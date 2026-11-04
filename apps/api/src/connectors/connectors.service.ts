@@ -296,6 +296,9 @@ function readFields(raw: unknown): Record<string, string> {
     return out;
 }
 
+/** Tope para leer la respuesta del endpoint de tokens (los de Microsoft 365 pasan de 8 KB). */
+const TOKEN_RESPONSE_MAX_BYTES = 256 * 1024;
+
 @Injectable()
 export class ConnectorsService {
     private readonly logger = new Logger(ConnectorsService.name);
@@ -626,6 +629,7 @@ export class ConnectorsService {
                               headers: req.headers,
                               ...(req.body !== undefined ? { body: req.body } : {}),
                               captureBody: true,
+                              maxCaptureBytes: 64 * 1024,
                               timeoutMs: 10_000,
                           });
                           return { status: res.status, body: res.body ?? '' };
@@ -967,6 +971,26 @@ export class ConnectorsService {
     }
 
     /**
+     * v0.1.363 — La vuelta del proveedor trajo un ERROR (la persona canceló,
+     * o Microsoft pidió la aprobación del administrador): el viaje terminó, así
+     * que se consume el `state` y se devuelve de qué app era, para que el panel
+     * ofrezca la salida que corresponde. Sólo a la misma persona que lo inició.
+     */
+    async abandonOAuth(sessionUserId: number, state: string): Promise<{ integration: IntegrationKey | null; purpose: 'agenda' | null }> {
+        const none = { integration: null, purpose: null };
+        if (state.trim() === '') return none;
+        const raw = await this.redis.getdel(oauthStateKey(state));
+        if (!raw) return none;
+        try {
+            const pending = JSON.parse(raw) as PendingOAuth;
+            if (pending.userId !== sessionUserId) return none;
+            return { integration: pending.integration ?? null, purpose: pending.purpose ?? null };
+        } catch {
+            return none;
+        }
+    }
+
+    /**
      * Vuelta del proveedor. El `state` se consume con `GETDEL` —de un solo uso,
      * el mismo criterio que el magic link del portal (SEC-15)— y además se
      * exige que lo canjee la MISMA persona que lo pidió: un código robado no
@@ -1165,6 +1189,7 @@ export class ConnectorsService {
                 method: req.method,
                 headers: req.headers,
                 captureBody: true,
+                maxCaptureBytes: 64 * 1024,
                 timeoutMs: 8000,
             });
             if (res.status >= 400) return null;
@@ -1339,7 +1364,15 @@ export class ConnectorsService {
             },
             body,
             captureBody: true,
+            // v0.1.364 — la respuesta ENTERA: con el tope de 8 KB del probador,
+            // los tokens de una cuenta de trabajo de Microsoft 365 (access +
+            // refresh + id_token, con los grupos del usuario) llegaban
+            // cortados y la conexión fallaba con «no es JSON».
+            maxCaptureBytes: TOKEN_RESPONSE_MAX_BYTES,
         });
+        if (res.truncated) {
+            throw new Error('La respuesta del proveedor con los permisos superó el tamaño máximo y llegó incompleta.');
+        }
         // `parseTokenResponse` propaga el error del proveedor tal cual
         // ("invalid_grant" es exactamente lo que hay que leer), así que el
         // status sólo se usa cuando el cuerpo no dice nada.

@@ -9,6 +9,7 @@ import {
     type Connection,
     type IntegrationKey,
     type IntegrationsOverview,
+    type MsAdminConsentStatus,
     type OAuthStartResult,
     type Role,
     type VerifyIntegrationInput,
@@ -21,6 +22,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { ConnectorsService } from './connectors.service';
+import { MsAdminConsentService } from './ms-admin-consent.service';
 import { assertReqModule, moduleForIntegration } from '../billing/plan-module-gate';
 
 /**
@@ -35,7 +37,10 @@ import { assertReqModule, moduleForIntegration } from '../billing/plan-module-ga
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 @RequireCapability('manage_automations')
 export class IntegrationsController {
-    constructor(private readonly connectors: ConnectorsService) {}
+    constructor(
+        private readonly connectors: ConnectorsService,
+        private readonly adminConsent: MsAdminConsentService,
+    ) {}
 
     @Get()
     async overview(@Req() req: FastifyRequest): Promise<{ data: IntegrationsOverview }> {
@@ -91,6 +96,25 @@ export class IntegrationsController {
             parseKey(key),
             input,
         );
+        return { data };
+    }
+
+    /**
+     * v0.1.363 — Aprobación del administrador de Microsoft 365 (Outlook y
+     * Teams): el enlace vigente y si un administrador ya aprobó.
+     */
+    @Get(':key/admin-consent')
+    async adminConsentStatus(@Req() req: FastifyRequest, @Param('key') key: string): Promise<{ data: MsAdminConsentStatus }> {
+        const data = await this.adminConsent.status(tenantId(req), parseKey(key));
+        return { data };
+    }
+
+    /** Crea (o devuelve el vigente) el enlace para mandarle al administrador de TI. */
+    @Post(':key/admin-consent')
+    @HttpCode(200)
+    async adminConsentCreate(@Req() req: FastifyRequest, @Param('key') key: string): Promise<{ data: MsAdminConsentStatus }> {
+        assertReqModule(req, moduleForIntegration(parseKey(key)));
+        const data = await this.adminConsent.create(tenantId(req), userId(req), parseKey(key));
         return { data };
     }
 }

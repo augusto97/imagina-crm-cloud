@@ -214,6 +214,31 @@ export const articles: LearnArticle[] = [
                 title: 'Usa una cuenta de la empresa',
                 md: 'Conecta un buzón compartido (ventas@, facturacion@) y no tu cuenta personal: si la persona se va de la empresa, la conexión sigue funcionando.',
             },
+            { t: 'h', text: 'Si Microsoft pide «la aprobación del administrador»' },
+            {
+                t: 'p',
+                md: 'Muchas empresas con Microsoft 365 no dejan que cada persona apruebe apps por su cuenta. Entonces, al conectar **Outlook** o **Microsoft Teams**, Microsoft muestra **«Se necesita la aprobación del administrador»** y no deja seguir. No es un error de la app: un administrador de Microsoft 365 de tu empresa tiene que aprobarla **una sola vez para toda la organización**.',
+            },
+            { t: 'anim', key: 'ms-admin-consent', caption: 'Microsoft pide un administrador: creas el enlace, se lo mandas a TI, lo aprueba y vuelves a conectar.' },
+            {
+                t: 'steps',
+                items: [
+                    'En **Ajustes → Integraciones**, en la tarjeta de **Microsoft Teams** u **Outlook**, toca **¿Tu empresa pide aprobación del administrador?** (si volviste de Microsoft con el error, el aviso trae el botón **Crear el enlace para mi administrador**). Para el calendario de la agenda está en **Ajustes → Cuenta → Mi calendario**.',
+                    'Toca **Crear el enlace para mi administrador** y luego **Copiar mensaje para tu administrador**: queda copiado un mensaje listo con el enlace, para pegarlo en un correo o en un chat.',
+                    'Tu administrador abre el enlace en su navegador, entra con su cuenta de Microsoft 365 y toca **Aceptar**. No necesita una cuenta en la app: al terminar ve una página que confirma que quedó aprobada.',
+                    'La ventana de la app se entera sola y muestra **Tu administrador ya aprobó**. Toca **Conectar** y entra con tu cuenta, como siempre.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Lo que conviene saber',
+                rows: [
+                    { name: 'Quién puede aprobar', what: 'Una cuenta con rol de **administrador global**, **administrador de aplicaciones** o **administrador de aplicaciones en la nube** de Microsoft 365. Si lo abre otra cuenta, Microsoft no lo registra y la ventana muestra el motivo.' },
+                    { name: 'Qué aprueba', what: 'Sólo los permisos de esa app (la ventana los lista en palabras). Cada persona sigue conectando su propia cuenta: la app usa esos permisos sólo con la cuenta de quien conecta.' },
+                    { name: 'Teams y Outlook van por separado', what: 'Tienen permisos distintos: si usan las dos, el administrador aprueba cada una con su enlace.' },
+                    { name: 'Cuánto dura el enlace', what: '14 días. Si vence, crea uno nuevo desde la misma ventana.' },
+                ],
+            },
             { t: 'h', text: 'Gmail y Outlook: correos desde tu dirección' },
             {
                 t: 'settings',

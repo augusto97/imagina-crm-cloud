@@ -38,10 +38,10 @@ export const meta: LearnModuleMeta = {
         {
             id: 'integraciones-google-microsoft',
             title: 'Gmail, Outlook, Google Calendar y Google Sheets',
-            summary: 'Conecta tu cuenta de Google o Microsoft con «Conectar», sin claves: manda correos desde tu dirección, crea eventos en tu calendario y suma filas a una planilla.',
-            minutes: 8,
+            summary: 'Conecta tu cuenta de Google o Microsoft con «Conectar», sin claves: manda correos desde tu dirección, crea eventos en tu calendario y suma filas a una planilla. Y qué hacer si Microsoft pide la aprobación del administrador.',
+            minutes: 10,
             level: 'basic',
-            keywords: 'gmail outlook microsoft 365 google calendar evento sheets planilla hoja de calculo autorizar',
+            keywords: 'gmail outlook microsoft 365 google calendar evento sheets planilla hoja de calculo autorizar aprobacion administrador consentimiento teams ti',
             needs: 'manage_automations',
         },
         {

@@ -1411,4 +1411,29 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Edita el formulario y en **Ajustes → Cobrar al enviar** elige la cuenta de cobro y cuánto se cobra. El dinero llega a la cuenta de tu empresa.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.363-aprobacion-administrador-microsoft',
+        version: '0.1.363',
+        date: '2026-11-04',
+        kind: 'improvement',
+        title: 'Conecta Teams y Outlook aunque tu empresa pida un administrador',
+        summary:
+            'Si Microsoft 365 muestra «Se necesita la aprobación del administrador», crea un enlace con un clic, mándaselo a tu administrador y la app te avisa cuando lo apruebe.',
+        media: {
+            slides: [
+                {
+                    title: 'Un enlace para tu administrador',
+                    text: 'La app arma el enlace con los permisos exactos y un mensaje listo para pegar en un correo o un chat. Tu administrador lo aprueba una sola vez para toda la organización.',
+                    illustration: 'ms-admin-consent',
+                },
+                {
+                    title: 'Te avisa cuando lo aprueba',
+                    text: 'La ventana se entera sola y muestra «Tu administrador ya aprobó». Tocas «Conectar» y entras con tu cuenta, como siempre.',
+                    illustration: 'integ-oauth',
+                },
+            ],
+        },
+        body: 'En **Ajustes → Integraciones**, en la tarjeta de **Microsoft Teams** u **Outlook**, toca **¿Tu empresa pide aprobación del administrador?**. Para el calendario de la agenda está en **Ajustes → Cuenta → Mi calendario**.',
+        action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
+    },
 ];

@@ -1241,6 +1241,69 @@ las sirve en `/api/v1/public/legal[/privacidad|/terminos]`:
 - **Entorno de pruebas:** `MS_GRAPH_API_URL` también re-apunta las acciones de
   Graph de la galería.
 
+**Addendum v0.1.363 — El enlace de aprobación para el administrador de
+Microsoft 365.** Que ningún permiso «pida» consentimiento del administrador es
+el comportamiento POR DEFECTO de Microsoft, no una garantía: muchas empresas
+apagan el consentimiento de los usuarios (o sólo lo dejan para apps de
+publicadores verificados) y entonces Microsoft muestra «Se necesita la
+aprobación del administrador» para cualquier app. Le pasó a un cliente del
+usuario al conectar Teams («Imagina Base, sin comprobar»). La salida que da
+Microsoft es el **consentimiento del administrador**, y la app lo arma:
+- **El enlace** (`buildMsAdminConsentUrl`, shared, puro):
+  `https://login.microsoftonline.com/organizations/v2.0/adminconsent` con el
+  client id de la plataforma, los permisos EXACTOS de la integración
+  (`integrationScopes(def)`, los de Graph con su recurso completo
+  `https://graph.microsoft.com/…`), la MISMA URI de redirección registrada
+  (`/api/v1/connections/oauth/callback`, nada nuevo que registrar) y un `state`
+  con prefijo `ac_`. Teams y Outlook tienen enlaces distintos (permisos
+  distintos); el calendario de la agenda usa el de Outlook (mismos permisos).
+- **Estado en Redis** (`MsAdminConsentService`): `msadmin:state:<state>` 14 días
+  (empresa, quién lo pidió, la app) y `msadmin:status:<empresa>:<app>` 120 días
+  (enlace, vencimiento, aprobado el…, último error). Pedirlo dos veces devuelve
+  el vigente (si le queda más de un día); uno aprobado se puede pedir de nuevo
+  (si el administrador revocó la app).
+- **La vuelta pasa sin sesión, sólo con `ac_`.** Llega al navegador del
+  administrador de TI, que no tiene cuenta en la app. No trae código ni tokens
+  —sólo `admin_consent=True`, el id de su organización y el `state`—, así que no
+  hay credencial que robar: lo peor que puede hacer un `state` adivinado es
+  marcar «aprobado» algo que no lo está, y al conectar Microsoft lo vuelve a
+  frenar. `OAuthCallbackGuard` deja pasar SÓLO esa forma; cualquier otra vuelta
+  sigue exigiendo la sesión de quien inició la conexión. El resultado es una
+  página HTML del servidor, sin scripts, todo escapado, con CSP
+  `default-src 'none'`, `no-store` y `noindex`: «Listo: aprobaste la app» (con a
+  quién avisar) o el motivo de Microsoft en palabras (`describeError`: cuenta no
+  administradora con los roles que sirven, dirección de regreso no registrada,
+  app no multiinquilino).
+- **Lo que ve la persona.** Diálogo «Aprobación del administrador de Microsoft
+  365» (Integraciones → tarjeta de Teams u Outlook; Mi calendario): crear el
+  enlace, «Copiar mensaje para tu administrador» (texto listo con el enlace),
+  los permisos en palabras (`msScopeLabels`) y el estado, que se consulta cada
+  10 s mientras está abierto («Tu administrador ya aprobó» + «Conectar»). Si la
+  persona vuelve de Microsoft con el error, el callback ahora dice de QUÉ app
+  era (`abandonOAuth`, sólo a quien la inició y una sola vez:
+  `&app=<integración>`) y el aviso reconoce el error de consentimiento
+  (`isMsConsentError`: `access_denied`, `consent_required`, AADSTS65001/65004/
+  90094/90095/90008) para ofrecer el enlace ahí mismo.
+- **Endpoints:** `GET|POST /integrations/:key/admin-consent`
+  (`manage_automations`; el POST respeta el módulo del plan) y
+  `GET|POST /me/agenda-calendar/admin-consent` (el POST no se usa
+  impersonando). Sólo Microsoft: otra app → 400 `admin_consent_not_microsoft`.
+- **Queda del lado del operador:** la verificación del publicador en Partner
+  Center (guía de Plataforma → Integraciones) quita el «sin comprobar» y, en
+  las organizaciones que dejan aprobar apps de publicadores verificados, evita
+  el paso del administrador.
+- **La respuesta de tokens se lee entera.** `safeWebhookFetch` retiene 8 KB
+  por defecto (es el tope del probador), y el canje del código y la
+  renovación lo usaban sin subirlo: la respuesta de una cuenta de trabajo de
+  Microsoft 365 (access token con los grupos del usuario, refresh e
+  id_token) pasa de 8 KB y llegaba cortada — toda cuenta de empresa de
+  Microsoft fallaba al conectar con «no es JSON». Regla: **toda llamada que
+  PARSEA la respuesta de un proveedor sube `maxCaptureBytes`** al tamaño que
+  esa respuesta puede tener (tokens 256 KB; eventos de calendario 256 KB;
+  lecturas chicas 64 KB) y trata `truncated` como error. Y un error de
+  parseo de la respuesta de tokens NUNCA repite el cuerpo: trae los tokens, y
+  el mensaje viaja a la pantalla, a la dirección y a los registros.
+
 ### ADR-S23 — Migrar UNA empresa entre instancias (v0.1.197)
 
 **Contexto.** ADR-S20 mueve el SERVIDOR entero: sirve para cambiar de VPS o
@@ -6721,4 +6784,4 @@ para poner Cloudflare delante y subir el tope está en
 
 ---
 
-**Versión del documento:** 1.147.0 (La actualización completa el `.env` de producción)
+**Versión del documento:** 1.148.0 (El enlace de aprobación para el administrador de Microsoft 365)

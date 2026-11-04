@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, CalendarCheck, CalendarDays, Loader2, Lock, PenLine } from 'lucide-react';
-import { BOOKING_MAX_BUSY_CALENDARS, type AgendaCalendarItem, type MyAgendaCalendarDto, type UpdateMyAgendaCalendarInput } from '@imagina-base/shared';
+import { AlertTriangle, CalendarCheck, CalendarDays, Loader2, Lock, PenLine, ShieldCheck } from 'lucide-react';
+import { BOOKING_MAX_BUSY_CALENDARS, isMsConsentError, type AgendaCalendarItem, type MyAgendaCalendarDto, type UpdateMyAgendaCalendarInput } from '@imagina-base/shared';
 
+import { MsAdminConsentDialog } from '@/cloud/components/MsAdminConsentDialog';
 import { useSession } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,7 +36,9 @@ export function MyAgendaCalendarCard(): JSX.Element {
     const toast = useToast();
     const confirm = useConfirm();
     const [params, setParams] = useSearchParams();
-    const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+    // v0.1.363 — `consent`: Microsoft pidió la aprobación del administrador.
+    const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string; consent?: boolean } | null>(null);
+    const [adminConsent, setAdminConsent] = useState(false);
 
     const q = useQuery({
         queryKey: KEY(tenantId),
@@ -47,14 +50,23 @@ export function MyAgendaCalendarCard(): JSX.Element {
     const oauthResult = params.get('oauth');
     useEffect(() => {
         if (!oauthResult) return;
+        const msg = params.get('msg') ?? '';
+        const consent = params.get('app') === 'outlook' && isMsConsentError(msg);
         setNotice(
             oauthResult === 'ok'
                 ? { kind: 'ok', text: __('¡Listo! Tu calendario quedó conectado. Elige abajo en cuáles se mira lo ocupado.') }
-                : { kind: 'err', text: params.get('msg') ?? __('No se pudo conectar el calendario.') },
+                : consent
+                  ? {
+                        kind: 'err',
+                        consent: true,
+                        text: __('Microsoft no dejó terminar la conexión: tu empresa pide que un administrador de Microsoft 365 apruebe la app antes de que cada persona conecte su calendario. Crea el enlace para tu administrador; cuando lo apruebe, vuelve a tocar «Conectar Outlook».'),
+                    }
+                  : { kind: 'err', text: msg || __('No se pudo conectar el calendario.') },
         );
         const next = new URLSearchParams(params);
         next.delete('oauth');
         next.delete('msg');
+        next.delete('app');
         setParams(next, { replace: true });
         void qc.invalidateQueries({ queryKey: KEY(tenantId) });
         // Sólo importa el resultado: las demás dependencias son estables.
@@ -125,7 +137,31 @@ export function MyAgendaCalendarCard(): JSX.Element {
                     data-testid="my-calendar-notice"
                 >
                     {notice.text}
+                    {notice.consent && (
+                        <div className="imcrm-mt-2">
+                            <Button size="sm" variant="outline" className="imcrm-gap-1.5" onClick={() => setAdminConsent(true)} data-testid="my-calendar-consent-open">
+                                <ShieldCheck className="imcrm-h-3.5 imcrm-w-3.5" />
+                                {__('Crear el enlace para mi administrador')}
+                            </Button>
+                        </div>
+                    )}
                 </div>
+            )}
+
+            {adminConsent && (
+                <MsAdminConsentDialog
+                    target={{ kind: 'agenda' }}
+                    open
+                    onClose={() => setAdminConsent(false)}
+                    onConnect={
+                        impersonating
+                            ? undefined
+                            : () => {
+                                  setAdminConsent(false);
+                                  connect.mutate('outlook');
+                              }
+                    }
+                />
             )}
 
             {impersonating && (
@@ -154,6 +190,17 @@ export function MyAgendaCalendarCard(): JSX.Element {
                                 </Button>
                             ))}
                         </div>
+                        {d.providers.some((p) => p.key === 'outlook' && p.available) && !impersonating && (
+                            <button
+                                type="button"
+                                onClick={() => setAdminConsent(true)}
+                                className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-self-start imcrm-rounded imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground hover:imcrm-underline focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-ring"
+                                data-testid="my-calendar-admin-consent"
+                            >
+                                <ShieldCheck className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                {__('¿Tu empresa usa Microsoft 365 y pide aprobación del administrador?')}
+                            </button>
+                        )}
                         {d.providers.some((p) => !p.available) && (
                             <p className="imcrm-text-xs imcrm-text-muted-foreground">
                                 {__('Lo que aparece apagado todavía no está habilitado en este servidor: lo habilita quien administra la plataforma.')}

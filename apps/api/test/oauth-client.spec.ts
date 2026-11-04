@@ -171,6 +171,19 @@ describe('parseTokenResponse', () => {
         expect(() => parseTokenResponse('{}', 'application/json', now)).toThrow(/access_token/);
         expect(() => parseTokenResponse('<html>502</html>', 'text/html', now)).toThrow();
     });
+
+    it('una respuesta cortada no repite el cuerpo en el error (trae los tokens)', () => {
+        const cut = '{"access_token":"ya29.SECRETO-DEL-TOKEN","refresh_token":"1//otro-secret';
+        let message = '';
+        try {
+            parseTokenResponse(cut, 'application/json', now);
+        } catch (e) {
+            message = (e as Error).message;
+        }
+        expect(message).toMatch(/incompleta o no es JSON/);
+        expect(message).not.toContain('SECRETO');
+        expect(message).not.toContain('access_token');
+    });
 });
 
 describe('needsRefresh', () => {

@@ -5,6 +5,7 @@ import {
     type AgendaCalendarItem,
     type ConnectMyAgendaCalendarInput,
     type MyAgendaCalendarDto,
+    type MsAdminConsentStatus,
     type UpdateMyAgendaCalendarInput,
     bookAppointmentSchema,
     bookingPreviewSlotsSchema,
@@ -49,6 +50,7 @@ import { appointmentNotFoundPage, bookingClassicLook, bookingClientHash, booking
 import { BookingPublicService, type CachedBookingPage } from './booking-public.service';
 import { BookingService, type BookingEditorOptions } from './booking.service';
 import { BookingMyCalendarService } from './booking-my-calendar.service';
+import { MsAdminConsentService } from '../connectors/ms-admin-consent.service';
 import { ForbiddenException } from '@nestjs/common';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 import { aclOf } from '../tenancy/acl-of';
@@ -489,7 +491,10 @@ function decider(req: FastifyRequest): Actor {
 @Controller('me/agenda-calendar')
 @UseGuards(SessionGuard, TenantGuard)
 export class MyAgendaCalendarController {
-    constructor(private readonly mine: BookingMyCalendarService) {}
+    constructor(
+        private readonly mine: BookingMyCalendarService,
+        private readonly adminConsent: MsAdminConsentService,
+    ) {}
 
     private noImpersonation(req: FastifyRequest): void {
         if (req.impersonatedBy !== undefined) {
@@ -519,5 +524,21 @@ export class MyAgendaCalendarController {
     disconnect(@Req() req: FastifyRequest): Promise<MyAgendaCalendarDto> {
         this.noImpersonation(req);
         return this.mine.disconnect(req.tenant!.tenantId, req.authUserId!, req.tenant!.role);
+    }
+
+    /**
+     * v0.1.363 — Outlook de una empresa con Microsoft 365 que pide la
+     * aprobación del administrador: el mismo enlace que en Integraciones.
+     */
+    @Get('admin-consent')
+    adminConsentStatus(@Req() req: FastifyRequest): Promise<MsAdminConsentStatus> {
+        return this.adminConsent.status(req.tenant!.tenantId, 'outlook');
+    }
+
+    @Post('admin-consent')
+    @HttpCode(200)
+    adminConsentCreate(@Req() req: FastifyRequest): Promise<MsAdminConsentStatus> {
+        this.noImpersonation(req);
+        return this.adminConsent.create(req.tenant!.tenantId, req.authUserId!, 'outlook');
     }
 }

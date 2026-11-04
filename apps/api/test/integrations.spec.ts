@@ -29,12 +29,18 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
         ...real,
         safeWebhookFetch: async (
             url: string,
-            opts: { method?: string; headers?: Record<string, string>; body?: string },
+            opts: { method?: string; headers?: Record<string, string>; body?: string; maxCaptureBytes?: number },
         ) => {
             const call = { url, method: opts.method, headers: opts.headers, body: opts.body };
             net.calls.push(call);
             const res = net.handler(call);
-            return { status: res.status, body: res.body, contentType: 'application/json' };
+            // v0.1.364 — el mismo tope que el fetch real (8 KB salvo que se pida
+            // más): un llamador que lee una respuesta grande sin subirlo la
+            // recibe cortada, igual que en producción.
+            const cap = opts.maxCaptureBytes ?? 8 * 1024;
+            const truncated = Buffer.byteLength(res.body) > cap;
+            const body = truncated ? Buffer.from(res.body).subarray(0, cap).toString('utf8') : res.body;
+            return { status: res.status, body, contentType: 'application/json', truncated };
         },
     };
 });
@@ -579,7 +585,21 @@ describe('Integraciones de la galería (v0.1.203)', () => {
         const CHAT = '19:uno-a-uno@unq.gbl.spaces';
         net.handler = (call) => {
             if (call.url.includes('login.microsoftonline.com')) {
-                return { status: 200, body: JSON.stringify({ access_token: 'ms-teams-token', expires_in: 3600, refresh_token: 'r1' }) };
+                // v0.1.364 — como responde Microsoft 365 a una cuenta de trabajo:
+                // el access token (con los grupos), el refresh y el id_token
+                // pasan de 8 KB en total, y `token_type`/`scope` van primero.
+                return {
+                    status: 200,
+                    body: JSON.stringify({
+                        token_type: 'Bearer',
+                        scope: 'Channel.ReadBasic.All ChannelMessage.Send Chat.Create ChatMessage.Send email openid Team.ReadBasic.All User.Read profile',
+                        expires_in: 3750,
+                        ext_expires_in: 3750,
+                        access_token: `ms-teams-token.${'a'.repeat(5000)}`,
+                        refresh_token: `r1.${'r'.repeat(2500)}`,
+                        id_token: `id.${'i'.repeat(2000)}`,
+                    }),
+                };
             }
             if (call.url === 'https://graph.microsoft.com/v1.0/me') {
                 return { status: 200, body: '{"mail":"yo@acme.co","userPrincipalName":"yo@acme.co"}' };

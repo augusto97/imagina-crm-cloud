@@ -11945,6 +11945,70 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `font-integrity.spec` (102, falla con las fuentes viejas) + E2E contra
         el build de producción con el API en modo desarrollo desde un release
         simulado.
+  - [x] **Conectar Teams y Outlook cuando la empresa pide un administrador
+        (v0.1.363, addendum ADR-S22, reporte del usuario con captura: a un
+        cliente que conectaba Teams Microsoft le mostró «Se necesita la
+        aprobación del administrador» — «Imagina Base, sin comprobar»)**.
+        Muchas empresas con Microsoft 365 apagan el consentimiento de los
+        usuarios: ningún permiso pide administrador por defecto, pero la
+        organización puede exigirlo para toda app. Ahora la app arma el
+        **consentimiento del administrador**:
+        (a) **El enlace** (`buildMsAdminConsentUrl`, shared, puro) a
+        `/organizations/v2.0/adminconsent` con el client id de la plataforma,
+        los permisos EXACTOS de la integración (Graph con su recurso
+        completo), la MISMA URI de redirección de siempre y un `state` `ac_…`;
+        uno para Teams y otro para Outlook (el calendario de la agenda usa el
+        de Outlook). `MsAdminConsentService` guarda en Redis el pedido (14
+        días) y el estado por empresa y app (120 días: enlace, vencimiento,
+        aprobado el…, último error); pedirlo dos veces devuelve el vigente.
+        (b) **La vuelta pasa sin sesión, sólo con `ac_`**
+        (`OAuthCallbackGuard`): llega al navegador del administrador de TI, no
+        trae código ni tokens. Página del servidor sin scripts, todo escapado,
+        CSP cerrada: «Listo: aprobaste la app» (dice a quién avisar) o el
+        motivo de Microsoft en palabras, con los roles que sirven (global, de
+        aplicaciones o de aplicaciones en la nube).
+        (c) **Diálogo** «Aprobación del administrador de Microsoft 365»
+        (`MsAdminConsentDialog`): «Crear el enlace para mi administrador»,
+        «Copiar mensaje para tu administrador» (texto listo con el enlace) o
+        sólo el enlace, los permisos en palabras, y el estado consultado cada
+        10 s: «Tu administrador ya aprobó» + «Conectar». Se abre desde la
+        tarjeta de Teams u Outlook en Integraciones («¿Tu empresa pide
+        aprobación del administrador?»), desde Mi calendario, y desde el aviso
+        de error: el callback ahora dice de qué app venía la conexión fallida
+        (`abandonOAuth`, sólo a quien la inició, una vez) y `isMsConsentError`
+        reconoce el error de consentimiento.
+        (d) Endpoints `GET|POST /integrations/:key/admin-consent` y
+        `GET|POST /me/agenda-calendar/admin-consent`.
+        Ayuda: párrafo en la guía de Teams, sección «Si Microsoft pide la
+        aprobación del administrador» en Aprende → Integraciones con la
+        ilustración nueva `ms-admin-consent`, y novedad con carrusel. Tests:
+        `ms-admin-consent.spec` (8: sólo Microsoft y con la app de la
+        plataforma, enlace con los permisos de Teams y reuso, aprobación y
+        error, enlace vencido, página escapada, guard sin sesión sólo con
+        `ac_`, `abandonOAuth`), 4 de shared (727 en verde), front 795 y specs de
+        OAuth/integraciones 63/63; E2E navegador 30/30 (tarjetas de Teams y
+        Outlook, enlace copiado, la vuelta del administrador sin sesión en
+        oscuro, el diálogo se entera solo, aviso tras el error, Mi calendario,
+        celular en oscuro).
+        **Bug encontrado por el cliente al reintentar con la cuenta de
+        administrador** («El proveedor devolvió algo que no es JSON:
+        {"token_type":"Bearer","scope":…»): el canje del código leía la
+        respuesta de tokens con el tope de 8 KB del probador
+        (`safeWebhookFetch` sin `maxCaptureBytes`), y la de una cuenta de
+        trabajo de Microsoft 365 (access token con los grupos + refresh +
+        id_token) pasa de 8 KB → JSON cortado → la conexión fallaba SIEMPRE
+        para esas cuentas. `postToken` (canje y renovación) ahora lee hasta
+        256 KB y una respuesta cortada lo dice. El error ya no repite el
+        cuerpo: es la respuesta con los TOKENS y el mensaje viaja a la
+        pantalla, la dirección y los registros (con Google, que manda
+        `access_token` primero, se habría filtrado el comienzo del token). El
+        mismo tope dejaba sin id el evento de Outlook con reunión de Teams que
+        crea la agenda (Graph devuelve el evento entero con el cuerpo HTML de
+        la invitación): sube a 256 KB, y a 64 KB los pasos previos de Teams y
+        la lectura de la cuenta. El mock de red de `integrations.spec` ahora
+        corta en el mismo tope que el fetch real y el token de Teams viene con
+        el tamaño y el orden de Microsoft (falla sin el arreglo); test de que
+        el error no repite el token.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 
