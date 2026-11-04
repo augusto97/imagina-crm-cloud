@@ -10,6 +10,7 @@ import {
     ExternalLink,
     EyeOff,
     GripVertical,
+    Grid3x3,
     Heading2,
     Image as ImageIcon,
     Link2,
@@ -74,6 +75,7 @@ import type { FieldEntity } from '@/types/field';
 
 import { Check, Field, Section } from '../automations/email/EmailBlockInspector';
 import { FieldItemDesign, ImageItemEditor } from './design/ItemDesign';
+import { MatrixEditor } from './design/QuestionKind';
 import { MyThemes } from './design/MyThemes';
 import { ThemeGallery } from './design/ThemeGallery';
 import { ThemeInspector } from './design/ThemeInspector';
@@ -90,6 +92,9 @@ import {
 import { themeErrorMessage, useAttachmentUrls } from './design/useFormThemes';
 import {
     addContentItem,
+    addMatrixItem,
+    defaultMatrixColumns,
+    usedFieldIds,
     addFieldItem,
     availableFields,
     conditionCandidates,
@@ -382,6 +387,20 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
         change(next);
         setSelected(id);
     };
+    // v0.1.355 — una matriz arranca con las selecciones sin usar que comparten opciones con la primera.
+    const addMatrix = (): void => {
+        const used = usedFieldIds(config);
+        const free = fields.filter((f) => !used.has(f.id) && ['select', 'rating'].includes(f.type));
+        const first = free[0];
+        const sameOptions = (a: typeof first, b: typeof first): boolean =>
+            JSON.stringify(defaultMatrixColumns(a).map((c) => c.value)) === JSON.stringify(defaultMatrixColumns(b).map((c) => c.value));
+        const rows = first ? free.filter((f) => f.type === first.type && sameOptions(f, first)).slice(0, 4) : [];
+        const { config: next, id } = addMatrixItem(config, rows.map((f) => f.id), defaultMatrixColumns(first), selected);
+        change(next);
+        setSelected(id);
+        // En el celular, directo a sus ajustes: una matriz hay que armarla.
+        if (narrow) setMobileTab('settings');
+    };
 
     const applyPreset = (p: PublicThemePreset): void => {
         change(applyTheme(config, p.theme, { keepCustomCss: !isAdmin, carryImages: true }));
@@ -430,6 +449,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             }}
             onAddField={addField}
             onAddContent={addContent}
+            onAddMatrix={addMatrix}
             onChange={change}
         />
     );
@@ -439,6 +459,8 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             item={selectedItem}
             config={config}
             fieldsById={fieldsById}
+            fields={fields}
+            listId={listId}
             themeChoiceStyle={theme.choices.style}
             onChange={change}
             onClose={() => setSelected(null)}
@@ -750,6 +772,8 @@ interface LeftPanelProps {
     onSelect: (id: string) => void;
     onAddField: (fieldId: number) => void;
     onAddContent: (type: FormContentType) => void;
+    /** v0.1.355 */
+    onAddMatrix: () => void;
     onChange: (next: FormConfig) => void;
 }
 
@@ -758,6 +782,7 @@ function itemTitle(item: FormItem, fieldsById: Map<number, FieldEntity>): string
     if (item.type === 'text') return item.text.split('\n')[0] || __('Texto');
     if (item.type === 'page_break') return item.title || __('Salto de página');
     if (item.type === 'image') return item.caption.trim() || item.alt.trim() || __('Imagen');
+    if (item.type === 'matrix') return item.label.trim() || __('Matriz');
     return item.label.trim() || fieldsById.get(item.field_id)?.label || __('Campo borrado');
 }
 
@@ -868,6 +893,16 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
                             <ImageIcon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />
                             {__('Imagen')}
                         </button>
+                        <button
+                            type="button"
+                            onClick={() => p.onAddMatrix()}
+                            className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left imcrm-text-sm hover:imcrm-bg-accent"
+                            data-testid="form-add-matrix"
+                        >
+                            <Grid3x3 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
+                            <span className="imcrm-min-w-0 imcrm-flex-1">{__('Matriz')}</span>
+                            <span className="imcrm-text-[10px] imcrm-text-muted-foreground">{__('varias preguntas en una tabla')}</span>
+                        </button>
                         <p className="imcrm-mt-1 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                             {__('Con saltos de página el formulario se responde por pasos, con una barra de progreso.')}
                         </p>
@@ -895,7 +930,9 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
                                     ? SeparatorHorizontal
                                     : item.type === 'image'
                                       ? ImageIcon
-                                      : fieldTypeIcon(p.fieldsById.get(item.field_id)?.type ?? 'text');
+                                      : item.type === 'matrix'
+                                        ? Grid3x3
+                                        : fieldTypeIcon(p.fieldsById.get(item.field_id)?.type ?? 'text');
                         const isBreak = item.type === 'page_break';
                         return (
                             <li
@@ -970,6 +1007,8 @@ function ItemInspector({
     item,
     config,
     fieldsById,
+    fields,
+    listId,
     themeChoiceStyle,
     onChange,
     onClose,
@@ -977,6 +1016,9 @@ function ItemInspector({
     item: FormItem;
     config: FormConfig;
     fieldsById: Map<number, FieldEntity>;
+    /** v0.1.355 — los campos de la lista (matriz y «Otro»). */
+    fields: FieldEntity[];
+    listId: number;
     /** v0.1.351 — estilo de las opciones del diseño del formulario. */
     themeChoiceStyle: PublicChoiceStyle;
     onChange: (next: FormConfig) => void;
@@ -993,7 +1035,9 @@ function ItemInspector({
                 ? __('Salto de página')
                 : item.type === 'image'
                   ? __('Imagen')
-                  : (field?.label ?? __('Pregunta'));
+                  : item.type === 'matrix'
+                    ? __('Matriz')
+                    : (field?.label ?? __('Pregunta'));
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-4" data-testid="form-item-inspector">
@@ -1048,12 +1092,13 @@ function ItemInspector({
                     <Field label={__('Ayuda')} hint={__('Aparece debajo de la pregunta.')}>
                         <Textarea rows={2} value={item.help} placeholder={field.description ?? ''} onChange={(e) => set({ help: e.target.value })} />
                     </Field>
-                    {!['checkbox', 'select', 'multi_select', 'rating', 'file', 'date', 'datetime'].includes(field.type) && (
+                    {(!['checkbox', 'select', 'multi_select', 'team', 'rating', 'file', 'date', 'datetime'].includes(field.type) || item.display === 'search') &&
+                        !['scale', 'slider', 'ranking'].includes(item.display) && (
                         <Field label={__('Texto de ejemplo')}>
                             <Input value={item.placeholder} onChange={(e) => set({ placeholder: e.target.value })} />
                         </Field>
                     )}
-                    {field.type === 'file' && (
+                    {field.type === 'file' && item.display !== 'signature' && (
                         <Field
                             label={__('Tipos de archivo')}
                             hint={__('Los programas y las páginas web nunca se aceptan. Cada archivo puede pesar hasta 20 MB.')}
@@ -1092,11 +1137,29 @@ function ItemInspector({
                         )}
                     </Section>
                     {!item.hidden && (
-                        <FieldItemDesign item={item} field={field} themeChoiceStyle={themeChoiceStyle} onSet={(patch) => onChange(updateItem(config, item.id, patch))} />
+                        <FieldItemDesign
+                            item={item}
+                            field={field}
+                            themeChoiceStyle={themeChoiceStyle}
+                            config={config}
+                            fields={fields}
+                            listId={listId}
+                            onSet={(patch) => onChange(updateItem(config, item.id, patch))}
+                        />
                     )}
                 </>
             )}
             {item.type === 'image' && <ImageItemEditor item={item} onSet={(patch) => onChange(updateItem(config, item.id, patch))} />}
+            {item.type === 'matrix' && (
+                <MatrixEditor
+                    item={item}
+                    config={config}
+                    fields={fields}
+                    fieldsById={fieldsById}
+                    listId={listId}
+                    onSet={(patch) => onChange(updateItem(config, item.id, patch))}
+                />
+            )}
 
             {item.type !== 'page_break' &&
                 !(item.type === 'field' && config.settings.confirm_email && config.settings.respondent_email_field_id === item.field_id) && (

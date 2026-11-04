@@ -1322,6 +1322,16 @@ export class StructureTools implements AiProposalApplier {
                         published: f.enabled,
                         submissions: f.submissions_count,
                         pages: splitFormPages(f.config.items).length,
+                        // v0.1.355 — las preguntas con forma propia (escala, firma, matriz…).
+                        special_questions: f.config.items.flatMap((i): Array<Record<string, unknown>> =>
+                            i.type === 'matrix'
+                                ? [{ kind: 'matrix', rows: i.rows.flatMap((r) => fieldById.get(r.field_id)?.slug ?? []) }]
+                                : i.type === 'field' && i.display !== 'auto' && !['radio', 'buttons', 'cards', 'dropdown'].includes(i.display)
+                                  ? [{ kind: i.display, field: fieldById.get(i.field_id)?.slug ?? null }]
+                                  : i.type === 'field' && i.other_field_id !== null
+                                    ? [{ kind: 'other', field: fieldById.get(i.field_id)?.slug ?? null, other_text_field: fieldById.get(i.other_field_id)?.slug ?? null }]
+                                    : [],
+                        ),
                         captcha: st.captcha,
                         respondent_email_field: emailField?.slug ?? null,
                         confirm_email: st.confirm_email && emailField !== undefined,

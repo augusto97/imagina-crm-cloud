@@ -4,6 +4,9 @@ import { formConfigSchema, type FormConfig } from '@imagina-base/shared';
 import {
     addContentItem,
     addFieldItem,
+    addMatrixItem,
+    defaultMatrixColumns,
+    usedFieldIds,
     availableFields,
     conditionCandidates,
     emailQuestions,
@@ -119,5 +122,51 @@ describe('constructor de formularios', () => {
         expect(emailQuestions(all, withEmail).map((f) => f.id)).toEqual([9]);
         const removed = removeItem(withEmail, 'aaaa9');
         expect(removed.settings).toMatchObject({ respondent_email_field_id: null, confirm_email: false, send_copy: false });
+    });
+});
+
+describe('v0.1.355 — matriz y «Otro» en el constructor', () => {
+    const more = [
+        ...fields,
+        { id: 7, label: 'Atención', type: 'select', is_required: true, config: { options: [{ value: 'malo', label: 'Malo' }, { value: 'bueno', label: 'Bueno' }] } },
+        { id: 8, label: 'Precio', type: 'select', is_required: false, config: { options: [{ value: 'malo', label: 'Malo' }, { value: 'bueno', label: 'Bueno' }] } },
+        { id: 9, label: 'Rapidez', type: 'rating', is_required: false, config: { max: 4 } },
+        { id: 10, label: 'Tipo (otro)', type: 'text', is_required: false },
+    ];
+
+    it('un campo usado como fila de matriz o como texto del «Otro» ya no se ofrece', () => {
+        let c = formConfigSchema.parse({
+            items: [{ id: 'aaaa1', type: 'field', field_id: 2, other_option: 'otro', other_field_id: 10 }],
+            settings: {},
+        });
+        c = addMatrixItem(c, [7, 8], [{ value: 'malo', label: 'Malo' }, { value: 'bueno', label: 'Bueno' }], null).config;
+        expect([...usedFieldIds(c)].sort((a, b) => a - b)).toEqual([2, 7, 8, 10]);
+        expect(availableFields(more, c).map((f) => f.id)).not.toContain(10);
+        expect(availableFields(more, c).map((f) => f.id)).not.toContain(7);
+        // Las filas cuentan como preguntas y pueden controlar condiciones de lo que viene después.
+        expect(questionCount(c)).toBe(3);
+        const after = addContentItem(c, 'heading', null);
+        expect(conditionCandidates(after.config, after.id).map((x) => x.field_id)).toEqual([2, 7, 8]);
+    });
+
+    it('una fila obligatoria la cubre una matriz obligatoria sin condición', () => {
+        const c = addMatrixItem(formConfigSchema.parse({ items: [], settings: {} }), [7], [{ value: 'malo', label: 'Malo' }], null);
+        expect(missingRequired(more, c.config).map((f) => f.id)).toContain(7);
+        const req = updateItem(c.config, c.id, { required: true });
+        expect(missingRequired(more, req).map((f) => f.id)).not.toContain(7);
+    });
+
+    it('quitar una matriz limpia las condiciones que dependían de sus filas', () => {
+        const m = addMatrixItem(formConfigSchema.parse({ items: [], settings: {} }), [7], [{ value: 'malo', label: 'Malo' }], null);
+        const q = addFieldItem(m.config, 1, m.id);
+        const withCond = updateItem(q.config, q.id, { show_if: { field_id: 7, op: 'eq', value: 'malo' } });
+        const removed = removeItem(withCond, m.id);
+        expect(removed.items).toHaveLength(1);
+        expect(removed.items[0]!.show_if).toBeNull();
+    });
+
+    it('columnas de arranque: las opciones de una selección o del 1 al máximo de una calificación', () => {
+        expect(defaultMatrixColumns(more[6]).map((c) => c.label)).toEqual(['Malo', 'Bueno']);
+        expect(defaultMatrixColumns(more[8]).map((c) => c.value)).toEqual(['1', '2', '3', '4']);
     });
 });

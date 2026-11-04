@@ -44,6 +44,57 @@ export function insertAfter(items: FormItem[], item: FormItem, afterId: string |
     return [...items.slice(0, idx + 1), item, ...items.slice(idx + 1)];
 }
 
+/**
+ * v0.1.355 — Los campos que el formulario ya usa: como pregunta, como fila de
+ * una matriz o como el texto del «Otro» de una pregunta. Cada campo se usa una vez.
+ */
+export function usedFieldIds(config: FormConfig): Set<number> {
+    const out = new Set<number>();
+    for (const i of config.items) {
+        if (i.type === 'field') {
+            out.add(i.field_id);
+            if (i.other_field_id !== null) out.add(i.other_field_id);
+        } else if (i.type === 'matrix') for (const r of i.rows) out.add(r.field_id);
+    }
+    return out;
+}
+
+/** v0.1.355 — Agrega una matriz con estas filas y columnas. */
+export function addMatrixItem(
+    config: FormConfig,
+    rowFieldIds: readonly number[],
+    columns: ReadonlyArray<{ value: string; label: string }>,
+    afterId: string | null,
+): { config: FormConfig; id: string } {
+    const item = formItemSchema.parse({
+        id: newFormItemId(),
+        type: 'matrix',
+        label: '',
+        rows: rowFieldIds.map((field_id) => ({ field_id })),
+        columns,
+    });
+    return { config: { ...config, items: insertAfter(config.items, item, afterId) }, id: item.id };
+}
+
+/**
+ * v0.1.355 — Columnas de arranque de una matriz según su primera fila: las
+ * opciones de una selección, o del 1 al máximo de una calificación.
+ */
+export function defaultMatrixColumns(field: FieldLike | undefined): Array<{ value: string; label: string }> {
+    if (!field) return [];
+    if (field.type === 'select' || field.type === 'multi_select') {
+        const raw = (field.config?.options as Array<{ value?: unknown; label?: unknown }> | undefined) ?? [];
+        return raw
+            .flatMap((o) => (typeof o?.value === 'string' ? [{ value: o.value, label: typeof o.label === 'string' && o.label ? o.label : o.value }] : []))
+            .slice(0, 10);
+    }
+    if (field.type === 'rating') {
+        const max = Math.max(1, Math.min(10, Math.round(Number(field.config?.max) || 5)));
+        return Array.from({ length: max }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }));
+    }
+    return [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) }));
+}
+
 export function addFieldItem(config: FormConfig, fieldId: number, afterId: string | null): { config: FormConfig; id: string } {
     if (config.items.some((i) => i.type === 'field' && i.field_id === fieldId)) {
         const existing = config.items.find((i) => i.type === 'field' && i.field_id === fieldId)!;
@@ -122,6 +173,8 @@ export function updateItem(config: FormConfig, id: string, patch: Partial<FormIt
 export function removeItem(config: FormConfig, id: string): FormConfig {
     const target = config.items.find((i) => i.id === id);
     const fieldId = target?.type === 'field' ? target.field_id : null;
+    // v0.1.355 — una matriz se lleva las condiciones que dependían de sus filas.
+    const rowIds = new Set(target?.type === 'matrix' ? target.rows.map((r) => r.field_id) : []);
     // Era la pregunta del correo de quien responde: sin ella no hay a quién
     // confirmarle ni mandarle la copia.
     const settings =
@@ -133,7 +186,9 @@ export function removeItem(config: FormConfig, id: string): FormConfig {
         settings,
         items: config.items
             .filter((i) => i.id !== id)
-            .map((i) => (fieldId !== null && i.show_if?.field_id === fieldId ? { ...i, show_if: null } : i)),
+            .map((i) =>
+                (fieldId !== null && i.show_if?.field_id === fieldId) || (i.show_if && rowIds.has(i.show_if.field_id)) ? { ...i, show_if: null } : i,
+            ),
     };
 }
 
@@ -161,7 +216,7 @@ export function updateSettings(config: FormConfig, patch: Partial<FormSettings>)
 
 /** Campos de la lista que se pueden preguntar y todavía no están en el formulario. */
 export function availableFields<F extends FieldLike>(fields: readonly F[], config: FormConfig): F[] {
-    const asked = new Set(config.items.flatMap((i) => (i.type === 'field' ? [i.field_id] : [])));
+    const asked = usedFieldIds(config);
     return fields.filter((f) => isFormFieldType(f.type) && !asked.has(f.id));
 }
 
@@ -179,6 +234,9 @@ export function missingRequired<F extends FieldLike>(fields: readonly F[], confi
         // («quien lo crea» no: un formulario público no tiene usuario).
         const def = fieldDefaultOf(f.config);
         if (def && def.kind !== 'creator') return false;
+        // v0.1.355 — una fila de una matriz obligatoria y sin condición la cubre.
+        const matrix = config.items.find((i) => i.type === 'matrix' && i.rows.some((r) => r.field_id === f.id));
+        if (matrix && matrix.type === 'matrix') return !matrix.required || matrix.show_if !== null;
         const item = config.items.find((i) => i.type === 'field' && i.field_id === f.id);
         if (!item || item.type !== 'field') return true;
         // Oculta (sólo por la dirección) o condicional: puede llegar vacía.
@@ -191,9 +249,15 @@ export function conditionCandidates(config: FormConfig, id: string): Array<{ fie
     const idx = config.items.findIndex((i) => i.id === id);
     return config.items
         .slice(0, idx < 0 ? config.items.length : idx)
-        .flatMap((i) => (i.type === 'field' ? [{ field_id: i.field_id, item_id: i.id }] : []));
+        .flatMap((i) =>
+            i.type === 'field'
+                ? [{ field_id: i.field_id, item_id: i.id }]
+                : i.type === 'matrix'
+                  ? i.rows.map((r) => ({ field_id: r.field_id, item_id: i.id }))
+                  : [],
+        );
 }
 
 export function questionCount(config: FormConfig): number {
-    return config.items.filter((i) => i.type === 'field' && !i.hidden).length;
+    return config.items.reduce((n, i) => n + (i.type === 'field' && !i.hidden ? 1 : i.type === 'matrix' ? i.rows.length : 0), 0);
 }

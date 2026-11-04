@@ -1,4 +1,4 @@
-import { FORM_ITEM_WIDTHS, type FormFieldItem, type FormImageItem, type FormItemWidth, type PublicChoiceStyle } from '@imagina-base/shared';
+import { FORM_ITEM_WIDTHS, type FormConfig, type FormFieldItem, type FormImageItem, type FormItemWidth, type PublicChoiceStyle } from '@imagina-base/shared';
 
 import { NumberField } from '@/components/design/DesignStyleControls';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import type { FieldEntity } from '@/types/field';
 
 import { Check, Field, Section } from '../../automations/email/EmailBlockInspector';
 import { ImageUpload } from './ImageUpload';
+import { DisplayOptions, DisplaySelect } from './QuestionKind';
 import { effectiveChoiceDisplay, setOptionImage } from './themeOps';
 
 /**
@@ -67,15 +68,24 @@ export function FieldItemDesign({
     item,
     field,
     themeChoiceStyle,
+    config,
+    fields,
+    listId,
     onSet,
 }: {
     item: FormFieldItem;
     field: FieldEntity;
     /** Estilo de las opciones del tema del formulario. */
     themeChoiceStyle: PublicChoiceStyle;
+    /** v0.1.355 — el formulario y los campos de la lista (para «Otro»). */
+    config: FormConfig;
+    fields: FieldEntity[];
+    listId: number;
     onSet: (patch: Partial<FormFieldItem>) => void;
 }): JSX.Element {
-    const isChoice = field.type === 'select' || field.type === 'multi_select' || field.type === 'team';
+    // v0.1.355 — las opciones (columnas, imágenes) sólo valen para las formas de opciones.
+    const choiceShown = ['auto', 'radio', 'buttons', 'cards', 'dropdown'].includes(item.display);
+    const isChoice = (field.type === 'select' || field.type === 'multi_select' || field.type === 'team') && choiceShown;
     const multiple = field.type === 'multi_select' || (field.type === 'team' && field.config.multiple === true);
     const options = field.type === 'team' ? [] : fieldOptions(field);
     const optionCount = field.type === 'team' ? 0 : options.length;
@@ -85,6 +95,13 @@ export function FieldItemDesign({
 
     return (
         <Section title={__('Diseño de esta pregunta')}>
+            <DisplaySelect item={item} field={field} multiple={multiple} themeLabel={STYLE_LABELS[themeChoiceStyle]} onSet={onSet} />
+            {isChoice && item.display === 'auto' && !multiple && optionCount > 6 && (
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Con más de 6 opciones, «Según el tema» la muestra como lista desplegable.')}
+                </p>
+            )}
+            <DisplayOptions item={item} field={field} config={config} fields={fields} listId={listId} onSet={onSet} />
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-testid="form-item-design">
                 <WidthControl value={item.width} onChange={(width) => onSet({ width })} />
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
@@ -100,26 +117,6 @@ export function FieldItemDesign({
 
             {isChoice && (
                 <>
-                    <Field
-                        label={__('Cómo se muestran las opciones')}
-                        hint={
-                            item.display === 'auto' && !multiple && optionCount > 6
-                                ? __('Con más de 6 opciones, «Según el tema» la muestra como lista desplegable.')
-                                : undefined
-                        }
-                    >
-                        <Select
-                            value={item.display}
-                            onChange={(e) => onSet({ display: e.target.value as FormFieldItem['display'] })}
-                            data-testid="form-item-display"
-                        >
-                            <option value="auto">{`${__('Según el tema')} (${__(STYLE_LABELS[themeChoiceStyle])})`}</option>
-                            <option value="radio">{__('Lista')}</option>
-                            <option value="buttons">{__('Botones')}</option>
-                            <option value="cards">{__('Tarjetas')}</option>
-                            {(!multiple || item.display === 'dropdown') && <option value="dropdown">{__('Lista desplegable')}</option>}
-                        </Select>
-                    </Field>
                     {multiple && item.display === 'dropdown' && (
                         <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                             {__('Con varias opciones no hay lista desplegable: se muestran según el tema.')}

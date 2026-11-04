@@ -2927,6 +2927,54 @@ lectura). Airtable, ClickUp, Notion y SmartSuite tienen formularios nativos.
 sin integraciones. Queda fuera: varias páginas/pasos, lógica que salta
 secciones, pagos dentro del formulario y editar una respuesta enviada.
 
+**Addendum v0.1.355 — Formas de preguntar (formularios, entrega 2, primera
+mitad).** Una pregunta sigue guardando en UN campo; lo nuevo es **cómo se
+pregunta**, y la matriz, que junta varios campos en una tabla.
+
+1. **`display` por tipo** (`formDisplaysFor`, shared): selección →
+   lista/botones/tarjetas/desplegable/**lista con buscador**; varias opciones →
+   también **ordenar**; número y calificación → **escala** o **deslizador**;
+   porcentaje → deslizador o escala; moneda → deslizador; casilla → **Sí /
+   No**; archivos → **firma**; texto y texto largo → **ordenar** (con
+   opciones propias, `ranking_options`). `effectiveFormDisplay` devuelve
+   `auto` ante una forma que el tipo no admite o un valor desconocido de una
+   versión futura: nada se rompe al leer.
+2. **Una sola fuente de verdad**: `buildPublicFormItems` arma lo que ve el
+   visitante (rangos resueltos, etiquetas de los botones, opciones a ordenar,
+   el «Otro», las filas de la matriz con lo que guarda cada columna) y es lo
+   que recorre `collect()` en el servidor, así la página, la vista previa del
+   constructor y la validación no pueden divergir. La agenda pide
+   `basicDisplays: true` (sólo las formas de las opciones; sin matriz).
+3. **El servidor no le cree al navegador**: la escala acepta sólo los valores
+   de sus botones (`formScaleValues`, máximo 11) y el deslizador lo que queda
+   dentro del rango, que nunca sale de lo que acepta el campo
+   (`resolveFormRange`); «Sí / No» guarda `true/false` y «No» cuenta como
+   respuesta en una obligatoria (`formAnswered`); ordenar exige una
+   **permutación exacta** de las opciones (`rankingOrder`) y en un campo de
+   texto se guarda legible («1. Precio · 2. Calidad», `formatRankingText`);
+   la firma es un PNG que sube la página por el mismo `/files` sellado de los
+   formularios y el campo sólo admite imágenes.
+4. **«Otro»**: una opción del campo (`other_option`) + un campo de **texto**
+   de la lista donde va lo escrito (`other_field_id`), que se guarda SÓLO si
+   se eligió esa opción.
+5. **Matriz** (`type: 'matrix'`): filas = campos (selección, varias opciones,
+   calificación, número o porcentaje), columnas = respuestas; cada columna se
+   resuelve por fila a lo que ese campo guarda (`matrixCellValue`: la opción
+   por valor o etiqueta, o el número; si no encaja, esa casilla no se puede
+   elegir y el constructor ofrece agregar la opción). Una matriz cuenta como
+   pregunta para las páginas y una pregunta puede depender de una de sus filas
+   (`formControllerOf`).
+6. **Cada campo se pregunta una vez** (`sanitizeConfig`): como pregunta, como
+   fila de una matriz o como destino de un «Otro», en ese orden de prioridad;
+   el destino del «Otro» tiene que ser de texto y de la lista.
+7. Migrar una empresa re-mapea `other_field_id` y las filas de la matriz (son
+   `*_field_id`); el asistente/MCP ve las formas especiales en
+   `get_list_schema` (`special_questions`).
+
+Queda para la segunda mitad (v0.1.356+): reglas Y/O, saltar a una página,
+varias pantallas finales, puntaje y cálculos, recordar respuestas, modo
+conversacional y bienvenida.
+
 ### ADR-S40 — «Mi trabajo» + bandeja de avisos (v0.1.276)
 
 **Contexto.** Una persona del equipo no tenía dónde ver lo SUYO: lo asignado

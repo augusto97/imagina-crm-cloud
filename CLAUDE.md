@@ -11573,6 +11573,60 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         celular oscuro (cero violaciones de CSP), reserva y página de la cita
         con el diseño 9/9 en escritorio y celular.
 
+  - [x] **Formularios, entrega 2 (primera mitad): más formas de preguntar
+        (v0.1.355, addendum ADR-S39)**. Lo aprobado por el usuario para la
+        entrega 2: "firma, NPS/escala, sí/no, opciones con imagen, matriz,
+        ranking, «Otro», lista con buscador, deslizador"; la lógica (reglas Y/O,
+        saltos, pantallas finales, puntaje, recordar respuestas, modo
+        conversacional) queda para v0.1.356+. Las opciones con imagen ya
+        estaban desde v0.1.351. Sin migración: todo vive en `forms.config`.
+        (a) **«Cómo se pregunta»** por pregunta, según el tipo de campo
+        (`formDisplaysFor` en shared): selección → lista, botones, tarjetas,
+        desplegable o **lista con buscador**; varias opciones → también
+        **ordenar**; número y calificación → **escala de botones** (como el
+        NPS, con ejemplos 0-10, 1-5, 1-10 y acuerdo, máximo 11 botones) o
+        **deslizador**; porcentaje → deslizador o escala; moneda →
+        deslizador; casilla → **botones «Sí» y «No»** (con sus textos; «No»
+        cuenta como respuesta en una obligatoria); archivos → **firma** con el
+        dedo o el mouse (PNG por el mismo `/files` sellado, sólo imágenes);
+        texto → **ordenar** opciones propias (se guarda «1. Precio · 2.
+        Calidad»). Rangos con desde/hasta/de a y textos en las puntas, que
+        nunca salen de lo que acepta el campo (`resolveFormRange`).
+        (b) **«Otro» con un espacio para escribir** en una selección: la
+        opción «Otro» del campo + un campo de texto donde va lo escrito (el
+        constructor crea los dos), guardado sólo si se elige esa opción.
+        (c) **Matriz** (botón en «Agregar»): filas = campos (selección, varias
+        opciones, calificación, número o porcentaje), columnas = respuestas
+        (ejemplos listos o las del primer campo); cada columna se resuelve por
+        fila a lo que guarda ese campo (`matrixCellValue`) y el constructor
+        avisa y agrega la opción que falta. Cuenta como pregunta para las
+        páginas, y otra pregunta puede depender de una fila
+        (`formControllerOf`).
+        (d) **Una sola fuente de verdad**: `buildPublicFormItems` (shared) arma
+        lo que ve el visitante y lo recorre `collect()` en el servidor, que
+        valida cada forma con lo que se mostró: botones de la escala, rango del
+        deslizador, permutación EXACTA al ordenar, columnas de la matriz.
+        `sanitizeConfig`: cada campo se pregunta una sola vez (pregunta > fila
+        de matriz > destino de un «Otro») y el destino del «Otro» es de texto.
+        La agenda usa sólo las formas básicas (`basicDisplays`).
+        (e) Página pública (`public-form/main.ts`): controles accesibles con
+        teclado (flechas en la escala y el «Sí/No»), ordenar arrastrando o con
+        ↑/↓, firma en un canvas con «Borrar y volver a firmar», combo con buscador que no ocupa la pantalla en el
+        celular, matriz que se apila en filas en pantallas chicas; estilos en
+        el motor de temas (`public-theme-css.ts`). Migrar una empresa re-mapea
+        `other_field_id` y las filas; el asistente/MCP ve las formas
+        especiales (`special_questions`).
+        **Atrapado en el E2E**: en el celular, agregar una matriz dejaba la
+        pestaña de preguntas y no se veía su panel; ahora pasa a «Ajustes».
+        Ayuda: guía «¿Cómo agrego una escala del 0 al 10, Sí o No, una firma o
+        una matriz a mi formulario?», artículo «Escalas, Sí o No, firma, matriz
+        y más formas de preguntar» en Aprende → Formularios con la ilustración
+        `form-question-types`, y novedad con carrusel. Tests: 12 de shared
+        (688 en verde), 6 de integración de la API (`forms-questions.spec`) y
+        4 del front (779 en verde); E2E navegador: página pública 29/29 en
+        escritorio y 31/31 en celular oscuro, constructor 17/17 y 18/18 en
+        celular.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

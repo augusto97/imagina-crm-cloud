@@ -21,6 +21,12 @@ export function isEmptyAnswer(value: unknown): boolean {
     return false;
 }
 
+/** v0.1.355 — ¿Respondió esta pregunta? En «Sí / No», el «No» (false) también es una respuesta. */
+export function formAnswered(display: string | undefined, value: unknown): boolean {
+    if (display === 'yes_no') return value === true || value === false;
+    return !isEmptyAnswer(value);
+}
+
 function asNumber(v: unknown): number | null {
     if (typeof v === 'number' && Number.isFinite(v)) return v;
     if (typeof v === 'string' && v.trim() !== '') {
@@ -74,16 +80,38 @@ export function evaluateFormCondition(cond: FormCondition, answer: unknown): boo
  * respuesta escrita y después escondida seguiría abriendo preguntas.
  * `values` va por id de campo (texto). Las cadenas se cortan a 20 niveles.
  */
+/** v0.1.355 — Una fila de matriz (guardada: `field_id`; pública: `key`). */
+interface MatrixRowLike {
+    field_id?: number;
+    key?: string;
+}
+interface LogicItemLike {
+    type: string;
+    field_id?: number;
+    /** v0.1.355 — las filas de una matriz (cada una es un campo). */
+    rows?: ReadonlyArray<MatrixRowLike>;
+    show_if: FormCondition | null;
+}
+
+/** v0.1.355 — El ítem que pregunta este campo: una pregunta o una fila de una matriz. */
+export function formControllerOf<T extends LogicItemLike>(items: ReadonlyArray<T>, fieldId: number): T | undefined {
+    return items.find(
+        (i) =>
+            (i.type === 'field' && i.field_id === fieldId) ||
+            (i.type === 'matrix' && Array.isArray(i.rows) && i.rows.some((r) => (r.field_id ?? Number(r.key)) === fieldId)),
+    );
+}
+
 export function formItemVisible(
     item: { show_if: FormCondition | null },
-    items: ReadonlyArray<{ type: string; field_id?: number; show_if: FormCondition | null }>,
+    items: ReadonlyArray<LogicItemLike>,
     values: Record<string, unknown>,
     depth = 0,
 ): boolean {
     const cond = item.show_if;
     if (!cond) return true;
     if (depth > 20) return false;
-    const controller = items.find((i) => i.type === 'field' && i.field_id === cond.field_id);
+    const controller = formControllerOf(items, cond.field_id);
     // Una condición sobre un campo que ya no está en el formulario no se cumple.
     if (!controller) return false;
     if (!formItemVisible(controller, items, values, depth + 1)) return false;
@@ -129,12 +157,12 @@ export function splitFormPages<T extends { id: string; type: string; title?: str
  * públicos (`key`, el id del campo como texto).
  */
 export function formPageVisible(
-    page: { items: ReadonlyArray<{ type: string; hidden?: boolean; field_id?: number; key?: string; show_if: FormCondition | null }> },
-    allItems: ReadonlyArray<{ type: string; field_id?: number; key?: string; show_if: FormCondition | null }>,
+    page: { items: ReadonlyArray<{ type: string; hidden?: boolean; field_id?: number; key?: string; rows?: ReadonlyArray<MatrixRowLike>; show_if: FormCondition | null }> },
+    allItems: ReadonlyArray<{ type: string; field_id?: number; key?: string; rows?: ReadonlyArray<MatrixRowLike>; show_if: FormCondition | null }>,
     values: Record<string, unknown>,
 ): boolean {
     const norm = allItems.map((i) => ({ ...i, field_id: i.field_id ?? (i.key !== undefined ? Number(i.key) : undefined) }));
-    const questions = page.items.filter((i) => i.type === 'field');
+    const questions = page.items.filter((i) => i.type === 'field' || i.type === 'matrix');
     if (questions.length > 0) return questions.some((i) => !i.hidden && formItemVisible(i, norm, values));
     return page.items.some((i) => formItemVisible(i, norm, values));
 }
@@ -142,4 +170,35 @@ export function formPageVisible(
 /** ¿El formulario tiene más de una página? */
 export function formHasPages(items: ReadonlyArray<{ id: string; type: string }>): boolean {
     return splitFormPages(items).length > 1;
+}
+
+// ─────────────────────── Escalas y deslizadores (v0.1.355) ───────────────────────
+
+/** Una escala de botones tiene como mucho 11 (de 0 a 10, como el NPS). */
+export const FORM_SCALE_MAX_BUTTONS = 11;
+
+/** Lo que hace falta de un rango ya resuelto (`resolveFormRange`). */
+export interface FormRangeLike {
+    min: number;
+    max: number;
+    step: number;
+}
+
+/** Los valores de los botones de una escala (de `min` a `max` de a `step`). */
+export function formScaleValues(range: FormRangeLike): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < FORM_SCALE_MAX_BUTTONS; i++) {
+        const v = Number((range.min + range.step * i).toFixed(6));
+        if (v > range.max + 1e-9) break;
+        out.push(v);
+    }
+    return out;
+}
+
+/** ¿Este número entra en la escala o el deslizador? */
+export function formRangeAccepts(kind: 'scale' | 'slider', range: FormRangeLike, value: unknown): boolean {
+    const n = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : NaN;
+    if (!Number.isFinite(n)) return false;
+    if (kind === 'scale') return formScaleValues(range).some((v) => Math.abs(v - n) < 1e-6);
+    return n >= range.min - 1e-9 && n <= range.max + 1e-9;
 }

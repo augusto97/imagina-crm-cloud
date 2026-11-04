@@ -11,6 +11,7 @@ export const meta: LearnModuleMeta = {
     hero: 'form-hero',
     highlights: [
         'Arma el formulario con los campos de tu lista y míralo tal como lo verá quien responde',
+        'Escalas del 0 al 10, Sí o No, deslizador, firma, matriz, ordenar opciones y «Otro» con espacio para escribir',
         'Preguntas que aparecen según otra respuesta, formularios por pasos y datos ocultos desde el enlace',
         'Plantillas de diseño, colores, fuentes, tamaños, bordes, fondo y portada, con tus propios temas',
         'Cierre por fecha o por cupo, confirmación por correo, anti-robots y autorización de datos',
@@ -33,6 +34,15 @@ export const meta: LearnModuleMeta = {
             minutes: 8,
             level: 'basic',
             keywords: 'constructor preguntas obligatoria ayuda texto de ejemplo archivos titulo de seccion vista previa celular',
+            needs: 'manage_forms',
+        },
+        {
+            id: 'formularios-tipos-pregunta',
+            title: 'Escalas, Sí o No, firma, matriz y más formas de preguntar',
+            summary: 'Cambia cómo se pregunta cada campo: escala del 0 al 10, deslizador, botones Sí y No, firma con el dedo, lista con buscador, ordenar opciones, «Otro» y una matriz para calificar varios aspectos a la vez.',
+            minutes: 9,
+            level: 'intermediate',
+            keywords: 'escala nps 0 a 10 recomendacion deslizador slider si no firma dibujar matriz cuadricula calificar aspectos ordenar ranking prioridades otro cual lista con buscador encuesta satisfaccion',
             needs: 'manage_forms',
         },
         {

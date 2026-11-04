@@ -382,9 +382,10 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.354**
-(la página de la agenda con el motor de temas de los formularios: plantillas,
-colores, tipografía, qué se muestra y distribución; addendum ADR-S94; antes
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.355**
+(formularios: más formas de preguntar —escala/NPS, deslizador, Sí o No,
+firma, lista con buscador, ordenar, «Otro» y matriz—; addendum ADR-S39; antes
+v0.1.354 la página de la agenda con el motor de temas, addendum ADR-S94,
 v0.1.353 aprobación de citas y seguridad de la página, addendum ADR-S67,
 v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
@@ -430,9 +431,13 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   formulario lo arma el script inline; la medición dio ~335 ms de primera
   pintura en 4G lento, apenas 27 ms más que antes, así que no se justificó).
   La entrega 3 de la agenda quedó **HECHA** (v0.1.353 aprobación y seguridad,
-  v0.1.354 la página con este mismo motor de temas). **SIGUIENTE**:
-  formularios entrega 2 (preguntas y lógica), después la 3 (medir, insertar,
-  cobrar).
+  v0.1.354 la página con este mismo motor de temas). La entrega 2 se partió
+  en dos: **preguntas HECHAS en v0.1.355** (escala/NPS, deslizador, Sí o No,
+  firma, lista con buscador, ordenar, «Otro», matriz; las opciones con imagen
+  ya estaban desde v0.1.351). **SIGUIENTE**: la lógica (v0.1.356+: reglas
+  Y/O, saltar a una página, varias pantallas finales, puntaje y cálculos,
+  recordar respuestas, modo conversacional y bienvenida), después la entrega
+  3 (medir, insertar, cobrar).
 - 2026-11-04 — **¿Aguantan mucho tráfico los formularios y la agenda
   insertados?** Pregunta del usuario: "si lo uso como formulario de contacto de
   una web con muchas visitas puede ponerme lenta la app… ¿cómo hacen cal.com,
@@ -1339,6 +1344,26 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-04 · v0.1.355** — **Formularios: más formas de preguntar**
+  (addendum ADR-S39; primera mitad de la entrega 2 aprobada por el usuario).
+  - **«Cómo se pregunta»** en cada pregunta, según el tipo de campo: escala de
+    botones como el NPS (ejemplos 0-10, 1-5, 1-10, acuerdo), deslizador, botones
+    «Sí» y «No» (el «No» cuenta como respuesta), firma con el dedo o el mouse,
+    lista con buscador y ordenar opciones (en varias opciones o en un texto con
+    opciones propias).
+  - **«Otro» con un espacio para escribir** en una selección (lo escrito va a
+    un campo de texto) y **matriz** para calificar varios aspectos en una tabla
+    (cada fila guarda en su propio campo; una pregunta puede depender de una
+    fila).
+  - El servidor valida cada forma con lo mismo que se le mostró al visitante
+    (una sola función en shared para la página, la vista previa y la
+    validación). Cada campo se pregunta una sola vez.
+  - **Bug atrapado en el E2E**: en el celular, agregar una matriz no mostraba
+    su panel; ahora pasa a «Ajustes».
+  - Sin migración. Tests: 12 de shared, 6 de integración de la API, 4 del
+    front; E2E navegador: página pública 29/29 (escritorio) y 31/31 (celular
+    oscuro), constructor 17/17 y 18/18 (celular).
+  - **Siguiente**: la lógica de los formularios (v0.1.356+).
 - **2026-11-04 · v0.1.354** — **La agenda de citas con tu diseño** (addendum
   ADR-S94; segunda mitad de la entrega 3 de la agenda: con esto las tres
   entregas aprobadas quedan completas).

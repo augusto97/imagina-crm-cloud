@@ -543,7 +543,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             })),
             choose_staff: s.choose_staff === 'visitor' && staff.length > 1,
             ask_phone: s.ask_phone,
-            questions: buildPublicFormItems({ items: p.config.questions, settings: {} as never }, fieldsForQuestions),
+            questions: buildPublicFormItems({ items: p.config.questions, settings: {} as never }, fieldsForQuestions, [], { basicDisplays: true }),
             max_days_ahead: p.config.rules.max_days_ahead,
             min_notice_min: p.config.rules.min_notice_min,
             ...(() => {
