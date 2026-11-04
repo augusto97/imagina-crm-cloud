@@ -3025,8 +3025,50 @@ cada persona y lo que ve al terminar.
    (son `field_id`); el asistente/MCP ve en `get_list_schema` cuántos saltos y
    qué pantallas finales tiene cada formulario.
 
-Queda para v0.1.357: puntaje y cálculos, modo conversacional (una pregunta por
-pantalla) y bienvenida.
+**Addendum v0.1.357 — puntaje y cálculos, una pregunta por pantalla y
+bienvenida.**
+
+1. **Cálculos** (`settings.calcs`, tope 5, lista tolerante): `{key, name,
+   start, parts[], save_field_id}`. Cada parte es una pregunta (o fila de
+   matriz) con **puntos por opción** (`points`: valor de la opción → número;
+   varias opciones se suman; Sí/No y casilla son `true`/`false`; una escala,
+   su número como texto) o, en una respuesta numérica, un **factor**
+   (`multiplier`). Una respuesta cuenta sólo si su pregunta está en el camino
+   y a la vista (la misma regla que para guardar).
+2. **Un solo motor**: `formFlow(items, values, jumps, calcs)` hace los
+   cálculos mientras recorre (un salto ve el puntaje que se lleva hasta su
+   página) y devuelve `calcs`; `formEndingFor` los usa. Una regla sobre un
+   cálculo es `{calc, op ∈ eq|neq|gt|lt, value}` (unión con la de una
+   pregunta) y se evalúa contra `values['calc:'+key]`. **Sólo en saltos y
+   pantallas finales**: en «Mostrar sólo si…» el servidor la quita (una
+   pregunta no depende de un total que todavía se arma).
+3. **El puntaje no se filtra antes de tiempo**: a la página viaja lo que vale
+   cada respuesta (`meta.calcs[].parts`) SÓLO si la página lo necesita
+   mientras se responde —un salto lo mira o un texto de las preguntas lo
+   muestra (`formCalcIsLive`)—. Si no, `parts: null` y el resultado llega en
+   la respuesta del envío (`SubmitFormResult.calcs`), que pinta la pantalla
+   final. El servidor calcula siempre (no le cree al navegador).
+4. `{{puntaje}}` usa el mismo recordar de v0.1.356: el mapa lleva
+   `puntaje → 'calc:puntaje'`. Por eso el nombre de un cálculo no puede
+   coincidir con el de un campo de la lista (se descarta al guardar). La
+   página de confirmación por correo recalcula con lo guardado.
+5. **Guardar el resultado** (`save_field_id`): sólo en un campo Número,
+   Moneda o Porcentaje de la lista que el formulario NO pregunta (si no, se
+   escribiría dos veces), uno por cálculo.
+6. **Una pregunta por pantalla** (`settings.layout = 'conversational'`): la
+   página parte cada página en pasos de una pregunta (títulos, textos e
+   imágenes van con la pregunta que sigue); los saltos se siguen decidiendo
+   por páginas. Elegir una opción, una calificación, una escala o Sí/No pasa
+   sola a la siguiente (con el teclado, Enter); «Pregunta X de Y»; en la
+   computadora el cursor queda en la respuesta (en el celular no, para no
+   abrir el teclado).
+7. **Bienvenida** (`settings.welcome`): título, mensaje, botón, imagen de la
+   empresa (URL firmada, como las de las preguntas) y «Toma unos N minutos»
+   (`formEstimateMinutes`). Sus textos pueden recordar lo que llega en la
+   dirección.
+8. Migrar una empresa re-mapea las partes y el campo donde se guarda
+   (`field_id`, `save_field_id`) y la imagen de la bienvenida (`file_id`); el
+   asistente/MCP ve cálculos, modo y bienvenida en `get_list_schema`.
 
 ### ADR-S40 — «Mi trabajo» + bandeja de avisos (v0.1.276)
 

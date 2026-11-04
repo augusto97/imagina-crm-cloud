@@ -4,6 +4,7 @@ import {
     FORM_MAX_ENDINGS,
     FORM_MAX_JUMPS,
     formConditionRules,
+    isFormCalcCondition,
     isFormConditionGroup,
     type FormCondition,
     type FormConfig,
@@ -24,6 +25,7 @@ import {
     addEnding,
     addJump,
     allCandidates,
+    calcChoices,
     endingName,
     jumpCandidates,
     jumpTargets,
@@ -36,7 +38,8 @@ import {
     updateEnding,
     updateJump,
 } from '../formDesignOps';
-import { ConditionEditor, OP_LABELS } from './ConditionEditor';
+import { CalcPanel } from './CalcPanel';
+import { CALC_OP_LABELS, ConditionEditor, OP_LABELS } from './ConditionEditor';
 
 /**
  * v0.1.356 — La lógica del formulario: adónde va cada persona según lo que
@@ -162,6 +165,10 @@ export function LogicPanel({
                 )}
             </Section>
 
+            <Section title={__('Cálculos y puntaje')}>
+                <CalcPanel config={config} fields={fields} fieldsById={fieldsById} onChange={onChange} />
+            </Section>
+
             <Section title={__('Recordar respuestas')}>
                 <p className="imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">
                     {__('Escribe una respuesta dentro de un texto con su nombre entre llaves: «Gracias, {{nombre}}». Con una barra eliges qué mostrar si no respondió: {{nombre|amigo}}. Sirve en preguntas, ayudas, títulos, textos y pantallas finales.')}
@@ -226,6 +233,7 @@ function JumpCard({
                 fieldsById={fieldsById}
                 emptyHint="Esta página no tiene preguntas antes de ella para decidir: el salto es siempre."
                 testId="form-logic-jump-cond"
+                calcs={calcChoices(config)}
             />
             <Field label={__('Entonces')}>
                 <Select value={jump.to} onChange={(e) => onChange(updateJump(config, jump.id, { to: e.target.value }))} aria-label={__('Adónde va')} data-testid="form-logic-jump-to">
@@ -309,6 +317,7 @@ function EndingCard({
                 fieldsById={fieldsById}
                 emptyHint="Agrega preguntas al formulario para poder elegir cuándo se muestra."
                 testId="form-logic-ending-cond"
+                calcs={calcChoices(config)}
             />
         </div>
     );
@@ -346,7 +355,7 @@ function CardActions({
 
 /** Los nombres que se pueden usar entre llaves (las respuestas que el formulario pide). */
 function RecallList({ config, fields }: { config: FormConfig; fields: FieldEntity[] }): JSX.Element {
-    const choices = recallChoices(config, fields);
+    const choices = [...recallChoices(config, fields), ...calcChoices(config).map((c) => ({ id: -1, slug: c.key, label: `${c.name} (${__('cálculo')})` }))];
     if (choices.length === 0) return <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Agrega preguntas para poder recordar sus respuestas.')}</p>;
     return (
         <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-testid="form-recall-list">
@@ -377,7 +386,10 @@ export function RecallPicker({
     onPick: (token: string) => void;
     exceptFieldId?: number;
 }): JSX.Element | null {
-    const choices = recallChoices(config, fields).filter((c) => c.id !== exceptFieldId);
+    const choices = [
+        ...recallChoices(config, fields).filter((c) => c.id !== exceptFieldId),
+        ...calcChoices(config).map((c) => ({ id: -1, slug: c.key, label: `${c.name} (${__('cálculo')})` })),
+    ];
     if (choices.length === 0) return null;
     return (
         <label className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-self-start imcrm-text-[11px] imcrm-text-muted-foreground">
@@ -403,10 +415,15 @@ export function RecallPicker({
 }
 
 /** «Tipo es Empresa y Edad es mayor que 17», para leer la lógica de un vistazo. */
-export function describeCondition(c: FormShowIf | null, fieldsById: Map<number, FieldEntity>): string {
+export function describeCondition(c: FormShowIf | null, fieldsById: Map<number, FieldEntity>, calcs?: ReadonlyArray<{ key: string; name: string }>): string {
     const rules = formConditionRules(c);
     if (rules.length === 0) return __('Siempre');
     const one = (r: FormCondition): string => {
+        // v0.1.357 — «Puntaje es mayor que 7».
+        if (isFormCalcCondition(r)) {
+            const name = calcs?.find((c) => c.key === r.calc)?.name || r.calc;
+            return `${name} ${__(CALC_OP_LABELS[r.op])} ${r.value === undefined || r.value === '' ? '…' : String(r.value)}`;
+        }
         const f = fieldsById.get(r.field_id);
         const name = f?.label ?? __('Pregunta borrada');
         const op = __(OP_LABELS[r.op]);
@@ -438,7 +455,7 @@ export function LogicMap({ config, fieldsById }: { config: FormConfig; fieldsByI
                             <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
                                 {own.map((j) => (
                                     <li key={j.id} className="imcrm-leading-snug">
-                                        <span className="imcrm-text-muted-foreground">{j.when ? `${__('Si')} ${describeCondition(j.when, fieldsById)}` : __('Siempre')}</span> → {__(targetLabel(j.from, j.to))}
+                                        <span className="imcrm-text-muted-foreground">{j.when ? `${__('Si')} ${describeCondition(j.when, fieldsById, calcChoices(config))}` : __('Siempre')}</span> → {__(targetLabel(j.from, j.to))}
                                     </li>
                                 ))}
                                 <li className="imcrm-text-muted-foreground">{p.index === pages.length - 1 ? __('Si no: se envía') : __('Si no: sigue a la página siguiente')}</li>
@@ -455,7 +472,7 @@ export function LogicMap({ config, fieldsById }: { config: FormConfig; fieldsByI
                     <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
                         {endings.map((e, i) => (
                             <li key={e.id} className="imcrm-leading-snug">
-                                «{endingName(e, i)}» <span className="imcrm-text-muted-foreground">{e.when ? `${__('si')} ${describeCondition(e.when, fieldsById)}` : __('sólo por un salto')}</span>
+                                «{endingName(e, i)}» <span className="imcrm-text-muted-foreground">{e.when ? `${__('si')} ${describeCondition(e.when, fieldsById, calcChoices(config))}` : __('sólo por un salto')}</span>
                             </li>
                         ))}
                         <li className="imcrm-text-muted-foreground">{__('Si ninguna: la de siempre')}</li>

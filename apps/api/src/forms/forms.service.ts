@@ -25,6 +25,13 @@ import {
     formAnswerText,
     formatFormNumber,
     isFormConditionGroup,
+    isFormCalcCondition,
+    formCalcIsLive,
+    formCalcsForLogic,
+    formCalcValues,
+    withFormCalcValues,
+    formEstimateMinutes,
+    type FormCondition,
     FORM_JUMP_END,
     FORM_JUMP_ENDING_PREFIX,
     FORM_START_PAGE,
@@ -718,6 +725,24 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             jumps: config.settings.jumps.map((j) => ({ from: j.from, when: j.when, to: j.to })),
             endings: config.settings.endings.map((e) => ({ id: e.id, title: e.title, message: e.message, redirect_url: e.redirect_url, when: e.when })),
             recall: formRecallMap(config, fields),
+            layout: config.settings.layout,
+            welcome: config.settings.welcome.enabled
+                ? {
+                      title: config.settings.welcome.title,
+                      message: config.settings.welcome.message,
+                      button_label: config.settings.welcome.button_label || 'Empezar',
+                      image_url: config.settings.welcome.file_id !== null ? this.files.signedUrl(row.tenantId, config.settings.welcome.file_id, FORM_IMAGE_TTL) : null,
+                      minutes: config.settings.welcome.show_time ? formEstimateMinutes(config) : null,
+                  }
+                : null,
+            // v0.1.357 — lo que vale cada respuesta viaja sólo si la página lo
+            // necesita mientras se responde; si no, el resultado llega al enviar.
+            calcs: formCalcsForLogic(config).map((c, idx) => ({
+                key: c.key,
+                name: config.settings.calcs[idx]?.name ?? '',
+                start: c.start,
+                parts: formCalcIsLive(config, c.key) ? [...(c.parts ?? [])] : null,
+            })),
         };
     }
 
@@ -811,7 +836,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const byId = new Map(fields.map((x) => [x.id, x]));
         // v0.1.289 — el servidor valida TODO el formulario, también las páginas
         // que el navegador pudo saltarse: las páginas son sólo cómo se muestra.
-        const { data, errors, attachmentIds, endingId } = this.collect(f, byId, input);
+        const { data, errors, attachmentIds, endingId, calcs } = this.collect(f, byId, input);
         const s = f.config.settings;
         const emailKey = s.respondent_email_field_id !== null ? jsonbKeyForField(s.respondent_email_field_id) : null;
         const respondentEmail = emailKey && typeof data[emailKey] === 'string' ? (data[emailKey] as string) : null;
@@ -850,7 +875,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
 
         const created = await this.finalize(f, fields, data, attachmentIds, accepted);
         if (s.send_copy && respondentEmail) this.sendCopyLater(f, fields, data, respondentEmail, ip, created.withdrawRef);
-        return { ok: true, redirect_url: this.endingRedirect(f, endingId), ending_id: endingId };
+        return { ok: true, redirect_url: this.endingRedirect(f, endingId), ending_id: endingId, ...(Object.keys(calcs).length ? { calcs } : {}) };
     }
 
     /**
@@ -1571,13 +1596,17 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         f: ResolvedForm,
         byId: Map<number, Field>,
         input: SubmitFormInput,
-    ): { data: Record<string, unknown>; errors: Record<string, string>; attachmentIds: number[]; endingId: string | null } {
-        const values = input.values;
+    ): { data: Record<string, unknown>; errors: Record<string, string>; attachmentIds: number[]; endingId: string | null; calcs: Record<string, number> } {
         const pub = buildPublicFormItems(f.config, [...byId.values()]);
+        // Una pregunta oculta sin «completar desde la dirección» no se guarda:
+        // tampoco decide saltos, pantallas finales ni puntaje.
+        const values: Record<string, unknown> = { ...input.values };
+        if (!f.config.settings.allow_prefill) for (const i of pub) if (i.type === 'field' && i.hidden) delete values[i.key];
         // v0.1.356 — el camino por las páginas (con los saltos): una pregunta de
         // una página que la persona no recorrió no se pide ni se guarda, aunque
         // el navegador mande lo que había escrito antes de cambiar de rumbo.
-        const flow = formFlow(pub, values, f.config.settings.jumps);
+        // v0.1.357 — con los cálculos (un salto puede mirar el puntaje).
+        const flow = formFlow(pub, values, f.config.settings.jumps, formCalcsForLogic(f.config));
         const data: Record<string, unknown> = {};
         const errors: Record<string, string> = {};
         const attachmentIds: number[] = [];
@@ -1661,9 +1690,16 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 }
             }
         }
+        // v0.1.357 — el resultado de cada cálculo, en su campo si se eligió uno.
+        for (const c of f.config.settings.calcs) {
+            if (c.save_field_id === null) continue;
+            const target = byId.get(c.save_field_id);
+            const v = flow.calcs[c.key];
+            if (target && typeof v === 'number') put(target, v);
+        }
         // v0.1.356 — la pantalla final que le toca (la decide el servidor con lo que aceptó).
         const ending = formEndingFor(f.config.settings.endings, pub, values, flow);
-        return { data, errors, attachmentIds, endingId: ending?.id ?? null };
+        return { data, errors, attachmentIds, endingId: ending?.id ?? null, calcs: flow.calcs };
     }
 
     /**
@@ -1673,8 +1709,10 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     private recallServer(f: ResolvedForm, fields: Field[], data: Record<string, unknown>, text: string): string {
         if (!text.includes('{{')) return text;
         const recall = formRecallMap(f.config, fields);
-        const values: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(data)) if (/^f\d+$/.test(k)) values[k.slice(1)] = v;
+        const answers: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(data)) if (/^f\d+$/.test(k)) answers[k.slice(1)] = v;
+        // v0.1.357 — `{{puntaje}}`: lo que quedó guardado son justo las respuestas que contaron.
+        const values = withFormCalcValues(answers, formCalcValues(formCalcsForLogic(f.config), answers, (key) => key in answers));
         const pub = buildPublicFormItems(f.config, fields);
         const fmt = tenantFormatSchema.safeParse(f.tenantSettings.format ?? {});
         const nf = fmt.success ? fmt.data.number_format : 'comma_dot';
@@ -1813,9 +1851,14 @@ function readConfig(raw: unknown): FormConfig {
  * campo del formulario. Un campo borrado o convertido a un tipo que no se
  * pregunta desaparece del formulario en vez de romperlo.
  */
+/** v0.1.357 — Tipos cuya respuesta se puede multiplicar en un cálculo (un número). */
+const CALC_NUMERIC_TYPES = new Set(['number', 'currency', 'percent', 'rating', 'duration']);
+/** v0.1.357 — Tipos de campo donde se puede guardar el resultado de un cálculo. */
+const CALC_SAVE_TYPES = new Set(['number', 'currency', 'percent']);
+
 export function sanitizeConfig(
     config: FormConfig,
-    fields: ReadonlyArray<{ id: number; type: string; config?: Record<string, unknown> }>,
+    fields: ReadonlyArray<{ id: number; type: string; slug?: string; config?: Record<string, unknown> }>,
 ): FormConfig {
     const askable = new Set(fields.filter((f) => isFormFieldType(f.type)).map((f) => f.id));
     const typeOf = new Map(fields.map((f) => [f.id, f.type]));
@@ -1894,10 +1937,31 @@ export function sanitizeConfig(
     const pageIndex = (key: string): number => (key === FORM_START_PAGE ? 0 : breaks.indexOf(key) + 1);
     const emailItem = emailId !== null ? unique.find((i) => i.type === 'field' && i.field_id === emailId) : undefined;
     const emailPage = emailItem ? (pageOf.get(emailItem.id) ?? 0) : -1;
+    // v0.1.357 — cálculos: nombre único que no choca con el de un campo (si
+    // no, `{{nombre}}` sería ambiguo), cada parte sobre una pregunta del
+    // formulario, el factor sólo en respuestas numéricas, y el resultado sólo
+    // se guarda en un campo numérico que el formulario NO pregunta.
+    const slugs = new Set(fields.map((f) => f.slug).filter((x): x is string => typeof x === 'string' && x !== ''));
+    const calcKeys = new Set<string>();
+    const calcIds = new Set<string>();
+    const savedTo = new Set<number>();
+    const calcs = s.calcs.flatMap((c) => {
+        if (calcIds.has(c.id) || calcKeys.has(c.key) || slugs.has(c.key)) return [];
+        calcIds.add(c.id);
+        calcKeys.add(c.key);
+        const partSeen = new Set<number>();
+        const parts = c.parts
+            .filter((p) => inForm.has(p.field_id) && (partSeen.has(p.field_id) ? false : (partSeen.add(p.field_id), true)))
+            .map((p) => ({ ...p, multiplier: CALC_NUMERIC_TYPES.has(typeOf.get(p.field_id) ?? '') ? p.multiplier : null }));
+        const sid = c.save_field_id;
+        const save = sid !== null && CALC_SAVE_TYPES.has(typeOf.get(sid) ?? '') && !seen.has(sid) && !savedTo.has(sid) ? sid : null;
+        if (save !== null) savedTo.add(save);
+        return [{ ...c, parts, save_field_id: save }];
+    });
     const endingIds = new Set<string>();
     const endings = s.endings
         .filter((e) => (endingIds.has(e.id) ? false : (endingIds.add(e.id), true)))
-        .map((e) => ({ ...e, when: cleanShowIf(e.when, inForm) }));
+        .map((e) => ({ ...e, when: cleanShowIf(e.when, inForm, calcKeys) }));
     const jumpIds = new Set<string>();
     const jumps = s.jumps.filter((j) => {
         if (jumpIds.has(j.id)) return false;
@@ -1914,12 +1978,12 @@ export function sanitizeConfig(
             if (to <= from) return false;
         }
         // Una condición que dependía de preguntas que ya no están no se vuelve «siempre».
-        if (j.when && cleanShowIf(j.when, inForm) === null) return false;
+        if (j.when && cleanShowIf(j.when, inForm, calcKeys) === null) return false;
         // Con confirmación por correo, ningún salto puede saltarse la pregunta del correo.
         if (confirm && emailPage > from && to > emailPage) return false;
         jumpIds.add(j.id);
         return true;
-    }).map((j) => ({ ...j, when: cleanShowIf(j.when, inForm) }));
+    }).map((j) => ({ ...j, when: cleanShowIf(j.when, inForm, calcKeys) }));
 
     const settings = {
         ...s,
@@ -1928,6 +1992,7 @@ export function sanitizeConfig(
         send_copy: s.send_copy && emailId !== null,
         jumps,
         endings,
+        calcs,
     };
 
     return formConfigSchema.parse({
@@ -1951,10 +2016,14 @@ export function sanitizeConfig(
  * v0.1.356 — Quita de una condición (o grupo) las reglas sobre campos que el
  * formulario ya no pregunta. Sin reglas, no queda condición.
  */
-function cleanShowIf(c: FormShowIf | null, inForm: ReadonlySet<number>): FormShowIf | null {
+function cleanShowIf(c: FormShowIf | null, inForm: ReadonlySet<number>, calcKeys: ReadonlySet<string> = new Set()): FormShowIf | null {
     if (!c) return null;
-    if (!isFormConditionGroup(c)) return inForm.has(c.field_id) ? c : null;
-    const rules = c.rules.filter((r) => inForm.has(r.field_id));
+    // v0.1.357 — una regla sobre un cálculo sólo vale en saltos y pantallas
+    // finales (quien llama pasa los cálculos que existen; en «Mostrar sólo
+    // si…» no pasa ninguno, así se quitan).
+    const keep = (r: FormCondition): boolean => (isFormCalcCondition(r) ? calcKeys.has(r.calc) : inForm.has(r.field_id));
+    if (!isFormConditionGroup(c)) return keep(c) ? c : null;
+    const rules = c.rules.filter(keep);
     // Una sola regla se guarda suelta, igual que en el editor.
     return rules.length > 1 ? { match: c.match, rules } : (rules[0] ?? null);
 }

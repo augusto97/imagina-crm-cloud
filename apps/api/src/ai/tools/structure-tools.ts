@@ -1337,6 +1337,15 @@ export class StructureTools implements AiProposalApplier {
                         page_jumps: st.jumps.length,
                         endings: st.endings.map((e) => ({ name: e.name || e.title, conditional: e.when !== null })),
                         recalls_answers: formRecallTexts(f.config).length > 0,
+                        // v0.1.357 — puntaje y cálculos, cómo se responde y la bienvenida.
+                        calcs: st.calcs.map((c) => ({
+                            key: c.key,
+                            name: c.name,
+                            questions: c.parts.flatMap((p) => fieldById.get(p.field_id)?.slug ?? []),
+                            saved_in: c.save_field_id !== null ? (fieldById.get(c.save_field_id)?.slug ?? null) : null,
+                        })),
+                        layout: st.layout === 'conversational' ? 'una pregunta por pantalla' : 'todo a la vista',
+                        welcome_screen: st.welcome.enabled,
                         captcha: st.captcha,
                         respondent_email_field: emailField?.slug ?? null,
                         confirm_email: st.confirm_email && emailField !== undefined,

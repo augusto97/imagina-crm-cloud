@@ -3,7 +3,7 @@ import type { PublicDataConsent } from './data-consent';
 import type { FieldType } from './field';
 import { publicThemeSchema, readPublicTheme, type PublicChoiceStyle } from './public-theme';
 import type { PublicThemeView } from './public-theme-css';
-import { FORM_SCALE_MAX_BUTTONS } from './form-logic';
+import { FORM_CALC_VALUE_PREFIX, FORM_SCALE_MAX_BUTTONS, formConditionCalcKeys, formRecallSlugs, type FormCalcLike } from './form-logic';
 
 /**
  * v0.1.275 — Formularios públicos (ADR-S39).
@@ -71,12 +71,43 @@ export type FormConditionOp = (typeof FORM_CONDITION_OPS)[number];
  * clic es la que la gente entiende; un árbol AND/OR aquí sería un editor de
  * filtros para personas que sólo quieren «si eligió Empresa, pedir el NIT».
  */
-export const formConditionSchema = z.object({
+export const formFieldConditionSchema = z.object({
     field_id: z.number().int().positive(),
     op: z.enum(FORM_CONDITION_OPS),
     value: z.unknown().optional(),
 });
+export type FormFieldCondition = z.infer<typeof formFieldConditionSchema>;
+
+/**
+ * v0.1.357 — El nombre de un cálculo del formulario: lo que se escribe entre
+ * llaves (`{{puntaje}}`) y lo que mira una regla. Mismo formato que el nombre
+ * interno de un campo.
+ */
+export const FORM_CALC_KEY_RE = /^[a-z][a-z0-9_]{0,40}$/;
+/** v0.1.357 — Las comparaciones de una regla sobre un cálculo (un número). */
+export const FORM_CALC_OPS = ['eq', 'neq', 'gt', 'lt'] as const;
+
+/**
+ * v0.1.357 — Una regla sobre un cálculo («si el puntaje es mayor que 7»). Se
+ * usa en saltos y pantallas finales; en «Mostrar sólo si…» no (el servidor la
+ * quita), porque una pregunta no puede depender de un total que todavía se
+ * está armando.
+ */
+export const formCalcConditionSchema = z.object({
+    calc: z.string().regex(FORM_CALC_KEY_RE),
+    op: z.enum(FORM_CALC_OPS),
+    value: z.unknown().optional(),
+});
+export type FormCalcCondition = z.infer<typeof formCalcConditionSchema>;
+
+/** Una regla: sobre una pregunta (la de siempre) o, desde v0.1.357, sobre un cálculo. */
+export const formConditionSchema = z.union([formFieldConditionSchema, formCalcConditionSchema]);
 export type FormCondition = z.infer<typeof formConditionSchema>;
+
+/** v0.1.357 — ¿Es una regla sobre un cálculo (y no sobre una pregunta)? */
+export function isFormCalcCondition(c: FormCondition): c is FormCalcCondition {
+    return typeof (c as FormCalcCondition).calc === 'string';
+}
 
 /** v0.1.356 — Hasta cuántas reglas tiene un grupo de condiciones. */
 export const FORM_CONDITION_MAX_RULES = 10;
@@ -407,6 +438,65 @@ export const formJumpSchema = z.object({
 });
 export type FormJump = z.infer<typeof formJumpSchema>;
 
+/** v0.1.357 — Hasta cuántos cálculos tiene un formulario y cuántas preguntas suma cada uno. */
+export const FORM_MAX_CALCS = 5;
+export const FORM_MAX_CALC_PARTS = 60;
+
+/**
+ * v0.1.357 — Lo que aporta una pregunta a un cálculo: puntos por cada opción
+ * (selección, varias opciones —se suman—, Sí/No y casilla como `true`/
+ * `false`, una escala por su número) y, en una respuesta numérica, la
+ * respuesta multiplicada por un factor.
+ */
+export const formCalcPartSchema = z.object({
+    field_id: z.number().int().positive(),
+    points: z
+        .record(z.string().max(200), z.number().finite().min(-1_000_000).max(1_000_000))
+        .refine((r) => Object.keys(r).length <= 300, 'Demasiadas opciones con puntos.')
+        .default({}),
+    multiplier: z.number().finite().min(-10_000).max(10_000).nullable().default(null),
+});
+export type FormCalcPart = z.infer<typeof formCalcPartSchema>;
+
+/**
+ * v0.1.357 — Un cálculo del formulario (puntaje, total, nivel): empieza en
+ * `start` y suma lo que aporta cada pregunta respondida en el camino de la
+ * persona. Se usa entre llaves (`{{puntaje}}`), en saltos y pantallas
+ * finales, y se puede guardar en un campo numérico de la lista.
+ */
+export const formCalcSchema = z.object({
+    id: z.string().regex(/^[a-z0-9]{4,24}$/),
+    key: z.string().regex(FORM_CALC_KEY_RE),
+    name: z.string().max(80).default(''),
+    start: z.number().finite().min(-1_000_000).max(1_000_000).default(0),
+    parts: z.array(formCalcPartSchema).max(FORM_MAX_CALC_PARTS).default([]),
+    /** Campo numérico de la lista donde se guarda el resultado (no puede ser una pregunta del formulario). */
+    save_field_id: z.number().int().positive().nullable().default(null),
+});
+export type FormCalc = z.infer<typeof formCalcSchema>;
+
+/**
+ * v0.1.357 — Pantalla de bienvenida: lo primero que ve la persona, con un
+ * botón para empezar. Sus textos pueden recordar lo que llega en la dirección
+ * (`{{nombre}}` de una pregunta oculta).
+ */
+export const formWelcomeSchema = z.object({
+    enabled: z.boolean().default(false),
+    title: z.string().max(200).default(''),
+    message: z.string().max(2000).default(''),
+    button_label: z.string().max(60).default('Empezar'),
+    /** Imagen de la empresa (como las de las preguntas). */
+    file_id: z.number().int().positive().nullable().default(null),
+    /** Mostrar «Toma unos N minutos». */
+    show_time: z.boolean().default(true),
+});
+export type FormWelcome = z.infer<typeof formWelcomeSchema>;
+const FORM_WELCOME_DEFAULT: FormWelcome = { enabled: false, title: '', message: '', button_label: 'Empezar', file_id: null, show_time: true };
+
+/** v0.1.357 — Cómo se responde: todo a la vista (por páginas) o una pregunta por pantalla. */
+export const FORM_LAYOUTS = ['classic', 'conversational'] as const;
+export type FormLayout = (typeof FORM_LAYOUTS)[number];
+
 /** v0.1.356 — Una pantalla final con su condición (null = sólo si un salto lleva a ella). */
 export const formEndingSchema = z.object({
     id: z.string().regex(/^[a-z0-9]{4,24}$/),
@@ -503,6 +593,12 @@ export const formSettingsSchema = z.object({
      * que pide un salto) reemplaza al «¡Gracias!» de siempre.
      */
     endings: tolerantArray(() => formEndingSchema, FORM_MAX_ENDINGS),
+    /** v0.1.357 — Cálculos (puntaje, total…). Uno roto se descarta sin tirar los demás. */
+    calcs: tolerantArray(() => formCalcSchema, FORM_MAX_CALCS),
+    /** v0.1.357 — Pantalla de bienvenida. */
+    welcome: formWelcomeSchema.catch(FORM_WELCOME_DEFAULT).default(FORM_WELCOME_DEFAULT),
+    /** v0.1.357 — Todo a la vista o una pregunta por pantalla (lo desconocido = el de siempre). */
+    layout: z.enum(FORM_LAYOUTS).catch('classic').default('classic'),
 });
 export type FormSettings = z.infer<typeof formSettingsSchema>;
 
@@ -712,6 +808,36 @@ export interface PublicFormMeta {
     endings?: PublicFormEnding[];
     /** v0.1.356 — `{{nombre}}` de los textos → la clave de esa respuesta. */
     recall?: Record<string, string>;
+    /** v0.1.357 — Todo a la vista o una pregunta por pantalla. */
+    layout?: FormLayout;
+    /** v0.1.357 — Pantalla de bienvenida (null = sin bienvenida). */
+    welcome?: PublicFormWelcome | null;
+    /**
+     * v0.1.357 — Los cálculos del formulario. `parts` viaja sólo si la página
+     * lo necesita mientras se responde (un salto o un texto de las preguntas
+     * lo usa); si no, es null y el resultado llega en la respuesta del envío
+     * (así el puntaje de una evaluación no se ve en el código de la página).
+     */
+    calcs?: PublicFormCalc[];
+}
+
+/** v0.1.357 */
+export interface PublicFormWelcome {
+    title: string;
+    message: string;
+    button_label: string;
+    image_url: string | null;
+    /** «Toma unos N minutos» (null = no se muestra). */
+    minutes: number | null;
+}
+
+/** v0.1.357 */
+export interface PublicFormCalc {
+    key: string;
+    name: string;
+    start: number;
+    /** Lo que aporta cada pregunta (`key` = la clave de la respuesta). null = se calcula en el servidor. */
+    parts: Array<{ key: string; points: Record<string, number>; multiplier: number | null }> | null;
 }
 
 /** v0.1.356 */
@@ -752,6 +878,8 @@ export interface SubmitFormResult {
     redirect_url: string | null;
     /** v0.1.356 — La pantalla final que corresponde (null = el «¡Gracias!» del formulario). */
     ending_id?: string | null;
+    /** v0.1.357 — El resultado de cada cálculo (clave → número), para la pantalla final. */
+    calcs?: Record<string, number>;
     /**
      * v0.1.289 — doble opt-in: la respuesta quedó PENDIENTE y se mandó el
      * correo para confirmarla. `email_hint` = el correo enmascarado.
@@ -1186,7 +1314,7 @@ export function buildPublicFormItems(
  */
 export function formRecallTexts(config: FormConfig): string[] {
     const st = config.settings;
-    const out: string[] = [st.title, st.description, st.success_title, st.success_message];
+    const out: string[] = [st.title, st.description, st.success_title, st.success_message, st.welcome.title, st.welcome.message];
     for (const e of st.endings) out.push(e.title, e.message);
     for (const i of config.items) {
         if (i.type === 'field') out.push(i.label, i.help);
@@ -1215,13 +1343,70 @@ export function formRecallMap(config: FormConfig, fields: ReadonlyArray<{ id: nu
     const bySlug = new Map(fields.map((f) => [f.slug, f.id]));
     const out: Record<string, string> = {};
     const re = /\{\{\s*([a-z][a-z0-9_]{0,62})\s*(?:\|[^{}]{0,80})?\}\}/g;
+    // v0.1.357 — `{{puntaje}}` de un cálculo (su nombre nunca choca con el de un campo: el servidor lo cuida).
+    const calcKeys = new Set(config.settings.calcs.map((c) => c.key));
     for (const t of formRecallTexts(config)) {
         for (const m of t.matchAll(re)) {
             const id = bySlug.get(m[1]!);
             if (id !== undefined && asked.has(id)) out[m[1]!] = String(id);
+            else if (calcKeys.has(m[1]!) && id === undefined) out[m[1]!] = FORM_CALC_VALUE_PREFIX + m[1]!;
         }
     }
     return out;
+}
+
+/**
+ * v0.1.357 — Los textos que se ven MIENTRAS se responde (no los del final):
+ * si un cálculo aparece en alguno, la página lo tiene que poder hacer.
+ */
+export function formLiveTexts(config: FormConfig): string[] {
+    const st = config.settings;
+    const out: string[] = [st.title, st.description, st.welcome.title, st.welcome.message];
+    for (const i of config.items) {
+        if (i.type === 'field') out.push(i.label, i.help);
+        else if (i.type === 'heading' || i.type === 'text') out.push(i.text);
+        else if (i.type === 'page_break') out.push(i.title);
+        else if (i.type === 'image') out.push(i.caption);
+        else if (i.type === 'matrix') out.push(i.label, i.help);
+    }
+    return out.filter((t) => typeof t === 'string' && t.includes('{{'));
+}
+
+/**
+ * v0.1.357 — ¿La página necesita hacer este cálculo mientras se responde? Sí
+ * si un salto lo mira o un texto de las preguntas lo muestra. Si no, el
+ * resultado lo da el servidor al enviar (y lo que vale cada respuesta no
+ * queda escrito en la página: el puntaje de una evaluación no se ve antes).
+ */
+export function formCalcIsLive(config: FormConfig, key: string): boolean {
+    if (config.settings.jumps.some((j) => formConditionCalcKeys(j.when).includes(key))) return true;
+    return formLiveTexts(config).some((t) => formRecallSlugs(t).includes(key));
+}
+
+/**
+ * v0.1.357 — Cuánto toma responder el formulario, en minutos («Toma unos 3
+ * minutos»): unos segundos por pregunta, más los textos largos, los archivos,
+ * la firma, ordenar y cada fila de una matriz. Las ocultas no cuentan.
+ */
+export function formEstimateMinutes(config: FormConfig): number {
+    let seconds = 0;
+    for (const i of config.items) {
+        if (i.type === 'matrix') seconds += 6 + i.rows.length * 6;
+        else if (i.type === 'field' && !i.hidden) {
+            const d = i.display;
+            seconds += d === 'signature' || d === 'ranking' ? 25 : d === 'scale' || d === 'yes_no' || d === 'slider' ? 6 : 12;
+        }
+    }
+    return Math.max(1, Math.round(seconds / 60));
+}
+
+/** v0.1.357 — Los cálculos del formulario como los hace la lógica pura (`key` de cada parte = id del campo como texto). */
+export function formCalcsForLogic(config: FormConfig): FormCalcLike[] {
+    return config.settings.calcs.map((c) => ({
+        key: c.key,
+        start: c.start,
+        parts: c.parts.map((p) => ({ key: String(p.field_id), points: p.points, multiplier: p.multiplier })),
+    }));
 }
 
 export function formConfigFileIds(config: FormConfig): number[] {
@@ -1230,6 +1415,8 @@ export function formConfigFileIds(config: FormConfig): number[] {
         if (item.type === 'image' && item.file_id !== null) ids.add(item.file_id);
         if (item.type === 'field') for (const id of Object.values(item.option_images)) ids.add(id);
     }
+    // v0.1.357 — la imagen de la bienvenida.
+    if (config.settings.welcome.file_id !== null) ids.add(config.settings.welcome.file_id);
     return [...ids];
 }
 

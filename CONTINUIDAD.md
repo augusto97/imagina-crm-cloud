@@ -382,10 +382,11 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.356**
-(formularios: la lógica —varias reglas todas/alguna, saltos entre páginas,
-pantallas finales según las respuestas y recordar respuestas con
-`{{nombre}}`—; addendum ADR-S39; antes v0.1.355 más formas de preguntar
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.357**
+(formularios: puntaje y cálculos, una pregunta por pantalla y bienvenida;
+addendum ADR-S39; antes v0.1.356 la lógica —varias reglas todas/alguna, saltos
+entre páginas, pantallas finales según las respuestas y recordar respuestas con
+`{{nombre}}`—, v0.1.355 más formas de preguntar
 —escala/NPS, deslizador, Sí o No, firma, lista con buscador, ordenar, «Otro» y
 matriz—, v0.1.354 la página de la agenda con el motor de temas, addendum ADR-S94,
 v0.1.353 aprobación de citas y seguridad de la página, addendum ADR-S67,
@@ -437,10 +438,10 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   en dos: **preguntas HECHAS en v0.1.355** (escala/NPS, deslizador, Sí o No,
   firma, lista con buscador, ordenar, «Otro», matriz; las opciones con imagen
   ya estaban desde v0.1.351) y **lógica HECHA en v0.1.356** (reglas Y/O,
-  saltar a una página, varias pantallas finales, recordar respuestas).
-  **SIGUIENTE**: v0.1.357 con puntaje y cálculos, modo conversacional (una
-  pregunta por pantalla) y bienvenida; después la entrega 3 (medir, insertar,
-  cobrar).
+  saltar a una página, varias pantallas finales, recordar respuestas) y
+  **puntaje, una pregunta por pantalla y bienvenida HECHOS en v0.1.357**: con
+  eso la entrega 2 queda completa.
+  **SIGUIENTE**: la entrega 3 de formularios (medir, insertar, cobrar).
 - 2026-11-04 — **¿Aguantan mucho tráfico los formularios y la agenda
   insertados?** Pregunta del usuario: "si lo uso como formulario de contacto de
   una web con muchas visitas puede ponerme lenta la app… ¿cómo hacen cal.com,
@@ -1347,6 +1348,28 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-04 · v0.1.357** — **Formularios: puntaje, una pregunta por pantalla
+  y bienvenida** (addendum ADR-S39; con esto la entrega 2 queda completa).
+  - **Cálculos y puntaje** (hasta 5 por formulario): puntos por opción, Sí/No,
+    calificación o varias opciones (se suman), o un número por un factor; sólo
+    cuentan las respuestas del camino de la persona. Se recuerda con
+    `{{puntaje}}` y se puede guardar en un campo número, moneda o porcentaje
+    que el formulario no pregunta.
+  - **Reglas por puntaje** en saltos y pantallas finales («si el puntaje es
+    mayor que 70, a «Excelente»»). Los puntos no viajan a la página salvo que
+    un salto o un texto visible los necesite: si no, el servidor calcula y
+    devuelve el resultado al enviar.
+  - **Una pregunta por pantalla** (elegir una opción, una escala o Sí/No pasa
+    sola a la siguiente; Enter en el resto) y **pantalla de bienvenida** con
+    título, mensaje, imagen, botón y «Toma unos N minutos».
+  - **Constructor**: «Cálculos y puntaje» en Lógica; «Cómo se responde» y
+    «Bienvenida» en Ajustes, con «Ver la bienvenida» en la vista previa.
+  - **Atrapado en el E2E**: tras «Empezar» el foco no iba a la respuesta y el
+    «Toma 1 minuto» quedaba pegado al botón.
+  - Sin migración. Tests: 6 de shared, 5 de la API + 1 de re-mapeo, 4 del
+    front; E2E navegador: página pública 27/27 y 26/26 en celular oscuro
+    (también con el build de producción y su CSP), constructor 26/26 y 25/25.
+  - **Siguiente**: entrega 3 de formularios (medir, insertar, cobrar).
 - **2026-11-04 · v0.1.356** — **Formularios: la lógica** (addendum ADR-S39;
   segunda mitad de la entrega 2, primera parte).
   - **Varias reglas** en una condición, que se cumplan **todas** o **alguna**,

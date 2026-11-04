@@ -836,6 +836,12 @@ export const TOURS: TourDef[] = [
                 tip: 'Una condición puede tener varias reglas: que se cumplan **todas** o **alguna**.',
             },
             {
+                id: 'score',
+                art: 'form-score',
+                title: 'Puntaje y una pregunta por pantalla',
+                body: 'En **Lógica → Cálculos y puntaje** cada respuesta suma puntos: muestra el resultado al final o úsalo para elegir la pantalla final. En los ajustes, **Una pregunta por pantalla** y la **Bienvenida** lo vuelven una conversación.',
+            },
+            {
                 id: 'publish',
                 art: 'form-embed',
                 title: 'Publica y comparte',

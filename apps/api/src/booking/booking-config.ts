@@ -12,6 +12,7 @@ import {
     type BookingStatus,
     type Field,
     formConditionRules,
+    isFormCalcRule,
 } from '@imagina-base/shared';
 
 /**
@@ -118,7 +119,9 @@ export function sanitizeBookingConfig(config: BookingConfig, fields: ReadonlyArr
     // sola regla se aplana; uno de varias reglas (sólo por la API) se quita.
     const cleanQuestions = questions.map((q) => {
         const rules = formConditionRules(q.show_if);
-        const one = rules.length === 1 && inForm.has(rules[0]!.field_id) ? rules[0]! : null;
+        // Una regla sobre un cálculo (de los formularios) no aplica en la agenda.
+        const r = rules.length === 1 ? rules[0]! : null;
+        const one = r && !isFormCalcRule(r) && inForm.has(r.field_id) ? r : null;
         return { ...q, show_if: one };
     });
 
