@@ -429,6 +429,31 @@ agenda, v0.1.349 reglas, cupos y festivos por país), en `main`.
   pintura en 4G lento, apenas 27 ms más que antes, así que no se justificó).
   **SIGUIENTE**: la entrega 3 de la agenda (aprobación de citas, rediseño con
   este mismo motor de temas, seguridad reforzada), después formularios 2 y 3.
+- 2026-11-04 — **¿Aguantan mucho tráfico los formularios y la agenda
+  insertados?** Pregunta del usuario: "si lo uso como formulario de contacto de
+  una web con muchas visitas puede ponerme lenta la app… ¿cómo hacen cal.com,
+  calendly o las plataformas de formularios para que el consumo de recursos sea
+  el mínimo?". Se MIDIÓ con la v0.1.351 en modo producción (sandbox de 4
+  núcleos, un proceso, autocannon): cargar un formulario ~300 por segundo
+  (p50 33 ms con 10 conexiones; la parte de datos sola ~520/s, el piso del
+  framework ~11.000/s), página de la agenda ~300/s, horarios de una semana
+  12–16 ms. Cada carga hace 4–6 consultas a la base, nada se cachea
+  (`Cache-Control: no-store` por el sello anti-robots de cada visita) y todo
+  cae en el mismo proceso y la misma base que el equipo. La agenda topa en
+  1.200 consultas de horarios por minuto por página. Ya bien: el iframe va con
+  `loading="lazy"`, `embed.js` cacheado, cliente de 9 KB gz, lo ocupado de
+  Google/Outlook cacheado 90 s. Se le explicó qué hacen las otras (iframe o
+  script que crea el iframe, no HTML pegado; lo fijo desde una CDN y sólo lo
+  variable al servidor; cargar al hacer clic; aislar lo público) y se PROPUSO
+  una versión propia: (1) caché en memoria de la configuración del formulario y
+  de la agenda, 30 s, invalidada al guardar; (2) sacar el sello del HTML para
+  que la página sea cacheable y el script pase a archivo con versión servido
+  por el proxy; (3) listo para poner Cloudflare delante; (4) horarios
+  cacheados 30–60 s por servicio y semana, borrados al reservar/cancelar, y
+  subir el tope por página; (5) tope de conexiones a la base propio para lo
+  público; (6) adelantar los modos de inserción que cargan al hacer clic
+  (botón flotante, ventana emergente). Se recomendó hacerlo ANTES de la entrega
+  3 de la agenda. **Esperando su respuesta: no arrancar sin su OK.**
 - 2026-11-04 — **Agenda de citas al nivel de Cal.com/Calendly** (addendum
   ADR-S67). Pedido del usuario: "la configuración de ese calendario o sistema de
   agendamientos está muy básica… seleccionar su asesor, diferentes franjas,
