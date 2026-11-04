@@ -11914,6 +11914,38 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         **Con esto el proyecto de formularios queda completo: diseño,
         preguntas y lógica, medir, insertar y cobrar.**
 
+  - [x] **Corrección: formularios en blanco, fuentes dañadas y servidor en
+        modo desarrollo (v0.1.362, reporte del usuario con captura: el
+        constructor de formularios en blanco y la consola con «Failed to load
+        module script: … text/html» y «Failed to decode downloaded font»)**.
+        Dos causas, verificadas contra `base.imagina.cloud` antes de tocar
+        nada: (a) **el servidor no corría en modo producción** — la vista
+        previa traía el `<script src="/app/public-form/main.ts">` de
+        desarrollo, `/api/v1/metrics` respondía 200 y no salía HSTS. El `.env`
+        venía de la «config mínima» de `docs/runbook-serveravatar.md`, que no
+        pedía `NODE_ENV=production` ni `SECRETS_KEY`/`FILES_SIGNING_SECRET`, y
+        desde v0.1.351 los formularios (y desde v0.1.292 los tableros
+        públicos) elegían «build o vite» sólo por `NODE_ENV`. Ahora
+        `common/web-build.ts` (`runningFromRelease` + `useWebBuild`) usa el
+        build siempre que el API corre desde un release; **`deploy/
+        env-heal.sh`** (lo llama `deploy.sh` en cada actualización, viaja en
+        el bundle, best-effort) genera las dos claves si faltan o están vacías
+        y DESPUÉS agrega `NODE_ENV=production`, respetando un valor puesto a
+        mano, sin imprimir secretos y conservando dueño y permisos (generar
+        `SECRETS_KEY` es seguro: sin clave nada se cifró y `decryptSecret` lee
+        el texto plano heredado); y **Plataforma → Diagnóstico →
+        «Configuración del servidor»** (`serverConfigStatus`) muestra modo,
+        claves, cookies seguras y `APP_BASE_URL` con las líneas a agregar si
+        la actualización no pudo escribir el archivo. Runbook corregido.
+        (b) **15 fuentes dañadas desde v0.1.300**: un reemplazo «vX» →
+        «v0.1.300» pasó por binarios y les metió 6 bytes (6 WOFF2 del
+        navegador y 9 WOFF del PDF); restauradas desde 442b82f (idénticas a
+        `@fontsource` 5.3.0) con un test que compara el largo declarado en la
+        cabecera con el tamaño real. Tests: `env-heal.spec` (11) y
+        `font-integrity.spec` (102, falla con las fuentes viejas) + E2E contra
+        el build de producción con el API en modo desarrollo desde un release
+        simulado.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

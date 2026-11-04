@@ -12,6 +12,7 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ENV, type Env } from '../config/env';
+import { useWebBuild } from '../common/web-build';
 import type { DashboardViewer } from '../dashboards/dashboards.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { devPublicPage, loadBuiltPublicPage, missingBuildPage, publicDashboardCsp, unavailableDashboardPage } from './public-dashboard-page';
@@ -102,7 +103,8 @@ export class PublicDashboardPageController {
                 .send(unavailableDashboardPage());
             return;
         }
-        const useBuild = this.env.NODE_ENV === 'production' || this.env.WEB_DIST_DIR.trim() !== '';
+        // v0.1.362 — también desde un release instalado sin NODE_ENV=production.
+        const useBuild = useWebBuild(this.env);
         let html: string;
         let csp: string;
         if (useBuild) {

@@ -157,7 +157,27 @@ export const accountMailStatusSchema = z.object({
 });
 export type AccountMailStatus = z.infer<typeof accountMailStatusSchema>;
 
+/**
+ * v0.1.362 — Lo que el servidor necesita en su `.env` para correr como
+ * producción. Un servidor instalado sin `NODE_ENV=production` servía la página
+ * de los formularios en modo desarrollo (en blanco), dejaba `/metrics` abierto
+ * y no mandaba HSTS; sin los dos secretos, las credenciales quedan sin cifrar y
+ * los enlaces firmados dejan de valer en cada reinicio.
+ */
+export const SERVER_CONFIG_CHECKS = ['production', 'secrets_key', 'files_signing_secret', 'cookie_secure', 'app_base_url'] as const;
+export type ServerConfigCheckKey = (typeof SERVER_CONFIG_CHECKS)[number];
+
+export const serverConfigStatusSchema = z.object({
+    /** Valor de `NODE_ENV` con el que corre el proceso. */
+    node_env: z.string(),
+    /** Corre desde un release instalado (layout de ADR-S13). */
+    from_release: z.boolean(),
+    checks: z.array(z.object({ key: z.enum(SERVER_CONFIG_CHECKS), ok: z.boolean() })),
+});
+export type ServerConfigStatus = z.infer<typeof serverConfigStatusSchema>;
+
 export const platformDiagnosticsSchema = z.object({
+    server: serverConfigStatusSchema,
     account_mail: accountMailStatusSchema,
     mail: z.array(mailLogEntrySchema),
     errors: z.array(serverErrorEntrySchema),

@@ -38,6 +38,12 @@ mkdir -p "${RELEASE_DIR}/apps/api/data"
 rm -rf "${RELEASE_DIR}/apps/api/data/uploads"
 ln -sfn "${SHARED}/uploads" "${RELEASE_DIR}/apps/api/data/uploads"
 
+echo "→ configuración de producción (.env)"
+# v0.1.362 — Completa NODE_ENV=production y los secretos obligatorios si
+# faltan (ver env-heal.sh). Sin NODE_ENV el API corría en modo desarrollo y los
+# formularios públicos quedaban en blanco. Best-effort: nunca corta el deploy.
+bash "$(dirname "$0")/env-heal.sh" "${SHARED}/.env.production" || echo "  (aviso: no se pudo revisar la configuración)"
+
 echo "→ migraciones (forward-only)"
 # Lee el .env estilo dotenv SIN `source`: un valor sin comillas con espacios o
 # `<>` (MAIL_FROM=Imagina Base <no-reply@…>, como trae el .env.production.example)

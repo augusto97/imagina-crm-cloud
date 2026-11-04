@@ -556,6 +556,11 @@ export const articles: LearnArticle[] = [
                 title: 'Lo que muestra Plataforma → Diagnóstico',
                 rows: [
                     {
+                        name: 'Configuración del servidor',
+                        what: 'Si el servidor corre en modo producción y tiene las dos claves (cifrado y firma de enlaces), cookies seguras y una dirección con https. Sin modo producción, los formularios públicos pueden quedar en blanco.',
+                        tip: 'Cada actualización completa sola lo que falta. Si sigue en rojo, muestra las líneas exactas que hay que agregar al archivo de configuración del servidor.',
+                    },
+                    {
                         name: 'Correos de cuenta',
                         what: 'Si se envían o no, y por dónde salen.',
                         tip: 'Si dice **No se envían**, toca **Configurar el correo de la plataforma**.',

@@ -382,8 +382,10 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.361**
-(formularios: cobrar al enviar con el Mercado Pago o Wompi de la empresa,
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.362**
+(corrección: formularios en blanco en servidores sin `NODE_ENV=production`,
+15 fuentes dañadas y el `.env` que se completa solo; antes v0.1.361
+formularios: cobrar al enviar con el Mercado Pago o Wompi de la empresa,
 addendum ADR-S39 —con ella queda COMPLETO el proyecto de formularios—; antes
 v0.1.360 enlace para que un cliente actualice su registro, v0.1.359 plantillas, panel lateral, pantalla completa y código
 QR, addendum ADR-S39 y ADR-S95, v0.1.358 estadísticas y guardar el avance,
@@ -1359,6 +1361,59 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-04 · v0.1.362** — **Corrección: formularios en blanco, fuentes
+  dañadas y servidor en modo desarrollo** (reporte del usuario con captura: el
+  constructor de formularios en blanco y la consola con «Failed to load module
+  script: … MIME type text/html» y ~26 «Failed to decode downloaded font»).
+  - **Causa 1 — el servidor no corría en modo producción.** Verificado desde
+    afuera contra `base.imagina.cloud`: la vista previa del formulario traía el
+    `<script type="module" src="/app/public-form/main.ts">` de DESARROLLO (y la
+    CSP con `ws: wss:`), `/api/v1/metrics` respondía 200 y no salía HSTS. El
+    `.env` se armó con la «config mínima» de `docs/runbook-serveravatar.md`,
+    que NO pedía `NODE_ENV=production` ni `SECRETS_KEY`/`FILES_SIGNING_SECRET`
+    (bug nuestro de documentación). Desde v0.1.351 los formularios (y desde
+    v0.1.292 los tableros públicos) decidían «build o vite» sólo por
+    `NODE_ENV`.
+  - **Arreglo**: `common/web-build.ts` — `runningFromRelease()` (existe
+    `<release>/web/cloud/index.html`) y `useWebBuild(env)`: formularios y
+    tableros públicos usan el build si corren desde un release aunque falte
+    `NODE_ENV`. **`deploy/env-heal.sh`** (lo llama `deploy.sh` en cada
+    actualización, best-effort, viaja en el bundle): si faltan o están vacíos
+    genera `SECRETS_KEY` y `FILES_SIGNING_SECRET` (96 hex; seguro porque sin
+    clave nada se cifró y `decryptSecret` lee el texto plano heredado) y
+    DESPUÉS agrega `NODE_ENV=production` (en producción el API no arranca sin
+    los secretos). Respeta un `NODE_ENV` puesto a mano, nunca imprime un
+    secreto y conserva dueño y permisos. **Plataforma → Diagnóstico →
+    «Configuración del servidor»** (`serverConfigStatus`: modo producción, las
+    dos claves, cookies seguras, `APP_BASE_URL` con https) con las líneas a
+    agregar si la actualización no pudo escribir el archivo. Runbook de
+    ServerAvatar corregido.
+  - **Qué cambia al pasar a producción** (avisado al usuario): HSTS, `/metrics`
+    cerrado sin `METRICS_TOKEN`, las credenciales nuevas se guardan cifradas,
+    los enlaces firmados (logo, QR, archivos del portal) dejan de cambiar en
+    cada reinicio, y los correos de cuenta sin SMTP de plataforma responden
+    503 con el motivo en vez de irse al registro en silencio.
+  - **Causa 2 — 15 fuentes dañadas** desde v0.1.300 (commit b710ffc): un
+    reemplazo de texto «vX» → «v0.1.300» pasó también por binarios y les metió
+    6 bytes (6 WOFF2 del navegador —Inter negrita, Montserrat, Open Sans,
+    Raleway, Roboto negrita— y 9 WOFF del PDF). Restauradas desde 442b82f
+    (idénticas a `@fontsource` 5.3.0) y **test nuevo** `font-integrity.spec`:
+    firma + largo declarado en la cabecera = tamaño real, para las 102 fuentes.
+    Lección: un reemplazo masivo de texto NUNCA sobre binarios (usar
+    `git grep -I`).
+  - El aviso «Banner not shown: beforeinstallpromptevent.preventDefault()» de
+    la consola es normal: la app guarda el aviso de instalación para su propio
+    botón «Instalar la app» (ADR-S68).
+  - Tests: `env-heal.spec` (11: config mínima, secretos vacíos sin duplicar,
+    NODE_ENV a mano respetado, archivo completo intacto, CRLF/sin salto final,
+    sin archivo, diagnóstico, build desde un release) y `font-integrity.spec`
+    (102; falla con las 15 fuentes viejas); specs de formularios, tableros
+    públicos, correo de cuenta y documentos 167/167. E2E 7/7 reproduciendo el
+    servidor del usuario: build de producción servido como nginx + API en
+    `NODE_ENV=development` corriendo desde un release simulado → la vista previa
+    dibuja el formulario, la página pública también, las fuentes cargan, el
+    Diagnóstico muestra el modo en rojo con la línea a agregar, y la consola
+    queda sin errores de módulo, fuentes ni CSP.
 - **2026-11-04 · v0.1.361** — **Formularios: cobrar al enviar** (addendum
   ADR-S39; cuarta y última versión de la entrega 3: con ella queda COMPLETO el
   proyecto de formularios —diseño, preguntas y lógica, medir, insertar y

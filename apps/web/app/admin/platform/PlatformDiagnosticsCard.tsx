@@ -14,6 +14,7 @@ import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
 import { DiskUsageCard } from './DiskUsageCard';
+import { ServerConfigCard } from './ServerConfigCard';
 
 /**
  * v0.1.238 — Plataforma → Diagnóstico. Responde, sin entrar al servidor:
@@ -63,6 +64,7 @@ export function PlatformDiagnosticsCard(): JSX.Element {
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="platform-diagnostics">
+            {q.data.server && <ServerConfigCard status={q.data.server} />}
             <DiskUsageCard />
             <Card>
                 <CardHeader>
