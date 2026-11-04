@@ -786,7 +786,14 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         // El horario viejo quedó libre.
         expect((await pub.slots(token, IP, { service: 'svcconsulta', staff: 'stfana', from: D, to: D })).slots.map((s) => s.start)).toContain(at(D, 10));
 
-        const cancelled = await pub.cancel(ref, IP, { reason: 'Me salió un viaje' });
+        // v0.1.353 — el enlace con el que se reprogramó ya no hace cambios; el nuevo, sí.
+        const stale = await pub.manageMeta(ref);
+        expect(stale.appointment).toMatchObject({ can_cancel: false, can_reschedule: false, locked_reason: expect.stringContaining('correo anterior') });
+        await expect(pub.cancel(ref, IP, {})).rejects.toMatchObject({ status: 403 });
+        const ref2 = refOf(moved.manage_url);
+        expect(ref2).not.toBe(ref);
+        expect(mailbox.sent[1]!.text).toContain(ref2);
+        const cancelled = await pub.cancel(ref2, IP, { reason: 'Me salió un viaje' });
         expect(cancelled.status).toBe('cancelled');
         const [rec2] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(records).where(eq(records.listId, listId)));
         expect((rec2!.data as Record<string, unknown>)[`f${f.estado!.id}`]).toBe(page.config.mapping.status_cancelled);
@@ -795,11 +802,11 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         await vi.waitFor(() => expect(calendar.deleted).toEqual(['ev1']));
         expect((notified.at(-1) as { body?: string }).body).toContain('Motivo: Me salió un viaje');
         // Una cita cancelada no se vuelve a cancelar ni a mover.
-        await expect(pub.cancel(ref, IP, {})).rejects.toMatchObject({ status: 403 });
-        await expect(pub.reschedule(ref, IP, { start: at(E, 10) })).rejects.toMatchObject({ status: 403 });
+        await expect(pub.cancel(ref2, IP, {})).rejects.toMatchObject({ status: 403 });
+        await expect(pub.reschedule(ref2, IP, { start: at(E, 10) })).rejects.toMatchObject({ status: 403 });
         // Y su horario quedó libre.
         expect((await pub.slots(token, IP, { service: 'svcconsulta', staff: 'stfana', from: E, to: E })).slots.map((s) => s.start)).toContain(at(E, 9));
-        const ics = await pub.ics(ref);
+        const ics = await pub.ics(ref2);
         expect(ics.body).toContain('STATUS:CANCELLED');
     });
 
@@ -1196,6 +1203,168 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
             spy.mockRestore();
         }
     });
+
+    // ─────────────────────────── v0.1.353 ───────────────────────────
+
+    const pageNow = () => booking.get(tenantId, 'citas', pageId);
+    const recordOfAppt = async (recordId: number) =>
+        ((await withTenant(pg.db, tenantId, (tx) => tx.select().from(records).where(eq(records.id, recordId))))[0]!.data as Record<string, unknown>);
+
+    it('v0.1.353 — aprobación: queda por confirmar (ocupa el lugar, sin calendario ni recordatorio), se aprueba desde la ficha y sólo entonces se confirma', async () => {
+        await pageWith((c) => {
+            c.approval.mode = 'all';
+            c.approval.hours = 12;
+        });
+        const page = await pageNow();
+        // Al publicar con aprobación, el campo de estado gana «Por confirmar» y «Rechazada».
+        expect(page.config.mapping.status_pending).toBeTruthy();
+        expect(page.config.mapping.status_declined).toBeTruthy();
+        const res = await book({ staff: 'stfana', start: at(D, 10) });
+        expect(res.appointment).toMatchObject({ status: 'pending', meeting_url: null });
+        const [appt] = await appointments();
+        expect(appt!.status).toBe('pending');
+        expect(appt!.pendingUntil!.getTime()).toBeLessThanOrEqual(Date.now() + 12 * 3600_000 + 5_000);
+        expect((await recordOfAppt(appt!.recordId))[`f${f.estado!.id}`]).toBe(page.config.mapping.status_pending);
+        // Ocupa el lugar.
+        expect((await pub.slots(token, IP, { service: 'svcconsulta', staff: 'stfana', from: D, to: D })).slots.map((x) => x.start)).not.toContain(at(D, 10));
+        await vi.waitFor(() => expect(mailbox.sent.length).toBe(1));
+        expect(mailbox.sent[0]!.subject).toContain('Recibimos tu solicitud de cita');
+        expect(mailbox.sent[0]!.attachments ?? []).toEqual([]);
+        expect(calendar.created).toEqual([]);
+        await vi.waitFor(() => expect(dispatcher.events.some((e) => e.booking?.event === 'requested')).toBe(true));
+        // Una automatización vieja «cuando se agenda» (sin eventos elegidos) no sale todavía.
+        expect(dispatcher.events.some((e) => e.booking?.event === 'booked')).toBe(false);
+        expect(notified.some((n) => (n as { title?: string }).title?.startsWith('Cita por confirmar'))).toBe(true);
+        // Sin recordatorio mientras espera.
+        expect(await reminders.tick(new Date(Date.parse(at(D, 10)) - 3600_000))).toBe(0);
+
+        // Beto (agente, no aprueba) no puede decidir; Ana (atiende y es admin), sí.
+        const dtoBeto = await pub.recordBooking(tenantId, { userId: beto, role: 'agent' }, 'citas', appt!.recordId).catch(() => null);
+        if (dtoBeto) expect(dtoBeto.can_decide).toBe(false);
+        await expect(pub.decide(tenantId, { userId: beto, role: 'agent' }, 'citas', appt!.recordId, { decision: 'approve' })).rejects.toMatchObject({ status: expect.any(Number) });
+        const dto = await pub.recordBooking(tenantId, { userId: ana, role: 'admin' }, 'citas', appt!.recordId);
+        expect(dto).toMatchObject({ status: 'pending', can_decide: true, on_timeout: 'decline', client_email: 'luis@cliente.co' });
+
+        mailbox.sent.length = 0;
+        dispatcher.events.length = 0;
+        // Dos aprobaciones a la vez: una sola cuenta.
+        const both = await Promise.allSettled([
+            pub.decide(tenantId, { userId: ana, role: 'admin' }, 'citas', appt!.recordId, { decision: 'approve' }),
+            pub.decide(tenantId, { userId: ana, role: 'admin' }, 'citas', appt!.recordId, { decision: 'approve' }),
+        ]);
+        expect(both.filter((b) => b.status === 'fulfilled').length).toBe(1);
+        const [after] = await appointments();
+        expect(after).toMatchObject({ status: 'confirmed', pendingUntil: null, decidedBy: ana });
+        expect((await recordOfAppt(after!.recordId))[`f${f.estado!.id}`]).toBe(page.config.mapping.status_confirmed);
+        await vi.waitFor(() => expect(calendar.created.length).toBe(1));
+        await vi.waitFor(() => expect(mailbox.sent.length).toBe(1));
+        expect(mailbox.sent[0]!.subject).toContain('Tu cita está confirmada');
+        expect(mailbox.sent[0]!.attachments?.[0]?.filename).toBe('cita.ics');
+        await vi.waitFor(() => expect(dispatcher.events.filter((e) => e.booking?.event === 'booked').length).toBe(1));
+        await expect(pub.decide(tenantId, { userId: ana, role: 'admin' }, 'citas', appt!.recordId, { decision: 'decline' })).rejects.toMatchObject({ status: 409 });
+    });
+
+    it('v0.1.353 — rechazar (desde la ficha o poniendo el estado), el plazo que vence y «sólo la primera cita de cada cliente»', async () => {
+        await pageWith((c) => {
+            c.approval.mode = 'new_clients';
+            c.approval.approver_user_ids = [beto];
+            c.approval.staff_approves = false;
+        });
+        const page = await pageNow();
+        // Primera cita de Luis: por confirmar. Beto aprueba (es de quienes aprueban) y la rechaza con motivo.
+        const r1 = await book({ staff: 'stfana', start: at(D, 8) });
+        expect(r1.appointment!.status).toBe('pending');
+        const [a1] = await appointments();
+        expect(notified.some((n) => (n as { userIds?: number[] }).userIds?.includes(beto))).toBe(true);
+        await vi.waitFor(() => expect(mailbox.sent.length).toBe(1));
+        mailbox.sent.length = 0;
+        const declined = await pub.decide(tenantId, { userId: beto, role: 'viewer' }, 'citas', a1!.recordId, { decision: 'decline', reason: 'No hay cupo esa semana' });
+        expect(declined).toMatchObject({ status: 'declined', decline_reason: 'No hay cupo esa semana', decided_by_name: 'Beto Díaz' });
+        expect((await recordOfAppt(a1!.recordId))[`f${f.estado!.id}`]).toBe(page.config.mapping.status_declined);
+        await vi.waitFor(() => expect(mailbox.sent.length).toBe(1));
+        expect(mailbox.sent[0]!.subject).toContain('Tu cita no pudo confirmarse');
+        expect(mailbox.sent[0]!.text).toContain('No hay cupo esa semana');
+        // El lugar quedó libre y el enlace del correo ya no deja cambios.
+        expect((await pub.slots(token, IP, { service: 'svcconsulta', staff: 'stfana', from: D, to: D })).slots.map((x) => x.start)).toContain(at(D, 8));
+        await expect(pub.cancel(refOf(r1.appointment!.manage_url), IP, {})).rejects.toMatchObject({ status: 403 });
+
+        // Segunda: el equipo la aprueba poniéndole «Confirmada» en la ficha.
+        const r2 = await book({ staff: 'stfana', start: at(D, 9) });
+        expect(r2.appointment!.status).toBe('pending');
+        const a2 = (await appointments()).find((a) => a.id !== a1!.id)!;
+        await recs.update(tenantId, { userId: ana, role: 'admin' }, 'citas', a2.recordId, { data: { [`f${f.estado!.id}`]: page.config.mapping.status_confirmed } });
+        await vi.waitFor(async () => expect((await appointments()).find((a) => a.id === a2.id)!.status).toBe('confirmed'));
+        await vi.waitFor(() => expect(calendar.created.length).toBe(1));
+
+        // Luis ya es conocido: su próxima cita se confirma sola (sin importar mayúsculas).
+        const r3 = await book({ staff: 'stfana', start: at(E, 9), email: 'luis@CLIENTE.co' });
+        expect(r3.appointment!.status).toBe('confirmed');
+
+        // Otro cliente: por confirmar; nadie decide y el plazo vence → se rechaza sola y avisa.
+        const r4 = await book({ staff: 'stfana', start: at(E, 10), email: 'nuevo@cliente.co' });
+        expect(r4.appointment!.status).toBe('pending');
+        notified.length = 0;
+        expect(await pub.expirePending(new Date(Date.now() - 60_000))).toBe(0);
+        expect(await pub.expirePending(new Date(Date.parse(at(E, 10)) + 1000))).toBe(1);
+        const a4 = (await appointments()).find((a) => a.clientEmail === 'nuevo@cliente.co')!;
+        expect(a4.status).toBe('declined');
+        expect(notified.some((n) => (n as { title?: string }).title?.startsWith('Venció el plazo'))).toBe(true);
+        // Y no se vuelve a vencer.
+        expect(await pub.expirePending(new Date(Date.parse(at(E, 10)) + 2000))).toBe(0);
+    });
+
+    it('v0.1.353 — seguridad: código por correo, correos temporales afuera, freno por correo y la prueba atada a la página y al correo', async () => {
+        await pageWith((c) => {
+            c.settings.verify_email = true;
+            c.settings.block_disposable_email = true;
+        });
+        const meta = await pub.meta(token);
+        expect(meta.verify_email).toBe(true);
+        // Sin la prueba no se agenda.
+        await expect(book({ staff: 'stfana', start: at(D, 10) })).rejects.toMatchObject({ response: { code: 'booking_email_unverified' } });
+        // Correo temporal: ni código ni reserva.
+        await expect(pub.requestCode(token, nextIp(), { email: 'x@mailinator.com', stamp: stamp(pageId) })).rejects.toMatchObject({ response: { code: 'booking_invalid' } });
+        await expect(pub.requestCode(token, nextIp(), { email: 'x@sub.yopmail.com', stamp: stamp(pageId) })).rejects.toMatchObject({ status: 400 });
+        // Pedir el código: llega al correo con el código en el asunto.
+        await pub.requestCode(token, nextIp(), { email: 'luis@cliente.co', stamp: stamp(pageId) });
+        await vi.waitFor(() => expect(mailbox.sent.length).toBe(1));
+        const code = /(\d{6}) es tu código/.exec(mailbox.sent[0]!.subject)![1]!;
+        expect(mailbox.sent[0]!.to).toBe('luis@cliente.co');
+        // Mal escrito: avisa cuántos intentos quedan; al quinto, hay que pedir otro.
+        const wrong = code === '000000' ? '111111' : '000000';
+        await expect(pub.verifyCode(token, nextIp(), { email: 'luis@cliente.co', code: wrong })).rejects.toMatchObject({ response: { code: 'booking_code_wrong' } });
+        const ok = await pub.verifyCode(token, nextIp(), { email: 'LUIS@cliente.co', code });
+        // El código se consume.
+        await expect(pub.verifyCode(token, nextIp(), { email: 'luis@cliente.co', code })).rejects.toMatchObject({ response: { code: 'booking_code_expired' } });
+        // La prueba vale para ESE correo y ESA página.
+        const withProof = (email: string, proof: string) =>
+            pub.book(token, nextIp(), { service_id: 'svcconsulta', staff_id: 'stfana', start: at(D, 10), name: 'Luis', email, values: {}, stamp: stamp(pageId), email_proof: proof });
+        await expect(withProof('otra@cliente.co', ok.proof)).rejects.toMatchObject({ response: { code: 'booking_email_unverified' } });
+        await expect(withProof('luis@cliente.co', ok.proof.replace(/.$/, (ch) => (ch === 'a' ? 'b' : 'a')))).rejects.toMatchObject({ response: { code: 'booking_email_unverified' } });
+        await expect(withProof('luis@cliente.co', ok.proof)).resolves.toMatchObject({ ok: true });
+        // Cinco intentos fallidos bloquean el código.
+        await pub.requestCode(token, nextIp(), { email: 'beta@cliente.co', stamp: stamp(pageId) });
+        for (let i = 0; i < 4; i++) {
+            await expect(pub.verifyCode(token, nextIp(), { email: 'beta@cliente.co', code: '999999' === code ? '888888' : '999999' })).rejects.toMatchObject({ response: { code: 'booking_code_wrong' } });
+        }
+        await expect(pub.verifyCode(token, nextIp(), { email: 'beta@cliente.co', code: '999999' === code ? '888888' : '999999' })).rejects.toMatchObject({ response: { code: 'booking_code_locked' } });
+        // Tres códigos en diez minutos por correo, aunque cambie la IP.
+        await pub.requestCode(token, nextIp(), { email: 'gamma@cliente.co', stamp: stamp(pageId) });
+        await pub.requestCode(token, nextIp(), { email: 'gamma@cliente.co', stamp: stamp(pageId) });
+        await pub.requestCode(token, nextIp(), { email: 'gamma@cliente.co', stamp: stamp(pageId) });
+        await expect(pub.requestCode(token, nextIp(), { email: 'gamma@cliente.co', stamp: stamp(pageId) })).rejects.toMatchObject({ status: 429 });
+    });
+
+    it('v0.1.353 — freno de reservas por correo (aunque cambie la IP) y correos temporales sin código', async () => {
+        await pageWith((c) => {
+            c.settings.block_disposable_email = true;
+        }, { max_per_day: null, buffer_after_min: 0 });
+        await expect(book({ staff: 'stfana', start: at(D, 10), email: 'a@10minutemail.com' })).rejects.toMatchObject({ response: { code: 'booking_invalid', data: { errors: { email: expect.stringContaining('temporales') } } } });
+        const slots = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30'].map((h) => at(D, Number(h.slice(0, 2)), Number(h.slice(3))));
+        for (const start of slots.slice(0, 5)) await book({ staff: 'stfana', start, email: 'mucho@cliente.co' });
+        await expect(book({ staff: 'stfana', start: slots[5]!, email: 'Mucho@Cliente.co' })).rejects.toMatchObject({ status: 429 });
+    });
+
 });
 
 describe('v0.1.349 — iCal de festivos (puro)', () => {

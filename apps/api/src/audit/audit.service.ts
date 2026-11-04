@@ -37,6 +37,9 @@ export type AuditAction =
     | 'booking.unpublish'
     | 'booking.regenerate_link'
     | 'booking.delete'
+    // v0.1.353 — aprobar o rechazar una cita por confirmar.
+    | 'booking.approve'
+    | 'booking.decline'
     // v0.1.289 — verificación anti-robots de un formulario y de la empresa,
     // y la contraseña del portal de clientes.
     | 'form.captcha_on'

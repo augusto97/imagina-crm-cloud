@@ -382,11 +382,11 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.352**
-(formularios y agenda insertados que aguantan mucho tráfico: caché de lo
-público, ventana al hacer clic y botón flotante, ADR-S95; antes v0.1.351
-formularios con tu diseño, ADR-S94, y v0.1.350 el calendario de cada asesor en
-la agenda), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.353**
+(agenda: aprobación de las citas y seguridad de la página — código por correo,
+correos temporales, frenos por correo y enlaces versionados; addendum ADR-S67;
+antes v0.1.352 formularios y agenda insertados que aguantan mucho tráfico,
+ADR-S95, y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-11-04 — **Formularios mucho más potentes y personalizables**. El
@@ -459,7 +459,7 @@ la agenda), en `main`.
   la propuesta, explicado al usuario: el script del formulario quedó EN LÍNEA
   (autorizado por su hash en la CSP) en vez de un archivo aparte, porque la
   página entera ya se cachea y un archivo aparte sólo suma un pedido.
-  **SIGUIENTE**: la entrega 3 de la agenda.
+  Después, la entrega 3 de la agenda (ver el hilo de abajo).
 - 2026-11-04 — **Agenda de citas al nivel de Cal.com/Calendly** (addendum
   ADR-S67). Pedido del usuario: "la configuración de ese calendario o sistema de
   agendamientos está muy básica… seleccionar su asesor, diferentes franjas,
@@ -484,12 +484,16 @@ la agenda), en `main`.
      → Integraciones ya lo lista con su justificación); sin él, «Mi
      calendario» de Google conecta pero no puede listar los calendarios (usa
      el principal). Microsoft no necesita nada nuevo.
-  3. **SIGUIENTE**: **aprobación** de citas configurable (quién aprueba, qué ve
-     el cliente mientras tanto), **rediseño visual** de la página (tema,
-     colores, portada, logo, mostrar u ocultar partes, distribución) y
-     **seguridad reforzada** (código por correo para confirmar, dominios
-     desechables bloqueados, topes por correo, enlaces de un solo uso,
-     revisión de todo lo público).
+  3. **Partida en dos**: **v0.1.353 — HECHA**: **aprobación** de citas
+     configurable (todas o sólo la primera de cada cliente, regla por servicio,
+     quién aprueba, plazo y qué pasa si nadie decide, panel en la ficha) y
+     **seguridad reforzada** (código por correo, correos temporales
+     bloqueados, frenos por correo, enlaces versionados: el del correo
+     anterior ya no hace cambios). **SIGUIENTE — v0.1.354**: el **rediseño
+     visual** de la página pública de la agenda con el motor de temas de los
+     formularios (ADR-S94: plantillas, colores, tipografía, portada, logo,
+     mostrar u ocultar partes, distribución). Después, formularios entregas 2
+     (preguntas y lógica) y 3 (medir, insertar, cobrar).
   Quedan fuera salvo que el usuario lo pida: cobrar al agendar y formularios de
   enrutamiento.
   **Nota de desarrollo**: el tenant 1 del entorno de dev está en plan `trial`
@@ -1329,6 +1333,31 @@ la agenda), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-04 · v0.1.353** — **Agenda: aprobación de las citas y seguridad de
+  la página** (addendum ADR-S67; primera mitad de la entrega 3 aprobada por el
+  usuario, después de v0.1.352).
+  - **Aprobación configurable** en «Aprobación y seguridad»: se confirman solas,
+    alguien las aprueba, o sólo la primera cita de cada cliente; regla propia
+    por servicio; quién aprueba (quien atiende + personas elegidas; siempre
+    quien administra la lista), plazo (2 h a una semana) y si al vencer se
+    rechaza o se confirma.
+  - **Por confirmar**: el horario queda apartado, sin evento, videollamada ni
+    recordatorios hasta aprobar; correo «Recibimos tu solicitud». Panel «Cita
+    por confirmar» en la ficha (modal, página y diseñada) con Aprobar y
+    Rechazar con motivo; cambiar el estado del registro también decide.
+    Estados nuevos Por confirmar y Rechazada, eventos nuevos del disparador
+    (las automatizaciones viejas no cambian).
+  - **Seguridad**: código de 6 números por correo (opcional), correos
+    temporales rechazados (por defecto), frenos por correo compartidos entre
+    servidores y enlaces de la cita versionados.
+  - Migración 0098 (el CHECK del estado no aceptaba los dos valores nuevos: lo
+    encontró el E2E con un 503).
+  - Tests: 4 de integración de la API, 4 de shared; E2E navegador: página
+    pública 13/13 en escritorio y celular, ficha 9/9 al aprobar y 10/10 al
+    rechazar, constructor 17/17 en escritorio y en celular oscuro.
+  - **Siguiente**: v0.1.354, la página pública de la agenda con el motor de
+    temas (ADR-S94).
 
 - **2026-11-04 · v0.1.352** — **Formularios y agenda insertados que aguantan
   mucho tráfico** (ADR-S95). Respuesta a la pregunta del usuario sobre usar un

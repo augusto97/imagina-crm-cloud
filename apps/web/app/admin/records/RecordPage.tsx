@@ -35,6 +35,7 @@ import { RecordSubtasks } from '@/admin/records/RecordSubtasks';
 import { isCloseCancelled } from '@/admin/records/dependencies/closeGuard';
 import { RecordDependencies } from '@/admin/records/dependencies/RecordDependencies';
 import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
+import { RecordBookingPanel } from '@/admin/booking/RecordBookingPanel';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
 import { RecordChecklists } from '@/admin/records/checklists/RecordChecklists';
 import { SaveRecordAsTemplateButton } from '@/admin/records/templates/SaveRecordAsTemplateButton';
@@ -416,6 +417,7 @@ export function RecordPage(): JSX.Element {
                     {/* E6 — lo que propone un agente de IA. */}
                     {!isGuest && <RecordAgentProposals listId={listInfo.id} recordId={rec.id} />}
                     {!isGuest && <RecordApprovals listId={listInfo.id} recordId={rec.id} />}
+                    {!isGuest && <RecordBookingPanel listId={listInfo.id} recordId={rec.id} />}
 
                     {/* Descripción rica (v0.1.133) — mismo componente que el
                         modal del registro. */}

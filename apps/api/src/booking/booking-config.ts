@@ -60,7 +60,7 @@ export function sanitizeBookingConfig(config: BookingConfig, fields: ReadonlyArr
     // Los valores de estado tienen que existir en las opciones del campo.
     const statusField = typeof mapping.status_field_id === 'number' ? byId.get(mapping.status_field_id) : undefined;
     const statusOpts = optionValues(statusField);
-    for (const k of ['status_confirmed', 'status_rescheduled', 'status_cancelled'] as const) {
+    for (const k of ['status_confirmed', 'status_rescheduled', 'status_cancelled', 'status_pending', 'status_declined'] as const) {
         const v = config.mapping[k];
         if (!statusField || v === null || !statusOpts.has(v)) mapping[k] = null;
     }
@@ -119,8 +119,12 @@ export function sanitizeBookingConfig(config: BookingConfig, fields: ReadonlyArr
         (a, b) => b.minutes_before - a.minutes_before,
     );
 
+    // v0.1.353 — quien aprueba: personas del equipo que pueden trabajar la lista, una vez cada una.
+    const approvers = [...new Set(config.approval.approver_user_ids)].filter((id) => !members || members.has(id));
+
     return bookingConfigSchema.parse({
         ...config,
+        approval: { ...config.approval, approver_user_ids: approvers },
         mapping: cleanMapping,
         services,
         staff,
@@ -132,13 +136,47 @@ export function sanitizeBookingConfig(config: BookingConfig, fields: ReadonlyArr
 /** El valor del campo de estado para un estado de la cita (null = no se escribe). */
 export function statusValueFor(m: BookingMapping, status: BookingStatus): string | null {
     if (m.status_field_id === null) return null;
-    return status === 'confirmed' ? m.status_confirmed : status === 'rescheduled' ? m.status_rescheduled ?? m.status_confirmed : m.status_cancelled;
+    switch (status) {
+        case 'confirmed':
+            return m.status_confirmed;
+        case 'rescheduled':
+            return m.status_rescheduled ?? m.status_confirmed;
+        case 'cancelled':
+            return m.status_cancelled;
+        // v0.1.353 — sin opción propia, «por confirmar» no escribe nada y «rechazada» cae a «cancelada».
+        case 'pending':
+            return m.status_pending;
+        case 'declined':
+            return m.status_declined ?? m.status_cancelled;
+    }
 }
 
 /** ¿El valor del campo de estado de un registro es «cancelada»? */
 export function isCancelledValue(m: BookingMapping, data: Record<string, unknown>): boolean {
     if (m.status_field_id === null || m.status_cancelled === null) return false;
     return data[jsonbKeyForField(m.status_field_id)] === m.status_cancelled;
+}
+
+/**
+ * v0.1.353 — Qué estado de la cita dice el campo de estado de un registro
+ * (null = ninguno de los de la agenda, o la página no tiene campo de estado).
+ * Si «rechazada» y «cancelada» comparten opción, gana «cancelada».
+ */
+export function statusFromValue(m: BookingMapping, data: Record<string, unknown>): BookingStatus | null {
+    if (m.status_field_id === null) return null;
+    const v = data[jsonbKeyForField(m.status_field_id)];
+    if (typeof v !== 'string' || v === '') return null;
+    if (v === m.status_cancelled) return 'cancelled';
+    if (v === m.status_declined) return 'declined';
+    if (v === m.status_pending) return 'pending';
+    if (v === m.status_confirmed) return 'confirmed';
+    if (v === m.status_rescheduled) return 'rescheduled';
+    return null;
+}
+
+/** Los valores del campo de estado que ya no ocupan el lugar (cancelada y rechazada). */
+export function inactiveStatusValues(m: BookingMapping): string[] {
+    return [m.status_cancelled, m.status_declined].filter((v): v is string => typeof v === 'string' && v !== '');
 }
 
 export interface AppointmentDataInput {

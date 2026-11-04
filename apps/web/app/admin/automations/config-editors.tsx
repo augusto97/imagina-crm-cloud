@@ -26,6 +26,7 @@ import { useLists } from '@/hooks/useLists';
 import { api } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
 import {
+    BOOKING_DEFAULT_EVENTS,
     BOOKING_EVENT_LABELS,
     BOOKING_EVENTS,
     cronError,
@@ -441,19 +442,21 @@ function ButtonPressedConfig({
     );
 }
 
-/** D5 — qué página de agenda y qué eventos disparan (sin elegir: cualquiera y los tres). */
+/** D5 — qué página de agenda y qué eventos disparan (sin elegir: cualquiera y los de siempre). */
 function BookingEventConfig({ config, onChange }: { config: TriggerConfig; onChange: (next: TriggerConfig) => void }): JSX.Element {
     const listId = useAutomationListId();
     const pages = useBookingPages(listId);
     const current = typeof config.booking_page_id === 'number' ? config.booking_page_id : 0;
     const list = pages.data ?? [];
     const events = Array.isArray(config.events) ? (config.events as BookingEvent[]) : [];
-    const all = events.length === 0;
+    // Sin elegir = los de siempre (agendar, reprogramar, cancelar); los de la aprobación se eligen (v0.1.353).
+    const chosen: readonly BookingEvent[] = events.length === 0 ? BOOKING_DEFAULT_EVENTS : events;
     const toggle = (ev: BookingEvent, on: boolean): void => {
-        const base = all ? [...BOOKING_EVENTS] : events;
-        const nextEvents = on ? [...new Set([...base, ev])] : base.filter((x) => x !== ev);
+        const nextEvents = on ? [...new Set([...chosen, ev])] : chosen.filter((x) => x !== ev);
+        if (nextEvents.length === 0) return;
         const next = { ...config };
-        if (nextEvents.length === 0 || nextEvents.length === BOOKING_EVENTS.length) delete next.events;
+        const isDefault = nextEvents.length === BOOKING_DEFAULT_EVENTS.length && BOOKING_DEFAULT_EVENTS.every((x) => nextEvents.includes(x));
+        if (isDefault) delete next.events;
         else next.events = BOOKING_EVENTS.filter((x) => nextEvents.includes(x));
         onChange(next);
     };
@@ -489,7 +492,7 @@ function BookingEventConfig({ config, onChange }: { config: TriggerConfig; onCha
                 <legend className="imcrm-mb-1 imcrm-text-sm imcrm-font-medium">{__('Qué la dispara')}</legend>
                 {BOOKING_EVENTS.map((ev) => (
                     <label key={ev} className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
-                        <input type="checkbox" checked={all || events.includes(ev)} onChange={(e) => toggle(ev, e.target.checked)} data-booking-event={ev} />
+                        <input type="checkbox" checked={chosen.includes(ev)} onChange={(e) => toggle(ev, e.target.checked)} data-booking-event={ev} />
                         {__(BOOKING_EVENT_LABELS[ev])}
                     </label>
                 ))}

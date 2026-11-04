@@ -64,6 +64,7 @@ import { RecordSubtasks } from './RecordSubtasks';
 import { isCloseCancelled } from './dependencies/closeGuard';
 import { RecordDependencies } from './dependencies/RecordDependencies';
 import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
+import { RecordBookingPanel } from '@/admin/booking/RecordBookingPanel';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
 import { RecordChecklists } from './checklists/RecordChecklists';
 import { SaveRecordAsTemplateButton } from './templates/SaveRecordAsTemplateButton';
@@ -583,6 +584,8 @@ export function RecordDetailDrawer({
                                     {/* E6 — lo que propone un agente de IA (Aplicar / Descartar). */}
                                     {view.ready && !isGuest && <RecordAgentProposals listId={listId} recordId={record.id} className="imcrm-mb-5" />}
                                     {view.ready && !isGuest && <RecordApprovals listId={listId} recordId={record.id} className="imcrm-mb-5" />}
+                                    {/* v0.1.353 — la cita de la agenda: aprobar o rechazar si está por confirmar. */}
+                                    {view.ready && !isGuest && <RecordBookingPanel listId={listId} recordId={record.id} className="imcrm-mb-5" />}
 
                                     {/* Descripción rica (v0.1.133) — el cuerpo tipo
                                         documento de la ficha, arriba de los campos

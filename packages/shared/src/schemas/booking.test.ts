@@ -10,12 +10,17 @@ import {
     staffVideoProblem,
     bookingRulesSchema,
     bookingTriggerMatches,
+    bookingUsesApproval,
+    decideBookingSchema,
     defaultBookingConfig,
+    serviceApprovalMode,
+    verifyBookingCodeSchema,
     defaultBookingWeek,
     hhmmToMinutes,
     minutesToHhmm,
     type BookingAvailability,
 } from './booking';
+import { isDisposableEmail } from './disposable-email';
 import { bookableWindow, checkBookingSlot, computeBookingSlots, dayIntervals, type StaffSlotsInput } from './booking-slots';
 
 const TZ = 'America/Bogota';
@@ -381,3 +386,49 @@ describe('v0.1.350 — calendario de cada persona y lugar de la cita', () => {
     });
 });
 
+
+describe('v0.1.353 — aprobación de las citas y seguridad de la página', () => {
+    it('una configuración vieja se lee sin aprobación y sin cambiar los eventos del disparador', () => {
+        const c = bookingConfigSchema.parse({ services: [{ id: 'svca0001', name: 'Consulta' }] });
+        expect(c.approval.mode).toBe('none');
+        expect(c.approval.on_timeout).toBe('decline');
+        expect(c.services[0]?.approval).toBe('inherit');
+        expect(c.settings.verify_email).toBe(false);
+        expect(bookingUsesApproval(c)).toBe(false);
+        // Sin eventos elegidos = los tres de siempre: una automatización vieja no se dispara con una solicitud.
+        expect(bookingTriggerMatches({}, { page_id: 3, event: 'requested' })).toBe(false);
+        expect(bookingTriggerMatches({}, { page_id: 3, event: 'declined' })).toBe(false);
+        expect(bookingTriggerMatches({ events: ['requested', 'declined'] }, { page_id: 3, event: 'declined' })).toBe(true);
+    });
+
+    it('cada servicio puede tener su propia regla', () => {
+        const page = { mode: 'all' as const };
+        expect(serviceApprovalMode(page, { approval: 'inherit' })).toBe('all');
+        expect(serviceApprovalMode(page, { approval: 'none' })).toBe('none');
+        expect(serviceApprovalMode({ mode: 'none' }, { approval: 'new_clients' })).toBe('new_clients');
+        expect(serviceApprovalMode({ mode: 'new_clients' }, null)).toBe('new_clients');
+        // La página no aprueba pero un servicio activo sí: la agenda usa aprobación.
+        expect(bookingUsesApproval({ approval: { mode: 'none' }, services: [{ approval: 'all', active: true }] })).toBe(true);
+        expect(bookingUsesApproval({ approval: { mode: 'none' }, services: [{ approval: 'all', active: false }] })).toBe(false);
+    });
+
+    it('el código son 6 números y decidir sólo acepta aprobar o rechazar', () => {
+        expect(verifyBookingCodeSchema.safeParse({ email: 'ana@acme.co', code: ' 123456 ' }).success).toBe(true);
+        expect(verifyBookingCodeSchema.safeParse({ email: 'ana@acme.co', code: '12345' }).success).toBe(false);
+        expect(verifyBookingCodeSchema.safeParse({ email: 'ana@acme.co', code: '12a456' }).success).toBe(false);
+        expect(decideBookingSchema.safeParse({ decision: 'decline', reason: 'Ese día no atendemos' }).success).toBe(true);
+        expect(decideBookingSchema.safeParse({ decision: 'cancel' }).success).toBe(false);
+        expect(decideBookingSchema.safeParse({ decision: 'decline', reason: 'x'.repeat(501) }).success).toBe(false);
+    });
+
+    it('reconoce los correos temporales, también en subdominios y con mayúsculas', () => {
+        expect(isDisposableEmail('alguien@mailinator.com')).toBe(true);
+        expect(isDisposableEmail('Alguien@YOPMAIL.COM')).toBe(true);
+        expect(isDisposableEmail('x@inbox.mailinator.com')).toBe(true);
+        expect(isDisposableEmail('x@guerrillamail.com.')).toBe(true);
+        expect(isDisposableEmail('ana@gmail.com')).toBe(false);
+        expect(isDisposableEmail('ana@mailinator.com.co')).toBe(false);
+        expect(isDisposableEmail('ana@notmailinator.com')).toBe(false);
+        expect(isDisposableEmail('sin-arroba')).toBe(false);
+    });
+});

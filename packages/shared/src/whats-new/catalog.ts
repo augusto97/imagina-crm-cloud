@@ -1151,4 +1151,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Publica el formulario o la agenda y, en **Compartir → Insertar en tu sitio**, elige **En la página**, **Ventana al hacer clic** o **Botón flotante**. Los códigos que ya pegaste siguen funcionando igual.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.353-aprobar-citas',
+        version: '0.1.353',
+        date: '2026-11-04',
+        kind: 'feature',
+        title: 'Aprueba las citas antes de confirmarlas y frena las reservas falsas',
+        summary:
+            'Cada cita de la agenda puede esperar la aprobación de alguien del equipo (todas o sólo la primera de cada cliente). Se aprueba o se rechaza desde la ficha del registro, y el cliente puede confirmar su correo con un código.',
+        media: {
+            slides: [
+                {
+                    title: 'Por confirmar, con el horario apartado',
+                    text: 'Con la aprobación encendida, cada reserva queda «Por confirmar» y nadie más puede tomar ese horario. Al cliente le llega un correo «Recibimos tu solicitud».',
+                    illustration: 'citas-aprobacion',
+                },
+                {
+                    title: 'Aprueba o rechaza desde la ficha',
+                    text: 'A quien aprueba le llega un aviso. En la ficha toca Aprobar —la cita llega al calendario con su videollamada y el cliente recibe la confirmación— o Rechazar con un motivo.',
+                    illustration: 'citas-email',
+                },
+                {
+                    title: 'Sin reservas falsas',
+                    text: 'Pide que el cliente confirme su correo con un código de 6 números y no aceptes correos temporales. Además, un mismo correo no puede pedir citas sin parar.',
+                    illustration: 'citas-hero',
+                },
+            ],
+        },
+        body: 'En **Configurar lista → Agenda → Editar**, abre **Aprobación y seguridad**. Elige si las citas se aprueban, quién decide y en cuánto tiempo. Cada servicio puede tener su propia regla.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

@@ -14,6 +14,7 @@ export const meta: LearnModuleMeta = {
         'Horarios por persona y por servicio, festivos de tu país, vacaciones, márgenes y topes',
         'Correo de confirmación con el evento para el calendario, recordatorios y enlaces para cambiar o cancelar',
         'Cada asesor conecta su Google Calendar u Outlook: no se ofrece lo ocupado, la cita llega con su enlace de Meet o Teams y moverla en el calendario la mueve en la app',
+        'Citas que alguien del equipo aprueba (todas o sólo la primera de cada cliente), código por correo y freno a los correos temporales',
         'Se publica con un enlace o dentro de tu sitio',
     ],
     articles: [
@@ -60,6 +61,15 @@ export const meta: LearnModuleMeta = {
             minutes: 8,
             level: 'intermediate',
             keywords: 'campos de la lista inicio fin estado confirmada reprogramada cancelada preguntas telefono correo de confirmacion ics recordatorios indicaciones',
+            needs: 'manage_lists',
+        },
+        {
+            id: 'agenda-aprobacion',
+            title: 'Aprobar citas y frenar reservas falsas',
+            summary: 'Que alguien del equipo apruebe cada cita (o sólo la primera de cada cliente), quién decide y en cuánto tiempo, y el código por correo para que nadie reserve con un correo ajeno.',
+            minutes: 6,
+            level: 'intermediate',
+            keywords: 'aprobar aprobacion rechazar por confirmar pendiente primera vez cliente nuevo plazo vencer codigo correo verificar temporales mailinator reservas falsas spam seguridad enlace de la cita',
             needs: 'manage_lists',
         },
         {

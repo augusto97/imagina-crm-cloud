@@ -135,6 +135,7 @@ export * from './schemas/custom-role';
 export * from './schemas/guest';
 export * from './schemas/booking';
 export * from './schemas/booking-slots';
+export * from './schemas/disposable-email';
 export * from './schemas/holidays';
 export * from './schemas/ai-agents';
 // F7 — «Empezar fácil»: bienvenida, datos de ejemplo y primeros pasos.

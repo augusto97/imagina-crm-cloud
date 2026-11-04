@@ -28,7 +28,7 @@ import { bookingAppointments, bookingPages, fields as fieldsTable, lists, record
 import { IncidentHub } from '../incidents/incident-hub';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { BookingCalendarService } from './booking-calendar';
-import { readBookingConfig } from './booking-config';
+import { inactiveStatusValues, readBookingConfig } from './booking-config';
 import { BookingHolidaysService } from './booking-holidays';
 
 /**
@@ -308,8 +308,10 @@ export class BookingAvailabilityService {
                 if (!value) continue;
                 conds.push(sql`${records.data} ->> ${jsonbKeyForField(m.resource_field_id)} = ${value}`);
             }
-            if (m.status_field_id !== null && m.status_cancelled !== null) {
-                conds.push(sql`coalesce(${records.data} ->> ${jsonbKeyForField(m.status_field_id)}, '') <> ${m.status_cancelled}`);
+            // v0.1.353 — una cita cancelada o rechazada ya no ocupa; una «por confirmar», sí.
+            const inactive = inactiveStatusValues(m);
+            if (m.status_field_id !== null && inactive.length > 0) {
+                conds.push(sql`coalesce(${records.data} ->> ${jsonbKeyForField(m.status_field_id)}, '') not in (${sql.join(inactive.map((v) => sql`${v}`), sql`, `)})`);
             }
             if (excludeRecordId !== undefined) conds.push(ne(records.id, excludeRecordId));
             const rows = await tx

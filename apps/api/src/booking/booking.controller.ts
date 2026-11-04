@@ -11,6 +11,13 @@ import {
     bookingSlotsQuerySchema,
     cancelAppointmentSchema,
     createBookingPageSchema,
+    decideBookingSchema,
+    requestBookingCodeSchema,
+    verifyBookingCodeSchema,
+    type DecideBookingInput,
+    type RecordBookingDto,
+    type RequestBookingCodeInput,
+    type VerifyBookingCodeInput,
     rescheduleAppointmentSchema,
     updateBookingPageSchema,
     type BookAppointmentInput,
@@ -44,6 +51,8 @@ import { BookingService, type BookingEditorOptions } from './booking.service';
 import { BookingMyCalendarService } from './booking-my-calendar.service';
 import { ForbiddenException } from '@nestjs/common';
 import { PlanModule } from '../tenancy/plan-module.decorator';
+import { aclOf } from '../tenancy/acl-of';
+import type { Actor } from '../records/records.service';
 
 /**
  * D5 — Páginas de agenda de una lista (Ajustes de la lista → Agenda).
@@ -248,6 +257,28 @@ export class PublicBookingController {
         }
     }
 
+    /** v0.1.353 — Manda el código de 6 dígitos al correo (si la página lo pide). */
+    @Post(':token/code')
+    @HttpCode(200)
+    requestCode(
+        @Req() req: FastifyRequest,
+        @Param('token') token: string,
+        @Body(new ZodValidationPipe(requestBookingCodeSchema)) input: RequestBookingCodeInput,
+    ): Promise<{ ok: true; minutes: number }> {
+        return this.svc.requestCode(token, req.ip, input);
+    }
+
+    /** v0.1.353 — Comprueba el código: devuelve la prueba que pide la reserva. */
+    @Post(':token/verify-code')
+    @HttpCode(200)
+    verifyCode(
+        @Req() req: FastifyRequest,
+        @Param('token') token: string,
+        @Body(new ZodValidationPipe(verifyBookingCodeSchema)) input: VerifyBookingCodeInput,
+    ): Promise<{ ok: true; proof: string }> {
+        return this.svc.verifyCode(token, req.ip, input);
+    }
+
     @Get(':token/slots')
     slots(
         @Req() req: FastifyRequest,
@@ -385,6 +416,53 @@ export class PublicBookingPageController {
  * calendarios. Mientras se ve la app como otra persona no se conecta nada (se
  * vincularía la cuenta de Google de quien mira).
  */
+/**
+ * v0.1.353 — La cita de un registro (el panel de la ficha) y aprobar o
+ * rechazar una por confirmar. Ver: el ACL del registro. Decidir: además, ser
+ * de quienes aprueban en esa agenda (lo exige el service).
+ */
+@PlanModule('booking')
+@Controller('lists/:list/records/:id/booking')
+@UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
+export class RecordBookingController {
+    constructor(
+        private readonly publicSvc: BookingPublicService,
+        private readonly audit: AuditService,
+    ) {}
+
+    @Get()
+    @RequireCapability('view_records', 'view_own_records')
+    async get(@Req() req: FastifyRequest, @Param('list') list: string, @Param('id', ParseIntPipe) id: number): Promise<{ data: RecordBookingDto | null }> {
+        return { data: await this.publicSvc.recordBooking(req.tenant!.tenantId, decider(req), list, id) };
+    }
+
+    @Post('decide')
+    @HttpCode(200)
+    @RequireCapability('view_records', 'view_own_records')
+    async decide(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(decideBookingSchema)) input: DecideBookingInput,
+    ): Promise<{ data: RecordBookingDto }> {
+        const out = await this.publicSvc.decide(req.tenant!.tenantId, decider(req), list, id, input);
+        await this.audit.log({
+            tenantId: req.tenant!.tenantId,
+            userId: req.authUserId ?? null,
+            action: input.decision === 'approve' ? 'booking.approve' : 'booking.decline',
+            targetType: 'record',
+            targetId: id,
+            targetLabel: `${out.service} · ${out.client_name || out.client_email}`.slice(0, 190),
+            meta: { list, appointment_id: out.appointment_id, booking_page_id: out.page_id },
+        });
+        return { data: out };
+    }
+}
+
+function decider(req: FastifyRequest): Actor {
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
+}
+
 @PlanModule('booking')
 @Controller('me/agenda-calendar')
 @UseGuards(SessionGuard, TenantGuard)

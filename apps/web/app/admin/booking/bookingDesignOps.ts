@@ -262,6 +262,8 @@ export function setMapping(config: BookingConfig, key: BookingMappingKey, fieldI
         mapping.status_confirmed = null;
         mapping.status_rescheduled = null;
         mapping.status_cancelled = null;
+        mapping.status_pending = null;
+        mapping.status_declined = null;
     }
     // Un campo que ahora escribe la página deja de ser una pregunta.
     const questions = fieldId === null ? config.questions : config.questions.filter((q) => q.type !== 'field' || q.field_id !== fieldId);
@@ -405,11 +407,13 @@ export function buildPreviewMeta(config: BookingConfig, ctx: PreviewContext): Pu
         stamp: '',
         captcha: s.captcha && ctx.captchaProvider ? ({ provider: ctx.captchaProvider, site_key: '' } as PublicBookingMeta['captcha']) : null,
         data_consent: s.data_consent ? ctx.dataConsent : null,
+        verify_email: s.verify_email,
+        pending_message: s.pending_message,
     };
 }
 
 /** Lo que falta por sección del constructor (para el punto rojo de cada una). */
-export type BookingSection = 'servicios' | 'atienden' | 'disponibilidad' | 'reglas' | 'campos' | 'correos' | 'publicar';
+export type BookingSection = 'servicios' | 'atienden' | 'disponibilidad' | 'reglas' | 'aprobacion' | 'campos' | 'correos' | 'publicar';
 
 /**
  * v0.1.350 — Qué calendario tiene cada persona que atiende, desde lo que
