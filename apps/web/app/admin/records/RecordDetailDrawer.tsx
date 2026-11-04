@@ -49,6 +49,7 @@ import { PortalAccessButton } from './crm/PortalAccessButton';
 import { RecordFollowControls } from '@/admin/mywork/RecordFollowControls';
 import { GeneratePdfButton } from '@/admin/documents/GeneratePdfButton';
 import { RecordQrButton } from '@/admin/qr/RecordQrButton';
+import { RecordEditLinkButton } from '@/admin/forms/RecordEditLinkButton';
 import { RecordShareButton } from '@/admin/guests/RecordShareButton';
 import { useIsGuest } from '@/lib/guest';
 import { useGuestAccess } from '@/hooks/useGuests';
@@ -482,6 +483,7 @@ export function RecordDetailDrawer({
                                     {!isGuest && (
                                         <RecordQrButton listId={listId} recordId={record.id} fields={fields} listSettings={listData.data?.settings as Record<string, unknown> | undefined} compact />
                                     )}
+                                    {!isGuest && <RecordEditLinkButton listId={listId} recordId={record.id} compact />}
                                     {!isGuest && <SendWhatsappButton listId={listId} recordId={record.id} compact />}
                                     {!isGuest && <SendSmsButton listId={listId} recordId={record.id} compact />}
                                     {/* C6 — «Guardar como plantilla» (no en listas de una tienda ni para un invitado). */}

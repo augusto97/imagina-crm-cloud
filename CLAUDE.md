@@ -11815,6 +11815,52 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         completa, ventana igual que antes, botón flotante a pantalla completa,
         reabrir sin otro marco, cero violaciones de CSP).
 
+  - [x] **Formularios, entrega 3 (tercera parte): enlace para que un cliente
+        actualice su registro (v0.1.360, addendum ADR-S39)**. Un formulario
+        abre con lo que un registro YA tiene y, al guardar, actualiza ese
+        registro en vez de crear otro. Sin migración.
+        (a) **Ajustes → «Actualizar un registro»**
+        (`settings.edit_links {enabled, days 1-365, version, message}`, leído
+        con tolerancia): días que sirve cada enlace, mensaje al guardar, la
+        variable con «Copiar» e **«Invalidar los enlaces ya enviados»** (sube
+        la versión).
+        (b) **El enlace** (`apps/api/src/forms/form-edit-links.ts`): la
+        dirección pública con `?editar=<registro>.<vence>.<firma>`; la firma es
+        HMAC del secreto de los enlaces firmados (scope `formedit`, 32 hex,
+        tiempo constante) sobre empresa, formulario, registro, vencimiento
+        (redondeado a la hora: los enlaces de un registro en la misma hora son
+        iguales) y versión. Nada se guarda por enlace.
+        (c) **Mandarlo**: ícono **«Enlace para actualizar»** en la ficha
+        (`RecordEditLinkButton`, en la página y el modal) que crea y copia el
+        enlace (`POST /lists/:l/forms/:id/edit-link`, `edit_records` o
+        `edit_own_records` + ACL de la fila para editar; 404 si no la alcanza,
+        409 sin publicar o con los enlaces apagados;
+        `GET /lists/:l/forms/edit-links` dice qué formularios lo permiten), o
+        la variable **`{{formulario.<id>.enlace}}`** (alias `form.<id>.link`)
+        en correos, WhatsApp y SMS: el motor arma un enlace por registro
+        (`configureFormEditRuntime` + `editLinkMaker`; sin registrar, vacía) y
+        el selector de variables la ofrece.
+        (d) **La página** (`public-form/main.ts`): lee `?editar=`, lo saca de
+        la barra (queda en `sessionStorage` de la pestaña), carga
+        `GET /public/forms/:token/edit/:code` (sólo los campos del formulario y
+        el nombre de los archivos, `no-store`), prellena (fecha y hora en la
+        hora local), avisa «Estás actualizando tus datos», «Guardar cambios» y
+        «Ya tienes: …» en archivos. El servidor guarda SÓLO lo que el
+        formulario muestra en el camino de la persona (`collect` en modo
+        actualización: vacío vacía, archivo sin cambio se conserva, lo oculto y
+        lo de páginas saltadas no se toca) por `RecordsService.update` → dispara
+        «Cuando se actualiza un registro». Sin captcha, cupo, estadísticas,
+        confirmación por correo ni guardar el avance; la autorización de datos
+        sí se registra. Alterado/vencido/otra versión/otro registro/papelera →
+        410 «ya no sirve»; cerrado por fecha o solo lectura → 403; apagado →
+        404.
+        (e) Asistente/MCP: `get_list_schema` muestra días y variable.
+        Ayuda: artículo en Aprende → Formularios con la ilustración
+        `form-edit-link`, guía `form-edit-link`, paso del recorrido y novedad.
+        Tests: `forms-edit.spec` (6), shared 719, front 795, specs de
+        formularios y automatizaciones 90/90; E2E navegador 28/28 y 26/26 en
+        celular oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

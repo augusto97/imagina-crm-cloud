@@ -530,6 +530,23 @@ export const formSaveProgressSchema = z.object({
 export type FormSaveProgress = z.infer<typeof formSaveProgressSchema>;
 export const FORM_SAVE_PROGRESS_DEFAULT: FormSaveProgress = { device: false, email: false };
 
+/**
+ * v0.1.360 — Enlaces para actualizar un registro: con `enabled`, el equipo (o
+ * una automatización, con `{{formulario.<id>.enlace}}`) le manda a alguien un
+ * enlace firmado que abre este formulario con lo que SU registro ya tiene; al
+ * enviarlo, se actualiza ese registro en vez de crear otro. `days` = cuánto
+ * vale cada enlace; `version` sube al invalidarlos todos; `message` = lo que
+ * ve al guardar (vacío = «¡Listo! Guardamos tus cambios.»).
+ */
+export const formEditLinksSchema = z.object({
+    enabled: z.boolean().default(false),
+    days: z.number().int().min(1).max(365).catch(30).default(30),
+    version: z.number().int().min(1).max(1_000_000).catch(1).default(1),
+    message: z.string().max(1000).catch('').default(''),
+});
+export type FormEditLinks = z.infer<typeof formEditLinksSchema>;
+export const FORM_EDIT_LINKS_DEFAULT: FormEditLinks = { enabled: false, days: 30, version: 1, message: '' };
+
 export const formSettingsSchema = z.object({
     title: z.string().max(200).default(''),
     description: z.string().max(5000).default(''),
@@ -614,6 +631,8 @@ export const formSettingsSchema = z.object({
     layout: z.enum(FORM_LAYOUTS).catch('classic').default('classic'),
     /** v0.1.358 — Guardar el avance (en el dispositivo y/o con un enlace al correo). */
     save_progress: formSaveProgressSchema.catch(FORM_SAVE_PROGRESS_DEFAULT).default(FORM_SAVE_PROGRESS_DEFAULT),
+    /** v0.1.360 — Enlaces para que alguien actualice su registro con este formulario. */
+    edit_links: formEditLinksSchema.catch(FORM_EDIT_LINKS_DEFAULT).default(FORM_EDIT_LINKS_DEFAULT),
 });
 export type FormSettings = z.infer<typeof formSettingsSchema>;
 
@@ -836,6 +855,11 @@ export interface PublicFormMeta {
     calcs?: PublicFormCalc[];
     /** v0.1.358 — Guardar el avance (null = no se guarda). */
     save_progress?: FormSaveProgress | null;
+    /**
+     * v0.1.360 — ¿Acepta enlaces para actualizar un registro? (la página sólo
+     * pide los datos del registro si lo acepta) y el mensaje al guardar.
+     */
+    edit_links?: { message: string } | null;
 }
 
 /** v0.1.357 */
@@ -891,6 +915,8 @@ export const submitFormSchema = z.object({
     draft: z.string().regex(/^[A-Za-z0-9_-]{32,64}$/).optional(),
     /** v0.1.358 — Cuánto tardó desde que empezó a responder (para el tiempo promedio). */
     elapsed_ms: z.number().int().min(0).max(7 * 86_400_000).optional(),
+    /** v0.1.360 — El enlace para actualizar un registro (actualiza ése en vez de crear otro). */
+    edit: z.string().regex(/^\d{1,12}\.\d{9,11}\.[0-9a-f]{32}$/).optional(),
 });
 export type SubmitFormInput = z.infer<typeof submitFormSchema>;
 
@@ -907,6 +933,8 @@ export interface SubmitFormResult {
      */
     pending_confirmation?: boolean;
     email_hint?: string;
+    /** v0.1.360 — Se actualizó un registro que ya existía (no se creó otro). */
+    updated?: boolean;
 }
 
 export interface FormUploadResult {

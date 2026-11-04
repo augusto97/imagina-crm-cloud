@@ -334,6 +334,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             })),
             // v0.1.358 — para que la vista previa muestre «Guardar y seguir después».
             save_progress: s.save_progress.device || s.save_progress.email ? { ...s.save_progress } : null,
+            edit_links: s.edit_links.enabled ? { message: s.edit_links.message } : null,
         };
     }, [config, draft.name, fields, branding.data, captcha.data?.provider, dataConsent.data, teamOptions, imageUrl, theme]);
 
@@ -551,6 +552,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             captcha={captcha.data ?? null}
             dataConsent={dataConsent.data ?? null}
             listId={listId}
+            formId={form.id}
             onOpenDesign={openDesign}
             previewWelcome={previewWelcome}
             onPreviewWelcome={setPreviewWelcome}
@@ -1321,11 +1323,14 @@ function SettingsInspector({
     captcha,
     dataConsent,
     listId,
+    formId,
     onOpenDesign,
     previewWelcome,
     onPreviewWelcome,
 }: {
     listId: number;
+    /** v0.1.360 — para la variable `{{formulario.<id>.enlace}}`. */
+    formId: number;
     /** v0.1.351 — lleva a la pestaña «Diseño» (colores, fuentes, tamaños…). */
     onOpenDesign: () => void;
     /** v0.1.357 — ver la bienvenida en la vista previa. */
@@ -1383,7 +1388,7 @@ function SettingsInspector({
                 <Input value={s.submit_label} onChange={(e) => set({ submit_label: e.target.value })} />
             </Field>
 
-            <StartSettings config={config} fields={fields} onChange={onChange} previewWelcome={previewWelcome} onPreviewWelcome={onPreviewWelcome} />
+            <StartSettings config={config} fields={fields} onChange={onChange} previewWelcome={previewWelcome} onPreviewWelcome={onPreviewWelcome} formId={formId} />
 
             <Section title={__('Después de enviar')}>
                 <Field label={__('Título del agradecimiento')} hint={__('Para mostrar otro mensaje según lo que responde, agrega una pantalla final en «Lógica».')}>

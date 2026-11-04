@@ -87,6 +87,15 @@ export const meta: LearnModuleMeta = {
             needs: 'manage_forms',
         },
         {
+            id: 'formularios-actualizar',
+            title: 'Enlace para que un cliente actualice sus datos',
+            summary: 'Manda un enlace que abre el formulario con lo que el registro ya tiene: la persona corrige lo que cambió y se guarda en ese mismo registro, sin crear otro.',
+            minutes: 6,
+            level: 'intermediate',
+            keywords: 'actualizar datos editar respuesta corregir cliente enlace firmado prellenado precargado formulario con datos actualizacion de datos ficha registro existente variable automatizacion correo whatsapp invalidar enlaces',
+            needs: 'manage_forms',
+        },
+        {
             id: 'formularios-ajustes',
             title: 'Ajustes: agradecimiento, cierre por fecha o cupo y logo',
             summary: 'Qué ve la persona al enviar, hasta cuándo recibe respuestas, con qué plantilla nace el registro y si muestra tu logo.',

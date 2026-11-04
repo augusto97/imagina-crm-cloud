@@ -83,7 +83,8 @@ import { buildWebhookRequest, type MergeFn } from './webhook-request';
 import type { Tx } from '../db/client';
 import { BillingService } from '../billing/billing.service';
 import { CollectionsService } from '../collections/collections.service';
-import { automationRuns, documentTemplates, lists, memberships, records, teams, tenants, users } from '../db/schema';
+import { automationRuns, documentTemplates, forms, lists, memberships, records, teams, tenants, users } from '../db/schema';
+import { editLinkFormId, editLinkMaker, readEditLinks, type EditLinkForm } from '../forms/form-edit-links';
 import { connectionModuleStepError, moduleForIntegration, planModuleOff, planModuleStepError } from '../billing/plan-module-gate';
 import { tenantIsReadOnly } from '../tenancy/read-only';
 import { FieldsRepository } from '../fields/fields.repository';
@@ -213,6 +214,12 @@ interface RunContext {
      * su QR (por el dominio de la empresa si responde).
      */
     recordLinkPrefix?: string;
+    /**
+     * v0.1.360 — `{{formulario.<id>.enlace}}`: el enlace firmado para que
+     * alguien actualice ESTE registro con ese formulario ('' si el formulario
+     * no es de la lista, no está publicado o no acepta enlaces).
+     */
+    formEditLink?: (formId: number, recordId: number) => string;
     /** Formato regional de la empresa (`|fecha`, `|moneda` y los números tipeados). */
     format?: Pick<TenantFormat, 'number_format' | 'date_format' | 'time_format'>;
     /**
@@ -1364,8 +1371,18 @@ export class AutomationEngine {
         tx: Tx,
         tenantId: number,
         listId: number,
-    ): Promise<Pick<RunContext, 'slugToKey' | 'fieldsBySlug' | 'timeZone' | 'format' | 'recordLinkPrefix'>> {
+    ): Promise<Pick<RunContext, 'slugToKey' | 'fieldsBySlug' | 'timeZone' | 'format' | 'recordLinkPrefix' | 'formEditLink'>> {
         const fieldRows = await this.fields.listByList(tx, tenantId, listId);
+        // v0.1.360 — los formularios de la lista que aceptan enlaces para actualizar.
+        const formRows = await tx
+            .select({ id: forms.id, token: forms.token, config: forms.config })
+            .from(forms)
+            .where(and(eq(forms.tenantId, tenantId), eq(forms.listId, listId), eq(forms.enabled, true)));
+        const editForms: EditLinkForm[] = [];
+        for (const r of formRows) {
+            const links = readEditLinks(r.config);
+            if (links) editForms.push({ id: r.id, token: r.token, links });
+        }
         const [tenant] = await tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
         const [listRow] = await tx.select({ slug: lists.slug }).from(lists).where(eq(lists.id, listId)).limit(1);
         const parsed = tenantFormatSchema.safeParse((tenant?.settings as Record<string, unknown> | null | undefined)?.format ?? {});
@@ -1375,6 +1392,7 @@ export class AutomationEngine {
             timeZone: await this.tenantTimeZone(tx, tenantId),
             format: parsed.success ? parsed.data : DEFAULT_FORMAT,
             recordLinkPrefix: listRow ? await recordLinkPrefix(tenantId, listRow.slug) : '',
+            formEditLink: await editLinkMaker(tenantId, editForms),
         };
     }
 
@@ -1482,6 +1500,9 @@ export class AutomationEngine {
             // v0.1.344 — {{registro.enlace}} y {{registro.qr}} (la imagen de su QR).
             const recordToken = recordTokenValue(token, ctx.recordLinkPrefix && ctx.recordId ? `${ctx.recordLinkPrefix}${ctx.recordId}` : '');
             if (recordToken !== undefined) return recordToken;
+            // v0.1.360 — el enlace para que actualice su registro con un formulario.
+            const editFormId = editLinkFormId(token);
+            if (editFormId !== null) return ctx.formEditLink && ctx.recordId ? ctx.formEditLink(editFormId, ctx.recordId) : '';
             // v0.1.288 — el registro vinculado en curso de un bucle.
             if (token.startsWith('item.')) return this.itemValue(ctx, token.slice('item.'.length));
             // v0.1.288 — la respuesta del último webhook / conector y las guardadas con nombre.

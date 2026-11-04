@@ -692,6 +692,80 @@ export const articles: LearnArticle[] = [
                 t: 'actions',
                 items: [
                     { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Siguiente: un enlace para actualizar los datos', article: 'formularios-actualizar' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'formularios-actualizar',
+        route: '/lists',
+        related: ['formularios-estadisticas', 'formularios-publicar', 'formularios-ajustes'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Un formulario también sirve para que un cliente **corrija sus propios datos**: le mandas un enlace, el formulario abre con lo que su registro ya tiene y, al tocar **Guardar cambios**, se actualiza ese mismo registro. No se crea uno nuevo ni tienes que copiar a mano lo que te responda.',
+            },
+            { t: 'anim', key: 'form-edit-link', caption: 'Ana abre el enlace, ve sus datos ya puestos, cambia el correo y su registro de la lista queda al día.' },
+            { t: 'h', text: 'Encenderlo en el formulario' },
+            {
+                t: 'steps',
+                items: [
+                    'Abre el formulario en **Configurar lista → Formularios** y ve a la pestaña **Ajustes**.',
+                    'En **Actualizar un registro**, enciende **Permitir enlaces para actualizar un registro**.',
+                    'Elige cuántos días sirve cada enlace y, si quieres, el mensaje que verá la persona al guardar.',
+                    'Publica el formulario: un enlace sólo funciona si el formulario está publicado.',
+                ],
+            },
+            { t: 'h', text: 'Mandar el enlace' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Desde la ficha del registro', what: 'Toca el ícono **Enlace para actualizar** (arriba, junto a los otros botones), elige el formulario si tienes varios y toca **Crear y copiar el enlace**. Pégalo en un correo o un mensaje.', tip: 'El botón sólo aparece si algún formulario de la lista tiene los enlaces encendidos y tú puedes editar ese registro.' },
+                    { name: 'En una automatización', what: 'En un correo, un WhatsApp o un SMS, usa la variable que aparece en **Actualizar un registro** (se ve como {{formulario.12.enlace}}). Cada registro recibe su propio enlace.', tip: 'Así puedes mandar «¿Tus datos siguen al día?» a todos tus clientes con una automatización programada.' },
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Qué se guarda',
+                rows: [
+                    { name: 'Lo que la persona cambia', what: 'Se guarda en el registro, con su historial en la actividad. Si vacía una pregunta, ese dato queda vacío.' },
+                    { name: 'Lo que el formulario no pregunta', what: 'No se toca: tus notas internas y los demás campos del registro quedan como estaban.' },
+                    { name: 'Archivos y firma', what: 'La persona ve que ya hay un archivo («Ya tienes: contrato.pdf»). Si no sube uno nuevo, se conserva el que había.' },
+                    { name: 'Preguntas ocultas', what: 'No se escriben nunca, aunque vengan en la dirección del enlace.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'warn',
+                title: 'Mándalo sólo a quien es dueño de esos datos',
+                md: 'Quien tenga el enlace puede ver y cambiar los datos de ese registro mientras el enlace sirva. Si mandaste uno por error o se filtró, toca **Invalidar los enlaces ya enviados** en los ajustes: todos los enlaces anteriores de ese formulario dejan de servir al instante y los nuevos funcionan normal.',
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Las automatizaciones reaccionan como a cualquier cambio',
+                md: 'Guardar desde el enlace es una edición del registro: dispara las automatizaciones de **Cuando se actualiza un registro**, no las de **Cuando se envía un formulario**.',
+            },
+            {
+                t: 'example',
+                title: 'Actualizar la base de clientes una vez al año',
+                md: 'Una distribuidora de Medellín tenía correos y teléfonos viejos en la mitad de sus clientes. Armó un formulario «Actualiza tus datos» con nombre, correo, teléfono y dirección, encendió los enlaces con 15 días de vigencia y creó una automatización programada que le manda a cada cliente un correo con {{formulario.4.enlace}}. En dos semanas, 380 clientes corrigieron sus datos solos, sin una sola llamada.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿La persona necesita una cuenta o una contraseña?', a: 'No. El enlace basta. Por eso conviene mandarlo sólo a su correo o su número.' },
+                    { q: '¿Qué ve si el enlace ya venció?', a: 'Un aviso de que el enlace ya no sirve. Tú le mandas uno nuevo desde la ficha.' },
+                    { q: '¿Cuenta como una respuesta nueva en las estadísticas o en el cupo?', a: 'No. Actualizar no suma respuestas, no cuenta para el cupo del formulario y no pide captcha ni confirmación por correo.' },
+                    { q: '¿Se puede usar si el formulario está cerrado?', a: 'No. Si el formulario cerró por fecha, el enlace también deja de funcionar.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a mis listas', to: '/lists' },
                     { label: 'Siguiente: agradecimiento y cierre', article: 'formularios-ajustes' },
                 ],
             },

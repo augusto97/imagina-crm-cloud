@@ -14,6 +14,8 @@ import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
 import { AutomationFlowContext, StepVariablesContext } from './flowContext';
+import { useAutomationListId } from './config-editors';
+import { useEditLinkForms } from '../forms/useForms';
 
 interface MergeTagInputProps {
     value: string;
@@ -242,6 +244,9 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
                 ? [{ title: __('SLA del ticket'), items: SLA_MERGE_TAGS.map((t) => ({ tag: t.tag, label: __(t.label), hint: `{{${t.tag}}}` })) }]
                 : [];
     const extra = context === 'automation' ? [...stepVars, ...helpdeskVars, ...extraProp] : extraProp;
+    // v0.1.360 — el enlace para que la persona actualice su registro con un formulario.
+    const automationListId = useAutomationListId();
+    const editForms = useEditLinkForms(context === 'automation' ? automationListId : undefined);
 
     const matches = (s: string): boolean =>
         search === '' || s.toLowerCase().includes(search.toLowerCase());
@@ -273,6 +278,11 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
         // v0.1.344 — el enlace a la ficha y la imagen de su código QR.
         { tag: 'registro.enlace', label: __('Enlace a la ficha del registro'), hint: 'https://…/lists/…/records/42' },
         { tag: 'registro.qr', label: __('Código QR del registro (imagen)'), hint: __('Para un bloque Imagen o el encabezado de WhatsApp') },
+        ...(editForms.data ?? []).map((f) => ({
+            tag: `formulario.${f.id}.enlace`,
+            label: __('Enlace para actualizar con «%s»').replace('%s', f.title),
+            hint: __('Abre el formulario con sus datos; al enviarlo, actualiza este registro'),
+        })),
     ];
     const visibleSystem = systemTags.filter((t) => matches(t.label) || matches(t.tag));
 

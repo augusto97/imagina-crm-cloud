@@ -265,3 +265,27 @@ export interface PublicFormDraft {
     page: number;
     expires_at: string;
 }
+
+// ─────────────── Actualizar un registro con el formulario (v0.1.360) ───────────────
+
+/**
+ * El código de un enlace para actualizar un registro: `<id del registro>.<vence
+ * (segundos)>.<firma>` (la firma, recortada a 32 hexadecimales, ata el enlace a
+ * la empresa, el formulario, el registro, el vencimiento y la versión de los
+ * enlaces: al invalidarlos todos, los anteriores dejan de servir).
+ */
+export const FORM_EDIT_CODE_RE = /^\d{1,12}\.\d{9,11}\.[0-9a-f]{32}$/;
+/** Días que vale un enlace para actualizar, por defecto y como máximo. */
+export const FORM_EDIT_DAYS_DEFAULT = 30;
+export const FORM_EDIT_DAYS_MAX = 365;
+
+/** Lo que la página recibe para actualizar un registro (nunca en caché). */
+export interface PublicFormEdit {
+    /** Lo que el registro tiene hoy en las preguntas del formulario (clave = id del campo). */
+    values: Record<string, unknown>;
+    /** Los archivos que ya tiene cada pregunta de archivos (sólo el nombre). */
+    files: Record<string, string[]>;
+    /** Hasta cuándo sirve el enlace. */
+    expires_at: string;
+}
+

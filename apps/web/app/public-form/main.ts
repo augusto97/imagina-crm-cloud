@@ -18,7 +18,7 @@
  * postMessage y se reemplazan en vivo.
  */
 import type { PublicFormFieldItem, PublicFormItem, PublicFormMeta, PublicThemeView } from '@imagina-base/shared';
-import { FORM_DRAFT_TTL_DAYS, formStatSource, type FormStatDevice, type FormStatEvent } from '@imagina-base/shared/src/schemas/form-stats-logic';
+import { FORM_DRAFT_TTL_DAYS, FORM_EDIT_CODE_RE, formStatSource, type FormStatDevice, type FormStatEvent, type PublicFormEdit } from '@imagina-base/shared/src/schemas/form-stats-logic';
 import {
     FORM_CALC_VALUE_PREFIX,
     formAnswerText,
@@ -158,13 +158,13 @@ function deviceKind(): FormStatDevice {
 }
 
 function trackView(): void {
-    if (BOOT.preview || !meta || meta.closed || !onceThisSession('v')) return;
+    if (BOOT.preview || editMode() || !meta || meta.closed || !onceThisSession('v')) return;
     const params = new URLSearchParams(location.search);
     stat({ kind: 'view', src: formStatSource({ utm_source: params.get('utm_source'), referrer: document.referrer, own_hosts: [location.hostname] }), dev: deviceKind() });
 }
 
 function trackStart(): void {
-    if (BOOT.preview || startedAt) return;
+    if (BOOT.preview || editMode() || startedAt) return;
     startedAt = Date.now();
     if (onceThisSession('s')) stat({ kind: 'start' });
     trackStep();
@@ -172,7 +172,7 @@ function trackStart(): void {
 
 /** Llegó a un paso nuevo (con varias páginas o una pregunta por pantalla). */
 function trackStep(): void {
-    if (BOOT.preview || !paged()) return;
+    if (BOOT.preview || editMode() || !paged()) return;
     const step = visiblePages().indexOf(current) + 1;
     if (step <= maxStep || step < 1) return;
     maxStep = step;
@@ -180,7 +180,7 @@ function trackStep(): void {
 }
 
 function trackLeave(): void {
-    if (BOOT.preview || leaveSent || submittedOk || !startedAt || !lastItem) return;
+    if (BOOT.preview || editMode() || leaveSent || submittedOk || !startedAt || !lastItem) return;
     leaveSent = true;
     stat({ kind: 'leave', item: lastItem });
 }
@@ -198,6 +198,36 @@ let noteText: string | null = null;
 /** Al dibujar, pintar los controles con lo que hay en `values` (al retomar). */
 let restoring = false;
 
+// ─────────────── Actualizar un registro (v0.1.360) ───────────────
+const EDIT_KEY = 'ib:e:' + BOOT.token;
+/** El enlace para actualizar con el que se está respondiendo (null = respuesta nueva). */
+let editCode: string | null = null;
+/** Los archivos que ya tiene cada pregunta de archivos (sólo el nombre). */
+let editFiles: Record<string, string[]> = {};
+/** Mientras llegan los datos del registro, no se muestra el formulario vacío. */
+let editLoading = false;
+
+function editing(): boolean {
+    return editCode !== null;
+}
+/** Actualizando (o por empezar): no cuenta para las estadísticas ni guarda el avance. */
+function editMode(): boolean {
+    return editCode !== null || editLoading;
+}
+
+/** El código del enlace: de la dirección o, si recargó la página, de esta pestaña. */
+function initialEditCode(): string | null {
+    if (BOOT.preview) return null;
+    const p = new URLSearchParams(location.search).get('editar');
+    if (p && FORM_EDIT_CODE_RE.test(p)) return p;
+    try {
+        const saved = sessionStorage.getItem(EDIT_KEY);
+        return saved && FORM_EDIT_CODE_RE.test(saved) ? saved : null;
+    } catch {
+        return null;
+    }
+}
+
 /** Las respuestas que se pueden guardar: no los archivos ni la firma. */
 function draftValues(): Record<string, unknown> {
     const out: Record<string, unknown> = {};
@@ -214,7 +244,7 @@ function draftValues(): Record<string, unknown> {
 }
 
 function persistLocal(): void {
-    if (BOOT.preview || !meta?.save_progress?.device || submittedOk || resumeOffer) return;
+    if (BOOT.preview || editMode() || !meta?.save_progress?.device || submittedOk || resumeOffer) return;
     if (saveTimer !== null) clearTimeout(saveTimer);
     saveTimer = window.setTimeout(() => {
         saveTimer = null;
@@ -270,6 +300,14 @@ function applyDraft(v: Record<string, unknown>, page: number): void {
     reportHeight();
 }
 
+/** v0.1.360 — Un instante guardado (ISO) en el formato de `datetime-local`, en la hora de este dispositivo. */
+function localDateTime(iso: string): string {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    const p2 = (n: number): string => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+
 /** Pinta cada control con su respuesta (al retomar lo guardado). */
 function restoreControls(controls: Record<string, Control>): void {
     for (const f of fields()) {
@@ -282,7 +320,14 @@ function restoreControls(controls: Record<string, Control>): void {
             const cb = c instanceof HTMLInputElement ? c : c.querySelector<HTMLInputElement>('input[type=checkbox]');
             if (cb) cb.checked = v;
         } else {
-            const str = v === null ? '' : typeof v === 'number' && ['number', 'currency', 'percent'].includes(f.field_type) ? fmtNum(v) : String(v);
+            const str =
+                v === null
+                    ? ''
+                    : typeof v === 'number' && ['number', 'currency', 'percent'].includes(f.field_type)
+                      ? fmtNum(v)
+                      : f.field_type === 'datetime' && typeof v === 'string'
+                        ? localDateTime(v)
+                        : String(v);
             const inp =
                 c instanceof HTMLInputElement || c instanceof HTMLTextAreaElement || c instanceof HTMLSelectElement
                     ? c
@@ -612,7 +657,9 @@ function validate(items: Item[]): boolean {
         if (i.type !== 'field' || i.hidden || !visible(i)) continue;
         setErr(i.id, '');
         const v = values[i.key];
-        if (i.required && !formAnswered(i.display, v)) {
+        // v0.1.360 — al actualizar, los archivos que ya tenía cuentan como respuesta.
+        const keeps = i.field_type === 'file' && editing() && (editFiles[i.key]?.length ?? 0) > 0;
+        if (i.required && !keeps && !formAnswered(i.display, v)) {
             setErr(i.id, i.display === 'ranking' ? 'Ordena las opciones (o toca «Dejar este orden»).' : i.display === 'signature' ? 'Falta la firma.' : 'Esta pregunta es obligatoria.');
             bad = true;
         } else if (i.other && choseOther(i) && empty(values[i.other.key])) {
@@ -981,7 +1028,7 @@ function signatureControl(f: FieldItem): Control {
     const key = f.key;
     uploads[key] = [];
     const canvas = el('canvas', { cls: 'ib-sign-canvas', id: 'q_' + f.id, role: 'img', 'aria-label': 'Espacio para firmar' });
-    const hint = el('div', { cls: 'ib-sign-hint', text: 'Firma aquí con el dedo o el mouse' });
+    const hint = el('div', { cls: 'ib-sign-hint', text: editing() && editFiles[key]?.length ? 'Ya firmaste. Firma de nuevo sólo si quieres cambiarla.' : 'Firma aquí con el dedo o el mouse' });
     const pad = el('div', { cls: 'ib-sign' }, [canvas, el('div', { cls: 'ib-sign-line', 'aria-hidden': 'true' }), hint]);
     const status = el('span', { cls: 'ib-sign-status', 'aria-live': 'polite' });
     const clear = el('button', { type: 'button', text: 'Borrar y volver a firmar', hidden: true });
@@ -1534,11 +1581,17 @@ function filesControl(f: FieldItem, id: string): Control {
                 });
         }
     });
-    return el('div', { cls: 'ib-files' }, [drop, limits, picker, ul]);
+    // v0.1.360 — al actualizar: lo que ya tiene (si sube otros, los reemplazan).
+    const current = editing() ? (editFiles[key] ?? []) : [];
+    const had = current.length
+        ? el('p', { cls: 'ib-help ib-files-current', 'data-testid': 'form-files-current', text: `Ya tienes: ${current.join(', ')}. Si subes otros, reemplazan a éstos.` })
+        : null;
+    return el('div', { cls: 'ib-files' }, [had, drop, limits, picker, ul]);
 }
 
 function prefill(controls: Record<string, Control>): void {
-    if (!meta?.allow_prefill || BOOT.preview) return;
+    // v0.1.360 — al actualizar, manda lo que tiene el registro (no la dirección).
+    if (!meta?.allow_prefill || BOOT.preview || editMode()) return;
     const params = new URLSearchParams(location.search);
     for (const f of fields()) {
         if (!params.has(f.slug)) continue;
@@ -1909,6 +1962,12 @@ function render(keepPage: boolean): void {
         return;
     }
 
+    // v0.1.360 — llegan los datos del registro a actualizar.
+    if (editLoading) {
+        r.appendChild(el('div', { cls: 'ib-note', role: 'status', text: 'Cargando tus datos…', 'data-testid': 'form-edit-loading' }));
+        return;
+    }
+
     // v0.1.358 — lo guardado de la última vez (en este navegador) o un aviso.
     if (noteText && !BOOT.preview) r.appendChild(el('div', { cls: 'ib-note', role: 'status', text: noteText, 'data-testid': 'form-note' }));
     if (resumeOffer && !BOOT.preview) r.appendChild(resumeNode(resumeOffer));
@@ -1917,7 +1976,7 @@ function render(keepPage: boolean): void {
     // respuestas que llegan en la dirección ya cuentan (su texto puede decir
     // «Hola, {{nombre}}»).
     const w = meta.welcome;
-    if (w && (BOOT.preview ? previewWelcome : !started)) {
+    if (w && !editing() && (BOOT.preview ? previewWelcome : !started)) {
         prefill({});
         r.appendChild(welcomeNode(w));
         if (w.title) r.classList.add('ib-welcome-hide');
@@ -1959,7 +2018,7 @@ function render(keepPage: boolean): void {
 
     const hp = el('div', { cls: 'ib-hp', 'aria-hidden': 'true' }, [el('label', { text: 'No completar' }), el('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off' })]);
     form.appendChild(hp);
-    if (meta.captcha) {
+    if (meta.captcha && !editing()) {
         if (BOOT.preview) {
             const names: Record<string, string> = { turnstile: 'Cloudflare Turnstile', hcaptcha: 'hCaptcha', recaptcha: 'Google reCAPTCHA' };
             form.appendChild(el('div', { cls: 'ib-captcha-ph', text: `Aquí aparece la verificación anti-robots (${names[meta.captcha.provider] ?? meta.captcha.provider}).` }));
@@ -1971,7 +2030,7 @@ function render(keepPage: boolean): void {
     if (meta.data_consent) form.appendChild(consentNode(meta.data_consent));
     alertBox = el('div', { cls: 'ib-alert', role: 'alert', hidden: true });
     form.appendChild(alertBox);
-    submitBtn = primaryButton(meta.submit_label || 'Enviar', 'submit');
+    submitBtn = primaryButton(editing() ? 'Guardar cambios' : meta.submit_label || 'Enviar', 'submit');
     if (paged()) {
         prevBtn = el('button', { type: 'button', cls: 'ib-btn ib-btn-secondary', text: 'Anterior' });
         nextBtn = primaryButton('Siguiente', 'button');
@@ -1987,7 +2046,7 @@ function render(keepPage: boolean): void {
         form.appendChild(el('div', { cls: 'ib-actions' }, [submitBtn]));
     }
     // v0.1.358 — «Guardar y seguir después» (un enlace al correo).
-    if (meta.save_progress?.email) {
+    if (meta.save_progress?.email && !editing()) {
         const later = saveLater(() => hp.querySelector('input')!.value);
         form.appendChild(el('div', { cls: 'ib-save-line' }, [later.btn]));
         form.appendChild(later.box);
@@ -1997,7 +2056,7 @@ function render(keepPage: boolean): void {
     // v0.1.358 — al retomar lo guardado, cada control muestra su respuesta.
     if (restoring) restoreControls(controls);
     refresh();
-    if (!paged() && meta.captcha && !BOOT.preview) mountCaptcha();
+    if (!paged() && meta.captcha && !editing() && !BOOT.preview) mountCaptcha();
 
     function advance(): void {
         if (!BOOT.preview) {
@@ -2054,7 +2113,7 @@ function submit(hpValue: string): void {
         focusFirstError();
         return;
     }
-    if (m.captcha && !captchaToken) {
+    if (m.captcha && !editing() && !captchaToken) {
         alertBox!.textContent = 'Completa la verificación para enviar.';
         alertBox!.hidden = false;
         return;
@@ -2074,17 +2133,19 @@ function submit(hpValue: string): void {
         if (values[i.key] !== undefined) outValues[i.key] = values[i.key];
         if (i.other && choseOther(i) && values[i.other.key] !== undefined) outValues[i.other.key] = values[i.other.key];
     }
-    const label = m.submit_label || 'Enviar';
+    const label = editing() ? 'Guardar cambios' : m.submit_label || 'Enviar';
     setBusy(true, label);
     const body: Record<string, unknown> = { values: outValues, uploads: outUploads, hp: hpValue };
-    if (m.captcha) body.captcha = captchaToken;
+    if (m.captcha && !editing()) body.captcha = captchaToken;
+    // v0.1.360 — actualiza el registro del enlace en vez de crear otro.
+    if (editCode) body.edit = editCode;
     if (m.data_consent && consentCb) {
         body.consent = consentCb.checked;
         body.consent_version = m.data_consent.version;
     }
     // v0.1.358 — cuánto tardó (para el tiempo promedio) y el avance que termina.
-    if (startedAt) body.elapsed_ms = Math.min(7 * 86_400_000, Date.now() - startedAt);
-    if (draftCode) body.draft = draftCode;
+    if (startedAt && !editing()) body.elapsed_ms = Math.min(7 * 86_400_000, Date.now() - startedAt);
+    if (draftCode && !editing()) body.draft = draftCode;
     readyStamp()
         .then((stamp) => {
             body.stamp = stamp;
@@ -2104,8 +2165,15 @@ function submit(hpValue: string): void {
                 ending_id?: string | null;
                 calcs?: Record<string, number>;
                 message?: string;
+                updated?: boolean;
+                code?: string;
                 data?: { errors?: Record<string, string> };
             };
+            if (res.ok && b.updated) {
+                submittedOk = true;
+                return editDone();
+            }
+            if (!res.ok && b.code === 'form_edit_expired') return editGone(b.message);
             if (res.ok) {
                 // v0.1.358 — enviado: lo guardado ya no hace falta.
                 submittedOk = true;
@@ -2118,7 +2186,7 @@ function submit(hpValue: string): void {
                 return done(b.ending_id ?? null);
             }
             // El token del captcha ya se usó (el servidor lo verifica una vez).
-            if (m.captcha) resetCaptcha();
+            if (m.captcha && !editing()) resetCaptcha();
             // Un sello vencido (la pestaña quedó abierta un día): el próximo intento pide otro.
             if ((res.b as { code?: string }).code === 'form_stale') stampPromise = null;
             const errs = b.data?.errors;
@@ -2264,6 +2332,42 @@ function done(endingId: string | null = null): void {
         kids.push(again);
     }
     finalScreen(kids, 'form-done');
+}
+
+// v0.1.360 — los cambios del enlace «actualizar mis datos» quedaron guardados.
+function editDone(): void {
+    try {
+        sessionStorage.removeItem(EDIT_KEY);
+    } catch {
+        // nada
+    }
+    finalScreen(
+        [
+            el('div', { cls: 'ib-tick', text: '✓', 'aria-hidden': 'true' }),
+            el('h2', { text: '¡Listo!' }),
+            paragraphs(meta?.edit_links?.message || 'Guardamos tus cambios.', 'ib-done-msg'),
+        ],
+        'form-edit-done',
+    );
+}
+
+/** v0.1.360 — El enlace para actualizar ya no sirve (vencido, invalidado o el registro ya no existe). */
+function editGone(message?: string): void {
+    try {
+        sessionStorage.removeItem(EDIT_KEY);
+    } catch {
+        // nada
+    }
+    editCode = null;
+    editLoading = false;
+    finalScreen(
+        [
+            el('div', { cls: 'ib-tick', text: '!', 'aria-hidden': 'true' }),
+            el('h2', { text: 'Este enlace ya no sirve' }),
+            el('p', { text: message || 'Este enlace para actualizar tus datos venció o ya no está disponible. Pide uno nuevo a quien te lo envió.' }),
+        ],
+        'form-edit-gone',
+    );
 }
 
 // Doble opt-in: la respuesta quedó pendiente hasta que abra el enlace.
@@ -2438,6 +2542,10 @@ if (BOOT.preview) {
     parent.postMessage({ type: 'imb-form-ready' }, location.origin);
 }
 
+// v0.1.360 — un enlace para actualizar un registro: el formulario espera sus datos.
+const pendingEdit = initialEditCode();
+if (pendingEdit && meta?.edit_links && !meta.closed) editLoading = true;
+
 render(false);
 
 // v0.1.352 — el sello se pide al primer contacto con el formulario (no al cargarlo).
@@ -2474,7 +2582,40 @@ if (!BOOT.preview && meta && !meta.closed) {
 
     const params = new URLSearchParams(location.search);
     const code = params.get('seguir');
-    if (code && meta.save_progress?.email) {
+    if (editLoading && pendingEdit) {
+        // El código no queda en la barra (se copia o se comparte sin querer):
+        // esta pestaña lo recuerda si se recarga.
+        if (params.has('editar')) {
+            params.delete('editar');
+            try {
+                history.replaceState(null, '', location.pathname + (params.toString() ? `?${params.toString()}` : '') + location.hash);
+            } catch {
+                // nada
+            }
+        }
+        try {
+            sessionStorage.setItem(EDIT_KEY, pendingEdit);
+        } catch {
+            // nada
+        }
+        fetch(`${API}/edit/${encodeURIComponent(pendingEdit)}`, { credentials: 'omit', cache: 'no-store' })
+            .then((r) =>
+                r.ok
+                    ? (r.json() as Promise<PublicFormEdit>)
+                    : r.json().then(
+                          (b: { message?: string; code?: string }) => Promise.reject(new Error(r.status === 403 && b.message ? b.message : '')),
+                          () => Promise.reject(new Error('')),
+                      ),
+            )
+            .then((d) => {
+                editCode = pendingEdit;
+                editFiles = d.files ?? {};
+                editLoading = false;
+                noteText = 'Estás actualizando tus datos. Cambia lo que haga falta y toca «Guardar cambios».';
+                applyDraft(d.values ?? {}, 0);
+            })
+            .catch((err: Error) => editGone(err.message || undefined));
+    } else if (code && meta.save_progress?.email) {
         // El enlace del correo: lo guardado se retoma en el paso donde quedó.
         params.delete('seguir');
         const clean = location.pathname + (params.toString() ? `?${params.toString()}` : '') + location.hash;

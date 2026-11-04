@@ -40,6 +40,7 @@ import {
     buildPublicThemeCss,
     publicThemeView,
 } from '@imagina-base/shared';
+import { z } from 'zod';
 import { ENV, type Env } from '../config/env';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuditService } from '../audit/audit.service';
@@ -67,6 +68,7 @@ import { FormsService, type ConfirmOutcome, type FormPageInfo } from './forms.se
 import { PublicBusyError } from '../public-cache/public-cache';
 import { PUBLIC_PAGE_CACHE_CONTROL, busyPage, precompress, sendPrecompressed, type Precompressed } from '../public-cache/public-send';
 import { PlanModule } from '../tenancy/plan-module.decorator';
+import { aclOf } from '../tenancy/acl-of';
 
 /**
  * v0.1.275 (ADR-S39) — Formularios de una lista. Armarlos es de quien arma
@@ -84,6 +86,30 @@ export class FormsController {
         private readonly captcha: CaptchaService,
         @Optional() private readonly dataConsent?: DataConsentService,
     ) {}
+
+    /**
+     * v0.1.360 — Los formularios publicados que aceptan enlaces para
+     * actualizar un registro (la ficha los ofrece). Lo ve quien puede editar
+     * registros: es quien va a mandar el enlace.
+     */
+    @Get('edit-links')
+    @RequireCapability('edit_records', 'edit_own_records')
+    async editLinkForms(@Req() req: FastifyRequest, @Param('list') list: string): Promise<{ data: Array<{ id: number; name: string; title: string; days: number }> }> {
+        return { data: await this.forms.editLinkForms(req.tenant!.tenantId, list) };
+    }
+
+    /** v0.1.360 — El enlace para que alguien actualice ESTE registro con el formulario. */
+    @Post(':id/edit-link')
+    @HttpCode(200)
+    @RequireCapability('edit_records', 'edit_own_records')
+    async editLink(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(z.object({ record_id: z.number().int().positive() }))) body: { record_id: number },
+    ): Promise<{ url: string; expires_at: string }> {
+        return this.forms.createEditLink(req.tenant!.tenantId, { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) }, list, id, body.record_id);
+    }
 
     @Get()
     @RequireCapability('manage_forms', 'manage_automations')
@@ -257,6 +283,16 @@ export class PublicFormsController {
         @Body(new ZodValidationPipe(saveFormDraftSchema)) input: SaveFormDraftInput,
     ): Promise<SaveFormDraftResult> {
         return this.forms.saveDraft(token, req.ip, input);
+    }
+
+    /**
+     * v0.1.360 — Lo que un registro tiene hoy en las preguntas del formulario,
+     * para el enlace «actualizar mis datos» (nunca en caché: son datos de alguien).
+     */
+    @Get(':token/edit/:code')
+    async loadEdit(@Param('token') token: string, @Param('code') code: string, @Res() reply: FastifyReply): Promise<void> {
+        const out = await this.forms.loadEdit(token, code);
+        reply.header('Cache-Control', 'no-store').header('Referrer-Policy', 'no-referrer').send(out);
     }
 
     /** v0.1.358 — El avance de un enlace «seguir después» (nunca en caché: son respuestas de alguien). */

@@ -1361,4 +1361,29 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'En **Configurar lista → Formularios**, toca **Nuevo formulario** y elige una plantilla. El panel lateral, la pantalla completa y el código QR están en **Compartir**.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.360-actualizar-con-formulario',
+        version: '0.1.360',
+        date: '2026-11-04',
+        kind: 'feature',
+        title: 'Que tus clientes actualicen sus datos con un formulario',
+        summary:
+            'Manda un enlace que abre el formulario con lo que el registro ya tiene: la persona corrige lo que cambió y se guarda en ese mismo registro, sin crear otro.',
+        media: {
+            slides: [
+                {
+                    title: 'El formulario abre con sus datos',
+                    text: 'Nombre, correo, teléfono… ya vienen puestos. La persona corrige lo que cambió y toca «Guardar cambios».',
+                    illustration: 'form-edit-link',
+                },
+                {
+                    title: 'Desde la ficha o en una automatización',
+                    text: 'Copia el enlace de un registro con un clic, o usa la variable del formulario en un correo, un WhatsApp o un SMS para mandárselo a todos.',
+                    illustration: 'form-edit-link',
+                },
+            ],
+        },
+        body: 'Edita el formulario y en **Ajustes → Actualizar un registro** enciende los enlaces. Después, en la ficha de un registro, toca el ícono **Enlace para actualizar**.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];
