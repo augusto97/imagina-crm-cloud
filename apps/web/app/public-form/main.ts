@@ -18,10 +18,11 @@
  * postMessage y se reemplazan en vivo.
  */
 import type { PublicFormFieldItem, PublicFormItem, PublicFormMeta, PublicThemeView } from '@imagina-base/shared';
-import { formItemVisible, formPageVisible, splitFormPages } from '@imagina-base/shared/src/schemas/form-logic';
+import { formAnswered, formItemVisible, formPageVisible, formScaleValues, splitFormPages } from '@imagina-base/shared/src/schemas/form-logic';
 
 type FieldItem = PublicFormFieldItem;
 type ImageItem = Extract<PublicFormItem, { type: 'image' }>;
+type MatrixItem = Extract<PublicFormItem, { type: 'matrix' }>;
 type Item = PublicFormItem;
 
 interface Boot {
@@ -112,6 +113,8 @@ let consentBox: HTMLElement | null = null;
 let captchaToken: string | null = null;
 let captchaWidget: unknown = null;
 let captchaMounted = false;
+/** v0.1.355 — El campo de texto del «Otro» de cada pregunta (se muestra al elegir esa opción). */
+let otherEls: Record<string, { wrap: HTMLElement; input: HTMLInputElement }> = {};
 
 // ───────────────────────────── Utilidades ─────────────────────────────
 
@@ -180,8 +183,30 @@ function fields(): FieldItem[] {
 function visible(item: Item): boolean {
     return formItemVisible(item as never, (meta?.items ?? []).map(normalized) as never, values);
 }
-function normalized(i: Item): { type: string; field_id?: number; show_if: unknown } {
-    return { type: i.type, field_id: i.type === 'field' ? Number(i.key) : undefined, show_if: i.show_if };
+function normalized(i: Item): { type: string; field_id?: number; rows?: MatrixItem['rows']; show_if: unknown } {
+    return {
+        type: i.type,
+        field_id: i.type === 'field' ? Number(i.key) : undefined,
+        rows: i.type === 'matrix' ? i.rows : undefined,
+        show_if: i.show_if,
+    };
+}
+
+/** v0.1.355 — ¿Eligió la opción «Otro» de esta pregunta? */
+function choseOther(f: FieldItem): boolean {
+    if (!f.other) return false;
+    const v = values[f.key];
+    return Array.isArray(v) ? v.map(String).includes(f.other.value) : v === f.other.value;
+}
+
+/** Un número con los separadores de la empresa. */
+function fmtNum(n: number): string {
+    const fmt = meta?.number_format ?? 'comma_dot';
+    const [int, dec] = String(Math.abs(n)).split('.');
+    const sep = fmt === 'comma_dot' ? ',' : fmt === 'dot_comma' ? '.' : '\u00a0';
+    const grouped = (int ?? '0').replace(/\B(?=(\d{3})+(?!\d))/g, sep);
+    const decSep = fmt === 'comma_dot' ? '.' : ',';
+    return `${n < 0 ? '-' : ''}${grouped}${dec ? decSep + dec : ''}`;
 }
 
 function paged(): boolean {
@@ -241,11 +266,23 @@ function clearErrs(): void {
 function validate(items: Item[]): boolean {
     let bad = false;
     for (const i of items) {
+        if (i.type === 'matrix') {
+            if (!visible(i)) continue;
+            setErr(i.id, '');
+            if (i.required && i.rows.some((r) => empty(values[r.key]))) {
+                setErr(i.id, 'Responde todas las filas.');
+                bad = true;
+            }
+            continue;
+        }
         if (i.type !== 'field' || i.hidden || !visible(i)) continue;
         setErr(i.id, '');
         const v = values[i.key];
-        if (i.required && empty(v)) {
-            setErr(i.id, 'Esta pregunta es obligatoria.');
+        if (i.required && !formAnswered(i.display, v)) {
+            setErr(i.id, i.display === 'ranking' ? 'Ordena las opciones (o toca «Dejar este orden»).' : i.display === 'signature' ? 'Falta la firma.' : 'Esta pregunta es obligatoria.');
+            bad = true;
+        } else if (i.other && choseOther(i) && empty(values[i.other.key])) {
+            setErr(i.id, 'Escribe cuál.');
             bad = true;
         } else if (i.field_type === 'email' && !empty(v) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v))) {
             setErr(i.id, 'Revisa el correo.');
@@ -254,7 +291,7 @@ function validate(items: Item[]): boolean {
             setErr(i.id, 'Escribe un número.');
             bad = true;
         } else if (i.field_type === 'file' && (uploads[i.key] ?? []).some((u) => u.pending)) {
-            setErr(i.id, 'Espera a que termine de subir.');
+            setErr(i.id, i.display === 'signature' ? 'Espera a que termine de guardarse la firma.' : 'Espera a que termine de subir.');
             bad = true;
         }
     }
@@ -344,6 +381,23 @@ function control(f: FieldItem, float: boolean): Control {
         });
         return input;
     };
+    // v0.1.355 — las formas propias (escala, deslizador, sí/no, firma, ordenar, buscador).
+    switch (f.display) {
+        case 'scale':
+            return scaleControl(f);
+        case 'slider':
+            return sliderControl(f);
+        case 'yes_no':
+            return yesNoControl(f);
+        case 'signature':
+            return signatureControl(f);
+        case 'ranking':
+            return rankingControl(f);
+        case 'search':
+            return withOther(f, searchControl(f));
+        default:
+            break;
+    }
     // C1 — un «Equipo» se dibuja como una selección (una o varias).
     const kind = f.field_type === 'team' ? (f.display === 'checkboxes' ? 'multi_select' : 'select') : f.field_type;
     switch (kind) {
@@ -421,17 +475,623 @@ function control(f: FieldItem, float: boolean): Control {
                     setErr(f.id, '');
                     refresh();
                 });
-                return sel;
+                return withOther(f, sel);
             }
-            return choices(f, false);
+            return withOther(f, choices(f, false));
         }
         case 'multi_select':
-            return choices(f, true);
+            return withOther(f, choices(f, true));
         case 'file':
             return filesControl(f, id);
         default:
             return bindText(el('input', { type: 'text', id, placeholder: ph, maxlength: cfg.max_length }));
     }
+}
+
+// ─────────────────────── Formas propias (v0.1.355) ───────────────────────
+
+/** Mueve el foco entre botones de un grupo con las flechas (y elige al moverse). */
+function arrowNav(btns: HTMLButtonElement[], onPick: (idx: number) => void): void {
+    btns.forEach((b, idx) => {
+        b.addEventListener('keydown', (e) => {
+            const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+            if (!dir) return;
+            e.preventDefault();
+            const next = (idx + dir + btns.length) % btns.length;
+            btns[next]!.focus();
+            onPick(next);
+        });
+    });
+}
+
+/** Etiquetas debajo de una escala o un deslizador («Nada probable» · «Muy probable»). */
+function rangeLabels(r: NonNullable<FieldItem['range']>, fallback: [string, string]): HTMLElement | null {
+    const low = r.low_label || fallback[0];
+    const high = r.high_label || fallback[1];
+    if (!low && !high && !r.mid_label) return null;
+    return el('div', { cls: 'ib-scale-labels', 'aria-hidden': 'true' }, [el('span', { text: low }), el('span', { text: r.mid_label }), el('span', { text: high })]);
+}
+
+/** Escala de botones numerados (NPS, 1 a 5…). Tocar el elegido lo quita. */
+function scaleControl(f: FieldItem): Control {
+    const key = f.key;
+    const r = f.range!;
+    const vals = formScaleValues(r);
+    const group = el('div', { cls: `ib-scale${vals.length > 6 ? ' ib-scale-many' : ''}`, role: 'radiogroup', 'aria-labelledby': 'l_' + f.id });
+    group.style.setProperty('--ib-n', String(vals.length));
+    const btns: HTMLButtonElement[] = [];
+    const paint = (): void =>
+        btns.forEach((b, i) => {
+            const on = values[key] === vals[i];
+            b.setAttribute('aria-checked', String(on));
+            b.tabIndex = on || ((values[key] === null || values[key] === undefined) && i === 0) ? 0 : -1;
+        });
+    const pick = (idx: number, toggle: boolean): void => {
+        const v = vals[idx]!;
+        values[key] = toggle && values[key] === v ? null : v;
+        paint();
+        setErr(f.id, '');
+        kickStamp();
+        refresh();
+    };
+    vals.forEach((v, idx) => {
+        const b = el('button', { type: 'button', role: 'radio', 'aria-checked': 'false', 'aria-label': r.low_label && idx === 0 ? `${fmtNum(v)} · ${r.low_label}` : r.high_label && idx === vals.length - 1 ? `${fmtNum(v)} · ${r.high_label}` : fmtNum(v), text: fmtNum(v) });
+        b.addEventListener('click', () => pick(idx, true));
+        btns.push(b);
+        group.appendChild(b);
+    });
+    arrowNav(btns, (idx) => pick(idx, false));
+    paint();
+    const box: Control = el('div', { cls: 'ib-scale-wrap' }, [group, rangeLabels(r, ['', ''])]);
+    box._paint = paint;
+    return box;
+}
+
+/** Cómo se lee el valor de un deslizador (con su moneda o su porcentaje). */
+function sliderText(f: FieldItem, n: number): string {
+    if (f.field_type === 'currency') return `${f.config.currency || '$'} ${fmtNum(n)}`;
+    if (f.field_type === 'percent') return `${fmtNum(n)} %`;
+    if (f.field_type === 'rating') return `${fmtNum(n)} de ${f.range!.max}`;
+    return fmtNum(n);
+}
+
+/** Deslizador. Hasta que se mueve no hay respuesta (y lo dice). */
+function sliderControl(f: FieldItem): Control {
+    const key = f.key;
+    const r = f.range!;
+    const start = r.min + Math.round((r.max - r.min) / r.step / 2) * r.step;
+    const input = el('input', { type: 'range', id: 'q_' + f.id, min: r.min, max: r.max, step: r.step, value: start });
+    const out = el('output', { cls: 'ib-slider-value ib-unset', for: 'q_' + f.id, 'aria-live': 'polite', text: 'Mueve el control' });
+    const paint = (): void => {
+        const v = values[key];
+        if (typeof v === 'number' && Number.isFinite(v)) {
+            input.value = String(v);
+            out.textContent = sliderText(f, v);
+            out.classList.remove('ib-unset');
+            input.setAttribute('aria-valuetext', sliderText(f, v));
+        } else {
+            out.textContent = 'Mueve el control';
+            out.classList.add('ib-unset');
+            input.removeAttribute('aria-valuetext');
+        }
+    };
+    input.addEventListener('input', () => {
+        values[key] = Number(input.value);
+        paint();
+        setErr(f.id, '');
+        kickStamp();
+        refresh();
+    });
+    const box: Control = el('div', { cls: 'ib-slider' }, [
+        el('div', { cls: 'ib-slider-row' }, [input, out]),
+        rangeLabels(r, [sliderText(f, r.min), sliderText(f, r.max)]),
+    ]);
+    box._paint = paint;
+    return box;
+}
+
+/** Dos botones «Sí» y «No». Tocar el elegido lo quita. */
+function yesNoControl(f: FieldItem): Control {
+    const key = f.key;
+    const group: Control = el('div', { cls: 'ib-yesno', role: 'radiogroup', 'aria-labelledby': 'l_' + f.id });
+    const opts: Array<[boolean, string]> = [
+        [true, f.yes_label || 'Sí'],
+        [false, f.no_label || 'No'],
+    ];
+    const btns = opts.map(([, text]) => el('button', { type: 'button', role: 'radio', 'aria-checked': 'false', text }));
+    const paint = (): void =>
+        btns.forEach((b, i) => {
+            const on = values[key] === opts[i]![0];
+            b.setAttribute('aria-checked', String(on));
+            b.tabIndex = on || (values[key] !== true && values[key] !== false && i === 0) ? 0 : -1;
+        });
+    const pick = (idx: number, toggle: boolean): void => {
+        const v = opts[idx]![0];
+        values[key] = toggle && values[key] === v ? null : v;
+        paint();
+        setErr(f.id, '');
+        kickStamp();
+        refresh();
+    };
+    btns.forEach((b, idx) => {
+        b.addEventListener('click', () => pick(idx, true));
+        group.appendChild(b);
+    });
+    arrowNav(btns, (idx) => pick(idx, false));
+    paint();
+    group._paint = paint;
+    return group;
+}
+
+/** Sube un archivo (o la firma) para una pregunta; devuelve su comprobante. */
+function uploadBlob(key: string, blob: Blob, name: string): Promise<{ token: string; name: string }> {
+    const fd = new FormData();
+    fd.append('file', blob, name);
+    return ensureStamp()
+        .then(({ stamp }) =>
+            fetch(`${API}/files?field=${encodeURIComponent(key)}`, { method: 'POST', body: fd, credentials: 'omit', headers: { 'X-Form-Stamp': stamp } }),
+        )
+        .then((r) => r.json().then((b: { message?: string; token?: string; name?: string }) => ({ ok: r.ok, b })))
+        .then((res) => {
+            if (!res.ok || !res.b.token) throw new Error(res.b?.message || 'No se pudo subir el archivo.');
+            return { token: res.b.token, name: res.b.name || name };
+        });
+}
+
+/**
+ * Firma dibujada con el dedo o el mouse, sobre «papel» blanco (se ve igual en
+ * modo oscuro y en el registro). Se guarda como PNG un momento después de
+ * dejar de firmar: se sube como cualquier archivo de la pregunta.
+ */
+function signatureControl(f: FieldItem): Control {
+    const key = f.key;
+    uploads[key] = [];
+    const canvas = el('canvas', { cls: 'ib-sign-canvas', id: 'q_' + f.id, role: 'img', 'aria-label': 'Espacio para firmar' });
+    const hint = el('div', { cls: 'ib-sign-hint', text: 'Firma aquí con el dedo o el mouse' });
+    const pad = el('div', { cls: 'ib-sign' }, [canvas, el('div', { cls: 'ib-sign-line', 'aria-hidden': 'true' }), hint]);
+    const status = el('span', { cls: 'ib-sign-status', 'aria-live': 'polite' });
+    const clear = el('button', { type: 'button', text: 'Borrar y volver a firmar', hidden: true });
+    let ctx: CanvasRenderingContext2D | null = null;
+    let drawing = false;
+    let dirty = false;
+    let last: { x: number; y: number } | null = null;
+    let timer: number | undefined;
+    let seq = 0;
+    const fit = (): void => {
+        const rect = canvas.getBoundingClientRect();
+        if (!rect.width) return;
+        const dpr = Math.min(3, window.devicePixelRatio || 1);
+        canvas.width = Math.round(rect.width * dpr);
+        canvas.height = Math.round(rect.height * dpr);
+        ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, rect.width, rect.height);
+        ctx.lineWidth = 2.6;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = '#111827';
+    };
+    const point = (e: PointerEvent): { x: number; y: number } => {
+        const rect = canvas.getBoundingClientRect();
+        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    };
+    const reset = (): void => {
+        dirty = false;
+        uploads[key] = [];
+        values[key] = null;
+        hint.hidden = false;
+        clear.hidden = true;
+        status.textContent = '';
+        seq++;
+        fit();
+        refresh();
+    };
+    const save = (): void => {
+        if (!dirty) return;
+        values[key] = ['x'];
+        if (BOOT.preview) {
+            status.textContent = 'Firma lista';
+            refresh();
+            return;
+        }
+        const mine = ++seq;
+        const u: Upload = { name: 'firma.png', pending: true };
+        uploads[key] = [u];
+        status.textContent = 'Guardando la firma…';
+        refresh();
+        canvas.toBlob((blob) => {
+            if (!blob || mine !== seq) return;
+            uploadBlob(key, blob, 'firma.png')
+                .then((res) => {
+                    if (mine !== seq) return;
+                    u.pending = false;
+                    u.token = res.token;
+                    status.textContent = 'Firma lista ✓';
+                    setErr(f.id, '');
+                    refresh();
+                })
+                .catch((err: Error) => {
+                    if (mine !== seq) return;
+                    uploads[key] = [];
+                    values[key] = null;
+                    status.textContent = '';
+                    setErr(f.id, err.message || 'No se pudo guardar la firma.');
+                    refresh();
+                });
+        }, 'image/png');
+    };
+    canvas.addEventListener('pointerdown', (e) => {
+        if (!ctx || canvas.width === 0 || (!dirty && Math.abs(canvas.getBoundingClientRect().width * Math.min(3, window.devicePixelRatio || 1) - canvas.width) > 2)) fit();
+        if (!ctx) return;
+        e.preventDefault();
+        canvas.setPointerCapture(e.pointerId);
+        drawing = true;
+        last = point(e);
+        ctx.beginPath();
+        ctx.arc(last.x, last.y, 1.2, 0, Math.PI * 2);
+        ctx.fillStyle = '#111827';
+        ctx.fill();
+        dirty = true;
+        hint.hidden = true;
+        clear.hidden = false;
+        window.clearTimeout(timer);
+        kickStamp();
+    });
+    canvas.addEventListener('pointermove', (e) => {
+        if (!drawing || !ctx || !last) return;
+        const p = point(e);
+        ctx.beginPath();
+        ctx.moveTo(last.x, last.y);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+        last = p;
+    });
+    const end = (): void => {
+        if (!drawing) return;
+        drawing = false;
+        last = null;
+        window.clearTimeout(timer);
+        timer = window.setTimeout(save, 600);
+    };
+    canvas.addEventListener('pointerup', end);
+    canvas.addEventListener('pointercancel', end);
+    clear.addEventListener('click', reset);
+    window.addEventListener('resize', () => {
+        if (!dirty) fit();
+    });
+    requestAnimationFrame(fit);
+    return el('div', { cls: 'ib-sign-box' }, [pad, el('div', { cls: 'ib-sign-bar' }, [status, clear])]);
+}
+
+/**
+ * Ordenar opciones: se arrastran (con el dedo o el mouse) o se mueven con las
+ * flechas. Hasta que se toca, no hay respuesta («Dejar este orden» la da).
+ */
+function rankingControl(f: FieldItem): Control {
+    const key = f.key;
+    const opts = f.ranking ?? [];
+    const labelOf = new Map(opts.map((o) => [o.value, o.label]));
+    let order = opts.map((o) => o.value);
+    const list = el('ol', { cls: 'ib-rank ib-untouched', 'aria-labelledby': 'l_' + f.id });
+    const keep = el('button', { type: 'button', cls: 'ib-rank-keep', text: 'Dejar este orden' });
+    const commit = (): void => {
+        values[key] = [...order];
+        list.classList.remove('ib-untouched');
+        keep.hidden = true;
+        setErr(f.id, '');
+        kickStamp();
+        refresh();
+    };
+    const draw = (focus?: { value: string; dir: 'up' | 'down' }): void => {
+        list.textContent = '';
+        order.forEach((v, idx) => {
+            const up = el('button', { type: 'button', 'aria-label': `Subir «${labelOf.get(v) ?? v}»`, text: '↑', disabled: idx === 0 });
+            const down = el('button', { type: 'button', 'aria-label': `Bajar «${labelOf.get(v) ?? v}»`, text: '↓', disabled: idx === order.length - 1 });
+            const move = (delta: number, dir: 'up' | 'down'): void => {
+                const to = idx + delta;
+                if (to < 0 || to >= order.length) return;
+                const next = [...order];
+                [next[idx], next[to]] = [next[to]!, next[idx]!];
+                order = next;
+                draw({ value: v, dir });
+                commit();
+            };
+            up.addEventListener('click', () => move(-1, 'up'));
+            down.addEventListener('click', () => move(1, 'down'));
+            const grip = el('span', { cls: 'ib-rank-grip', 'aria-hidden': 'true', text: '⋮⋮' });
+            const li = el('li', { 'data-value': v }, [
+                grip,
+                el('span', { cls: 'ib-rank-n', text: String(idx + 1) }),
+                el('span', { cls: 'ib-rank-label', text: labelOf.get(v) ?? v }),
+                el('span', { cls: 'ib-rank-move' }, [up, down]),
+            ]);
+            // Arrastrar: el renglón sigue al dedo y los demás se reacomodan.
+            grip.addEventListener('pointerdown', (e) => startDrag(e, li, v));
+            li.querySelector('.ib-rank-label')!.addEventListener('pointerdown', (e) => startDrag(e as PointerEvent, li, v));
+            list.appendChild(li);
+            if (focus && focus.value === v) {
+                const btn = focus.dir === 'up' ? (idx === 0 ? down : up) : idx === order.length - 1 ? up : down;
+                btn.focus();
+            }
+        });
+        reportHeight();
+    };
+    const startDrag = (e: PointerEvent, li: HTMLElement, value: string): void => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        li.setPointerCapture(e.pointerId);
+        li.classList.add('ib-dragging');
+        let moved = false;
+        const onMove = (ev: PointerEvent): void => {
+            const items = Array.from(list.children) as HTMLElement[];
+            const from = order.indexOf(value);
+            let to = from;
+            items.forEach((node, idx) => {
+                const r = node.getBoundingClientRect();
+                if (ev.clientY > r.top + r.height / 2) to = idx >= from ? idx : idx + 1;
+            });
+            to = Math.max(0, Math.min(order.length - 1, ev.clientY < (items[0]?.getBoundingClientRect().top ?? 0) ? 0 : to));
+            if (to !== from) {
+                const next = order.filter((x) => x !== value);
+                next.splice(to, 0, value);
+                order = next;
+                moved = true;
+                const ref = (Array.from(list.children) as HTMLElement[]).filter((n) => n !== li)[to] ?? null;
+                list.insertBefore(li, ref);
+                (Array.from(list.children) as HTMLElement[]).forEach((n, i) => {
+                    const num = n.querySelector('.ib-rank-n');
+                    if (num) num.textContent = String(i + 1);
+                });
+            }
+        };
+        const onUp = (): void => {
+            li.removeEventListener('pointermove', onMove);
+            li.removeEventListener('pointerup', onUp);
+            li.removeEventListener('pointercancel', onUp);
+            li.classList.remove('ib-dragging');
+            if (moved) {
+                draw();
+                commit();
+            }
+        };
+        li.addEventListener('pointermove', onMove);
+        li.addEventListener('pointerup', onUp);
+        li.addEventListener('pointercancel', onUp);
+    };
+    keep.addEventListener('click', commit);
+    draw();
+    const box: Control = el('div', { cls: 'ib-rank-box' }, [
+        el('p', { cls: 'ib-help', text: 'Arrastra o usa las flechas: lo primero es lo más importante.' }),
+        list,
+        keep,
+    ]);
+    box._paint = () => {
+        const v = values[key];
+        if (Array.isArray(v) && v.length === order.length) {
+            order = v.map(String);
+            list.classList.remove('ib-untouched');
+            keep.hidden = true;
+            draw();
+        }
+    };
+    return box;
+}
+
+/** Sin tildes ni mayúsculas, para buscar. */
+function fold(s: string): string {
+    return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+/** Lista con buscador (una opción o varias), para listas largas de opciones. */
+function searchControl(f: FieldItem): Control {
+    const key = f.key;
+    const multiple = !!f.multiple;
+    const opts = f.options ?? [];
+    const listId = 'lb_' + f.id;
+    const input = el('input', {
+        type: 'text',
+        id: 'q_' + f.id,
+        cls: 'ib-input',
+        role: 'combobox',
+        'aria-expanded': 'false',
+        'aria-controls': listId,
+        'aria-autocomplete': 'list',
+        autocomplete: 'off',
+        placeholder: f.placeholder || (multiple ? 'Escribe para buscar y elegir…' : 'Escribe para buscar…'),
+    });
+    const list = el('ul', { cls: 'ib-combo-list', id: listId, role: 'listbox', hidden: true, 'aria-multiselectable': multiple ? 'true' : null });
+    const chips = el('div', { cls: 'ib-chips', hidden: true });
+    let shown: typeof opts = [];
+    let active = -1;
+    const selected = (): string[] => {
+        const v = values[key];
+        return multiple ? (Array.isArray(v) ? v.map(String) : []) : typeof v === 'string' && v ? [v] : [];
+    };
+    const labelOf = (v: string): string => opts.find((o) => o.value === v)?.label ?? v;
+    const paintChips = (): void => {
+        chips.textContent = '';
+        const sel = selected();
+        chips.hidden = !multiple || sel.length === 0;
+        for (const v of sel) {
+            const x = el('button', { type: 'button', 'aria-label': `Quitar «${labelOf(v)}»`, text: '×' });
+            x.addEventListener('click', () => {
+                values[key] = selected().filter((s) => s !== v);
+                paintChips();
+                setErr(f.id, '');
+                refresh();
+            });
+            chips.appendChild(el('span', { cls: 'ib-chip' }, [el('span', { text: labelOf(v) }), x]));
+        }
+    };
+    const setActive = (idx: number): void => {
+        active = idx;
+        Array.from(list.children).forEach((li, i) => li.setAttribute('aria-selected', String(i === idx)));
+        const node = list.children[idx] as HTMLElement | undefined;
+        if (node) {
+            input.setAttribute('aria-activedescendant', node.id);
+            node.scrollIntoView({ block: 'nearest' });
+        } else input.removeAttribute('aria-activedescendant');
+    };
+    const close = (): void => {
+        list.hidden = true;
+        input.setAttribute('aria-expanded', 'false');
+        input.removeAttribute('aria-activedescendant');
+        active = -1;
+        reportHeight();
+    };
+    const open = (): void => {
+        const q = fold(input.value.trim());
+        const sel = selected();
+        // Con una opción elegida y su nombre escrito, se ven todas otra vez.
+        const typed = !multiple && sel.length === 1 && input.value === labelOf(sel[0]!) ? '' : q;
+        shown = opts.filter((o) => !typed || fold(o.label).includes(typed)).slice(0, 80);
+        list.textContent = '';
+        if (shown.length === 0) list.appendChild(el('li', { cls: 'ib-combo-empty', role: 'presentation', text: 'No hay opciones con ese nombre.' }));
+        shown.forEach((o, i) => {
+            const li = el('li', { id: `${listId}_${i}`, role: 'option', 'aria-selected': 'false', cls: sel.includes(o.value) ? 'ib-chosen' : '', text: o.label });
+            li.addEventListener('mousedown', (e) => e.preventDefault());
+            li.addEventListener('click', () => choose(o.value));
+            list.appendChild(li);
+        });
+        list.hidden = false;
+        input.setAttribute('aria-expanded', 'true');
+        active = -1;
+        reportHeight();
+    };
+    const choose = (v: string): void => {
+        if (multiple) {
+            const sel = selected();
+            values[key] = sel.includes(v) ? sel.filter((s) => s !== v) : [...sel, v];
+            input.value = '';
+            paintChips();
+            open();
+        } else {
+            values[key] = v;
+            input.value = labelOf(v);
+            close();
+        }
+        setErr(f.id, '');
+        kickStamp();
+        refresh();
+    };
+    input.addEventListener('focus', open);
+    input.addEventListener('input', () => {
+        if (!multiple && input.value.trim() === '') values[key] = null;
+        open();
+    });
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (list.hidden) open();
+            const n = shown.length;
+            if (!n) return;
+            setActive(e.key === 'ArrowDown' ? (active + 1) % n : (active - 1 + n) % n);
+        } else if (e.key === 'Enter') {
+            if (!list.hidden && active >= 0 && shown[active]) {
+                e.preventDefault();
+                choose(shown[active]!.value);
+            }
+        } else if (e.key === 'Escape') {
+            if (!list.hidden) {
+                e.preventDefault();
+                close();
+            }
+        }
+    });
+    input.addEventListener('blur', () => {
+        window.setTimeout(() => {
+            close();
+            // Una opción a medio escribir no queda: vuelve el nombre de la elegida.
+            if (!multiple) {
+                const sel = selected();
+                input.value = sel.length ? labelOf(sel[0]!) : '';
+            } else input.value = '';
+        }, 120);
+    });
+    const box: Control = el('div', { cls: 'ib-combo' }, [chips, input, list]);
+    box._paint = () => {
+        const sel = selected();
+        if (!multiple) input.value = sel.length ? labelOf(sel[0]!) : '';
+        paintChips();
+    };
+    return box;
+}
+
+/** «Otro»: al elegir esa opción aparece un campo para escribir cuál. */
+function withOther(f: FieldItem, ctl: Control): Control {
+    if (!f.other) return ctl;
+    const o = f.other;
+    const input = el('input', { type: 'text', cls: 'ib-input', id: `q_${f.id}_otro`, placeholder: o.placeholder, 'aria-label': o.placeholder, maxlength: 500 });
+    input.addEventListener('input', () => {
+        values[o.key] = input.value;
+        setErr(f.id, '');
+    });
+    const wrap = el('div', { cls: 'ib-other', hidden: true }, [input]);
+    otherEls[f.id] = { wrap, input };
+    const box: Control = el('div', { cls: 'ib-with-other' }, [ctl, wrap]);
+    box._paint = () => ctl._paint?.();
+    return box;
+}
+
+/** Matriz: una fila por campo, una columna por respuesta (en el celular, cada fila en su tarjeta). */
+function matrixNode(i: MatrixItem): HTMLElement {
+    const node = el('div', { cls: 'ib-item ib-matrix-item' });
+    const label = el('div', { cls: 'ib-label', id: 'l_' + i.id });
+    label.appendChild(document.createTextNode(i.label || 'Responde cada fila'));
+    if (i.required) label.appendChild(el('span', { cls: 'ib-req', text: '*', 'aria-hidden': 'true' }));
+    node.appendChild(label);
+    if (i.help) node.appendChild(el('div', { cls: 'ib-help', text: i.help }));
+    const table = el('table', { cls: 'ib-matrix', 'aria-labelledby': 'l_' + i.id });
+    const headRow = el('tr', null, [el('td', { 'aria-hidden': 'true' })]);
+    i.columns.forEach((c) => headRow.appendChild(el('th', { scope: 'col', text: c.label })));
+    table.appendChild(el('thead', null, [headRow]));
+    const body = el('tbody');
+    const cells: Array<{ row: MatrixItem['rows'][number]; value: string | number; input: HTMLInputElement; cell: HTMLElement }> = [];
+    const sync = (): void =>
+        cells.forEach((c) => {
+            const v = values[c.row.key];
+            const on = Array.isArray(v) ? v.map(String).includes(String(c.value)) : String(v ?? '') === String(c.value);
+            c.input.checked = on;
+            c.cell.classList.toggle('ib-checked', on);
+        });
+    i.rows.forEach((row, ri) => {
+        const tr = el('tr', null, [el('th', { scope: 'row', text: row.label })]);
+        row.values.forEach((value, ci) => {
+            const td = el('td');
+            if (value === null) {
+                td.setAttribute('aria-hidden', 'true');
+                tr.appendChild(td);
+                return;
+            }
+            const col = i.columns[ci]?.label ?? String(value);
+            const input = el('input', { type: i.multiple ? 'checkbox' : 'radio', name: `m_${i.id}_${ri}`, value: String(value), 'aria-label': `${row.label}: ${col}` });
+            const cell = el('label', { cls: 'ib-matrix-cell', 'data-col': col }, [input]);
+            input.addEventListener('change', () => {
+                if (i.multiple) {
+                    const cur = Array.isArray(values[row.key]) ? [...(values[row.key] as Array<string | number>)] : [];
+                    const has = cur.map(String).includes(String(value));
+                    values[row.key] = input.checked ? (has ? cur : [...cur, value]) : cur.filter((x) => String(x) !== String(value));
+                } else values[row.key] = value;
+                sync();
+                setErr(i.id, '');
+                kickStamp();
+                refresh();
+            });
+            cells.push({ row, value, input, cell });
+            td.appendChild(cell);
+            tr.appendChild(td);
+        });
+        body.appendChild(tr);
+    });
+    table.appendChild(body);
+    node.appendChild(el('div', { cls: 'ib-matrix-scroll' }, [table]));
+    const err = el('div', { cls: 'ib-error', role: 'alert', hidden: true });
+    errEls[i.id] = err;
+    node.appendChild(err);
+    (node as Control)._paint = sync;
+    return node;
 }
 
 function choices(f: FieldItem, multiple: boolean): Control {
@@ -521,18 +1181,11 @@ function filesControl(f: FieldItem, id: string): Control {
             const u: Upload = { name: file.name, pending: true };
             uploads[key]!.push(u);
             render();
-            const fd = new FormData();
-            fd.append('file', file, file.name);
-            ensureStamp()
-                .then(({ stamp }) =>
-                    fetch(`${API}/files?field=${encodeURIComponent(key)}`, { method: 'POST', body: fd, credentials: 'omit', headers: { 'X-Form-Stamp': stamp } }),
-                )
-                .then((r) => r.json().then((b: { message?: string; token?: string; name?: string }) => ({ ok: r.ok, b })))
+            uploadBlob(key, file, file.name)
                 .then((res) => {
-                    if (!res.ok) throw new Error(res.b?.message || 'No se pudo subir el archivo.');
                     u.pending = false;
-                    u.token = res.b.token;
-                    u.name = res.b.name || u.name;
+                    u.token = res.token;
+                    u.name = res.name || u.name;
                     render();
                     setErr(f.id, '');
                 })
@@ -553,7 +1206,20 @@ function prefill(controls: Record<string, Control>): void {
         if (!params.has(f.slug)) continue;
         const raw = params.get(f.slug) ?? '';
         const c = controls[f.id];
-        const kind = f.field_type === 'team' ? (f.display === 'checkboxes' ? 'multi_select' : 'select') : f.field_type;
+        // v0.1.355 — las formas propias se completan por su valor.
+        if (f.display === 'yes_no') {
+            values[f.key] = /^(1|true|si|sí|yes)$/i.test(raw) ? true : /^(0|false|no)$/i.test(raw) ? false : null;
+            c?._paint?.();
+            continue;
+        }
+        if (f.display === 'scale' || f.display === 'slider') {
+            const n = parseNumber(raw);
+            values[f.key] = n !== null && !Number.isNaN(n) ? n : null;
+            c?._paint?.();
+            continue;
+        }
+        if (f.display === 'ranking' || f.display === 'signature') continue;
+        const kind = f.field_type === 'team' ? (f.multiple ? 'multi_select' : 'select') : f.field_type;
         switch (kind) {
             case 'multi_select': {
                 const vals = raw
@@ -572,12 +1238,14 @@ function prefill(controls: Record<string, Control>): void {
                 if (cb) cb.checked = on;
                 break;
             }
-            case 'select':
+            case 'select': {
                 values[f.key] = raw;
-                if (c instanceof HTMLSelectElement) c.value = raw;
+                const sel = c instanceof HTMLSelectElement ? c : c?.querySelector('select');
+                if (sel) sel.value = raw;
                 else c?.querySelectorAll('input').forEach((i) => (i.checked = i.value === raw));
                 (c as Control | undefined)?._paint?.();
                 break;
+            }
             case 'rating':
                 values[f.key] = Number(raw) || null;
                 c?._paint?.();
@@ -596,6 +1264,20 @@ function prefill(controls: Record<string, Control>): void {
                 values[f.key] = raw;
                 if (c instanceof HTMLInputElement || c instanceof HTMLTextAreaElement) c.value = raw;
         }
+    }
+    // v0.1.355 — una fila de una matriz, por su campo: `?atencion=bueno`.
+    for (const m of (meta.items ?? []).filter((i): i is MatrixItem => i.type === 'matrix')) {
+        for (const row of m.rows) {
+            if (!params.has(row.slug)) continue;
+            const raw = (params.get(row.slug) ?? '').trim().toLowerCase();
+            const pick = (txt: string): string | number | null => {
+                const idx = row.values.findIndex((v, ci) => v !== null && (String(v).toLowerCase() === txt || (m.columns[ci]?.label ?? '').toLowerCase() === txt));
+                return idx >= 0 ? row.values[idx]! : null;
+            };
+            if (m.multiple) values[row.key] = raw.split(',').map((t) => pick(t.trim())).filter((v) => v !== null);
+            else values[row.key] = pick(raw);
+        }
+        controls[m.id]?._paint?.();
     }
 }
 
@@ -623,12 +1305,20 @@ function fieldNode(i: FieldItem, controls: Record<string, Control>): HTMLElement
     const float = view()?.label_position === 'floating' && FLOAT_TYPES.has(i.field_type) && !i.hide_label;
     const c = control(i, float);
     controls[i.id] = c;
-    const node = el('div', { cls: `ib-item ib-field ib-type-${i.field_type} ib-w-${i.width ?? 'full'}${float ? ' ib-float' : ''}` });
+    const node = el('div', { cls: `ib-item ib-field ib-type-${i.field_type} ib-show-${i.display} ib-w-${i.width ?? 'full'}${float ? ' ib-float' : ''}` });
     const err = el('div', { cls: 'ib-error', role: 'alert', hidden: true });
     errEls[i.id] = err;
     let label: HTMLElement | null = null;
-    if (i.field_type !== 'checkbox') {
-        const isGroup = (i.field_type === 'select' && i.display !== 'dropdown') || i.field_type === 'multi_select' || i.field_type === 'rating' || (i.field_type === 'team' && i.display !== 'dropdown');
+    if (i.field_type !== 'checkbox' || i.display === 'yes_no') {
+        const own = i.display === 'scale' || i.display === 'yes_no' || i.display === 'ranking' || i.display === 'signature';
+        const labelFor = i.display === 'search' || i.display === 'slider';
+        const isGroup =
+            own ||
+            (!labelFor &&
+                ((i.field_type === 'select' && i.display !== 'dropdown') ||
+                    i.field_type === 'multi_select' ||
+                    i.field_type === 'rating' ||
+                    (i.field_type === 'team' && i.display !== 'dropdown')));
         label = isGroup ? el('div', { cls: 'ib-label', id: 'l_' + i.id }) : el('label', { cls: 'ib-label', for: 'q_' + i.id, id: 'l_' + i.id });
         label.appendChild(document.createTextNode(i.label));
         if (i.required) label.appendChild(el('span', { cls: 'ib-req', text: '*', 'aria-hidden': 'true' }));
@@ -670,7 +1360,10 @@ function itemNode(i: Item, controls: Record<string, Control>): HTMLElement {
     else if (i.type === 'text') {
         node = paragraphs(i.text, 'ib-item ib-text');
     } else if (i.type === 'image') node = imageNode(i);
-    else node = fieldNode(i as FieldItem, controls);
+    else if (i.type === 'matrix') {
+        node = matrixNode(i);
+        controls[i.id] = node as Control;
+    } else node = fieldNode(i as FieldItem, controls);
     if (BOOT.preview && i.show_if) node.insertBefore(pvTag('Condicional · sólo aparece si se cumple su condición'), node.firstChild);
     previewable(node, i.id);
     itemEls[i.id] = node;
@@ -685,6 +1378,14 @@ function refresh(): void {
         if (!n) continue;
         // En la vista previa se ve todo (atenuado lo condicional y lo oculto).
         n.hidden = BOOT.preview ? false : i.type === 'field' && i.hidden ? true : !visible(i);
+        // v0.1.355 — el «Otro» aparece al elegir esa opción.
+        if (i.type === 'field' && i.other && otherEls[i.id]) {
+            const { wrap, input } = otherEls[i.id]!;
+            const on = choseOther(i);
+            const opened = on && wrap.hidden;
+            wrap.hidden = !on;
+            if (opened && !BOOT.preview) input.focus();
+        }
     }
     if (paged()) paintPages();
     reportHeight();
@@ -778,6 +1479,7 @@ function header(): HTMLElement {
 function render(keepPage: boolean): void {
     itemEls = {};
     errEls = {};
+    otherEls = {};
     pageEls = [];
     stepsLabel = barEl = dotsEl = null;
     prevBtn = nextBtn = submitBtn = null;
@@ -910,12 +1612,18 @@ function submit(hpValue: string): void {
     }
     const outValues: Record<string, unknown> = {};
     const outUploads: Record<string, string[]> = {};
-    for (const i of fields()) {
+    for (const i of m.items) {
+        if (i.type === 'matrix') {
+            for (const r of i.rows) if (values[r.key] !== undefined) outValues[r.key] = values[r.key];
+            continue;
+        }
+        if (i.type !== 'field') continue;
         if (i.field_type === 'file') {
             outUploads[i.key] = (uploads[i.key] ?? []).filter((u) => u.token).map((u) => u.token!);
             continue;
         }
         if (values[i.key] !== undefined) outValues[i.key] = values[i.key];
+        if (i.other && choseOther(i) && values[i.other.key] !== undefined) outValues[i.other.key] = values[i.other.key];
     }
     const label = m.submit_label || 'Enviar';
     setBusy(true, label);

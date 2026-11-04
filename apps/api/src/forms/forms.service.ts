@@ -21,6 +21,13 @@ import {
     formItemVisible,
     isEmptyAnswer,
     isFormFieldType,
+    effectiveFormDisplay,
+    formAnswered,
+    formRangeAccepts,
+    formatRankingText,
+    rankingTextOptions,
+    FORM_MATRIX_ROW_TYPES,
+    type PublicFormItem,
     jsonbKeyForField,
     tenantFormatSchema,
     validateFieldValue,
@@ -1537,23 +1544,44 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
      * con estas respuestas: una clave que no es del formulario, o de una
      * pregunta escondida por su condición, se ignora — un visitante no
      * puede escribir columnas que el formulario no pregunta.
+     *
+     * v0.1.355 — Recorre las MISMAS preguntas públicas que ve el visitante
+     * (`buildPublicFormItems`): la escala, el deslizador, el «Sí / No», el
+     * ordenar, el «Otro» y la matriz se revisan con lo que se le mostró.
      */
     private collect(
         f: ResolvedForm,
         byId: Map<number, Field>,
         input: SubmitFormInput,
     ): { data: Record<string, unknown>; errors: Record<string, string>; attachmentIds: number[] } {
-        const items = f.config.items;
         const values = input.values;
+        const pub = buildPublicFormItems(f.config, [...byId.values()]);
+        const norm = pub.map((i) => ({
+            type: i.type,
+            field_id: i.type === 'field' ? Number(i.key) : undefined,
+            rows: i.type === 'matrix' ? i.rows : undefined,
+            show_if: i.show_if,
+        }));
         const data: Record<string, unknown> = {};
         const errors: Record<string, string> = {};
         const attachmentIds: number[] = [];
-        for (const item of items) {
+        const put = (field: Field, raw: unknown): string | null => {
+            const res = validateFieldValue({ type: field.type, config: field.config, is_required: false }, raw);
+            if (!res.ok) return res.error;
+            data[jsonbKeyForField(field.id)] = res.value;
+            return null;
+        };
+        for (const item of pub) {
+            if (item.type === 'matrix') {
+                if (!formItemVisible(item, norm, values)) continue;
+                this.collectMatrix(item, byId, values, put, errors);
+                continue;
+            }
             if (item.type !== 'field') continue;
-            const field = byId.get(item.field_id);
+            const field = byId.get(Number(item.key));
             if (!field || !isFormFieldType(field.type)) continue;
-            const key = String(field.id);
-            if (!item.hidden && !formItemVisible(item, items, values)) continue;
+            const key = item.key;
+            if (!item.hidden && !formItemVisible(item, norm, values)) continue;
             if (item.hidden && !f.config.settings.allow_prefill) continue;
 
             let raw: unknown = values[key];
@@ -1571,22 +1599,94 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 raw = ids.length > 0 ? ids : null;
                 attachmentIds.push(...ids);
             }
-            const required = (item.required || field.is_required) && !item.hidden;
-            if (required && isEmptyAnswer(raw)) {
+            // v0.1.355 — las formas propias se leen como las dibujó la página.
+            if (item.display === 'yes_no') raw = raw === true || raw === 'true' ? true : raw === false || raw === 'false' ? false : null;
+            if (item.required && !formAnswered(item.display, raw)) {
                 errors[item.id] = 'Esta pregunta es obligatoria.';
                 continue;
             }
-            if (isEmptyAnswer(raw) && field.type !== 'checkbox') continue;
-            const res = validateFieldValue({ type: field.type, config: field.config, is_required: false }, raw);
-            if (!res.ok) {
+            if (item.display === 'yes_no') {
+                if (raw === null) continue;
+            } else if (isEmptyAnswer(raw) && field.type !== 'checkbox') continue;
+
+            if ((item.display === 'scale' || item.display === 'slider') && item.range) {
+                if (!formRangeAccepts(item.display, item.range, raw)) {
+                    if (!item.hidden) errors[item.id] = item.display === 'scale' ? 'Elige uno de los valores de la escala.' : 'Ese valor está fuera del rango.';
+                    continue;
+                }
+                raw = Number(raw);
+            }
+            if (item.display === 'ranking' && item.ranking) {
+                const order = rankingOrder(raw, item.ranking.map((o) => o.value));
+                if (!order) {
+                    if (!item.hidden) errors[item.id] = 'Ordena todas las opciones.';
+                    continue;
+                }
+                raw = field.type === 'multi_select' ? order : formatRankingText(order, field.type === 'long_text');
+            }
+            const err = put(field, raw);
+            if (err) {
                 // Un campo oculto con un valor de la dirección que no sirve no
                 // es culpa del visitante: se descarta en silencio.
-                if (!item.hidden) errors[item.id] = res.error;
+                if (!item.hidden) errors[item.id] = err;
                 continue;
             }
-            data[jsonbKeyForField(field.id)] = res.value;
+            // v0.1.355 — «Otro»: lo que escribió va a su campo de texto, sólo si eligió esa opción.
+            if (item.other) {
+                const chosen = Array.isArray(raw) ? raw.map(String).includes(item.other.value) : String(raw) === item.other.value;
+                const target = byId.get(Number(item.other.key));
+                if (chosen && target) {
+                    const text = values[item.other.key];
+                    if (typeof text !== 'string' || text.trim() === '') errors[item.id] = 'Escribe cuál.';
+                    else {
+                        const otherErr = put(target, text.trim());
+                        if (otherErr) errors[item.id] = otherErr;
+                    }
+                }
+            }
         }
         return { data, errors, attachmentIds };
+    }
+
+    /** v0.1.355 — Una matriz: cada fila es un campo; sólo se aceptan las columnas que se mostraron. */
+    private collectMatrix(
+        item: Extract<PublicFormItem, { type: 'matrix' }>,
+        byId: Map<number, Field>,
+        values: Record<string, unknown>,
+        put: (field: Field, raw: unknown) => string | null,
+        errors: Record<string, string>,
+    ): void {
+        let missing = false;
+        for (const row of item.rows) {
+            const field = byId.get(row.field_id);
+            if (!field || !(FORM_MATRIX_ROW_TYPES as readonly string[]).includes(field.type)) continue;
+            const raw = values[row.key];
+            const allowed = row.values.filter((v): v is string | number => v !== null);
+            if (isEmptyAnswer(raw)) {
+                missing = true;
+                continue;
+            }
+            let picked: unknown;
+            if (item.multiple) {
+                const list = Array.isArray(raw) ? raw : [raw];
+                const hits = list.map((v) => allowed.find((a) => String(a) === String(v)));
+                if (hits.some((h) => h === undefined)) {
+                    errors[item.id] = `${row.label}: esa respuesta no está en la tabla.`;
+                    continue;
+                }
+                picked = hits;
+            } else {
+                const hit = allowed.find((a) => String(a) === String(raw));
+                if (hit === undefined) {
+                    errors[item.id] = `${row.label}: esa respuesta no está en la tabla.`;
+                    continue;
+                }
+                picked = hit;
+            }
+            const err = put(field, picked);
+            if (err) errors[item.id] = `${row.label}: ${err}`;
+        }
+        if (missing && item.required && !errors[item.id]) errors[item.id] = 'Responde todas las filas.';
     }
 
     private verifyUpload(f: ResolvedForm, token: string): number | null {
@@ -1651,6 +1751,17 @@ function newToken(): string {
     return randomBytes(18).toString('base64url');
 }
 
+/**
+ * v0.1.355 — El orden que mandó el visitante, si es una permutación EXACTA de
+ * las opciones (todas, una vez cada una). Si no, null.
+ */
+function rankingOrder(raw: unknown, options: readonly string[]): string[] | null {
+    if (!Array.isArray(raw) || raw.length !== options.length) return null;
+    const order = raw.map(String);
+    if (new Set(order).size !== order.length) return null;
+    return order.every((v) => options.includes(v)) ? order : null;
+}
+
 function readConfig(raw: unknown): FormConfig {
     const parsed = formConfigSchema.safeParse(raw ?? {});
     return parsed.success ? parsed.data : formConfigSchema.parse({});
@@ -1662,17 +1773,60 @@ function readConfig(raw: unknown): FormConfig {
  * campo del formulario. Un campo borrado o convertido a un tipo que no se
  * pregunta desaparece del formulario en vez de romperlo.
  */
-export function sanitizeConfig(config: FormConfig, fields: ReadonlyArray<{ id: number; type: string }>): FormConfig {
+export function sanitizeConfig(
+    config: FormConfig,
+    fields: ReadonlyArray<{ id: number; type: string; config?: Record<string, unknown> }>,
+): FormConfig {
     const askable = new Set(fields.filter((f) => isFormFieldType(f.type)).map((f) => f.id));
     const typeOf = new Map(fields.map((f) => [f.id, f.type]));
+    const fieldConfig = new Map(fields.map((f) => [f.id, f.config ?? {}]));
+    // Cada campo se pregunta UNA vez: como pregunta o como fila de una matriz.
     const seen = new Set<number>();
-    const items = config.items.filter((i) => {
-        if (i.type !== 'field') return true;
-        if (!askable.has(i.field_id) || seen.has(i.field_id)) return false;
+    const firstPass = config.items.flatMap((i): FormConfig['items'] => {
+        if (i.type === 'matrix') {
+            const rows = i.rows.filter((r) => {
+                const t = typeOf.get(r.field_id);
+                if (!t || !askable.has(r.field_id) || !(FORM_MATRIX_ROW_TYPES as readonly string[]).includes(t) || seen.has(r.field_id)) return false;
+                seen.add(r.field_id);
+                return true;
+            });
+            const colSeen = new Set<string>();
+            const columns = i.columns.filter((c) => (colSeen.has(c.value) ? false : (colSeen.add(c.value), true)));
+            return [{ ...i, rows, columns }];
+        }
+        if (i.type !== 'field') return [i];
+        if (!askable.has(i.field_id) || seen.has(i.field_id)) return [];
         seen.add(i.field_id);
-        return true;
+        // v0.1.355 — una forma que el tipo no admite vuelve a la de siempre; la
+        // firma sólo recibe imágenes.
+        const type = typeOf.get(i.field_id) ?? '';
+        const multiple = type === 'multi_select' || (type === 'team' && fieldConfig.get(i.field_id)?.multiple === true);
+        const display = effectiveFormDisplay(i.display, type, multiple);
+        return [
+            {
+                ...i,
+                display,
+                accept: display === 'signature' ? 'images' : i.accept,
+                ranking_options: rankingTextOptions(i.ranking_options),
+            },
+        ];
     });
-    const inForm = new Set(items.flatMap((i) => (i.type === 'field' ? [i.field_id] : [])));
+    // v0.1.355 — el campo donde va el «Otro» tiene que ser de texto, de esta
+    // lista y no estar preguntado aparte (si no, se escribiría dos veces).
+    const items = firstPass.map((i) => {
+        if (i.type !== 'field' || i.other_field_id === null) return i;
+        const t = typeOf.get(i.other_field_id);
+        const ok =
+            (typeOf.get(i.field_id) === 'select' || typeOf.get(i.field_id) === 'multi_select') &&
+            i.other_option !== null &&
+            (t === 'text' || t === 'long_text') &&
+            !seen.has(i.other_field_id);
+        if (!ok) return { ...i, other_field_id: null };
+        seen.add(i.other_field_id);
+        return i;
+    });
+    // Las condiciones pueden depender de una pregunta o de una fila de una matriz.
+    const inForm = new Set(items.flatMap((i) => (i.type === 'field' ? [i.field_id] : i.type === 'matrix' ? i.rows.map((r) => r.field_id) : [])));
     const seenIds = new Set<string>();
     const unique = items.filter((i) => (seenIds.has(i.id) ? false : (seenIds.add(i.id), true)));
 

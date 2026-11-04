@@ -84,7 +84,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
 | A7 · Campos condicionales en la ficha y en el alta («NIT» sólo si «Tipo = Empresa») | medio · M | Los formularios públicos ya tienen condiciones. |
-| A10 · Campo Firma (dibujar la firma en la ficha, un formulario o el portal) | medio · S-M | Ver D6. |
+| A10 · Campo Firma (dibujar la firma en la ficha, un formulario o el portal) | medio · S-M | Ver D6. **En parte hecho en v0.1.355**: un formulario público pide una firma con el dedo o el mouse (se guarda como imagen en un campo de archivos). Queda firmar desde la ficha y el portal. |
 | A11 · Ubicación / dirección con autocompletado, latitud y longitud | medio · M | Base de B3 (mapa). OpenStreetMap o la clave de Google de cada empresa. |
 | A12 · Código de barras / QR como campo | medio · S | Con H3 se escanea con la cámara. **En parte hecho en v0.1.344**: cada registro tiene su QR (enlace o el valor del campo «Código»), con etiquetas en PDF y variables para correos y documentos. Lo que queda es un tipo de campo que dibuje el código de barras (EAN/Code 128) dentro de la tabla. |
 | A13 · Moneda múltiple con conversión y tasa del día | medio · M | |
@@ -115,7 +115,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | D1 · El correo de cada registro (Gmail/Outlook de cada persona en la ficha) | alto (CRM) · L | Opt-in por persona; sólo hilos con contactos de la lista. |
 | D4 · SMS (Twilio, Infobip o proveedor local) | medio · S | |
 | D7 · Chat para el sitio web que crea el lead | medio · M-L | Guardando sólo lo necesario, como D3. |
-| D8 · Encuesta NPS / satisfacción de un clic | medio · S-M | |
+| D8 · Encuesta NPS / satisfacción de un clic | medio · S-M | **En parte hecho en v0.1.355**: los formularios tienen la escala NPS (0 a 10) y la matriz para calificar varios aspectos. Queda responder con un clic desde el correo (cada número es un enlace). |
 | D9 · Seguimientos 1 a 1 desde una vista | medio · M | Choca con ADR-S18: sólo con correo propio y con límites. |
 
 ### E. Automatizaciones

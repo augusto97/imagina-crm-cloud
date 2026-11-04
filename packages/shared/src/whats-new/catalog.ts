@@ -1211,4 +1211,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'En **Configurar lista → Agenda → Editar**, abre **Diseño**. Las agendas que ya tenías siguen con su diseño de siempre hasta que elijas otro.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.355-formas-de-preguntar',
+        version: '0.1.355',
+        date: '2026-11-04',
+        kind: 'feature',
+        title: 'Escalas, Sí o No, firma, matriz y más formas de preguntar',
+        summary:
+            'Tus formularios ya pueden preguntar con una escala del 0 al 10, un deslizador, botones Sí y No, una firma con el dedo, una lista con buscador u ordenar opciones. También hay «Otro» con espacio para escribir y una matriz para calificar varios aspectos a la vez.',
+        media: {
+            slides: [
+                {
+                    title: 'La escala, el deslizador y Sí o No',
+                    text: 'Un número puede preguntarse como una escala del 0 al 10 (como el NPS) o un deslizador; una casilla, con dos botones grandes. Todo se cambia en «Cómo se pregunta».',
+                    illustration: 'form-question-types',
+                },
+                {
+                    title: 'Una matriz en vez de cinco preguntas',
+                    text: 'Califica atención, rapidez y limpieza en una sola tabla. Cada fila guarda su respuesta en su propio campo, lista para filtrar y promediar.',
+                    illustration: 'form-builder',
+                },
+                {
+                    title: 'Firma, ordenar y «Otro»',
+                    text: 'Pide una firma con el dedo, deja ordenar las prioridades de la más a la menos importante y agrega «Otro» con un espacio para escribir cuál.',
+                    illustration: 'form-conditional',
+                },
+            ],
+        },
+        body: 'En **Configurar lista → Formularios → Editar**, toca una pregunta y elige **Cómo se pregunta**. La matriz está en la pestaña **Agregar**.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

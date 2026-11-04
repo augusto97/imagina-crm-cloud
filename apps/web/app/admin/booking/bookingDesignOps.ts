@@ -400,7 +400,7 @@ export function buildPreviewMeta(config: BookingConfig, ctx: PreviewContext): Pu
         })),
         choose_staff: s.choose_staff === 'visitor' && staff.length > 1,
         ask_phone: s.ask_phone,
-        questions: buildPublicFormItems({ items: config.questions, settings: {} } as never, questionFields),
+        questions: buildPublicFormItems({ items: config.questions, settings: {} } as never, questionFields, [], { basicDisplays: true }),
         max_days_ahead: config.rules.max_days_ahead,
         min_notice_min: config.rules.min_notice_min,
         ...(() => {

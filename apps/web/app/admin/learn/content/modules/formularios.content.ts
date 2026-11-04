@@ -141,7 +141,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Pregunta', what: 'El texto que ve quien responde. Vacío = el nombre del campo.', tip: 'Escríbela como la dirías en voz alta: «¿A qué correo te respondemos?» en vez de «Email».' },
                     { name: 'Ayuda', what: 'Una línea más chica que aparece debajo de la pregunta.', tip: 'Úsala para aclarar el formato: «Con indicativo, por ejemplo +57 300 123 4567».' },
                     { name: 'Texto de ejemplo', what: 'Lo que se ve dentro de la casilla vacía, en gris, antes de escribir.' },
-                    { name: 'Cómo se elige', what: 'Sólo en preguntas de selección: **Automático**, **Botones** (todas las opciones a la vista) o **Lista** (desplegable).', tip: '**Automático** muestra botones con pocas opciones y una lista desplegable con muchas.' },
+                    { name: 'Cómo se pregunta', what: 'La forma de la pregunta, según el tipo de campo: en una selección **Botones**, **Tarjetas**, **Lista desplegable** o **Lista con buscador**; en un número una **Escala** o un **Deslizador**; en una casilla **Sí** y **No**; en archivos una **Firma**.', tip: 'Lo explicamos en «Escalas, Sí o No, firma, matriz y más formas de preguntar».' },
                     { name: 'Tipos de archivo', what: 'Sólo en preguntas de archivo: cualquier archivo, imágenes, PDF, imágenes o PDF, o documentos (PDF, Word, Excel, texto).', tip: 'Los programas y las páginas web nunca se aceptan. Cada archivo puede pesar hasta 20 MB.' },
                     { name: 'Obligatoria', what: 'No deja enviar sin responderla. Si la lista exige ese campo, ya viene marcada y no se puede apagar.' },
                     { name: 'Oculta: se completa desde la dirección', what: 'La pregunta no se muestra; su valor llega en el enlace. Sirve para saber de dónde vino cada respuesta.', tip: 'Lo explicamos en detalle en «Preguntas que aparecen solas, formularios por pasos y datos ocultos».' },
@@ -183,6 +183,95 @@ export const articles: LearnArticle[] = [
                     { q: '¿Puedo preguntar algo que no es un campo de la lista?', a: 'Cada pregunta guarda su respuesta en un campo. Si necesitas una pregunta nueva, primero crea el campo en **Configurar lista → Campos** (o con «+ Agregar columna» en la tabla) y después agrégalo al formulario.' },
                     { q: '¿Cambiar el texto de la pregunta cambia el nombre del campo?', a: 'No. El texto de la pregunta es sólo del formulario; en la lista el campo conserva su nombre.' },
                     { q: '¿Y si renombro o reordeno los campos de la lista?', a: 'El formulario no se rompe: cada pregunta apunta al campo, no a su nombre.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Siguiente: formas de preguntar', article: 'formularios-tipos-pregunta' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'formularios-tipos-pregunta',
+        route: '/lists',
+        related: ['formularios-constructor', 'formularios-condiciones-pasos', 'formularios-diseno'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Cada pregunta del formulario guarda su respuesta en un campo de la lista, pero **cómo se pregunta** lo eliges tú. Un mismo campo numérico puede ser una casilla para escribir, una **escala del 0 al 10** o un **deslizador**; una casilla puede ser dos botones **Sí** y **No**; un campo de archivos puede pedir una **firma** dibujada con el dedo. Para quien responde es más rápido y para ti los datos llegan limpios.',
+            },
+            { t: 'anim', key: 'form-question-types', caption: 'Una escala del 0 al 10, Sí o No, un deslizador, una matriz y una firma, respondidas una por una.' },
+            { t: 'h', text: 'Dónde se cambia' },
+            {
+                t: 'steps',
+                items: [
+                    'Abre el formulario en **Configurar lista → Formularios** y toca la pregunta en la vista previa.',
+                    'Arriba del panel derecho, en **Cómo se pregunta**, elige la forma. Sólo aparecen las que sirven para ese tipo de campo.',
+                    'Completa lo que pide cada forma (los números de la escala, los textos de los botones, las opciones para ordenar) y revisa el resultado en la vista previa, en computadora y en celular.',
+                    'Toca **Guardar**.',
+                ],
+            },
+            { t: 'h', text: 'Las formas de preguntar, una por una' },
+            {
+                t: 'settings',
+                title: 'Qué hace cada una y para qué campo sirve',
+                rows: [
+                    { name: 'Escala de botones (como el NPS)', what: 'Botones numerados de un extremo al otro, con un texto en cada punta («Nada probable» · «Muy probable»). Para campos de número, calificación o porcentaje.', tip: 'Elige un ejemplo listo: **NPS (0 a 10)**, **1 a 5**, **1 a 10** o **Acuerdo (1 a 5)**. Una escala tiene como mucho 11 botones.' },
+                    { name: 'Deslizador', what: 'Se arrastra un control entre el mínimo y el máximo, y el valor se ve mientras se mueve. Para número, moneda, porcentaje o calificación.', tip: 'Sirve para «presupuesto aproximado» o «qué tan urgente es». Hasta que la persona lo mueve no hay respuesta.' },
+                    { name: 'Botones «Sí» y «No»', what: 'Dos botones grandes para un campo de casilla. A diferencia de la casilla, «No» también cuenta como respuesta.', tip: 'Por eso sirve en una pregunta obligatoria. Puedes cambiar el texto de cada botón («Claro», «Todavía no»).' },
+                    { name: 'Firma', what: 'Un recuadro donde la persona firma con el dedo o el mouse. Se guarda como una imagen en el campo de archivos.', tip: 'Útil para aceptar condiciones, autorizar un servicio o firmar el recibido de un pedido.' },
+                    { name: 'Lista con buscador', what: 'Para selecciones con muchas opciones: la persona escribe y elige. En el celular no ocupa la pantalla entera.', tip: 'Ideal para ciudades, productos o sedes.' },
+                    { name: 'Ordenar opciones', what: 'La persona ordena una lista de la más a la menos importante, arrastrando o con las flechas. En un campo de varias opciones ordena las opciones del campo; en un campo de texto, las que escribas.', tip: 'En un campo de texto se guarda así: «1. Precio · 2. Calidad · 3. Rapidez».' },
+                    { name: 'Botones, tarjetas o lista desplegable', what: 'Para selecciones: todas las opciones a la vista como botones o tarjetas (con foto, si quieres), o una lista que se despliega.', tip: 'El diseño de los botones y las tarjetas se ajusta en la pestaña **Diseño**.' },
+                ],
+            },
+            { t: 'h', text: '«Otro» con un espacio para escribir' },
+            {
+                t: 'p',
+                md: 'En una pregunta de selección toca **Agregar «Otro» con un espacio para escribir**. Si la persona elige «Otro», aparece una casilla para que escriba cuál, y eso se guarda en un **campo de texto** de la lista (la app te ofrece crear uno, por ejemplo «Canal (otro)»). Así la opción «Otro» no se pierde en un mar de respuestas sin explicar.',
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Para qué sirve',
+                md: 'En «¿Cómo nos conociste?» con las opciones Instagram, Google y Recomendación, «Otro» deja escribir «Feria de emprendimiento». Si muchas personas escriben lo mismo, ya sabes qué opción te falta agregar.',
+            },
+            { t: 'h', text: 'Una matriz para calificar varios aspectos a la vez' },
+            {
+                t: 'p',
+                md: 'La **matriz** junta varias preguntas en una tabla: cada **fila** es un aspecto y cada **columna** una respuesta posible. En la pestaña **Agregar** toca **Matriz**, elige qué campos van como filas y qué columnas usar. Cada fila guarda su respuesta en **su propio campo** de la lista, así después puedes filtrar, agrupar o promediar cada aspecto por separado.',
+            },
+            {
+                t: 'settings',
+                title: 'Ajustes de la matriz',
+                rows: [
+                    { name: 'Pregunta y ayuda', what: 'El texto que va arriba de la tabla, por ejemplo «¿Cómo calificas cada aspecto?».' },
+                    { name: 'Filas', what: 'Un campo por fila: selección, varias opciones, calificación, número o porcentaje. Puedes cambiar el texto de cada fila y ordenarlas.', tip: 'Un campo que ya está en otra pregunta del formulario no se puede usar como fila: cada campo se pregunta una sola vez.' },
+                    { name: 'Columnas', what: 'Las respuestas posibles. Hay ejemplos listos (**Malo · Regular · Bueno · Excelente**, **Nunca · A veces · Siempre**, **1 a 5**) o puedes usar las opciones del primer campo.', tip: 'Si a un campo le falta una de las columnas, la app te avisa y te ofrece agregarle esa opción.' },
+                    { name: 'Obligatoria', what: 'No deja enviar sin responder todas las filas.' },
+                ],
+            },
+            {
+                t: 'example',
+                title: 'Una encuesta de satisfacción en un restaurante',
+                md: 'Sabor de Casa, en Cali, deja un QR en cada mesa que abre «¿Cómo te atendimos?»: una escala **NPS (0 a 10)** en el campo **Recomendación**, una matriz con **Atención**, **Rapidez** y **Limpieza** en las columnas **Malo · Regular · Bueno · Excelente**, y **«¿Volverías?»** con los botones **Sí** y **No**. Con una condición, la pregunta «¿Qué podemos mejorar?» aparece sólo si la atención fue «Malo». En el tablero ve el promedio de cada aspecto por semana.',
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Las condiciones también miran la matriz',
+                md: 'En **Mostrar sólo si…** de otra pregunta puedes elegir una fila de la matriz: por ejemplo, mostrar «¿Qué pasó?» sólo a quien calificó la rapidez como «Malo». Lo explicamos en «Preguntas que aparecen solas, formularios por pasos y datos ocultos».',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Necesito crear campos nuevos para usar estas formas?', a: 'No. Son otra forma de preguntar los campos que ya tienes: un campo de número puede ser una escala, una casilla puede ser Sí o No. Sólo la matriz y «Otro» usan un campo por cada respuesta.' },
+                    { q: '¿Qué pasa si la escala va del 0 al 10 y el campo es una calificación de 5 estrellas?', a: 'La escala nunca pasa de lo que acepta el campo: en una calificación de 5 estrellas la escala llega hasta 5.' },
+                    { q: '¿Estas formas se ven en la agenda de citas?', a: 'En los datos que pide la agenda se usan las formas básicas (lista, botones y casillas). Las escalas, la firma y la matriz son de los formularios.' },
                 ],
             },
             {

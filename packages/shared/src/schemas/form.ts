@@ -3,6 +3,7 @@ import type { PublicDataConsent } from './data-consent';
 import type { FieldType } from './field';
 import { publicThemeSchema, readPublicTheme, type PublicChoiceStyle } from './public-theme';
 import type { PublicThemeView } from './public-theme-css';
+import { FORM_SCALE_MAX_BUTTONS } from './form-logic';
 
 /**
  * v0.1.275 — Formularios públicos (ADR-S39).
@@ -139,6 +140,78 @@ export function formAcceptAttribute(accept: FormFileAccept): string {
     return exts ? exts.map((e) => `.${e}`).join(',') : '';
 }
 
+/**
+ * v0.1.355 — Cómo se pregunta un campo. Además de las formas de las opciones
+ * (lista, botones, tarjetas, desplegable) hay formas propias de algunos tipos:
+ * - `search`: lista con buscador (selección, varias opciones, equipo).
+ * - `scale`: botones numerados, como el NPS (número, calificación, porcentaje).
+ * - `slider`: deslizador (número, moneda, porcentaje, calificación).
+ * - `yes_no`: dos botones «Sí» y «No» (casilla).
+ * - `signature`: firma dibujada con el dedo o el mouse (archivo).
+ * - `ranking`: ordenar opciones (varias opciones, o un texto con opciones propias).
+ * Una forma que el tipo no admite se lee como `auto` (ver `formDisplaysFor`).
+ */
+export const FORM_FIELD_DISPLAYS = [
+    'auto',
+    'radio',
+    'dropdown',
+    'buttons',
+    'cards',
+    'search',
+    'scale',
+    'slider',
+    'yes_no',
+    'signature',
+    'ranking',
+] as const;
+export type FormFieldDisplay = (typeof FORM_FIELD_DISPLAYS)[number];
+
+/** Las formas de preguntar que admite cada tipo de campo (la primera, `auto`, siempre). */
+export function formDisplaysFor(fieldType: string, multiple = fieldType === 'multi_select'): readonly FormFieldDisplay[] {
+    switch (fieldType) {
+        case 'select':
+            return ['auto', 'radio', 'buttons', 'cards', 'dropdown', 'search'];
+        case 'multi_select':
+            return ['auto', 'radio', 'buttons', 'cards', 'search', 'ranking'];
+        case 'team':
+            return multiple ? ['auto', 'radio', 'buttons', 'cards', 'search'] : ['auto', 'radio', 'buttons', 'cards', 'dropdown', 'search'];
+        case 'number':
+        case 'rating':
+            return ['auto', 'scale', 'slider'];
+        case 'percent':
+            return ['auto', 'slider', 'scale'];
+        case 'currency':
+            return ['auto', 'slider'];
+        case 'checkbox':
+            return ['auto', 'yes_no'];
+        case 'file':
+            return ['auto', 'signature'];
+        case 'text':
+        case 'long_text':
+            return ['auto', 'ranking'];
+        default:
+            return ['auto'];
+    }
+}
+
+/**
+ * v0.1.355 — Rango de una escala o un deslizador. Vacío (null) = el que
+ * corresponde al campo (sus mínimos y máximos, o 1 a 5, o 0 a 100). Las
+ * etiquetas van en los extremos («Nada probable» · «Muy probable»).
+ */
+export const formRangeSchema = z.object({
+    min: z.number().finite().min(-1e12).max(1e12).nullable().catch(null).default(null),
+    max: z.number().finite().min(-1e12).max(1e12).nullable().catch(null).default(null),
+    step: z.number().positive().max(1e12).nullable().catch(null).default(null),
+    low_label: z.string().max(60).catch('').default(''),
+    mid_label: z.string().max(60).catch('').default(''),
+    high_label: z.string().max(60).catch('').default(''),
+});
+export type FormRange = z.infer<typeof formRangeSchema>;
+
+/** Opciones de una pregunta para ordenar (en un campo de texto). */
+export const FORM_RANKING_MAX_OPTIONS = 15;
+
 export const formFieldItemSchema = z.object({
     id: itemIdSchema,
     type: z.literal('field'),
@@ -158,8 +231,23 @@ export const formFieldItemSchema = z.object({
      * Selección: `auto` (el estilo del tema; con más de 6 opciones, lista
      * desplegable), `radio` (lista), `buttons` (botones), `cards` (tarjetas,
      * con imagen si la opción tiene) o `dropdown` (lista desplegable).
+     * v0.1.355 — y las formas propias de otros tipos (`FORM_FIELD_DISPLAYS`).
      */
-    display: z.enum(['auto', 'radio', 'dropdown', 'buttons', 'cards']).default('auto'),
+    display: z.enum(FORM_FIELD_DISPLAYS).catch('auto').default('auto'),
+    /** v0.1.355 — Escala o deslizador: mínimo, máximo, paso y etiquetas. */
+    range: formRangeSchema.catch(() => formRangeSchema.parse({})).default({}),
+    /** v0.1.355 — Sí / No: los textos de los dos botones (vacío = «Sí» y «No»). */
+    yes_label: z.string().max(40).catch('').default(''),
+    no_label: z.string().max(40).catch('').default(''),
+    /**
+     * v0.1.355 — «Otro»: la opción del campo que significa «otro» y el campo de
+     * TEXTO de la lista donde se guarda lo que escribe la persona al elegirla.
+     */
+    other_option: z.string().max(200).nullable().catch(null).default(null),
+    other_field_id: z.number().int().positive().nullable().catch(null).default(null),
+    other_placeholder: z.string().max(120).catch('').default(''),
+    /** v0.1.355 — Ordenar en un campo de texto: las opciones a ordenar. */
+    ranking_options: z.array(z.string().max(120)).max(FORM_RANKING_MAX_OPTIONS).catch([]).default([]),
     /** Archivos: qué tipos acepta esta pregunta. */
     accept: z.enum(FORM_FILE_ACCEPTS).default('any'),
     show_if: formConditionSchema.nullable().default(null),
@@ -222,12 +310,48 @@ export const formImageItemSchema = z.object({
 });
 export type FormImageItem = z.infer<typeof formImageItemSchema>;
 
+/**
+ * v0.1.355 — Matriz: varias preguntas con las mismas respuestas en una
+ * grilla («Califica: Atención · Precio · Rapidez» × «Malo · Regular · Bueno»).
+ * Cada FILA es un campo de la lista (selección, varias opciones,
+ * calificación, número o porcentaje) y cada columna, una respuesta: en una
+ * selección se guarda la opción cuyo valor o nombre coincide con la columna;
+ * en un número, el número de la columna.
+ */
+export const FORM_MATRIX_ROW_TYPES = ['select', 'multi_select', 'rating', 'number', 'percent'] as const;
+export const FORM_MATRIX_MAX_ROWS = 20;
+export const FORM_MATRIX_MAX_COLUMNS = 10;
+
+export const formMatrixRowSchema = z.object({
+    field_id: z.number().int().positive(),
+    /** Vacío = el nombre del campo. */
+    label: z.string().max(200).catch('').default(''),
+});
+export const formMatrixColumnSchema = z.object({
+    /** Lo que se guarda (opción o número); el texto que se ve va en `label`. */
+    value: z.string().trim().min(1).max(120),
+    label: z.string().max(120).catch('').default(''),
+});
+export const formMatrixItemSchema = z.object({
+    id: itemIdSchema,
+    type: z.literal('matrix'),
+    label: z.string().max(300).default(''),
+    help: z.string().max(1000).default(''),
+    /** Obligatoria = hay que responder TODAS las filas. */
+    required: z.boolean().default(false),
+    rows: z.array(formMatrixRowSchema).max(FORM_MATRIX_MAX_ROWS).default([]),
+    columns: z.array(formMatrixColumnSchema).max(FORM_MATRIX_MAX_COLUMNS).default([]),
+    show_if: formConditionSchema.nullable().default(null),
+});
+export type FormMatrixItem = z.infer<typeof formMatrixItemSchema>;
+
 export const formItemSchema = z.discriminatedUnion('type', [
     formFieldItemSchema,
     formHeadingItemSchema,
     formTextItemSchema,
     formPageBreakItemSchema,
     formImageItemSchema,
+    formMatrixItemSchema,
 ]);
 export type FormItem = z.infer<typeof formItemSchema>;
 
@@ -368,7 +492,23 @@ export interface PublicFormFieldItem {
     placeholder: string;
     required: boolean;
     hidden: boolean;
-    display: 'radio' | 'dropdown' | 'checkboxes';
+    /**
+     * Cómo se dibuja: `radio`/`checkboxes` (opciones, según `choice_style`),
+     * `dropdown`, o (v0.1.355) `search`, `scale`, `slider`, `yes_no`,
+     * `signature` y `ranking`. Un tipo sin forma propia usa `radio` y la
+     * página dibuja su control de siempre.
+     */
+    display: PublicFormDisplay;
+    /** v0.1.355 — Se eligen varias opciones (varias opciones, equipos, ordenar en «varias opciones»). */
+    multiple?: boolean;
+    /** v0.1.355 — Escala o deslizador ya resueltos. */
+    range?: PublicFormRange;
+    yes_label?: string;
+    no_label?: string;
+    /** v0.1.355 — «Otro»: la opción que lo abre y la clave (id del campo de texto) donde va lo escrito. */
+    other?: { value: string; key: string; placeholder: string };
+    /** v0.1.355 — Lo que se ordena (en «varias opciones», las opciones del campo). */
+    ranking?: PublicFormOption[];
     /** v0.1.351 — Cómo se dibujan las opciones cuando no es lista desplegable. */
     choice_style?: PublicChoiceStyle;
     /** v0.1.351 — Columnas de las opciones (null = las del tema). */
@@ -393,8 +533,47 @@ export interface PublicFormFieldItem {
     show_if: FormCondition | null;
 }
 
+/** v0.1.355 */
+export type PublicFormDisplay = 'radio' | 'dropdown' | 'checkboxes' | 'search' | 'scale' | 'slider' | 'yes_no' | 'signature' | 'ranking';
+
+/** v0.1.355 — Rango ya resuelto de una escala o un deslizador. */
+export interface PublicFormRange {
+    min: number;
+    max: number;
+    step: number;
+    low_label: string;
+    mid_label: string;
+    high_label: string;
+}
+
+/** v0.1.355 — Una fila de una matriz: un campo y lo que se guarda en cada columna. */
+export interface PublicFormMatrixRow {
+    /** El id del campo como texto (la clave del valor en el envío). */
+    key: string;
+    field_id: number;
+    slug: string;
+    label: string;
+    field_type: string;
+    /** Lo que se guarda al elegir cada columna; null = esa columna no aplica a la fila. */
+    values: Array<string | number | null>;
+}
+
+export interface PublicFormMatrixItem {
+    id: string;
+    type: 'matrix';
+    label: string;
+    help: string;
+    required: boolean;
+    /** Varias respuestas por fila (filas de «varias opciones»). */
+    multiple: boolean;
+    columns: Array<{ label: string }>;
+    rows: PublicFormMatrixRow[];
+    show_if: FormCondition | null;
+}
+
 export type PublicFormItem =
     | PublicFormFieldItem
+    | PublicFormMatrixItem
     | { id: string; type: 'heading'; text: string; show_if: FormCondition | null }
     | { id: string; type: 'text'; text: string; show_if: FormCondition | null }
     | { id: string; type: 'page_break'; title: string; show_if: null }
@@ -526,7 +705,7 @@ export interface FormFieldLike {
     description?: string | null;
 }
 
-function optionsOf(field: FormFieldLike): PublicFormOption[] {
+function optionsOf(field: { config: Record<string, unknown> }): PublicFormOption[] {
     const raw = field.config.options;
     if (!Array.isArray(raw)) return [];
     return raw.flatMap((o) => {
@@ -542,11 +721,156 @@ function cfgNum(cfg: Record<string, unknown>, key: string): number | undefined {
     return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
+/** Las formas que existían antes de v0.1.355 (las únicas que dibuja la agenda). */
+const BASIC_DISPLAYS = new Set<FormFieldDisplay>(['auto', 'radio', 'dropdown', 'buttons', 'cards']);
+
+/**
+ * v0.1.355 — La forma que de verdad se usa: la elegida si el tipo la admite;
+ * si no, `auto`. `basic` deja sólo las de las opciones (la agenda).
+ */
+export function effectiveFormDisplay(
+    display: FormFieldDisplay,
+    fieldType: string,
+    multiple = fieldType === 'multi_select',
+    basic = false,
+): FormFieldDisplay {
+    if (basic && !BASIC_DISPLAYS.has(display)) return 'auto';
+    return formDisplaysFor(fieldType, multiple).includes(display) ? display : 'auto';
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+    return Math.min(hi, Math.max(lo, n));
+}
+/** Redondea al decimal del paso (evita 0.30000000000000004). */
+function tidy(n: number): number {
+    return Number(n.toFixed(6));
+}
+
+/**
+ * v0.1.355 — El rango de una escala o un deslizador con los valores del
+ * campo: lo que se elija nunca puede caer fuera de lo que el campo acepta.
+ */
+export function resolveFormRange(
+    kind: 'scale' | 'slider',
+    fieldType: string,
+    cfg: Record<string, unknown>,
+    range: Partial<FormRange> | null | undefined,
+): PublicFormRange {
+    const r = range ?? {};
+    const fmin = cfgNum(cfg, 'min');
+    const fmax = cfgNum(cfg, 'max');
+    let lo: number;
+    let hi: number;
+    let min: number;
+    let max: number;
+    let step: number;
+    if (fieldType === 'rating') {
+        lo = 0;
+        hi = clamp(Math.round(fmax ?? 5), 1, 10);
+        min = r.min ?? (kind === 'scale' ? 1 : 0);
+        max = r.max ?? hi;
+        step = Math.max(1, Math.round(r.step ?? 1));
+    } else if (fieldType === 'percent') {
+        lo = 0;
+        hi = 100;
+        min = r.min ?? 0;
+        max = r.max ?? 100;
+        step = r.step ?? (kind === 'scale' ? 10 : 1);
+    } else {
+        lo = fmin ?? -1e12;
+        hi = fmax ?? 1e12;
+        min = r.min ?? fmin ?? (kind === 'scale' ? 1 : 0);
+        const fallbackMax = kind === 'scale' ? min + 4 : fieldType === 'currency' ? 1_000_000 : 100;
+        max = r.max ?? fmax ?? fallbackMax;
+        step = r.step ?? (fieldType === 'currency' && kind === 'slider' ? Math.max(1, (max - min) / 100) : 1);
+    }
+    min = clamp(min, lo, hi);
+    max = clamp(max, lo, hi);
+    if (fieldType === 'rating') {
+        min = Math.round(min);
+        max = Math.round(max);
+    }
+    if (!(step > 0)) step = 1;
+    if (max <= min) max = clamp(min + step, lo, hi);
+    if (max <= min) min = clamp(max - step, lo, hi);
+    if (kind === 'scale') {
+        // Una escala son botones: entre 2 y 11.
+        const count = Math.floor((max - min) / step + 1e-9) + 1;
+        if (count > FORM_SCALE_MAX_BUTTONS) max = tidy(min + step * (FORM_SCALE_MAX_BUTTONS - 1));
+        else max = tidy(min + step * (count - 1));
+    }
+    return {
+        min: tidy(min),
+        max: tidy(max),
+        step: tidy(step),
+        low_label: (r.low_label ?? '').trim(),
+        mid_label: (r.mid_label ?? '').trim(),
+        high_label: (r.high_label ?? '').trim(),
+    };
+}
+
+/** v0.1.355 — Las opciones a ordenar de un campo de texto (sin repetir ni vacías). */
+export function rankingTextOptions(options: readonly string[]): string[] {
+    const out: string[] = [];
+    for (const o of options) {
+        const t = o.trim();
+        if (t && !out.includes(t)) out.push(t);
+    }
+    return out.slice(0, FORM_RANKING_MAX_OPTIONS);
+}
+
+/** v0.1.355 — Cómo queda un orden en un campo de texto: «1. Precio · 2. Calidad». */
+export function formatRankingText(ordered: readonly string[], long: boolean): string {
+    return ordered.map((o, i) => `${i + 1}. ${o}`).join(long ? '\n' : ' · ');
+}
+
+/**
+ * v0.1.355 — Lo que se guarda en una fila de matriz al elegir una columna.
+ * En una selección, la opción cuyo valor o nombre coincide con la columna
+ * (sin importar mayúsculas); en un número, el número de la columna si el
+ * campo lo acepta. null = esa columna no sirve para esa fila.
+ */
+export function matrixCellValue(
+    field: { type: string; config: Record<string, unknown> },
+    column: { value: string; label?: string },
+): string | number | null {
+    const norm = (v: string): string => v.trim().toLowerCase();
+    if (field.type === 'select' || field.type === 'multi_select') {
+        const opts = optionsOf(field);
+        if (opts.length === 0) return column.value;
+        const exact = opts.find((o) => o.value === column.value);
+        if (exact) return exact.value;
+        const keys = [norm(column.value), norm(column.label ?? '')].filter(Boolean);
+        const byName = opts.find((o) => keys.includes(norm(o.label)) || keys.includes(norm(o.value)));
+        return byName ? byName.value : null;
+    }
+    const n = Number(column.value.replace(',', '.'));
+    if (!Number.isFinite(n)) return null;
+    if (field.type === 'rating') {
+        const max = clamp(Math.round(cfgNum(field.config, 'max') ?? 5), 1, 10);
+        return Number.isInteger(n) && n >= 0 && n <= max ? n : null;
+    }
+    if (field.type === 'percent') return n >= 0 && n <= 100 ? n : null;
+    if (field.type === 'number') {
+        const min = cfgNum(field.config, 'min');
+        const max = cfgNum(field.config, 'max');
+        if (min !== undefined && n < min) return null;
+        if (max !== undefined && n > max) return null;
+        return n;
+    }
+    return null;
+}
+
+function isMatrixRowType(type: string): boolean {
+    return (FORM_MATRIX_ROW_TYPES as readonly string[]).includes(type);
+}
+
 function publicField(
     item: FormFieldItem,
     field: FormFieldLike,
     teamOptions: readonly PublicFormOption[],
     opts: PublicFormItemsOptions,
+    byId: Map<number, FormFieldLike>,
 ): PublicFormFieldItem {
     const cfg = field.config;
     const type = field.type as FormFieldType;
@@ -561,20 +885,38 @@ function publicField(
         return url ? { ...o, image_url: url } : o;
     });
     const multiple = type === 'multi_select' || (type === 'team' && cfg.multiple === true);
+    let shown = effectiveFormDisplay(item.display, type, multiple, opts.basicDisplays === true);
+    // v0.1.355 — ordenar necesita al menos dos opciones.
+    const rankingOptions: PublicFormOption[] | undefined =
+        shown !== 'ranking'
+            ? undefined
+            : type === 'multi_select'
+              ? (options ?? []).map((o) => ({ value: o.value, label: o.label }))
+              : rankingTextOptions(item.ranking_options).map((o) => ({ value: o, label: o }));
+    if (shown === 'ranking' && (rankingOptions?.length ?? 0) < 2) shown = 'auto';
+
     const themeStyle = opts.choiceStyle ?? 'list';
-    const display: PublicFormFieldItem['display'] = multiple
-        ? 'checkboxes'
-        : item.display === 'dropdown'
-          ? 'dropdown'
-          : item.display === 'auto' && (options?.length ?? 0) > 6
-            ? 'dropdown'
-            : 'radio';
+    let display: PublicFormFieldItem['display'];
+    switch (shown) {
+        case 'search':
+        case 'scale':
+        case 'slider':
+        case 'yes_no':
+        case 'signature':
+        case 'ranking':
+            display = shown;
+            break;
+        default:
+            display = multiple
+                ? 'checkboxes'
+                : shown === 'dropdown'
+                  ? 'dropdown'
+                  : shown === 'auto' && (options?.length ?? 0) > 6
+                    ? 'dropdown'
+                    : 'radio';
+    }
     const choice_style: PublicChoiceStyle =
-        item.display === 'buttons' || item.display === 'cards'
-            ? item.display
-            : item.display === 'radio'
-              ? 'list'
-              : themeStyle;
+        shown === 'buttons' || shown === 'cards' ? shown : shown === 'radio' ? 'list' : themeStyle;
     const config: PublicFormFieldItem['config'] = {};
     const max_files = cfgNum(cfg, 'max_files');
     const max = cfgNum(cfg, 'max');
@@ -589,10 +931,12 @@ function publicField(
     if (typeof cfg.currency === 'string') config.currency = cfg.currency;
     if (typeof cfg.default_country === 'string') config.default_country = cfg.default_country;
     if (type === 'file') {
-        config.accept = formAcceptAttribute(item.accept);
-        config.accept_label = FORM_FILE_ACCEPT_INFO[item.accept].label;
+        const accept = shown === 'signature' ? 'images' : item.accept;
+        config.accept = formAcceptAttribute(accept);
+        config.accept_label = FORM_FILE_ACCEPT_INFO[accept].label;
+        if (shown === 'signature') config.max_files = 1;
     }
-    return {
+    const out: PublicFormFieldItem = {
         id: item.id,
         type: 'field',
         key: String(field.id),
@@ -612,6 +956,57 @@ function publicField(
         config,
         show_if: item.show_if,
     };
+    if (multiple) out.multiple = true;
+    if (shown === 'scale' || shown === 'slider') out.range = resolveFormRange(shown, type, cfg, item.range);
+    if (shown === 'yes_no') {
+        out.yes_label = item.yes_label.trim() || 'Sí';
+        out.no_label = item.no_label.trim() || 'No';
+    }
+    if (rankingOptions && shown === 'ranking') out.ranking = rankingOptions;
+    // v0.1.355 — «Otro»: la opción existe en el campo y el texto va a un campo de texto de la lista.
+    if ((type === 'select' || type === 'multi_select') && item.other_option !== null && item.other_field_id !== null && !opts.basicDisplays) {
+        const target = byId.get(item.other_field_id);
+        if (target && (target.type === 'text' || target.type === 'long_text') && (options ?? []).some((o) => o.value === item.other_option)) {
+            out.other = {
+                value: item.other_option,
+                key: String(target.id),
+                placeholder: item.other_placeholder.trim() || '¿Cuál?',
+            };
+        }
+    }
+    return out;
+}
+
+/** v0.1.355 — La matriz pública: filas con su campo y lo que guarda cada columna. */
+function publicMatrix(item: FormMatrixItem, byId: Map<number, FormFieldLike>): PublicFormMatrixItem | null {
+    const rowFields = item.rows.flatMap((r) => {
+        const f = byId.get(r.field_id);
+        return f && isMatrixRowType(f.type) ? [{ row: r, field: f }] : [];
+    });
+    if (rowFields.length === 0 || item.columns.length < 2) return null;
+    // Todas las filas eligen una o todas eligen varias (como la primera).
+    const multiple = rowFields[0]!.field.type === 'multi_select';
+    const rows = rowFields
+        .filter(({ field }) => (field.type === 'multi_select') === multiple)
+        .map(({ row, field }) => ({
+            key: String(field.id),
+            field_id: field.id,
+            slug: field.slug,
+            label: row.label.trim() || field.label,
+            field_type: field.type,
+            values: item.columns.map((c) => matrixCellValue(field, c)),
+        }));
+    return {
+        id: item.id,
+        type: 'matrix',
+        label: item.label.trim(),
+        help: item.help.trim(),
+        required: item.required,
+        multiple,
+        columns: item.columns.map((c) => ({ label: c.label.trim() || c.value })),
+        rows,
+        show_if: item.show_if,
+    };
 }
 
 export interface PublicFormItemsOptions {
@@ -619,6 +1014,11 @@ export interface PublicFormItemsOptions {
     imageUrl?: (fileId: number) => string | null;
     /** Estilo de las opciones del tema (cuando la pregunta no elige uno). */
     choiceStyle?: PublicChoiceStyle;
+    /**
+     * v0.1.355 — Sólo las formas de las opciones (lista, botones, tarjetas,
+     * desplegable): la página de la agenda no dibuja las demás.
+     */
+    basicDisplays?: boolean;
 }
 
 /**
@@ -660,9 +1060,15 @@ export function buildPublicFormItems(
             });
             continue;
         }
+        if (item.type === 'matrix') {
+            if (o.basicDisplays) continue;
+            const m = publicMatrix(item, byId);
+            if (m) out.push(m);
+            continue;
+        }
         const field = byId.get(item.field_id);
         if (!field || !isFormFieldType(field.type)) continue;
-        out.push(publicField(item, field, teamOptions, o));
+        out.push(publicField(item, field, teamOptions, o, byId));
     }
     return out;
 }
