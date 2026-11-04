@@ -867,6 +867,18 @@ export class TenantTransferService {
                 createdBy: mapId(maps.user, c.createdBy),
             }),
         );
+        // v0.1.350 — «Mi calendario» de cada persona apunta a SU conexión: con
+        // las conexiones ya creadas, se re-apunta (o se suelta si no viajó).
+        for (const m of memberRows) {
+            const userId = maps.user.get(Number(m.userId));
+            const cal = ((m.settings as Row | null) ?? {}).agenda_calendar as Row | undefined;
+            if (userId === undefined || !cal || typeof cal !== 'object' || cal.connection_id === null || cal.connection_id === undefined) continue;
+            const next = { ...cal, connection_id: mapId(maps.connection, cal.connection_id) };
+            await tx
+                .update(memberships)
+                .set({ settings: sql`coalesce(${memberships.settings}, '{}'::jsonb) || jsonb_build_object('agenda_calendar', ${JSON.stringify(next)}::jsonb)` })
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
+        }
 
         // 5. Adjuntos ANTES que los registros: `data` los referencia por id.
         const attachRows = await this.readAll(rows('attachments'));
@@ -1429,6 +1441,8 @@ export class TenantTransferService {
                 clientEmail: (a.clientEmail as string | null) ?? null,
                 clientTz: (a.clientTz as string | null) ?? null,
                 externalEvent: a.externalEvent ? (remapJson(a.externalEvent as Row, maps) as Row) : null,
+                meetingUrl: typeof a.meetingUrl === 'string' ? a.meetingUrl : null,
+                meetingProvider: typeof a.meetingProvider === 'string' ? a.meetingProvider.slice(0, 16) : null,
                 remindersSent: Array.isArray(a.remindersSent) ? a.remindersSent : [],
                 cancelledAt: this.date(a.cancelledAt),
                 createdAt: this.date(a.createdAt) ?? new Date(),

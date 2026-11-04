@@ -13,7 +13,8 @@ export const meta: LearnModuleMeta = {
         'Servicios con varias duraciones, citas grupales con cupos y asesores con foto y cargo',
         'Horarios por persona y por servicio, festivos de tu país, vacaciones, márgenes y topes',
         'Correo de confirmación con el evento para el calendario, recordatorios y enlaces para cambiar o cancelar',
-        'Se publica con un enlace o dentro de tu sitio, y no ofrece las horas ocupadas en Google Calendar u Outlook',
+        'Cada asesor conecta su Google Calendar u Outlook: no se ofrece lo ocupado, la cita llega con su enlace de Meet o Teams y moverla en el calendario la mueve en la app',
+        'Se publica con un enlace o dentro de tu sitio',
     ],
     articles: [
         {
@@ -32,6 +33,15 @@ export const meta: LearnModuleMeta = {
             minutes: 8,
             level: 'intermediate',
             keywords: 'servicios duracion varias duraciones precio cupos grupal clase taller personas recursos sala consultorio foto cargo el primero disponible turno equilibrar prioridad round robin google calendar outlook ocupado',
+            needs: 'manage_lists',
+        },
+        {
+            id: 'agenda-calendarios',
+            title: 'El calendario de cada asesor, la videollamada y los cambios desde el calendario',
+            summary: 'Cada persona conecta su Google Calendar u Outlook y elige en cuáles mira lo ocupado; las citas llevan su enlace de Meet o Teams, y si la mueve o la borra en su calendario, la cita se mueve o se cancela.',
+            minutes: 7,
+            level: 'intermediate',
+            keywords: 'mi calendario google calendar outlook calendarios ocupado meet teams videollamada enlace zoom en persona telefono donde es sincronizacion mover borrar evento cancelar dos sentidos',
             needs: 'manage_lists',
         },
         {

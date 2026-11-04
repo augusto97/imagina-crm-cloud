@@ -77,6 +77,34 @@ export const BOOKING_ASSIGN_MODE_LABELS: Record<BookingAssignMode, string> = {
     priority: 'Por prioridad',
 };
 
+/**
+ * v0.1.350 — Dónde es la cita, por servicio. `page` = lo que dice la página
+ * (el texto «Dónde» de siempre); `video` = una videollamada que se genera
+ * sola en el calendario de quien atiende (Google Meet o Microsoft Teams).
+ */
+export const BOOKING_LOCATION_KINDS = ['page', 'video', 'in_person', 'phone', 'link'] as const;
+export type BookingLocationKind = (typeof BOOKING_LOCATION_KINDS)[number];
+export const BOOKING_LOCATION_LABELS: Record<BookingLocationKind, string> = {
+    page: 'Lo que dice la página',
+    video: 'Videollamada (Google Meet o Teams)',
+    in_person: 'En persona',
+    phone: 'Por teléfono',
+    link: 'Un enlace fijo (Zoom u otra plataforma)',
+};
+/** Con videollamada: cuál se genera. `auto` = la del calendario de quien atiende. */
+export const BOOKING_VIDEO_PROVIDERS = ['auto', 'meet', 'teams'] as const;
+export type BookingVideoProvider = (typeof BOOKING_VIDEO_PROVIDERS)[number];
+export const BOOKING_VIDEO_PROVIDER_LABELS: Record<BookingVideoProvider, string> = {
+    auto: 'La del calendario de quien atiende',
+    meet: 'Google Meet',
+    teams: 'Microsoft Teams',
+};
+/** De dónde sale el calendario de quien atiende. */
+export const BOOKING_CALENDAR_SOURCES = ['person', 'connection'] as const;
+export type BookingCalendarSource = (typeof BOOKING_CALENDAR_SOURCES)[number];
+/** Cuántos calendarios de una cuenta se pueden mirar a la vez para saber qué está ocupado. */
+export const BOOKING_MAX_BUSY_CALENDARS = 20;
+
 /** Preguntas extra: los tipos del formulario, salvo archivos (subir archivos a una cita queda para después). */
 export const BOOKING_QUESTION_TYPES = FORM_FIELD_TYPES.filter((t) => t !== 'file') as Exclude<FormFieldType, 'file'>[];
 const BOOKING_QUESTION_SET = new Set<string>(BOOKING_QUESTION_TYPES);
@@ -96,6 +124,8 @@ export const BOOKING_MAPPING_TYPES = {
     email_field_id: ['email', 'text'],
     phone_field_id: ['phone', 'text'],
     status_field_id: ['select'],
+    /** v0.1.350 — El enlace de la videollamada (Meet, Teams o el fijo). */
+    meeting_url_field_id: ['url', 'text'],
 } as const satisfies Record<string, readonly string[]>;
 export type BookingMappingKey = keyof typeof BOOKING_MAPPING_TYPES;
 export const BOOKING_MAPPING_KEYS = Object.keys(BOOKING_MAPPING_TYPES) as BookingMappingKey[];
@@ -113,6 +143,20 @@ const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 /** «08:30» (24 h). «24:00» vale sólo como fin de un tramo. */
 const hhmm = z.string().regex(/^(([01]\d|2[0-3]):[0-5]\d|24:00)$/, 'Usa el formato HH:MM');
+
+/** Id de un calendario de Google («primary», «x@group.calendar.google.com») u Outlook (un id largo). */
+const calendarIdSchema = z
+    .string()
+    .min(1)
+    .max(512)
+    // Sin espacios, comillas, «<>» ni caracteres de control (se mira el código: el lint no deja escribirlos en una regex).
+    .refine((v) => !/[\s<>"]/.test(v) && ![...v].some((ch) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f), 'Calendario no válido');
+/** Un enlace https (o vacío). */
+const httpsOrEmpty = z
+    .string()
+    .trim()
+    .max(500)
+    .refine((v) => v === '' || /^https:\/\/[^\s<>"]+$/i.test(v), { message: 'Usa un enlace que empiece con https://' });
 
 /** Minutos desde la medianoche de un «HH:MM». */
 export function hhmmToMinutes(v: string): number {
@@ -205,6 +249,29 @@ const durationMin = z.number().int().min(5).max(720);
 /** Un margen o aviso propio del servicio; null = el de la página. */
 const minutesOrPage = (max: number) => z.number().int().min(0).max(max).nullable().default(null);
 
+/**
+ * v0.1.350 — Dónde es la cita de un servicio (lo ve el cliente en la página,
+ * el correo, el .ics y `{{cita.lugar}}`).
+ *  - `video`: Meet o Teams generado solo en el calendario de quien atiende;
+ *    si no se puede (no conectó su calendario, una cuenta personal de
+ *    Microsoft), su enlace de videollamada fijo.
+ *  - `phone`: `client` = la empresa llama al teléfono que deja el cliente;
+ *    `company` = el cliente llama al número de la empresa.
+ *  - `link`: un enlace fijo (una sala de Zoom). Se le muestra al cliente
+ *    recién cuando reservó, nunca en la página pública.
+ */
+export const bookingLocationSchema = z.object({
+    kind: z.enum(BOOKING_LOCATION_KINDS).default('page'),
+    video: z.enum(BOOKING_VIDEO_PROVIDERS).default('auto'),
+    address: z.string().trim().max(500).default(''),
+    url: httpsOrEmpty.default(''),
+    phone: z.enum(['client', 'company']).default('client'),
+    phone_number: z.string().trim().max(60).default(''),
+    /** Indicaciones («Toca el timbre del 302», «Ten a mano tu cédula»). */
+    note: z.string().trim().max(300).default(''),
+});
+export type BookingLocation = z.infer<typeof bookingLocationSchema>;
+
 /** Un tipo de cita. */
 export const bookingServiceSchema = z.object({
     id: itemIdSchema,
@@ -243,12 +310,14 @@ export const bookingServiceSchema = z.object({
         .refine(isSlotInterval, { message: 'Intervalo no válido' })
         .nullable()
         .default(null),
+    /** v0.1.350 — Dónde es la cita (por defecto, lo que dice la página). */
+    location: bookingLocationSchema.default({}),
     active: z.boolean().default(true),
 });
 export type BookingServiceItem = z.infer<typeof bookingServiceSchema>;
 
 /** Quien atiende: una persona del equipo o un recurso (sala, consultorio, vehículo). */
-export const bookingStaffSchema = z.object({
+const bookingStaffObject = z.object({
     id: itemIdSchema,
     kind: z.enum(['user', 'resource']).default('user'),
     /** Persona del equipo (kind = user). */
@@ -268,14 +337,44 @@ export const bookingStaffSchema = z.object({
     /** Servicios que ofrece (vacío = todos). */
     services: z.array(itemIdSchema).max(BOOKING_MAX_SERVICES).default([]),
     availability: bookingAvailabilitySchema.default({}),
-    /** Conexión de Google Calendar u Outlook de esta persona (Ajustes → Integraciones). */
+    /**
+     * v0.1.350 — De dónde sale su calendario:
+     *  - `person`: el que la persona conectó ella misma en «Mi calendario»
+     *    (Ajustes → Cuenta), con los calendarios que eligió;
+     *  - `connection`: una conexión que eligió quien arma la agenda.
+     * Un recurso no tiene calendario.
+     */
+    calendar_source: z.enum(BOOKING_CALENDAR_SOURCES).default('person'),
+    /** Con `connection`: la conexión de Google Calendar u Outlook (Ajustes → Integraciones). */
     connection_id: z.number().int().positive().nullable().default(null),
-    /** Descontar sus horarios ocupados de ese calendario (sólo inicio y fin). */
+    /** Con `connection`: en qué calendarios mira lo ocupado (vacío = el principal). */
+    busy_calendars: z.array(calendarIdSchema).max(BOOKING_MAX_BUSY_CALENDARS).default([]),
+    /** Con `connection`: en qué calendario crea las citas (null = el principal). */
+    write_calendar: calendarIdSchema.nullable().default(null),
+    /** Descontar sus horarios ocupados de su calendario (sólo inicio y fin). */
     read_busy: z.boolean().default(true),
-    /** Crear el evento de cada cita en ese calendario. */
+    /** Crear el evento de cada cita en su calendario. */
     create_events: z.boolean().default(true),
+    /**
+     * v0.1.350 — Su enlace de videollamada fijo (una sala de Zoom o de Meet):
+     * se usa cuando el servicio es por videollamada y su calendario no puede
+     * generar una.
+     */
+    meeting_url: httpsOrEmpty.default(''),
     active: z.boolean().default(true),
 });
+
+/**
+ * Antes de v0.1.350 el calendario de cada persona era siempre una conexión
+ * elegida en la agenda. Una configuración vieja con conexión sigue con esa
+ * conexión; una sin conexión pasa a usar el calendario de la persona.
+ */
+export const bookingStaffSchema = z.preprocess((raw) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+    const r = raw as Record<string, unknown>;
+    if ('calendar_source' in r) return r;
+    return { ...r, calendar_source: typeof r.connection_id === 'number' ? 'connection' : 'person' };
+}, bookingStaffObject);
 export type BookingStaff = z.infer<typeof bookingStaffSchema>;
 
 const capOrNone = (max: number) => z.number().int().min(1).max(max).nullable().default(null);
@@ -333,6 +432,8 @@ export const bookingMappingSchema = z.object({
     email_field_id: fieldRef,
     phone_field_id: fieldRef,
     status_field_id: fieldRef,
+    /** v0.1.350 — El enlace de la videollamada. */
+    meeting_url_field_id: fieldRef,
     /** Valores (opción) del campo de estado. null = la página no escribe ese estado. */
     status_confirmed: z.string().max(190).nullable().default(null),
     status_rescheduled: z.string().max(190).nullable().default(null),
@@ -403,6 +504,18 @@ export const bookingSettingsSchema = z.object({
 });
 export type BookingSettings = z.infer<typeof bookingSettingsSchema>;
 
+/**
+ * v0.1.350 — Lo que pasa cuando quien atiende cambia el evento de la cita en
+ * su propio calendario (Google u Outlook): moverlo mueve la cita, borrarlo la
+ * cancela. Al cliente se le avisa con el mismo correo que cuando el equipo la
+ * cambia desde la app (`notify_client_on_team_change`).
+ */
+export const bookingCalendarSyncSchema = z.object({
+    move: z.boolean().default(true),
+    cancel: z.boolean().default(true),
+});
+export type BookingCalendarSync = z.infer<typeof bookingCalendarSyncSchema>;
+
 export const bookingConfigSchema = z.object({
     settings: bookingSettingsSchema.default({}),
     services: z.array(bookingServiceSchema).max(BOOKING_MAX_SERVICES).default([]),
@@ -411,6 +524,7 @@ export const bookingConfigSchema = z.object({
     mapping: bookingMappingSchema.default({}),
     questions: z.array(bookingQuestionSchema).max(BOOKING_MAX_QUESTIONS).default([]),
     notifications: bookingNotificationsSchema.default({}),
+    calendar_sync: bookingCalendarSyncSchema.default({}),
 });
 export type BookingConfig = z.infer<typeof bookingConfigSchema>;
 
@@ -463,6 +577,76 @@ export const bookingPreviewSlotsSchema = z.object({
 });
 export type BookingPreviewSlotsInput = z.infer<typeof bookingPreviewSlotsSchema>;
 
+// ───────────────────── v0.1.350 — Calendario de cada persona ─────────────────────
+
+export type BookingCalendarProvider = 'google_calendar' | 'outlook';
+
+/**
+ * «Mi calendario» (Ajustes → Cuenta): la conexión de Google Calendar u
+ * Outlook que la PERSONA conectó para sus citas y qué calendarios usa. Vive
+ * en `memberships.settings.agenda_calendar` (es suyo, por empresa).
+ */
+export const agendaCalendarPrefsSchema = z.object({
+    connection_id: z.number().int().positive().nullable().default(null),
+    /** En qué calendarios mira lo ocupado (vacío = el principal). */
+    busy_calendars: z.array(calendarIdSchema).max(BOOKING_MAX_BUSY_CALENDARS).default([]),
+    /** En cuál crea las citas (null = el principal). */
+    write_calendar: calendarIdSchema.nullable().default(null),
+});
+export type AgendaCalendarPrefs = z.infer<typeof agendaCalendarPrefsSchema>;
+
+export const updateMyAgendaCalendarSchema = z.object({
+    busy_calendars: z.array(calendarIdSchema).max(BOOKING_MAX_BUSY_CALENDARS).optional(),
+    write_calendar: calendarIdSchema.nullable().optional(),
+});
+export type UpdateMyAgendaCalendarInput = z.infer<typeof updateMyAgendaCalendarSchema>;
+
+export const connectMyAgendaCalendarSchema = z.object({
+    provider: z.enum(['google_calendar', 'outlook']),
+});
+export type ConnectMyAgendaCalendarInput = z.infer<typeof connectMyAgendaCalendarSchema>;
+
+/** Un calendario de la cuenta conectada (sólo nombre y si se puede escribir). */
+export interface AgendaCalendarItem {
+    id: string;
+    name: string;
+    primary: boolean;
+    can_write: boolean;
+    color: string | null;
+}
+
+export interface MyAgendaCalendarDto {
+    connection: {
+        id: number;
+        provider: BookingCalendarProvider;
+        name: string;
+        account: string | null;
+        /** Por qué no se puede usar (autorización vencida), o null. */
+        problem: string | null;
+    } | null;
+    busy_calendars: string[];
+    write_calendar: string | null;
+    /** Los calendarios de la cuenta (null = no se pudieron leer: `calendars_error`). */
+    calendars: AgendaCalendarItem[] | null;
+    calendars_error: string | null;
+    /** Con qué se puede conectar (la app de Google o Microsoft la registra quien opera la plataforma). */
+    providers: Array<{ key: BookingCalendarProvider; name: string; available: boolean }>;
+    /** Las agendas donde la persona atiende con su calendario. */
+    pages: Array<{ id: number; name: string; list_id: number; list_name: string; read_busy: boolean; create_events: boolean }>;
+}
+
+/** El estado del calendario de una persona, para el constructor (sin nombres de calendarios: son suyos). */
+export interface BookingMemberCalendar {
+    provider: BookingCalendarProvider;
+    account: string | null;
+    /** Cuántos calendarios mira para saber qué está ocupado. */
+    busy_count: number;
+    problem: string | null;
+}
+
+/** Lo que `bookingProblems` necesita saber del calendario de cada persona (por id de quien atiende). */
+export type BookingStaffCalendars = Record<string, { provider: BookingCalendarProvider | null }>;
+
 // ─────────────────────────── Público ───────────────────────────
 
 export interface PublicBookingService {
@@ -478,6 +662,14 @@ export interface PublicBookingService {
     /** v0.1.349 — Cupos por horario (1 = individual). */
     seats: number;
     show_seats_left: boolean;
+    /** v0.1.350 — Dónde es (sin enlaces: el de la videollamada llega al reservar). */
+    location: BookingLocationPublic;
+}
+
+export interface BookingLocationPublic {
+    kind: BookingLocationKind;
+    label: string;
+    detail: string;
 }
 
 export interface PublicBookingStaff {
@@ -579,6 +771,9 @@ export interface PublicAppointmentSummary {
     end: string;
     status: BookingStatus;
     location: string;
+    /** v0.1.350 — Cómo es la cita y el enlace de la videollamada (null = no tiene, o todavía se está creando). */
+    location_kind: BookingLocationKind;
+    meeting_url: string | null;
     client_name: string;
     time_zone: string;
     /** Enlaces del cliente (reprogramar / cancelar / agregar al calendario). */
@@ -622,8 +817,11 @@ export interface BookingEventInfo {
     page_id: number;
     page_name: string;
     event: BookingEvent;
-    /** Quién lo hizo: el cliente desde la página o el enlace, o el equipo desde la app. */
-    by: 'client' | 'team';
+    /**
+     * Quién lo hizo: el cliente desde la página o el enlace, el equipo desde
+     * la app, o (v0.1.350) quien atiende desde su propio calendario.
+     */
+    by: 'client' | 'team' | 'calendar';
     service: string;
     staff: string;
     /** ISO UTC. */
@@ -637,6 +835,9 @@ export interface BookingEventInfo {
     manage_url: string;
     cancel_url: string;
     time_zone: string;
+    /** v0.1.350 — Dónde es («En persona · Cra. 7 #12-34») y el enlace de la videollamada. */
+    location?: string;
+    meeting_url?: string;
 }
 
 /** ¿El evento coincide con el disparador? Sin página = cualquiera; sin eventos = los tres. */
@@ -716,7 +917,11 @@ export function bookingMergeValue(info: BookingEventInfo | undefined | null, key
         case 'enlace_cancelar':
             return info.cancel_url;
         case 'por':
-            return info.by === 'team' ? 'el equipo' : 'el cliente';
+            return info.by === 'team' ? 'el equipo' : info.by === 'calendar' ? 'quien atiende (desde su calendario)' : 'el cliente';
+        case 'lugar':
+            return info.location ?? '';
+        case 'enlace_reunion':
+            return info.meeting_url ?? '';
         default:
             return '';
     }
@@ -742,6 +947,8 @@ export function sampleBookingEvent(event: BookingEvent = 'booked', now: Date = n
         manage_url: 'https://ejemplo.com/cita',
         cancel_url: 'https://ejemplo.com/cita?accion=cancelar',
         time_zone: 'UTC',
+        location: 'Videollamada por Google Meet',
+        meeting_url: 'https://meet.google.com/abc-defg-hij',
     };
 }
 
@@ -757,6 +964,8 @@ export const BOOKING_MERGE_TAGS: ReadonlyArray<{ tag: string; label: string }> =
     { tag: 'cita.inicio_iso', label: 'Inicio en formato ISO (para webhooks)' },
     { tag: 'cita.cliente', label: 'Nombre del cliente' },
     { tag: 'cita.email', label: 'Correo del cliente' },
+    { tag: 'cita.lugar', label: 'Dónde es (dirección, teléfono o videollamada)' },
+    { tag: 'cita.enlace_reunion', label: 'Enlace de la videollamada (Meet, Teams o el fijo)' },
     { tag: 'cita.pagina', label: 'Página de agenda' },
     { tag: 'cita.enlace_reprogramar', label: 'Enlace para reprogramar' },
     { tag: 'cita.enlace_cancelar', label: 'Enlace para cancelar' },
@@ -784,10 +993,98 @@ export function newBookingItemId(prefix = ''): string {
     return s.slice(0, 24);
 }
 
+const VIDEO_LATER = 'El enlace de la videollamada te llega en el correo de confirmación.';
+
+/**
+ * v0.1.350 — Dónde es la cita, como lo ve el cliente ANTES de reservar.
+ * Nunca lleva un enlace: el de la videollamada (generado o fijo) recién
+ * aparece cuando la cita existe.
+ */
+export function bookingLocationPublic(loc: BookingLocation, pageLocation: string): BookingLocationPublic {
+    const page = pageLocation.trim();
+    switch (loc.kind) {
+        case 'video':
+            return {
+                kind: 'video',
+                label: loc.video === 'meet' ? 'Videollamada por Google Meet' : loc.video === 'teams' ? 'Videollamada por Microsoft Teams' : 'Videollamada',
+                detail: VIDEO_LATER,
+            };
+        case 'link':
+            return { kind: 'link', label: 'Videollamada', detail: VIDEO_LATER };
+        case 'in_person':
+            return { kind: 'in_person', label: 'En persona', detail: [loc.address || page, loc.note].filter((x) => x.trim() !== '').join(' · ') };
+        case 'phone':
+            return {
+                kind: 'phone',
+                label: 'Por teléfono',
+                detail: loc.phone === 'company' && loc.phone_number !== '' ? `Llámanos al ${loc.phone_number}.` : 'Te llamamos al teléfono que nos dejes.',
+            };
+        default:
+            return { kind: 'page', label: page, detail: '' };
+    }
+}
+
+/** El nombre de la plataforma de una videollamada ya creada. */
+export function meetingProviderLabel(provider: string | null | undefined): string {
+    if (provider === 'meet') return 'Google Meet';
+    if (provider === 'teams') return 'Microsoft Teams';
+    return '';
+}
+
+/**
+ * v0.1.350 — Dónde es una cita YA reservada, en una línea («Videollamada por
+ * Google Meet», «En persona · Cra. 7 #12-34 · Toca el timbre»). Es lo que va
+ * en el correo, el .ics, el evento del calendario y `{{cita.lugar}}`; el
+ * enlace va aparte (`{{cita.enlace_reunion}}`).
+ */
+export function bookingLocationText(loc: BookingLocation, pageLocation: string, meeting: { url: string | null; provider: string | null } = { url: null, provider: null }): string {
+    const page = pageLocation.trim();
+    switch (loc.kind) {
+        case 'video':
+        case 'link': {
+            const p = meetingProviderLabel(meeting.provider);
+            return [p ? `Videollamada por ${p}` : 'Videollamada', loc.note].filter((x) => x.trim() !== '').join(' · ');
+        }
+        case 'in_person':
+            return ['En persona', loc.address || page, loc.note].filter((x) => x.trim() !== '').join(' · ');
+        case 'phone':
+            return [loc.phone === 'company' && loc.phone_number !== '' ? `Por teléfono: llámanos al ${loc.phone_number}` : 'Por teléfono: te llamamos', loc.note]
+                .filter((x) => x.trim() !== '')
+                .join(' · ');
+        default:
+            return page;
+    }
+}
+
+/**
+ * ¿Puede esta persona atender un servicio por videollamada? Sí, si su
+ * calendario genera la que pide el servicio (Google → Meet, Outlook → Teams)
+ * y agrega las citas a su calendario, o si tiene un enlace fijo.
+ */
+export function staffVideoProblem(
+    staff: Pick<BookingStaff, 'kind' | 'create_events' | 'meeting_url'>,
+    video: BookingVideoProvider,
+    provider: BookingCalendarProvider | null,
+): string | null {
+    if (staff.meeting_url.trim() !== '') return null;
+    if (staff.kind === 'resource') return 'ponle un enlace de videollamada fijo (un recurso no tiene calendario)';
+    const fits = provider !== null && (video === 'auto' || (video === 'meet' ? provider === 'google_calendar' : provider === 'outlook'));
+    if (!fits) {
+        if (provider === null) return 'conecta su calendario (lo hace la persona en Ajustes → Cuenta → Mi calendario) o ponle un enlace de videollamada fijo';
+        return video === 'meet'
+            ? 'Google Meet necesita un Google Calendar y su calendario es de Outlook: cambia la videollamada a «La del calendario de quien atiende» o ponle un enlace fijo'
+            : 'Microsoft Teams necesita un calendario de Outlook y su calendario es de Google: cambia la videollamada a «La del calendario de quien atiende» o ponle un enlace fijo';
+    }
+    if (!staff.create_events) return 'activa «Agregar cada cita a su calendario» (la videollamada se crea en ese evento) o ponle un enlace fijo';
+    return null;
+}
+
 /** Lo que hay que completar antes de poder publicar (en lenguaje claro). */
 export function bookingProblems(
     config: BookingConfig,
     fields: ReadonlyArray<{ id: number; type: string }>,
+    /** v0.1.350 — El calendario de cada persona (sin esto no se revisa la videollamada). */
+    opts: { staffCalendars?: BookingStaffCalendars } = {},
 ): string[] {
     const out: string[] = [];
     const typeOf = new Map(fields.map((f) => [f.id, f.type]));
@@ -818,6 +1115,28 @@ export function bookingProblems(
         const week = s.availability.week.some((d) => d.length > 0);
         const extra = s.availability.exceptions.some((e) => !e.closed && e.intervals.length > 0);
         if (!week && !extra) out.push(`«${staffLabel(s)}» no tiene horario: agrégale al menos un tramo.`);
+    }
+    // v0.1.350 — Dónde es cada servicio.
+    for (const svc of config.services) {
+        if (!svc.active) continue;
+        const loc = svc.location;
+        if (loc.kind === 'link' && loc.url === '') out.push(`Escribe el enlace de la videollamada de «${svc.name}» (Servicios → Dónde es).`);
+        if (loc.kind === 'in_person' && loc.address === '' && config.settings.location.trim() === '') {
+            out.push(`Escribe la dirección de «${svc.name}» (Servicios → Dónde es).`);
+        }
+        if (loc.kind === 'phone' && loc.phone === 'client' && config.settings.ask_phone === 'hidden') {
+            out.push(`«${svc.name}» es por teléfono: pide el teléfono del cliente (Campos de la lista → Lo que se le pregunta al cliente).`);
+        }
+        if (loc.kind === 'phone' && loc.phone === 'company' && loc.phone_number === '') {
+            out.push(`Escribe el número al que llama el cliente para «${svc.name}» (Servicios → Dónde es).`);
+        }
+        if (loc.kind === 'video' && opts.staffCalendars) {
+            for (const st of staff) {
+                if (!staffOffers(st, svc.id)) continue;
+                const why = staffVideoProblem(st, loc.video, opts.staffCalendars[st.id]?.provider ?? null);
+                if (why) out.push(`«${staffLabel(st)}» no puede atender «${svc.name}» por videollamada: ${why}.`);
+            }
+        }
     }
     // SMS (ADR-S82): los recordatorios por SMS necesitan la conexión y el teléfono del cliente.
     const sms = config.notifications.sms_reminders;

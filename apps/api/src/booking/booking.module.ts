@@ -11,7 +11,9 @@ import { BookingHolidaysService } from './booking-holidays';
 import { BookingPublicService } from './booking-public.service';
 import { BookingRemindersService } from './booking-reminders.service';
 import { BOOKING_SIMULATOR } from './booking-simulator';
-import { BookingController, PublicBookingController, PublicBookingPageController } from './booking.controller';
+import { BookingController, MyAgendaCalendarController, PublicBookingController, PublicBookingPageController } from './booking.controller';
+import { BookingMyCalendarService } from './booking-my-calendar.service';
+import { BookingCalendarSyncService } from './booking-calendar-sync.service';
 import { BookingService } from './booking.service';
 
 /**
@@ -22,7 +24,7 @@ import { BookingService } from './booking.service';
 @Global()
 @Module({
     imports: [AuthModule, DomainsModule, ListsModule, FieldsModule, FilesModule, RecordsModule],
-    controllers: [BookingController, PublicBookingController, PublicBookingPageController],
+    controllers: [BookingController, MyAgendaCalendarController, PublicBookingController, PublicBookingPageController],
     providers: [
         BookingService,
         BookingPublicService,
@@ -30,8 +32,10 @@ import { BookingService } from './booking.service';
         BookingCalendarService,
         BookingHolidaysService,
         BookingRemindersService,
+        BookingMyCalendarService,
+        BookingCalendarSyncService,
         { provide: BOOKING_SIMULATOR, useExisting: BookingPublicService },
     ],
-    exports: [BookingService, BookingPublicService, BookingAvailabilityService, BookingHolidaysService, BookingRemindersService, BOOKING_SIMULATOR],
+    exports: [BookingService, BookingMyCalendarService, BookingCalendarSyncService, BookingPublicService, BookingAvailabilityService, BookingHolidaysService, BookingRemindersService, BOOKING_SIMULATOR],
 })
 export class BookingModule {}

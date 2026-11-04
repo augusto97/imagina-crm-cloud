@@ -36,6 +36,8 @@ export interface BookingMailInput {
     withdrawUrl?: string | null;
     /** Quién canceló o movió: el cliente o la empresa. */
     byTeam?: boolean;
+    /** v0.1.350 — El enlace de la videollamada (Meet, Teams o el fijo); va como botón principal. */
+    meetingUrl?: string | null;
 }
 
 /** El horario en el reloj del cliente y, si es otro, también en el de la empresa. */
@@ -106,7 +108,10 @@ export function bookingClientEmail(brand: PortalEmailBrand, i: BookingMailInput)
     const note = i.kind !== 'cancelled' && i.note?.trim() ? i.note.trim().slice(0, 2000) : '';
     const active = i.kind !== 'cancelled';
     const buttons: Array<{ label: string; url: string; primary: boolean }> = [];
-    if (active && i.canReschedule) buttons.push({ label: 'Cambiar el horario', url: i.manageUrl, primary: true });
+    // Sólo un enlace https llega como botón (lo arma la app, pero se revisa igual).
+    const meeting = active && i.meetingUrl && /^https:\/\/[^\s<>"]+$/i.test(i.meetingUrl) ? i.meetingUrl : null;
+    if (meeting) buttons.push({ label: 'Unirse a la videollamada', url: meeting, primary: true });
+    if (active && i.canReschedule) buttons.push({ label: 'Cambiar el horario', url: i.manageUrl, primary: meeting === null });
     if (active && i.canCancel) buttons.push({ label: 'Cancelar la cita', url: i.cancelUrl, primary: false });
     if (!active && i.bookUrl) buttons.push({ label: 'Agendar otra cita', url: i.bookUrl, primary: true });
 

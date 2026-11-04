@@ -85,7 +85,7 @@ Sólo para prestar el servicio: mostrar y guardar los datos de cada empresa, eje
 ## Integraciones con Google
 Si una empresa conecta su cuenta de Google, {{app_name}} recibe sólo los permisos que esa persona acepta y los usa únicamente para lo que la empresa configura en sus automatizaciones:
 - **Gmail (gmail.send)**: enviar correos desde esa cuenta. No leemos, buscamos ni guardamos los correos de la casilla.
-- **Google Calendar (calendar.events)**: crear eventos en su calendario y, si la empresa lo activa en su agenda de citas, consultar sólo la hora de inicio y de fin de los eventos de la persona que atiende, para no ofrecer los horarios en que ya está ocupada. No leemos títulos, descripciones ni invitados.
+- **Google Calendar (calendar.events y calendar.calendarlist.readonly)**: crear eventos en su calendario (con su videollamada de Google Meet si la empresa lo pide) y, si la empresa lo activa en su agenda de citas, consultar sólo la hora de inicio y de fin de los eventos de la persona que atiende, para no ofrecer los horarios en que ya está ocupada, y ver si movió o borró un evento que creamos para mover o cancelar esa cita. Para que la persona elija en cuáles de sus calendarios mirar, vemos sólo el nombre de sus calendarios. No leemos títulos, descripciones ni invitados.
 - **Google Sheets (spreadsheets)**: agregar filas a las hojas de cálculo que la empresa indica.
 - **Google Drive (drive.file)**: guardar los archivos de la empresa en una carpeta de su Drive y volver a leerlos. Sólo vemos los archivos que la propia app creó ahí.
 

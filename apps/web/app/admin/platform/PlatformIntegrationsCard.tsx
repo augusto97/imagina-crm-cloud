@@ -100,7 +100,10 @@ function ProviderCard({
     const unlocks = INTEGRATIONS.filter((i) => i.auth.kind === 'oauth' && i.auth.provider === app.provider);
     const scopes = [
         ...new Set(
-            unlocks.flatMap((i) => integrationScopes(i).split(def.scope_separator === ',' ? ',' : ' ')),
+            unlocks.flatMap((i) =>
+                // El calendario de la agenda (v0.1.350) pide además ver la lista de calendarios.
+                [integrationScopes(i), integrationScopes(i, { purpose: 'agenda' })].flatMap((x) => x.split(def.scope_separator === ',' ? ',' : ' ')),
+            ),
         ),
     ].filter(Boolean);
     const values = guideValues(redirectUri, scopes, legal);

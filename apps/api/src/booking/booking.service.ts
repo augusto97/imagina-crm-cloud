@@ -7,8 +7,11 @@ import {
     readMirrorListMarker,
     resolveTimeZone,
     slugify,
+    type AgendaCalendarItem,
     type BookingConfig,
+    type BookingMemberCalendar,
     type BookingPageDto,
+    type BookingStaffCalendars,
     type BookingPreviewSlotsInput,
     type BookingStatus,
     type CreateBookingPageInput,
@@ -28,7 +31,8 @@ import { effectivePermissions } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { BookingAvailabilityService, type PageContext } from './booking-availability.service';
-import { isCalendarProvider } from './booking-calendar';
+import { BookingCalendarService, CalendarListScopeError, isCalendarProvider } from './booking-calendar';
+import { BookingMyCalendarService } from './booking-my-calendar.service';
 import { newBookingToken, readBookingConfig, sanitizeBookingConfig } from './booking-config';
 import { BookingHolidaysService } from './booking-holidays';
 
@@ -65,8 +69,11 @@ export interface BookingCalendarOption {
 }
 
 export interface BookingEditorOptions {
-    /** Personas del equipo que pueden atender (las que pueden editar la lista). */
-    members: Array<{ id: number; name: string; email: string }>;
+    /**
+     * Personas del equipo que pueden atender (las que pueden editar la lista)
+     * y, v0.1.350, cómo está su «Mi calendario» (sin los nombres de sus calendarios).
+     */
+    members: Array<{ id: number; name: string; email: string; calendar: BookingMemberCalendar | null }>;
     /** Calendarios conectados (Google Calendar u Outlook) para asociar a una persona. */
     calendars: BookingCalendarOption[];
     time_zone: string;
@@ -82,6 +89,8 @@ export class BookingService {
         private readonly fields: FieldsService,
         private readonly availability: BookingAvailabilityService,
         private readonly holidays: BookingHolidaysService,
+        private readonly calendar: BookingCalendarService,
+        private readonly myCalendar: BookingMyCalendarService,
         @Optional() private readonly domains?: DomainsService,
     ) {}
 
@@ -136,16 +145,64 @@ export class BookingService {
     }
 
     /** Lo que impide publicar y depende de la empresa (no sólo de la configuración). */
-    private async memberProblems(tenantId: number, list: List, config: BookingConfig): Promise<string[]> {
-        const ids = config.staff.filter((s) => s.active && s.kind === 'user' && s.staff_user_id !== null).map((s) => s.staff_user_id!);
-        if (ids.length === 0) return [];
-        const ok = new Set((await this.eligibleMembers(tenantId, list)).map((m) => m.id));
+    private async memberProblems(tenantId: number, list: List, config: BookingConfig, fields: readonly Field[] = []): Promise<string[]> {
         const out: string[] = [];
-        for (const s of config.staff) {
-            if (!s.active || s.kind !== 'user' || s.staff_user_id === null) continue;
-            if (!ok.has(s.staff_user_id)) out.push('Una de las personas que atiende ya no puede editar esta lista: elige a otra o dale acceso en Permisos.');
+        const ids = config.staff.filter((s) => s.active && s.kind === 'user' && s.staff_user_id !== null).map((s) => s.staff_user_id!);
+        const members = ids.length > 0 ? await this.eligibleMembers(tenantId, list) : [];
+        if (ids.length > 0) {
+            const ok = new Set(members.map((m) => m.id));
+            for (const s of config.staff) {
+                if (!s.active || s.kind !== 'user' || s.staff_user_id === null) continue;
+                if (!ok.has(s.staff_user_id)) out.push('Una de las personas que atiende ya no puede editar esta lista: elige a otra o dale acceso en Permisos.');
+            }
+        }
+        // v0.1.350 — la videollamada depende del calendario de cada persona.
+        if (config.services.some((s) => s.active && s.location.kind === 'video')) {
+            // La persona se nombra con su nombre (la configuración guarda sólo su id).
+            const names = new Map(members.map((m) => [m.id, m.name.trim() || m.email]));
+            const named: BookingConfig = {
+                ...config,
+                staff: config.staff.map((s) => (s.name.trim() === '' && s.staff_user_id !== null && names.has(s.staff_user_id) ? { ...s, name: names.get(s.staff_user_id)! } : s)),
+            };
+            const base = new Set(bookingProblems(named, fields));
+            const full = bookingProblems(named, fields, { staffCalendars: await this.staffCalendars(tenantId, config) });
+            out.push(...full.filter((p) => !base.has(p)));
         }
         return [...new Set(out)];
+    }
+
+    /** v0.1.350 — Qué calendario tiene cada persona que atiende (para saber si puede crear la videollamada). */
+    private async staffCalendars(tenantId: number, config: BookingConfig): Promise<BookingStaffCalendars> {
+        const out: BookingStaffCalendars = {};
+        const persons = config.staff.filter((s) => s.kind === 'user' && s.staff_user_id !== null && s.calendar_source === 'person').map((s) => s.staff_user_id!);
+        const mine = await this.myCalendar.memberCalendars(tenantId, persons);
+        const needConns = config.staff.some((s) => s.calendar_source === 'connection' && s.connection_id !== null);
+        const conns = needConns ? new Map((await this.calendarOptions(tenantId)).map((c) => [c.id, c])) : new Map<number, BookingCalendarOption>();
+        for (const s of config.staff) {
+            if (s.kind !== 'user' || s.staff_user_id === null) out[s.id] = { provider: null };
+            else if (s.calendar_source === 'person') out[s.id] = { provider: mine.get(s.staff_user_id)?.provider ?? null };
+            else out[s.id] = { provider: s.connection_id !== null ? (conns.get(s.connection_id)?.provider ?? null) : null };
+        }
+        return out;
+    }
+
+    /**
+     * v0.1.350 — Los calendarios de una conexión de la EMPRESA (para elegir en
+     * cuáles mira lo ocupado una persona y en cuál crea las citas). Una
+     * conexión privada de alguien no se lista desde aquí: sus calendarios son
+     * suyos y los elige esa persona en «Mi calendario».
+     */
+    async connectionCalendars(tenantId: number, connectionId: number): Promise<AgendaCalendarItem[]> {
+        const c = (await this.calendarOptions(tenantId)).find((x) => x.id === connectionId);
+        if (!c || c.owner_user_id !== null) {
+            throw new NotFoundException({ code: 'not_found', message: 'Ese calendario no es de la empresa.', data: { status: 404 } });
+        }
+        try {
+            return await this.calendar.listCalendars(tenantId, connectionId);
+        } catch (err) {
+            if (err instanceof CalendarListScopeError) return [{ id: 'primary', name: 'Calendario principal', primary: true, can_write: true, color: null }];
+            throw badRequest('calendar_unavailable', err instanceof Error ? err.message : String(err));
+        }
     }
 
     // ─────────────────────────── Administración ───────────────────────────
@@ -164,7 +221,7 @@ export class BookingService {
         const upcoming = await this.upcomingCounts(tenantId, rows.map((r) => r.id));
         const out: BookingPageDto[] = [];
         for (const r of rows) {
-            out.push(this.toDto(r, fields, base, upcoming.get(r.id) ?? 0, await this.memberProblems(tenantId, list, readBookingConfig(r.config))));
+            out.push(this.toDto(r, fields, base, upcoming.get(r.id) ?? 0, await this.memberProblems(tenantId, list, readBookingConfig(r.config), fields)));
         }
         return out;
     }
@@ -174,7 +231,7 @@ export class BookingService {
         const row = await this.load(tenantId, list.id, id);
         const fields = await this.fields.listByListId(tenantId, list.id);
         const upcoming = await this.upcomingCounts(tenantId, [row.id]);
-        return this.toDto(row, fields, await this.publicBase(tenantId), upcoming.get(row.id) ?? 0, await this.memberProblems(tenantId, list, readBookingConfig(row.config)));
+        return this.toDto(row, fields, await this.publicBase(tenantId), upcoming.get(row.id) ?? 0, await this.memberProblems(tenantId, list, readBookingConfig(row.config), fields));
     }
 
     private async load(tenantId: number, listId: number, id: number): Promise<BookingPageRow> {
@@ -225,7 +282,7 @@ export class BookingService {
                 })
                 .returning(),
         );
-        return this.toDto(row!, fields, await this.publicBase(tenantId), 0, await this.memberProblems(tenantId, list, config));
+        return this.toDto(row!, fields, await this.publicBase(tenantId), 0, await this.memberProblems(tenantId, list, config, fields));
     }
 
     async update(tenantId: number, listIdOrSlug: string, id: number, input: UpdateBookingPageInput): Promise<BookingPageDto> {
@@ -243,7 +300,7 @@ export class BookingService {
         const willBeEnabled = input.enabled ?? current.enabled;
         if (input.enabled === true) {
             this.assertNotStore(list);
-            const problems = [...bookingProblems(config, fields), ...(await this.memberProblems(tenantId, list, config))];
+            const problems = [...bookingProblems(config, fields), ...(await this.memberProblems(tenantId, list, config, fields))];
             if (problems.length > 0) throw badRequest('booking_incomplete', `Todavía no se puede publicar: ${problems[0]}`);
         }
         if (input.enabled !== undefined) patch.enabled = input.enabled;
@@ -258,7 +315,7 @@ export class BookingService {
             tx.update(bookingPages).set(patch).where(and(eq(bookingPages.tenantId, tenantId), eq(bookingPages.id, current.id))).returning(),
         );
         const upcoming = await this.upcomingCounts(tenantId, [row!.id]);
-        return this.toDto(row!, fields, await this.publicBase(tenantId), upcoming.get(row!.id) ?? 0, await this.memberProblems(tenantId, list, config));
+        return this.toDto(row!, fields, await this.publicBase(tenantId), upcoming.get(row!.id) ?? 0, await this.memberProblems(tenantId, list, config, fields));
     }
 
     async remove(tenantId: number, listIdOrSlug: string, id: number): Promise<{ name: string }> {
@@ -285,7 +342,8 @@ export class BookingService {
         const members = await this.eligibleMembers(tenantId, list);
         const calendars = await this.calendarOptions(tenantId);
         const tz = await this.tenantTimeZone(tenantId);
-        return { members, calendars, time_zone: tz.zone, time_zone_set: tz.set };
+        const mine = await this.myCalendar.memberCalendars(tenantId, members.map((m) => m.id));
+        return { members: members.map((m) => ({ ...m, calendar: mine.get(m.id) ?? null })), calendars, time_zone: tz.zone, time_zone_set: tz.set };
     }
 
     /** Los calendarios conectados de la empresa (Google Calendar u Outlook). */
@@ -306,6 +364,8 @@ export class BookingService {
         );
         return rows.flatMap((r) => {
             if (!isCalendarProvider(r.provider)) return [];
+            // v0.1.350 — el «Mi calendario» de cada persona se maneja aparte (lo elige ella).
+            if ((r.config as Record<string, unknown>).purpose === 'agenda') return [];
             const label = (r.config as Record<string, unknown>).account_label;
             return [
                 {
@@ -331,6 +391,8 @@ export class BookingService {
             ...config,
             staff: config.staff.map((s) => {
                 if (s.connection_id === null) return s;
+                // El calendario de la persona («Mi calendario») no lleva conexión en la agenda.
+                if (s.calendar_source === 'person') return { ...s, connection_id: null, busy_calendars: [], write_calendar: null };
                 const c = cals.get(s.connection_id);
                 const ok = s.kind === 'user' && s.staff_user_id !== null && c !== undefined && (c.owner_user_id === null || c.owner_user_id === s.staff_user_id);
                 return ok ? s : { ...s, connection_id: null, read_busy: false, create_events: false };

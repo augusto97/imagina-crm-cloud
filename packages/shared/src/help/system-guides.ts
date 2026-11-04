@@ -795,9 +795,26 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         screens: ['list-settings:agenda'],
         keywords: 'agenda citas grupal cupos clase taller duraciones festivos pais vacaciones ausencias foto asesor cargo prioridad equilibrar topes semana mes cliente rango fechas dias habiles',
         route: '/lists/{list}/edit?s=agenda',
-        related: ['booking'],
+        related: ['booking', 'booking-calendar'],
         requires: ['manage_lists'],
         if_restricted: 'note',
+    },
+    {
+        id: 'booking-calendar',
+        title: '¿Cómo conecto mi calendario a la agenda de citas y le pongo Meet o Teams?',
+        category: 'public',
+        minutes: 3,
+        body: [
+            '1. Cada persona que atiende entra a **Ajustes → Cuenta → Mi calendario** y toca **Conectar Google Calendar** o **Conectar Outlook** con su propia cuenta (es privado: nadie más lo ve).',
+            '2. Ahí marca en **Mirar lo ocupado en** sus calendarios (el principal y los que use) y elige en **Crear las citas en** dónde quiere ver sus citas.',
+            '3. En el constructor de la agenda (**Configurar lista → Agenda → Editar**), en **Servicios**, elige **Dónde es → Videollamada**: cada cita lleva su enlace de Google Meet o Microsoft Teams.',
+            '4. En **Quién atiende**, deja **Su calendario: El suyo** y encendido **Agregar cada cita a su calendario**. Abajo decides si mover o borrar el evento en su calendario mueve o cancela la cita.',
+        ].join('\n'),
+        tip: 'El enlace le llega al cliente en el correo de confirmación y en el botón «Unirse a la videollamada» de su cita. Si alguien no puede crear la videollamada, la agenda te dice qué le falta antes de publicar.',
+        screens: ['settings:calendario', 'list-settings:agenda'],
+        keywords: 'mi calendario conectar google calendar outlook calendarios ocupado meet teams videollamada zoom enlace reunion sincronizar mover borrar evento cita',
+        route: '/settings?s=calendario',
+        related: ['booking', 'booking-rules'],
     },
 
     // ── Documentos y cobros ───────────────────────────────────────────────

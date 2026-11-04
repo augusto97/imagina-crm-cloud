@@ -1522,12 +1522,23 @@ export function integrationDef(key: unknown): IntegrationDef | null {
     return INTEGRATIONS.find((i) => i.key === key) ?? null;
 }
 
+/**
+ * v0.1.350 — Permiso extra del calendario de «Mi calendario» (agenda de
+ * citas): ver la LISTA de calendarios de la cuenta para que la persona elija
+ * en cuáles se mira lo ocupado. `calendar.events` no alcanza para listarlos.
+ * Microsoft ya los lista con `Calendars.ReadWrite`.
+ */
+export const AGENDA_CALENDAR_EXTRA_SCOPES: Partial<Record<string, string>> = {
+    google_calendar: 'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
+};
+
 /** Permisos completos que se piden al autorizar una integración OAuth. */
-export function integrationScopes(def: IntegrationDef): string {
+export function integrationScopes(def: IntegrationDef, opts: { purpose?: 'agenda' | null } = {}): string {
     if (def.auth.kind !== 'oauth') return '';
     const provider = INTEGRATION_PROVIDER_DEFS[def.auth.provider];
     const sep = provider.scope_separator;
-    const parts = [provider.base_scopes, def.auth.scopes]
+    const extra = opts.purpose === 'agenda' ? (AGENDA_CALENDAR_EXTRA_SCOPES[def.key] ?? '') : '';
+    const parts = [provider.base_scopes, def.auth.scopes, extra]
         .flatMap((s) => s.split(/[\s,]+/))
         .map((s) => s.trim())
         .filter(Boolean);

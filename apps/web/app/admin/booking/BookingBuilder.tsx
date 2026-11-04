@@ -74,7 +74,9 @@ import {
     removeException,
     removeQuestion,
     removeStaff,
+    bookingSaveErrorText,
     sectionProblems,
+    staffCalendarsFrom,
     setDayIntervals,
     setException,
     setMapping,
@@ -84,6 +86,7 @@ import {
     updateStaff,
     type BookingSection,
 } from './bookingDesignOps';
+import { CalendarSyncEditor, StaffCalendarPanel } from './BookingCalendarParts';
 import { HolidayPanel, IconBtn, intervalLabel, NOTICE_OPTIONS, ServiceCard, StaffProfile, TimeOffEditor, WeekHoursEditor } from './BookingRulesParts';
 import {
     bookingEmbedCode,
@@ -272,7 +275,15 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
         iframeRef.current?.contentWindow?.postMessage({ type: 'imb-booking-preview', meta }, window.location.origin);
     }, [ready, meta]);
 
-    const problems = useMemo(() => sectionProblems(config, fields), [config, fields]);
+    const problems = useMemo(
+        () =>
+            sectionProblems(config, fields, {
+                // v0.1.350 — la videollamada depende del calendario de cada persona.
+                ...(options.data ? { staffCalendars: staffCalendarsFrom(config, options.data.members, options.data.calendars) } : {}),
+                memberNames: new Map(members.map((m) => [m.id, m.name])),
+            }),
+        [config, fields, options.data, members],
+    );
     const problemCount = Object.values(problems).reduce((n, list) => n + (list?.length ?? 0), 0);
 
     const save = async (extra: { enabled?: boolean; regenerate_token?: boolean } = {}): Promise<boolean> => {
@@ -284,7 +295,7 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
             setCurrent(doc);
             return true;
         } catch (err) {
-            toast.error(__('No se pudo guardar'), err instanceof Error ? err.message : String(err));
+            toast.error(__('No se pudo guardar'), bookingSaveErrorText(err, draft.config, new Map(members.map((m) => [m.id, m.name]))));
             return false;
         }
     };
@@ -658,7 +669,7 @@ const ASSIGN_HINTS: Record<BookingConfig['rules']['assign_mode'], string> = {
     priority: __('Va a quien tenga la prioridad más alta y esté libre; entre iguales, por turno. Útil para un asesor principal y otros de respaldo.'),
 };
 
-function StaffEditor({ config, onChange, options }: SectionEditorProps): JSX.Element {
+function StaffEditor({ config, onChange, options, listId }: SectionEditorProps): JSX.Element {
     const used = new Set(config.staff.flatMap((s) => (s.kind === 'user' && s.staff_user_id !== null ? [s.staff_user_id] : [])));
     const free = options.members.filter((m) => !used.has(m.id));
     return (
@@ -689,7 +700,7 @@ function StaffEditor({ config, onChange, options }: SectionEditorProps): JSX.Ele
                 </div>
             )}
             {config.staff.map((s) => (
-                <StaffCard key={s.id} staff={s} config={config} onChange={onChange} options={options} used={used} showPriority={config.staff.length > 1 && config.rules.assign_mode === 'priority'} />
+                <StaffCard key={s.id} staff={s} config={config} onChange={onChange} options={options} used={used} listId={listId} showPriority={config.staff.length > 1 && config.rules.assign_mode === 'priority'} />
             ))}
             <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
                 <Button
@@ -712,6 +723,7 @@ function StaffEditor({ config, onChange, options }: SectionEditorProps): JSX.Ele
             <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                 {__('Una persona aparece si puede editar esta lista (si no, no vería sus propias citas). Si atiende en otras agendas de la empresa, sus citas de allá también ocupan su horario aquí.')}
             </p>
+            {config.staff.some((s) => s.kind === 'user') && <CalendarSyncEditor config={config} onChange={onChange} />}
         </div>
     );
 }
@@ -722,6 +734,7 @@ function StaffCard({
     onChange,
     options,
     used,
+    listId,
     showPriority,
 }: {
     staff: BookingStaff;
@@ -729,9 +742,9 @@ function StaffCard({
     onChange: (next: BookingConfig) => void;
     options: BookingEditorOptions;
     used: Set<number>;
+    listId: number;
     showPriority: boolean;
 }): JSX.Element {
-    const calendars = options.calendars.filter((c) => c.owner_user_id === null || c.owner_user_id === staff.staff_user_id);
     const offers = (svcId: string): boolean => staff.services.length === 0 || staff.services.includes(svcId);
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3" data-staff={staff.id}>
@@ -742,7 +755,7 @@ function StaffCard({
                 {staff.kind === 'user' ? (
                     <Select
                         value={staff.staff_user_id === null ? '' : String(staff.staff_user_id)}
-                        onChange={(e) => onChange(updateStaff(config, staff.id, { staff_user_id: e.target.value === '' ? null : Number(e.target.value), connection_id: null }))}
+                        onChange={(e) => onChange(updateStaff(config, staff.id, { staff_user_id: e.target.value === '' ? null : Number(e.target.value), connection_id: null, busy_calendars: [], write_calendar: null }))}
                         aria-label={__('Persona')}
                         className="imcrm-h-8"
                         data-testid="staff-user"
@@ -779,37 +792,18 @@ function StaffCard({
                     </div>
                 </div>
             )}
-            {staff.kind === 'user' && (
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-md imcrm-bg-muted/40 imcrm-p-2">
-                    <Field label={__('Su calendario (Google Calendar u Outlook)')}>
-                        <Select
-                            value={staff.connection_id === null ? '' : String(staff.connection_id)}
-                            onChange={(e) => onChange(updateStaff(config, staff.id, { connection_id: e.target.value === '' ? null : Number(e.target.value) }))}
-                            className="imcrm-h-8"
-                            data-testid="staff-calendar"
-                        >
-                            <option value="">{__('Ninguno')}</option>
-                            {calendars.map((c) => (
-                                <option key={c.id} value={c.id}>
-                                    {c.name}
-                                    {c.account ? ` · ${c.account}` : ''}
-                                </option>
-                            ))}
-                        </Select>
-                    </Field>
-                    {calendars.length === 0 && (
-                        <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Conecta Google Calendar u Outlook en Ajustes → Integraciones para no ofrecer los horarios en que ya está ocupado.')}</p>
-                    )}
-                    {staff.connection_id !== null && (
-                        <>
-                            <Check label={__('No ofrecer los horarios ocupados en su calendario')} checked={staff.read_busy} onChange={(v) => onChange(updateStaff(config, staff.id, { read_busy: v }))} />
-                            <Check label={__('Agregar cada cita a su calendario')} checked={staff.create_events} onChange={(v) => onChange(updateStaff(config, staff.id, { create_events: v }))} />
-                            <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                                {__('Del calendario sólo se lee la hora de inicio y de fin de cada evento: nunca el título, la descripción ni los invitados.')}
-                            </p>
-                        </>
-                    )}
-                </div>
+            {staff.kind === 'user' && <StaffCalendarPanel staff={staff} config={config} onChange={onChange} options={options} listId={listId} />}
+            {staff.kind === 'resource' && config.services.some((x) => x.active && x.location.kind === 'video' && (staff.services.length === 0 || staff.services.includes(x.id))) && (
+                <Field label={__('Enlace de videollamada fijo')} hint={__('Un recurso no tiene calendario: sus videollamadas usan este enlace.')}>
+                    <Input
+                        type="url"
+                        value={staff.meeting_url}
+                        onChange={(e) => onChange(updateStaff(config, staff.id, { meeting_url: e.target.value.trim() }))}
+                        placeholder="https://zoom.us/j/123456789"
+                        className="imcrm-h-8"
+                        data-testid="staff-meeting-url"
+                    />
+                </Field>
             )}
             <Check label={__('Recibe citas')} checked={staff.active} onChange={(v) => onChange(updateStaff(config, staff.id, { active: v }))} />
         </div>
@@ -1035,6 +1029,7 @@ const MAPPING_LABELS: Record<BookingMappingKey, { label: string; hint?: string }
     email_field_id: { label: 'Correo del cliente' },
     phone_field_id: { label: 'Teléfono del cliente' },
     status_field_id: { label: 'Estado', hint: 'Una selección: al publicar se crean «Confirmada», «Reprogramada» y «Cancelada» si no existen.' },
+    meeting_url_field_id: { label: 'Enlace de la reunión', hint: 'Un campo Enlace o Texto: guarda el enlace de la videollamada de cada cita (Meet, Teams o el fijo).' },
 };
 
 function FieldsEditor({ config, onChange, fields }: SectionEditorProps): JSX.Element {

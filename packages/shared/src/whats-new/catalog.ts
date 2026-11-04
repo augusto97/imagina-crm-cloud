@@ -1056,4 +1056,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Abre **Configurar lista → Agenda** y edita tu agenda. En **Reglas** también puedes limitar cuántas citas pendientes tiene un mismo cliente o abrir la agenda sólo entre dos fechas.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.350-agenda-calendarios',
+        version: '0.1.350',
+        date: '2026-11-04',
+        kind: 'feature',
+        title: 'Tu calendario en la agenda, con Meet o Teams en cada cita',
+        summary:
+            'Cada persona conecta su Google Calendar u Outlook: la agenda no ofrece lo ocupado, las citas llegan con su enlace de Meet o Teams, y si las mueves o borras en tu calendario, se mueven o se cancelan solas.',
+        media: {
+            slides: [
+                {
+                    title: 'Mi calendario',
+                    text: 'En Ajustes → Cuenta → Mi calendario conectas tu propia cuenta y eliges en cuáles calendarios se mira lo ocupado y en cuál se crean tus citas. Nadie más lo ve.',
+                    illustration: 'citas-calendario-sync',
+                },
+                {
+                    title: 'Videollamada en cada cita',
+                    text: 'Elige «Dónde es → Videollamada» en el servicio: cada cita lleva su enlace de Google Meet o Microsoft Teams, que le llega al cliente en la confirmación. También hay en persona, por teléfono o con un enlace fijo.',
+                    illustration: 'citas-email',
+                },
+                {
+                    title: 'Los cambios van y vuelven',
+                    text: 'Si arrastras una cita a otra hora en tu calendario, o la borras, la agenda la mueve o la cancela y le avisa al cliente.',
+                    illustration: 'citas-reschedule',
+                },
+            ],
+        },
+        body: 'Conecta tu calendario en **Ajustes → Cuenta → Mi calendario**. Para la videollamada, abre **Configurar lista → Agenda** y en cada servicio elige **Dónde es**.',
+        action: { label: 'Conectar mi calendario', href: '/settings?s=calendario' },
+    },
 ];

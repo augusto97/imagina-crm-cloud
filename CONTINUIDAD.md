@@ -382,10 +382,10 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.349**
-(agenda de citas: reglas, cupos grupales, festivos por país y asesores con foto;
-antes v0.1.348 Microsoft Teams y la ayuda debajo de cada credencial, v0.1.347 la
-barra de abajo del celular personalizable), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.350**
+(agenda de citas: el calendario de cada asesor, Meet o Teams en cada cita y la
+vuelta desde el calendario; antes v0.1.349 reglas, cupos y festivos por país,
+v0.1.348 Microsoft Teams), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-11-04 — **Agenda de citas al nivel de Cal.com/Calendly** (addendum
@@ -401,12 +401,18 @@ barra de abajo del celular personalizable), en `main`.
   1. **v0.1.349 — HECHA**: reglas por servicio, varias duraciones, cupos
      grupales, topes por día/semana/mes y por cliente, festivos por país,
      vacaciones, asesores con foto y cargo, reparto por turno/carga/prioridad.
-  2. **SIGUIENTE**: el calendario PROPIO de cada asesor (cada uno conecta su
-     Google Calendar u Outlook y decide en cuáles mira lo ocupado), enlace de
-     **Meet o Teams** generado solo en cada cita, y **sincronización en dos
-     sentidos** (mover o borrar el evento en Google/Outlook mueve o cancela la
-     cita).
-  3. **DESPUÉS**: **aprobación** de citas configurable (quién aprueba, qué ve
+  2. **v0.1.350 — HECHA**: el calendario PROPIO de cada asesor (Ajustes →
+     Cuenta → Mi calendario: conecta su Google Calendar u Outlook y elige en
+     cuáles mira lo ocupado y en cuál crea las citas), enlace de **Meet o
+     Teams** generado solo en cada cita (o un enlace fijo, en persona, por
+     teléfono), y la **vuelta** (mover o borrar el evento en su calendario
+     mueve o cancela la cita, revisado cada 3 minutos).
+     **Para el operador**: en la pantalla de consentimiento de Google hay que
+     sumar el permiso `calendar.calendarlist.readonly` (la guía de Plataforma
+     → Integraciones ya lo lista con su justificación); sin él, «Mi
+     calendario» de Google conecta pero no puede listar los calendarios (usa
+     el principal). Microsoft no necesita nada nuevo.
+  3. **SIGUIENTE**: **aprobación** de citas configurable (quién aprueba, qué ve
      el cliente mientras tanto), **rediseño visual** de la página (tema,
      colores, portada, logo, mostrar u ocultar partes, distribución) y
      **seguridad reforzada** (código por correo para confirmar, dominios
@@ -1251,6 +1257,32 @@ barra de abajo del celular personalizable), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-04 · v0.1.350** — **Agenda: el calendario de cada asesor, Meet o
+  Teams en cada cita y la vuelta desde el calendario** (addendum ADR-S67;
+  segunda de tres entregas, ver §10).
+  - **Mi calendario** (Ajustes → Cuenta): conexión OAuth privada con
+    `purpose = 'agenda'`, prefs en `memberships.settings.agenda_calendar`
+    (calendarios para lo ocupado y para crear); Google suma
+    `calendar.calendarlist.readonly`.
+  - **Quién atiende → Su calendario**: «El suyo» (sólo una conexión privada del
+    propio asesor) o «Una conexión de la empresa» con sus calendarios; enlace
+    de videollamada fijo de respaldo.
+  - **Dónde es** por servicio: videollamada (Meet/Teams), en persona, por
+    teléfono, enlace fijo o lo de la página. El enlace va a la confirmación,
+    el correo, el `.ics`, la página de la cita, `{{cita.enlace_reunion}}` y un
+    campo mapeado (migración 0097). No se publica si alguien no puede crearla.
+  - **La vuelta**: scheduler cada 3 min (Google por `updatedMin`, Outlook por
+    `$batch`), compara contra lo que escribió la app; mover → Reprogramada,
+    borrar → Cancelada; Problema si no se puede leer.
+  - **Bugs**: enlace `http://` escondido trababa el guardado («Datos
+    inválidos»: ahora se limpia y el error dice dónde); casillas de «Mi
+    calendario» que no se movían (valor fijado en el evento); aviso con
+    «Persona del equipo» en vez del nombre.
+  - Tests: API 13 nuevos (`booking-calendars.spec`) + suites relacionadas
+    216/216, shared 660, front 747; E2E con Google/Graph simulados: Mi
+    calendario 12/12 y 11/11 celular oscuro, constructor 21/21, reserva con
+    Meet 12/12, la vuelta (mover y borrar) verificada.
 
 - **2026-11-04 · v0.1.349** — **Agenda de citas: reglas, cupos, festivos por
   país y asesores con foto** (addendum ADR-S67; primera de tres entregas, ver

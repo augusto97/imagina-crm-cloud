@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
+    BOOKING_LOCATION_LABELS,
     BOOKING_MAPPING_TYPES,
     BOOKING_SLOT_INTERVALS,
     bookingConfigSchema,
@@ -72,7 +73,28 @@ const staffSpec = z.object({
     title: z.string().max(120).optional().describe('Cargo o especialidad que ve el cliente («Odontóloga»)'),
     bio: z.string().max(600).optional().describe('Unas líneas sobre la persona o el recurso'),
     priority: z.number().int().min(1).max(5).optional().describe('Con assign_mode «priority»: 5 recibe primero, 1 al final (por defecto 3)'),
+    meeting_url: z
+        .string()
+        .max(500)
+        .optional()
+        .describe('Enlace de videollamada FIJO de la persona (https, una sala de Zoom o de Meet): se usa cuando el servicio es por videollamada y su calendario no puede generar una'),
+    read_busy: z.boolean().optional().describe('No ofrecer los horarios ocupados en su calendario (por defecto sí). El calendario lo conecta la persona en Ajustes → Cuenta → Mi calendario.'),
+    create_events: z.boolean().optional().describe('Agregar cada cita a su calendario, con la videollamada si el servicio la pide (por defecto sí)'),
 });
+
+const locationSpec = z
+    .object({
+        kind: z
+            .enum(['page', 'video', 'in_person', 'phone', 'link'])
+            .describe('page = lo que dice la página; video = Meet o Teams generado solo en el calendario de quien atiende; in_person = presencial; phone = por teléfono; link = un enlace fijo'),
+        video: z.enum(['auto', 'meet', 'teams']).optional().describe('Con video: auto = la del calendario de quien atiende (Google → Meet, Outlook → Teams)'),
+        address: z.string().max(500).optional().describe('Con in_person: la dirección (vacío = la de la página)'),
+        url: z.string().max(500).optional().describe('Con link: el enlace https (se le muestra al cliente recién al reservar)'),
+        phone: z.enum(['client', 'company']).optional().describe('Con phone: client = la empresa llama al cliente; company = el cliente llama'),
+        phone_number: z.string().max(60).optional().describe('Con phone company: el número al que llama el cliente'),
+        note: z.string().max(300).optional().describe('Indicaciones («Toca el timbre del 302»)'),
+    })
+    .describe('Dónde es la cita de este servicio');
 
 const writesSpec = z
     .object({
@@ -86,6 +108,7 @@ const writesSpec = z
         client_email: z.string().max(63).optional(),
         client_phone: z.string().max(63).optional(),
         status: z.string().max(63).optional().describe('Campo selección del estado (se crean Confirmada / Reprogramada / Cancelada al publicar)'),
+        meeting_url: z.string().max(63).optional().describe('Campo Enlace (o texto) donde va el enlace de la videollamada'),
     })
     .describe('Qué campo de la lista guarda cada dato de la cita (slugs)');
 
@@ -100,6 +123,7 @@ const WRITE_KEYS: Record<keyof z.infer<typeof writesSpec>, BookingMappingKey> = 
     client_email: 'email_field_id',
     client_phone: 'phone_field_id',
     status: 'status_field_id',
+    meeting_url: 'meeting_url_field_id',
 };
 
 const pageSpec = z.object({
@@ -125,6 +149,7 @@ const pageSpec = z.object({
                 buffer_before_min: z.number().int().min(0).max(240).optional().describe('Margen antes propio de este servicio'),
                 buffer_after_min: z.number().int().min(0).max(240).optional().describe('Margen después propio de este servicio'),
                 min_notice_min: z.number().int().min(0).max(86_400).optional().describe('Aviso mínimo propio de este servicio (minutos)'),
+                location: locationSpec.optional(),
             }),
         )
         .max(30)
@@ -239,6 +264,7 @@ export class BookingTools implements AiProposalApplier {
                     buffer_before_min: s.buffer_before_min ?? prev?.buffer_before_min ?? null,
                     buffer_after_min: s.buffer_after_min ?? prev?.buffer_after_min ?? null,
                     min_notice_min: s.min_notice_min ?? prev?.min_notice_min ?? null,
+                    location: s.location ? this.buildLocation(s.location, `services.${s.name}`) : (prev?.location ?? {}),
                     active: true,
                 });
             });
@@ -296,7 +322,7 @@ export class BookingTools implements AiProposalApplier {
 
         // Vista previa en lenguaje claro.
         const names = new Map(members.map((m) => [m.id, m.name]));
-        changes.push({ label: 'Servicios', from: null, to: clean.services.filter((s) => s.active).map((s) => `${s.name} (${serviceDurations(s).join(' / ')} min${s.seats > 1 ? `, ${s.seats} cupos` : ''})`).join(', ') || '(ninguno)' });
+        changes.push({ label: 'Servicios', from: null, to: clean.services.filter((s) => s.active).map((s) => `${s.name} (${serviceDurations(s).join(' / ')} min${s.seats > 1 ? `, ${s.seats} cupos` : ''}${s.location.kind !== 'page' ? `, ${BOOKING_LOCATION_LABELS[s.location.kind].toLowerCase()}` : ''})`).join(', ') || '(ninguno)' });
         changes.push({
             label: 'Quién atiende',
             from: null,
@@ -456,11 +482,35 @@ export class BookingTools implements AiProposalApplier {
                 holiday_country: holidayCountry,
                 time_off: s.vacations ? s.vacations.map((v) => ({ id: newBookingItemId('off'), from: v.from, to: v.to, note: v.note ?? '' })) : availability.time_off,
             },
+            calendar_source: old?.calendar_source ?? 'person',
             connection_id: old?.connection_id ?? null,
-            read_busy: old?.read_busy ?? true,
-            create_events: old?.create_events ?? true,
+            busy_calendars: old?.busy_calendars ?? [],
+            write_calendar: old?.write_calendar ?? null,
+            read_busy: s.read_busy ?? old?.read_busy ?? true,
+            create_events: s.create_events ?? old?.create_events ?? true,
+            meeting_url: s.meeting_url !== undefined ? this.httpsOnly(s.meeting_url, `${where}.meeting_url`) : (old?.meeting_url ?? ''),
             active: true,
         });
+    }
+
+    private httpsOnly(v: string, where: string): string {
+        const t = v.trim();
+        if (t !== '' && !/^https:\/\/[^\s<>"]+$/i.test(t)) throw new AiToolError(`${where}: el enlace tiene que empezar con https://.`);
+        return t;
+    }
+
+    /** v0.1.350 — Dónde es un servicio (el enlace fijo sólo https). */
+    private buildLocation(l: z.infer<typeof locationSpec>, where: string): Record<string, unknown> {
+        if (l.kind === 'link' && !(l.url ?? '').trim()) throw new AiToolError(`${where}.location: con kind «link» falta url.`);
+        return {
+            kind: l.kind,
+            video: l.video ?? 'auto',
+            address: l.address ?? '',
+            url: l.url !== undefined ? this.httpsOnly(l.url, `${where}.location.url`) : '',
+            phone: l.phone ?? 'client',
+            phone_number: l.phone_number ?? '',
+            note: l.note ?? '',
+        };
     }
 
     private async resolveList(ctx: AiToolContext, slug: string): Promise<List> {
