@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import type { PublicDataConsent } from './data-consent';
 import type { FieldType } from './field';
+import { publicThemeSchema, readPublicTheme, type PublicChoiceStyle } from './public-theme';
+import type { PublicThemeView } from './public-theme-css';
 
 /**
  * v0.1.275 — Formularios públicos (ADR-S39).
@@ -77,6 +79,10 @@ export type FormCondition = z.infer<typeof formConditionSchema>;
 
 const itemIdSchema = z.string().regex(/^[a-z0-9]{4,24}$/);
 
+/** v0.1.351 — Ancho de una pregunta o imagen (de 6 columnas: todo, mitad, un tercio, dos tercios). */
+export const FORM_ITEM_WIDTHS = ['full', 'half', 'third', 'two_thirds'] as const;
+export type FormItemWidth = (typeof FORM_ITEM_WIDTHS)[number];
+
 /**
  * Qué archivos acepta una pregunta de archivos. Sea cual sea la elección,
  * los ejecutables y lo que un navegador interpretaría como página (`.exe`,
@@ -148,11 +154,27 @@ export const formFieldItemSchema = z.object({
      * (`?origen=instagram`). Para saber de dónde llegó cada respuesta.
      */
     hidden: z.boolean().default(false),
-    /** Selección: botones de opción, lista desplegable o casillas. */
-    display: z.enum(['auto', 'radio', 'dropdown']).default('auto'),
+    /**
+     * Selección: `auto` (el estilo del tema; con más de 6 opciones, lista
+     * desplegable), `radio` (lista), `buttons` (botones), `cards` (tarjetas,
+     * con imagen si la opción tiene) o `dropdown` (lista desplegable).
+     */
+    display: z.enum(['auto', 'radio', 'dropdown', 'buttons', 'cards']).default('auto'),
     /** Archivos: qué tipos acepta esta pregunta. */
     accept: z.enum(FORM_FILE_ACCEPTS).default('any'),
     show_if: formConditionSchema.nullable().default(null),
+    /** v0.1.351 — Ancho en el formulario: dos o tres preguntas lado a lado. */
+    width: z.enum(FORM_ITEM_WIDTHS).catch('full').default('full'),
+    /** v0.1.351 — No mostrar la etiqueta (queda para lectores de pantalla). */
+    hide_label: z.boolean().catch(false).default(false),
+    /** v0.1.351 — Columnas de las opciones (null = las del tema). */
+    columns: z.number().int().min(1).max(4).nullable().catch(null).default(null),
+    /** v0.1.351 — Imagen por opción (valor → archivo de la empresa), para las tarjetas. */
+    option_images: z
+        .record(z.string().max(200), z.number().int().positive())
+        .refine((r) => Object.keys(r).length <= 60, 'Demasiadas imágenes')
+        .catch({})
+        .default({}),
 });
 export type FormFieldItem = z.infer<typeof formFieldItemSchema>;
 
@@ -185,11 +207,27 @@ export const formPageBreakItemSchema = z.object({
 });
 export type FormPageBreakItem = z.infer<typeof formPageBreakItemSchema>;
 
+/** v0.1.351 — Una imagen entre las preguntas (un archivo de la empresa). */
+export const formImageItemSchema = z.object({
+    id: itemIdSchema,
+    type: z.literal('image'),
+    file_id: z.number().int().positive().nullable().default(null),
+    /** Texto alternativo (lo leen los lectores de pantalla). */
+    alt: z.string().max(300).default(''),
+    caption: z.string().max(300).default(''),
+    width: z.enum(FORM_ITEM_WIDTHS).catch('full').default('full'),
+    /** Alto máximo (px); null = el natural. */
+    max_height: z.number().int().min(40).max(1200).nullable().catch(null).default(null),
+    show_if: formConditionSchema.nullable().default(null),
+});
+export type FormImageItem = z.infer<typeof formImageItemSchema>;
+
 export const formItemSchema = z.discriminatedUnion('type', [
     formFieldItemSchema,
     formHeadingItemSchema,
     formTextItemSchema,
     formPageBreakItemSchema,
+    formImageItemSchema,
 ]);
 export type FormItem = z.infer<typeof formItemSchema>;
 
@@ -255,6 +293,11 @@ export const formSettingsSchema = z.object({
      * formulario completa PISA lo de la plantilla. null = alta normal.
      */
     record_template_id: z.number().int().positive().nullable().default(null),
+    /**
+     * v0.1.351 (ADR-S94) — Diseño de la página: colores, tipografía, tamaños,
+     * bordes, fondo, portada… null = el de siempre (el «Clásico»).
+     */
+    theme: publicThemeSchema.nullable().catch(null).default(null),
 });
 export type FormSettings = z.infer<typeof formSettingsSchema>;
 
@@ -307,6 +350,8 @@ export type UpdateFormInput = z.infer<typeof updateFormSchema>;
 export interface PublicFormOption {
     value: string;
     label: string;
+    /** v0.1.351 — imagen de la opción (tarjetas). */
+    image_url?: string | null;
 }
 
 /** Lo que el visitante necesita de cada campo — nada de la lista entera. */
@@ -324,6 +369,13 @@ export interface PublicFormFieldItem {
     required: boolean;
     hidden: boolean;
     display: 'radio' | 'dropdown' | 'checkboxes';
+    /** v0.1.351 — Cómo se dibujan las opciones cuando no es lista desplegable. */
+    choice_style?: PublicChoiceStyle;
+    /** v0.1.351 — Columnas de las opciones (null = las del tema). */
+    columns?: number | null;
+    /** v0.1.351 — Ancho en la grilla del formulario. */
+    width?: FormItemWidth;
+    hide_label?: boolean;
     options?: PublicFormOption[];
     /** Sólo lo que el control necesita: máximos, decimales, símbolo, país. */
     config: {
@@ -345,7 +397,17 @@ export type PublicFormItem =
     | PublicFormFieldItem
     | { id: string; type: 'heading'; text: string; show_if: FormCondition | null }
     | { id: string; type: 'text'; text: string; show_if: FormCondition | null }
-    | { id: string; type: 'page_break'; title: string; show_if: null };
+    | { id: string; type: 'page_break'; title: string; show_if: null }
+    | {
+          id: string;
+          type: 'image';
+          url: string | null;
+          alt: string;
+          caption: string;
+          width: FormItemWidth;
+          max_height: number | null;
+          show_if: FormCondition | null;
+      };
 
 /** v0.1.289 — Lo que la página pública necesita para dibujar el captcha. */
 export interface PublicFormCaptcha {
@@ -379,6 +441,11 @@ export interface PublicFormMeta {
     confirm_email?: boolean;
     /** Autorización de tratamiento de datos a aceptar antes de enviar (null = no se pide). */
     data_consent?: PublicDataConsent | null;
+    /**
+     * v0.1.351 — Lo que la página necesita del diseño para ARMARSE (etiquetas,
+     * opciones, avance, portada…). Los colores y tamaños van en el CSS.
+     */
+    theme?: PublicThemeView;
 }
 
 export const submitFormSchema = z.object({
@@ -416,83 +483,6 @@ export interface FormUploadResult {
 }
 
 // ─────────────────────────── Lógica pura ───────────────────────────
-
-/** ¿Está vacío este valor como respuesta? (casilla sin marcar cuenta como vacía). */
-export function isEmptyAnswer(value: unknown): boolean {
-    if (value === null || value === undefined || value === false) return true;
-    if (typeof value === 'string') return value.trim() === '';
-    if (Array.isArray(value)) return value.length === 0;
-    return false;
-}
-
-function asNumber(v: unknown): number | null {
-    if (typeof v === 'number' && Number.isFinite(v)) return v;
-    if (typeof v === 'string' && v.trim() !== '') {
-        const n = Number(v);
-        return Number.isFinite(n) ? n : null;
-    }
-    return null;
-}
-
-/** Evalúa una condición contra la respuesta actual del campo que controla. */
-export function evaluateFormCondition(cond: FormCondition, answer: unknown): boolean {
-    const empty = isEmptyAnswer(answer);
-    switch (cond.op) {
-        case 'is_empty':
-            return empty;
-        case 'is_not_empty':
-            return !empty;
-        case 'eq':
-        case 'neq': {
-            let match: boolean;
-            if (Array.isArray(answer)) match = answer.map(String).includes(String(cond.value));
-            else if (typeof answer === 'boolean') match = answer === (cond.value === true || cond.value === 'true');
-            else match = !empty && String(answer).trim().toLowerCase() === String(cond.value ?? '').trim().toLowerCase();
-            return cond.op === 'eq' ? match : !match;
-        }
-        case 'in': {
-            const wanted = Array.isArray(cond.value) ? cond.value.map(String) : [];
-            if (wanted.length === 0) return false;
-            if (Array.isArray(answer)) return answer.some((a) => wanted.includes(String(a)));
-            return !empty && wanted.includes(String(answer));
-        }
-        case 'contains':
-            if (empty) return false;
-            if (Array.isArray(answer)) return answer.map(String).includes(String(cond.value));
-            return String(answer).toLowerCase().includes(String(cond.value ?? '').toLowerCase());
-        case 'gt':
-        case 'lt': {
-            const a = asNumber(answer);
-            const b = asNumber(cond.value);
-            if (a === null || b === null) return false;
-            return cond.op === 'gt' ? a > b : a < b;
-        }
-        default:
-            return false;
-    }
-}
-
-/**
- * ¿Se muestra este ítem con las respuestas actuales? Un ítem cuyo campo de
- * control está OCULTO (por su propia condición) no se muestra: si no, una
- * respuesta escrita y después escondida seguiría abriendo preguntas.
- * `values` va por id de campo (texto). Las cadenas se cortan a 20 niveles.
- */
-export function formItemVisible(
-    item: { show_if: FormCondition | null },
-    items: ReadonlyArray<{ type: string; field_id?: number; show_if: FormCondition | null }>,
-    values: Record<string, unknown>,
-    depth = 0,
-): boolean {
-    const cond = item.show_if;
-    if (!cond) return true;
-    if (depth > 20) return false;
-    const controller = items.find((i) => i.type === 'field' && i.field_id === cond.field_id);
-    // Una condición sobre un campo que ya no está en el formulario no se cumple.
-    if (!controller) return false;
-    if (!formItemVisible(controller, items, values, depth + 1)) return false;
-    return evaluateFormCondition(cond, values[String(cond.field_id)]);
-}
 
 /** Id corto y estable para un ítem nuevo. */
 export function newFormItemId(): string {
@@ -552,21 +542,39 @@ function cfgNum(cfg: Record<string, unknown>, key: string): number | undefined {
     return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }
 
-function publicField(item: FormFieldItem, field: FormFieldLike, teamOptions: readonly PublicFormOption[]): PublicFormFieldItem {
+function publicField(
+    item: FormFieldItem,
+    field: FormFieldLike,
+    teamOptions: readonly PublicFormOption[],
+    opts: PublicFormItemsOptions,
+): PublicFormFieldItem {
     const cfg = field.config;
     const type = field.type as FormFieldType;
     // C1 — un campo «Equipo» se elige entre los equipos de la empresa (sólo
     // viajan su id y su nombre, y sólo si el formulario lo pregunta).
-    const options =
+    const baseOptions =
         type === 'select' || type === 'multi_select' ? optionsOf(field) : type === 'team' ? [...teamOptions] : undefined;
-    const display: PublicFormFieldItem['display'] =
-        type === 'multi_select' || (type === 'team' && cfg.multiple === true)
-            ? 'checkboxes'
-            : item.display === 'radio' || item.display === 'dropdown'
-              ? item.display
-              : (options?.length ?? 0) <= 6
-                ? 'radio'
-                : 'dropdown';
+    // v0.1.351 — la imagen de cada opción (sólo las que están en el formulario).
+    const options = baseOptions?.map((o) => {
+        const fid = item.option_images[o.value];
+        const url = fid !== undefined && opts.imageUrl ? opts.imageUrl(fid) : null;
+        return url ? { ...o, image_url: url } : o;
+    });
+    const multiple = type === 'multi_select' || (type === 'team' && cfg.multiple === true);
+    const themeStyle = opts.choiceStyle ?? 'list';
+    const display: PublicFormFieldItem['display'] = multiple
+        ? 'checkboxes'
+        : item.display === 'dropdown'
+          ? 'dropdown'
+          : item.display === 'auto' && (options?.length ?? 0) > 6
+            ? 'dropdown'
+            : 'radio';
+    const choice_style: PublicChoiceStyle =
+        item.display === 'buttons' || item.display === 'cards'
+            ? item.display
+            : item.display === 'radio'
+              ? 'list'
+              : themeStyle;
     const config: PublicFormFieldItem['config'] = {};
     const max_files = cfgNum(cfg, 'max_files');
     const max = cfgNum(cfg, 'max');
@@ -596,10 +604,21 @@ function publicField(item: FormFieldItem, field: FormFieldLike, teamOptions: rea
         required: (item.required || field.is_required) && !item.hidden,
         hidden: item.hidden,
         display,
+        choice_style,
+        columns: item.columns,
+        width: item.width,
+        hide_label: item.hide_label,
         ...(options ? { options } : {}),
         config,
         show_if: item.show_if,
     };
+}
+
+export interface PublicFormItemsOptions {
+    /** v0.1.351 — URL pública (firmada) de un archivo de la empresa; null = no se puede. */
+    imageUrl?: (fileId: number) => string | null;
+    /** Estilo de las opciones del tema (cuando la pregunta no elige uno). */
+    choiceStyle?: PublicChoiceStyle;
 }
 
 /**
@@ -612,8 +631,11 @@ export function buildPublicFormItems(
     fields: ReadonlyArray<FormFieldLike>,
     /** C1 — los equipos de la empresa (id → nombre) para las preguntas «Equipo». */
     teamOptions: readonly PublicFormOption[] = [],
+    opts: PublicFormItemsOptions = {},
 ): PublicFormItem[] {
     const byId = new Map(fields.map((f) => [f.id, f]));
+    const theme = config.settings?.theme ? readPublicTheme(config.settings.theme) : null;
+    const o: PublicFormItemsOptions = { choiceStyle: theme?.choices.style ?? 'list', ...opts };
     const out: PublicFormItem[] = [];
     for (const item of config.items) {
         if (item.type === 'heading' || item.type === 'text') {
@@ -624,63 +646,34 @@ export function buildPublicFormItems(
             out.push({ id: item.id, type: 'page_break', title: item.title, show_if: null });
             continue;
         }
+        if (item.type === 'image') {
+            const url = item.file_id !== null && o.imageUrl ? o.imageUrl(item.file_id) : null;
+            out.push({
+                id: item.id,
+                type: 'image',
+                url,
+                alt: item.alt,
+                caption: item.caption,
+                width: item.width,
+                max_height: item.max_height,
+                show_if: item.show_if,
+            });
+            continue;
+        }
         const field = byId.get(item.field_id);
         if (!field || !isFormFieldType(field.type)) continue;
-        out.push(publicField(item, field, teamOptions));
+        out.push(publicField(item, field, teamOptions, o));
     }
     return out;
 }
 
-// ─────────────────────── Varias páginas (v0.1.289) ───────────────────────
-
-/** Una página del formulario: los ítems entre dos saltos de página. */
-export interface FormPage<T> {
-    /** Id del salto de página que la abre (null = la primera, antes de cualquier salto). */
-    break_id: string | null;
-    title: string;
-    items: T[];
-}
-
-/**
- * Parte los ítems en páginas por los saltos. Un salto al principio, al final
- * o dos seguidos no dejan páginas vacías: una página sin ítems no existe.
- * Sin saltos hay UNA página (el formulario de siempre).
- */
-export function splitFormPages<T extends { id: string; type: string; title?: string }>(items: readonly T[]): Array<FormPage<T>> {
-    const pages: Array<FormPage<T>> = [];
-    let current: FormPage<T> = { break_id: null, title: '', items: [] };
-    for (const item of items) {
-        if (item.type === 'page_break') {
-            if (current.items.length > 0) pages.push(current);
-            current = { break_id: item.id, title: typeof item.title === 'string' ? item.title : '', items: [] };
-            continue;
-        }
-        current.items.push(item);
+/** v0.1.351 — Los archivos (imágenes) que usa un formulario: ítems de imagen e imágenes de opciones. */
+export function formConfigFileIds(config: FormConfig): number[] {
+    const ids = new Set<number>();
+    for (const item of config.items) {
+        if (item.type === 'image' && item.file_id !== null) ids.add(item.file_id);
+        if (item.type === 'field') for (const id of Object.values(item.option_images)) ids.add(id);
     }
-    if (current.items.length > 0 || pages.length === 0) pages.push(current);
-    return pages;
+    return [...ids];
 }
 
-/**
- * ¿Se muestra esta página con las respuestas actuales? Una página con
- * preguntas se muestra si al menos una está a la vista (no oculta y con su
- * condición cumplida); una página sólo de títulos/textos, si alguno se ve.
- * Así una página cuyas preguntas dependen de una respuesta anterior se salta
- * sola cuando no aplica. Acepta los ítems guardados (`field_id`) y los
- * públicos (`key`, el id del campo como texto).
- */
-export function formPageVisible(
-    page: { items: ReadonlyArray<{ type: string; hidden?: boolean; field_id?: number; key?: string; show_if: FormCondition | null }> },
-    allItems: ReadonlyArray<{ type: string; field_id?: number; key?: string; show_if: FormCondition | null }>,
-    values: Record<string, unknown>,
-): boolean {
-    const norm = allItems.map((i) => ({ ...i, field_id: i.field_id ?? (i.key !== undefined ? Number(i.key) : undefined) }));
-    const questions = page.items.filter((i) => i.type === 'field');
-    if (questions.length > 0) return questions.some((i) => !i.hidden && formItemVisible(i, norm, values));
-    return page.items.some((i) => formItemVisible(i, norm, values));
-}
-
-/** ¿El formulario tiene más de una página? */
-export function formHasPages(items: ReadonlyArray<{ id: string; type: string }>): boolean {
-    return splitFormPages(items).length > 1;
-}
