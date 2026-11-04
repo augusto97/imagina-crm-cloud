@@ -104,12 +104,17 @@ export const articles: LearnArticle[] = [
             },
             { t: 'anim', key: 'citas-roundrobin', caption: 'Con «El primero disponible», las citas se reparten por turno entre quienes están libres.' },
             { t: 'h', text: 'Servicios' },
+            { t: 'anim', key: 'citas-cupos', caption: 'Un taller grupal: el cliente elige la duración y con quién, y los cupos de cada horario bajan con cada reserva.' },
             {
                 t: 'settings',
                 title: 'Cada servicio',
                 rows: [
                     { name: 'Nombre del servicio', what: 'Lo que ve el cliente: «Consulta general», «Corte y barba».' },
                     { name: 'Duración', what: 'De 10 minutos a varias horas. Define cuánto tiempo bloquea la cita en el horario de quien atiende.', tip: 'Si después de cada cita necesitas tiempo para limpiar, no lo sumes aquí: usa el **Margen después** de las reglas.' },
+                    { name: 'El cliente también puede elegir', what: 'Marca otras duraciones (por ejemplo 30 min y 1 h) y en la página el cliente elige cuánto dura su cita. La primera es la de por defecto.', tip: 'Una consulta de 30 minutos o una sesión completa de una hora, en el mismo servicio.' },
+                    { name: 'Cupos por horario', what: 'Cuántas personas pueden reservar el mismo horario. Con 1 es una cita individual; con más es **grupal** (una clase, un taller, un tour) y cada reserva es un registro.', tip: 'Con **Mostrarle al cliente cuántos cupos quedan**, cada horario dice «3 cupos», «2 cupos»… Al llenarse deja de ofrecerse.' },
+                    { name: 'Horario propio del servicio', what: 'Para ofrecer un servicio sólo en ciertas franjas (las valoraciones en la mañana, por ejemplo). Se cruza con el horario de quien atiende: se ofrece lo que está en los dos.' },
+                    { name: 'Reglas propias del servicio', what: 'Márgenes antes y después, aviso mínimo y cada cuánto empieza un horario sólo para este servicio. Vacío = las de la página.', tip: 'Un procedimiento largo con 30 minutos de limpieza y las consultas cortas sin margen, en la misma agenda.' },
                     { name: 'Precio (opcional)', what: 'Se muestra junto al servicio, con el formato de tu empresa. Es sólo informativo: no se cobra.' },
                     { name: 'Descripción (opcional)', what: 'Una línea que ayuda a elegir: «Incluye lavado y peinado».' },
                     { name: 'Disponible para agendar', what: 'Apágalo para esconder un servicio sin borrarlo (por ejemplo, en temporada baja).' },
@@ -127,6 +132,8 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Persona / Recurso', what: 'Elige a alguien del equipo, o escribe el nombre del recurso («Sala 1», «Cancha 2»).' },
                     { name: 'Nombre que ve el cliente (opcional)', what: 'Por ejemplo «Dra. Martínez» en vez de su nombre en la app.' },
+                    { name: 'Foto', what: 'Una foto (PNG, JPG, WebP o GIF, hasta 5 MB) que el cliente ve al elegir con quién. Sin foto se muestran sus iniciales.' },
+                    { name: 'Cargo o especialidad y descripción (opcional)', what: '«Odontóloga», «Asesor de seguros» y unas líneas sobre la persona: ayudan al cliente a elegir.' },
                     { name: 'Servicios que atiende', what: 'Qué servicios presta. Sin marcar ninguno, atiende todos.', tip: 'La nutricionista no hace masajes: márcale sólo los suyos.' },
                     { name: 'Su calendario (Google Calendar u Outlook)', what: 'Una conexión de calendario de **Ajustes → Integraciones** para no chocar con lo que ya tiene agendado.' },
                     { name: 'No ofrecer los horarios ocupados en su calendario', what: 'Las horas en que tiene un evento en su calendario no se ofrecen.', tip: 'Del calendario sólo se lee la hora de inicio y de fin de cada evento: nunca el título, la descripción ni los invitados.' },
@@ -139,7 +146,16 @@ export const articles: LearnArticle[] = [
                 t: 'settings',
                 rows: [
                     { name: 'El cliente elige', what: 'El cliente ve quién atiende y también **El primero disponible**, que reparte las citas por turno entre quienes están libres.', tip: 'Ideal cuando los clientes tienen su profesional de confianza.' },
-                    { name: 'Se asigna solo', what: 'El cliente no elige: la cita va a quien esté libre, por turno.', tip: 'Ideal para una llamada comercial o un call center: la carga se reparte pareja.' },
+                    { name: 'Se asigna solo', what: 'El cliente no elige: la cita va a quien esté libre.', tip: 'Ideal para una llamada comercial o un call center: la carga se reparte pareja.' },
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Cómo se reparten las citas (con «El primero disponible» o «Se asigna solo»)',
+                rows: [
+                    { name: 'Por turno', what: 'Cada cita nueva va al siguiente que esté libre, en orden.' },
+                    { name: 'Equilibrar la carga', what: 'La cita va a quien tiene menos citas en los próximos 30 días: nadie queda sobrecargado.' },
+                    { name: 'Por prioridad', what: 'Va a quien tenga la prioridad más alta (de 1 a 5) y esté libre; entre iguales, por turno.', tip: 'Un asesor principal y otros de respaldo que sólo reciben citas cuando el principal está ocupado.' },
                 ],
             },
             {
@@ -188,7 +204,7 @@ export const articles: LearnArticle[] = [
                     'Para cada día pon uno o más tramos **Desde** / **Hasta** (por ejemplo 8:00–12:00 y 14:00–18:00). Con **Agregar otro tramo** sumas la jornada de la tarde.',
                     'Usa **Copiar a lun–vie** para repetir el horario del lunes en toda la semana.',
                     'Marca **No atiende** en los días libres.',
-                    'Deja encendido **No atender en festivos de Colombia** si cierras en festivos.',
+                    'En **Festivos** elige el país: sus festivos oficiales no se ofrecen. Marca en la lista los que sí atiendes.',
                 ],
             },
             {
@@ -196,10 +212,20 @@ export const articles: LearnArticle[] = [
                 tone: 'info',
                 md: 'Los horarios se cargan en la **zona horaria de la empresa** (se elige en **Ajustes → Formato regional**). Si tu cliente está en otro país, la página le muestra las horas en SU zona, y él puede cambiarla.',
             },
+            { t: 'h', text: 'Festivos por país y vacaciones' },
+            { t: 'anim', key: 'citas-festivos', caption: 'Se elige el país y sus festivos se cierran solos; uno se marca como día que sí se atiende y unas vacaciones bloquean una semana.' },
+            {
+                t: 'p',
+                md: 'En **Festivos** eliges el país de cada persona o recurso (Colombia, México, Perú, Chile, Argentina, España, Estados Unidos y más de 30). Los festivos salen del **calendario oficial**, así que se actualizan solos cada año, incluidos los que se trasladan. Debajo ves la lista del año con una casilla por festivo: márcala si ese día **sí atiendes**. Los festivos regionales (de un estado o provincia) se muestran aparte y no cierran salvo que los marques. Con varias personas, **Usar estos festivos para todos los que atienden** copia el país y lo marcado.',
+            },
+            {
+                t: 'p',
+                md: 'En **Vacaciones y ausencias** agregas un rango de fechas (**Desde** / **Hasta**, con una nota interna): esos días no se ofrecen. Sirve para vacaciones, una licencia o un viaje sin tener que cerrar día por día.',
+            },
             { t: 'h', text: 'Días especiales' },
             {
                 t: 'p',
-                md: 'Vacaciones, un día cerrado, un sábado con otro horario: en **Días especiales** eliges la **Fecha**, si es **Cerrado** u **Otro horario** (con sus tramos) y una **Nota interna (opcional)**, y tocas **Agregar día**. Un día especial pisa al horario de la semana y a los festivos: si abres un festivo, agrégalo como día especial con su horario.',
+                md: 'Un día cerrado o un sábado con otro horario: en **Días especiales** eliges la **Fecha**, si es **Cerrado** u **Otro horario** (con sus tramos) y una **Nota interna (opcional)**, y tocas **Agregar día**. Un día especial pisa al horario de la semana, a las vacaciones y a los festivos: si un festivo abres con otro horario, agrégalo como día especial.',
             },
             { t: 'h', text: 'Reglas' },
             {
@@ -209,9 +235,11 @@ export const articles: LearnArticle[] = [
                     { name: 'Margen antes (min)', what: 'Tiempo libre antes de cada cita, para prepararse.' },
                     { name: 'Margen después (min)', what: 'Tiempo libre después: limpieza, traslado o notas.', tip: 'Un spa con 15 minutos para cambiar la camilla nunca recibe citas pegadas.' },
                     { name: 'Aviso mínimo', what: 'Con cuánta anticipación se puede agendar: sin aviso, 30 min, 1, 2, 4 o 12 horas, 1 o 2 días. Tampoco se puede cambiar ni cancelar en línea con menos anticipación.', tip: 'Con 2 horas, nadie te reserva «para ya» sin que alcances a llegar.' },
-                    { name: 'Hasta cuántos días adelante', what: 'Hasta cuándo se puede reservar (de 1 a 365 días).', tip: 'Con 30 días, nadie aparta una fecha de dentro de seis meses que después olvida.' },
-                    { name: 'Un horario cada', what: 'Cada cuánto empieza un horario: 5, 10, 15, 20, 30, 45 minutos, 1, 1,5 o 2 horas.', tip: 'Con citas de 30 minutos y un horario cada 30, ofreces 8:00, 8:30, 9:00…' },
-                    { name: 'Máximo de citas por día (por persona o recurso)', what: 'Tope de citas diarias de cada uno. Vacío = sin tope.' },
+                    { name: 'Hasta cuándo se puede agendar: los próximos días', what: 'Hasta cuántos días adelante se puede reservar (de 1 a 365). Con **Contar sólo días hábiles** se cuentan de lunes a viernes.', tip: 'Con 30 días, nadie aparta una fecha de dentro de seis meses que después olvida.' },
+                    { name: 'Hasta cuándo se puede agendar: entre dos fechas', what: 'Sólo se ofrecen horarios entre una fecha **Desde** y una **Hasta**: una temporada, un evento o una feria.' },
+                    { name: 'Un horario cada', what: 'Cada cuánto empieza un horario: **Lo que dura la cita** (uno detrás de otro), 5, 10, 15, 20, 30, 45 minutos, 1, 1,5 o 2 horas.', tip: 'Con citas de 45 minutos y «Lo que dura la cita», ofreces 8:00, 8:45, 9:30…' },
+                    { name: 'Cupos y topes: por día, por semana, por mes', what: 'Cuántas citas puede recibir cada persona o recurso en un día, una semana (lunes a domingo) o un mes. Un horario grupal cuenta una sola vez. Vacío = sin tope.' },
+                    { name: 'Citas pendientes por cliente', what: 'Cuántas citas futuras puede tener a la vez un mismo correo. Evita que una persona acapare la agenda.', tip: 'Con 1, cada cliente tiene una sola cita por delante: para otra, cambia la que tiene.' },
                     { name: 'El cliente puede cambiar el horario desde su correo', what: 'El correo de confirmación trae un enlace para elegir otro horario.' },
                     { name: 'El cliente puede cancelar desde su correo', what: 'El correo trae un enlace para cancelar (con un motivo opcional).' },
                 ],
@@ -226,7 +254,8 @@ export const articles: LearnArticle[] = [
                 items: [
                     { q: '¿Por qué un día no aparece marcado en la página?', a: 'Puede ser que no haya tramos ese día, que sea festivo, que esté fuera de los días adelante permitidos, que ya esté lleno o que el aviso mínimo lo deje afuera. La vista previa del constructor te ayuda a probar.' },
                     { q: '¿Las citas cargadas a mano en la lista también ocupan el horario?', a: 'Sí: los registros de la lista con esa persona y esa hora también cuentan como ocupado, aunque no hayan llegado por la agenda.' },
-                    { q: '¿Puedo tener horarios distintos por servicio?', a: 'El horario es de cada persona o recurso. Si un servicio sólo se da los sábados, créale una persona o recurso con ese horario, o una agenda aparte.' },
+                    { q: '¿Puedo tener horarios distintos por servicio?', a: 'Sí: en **Servicios**, abre **Horario propio del servicio** y elige sus franjas. Se ofrece sólo lo que coincide con el horario de quien atiende.' },
+                    { q: '¿Una misma persona puede reservar dos cupos de un horario grupal?', a: 'No con el mismo correo: la segunda reserva del mismo horario se rechaza. Para inscribir a otra persona, se usa su correo.' },
                 ],
             },
             {

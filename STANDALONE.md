@@ -4164,6 +4164,41 @@ cancela una cita»). Atender por equipo, reservas grupales (capacidad > 1) o un
 calendario propio por recurso exigen ampliar el modelo; mover el evento en
 Google no mueve la cita (no hay sincronización inversa).
 
+**Addendum v0.1.349 — Reglas de nivel Cal.com/Calendly (primera de tres
+entregas).** El pedido del usuario: la agenda era «muy básica» y debía quedar
+«útil, bonita y eficiente», con prioridad en que sea segura. Se amplió el
+modelo SIN migración (todo vive en `booking_pages.config`, leído con
+tolerancia: `skip_holidays` viejo pasa a `holiday_country`):
+1. **Servicio**: varias duraciones elegibles (`durations[]`, hasta 6), cupos
+   por horario (`seats` 1-500 → **sesión grupal** = mismo inicio + fin +
+   servicio; los topes cuentan sesiones, no personas), horario propio
+   (`hours`, se cruza con el de quien atiende) y reglas propias (márgenes,
+   aviso mínimo e intervalo; null = las de la página). Intervalo `0` = «lo que
+   dura la cita».
+2. **Quién atiende**: foto (`photo_file_id`, attachment del tenant, sólo
+   imagen y no pendiente de formulario; sale por URL firmada), cargo,
+   descripción y prioridad; reparto por turno, **equilibrando la carga**
+   (menos citas en 30 días) o **por prioridad**.
+3. **Festivos por país**: el iCal PÚBLICO del calendario oficial de Google por
+   país (33 países), bajado por el guard anti-SSRF con tope de tamaño y tiempo,
+   en Redis 7 días frescos / 400 días de respaldo; sin red y sin nada guardado,
+   Colombia cae a las reglas de la app y otro país no bloquea (y abre un
+   Problema). Nacional y de medio día cierran por defecto; regional sólo si se
+   marca. **Vacaciones** como rangos (`time_off`).
+4. **Reglas**: ventana por días corridos o hábiles o **entre dos fechas**,
+   topes por día/semana/mes y **citas pendientes por cliente**; los márgenes
+   de cada cita son los de SU servicio; los eventos que la propia app creó en
+   el calendario externo no cuentan como ocupado (si no, una sesión grupal se
+   bloqueaba sola).
+5. **Seguridad**: el tope por cliente y «un correo no ocupa dos lugares de la
+   misma sesión» se chequean DENTRO del candado de la persona con un segundo
+   candado por correo (orden fijo, sin abrazos mortales): dos reservas
+   simultáneas del mismo correo no lo esquivan. La duración elegida se valida
+   contra las del servicio en el servidor.
+Las entregas siguientes: calendarios propios de cada asesor + Meet/Teams +
+sincronización en dos sentidos; después aprobación de citas, diseño de la
+página y más endurecimiento.
+
 ---
 
 ### ADR-S68 — App instalable, notificaciones push y escáner de códigos (v0.1.314)

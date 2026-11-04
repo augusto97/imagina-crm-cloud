@@ -4,9 +4,14 @@ import {
     BOOKING_MAX_QUESTIONS,
     BOOKING_MAX_SERVICES,
     BOOKING_MAX_STAFF,
+    bookableWindow,
     bookingPriceLabel,
+    bookingServiceSchema,
+    bookingStaffSchema,
     buildPublicFormItems,
     defaultBookingWeek,
+    holidayCountryForTimeZone,
+    serviceDurations,
     isBookingQuestionType,
     newBookingItemId,
     newFormItemId,
@@ -19,6 +24,7 @@ import {
     type BookingQuestion,
     type BookingServiceItem,
     type BookingStaff,
+    type BookingTimeOff,
     type PublicBookingMeta,
 } from '@imagina-base/shared';
 
@@ -35,7 +41,7 @@ type FieldLike = { id: number; type: string; slug: string; label: string; is_req
 export function addService(config: BookingConfig, name = 'Servicio nuevo'): { config: BookingConfig; id: string } {
     const id = newBookingItemId('svc');
     if (config.services.length >= BOOKING_MAX_SERVICES) return { config, id: config.services[config.services.length - 1]?.id ?? id };
-    const svc: BookingServiceItem = { id, name, duration_min: 30, description: '', price: null, option_value: null, active: true };
+    const svc: BookingServiceItem = bookingServiceSchema.parse({ id, name, duration_min: 30 });
     return { config: { ...config, services: [...config.services, svc] }, id };
 }
 
@@ -58,22 +64,23 @@ export function moveService(config: BookingConfig, id: string, delta: -1 | 1): B
 
 // ── Quién atiende ───────────────────────────────────────────────────────
 
-export function addStaff(config: BookingConfig, kind: 'user' | 'resource', userId: number | null = null): { config: BookingConfig; id: string } {
+export function addStaff(
+    config: BookingConfig,
+    kind: 'user' | 'resource',
+    userId: number | null = null,
+    timeZone: string | null = null,
+): { config: BookingConfig; id: string } {
     const id = newBookingItemId('stf');
     if (config.staff.length >= BOOKING_MAX_STAFF) return { config, id: config.staff[config.staff.length - 1]?.id ?? id };
-    const st: BookingStaff = {
+    // El país de los festivos: el de quien ya atiende o el de la zona de la empresa.
+    const country = config.staff[0]?.availability.holiday_country ?? holidayCountryForTimeZone(timeZone) ?? 'CO';
+    const st: BookingStaff = bookingStaffSchema.parse({
         id,
         kind,
         staff_user_id: kind === 'user' ? userId : null,
         name: kind === 'resource' ? 'Recurso nuevo' : '',
-        option_value: null,
-        services: [],
-        availability: { week: defaultBookingWeek(), exceptions: [], skip_holidays: true },
-        connection_id: null,
-        read_busy: true,
-        create_events: true,
-        active: true,
-    };
+        availability: { week: defaultBookingWeek(), holiday_country: country },
+    });
     return { config: { ...config, staff: [...config.staff, st] }, id };
 }
 
@@ -124,6 +131,94 @@ export function nextInterval(day: BookingInterval[]): BookingInterval | null {
     const endMin = Math.min(startMin + 4 * 60, 24 * 60);
     const fmt = (v: number): string => `${String(Math.floor(v / 60)).padStart(2, '0')}:${String(v % 60).padStart(2, '0')}`;
     return { start: fmt(startMin), end: endMin === 24 * 60 ? '24:00' : fmt(endMin) };
+}
+
+// ── v0.1.349 — Festivos y vacaciones ─────────────────────────────────────
+
+/** El país de los festivos (null = atiende en festivos). Cambiar de país olvida los marcados del anterior. */
+export function setHolidayCountry(config: BookingConfig, staffId: string, country: string | null): BookingConfig {
+    return setAvailability(config, staffId, (a) =>
+        a.holiday_country === country ? a : { ...a, holiday_country: country, holiday_work: [], holiday_off: [] },
+    );
+}
+
+/** El mismo país (y los mismos marcados) para todos los que atienden. */
+export function copyHolidaysToAll(config: BookingConfig, fromStaffId: string): BookingConfig {
+    const src = config.staff.find((s) => s.id === fromStaffId)?.availability;
+    if (!src) return config;
+    return {
+        ...config,
+        staff: config.staff.map((s) =>
+            s.id === fromStaffId
+                ? s
+                : { ...s, availability: { ...s.availability, holiday_country: src.holiday_country, holiday_work: [...src.holiday_work], holiday_off: [...src.holiday_off] } },
+        ),
+    };
+}
+
+/**
+ * Atiende o no un festivo puntual. `blocksByDefault` = nacional o de medio
+ * día (no atiende salvo que se marque); si no, regional (atiende salvo que
+ * se marque).
+ */
+export function setHolidayWorked(config: BookingConfig, staffId: string, date: string, works: boolean, blocksByDefault: boolean): BookingConfig {
+    return setAvailability(config, staffId, (a) => {
+        const work = new Set(a.holiday_work);
+        const off = new Set(a.holiday_off);
+        if (blocksByDefault) {
+            if (works) work.add(date);
+            else work.delete(date);
+        } else if (works) off.delete(date);
+        else off.add(date);
+        return { ...a, holiday_work: [...work].sort(), holiday_off: [...off].sort() };
+    });
+}
+
+export function addTimeOff(config: BookingConfig, staffId: string, from: string, to: string, note = ''): BookingConfig {
+    const [a, b] = from <= to ? [from, to] : [to, from];
+    return setAvailability(config, staffId, (av) =>
+        av.time_off.length >= 30 ? av : { ...av, time_off: [...av.time_off, { id: newBookingItemId('off'), from: a, to: b, note }].sort((x, y) => x.from.localeCompare(y.from)) },
+    );
+}
+
+export function updateTimeOff(config: BookingConfig, staffId: string, id: string, patch: Partial<BookingTimeOff>): BookingConfig {
+    return setAvailability(config, staffId, (av) => ({ ...av, time_off: av.time_off.map((t) => (t.id === id ? { ...t, ...patch } : t)) }));
+}
+
+export function removeTimeOff(config: BookingConfig, staffId: string, id: string): BookingConfig {
+    return setAvailability(config, staffId, (av) => ({ ...av, time_off: av.time_off.filter((t) => t.id !== id) }));
+}
+
+// ── v0.1.349 — Duraciones y horario propio del servicio ─────────────────
+
+/** Agrega o quita una duración que el cliente puede elegir (la de por defecto no se quita). */
+export function toggleServiceDuration(config: BookingConfig, serviceId: string, minutes: number, on: boolean): BookingConfig {
+    const svc = config.services.find((s) => s.id === serviceId);
+    if (!svc || minutes === svc.duration_min) return config;
+    const set = new Set(svc.durations);
+    if (on) set.add(minutes);
+    else set.delete(minutes);
+    return updateService(config, serviceId, { durations: [...set].filter((m) => m !== svc.duration_min).sort((a, b) => a - b).slice(0, 6) });
+}
+
+/** Cambia la duración por defecto: la vieja queda como opción si había varias. */
+export function setDefaultDuration(config: BookingConfig, serviceId: string, minutes: number): BookingConfig {
+    const svc = config.services.find((s) => s.id === serviceId);
+    if (!svc) return config;
+    const others = svc.durations.length > 0 ? [...new Set([...svc.durations, svc.duration_min])] : [];
+    return updateService(config, serviceId, { duration_min: minutes, durations: others.filter((m) => m !== minutes).sort((a, b) => a - b).slice(0, 6) });
+}
+
+/** Activa (con el horario de lunes a viernes de 8 a 12) o quita el horario propio del servicio. */
+export function setServiceHours(config: BookingConfig, serviceId: string, on: boolean): BookingConfig {
+    const morning = [[], ...Array.from({ length: 5 }, () => [{ start: '08:00', end: '12:00' }]), []] as BookingInterval[][];
+    return updateService(config, serviceId, { hours: on ? morning : null });
+}
+
+export function setServiceDayIntervals(config: BookingConfig, serviceId: string, dow: number, intervals: BookingInterval[]): BookingConfig {
+    const svc = config.services.find((s) => s.id === serviceId);
+    if (!svc || svc.hours === null) return config;
+    return updateService(config, serviceId, { hours: svc.hours.map((d, i) => (i === dow ? intervals : d)) });
 }
 
 export function setException(config: BookingConfig, staffId: string, ex: BookingException): BookingConfig {
@@ -246,6 +341,8 @@ export interface PreviewContext {
     numberFormat: 'comma_dot' | 'dot_comma' | 'space_comma';
     captchaProvider: string | null;
     dataConsent: PublicBookingMeta['data_consent'];
+    /** v0.1.349 — La dirección de la foto de quien atiende (en el editor: la descarga con sesión). */
+    photoUrl?: (fileId: number) => string | null;
 }
 
 /**
@@ -270,18 +367,34 @@ export function buildPreviewMeta(config: BookingConfig, ctx: PreviewContext): Pu
         number_format: ctx.numberFormat,
         services: config.services
             .filter((x) => x.active && staff.some((st) => st.services.length === 0 || st.services.includes(x.id)))
-            .map((x) => ({ id: x.id, name: x.name, duration_min: x.duration_min, description: x.description, price_label: bookingPriceLabel(x.price, ctx.numberFormat) })),
+            .map((x) => ({
+                id: x.id,
+                name: x.name,
+                duration_min: x.duration_min,
+                durations: serviceDurations(x),
+                description: x.description,
+                price_label: bookingPriceLabel(x.price, ctx.numberFormat),
+                seats: x.seats,
+                show_seats_left: x.show_seats_left,
+            })),
         staff: staff.map((x) => ({
             id: x.id,
             name: x.name.trim() || (x.kind === 'user' && x.staff_user_id !== null ? (names.get(x.staff_user_id) ?? staffLabel(x)) : staffLabel(x)),
             kind: x.kind,
             services: x.services,
+            title: x.title,
+            bio: x.bio,
+            photo_url: x.photo_file_id !== null ? (ctx.photoUrl?.(x.photo_file_id) ?? null) : null,
         })),
         choose_staff: s.choose_staff === 'visitor' && staff.length > 1,
         ask_phone: s.ask_phone,
         questions: buildPublicFormItems({ items: config.questions, settings: {} } as never, questionFields),
         max_days_ahead: config.rules.max_days_ahead,
         min_notice_min: config.rules.min_notice_min,
+        ...(() => {
+            const w = bookableWindow(config.rules, ctx.timeZone, new Date());
+            return { first_day: w.first, last_day: w.last };
+        })(),
         closed: null,
         success_message: s.success_message,
         stamp: '',
@@ -300,6 +413,12 @@ export function sectionProblems(config: BookingConfig, fields: readonly FieldLik
     };
     const typeOf = new Map(fields.map((f) => [f.id, f.type]));
     if (!config.services.some((s) => s.active)) push('servicios', 'Agrega al menos un servicio.');
+    for (const svc of config.services) {
+        if (svc.active && svc.hours !== null && !svc.hours.some((d) => d.length > 0)) push('servicios', `«${svc.name}» tiene un horario propio vacío.`);
+        if (svc.hours !== null && svc.hours.some((d) => dayProblem(d) !== null)) push('servicios', `El horario propio de «${svc.name}» tiene tramos que se pisan.`);
+    }
+    const r = config.rules;
+    if (r.window_mode === 'range' && (r.range_start === null || r.range_end === null || r.range_start > r.range_end)) push('reglas', 'Elige desde y hasta qué fecha se puede agendar.');
     const staff = config.staff.filter((s) => s.active);
     if (staff.length === 0) push('atienden', 'Agrega al menos una persona o recurso que atienda.');
     if (staff.some((s) => s.kind === 'user' && s.staff_user_id === null)) push('atienden', 'Hay una persona sin elegir.');

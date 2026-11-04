@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
     addDaysYmd,
     bookingConfigSchema,
+    bookingServiceSchema,
     isColombianHoliday,
     newFormItemId,
     ymdToMs,
@@ -19,6 +20,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AutomationDispatcher, type TriggerEvent } from '../src/automations/automation-dispatcher.service';
+import { NO_HOLIDAYS } from './helpers/no-holidays';
 import { BookingAvailabilityService } from '../src/booking/booking-availability.service';
 import { BookingCalendarService, busyRequest, parseBusy, type CalendarEventInput } from '../src/booking/booking-calendar';
 import { appointmentRecordData, sanitizeBookingConfig } from '../src/booking/booking-config';
@@ -28,8 +30,12 @@ import { renderBookingPage } from '../src/booking/booking-page';
 import { BookingPublicService } from '../src/booking/booking-public.service';
 import { BookingRemindersService } from '../src/booking/booking-reminders.service';
 import { BookingService } from '../src/booking/booking.service';
+import { BookingHolidaysService, colombianFallback, parseHolidayIcs } from '../src/booking/booking-holidays';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { loadEnv, type Env } from '../src/config/env';
 import {
+    attachments,
     bookingAppointments,
     bookingPages,
     connections,
@@ -255,7 +261,7 @@ describe('D5 — agenda (puro)', () => {
         const data = appointmentRecordData({
             config: cfg,
             fieldsById: new Map(fields.map((f) => [f.id, f])),
-            service: { id: 'svcx', name: 'Consulta', duration_min: 30, description: '', price: null, option_value: null, active: true },
+            service: bookingServiceSchema.parse({ id: 'svcx', name: 'Consulta', duration_min: 30 }),
             staff: cfg.staff[0]!,
             staffName: 'Ana',
             start: new Date('2026-11-03T13:00:00Z'),
@@ -383,8 +389,8 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         files = new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imb-book-'))), env);
         mailbox = new CapturingMailTransport();
         calendar = new FakeCalendar(env, redis, tenantDb);
-        const availability = new BookingAvailabilityService(tenantDb, calendar);
-        booking = new BookingService(pg.db, tenantDb, lists, fieldsSvc, availability);
+        const availability = new BookingAvailabilityService(tenantDb, calendar, NO_HOLIDAYS);
+        booking = new BookingService(pg.db, tenantDb, lists, fieldsSvc, availability, NO_HOLIDAYS);
         const notify = new NotifyHub();
         notified = [];
         notify.subscribe((e) => {
@@ -922,5 +928,238 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         ).rejects.toBeTruthy();
         const borrar = await withTenant(pg.db, otherTenant, (tx) => tx.delete(bookingAppointments).where(and(eq(bookingAppointments.pageId, pageId))).returning());
         expect(borrar.length).toBe(0);
+    });
+
+    // ─────────────────────────── v0.1.349 ───────────────────────────
+
+    async function pageWith(mutate: (c: BookingConfig) => void, rules: Partial<BookingConfig['rules']> = {}): Promise<void> {
+        const dto = await booking.create(tenantId, ana, 'citas', { name: 'Agenda Acme' });
+        const cfg = pageConfig(rules);
+        mutate(cfg);
+        await booking.update(tenantId, 'citas', dto.id, { config: cfg });
+        const p2 = await booking.update(tenantId, 'citas', dto.id, { enabled: true });
+        pageId = p2.id;
+        token = p2.public_path.split('/').pop()!;
+        pub.forgetLists(tenantId);
+    }
+
+    it('v0.1.349 — horario grupal: hasta N reservas en el mismo horario, con los cupos a la vista', async () => {
+        await pageWith((c) => {
+            c.services.push(bookingServiceSchema.parse({ id: 'svcclase', name: 'Clase grupal', duration_min: 60, seats: 3 }));
+        });
+        const meta = await pub.meta(token);
+        expect(meta.services.find((x) => x.id === 'svcclase')).toMatchObject({ seats: 3, show_seats_left: true, durations: [60] });
+        const q = { service: 'svcclase', staff: 'stfana', from: D, to: D } as const;
+        const before = await pub.slots(token, IP, q);
+        expect(before.slots.find((x) => x.start === at(D, 9))?.seats_left).toBe(3);
+        await book({ service: 'svcclase', staff: 'stfana', start: at(D, 9), email: 'a@x.co' });
+        // El mismo correo no se lleva un segundo cupo de esa sesión (sin importar mayúsculas).
+        await expect(book({ service: 'svcclase', staff: 'stfana', start: at(D, 9), email: 'A@X.co' })).rejects.toMatchObject({ response: { code: 'booking_duplicate' } });
+        for (const email of ['b@x.co', 'c@x.co']) {
+            await book({ service: 'svcclase', staff: 'stfana', start: at(D, 9), email });
+        }
+        const rows = await appointments();
+        expect(rows.length).toBe(3);
+        expect(new Set(rows.map((r) => r.startAt.toISOString()))).toEqual(new Set([at(D, 9)]));
+        // Lleno: ya no se ofrece y una cuarta reserva rebota.
+        expect((await pub.slots(token, IP, q)).slots.find((x) => x.start === at(D, 9))).toBeUndefined();
+        await expect(book({ service: 'svcclase', staff: 'stfana', start: at(D, 9), email: 'd@x.co' })).rejects.toMatchObject({ response: { code: 'booking_slot_taken' } });
+        // Una consulta individual en ese horario tampoco (el grupo lo ocupa).
+        const consulta = await pub.slots(token, IP, { service: 'svcconsulta', staff: 'stfana', from: D, to: D });
+        expect(consulta.slots.some((x) => x.start === at(D, 9) || x.start === at(D, 9, 30))).toBe(false);
+        // Con dos sesiones del grupo en un día el tope diario (2) cuenta horarios, no personas.
+        await book({ service: 'svcclase', staff: 'stfana', start: at(D, 11), email: 'e@x.co' });
+        expect((await pub.slots(token, IP, { service: 'svcconsulta', staff: 'stfana', from: D, to: D })).slots).toEqual([]);
+    });
+
+    it('v0.1.349 — varias duraciones: el cliente elige, se guarda y se conserva al reprogramar; márgenes propios del servicio', async () => {
+        await pageWith((c) => {
+            c.services[0] = { ...c.services[0]!, durations: [60], buffer_after_min: 0 };
+        });
+        const meta = await pub.meta(token);
+        expect(meta.services[0]!.durations).toEqual([30, 60]);
+        // De 60 min, la última de Ana empieza a las 11 (termina 12).
+        const s60 = await pub.slots(token, IP, { service: 'svcconsulta', staff: 'stfana', from: D, to: D, duration: 60 });
+        expect(s60.slots.at(-1)!.start).toBe(at(D, 11));
+        expect(s60.slots[0]!.end).toBe(at(D, 9));
+        await expect(pub.book(token, nextIp(), { service_id: 'svcconsulta', staff_id: 'stfana', start: at(D, 9), duration_min: 45, name: 'X', email: 'x@x.co', values: {}, stamp: stamp(pageId) })).rejects.toMatchObject({ response: { code: 'booking_invalid' } });
+        const res = await pub.book(token, nextIp(), { service_id: 'svcconsulta', staff_id: 'stfana', start: at(D, 9), duration_min: 60, name: 'Ana Cliente', email: 'dur@x.co', values: {}, stamp: stamp(pageId) });
+        const [appt] = await appointments();
+        expect(appt!.endAt.getTime() - appt!.startAt.getTime()).toBe(60 * 60_000);
+        const [rec] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(records).where(eq(records.listId, listId)));
+        expect((rec!.data as Record<string, unknown>)[`f${f.duracion!.id}`]).toBe(60);
+        // El servicio no deja margen después (el de la página es 10): a las 10 ya se ofrece.
+        const after = await pub.slots(token, IP, { service: 'svcconsulta', staff: 'stfana', from: D, to: D });
+        expect(after.slots.some((x) => x.start === at(D, 10))).toBe(true);
+        // Reprogramar conserva los 60 min.
+        const moved = await pub.reschedule(refOf(res.appointment!.manage_url), nextIp(), { start: at(E, 9) });
+        expect(Date.parse(moved.end) - Date.parse(moved.start)).toBe(60 * 60_000);
+    });
+
+    it('v0.1.349 — citas activas por cliente: con el tope lleno rebota (sin importar mayúsculas); al cancelar, vuelve a poder', async () => {
+        await pageWith(() => undefined, { max_active_per_client: 1, max_per_day: null });
+        const first = await book({ staff: 'stfana', start: at(D, 9), email: 'Repite@Cliente.co' });
+        await expect(book({ staff: 'stfana', start: at(D, 10), email: 'repite@cliente.co' })).rejects.toMatchObject({ response: { code: 'booking_client_limit' } });
+        // Dos a la vez con el mismo correo en personas distintas: sólo una entra.
+        await pub.cancel(refOf(first.appointment!.manage_url), nextIp(), {});
+        const both = await Promise.allSettled([
+            book({ staff: 'stfana', start: at(D, 10), email: 'doble@cliente.co' }),
+            book({ service: 'svcterapia', staff: 'stfsala', start: at(D, 15), email: 'doble@cliente.co' }),
+        ]);
+        expect(both.filter((r) => r.status === 'fulfilled').length).toBe(1);
+        expect(await book({ staff: 'stfana', start: at(D, 11), email: 'repite@cliente.co' })).toMatchObject({ ok: true });
+    });
+
+    it('v0.1.349 — reparto sin elegir: por prioridad y equilibrando la carga', async () => {
+        const allDay = staffWeek([{ start: '08:00', end: '18:00' }]);
+        await pageWith(
+            (c) => {
+                c.settings.choose_staff = 'auto';
+                c.staff = c.staff.filter((x) => x.kind === 'user').map((x) => ({ ...x, availability: { ...x.availability, week: allDay, exceptions: [] }, connection_id: null, priority: x.id === 'stfbeto' ? 5 : 3 }));
+            },
+            { assign_mode: 'priority', max_per_day: null },
+        );
+        await book({ start: at(D, 9), email: 'p1@x.co' });
+        await book({ start: at(D, 10), email: 'p2@x.co' });
+        expect((await appointments()).map((r) => r.staffId)).toEqual(['stfbeto', 'stfbeto']);
+
+        await pageWith(
+            (c) => {
+                c.settings.choose_staff = 'auto';
+                c.staff = c.staff.filter((x) => x.kind === 'user').map((x) => ({ ...x, availability: { ...x.availability, week: allDay, exceptions: [] }, connection_id: null }));
+            },
+            { assign_mode: 'balance', max_per_day: null },
+        );
+        await book({ start: at(E, 9), email: 'b1@x.co' });
+        await book({ start: at(E, 10), email: 'b2@x.co' });
+        await book({ start: at(E, 11), email: 'b3@x.co' });
+        const counts = (await appointments()).reduce<Record<string, number>>((acc, r) => ({ ...acc, [r.staffId]: (acc[r.staffId] ?? 0) + 1 }), {});
+        expect(Object.values(counts).sort()).toEqual([1, 2]);
+    });
+
+    it('v0.1.349 — foto, cargo y descripción de quien atiende: sólo una imagen de la empresa, servida firmada', async () => {
+        const [png] = await withTenant(pg.db, tenantId, (tx) => tx.insert(attachments).values({ tenantId, filename: 'ana.png', mime: 'image/png', sizeBytes: 10, storageKey: 'k/ana.png' }).returning());
+        const [pdf] = await withTenant(pg.db, tenantId, (tx) => tx.insert(attachments).values({ tenantId, filename: 'cv.pdf', mime: 'application/pdf', sizeBytes: 10, storageKey: 'k/cv.pdf' }).returning());
+        const [ajena] = await withTenant(pg.db, otherTenant, (tx) => tx.insert(attachments).values({ tenantId: otherTenant, filename: 'x.png', mime: 'image/png', sizeBytes: 10, storageKey: 'k/x.png' }).returning());
+        await pageWith((c) => {
+            c.staff[0] = { ...c.staff[0]!, photo_file_id: png!.id, title: 'Odontóloga', bio: 'Doce años de experiencia.' };
+            c.staff[1] = { ...c.staff[1]!, photo_file_id: pdf!.id };
+            c.staff[2] = { ...c.staff[2]!, photo_file_id: ajena!.id };
+        });
+        const page = await booking.get(tenantId, 'citas', pageId);
+        expect(page.config.staff.map((x) => x.photo_file_id)).toEqual([png!.id, null, null]);
+        const meta = await pub.meta(token);
+        expect(meta.staff[0]).toMatchObject({ title: 'Odontóloga', bio: 'Doce años de experiencia.' });
+        expect(meta.staff[0]!.photo_url).toMatch(new RegExp(`/files/${png!.id}/signed\\?`));
+        expect(meta.staff[1]!.photo_url).toBeNull();
+    });
+
+    it('v0.1.349 — festivos de otro país (iCal oficial) y el festivo que sí se atiende', async () => {
+        const ymdIcs = D.replace(/-/g, '');
+        const next = addDaysYmd(D, 1).replace(/-/g, '');
+        const ics = [
+            'BEGIN:VCALENDAR',
+            'BEGIN:VEVENT',
+            `DTSTART;VALUE=DATE:${ymdIcs}`,
+            `DTEND;VALUE=DATE:${next}`,
+            'SUMMARY:Día de la Revolución',
+            'DESCRIPTION:Día festivo',
+            'END:VEVENT',
+            'BEGIN:VEVENT',
+            `DTSTART;VALUE=DATE:${E.replace(/-/g, '')}`,
+            'SUMMARY:Festivo regional',
+            'DESCRIPTION:Festivo en Jalisco',
+            'END:VEVENT',
+            'END:VCALENDAR',
+        ].join('\r\n');
+        let hits = 0;
+        const server: Server = createServer((req, res) => {
+            hits++;
+            if (!String(req.url).includes(encodeURIComponent('es.mexican.official#holiday'))) {
+                res.writeHead(404).end();
+                return;
+            }
+            res.writeHead(200, { 'content-type': 'text/calendar' }).end(ics);
+        });
+        await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+        const prev = process.env.DEV_ALLOW_PRIVATE_EGRESS;
+        process.env.DEV_ALLOW_PRIVATE_EGRESS = '1';
+        try {
+            const env = loadEnv({ FILES_SIGNING_SECRET: 'book-secret', HOLIDAYS_ICS_BASE: `http://127.0.0.1:${(server.address() as AddressInfo).port}` });
+            const holidays = new BookingHolidaysService(redis as never, env);
+            const items = await holidays.items('MX');
+            expect(items?.map((h) => [h.date, h.kind])).toEqual([[D, 'national'], [E, 'regional']]);
+            await holidays.items('MX');
+            expect(hits).toBe(1); // en caché
+            const withHol = new BookingAvailabilityService(tenantDb, calendar, holidays);
+            await pageWith((c) => {
+                c.staff[0] = { ...c.staff[0]!, availability: { ...c.staff[0]!.availability, holiday_country: 'MX' } };
+            });
+            const page = await booking.get(tenantId, 'citas', pageId);
+            const ctx = { tenantId, pageId, pageName: page.name, listId, config: page.config, timeZone: TZ, fields: await fieldsSvc.listByListId(tenantId, listId), createdBy: ana };
+            expect((await withHol.slots(ctx, 'svcconsulta', 'stfana', D, D)).slots).toEqual([]);
+            // Lo regional se atiende salvo que se marque.
+            expect((await withHol.slots(ctx, 'svcconsulta', 'stfana', E, E)).slots.length).toBeGreaterThan(0);
+            const worked = { ...ctx, config: { ...ctx.config, staff: ctx.config.staff.map((x, i) => (i === 0 ? { ...x, availability: { ...x.availability, holiday_work: [D], holiday_off: [E] } } : x)) } };
+            expect((await withHol.slots(worked, 'svcconsulta', 'stfana', D, D)).slots.length).toBeGreaterThan(0);
+            expect((await withHol.slots(worked, 'svcconsulta', 'stfana', E, E)).slots).toEqual([]);
+            // Google caído y sin nada guardado: otro país queda sin festivos; Colombia, con las reglas de la app.
+            await redis.flushall();
+            server.close();
+            const offline = new BookingHolidaysService(redis as never, env);
+            expect(await offline.items('MX')).toBeNull();
+            const co = await offline.items('CO');
+            expect(co?.length).toBeGreaterThan(30);
+            expect(co).toEqual(expect.arrayContaining(colombianFallback(new Date().getUTCFullYear(), new Date().getUTCFullYear())));
+            // Un país que no está en el catálogo no arma ninguna dirección.
+            expect(await offline.items('ZZ')).toBeNull();
+        } finally {
+            if (prev === undefined) delete process.env.DEV_ALLOW_PRIVATE_EGRESS;
+            else process.env.DEV_ALLOW_PRIVATE_EGRESS = prev;
+            server.close();
+        }
+    });
+});
+
+describe('v0.1.349 — iCal de festivos (puro)', () => {
+    it('lee días completos, renglones continuados, escapes y eventos de varios días; ignora lo demás', () => {
+        const ics = [
+            'BEGIN:VCALENDAR',
+            'BEGIN:VEVENT',
+            'DTSTART;VALUE=DATE:20261225',
+            'DTEND;VALUE=DATE:20261226',
+            'SUMMARY:Navidad\\, fiesta',
+            'DESCRIPTION:Día festivo',
+            'END:VEVENT',
+            'BEGIN:VEVENT',
+            'DTSTART;VALUE=DATE:20260402',
+            'DTEND;VALUE=DATE:20260404',
+            'SUMMARY:Semana',
+            ' Santa',
+            'DESCRIPTION:Día festivo',
+            'END:VEVENT',
+            'BEGIN:VEVENT',
+            'DTSTART:20260101T100000Z',
+            'SUMMARY:Con hora (no es un festivo de día completo)',
+            'END:VEVENT',
+            'BEGIN:VEVENT',
+            'DTSTART;VALUE=DATE:20261224',
+            'SUMMARY:Nochebuena',
+            'DESCRIPTION:Día festivo\\nEste es un festivo de medio día.',
+            'END:VEVENT',
+            'BEGIN:VEVENT',
+            'DTSTART;VALUE=DATE:20260707',
+            'STATUS:CANCELLED',
+            'SUMMARY:Cancelado',
+            'END:VEVENT',
+            'END:VCALENDAR',
+        ].join('\r\n');
+        expect(parseHolidayIcs(ics)).toEqual([
+            { date: '2026-04-02', name: 'SemanaSanta', kind: 'national' },
+            { date: '2026-04-03', name: 'SemanaSanta', kind: 'national' },
+            { date: '2026-12-24', name: 'Nochebuena', kind: 'half' },
+            { date: '2026-12-25', name: 'Navidad, fiesta', kind: 'national' },
+        ]);
+        expect(parseHolidayIcs('<html>nada</html>')).toEqual([]);
     });
 });

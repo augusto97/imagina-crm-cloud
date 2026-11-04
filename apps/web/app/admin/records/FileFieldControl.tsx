@@ -13,7 +13,8 @@ import { normalizeFileIds } from './fileIds';
 /** Límite de upload del backend (ADR-S16) — espejo para cortar antes del POST. */
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
-async function uploadOne(file: File): Promise<number> {
+/** Sube un archivo al módulo de archivos de la empresa y devuelve su id (también lo usa la foto de quien atiende en la agenda). */
+export async function uploadOne(file: File): Promise<number> {
     if (file.size > MAX_UPLOAD_BYTES) throw new Error(__('El archivo supera el tamaño máximo (20 MB).'));
     const boot = getBootData();
     // Auth: cookie de sesión + workspace activo por header (sin Content-Type

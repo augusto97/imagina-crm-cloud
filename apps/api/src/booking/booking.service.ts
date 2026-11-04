@@ -3,6 +3,7 @@ import {
     BOOKING_STATUS_LABELS,
     bookingProblems,
     defaultBookingConfig,
+    holidayCountry,
     readMirrorListMarker,
     resolveTimeZone,
     slugify,
@@ -12,6 +13,7 @@ import {
     type BookingStatus,
     type CreateBookingPageInput,
     type Field,
+    type HolidayItem,
     type List,
     type PublicBookingSlots,
     type Role,
@@ -19,7 +21,7 @@ import {
 } from '@imagina-base/shared';
 import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
-import { bookingAppointments, bookingPages, connections, memberships, tenants, users, type BookingPageRow } from '../db/schema';
+import { attachments, bookingAppointments, bookingPages, connections, memberships, tenants, users, type BookingPageRow } from '../db/schema';
 import { DomainsService } from '../domains/domains.service';
 import { FieldsService } from '../fields/fields.service';
 import { effectivePermissions } from '../lists/list-acl';
@@ -28,6 +30,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { BookingAvailabilityService, type PageContext } from './booking-availability.service';
 import { isCalendarProvider } from './booking-calendar';
 import { newBookingToken, readBookingConfig, sanitizeBookingConfig } from './booking-config';
+import { BookingHolidaysService } from './booking-holidays';
 
 /** Cuentas que nunca atienden citas: el cliente del portal y el invitado externo. */
 const NOT_STAFF_ROLES = new Set(['client', 'guest']);
@@ -78,6 +81,7 @@ export class BookingService {
         private readonly lists: ListsService,
         private readonly fields: FieldsService,
         private readonly availability: BookingAvailabilityService,
+        private readonly holidays: BookingHolidaysService,
         @Optional() private readonly domains?: DomainsService,
     ) {}
 
@@ -202,10 +206,11 @@ export class BookingService {
         this.assertNotStore(list);
         const fields = await this.fields.listByListId(tenantId, list.id);
         const members = new Set((await this.eligibleMembers(tenantId, list)).map((m) => m.id));
-        const raw = input.config ?? defaultBookingConfig({ listName: list.name, userId: members.has(userId) ? userId : null, fields });
+        const tz = await this.tenantTimeZone(tenantId);
+        const raw = input.config ?? defaultBookingConfig({ listName: list.name, userId: members.has(userId) ? userId : null, fields, timeZone: tz.set ? tz.zone : null });
         // Las opciones de servicios, recursos y estados se crean al PUBLICAR: mientras
         // se arma la página, renombrar un servicio no deja opciones huérfanas.
-        const config = await this.cleanCalendars(tenantId, sanitizeBookingConfig(raw, fields, members));
+        const config = await this.cleanPhotos(tenantId, await this.cleanCalendars(tenantId, sanitizeBookingConfig(raw, fields, members)));
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .insert(bookingPages)
@@ -232,7 +237,7 @@ export class BookingService {
         let config = readBookingConfig(current.config);
         if (input.config !== undefined) {
             const members = new Set((await this.eligibleMembers(tenantId, list)).map((m) => m.id));
-            config = await this.cleanCalendars(tenantId, sanitizeBookingConfig(input.config, fields, members));
+            config = await this.cleanPhotos(tenantId, await this.cleanCalendars(tenantId, sanitizeBookingConfig(input.config, fields, members)));
             patch.config = config as unknown as Record<string, unknown>;
         }
         const willBeEnabled = input.enabled ?? current.enabled;
@@ -334,6 +339,33 @@ export class BookingService {
     }
 
     /**
+     * v0.1.349 — La foto de cada persona o recurso tiene que ser una IMAGEN
+     * subida a esta empresa (la página pública la sirve firmada: un id de otra
+     * empresa o un PDF nunca llegan a la página). Lo que no cumple se suelta.
+     */
+    private async cleanPhotos(tenantId: number, config: BookingConfig): Promise<BookingConfig> {
+        const ids = [...new Set(config.staff.flatMap((s) => (s.photo_file_id !== null ? [s.photo_file_id] : [])))];
+        if (ids.length === 0) return config;
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: attachments.id, mime: attachments.mime })
+                .from(attachments)
+                .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, ids), isNull(attachments.pendingFormId))),
+        );
+        const ok = new Set(rows.filter((r) => /^image\/(png|jpe?g|webp|gif)$/i.test(r.mime)).map((r) => r.id));
+        return { ...config, staff: config.staff.map((s) => (s.photo_file_id !== null && !ok.has(s.photo_file_id) ? { ...s, photo_file_id: null } : s)) };
+    }
+
+    /** v0.1.349 — Los festivos de un país para el constructor (lista de un año). */
+    async holidayList(code: string, year: number): Promise<{ country: string; items: HolidayItem[]; available: boolean }> {
+        const country = holidayCountry(code);
+        if (!country) throw new BadRequestException({ code: 'booking_invalid', message: 'Ese país no tiene festivos disponibles.', data: { status: 400 } });
+        const items = await this.holidays.items(country.code);
+        const prefix = String(year);
+        return { country: country.code, available: items !== null, items: (items ?? []).filter((h) => h.date.startsWith(prefix)) };
+    }
+
+    /**
      * Vista previa del constructor: los horarios con la configuración EN
      * EDICIÓN (sin guardar), con las citas y calendarios reales.
      */
@@ -345,7 +377,7 @@ export class BookingService {
         const tz = await this.tenantTimeZone(tenantId);
         const ctx: PageContext = { tenantId, pageId: row.id, pageName: row.name, listId: list.id, config, timeZone: tz.zone, fields, createdBy: row.createdBy };
         if (!config.services.some((s) => s.id === input.service_id && s.active)) return { slots: [], first_day: input.from, last_day: input.to };
-        return this.availability.slots(ctx, input.service_id, input.staff_id, input.from, input.to);
+        return this.availability.slots(ctx, input.service_id, input.staff_id, input.from, input.to, input.duration !== undefined ? { durationMin: input.duration } : {});
     }
 
     async tenantTimeZone(tenantId: number): Promise<{ zone: string; set: boolean }> {

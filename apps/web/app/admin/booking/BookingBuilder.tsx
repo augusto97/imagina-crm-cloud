@@ -27,6 +27,8 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 import {
+    BOOKING_ASSIGN_MODES,
+    BOOKING_ASSIGN_MODE_LABELS,
     BOOKING_MAPPING_KEYS,
     BOOKING_SLOT_INTERVALS,
     BOOKING_STATUS_LABELS,
@@ -45,6 +47,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
+import { useAttachments } from '@/hooks/useAttachments';
 import { useBrandingData } from '@/hooks/useBranding';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
@@ -65,15 +68,11 @@ import {
     availableQuestionFields,
     buildPreviewMeta,
     copyDayToWeekdays,
-    dayProblem,
     mappingCandidates,
     moveQuestion,
-    moveService,
-    nextInterval,
     reminderLabel,
     removeException,
     removeQuestion,
-    removeService,
     removeStaff,
     sectionProblems,
     setDayIntervals,
@@ -82,10 +81,10 @@ import {
     setReminders,
     toggleStaffService,
     updateQuestion,
-    updateService,
     updateStaff,
     type BookingSection,
 } from './bookingDesignOps';
+import { HolidayPanel, IconBtn, intervalLabel, NOTICE_OPTIONS, ServiceCard, StaffProfile, TimeOffEditor, WeekHoursEditor } from './BookingRulesParts';
 import {
     bookingEmbedCode,
     bookingPublicUrl,
@@ -126,9 +125,6 @@ const SECTIONS: Array<{ id: BookingSection; label: string; icon: LucideIcon }> =
     { id: 'correos', label: 'Correos y recordatorios', icon: Mail },
     { id: 'publicar', label: 'Publicar', icon: Send },
 ];
-
-const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
-const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
 export default function BookingBuilder(props: BookingBuilderProps): JSX.Element {
     return (
@@ -227,6 +223,8 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
     const [ready, setReady] = useState(false);
     const members = useMemo(() => options.data?.members ?? [], [options.data]);
     const timeZone = options.data?.time_zone ?? 'America/Bogota';
+    const photoIds = useMemo(() => config.staff.flatMap((s) => (s.photo_file_id !== null ? [s.photo_file_id] : [])), [config.staff]);
+    const photos = useAttachments(photoIds);
     const meta = useMemo(
         () =>
             buildPreviewMeta(config, {
@@ -240,14 +238,15 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
                 numberFormat: getTenantFormat().number_format,
                 captchaProvider: captcha.data?.provider ?? null,
                 dataConsent: dataConsent.data?.active ? (dataConsent.data.consent ?? null) : null,
+                photoUrl: (id) => photos.data?.get(id)?.url ?? null,
             }),
-        [config, draft.name, fields, members, branding.data, timeZone, captcha.data?.provider, dataConsent.data],
+        [config, draft.name, fields, members, branding.data, timeZone, captcha.data?.provider, dataConsent.data, photos.data],
     );
 
     useEffect(() => {
         const onMessage = (e: MessageEvent): void => {
             if (e.origin !== window.location.origin || e.source !== iframeRef.current?.contentWindow) return;
-            const data = e.data as { type?: string; id?: number; service?: string; staff?: string; from?: string; to?: string } | null;
+            const data = e.data as { type?: string; id?: number; service?: string; staff?: string; from?: string; to?: string; duration?: number } | null;
             if (data?.type === 'imb-booking-ready') setReady(true);
             if (data?.type === 'imb-booking-slots-request' && typeof data.id === 'number') {
                 const reply = (slots: unknown[]): void => {
@@ -259,6 +258,7 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
                     staff_id: String(data.staff ?? 'any'),
                     from: String(data.from ?? ''),
                     to: String(data.to ?? ''),
+                    ...(typeof data.duration === 'number' && data.duration > 0 ? { duration: data.duration } : {}),
                 })
                     .then((res) => reply(res.slots))
                     .catch(() => reply([]));
@@ -329,6 +329,7 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
     const opts: BookingEditorOptions = options.data ?? { members: [], calendars: [], time_zone: timeZone, time_zone_set: false };
     const editor = (
         <SectionEditor
+            listId={listId}
             section={section}
             config={config}
             onChange={change}
@@ -585,6 +586,7 @@ function SharePanel({ page, onClose, onPublish }: { page: BookingPageDto; onClos
 // ─────────────────────────── Secciones ───────────────────────────
 
 interface SectionEditorProps {
+    listId: number;
     section: BookingSection;
     config: BookingConfig;
     onChange: (next: BookingConfig) => void;
@@ -636,57 +638,11 @@ const SECTION_HINTS: Record<BookingSection, string> = {
     publicar: __('Cómo se ve la página, dónde se puede insertar y su enlace.'),
 };
 
-const DURATIONS = [10, 15, 20, 30, 45, 60, 90, 120, 180];
-
 function ServicesEditor({ config, onChange }: SectionEditorProps): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             {config.services.map((s, i) => (
-                <div key={s.id} className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3" data-service={s.id}>
-                    <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
-                        <Input value={s.name} onChange={(e) => onChange(updateService(config, s.id, { name: e.target.value }))} aria-label={__('Nombre del servicio')} className="imcrm-h-8 imcrm-font-medium" data-testid="service-name" />
-                        <IconBtn label={__('Subir')} disabled={i === 0} onClick={() => onChange(moveService(config, s.id, -1))}>
-                            <ArrowUp className="imcrm-h-3.5 imcrm-w-3.5" />
-                        </IconBtn>
-                        <IconBtn label={__('Bajar')} disabled={i === config.services.length - 1} onClick={() => onChange(moveService(config, s.id, 1))}>
-                            <ArrowDown className="imcrm-h-3.5 imcrm-w-3.5" />
-                        </IconBtn>
-                        <IconBtn label={__('Quitar el servicio')} onClick={() => onChange(removeService(config, s.id))}>
-                            <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                        </IconBtn>
-                    </div>
-                    <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
-                        <Field label={__('Duración')}>
-                            <Select
-                                value={DURATIONS.includes(s.duration_min) ? String(s.duration_min) : 'custom'}
-                                onChange={(e) => {
-                                    if (e.target.value !== 'custom') onChange(updateService(config, s.id, { duration_min: Number(e.target.value) }));
-                                }}
-                                data-testid="service-duration"
-                            >
-                                {DURATIONS.map((m) => (
-                                    <option key={m} value={m}>
-                                        {m < 60 ? `${m} min` : m % 60 === 0 ? `${m / 60} h` : `${Math.floor(m / 60)} h ${m % 60} min`}
-                                    </option>
-                                ))}
-                                {!DURATIONS.includes(s.duration_min) && <option value="custom">{`${s.duration_min} min`}</option>}
-                            </Select>
-                        </Field>
-                        <Field label={__('Precio (opcional)')}>
-                            <Input
-                                type="number"
-                                min={0}
-                                value={s.price ?? ''}
-                                onChange={(e) => onChange(updateService(config, s.id, { price: e.target.value === '' ? null : Math.max(0, Number(e.target.value)) }))}
-                                placeholder="80000"
-                            />
-                        </Field>
-                    </div>
-                    <Field label={__('Descripción (opcional)')}>
-                        <Textarea rows={2} value={s.description} onChange={(e) => onChange(updateService(config, s.id, { description: e.target.value }))} />
-                    </Field>
-                    <Check label={__('Disponible para agendar')} checked={s.active} onChange={(v) => onChange(updateService(config, s.id, { active: v }))} />
-                </div>
+                <ServiceCard key={s.id} svc={s} index={i} config={config} onChange={onChange} />
             ))}
             <Button variant="outline" size="sm" className="imcrm-gap-1.5 imcrm-self-start" onClick={() => onChange(addService(config).config)} data-testid="service-add">
                 <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -695,6 +651,12 @@ function ServicesEditor({ config, onChange }: SectionEditorProps): JSX.Element {
         </div>
     );
 }
+
+const ASSIGN_HINTS: Record<BookingConfig['rules']['assign_mode'], string> = {
+    rotate: __('Cada cita nueva va al siguiente que esté libre, en orden.'),
+    balance: __('La cita va a quien tiene menos citas en los próximos 30 días: nadie queda sobrecargado.'),
+    priority: __('Va a quien tenga la prioridad más alta y esté libre; entre iguales, por turno. Útil para un asesor principal y otros de respaldo.'),
+};
 
 function StaffEditor({ config, onChange, options }: SectionEditorProps): JSX.Element {
     const used = new Set(config.staff.flatMap((s) => (s.kind === 'user' && s.staff_user_id !== null ? [s.staff_user_id] : [])));
@@ -712,11 +674,22 @@ function StaffEditor({ config, onChange, options }: SectionEditorProps): JSX.Ele
             />
             <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                 {config.settings.choose_staff === 'visitor'
-                    ? __('El cliente ve quién atiende y también «El primero disponible», que reparte las citas por turno entre quienes están libres.')
-                    : __('El cliente no elige: la cita va a quien esté libre, por turno.')}
+                    ? __('El cliente ve quién atiende (con su foto y su cargo) y también «El primero disponible», que reparte las citas entre quienes están libres.')
+                    : __('El cliente no elige: la cita va a quien esté libre.')}
             </p>
+            {config.staff.length > 1 && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-testid="assign-mode">
+                    <Segmented
+                        label={__('Cómo se reparten las citas')}
+                        value={config.rules.assign_mode}
+                        options={BOOKING_ASSIGN_MODES.map((m) => ({ value: m, label: __(BOOKING_ASSIGN_MODE_LABELS[m]) }))}
+                        onChange={(v) => onChange({ ...config, rules: { ...config.rules, assign_mode: v } })}
+                    />
+                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{ASSIGN_HINTS[config.rules.assign_mode]}</p>
+                </div>
+            )}
             {config.staff.map((s) => (
-                <StaffCard key={s.id} staff={s} config={config} onChange={onChange} options={options} used={used} />
+                <StaffCard key={s.id} staff={s} config={config} onChange={onChange} options={options} used={used} showPriority={config.staff.length > 1 && config.rules.assign_mode === 'priority'} />
             ))}
             <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
                 <Button
@@ -725,13 +698,13 @@ function StaffEditor({ config, onChange, options }: SectionEditorProps): JSX.Ele
                     className="imcrm-gap-1.5"
                     disabled={free.length === 0}
                     title={free.length === 0 ? __('Ya están todas las personas que pueden editar la lista') : undefined}
-                    onClick={() => onChange(addStaff(config, 'user', free[0]?.id ?? null).config)}
+                    onClick={() => onChange(addStaff(config, 'user', free[0]?.id ?? null, options.time_zone).config)}
                     data-testid="staff-add-user"
                 >
                     <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                     {__('Agregar persona')}
                 </Button>
-                <Button variant="outline" size="sm" className="imcrm-gap-1.5" onClick={() => onChange(addStaff(config, 'resource').config)} data-testid="staff-add-resource">
+                <Button variant="outline" size="sm" className="imcrm-gap-1.5" onClick={() => onChange(addStaff(config, 'resource', null, options.time_zone).config)} data-testid="staff-add-resource">
                     <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                     {__('Agregar recurso')}
                 </Button>
@@ -749,12 +722,14 @@ function StaffCard({
     onChange,
     options,
     used,
+    showPriority,
 }: {
     staff: BookingStaff;
     config: BookingConfig;
     onChange: (next: BookingConfig) => void;
     options: BookingEditorOptions;
     used: Set<number>;
+    showPriority: boolean;
 }): JSX.Element {
     const calendars = options.calendars.filter((c) => c.owner_user_id === null || c.owner_user_id === staff.staff_user_id);
     const offers = (svcId: string): boolean => staff.services.length === 0 || staff.services.includes(svcId);
@@ -793,6 +768,7 @@ function StaffCard({
                     <Input value={staff.name} onChange={(e) => onChange(updateStaff(config, staff.id, { name: e.target.value }))} placeholder={__('Su nombre en la app')} className="imcrm-h-8" />
                 </Field>
             )}
+            <StaffProfile staff={staff} config={config} onChange={onChange} showPriority={showPriority} />
             {config.services.length > 1 && (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                     <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Servicios que atiende')}</span>
@@ -846,7 +822,7 @@ function staffName(s: BookingStaff, members: BookingEditorOptions['members']): s
     return __('Recurso sin nombre');
 }
 
-function AvailabilityEditor({ config, onChange, options }: SectionEditorProps): JSX.Element {
+function AvailabilityEditor({ config, onChange, options, listId }: SectionEditorProps): JSX.Element {
     const [sel, setSel] = useState<string | null>(config.staff[0]?.id ?? null);
     const staff = config.staff.find((s) => s.id === sel) ?? config.staff[0];
     const [exDate, setExDate] = useState('');
@@ -879,74 +855,19 @@ function AvailabilityEditor({ config, onChange, options }: SectionEditorProps): 
                 {__('Horarios en la zona de la empresa')}: {options.time_zone}
                 {!options.time_zone_set && ` (${__('elígela en Ajustes → Formato regional')})`}
             </p>
-            <div className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-rounded-lg imcrm-border imcrm-border-border" data-testid="availability-week">
-                {WEEK_ORDER.map((dow) => {
-                    const day = a.week[dow] ?? [];
-                    const problem = dayProblem(day);
-                    return (
-                        <div key={dow} className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-px-3 imcrm-py-2" data-day={dow}>
-                            <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                                <label className="imcrm-flex imcrm-w-28 imcrm-items-center imcrm-gap-2 imcrm-text-sm">
-                                    <input
-                                        type="checkbox"
-                                        checked={day.length > 0}
-                                        onChange={(e) => onChange(setDayIntervals(config, staff.id, dow, e.target.checked ? [{ start: '08:00', end: '17:00' }] : []))}
-                                        data-day-toggle={dow}
-                                    />
-                                    {__(DAY_NAMES[dow]!)}
-                                </label>
-                                {day.length === 0 && <span className="imcrm-text-xs imcrm-text-muted-foreground">{__('No atiende')}</span>}
-                                {day.length > 0 && dow >= 1 && dow <= 5 && (
-                                    <button type="button" className="imcrm-ml-auto imcrm-text-[11px] imcrm-text-primary hover:imcrm-underline" onClick={() => onChange(copyDayToWeekdays(config, staff.id, dow))}>
-                                        {__('Copiar a lun–vie')}
-                                    </button>
-                                )}
-                            </div>
-                            {day.map((t, i) => (
-                                <div key={i} className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-pl-6">
-                                    <Input
-                                        type="time"
-                                        step={300}
-                                        value={t.start}
-                                        onChange={(e) => onChange(setDayIntervals(config, staff.id, dow, day.map((x, j) => (j === i ? { ...x, start: e.target.value || x.start } : x))))}
-                                        className="imcrm-h-8 imcrm-w-32"
-                                        aria-label={__('Desde')}
-                                        data-interval-start={`${dow}-${i}`}
-                                    />
-                                    <span className="imcrm-text-xs imcrm-text-muted-foreground">–</span>
-                                    <Input
-                                        type="time"
-                                        step={300}
-                                        value={t.end === '24:00' ? '23:59' : t.end}
-                                        onChange={(e) => onChange(setDayIntervals(config, staff.id, dow, day.map((x, j) => (j === i ? { ...x, end: e.target.value || x.end } : x))))}
-                                        className="imcrm-h-8 imcrm-w-32"
-                                        aria-label={__('Hasta')}
-                                        data-interval-end={`${dow}-${i}`}
-                                    />
-                                    <IconBtn label={__('Quitar el tramo')} onClick={() => onChange(setDayIntervals(config, staff.id, dow, day.filter((_, j) => j !== i)))}>
-                                        <X className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    </IconBtn>
-                                    {i === day.length - 1 && nextInterval(day) && day.length < 6 && (
-                                        <IconBtn label={__('Agregar otro tramo')} onClick={() => onChange(setDayIntervals(config, staff.id, dow, [...day, nextInterval(day)!]))}>
-                                            <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
-                                        </IconBtn>
-                                    )}
-                                </div>
-                            ))}
-                            {problem && <p className="imcrm-pl-6 imcrm-text-[11px] imcrm-text-destructive">{__(problem)}</p>}
-                        </div>
-                    );
-                })}
-            </div>
-            <Check
-                label={__('No atender en festivos de Colombia')}
-                checked={a.skip_holidays}
-                onChange={(v) => onChange(updateStaff(config, staff.id, { availability: { ...a, skip_holidays: v } }))}
-                testId="availability-holidays"
+            <WeekHoursEditor
+                week={a.week}
+                onDay={(dow, intervals) => onChange(setDayIntervals(config, staff.id, dow, intervals))}
+                onCopyWeekdays={(dow) => onChange(copyDayToWeekdays(config, staff.id, dow))}
+                testId="availability-week"
             />
+            <HolidayPanel listId={listId} staff={staff} config={config} onChange={onChange} />
+            <Section title={__('Vacaciones y ausencias')}>
+                <TimeOffEditor staff={staff} config={config} onChange={onChange} />
+            </Section>
             <Section title={__('Días especiales')}>
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                    {__('Vacaciones, un día cerrado o un sábado con otro horario. Pisan al horario de la semana (y a los festivos).')}
+                    {__('Un día cerrado o un sábado con otro horario. Pisan al horario de la semana, a las vacaciones y a los festivos.')}
                 </p>
                 {a.exceptions.map((ex) => (
                     <div key={ex.date} className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2" data-exception={ex.date}>
@@ -1003,60 +924,102 @@ function AvailabilityEditor({ config, onChange, options }: SectionEditorProps): 
     );
 }
 
-const NOTICE_OPTIONS = [0, 30, 60, 120, 240, 720, 1440, 2880];
+function CapInput({ label, hint, value, max, onChange, testId }: { label: string; hint?: string; value: number | null; max: number; onChange: (v: number | null) => void; testId: string }): JSX.Element {
+    return (
+        <Field label={label} hint={hint}>
+            <Input type="number" min={1} max={max} value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? null : clampInt(e.target.value, 1, max))} placeholder={__('Sin tope')} data-testid={testId} />
+        </Field>
+    );
+}
 
 function RulesEditor({ config, onChange }: SectionEditorProps): JSX.Element {
     const r = config.rules;
     const set = (patch: Partial<BookingConfig['rules']>): void => onChange({ ...config, rules: { ...r, ...patch } });
     const minutes = (n: number): string => (n === 0 ? __('Sin aviso mínimo') : n < 60 ? `${n} min` : n % 1440 === 0 ? `${n / 1440} ${n === 1440 ? __('día') : __('días')}` : `${n / 60} h`);
+    const today = new Date().toISOString().slice(0, 10);
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
-            <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
-                <Field label={__('Margen antes (min)')} hint={__('Para prepararse.')}>
-                    <Input type="number" min={0} max={240} value={r.buffer_before_min} onChange={(e) => set({ buffer_before_min: clampInt(e.target.value, 0, 240) })} data-testid="rule-buffer-before" />
-                </Field>
-                <Field label={__('Margen después (min)')} hint={__('Limpieza, traslado o notas.')}>
-                    <Input type="number" min={0} max={240} value={r.buffer_after_min} onChange={(e) => set({ buffer_after_min: clampInt(e.target.value, 0, 240) })} data-testid="rule-buffer-after" />
-                </Field>
-            </div>
-            <Field label={__('Aviso mínimo')} hint={__('No se puede agendar, cambiar ni cancelar en línea con menos anticipación.')}>
-                <Select value={String(r.min_notice_min)} onChange={(e) => set({ min_notice_min: Number(e.target.value) })} data-testid="rule-notice">
-                    {[...new Set([...NOTICE_OPTIONS, r.min_notice_min])]
-                        .sort((x, y) => x - y)
-                        .map((n) => (
-                            <option key={n} value={n}>
-                                {minutes(n)}
-                            </option>
-                        ))}
-                </Select>
-            </Field>
-            <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
-                <Field label={__('Hasta cuántos días adelante')}>
-                    <Input type="number" min={1} max={365} value={r.max_days_ahead} onChange={(e) => set({ max_days_ahead: clampInt(e.target.value, 1, 365) })} data-testid="rule-days" />
-                </Field>
-                <Field label={__('Un horario cada')}>
+            <Section title={__('Tiempo entre citas')}>
+                <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                    <Field label={__('Margen antes (min)')} hint={__('Para prepararse.')}>
+                        <Input type="number" min={0} max={240} value={r.buffer_before_min} onChange={(e) => set({ buffer_before_min: clampInt(e.target.value, 0, 240) })} data-testid="rule-buffer-before" />
+                    </Field>
+                    <Field label={__('Margen después (min)')} hint={__('Limpieza, traslado o notas.')}>
+                        <Input type="number" min={0} max={240} value={r.buffer_after_min} onChange={(e) => set({ buffer_after_min: clampInt(e.target.value, 0, 240) })} data-testid="rule-buffer-after" />
+                    </Field>
+                </div>
+                <Field label={__('Un horario cada')} hint={__('Cada cuánto empieza un horario. «Lo que dura la cita» los pone uno detrás de otro (8:00, 8:45, 9:30 para citas de 45 min).')}>
                     <Select value={String(r.slot_interval_min)} onChange={(e) => set({ slot_interval_min: Number(e.target.value) })} data-testid="rule-interval">
                         {BOOKING_SLOT_INTERVALS.map((n) => (
                             <option key={n} value={n}>
-                                {n < 60 ? `${n} min` : `${n / 60} h`}
+                                {intervalLabel(n)}
                             </option>
                         ))}
                     </Select>
                 </Field>
-            </div>
-            <Field label={__('Máximo de citas por día (por persona o recurso)')} hint={__('Vacío = sin tope.')}>
-                <Input
-                    type="number"
-                    min={1}
-                    max={200}
-                    value={r.max_per_day ?? ''}
-                    onChange={(e) => set({ max_per_day: e.target.value === '' ? null : clampInt(e.target.value, 1, 200) })}
-                    placeholder={__('Sin tope')}
-                    data-testid="rule-max-day"
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{__('Cada servicio puede tener sus propios márgenes, aviso mínimo e intervalo (en «Servicios» → «Reglas propias del servicio»).')}</p>
+            </Section>
+            <Section title={__('Con cuánta anticipación')}>
+                <Field label={__('Aviso mínimo')} hint={__('No se puede agendar, cambiar ni cancelar en línea con menos anticipación.')}>
+                    <Select value={String(r.min_notice_min)} onChange={(e) => set({ min_notice_min: Number(e.target.value) })} data-testid="rule-notice">
+                        {[...new Set([...NOTICE_OPTIONS, r.min_notice_min])]
+                            .sort((x, y) => x - y)
+                            .map((n) => (
+                                <option key={n} value={n}>
+                                    {minutes(n)}
+                                </option>
+                            ))}
+                    </Select>
+                </Field>
+                <Segmented
+                    label={__('Hasta cuándo se puede agendar')}
+                    value={r.window_mode}
+                    options={[
+                        { value: 'rolling', label: __('Los próximos días') },
+                        { value: 'range', label: __('Entre dos fechas') },
+                    ]}
+                    onChange={(v) => set({ window_mode: v })}
                 />
-            </Field>
-            <Check label={__('El cliente puede cambiar el horario desde su correo')} checked={r.allow_reschedule} onChange={(v) => set({ allow_reschedule: v })} />
-            <Check label={__('El cliente puede cancelar desde su correo')} checked={r.allow_cancel} onChange={(v) => set({ allow_cancel: v })} />
+                {r.window_mode === 'rolling' ? (
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-testid="rule-window-rolling">
+                        <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                            <Input type="number" min={1} max={365} value={r.max_days_ahead} onChange={(e) => set({ max_days_ahead: clampInt(e.target.value, 1, 365) })} className="imcrm-w-24" aria-label={__('Cuántos días')} data-testid="rule-days" />
+                            <span className="imcrm-text-sm">{r.business_days ? __('días hábiles hacia adelante') : __('días hacia adelante')}</span>
+                        </div>
+                        <Check label={__('Contar sólo días hábiles (lunes a viernes)')} checked={r.business_days} onChange={(v) => set({ business_days: v })} testId="rule-business-days" />
+                    </div>
+                ) : (
+                    <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2" data-testid="rule-window-range">
+                        <Field label={__('Desde')}>
+                            <Input type="date" value={r.range_start ?? ''} min={today} onChange={(e) => set({ range_start: e.target.value || null, range_end: r.range_end && e.target.value && r.range_end < e.target.value ? e.target.value : r.range_end })} data-testid="rule-range-start" />
+                        </Field>
+                        <Field label={__('Hasta')}>
+                            <Input type="date" value={r.range_end ?? ''} min={r.range_start ?? today} onChange={(e) => set({ range_end: e.target.value || null })} data-testid="rule-range-end" />
+                        </Field>
+                        <p className="imcrm-col-span-2 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{__('Para una temporada, un evento o una feria: fuera de esas fechas la página no ofrece horarios.')}</p>
+                    </div>
+                )}
+            </Section>
+            <Section title={__('Cupos y topes')}>
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{__('Por persona o recurso. Un horario grupal (un taller con varios cupos) cuenta como una sola cita. Vacío = sin tope.')}</p>
+                <div className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-2">
+                    <CapInput label={__('Por día')} value={r.max_per_day} max={200} onChange={(v) => set({ max_per_day: v })} testId="rule-max-day" />
+                    <CapInput label={__('Por semana')} value={r.max_per_week} max={1000} onChange={(v) => set({ max_per_week: v })} testId="rule-max-week" />
+                    <CapInput label={__('Por mes')} value={r.max_per_month} max={5000} onChange={(v) => set({ max_per_month: v })} testId="rule-max-month" />
+                </div>
+                <CapInput
+                    label={__('Citas pendientes por cliente')}
+                    hint={__('Cuántas citas futuras puede tener a la vez un mismo correo. Evita que una persona acapare la agenda.')}
+                    value={r.max_active_per_client}
+                    max={50}
+                    onChange={(v) => set({ max_active_per_client: v })}
+                    testId="rule-max-client"
+                />
+            </Section>
+            <Section title={__('Cambios del cliente')}>
+                <Check label={__('El cliente puede cambiar el horario desde su correo')} checked={r.allow_reschedule} onChange={(v) => set({ allow_reschedule: v })} />
+                <Check label={__('El cliente puede cancelar desde su correo')} checked={r.allow_cancel} onChange={(v) => set({ allow_cancel: v })} />
+            </Section>
         </div>
     );
 }
@@ -1418,21 +1381,6 @@ function DomainsField({ value, onChange }: { value: string[]; onChange: (v: stri
             placeholder={'miempresa.com\n*.miempresa.com'}
             data-testid="booking-domains"
         />
-    );
-}
-
-function IconBtn({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: React.ReactNode }): JSX.Element {
-    return (
-        <button
-            type="button"
-            aria-label={label}
-            title={label}
-            disabled={disabled}
-            onClick={onClick}
-            className="imcrm-shrink-0 imcrm-rounded imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground disabled:imcrm-opacity-30"
-        >
-            {children}
-        </button>
     );
 }
 

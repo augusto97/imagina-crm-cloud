@@ -11138,6 +11138,79 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
           texto escapado, mensaje directo, Outlook con reunión, guardado, y
           celular en oscuro.
 
+  - [x] **Agenda de citas, primera entrega: reglas, cupos, festivos por país y
+        asesores con foto (v0.1.349, addendum ADR-S67).** Pedido del usuario:
+        "la configuración de ese sistema de agendamientos está muy básica…
+        investiga cómo lo hacen Cal.com y Calendly… prioridad de que sea
+        segura". Se aprobó hacerlo en tres entregas (reglas → calendarios de
+        cada asesor con Meet/Teams y sincronización → aprobación, diseño y
+        seguridad reforzada); ésta es la primera. Sin migración: todo vive en
+        `booking_pages.config` y se lee con tolerancia.
+        (a) **Servicios**:
+        - Varias duraciones que elige el cliente (hasta 6).
+        - **Cupos por horario** (1-500): con más de uno la sesión es
+          **grupal**. Una sesión = mismo inicio, fin y servicio; el cliente ve
+          «3 cupos» y al llenarse el horario desaparece.
+        - **Horario propio** del servicio, que se cruza con el de quien
+          atiende.
+        - **Reglas propias**: márgenes, aviso mínimo e intervalo; vacío = las
+          de la página.
+        (b) **Quién atiende**:
+        - Foto (attachment del tenant, sólo imagen, servida por URL firmada en
+          la página pública), cargo, descripción y prioridad.
+        - Reparto **por turno**, **equilibrando la carga** (menos citas en los
+          próximos 30 días) o **por prioridad**.
+        (c) **Festivos por país** (`holidays.ts` en shared,
+        `booking-holidays.ts` en la API):
+        - 33 países desde el iCal público del calendario oficial de Google,
+          por el guard anti-SSRF con tope de 2 MB y 8 s.
+        - Caché en Redis: 7 días fresco, 400 días de respaldo.
+        - Sin red ni caché: Colombia cae a las reglas de la app (Ley
+          Emiliani); otro país no bloquea y abre un Problema.
+        - Nacionales y de medio día cierran; los regionales sólo si se marcan.
+          Lista del año con «Atiende» por festivo y «usar para todos».
+        - **Vacaciones** como rangos de fechas.
+        (d) **Reglas**:
+        - Hasta cuándo se agenda: días corridos, días hábiles o **entre dos
+          fechas**.
+        - «Un horario cada» con **«Lo que dura la cita»**.
+        - Topes por **día, semana y mes** (cuentan sesiones, no personas).
+        - **Citas pendientes por cliente**.
+        - Los márgenes de cada cita son los de SU servicio.
+        (e) **Seguridad**:
+        - El tope por cliente y la regla «un correo no ocupa dos lugares de la
+          misma sesión» (409 `booking_duplicate`) se chequean DENTRO del
+          candado de la persona, con un segundo candado por correo. Dos
+          reservas simultáneas no lo esquivan.
+        - La duración se valida contra las del servicio.
+        - La foto debe ser una imagen de la empresa y no un archivo pendiente
+          de un formulario.
+        **Bugs atrapados**:
+        - Los eventos que la propia app crea en Google u Outlook contaban como
+          ocupado: una sesión grupal se bloqueaba sola tras la primera reserva
+          y reprogramar chocaba contra sí misma. Ahora se excluyen por id.
+        - Un `refine` en las reglas habría tirado la configuración ENTERA al
+          leer un rango a medias; ahora se avisa en el constructor.
+        **Constructor**: `BookingRulesParts.tsx` (tarjeta de servicio, perfil,
+        festivos, vacaciones); la vista previa recibe la duración y la foto.
+        **Página pública**: avatares con foto o iniciales, cargo y descripción,
+        chips de duración y «N cupos».
+        **El resto**:
+        - El asistente y el MCP configuran todo lo nuevo.
+        - Migrar una empresa re-mapea la foto.
+        - Ayuda: guía «¿Cómo armo citas grupales, varias duraciones o los
+          festivos de mi país…?», Aprende al día con dos ilustraciones nuevas
+          (`citas-cupos`, `citas-festivos`) y novedad con carrusel.
+        **Tests**: shared 654 (8 nuevos del motor + 5 de festivos), API 1851 +
+        1 omitido (8 nuevos de la agenda, entre ellos festivos con un iCal
+        falso y la sesión duplicada), front 743.
+        **E2E navegador**:
+        - Constructor 21/21 en escritorio y en celular oscuro.
+        - Página pública 14/14 en escritorio y en celular: foto, cargo,
+          duraciones, cupos 3→2→1, horario lleno que desaparece y tope por
+          cliente.
+        - Festivos reales de Colombia y México bajados del calendario oficial.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

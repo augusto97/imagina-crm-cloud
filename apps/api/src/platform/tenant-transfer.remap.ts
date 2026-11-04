@@ -111,6 +111,8 @@ const EXPLICIT: Record<string, keyof IdMaps> = {
     // personas del equipo que atienden en una página de agenda.
     booking_page_id: 'bookingPage',
     staff_user_id: 'user',
+    // v0.1.349 — la foto de quien atiende en una página de agenda.
+    photo_file_id: 'attachment',
     // D2/E5 — la persona que el SLA pone al escalar (campo Persona).
     escalate_set_user_id: 'user',
     // E6 — el agente de IA de la acción «Pedirle a un agente».

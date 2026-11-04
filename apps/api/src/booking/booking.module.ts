@@ -7,6 +7,7 @@ import { ListsModule } from '../lists/lists.module';
 import { RecordsModule } from '../records/records.module';
 import { BookingAvailabilityService } from './booking-availability.service';
 import { BookingCalendarService } from './booking-calendar';
+import { BookingHolidaysService } from './booking-holidays';
 import { BookingPublicService } from './booking-public.service';
 import { BookingRemindersService } from './booking-reminders.service';
 import { BOOKING_SIMULATOR } from './booking-simulator';
@@ -27,9 +28,10 @@ import { BookingService } from './booking.service';
         BookingPublicService,
         BookingAvailabilityService,
         BookingCalendarService,
+        BookingHolidaysService,
         BookingRemindersService,
         { provide: BOOKING_SIMULATOR, useExisting: BookingPublicService },
     ],
-    exports: [BookingService, BookingPublicService, BookingAvailabilityService, BookingRemindersService, BOOKING_SIMULATOR],
+    exports: [BookingService, BookingPublicService, BookingAvailabilityService, BookingHolidaysService, BookingRemindersService, BOOKING_SIMULATOR],
 })
 export class BookingModule {}

@@ -5,25 +5,31 @@ import {
     checkBookingSlot,
     computeBookingSlots,
     jsonbKeyForField,
+    pickServiceDuration,
+    serviceRules,
     staffOffers,
+    weekKey,
     zonedDayAndMinute,
     zonedInstant,
     BOOKING_MAX_RANGE_DAYS,
     type BookingConfig,
+    type BookingRules,
     type BookingServiceItem,
     type BookingStaff,
     type BusyInterval,
     type Field,
     type PublicBookingSlots,
+    type SlotServiceInput,
     type StaffSlotsInput,
 } from '@imagina-base/shared';
-import { and, eq, isNull, ne, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, isNotNull, isNull, lte, ne, sql, type SQL } from 'drizzle-orm';
 import type { Tx } from '../db/client';
-import { bookingPages, fields as fieldsTable, lists, records } from '../db/schema';
+import { bookingAppointments, bookingPages, fields as fieldsTable, lists, records } from '../db/schema';
 import { IncidentHub } from '../incidents/incident-hub';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { BookingCalendarService } from './booking-calendar';
 import { readBookingConfig } from './booking-config';
+import { BookingHolidaysService } from './booking-holidays';
 
 /**
  * D5 — Lo ocupado y los horarios libres de una página de agenda. El cálculo
@@ -34,8 +40,20 @@ import { readBookingConfig } from './booking-config';
  *  - si la persona atiende en OTRAS páginas de agenda de la empresa, también
  *    las citas de esas listas (una persona no puede estar en dos lados);
  *  - lo ocupado de su Google Calendar u Outlook, si la empresa lo conectó y
- *    lo asoció a esa persona (sólo inicio y fin).
+ *    lo asoció a esa persona (sólo inicio y fin), sin los eventos que la
+ *    propia agenda creó para sus citas (v0.1.349: no se cuentan dos veces);
+ *  - v0.1.349: los festivos del país de cada persona (`BookingHolidaysService`).
+ *
+ * Cada cita ocupa con los márgenes DE SU SERVICIO y lleva su servicio (para
+ * los cupos grupales); los topes cuentan horarios (`sessions`), leyendo las
+ * semanas o meses enteros cuando hay topes semanales o mensuales.
  */
+
+/** Lo que se lee FUERA de la transacción (red): el calendario y los festivos. */
+export interface StaffOutside {
+    external: BusyInterval[];
+    holidays: Set<string> | undefined;
+}
 
 export interface PageContext {
     tenantId: number;
@@ -74,8 +92,14 @@ export class BookingAvailabilityService {
     constructor(
         private readonly tenantDb: TenantDb,
         private readonly calendar: BookingCalendarService,
+        private readonly holidays: BookingHolidaysService,
         @Optional() private readonly incidents?: IncidentHub,
     ) {}
+
+    /** Lo que el motor necesita del servicio (cupos y horario propio). */
+    slotService(svc: BookingServiceItem): SlotServiceInput {
+        return { id: svc.id, seats: svc.seats, hours: svc.hours };
+    }
 
     /** Las personas o recursos que pueden atender este servicio (los elegidos o todos). */
     candidates(config: BookingConfig, serviceId: string, staffSel: string): BookingStaff[] {
@@ -97,7 +121,7 @@ export class BookingAvailabilityService {
     /**
      * Horarios libres del rango (días en la zona de la empresa, recortado a lo
      * reservable). `excludeRecordId`: la cita que se está reprogramando no
-     * cuenta como ocupada.
+     * cuenta como ocupada. `durationMin`: la duración elegida (una del servicio).
      */
     async slots(
         ctx: PageContext,
@@ -105,11 +129,12 @@ export class BookingAvailabilityService {
         staffSel: string,
         fromYmd: string,
         toYmd: string,
-        opts: { excludeRecordId?: number; now?: Date } = {},
+        opts: { excludeRecordId?: number; now?: Date; durationMin?: number } = {},
     ): Promise<PublicBookingSlots> {
         const now = opts.now ?? new Date();
         const svc = this.service(ctx.config, serviceId);
-        const window = bookableWindow(ctx.config.rules, ctx.timeZone, now);
+        const rules = serviceRules(ctx.config.rules, svc);
+        const window = bookableWindow(rules, ctx.timeZone, now);
         const from = fromYmd < window.first ? window.first : fromYmd;
         let to = toYmd > window.last ? window.last : toYmd;
         if (to > addDaysYmd(from, BOOKING_MAX_RANGE_DAYS)) to = addDaysYmd(from, BOOKING_MAX_RANGE_DAYS);
@@ -119,8 +144,9 @@ export class BookingAvailabilityService {
         const inputs = await this.staffInputs(ctx, staff, from, to, opts.excludeRecordId);
         const slots = computeBookingSlots({
             staff: inputs,
-            durationMin: svc.duration_min,
-            rules: ctx.config.rules,
+            durationMin: pickServiceDuration(svc, opts.durationMin),
+            service: this.slotService(svc),
+            rules,
             timeZone: ctx.timeZone,
             now,
             fromYmd: from,
@@ -129,24 +155,60 @@ export class BookingAvailabilityService {
         return { slots, first_day: window.first, last_day: window.last };
     }
 
-    /** Lo ocupado de cada persona o recurso (citas de las listas + calendario externo). */
+    /** Lo ocupado de cada persona o recurso (citas de las listas + calendario externo) y sus festivos. */
     async staffInputs(ctx: PageContext, staff: BookingStaff[], fromYmd: string, toYmd: string, excludeRecordId?: number): Promise<StaffSlotsInput[]> {
-        const external = await Promise.all(staff.map((s) => this.externalBusy(ctx, s, fromYmd, toYmd)));
+        const outside = await Promise.all(staff.map((s) => this.outside(ctx, s, fromYmd, toYmd)));
         return this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
             const out: StaffSlotsInput[] = [];
             for (const [i, s] of staff.entries()) {
-                const { busy, dayCounts } = await this.recordBusy(tx, ctx, s, fromYmd, toYmd, excludeRecordId);
-                out.push({ id: s.id, availability: s.availability, busy: [...busy, ...(external[i] ?? [])], dayCounts });
+                const o = outside[i]!;
+                const { busy, sessions, ownEvents } = await this.recordBusy(tx, ctx, s, fromYmd, toYmd, excludeRecordId);
+                out.push({
+                    id: s.id,
+                    availability: s.availability,
+                    busy: [...busy, ...withoutOwnEvents(o.external, ownEvents)],
+                    sessions,
+                    ...(o.holidays ? { holidays: o.holidays } : {}),
+                });
             }
             return out;
         });
     }
 
+    /** Lo de la red de una persona (calendario y festivos), antes de tomar cualquier candado. */
+    async outside(ctx: PageContext, s: BookingStaff, fromYmd: string, toYmd: string): Promise<StaffOutside> {
+        const [external, holidays] = await Promise.all([this.externalBusy(ctx, s, fromYmd, toYmd), this.staffHolidays(ctx, s)]);
+        return { external, holidays };
+    }
+
+    /** Festivos de la persona; si no se pudieron saber, se sigue (el motor usa sus reglas) y se avisa. */
+    async staffHolidays(ctx: PageContext, s: BookingStaff): Promise<Set<string> | undefined> {
+        const key = `booking-holidays:${ctx.pageId}:${s.availability.holiday_country ?? '-'}`;
+        try {
+            const set = await this.holidays.blockedFor(s.availability);
+            if (set === undefined && s.availability.holiday_country !== null && s.availability.holiday_country !== 'CO') {
+                this.incidents?.report({
+                    tenantId: ctx.tenantId,
+                    key,
+                    source: 'booking',
+                    sourceId: ctx.pageId,
+                    listId: ctx.listId,
+                    ownerId: ctx.createdBy,
+                    title: `La agenda «${ctx.pageName}» no pudo leer los festivos`,
+                    message: `No pudimos bajar los festivos de ${s.availability.holiday_country}. Mientras tanto la página ofrece horarios también en esos días; marca los cierres puntuales en «Días especiales».`,
+                });
+            } else this.incidents?.resolve(ctx.tenantId, key);
+            return set;
+        } catch {
+            return undefined;
+        }
+    }
+
     /**
      * Re-chequeo DENTRO de la transacción que tiene el candado de esa persona:
      * con las citas tal como están ahora (otra reserva pudo entrar un segundo
-     * antes). `external` = lo ocupado del calendario (leído antes del candado:
-     * no se espera a la red con el candado tomado).
+     * antes). `outside` = el calendario y los festivos (leídos antes del
+     * candado: no se espera a la red con el candado tomado).
      */
     async checkInTx(
         tx: Tx,
@@ -154,15 +216,22 @@ export class BookingAvailabilityService {
         staff: BookingStaff,
         service: BookingServiceItem,
         start: Date,
-        external: BusyInterval[],
-        opts: { excludeRecordId?: number; now?: Date } = {},
+        outside: StaffOutside,
+        opts: { excludeRecordId?: number; now?: Date; durationMin?: number } = {},
     ): Promise<string | null> {
         const { ymd } = zonedDayAndMinute(start, ctx.timeZone);
-        const { busy, dayCounts } = await this.recordBusy(tx, ctx, staff, ymd, ymd, opts.excludeRecordId);
+        const { busy, sessions, ownEvents } = await this.recordBusy(tx, ctx, staff, ymd, ymd, opts.excludeRecordId);
         return checkBookingSlot({
-            staff: { id: staff.id, availability: staff.availability, busy: [...busy, ...external], dayCounts },
-            durationMin: service.duration_min,
-            rules: ctx.config.rules,
+            staff: {
+                id: staff.id,
+                availability: staff.availability,
+                busy: [...busy, ...withoutOwnEvents(outside.external, ownEvents)],
+                sessions,
+                ...(outside.holidays ? { holidays: outside.holidays } : {}),
+            },
+            durationMin: pickServiceDuration(service, opts.durationMin),
+            service: this.slotService(service),
+            rules: serviceRules(ctx.config.rules, service),
             timeZone: ctx.timeZone,
             now: opts.now ?? new Date(),
             start,
@@ -198,8 +267,10 @@ export class BookingAvailabilityService {
 
     /**
      * Las citas (no canceladas) de una persona o recurso entre dos días (con un
-     * día de margen a cada lado), y cuántas tiene cada día. Lee las listas de
-     * TODAS las páginas de agenda donde esa persona atiende.
+     * día de margen a cada lado, o las semanas / meses enteros si hay topes
+     * semanales o mensuales), sus inicios (para los topes) y los eventos de
+     * calendario que la agenda creó para ellas. Lee las listas de TODAS las
+     * páginas de agenda donde esa persona atiende.
      */
     async recordBusy(
         tx: Tx,
@@ -208,12 +279,11 @@ export class BookingAvailabilityService {
         fromYmd: string,
         toYmd: string,
         excludeRecordId?: number,
-    ): Promise<{ busy: BusyInterval[]; dayCounts: Map<string, number> }> {
+    ): Promise<{ busy: BusyInterval[]; sessions: number[]; ownEvents: Set<string> }> {
         const sources = await this.sourcesFor(tx, ctx, staff);
         const busy: BusyInterval[] = [];
-        const dayCounts = new Map<string, number>();
-        const lo = addDaysYmd(fromYmd, -1);
-        const hi = addDaysYmd(toYmd, 1);
+        const sessions = new Set<number>();
+        const { lo, hi } = capRange(ctx.config.rules, fromYmd, toYmd);
         for (const src of sources) {
             const m = src.config.mapping;
             if (m.start_field_id === null) continue;
@@ -247,31 +317,55 @@ export class BookingAvailabilityService {
                 const iv = this.intervalOf(src, r.data as Record<string, unknown>);
                 if (!iv) continue;
                 busy.push({ ...iv, kind: 'appointment' });
-                const day = zonedDayAndMinute(new Date(iv.start), ctx.timeZone).ymd;
-                dayCounts.set(day, (dayCounts.get(day) ?? 0) + 1);
+                sessions.add(iv.start);
             }
         }
-        return { busy, dayCounts };
+        // Los eventos que la agenda creó en el calendario de esta persona (para
+        // no contarlos dos veces, ni que la cita que se reprograma se bloquee a sí misma).
+        const ownEvents = new Set<string>();
+        if (staff.kind === 'user' && staff.staff_user_id !== null && staff.connection_id !== null) {
+            const rows = await tx
+                .select({ ev: bookingAppointments.externalEvent })
+                .from(bookingAppointments)
+                .where(
+                    and(
+                        eq(bookingAppointments.tenantId, ctx.tenantId),
+                        eq(bookingAppointments.staffUserId, staff.staff_user_id),
+                        isNotNull(bookingAppointments.externalEvent),
+                        gte(bookingAppointments.startAt, zonedInstant(addDaysYmd(fromYmd, -1), ctx.timeZone)),
+                        lte(bookingAppointments.startAt, zonedInstant(addDaysYmd(toYmd, 2), ctx.timeZone)),
+                    ),
+                )
+                .limit(MAX_BUSY_ROWS);
+            for (const r of rows) if (r.ev?.event_id) ownEvents.add(r.ev.event_id);
+        }
+        return { busy, sessions: [...sessions], ownEvents };
     }
 
-    /** Inicio y fin de una cita de la lista: fin del campo, o duración, o la del servicio, o 30 min. */
-    private intervalOf(src: BusySource, data: Record<string, unknown>): { start: number; end: number } | null {
+    /**
+     * Inicio, fin, servicio y márgenes de una cita de la lista: fin del campo,
+     * o duración, o la del servicio, o 30 min; los márgenes, los de su servicio.
+     */
+    private intervalOf(src: BusySource, data: Record<string, unknown>): { start: number; end: number; serviceId: string | null; before: number; after: number } | null {
         const m = src.config.mapping;
         const start = parseInstant(m.start_field_id !== null ? data[jsonbKeyForField(m.start_field_id)] : null);
         if (start === null) return null;
+        let svc: BookingServiceItem | undefined;
+        if (m.service_field_id !== null) {
+            const v = data[jsonbKeyForField(m.service_field_id)];
+            svc = src.config.services.find((s) => (s.option_value !== null && s.option_value === v) || s.name === v);
+        }
+        const r = svc ? serviceRules(src.config.rules, svc) : src.config.rules;
+        const margins = { serviceId: svc?.id ?? null, before: r.buffer_before_min * 60_000, after: r.buffer_after_min * 60_000 };
         const end = m.end_field_id !== null ? parseInstant(data[jsonbKeyForField(m.end_field_id)]) : null;
-        if (end !== null && end > start) return { start, end };
+        if (end !== null && end > start) return { start, end, ...margins };
         let minutes: number | null = null;
         if (m.duration_field_id !== null) {
             const d = Number(data[jsonbKeyForField(m.duration_field_id)]);
             if (Number.isFinite(d) && d > 0) minutes = Math.min(d, 24 * 60);
         }
-        if (minutes === null && m.service_field_id !== null) {
-            const v = data[jsonbKeyForField(m.service_field_id)];
-            const svc = src.config.services.find((s) => (s.option_value !== null && s.option_value === v) || s.name === v);
-            if (svc) minutes = svc.duration_min;
-        }
-        return { start, end: start + (minutes ?? DEFAULT_APPOINTMENT_MIN) * 60_000 };
+        if (minutes === null && svc) minutes = svc.duration_min;
+        return { start, end: start + (minutes ?? DEFAULT_APPOINTMENT_MIN) * 60_000, ...margins };
     }
 
     /** La lista de esta página y, para una persona, las de las otras páginas donde atiende. */
@@ -302,4 +396,30 @@ export class BookingAvailabilityService {
         }
         return out;
     }
+}
+
+/** Lo ocupado del calendario, sin los eventos que la agenda creó para sus citas. */
+function withoutOwnEvents(external: readonly BusyInterval[], own: ReadonlySet<string>): BusyInterval[] {
+    if (own.size === 0) return [...external];
+    return external.filter((b) => !b.externalId || !own.has(b.externalId));
+}
+
+/** Qué días hay que leer para que los topes semanales y mensuales cuenten bien. */
+export function capRange(rules: Pick<BookingRules, 'max_per_week' | 'max_per_month'>, fromYmd: string, toYmd: string): { lo: string; hi: string } {
+    let lo = addDaysYmd(fromYmd, -1);
+    let hi = addDaysYmd(toYmd, 1);
+    if (rules.max_per_week !== null) {
+        const wlo = weekKey(fromYmd);
+        const whi = addDaysYmd(weekKey(toYmd), 6);
+        if (wlo < lo) lo = wlo;
+        if (whi > hi) hi = whi;
+    }
+    if (rules.max_per_month !== null) {
+        const mlo = `${fromYmd.slice(0, 7)}-01`;
+        const [y, mo] = toYmd.split('-').map(Number) as [number, number];
+        const mhi = addDaysYmd(`${mo === 12 ? y + 1 : y}-${String(mo === 12 ? 1 : mo + 1).padStart(2, '0')}-01`, -1);
+        if (mlo < lo) lo = mlo;
+        if (mhi > hi) hi = mhi;
+    }
+    return { lo, hi };
 }

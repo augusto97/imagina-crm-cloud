@@ -57,6 +57,16 @@ const CSS = `
   .opt .s { color: var(--muted); font-size: 13px; }
   .opt .d { color: var(--muted); font-size: 13px; margin-top: 2px; white-space: pre-wrap; }
   .opt .r { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .who { display: flex; align-items: center; gap: 12px; }
+  .avatar { flex: none; width: 44px; height: 44px; border-radius: 50%; background: var(--accent-soft); color: var(--fg); display: inline-flex; align-items: center; justify-content: center;
+            font-weight: 650; font-size: 15px; overflow: hidden; }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .avatar.any { color: var(--accent); }
+  .durs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; }
+  .dur { appearance: none; border: 1px solid var(--border); background: #fff; color: var(--fg); border-radius: 99px; padding: 6px 14px; font: inherit; font-size: 14px; cursor: pointer; min-height: 36px; }
+  .dur.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .dur:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .slot .seats { display: block; font-size: 11px; font-weight: 500; opacity: .8; }
   .chip { display: inline-block; padding: 1px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--fg); font-size: 12px; }
   .summary { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 14px; background: #fafbfc; }
   .summary b { font-weight: 600; }
@@ -187,7 +197,7 @@ const CLIENT_JS = String.raw`
   var visitorTz = 'UTC';
   try { visitorTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) {}
   var st = {
-    step: 'service', service: null, staff: 'any', month: null, day: null, slot: null,
+    step: 'service', service: null, duration: null, staff: 'any', month: null, day: null, slot: null,
     showTz: null, values: {}, busy: false, cache: {}, alert: '', errors: {}, done: null, cancelOpen: false
   };
   var captchaToken = null, captchaWidget = null;
@@ -251,6 +261,19 @@ const CLIENT_JS = String.raw`
     } catch (e) { return tz; }
   }
   function cap(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; }
+  function durLabel(min) { var h = Math.floor(min / 60), m = min % 60; return h ? (m ? h + ' h ' + m + ' min' : h + ' h') : m + ' min'; }
+  function durationsOf(svc) { return svc && svc.durations && svc.durations.length ? svc.durations : (svc ? [svc.duration_min] : []); }
+  function chosenDuration(svc) { return st.duration && durationsOf(svc).indexOf(st.duration) >= 0 ? st.duration : (svc ? svc.duration_min : 30); }
+  function initials(name) { return String(name || '?').trim().split(/\s+/).slice(0, 2).map(function (w) { return w.charAt(0).toUpperCase(); }).join('') || '?'; }
+  function avatar(s, size) {
+    var box = el('span', { cls: 'avatar' + (size === 'lg' ? ' lg' : ''), 'aria-hidden': 'true' });
+    if (s && s.photo_url) {
+      var img = el('img', { src: s.photo_url, alt: '' });
+      img.addEventListener('error', function () { box.textContent = initials(s.name); });
+      box.appendChild(img);
+    } else box.textContent = initials(s ? s.name : '');
+    return box;
+  }
   function addDays(ymd, n) {
     var a = ymd.split('-').map(Number), d = new Date(Date.UTC(a[0], a[1] - 1, a[2] + n));
     return d.toISOString().slice(0, 10);
@@ -263,18 +286,19 @@ const CLIENT_JS = String.raw`
   function staffName(id) { var s = (meta.staff || []).filter(function (x) { return x.id === id; })[0]; return s ? s.name : ''; }
 
   function fetchSlots(from, to) {
-    var key = st.service + '|' + st.staff + '|' + from + '|' + to;
+    var dur = MODE === 'manage' ? null : st.duration;
+    var key = st.service + '|' + st.staff + '|' + (dur || '') + '|' + from + '|' + to;
     if (st.cache[key]) return Promise.resolve(st.cache[key]);
     var p;
     if (PREVIEW) {
       p = new Promise(function (resolve) {
         var id = ++pvReq;
         pvWait[id] = resolve;
-        parent.postMessage({ type: 'imb-booking-slots-request', id: id, service: st.service, staff: st.staff, from: from, to: to }, location.origin);
+        parent.postMessage({ type: 'imb-booking-slots-request', id: id, service: st.service, staff: st.staff, duration: dur, from: from, to: to }, location.origin);
         setTimeout(function () { if (pvWait[id]) { delete pvWait[id]; resolve({ slots: [] }); } }, 15000);
       });
     } else {
-      var q = '?service=' + encodeURIComponent(st.service) + '&staff=' + encodeURIComponent(st.staff) + '&from=' + from + '&to=' + to;
+      var q = '?service=' + encodeURIComponent(st.service) + '&staff=' + encodeURIComponent(st.staff) + '&from=' + from + '&to=' + to + (dur ? '&duration=' + dur : '');
       p = fetch(API + '/slots' + q, { headers: { accept: 'application/json' } }).then(function (r) { return r.ok ? r.json() : { slots: [] }; }).catch(function () { return { slots: [] }; });
     }
     return p.then(function (res) { st.cache[key] = res; return res; });
@@ -322,7 +346,7 @@ const CLIENT_JS = String.raw`
   function summaryBox(withSlot) {
     var svc = serviceById(st.service);
     var rows = [];
-    if (svc) rows.push(['Servicio', svc.name + ' · ' + svc.duration_min + ' min']);
+    if (svc) rows.push(['Servicio', svc.name + ' · ' + durLabel(MODE === 'manage' && manage ? Math.round((Date.parse(manage.appointment.end) - Date.parse(manage.appointment.start)) / 60000) : chosenDuration(svc))]);
     if (st.staff && st.staff !== 'any') rows.push(['Con', staffName(st.staff)]);
     else if (meta.choose_staff) rows.push(['Con', 'El primero disponible']);
     if (withSlot && st.slot) rows.push(['Cuándo', whenLong(st.slot.start, tzShown())]);
@@ -335,10 +359,12 @@ const CLIENT_JS = String.raw`
     root.appendChild(el('h2', { text: 'Elige el servicio' }));
     var list = el('div', { cls: 'choices' });
     (meta.services || []).forEach(function (s) {
-      var left = el('div', null, [el('div', { cls: 't', text: s.name }), el('div', { cls: 's', text: s.duration_min + ' minutos' })]);
+      var info = durationsOf(s).map(durLabel).join(' · ');
+      if (s.seats > 1) info += ' · grupal, hasta ' + s.seats + ' personas';
+      var left = el('div', null, [el('div', { cls: 't', text: s.name }), el('div', { cls: 's', text: info })]);
       if (s.description) left.appendChild(el('div', { cls: 'd', text: s.description }));
       list.appendChild(el('button', { type: 'button', cls: 'opt', 'data-service': s.id, on: { click: function () {
-        st.service = s.id; st.staff = 'any'; st.day = null; st.slot = null;
+        st.service = s.id; st.duration = s.duration_min; st.staff = 'any'; st.day = null; st.slot = null;
         var s2 = steps(); go(s2[s2.indexOf('service') + 1]);
       } } }, [left, s.price_label ? el('span', { cls: 'r', text: s.price_label }) : null]));
     });
@@ -351,11 +377,15 @@ const CLIENT_JS = String.raw`
     root.appendChild(el('h2', { text: '¿Con quién?' }));
     var list = el('div', { cls: 'choices' });
     list.appendChild(el('button', { type: 'button', cls: 'opt', 'data-staff': 'any', on: { click: function () { st.staff = 'any'; st.day = null; go('date'); } } },
-      [el('div', null, [el('div', { cls: 't', text: 'El primero disponible' }), el('div', { cls: 's', text: 'Más horarios para elegir' })])]));
+      [el('div', { cls: 'who' }, [el('span', { cls: 'avatar any', 'aria-hidden': 'true', text: '\u2605' }), el('div', null, [el('div', { cls: 't', text: 'El primero disponible' }), el('div', { cls: 's', text: 'Más horarios para elegir' })])])]));
     staffFor(st.service).forEach(function (s) {
       var now = MODE === 'manage' && manage && manage.staff_id === s.id;
+      var txt = el('div', null, [el('div', { cls: 't', text: s.name })]);
+      if (s.title) txt.appendChild(el('div', { cls: 's', text: s.title }));
+      if (s.bio) txt.appendChild(el('div', { cls: 'd', text: s.bio }));
+      if (now) txt.appendChild(el('div', { cls: 's', text: 'Te atiende ahora' }));
       list.appendChild(el('button', { type: 'button', cls: 'opt' + (now ? ' cur' : ''), 'data-staff': s.id, on: { click: function () { st.staff = s.id; st.day = null; go('date'); } } },
-        [el('div', null, [el('div', { cls: 't', text: s.name }), now ? el('div', { cls: 's', text: 'Te atiende ahora' }) : null])]));
+        [el('div', { cls: 'who' }, [avatar(s), txt])]));
     });
     root.appendChild(list);
   }
@@ -373,22 +403,36 @@ const CLIENT_JS = String.raw`
       el('span', { cls: 'small', text: tzShown() === visitorTz ? '(la empresa está en ' + meta.time_zone_label + ')' : '' })]);
   }
 
+  function durationChips() {
+    var svc = serviceById(st.service), opts = durationsOf(svc);
+    if (MODE === 'manage' || opts.length < 2) return null;
+    var cur = chosenDuration(svc);
+    var row = el('div', { cls: 'durs', role: 'group', 'aria-label': 'Duración', 'data-testid': 'booking-durations' }, [el('span', { cls: 'muted small', text: 'Duración' })]);
+    opts.forEach(function (m) {
+      row.appendChild(el('button', { type: 'button', cls: 'dur' + (m === cur ? ' on' : ''), 'aria-pressed': m === cur ? 'true' : 'false', text: durLabel(m), 'data-duration': String(m), on: { click: function () { if (st.duration === m) return; st.duration = m; st.day = null; render(); } } }));
+    });
+    return row;
+  }
+
   function renderDate() {
     root.appendChild(summaryBox(false));
     root.appendChild(el('h2', { text: 'Elige el día y la hora' }));
+    var chips = durationChips();
+    if (chips) root.appendChild(chips);
     root.appendChild(tzControl());
     var tz = tzShown();
     var today = todayIn(tz);
-    if (!st.month) st.month = today.slice(0, 7);
+    var winFirst = meta.first_day && meta.first_day > today ? meta.first_day : today;
+    if (!st.month) st.month = winFirst.slice(0, 7);
     var y = Number(st.month.slice(0, 4)), mo = Number(st.month.slice(5, 7));
     var first = st.month + '-01';
     var daysIn = new Date(Date.UTC(y, mo, 0)).getUTCDate();
     var last = st.month + '-' + (daysIn < 10 ? '0' : '') + daysIn;
-    var lastAllowed = addDays(today, (meta.max_days_ahead || 60) + 1);
+    var lastAllowed = meta.last_day ? addDays(meta.last_day, 1) : addDays(today, (meta.max_days_ahead || 60) + 1);
     var head = el('div', { cls: 'cal-head' });
     var prev = el('button', { type: 'button', cls: 'nav', 'aria-label': 'Mes anterior', text: '\u2039', 'data-testid': 'booking-prev', on: { click: function () { st.month = addDays(first, -1).slice(0, 7); st.day = null; render(); } } });
     var next = el('button', { type: 'button', cls: 'nav', 'aria-label': 'Mes siguiente', text: '\u203A', 'data-testid': 'booking-next', on: { click: function () { st.month = addDays(last, 1).slice(0, 7); st.day = null; render(); } } });
-    if (first <= today) prev.disabled = true;
+    if (first <= winFirst) prev.disabled = true;
     if (last >= lastAllowed) next.disabled = true;
     var title = cap(new Intl.DateTimeFormat('es-CO', { timeZone: 'UTC', month: 'long', year: 'numeric' }).format(new Date(Date.UTC(y, mo - 1, 1))));
     head.appendChild(prev); head.appendChild(el('b', { text: title })); head.appendChild(next);
@@ -437,7 +481,11 @@ const CLIENT_JS = String.raw`
         if (!list.length) slotsBox.appendChild(el('div', { cls: 'empty', text: 'Ese día ya no tiene horarios libres.' }));
         var g = el('div', { cls: 'slots', 'data-testid': 'booking-slots' });
         list.forEach(function (s) {
-          g.appendChild(el('button', { type: 'button', cls: 'slot', text: timeLabel(s.start, tz), 'data-start': s.start, on: { click: function () { pickSlot(s); } } }));
+          var svc2 = serviceById(st.service);
+          var seats = typeof s.seats_left === 'number' && svc2 && svc2.show_seats_left ? s.seats_left : null;
+          var btn = el('button', { type: 'button', cls: 'slot', 'data-start': s.start, on: { click: function () { pickSlot(s); } } }, [el('span', { text: timeLabel(s.start, tz) })]);
+          if (seats !== null) { btn.appendChild(el('span', { cls: 'seats', text: seats === 1 ? '1 cupo' : seats + ' cupos' })); btn.setAttribute('aria-label', timeLabel(s.start, tz) + ', ' + (seats === 1 ? 'queda 1 cupo' : 'quedan ' + seats + ' cupos')); }
+          g.appendChild(btn);
         });
         slotsBox.appendChild(g);
       }
@@ -617,7 +665,7 @@ const CLIENT_JS = String.raw`
     var values = {};
     (meta.questions || []).forEach(function (q) { if (q.type === 'field' && visible(q) && st.values[q.key] !== undefined) values[q.key] = st.values[q.key]; });
     var body = {
-      service_id: st.service, staff_id: st.staff, start: st.slot.start,
+      service_id: st.service, staff_id: st.staff, start: st.slot.start, duration_min: chosenDuration(serviceById(st.service)),
       name: st.values.__name.trim(), email: st.values.__email.trim(), values: values,
       stamp: meta.stamp, hp: (document.getElementById('hp') || {}).value || '', time_zone: visitorTz
     };

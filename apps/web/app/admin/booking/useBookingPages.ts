@@ -3,6 +3,7 @@ import type {
     BookingConfig,
     BookingPageDto,
     CreateBookingPageInput,
+    HolidayItem,
     PublicBookingSlots,
     UpdateBookingPageInput,
 } from '@imagina-base/shared';
@@ -90,7 +91,7 @@ export function useDeleteBookingPage(listId: number) {
 export async function fetchPreviewSlots(
     listId: number,
     pageId: number,
-    body: { config: BookingConfig; service_id: string; staff_id: string; from: string; to: string },
+    body: { config: BookingConfig; service_id: string; staff_id: string; from: string; to: string; duration?: number },
 ): Promise<PublicBookingSlots> {
     return (await api.post<PublicBookingSlots>(`/lists/${listId}/booking-pages/${pageId}/preview-slots`, body)).data;
 }
@@ -119,4 +120,15 @@ export function bookingEmbedCode(page: Pick<BookingPageDto, 'public_path' | 'pub
         `<iframe src="${bookingPublicUrl(page)}" title="${title}" data-imagina-form style="width:100%;height:720px;border:0" loading="lazy"></iframe>\n` +
         `<script src="${bookingPublicOrigin(page)}/api/v1/public/f/embed.js" async></script>`
     );
+}
+
+/** v0.1.349 — Los festivos de un país en un año (para marcar los que sí se atienden). */
+export function useBookingHolidays(listId: number, country: string | null, year: number) {
+    return useQuery({
+        queryKey: ['booking-holidays', listId, country, year],
+        enabled: country !== null,
+        staleTime: 60 * 60_000,
+        queryFn: async () =>
+            (await api.get<{ country: string; items: HolidayItem[]; available: boolean }>(`/lists/${listId}/booking-pages/holidays?country=${encodeURIComponent(country ?? '')}&year=${year}`)).data,
+    });
 }

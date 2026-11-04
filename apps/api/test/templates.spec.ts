@@ -24,6 +24,7 @@ import { PlansService } from '../src/billing/plans.service';
 import { ConnectorsService } from '../src/connectors/connectors.service';
 import { loadEnv } from '../src/config/env';
 import { automationHooks, bookingPages, fields as fieldsTable, memberships, recordChecklistItems, recordChecklists, records, relations, tenants, users } from '../src/db/schema';
+import { NO_HOLIDAYS } from './helpers/no-holidays';
 import { BookingAvailabilityService } from '../src/booking/booking-availability.service';
 import { BookingService } from '../src/booking/booking.service';
 import { withTenant } from '../src/db/tenant-tx';
@@ -320,7 +321,7 @@ describe('Duplicar listas y plantillas (Postgres real, v0.1.166)', () => {
             dashboardsService,
             recordTemplatesSvc,
             // D5 — las páginas de agenda viajan en el blueprint.
-            new BookingService(pg.db, tenantDb, listsService, fieldsService, new BookingAvailabilityService(tenantDb, null as never)),
+            new BookingService(pg.db, tenantDb, listsService, fieldsService, new BookingAvailabilityService(tenantDb, null as never, NO_HOLIDAYS), NO_HOLIDAYS),
         );
         const audit = new AuditService(tenantDb);
         templates = new TemplatesService(tenantDb, listsService, blueprints, audit);

@@ -382,13 +382,41 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.348**
-(Microsoft Teams y la ayuda debajo de cada credencial; antes v0.1.347 la barra
-de abajo del celular personalizable, v0.1.346 la barra de abajo de la app
-instalada siguiendo el modo oscuro y v0.1.345 la apertura de la app en modo
-oscuro explicada como es), en `main`.
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.349**
+(agenda de citas: reglas, cupos grupales, festivos por país y asesores con foto;
+antes v0.1.348 Microsoft Teams y la ayuda debajo de cada credencial, v0.1.347 la
+barra de abajo del celular personalizable), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-04 — **Agenda de citas al nivel de Cal.com/Calendly** (addendum
+  ADR-S67). Pedido del usuario: "la configuración de ese calendario o sistema de
+  agendamientos está muy básica… seleccionar su asesor, diferentes franjas,
+  cuánto duran las franjas, tiempo antes y después, límite de anticipación,
+  límite de cupo, festivos en automático por país, que se sincronice con los
+  calendarios de los agentes (Google u Outlook), que genere link de Meet o
+  Teams, que alguien apruebe o rechace (configurable), más estilos (colores,
+  logo, mostrar u ocultar)… investiga cómo lo hacen cal.com y calendly… por
+  cierto, prioridad de que sea segura y no hackeable". Se propusieron TRES
+  entregas y el usuario aprobó **«Ese orden»**:
+  1. **v0.1.349 — HECHA**: reglas por servicio, varias duraciones, cupos
+     grupales, topes por día/semana/mes y por cliente, festivos por país,
+     vacaciones, asesores con foto y cargo, reparto por turno/carga/prioridad.
+  2. **SIGUIENTE**: el calendario PROPIO de cada asesor (cada uno conecta su
+     Google Calendar u Outlook y decide en cuáles mira lo ocupado), enlace de
+     **Meet o Teams** generado solo en cada cita, y **sincronización en dos
+     sentidos** (mover o borrar el evento en Google/Outlook mueve o cancela la
+     cita).
+  3. **DESPUÉS**: **aprobación** de citas configurable (quién aprueba, qué ve
+     el cliente mientras tanto), **rediseño visual** de la página (tema,
+     colores, portada, logo, mostrar u ocultar partes, distribución) y
+     **seguridad reforzada** (código por correo para confirmar, dominios
+     desechables bloqueados, topes por correo, enlaces de un solo uso,
+     revisión de todo lo público).
+  Quedan fuera salvo que el usuario lo pida: cobrar al agendar y formularios de
+  enrutamiento.
+  **Nota de desarrollo**: el tenant 1 del entorno de dev está en plan `trial`
+  con más de 500 registros; para las pruebas se subió a `enterprise` y se
+  restauró al terminar.
 - 2026-11-03 — **Conectar Outlook y Teams → v0.1.348** (addendum ADR-S22). El
   usuario estaba registrando la app de Microsoft y dijo: "la guía no está muy
   clara… no sé de dónde sacar los valores de abajo (Client ID y Client
@@ -1223,6 +1251,24 @@ oscuro explicada como es), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-04 · v0.1.349** — **Agenda de citas: reglas, cupos, festivos por
+  país y asesores con foto** (addendum ADR-S67; primera de tres entregas, ver
+  §10).
+  - **Servicio**: varias duraciones, cupos por horario (sesiones grupales),
+    horario propio y reglas propias.
+  - **Quién atiende**: foto (URL firmada), cargo, descripción y prioridad;
+    reparto por turno, carga o prioridad.
+  - **Festivos por país**: iCal oficial de Google para 33 países, caché en
+    Redis, respaldo de Colombia; vacaciones como rangos.
+  - **Reglas**: días corridos/hábiles o entre dos fechas, «lo que dura la
+    cita», topes por día/semana/mes y por cliente.
+  - **Seguridad**: tope por cliente y sesión duplicada chequeados dentro de los
+    candados; duración y foto validadas en el servidor.
+  - **Bug**: los eventos que la app crea en el calendario externo ya no
+    cuentan como ocupado.
+  - Sin migración. Tests: shared 654, API 1851, front 743; E2E 21/21
+    constructor y 14/14 página pública (escritorio y celular).
 
 - **2026-11-03 · v0.1.348** — **Microsoft Teams + ayuda debajo de cada
   credencial** (addendum ADR-S22; pedido del usuario, ver §10).
