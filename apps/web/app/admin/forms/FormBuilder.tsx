@@ -705,7 +705,7 @@ function SharePanel({ form, enabled, accent, onClose, onPublish }: { form: FormD
             )}
             <CopyRow label={__('Enlace')} value={formPublicUrl(form)} testId="form-link" />
             <EmbedCodePicker
-                target={{ url: formPublicUrl(form), origin: formPublicOrigin(form), title: form.name, kind: 'form' }}
+                target={{ url: formPublicUrl(form), origin: formPublicOrigin(form), title: form.config.settings.title.trim() || form.name, kind: 'form' }}
                 accent={accent}
                 testId="form-embed"
                 dataTour="form-embed-mode"

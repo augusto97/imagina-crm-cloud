@@ -11392,6 +11392,76 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         - constructor en celular 7/7, en claro y en oscuro;
         - un formulario nuevo nace con el tema por defecto.
 
+  - [x] **Formularios y agenda insertados que aguantan mucho tráfico
+        (v0.1.352, ADR-S95, pregunta del usuario: "si lo uso como formulario de
+        contacto de una web con muchas visitas, ¿puede ponerme lenta la app?…
+        ¿cómo hacen Cal.com o Calendly?" → "hazlo primero y luego la tercera
+        entrega")**. Medido antes: la página de un formulario o de la agenda
+        salía a ~300 por segundo, con 4-6 consultas a la base por visita, porque
+        el sello anti-robots viajaba en el HTML (`no-store`) y la CSP llevaba un
+        nonce por respuesta.
+        (a) **La página es la misma para todos**: el sello se pide aparte
+        (`GET /public/forms/:token/stamp` y `/public/booking/:token/stamp`,
+        `no-store`) en la primera interacción, y el cliente espera 2,6 s desde
+        que lo recibe antes de enviar.
+        (b) **CSP por hash** (`cacheablePageCsp` + `inlineScriptHash`): el
+        script sigue EN LÍNEA (una sola ida y vuelta) y se autoriza por su
+        `sha256`. Se descartó, explicándolo, el archivo aparte con versión que
+        se había propuesto: con la página cacheada sólo sumaba un pedido.
+        (c) **`PublicCache`** (`apps/api/src/public-cache/`): memoria por
+        proceso, 30 s (15 s lo que no existe), single-flight (mil pedidos a la
+        vez arman una vez), época para no guardar un armado viejo, LRU de 5.000,
+        y versiones por espacio (`slots:<tenant>`) que dejan viejas todas sus
+        claves en O(1). Invalidaciones por Redis pub/sub entre servidores
+        (`imb:public-cache`).
+        (d) **Tope de armados públicos** (`PUBLIC_DB_CONCURRENCY`, 8 por
+        defecto; fila de 400, 8 s): lleno → 503 «Hay muchas visitas en este
+        momento» en vez de frenar a la app del equipo.
+        (e) **Precomprimida** una vez (brotli + gzip) con `ETag`/304 y
+        `Cache-Control: public, max-age=30, stale-while-revalidate=120`;
+        `embed.js` igual con una hora de caché.
+        (f) **Horarios de la agenda** cacheados 30 s por página, servicio,
+        persona, rango y duración; reservar, cancelar, reprogramar, el
+        calendario de alguien o un cambio en la lista los invalida al instante,
+        y la reserva siempre re-chequea dentro del candado. El tope por página
+        cuenta sólo los cálculos de verdad.
+        (g) **Tres formas de insertar** en el constructor de formularios y de la
+        agenda (`EmbedCodePicker`): **En la página** (iframe lazy), **Ventana al
+        hacer clic** (botón con texto/color, o el atributo `data-imagina-popup`
+        en un botón propio, que la app da listo para copiar) y **Botón
+        flotante** (texto, color y esquina). El `embed.js` nuevo precarga al
+        pasar el mouse o tocar, abre una ventana accesible (Escape, clic afuera,
+        foco que vuelve), acepta varios scripts en la página, sólo abre
+        direcciones públicas de su propio origen y funciona con una CSP estricta
+        del sitio. El título de la ventana es el título público (antes el código
+        llevaba el nombre interno).
+        **Bug atrapado en el E2E**: mover un iframe de lugar en el DOM lo vuelve
+        a cargar, así que la primera versión perdía la precarga al abrir y cada
+        cerrar/abrir volvía a pedir la página; ahora la ventana se arma una vez y
+        sólo se muestra u oculta. **De paso**: un test de la mesa de ayuda era
+        una bomba de tiempo (fechas fijas del 3-nov y un recálculo en segundo
+        plano con el reloj real); ahora fija el reloj del proceso.
+        **Medido después** (mismo sandbox): página del formulario ~3.300-3.700
+        por segundo (p50 2-12 ms; ~11 veces más), ~0,2 ms de CPU por visita, 304
+        a ~8.600/s; agenda ~3.000/s; horarios ~2,5 ms desde caché y ~2.950/s
+        con muchos visitantes sin un 429. Guía del operador para Cloudflare y el
+        tope: `docs/runbook-public-traffic.md`. Ayuda: guía «¿Cómo pongo un
+        formulario o la agenda en mi sitio web sin que se ponga lento?»,
+        Aprende (formularios y agenda) con la ilustración `embed-popup`,
+        recorrido y novedad.
+        Tests: `public-cache.spec` (12: TTL, single-flight de 1.000, negativos,
+        invalidación en vuelo, versiones, tope y fila, espera que se rinde, LRU,
+        precompresión, codificación y el hash exacto de la CSP del formulario y
+        de la agenda), casos nuevos en `forms.spec` y `booking.spec` (caché e
+        invalidación), `embedCode.test` en el front — API 1885 + 1 omitido,
+        shared y front en verde — + E2E navegador: constructor 11/11 (escritorio,
+        celular y oscuro), un sitio de otra empresa con CSP estricta y los tres
+        modos 19/19 en dev y contra el build de producción, en escritorio y en
+        celular (nada se pide al cargar, precarga al pasar el mouse, reabrir sin
+        recargar, sello al tocar un campo, envío rápido que espera lo justo,
+        botón propio, flotante, marco lazy, cero violaciones de CSP) y la agenda
+        10/10 (los cupos bajan 3→2→1 al instante y el horario lleno se va).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

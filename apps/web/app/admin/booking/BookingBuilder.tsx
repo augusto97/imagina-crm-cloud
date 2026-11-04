@@ -592,7 +592,7 @@ function SharePanel({ page, accent, onClose, onPublish }: { page: BookingPageDto
             )}
             <CopyRow label={__('Enlace')} value={bookingPublicUrl(page)} testId="booking-link" />
             <EmbedCodePicker
-                target={{ url: bookingPublicUrl(page), origin: bookingPublicOrigin(page), title: page.name, kind: 'booking' }}
+                target={{ url: bookingPublicUrl(page), origin: bookingPublicOrigin(page), title: page.config.settings.title.trim() || page.name, kind: 'booking' }}
                 accent={accent}
                 testId="booking-embed"
                 dataTour="booking-embed-mode"
@@ -1323,7 +1323,7 @@ function PublishEditor({ config, onChange, page, problems, onPublish, onRegenera
             )}
             <CopyRow label={__('Enlace')} value={bookingPublicUrl(page)} testId="booking-link-inline" />
             <EmbedCodePicker
-                target={{ url: bookingPublicUrl(page), origin: bookingPublicOrigin(page), title: page.name, kind: 'booking' }}
+                target={{ url: bookingPublicUrl(page), origin: bookingPublicOrigin(page), title: s.title.trim() || page.name, kind: 'booking' }}
                 accent={s.accent_color ?? '#0e7490'}
                 testId="booking-embed-inline"
             />

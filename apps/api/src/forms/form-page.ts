@@ -291,67 +291,46 @@ export const FORM_EMBED_JS = String.raw`(function () {
   });
 
   // ───────────── Ventana emergente (se carga al hacer clic) ─────────────
-  var frames = {};
+  // Una ventana por dirección, armada UNA vez (al pasar el mouse o al hacer
+  // clic) y después sólo mostrada u ocultada: mover un iframe de lugar en el
+  // DOM lo vuelve a cargar, así que el marco nunca cambia de padre.
+  var popups = {};
   var open = null;
 
   function css(el, props) { for (var k in props) el.style[k] = props[k]; return el; }
   function small() { return window.innerWidth < 600; }
 
-  function frameFor(url, title) {
-    var f = frames[url];
-    if (f && f.getAttribute('data-imagina-done') !== null) { if (f.parentNode) f.parentNode.removeChild(f); f = null; }
-    if (!f) {
-      f = document.createElement('iframe');
-      f.src = url;
-      f.title = title || 'Formulario';
-      f.setAttribute('data-imagina-form', '');
-      f.setAttribute('data-imagina-popup-frame', '');
-      f.setAttribute('allow', 'payment');
-      css(f, { width: '100%', height: '560px', border: '0', display: 'block', background: 'transparent' });
-      frames[url] = f;
+  function layout(p) {
+    css(p.overlay, { padding: small() ? '0' : '16px' });
+    css(p.panel, {
+      width: small() ? '100%' : 'min(680px, 100%)', height: small() ? '100%' : 'auto',
+      maxHeight: small() ? '100%' : 'calc(100vh - 32px)', borderRadius: small() ? '0' : '14px'
+    });
+  }
+
+  function hide(p) {
+    css(p.overlay, { visibility: 'hidden', opacity: '0' });
+    p.overlay.setAttribute('aria-hidden', 'true');
+  }
+
+  function build(url, title) {
+    var p = popups[url];
+    if (p && p.frame.getAttribute('data-imagina-done') !== null) {
+      // Ya se envió: la próxima vez arranca de cero.
+      if (p.overlay.parentNode) p.overlay.parentNode.removeChild(p.overlay);
+      p = null;
     }
-    return f;
-  }
-
-  // Al pasar el mouse (o tocar) se empieza a cargar: al hacer clic ya está.
-  var parking = null;
-  function preload(url, title) {
-    if (!url || frames[url]) return;
-    if (!parking) {
-      parking = css(document.createElement('div'), { position: 'fixed', left: '-10000px', top: '0', width: '600px', height: '10px', overflow: 'hidden', visibility: 'hidden' });
-      parking.setAttribute('aria-hidden', 'true');
-      document.body.appendChild(parking);
-    }
-    parking.appendChild(frameFor(url, title));
-  }
-
-  function close() {
-    if (!open) return;
-    var o = open;
-    open = null;
-    document.removeEventListener('keydown', onKey, true);
-    document.documentElement.style.overflow = o.overflow;
-    if (parking && o.frame.getAttribute('data-imagina-done') === null) parking.appendChild(o.frame);
-    if (o.overlay.parentNode) o.overlay.parentNode.removeChild(o.overlay);
-    if (o.opener && o.opener.focus) { try { o.opener.focus(); } catch (e) {} }
-  }
-
-  function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
-
-  function openPopup(url, title, opener) {
-    if (open) close();
+    if (p) return p;
     var overlay = css(document.createElement('div'), {
       position: 'fixed', inset: '0', zIndex: '2147483000', background: 'rgba(15,23,42,.55)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: small() ? '0' : '16px'
+      display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'opacity .15s'
     });
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', title || 'Formulario');
     var panel = css(document.createElement('div'), {
-      position: 'relative', background: '#fff', width: small() ? '100%' : 'min(680px, 100%)',
-      height: small() ? '100%' : 'auto', maxHeight: small() ? '100%' : 'calc(100vh - 32px)',
-      overflowY: 'auto', borderRadius: small() ? '0' : '14px', boxShadow: '0 24px 60px rgba(15,23,42,.35)',
-      WebkitOverflowScrolling: 'touch'
+      position: 'relative', background: '#fff', overflowY: 'auto',
+      boxShadow: '0 24px 60px rgba(15,23,42,.35)', WebkitOverflowScrolling: 'touch'
     });
     var x = css(document.createElement('button'), {
       position: 'sticky', top: '8px', float: 'right', marginRight: '8px', marginTop: '8px', zIndex: '2',
@@ -363,16 +342,53 @@ export const FORM_EMBED_JS = String.raw`(function () {
     x.setAttribute('aria-label', 'Cerrar');
     x.textContent = '×';
     x.addEventListener('click', close);
-    var f = frameFor(url, title);
+    var f = document.createElement('iframe');
+    f.src = url;
+    f.title = title || 'Formulario';
+    f.setAttribute('data-imagina-form', '');
+    f.setAttribute('data-imagina-popup-frame', '');
+    f.setAttribute('allow', 'payment');
+    css(f, { width: '100%', height: '560px', border: '0', display: 'block', background: 'transparent' });
     panel.appendChild(x);
     panel.appendChild(f);
     overlay.appendChild(panel);
     overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) close(); });
-    open = { overlay: overlay, frame: f, opener: opener, overflow: document.documentElement.style.overflow };
-    document.documentElement.style.overflow = 'hidden';
+    p = { overlay: overlay, panel: panel, frame: f, close: x };
+    layout(p);
+    hide(p);
     document.body.appendChild(overlay);
+    popups[url] = p;
+    return p;
+  }
+
+  // Al pasar el mouse (o tocar) se empieza a cargar: al hacer clic ya está.
+  function preload(url, title) {
+    if (!url || popups[url]) return;
+    build(url, title);
+  }
+
+  function close() {
+    if (!open) return;
+    var o = open;
+    open = null;
+    document.removeEventListener('keydown', onKey, true);
+    document.documentElement.style.overflow = o.overflow;
+    hide(o.p);
+    if (o.opener && o.opener.focus) { try { o.opener.focus(); } catch (e) {} }
+  }
+
+  function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
+
+  function openPopup(url, title, opener) {
+    if (open) close();
+    var p = build(url, title);
+    layout(p);
+    css(p.overlay, { visibility: 'visible', opacity: '1' });
+    p.overlay.removeAttribute('aria-hidden');
+    open = { p: p, opener: opener, overflow: document.documentElement.style.overflow };
+    document.documentElement.style.overflow = 'hidden';
     document.addEventListener('keydown', onKey, true);
-    try { x.focus(); } catch (e) {}
+    try { p.close.focus(); } catch (e) {}
   }
 
   function targetOf(el) {
