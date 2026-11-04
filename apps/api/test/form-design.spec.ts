@@ -187,7 +187,7 @@ describe('v0.1.351 — diseño de los formularios (Postgres + Redis reales)', ()
             { config: formConfigSchema.parse({ items: [], settings: { theme: { ...base, custom_css: '@import url(https://x.test/a.css); .ib-title{color:red;background:url(https://x.test/p.png)}' } } }) },
             ADMIN,
         );
-        expect(saved.config.settings.theme?.custom_css).toBe('.ib-title{color:red;background:none(https://x.test/p.png)}');
+        expect(saved.config.settings.theme?.custom_css).toBe('.ib-title{color:red;background:none}');
         // Un agente puede cambiar OTRA cosa del diseño sin tocar el CSS que ya estaba.
         const theme = saved.config.settings.theme!;
         const again = await svc.update(
