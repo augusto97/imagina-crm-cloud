@@ -11,8 +11,9 @@ import { At, C, Keyframes, Stage, T, tone } from '../kit';
 
 const CSS = `
 @keyframes ca-digit{0%,6%{opacity:0;transform:translateY(4px)}12%,100%{opacity:1;transform:none}}
-@keyframes ca-code{0%,30%{opacity:1}36%,100%{opacity:0}}
-@keyframes ca-pending{0%,32%{opacity:0;transform:translateY(6px)}38%,94%{opacity:1;transform:none}99%,100%{opacity:0}}
+@keyframes ca-code{0%,27%{opacity:1}31%,100%{opacity:0}}
+@keyframes ca-pending{0%,33%{opacity:0;transform:translateY(6px)}39%,94%{opacity:1;transform:none}99%,100%{opacity:0}}
+@keyframes ca-ficha{0%,37%{opacity:0;transform:translateY(6px)}43%,94%{opacity:1;transform:none}99%,100%{opacity:0}}
 @keyframes ca-hand{0%,48%{opacity:0;transform:translate(14px,10px)}54%{opacity:1;transform:none}60%,64%{opacity:1;transform:scale(.88)}68%{opacity:1;transform:none}74%,100%{opacity:0}}
 @keyframes ca-chip-pending{0%,62%{opacity:1}66%,100%{opacity:0}}
 @keyframes ca-chip-ok{0%,62%{opacity:0}66%,94%{opacity:1}99%,100%{opacity:0}}
@@ -87,7 +88,7 @@ export default function CitasAprobacion(): JSX.Element {
                 </At>
 
                 {/* La ficha del registro: aprobar */}
-                <At x={242} y={26} w={222} h={150} style={{ ...card, padding: 12, display: 'flex', flexDirection: 'column', gap: 7 }}>
+                <At x={242} y={26} w={222} h={150} a="ca-ficha" style={{ ...card, padding: 12, display: 'flex', flexDirection: 'column', gap: 7 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                         <CalendarCheck size={11} color={tone('blue')} />
                         <T size={8.5} weight={800}>
