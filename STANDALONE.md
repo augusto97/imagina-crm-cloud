@@ -4250,6 +4250,62 @@ Queda para la tercera entrega: aprobación de citas, el diseño de la página y
 el endurecimiento de lo público. Afuera, a propósito: Zoom por OAuth (se usa
 el enlace fijo) y elegir el calendario de un RECURSO.
 
+**Addendum v0.1.353 — Aprobación de las citas y seguridad de la página
+(tercera entrega, primera mitad).** El diseño de la página con el motor de
+temas (ADR-S94) va en v0.1.354.
+
+1. **Modelo**: `config.approval` (`bookingApprovalSchema`: `mode` none | all |
+   new_clients, `hours` 1-168, `on_timeout` decline | approve,
+   `staff_approves`, `approver_user_ids`) y `services[].approval` (`inherit`
+   por defecto). Dos estados nuevos de la cita, **`pending`** y
+   **`declined`** (`BOOKING_INACTIVE_STATUSES` = cancelled + declined), con
+   su valor en el campo de estado de la lista (`mapping.status_pending` /
+   `status_declined`, creados al publicar). Migración 0098:
+   `pending_until`, `decided_by`, `decided_at`, `decline_reason`,
+   `manage_version` y el CHECK del estado con los dos valores nuevos (los
+   índices de «vivas» y de eventos externos excluyen las rechazadas). Una
+   configuración vieja se lee igual: sin aprobación.
+2. **Reservar por confirmar**: la cita nace `pending` dentro del mismo
+   candado de la persona, así **el horario queda apartado** (cuenta para los
+   cupos y los topes), pero sin evento en el calendario, videollamada ni
+   recordatorios. `pending_until = min(now + hours, inicio)`. `new_clients` =
+   el correo no tiene una cita anterior en la página que haya sido confirmada
+   (confirmada, reprogramada o cancelada después de confirmarse). Al cliente le
+   llega «Recibimos tu solicitud» (sin `.ics`) y la página muestra el
+   `pending_message`.
+3. **Decidir**: aprueban quien atiende (si `staff_approves`), las personas
+   elegidas (filtradas a miembros que pueden trabajar la lista) y siempre quien
+   tiene `manage_lists`; sin nadie elegido, quien creó la agenda. Aviso en la
+   campana a esas personas. `GET /lists/:l/records/:id/booking` (el panel de la
+   ficha, con el ACL de la ficha) y `POST …/booking/decide` (aprobar o
+   rechazar con motivo; bitácora `booking.approve`/`booking.decline`). La
+   decisión es un UPDATE condicional `WHERE status = 'pending'`: dos personas
+   a la vez no deciden dos veces. Aprobar crea el evento con su reunión, los
+   recordatorios y el correo de confirmación con el `.ics`; rechazar libera el
+   horario y manda el motivo. El estado del registro cambia solo, y un cambio
+   de estado hecho por el equipo en el registro también aprueba o rechaza.
+   Vencido el plazo, el tick de recordatorios aplica `on_timeout` y avisa.
+4. **Disparador**: eventos nuevos `requested` y `declined`. Sin eventos
+   elegidos el disparador sigue escuchando sólo los tres de siempre
+   (`BOOKING_DEFAULT_EVENTS`): una automatización vieja no se dispara con una
+   solicitud.
+5. **Seguridad de lo público**: (a) **código por correo** opcional
+   (`settings.verify_email`): `POST /public/booking/:token/code` manda 6
+   números (Redis `bookcode:{page}:{sha(email)}`, 10 min, 5 intentos,
+   comparación en tiempo constante) y `…/verify-code` devuelve una prueba HMAC
+   (`bookproof`: página + correo + vencimiento, 45 min) que la reserva exige;
+   (b) **correos temporales** rechazados por defecto (`isDisposableEmail`,
+   lista de dominios conocidos y sus subdominios); (c) **frenos por correo**
+   en Redis, compartidos entre nodos (5 reservas por hora y 12 por día por
+   página; 3 códigos cada 10 min y 8 por día), además de los de IP y página;
+   (d) **enlaces versionados**: el enlace de la cita lleva `manage_version` y
+   cada cambio lo sube, así el correo anterior sigue mostrando la cita pero ya
+   no la cambia («usa el del último correo»).
+6. **Interfaz**: sección «Aprobación y seguridad» del constructor (con la
+   regla por servicio y los valores del estado en Campos), pantalla del código
+   y de «Por confirmar» en la página pública, y panel «Cita por confirmar» en la
+   ficha (modal, página y ficha diseñada) con Aprobar / Rechazar con motivo.
+
 ---
 
 ### ADR-S68 — App instalable, notificaciones push y escáner de códigos (v0.1.314)

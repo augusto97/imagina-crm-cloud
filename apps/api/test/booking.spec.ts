@@ -1210,7 +1210,7 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
     const recordOfAppt = async (recordId: number) =>
         ((await withTenant(pg.db, tenantId, (tx) => tx.select().from(records).where(eq(records.id, recordId))))[0]!.data as Record<string, unknown>);
 
-    it('v0.1.353 — aprobación: queda por confirmar (ocupa el lugar, sin calendario ni recordatorio), se aprueba desde la ficha y recién ahí se confirma', async () => {
+    it('v0.1.353 — aprobación: queda por confirmar (ocupa el lugar, sin calendario ni recordatorio), se aprueba desde la ficha y sólo entonces se confirma', async () => {
         await pageWith((c) => {
             c.approval.mode = 'all';
             c.approval.hours = 12;

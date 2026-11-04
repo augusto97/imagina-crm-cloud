@@ -411,6 +411,7 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Pedir la autorización de tratamiento de datos (Ley 1581)', what: 'La casilla obligatoria con el texto de tu empresa, igual que en los formularios. Se activa en **Ajustes → Datos personales**.' },
                     { name: 'Pedir la verificación anti-robots (captcha)', what: 'Para frenar reservas falsas. Las llaves se cargan en **Ajustes → Portal y formularios**.' },
+                    { name: 'Código por correo y correos temporales', what: 'Están en **Aprobación y seguridad**: el cliente confirma su correo con un código de 6 números y no se aceptan los correos que duran unos minutos.' },
                 ],
             },
             {
@@ -430,6 +431,93 @@ export const articles: LearnArticle[] = [
                 t: 'actions',
                 items: [
                     { label: 'Configurar el correo de la empresa', to: '/settings?s=correo' },
+                    { label: 'Siguiente: aprobar citas y frenar reservas falsas', article: 'agenda-aprobacion' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'agenda-aprobacion',
+        route: '/lists',
+        related: ['agenda-campos-correos', 'agenda-gestionar', 'agenda-publicar'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Hay negocios que no pueden confirmar una cita sin mirarla antes: un consultorio que revisa el motivo, una asesoría que primero quiere saber quién es el cliente, un taller con cupos limitados. En **Aprobación y seguridad** decides si cada cita **espera la aprobación** de alguien del equipo y cómo se protege la página de reservas falsas.',
+            },
+            { t: 'anim', key: 'citas-aprobacion', caption: 'Carla confirma su correo con un código, su cita queda «Por confirmar» con el horario apartado, Ana la aprueba desde la ficha y a Carla le llega la confirmación.' },
+            { t: 'h', text: 'Elegir cuándo se aprueba' },
+            {
+                t: 'settings',
+                title: 'Aprobación y seguridad → Aprobación de las citas',
+                rows: [
+                    { name: 'Se confirman solas', what: 'Cada reserva queda confirmada al instante. Es lo de siempre.' },
+                    { name: 'Alguien del equipo las aprueba', what: 'Cada reserva queda **Por confirmar** hasta que alguien la aprueba. Mientras tanto, el horario queda apartado: nadie más lo puede tomar.' },
+                    { name: 'Sólo la primera cita de cada cliente', what: 'La primera cita de cada correo espera la aprobación; las siguientes del mismo cliente se confirman solas.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'Cada servicio puede tener **su propia regla** en **Servicios → Aprobación**: por ejemplo, la consulta de control se confirma sola y la primera consulta se aprueba.',
+            },
+            { t: 'h', text: 'Quién aprueba y en cuánto tiempo' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Quien atiende la cita puede aprobarla', what: 'La persona que va a atender decide sobre sus propias citas.' },
+                    { name: 'Y también estas personas', what: 'Otras personas del equipo que aprueban todas las citas de la agenda. Quien administra la lista siempre puede aprobar.' },
+                    { name: 'Hay que decidir antes de', what: 'El plazo para decidir (de 2 horas a una semana). Nunca pasa del inicio de la cita.' },
+                    { name: 'Si nadie decide a tiempo', what: '**Se rechaza** (y el horario vuelve a quedar libre) o **Se confirma** sola.' },
+                    { name: 'Lo que ve el cliente al pedirla', what: 'El mensaje de la pantalla «Recibimos tu solicitud».' },
+                ],
+            },
+            { t: 'h', text: 'Aprobar o rechazar desde la ficha' },
+            {
+                t: 'steps',
+                items: [
+                    'Cuando llega una cita por confirmar, a quien aprueba le llega un aviso en la campana.',
+                    'Abre la ficha del registro: arriba aparece **Cita por confirmar**, con el servicio, la hora y hasta cuándo hay para decidir.',
+                    'Toca **Aprobar**: la cita queda **Confirmada**, llega al calendario de quien atiende (con su videollamada) y al cliente le llega la confirmación con el evento para su calendario.',
+                    'O toca **Rechazar** y, si quieres, escribe el motivo: al cliente le llega un correo con ese motivo y el horario vuelve a quedar libre.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'Mientras la cita espera, no se crean el evento en el calendario, la videollamada ni los recordatorios: todo eso pasa cuando se aprueba. El estado del registro también cambia solo (**Por confirmar**, **Confirmada** o **Rechazada**), así puedes filtrar o armar un tablero con las que esperan.',
+            },
+            { t: 'h', text: 'Seguridad de la página' },
+            {
+                t: 'settings',
+                title: 'Aprobación y seguridad → Seguridad de la página',
+                rows: [
+                    { name: 'Pedir que confirme su correo con un código', what: 'Antes de agendar, al cliente le llega un código de 6 números. Así nadie reserva con el correo de otra persona. Recomendado con «Sólo la primera cita de cada cliente».' },
+                    { name: 'No aceptar correos temporales', what: 'Rechaza los correos que duran unos minutos, que suelen usarse para reservas falsas. Viene encendido.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'Además, siempre: un mismo correo no puede pedir más de 5 citas por hora, y cuando una cita se cambia, el enlace del correo anterior deja de servir para hacer cambios (sigue mostrando la cita, pero los cambios se hacen desde el enlace más reciente).',
+            },
+            {
+                t: 'example',
+                title: 'Un centro de estética',
+                md: 'Lumina, en Medellín, ofrece valoraciones gratis y tratamientos. Puso **Sólo la primera cita de cada cliente** con el código por correo: la primera valoración la revisa la recepcionista antes de confirmarla (rechaza las que no tienen sentido con un motivo amable) y las clientas que ya vinieron reservan sus tratamientos sin esperar.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Qué pasa si el cliente cancela mientras espera?', a: 'Puede cancelar la solicitud desde el enlace de su correo; el horario queda libre y el registro pasa a Cancelada.' },
+                    { q: '¿Las automatizaciones se enteran?', a: 'Sí: en **Cuando se agenda, reprograma o cancela una cita** puedes elegir también **Se pidió (por confirmar)** y **Se rechazó**. Las automatizaciones que ya tenías no cambian.' },
+                    { q: '¿Quién aprueba si nadie está marcado?', a: 'Quien administra la lista. Si marcas que quien atiende puede aprobar, también esa persona.' },
+                    { q: '¿Puedo aprobar desde el celular?', a: 'Sí: abre el aviso de la campana y aprueba o rechaza desde la ficha, igual que en el computador.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Configurar la agenda', to: '/lists' },
                     { label: 'Siguiente: publicar la agenda', article: 'agenda-publicar' },
                 ],
             },

@@ -1150,7 +1150,7 @@ function ApprovalEditor({ config, onChange, options }: SectionEditorProps): JSX.
                         <Textarea rows={2} value={s.pending_message} onChange={(e) => setS({ pending_message: e.target.value })} data-testid="booking-pending-message" />
                     </Field>
                     <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                        {__('Le llega un correo «Recibimos tu solicitud», y otro cuando se confirma o se rechaza (con el motivo, si lo escriben). La cita va al calendario de quien atiende recién al aprobarla.')}
+                        {__('Le llega un correo «Recibimos tu solicitud», y otro cuando se confirma o se rechaza (con el motivo, si lo escriben). La cita llega al calendario de quien atiende sólo cuando se aprueba.')}
                     </p>
                 </Section>
             )}

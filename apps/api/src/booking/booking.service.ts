@@ -24,7 +24,7 @@ import {
     BOOKING_INACTIVE_STATUSES,
     bookingUsesApproval,
 } from '@imagina-base/shared';
-import { and, asc, eq, gt, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
 import { attachments, bookingAppointments, bookingPages, connections, memberships, tenants, users, type BookingPageRow } from '../db/schema';
 import { DomainsService } from '../domains/domains.service';

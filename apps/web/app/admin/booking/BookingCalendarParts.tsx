@@ -35,7 +35,7 @@ const LOCATION_HINTS: Record<BookingLocation['kind'], string> = {
     video: 'Cada cita lleva su propio enlace de Google Meet o Microsoft Teams, que se crea en el calendario de quien atiende. El cliente lo recibe en el correo de confirmación.',
     in_person: 'La dirección va en la página, el correo y el archivo del calendario.',
     phone: 'Elige quién llama a quién.',
-    link: 'El mismo enlace para todas las citas (una sala de Zoom, por ejemplo). El cliente lo ve recién cuando reservó, nunca en la página pública.',
+    link: 'El mismo enlace para todas las citas (una sala de Zoom, por ejemplo). El cliente lo ve sólo después de reservar, nunca en la página pública.',
 };
 
 const LOCATION_ICONS: Record<BookingLocation['kind'], typeof Video> = {

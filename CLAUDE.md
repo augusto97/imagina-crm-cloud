@@ -11462,6 +11462,72 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         botón propio, flotante, marco lazy, cero violaciones de CSP) y la agenda
         10/10 (los cupos bajan 3→2→1 al instante y el horario lleno se va).
 
+  - [x] **Agenda de citas, tercera entrega (primera mitad): aprobación de las
+        citas y seguridad de la página (v0.1.353, addendum ADR-S67)**. Lo
+        aprobado por el usuario para la tercera entrega: "que alguien apruebe o
+        rechace (configurable)… prioridad de que sea segura y no hackeable". El
+        diseño de la página con el motor de temas quedó para v0.1.354.
+        (a) **Aprobación configurable** en la sección nueva **«Aprobación y
+        seguridad»** del constructor (`config.approval`): se confirman solas,
+        **alguien del equipo las aprueba**, o **sólo la primera cita de cada
+        cliente** (el correo sin una cita anterior confirmada en la página).
+        Cada servicio puede tener su propia regla (`services[].approval`,
+        `inherit` por defecto). Quién aprueba: quien atiende (si se marca), las
+        personas elegidas (sólo miembros que pueden trabajar la lista) y
+        siempre quien tiene `manage_lists`. Plazo de 2 horas a una semana
+        (nunca pasa del inicio de la cita) y qué pasa si nadie decide: se
+        rechaza o se confirma.
+        (b) **Por confirmar**: la cita nace `pending` dentro del mismo candado,
+        así **el horario queda apartado** (cupos y topes lo cuentan), pero sin
+        evento en el calendario, videollamada ni recordatorios hasta aprobarla.
+        Al cliente le llega «Recibimos tu solicitud» (sin `.ics`) y la página
+        muestra el mensaje de la agenda. A quien aprueba le llega un aviso.
+        (c) **Decidir desde la ficha**: panel **«Cita por confirmar»** en el
+        modal, la página y la ficha diseñada (`RecordBookingPanel`,
+        `GET /lists/:l/records/:id/booking` con el ACL de la ficha y
+        `POST …/booking/decide`, bitácora `booking.approve`/`booking.decline`)
+        con hasta cuándo hay para decidir, **Aprobar** (crea el evento con su
+        reunión, los recordatorios y el correo de confirmación con el `.ics`) y
+        **Rechazar** con motivo (libera el horario y se lo cuenta al cliente).
+        La decisión es un UPDATE condicional `WHERE status = 'pending'`: dos
+        personas a la vez no deciden dos veces. Cambiar el estado del registro
+        a Confirmada o Rechazada también decide. Vencido el plazo, el tick de
+        recordatorios aplica la regla y avisa.
+        (d) **Estados y disparador**: estados nuevos `pending` («Por
+        confirmar») y `declined` («Rechazada»), con su valor en el campo de
+        estado (creados al publicar). Migración 0098: columnas de la decisión,
+        `manage_version` y el CHECK del estado con los valores nuevos. Eventos
+        nuevos del disparador («Se pidió», «Se rechazó»); sin eventos elegidos
+        sigue escuchando sólo agendar/reprogramar/cancelar, así una
+        automatización vieja no cambia.
+        (e) **Seguridad de lo público**: **código de 6 números por correo**
+        (opcional; Redis 10 min, 5 intentos, tiempo constante; la verificación
+        devuelve una prueba HMAC de 45 min que la reserva exige), **correos
+        temporales rechazados** por defecto (`isDisposableEmail` en shared, con
+        subdominios), **frenos por correo** compartidos entre servidores (5
+        reservas por hora y 12 por día; 3 códigos cada 10 min y 8 por día),
+        además de los de IP y página, y **enlaces de la cita versionados**: el
+        del correo anterior sigue mostrando la cita pero ya no la cambia.
+        (f) El asistente y el MCP configuran la aprobación y la seguridad
+        (`propose_configure_booking_page`) y la migración de empresa lleva las
+        columnas nuevas.
+        **Bug atrapado en el E2E**: la base rechazaba la cita «por confirmar»
+        con un 503 (el CHECK del estado sólo tenía tres valores).
+        Ayuda: guía «¿Cómo apruebo cada cita antes de confirmarla y evito
+        reservas falsas?», artículo «Aprobar citas y frenar reservas falsas» en
+        Aprende → Agenda de citas con la ilustración `citas-aprobacion`, y
+        novedad con carrusel. Tests: 4 de integración de la API (por confirmar
+        con el horario apartado y aprobar desde la ficha; rechazar, plazo
+        vencido y sólo la primera vez; código, correos temporales y la prueba
+        atada al correo; frenos por correo) más el de reprogramar, actualizado
+        para los enlaces versionados; 4 de shared (674 en verde) y el front
+        (772) — E2E navegador: página
+        pública 13/13 en escritorio y celular oscuro (correo temporal
+        rechazado, código con intentos que bajan, «Por confirmar» sin agregar
+        al calendario), ficha 9/9 al aprobar y 10/10 al rechazar (correo con y
+        sin `.ics`, estado del registro, página de la cita «no fue
+        confirmada») y constructor 17/17 en escritorio y en celular oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
