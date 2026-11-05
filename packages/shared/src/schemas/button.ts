@@ -204,5 +204,10 @@ export interface ButtonPressStatus {
         name: string;
         status: string;
         error: string | null;
+        /**
+         * v0.1.365 — Los links de pago que creó la corrida («Crear link de
+         * pago»): el aviso del botón los muestra con «Copiar link».
+         */
+        payment_links?: string[];
     }>;
 }

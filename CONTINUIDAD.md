@@ -394,8 +394,10 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.364**
-(publicar más rápido: las pruebas de la API en 4 máquinas y las capturas del
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.365**
+(los cobros se ven: el link de pago queda en la columna que se elija, la ficha
+siempre muestra «Cobros» y el botón trae el link para copiar, addendum ADR-S31;
+antes v0.1.364 publicar más rápido: las pruebas de la API en 4 máquinas y las capturas del
 centro de aprendizaje en 5, addendum ADR-S75; arregla 2 capturas rotas; antes
 v0.1.363 conectar Teams y Outlook cuando la empresa pide un administrador de
 Microsoft 365: el enlace de consentimiento del administrador, addendum ADR-S22;
@@ -1378,6 +1380,28 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.365** — **Los cobros se ven** (reporte del usuario:
+  "creé un botón de generar link de pago en mi lista de anualidades… crea el
+  link pero no veo ningún link generado; la automatización no creaba ningún
+  campo para mostrar el link. Creo que no pensaste bien la integración"). Tenía
+  razón; revisé su lista por el MCP: los dos links SÍ estaban creados (en
+  `payment_links`), pero la lista no tenía columnas de cobro elegidas (eran
+  opt-in detrás de «Agregar columnas», escondido en la ficha), su ficha es
+  diseñada/automática y ese panel sólo salía en la clásica, y su paso
+  «Actualizar campo» con `{{respuestas.pago.url}}` quedaba vacío (la acción no
+  guardaba la respuesta con nombre y el log decía «ya tenían esos valores»).
+  Ahora: **elegir columnas** por dato (una existente como su «Link de pago», una
+  nueva o ninguna) desde la ficha («Elegir columnas»/«Columnas») y dentro de la
+  acción («Dónde queda el link»); «Cobros» en toda ficha; el aviso del botón trae
+  «Link de pago listo» + «Copiar link»; `{{respuestas.pago.url}}` funciona; el
+  log dice dónde quedó el link; una variable vacía se nombra; la fecha de pago
+  en una columna de sólo fecha toma el día de la empresa. **Le conté cómo
+  dejarlo**: en la acción, «Dónde queda el link» → Link de pago = su columna
+  «Link de pago», y si quiere, Fecha de pago = «Pagos recientes» (así su
+  automatización de renovación se dispara sola cuando Mercado Pago confirma el
+  pago). Los dos links ya creados aparecen en «Cobros» de la ficha.
+  También confirmé los tiempos de v0.1.364: pruebas del PR 5 min 14 s y
+  publicación 7 min 27 s (antes ~16 + ~20).
 - **2026-11-04 · v0.1.364** — **Publicar más rápido** (pregunta del usuario:
   "¿por qué se demoran tanto las versiones en publicar? … tarda más de media
   hora"). Medí los tiempos de GitHub Actions: no es el tamaño de la app (armar
@@ -1393,8 +1417,8 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   que fallaban («Publicar»: la página pública salía en blanco en el entorno
   de las capturas; «Crear»: buscaba un botón que ya no existe) y la de la
   campana, que perdía 2 minutos esperando. Esperado:
-  ~5 min de pruebas + ~10 de publicación. **Queda**: confirmar los tiempos
-  reales con esta misma versión (es la primera que usa los flujos nuevos).
+  ~5 min de pruebas + ~10 de publicación. Medido con esta misma versión:
+  pruebas 5 min 14 s y publicación 7 min 27 s.
 - **2026-11-04 · v0.1.363** — **Conectar Teams y Outlook cuando la empresa
   pide un administrador** (reporte del usuario con captura: a un cliente,
   cristian.bucuru@binapps.co, Microsoft le mostró «Se necesita la aprobación

@@ -188,7 +188,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'callout',
                 tone: 'tip',
-                md: 'Debajo del botón aparece **Agregar columnas**: crea en la lista las columnas de cobro (link, estado, fecha, monto y medio) para ver y filtrar quién pagó sin abrir cada registro. Lo hace quien puede administrar los campos.',
+                md: 'Si la lista todavía no guarda los cobros en ninguna columna, la sección lo avisa con **Elegir columnas**: ahí decides dónde queda el link, el estado, la fecha, el monto y el medio, para ver y filtrar quién pagó sin abrir cada registro. Lo hace quien puede administrar los campos.',
             },
             {
                 t: 'example',
@@ -245,7 +245,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Ver y filtrar en la lista' },
             {
                 t: 'p',
-                md: 'En la sección **Cobros** de cualquier registro toca **Agregar columnas**. La lista gana cinco columnas que se llenan solas con cada pago:',
+                md: 'En la sección **Cobros** de cualquier registro toca **Elegir columnas** (o **Columnas**, si ya elegiste). Para cada dato eliges una columna que la lista **ya tiene** (por ejemplo, un «Link de pago» que creaste a mano), **Crear columna** o **No guardar**. Se llenan solas con cada link y con cada pago:',
             },
             {
                 t: 'settings',
@@ -307,9 +307,15 @@ export const articles: LearnArticle[] = [
                     'Abre las **Automatizaciones** de la lista (por ejemplo **Facturas**) y crea una con el disparador que quieras: **Cuando se crea un registro**, o una fecha.',
                     'Toca **Añadir la primera acción** y, en **Apps conectadas**, elige **Crear link de pago (Mercado Pago)** o **(Wompi)**.',
                     'Completa **Concepto** («Factura {{numero}}»), **Monto** ({{monto}}), la **Moneda**, el **Correo del cliente** y **Vence en (días)**.',
+                    'Más abajo, en **Dónde queda el link**, elige la columna de la lista donde se guarda (por ejemplo tu «Link de pago»), la del estado y la de la fecha de pago, y toca **Guardar los cobros en estas columnas**.',
                     'Agrega después un **Enviar email** o un WhatsApp con el link: **{{pago.link}}**.',
                     'Toca **Guardar**. Si quieres ensayarla, usa una conexión en modo prueba.',
                 ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'Si la automatización corre con un **botón**, al presionarlo aparece el aviso **Link de pago listo** con **Copiar link**. Y si le pones un nombre a la respuesta (por ejemplo «pago»), en los pasos siguientes el link también es **{{respuestas.pago.url}}**.',
             },
             { t: 'demo', key: 'cobro-demo-automatizar', caption: 'La acción «Crear link de pago» en el menú de acciones de una automatización.', fallback: 'cobro-automatizar' },
             {

@@ -1,6 +1,8 @@
 import { Injectable, Optional } from '@nestjs/common';
 import {
     AUTOMATION_ACTIONS,
+    COLLECTION_FIELD_ROLES,
+    readCollectionFields,
     FORMULA_RESULT_TYPES,
     formulaToDisplay,
     prepareFormula,
@@ -587,7 +589,7 @@ const automationSpec = z.object({
                 'create_record {target_list: slug, values: {slug: valor}, template_id? (id de una plantilla de registro de la lista destino: el registro nace con sus valores, subtareas y checklists; values pisa la plantilla)} | ' +
                 'create_subtasks_from_template {template_id (id de una de las `record_templates` de get_list_schema), include_checklists?: true} — crea las subtareas de esa plantilla (y, si se pide, sus checklists) DEBAJO del registro que disparó la automatización | ' +
                 'call_webhook {url, method?, headers?, body_template?} | ' +
-                'connector_action {connection_id, action_key, values: {param: valor}} — SÓLO para ejecutar algo en un SERVICIO EXTERNO que la persona pidió explícitamente (mandar un WhatsApp, actualizar un producto en WooCommerce…); usa exactamente las conexiones y acciones que lista `connectors` en get_list_schema, nunca para cambiar un campo de la app. WhatsApp oficial (app whatsapp_cloud): send_template {to: "{{telefono}}", template, language, variables: {"body.1": "{{slug}}"…}, header_media?} con una plantilla de `whatsapp.connections[].approved_templates`; send_text {to, text} sólo dentro de las 24 h desde el último mensaje del contacto (si no, falla: usa una plantilla). SMS (apps sms_twilio, sms_bulkgate, sms_infobip, sms_labsmobile, sms_onurix; ver `sms` en get_list_schema): send_sms {to: "{{telefono}}", message, sender?, strip_accents?, respect_hours?} — respect_hours:true para cobros o mensajes comerciales (Ley 2300 en Colombia) | ' +
+                'connector_action {connection_id, action_key, values: {param: valor}} — SÓLO para ejecutar algo en un SERVICIO EXTERNO que la persona pidió explícitamente (mandar un WhatsApp, actualizar un producto en WooCommerce…); usa exactamente las conexiones y acciones que lista `connectors` en get_list_schema, nunca para cambiar un campo de la app. WhatsApp oficial (app whatsapp_cloud): send_template {to: "{{telefono}}", template, language, variables: {"body.1": "{{slug}}"…}, header_media?} con una plantilla de `whatsapp.connections[].approved_templates`; send_text {to, text} sólo dentro de las 24 h desde el último mensaje del contacto (si no, falla: usa una plantilla). SMS (apps sms_twilio, sms_bulkgate, sms_infobip, sms_labsmobile, sms_onurix; ver `sms` en get_list_schema): send_sms {to: "{{telefono}}", message, sender?, strip_accents?, respect_hours?} — respect_hours:true para cobros o mensajes comerciales (Ley 2300 en Colombia). Cobros (apps mercadopago, wompi): create_payment_link {title, amount, currency?, payer_email?, expires_days?} — el link queda solo en la ficha («Cobros») y en las columnas de cobro de la lista (`collections_fields` de get_list_schema); en los pasos siguientes es {{pago.link}} (también {{pago.monto}}, {{pago.concepto}}), no hace falta un update_field para guardarlo | ' +
                 'bulk_edit {filters: [{field, op, value}], operations: [{field, op, …}]} — EDITA EN LOTE todo lo que coincide con filters cuando corre (mismas operaciones que propose_bulk_edit; ideal con trigger_type scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour, minute, weekday 0-6, day 1-28, tz}); sin filters exige all_records: true | ' +
                 'generate_pdf {document_template_id (id de una de las plantillas que lista `document_templates` en get_list_schema), save_field? (slug de un campo Archivo donde guardarlo), save_mode? append|replace, filename?} — arma un PDF (cuenta de cobro, recibo) y deja {{pdf.link}} y {{pdf.nombre}} para las acciones siguientes; sin save_field el enlace dura 30 días y arma el PDF al abrirlo (no ocupa espacio) | ' +
                 'if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]} | ' +
@@ -1466,8 +1468,30 @@ export class StructureTools implements AiProposalApplier {
                                 ...(p.help !== '' ? { help: p.help } : {}),
                                 options: p.options.map((o) => o.value),
                             })),
+                            // v0.1.365 — lo que deja la acción para los pasos
+                            // siguientes (el asistente inventaba `{{respuestas.pago.url}}`).
+                            ...(a.key === 'create_payment_link'
+                                ? {
+                                      outputs: {
+                                          '{{pago.link}}': 'el link de pago creado',
+                                          '{{pago.monto}}': 'el monto',
+                                          '{{pago.concepto}}': 'el concepto',
+                                          '{{pago.estado}}': 'Pendiente (después cambia solo)',
+                                      },
+                                      _nota: 'El link también se escribe solo en las columnas de cobro de la lista (collections_fields). Para mandarlo al cliente en el paso siguiente usa {{pago.link}}.',
+                                  }
+                                : {}),
                         })),
                     })),
+                // v0.1.365 — dónde guarda la lista cada dato del cobro (link,
+                // estado, fecha, monto, medio); null = todavía no se eligió.
+                collections_fields: (() => {
+                    const m = readCollectionFields(settings);
+                    if (!m) return null;
+                    return Object.fromEntries(
+                        COLLECTION_FIELD_ROLES.map((r) => [r, m[r] === null ? null : (fieldById.get(m[r]!)?.slug ?? null)]),
+                    );
+                })(),
             },
         };
     }

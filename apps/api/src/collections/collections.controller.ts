@@ -1,6 +1,8 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import {
     createPaymentLinkSchema,
+    setCollectionFieldsSchema,
+    type SetCollectionFieldsInput,
     type CollectionConnection,
     type CollectionConnectionDetail,
     type CollectionFields,
@@ -76,7 +78,26 @@ export class CollectionsController {
         return this.collections.cancelLink(tenantId(req), actorOf(req), id);
     }
 
-    /** Crea en la lista las columnas de cobro que falten. */
+    /** v0.1.365 — Las columnas donde la lista guarda el cobro. */
+    @Get('lists/:list/collections/fields')
+    @RequireCapability('view_records', 'view_own_records')
+    async fields(@Req() req: FastifyRequest, @Param('list') list: string): Promise<{ fields: CollectionFields | null }> {
+        return { fields: await this.collections.getFields(tenantId(req), list) };
+    }
+
+    /** v0.1.365 — Elegir las columnas: una existente, una nueva o ninguna. */
+    @Put('lists/:list/collections/fields')
+    @HttpCode(200)
+    @RequireCapability('manage_fields')
+    setFields(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(setCollectionFieldsSchema)) input: SetCollectionFieldsInput,
+    ): Promise<CollectionFields> {
+        return this.collections.setFields(tenantId(req), actorOf(req), list, input);
+    }
+
+    /** Usa las columnas de cobro que la lista ya tenga y crea las que falten. */
     @Post('lists/:list/collections/setup')
     @HttpCode(200)
     @RequireCapability('manage_fields')

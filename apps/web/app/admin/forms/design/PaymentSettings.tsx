@@ -245,7 +245,7 @@ export function PaymentSettings({ config, fields, onChange }: { config: FormConf
                             </p>
                         )}
                         <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                            {__('Si el total da cero, no se cobra. Para ver quién pagó en la lista, en la ficha de un registro → «Cobros» → «Agregar columnas». Para avisar cuando llega el pago, usa una automatización «Cuando se recibe un pago».')}
+                            {__('Si el total da cero, no se cobra. Para ver quién pagó en la lista, en la ficha de un registro → «Cobros» → «Elegir columnas». Para avisar cuando llega el pago, usa una automatización «Cuando se recibe un pago».')}
                         </p>
                     </div>
                 )}
