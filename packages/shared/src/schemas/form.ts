@@ -602,6 +602,45 @@ export const FORM_PAYMENT_DEFAULT: FormPayment = {
     after: 'redirect',
     button_label: '',
 };
+/**
+ * v0.1.368 (ADR-S96) — Suscribir al enviar: el formulario crea una
+ * suscripción de débito automático de Mercado Pago con uno de los planes de la
+ * empresa (ADR-S96). Si hay varios, la persona elige. El correo sale de la
+ * pregunta «correo de quien responde» (Mercado Pago lo exige). Excluyente con
+ * «Cobrar al enviar»: un formulario cobra una vez O suscribe.
+ */
+export const FORM_SUBSCRIPTION_MAX_PLANS = 6;
+export const formSubscriptionSchema = z.object({
+    enabled: z.boolean().default(false),
+    /** Los planes que se ofrecen (de conexiones de Mercado Pago del equipo). */
+    plan_ids: z.array(z.number().int().positive()).max(FORM_SUBSCRIPTION_MAX_PLANS).catch([]).default([]),
+    /** El título de la elección de plan («Elige tu plan»). */
+    plan_label: z.string().max(120).catch('').default(''),
+    after: z.enum(FORM_PAYMENT_AFTER).catch('redirect').default('redirect'),
+    /** El botón para autorizar la tarjeta. */
+    button_label: z.string().max(60).catch('').default(''),
+});
+export type FormSubscription = z.infer<typeof formSubscriptionSchema>;
+export const FORM_SUBSCRIPTION_DEFAULT: FormSubscription = {
+    enabled: false,
+    plan_ids: [],
+    plan_label: '',
+    after: 'redirect',
+    button_label: '',
+};
+/** Un plan visto desde la página pública (sin la conexión). */
+export interface PublicFormPlan {
+    id: number;
+    name: string;
+    description: string | null;
+    amount: number;
+    currency: string;
+    frequency: number;
+    frequency_type: 'months' | 'days';
+    trial_days: number;
+    cycles: number | null;
+}
+
 /** El estado de un pago visto desde la página pública (al volver del checkout). */
 export const FORM_PAYMENT_STATES = ['pending', 'paid', 'failed', 'expired', 'cancelled'] as const;
 export type FormPaymentState = (typeof FORM_PAYMENT_STATES)[number];
@@ -694,6 +733,8 @@ export const formSettingsSchema = z.object({
     edit_links: formEditLinksSchema.catch(FORM_EDIT_LINKS_DEFAULT).default(FORM_EDIT_LINKS_DEFAULT),
     /** v0.1.361 — Cobrar al enviar. */
     payment: formPaymentSchema.catch(FORM_PAYMENT_DEFAULT).default(FORM_PAYMENT_DEFAULT),
+    /** v0.1.368 — Suscribir al enviar (débito automático de Mercado Pago). */
+    subscription: formSubscriptionSchema.catch(FORM_SUBSCRIPTION_DEFAULT).default(FORM_SUBSCRIPTION_DEFAULT),
 });
 export type FormSettings = z.infer<typeof formSettingsSchema>;
 
@@ -927,6 +968,29 @@ export interface PublicFormMeta {
      * el botón. null = no se cobra.
      */
     payment?: PublicFormPayment | null;
+    /** v0.1.368 — suscribir al enviar: los planes que se ofrecen. */
+    subscription?: PublicFormSubscription | null;
+}
+
+/** v0.1.368 — Suscribir al enviar, visto desde la página. */
+export interface PublicFormSubscription {
+    plans: PublicFormPlan[];
+    plan_label: string;
+    after: 'redirect' | 'button';
+    button_label: string;
+}
+
+/** v0.1.368 — Lo que la página muestra al volver de Mercado Pago (`?suscripcion=`). */
+export interface PublicFormSubscriptionStatus {
+    /** pending = todavía no autorizó; active = autorizó; failed = autorizó pero el cobro no pasó; cancelled. */
+    state: 'pending' | 'active' | 'failed' | 'cancelled';
+    plan: string;
+    amount: number;
+    currency: string;
+    frequency: number;
+    frequency_type: 'months' | 'days';
+    /** Si todavía no autorizó: el link para terminar (si no, null). */
+    url: string | null;
 }
 
 export interface PublicFormPayment {
@@ -1009,6 +1073,8 @@ export const submitFormSchema = z.object({
     elapsed_ms: z.number().int().min(0).max(7 * 86_400_000).optional(),
     /** v0.1.360 — El enlace para actualizar un registro (actualiza ése en vez de crear otro). */
     edit: z.string().regex(/^\d{1,12}\.\d{9,11}\.[0-9a-f]{32}$/).optional(),
+    /** v0.1.368 — El plan que eligió (si el formulario suscribe y ofrece varios). */
+    plan_id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
 });
 export type SubmitFormInput = z.infer<typeof submitFormSchema>;
 
@@ -1033,6 +1099,21 @@ export interface SubmitFormResult {
      */
     payment?: { url: string; amount: number; currency: string; after: 'redirect' | 'button'; button_label: string } | null;
     payment_error?: string;
+    /**
+     * v0.1.368 — Suscribir al enviar: el link para que autorice su tarjeta en
+     * Mercado Pago, o por qué no se pudo armar. La respuesta YA quedó guardada.
+     */
+    subscription?: {
+        url: string;
+        plan: string;
+        amount: number;
+        currency: string;
+        frequency: number;
+        frequency_type: 'months' | 'days';
+        after: 'redirect' | 'button';
+        button_label: string;
+    } | null;
+    subscription_error?: string;
 }
 
 export interface FormUploadResult {
@@ -1526,6 +1607,8 @@ export function formLiveTexts(config: FormConfig): string[] {
  * cálculo del formulario o una pregunta del formulario).
  */
 export function formPaymentActive(config: FormConfig): boolean {
+    // v0.1.368 — un formulario que suscribe no cobra además una vez.
+    if (formSubscriptionActive(config)) return false;
     const p = config.settings.payment;
     if (!p.enabled || p.connection_id === null) return false;
     if (p.source === 'fixed') return p.amount !== null && p.amount > 0;
@@ -1533,6 +1616,17 @@ export function formPaymentActive(config: FormConfig): boolean {
     return p.field_id !== null && config.items.some((i) => i.type === 'field' && i.field_id === p.field_id);
 }
 
+
+/**
+ * v0.1.368 — ¿El formulario suscribe al enviar? Sí si está encendido, ofrece
+ * al menos un plan y sabe de qué pregunta sale el correo (Mercado Pago lo pide).
+ */
+export function formSubscriptionActive(config: FormConfig): boolean {
+    const s = config.settings.subscription;
+    if (!s.enabled || s.plan_ids.length === 0) return false;
+    const emailId = config.settings.respondent_email_field_id;
+    return emailId !== null && config.items.some((i) => i.type === 'field' && i.field_id === emailId);
+}
 
 /**
  * v0.1.357 — ¿La página necesita hacer este cálculo mientras se responde? Sí

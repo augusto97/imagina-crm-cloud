@@ -306,6 +306,16 @@ export class PublicFormsController {
         reply.header('Cache-Control', 'no-store').header('Referrer-Policy', 'no-referrer').send(out);
     }
 
+    /**
+     * v0.1.368 — Cómo quedó la suscripción al volver de Mercado Pago
+     * (`?suscripcion=<referencia>`): estado, plan y valor, nunca en caché.
+     */
+    @Get(':token/subscription/:ref')
+    async subscriptionStatus(@Param('token') token: string, @Param('ref') ref: string, @Res() reply: FastifyReply): Promise<void> {
+        const out = await this.forms.subscriptionStatus(token, ref);
+        reply.header('Cache-Control', 'no-store').header('Referrer-Policy', 'no-referrer').send(out);
+    }
+
     /** v0.1.358 — El avance de un enlace «seguir después» (nunca en caché: son respuestas de alguien). */
     @Get(':token/drafts/:code')
     async loadDraft(@Param('token') token: string, @Param('code') code: string, @Res() reply: FastifyReply): Promise<void> {
@@ -455,7 +465,9 @@ export class PublicFormPageController {
             message: out.message,
             tone: out.status === 'confirmed' ? 'ok' : out.status === 'closed' ? 'info' : 'error',
             continueUrl: out.continueUrl,
-            pay: out.payUrl ? { url: out.payUrl, label: out.payLabel || 'Ir a pagar', amountText: out.payAmountText ?? '' } : null,
+            pay: out.payUrl
+                ? { url: out.payUrl, label: out.payLabel || 'Ir a pagar', amountText: out.payAmountText ?? '', totalLabel: out.payTotalLabel }
+                : null,
             payError: out.payError ?? null,
         });
         this.sendNotice(reply, nonce, html, out.status === 'confirmed' ? 200 : out.status === 'invalid' ? 404 : out.status === 'closed' ? 410 : 503);

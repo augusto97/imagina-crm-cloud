@@ -910,6 +910,12 @@ function PortalPaymentsForm({ block, set }: FormProps): JSX.Element {
                         </div>
                     </Row>
                 )}
+                <Toggle
+                    label={__('Mostrar sus suscripciones')}
+                    hint={__('Las de débito automático de su registro: el estado, el próximo cobro y sus últimos cobros. Si todavía no autorizó la tarjeta, el botón para hacerlo.')}
+                    checked={c.show_subscriptions !== false}
+                    onChange={(v) => set({ show_subscriptions: v })}
+                />
             </Group>
             <Group title={__('Botón para pagar')}>
                 <Toggle

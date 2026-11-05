@@ -1,6 +1,7 @@
 import {
     SUBSCRIPTION_FIELD_ROLES,
     SUBSCRIPTION_STATUS_OPTIONS,
+    subscriptionFrequencyText,
     suggestSubscriptionFields,
     type Subscription,
     type SubscriptionFieldRole,
@@ -25,11 +26,7 @@ export interface SubFieldLike {
 
 /** «cada mes», «cada 3 meses», «cada 15 días». */
 export function frequencyText(frequency: number, type: SubscriptionFrequencyType): string {
-    const n = Math.max(1, Math.floor(frequency));
-    if (type === 'days') return n === 1 ? 'cada día' : `cada ${n} días`;
-    if (n === 1) return 'cada mes';
-    if (n === 12) return 'cada año';
-    return `cada ${n} meses`;
+    return subscriptionFrequencyText(frequency, type);
 }
 
 /** «12 cuotas» / «sin fin». */

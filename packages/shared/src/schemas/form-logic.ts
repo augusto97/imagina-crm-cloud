@@ -630,3 +630,24 @@ export function formPaymentAmount(
     if (!Number.isFinite(raw) || raw <= 0) return { amount: 0 };
     return { amount: Math.min(FORM_PAYMENT_MAX_AMOUNT, Math.round(raw * 100) / 100) };
 }
+
+/**
+ * v0.1.368 — «cada mes» / «cada 3 meses» / «cada año» / «cada 15 días»: cada
+ * cuánto cobra un plan de suscripción. La usan la página del formulario, la de
+ * confirmación y la ficha (un solo texto en toda la app).
+ */
+export function subscriptionFrequencyText(frequency: number, type: 'months' | 'days'): string {
+    const n = Math.max(1, Math.floor(frequency));
+    if (type === 'days') return n === 1 ? 'cada día' : `cada ${n} días`;
+    if (n === 1) return 'cada mes';
+    if (n === 12) return 'cada año';
+    return `cada ${n} meses`;
+}
+
+/** v0.1.368 — Lo que se ve debajo del nombre de un plan: «7 días gratis · 12 cuotas». */
+export function subscriptionPlanExtras(plan: { trial_days: number; cycles: number | null }): string {
+    const out: string[] = [];
+    if (plan.trial_days > 0) out.push(plan.trial_days === 1 ? '1 día gratis' : `${plan.trial_days} días gratis`);
+    if (plan.cycles !== null && plan.cycles > 0) out.push(plan.cycles === 1 ? '1 cobro' : `${plan.cycles} cobros`);
+    return out.join(' · ');
+}

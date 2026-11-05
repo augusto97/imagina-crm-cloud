@@ -1393,6 +1393,30 @@ export class TenantTransferService {
             (t) => maps.list.has(Number(t.listId)),
         );
 
+        // 7b-bis. Planes de suscripción (v0.1.367/368, ADR-S96): antes que los
+        //     formularios («Suscribir al enviar» los nombra por id en
+        //     `plan_ids`) y que las automatizaciones.
+        const subPlanRows = await this.readAll(rows('subscription_plans'));
+        counts.subscription_plans = await this.insertMapped(tx, subPlanRows, subscriptionPlans, maps.subscriptionPlan, (p) => ({
+            tenantId,
+            connectionId: mapId(maps.connection, p.connectionId),
+            provider: String(p.provider ?? 'mercadopago').slice(0, 24),
+            name: String(p.name ?? '').slice(0, 120),
+            description: (p.description as string | null) ?? null,
+            amount: Number(p.amount ?? 0) || 0,
+            currency: String(p.currency ?? 'COP').slice(0, 8),
+            frequency: Number(p.frequency ?? 1) || 1,
+            frequencyType: p.frequencyType === 'days' ? 'days' : 'months',
+            cycles: p.cycles === null || p.cycles === undefined ? null : Number(p.cycles),
+            trialDays: Number(p.trialDays ?? 0) || 0,
+            graceDays: Number(p.graceDays ?? 10) || 10,
+            onExpire: p.onExpire === 'cancel' ? 'cancel' : 'mark',
+            active: p.active !== false,
+            createdBy: mapId(maps.user, p.createdBy),
+            createdAt: this.date(p.createdAt) ?? new Date(),
+            updatedAt: this.date(p.updatedAt) ?? new Date(),
+        }));
+
         // 7c. Formularios públicos (antes que las automatizaciones: el
         //     disparador «Cuando se envía un formulario» los nombra por id).
         //     La dirección pública es una credencial del servidor de origen:
@@ -1481,26 +1505,6 @@ export class TenantTransferService {
         //     plan por id. La referencia es NUEVA (la página de vuelta de este
         //     servidor); el id de Mercado Pago se conserva: con la conexión que
         //     viaja, la revisión periódica las sigue al día.
-        const subPlanRows = await this.readAll(rows('subscription_plans'));
-        counts.subscription_plans = await this.insertMapped(tx, subPlanRows, subscriptionPlans, maps.subscriptionPlan, (p) => ({
-            tenantId,
-            connectionId: mapId(maps.connection, p.connectionId),
-            provider: String(p.provider ?? 'mercadopago').slice(0, 24),
-            name: String(p.name ?? '').slice(0, 120),
-            description: (p.description as string | null) ?? null,
-            amount: Number(p.amount ?? 0) || 0,
-            currency: String(p.currency ?? 'COP').slice(0, 8),
-            frequency: Number(p.frequency ?? 1) || 1,
-            frequencyType: p.frequencyType === 'days' ? 'days' : 'months',
-            cycles: p.cycles === null || p.cycles === undefined ? null : Number(p.cycles),
-            trialDays: Number(p.trialDays ?? 0) || 0,
-            graceDays: Number(p.graceDays ?? 10) || 10,
-            onExpire: p.onExpire === 'cancel' ? 'cancel' : 'mark',
-            active: p.active !== false,
-            createdBy: mapId(maps.user, p.createdBy),
-            createdAt: this.date(p.createdAt) ?? new Date(),
-            updatedAt: this.date(p.updatedAt) ?? new Date(),
-        }));
         const subRows = await this.readAll(rows('subscriptions'));
         const subMap = new Map<number, number>();
         counts.subscriptions = await this.insertMapped(tx, subRows, subscriptions, subMap, (x) => ({

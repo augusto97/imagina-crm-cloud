@@ -29,6 +29,8 @@ import {
     formCalcIsLive,
     formPaymentActive,
     formPaymentAmount,
+    formSubscriptionActive,
+    subscriptionFrequencyText,
     formCalcsForLogic,
     formCalcValues,
     withFormCalcValues,
@@ -59,6 +61,8 @@ import {
     type SubmitFormInput,
     type SubmitFormResult,
     type PublicFormPaymentStatus,
+    type PublicFormSubscription,
+    type PublicFormSubscriptionStatus,
     type UpdateFormInput,
     readMirrorListMarker,
     mirrorFromPlace,
@@ -118,6 +122,7 @@ import { planModuleOff } from '../billing/plan-module-gate';
 import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-cache';
 import { PublicCacheService } from '../public-cache/public-cache.service';
 import { CollectionError, CollectionsService } from '../collections/collections.service';
+import { SubscriptionError, SubscriptionsService } from '../subscriptions/subscriptions.service';
 
 /** v0.1.352 — Cuánto vale la página guardada de un formulario (y la de uno que no existe). */
 const PAGE_CACHE_TTL_MS = 30_000;
@@ -251,6 +256,8 @@ interface AcceptedConsent {
 const CONSENT_REQUIRED_MESSAGE = 'Para enviar, acepta la autorización para el tratamiento de tus datos personales.';
 /** Clave del error de la casilla (no choca con un id de ítem: esos no llevan «_»). */
 export const CONSENT_ERROR_KEY = '__consent';
+/** v0.1.368 — Error de «elige un plan» (no es una pregunta: va debajo de los planes). */
+export const PLAN_ERROR_KEY = '__plan';
 
 /** Resultado del enlace de confirmación (lo dibuja el controller con la marca). */
 export interface ConfirmOutcome {
@@ -264,6 +271,8 @@ export interface ConfirmOutcome {
     payLabel?: string;
     /** El monto ya escrito con el formato de la empresa («150.000 COP»). */
     payAmountText?: string;
+    /** v0.1.368 — Qué dice antes del monto («Total a pagar» / «Suscripción»). */
+    payTotalLabel?: string;
     payError?: string;
 }
 
@@ -337,6 +346,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         @Optional() private readonly stats?: FormStatsService,
         // v0.1.361 — cobrar al enviar con la conexión de cobro de la empresa.
         @Optional() private readonly collections?: CollectionsService,
+        // v0.1.368 — suscribir al enviar (débito automático de Mercado Pago).
+        @Optional() private readonly subscriptionsSvc?: SubscriptionsService,
     ) {
         this.pcache = cache ?? NO_PUBLIC_CACHE;
     }
@@ -455,6 +466,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const config = sanitizeConfig(input.config ?? defaultFormConfig(list.name, fields), fields);
         await this.assertTemplate(tenantId, list.id, config.settings.record_template_id);
         await this.assertPayment(tenantId, config);
+        await this.assertSubscription(tenantId, config);
         // v0.1.351 — un formulario nuevo nace con el tema por defecto de la empresa (si eligió uno).
         const def = await this.defaultTheme(tenantId);
         if (!config.settings.theme && def) config.settings.theme = def;
@@ -493,6 +505,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             const clean = sanitizeConfig(input.config, fields);
             await this.assertTemplate(tenantId, list.id, clean.settings.record_template_id);
             await this.assertPayment(tenantId, clean);
+            await this.assertSubscription(tenantId, clean);
             const prev = readPublicTheme(((current.config as Record<string, unknown>)?.settings as Record<string, unknown> | undefined)?.theme ?? {});
             await this.assertDesign(tenantId, clean, prev.custom_css, actor);
             patch.config = clean as unknown as Record<string, unknown>;
@@ -519,6 +532,20 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             throw badRequest('form_payment_connection', 'Elige una conexión de cobro del equipo (Mercado Pago o Wompi) en Ajustes → Integraciones.');
         }
         if (conn.provider === 'wompi') pay.currency = 'COP';
+    }
+
+    /**
+     * v0.1.368 — Los planes que ofrece «Suscribir al enviar»: activos y de una
+     * conexión de Mercado Pago DEL EQUIPO. Se revisa sólo con el interruptor
+     * encendido (apagado, los planes elegidos se conservan sin validar).
+     */
+    private async assertSubscription(tenantId: number, config: FormConfig): Promise<void> {
+        const sub = config.settings.subscription;
+        if (!sub.enabled || sub.plan_ids.length === 0) return;
+        if (!this.subscriptionsSvc) {
+            throw badRequest('form_subscription_plan', 'Las suscripciones no están disponibles en este servidor.');
+        }
+        await this.subscriptionsSvc.assertFormPlans(tenantId, sub.plan_ids);
     }
 
     /**
@@ -1244,6 +1271,26 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                       button_label: config.settings.payment.button_label || 'Ir a pagar',
                   }
                 : null,
+            // v0.1.368 — suscribir al enviar: los planes que se ofrecen.
+            subscription: await this.publicSubscription(row.tenantId, config),
+        };
+    }
+
+    /**
+     * v0.1.368 — Los planes que ve la página. Si ninguno se puede usar (se
+     * desactivaron o la conexión ya no es del equipo), el formulario no
+     * suscribe: se ve y se envía como uno común.
+     */
+    private async publicSubscription(tenantId: number, config: FormConfig): Promise<PublicFormSubscription | null> {
+        if (!formSubscriptionActive(config) || !this.subscriptionsSvc) return null;
+        const s = config.settings.subscription;
+        const plans = await this.subscriptionsSvc.formPlans(tenantId, s.plan_ids).catch(() => []);
+        if (plans.length === 0) return null;
+        return {
+            plans,
+            plan_label: s.plan_label || (plans.length > 1 ? 'Elige tu plan' : 'Tu plan'),
+            after: s.after,
+            button_label: s.button_label || 'Autorizar el débito automático',
         };
     }
 
@@ -1350,6 +1397,13 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             const item = f.config.items.find((i) => i.type === 'field' && i.field_id === s.respondent_email_field_id);
             if (item && !errors[item.id]) errors[item.id] = 'Necesitamos tu correo para confirmar la respuesta.';
         }
+        // v0.1.368 — suscribir al enviar: el plan (si hay varios, lo elige la
+        // persona) y el correo, que Mercado Pago exige.
+        const planId = await this.subscriptionPlanFor(f, input.plan_id, errors);
+        if (planId !== null && !respondentEmail) {
+            const item = f.config.items.find((i) => i.type === 'field' && i.field_id === s.respondent_email_field_id);
+            if (item && !errors[item.id]) errors[item.id] = 'Necesitamos tu correo para la suscripción.';
+        }
         // Ley 1581: sin la casilla marcada no se recibe nada. Lo decide el
         // servidor (la casilla del navegador es sólo la pantalla).
         const consent = await this.consentFor(f);
@@ -1376,12 +1430,13 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
 
         let result: SubmitFormResult;
         if (s.confirm_email && respondentEmail) {
-            result = await this.holdForConfirmation(f, data, attachmentIds, respondentEmail, ip, accepted, endingId);
+            result = await this.holdForConfirmation(f, data, attachmentIds, respondentEmail, ip, accepted, endingId, planId);
         } else {
             const created = await this.finalize(f, fields, data, attachmentIds, accepted);
             if (s.send_copy && respondentEmail) this.sendCopyLater(f, fields, data, respondentEmail, ip, created.withdrawRef);
             result = { ok: true, redirect_url: this.endingRedirect(f, endingId), ending_id: endingId, ...(Object.keys(calcs).length ? { calcs } : {}) };
             if (payAmount > 0) Object.assign(result, await this.chargeFor(f, fields, created.id, data, payAmount, respondentEmail));
+            if (planId !== null && respondentEmail) Object.assign(result, await this.subscribeFor(f, created.id, planId, respondentEmail));
         }
         // v0.1.358 — cuenta para las estadísticas (y el avance guardado ya no hace falta).
         void this.stats?.recordSubmit(statsTarget(f), input.elapsed_ms);
@@ -1604,6 +1659,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         ip: string,
         consent: AcceptedConsent | null = null,
         endingId: string | null = null,
+        planId: number | null = null,
     ): Promise<SubmitFormResult> {
         if (!this.mail) {
             throw new HttpException(
@@ -1648,6 +1704,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                     ip: ip.slice(0, 64),
                     consent: pendingConsent,
                     endingId,
+                    planId,
                     expiresAt: new Date(Date.now() + CONFIRM_TTL_MS),
                 })
                 .returning({ id: formPendingSubmissions.id }),
@@ -1800,6 +1857,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                     attachmentIds: pending.attachmentIds,
                     ip: pending.ip,
                     consent: pending.consent,
+                    endingId: pending.endingId,
+                    planId: pending.planId,
                     expiresAt: pending.expiresAt,
                 })
                 .onConflictDoNothing()
@@ -1823,6 +1882,13 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const calcs = formCalcValues(formCalcsForLogic(f.config), answers, (key) => key in answers);
         const payAmount = createdId ? this.paymentAmountFor(f, pending.data, calcs, {}) : 0;
         const charge = payAmount > 0 ? await this.chargeFor(f, fields, createdId, pending.data, payAmount, pending.email) : {};
+        // v0.1.368 — con suscripción, también se arma recién ahora (y sólo si el
+        // formulario todavía suscribe y el plan sigue entre los que ofrece).
+        const subPlan =
+            createdId && pending.planId && formSubscriptionActive(f.config) && f.config.settings.subscription.plan_ids.includes(pending.planId)
+                ? pending.planId
+                : null;
+        const sub = subPlan ? await this.subscribeFor(f, createdId, subPlan, pending.email) : {};
         return {
             status: 'confirmed',
             title: '¡Listo! Tu respuesta quedó confirmada',
@@ -1837,6 +1903,15 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                   }
                 : {}),
             ...(charge.payment_error ? { payError: charge.payment_error } : {}),
+            ...(sub.subscription
+                ? {
+                      payUrl: sub.subscription.url,
+                      payLabel: sub.subscription.button_label,
+                      payTotalLabel: 'Suscripción',
+                      payAmountText: `${formatFormNumber(sub.subscription.amount, this.numberFormatOf(f))} ${sub.subscription.currency} ${subscriptionFrequencyText(sub.subscription.frequency, sub.subscription.frequency_type)} · ${sub.subscription.plan}`,
+                  }
+                : {}),
+            ...(sub.subscription_error ? { payError: sub.subscription_error } : {}),
         };
     }
 
@@ -2378,6 +2453,98 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         return out;
     }
 
+    /**
+     * v0.1.368 — El plan con el que se suscribe esta respuesta (null = el
+     * formulario no suscribe). Con un solo plan no hace falta elegir; con
+     * varios, el elegido tiene que estar entre los que se OFRECEN ahora.
+     */
+    private async subscriptionPlanFor(f: ResolvedForm, chosen: number | undefined, errors: Record<string, string>): Promise<number | null> {
+        if (!formSubscriptionActive(f.config) || !this.subscriptionsSvc) return null;
+        const offered = await this.subscriptionsSvc.formPlans(f.row.tenantId, f.config.settings.subscription.plan_ids).catch(() => []);
+        // Ningún plan disponible: el formulario se recibe como uno común (la
+        // página tampoco los mostró).
+        if (offered.length === 0) return null;
+        const pick = chosen ?? (offered.length === 1 ? offered[0]!.id : undefined);
+        if (pick === undefined || !offered.some((p) => p.id === pick)) {
+            errors[PLAN_ERROR_KEY] = offered.length > 1 ? 'Elige un plan.' : 'Ese plan ya no está disponible.';
+            return null;
+        }
+        return pick;
+    }
+
+    /**
+     * v0.1.368 — Arma la suscripción de una respuesta ya guardada: devuelve el
+     * link para que la persona autorice su tarjeta en Mercado Pago. Si no se
+     * puede, la respuesta NO se pierde: se le dice a la persona y se avisa a la
+     * empresa (Problemas).
+     */
+    private async subscribeFor(
+        f: ResolvedForm,
+        recordId: number,
+        planId: number,
+        email: string,
+    ): Promise<Pick<SubmitFormResult, 'subscription' | 'subscription_error'>> {
+        const s = f.config.settings.subscription;
+        const incidentKey = `form-subscription:${f.row.id}`;
+        const fail = (reason: string): Pick<SubmitFormResult, 'subscription_error'> => {
+            this.incidents?.report({
+                tenantId: f.row.tenantId,
+                key: incidentKey,
+                source: 'form',
+                sourceId: f.row.id,
+                listId: f.row.listId,
+                ownerId: f.row.createdBy ?? null,
+                title: `El formulario «${f.row.name}» no pudo armar la suscripción`,
+                message: `Alguien envió el formulario y no se pudo crear su suscripción: ${reason} La respuesta quedó guardada; a la persona le dijimos que se pondrán en contacto.`,
+            });
+            return {
+                subscription_error: 'Recibimos tu respuesta, pero no pudimos preparar la suscripción en este momento. Te contactaremos para completarla.',
+            };
+        };
+        if (!this.subscriptionsSvc) return fail('las suscripciones no están disponibles.');
+        const base = (await this.publicBase(f.row.tenantId)) ?? this.env.APP_BASE_URL.replace(/\/+$/, '');
+        const pagePath = `/api/v1/public/f/${f.row.token}`;
+        try {
+            const out = await this.subscriptionsSvc.createForForm(f.row.tenantId, {
+                formId: f.row.id,
+                planId,
+                listId: f.row.listId,
+                recordId,
+                payerEmail: email,
+                backUrlFor: (ref) => `${base}${pagePath}?suscripcion=${encodeURIComponent(ref)}`,
+            });
+            this.incidents?.resolve(f.row.tenantId, incidentKey);
+            return {
+                subscription: {
+                    url: out.url,
+                    plan: out.plan,
+                    amount: out.amount,
+                    currency: out.currency,
+                    frequency: out.frequency,
+                    frequency_type: out.frequency_type,
+                    after: s.after,
+                    button_label: s.button_label || 'Autorizar el débito automático',
+                },
+            };
+        } catch (err) {
+            const known = err instanceof SubscriptionError || err instanceof CollectionError;
+            if (!known) this.logger.warn(`Formulario ${f.row.id}: suscripción: ${err instanceof Error ? err.message : String(err)}`);
+            return fail(known ? (err as Error).message : 'falló algo de nuestro lado.');
+        }
+    }
+
+    /**
+     * v0.1.368 — Cómo quedó la suscripción al volver de Mercado Pago
+     * (`?suscripcion=<referencia>`). Sólo de una que armó ESTE formulario.
+     */
+    async subscriptionStatus(token: string, reference: string): Promise<PublicFormSubscriptionStatus> {
+        const f = await this.resolve(token);
+        if (!this.subscriptionsSvc) throw notFound();
+        const out = await this.subscriptionsSvc.formSubscriptionStatus(f.row.tenantId, f.row.id, reference);
+        if (!out) throw notFound();
+        return out;
+    }
+
     /** v0.1.356 — Adónde lleva una pantalla final (o el formulario, sin pantalla propia). */
     private endingRedirect(f: ResolvedForm, endingId: string | null): string | null {
         const e = endingId ? f.config.settings.endings.find((x) => x.id === endingId) : undefined;
@@ -2543,6 +2710,16 @@ function cleanPayment(
     };
 }
 
+/** v0.1.368 — Planes sin repetir y textos sin espacios de más. */
+function cleanSubscription(sub: FormConfig['settings']['subscription']): FormConfig['settings']['subscription'] {
+    return {
+        ...sub,
+        plan_ids: [...new Set(sub.plan_ids)],
+        plan_label: sub.plan_label.trim(),
+        button_label: sub.button_label.trim(),
+    };
+}
+
 export function sanitizeConfig(
     config: FormConfig,
     fields: ReadonlyArray<{ id: number; type: string; slug?: string; config?: Record<string, unknown> }>,
@@ -2681,6 +2858,7 @@ export function sanitizeConfig(
         endings,
         calcs,
         payment: cleanPayment(s.payment, inForm, typeOf, calcKeys),
+        subscription: cleanSubscription(s.subscription),
     };
 
     return formConfigSchema.parse({

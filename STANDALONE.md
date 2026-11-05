@@ -7000,6 +7000,52 @@ suscripciones administradas). Ésta es la primera.
 - **Una lista de cobros desde el día uno**: va en la segunda entrega, como
   lista espejo (ADR-S83) para no duplicar el modelo.
 
+**Addendum v0.1.368 — suscribir desde un formulario y el portal.** La
+segunda entrega se partió: v0.1.368 trae el formulario y el portal; la lista
+de cobros, el tablero y la herramienta del asistente pasan a v0.1.369 y PayPal
+a v0.1.370.
+
+1. **«Suscribir al enviar»** (`settings.subscription`: `enabled`, `plan_ids`
+   —hasta 6, en orden—, `plan_label`, `after: redirect | button`,
+   `button_label`), leído con tolerancia. Sólo se ofrecen planes **activos de
+   una conexión de Mercado Pago del equipo** (una privada se rechaza al
+   guardar: `form_subscription_plan`; un plan pausado o de una conexión que
+   pasó a privada deja de ofrecerse solo). Exige la pregunta del **correo de
+   quien responde** (Mercado Pago lo pide): sin ella el formulario recibe
+   respuestas sin suscribir. **Excluye «Cobrar al enviar»**
+   (`formPaymentActive` da false si `formSubscriptionActive`): un formulario
+   cobra una vez o suscribe.
+2. **La elección la valida el servidor**: con un plan se toma solo; con
+   varios, `plan_id` tiene que ser uno de los ofrecidos (error en la clave
+   `__plan`, «Elige un plan.»). La suscripción se crea con
+   `SubscriptionsService.createInTx` (sin usuario), tras el registro, con
+   `form_id` y la vuelta `…/public/f/<token>?suscripcion=<ref>`. La página
+   pregunta `GET /public/forms/:token/subscription/:ref` (`no-store`, 404 si
+   la referencia no es de ese formulario) cada 4 s hasta 2 min y muestra
+   activa / por autorizar (con «Volver a Mercado Pago») / cobro rechazado /
+   no activa; la URL de autorizar sólo viaja mientras esté pendiente.
+3. **Con confirmación por correo** la suscripción espera a la confirmación:
+   `form_pending_submissions.plan_id` (migración 0103) y la página que
+   confirma muestra «Suscripción: <valor> cada mes · <plan>» con el botón.
+4. **Si Mercado Pago falla, la respuesta no se pierde**: el registro queda,
+   la persona lee que la contactarán y se abre un Problema
+   (`form-subscription:<formId>`, ADR-S44).
+5. **Portal**: el bloque «Pagos» suma `show_subscriptions` (encendido por
+   defecto) y `subscriptions[]` en sus datos: las suscripciones del registro
+   del cliente vivas o tocadas en los últimos 60 días (hasta 5), con plan,
+   valor, frecuencia, estado, próximo cobro, «pagado hasta», sus últimos 6
+   cobros (el motivo sólo en los rechazados) y la URL de autorizar sólo si
+   está pendiente. Nada interno viaja (id externo, referencia, conexión).
+6. Migrar una empresa re-mapea `plan_ids` de los formularios (por eso los
+   planes se importan ANTES que los formularios); el asistente/MCP ve
+   `subscribes_on_submit` en `get_list_schema`.
+7. **Bug encontrado en la prueba** (desde que el portal valida su respuesta):
+   `recordSchema.created_by` exigía un id positivo, pero un registro creado
+   por un formulario, una automatización o la mesa de ayuda tiene
+   `created_by = 0` (el sistema) — el portal rechazaba el propio registro del
+   cliente y le mostraba «Entrar a tu portal». Ahora `created_by` (y
+   `comment.user_id`) aceptan 0, la misma convención que `updated_by`.
+
 ---
 
-**Versión del documento:** 1.152.0 (Suscripciones con débito automático de Mercado Pago)
+**Versión del documento:** 1.153.0 (Suscribir al enviar un formulario y suscripciones en el portal)

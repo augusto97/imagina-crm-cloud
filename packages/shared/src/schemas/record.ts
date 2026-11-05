@@ -57,7 +57,13 @@ export const recordSchema = z.object({
      * corrieron por la reprogramación en cadena (ids).
      */
     rescheduled: z.array(idSchema).optional(),
-    created_by: idSchema,
+    /**
+     * Quién lo creó. 0 = el sistema: un formulario público, una automatización,
+     * la mesa de ayuda o una sincronización (no hay persona detrás). v0.1.368 —
+     * antes exigía un id positivo y el portal del cliente rechazaba su propio
+     * registro si había llegado por un formulario (mostraba «Entrar a tu portal»).
+     */
+    created_by: z.number().int().nonnegative(),
     created_at: isoDateTimeSchema,
     updated_at: isoDateTimeSchema,
     /**

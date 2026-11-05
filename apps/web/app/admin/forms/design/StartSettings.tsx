@@ -15,6 +15,7 @@ import { Check, Field, Section } from '../../automations/email/EmailBlockInspect
 import { updateSettings } from '../formDesignOps';
 import { ImageUpload } from './ImageUpload';
 import { PaymentSettings } from './PaymentSettings';
+import { SubscriptionSettings } from './SubscriptionSettings';
 import { RecallPicker, withToken } from './LogicPanel';
 
 const LAYOUTS: Array<{ value: FormLayout; title: string; hint: string; icon: typeof LayoutList }> = [
@@ -142,6 +143,7 @@ export function StartSettings({
             </Section>
 
             <PaymentSettings config={config} fields={fields} onChange={onChange} />
+            <SubscriptionSettings config={config} fields={fields} onChange={onChange} />
 
             <EditLinksSettings config={config} onChange={onChange} formId={formId} />
         </>

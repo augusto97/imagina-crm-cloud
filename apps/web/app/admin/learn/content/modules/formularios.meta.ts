@@ -105,6 +105,15 @@ export const meta: LearnModuleMeta = {
             needs: 'manage_forms',
         },
         {
+            id: 'formularios-suscribir',
+            title: 'Suscribir al enviar: planes con débito automático',
+            summary: 'La persona elige uno de tus planes de Mercado Pago, autoriza su tarjeta una vez y se le cobra solo cada período; la suscripción queda en su registro y en su portal.',
+            minutes: 6,
+            level: 'intermediate',
+            keywords: 'suscribir suscripcion suscripciones plan planes membresia mensualidad cuota debito automatico recurrente mercado pago autorizar tarjeta elegir plan gimnasio portal pagos',
+            needs: 'manage_forms',
+        },
+        {
             id: 'formularios-ajustes',
             title: 'Ajustes: agradecimiento, cierre por fecha o cupo y logo',
             summary: 'Qué ve la persona al enviar, hasta cuándo recibe respuestas, con qué plantilla nace el registro y si muestra tu logo.',

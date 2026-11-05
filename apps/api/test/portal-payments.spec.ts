@@ -44,13 +44,14 @@ import { AuditService } from '../src/audit/audit.service';
 import { SessionService } from '../src/auth/session.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
 import { CollectionsService } from '../src/collections/collections.service';
+import { SubscriptionsService } from '../src/subscriptions/subscriptions.service';
 import { CommentsRepository } from '../src/comments/comments.repository';
 import { loadEnv } from '../src/config/env';
 import { ConnectorsService } from '../src/connectors/connectors.service';
 import { IntegrationAppsService } from '../src/connectors/integration-apps.service';
 import { DashboardsService } from '../src/dashboards/dashboards.service';
 import { RecordLayoutDataService } from '../src/dashboards/record-layout-data.service';
-import { connections, memberships, paymentLinks, tenants, users } from '../src/db/schema';
+import { connections, memberships, paymentLinks, subscriptionCharges, subscriptions, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { DomainsService } from '../src/domains/domains.service';
 import { FieldsRepository } from '../src/fields/fields.repository';
@@ -210,6 +211,9 @@ describe('v0.1.289 — pagar desde el portal (Postgres + Redis reales)', () => {
             undefined,
             records,
             collections,
+            undefined,
+            undefined,
+            new SubscriptionsService(tenantDb, pg.db, env, connectors, lists, new RecordsRepository(), activity, rt, new AutomationDispatcher(), audit, collections, fieldsSvc),
         );
 
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
@@ -392,5 +396,55 @@ describe('v0.1.289 — pagar desde el portal (Postgres + Redis reales)', () => {
         expect(titles).toContain('Cuota hosting · Hosting 2026');
         expect(titles).not.toContain('Cuota ajena · De otro');
         expect((await portal.me(actorOf(beto))).payments.pagos!.links.map((l) => l.title)).not.toContain('Cuota hosting');
+    });
+    it('v0.1.368 — el bloque muestra SUS suscripciones con sus últimos cobros (y no las de otro cliente)', async () => {
+        const mk = async (recordId: number, title: string, status: string, url: string | null) => {
+            const [row] = await withTenant(pg.db, tenantId, (tx) =>
+                tx
+                    .insert(subscriptions)
+                    .values({
+                        tenantId,
+                        connectionId: connId,
+                        provider: 'mercadopago',
+                        listId: ids.clientes!,
+                        recordId,
+                        externalId: `pre-${title}`,
+                        reference: `ibs_${title.replace(/\W/g, '')}0000000000`,
+                        url,
+                        title,
+                        planName: title,
+                        amount: 150000,
+                        currency: 'COP',
+                        status,
+                        nextChargeAt: new Date('2026-12-05T05:00:00Z'),
+                        paidUntil: new Date('2026-12-05T05:00:00Z'),
+                    })
+                    .returning(),
+            );
+            return row!;
+        };
+        const mine = await mk(ana.recordId, 'Mantenimiento', 'retrying', 'https://www.mercadopago.com.co/subscriptions/checkout?preapproval_id=x');
+        const theirs = await mk(beto.recordId, 'Otro plan', 'active', null);
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(subscriptionCharges).values([
+                { tenantId, subscriptionId: mine.id, provider: 'mercadopago', providerPaymentId: '1', amount: 150000, currency: 'COP', status: 'approved', paidAt: new Date('2026-10-05T15:00:00Z') },
+                { tenantId, subscriptionId: mine.id, provider: 'mercadopago', providerPaymentId: '2', amount: 150000, currency: 'COP', status: 'rejected', failureReason: 'fondos insuficientes', periodStart: new Date('2026-11-05T15:00:00Z') },
+                { tenantId, subscriptionId: theirs.id, provider: 'mercadopago', providerPaymentId: '3', amount: 150000, currency: 'COP', status: 'approved', paidAt: new Date('2026-11-01T15:00:00Z') },
+            ]),
+        );
+        await setPaymentsBlock({ show_links: true });
+        const block = (await portal.me(actorOf(ana))).payments.pagos!;
+        expect(block.subscriptions.map((x) => x.title)).toEqual(['Mantenimiento']);
+        const sub = block.subscriptions[0]!;
+        expect(sub).toMatchObject({ status: 'retrying', amount: 150000, frequency: 1, frequency_type: 'months', next_charge_at: '2026-12-05T05:00:00.000Z' });
+        // El link sólo se ofrece mientras falta autorizar; nada interno viaja.
+        expect(sub.url).toBeNull();
+        expect(JSON.stringify(sub)).not.toMatch(/pre-|ibs_|connection/);
+        // Los cobros, del más nuevo al más viejo, con el motivo del rechazo.
+        expect(sub.charges.map((c) => `${c.status}:${c.reason ?? ''}`)).toEqual(['rejected:fondos insuficientes', 'approved:']);
+        expect((await portal.me(actorOf(beto))).payments.pagos!.subscriptions.map((x) => x.title)).toEqual(['Otro plan']);
+        // Apagado en el bloque: no viajan.
+        await setPaymentsBlock({ show_links: true, show_subscriptions: false });
+        expect((await portal.me(actorOf(ana))).payments.pagos!.subscriptions).toEqual([]);
     });
 });

@@ -12208,6 +12208,67 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         suscripción, portal, lista espejo de cobros y tablero) y v0.1.369
         (PayPal).
 
+  - [x] **Suscribir al enviar un formulario + suscripciones en el portal
+        (v0.1.368, addendum ADR-S96, segunda entrega partida en dos: la lista
+        de cobros, el tablero y el asistente pasan a v0.1.369 y PayPal a
+        v0.1.370)**. Un formulario ofrece los planes de débito automático de
+        la empresa: la persona elige uno, autoriza su tarjeta en Mercado Pago
+        una sola vez y queda suscrita; en su portal ve la suscripción.
+        (a) **Ajustes → «Suscribir al enviar»** (`settings.subscription`,
+        `SubscriptionSettings`): planes que se ofrecen (hasta 6, en orden;
+        sólo activos de una conexión de Mercado Pago del EQUIPO — una privada
+        se rechaza con `form_subscription_plan`, y un plan pausado deja de
+        ofrecerse solo y el panel lo avisa), título de la elección, después de
+        enviar (llevar directo a Mercado Pago o el botón en la pantalla de
+        gracias, con su texto). Exige la pregunta del **correo de quien
+        responde** y **excluye «Cobrar al enviar»**: un formulario cobra una
+        vez o suscribe.
+        (b) **Página pública**: tarjetas con precio, «cada mes / cada 3 meses
+        / cada año», días gratis y cuotas (`subscriptionFrequencyText` y
+        `subscriptionPlanExtras` en shared, sin zod); con un plan, un resumen
+        sin elegir; botón «Enviar y suscribirme». El servidor valida la
+        elección (`__plan`: «Elige un plan.»), crea el registro y la
+        suscripción (`createForForm`, con `form_id`) y vuelve a
+        `?suscripcion=<ref>`: la página pregunta cada 4 s y pasa sola a
+        «¡Listo! Tu suscripción quedó activa», u ofrece «Volver a Mercado
+        Pago». Una referencia ajena da 404 y la URL de autorizar sólo viaja
+        mientras está pendiente.
+        (c) **Confirmación por correo**: la respuesta pendiente guarda el plan
+        (migración 0103) y la página que confirma muestra «Suscripción:
+        150.000 COP cada mes · Mensual» con el botón. **Si Mercado Pago
+        falla**, la respuesta igual se guarda y se abre un Problema.
+        (d) **Portal**: el bloque «Pagos» muestra sus suscripciones
+        (`show_subscriptions`, encendido por defecto): plan, valor, estado,
+        próximo cobro, «pagado hasta», últimos pagos con el motivo de un
+        rechazo, y «Autorizar el débito automático» si está pendiente. Nada
+        interno viaja.
+        (e) Migrar una empresa re-mapea los planes de cada formulario (los
+        planes se importan ahora ANTES que los formularios); el asistente/MCP
+        ve `subscribes_on_submit`.
+        **Bug real encontrado en la prueba** (no de esta versión): el portal
+        valida su respuesta con el esquema compartido y `recordSchema` exigía
+        `created_by` positivo, pero un registro creado por un formulario, una
+        automatización o la mesa de ayuda tiene `created_by = 0` → el cliente
+        cuyo registro llegó por un formulario veía «Entrar a tu portal» en vez
+        de su portal. Ahora `created_by` y `comment.user_id` aceptan 0 (la
+        convención de `updated_by`). **De paso**: la vuelta fallida de una
+        confirmación ya no perdía la pantalla final elegida (`endingId`), y
+        «Elige tu plan» ganó su espacio arriba.
+        Ayuda: guía «¿Cómo hago que mis clientes se suscriban a un plan desde
+        un formulario?», artículo «Suscribir al enviar» en Aprende →
+        Formularios con la ilustración nueva `form-subscription` (y Cobros y
+        Portal al día), paso del recorrido de formularios y novedad con
+        carrusel. El script de la página pública sube ~1,2 KB gz (23,8 KB).
+        Tests: 5 de integración (`forms-subscription.spec`: planes del equipo
+        y en orden, elegir y suscribir con la vuelta, un plan y el botón,
+        confirmación por correo, Mercado Pago caído), portal (suscripciones
+        del cliente y nada interno), re-mapeo y 6 de shared (incluido el de
+        `created_by = 0`) — shared 748, front 801 — + E2E navegador 48/48
+        contra el Mercado Pago simulado (constructor y vista previa, elegir
+        plan, Mercado Pago con el correo y el valor, por autorizar → activa con
+        el aviso, un plan con botón propio, confirmación por correo, portal
+        «Al día» y apagado, celular sin desborde y sin errores de JS).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

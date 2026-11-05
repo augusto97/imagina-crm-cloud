@@ -439,7 +439,7 @@ export const articles: LearnArticle[] = [
     {
         id: 'cobros-suscripciones',
         route: '/settings?s=conectores',
-        related: ['cobros-estados', 'cobros-automatizar', 'cobros-panel'],
+        related: ['formularios-suscribir', 'cobros-automatizar', 'portal-pagos'],
         blocks: [
             {
                 t: 'p',
@@ -483,6 +483,12 @@ export const articles: LearnArticle[] = [
                     'Toca **Crear el link**: la suscripción queda **Por autorizar** y el link se copia con **Copiar link**.',
                     'Mándale el link por WhatsApp o correo. Cuando el cliente autoriza su tarjeta, la ficha pasa sola a **Al día**.',
                 ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Que se suscriban solos',
+                md: 'Con un formulario con **Suscribir al enviar**, cada persona elige el plan y autoriza su tarjeta sin que tengas que mandarle un link. Y en el portal, el bloque **Pagos** le muestra su suscripción, el próximo cobro y sus pagos.',
             },
             { t: 'h', text: 'Qué significa cada estado' },
             {
@@ -562,7 +568,7 @@ export const articles: LearnArticle[] = [
                 t: 'actions',
                 items: [
                     { label: 'Ir a Integraciones', to: '/settings?s=conectores' },
-                    { label: 'Saber quién ya pagó', article: 'cobros-estados' },
+                    { label: 'Suscribir desde un formulario', article: 'formularios-suscribir' },
                 ],
             },
         ],
