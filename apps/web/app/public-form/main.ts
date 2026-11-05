@@ -33,6 +33,7 @@ import {
     type FormCalcLike,
     type FormFlow,
 } from '@imagina-base/shared/src/schemas/form-logic';
+import { attributionFromSearch, cleanAttribution, type AttributionData, type ImaginaConversionEvent } from '@imagina-base/shared/src/schemas/conversion-logic';
 
 type FieldItem = PublicFormFieldItem;
 type ImageItem = Extract<PublicFormItem, { type: 'image' }>;
@@ -71,6 +72,98 @@ const PLAN = '__plan';
 const FLOAT_TYPES = new Set(['text', 'long_text', 'email', 'url', 'phone', 'number', 'duration']);
 
 let meta: PublicFormMeta | null = BOOT.meta;
+
+// ─────────────── Medir conversiones (v0.1.374, ADR-S97) ───────────────
+// Insertado en un sitio: el script del sitio (`embed.js`) le pasa al marco de
+// dónde vino la persona (la campaña, el clic del anuncio, la página) y, al
+// enviar, convierte el aviso en un evento DEL SITIO (Tag Manager, Google Ads,
+// Meta). Sin ese script (un iframe pegado solo), se sigue como antes.
+let hostAttribution: AttributionData | null = null;
+/** El origen del sitio que insertó el formulario (lo dice su primer mensaje). */
+let hostOrigin: string | null = null;
+const conversionAcks = new Set<string>();
+const contextWaiters: Array<() => void> = [];
+if (embedded && !BOOT.preview) {
+    window.addEventListener('message', (e: MessageEvent) => {
+        if (e.source !== parent) return;
+        const d = e.data as { type?: string; attribution?: unknown; ref?: string } | null;
+        if (!d || typeof d !== 'object') return;
+        if (d.type === 'imb-context') {
+            hostAttribution = cleanAttribution(d.attribution);
+            hostOrigin = typeof e.origin === 'string' && /^https?:\/\//.test(e.origin) ? e.origin : null;
+            contextWaiters.splice(0).forEach((fn) => fn());
+        } else if (d.type === 'imb-conversion-ack' && typeof d.ref === 'string') {
+            conversionAcks.add(d.ref);
+        }
+    });
+    try {
+        parent.postMessage({ type: 'imb-hello' }, '*');
+    } catch {
+        // nada
+    }
+}
+
+/** Lo que se sabe de dónde vino: lo del sitio (insertado) sobre lo de la propia dirección. */
+function attributionNow(): AttributionData {
+    const own = attributionFromSearch(location.search);
+    if (!embedded && document.referrer) {
+        try {
+            if (new URL(document.referrer).host !== location.host) own.referrer = document.referrer.slice(0, 1000);
+        } catch {
+            // nada
+        }
+    }
+    return { ...own, ...(hostAttribution ?? {}) };
+}
+
+/** Espera (un rato corto) a que el sitio diga de dónde vino la persona. */
+function whenContext(ms: number): Promise<void> {
+    if (!embedded || hostAttribution !== null) return Promise.resolve();
+    return new Promise((ok) => {
+        const t = window.setTimeout(ok, ms);
+        contextWaiters.push(() => {
+            window.clearTimeout(t);
+            ok();
+        });
+    });
+}
+
+function targetOrigin(): string {
+    if (hostOrigin) return hostOrigin;
+    try {
+        const anc = (location as Location & { ancestorOrigins?: DOMStringList }).ancestorOrigins;
+        if (anc && anc.length > 0 && anc[0]) return anc[0];
+    } catch {
+        // nada
+    }
+    return '*';
+}
+
+let convSeq = 0;
+/** Le avisa al sitio que hubo una conversión (y, si sigue una página de gracias, cuál). */
+function postConversion(ev: ImaginaConversionEvent | null, redirect: string | null, delayMs: number): string | null {
+    if (!ev || !embedded || BOOT.preview) return null;
+    const ref = `c${++convSeq}${Date.now().toString(36)}`;
+    try {
+        parent.postMessage({ type: 'imb-conversion', ref, event: ev, redirect, delay_ms: delayMs }, targetOrigin());
+    } catch {
+        return null;
+    }
+    return ref;
+}
+
+function waitAck(ref: string | null, ms: number): Promise<boolean> {
+    if (!ref) return Promise.resolve(false);
+    return new Promise((ok) => {
+        const t0 = Date.now();
+        const tick = (): void => {
+            if (conversionAcks.has(ref)) return ok(true);
+            if (Date.now() - t0 >= ms) return ok(false);
+            window.setTimeout(tick, 50);
+        };
+        tick();
+    });
+}
 
 // ─────────────────────── Sello anti-robots (v0.1.352) ───────────────────────
 // La página ya no lo trae (así se puede guardar en caché): se pide la primera
@@ -167,7 +260,11 @@ function deviceKind(): FormStatDevice {
 function trackView(): void {
     if (BOOT.preview || editMode() || !meta || meta.closed || !onceThisSession('v')) return;
     const params = new URLSearchParams(location.search);
-    stat({ kind: 'view', src: formStatSource({ utm_source: params.get('utm_source'), referrer: document.referrer, own_hosts: [location.hostname] }), dev: deviceKind() });
+    // v0.1.374 — insertado: la campaña con la que llegó al SITIO (si el script lo dice).
+    void whenContext(700).then(() => {
+        const utm = hostAttribution?.utm_source ?? params.get('utm_source');
+        stat({ kind: 'view', src: formStatSource({ utm_source: utm, referrer: document.referrer, own_hosts: [location.hostname] }), dev: deviceKind() });
+    });
 }
 
 function trackStart(): void {
@@ -2211,6 +2308,11 @@ function submit(hpValue: string): void {
     // v0.1.358 — cuánto tardó (para el tiempo promedio) y el avance que termina.
     if (startedAt && !editing()) body.elapsed_ms = Math.min(7 * 86_400_000, Date.now() - startedAt);
     if (draftCode && !editing()) body.draft = draftCode;
+    // v0.1.374 — de dónde vino (sólo si el formulario lo guarda).
+    if (m.conversion?.attribution && !editing()) {
+        const a = attributionNow();
+        if (Object.keys(a).length) body.attribution = a;
+    }
     readyStamp()
         .then((stamp) => {
             body.stamp = stamp;
@@ -2231,6 +2333,7 @@ function submit(hpValue: string): void {
                 calcs?: Record<string, number>;
                 message?: string;
                 updated?: boolean;
+                conversion?: { submission_id: string; value: number | null; currency: string | null; user_data?: { email?: string; phone_number?: string } | null } | null;
                 payment?: { url: string; amount: number; currency: string; after: 'redirect' | 'button'; button_label: string } | null;
                 payment_error?: string;
                 subscription?: SubResult | null;
@@ -2250,6 +2353,10 @@ function submit(hpValue: string): void {
                 flushStats();
                 // v0.1.357 — el puntaje lo dice el servidor (la pantalla final lo puede mostrar).
                 if (b.calcs && typeof b.calcs === 'object') finalCalcs = b.calcs;
+                // v0.1.374 — la conversión, para el sitio donde está insertado.
+                const conv = conversionEvent(b, b.ending_id ?? null);
+                if (b.redirect_url && !b.pending_confirmation && !b.payment && !b.subscription) return goTo(b.redirect_url, conv, b.ending_id ?? null);
+                postConversion(conv, null, 0);
                 if (b.pending_confirmation) return checkEmail(b.email_hint);
                 // v0.1.361 — cobrar al enviar: a pagar (o el botón en la pantalla de gracias).
                 if (b.payment && /^https?:\/\//.test(b.payment.url)) {
@@ -2263,7 +2370,6 @@ function submit(hpValue: string): void {
                     return done(b.ending_id ?? null, null, undefined, b.subscription);
                 }
                 if (b.subscription_error) return done(b.ending_id ?? null, null, b.subscription_error);
-                if (b.redirect_url) return goTo(b.redirect_url);
                 return done(b.ending_id ?? null);
             }
             // El token del captcha ya se usó (el servidor lo verifica una vez).
@@ -2341,25 +2447,73 @@ function consentNode(dc: NonNullable<PublicFormMeta['data_consent']>): HTMLEleme
     return box;
 }
 
-// Insertado en otro sitio, la redirección lleva a TODA la página (no al
-// marco): el script de inserción la hace; sin él, se intenta igual.
-function goTo(url: string): void {
+/** v0.1.374 — La conversión de este envío, como la lee el sitio. */
+function conversionEvent(
+    b: { conversion?: { submission_id: string; value: number | null; currency: string | null; user_data?: { email?: string; phone_number?: string } | null } | null; pending_confirmation?: boolean },
+    endingId: string | null,
+): ImaginaConversionEvent | null {
+    const c = b.conversion;
+    if (!c || !meta || BOOT.preview) return null;
+    const ending = endingId ? meta.endings?.find((e) => e.id === endingId) : undefined;
+    return {
+        kind: 'form',
+        id: BOOT.token,
+        name: meta.title,
+        submission_id: c.submission_id,
+        value: c.value,
+        currency: c.currency,
+        ending: ending ? ending.title : null,
+        pending_confirmation: b.pending_confirmation === true,
+        google_ads: meta.conversion?.google_ads ?? null,
+        meta_event: meta.conversion?.meta_event ? 'Lead' : null,
+        user_data: c.user_data ?? null,
+    };
+}
+
+/**
+ * La página de gracias. Insertado en otro sitio, la redirección lleva a
+ * TODA la página (no al marco): la hace el script del sitio después de que
+ * sus etiquetas registraron la conversión. Sin ese script (o con uno viejo)
+ * se pide como antes. v0.1.374: con «esperar N segundos», se ve el
+ * «¡Gracias!» con un enlace para ir ya.
+ */
+function goTo(url: string, conv: ImaginaConversionEvent | null = null, endingId: string | null = null): void {
+    const delay = Math.max(0, Math.min(10, meta?.redirect_delay ?? 0)) * 1000;
+    redirecting(url, endingId, delay);
     if (!embedded) {
-        location.href = url;
+        window.setTimeout(() => {
+            location.href = url;
+        }, delay);
         return;
     }
-    try {
-        parent.postMessage({ type: 'imb-form-redirect', url }, '*');
-    } catch {
-        // nada
-    }
-    setTimeout(() => {
-        try {
-            window.open(url, '_top');
-        } catch {
-            location.href = url;
-        }
-    }, 200);
+    const ref = postConversion(conv, url, delay);
+    void waitAck(ref, 500).then((handled) => {
+        if (handled) return;
+        window.setTimeout(() => {
+            try {
+                parent.postMessage({ type: 'imb-form-redirect', url }, '*');
+            } catch {
+                // nada
+            }
+            window.setTimeout(() => {
+                try {
+                    window.open(url, '_top');
+                } catch {
+                    location.href = url;
+                }
+            }, 200);
+        }, Math.max(0, delay - 500));
+    });
+}
+
+/** El «¡Gracias!» mientras se va a la página de gracias (con un enlace para ir ya). */
+function redirecting(url: string, endingId: string | null, delay: number): void {
+    const kids = endingKids(endingId);
+    kids.push(
+        el('p', { cls: 'ib-small', 'data-testid': 'form-redirecting', text: delay > 0 ? `Te llevamos en ${Math.round(delay / 1000)} segundos…` : 'Te llevamos a la siguiente página…' }),
+        el('a', { cls: 'ib-btn ib-btn-secondary', href: url, target: '_top', rel: 'noopener', text: 'Ir ahora' }),
+    );
+    finalScreen(kids, 'form-done');
 }
 
 // Insertado: avisa su alto al sitio para que el marco no corte ni sobre.

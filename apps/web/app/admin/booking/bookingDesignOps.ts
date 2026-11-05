@@ -1,4 +1,6 @@
 import {
+    ATTRIBUTION_KEYS,
+    attributionFieldFor,
     BOOKING_MAPPING_KEYS,
     BOOKING_MAPPING_TYPES,
     BOOKING_MAX_QUESTIONS,
@@ -279,7 +281,10 @@ export function setMapping(config: BookingConfig, key: BookingMappingKey, fieldI
 export function availableQuestionFields<F extends FieldLike>(fields: readonly F[], config: BookingConfig): F[] {
     const mapped = new Set(BOOKING_MAPPING_KEYS.map((k) => config.mapping[k]).filter((v): v is number => typeof v === 'number'));
     const asked = new Set(config.questions.flatMap((q) => (q.type === 'field' ? [q.field_id] : [])));
-    return fields.filter((f) => isBookingQuestionType(f.type) && !mapped.has(f.id) && !asked.has(f.id));
+    // v0.1.374 — las columnas del origen (campaña, clic del anuncio…) se llenan solas.
+    const a = config.settings.attribution;
+    const origin = new Set(a?.enabled ? ATTRIBUTION_KEYS.map((k) => attributionFieldFor(a, k)).filter((v): v is number => v !== null) : []);
+    return fields.filter((f) => isBookingQuestionType(f.type) && !mapped.has(f.id) && !asked.has(f.id) && !origin.has(f.id));
 }
 
 export function addQuestion(config: BookingConfig, fieldId: number): BookingConfig {
@@ -421,7 +426,7 @@ export function buildPreviewMeta(config: BookingConfig, ctx: PreviewContext): Pu
 }
 
 /** Lo que falta por sección del constructor (para el punto rojo de cada una). */
-export type BookingSection = 'servicios' | 'atienden' | 'disponibilidad' | 'reglas' | 'aprobacion' | 'diseno' | 'campos' | 'correos' | 'publicar';
+export type BookingSection = 'servicios' | 'atienden' | 'disponibilidad' | 'reglas' | 'aprobacion' | 'diseno' | 'campos' | 'correos' | 'medir' | 'publicar';
 
 /**
  * v0.1.350 — Qué calendario tiene cada persona que atiende, desde lo que

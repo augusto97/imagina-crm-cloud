@@ -1,4 +1,6 @@
 import {
+    ATTRIBUTION_KEYS,
+    attributionFieldFor,
     FORM_CALC_KEY_RE,
     FORM_MAX_CALCS,
     fieldDefaultOf,
@@ -581,7 +583,21 @@ export function updateSettings(config: FormConfig, patch: Partial<FormSettings>)
 /** Campos de la lista que se pueden preguntar y todavía no están en el formulario. */
 export function availableFields<F extends FieldLike>(fields: readonly F[], config: FormConfig): F[] {
     const asked = usedFieldIds(config);
-    return fields.filter((f) => isFormFieldType(f.type) && !asked.has(f.id));
+    // v0.1.374 — las columnas del origen (campaña, clic del anuncio…) se llenan solas: no se preguntan.
+    const origin = attributionColumnIds(config);
+    return fields.filter((f) => isFormFieldType(f.type) && !asked.has(f.id) && !origin.has(f.id));
+}
+
+/** v0.1.374 — Las columnas donde el formulario guarda de dónde vino cada registro (si está encendido). */
+export function attributionColumnIds(config: FormConfig): Set<number> {
+    const a = config.settings.attribution;
+    const out = new Set<number>();
+    if (!a?.enabled) return out;
+    for (const k of ATTRIBUTION_KEYS) {
+        const id = attributionFieldFor(a, k);
+        if (id !== null) out.add(id);
+    }
+    return out;
 }
 
 /**

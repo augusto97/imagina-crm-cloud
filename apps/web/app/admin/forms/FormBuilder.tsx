@@ -40,6 +40,7 @@ import {
     CAPTCHA_PROVIDER_INFO,
     formEstimateMinutes,
     formPaymentActive,
+    REDIRECT_URL_RE,
     formSubscriptionActive,
     formRecallMap,
     FORM_FILE_ACCEPT_INFO,
@@ -88,6 +89,7 @@ import { SitePreviewFrame } from './design/SitePreviewFrame';
 import { MatrixEditor } from './design/QuestionKind';
 import { MyThemes } from './design/MyThemes';
 import { StartSettings } from './design/StartSettings';
+import { ConversionSettings, ThankYouUrlField } from './design/ConversionSettings';
 import { ThemeGallery } from './design/ThemeGallery';
 import { ThemeInspector } from './design/ThemeInspector';
 import {
@@ -108,6 +110,7 @@ import {
     defaultMatrixColumns,
     usedFieldIds,
     addFieldItem,
+    attributionColumnIds,
     availableFields,
     conditionCandidates,
     emailQuestions,
@@ -422,7 +425,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
 
     const save = async (extra: { enabled?: boolean } = {}): Promise<boolean> => {
         // v0.1.356 — una pantalla final con la dirección a medio escribir se perdería al guardar.
-        const badEnding = draft.config.settings.endings.findIndex((e) => !!e.redirect_url && !/^https:\/\/\S+$/.test(e.redirect_url));
+        const badEnding = draft.config.settings.endings.findIndex((e) => !!e.redirect_url && !REDIRECT_URL_RE.test(e.redirect_url));
         if (badEnding >= 0) {
             const e = draft.config.settings.endings[badEnding]!;
             toast.error(
@@ -1065,6 +1068,7 @@ function LeftPanel(p: LeftPanelProps): JSX.Element {
                         )}
                         <p className="imcrm-mt-1 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                             {__('Las personas del equipo, las relaciones y los campos calculados no se preguntan en un formulario público.')}
+                            {attributionColumnIds(p.config).size > 0 && ' ' + __('Las columnas de dónde vino cada registro se llenan solas (Ajustes → Medir conversiones).')}
                         </p>
                     </div>
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
@@ -1494,15 +1498,29 @@ function SettingsInspector({
                     <Textarea rows={2} value={s.success_message} onChange={(e) => set({ success_message: e.target.value })} />
                     <RecallPicker config={config} fields={fields} onPick={(t) => set({ success_message: withToken(s.success_message, t) })} />
                 </Field>
-                <Field label={__('O llevar a esta dirección')} hint={__('Opcional. Tiene que empezar con https://')}>
-                    <Input
-                        value={s.redirect_url ?? ''}
-                        placeholder="https://tusitio.com/gracias"
-                        onChange={(e) => set({ redirect_url: e.target.value.trim() === '' ? null : e.target.value.trim() })}
-                    />
-                </Field>
+                <ThankYouUrlField
+                    value={s.redirect_url}
+                    delay={s.redirect_delay}
+                    onChange={(url) => set({ redirect_url: url })}
+                    onDelay={(n) => set({ redirect_delay: n })}
+                    variables={thankYouVariables(config, fields)}
+                    placeholder="https://tusitio.com/gracias"
+                    testId="form-redirect-url"
+                />
                 <Check label={__('Ofrecer «Enviar otra respuesta»')} checked={s.allow_another} onChange={(v) => set({ allow_another: v })} />
             </Section>
+
+            <ConversionSettings
+                kind="form"
+                conversion={s.conversion}
+                attribution={s.attribution}
+                onChange={(patch) => set(patch)}
+                fields={fields}
+                takenFieldIds={takenByForm(config)}
+                listId={listId}
+                calcs={s.calcs.map((c) => ({ key: c.key, name: c.name }))}
+                canCharge={formPaymentActive(config)}
+            />
 
             {((recordTemplates.data ?? []).length > 0 || s.record_template_id !== null) && (
                 <Section title={__('Registro que se crea')}>
@@ -1700,4 +1718,35 @@ function SettingsInspector({
             </p>
         </div>
     );
+}
+
+/** v0.1.374 — Los campos que el formulario ya escribe (preguntas y resultados de cálculos): no sirven para el origen. */
+function takenByForm(config: FormConfig): Set<number> {
+    const out = new Set<number>();
+    for (const i of config.items) {
+        if (i.type === 'field') {
+            out.add(i.field_id);
+            if (i.other_field_id !== null) out.add(i.other_field_id);
+        } else if (i.type === 'matrix') for (const r of i.rows) out.add(r.field_id);
+    }
+    for (const c of config.settings.calcs) if (c.save_field_id !== null) out.add(c.save_field_id);
+    return out;
+}
+
+/** v0.1.374 — Las variables que se le pueden pasar a la página de gracias (nunca correo ni teléfono). */
+function thankYouVariables(config: FormConfig, fields: FieldEntity[]): Array<{ token: string; label: string }> {
+    const byId = new Map(fields.map((f) => [f.id, f]));
+    const answers = config.items.flatMap((i) => {
+        if (i.type !== 'field') return [];
+        const f = byId.get(i.field_id);
+        if (!f || f.type === 'email' || f.type === 'phone') return [];
+        return [{ token: f.slug, label: f.label }];
+    });
+    return [
+        { token: 'envio.id', label: __('Id único del envío (para no contar dos veces)') },
+        { token: 'valor', label: __('Valor de la conversión') },
+        { token: 'moneda', label: __('Moneda del valor') },
+        { token: 'utm_campaign', label: __('La campaña con la que llegó') },
+        ...answers.slice(0, 8),
+    ];
 }

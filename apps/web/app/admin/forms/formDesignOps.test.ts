@@ -15,6 +15,7 @@ import {
     defaultMatrixColumns,
     usedFieldIds,
     availableFields,
+    attributionColumnIds,
     conditionCandidates,
     emailQuestions,
     missingRequired,
@@ -87,6 +88,16 @@ describe('constructor de formularios', () => {
 
     it('campos disponibles: los que se preguntan y faltan', () => {
         expect(availableFields(fields, base()).map((f) => f.id)).toEqual([6]);
+    });
+
+    it('v0.1.374 — las columnas del origen no se ofrecen como pregunta (sólo si está encendido)', () => {
+        const c = base();
+        const on: FormConfig = { ...c, settings: { ...c.settings, attribution: { ...c.settings.attribution, enabled: true, utm_campaign_field_id: 6 } } };
+        expect(attributionColumnIds(on)).toEqual(new Set([6]));
+        expect(availableFields(fields, on).map((f) => f.id)).toEqual([]);
+        const off: FormConfig = { ...on, settings: { ...on.settings, attribution: { ...on.settings.attribution, enabled: false } } };
+        expect(attributionColumnIds(off).size).toBe(0);
+        expect(availableFields(fields, off).map((f) => f.id)).toEqual([6]);
     });
 
     it('avisa de lo que la lista exige y el formulario puede no traer', () => {

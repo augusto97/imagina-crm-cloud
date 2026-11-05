@@ -225,21 +225,21 @@ describe('v0.1.356 — lógica de formularios (Postgres + Redis reales)', () => 
         });
         // Menor de edad: termina en la página 1, sin pedir lo de la empresa.
         const a = await svc.submit(token, IP, { values: { [f.tipo!.id]: 'empresa', [f.edad!.id]: 15 }, uploads: {}, stamp: stamp(id) });
-        expect(a).toEqual({ ok: true, ending_id: 'menores1', redirect_url: null });
+        expect(a).toEqual({ ok: true, ending_id: 'menores1', redirect_url: null, conversion: expect.objectContaining({ submission_id: expect.any(String) }) });
         // Empresa grande: su pantalla, con su dirección.
         const b = await svc.submit(token, IP, {
             values: { [f.tipo!.id]: 'empresa', [f.edad!.id]: 40, [f.nit!.id]: '900', [f.empleados!.id]: 120 },
             uploads: {},
             stamp: stamp(id),
         });
-        expect(b).toEqual({ ok: true, ending_id: 'grandes1', redirect_url: 'https://acme.test/grandes' });
+        expect(b).toEqual({ ok: true, ending_id: 'grandes1', redirect_url: 'https://acme.test/grandes', conversion: expect.objectContaining({ submission_id: expect.any(String) }) });
         // Ninguna: el «¡Gracias!» de siempre, con la dirección del formulario.
         const c = await svc.submit(token, IP, {
             values: { [f.tipo!.id]: 'empresa', [f.edad!.id]: 40, [f.nit!.id]: '900', [f.empleados!.id]: 5 },
             uploads: {},
             stamp: stamp(id),
         });
-        expect(c).toEqual({ ok: true, ending_id: null, redirect_url: 'https://acme.test/gracias' });
+        expect(c).toEqual({ ok: true, ending_id: null, redirect_url: 'https://acme.test/gracias', conversion: expect.objectContaining({ submission_id: expect.any(String) }) });
         // La página pública recibe los saltos, las pantallas y lo que se recuerda.
         const meta = await svc.meta(token);
         expect(meta.jumps).toEqual([{ from: 'start', when: { field_id: f.edad!.id, op: 'lt', value: 18 }, to: 'ending:menores1' }]);

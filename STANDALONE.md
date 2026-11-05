@@ -7258,6 +7258,79 @@ PayPal de los cobros (ADR-S31, token en memoria por credencial).
    la página de la app y en el formulario. Recién vuelto del proveedor el
    estado se consulta enseguida (a lo sumo cada 2 s; antes, 15 s).
 
+
+### ADR-S97 — Medir conversiones de formularios y agendas insertados (v0.1.374)
+
+**Contexto.** Pregunta del usuario: «cuando en el sitio web del cliente se
+hagan campañas como las de Google Ads, ¿cómo se miden las conversiones de
+llenadas de formulario o agendamientos? ¿Hay forma de colocar el código de
+seguimiento de la campaña? ¿Y de llevar a una página de gracias?». El
+formulario y la agenda viven en un **marco de otro dominio** dentro del sitio
+de la empresa: la etiqueta de Google Ads del sitio no ve lo que pasa adentro,
+y Google atribuye la conversión en la página donde aterrizó el anuncio (la del
+sitio), no en la del marco. Las alternativas de los competidores son pegar el
+código de seguimiento DENTRO del formulario (Typeform, Jotform) o mandar el
+evento al sitio por `postMessage` (Calendly, HubSpot). Pegar JavaScript ajeno
+en nuestras páginas públicas no es aceptable: viven en el origen de la app
+(misma sesión del equipo si alguien la tiene abierta) y su CSP es estricta a
+propósito (ADR-S95).
+
+**Decisión.**
+
+1. **El evento sale en el sitio, no en el marco.** Al enviar o agendar, la
+   página pública manda `imb-conversion` al sitio; el `embed.js` (el mismo
+   script de inserción de siempre, sólo atiende mensajes de SUS marcos y de su
+   origen) lo convierte en un evento del sitio: `dataLayer.push` con
+   `event: imagina_form_submit | imagina_booking`, `transaction_id`, `value`,
+   `currency` y el detalle en `imagina` (para Google Tag Manager, sin
+   configurar nada); `gtag('event','conversion',{send_to,…})` con la etiqueta
+   de Google Ads que pega la empresa (sólo el `AW-…/…` reconocido por una
+   expresión; nunca código); `fbq('track','Lead'|'Schedule',…,{eventID})` y un
+   `CustomEvent` del navegador. Un envío dispara una sola vez (por su id).
+2. **Un id por envío** (`submission_id`, 12 caracteres base64url) que viaja
+   como `transaction_id` y `eventID`: Google y Meta lo usan para no contar dos
+   veces. Lo genera el servidor.
+3. **Valor de la conversión** elegible: ninguno, fijo, lo que se cobra al
+   enviar, el resultado de un cálculo del formulario o, en la agenda, el precio
+   del servicio. Lo calcula el servidor.
+4. **Conversiones mejoradas** opcionales y apagadas por defecto (son datos
+   personales): el correo (en minúsculas) y el teléfono (E.164) de quien
+   respondió viajan a `gtag('set','user_data')` y al `dataLayer`; Google los
+   cifra.
+5. **De dónde vino cada registro** (`settings.attribution`, mismo esquema en
+   formularios y agendas): `utm_*`, `gclid`/`gbraid`/`wbraid`, `fbclid`,
+   `msclkid`, `ttclid`, la página donde se llenó y el sitio de donde llegó, en
+   columnas de texto o enlace elegidas (o creadas) por la empresa. El
+   `embed.js` guarda en la sesión de la pestaña los datos de la **primera**
+   página de la visita (un clic nuevo de un anuncio los reemplaza; respaldo con
+   las cookies `_gcl_aw` y `_fbc`) y se los pasa al marco **por mensaje**
+   (`imb-hello` → `imb-context`), nunca en la dirección del marco: cada clic
+   trae un id distinto y eso rompería la caché de ADR-S95. El servidor los
+   limpia (claves conocidas, topes, forma de los ids, sólo http(s)) y nunca
+   escribe en una columna que el formulario pregunta o que otra cosa escribe;
+   un dato raro se descarta sin hacer fallar el envío. Las claves terminan en
+   `_field_id`, así migrar una empresa las re-mapea solas.
+6. **Página de gracias con variables** (formularios, pantallas finales y
+   ahora también la agenda): sólo `https`, las variables sólo después del
+   dominio (`REDIRECT_URL_RE`), cada valor codificado y, si el resultado no es
+   del MISMO sitio, la dirección sin variables. El **correo y el teléfono
+   nunca se resuelven** (Google Analytics prohíbe datos personales en las
+   direcciones). Con `redirect_delay` se ve el agradecimiento unos segundos.
+   Insertado, la página entera va a la de gracias después de que las
+   etiquetas terminaron (o a los 1,6 s); si el sitio no contesta en 500 ms
+   (script viejo), el marco usa la redirección de antes.
+7. **Lo que NO se hace**: pegar código de seguimiento arbitrario, Google Tag
+   Manager o píxeles dentro de nuestras páginas. Para el enlace directo (sin
+   sitio) queda propuesto un píxel por ID (Google Ads / Meta) aislado en la
+   página pública (v0.1.375, pendiente de aprobación).
+
+**Consecuencias.** Funciona con cualquiera de las formas de inserción
+(página, ventana, panel lateral, botón flotante) y con una CSP estricta del
+sitio. La empresa necesita el script de inserción en su sitio (y conviene en
+todas las páginas, para no perder la campaña al navegar). El nombre del evento
+lleva el de la plataforma porque cambiarlo después rompería la configuración
+de Tag Manager de las empresas.
+
 ---
 
-**Versión del documento:** 1.157.0 (Suscripciones con PayPal)
+**Versión del documento:** 1.158.0 (Medir conversiones)

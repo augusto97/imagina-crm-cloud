@@ -394,8 +394,18 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.373**
-(PayPal como tercer proveedor de cobros de cada empresa: links de pago en
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.374**
+(medir conversiones: el formulario y la agenda insertados en el sitio de la
+empresa disparan la conversión EN EL SITIO —Tag Manager, Google Ads y Meta,
+con valor e id único—, guardan de qué campaña vino cada registro y llevan a
+una página de gracias con variables, también desde la agenda, ADR-S97); antes
+v0.1.373
+(suscripciones con débito automático también con PayPal: planes en dólares,
+producto y plan creados una vez en la cuenta de la empresa, estado releído,
+«En mora» al tercer fallo, pausar/reanudar/cancelar/cambiar el valor, y lo
+público que dice a quién se le paga, addendum ADR-S96 —con ella queda COMPLETO
+el pedido de suscripciones—; antes v0.1.372
+PayPal como tercer proveedor de cobros de cada empresa: links de pago en
 dólares desde la ficha, las automatizaciones, los formularios y el portal, con
 link propio de la app que reusa o crea la orden, captura al volver el cliente,
 aviso o «Verificar», webhook registrado solo con https y páginas con la marca
@@ -444,6 +454,38 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-05 — **Medir conversiones (Google Ads) en formularios y agenda
+  insertados + página de gracias** — **v0.1.374 HECHA** (el usuario respondió
+  «Si, hazlo»). Queda propuesta, sin aprobar, la **v0.1.375**: píxel de Google
+  y de Meta por ID en el enlace directo (sin sitio), aislado. Preguntas del
+  usuario: "¿cómo quedó lo de que los formularios consuman pocos recursos?
+  creo que se subía un script a Cloudflare", "¿cómo medir las conversiones de
+  llenadas de formulario o agendamientos de campañas de Google Ads? ¿se puede
+  colocar el código de seguimiento?" y "¿se pueden manejar redirecciones a
+  una página de gracias?". Respuesta: (1) rendimiento resuelto en v0.1.352 SIN
+  Cloudflare (nada se subió allá; `docs/runbook-public-traffic.md` es una guía
+  opcional); su servidor responde nginx directo, sin Cloudflare, y no lo
+  necesita. (2) Hoy NO hay forma cómoda de medir: el marco manda
+  `imb-form-submitted` sin decir cuál formulario y `embed.js` no lo convierte
+  en nada que entienda Tag Manager; una etiqueta DENTRO del marco tampoco
+  sirve (el `gclid` queda en el sitio del cliente y Safari/Firefox bloquean
+  cookies en marcos de otro dominio). (3) La página de gracias YA existe en
+  formularios (redirección general y por pantalla final; insertado navega la
+  página entera) pero NO en la agenda, y la dirección es fija (sin variables).
+  Propuesta: **v0.1.374 «Medir conversiones»** — `embed.js` publica en el sitio
+  `dataLayer.push({event:'imagina_form_submit'|'imagina_booking', …})` + un
+  evento del navegador (nombre, pantalla final, valor/moneda si cobra, id único
+  para no contar dos veces; correo/teléfono para conversiones mejoradas sólo
+  opt-in), ID y etiqueta de conversión de Google Ads por formulario para usar
+  el `gtag` del sitio sin Tag Manager, captura de `gclid/gbraid/wbraid/fbclid/
+  utm_*` y la página en columnas del registro (pasados al marco por mensaje,
+  NO en la URL del iframe, para no romper el caché con cada clic), página de
+  gracias en la agenda, variables en la dirección y guía en Aprende;
+  **v0.1.375** — Google (AW/G) y Meta Pixel POR ID en el enlace directo
+  (nunca código libre ni GTM: la página pública vive en el mismo dominio que la
+  app y ese código correría con la sesión de quien del equipo la abra), con
+  aislamiento; después, conversiones offline (Google Ads API pide developer
+  token) y API de conversiones de Meta.
 - 2026-11-05 — **Logo y «sin marco» en formularios + rediseño del chat de
   IA** (pedido del usuario: "en los formularios debería poderse cambiar el
   logo u ocultarse… un estilo más limpio para embeber… que no tenga espacios
@@ -1496,6 +1538,32 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.374** — **Medir conversiones de formularios y agendas
+  insertados** (preguntas del usuario sobre Google Ads, el código de
+  seguimiento y la página de gracias → «Si, hazlo»). Insertados en el sitio de
+  la empresa, cada envío y cada cita se vuelven un evento DEL SITIO, que es
+  donde Google atribuye la conversión: `dataLayer` (`imagina_form_submit` /
+  `imagina_booking`, con `transaction_id`, valor y moneda), `gtag` con la
+  etiqueta de Google Ads que se pega en **Ajustes → Medir conversiones** (la app
+  reconoce el «send_to» aunque se pegue el fragmento entero), `fbq` Lead /
+  Schedule y un evento del navegador. Valor fijo, de lo cobrado, de un cálculo
+  o el precio del servicio; conversiones mejoradas opcionales. **De dónde vino
+  cada registro**: utm, ids de clic, página y sitio de origen en columnas
+  elegidas o creadas con un botón (las columnas del origen ya no se ofrecen
+  como pregunta). **Página de gracias** también en la agenda, con variables
+  (`{{envio.id}}`, `{{valor}}`, `{{cita.servicio}}`…), espera opcional y nunca
+  el correo ni el teléfono en la dirección. **Decisiones**: el código de
+  seguimiento NUNCA se pega dentro de nuestras páginas (viven en el origen de
+  la app); el origen viaja al marco por mensaje y no en su dirección (para no
+  romper la caché de v0.1.352); el script de inserción recuerda la campaña de
+  la primera página de la visita, así que conviene pegarlo en todas las
+  páginas del sitio. **Bug encontrado al probar**: la página de gracias sólo
+  resolvía las respuestas que también aparecían en un texto del formulario.
+  E2E 48/48 en escritorio y en celular oscuro contra un sitio de OTRO origen
+  con GTM, gtag y fbq simulados (insertado, panel lateral tras navegar,
+  enlace directo y agenda). Runbook de Cloudflare: ignorar los parámetros de
+  campaña en la caché. Queda: v0.1.375 propuesta (píxel por ID en el enlace
+  directo), sin aprobar.
 - **2026-11-05 · v0.1.373** — **Suscripciones con débito automático también
   con PayPal** (última parte de «hazlo todo como lo veas más recomendable»: el
   pedido de suscripciones queda completo). Planes en dólares (u otra moneda de

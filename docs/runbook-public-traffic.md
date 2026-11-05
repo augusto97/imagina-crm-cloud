@@ -63,6 +63,16 @@ respete las del servidor en las rutas públicas.
    reservas salen con `no-store` o por POST, y Cloudflare no los guarda.
 4. Comprueba con `curl -sI https://tu-dominio/api/v1/public/f/<token>`: la
    segunda vez debe decir `cf-cache-status: HIT`.
+5. (v0.1.374) **Que los parámetros de las campañas no rompan la caché.** Un
+   enlace con `?utm_campaign=…&gclid=…` es una dirección distinta por cada clic
+   de anuncio, y Cloudflare, por defecto, la guarda aparte. La página es la
+   misma para todos (los datos de origen los lee el navegador y viajan con el
+   envío), así que en la misma regla, en **Cache key → Query string**, elige
+   **Ignore query string** (o «Exclude» con `utm_*`, `gclid`, `gbraid`,
+   `wbraid`, `fbclid`, `msclkid`, `ttclid`). Insertado en un sitio, el
+   formulario NO recibe esos datos por su dirección (llegan por mensaje del
+   script de inserción), así que este paso sólo importa para el enlace directo
+   compartido en anuncios.
 
 Al despublicar un formulario, la CDN puede seguir mostrando la página vieja
 hasta 30 segundos (el envío ya lo rechaza el servidor al instante).

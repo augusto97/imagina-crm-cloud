@@ -21,6 +21,7 @@ import {
     formEndingFor,
     formFlow,
     formRecallMap,
+    FORM_CALC_VALUE_PREFIX,
     formRecallText,
     formAnswerText,
     formatFormNumber,
@@ -92,7 +93,12 @@ import {
     type SaveFormDraftInput,
     type SaveFormDraftResult,
     collectionCurrencyError,
+    ATTRIBUTION_KEYS,
+    cleanAttribution,
+    fillRedirectUrl,
+    type ConversionResult,
 } from '@imagina-base/shared';
+import { attributionRecordData, cleanAttributionSettings, conversionResult, publicConversion } from './form-conversion';
 import { accessOf } from '../billing/tenant-access';
 import { and, asc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
@@ -1285,6 +1291,9 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 : null,
             // v0.1.368 — suscribir al enviar: los planes que se ofrecen.
             subscription: await this.publicSubscription(row.tenantId, config),
+            // v0.1.374 — qué avisarle al sitio al enviar (el evento sale siempre).
+            conversion: publicConversion(config.settings.conversion, config.settings.attribution),
+            redirect_delay: config.settings.redirect_delay,
         };
     }
 
@@ -1390,7 +1399,10 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         // Robots: el campo trampa lleno se "acepta" sin guardar nada (no se
         // le avisa al robot que lo detectamos); el sello tiene que ser de
         // este formulario y de hace más de unos segundos.
-        if (input.hp && input.hp.trim() !== '') return { ok: true, redirect_url: f.config.settings.redirect_url };
+        if (input.hp && input.hp.trim() !== '') {
+            const url = f.config.settings.redirect_url;
+            return { ok: true, redirect_url: url ? fillRedirectUrl(url, () => null) : null };
+        }
         this.checkStamp(f.row.id, input.stamp);
         await this.enforce(SUBMIT_LIMITS, f.row.id, ip, 'respuestas');
 
@@ -1428,6 +1440,15 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         // respuestas: un dato mal escrito no le quema el token a la persona.
         await this.checkCaptcha(f, input.captcha, ip);
 
+        // v0.1.374 — de dónde vino (campaña, clic del anuncio, página del
+        // sitio): a sus columnas, si el formulario lo guarda.
+        Object.assign(data, attributionRecordData(s.attribution, fields, input.attribution));
+        const conversion = conversionResult(s.conversion, {
+            payment: payAmount > 0 ? { amount: payAmount, currency: s.payment.currency } : null,
+            calcs,
+            ...this.contactFor(f, fields, data, respondentEmail),
+        });
+
         // La versión que la persona VIO (la página pudo cargarse antes de un
         // cambio del texto), con cuándo y desde dónde la aceptó.
         const accepted: AcceptedConsent | null =
@@ -1446,10 +1467,17 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         } else {
             const created = await this.finalize(f, fields, data, attachmentIds, accepted);
             if (s.send_copy && respondentEmail) this.sendCopyLater(f, fields, data, respondentEmail, ip, created.withdrawRef);
-            result = { ok: true, redirect_url: this.endingRedirect(f, endingId), ending_id: endingId, ...(Object.keys(calcs).length ? { calcs } : {}) };
+            result = {
+                ok: true,
+                redirect_url: this.thankYouUrl(f, fields, data, this.endingRedirect(f, endingId), conversion, input.attribution),
+                ending_id: endingId,
+                ...(Object.keys(calcs).length ? { calcs } : {}),
+            };
             if (payAmount > 0) Object.assign(result, await this.chargeFor(f, fields, created.id, data, payAmount, respondentEmail));
             if (planId !== null && respondentEmail) Object.assign(result, await this.subscribeFor(f, created.id, planId, respondentEmail));
         }
+        // v0.1.374 — para el evento del sitio (también con la respuesta por confirmar).
+        result.conversion = conversion;
         // v0.1.358 — cuenta para las estadísticas (y el avance guardado ya no hace falta).
         void this.stats?.recordSubmit(statsTarget(f), input.elapsed_ms);
         if (input.draft) void this.dropDraft(f, input.draft);
@@ -1906,7 +1934,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             title: '¡Listo! Tu respuesta quedó confirmada',
             message: this.recallServer(f, fields, pending.data, message),
             brand,
-            continueUrl: this.endingRedirect(f, ending?.id ?? null),
+            continueUrl: this.thankYouUrl(f, fields, pending.data, this.endingRedirect(f, ending?.id ?? null), null, null),
             ...(charge.payment
                 ? {
                       payUrl: charge.payment.url,
@@ -2558,6 +2586,82 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         return out;
     }
 
+    /**
+     * v0.1.374 — La página de gracias con sus variables completas: una
+     * respuesta (`{{nombre}}`, como se lee), el envío (`{{envio.id}}`,
+     * `{{valor}}`, `{{moneda}}`, `{{formulario.nombre}}`) y el origen
+     * (`{{utm_campaign}}`…). El correo y el teléfono NUNCA van en una
+     * dirección: Google Analytics prohíbe datos personales en las direcciones.
+     */
+    private thankYouUrl(
+        f: ResolvedForm,
+        fields: Field[],
+        data: Record<string, unknown>,
+        template: string | null,
+        conversion: ConversionResult | null,
+        attribution: unknown,
+    ): string | null {
+        if (!template) return null;
+        if (!template.includes('{{')) return template;
+        // Cualquier respuesta del formulario (no sólo las que se recuerdan en un texto).
+        const recall = this.answerKeyMap(f, fields);
+        const answers: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(data)) if (/^f\d+$/.test(k)) answers[k.slice(1)] = v;
+        const values = withFormCalcValues(answers, formCalcValues(formCalcsForLogic(f.config), answers, (key) => key in answers));
+        const pub = buildPublicFormItems(f.config, fields);
+        const nf = this.numberFormatOf(f);
+        const typeBySlug = new Map(fields.map((x) => [x.slug, x.type]));
+        const origin = cleanAttribution(attribution);
+        const extra: Record<string, string | number | null> = {
+            'envio.id': conversion?.submission_id ?? null,
+            valor: conversion?.value ?? null,
+            moneda: conversion?.currency ?? null,
+            'formulario.nombre': f.config.settings.title || f.row.name,
+        };
+        for (const k of ATTRIBUTION_KEYS) if (k !== 'page_url' && k !== 'referrer') extra[k] = origin[k] ?? null;
+        return fillRedirectUrl(template, (key) => {
+            if (key in extra) return extra[key];
+            if (!recall[key]) return null;
+            const t = typeBySlug.get(key);
+            if (t === 'email' || t === 'phone') return null;
+            return formAnswerText(pub, recall[key]!, values, (n) => formatFormNumber(n, nf));
+        });
+    }
+
+    /** v0.1.374 — `{{nombre}}` → la clave de su respuesta, para cualquier pregunta del formulario o cálculo. */
+    private answerKeyMap(f: ResolvedForm, fields: Field[]): Record<string, string> {
+        const asked = new Set<number>();
+        for (const i of f.config.items) {
+            if (i.type === 'field') {
+                asked.add(i.field_id);
+                if (i.other_field_id) asked.add(i.other_field_id);
+            } else if (i.type === 'matrix') for (const r of i.rows) asked.add(r.field_id);
+        }
+        const out: Record<string, string> = {};
+        for (const x of fields) if (asked.has(x.id)) out[x.slug] = String(x.id);
+        for (const c of f.config.settings.calcs) if (!(c.key in out)) out[c.key] = FORM_CALC_VALUE_PREFIX + c.key;
+        return out;
+    }
+
+    /**
+     * v0.1.374 — El correo y el teléfono de quien respondió (para las
+     * conversiones mejoradas): el correo de quien responde o la primera
+     * pregunta de correo, y la primera de teléfono que respondió.
+     */
+    private contactFor(f: ResolvedForm, fields: Field[], data: Record<string, unknown>, respondentEmail: string | null): { email: string | null; phone: string | null } {
+        if (!f.config.settings.conversion.share_contact) return { email: null, phone: null };
+        const typeOf = new Map(fields.map((x) => [x.id, x.type]));
+        const first = (type: string): string | null => {
+            for (const i of f.config.items) {
+                if (i.type !== 'field' || typeOf.get(i.field_id) !== type) continue;
+                const v = data[jsonbKeyForField(i.field_id)];
+                if (typeof v === 'string' && v.trim() !== '') return v;
+            }
+            return null;
+        };
+        return { email: respondentEmail ?? first('email'), phone: first('phone') };
+    }
+
     /** v0.1.356 — Adónde lleva una pantalla final (o el formulario, sin pantalla propia). */
     private endingRedirect(f: ResolvedForm, endingId: string | null): string | null {
         const e = endingId ? f.config.settings.endings.find((x) => x.id === endingId) : undefined;
@@ -2872,6 +2976,12 @@ export function sanitizeConfig(
         calcs,
         payment: cleanPayment(s.payment, inForm, typeOf, calcKeys),
         subscription: cleanSubscription(s.subscription),
+        // v0.1.374 — el origen va a columnas que el formulario NO pregunta (ni guarda un cálculo).
+        attribution: cleanAttributionSettings(s.attribution, fields, new Set([...seen, ...savedTo])),
+        conversion: {
+            ...s.conversion,
+            value: s.conversion.value === 'price' || (s.conversion.value === 'calc' && !calcKeys.has(s.conversion.calc_key ?? '')) ? 'none' : s.conversion.value,
+        },
     };
 
     return formConfigSchema.parse({
