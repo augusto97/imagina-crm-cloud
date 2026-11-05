@@ -62,7 +62,7 @@ const SCOPE_LABELS: Record<string, string> = {
     'user.read': 'Ver el nombre y el correo de quien conecta',
     offline_access: 'Seguir conectada sin volver a pedir permiso',
     'mail.send': 'Enviar correos en nombre de quien conecta',
-    'calendars.readwrite': 'Ver y crear eventos en su calendario',
+    'calendars.readwrite': 'Ver, crear y cambiar eventos y reuniones en su calendario',
     'calendars.read': 'Ver los eventos de su calendario',
     'team.readbasic.all': 'Ver los equipos de Teams de quien conecta',
     'channel.readbasic.all': 'Ver los canales de esos equipos',
@@ -106,5 +106,13 @@ export const msAdminConsentStatusSchema = z.object({
     error: z.string().nullable(),
     /** Lo que se aprueba, en palabras. */
     permissions: z.array(z.string()),
+    /**
+     * v0.1.366 — La aprobación es de antes de que la app pidiera un permiso
+     * nuevo (Teams sumó el calendario para las reuniones): sigue valiendo para
+     * lo de antes, pero lo nuevo necesita que el administrador apruebe otra vez.
+     */
+    outdated: z.boolean().default(false),
+    /** Lo que falta aprobar, en palabras (vacío si no falta nada). */
+    missing_permissions: z.array(z.string()).default([]),
 });
 export type MsAdminConsentStatus = z.infer<typeof msAdminConsentStatusSchema>;

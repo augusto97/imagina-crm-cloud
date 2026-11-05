@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
     buildIntegrationRequest,
     buildRfc2822,
+    cancelAlreadyGone,
     checkIntegrationResponse,
     compileIntegrationValues,
     emailList,
+    eventDurationMinutes,
     eventWindow,
     identityLabel,
+    meetingResult,
     parseVerify,
     sheetCell,
     spreadsheetId,
@@ -375,8 +378,9 @@ describe('Microsoft Teams (v0.1.348)', () => {
     const channelLink = `https://teams.microsoft.com/l/channel/${encodeURIComponent(CHANNEL)}/General?groupId=${TEAM}&tenantId=x`;
 
     it('pide sólo permisos sin consentimiento del administrador', () => {
+        // v0.1.366 — `Calendars.ReadWrite` (reuniones) tampoco lo exige por defecto.
         expect(integrationScopes(integrationDef('teams')!)).toBe(
-            'openid email offline_access User.Read Team.ReadBasic.All Channel.ReadBasic.All ChannelMessage.Send Chat.Create ChatMessage.Send',
+            'openid email offline_access User.Read Team.ReadBasic.All Channel.ReadBasic.All ChannelMessage.Send Chat.Create ChatMessage.Send Calendars.ReadWrite',
         );
     });
 
@@ -503,5 +507,176 @@ describe('Microsoft Teams (v0.1.348)', () => {
         const gb = JSON.parse(google.body!);
         expect(gb.conferenceData.createRequest.conferenceSolutionKey).toEqual({ type: 'hangoutsMeet' });
         expect(gb.conferenceData.createRequest.requestId).toMatch(/^[0-9a-f-]{36}$/);
+    });
+});
+
+/**
+ * v0.1.366 — reuniones desde automatizaciones (pedido de un cliente: agendar
+ * demos con Teams, guardar el enlace y el id, reprogramar y cancelar).
+ */
+describe('reuniones de Teams, Outlook y Google Calendar', () => {
+    it('Teams crea la reunión con enlace, fin, lugar e invitados obligatorios y opcionales', () => {
+        const req = buildIntegrationRequest(
+            'teams',
+            'create_meeting',
+            vals({
+                title: 'Demo comercial',
+                date: '2026-11-10T15:00:00Z',
+                end: '2026-11-10T15:45:00Z',
+                timezone: 'America/Bogota',
+                location: 'Sala 2',
+                attendees: 'cliente@acme.co; gerencia@binapps.co',
+                optional_attendees: 'apoyo@binapps.co; cliente@acme.co',
+                teams_meeting: 'true',
+            }),
+            creds(),
+        );
+        expect(req.method).toBe('POST');
+        expect(req.url).toBe('https://graph.microsoft.com/v1.0/me/events');
+        const body = JSON.parse(req.body!);
+        expect(body.start).toEqual({ dateTime: '2026-11-10T15:00:00', timeZone: 'UTC' });
+        expect(body.end).toEqual({ dateTime: '2026-11-10T15:45:00', timeZone: 'UTC' });
+        expect(body.location).toEqual({ displayName: 'Sala 2' });
+        expect(body.isOnlineMeeting).toBe(true);
+        expect(body.onlineMeetingProvider).toBe('teamsForBusiness');
+        // «;» como separador, y el que ya es obligatorio no se repite como opcional.
+        expect(body.attendees).toEqual([
+            { emailAddress: { address: 'cliente@acme.co' }, type: 'required' },
+            { emailAddress: { address: 'gerencia@binapps.co' }, type: 'required' },
+            { emailAddress: { address: 'apoyo@binapps.co' }, type: 'optional' },
+        ]);
+    });
+
+    it('el fin manda sobre la duración: hora local, otra fecha y hora, y los errores', () => {
+        const local = JSON.parse(
+            buildIntegrationRequest('outlook', 'create_event', vals({ title: 'Visita', date: '2026-11-10', time: '09:00', end: '10:30', timezone: 'America/Bogota' }), creds()).body!,
+        );
+        expect(local.start).toEqual({ dateTime: '2026-11-10T09:00:00', timeZone: 'America/Bogota' });
+        expect(local.end).toEqual({ dateTime: '2026-11-10T10:30:00', timeZone: 'America/Bogota' });
+        // Todo el día de varios días: el fin es inclusivo.
+        const days = JSON.parse(
+            buildIntegrationRequest('google_calendar', 'create_event', vals({ title: 'Feria', date: '2026-11-10', end: '2026-11-12' }), creds()).body!,
+        );
+        expect(days.start).toEqual({ date: '2026-11-10' });
+        expect(days.end).toEqual({ date: '2026-11-13' });
+        expect(() =>
+            buildIntegrationRequest('outlook', 'create_event', vals({ title: 'x', date: '2026-11-10', time: '09:00', end: '08:00' }), creds()),
+        ).toThrow(/después del inicio/);
+        expect(() =>
+            buildIntegrationRequest('outlook', 'create_event', vals({ title: 'x', date: '2026-11-10T15:00:00Z', end: '16:00' }), creds()),
+        ).toThrow(/otra fecha y hora/);
+        expect(() =>
+            buildIntegrationRequest('outlook', 'create_event', vals({ title: 'x', date: '2026-11-10', time: '09:00', end: 'mañana' }), creds()),
+        ).toThrow(/formato/);
+    });
+
+    it('reprogramar manda SÓLO lo que se completó; sin nada, lo dice', () => {
+        const req = buildIntegrationRequest(
+            'teams',
+            'update_event',
+            vals({ event_id: 'AAMkAGI2=', date: '2026-11-12T16:00:00Z', duration: '45' }),
+            creds(),
+        );
+        expect(req.method).toBe('PATCH');
+        expect(req.url).toBe('https://graph.microsoft.com/v1.0/me/events/AAMkAGI2%3D');
+        expect(JSON.parse(req.body!)).toEqual({
+            isAllDay: false,
+            start: { dateTime: '2026-11-12T16:00:00', timeZone: 'UTC' },
+            end: { dateTime: '2026-11-12T16:45:00', timeZone: 'UTC' },
+        });
+        const title = JSON.parse(buildIntegrationRequest('outlook', 'update_event', vals({ event_id: 'e1', title: 'Demo (nueva hora)' }), creds()).body!);
+        expect(title).toEqual({ subject: 'Demo (nueva hora)' });
+        expect(() => buildIntegrationRequest('outlook', 'update_event', vals({ event_id: 'e1' }), creds())).toThrow(/nada que cambiar/);
+        expect(() => buildIntegrationRequest('outlook', 'update_event', vals({ event_id: 'e1', time: '10:00' }), creds())).toThrow(/Inicio nuevo/);
+        // El error más común: pegar el enlace de la reunión en vez del id.
+        expect(() =>
+            buildIntegrationRequest('teams', 'update_event', vals({ event_id: 'https://teams.microsoft.com/l/meetup-join/x', title: 'y' }), creds()),
+        ).toThrow(/enlace, no el id/);
+        expect(() => buildIntegrationRequest('teams', 'cancel_event', vals({ event_id: '' }), creds())).toThrow(/Falta el id/);
+
+        const google = buildIntegrationRequest(
+            'google_calendar',
+            'update_event',
+            vals({ event_id: 'abc123', date: '2026-11-12', time: '10:00', duration: '30', timezone: 'America/Bogota', attendees: 'a@x.co' }),
+            creds(),
+        );
+        expect(google.url).toBe('https://www.googleapis.com/calendar/v3/calendars/primary/events/abc123?sendUpdates=all');
+        expect(JSON.parse(google.body!)).toEqual({
+            start: { dateTime: '2026-11-12T10:00:00', timeZone: 'America/Bogota' },
+            end: { dateTime: '2026-11-12T10:30:00', timeZone: 'America/Bogota' },
+            attendees: [{ email: 'a@x.co' }],
+        });
+    });
+
+    it('cancelar: con mensaje usa «cancel», sin mensaje borra; Google avisa a los invitados', () => {
+        const withMessage = buildIntegrationRequest('teams', 'cancel_event', vals({ event_id: 'e1', message: 'El cliente no puede asistir' }), creds());
+        expect(withMessage.method).toBe('POST');
+        expect(withMessage.url).toBe('https://graph.microsoft.com/v1.0/me/events/e1/cancel');
+        expect(JSON.parse(withMessage.body!)).toEqual({ comment: 'El cliente no puede asistir' });
+        const plain = buildIntegrationRequest('outlook', 'cancel_event', vals({ event_id: 'e1' }), creds());
+        expect(plain.method).toBe('DELETE');
+        expect(plain.url).toBe('https://graph.microsoft.com/v1.0/me/events/e1');
+        const google = buildIntegrationRequest('google_calendar', 'cancel_event', vals({ event_id: 'abc', calendar: 'ventas@grupo.calendar.google.com' }), creds());
+        expect(google.method).toBe('DELETE');
+        expect(google.url).toBe('https://www.googleapis.com/calendar/v3/calendars/ventas%40grupo.calendar.google.com/events/abc?sendUpdates=all');
+    });
+
+    it('lee el enlace y el id de lo que devuelve el calendario', () => {
+        expect(
+            meetingResult('teams', JSON.stringify({ id: 'AAMk1', subject: 'Demo', webLink: 'https://outlook.office365.com/x', onlineMeeting: { joinUrl: 'https://teams.microsoft.com/l/meetup-join/abc' } })),
+        ).toEqual({ id: 'AAMk1', enlace: 'https://teams.microsoft.com/l/meetup-join/abc', web: 'https://outlook.office365.com/x', titulo: 'Demo', pending: false });
+        expect(meetingResult('outlook', JSON.stringify({ id: 'AAMk2', subject: 'Sin Teams', onlineMeeting: null }))?.enlace).toBe('');
+        expect(
+            meetingResult('google_calendar', JSON.stringify({ id: 'g1', summary: 'Demo', htmlLink: 'https://www.google.com/calendar/event?eid=1', conferenceData: { createRequest: { status: { statusCode: 'pending' } } } })),
+        ).toMatchObject({ id: 'g1', enlace: '', pending: true });
+        expect(
+            meetingResult('google_calendar', JSON.stringify({ id: 'g1', hangoutLink: 'https://meet.google.com/abc-defg-hij' }))?.enlace,
+        ).toBe('https://meet.google.com/abc-defg-hij');
+        expect(meetingResult('teams', 'no es json')).toBeNull();
+        expect(eventDurationMinutes(JSON.stringify({ start: { dateTime: '2026-11-10T15:00:00.0000000' }, end: { dateTime: '2026-11-10T15:45:00.0000000' } }))).toBe(45);
+        expect(eventDurationMinutes(JSON.stringify({ start: { dateTime: '2026-11-10T10:00:00-05:00' }, end: { dateTime: '2026-11-10T11:30:00-05:00' } }))).toBe(90);
+    });
+
+    it('los errores del calendario se explican en lenguaje claro', () => {
+        expect(checkIntegrationResponse('teams', 404, '{"error":{"message":"The specified object was not found in the store."}}', 'update_event')).toMatch(
+            /No encontramos ese evento/,
+        );
+        expect(
+            checkIntegrationResponse('teams', 403, '{"error":{"code":"ErrorAccessDenied","message":"Access is denied. Check credentials and try again."}}', 'create_meeting'),
+        ).toMatch(/permiso para el calendario/);
+        expect(
+            checkIntegrationResponse('outlook', 400, '{"error":{"message":"Your request can\'t be completed. You need to be an organizer to cancel a meeting."}}', 'cancel_event'),
+        ).toMatch(/Sólo quien organizó/);
+        // Un 403 de un MENSAJE de Teams sigue explicándose como antes.
+        expect(checkIntegrationResponse('teams', 403, '{"error":{"message":"Forbidden"}}', 'send_channel_message')).toMatch(/miembro del equipo/);
+        expect(cancelAlreadyGone(410)).toBe(true);
+        expect(cancelAlreadyGone(500)).toBe(false);
+    });
+
+    it('reprogramar sin duración conserva la que el evento ya tenía', async () => {
+        const seen: string[] = [];
+        const req = await prepareIntegrationRequest(
+            'teams',
+            'update_event',
+            vals({ event_id: 'AAMk1', date: '2026-11-12T16:00:00Z', timezone: 'America/Bogota' }),
+            creds(),
+            {
+                fetch: async (r) => {
+                    seen.push(`${r.method} ${r.url}`);
+                    return { status: 200, body: JSON.stringify({ start: { dateTime: '2026-11-10T15:00:00.0000000' }, end: { dateTime: '2026-11-10T15:45:00.0000000' } }) };
+                },
+            },
+        );
+        expect(seen).toEqual(['GET https://graph.microsoft.com/v1.0/me/events/AAMk1?$select=start,end,isAllDay']);
+        expect(JSON.parse(req.body!).end).toEqual({ dateTime: '2026-11-12T16:45:00', timeZone: 'UTC' });
+        // En la simulación no se lee nada: una hora.
+        const sim = await prepareIntegrationRequest('teams', 'update_event', vals({ event_id: 'AAMk1', date: '2026-11-12T16:00:00Z' }), creds());
+        expect(JSON.parse(sim.body!).end.dateTime).toBe('2026-11-12T17:00:00');
+        // Un evento que ya no existe se dice al leerlo.
+        await expect(
+            prepareIntegrationRequest('teams', 'update_event', vals({ event_id: 'AAMk1', date: '2026-11-12T16:00:00Z' }), creds(), {
+                fetch: async () => ({ status: 404, body: '{"error":{"message":"not found"}}' }),
+            }),
+        ).rejects.toThrow(/No encontramos ese evento/);
     });
 });

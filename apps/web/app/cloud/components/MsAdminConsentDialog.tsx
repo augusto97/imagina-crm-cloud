@@ -65,7 +65,10 @@ export function MsAdminConsentDialog({ target, open, onClose, onConnect }: { tar
 
     const s = status.data;
     const url = s?.url ?? null;
-    const approved = s?.approved_at ?? null;
+    // v0.1.366 — una aprobación de antes de que la app pidiera un permiso nuevo
+    // (el calendario de Teams) no alcanza: hace falta aprobar otra vez.
+    const outdated = s?.outdated === true;
+    const approved = outdated ? null : (s?.approved_at ?? null);
 
     const copy = async (what: 'link' | 'message'): Promise<void> => {
         if (!url) return;
@@ -121,6 +124,21 @@ export function MsAdminConsentDialog({ target, open, onClose, onConnect }: { tar
                                         </Button>
                                     )}
                                 </div>
+                            </div>
+                        )}
+
+                        {outdated && (
+                            <div className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-warning/40 imcrm-bg-warning/10 imcrm-p-3" data-testid="ms-admin-consent-outdated">
+                                <ShieldCheck className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-warning" aria-hidden />
+                                <span>
+                                    <strong>{__('Hace falta aprobar un permiso nuevo.')}</strong>{' '}
+                                    {sprintf(
+                                        __('Tu administrador aprobó la app el %1$s, pero desde entonces %2$s pide además: %3$s. Lo de antes sigue funcionando; para lo nuevo, crea un enlace y mándaselo otra vez.'),
+                                        formatDateTimeStr(s?.approved_at ?? ''),
+                                        appName(target),
+                                        (s?.missing_permissions ?? []).join(', ').toLowerCase(),
+                                    )}
+                                </span>
                             </div>
                         )}
 

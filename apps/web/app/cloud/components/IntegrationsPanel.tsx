@@ -5,6 +5,7 @@ import {
     INTEGRATIONS,
     INTEGRATION_CATEGORY_LABEL,
     integrationDef,
+    integrationMissingScopes,
     isMsConsentError,
     isSmsProvider,
     moduleForIntegration,
@@ -443,6 +444,13 @@ function ConnectedRow({
         siteRejected ||
         (c.oauth_status !== null && (!c.oauth_status.connected || c.oauth_status.last_error !== null));
     const isOAuth = def?.auth.kind === 'oauth';
+    // v0.1.366 — una conexión de antes no tiene los permisos que la app sumó
+    // después (el calendario de Teams): lo de antes sigue andando, lo nuevo
+    // pide reconectar.
+    const lacking =
+        def && !broken && c.purpose !== 'agenda' && c.oauth_status?.connected
+            ? integrationMissingScopes(def, c.oauth_status.granted_scopes ?? '')
+            : [];
     return (
         <li
             className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3 imcrm-px-4 imcrm-py-3"
@@ -485,6 +493,13 @@ function ConnectedRow({
                 </p>
                 {c.oauth_status?.last_error && (
                     <p className="imcrm-mt-0.5 imcrm-text-xs imcrm-text-destructive">{c.oauth_status.last_error}</p>
+                )}
+                {lacking.length > 0 && (
+                    <p className="imcrm-mt-0.5 imcrm-text-xs imcrm-text-warning" data-testid="imcrm-integration-missing-scopes">
+                        {c.integration_key === 'teams'
+                            ? __('Para crear reuniones de Teams, toca «Reconectar» y acepta el permiso del calendario. Los mensajes siguen funcionando.')
+                            : __('Le falta un permiso nuevo: toca «Reconectar» para usar todas sus acciones.')}
+                    </p>
                 )}
                 {siteRejected && c.last_check_error && (
                     <p className="imcrm-mt-0.5 imcrm-text-xs imcrm-text-destructive" data-testid="imcrm-site-rejected">{c.last_check_error}</p>

@@ -1,5 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import {
+    INTEGRATION_SCOPES_ADDED,
     MS_ADMIN_CONSENT_STATE_PREFIX,
     MS_ADMIN_CONSENT_TTL_DAYS,
     buildMsAdminConsentUrl,
@@ -48,6 +49,19 @@ interface StatusRecord {
     expires_at: string;
     approved_at: string | null;
     error: string | null;
+    /**
+     * v0.1.366 — los permisos del enlace (lo que el administrador aprueba). Un
+     * registro de antes no lo tiene: se toma como los de entonces (los de hoy
+     * menos los que la app sumó después).
+     */
+    scopes?: string;
+}
+
+/** Los permisos de `want` que no están en `have` (comparados sin mayúsculas). */
+function scopesMissing(want: string, have: string): string[] {
+    const norm = (s: string): string => s.trim().replace(/^https:\/\/graph\.microsoft\.com\//i, '').toLowerCase();
+    const got = new Set(have.split(/[\s,]+/).map(norm).filter(Boolean));
+    return want.split(/[\s,]+/).map((s) => s.trim()).filter((s) => s !== '' && !got.has(norm(s)));
 }
 
 /** Subconjunto de ioredis que se usa (los tests pasan uno real). */
@@ -107,6 +121,17 @@ export class MsAdminConsentService {
         const def = this.requireMicrosoft(key);
         const rec = await this.read(tenantId, key);
         const live = rec !== null && Date.parse(rec.expires_at) > Date.now();
+        const current = integrationScopes(def);
+        // v0.1.366 — ¿lo aprobado cubre lo que la app pide HOY? Teams sumó el
+        // calendario: una aprobación de antes sirve para los mensajes, no para
+        // las reuniones.
+        let missing: string[] = [];
+        if (rec?.approved_at) {
+            // Un registro de antes no guardó los permisos: se aprobó lo de
+            // entonces, o sea lo de hoy menos lo que la app sumó después.
+            const approvedScopes = rec.scopes ?? scopesMissing(current, INTEGRATION_SCOPES_ADDED[key] ?? '').join(' ');
+            missing = scopesMissing(current, approvedScopes);
+        }
         return {
             integration: key,
             url: live && rec.approved_at === null ? rec.url : null,
@@ -115,7 +140,9 @@ export class MsAdminConsentService {
             expires_at: live ? rec.expires_at : null,
             approved_at: rec?.approved_at ?? null,
             error: rec?.error ?? null,
-            permissions: msScopeLabels(integrationScopes(def)),
+            permissions: msScopeLabels(current),
+            outdated: missing.length > 0,
+            missing_permissions: msScopeLabels(missing.join(' ')),
         };
     }
 
@@ -142,6 +169,7 @@ export class MsAdminConsentService {
             expires_at: new Date(now.getTime() + ttl * 1000).toISOString(),
             approved_at: null,
             error: null,
+            scopes: integrationScopes(def),
         };
         await this.redis.set(stateKey(state), JSON.stringify({ tenantId, userId, integration: key } satisfies StateRecord), 'EX', ttl);
         // El estado se recuerda más que el enlace: «aprobado el …» sigue sirviendo.

@@ -229,6 +229,24 @@ automatización, la acción es:
 El catálogo de acciones se define en la app (Ajustes → Conectores): desde el
 MCP se usan, no se crean.
 
+**Reuniones (v0.1.366).** `teams.create_meeting`, `outlook.create_event` y
+`google_calendar.create_event` devuelven la reunión: en el schema cada una trae
+`outputs` (`{{reunion.enlace}}`, `{{reunion.id}}`, `{{reunion.web}}`) y
+`save_to_record`. Para guardar el enlace y el id en el registro, la config del
+paso lleva las claves al lado de `values` (slugs de campos de texto o enlace):
+
+```json
+{ "type": "connector_action",
+  "config": { "connection_id": 7, "action_key": "create_meeting",
+              "values": { "title": "Demo · {{empresa}}", "date": "{{fecha_demo}}",
+                          "attendees": "{{email}}; gerencia@empresa.co" },
+              "save_meeting_link": "enlace_reunion", "save_event_id": "id_evento" } }
+```
+
+`update_event` y `cancel_event` piden `event_id` (normalmente `{{id_evento}}`);
+al reprogramar sólo se cambia lo completado, y cancelar vacía los campos que se
+indiquen en las mismas claves.
+
 ## Límites conocidos
 
 - Sin estado: no hay `GET` (stream de notificaciones del servidor) ni

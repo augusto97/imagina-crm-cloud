@@ -394,8 +394,10 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.365**
-(los cobros se ven: el link de pago queda en la columna que se elija, la ficha
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.366**
+(reuniones de Teams, Outlook y Google Calendar desde las automatizaciones:
+crear con enlace, guardar el enlace y el id en el registro, reprogramar y
+cancelar, addendum ADR-S22; antes v0.1.365 los cobros se ven: el link de pago queda en la columna que se elija, la ficha
 siempre muestra «Cobros» y el botón trae el link para copiar, addendum ADR-S31;
 antes v0.1.364 publicar más rápido: las pruebas de la API en 4 máquinas y las capturas del
 centro de aprendizaje en 5, addendum ADR-S75; arregla 2 capturas rotas; antes
@@ -418,6 +420,26 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-05 — **Reuniones de Teams para Binapps (v0.1.366)**. El cliente
+  Binapps (cuentas mayerli.castano@binapps.co y nestor@binapps.co) pidió por
+  escrito crear, reprogramar y cancelar reuniones de Teams desde las
+  automatizaciones, guardar el enlace y el id, y mandar el enlace por WhatsApp
+  (hoy lo hacen con un puente de Power Automate). Quedó en v0.1.366. **Lo que
+  tienen que hacer ellos**: en Ajustes → Integraciones, **Reconectar** Teams y
+  aceptar el permiso del calendario (si su empresa pide aprobación del
+  administrador, la ventana dice «Hace falta aprobar un permiso nuevo» y da el
+  enlace para TI). La receta: disparador «Cuando se actualiza un registro» con
+  la fecha de la demo en los campos que cambian → «Si / sino» con «Id del
+  evento» vacío → «Crear reunión de Teams» guardando enlace e id → WhatsApp con
+  `{{reunion.enlace}}`; si ya hay id, «Reprogramar…»; otra automatización
+  cancela. La disponibilidad (su punto «opcional») ya existe: «Mi calendario»
+  con Outlook en la agenda de citas. Queda esperando que lo prueben.
+- 2026-11-05 — **Columnas de cobro por el MCP**: la sesión que configura por el
+  MCP no veía la herramienta nueva `propose_configure_payment_columns` (la lista
+  de herramientas de una sesión es fija). Opciones dadas: hacerlo en la app
+  («Dónde queda el link» en la acción), pedírselo al asistente ✨, o una sesión
+  nueva. También se ofreció quitar el paso «Actualizar campo» redundante de la
+  automatización 116.
 - 2026-11-04 — **Formularios mucho más potentes y personalizables**. El
   usuario aprobó el orden **«Formularios 1 → agenda (Recomendado)»** (diseño de
   formularios → entrega 3 de la agenda, que reusa el motor de temas →
@@ -1380,6 +1402,21 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.366** — **Reuniones desde las automatizaciones**
+  (pedido del cliente Binapps, reenviado por el usuario: agendar las demos
+  comerciales sin el puente de Power Automate). Teams gana «Crear reunión de
+  Teams» y Teams, Outlook y Google Calendar ganan **Reprogramar** y
+  **Cancelar** por id; crear suma fin, lugar e invitados opcionales (`,` o
+  `;`). La reunión deja `{{reunion.enlace|id|web}}` y se puede guardar en dos
+  campos del registro (cancelar los vacía) sin re-disparar automatizaciones.
+  Permiso nuevo `Calendars.ReadWrite` en Teams (no hizo falta
+  `OnlineMeetings.ReadWrite`): las conexiones de antes siguen mandando
+  mensajes porque la renovación pide sólo los permisos ya concedidos, y las
+  reuniones piden reconectar antes de llamar a Microsoft (aviso en el editor,
+  en Integraciones y en la ventana del administrador). «Probar ahora» crea sin
+  invitados y borra, y en reprogramar/cancelar sólo muestra la petición.
+  Disponibilidad: ya estaba en «Mi calendario» (v0.1.350). Queda: que Binapps
+  reconecte Teams y lo pruebe.
 - **2026-11-05 · v0.1.365** — **Los cobros se ven** (reporte del usuario:
   "creé un botón de generar link de pago en mi lista de anualidades… crea el
   link pero no veo ningún link generado; la automatización no creaba ningún

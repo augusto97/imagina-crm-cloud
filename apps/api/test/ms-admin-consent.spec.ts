@@ -90,6 +90,30 @@ describe('Aprobación del administrador de Microsoft 365 (v0.1.363)', () => {
         expect(new URL(fresh.url!).searchParams.get('state')).not.toBe(state);
     });
 
+    it('v0.1.366 — una aprobación de ANTES del calendario de Teams sirve para los mensajes, no para las reuniones', async () => {
+        // Un registro guardado por v0.1.363-0.1.365: sin `scopes`, aprobado.
+        const legacy = {
+            state: 'ac_viejo',
+            url: 'https://login.microsoftonline.com/organizations/v2.0/adminconsent?x',
+            requested_by: userId,
+            requested_at: new Date().toISOString(),
+            expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+            approved_at: new Date().toISOString(),
+            error: null,
+        };
+        await store.set(`msadmin:status:${tenantId}:teams`, JSON.stringify(legacy), 'EX', 3600);
+        const st = await consent.status(tenantId, 'teams');
+        expect(st.outdated).toBe(true);
+        expect(st.missing_permissions).toEqual(['Ver, crear y cambiar eventos y reuniones en su calendario']);
+        // Pedirlo de nuevo arma un enlace con TODOS los permisos de hoy, y al aprobarlo deja de estar desactualizado.
+        const fresh = await consent.create(tenantId, userId, 'teams');
+        expect(new URL(fresh.url!).searchParams.get('scope')).toContain('https://graph.microsoft.com/Calendars.ReadWrite');
+        await consent.complete({ state: new URL(fresh.url!).searchParams.get('state')!, adminConsent: 'True' });
+        const after = await consent.status(tenantId, 'teams');
+        expect(after.outdated).toBe(false);
+        expect(after.missing_permissions).toEqual([]);
+    });
+
     it('si la cuenta no es administradora, queda el motivo y se explica qué rol hace falta', async () => {
         const st = await consent.status(tenantId, 'outlook');
         const state = new URL(st.url!).searchParams.get('state')!;

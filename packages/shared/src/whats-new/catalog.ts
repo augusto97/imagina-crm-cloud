@@ -1461,4 +1461,29 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'En la ficha de un registro, en **Cobros**, toca **Elegir columnas**. En una automatización, la acción **Crear link de pago** tiene la misma sección **Dónde queda el link**.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.366-reuniones-teams',
+        version: '0.1.366',
+        date: '2026-11-05',
+        kind: 'feature',
+        title: 'Agenda reuniones de Teams desde tus registros',
+        summary:
+            'Una automatización crea la reunión de Teams en el calendario, invita al cliente y a tu equipo, guarda el enlace y el id en el registro, y después la reprograma o la cancela sola.',
+        media: {
+            slides: [
+                {
+                    title: 'La reunión se crea sola',
+                    text: 'Cuando alguien pone la fecha de la demo, se crea la reunión de Teams con los invitados, y el enlace y el id quedan en campos del registro. En el paso siguiente mandas el enlace por WhatsApp con {{reunion.enlace}}.',
+                    illustration: 'reunion-teams',
+                },
+                {
+                    title: 'Reprogramar y cancelar por su id',
+                    text: 'Si cambia la fecha, la misma reunión se mueve (y conserva su duración); si el cliente no puede, se cancela y los invitados reciben el aviso. También funciona con Outlook y Google Calendar.',
+                    illustration: 'equipo-teams',
+                },
+            ],
+        },
+        body: 'Conecta **Microsoft Teams** en **Ajustes → Integraciones** (si ya la tenías, toca **Reconectar** y acepta el permiso del calendario) y usa las acciones **Crear reunión de Teams**, **Reprogramar o cambiar una reunión de Teams** y **Cancelar una reunión de Teams** en tus automatizaciones.',
+        action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
+    },
 ];

@@ -6,6 +6,8 @@ import {
     buildIntegrationRequest,
     checkIntegrationResponse,
     emailList,
+    eventDurationMinutes,
+    eventReadRequest,
     graphErrorMessage,
     teamsMeRequest,
     teamsOneOnOneRequest,
@@ -57,6 +59,22 @@ export async function prepareIntegrationRequest(
     creds: IntegrationCreds,
     opts: PrepareOptions = {},
 ): Promise<IntegrationRequest> {
+    // v0.1.366 — reprogramar sin decir la duración conserva la que el evento ya
+    // tenía (una demo de 45 minutos movida al jueves sigue durando 45): se lee
+    // el evento antes. Sin poder leerlo (la simulación), una hora.
+    if (actionKey === 'update_event' && (compiled.values.date ?? '').trim() !== '' && (compiled.values.end ?? '').trim() === '' && (compiled.values.duration ?? '').trim() === '') {
+        let minutes: number | null = null;
+        if (opts.fetch) {
+            const read = await opts.fetch(rebaseGraph(eventReadRequest(integration, compiled.values, creds.accessToken), opts.graphBase));
+            if (read.status >= 400) {
+                throw new IntegrationInputError(
+                    checkIntegrationResponse(integration, read.status, read.body, actionKey) ?? `No pudimos leer el evento (HTTP ${read.status}).`,
+                );
+            }
+            minutes = eventDurationMinutes(read.body);
+        }
+        compiled = { ...compiled, values: { ...compiled.values, duration: String(minutes ?? 60) } };
+    }
     const req = rebaseGraph(buildIntegrationRequest(integration, actionKey, compiled, creds), opts.graphBase);
     if (integration !== 'teams' || actionKey !== 'send_direct_message' || !opts.fetch) return req;
 

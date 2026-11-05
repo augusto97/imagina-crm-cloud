@@ -25,6 +25,8 @@ import {
     emailDesignSchema,
     FALLBACK_TIME_ZONE,
     formatEmailFieldValue,
+    meetingActionKind,
+    missingActionScopes,
     parseEmailDesign,
     tenantFormatSchema,
     zonedToday,
@@ -53,6 +55,7 @@ import { compileConnectorCall } from '../connectors/connector-actions';
 import {
     checkIntegrationResponse,
     compileIntegrationValues,
+    meetingResult,
 } from '../connectors/integration-calls';
 import { buildWebhookRequest } from './webhook-request';
 import { IncidentHub } from '../incidents/incident-hub';
@@ -921,9 +924,52 @@ export class AutomationsService {
                 sample_record_id: sampleRecordId,
             };
         }
+        // v0.1.366 — reuniones: la prueba no puede mandarle una invitación de
+        // verdad al cliente del registro de muestra, ni mover o cancelar una
+        // reunión real.
+        const meetingKind = meetingActionKind(integ.key, action.key);
+        const lacking = missingActionScopes(integ.key, action.key, integ.grantedScope);
+        if (lacking.length > 0) {
+            return {
+                request: { url: '', method: 'POST', headers: {}, body: null },
+                response: null,
+                error: `«${resolved.name}» se conectó antes de que existieran las reuniones y no tiene permiso para el calendario: vuelve a conectarla en Ajustes → Integraciones → ${integ.def.name}.`,
+                sample_record_id: sampleRecordId,
+            };
+        }
+        if (meetingKind === 'update' || meetingKind === 'cancel') {
+            try {
+                const shown = await this.connectors.prepareIntegrationCall(integ.key, action.key, compiled, integ.creds, false);
+                return {
+                    request: {
+                        url: redactValues(shown.url, hide),
+                        method: shown.method,
+                        headers: maskHeaders(shown.headers),
+                        body: shown.body !== undefined ? redactValues(shown.body, hide) : null,
+                    },
+                    response: null,
+                    error: null,
+                    sample_record_id: sampleRecordId,
+                    note:
+                        meetingKind === 'update'
+                            ? 'Así se enviaría el cambio. Para no mover una reunión real, la prueba no lo envía: pruébalo con un registro de prueba que tenga su propio evento.'
+                            : 'Así se enviaría la cancelación. Para no cancelar una reunión real, la prueba no la envía: pruébala con un registro de prueba que tenga su propio evento.',
+                };
+            } catch (err) {
+                return {
+                    request: { url: '', method: 'POST', headers: {}, body: null },
+                    response: null,
+                    error: err instanceof Error ? err.message : String(err),
+                    sample_record_id: sampleRecordId,
+                };
+            }
+        }
+        const probe = meetingKind === 'create'
+            ? { ...compiled, values: { ...compiled.values, attendees: '', optional_attendees: '' } }
+            : compiled;
         let req;
         try {
-            req = await this.connectors.prepareIntegrationCall(integ.key, action.key, compiled, integ.creds, true);
+            req = await this.connectors.prepareIntegrationCall(integ.key, action.key, probe, integ.creds, true);
         } catch (err) {
             return {
                 request: { url: '', method: 'POST', headers: {}, body: null },
@@ -945,6 +991,34 @@ export class AutomationsService {
                 body: req.body,
                 captureBody: true,
             });
+            const problem = checkIntegrationResponse(integ.key, res.status, res.body ?? '', action.key);
+            let note: string | null = null;
+            if (meetingKind === 'create' && !problem) {
+                // Se creó SIN invitados para ver que funciona (y el enlace de
+                // Teams o Meet): se borra en el acto, así no queda en el calendario.
+                const meet = meetingResult(integ.key, res.body ?? '');
+                let removed = false;
+                if (meet) {
+                    try {
+                        // Sin mensaje: se BORRA (no hay invitados a quienes avisar).
+                        const del = await this.connectors.prepareIntegrationCall(
+                            integ.key,
+                            'cancel_event',
+                            { values: { event_id: meet.id, calendar: compiled.values.calendar ?? '' }, lines: {} },
+                            integ.creds,
+                            false,
+                        );
+                        const out = await safeWebhookFetch(del.url, { method: del.method, headers: del.headers, captureBody: true, timeoutMs: 10_000 });
+                        removed = out.status < 300 || out.status === 404 || out.status === 410;
+                    } catch {
+                        removed = false;
+                    }
+                }
+                note =
+                    'La prueba creó la reunión SIN invitados (a nadie le llegó nada)' +
+                    (meet?.enlace ? `, con su enlace: ${meet.enlace}` : meet ? ', sin enlace de videollamada' : '') +
+                    (removed ? ', y la borró enseguida de tu calendario.' : '. No pudimos borrarla: bórrala de tu calendario.');
+            }
             return {
                 request,
                 response: {
@@ -952,8 +1026,9 @@ export class AutomationsService {
                     content_type: res.contentType ?? '',
                     body: redactValues(res.body ?? '', hide),
                 },
-                error: checkIntegrationResponse(integ.key, res.status, res.body ?? ''),
+                error: problem,
                 sample_record_id: sampleRecordId,
+                note,
             };
         } catch (err) {
             return {
