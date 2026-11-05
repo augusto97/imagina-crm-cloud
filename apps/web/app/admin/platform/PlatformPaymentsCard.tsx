@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { BillingPayment, PlatformPaymentRow } from '@imagina-base/shared';
-import { Check, Copy, ExternalLink, KeyRound, Receipt, Wallet } from 'lucide-react';
+import type { BillingPayment, PlatformPaymentRow, PlatformPaymentsView } from '@imagina-base/shared';
+import { Check, Copy, ExternalLink, KeyRound, Receipt, RefreshCw, Wallet } from 'lucide-react';
 
 import { api } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,7 @@ import { __ } from '@/lib/i18n';
 const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 const DATE = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
+const DATETIME = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
 const STATUS: Record<BillingPayment['status'], { label: string; variant: 'success' | 'warning' | 'destructive' | 'secondary' }> = {
     approved: { label: 'Aprobado', variant: 'success' },
@@ -117,8 +118,10 @@ function CredentialsCard(): JSX.Element | null {
                     </li>
                     <li>
                         {__('En esa aplicación, Webhooks → Configurar notificaciones: pega esta URL y marca los eventos ')}
-                        <strong>{__('Pagos')}</strong>, <strong>{__('Planes y suscripciones')}</strong>
-                        {__(' (suscripciones y pagos de suscripciones).')}
+                        <strong>{__('Pagos')}</strong>
+                        {__(' (en el panel puede decir «Pagos (legacy)») y ')}
+                        <strong>{__('Planes y suscripciones')}</strong>
+                        {__('. Para probar, «Simular notificación» y después «Volver a revisar» abajo.')}
                         <div className="imcrm-mt-1.5 imcrm-flex imcrm-max-w-xl imcrm-items-center imcrm-gap-2">
                             <code className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-2 imcrm-py-1.5 imcrm-text-xs" data-testid="mp-webhook-url">
                                 {mp.webhook_url}
@@ -161,6 +164,7 @@ function CredentialsCard(): JSX.Element | null {
                         {__('Falta la clave secreta: las empresas pueden pagar, pero los avisos se rechazan y el período NO se extiende.')}
                     </p>
                 )}
+                {mp.configured && <LastHook hook={mp.last_hook} refreshing={q.isFetching} onRefresh={() => void q.refetch()} />}
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
                     <Button onClick={() => save.mutate(false)} disabled={save.isPending || (!token.trim() && !secret.trim())} data-testid="mp-save">
                         <KeyRound className="imcrm-h-4 imcrm-w-4" />
@@ -194,6 +198,77 @@ function CredentialsCard(): JSX.Element | null {
                 </p>
             </CardContent>
         </Card>
+    );
+}
+
+type LastHookData = PlatformPaymentsView['mercadopago']['last_hook'];
+
+/**
+ * v0.1.379 — el último aviso que llegó a la URL de webhooks. «Simular
+ * notificación» de Mercado Pago sale bien aunque la clave secreta no coincida
+ * (un aviso con firma mala se contesta 200 sin hacer nada): esto es lo que
+ * dice si de verdad la firma coincidió.
+ */
+function LastHook({ hook, refreshing, onRefresh }: { hook: LastHookData; refreshing: boolean; onRefresh: () => void }): JSX.Element {
+    const when = hook ? DATETIME.format(new Date(hook.at)) : null;
+    let tone: 'ok' | 'warn' | 'err' = 'ok';
+    let title: string;
+    let detail: string;
+    if (!hook) {
+        tone = 'warn';
+        title = __('Todavía no llegó ningún aviso');
+        detail = __('Prueba con «Simular notificación» en Mercado Pago (Webhooks) y vuelve a revisar.');
+    } else if (hook.signature === 'no_secret') {
+        tone = 'err';
+        title = __('Llegó un aviso, pero falta la clave secreta');
+        detail = __('Pega abajo la «Clave secreta» de Webhooks: sin ella los pagos no extienden el período.');
+    } else if (hook.signature === 'bad') {
+        tone = 'err';
+        title = __('Llegó un aviso con una firma que no coincide');
+        detail = __('La clave secreta guardada no es la de esta aplicación de Mercado Pago. Cópiala de nuevo desde Webhooks y guárdala.');
+    } else if (hook.result === 'not_found') {
+        title = __('Llegó un aviso y la firma coincide');
+        detail = hook.data_id
+            ? __('Mercado Pago no tiene el pago %s: es normal en «Simular notificación». Los pagos reales se leen y se aplican.').replace('%s', hook.data_id)
+            : __('Es normal en «Simular notificación». Los pagos reales se leen y se aplican.');
+    } else if (hook.result === 'error') {
+        tone = 'err';
+        title = __('Llegó un aviso, pero no se pudo leer el pago en Mercado Pago');
+        detail = `${hook.message ?? ''} ${__('Mercado Pago lo reintenta solo. Si dice 401 o 403, revisa el Access Token.')}`.trim();
+    } else if (hook.result === 'unrelated') {
+        title = __('Llegó un aviso y la firma coincide');
+        detail = __('No era el cobro de un plan (puede ser otro uso de la misma cuenta); se ignoró.');
+    } else {
+        title = __('Llegó un aviso y la firma coincide');
+        detail = __('Se leyó el pago en Mercado Pago y se aplicó.');
+    }
+    const box =
+        tone === 'ok'
+            ? 'imcrm-border-success/30 imcrm-bg-success/10'
+            : tone === 'warn'
+              ? 'imcrm-border-border imcrm-bg-muted/40'
+              : 'imcrm-border-destructive/30 imcrm-bg-destructive/10';
+    const ink = tone === 'ok' ? 'imcrm-text-success' : tone === 'warn' ? 'imcrm-text-foreground' : 'imcrm-text-destructive';
+    return (
+        <div className={`imcrm-rounded-md imcrm-border imcrm-p-3 ${box}`} data-testid="mp-last-hook" data-tone={tone}>
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-start imcrm-justify-between imcrm-gap-2">
+                <div className="imcrm-min-w-0 imcrm-space-y-0.5">
+                    <p className="imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">{__('Último aviso recibido')}</p>
+                    <p className={`imcrm-text-sm imcrm-font-medium ${ink}`}>{title}</p>
+                    <p className="imcrm-text-sm imcrm-text-muted-foreground">{detail}</p>
+                    {when && (
+                        <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                            {when}
+                            {hook?.type ? ` · ${hook.type}` : ''}
+                        </p>
+                    )}
+                </div>
+                <Button size="sm" variant="outline" onClick={onRefresh} disabled={refreshing}>
+                    <RefreshCw className={refreshing ? 'imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin' : 'imcrm-h-3.5 imcrm-w-3.5'} />
+                    {__('Volver a revisar')}
+                </Button>
+            </div>
+        </div>
     );
 }
 

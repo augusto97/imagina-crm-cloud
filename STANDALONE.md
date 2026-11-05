@@ -2536,6 +2536,17 @@ el `preapproval` sin plan toma el monto del momento); dejar `past_due` al primer
 rechazo (Mercado Pago reintenta la tarjeta durante la gracia); cambiar el
 estado en el retorno del navegador (falsificable).
 
+**Addendum v0.1.379 — la simulación y cómo comprobar la clave.** La
+«Simular notificación» del panel de Mercado Pago llega FIRMADA con la clave
+real y un id que no existe (12345): un 404 al releer el recurso ya no es una
+falla (200 sin hacer nada); red, 5xx y clave rechazada siguen respondiendo 500
+para que Mercado Pago reintente. Un aviso con firma mala también se contesta
+200 —si no, Mercado Pago lo reintenta sin fin—, así que el panel del proveedor
+no prueba la clave: la pasarela anota el último aviso (tipo, id, firma
+`ok|bad|no_secret`, resultado `read|unrelated|not_found|error`) en Redis
+`billing:mp:last_hook` —fuera de `platform:`, no viaja en el snapshot— y
+Plataforma → Cobros lo muestra como «Último aviso recibido».
+
 ### ADR-S31 — Cobros de las empresas con Mercado Pago y Wompi (v0.1.251)
 
 **Contexto.** Las empresas que usan la app para facturar (cartera, cuotas,

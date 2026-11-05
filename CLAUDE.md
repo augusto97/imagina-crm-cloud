@@ -12856,6 +12856,23 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         la vista previa, el texto del botón, grupos de Ajustes, Diseño,
         guardar, y la página pública con el color y el texto y sin marcas).
 
+  - [x] **La simulación del webhook de Mercado Pago ya no falla + último aviso
+        a la vista (v0.1.379, addendum ADR-S30, reporte del usuario con
+        captura: «estoy testeando en mercadopago y falla»)**: la «Simular
+        notificación» del panel llega firmada con la clave real y el id 12345,
+        que no existe; la app lo releía, Mercado Pago respondía 404 y eso se
+        trataba como una caída (500 → «La prueba de esta URL falló»). Ahora un
+        id que Mercado Pago no tiene se contesta 200 sin hacer nada y red, 5xx o
+        clave rechazada siguen respondiendo 500 para que reintente; de paso el
+        `try` devolvía la promesa sin esperarla y ningún error de relectura
+        quedaba registrado. Como una firma equivocada también responde 200, la
+        simulación no prueba la clave: **Plataforma → Cobros → «Último aviso
+        recibido»** (Redis `billing:mp:last_hook`) dice si llegó, si la firma
+        coincidió o falta la clave y qué pasó, con «Volver a revisar». El paso 2
+        de la consola y Aprende aclaran que el evento se llama «Pagos (legacy)».
+        Tests: payments.spec 41/41 + E2E navegador 8/8 en escritorio y 8/8 en
+        celular oscuro contra el Mercado Pago simulado.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

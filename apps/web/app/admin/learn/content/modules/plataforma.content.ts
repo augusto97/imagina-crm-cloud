@@ -480,9 +480,16 @@ export const articles: LearnArticle[] = [
                 items: [
                     'En el panel de desarrolladores de Mercado Pago, en **Tus integraciones**, crea una aplicación de pagos online (Checkout Pro) y copia el **Access Token** de producción (empieza con `APP_USR-`). Para probar, usa el de prueba (`TEST-`).',
                     'En **Plataforma → Cobros** pégalo y guarda.',
-                    'En la misma aplicación de Mercado Pago, en **Webhooks → Configurar notificaciones**, pega la URL que te muestra la consola (con **Copiar**) y marca los eventos **Pagos** y **Planes y suscripciones**.',
+                    'En la misma aplicación de Mercado Pago, en **Webhooks → Configurar notificaciones**, pega la URL que te muestra la consola (con **Copiar**) y marca los eventos **Pagos** (en el panel puede decir «Pagos (legacy)») y **Planes y suscripciones**.',
                     'Mercado Pago te muestra una **Clave secreta**: pégala en **Clave secreta de los webhooks** y toca **Guardar**.',
+                    'Para probar, toca **Simular notificación** en Mercado Pago y después **Volver a revisar** en la consola: **Último aviso recibido** dice si llegó y si la firma coincide.',
                 ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'La simulación sale bien aunque la clave no coincida',
+                md: 'Un aviso con una firma que no coincide se contesta igual con «recibido» (para que Mercado Pago no lo reintente sin fin), así que el panel de Mercado Pago no te dice si la clave está bien. Eso lo dice **Último aviso recibido** en la consola: en verde «la firma coincide», en rojo si no coincide o si falta la clave. El pago de la simulación (por ejemplo, el 12345) no existe en Mercado Pago, y eso es normal.',
             },
             {
                 t: 'callout',

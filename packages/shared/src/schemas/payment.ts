@@ -204,6 +204,23 @@ export const platformPaymentsViewSchema = z.object({
         webhook_secret_set: z.boolean(),
         /** La URL para pegar en Mercado Pago → Tus integraciones → Webhooks. */
         webhook_url: z.string(),
+        /**
+         * v0.1.379 — el último aviso que llegó a esa URL: si la firma coincidió
+         * y qué pasó. Sirve para probar con «Simular notificación» (que sale
+         * bien aunque la firma no coincida: un aviso con firma mala se contesta
+         * 200 sin hacer nada).
+         */
+        last_hook: z
+            .object({
+                at: z.string(),
+                type: z.string().nullable(),
+                data_id: z.string().nullable(),
+                signature: z.enum(['ok', 'bad', 'no_secret']),
+                result: z.enum(['read', 'unrelated', 'not_found', 'error']),
+                message: z.string().nullable().default(null),
+            })
+            .nullable()
+            .default(null),
     }),
     paypal: z.object({ configured: z.boolean() }),
 });
