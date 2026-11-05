@@ -394,10 +394,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.368**
-(«Suscribir al enviar» en los formularios y las suscripciones del cliente en
-el bloque «Pagos» del portal, addendum ADR-S96; arregla el portal de los
-clientes cuyo registro llegó por un formulario; antes v0.1.367
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.369**
+(formularios «sin marco» al insertarlos en un sitio y logo por formulario,
+addendum ADR-S95; arregla el marco insertado que nunca bajaba de 640 px; antes
+v0.1.368 «Suscribir al enviar» en los formularios y las suscripciones del
+cliente en el bloque «Pagos» del portal, addendum ADR-S96; arregla el portal de
+los clientes cuyo registro llegó por un formulario; antes v0.1.367
 suscripciones con débito automático de Mercado Pago para los clientes de cada
 empresa: planes, suscribir desde la ficha, estado derivado con gracia, cobros,
 columnas, disparador y acciones, ADR-S96 — primera de tres entregas; antes
@@ -426,6 +428,18 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-05 — **Logo y «sin marco» en formularios + rediseño del chat de
+  IA** (pedido del usuario: "en los formularios debería poderse cambiar el
+  logo u ocultarse… un estilo más limpio para embeber… que no tenga espacios
+  ni fondo… también mejora el chat de IA, rediséñalo, el contenido sale sin
+  formato, como texto plano"). Lo partí en dos: **v0.1.369 hecha** (logo
+  propio/ninguno + «Sin marco») y **v0.1.370** el rediseño del chat del
+  asistente: mostrar las respuestas con formato (Markdown seguro: títulos,
+  listas, tablas, código con copiar, enlaces), historial de conversaciones,
+  los pasos de las herramientas a la vista, copiar/reintentar, modo ancho,
+  sugerencias según la pantalla y el cuadro que crece. Las suscripciones
+  siguen después: **v0.1.371** (lista espejo de cobros, plantilla de tablero,
+  herramienta del asistente/MCP) y **v0.1.372** (PayPal).
 - 2026-11-05 — **Suscripciones y cobros recurrentes (Mercado Pago y PayPal)
   para los clientes de cada empresa** — EN CURSO. El usuario respondió «hazlo
   todo como lo veas más recomendable»: decidí una suscripción viva por
@@ -434,10 +448,11 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   opción del plan) y Wompi recurrente afuera. **v0.1.367 hecha** (Mercado Pago
   de punta a punta, ADR-S96) y **v0.1.368 hecha** (formulario «Suscribir al
   enviar» + bloque del portal; partí la segunda entrega para no hacer un
-  release gigante). Siguen **v0.1.369** (lista espejo «Cobros de
+  release gigante). Siguen **v0.1.371** (lista espejo «Cobros de
   suscripciones», plantilla de tablero, herramienta propose del
-  asistente/MCP para planes y suscripciones) y **v0.1.370** (PayPal como
-  conector de la empresa, links y suscripciones en USD). Ideas que
+  asistente/MCP para planes y suscripciones) y **v0.1.372** (PayPal como
+  conector de la empresa, links y suscripciones en USD); en el medio el
+  usuario pidió logo/«sin marco» (v0.1.369) y el chat de IA (v0.1.370). Ideas que
   quedaron anotadas para más adelante: bloquear a mano las columnas de la
   suscripción (hoy se pueden editar y la siguiente relectura las pisa) y
   mostrar las fechas del panel en la zona de la empresa (hoy en la del
@@ -1452,6 +1467,20 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.369** — **Formularios «sin marco» al insertarlos y
+  logo por formulario** (pedido del usuario: cambiar u ocultar el logo, y un
+  estilo sin fondo ni espacio para que el formulario ocupe exactamente el
+  lugar del formulario de contacto de un sitio). «Sin marco» vive en el tema
+  (Diseño → Página y Compartir → Insertar en tu sitio → En la página) y sólo
+  aplica dentro de un iframe; en la ventana/panel de `embed.js` y en el enlace
+  directo se ve con su tarjeta. Vista previa «En tu sitio». Logo: el de la
+  empresa, otro (sólo imágenes de la empresa) o ninguno, también en los
+  correos del formulario. **Bug viejo encontrado**: el marco insertado nunca
+  bajaba de 640 px (720 la agenda) — un formulario corto dejaba espacio en
+  blanco; ahora el alto es el del contenido. Para la prueba hubo que servir
+  el sitio de ejemplo desde un servidor real en 127.0.0.1 (un sitio «público»
+  simulado no puede llamar a localhost: Private Network Access). E2E 31/31 +
+  agenda insertada. Queda: v0.1.370 (chat de IA) y las suscripciones (ver §10).
 - **2026-11-05 · v0.1.368** — **Suscribir al enviar un formulario y las
   suscripciones en el portal** (segunda entrega del pedido de suscripciones,
   partida: lo que falta pasa a v0.1.369 y PayPal a v0.1.370). Ajustes del

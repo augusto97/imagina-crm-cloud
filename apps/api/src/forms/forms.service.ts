@@ -202,6 +202,16 @@ function maskEmail(email: string): string {
     return `${local.slice(0, Math.min(2, local.length))}***@${domain}`;
 }
 
+/**
+ * v0.1.369 — El logo que muestra un formulario (página, confirmación y
+ * correos): ninguno si se apagó, el propio del formulario si tiene, si no el
+ * de la empresa.
+ */
+export function formLogoFileId(config: FormConfig, brandLogoId: number | null): number | null {
+    if (!config.settings.show_logo) return null;
+    return config.settings.logo_file_id ?? brandLogoId;
+}
+
 function hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
 }
@@ -1215,10 +1225,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             allow_another: config.settings.allow_another,
             allow_prefill: config.settings.allow_prefill,
             accent_color: config.settings.theme?.colors.accent ?? config.settings.accent_color ?? b.primary_color ?? '#0e7490',
-            logo_url:
-                config.settings.show_logo && b.logo_file_id !== null
-                    ? this.files.signedUrl(row.tenantId, b.logo_file_id, 3600)
-                    : null,
+            logo_url: ((id) => (id !== null ? this.files.signedUrl(row.tenantId, id, 3600) : null))(formLogoFileId(config, b.logo_file_id)),
             company: b.app_name || f.tenantName,
             number_format: format.success ? format.data.number_format : 'comma_dot',
             items: buildPublicFormItems(config, fields, await this.teamOptions(row.tenantId, fields), {
@@ -1973,7 +1980,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         return {
             company: b.app_name || f.tenantName,
             accent: f.config.settings.theme?.colors.accent ?? f.config.settings.accent_color ?? b.primary_color ?? '#0e7490',
-            logoUrl: b.logo_file_id !== null ? this.files.signedUrl(f.row.tenantId, b.logo_file_id, 3600) : null,
+            logoUrl: ((id) => (id !== null ? this.files.signedUrl(f.row.tenantId, id, 3600) : null))(formLogoFileId(f.config, b.logo_file_id)),
             themeCss: look.css,
             bodyClasses: look.classes,
         };
@@ -1986,7 +1993,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         return {
             name: b.app_name ?? f.tenantName,
             color: f.config.settings.theme?.colors.accent ?? f.config.settings.accent_color ?? b.primary_color,
-            logoUrl: b.logo_file_id !== null ? `${base}${this.files.signedUrl(f.row.tenantId, b.logo_file_id, 30 * 24 * 3600)}` : null,
+            logoUrl: ((id) => (id !== null ? `${base}${this.files.signedUrl(f.row.tenantId, id, 30 * 24 * 3600)}` : null))(formLogoFileId(f.config, b.logo_file_id)),
         };
     }
 

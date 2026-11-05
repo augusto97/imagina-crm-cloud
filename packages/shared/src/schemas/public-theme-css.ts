@@ -259,6 +259,8 @@ export interface PublicThemeView {
     split: { side: 'left' | 'right'; headline: string } | null;
     /** Insertado en otro sitio, ¿se ve el fondo? (si no, transparente). */
     embed_background: boolean;
+    /** v0.1.369 — Insertado en otro sitio, sin marco (sin fondo, borde ni espacios). */
+    embed_bare: boolean;
 }
 
 export function publicThemeView(theme: PublicTheme): PublicThemeView {
@@ -289,6 +291,7 @@ export function publicThemeView(theme: PublicTheme): PublicThemeView {
         band: theme.layout.band && !theme.cover.enabled,
         split: theme.split.enabled ? { side: theme.split.side, headline: theme.split.headline } : null,
         embed_background: theme.layout.embed_background,
+        embed_bare: theme.layout.embed_style === 'bare',
     };
 }
 
@@ -508,6 +511,8 @@ body.ib-embedded .ib-wrap{padding:8px 4px 16px}
 .ib-vcenter .ib-wrap{justify-content:center}
 .ib-card{position:relative;width:100%;max-width:var(--ib-width);background:var(--ib-card);border:var(--ib-card-bw) solid var(--ib-border);border-radius:var(--ib-card-radius);box-shadow:var(--ib-shadow);overflow:hidden}
 body.ib-embedded:not(.ib-embed-bg) .ib-card{box-shadow:none}
+body.ib-embedded .ib-shell{min-height:0}
+body.ib-embedded .ib-header-empty{display:none}
 .ib-container-plain .ib-card{background:transparent;border-color:transparent;box-shadow:none;border-radius:0;overflow:visible}
 .ib-band{height:6px;background:var(--ib-accent)}
 .ib-cover{height:var(--ib-cover-h);background:var(--ib-accent)}
@@ -799,4 +804,13 @@ body.ib-embedded.ib-layout-conv .ib-page{min-height:0}
 .ib-skeleton{display:grid;gap:18px}
 .ib-skeleton span{display:block;height:var(--ib-input-h);border-radius:var(--ib-input-radius);background:var(--ib-soft)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+/* v0.1.369 — Insertado «sin marco»: ocupa exactamente el espacio que le da el sitio. */
+body.ib-embedded.ib-embed-bare{background:transparent;--ib-accent-ring:transparent}
+body.ib-embedded.ib-embed-bare .ib-bg,body.ib-embedded.ib-embed-bare .ib-band,body.ib-embedded.ib-embed-bare .ib-cover,body.ib-embedded.ib-embed-bare .ib-split-media{display:none}
+body.ib-embedded.ib-embed-bare .ib-wrap{padding:0;align-items:stretch}
+body.ib-embedded.ib-embed-bare .ib-card{max-width:none;background:transparent;border:0;border-radius:0;box-shadow:none;overflow:visible}
+body.ib-embedded.ib-embed-bare .ib-inner{padding:0}
+body.ib-embedded.ib-embed-bare .ib-input:focus{box-shadow:inset 0 0 0 1px var(--ib-accent)}
+body.ib-embedded.ib-embed-bare.ib-input-underline .ib-input:focus{box-shadow:inset 0 -1px 0 0 var(--ib-accent)}
+body.ib-embedded.ib-embed-bare .ib-done{padding-left:0;padding-right:0}
 `;

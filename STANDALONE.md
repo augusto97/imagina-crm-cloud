@@ -6900,6 +6900,40 @@ para poner Cloudflare delante y subir el tope está en
    llega escaneándolo («Código QR»).
 
 
+**Addendum v0.1.369 — «Sin marco» al insertarlo y el alto del marco.** Pedido
+del usuario: clientes que usan el formulario como formulario de contacto de su
+sitio quieren que ocupe exactamente el lugar del que tenían, sin fondo ni
+espacio alrededor.
+1. **Estilo al insertarlo** (`theme.layout.embed_style`: `card` | `bare`, se
+   lee con tolerancia; lo guardado antes es `card`). Es parte del TEMA, no del
+   código de inserción: el código pegado en un sitio no cambia y el cambio se
+   ve al guardar. `bare` sólo vale cuando la página está DENTRO de un iframe:
+   la página marca `ib-embedded` + `ib-embed-bare` en el `<body>` y el CSS fijo
+   (`PUBLIC_BASE_CSS`) quita fondo, banda, portada, imagen del panel dividido,
+   borde, sombra, esquinas y relleno; el anillo de foco pasa a ser interior
+   (uno exterior se cortaría en el borde del iframe). Con `card` sigue
+   `embed_background` como antes. El enlace directo nunca usa la variante.
+2. **En la ventana o el panel de `embed.js` no aplica**: el marco que crea el
+   script lleva `name="imagina-popup"` y la página lo lee en `window.name` (no
+   en la URL, que es parte de la clave de la caché pública). Así un formulario
+   «sin marco» no queda pegado a los bordes de una ventana blanca.
+3. **El alto del marco es el del contenido**: antes se reportaba
+   `documentElement.scrollHeight`, que nunca es menor que la altura del propio
+   iframe (640 px en el código, 720 en la agenda), así que un formulario corto
+   dejaba espacio en blanco debajo para siempre. Ahora se mide la caja
+   `.ib-shell` y, insertado, `.ib-shell{min-height:0}` (formularios y agenda).
+4. **Dónde se elige**: en Diseño → Página («Insertado en tu sitio») y en
+   Compartir → Insertar en tu sitio → En la página («Cómo se ve en tu página»),
+   que editan el mismo borrador; la vista previa del constructor tiene un modo
+   **En tu sitio** (`embed: true` en el mensaje de la vista previa) que dibuja
+   el formulario dentro de una página de ejemplo con el espacio punteado.
+5. **Logo por formulario** (`settings.logo_file_id`, en `formConfigFileIds` →
+   misma validación que las imágenes del formulario: de la empresa, nunca
+   SVG): «El de la empresa» (null), «Otro logo» o «Sin logo» (`show_logo`).
+   `formLogoFileId` decide para la página, la confirmación por correo y los
+   correos del formulario; migrar una empresa lo re-mapea (`logo_file_id` en
+   el mapa explícito; la marca de la empresa se re-mapea aparte).
+
 ### ADR-S96 — Suscripciones con débito automático de Mercado Pago (v0.1.367)
 
 **Contexto.** Pregunta del usuario: «¿cómo se manejan las suscripciones o
@@ -7048,4 +7082,4 @@ a v0.1.370.
 
 ---
 
-**Versión del documento:** 1.153.0 (Suscribir al enviar un formulario y suscripciones en el portal)
+**Versión del documento:** 1.154.0 (Formularios «sin marco» al insertarlos y logo por formulario)

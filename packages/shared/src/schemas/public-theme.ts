@@ -107,6 +107,9 @@ export type PublicTypography = z.infer<typeof publicTypographySchema>;
 export const PUBLIC_CONTAINERS = ['card', 'plain'] as const;
 export const PUBLIC_ALIGNS = ['left', 'center'] as const;
 export const PUBLIC_PROGRESS = ['bar', 'steps', 'none'] as const;
+/** v0.1.369 — Cómo se ve insertado en otro sitio: con su tarjeta o sin marco. */
+export const PUBLIC_EMBED_STYLES = ['card', 'bare'] as const;
+export type PublicEmbedStyle = (typeof PUBLIC_EMBED_STYLES)[number];
 export const PUBLIC_COVER_POSITIONS = ['top', 'center', 'bottom'] as const;
 
 const fileId = z.number().int().positive();
@@ -134,6 +137,13 @@ export const publicLayoutSchema = z.object({
     progress: z.enum(PUBLIC_PROGRESS).default('bar'),
     /** Insertado en otro sitio: mostrar el fondo (si no, queda transparente sobre el sitio). */
     embed_background: z.boolean().default(false),
+    /**
+     * v0.1.369 — Insertado en otro sitio: `card` = con su tarjeta (borde,
+     * relleno y márgenes); `bare` = sin marco: sin fondo, sin borde, sin
+     * sombra y sin espacio alrededor — los campos llegan al borde del espacio
+     * que le da el sitio, como un formulario de contacto propio.
+     */
+    embed_style: z.enum(PUBLIC_EMBED_STYLES).default('card'),
 });
 export type PublicLayout = z.infer<typeof publicLayoutSchema>;
 

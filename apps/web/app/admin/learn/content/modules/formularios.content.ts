@@ -1002,7 +1002,11 @@ export const articles: LearnArticle[] = [
             {
                 t: 'settings',
                 rows: [
-                    { name: 'Mostrar el logo de la empresa', what: 'Pone tu logo arriba del título. El logo y el color de la marca se configuran en **Ajustes → Marca**.' },
+                    {
+                        name: 'Logo',
+                        what: '**El de la empresa** (el de **Ajustes → Marca**), **Otro logo** (subes uno sólo para este formulario: sale arriba del título y en los correos del formulario) o **Sin logo**.',
+                        tip: 'Otro logo sirve cuando el formulario es de una marca o un producto tuyo distinto. Acepta PNG, JPG o WebP; el alto se ajusta en **Diseño → Página → Alto del logo**.',
+                    },
                     { name: 'Colores, fuentes y más', what: 'Abre la pestaña **Diseño**: plantillas, colores, tipografía, tamaños, bordes, fondo, portada y el botón.', tip: 'Lo explicamos completo en «Diseña tu formulario: plantillas, colores, fuentes y tamaños».' },
                 ],
             },
@@ -1296,6 +1300,33 @@ export const articles: LearnArticle[] = [
                     { icon: 'AppWindow', title: 'Ventana al hacer clic', md: 'Un botón (con el texto y el color que elijas) abre el formulario en una ventana sobre la página. No se carga nada hasta que alguien lo toca.', tone: 'violet' },
                     { icon: 'MousePointerClick', title: 'Botón flotante', md: 'Un botón fijo en una esquina de cada página donde pegues el código. Ideal para «Escríbenos» o «Agenda tu cita» en todo el sitio.', tone: 'mint' },
                 ],
+            },
+            { t: 'h', text: 'Con su tarjeta o sin marco' },
+            {
+                t: 'p',
+                md: 'Con **En la página** eliges además **cómo se ve en tu página**. Si vas a reemplazar el formulario de contacto que ya tenía tu sitio, **Sin marco** lo deja listo para ocupar exactamente ese lugar: sin fondo, sin borde, sin sombra y sin espacio alrededor, así los campos llegan al borde del hueco y el fondo es el de tu página.',
+            },
+            { t: 'anim', key: 'form-embed-bare', caption: '«Sin marco»: el formulario ocupa exactamente el hueco de la página de contacto, sin fondo ni espacio alrededor.' },
+            {
+                t: 'settings',
+                title: 'Cómo se ve en tu página',
+                rows: [
+                    { name: 'Con su tarjeta', what: 'Se ve con su fondo, su tarjeta y su espacio alrededor, igual que el enlace directo.', tip: 'Si quieres que el fondo del formulario también se vea dentro de tu sitio, en **Diseño → Página** marca **Al insertarlo en otro sitio, mostrar el fondo**.' },
+                    { name: 'Sin marco', what: 'Sin fondo, sin borde, sin sombra y sin espacio: los campos de borde a borde del espacio que le das. Toma la tipografía y los colores de los campos y del botón del diseño.', tip: 'Ideal como formulario de contacto de tu sitio. Para que combine, elige en **Diseño** colores y una fuente parecidos a los de tu página.' },
+                ],
+            },
+            {
+                t: 'steps',
+                items: [
+                    'Elígelo en **Compartir → Insertar en tu sitio → En la página → Cómo se ve en tu página**, o en **Diseño → Página → Insertado en tu sitio**. Es lo mismo en los dos lugares.',
+                    'Para ver cómo queda antes de pegarlo, toca el ícono del **mundo** arriba de la vista previa (**En tu sitio**): muestra el formulario dentro de una página de ejemplo, con una línea punteada en el espacio que le da la página.',
+                    'Toca **Guardar**: el sitio donde ya lo pegaste se actualiza solo, sin cambiar el código.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: '«Sin marco» sólo aplica cuando el formulario está **dentro** de tu página. En la ventana, el panel lateral o el enlace directo siempre se ve con su tarjeta, para que no quede pegado a los bordes. Y el alto se ajusta solo a lo que tiene el formulario: no queda espacio en blanco debajo. La agenda de citas tiene la misma opción en **Diseño → Página**.',
             },
             { t: 'anim', key: 'embed-popup', caption: 'El botón flotante: el formulario se abre y se carga sólo cuando alguien lo toca.' },
             {

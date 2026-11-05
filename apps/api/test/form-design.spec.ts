@@ -256,6 +256,44 @@ describe('v0.1.351 — diseño de los formularios (Postgres + Redis reales)', ()
         expect(html).toContain('class="ib-body ib-input-pill"');
     });
 
+    it('v0.1.369 — el logo del formulario: el de la empresa, uno propio o ninguno (y sólo imágenes de la empresa)', async () => {
+        const own = (await withTenant(pg.db, tenantId, (tx) => tx.insert(attachments).values({ tenantId, filename: 'logo-form.png', mime: 'image/png', sizeBytes: 10, storageKey: 'k/logo-form.png' }).returning()))[0]!.id;
+        await pg.db.update(tenants).set({ settings: { branding: { logo_file_id: png } } }).where(eq(tenants.id, tenantId));
+        const dto = await svc.create(tenantId, 0, 'contactos', { name: 'Logo', config: formConfigSchema.parse({ items: [{ id: newFormItemId(), type: 'field', field_id: f.nombre!.id }] }) }, ADMIN);
+        await svc.update(tenantId, 'contactos', dto.id, { enabled: true });
+        const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(forms).where(eq(forms.id, dto.id)));
+        const logoOf = async () => (await svc.pageInfo(row!.token))!.meta.logo_url;
+        const save = (settings: Record<string, unknown>) =>
+            svc.update(tenantId, 'contactos', dto.id, { config: formConfigSchema.parse({ items: [{ id: newFormItemId(), type: 'field', field_id: f.nombre!.id }], settings }) }, ADMIN);
+        // Por defecto: el logo de la empresa.
+        expect(await logoOf()).toMatch(new RegExp(`^/api/v1/files/${png}/signed\\?`));
+        // Uno propio para este formulario.
+        await save({ show_logo: true, logo_file_id: own });
+        expect(await logoOf()).toMatch(new RegExp(`^/api/v1/files/${own}/signed\\?`));
+        // Ninguno: aunque quede guardado el propio, no se muestra.
+        await save({ show_logo: false, logo_file_id: own });
+        expect(await logoOf()).toBeNull();
+        // Sólo imágenes de la empresa, nunca SVG.
+        await expect(save({ show_logo: true, logo_file_id: svg })).rejects.toMatchObject({ status: 400 });
+        await expect(save({ show_logo: true, logo_file_id: foreignPng })).rejects.toMatchObject({ status: 400 });
+        // Volver a «El de la empresa» suelta el propio.
+        await save({ show_logo: true, logo_file_id: null });
+        expect(await logoOf()).toMatch(new RegExp(`^/api/v1/files/${png}/signed\\?`));
+    });
+
+    it('v0.1.369 — «Sin marco»: la página marca el tema para quitar fondo y espacio sólo insertado', async () => {
+        const { token } = await designedForm({ layout: { embed_style: 'bare' } });
+        const info = (await svc.pageInfo(token))!;
+        expect(info.meta.theme?.embed_bare).toBe(true);
+        // Las reglas están en el CSS fijo de la página: no hace falta otra petición.
+        const html = renderFormPage({ nonce: 'n', title: info.title, meta: info.meta, token, themeCss: info.theme_css, bodyClasses: info.body_classes, preloadFont: info.preload_font, client: 'void 0' });
+        expect(html).toContain('body.ib-embedded.ib-embed-bare .ib-inner{padding:0}');
+        // El enlace directo sigue con su diseño: las clases de la variante las pone el navegador sólo insertado.
+        expect(info.body_classes).not.toContain('ib-embed-bare');
+        const plain = await designedForm({});
+        expect((await svc.pageInfo(plain.token))!.meta.theme?.embed_bare).toBe(false);
+    });
+
     it('migrar la empresa: imágenes del diseño, de las opciones, el logo y «Mis temas» con sus ids nuevos', () => {
         const maps = { attachment: new Map([[10, 110], [11, 111], [12, 112]]), field: new Map([[5, 55]]) } as unknown as IdMaps;
         for (const k of ['user', 'list', 'view', 'automation', 'form', 'document', 'recordTemplate', 'team', 'bookingPage', 'agent', 'approval_flow', 'connection']) {
@@ -267,10 +305,12 @@ describe('v0.1.351 — diseño de los formularios (Postgres + Redis reales)', ()
                     { id: 'aaaa1111', type: 'field', field_id: 5, option_images: { pro: 10, gratis: 99 } },
                     { id: 'bbbb2222', type: 'image', file_id: 11 },
                 ],
-                settings: { theme: { cover: { enabled: true, file_id: 12 }, background: { file_id: null } } },
+                settings: { logo_file_id: 10, theme: { cover: { enabled: true, file_id: 12 }, background: { file_id: null } } },
             },
             maps,
-        ) as { items: Array<Record<string, unknown>>; settings: { theme: { cover: { file_id: number }; background: { file_id: null } } } };
+        ) as { items: Array<Record<string, unknown>>; settings: { logo_file_id: number; theme: { cover: { file_id: number }; background: { file_id: null } } } };
+        // v0.1.369 — el logo propio del formulario.
+        expect(config.settings.logo_file_id).toBe(110);
         expect(config.items[0]).toMatchObject({ field_id: 55, option_images: { pro: 110 } });
         expect((config.items[0]!.option_images as Record<string, number>).gratis).toBeUndefined();
         expect(config.items[1]).toMatchObject({ file_id: 111 });

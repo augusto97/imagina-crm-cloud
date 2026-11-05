@@ -1541,4 +1541,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Abre el formulario en **Configurar lista → Formularios**, ve a **Ajustes → Suscribir al enviar** y marca los planes que se ofrecen. El formulario tiene que preguntar el correo.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.369-formulario-sin-marco',
+        version: '0.1.369',
+        date: '2026-11-05',
+        kind: 'feature',
+        title: 'Tu formulario como parte de tu sitio, y con el logo que quieras',
+        summary:
+            'Insértalo «sin marco»: sin fondo, sin borde y sin espacio alrededor, ocupa exactamente el lugar de tu formulario de contacto. Y elige su logo: el de la empresa, otro o ninguno.',
+        media: {
+            slides: [
+                {
+                    title: 'Sin marco: ocupa justo su lugar',
+                    text: 'En Compartir, con «En la página», elige «Sin marco»: los campos llegan al borde del espacio que le das y se ve el fondo de tu sitio. El alto se ajusta solo, sin espacio en blanco debajo.',
+                    illustration: 'form-embed-bare',
+                },
+                {
+                    title: 'Mira cómo queda antes de pegarlo',
+                    text: 'El ícono del mundo de la vista previa muestra el formulario dentro de una página de ejemplo, con una línea punteada en el espacio que le da tu sitio.',
+                    illustration: 'form-embed',
+                },
+                {
+                    title: 'El logo que va con ese formulario',
+                    text: 'En Ajustes → Apariencia → Logo elige el de la empresa, sube otro sólo para ese formulario o quítalo. Sale en la página y en los correos del formulario.',
+                    illustration: 'form-design',
+                },
+            ],
+        },
+        body: 'Abre el formulario en **Configurar lista → Formularios**. El estilo está en **Compartir → Insertar en tu sitio** (o en **Diseño → Página**) y el logo en **Ajustes → Apariencia**. La agenda de citas tiene el mismo «Sin marco» en su diseño.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

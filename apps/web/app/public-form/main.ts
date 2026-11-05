@@ -61,6 +61,8 @@ try {
 } catch {
     embedded = true;
 }
+/** v0.1.369 — Abierto en la ventana o el panel de embed.js: ahí «Sin marco» no aplica. */
+const inPopup = embedded && window.name === 'imagina-popup';
 
 const CONSENT = '__consent';
 /** v0.1.368 — el error de «elige un plan» (no es una pregunta). */
@@ -391,6 +393,8 @@ let otherEls: Record<string, { wrap: HTMLElement; input: HTMLInputElement }> = {
 let started = false;
 /** v0.1.357 — En la vista previa, mostrar la bienvenida (la pide el constructor). */
 let previewWelcome = false;
+/** v0.1.369 — la vista previa «En tu sitio»: se dibuja como insertado. */
+let previewEmbed = false;
 /** v0.1.357 — El resultado de cada cálculo que mandó el servidor al enviar. */
 let finalCalcs: Record<string, number> | null = null;
 /** v0.1.361 — «Total a pagar» antes de enviar (cuando el formulario cobra). */
@@ -1923,8 +1927,11 @@ function applyBodyClasses(): void {
     const v = view();
     const cls = ['ib-body', ...(v?.classes ?? [])];
     if (meta?.layout === 'conversational') cls.push('ib-layout-conv');
-    if (embedded && !BOOT.preview) cls.push('ib-embedded');
-    if (embedded && !BOOT.preview && v?.embed_background) cls.push('ib-embed-bg');
+    // Insertado de verdad, o la vista previa «En tu sitio» del constructor.
+    const asEmbed = (embedded && !BOOT.preview) || (BOOT.preview && previewEmbed);
+    if (asEmbed) cls.push('ib-embedded');
+    if (asEmbed && v?.embed_bare && !inPopup) cls.push('ib-embed-bare');
+    else if (asEmbed && v?.embed_background) cls.push('ib-embed-bg');
     document.body.className = cls.join(' ');
 }
 
@@ -1961,7 +1968,12 @@ function welcomeNode(w: NonNullable<PublicFormMeta['welcome']>): HTMLElement {
 
 function header(): HTMLElement {
     const m = meta!;
-    const box = el('header', { cls: 'ib-header' });
+    const classes = view()?.classes ?? [];
+    // v0.1.369 — sin logo, sin título y sin descripción visibles, el encabezado
+    // no deja su margen arriba (insertado «sin marco», el primer campo va al borde).
+    const showsTitle = !!m.title && !classes.includes('ib-no-title');
+    const showsDesc = !!m.description && !classes.includes('ib-no-desc');
+    const box = el('header', { cls: m.logo_url || showsTitle || showsDesc ? 'ib-header' : 'ib-header ib-header-empty' });
     if (m.logo_url) box.appendChild(el('div', { cls: 'ib-logo' }, [el('img', { src: m.logo_url, alt: m.company || 'Logo', decoding: 'async', fetchpriority: 'high' })]));
     const h1 = el('h1', { cls: 'ib-title' });
     setRecall(h1, m.title);
@@ -2351,10 +2363,22 @@ function goTo(url: string): void {
 }
 
 // Insertado: avisa su alto al sitio para que el marco no corte ni sobre.
+/**
+ * v0.1.369 — El alto del CONTENIDO. `documentElement.scrollHeight` nunca baja
+ * del alto del iframe (es como mínimo el de la ventana), así que un formulario
+ * corto dejaba el espacio inicial (640 px) vacío debajo; se mide la caja de la
+ * página, que insertada no tiene alto mínimo.
+ */
+function contentHeight(): number {
+    const shell = document.querySelector('.ib-shell');
+    const h = shell ? shell.getBoundingClientRect().height : 0;
+    return Math.ceil(h > 0 ? h : document.documentElement.scrollHeight);
+}
+
 function reportHeight(): void {
     if (!embedded || BOOT.preview) return;
     try {
-        parent.postMessage({ type: 'imb-form-height', height: Math.ceil(document.documentElement.scrollHeight) }, '*');
+        parent.postMessage({ type: 'imb-form-height', height: contentHeight() }, '*');
     } catch {
         // nada
     }
@@ -2812,6 +2836,8 @@ if (BOOT.preview) {
             ending?: string | null;
             /** v0.1.357 — ver la bienvenida. */
             welcome?: boolean;
+            /** v0.1.369 — ver cómo queda insertado en un sitio. */
+            embed?: boolean;
         } | null;
         if (e.origin !== location.origin || !d || d.type !== 'imb-form-preview') return;
         const keep = window.scrollY;
@@ -2826,6 +2852,7 @@ if (BOOT.preview) {
         values = {};
         uploads = {};
         previewWelcome = d.welcome === true;
+        previewEmbed = d.embed === true;
         if (meta && typeof d.ending === 'string') {
             recallNodes = [];
             const r = root!;

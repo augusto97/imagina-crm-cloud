@@ -378,6 +378,8 @@ export const FORM_EMBED_JS = String.raw`(function () {
     f.title = title || 'Formulario';
     f.setAttribute('data-imagina-form', '');
     f.setAttribute('data-imagina-popup-frame', '');
+    // v0.1.369 — El marco sabe que es una ventana: ahí «Sin marco» no aplica.
+    f.name = 'imagina-popup';
     f.setAttribute('allow', 'payment');
     css(f, { width: '100%', height: '560px', border: '0', display: 'block', background: 'transparent' });
     // De lado o a pantalla completa, el formulario llena el alto disponible.

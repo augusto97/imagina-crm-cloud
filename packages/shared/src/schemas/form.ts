@@ -667,6 +667,12 @@ export const formSettingsSchema = z.object({
     /** Color del botón y los detalles; null = el color de la marca. */
     accent_color: hexColor.nullable().default(null),
     show_logo: z.boolean().default(true),
+    /**
+     * v0.1.369 — Un logo propio para ESTE formulario (un archivo de la
+     * empresa, nunca SVG). Null = el logo de la empresa. Con `show_logo`
+     * apagado no se muestra ninguno.
+     */
+    logo_file_id: z.number().int().positive().nullable().default(null),
     /** Deja de recibir respuestas después de este día (inclusive). */
     closes_at: isoDate.nullable().default(null),
     /** Deja de recibir respuestas al llegar a este número. */
@@ -1676,6 +1682,8 @@ export function formConfigFileIds(config: FormConfig): number[] {
     }
     // v0.1.357 — la imagen de la bienvenida.
     if (config.settings.welcome.file_id !== null) ids.add(config.settings.welcome.file_id);
+    // v0.1.369 — el logo propio del formulario.
+    if (config.settings.logo_file_id !== null) ids.add(config.settings.logo_file_id);
     return [...ids];
 }
 

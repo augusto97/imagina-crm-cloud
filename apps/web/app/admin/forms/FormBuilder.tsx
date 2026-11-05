@@ -11,6 +11,7 @@ import {
     ExternalLink,
     EyeOff,
     GripVertical,
+    Globe,
     Grid3x3,
     Heading2,
     Image as ImageIcon,
@@ -82,6 +83,8 @@ import { Check, Field, Section } from '../automations/email/EmailBlockInspector'
 import { FieldItemDesign, ImageItemEditor } from './design/ItemDesign';
 import { ConditionEditor } from './design/ConditionEditor';
 import { LogicMap, LogicPanel, RecallPicker, withToken } from './design/LogicPanel';
+import { LogoSetting } from './design/LogoSetting';
+import { SitePreviewFrame } from './design/SitePreviewFrame';
 import { MatrixEditor } from './design/QuestionKind';
 import { MyThemes } from './design/MyThemes';
 import { StartSettings } from './design/StartSettings';
@@ -94,6 +97,7 @@ import {
     fallbackAccent,
     formImageIds,
     normalizeForSave,
+    patchThemeSection,
     resolvedAccent,
     startTheme,
 } from './design/themeOps';
@@ -190,7 +194,8 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     const [selected, setSelected] = useState<string | null>(null);
     const [leftTab, setLeftTab] = useState<LeftTab>('add');
     const [mobileTab, setMobileTab] = useState<'build' | 'design' | 'preview' | 'settings'>('preview');
-    const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
+    // v0.1.369 — `site`: el formulario dentro de una página de ejemplo, como queda insertado.
+    const [device, setDevice] = useState<'desktop' | 'mobile' | 'site'>('desktop');
     // Con el modo «según el dispositivo», qué ver en la vista previa (arranca como la app).
     const [previewScheme, setPreviewScheme] = useState<'light' | 'dark'>(() => getThemeState().resolved);
     const [shareOpen, setShareOpen] = useState(false);
@@ -304,7 +309,8 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             allow_another: s.allow_another,
             allow_prefill: s.allow_prefill,
             accent_color: resolvedAccent(s, b?.primary_color),
-            logo_url: s.show_logo ? (b?.logo_url ?? null) : null,
+            // v0.1.369 — el logo propio del formulario, si tiene; si no, el de la empresa.
+            logo_url: s.show_logo ? (s.logo_file_id !== null ? imageUrl(s.logo_file_id) : (b?.logo_url ?? null)) : null,
             company: b?.app_name ?? '',
             number_format: getTenantFormat().number_format,
             items: buildPublicFormItems(config, fields, teamOptions, { imageUrl }),
@@ -392,10 +398,19 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     useEffect(() => {
         if (!ready) return;
         iframeRef.current?.contentWindow?.postMessage(
-            { type: 'imb-form-preview', meta, selected, css: themeCss, scheme, ending: previewEnding ?? undefined, welcome: previewWelcome && config.settings.welcome.enabled },
+            {
+                type: 'imb-form-preview',
+                meta,
+                selected,
+                css: themeCss,
+                scheme,
+                ending: previewEnding ?? undefined,
+                welcome: previewWelcome && config.settings.welcome.enabled,
+                embed: device === 'site',
+            },
             window.location.origin,
         );
-    }, [ready, meta, selected, themeCss, scheme, previewEnding, previewWelcome, config.settings.welcome.enabled]);
+    }, [ready, meta, selected, themeCss, scheme, previewEnding, previewWelcome, config.settings.welcome.enabled, device]);
     // Elegir una pregunta vuelve al formulario (la bienvenida tapa las preguntas).
     useEffect(() => {
         if (selected) setPreviewWelcome(false);
@@ -638,6 +653,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                             [
                                 ['desktop', Monitor, __('Computadora')],
                                 ['mobile', Smartphone, __('Celular')],
+                                ['site', Globe, __('Insertado en tu sitio')],
                             ] as const
                         ).map(([key, Icon, label]) => (
                             <button
@@ -646,6 +662,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                                 title={label}
                                 aria-pressed={device === key}
                                 onClick={() => setDevice(key)}
+                                data-testid={`form-preview-device-${key}`}
                                 className={cn(
                                     'imcrm-rounded imcrm-p-1',
                                     device === key ? 'imcrm-bg-background imcrm-text-foreground imcrm-shadow-sm' : 'imcrm-text-muted-foreground',
@@ -658,18 +675,31 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                 </div>
             </div>
             <div className="imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-justify-center imcrm-overflow-hidden imcrm-p-3">
-                <iframe
-                    ref={iframeRef}
-                    src="/api/v1/public/f/preview"
-                    title={__('Vista previa del formulario')}
-                    className={cn(
-                        'imcrm-h-full imcrm-rounded-lg imcrm-border imcrm-border-border',
-                        device === 'mobile' ? 'imcrm-w-[375px]' : 'imcrm-w-full imcrm-max-w-[760px]',
-                    )}
-                    // La miniatura toma el fondo del diseño (no un blanco que parpadea al cargar).
-                    style={{ background: previewBg }}
-                    data-testid="form-preview"
-                />
+                {device === 'site' ? (
+                    <SitePreviewFrame bare={theme.layout.embed_style === 'bare'}>
+                        <iframe
+                            ref={iframeRef}
+                            src="/api/v1/public/f/preview"
+                            title={__('Vista previa del formulario')}
+                            className="imcrm-block imcrm-h-full imcrm-w-full imcrm-border-0"
+                            style={{ background: 'transparent' }}
+                            data-testid="form-preview"
+                        />
+                    </SitePreviewFrame>
+                ) : (
+                    <iframe
+                        ref={iframeRef}
+                        src="/api/v1/public/f/preview"
+                        title={__('Vista previa del formulario')}
+                        className={cn(
+                            'imcrm-h-full imcrm-rounded-lg imcrm-border imcrm-border-border',
+                            device === 'mobile' ? 'imcrm-w-[375px]' : 'imcrm-w-full imcrm-max-w-[760px]',
+                        )}
+                        // La miniatura toma el fondo del diseño (no un blanco que parpadea al cargar).
+                        style={{ background: previewBg }}
+                        data-testid="form-preview"
+                    />
+                )}
             </div>
         </div>
     );
@@ -717,7 +747,18 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             </header>
             {statsOpen && <FormStatsSheet open onOpenChange={setStatsOpen} listId={listId} form={form} fields={fields} />}
             {shareOpen && (
-                <SharePanel form={form} enabled={enabled} accent={resolvedAccent(config.settings, brandColor)} onClose={() => setShareOpen(false)} onPublish={() => void togglePublish()} />
+                <SharePanel
+                    form={form}
+                    enabled={enabled}
+                    accent={resolvedAccent(config.settings, brandColor)}
+                    bare={{
+                        value: theme.layout.embed_style === 'bare',
+                        onChange: (v) => change(patchThemeSection(config, 'layout', { embed_style: v ? 'bare' : 'card' })),
+                        unsaved: dirty,
+                    }}
+                    onClose={() => setShareOpen(false)}
+                    onPublish={() => void togglePublish()}
+                />
             )}
 
             {narrow ? (
@@ -834,7 +875,21 @@ function CopyRow({ label, value, testId }: { label: string; value: string; testI
     );
 }
 
-function SharePanel({ form, enabled, accent, onClose, onPublish }: { form: FormDto; enabled: boolean; accent: string; onClose: () => void; onPublish: () => void }): JSX.Element {
+function SharePanel({
+    form,
+    enabled,
+    accent,
+    bare,
+    onClose,
+    onPublish,
+}: {
+    form: FormDto;
+    enabled: boolean;
+    accent: string;
+    bare: { value: boolean; onChange: (bare: boolean) => void; unsaved: boolean };
+    onClose: () => void;
+    onPublish: () => void;
+}): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-max-h-[65dvh] imcrm-shrink-0 imcrm-flex-col imcrm-gap-3 imcrm-overflow-y-auto imcrm-border-b imcrm-border-border imcrm-bg-muted/40 imcrm-px-4 imcrm-py-3" data-testid="form-share-panel">
             <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2">
@@ -861,6 +916,7 @@ function SharePanel({ form, enabled, accent, onClose, onPublish }: { form: FormD
                 accent={accent}
                 testId="form-embed"
                 dataTour="form-embed-mode"
+                bare={bare}
             />
             <PublicQrCard url={formPublicUrl(form)} name={form.config.settings.title.trim() || form.name} kind="form" />
             <a
@@ -1385,6 +1441,7 @@ function SettingsInspector({
 }): JSX.Element {
     const s = config.settings;
     const set = (patch: Partial<FormConfig['settings']>): void => onChange(updateSettings(config, patch));
+    const brandingForLogo = useBrandingData();
     // C6 — el registro que crea el formulario puede salir de una plantilla.
     const recordTemplates = useRecordTemplates(listId, 'record');
     const emails = emailQuestions(fields, config);
@@ -1602,7 +1659,7 @@ function SettingsInspector({
             </Section>
 
             <Section title={__('Apariencia')}>
-                <Check label={__('Mostrar el logo de la empresa')} checked={s.show_logo} onChange={(v) => set({ show_logo: v })} />
+                <LogoSetting settings={s} hasBrandLogo={!!brandingForLogo.data?.logo_url} onChange={set} />
                 <Button variant="outline" size="sm" className="imcrm-gap-1.5 imcrm-self-start" onClick={onOpenDesign} data-testid="form-open-design">
                     <Palette className="imcrm-h-3.5 imcrm-w-3.5" />
                     {__('Colores, fuentes y más')}
