@@ -2,42 +2,29 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useQuery } from '@tanstack/react-query';
 import {
-    AlertTriangle,
-    ArrowDown,
-    ArrowUp,
+    ArrowLeft,
+    MousePointerClick,
     Check as CheckIcon,
-    Code2,
     Copy,
     ExternalLink,
-    EyeOff,
-    GripVertical,
     Globe,
-    Grid3x3,
-    Heading2,
-    Image as ImageIcon,
     Link2,
     Loader2,
-    MailCheck,
     Monitor,
     Moon,
     Palette,
-    Plus,
     BarChart3,
     Redo2,
-    Scale,
-    SeparatorHorizontal,
-    ShieldCheck,
     Smartphone,
     Sun,
     Trash2,
-    Type,
     Undo2,
     X,
 } from 'lucide-react';
 import {
+    DEFAULT_PUBLIC_THEME,
     buildPublicFormItems,
     buildPublicThemeCss,
-    CAPTCHA_PROVIDER_INFO,
     formEstimateMinutes,
     formPaymentActive,
     REDIRECT_URL_RE,
@@ -45,8 +32,6 @@ import {
     formRecallMap,
     FORM_FILE_ACCEPT_INFO,
     FORM_FILE_ACCEPTS,
-    type CaptchaAvailability,
-    type FormDataConsentAvailability,
     type FormFileAccept,
     type FormConfig,
     type FormShowIf,
@@ -65,15 +50,12 @@ import { FormStatsSheet } from './FormStatsSheet';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { api, useSession } from '@/cloud/session';
 import { useBrandingData } from '@/hooks/useBranding';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
-import { useRecordTemplates } from '@/hooks/useRecordTemplates';
 import { useTeams } from '@/hooks/useTeams';
-import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
 import { __ } from '@/lib/i18n';
 import { getTenantFormat } from '@/lib/tenantFormat';
 import { getThemeState } from '@/lib/theme';
@@ -84,14 +66,17 @@ import { Check, Field, Section } from '../automations/email/EmailBlockInspector'
 import { FieldItemDesign, ImageItemEditor } from './design/ItemDesign';
 import { ConditionEditor } from './design/ConditionEditor';
 import { LogicMap, LogicPanel, RecallPicker, withToken } from './design/LogicPanel';
-import { LogoSetting } from './design/LogoSetting';
 import { SitePreviewFrame } from './design/SitePreviewFrame';
 import { MatrixEditor } from './design/QuestionKind';
 import { MyThemes } from './design/MyThemes';
-import { StartSettings } from './design/StartSettings';
-import { ConversionSettings, ThankYouUrlField } from './design/ConversionSettings';
 import { ThemeGallery } from './design/ThemeGallery';
 import { ThemeInspector } from './design/ThemeInspector';
+import { ElementColors } from './design/ElementColors';
+import { ContentOutline } from './builder/ContentOutline';
+import { InspectorTabs, PageElementInspector, type InspectorTab, type PageElementContext } from './builder/PageElementInspector';
+import { SettingsGroupPanel, SettingsIndex, type SettingsContext } from './builder/SettingsGroups';
+import { QUESTION_STYLE, isPageElement, type SettingsGroupId } from './builder/pageElements';
+import { Choice, NumberField } from '@/components/design/DesignStyleControls';
 import {
     activePresetId,
     applyTheme,
@@ -110,22 +95,14 @@ import {
     defaultMatrixColumns,
     usedFieldIds,
     addFieldItem,
-    attributionColumnIds,
-    availableFields,
     conditionCandidates,
-    emailQuestions,
     endingName,
     logicCount,
     missingRequired,
-    moveItem,
-    moveItemTo,
-    pageCount,
-    pageNumbers,
     questionCount,
     readFormConfig,
     removeItem,
     updateItem,
-    updateSettings,
     type FormContentType,
 } from './formDesignOps';
 import { EmbedCodePicker } from './EmbedCodePicker';
@@ -195,8 +172,14 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     const [enabled, setEnabled] = useState(form.enabled);
     const [history, setHistory] = useState<History>({ past: [], future: [] });
     const [selected, setSelected] = useState<string | null>(null);
-    const [leftTab, setLeftTab] = useState<LeftTab>('add');
-    const [mobileTab, setMobileTab] = useState<'build' | 'design' | 'preview' | 'settings'>('preview');
+    const [leftTab, setLeftTab] = useState<LeftTab>('content');
+    // v0.1.377 — `edit` = el panel de lo elegido (en el celular, a pantalla completa con «Volver»).
+    const [mobileTab, setMobileTab] = useState<'content' | 'logic' | 'preview' | 'design' | 'settings' | 'edit'>('preview');
+    const [mobileBack, setMobileBack] = useState<'content' | 'logic' | 'preview' | 'design' | 'settings'>('preview');
+    // v0.1.377 — el grupo de Ajustes abierto (en el celular, null = el índice).
+    const [settingsGroup, setSettingsGroup] = useState<SettingsGroupId | null>(null);
+    // v0.1.377 — Contenido / Estilo del panel de lo elegido (se recuerda al cambiar de elemento).
+    const [inspectorTab, setInspectorTab] = useState<InspectorTab>('content');
     // v0.1.369 — `site`: el formulario dentro de una página de ejemplo, como queda insertado.
     const [device, setDevice] = useState<'desktop' | 'mobile' | 'site'>('desktop');
     // Con el modo «según el dispositivo», qué ver en la vista previa (arranca como la app).
@@ -215,6 +198,24 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     const subOn = config.settings.subscription.enabled;
     const subPlans = useQuery({ queryKey: ['subscription-plans', 'all'], queryFn: () => api.subscriptionPlans(), retry: false, staleTime: 30_000, enabled: subOn });
     const fieldsById = useMemo(() => new Map(fields.map((f) => [f.id, f])), [fields]);
+    /**
+     * v0.1.377 — Elegir algo (una pregunta o una parte como el título): se
+     * edita a la derecha, y en el celular se abre su panel con «Volver».
+     */
+    const pick = useCallback(
+        (id: string): void => {
+            setSelected(id);
+            // La pantalla de agradecimiento se mira en la vista previa al elegirla.
+            setPreviewEnding(id === '@thanks' ? '' : null);
+            if (narrow) {
+                setMobileTab((cur) => {
+                    if (cur !== 'edit') setMobileBack(cur);
+                    return 'edit';
+                });
+            }
+        },
+        [narrow],
+    );
 
     const change = useCallback((next: FormConfig) => {
         setDraft((d) => {
@@ -391,13 +392,12 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             const data = e.data as { type?: string; id?: string } | null;
             if (data?.type === 'imb-form-ready') setReady((n) => n + 1);
             if (data?.type === 'imb-form-select' && typeof data.id === 'string') {
-                setSelected(data.id);
-                if (narrow) setMobileTab('settings');
+                pick(data.id);
             }
         };
         window.addEventListener('message', onMessage);
         return () => window.removeEventListener('message', onMessage);
-    }, [narrow]);
+    }, [pick]);
     useEffect(() => {
         if (!ready) return;
         iframeRef.current?.contentWindow?.postMessage(
@@ -414,14 +414,15 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             window.location.origin,
         );
     }, [ready, meta, selected, themeCss, scheme, previewEnding, previewWelcome, config.settings.welcome.enabled, device]);
-    // Elegir una pregunta vuelve al formulario (la bienvenida tapa las preguntas).
+    // Elegir una pregunta vuelve al formulario (la bienvenida tapa las preguntas);
+    // elegir la bienvenida la muestra.
     useEffect(() => {
-        if (selected) setPreviewWelcome(false);
+        if (selected) setPreviewWelcome(selected === '@welcome');
     }, [selected]);
-    // Al salir de «Lógica» la vista previa vuelve al formulario.
+    // Al salir de «Lógica» la vista previa vuelve al formulario (salvo mirando el agradecimiento).
     useEffect(() => {
-        if (leftTab !== 'logic') setPreviewEnding(null);
-    }, [leftTab]);
+        if (leftTab !== 'logic' && selected !== '@thanks') setPreviewEnding(null);
+    }, [leftTab, selected]);
 
     const save = async (extra: { enabled?: boolean } = {}): Promise<boolean> => {
         // v0.1.356 — una pantalla final con la dirección a medio escribir se perdería al guardar.
@@ -433,7 +434,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                 __('Su dirección tiene que empezar con https://, o déjala vacía para mostrar el mensaje.'),
             );
             setSelected(null);
-            if (narrow) setMobileTab('build');
+            if (narrow) setMobileTab('logic');
             setLeftTab('logic');
             return false;
         }
@@ -484,12 +485,12 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     const addField = (fieldId: number): void => {
         const { config: next, id } = addFieldItem(config, fieldId, selected);
         change(next);
-        setSelected(id);
+        pick(id);
     };
     const addContent = (type: FormContentType): void => {
         const { config: next, id } = addContentItem(config, type, selected);
         change(next);
-        setSelected(id);
+        pick(id);
     };
     // v0.1.355 — una matriz arranca con las selecciones sin usar que comparten opciones con la primera.
     const addMatrix = (): void => {
@@ -501,9 +502,8 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
         const rows = first ? free.filter((f) => f.type === first.type && sameOptions(f, first)).slice(0, 4) : [];
         const { config: next, id } = addMatrixItem(config, rows.map((f) => f.id), defaultMatrixColumns(first), selected);
         change(next);
-        setSelected(id);
         // En el celular, directo a sus ajustes: una matriz hay que armarla.
-        if (narrow) setMobileTab('settings');
+        pick(id);
     };
 
     const applyPreset = (p: PublicThemePreset): void => {
@@ -512,11 +512,6 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     const applySaved = (t: SavedPublicTheme): void => {
         change(applyTheme(config, t.theme, { keepCustomCss: !isAdmin }));
         toast.success(__('Tema aplicado'), __('«%s». Si no te convence, deshazlo.').replace('%s', t.name));
-    };
-    const openDesign = (): void => {
-        setSelected(null);
-        if (narrow) setMobileTab('design');
-        else setLeftTab('design');
     };
     const designLibrary = (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-5">
@@ -533,12 +528,8 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
         <ThemeInspector config={config} onChange={change} brand={brandColor} isAdmin={isAdmin} showLogo={config.settings.show_logo} />
     );
 
-    const openSettings = (): void => {
-        setSelected(null);
-        setPreviewEnding(null);
-        if (narrow) setMobileTab('settings');
-        else setLeftTab('structure');
-    };
+    // La pantalla de agradecimiento «de siempre» se edita tocándola.
+    const openSettings = (): void => pick('@thanks');
     const logicPanel = (
         <LogicPanel
             config={config}
@@ -555,33 +546,111 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
         />
     );
 
-    const left = (
-        <LeftPanel
-            tab={leftTab}
-            onTab={(t) => {
-                setLeftTab(t);
-                // Elegir «Diseño» o «Lógica» muestra sus ajustes a la derecha.
-                if (t === 'design' || t === 'logic') setSelected(null);
-            }}
-            showDesignTab={!narrow}
-            designContent={designLibrary}
-            // En el celular la lógica se edita ahí mismo; en la computadora, a la derecha.
-            logicContent={narrow ? logicPanel : <LogicMap config={config} fieldsById={fieldsById} />}
+    const closeSelection = (): void => {
+        setSelected(null);
+        if (narrow) setMobileTab(mobileBack);
+    };
+    const selectedElement = isPageElement(selected) ? selected : null;
+    const settingsCtx: SettingsContext = {
+        config,
+        onChange: change,
+        fields,
+        listId,
+        formId: form.id,
+        name: draft.name,
+        setName: (name) => setDraft((d) => ({ ...d, name })),
+        captcha: captcha.data ?? null,
+        dataConsent: dataConsent.data ?? null,
+        missing,
+        previewWelcome,
+        onPreviewWelcome: setPreviewWelcome,
+        onSelectElement: pick,
+    };
+    const openSettingsGroup = (g: SettingsGroupId): void => {
+        setSelected(null);
+        setSettingsGroup(g);
+        setLeftTab('settings');
+        if (narrow) setMobileTab('settings');
+    };
+    const elementCtx: PageElementContext = {
+        config,
+        onChange: change,
+        fields,
+        brand: brandColor,
+        isAdmin,
+        captcha: captcha.data ?? null,
+        dataConsent: dataConsent.data ?? null,
+        previewWelcome,
+        onPreviewWelcome: setPreviewWelcome,
+        onOpenSettings: openSettingsGroup,
+        onOpenLogic: () => {
+            setSelected(null);
+            setLeftTab('logic');
+            if (narrow) setMobileTab('logic');
+        },
+    };
+
+    const outline = (
+        <ContentOutline
             config={config}
             fields={fields}
             fieldsById={fieldsById}
             selected={selected}
-            onSelect={(id) => {
-                setSelected(id);
-                if (narrow) setMobileTab('settings');
-            }}
+            onSelect={pick}
+            onChange={change}
             onAddField={addField}
             onAddContent={addContent}
             onAddMatrix={addMatrix}
-            onChange={change}
+            titleText={config.settings.title || draft.name}
+            hasLogo={!!branding.data?.logo_url}
         />
     );
-    const right = selectedItem ? (
+    const settingsIndex = (
+        <SettingsIndex
+            active={narrow ? null : (settingsGroup ?? 'general')}
+            onPick={(g) => {
+                setSettingsGroup(g);
+                setSelected(null);
+            }}
+            config={config}
+            captcha={captcha.data ?? null}
+            missing={missing}
+        />
+    );
+    const designLeft = (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-p-3">
+            <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                <Palette className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
+                {__('Elige una plantilla o un tema guardado. Los colores, fuentes y tamaños de todo el formulario se ajustan a la derecha; los de una parte, tocándola.')}
+            </p>
+            {designLibrary}
+        </div>
+    );
+    const left = (
+        <div className="imcrm-flex imcrm-flex-col">
+            <BuilderTabs
+                tab={leftTab}
+                onTab={(t) => {
+                    setLeftTab(t as LeftTab);
+                    // Elegir una pestaña muestra sus ajustes a la derecha.
+                    setSelected(null);
+                }}
+                tabs={[
+                    ['content', __('Contenido')],
+                    ['design', __('Diseño')],
+                    ['logic', __('Lógica')],
+                    ['settings', __('Ajustes')],
+                ]}
+                logicCount={logicCount(config)}
+                itemsCount={config.items.length}
+            />
+            {leftTab === 'content' && outline}
+            {leftTab === 'design' && designLeft}
+            {leftTab === 'logic' && <LogicMap config={config} fieldsById={fieldsById} />}
+            {leftTab === 'settings' && settingsIndex}
+        </div>
+    );
+    const itemInspector = selectedItem ? (
         <ItemInspector
             key={selectedItem.id}
             item={selectedItem}
@@ -591,34 +660,33 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             listId={listId}
             themeChoiceStyle={theme.choices.style}
             onChange={change}
-            onClose={() => setSelected(null)}
+            onClose={closeSelection}
+            tab={inspectorTab}
+            onTab={setInspectorTab}
+            brand={brandColor}
+            isAdmin={isAdmin}
         />
-    ) : leftTab === 'design' && !narrow ? (
-        themeInspector
-    ) : leftTab === 'logic' && !narrow ? (
-        logicPanel
-    ) : (
-        <SettingsInspector
-            draft={draft}
-            setName={(name) => setDraft((d) => ({ ...d, name }))}
-            config={config}
-            onChange={change}
-            missing={missing}
-            fields={fields}
-            captcha={captcha.data ?? null}
-            dataConsent={dataConsent.data ?? null}
-            listId={listId}
-            formId={form.id}
-            onOpenDesign={openDesign}
-            previewWelcome={previewWelcome}
-            onPreviewWelcome={setPreviewWelcome}
-        />
-    );
+    ) : null;
+    const elementInspector = selectedElement ? (
+        <PageElementInspector key={selectedElement} id={selectedElement} ctx={elementCtx} tab={inspectorTab} onTab={setInspectorTab} onClose={closeSelection} />
+    ) : null;
+    const right =
+        itemInspector ??
+        elementInspector ??
+        (leftTab === 'design' ? (
+            themeInspector
+        ) : leftTab === 'logic' ? (
+            logicPanel
+        ) : leftTab === 'settings' ? (
+            <SettingsGroupPanel group={settingsGroup ?? 'general'} ctx={settingsCtx} />
+        ) : (
+            <EmptyInspector onPick={pick} />
+        ));
     const preview = (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-bg-canvas">
             <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-3 imcrm-py-1.5">
                 <span className="imcrm-min-w-0 imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">
-                    {__('Vista previa — toca una pregunta para editarla')}
+                    {__('Vista previa — toca cualquier parte para editarla')}
                 </span>
                 <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5">
                     {theme.mode === 'auto' && (
@@ -766,36 +834,36 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
 
             {narrow ? (
                 <>
-                    <div role="tablist" className="imcrm-flex imcrm-border-b imcrm-border-border">
-                        {(
-                            [
-                                ['build', __('Preguntas')],
-                                ['design', __('Diseño')],
+                    {mobileTab === 'edit' ? (
+                        <div className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-border-b imcrm-border-border imcrm-px-2 imcrm-py-1.5">
+                            <Button variant="ghost" size="sm" className="imcrm-gap-1" onClick={closeSelection} data-testid="form-edit-back">
+                                <ArrowLeft className="imcrm-h-4 imcrm-w-4" />
+                                {__('Volver')}
+                            </Button>
+                            <span className="imcrm-ml-auto imcrm-text-[11px] imcrm-text-muted-foreground">{__('Editando')}</span>
+                        </div>
+                    ) : (
+                        <BuilderTabs
+                            full
+                            tab={mobileTab}
+                            onTab={(t) => {
+                                setMobileTab(t as typeof mobileTab);
+                                setSelected(null);
+                                if (t === 'settings') setSettingsGroup(null);
+                            }}
+                            tabs={[
+                                ['content', __('Contenido')],
+                                ['logic', __('Lógica')],
                                 ['preview', __('Vista previa')],
-                                ['settings', selectedItem ? __('Editar') : __('Ajustes')],
-                            ] as const
-                        ).map(([key, label]) => (
-                            <button
-                                key={key}
-                                role="tab"
-                                type="button"
-                                aria-selected={mobileTab === key}
-                                data-tour={designTabTour(key)}
-                                onClick={() => {
-                                    setMobileTab(key);
-                                    if (key === 'design') setSelected(null);
-                                }}
-                                className={cn(
-                                    'imcrm-flex-1 imcrm-border-b-2 imcrm-py-2 imcrm-text-sm',
-                                    mobileTab === key ? 'imcrm-border-primary imcrm-font-medium' : 'imcrm-border-transparent imcrm-text-muted-foreground',
-                                )}
-                            >
-                                {label}
-                            </button>
-                        ))}
-                    </div>
+                                ['design', __('Diseño')],
+                                ['settings', __('Ajustes')],
+                            ]}
+                            logicCount={logicCount(config)}
+                        />
+                    )}
                     <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto">
-                        {mobileTab === 'build' && left}
+                        {mobileTab === 'content' && outline}
+                        {mobileTab === 'logic' && logicPanel}
                         {mobileTab === 'design' && (
                             <div className="imcrm-flex imcrm-flex-col" data-testid="form-design-mobile">
                                 <div className="imcrm-border-b imcrm-border-border imcrm-p-3">{designLibrary}</div>
@@ -803,7 +871,24 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                             </div>
                         )}
                         {mobileTab === 'preview' && <div className="imcrm-h-full">{preview}</div>}
-                        {mobileTab === 'settings' && right}
+                        {mobileTab === 'settings' &&
+                            (settingsGroup === null ? (
+                                settingsIndex
+                            ) : (
+                                <div className="imcrm-flex imcrm-flex-col">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSettingsGroup(null)}
+                                        className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-px-4 imcrm-pt-3 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground"
+                                        data-testid="form-settings-back"
+                                    >
+                                        <ArrowLeft className="imcrm-h-3.5 imcrm-w-3.5" />
+                                        {__('Ajustes')}
+                                    </button>
+                                    <SettingsGroupPanel group={settingsGroup} ctx={settingsCtx} />
+                                </div>
+                            ))}
+                        {mobileTab === 'edit' && (itemInspector ?? elementInspector ?? <EmptyInspector onPick={pick} />)}
                     </div>
                 </>
             ) : (
@@ -937,274 +1022,95 @@ function SharePanel({
 
 // ─────────────────────────── Panel izquierdo ───────────────────────────
 
-type LeftTab = 'add' | 'structure' | 'design' | 'logic';
+type LeftTab = 'content' | 'design' | 'logic' | 'settings';
 
 /** Ancla del recorrido para la pestaña «Diseño» (escritorio y celular). */
-const DESIGN_TAB = { dataTour: 'form-design-tab' } as const;
 function designTabTour(tab: string): string | undefined {
-    return tab === 'design' ? DESIGN_TAB.dataTour : undefined;
+    return tab === 'design' ? 'form-design-tab' : tab === 'settings' ? 'form-settings-tab' : tab === 'content' ? 'form-content-tab' : undefined;
 }
 
-interface LeftPanelProps {
-    tab: LeftTab;
-    onTab: (t: LeftTab) => void;
-    /** En el celular el diseño tiene su propia pestaña arriba. */
-    showDesignTab: boolean;
-    /** Plantillas y «Mis temas». */
-    designContent: React.ReactNode;
-    /** v0.1.356 — el mapa de la lógica (computadora) o su editor (celular). */
-    logicContent: React.ReactNode;
-    config: FormConfig;
-    fields: FieldEntity[];
-    fieldsById: Map<number, FieldEntity>;
-    selected: string | null;
-    onSelect: (id: string) => void;
-    onAddField: (fieldId: number) => void;
-    onAddContent: (type: FormContentType) => void;
-    /** v0.1.355 */
-    onAddMatrix: () => void;
-    onChange: (next: FormConfig) => void;
-}
-
-function itemTitle(item: FormItem, fieldsById: Map<number, FieldEntity>): string {
-    if (item.type === 'heading') return item.text || __('Título de sección');
-    if (item.type === 'text') return item.text.split('\n')[0] || __('Texto');
-    if (item.type === 'page_break') return item.title || __('Salto de página');
-    if (item.type === 'image') return item.caption.trim() || item.alt.trim() || __('Imagen');
-    if (item.type === 'matrix') return item.label.trim() || __('Matriz');
-    return item.label.trim() || fieldsById.get(item.field_id)?.label || __('Campo borrado');
-}
-
-function LeftPanel(p: LeftPanelProps): JSX.Element {
-    const available = availableFields(p.fields, p.config);
-    const [dragId, setDragId] = useState<string | null>(null);
-    const [dropAt, setDropAt] = useState<number | null>(null);
-    const pageOf = pageNumbers(p.config);
-    const multiPage = pageCount(p.config) > 1;
-    const rules = logicCount(p.config);
+/**
+ * v0.1.377 — Las pestañas del constructor: Contenido (todo lo que tiene el
+ * formulario, en orden), Diseño (plantillas y temas), Lógica y Ajustes (en
+ * grupos). Cada pestaña dice para qué sirve, así nunca hay que adivinar.
+ */
+function BuilderTabs({
+    tab,
+    onTab,
+    tabs,
+    logicCount: rules,
+    itemsCount,
+    full,
+}: {
+    tab: string;
+    onTab: (t: string) => void;
+    tabs: ReadonlyArray<readonly [string, string]>;
+    logicCount: number;
+    itemsCount?: number;
+    /** En el celular, la tira de pestañas de arriba (a todo el ancho). */
+    full?: boolean;
+}): JSX.Element {
     return (
-        <div className="imcrm-flex imcrm-flex-col">
-            <div role="tablist" className="imcrm-flex imcrm-gap-0.5 imcrm-border-b imcrm-border-border imcrm-px-1 imcrm-pt-2">
-                {(
-                    [
-                        ['add', __('Agregar')],
-                        ['structure', __('Preguntas')],
-                        ...(p.showDesignTab ? ([['design', __('Diseño')]] as const) : []),
-                        ['logic', __('Lógica')],
-                    ] as ReadonlyArray<readonly [LeftTab, string]>
-                ).map(([key, label]) => (
+        <div role="tablist" className={cn('imcrm-flex imcrm-border-b imcrm-border-border', full ? '' : 'imcrm-gap-0.5 imcrm-px-1 imcrm-pt-2')}>
+            {tabs.map(([key, label]) => (
+                <button
+                    key={key}
+                    role="tab"
+                    type="button"
+                    aria-selected={tab === key}
+                    data-tour={designTabTour(key)}
+                    data-testid={`form-tab-${key}`}
+                    aria-label={key === 'content' && itemsCount !== undefined ? `${label} (${itemsCount})` : key === 'logic' && rules > 0 ? `${label} (${rules})` : undefined}
+                    title={key === 'logic' && rules > 0 ? __('%s saltos y pantallas finales').replace('%s', String(rules)) : undefined}
+                    onClick={() => onTab(key)}
+                    className={cn(
+                        '-imcrm-mb-px imcrm-whitespace-nowrap imcrm-border-b-2',
+                        full ? 'imcrm-flex-1 imcrm-py-2 imcrm-text-[13px]' : 'imcrm-flex-1 imcrm-px-1.5 imcrm-pb-2 imcrm-text-xs',
+                        tab === key ? 'imcrm-border-primary imcrm-font-medium imcrm-text-foreground' : 'imcrm-border-transparent imcrm-text-muted-foreground',
+                    )}
+                >
+                    {label}
+                    {key === 'logic' && rules > 0 && (
+                        <span className="imcrm-ml-1 imcrm-inline-block imcrm-h-1.5 imcrm-w-1.5 imcrm-rounded-full imcrm-bg-primary imcrm-align-middle" aria-hidden="true" />
+                    )}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+/** v0.1.377 — Lo que se ve a la derecha cuando no hay nada elegido. */
+function EmptyInspector({ onPick }: { onPick: (id: string) => void }): JSX.Element {
+    const quick: Array<[string, string]> = [
+        ['@title', 'El título'],
+        ['@logo', 'El logo'],
+        ['@submit', 'El botón'],
+        ['@thanks', 'El agradecimiento'],
+        ['@page', 'El fondo'],
+    ];
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-3 imcrm-px-6 imcrm-py-12 imcrm-text-center" data-testid="form-inspector-empty">
+            <span className="imcrm-flex imcrm-h-11 imcrm-w-11 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-primary/10 imcrm-text-primary">
+                <MousePointerClick className="imcrm-h-5 imcrm-w-5" />
+            </span>
+            <div>
+                <p className="imcrm-text-sm imcrm-font-semibold">{__('Toca cualquier parte del formulario')}</p>
+                <p className="imcrm-mt-1 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('En la vista previa o en la lista de la izquierda: una pregunta, el título, el logo, el botón… Aquí aparece lo que dice, si se muestra y su estilo.')}
+                </p>
+            </div>
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-justify-center imcrm-gap-1.5">
+                {quick.map(([id, label]) => (
                     <button
-                        key={key}
-                        role="tab"
+                        key={id}
                         type="button"
-                        aria-selected={p.tab === key}
-                        data-tour={designTabTour(key)}
-                        data-testid={key === 'design' ? 'form-design-tab' : key === 'logic' ? 'form-logic-tab' : undefined}
-                        // La cantidad de saltos y pantallas finales va en un punto (no entra en el ancho).
-                        aria-label={
-                            key === 'structure' ? `${label} (${p.config.items.length})` : key === 'logic' && rules > 0 ? `${label} (${rules})` : undefined
-                        }
-                        title={key === 'logic' && rules > 0 ? __('%s saltos y pantallas finales').replace('%s', String(rules)) : undefined}
-                        data-count={key === 'logic' ? rules : undefined}
-                        onClick={() => p.onTab(key)}
-                        className={cn(
-                            '-imcrm-mb-px imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-1.5 imcrm-pb-2 imcrm-text-xs',
-                            p.tab === key ? 'imcrm-border-primary imcrm-font-medium imcrm-text-foreground' : 'imcrm-border-transparent imcrm-text-muted-foreground',
-                        )}
+                        onClick={() => onPick(id)}
+                        className="imcrm-rounded-full imcrm-border imcrm-border-border imcrm-px-2.5 imcrm-py-1 imcrm-text-[11px] hover:imcrm-bg-accent"
                     >
-                        {label}
-                        {key === 'structure' && (
-                            <span className="imcrm-ml-1 imcrm-text-[10px] imcrm-tabular-nums imcrm-text-muted-foreground" aria-hidden="true">
-                                {p.config.items.length}
-                            </span>
-                        )}
-                        {key === 'logic' && rules > 0 && (
-                            <span className="imcrm-ml-1 imcrm-inline-block imcrm-h-1.5 imcrm-w-1.5 imcrm-rounded-full imcrm-bg-primary imcrm-align-middle" aria-hidden="true" />
-                        )}
+                        {__(label)}
                     </button>
                 ))}
             </div>
-
-            {p.tab === 'logic' ? (
-                p.logicContent
-            ) : p.tab === 'design' && p.showDesignTab ? (
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-p-3">
-                    <button
-                        type="button"
-                        className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-left imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground"
-                        onClick={() => p.onTab('design')}
-                    >
-                        <Palette className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
-                        {__('Los colores, fuentes, tamaños y bordes se ajustan a la derecha.')}
-                    </button>
-                    {p.designContent}
-                </div>
-            ) : p.tab === 'add' || (p.tab === 'design' && !p.showDesignTab) ? (
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-3">
-                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                        <p className="imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                            {__('Campos de la lista')}
-                        </p>
-                        {available.length === 0 ? (
-                            <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Ya están todos los campos que se pueden preguntar.')}</p>
-                        ) : (
-                            available.map((f) => {
-                                const Icon = fieldTypeIcon(f.type);
-                                return (
-                                    <button
-                                        key={f.id}
-                                        type="button"
-                                        onClick={() => p.onAddField(f.id)}
-                                        className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left imcrm-text-sm hover:imcrm-bg-accent"
-                                        data-add-field={f.slug}
-                                    >
-                                        <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
-                                        <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate">{f.label}</span>
-                                        {f.is_required && <span className="imcrm-text-[10px] imcrm-text-muted-foreground">{__('obligatorio')}</span>}
-                                        <Plus className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />
-                                    </button>
-                                );
-                            })
-                        )}
-                        <p className="imcrm-mt-1 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                            {__('Las personas del equipo, las relaciones y los campos calculados no se preguntan en un formulario público.')}
-                            {attributionColumnIds(p.config).size > 0 && ' ' + __('Las columnas de dónde vino cada registro se llenan solas (Ajustes → Medir conversiones).')}
-                        </p>
-                    </div>
-                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                        <p className="imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                            {__('Contenido')}
-                        </p>
-                        <button type="button" onClick={() => p.onAddContent('heading')} className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-sm hover:imcrm-bg-accent">
-                            <Heading2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />
-                            {__('Título de sección')}
-                        </button>
-                        <button type="button" onClick={() => p.onAddContent('text')} className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-sm hover:imcrm-bg-accent">
-                            <Type className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />
-                            {__('Texto o aclaración')}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => p.onAddContent('page_break')}
-                            className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-sm hover:imcrm-bg-accent"
-                            data-testid="form-add-page-break"
-                        >
-                            <SeparatorHorizontal className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />
-                            {__('Salto de página')}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => p.onAddContent('image')}
-                            className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-sm hover:imcrm-bg-accent"
-                            data-testid="form-add-image"
-                        >
-                            <ImageIcon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />
-                            {__('Imagen')}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => p.onAddMatrix()}
-                            className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left imcrm-text-sm hover:imcrm-bg-accent"
-                            data-testid="form-add-matrix"
-                        >
-                            <Grid3x3 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
-                            <span className="imcrm-min-w-0 imcrm-flex-1">{__('Matriz')}</span>
-                            <span className="imcrm-text-[10px] imcrm-text-muted-foreground">{__('varias preguntas en una tabla')}</span>
-                        </button>
-                        <p className="imcrm-mt-1 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                            {__('Con saltos de página el formulario se responde por pasos, con una barra de progreso.')}
-                        </p>
-                    </div>
-                </div>
-            ) : (
-                <ol className="imcrm-flex imcrm-flex-col imcrm-gap-0.5 imcrm-p-2" data-testid="form-structure">
-                    {p.config.items.length === 0 && (
-                        <li className="imcrm-px-2 imcrm-py-6 imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Todavía no hay preguntas. Agrégalas desde la pestaña «Agregar».')}
-                        </li>
-                    )}
-                    {multiPage && p.config.items[0]?.type !== 'page_break' && (
-                        <li className="imcrm-px-1.5 imcrm-pb-0.5 imcrm-pt-1 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                            {__('Página')} 1
-                        </li>
-                    )}
-                    {p.config.items.map((item, idx) => {
-                        const Icon =
-                            item.type === 'heading'
-                                ? Heading2
-                                : item.type === 'text'
-                                  ? Type
-                                  : item.type === 'page_break'
-                                    ? SeparatorHorizontal
-                                    : item.type === 'image'
-                                      ? ImageIcon
-                                      : item.type === 'matrix'
-                                        ? Grid3x3
-                                        : fieldTypeIcon(p.fieldsById.get(item.field_id)?.type ?? 'text');
-                        const isBreak = item.type === 'page_break';
-                        return (
-                            <li
-                                key={item.id}
-                                draggable
-                                onDragStart={(e) => {
-                                    setDragId(item.id);
-                                    e.dataTransfer.effectAllowed = 'move';
-                                }}
-                                onDragOver={(e) => {
-                                    if (!dragId) return;
-                                    e.preventDefault();
-                                    const r = e.currentTarget.getBoundingClientRect();
-                                    setDropAt(e.clientY < r.top + r.height / 2 ? idx : idx + 1);
-                                }}
-                                onDragEnd={() => {
-                                    setDragId(null);
-                                    setDropAt(null);
-                                }}
-                                onDrop={(e) => {
-                                    e.preventDefault();
-                                    if (dragId && dropAt !== null) {
-                                        const from = p.config.items.findIndex((i) => i.id === dragId);
-                                        p.onChange(moveItemTo(p.config, dragId, from < dropAt ? dropAt - 1 : dropAt));
-                                    }
-                                    setDragId(null);
-                                    setDropAt(null);
-                                }}
-                                className={cn(
-                                    'imcrm-group imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-transparent imcrm-px-1.5 imcrm-py-1.5 imcrm-text-sm',
-                                    isBreak && 'imcrm-mt-2 imcrm-border-dashed imcrm-border-t-border imcrm-bg-muted/40',
-                                    p.selected === item.id ? 'imcrm-border-primary/40 imcrm-bg-primary/5' : 'hover:imcrm-bg-accent',
-                                    dropAt === idx && 'imcrm-border-t-primary',
-                                    dropAt === idx + 1 && idx === p.config.items.length - 1 && 'imcrm-border-b-primary',
-                                )}
-                                data-structure-item={item.id}
-                            >
-                                <GripVertical className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-cursor-grab imcrm-text-muted-foreground" />
-                                <button type="button" className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-1.5 imcrm-text-left" onClick={() => p.onSelect(item.id)}>
-                                    <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
-                                    {isBreak && (
-                                        <span className="imcrm-shrink-0 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                                            {__('Página')} {pageOf.get(item.id) ?? 1}
-                                        </span>
-                                    )}
-                                    <span className={cn('imcrm-truncate', item.type === 'heading' && 'imcrm-font-medium', isBreak && 'imcrm-text-muted-foreground')}>
-                                        {isBreak ? (item.title ? `· ${item.title}` : '') : itemTitle(item, p.fieldsById)}
-                                    </span>
-                                    {item.type === 'field' && item.hidden && <EyeOff className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-muted-foreground" aria-label={__('Oculto')} />}
-                                    {item.show_if && <span className="imcrm-shrink-0 imcrm-rounded imcrm-bg-muted imcrm-px-1 imcrm-text-[10px] imcrm-text-muted-foreground">{__('si…')}</span>}
-                                </button>
-                                <span className="imcrm-flex imcrm-opacity-0 group-hover:imcrm-opacity-100 group-focus-within:imcrm-opacity-100">
-                                    <button type="button" aria-label={__('Subir')} disabled={idx === 0} onClick={() => p.onChange(moveItem(p.config, item.id, -1))} className="imcrm-rounded imcrm-p-0.5 imcrm-text-muted-foreground hover:imcrm-text-foreground disabled:imcrm-opacity-30">
-                                        <ArrowUp className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    </button>
-                                    <button type="button" aria-label={__('Bajar')} disabled={idx === p.config.items.length - 1} onClick={() => p.onChange(moveItem(p.config, item.id, 1))} className="imcrm-rounded imcrm-p-0.5 imcrm-text-muted-foreground hover:imcrm-text-foreground disabled:imcrm-opacity-30">
-                                        <ArrowDown className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    </button>
-                                </span>
-                            </li>
-                        );
-                    })}
-                </ol>
-            )}
         </div>
     );
 }
@@ -1220,6 +1126,10 @@ function ItemInspector({
     themeChoiceStyle,
     onChange,
     onClose,
+    tab,
+    onTab,
+    brand,
+    isAdmin,
 }: {
     item: FormItem;
     config: FormConfig;
@@ -1231,6 +1141,11 @@ function ItemInspector({
     themeChoiceStyle: PublicChoiceStyle;
     onChange: (next: FormConfig) => void;
     onClose: () => void;
+    /** v0.1.377 — Contenido / Estilo. */
+    tab: InspectorTab;
+    onTab: (t: InspectorTab) => void;
+    brand: string;
+    isAdmin: boolean;
 }): JSX.Element {
     const set = (patch: Partial<FormItem>): void => onChange(updateItem(config, item.id, patch));
     const field = item.type === 'field' ? fieldsById.get(item.field_id) : undefined;
@@ -1247,6 +1162,8 @@ function ItemInspector({
                     ? __('Matriz')
                     : (field?.label ?? __('Pregunta'));
 
+    const hasStyle = item.type === 'field' ? !item.hidden : item.type === 'heading' || item.type === 'text' || item.type === 'matrix';
+    const shown: InspectorTab = hasStyle ? tab : 'content';
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-4" data-testid="form-item-inspector">
             <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
@@ -1266,12 +1183,16 @@ function ItemInspector({
                     >
                         <Trash2 className="imcrm-h-4 imcrm-w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" aria-label={__('Volver a los ajustes')} onClick={onClose}>
+                    <Button variant="ghost" size="icon" aria-label={__('Cerrar')} onClick={onClose}>
                         <X className="imcrm-h-4 imcrm-w-4" />
                     </Button>
                 </div>
             </div>
-
+            <InspectorTabs tab={shown} onTab={onTab} hasStyle={hasStyle} />
+            {shown === 'style' ? (
+                <ItemStyle item={item} field={field} config={config} fields={fields} listId={listId} themeChoiceStyle={themeChoiceStyle} onChange={onChange} brand={brand} isAdmin={isAdmin} />
+            ) : (
+            <>
             {item.type === 'heading' && (
                 <Field label={__('Título')}>
                     <Input value={item.text} onChange={(e) => set({ text: e.target.value })} />
@@ -1356,6 +1277,7 @@ function ItemInspector({
                     </Section>
                     {!item.hidden && (
                         <FieldItemDesign
+                            part="answer"
                             item={item}
                             field={field}
                             themeChoiceStyle={themeChoiceStyle}
@@ -1383,6 +1305,105 @@ function ItemInspector({
                 !(item.type === 'field' && config.settings.confirm_email && config.settings.respondent_email_field_id === item.field_id) && (
                 <ItemCondition item={item} config={config} fieldsById={fieldsById} onSet={(show_if) => set({ show_if })} />
             )}
+            </>
+            )}
+        </div>
+    );
+}
+
+/**
+ * v0.1.377 — «Estilo» de una pregunta: lo suyo (ancho, etiqueta, columnas,
+ * imágenes de las opciones) y lo que vale para TODAS las preguntas (colores,
+ * tamaño de la etiqueta, campos y opciones), dicho así para que nadie crea que
+ * cambia sólo ésta.
+ */
+function ItemStyle({
+    item,
+    field,
+    config,
+    fields,
+    listId,
+    themeChoiceStyle,
+    onChange,
+    brand,
+    isAdmin,
+}: {
+    item: FormItem;
+    field: FieldEntity | undefined;
+    config: FormConfig;
+    fields: FieldEntity[];
+    listId: number;
+    themeChoiceStyle: PublicChoiceStyle;
+    onChange: (next: FormConfig) => void;
+    brand: string;
+    isAdmin: boolean;
+}): JSX.Element {
+    const t = effectiveTheme(config.settings);
+    const D = DEFAULT_PUBLIC_THEME;
+    const isChoice = item.type === 'matrix' || (item.type === 'field' && !!field && ['select', 'multi_select', 'team', 'checkbox', 'rating'].includes(field.type));
+    if (item.type === 'heading' || item.type === 'text') {
+        return (
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="form-item-style">
+                <Section title={__('Colores')}>
+                    <ElementColors config={config} onChange={onChange} keys={item.type === 'heading' ? ['heading'] : ['text', 'link']} brand={brand} />
+                    <p className="imcrm-text-[10.5px] imcrm-leading-snug imcrm-text-muted-foreground">
+                        {item.type === 'heading' ? __('Vale para todos los títulos de sección del formulario.') : __('Vale para todos los textos del formulario.')}
+                    </p>
+                </Section>
+            </div>
+        );
+    }
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="form-item-style">
+            {item.type === 'field' && field && (
+                <FieldItemDesign
+                    part="look"
+                    item={item}
+                    field={field}
+                    themeChoiceStyle={themeChoiceStyle}
+                    config={config}
+                    fields={fields}
+                    listId={listId}
+                    onSet={(patch) => onChange(updateItem(config, item.id, patch))}
+                />
+            )}
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-canvas/60 imcrm-p-2.5">
+                <p className="imcrm-text-xs imcrm-font-semibold">{__('Para todas las preguntas')}</p>
+                <p className="imcrm-text-[10.5px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Lo de aquí cambia todas las preguntas del formulario a la vez, así se ven parejas.')}
+                </p>
+                <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
+                    <NumberField
+                        label={__('Tamaño de la pregunta')}
+                        unit="px"
+                        min={12}
+                        max={30}
+                        value={t.typography.question_size}
+                        placeholder={String(D.typography.question_size)}
+                        onChange={(v) => onChange(patchThemeSection(config, 'typography', { question_size: v == null ? D.typography.question_size : Math.round(v) }))}
+                    />
+                    <Choice
+                        label={__('Grosor')}
+                        value={String(t.typography.question_weight)}
+                        options={[
+                            { value: '400', label: __('Normal') },
+                            { value: '600', label: __('Semi') },
+                            { value: '700', label: __('Negrita') },
+                        ]}
+                        onChange={(v) => onChange(patchThemeSection(config, 'typography', { question_weight: Number(v) as typeof t.typography.question_weight }))}
+                    />
+                </div>
+                <ElementColors config={config} onChange={onChange} keys={QUESTION_STYLE.colors} brand={brand} />
+                {isChoice && <ElementColors config={config} onChange={onChange} keys={QUESTION_STYLE.choiceColors} brand={brand} />}
+                <ThemeInspector
+                    config={config}
+                    onChange={onChange}
+                    brand={brand}
+                    isAdmin={isAdmin}
+                    showLogo={config.settings.show_logo}
+                    only={isChoice ? ['inputs', 'choices'] : ['inputs']}
+                />
+            </div>
         </div>
     );
 }
@@ -1409,347 +1430,4 @@ function ItemCondition({
             />
         </Section>
     );
-}
-
-function SettingsInspector({
-    draft,
-    setName,
-    config,
-    onChange,
-    missing,
-    fields,
-    captcha,
-    dataConsent,
-    listId,
-    formId,
-    onOpenDesign,
-    previewWelcome,
-    onPreviewWelcome,
-}: {
-    listId: number;
-    /** v0.1.360 — para la variable `{{formulario.<id>.enlace}}`. */
-    formId: number;
-    /** v0.1.351 — lleva a la pestaña «Diseño» (colores, fuentes, tamaños…). */
-    onOpenDesign: () => void;
-    /** v0.1.357 — ver la bienvenida en la vista previa. */
-    previewWelcome: boolean;
-    onPreviewWelcome: (on: boolean) => void;
-    draft: Draft;
-    setName: (name: string) => void;
-    config: FormConfig;
-    onChange: (next: FormConfig) => void;
-    missing: FieldEntity[];
-    fields: FieldEntity[];
-    captcha: CaptchaAvailability | null;
-    dataConsent: FormDataConsentAvailability | null;
-}): JSX.Element {
-    const s = config.settings;
-    const set = (patch: Partial<FormConfig['settings']>): void => onChange(updateSettings(config, patch));
-    const brandingForLogo = useBrandingData();
-    // C6 — el registro que crea el formulario puede salir de una plantilla.
-    const recordTemplates = useRecordTemplates(listId, 'record');
-    const emails = emailQuestions(fields, config);
-    const emailId = s.respondent_email_field_id !== null && emails.some((f) => f.id === s.respondent_email_field_id) ? s.respondent_email_field_id : null;
-    /** Confirmar el correo: la pregunta queda obligatoria, visible y sin condición. */
-    const setConfirm = (on: boolean): void => {
-        let next = updateSettings(config, { confirm_email: on });
-        if (on && emailId !== null) {
-            const it = next.items.find((i) => i.type === 'field' && i.field_id === emailId);
-            if (it) next = updateItem(next, it.id, { required: true, hidden: false, show_if: null });
-        }
-        onChange(next);
-    };
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-4" data-testid="form-settings">
-            {missing.length > 0 && (
-                <div className="imcrm-flex imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-warning/40 imcrm-bg-warning/10 imcrm-px-3 imcrm-py-2 imcrm-text-xs" data-testid="form-missing-required">
-                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
-                    <span>
-                        {__('La lista exige')} {missing.map((f) => `«${f.label}»`).join(', ')}{' '}
-                        {__('y el formulario puede no traerlo: esas respuestas no se van a poder guardar. Agrégalo como pregunta visible y sin condición, o quítale el «obligatorio» en la lista.')}
-                    </span>
-                </div>
-            )}
-            <div>
-                <p className="imcrm-text-sm imcrm-font-semibold">{__('Ajustes del formulario')}</p>
-                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Toca una pregunta en la vista previa para editarla.')}</p>
-            </div>
-            <Field label={__('Nombre interno')} hint={__('Sólo lo ve tu equipo.')}>
-                <Input value={draft.name} onChange={(e) => setName(e.target.value)} />
-            </Field>
-            <Field label={__('Título')}>
-                <Input value={s.title} onChange={(e) => set({ title: e.target.value })} data-testid="form-title" />
-            </Field>
-            <Field label={__('Descripción')}>
-                <Textarea rows={3} value={s.description} onChange={(e) => set({ description: e.target.value })} />
-            </Field>
-            <Field label={__('Texto del botón')}>
-                <Input value={s.submit_label} onChange={(e) => set({ submit_label: e.target.value })} />
-            </Field>
-
-            <StartSettings config={config} fields={fields} onChange={onChange} previewWelcome={previewWelcome} onPreviewWelcome={onPreviewWelcome} formId={formId} />
-
-            <Section title={__('Después de enviar')}>
-                <Field label={__('Título del agradecimiento')} hint={__('Para mostrar otro mensaje según lo que responde, agrega una pantalla final en «Lógica».')}>
-                    <Input value={s.success_title} onChange={(e) => set({ success_title: e.target.value })} />
-                    <RecallPicker config={config} fields={fields} onPick={(t) => set({ success_title: withToken(s.success_title, t) })} />
-                </Field>
-                <Field label={__('Mensaje')}>
-                    <Textarea rows={2} value={s.success_message} onChange={(e) => set({ success_message: e.target.value })} />
-                    <RecallPicker config={config} fields={fields} onPick={(t) => set({ success_message: withToken(s.success_message, t) })} />
-                </Field>
-                <ThankYouUrlField
-                    value={s.redirect_url}
-                    delay={s.redirect_delay}
-                    onChange={(url) => set({ redirect_url: url })}
-                    onDelay={(n) => set({ redirect_delay: n })}
-                    variables={thankYouVariables(config, fields)}
-                    placeholder="https://tusitio.com/gracias"
-                    testId="form-redirect-url"
-                />
-                <Check label={__('Ofrecer «Enviar otra respuesta»')} checked={s.allow_another} onChange={(v) => set({ allow_another: v })} />
-            </Section>
-
-            <ConversionSettings
-                kind="form"
-                conversion={s.conversion}
-                attribution={s.attribution}
-                onChange={(patch) => set(patch)}
-                fields={fields}
-                takenFieldIds={takenByForm(config)}
-                listId={listId}
-                calcs={s.calcs.map((c) => ({ key: c.key, name: c.name }))}
-                canCharge={formPaymentActive(config)}
-            />
-
-            {((recordTemplates.data ?? []).length > 0 || s.record_template_id !== null) && (
-                <Section title={__('Registro que se crea')}>
-                    <Field
-                        label={__('Desde una plantilla')}
-                        hint={__('El registro nace con los valores, las subtareas y los checklists de la plantilla; lo que responde la persona pisa los valores.')}
-                    >
-                        <Select
-                            value={s.record_template_id === null ? '' : String(s.record_template_id)}
-                            onChange={(e) => set({ record_template_id: e.target.value === '' ? null : Number(e.target.value) })}
-                            data-testid="form-record-template"
-                        >
-                            <option value="">{__('Sin plantilla')}</option>
-                            {(recordTemplates.data ?? []).map((t) => (
-                                <option key={t.id} value={t.id}>
-                                    {t.name}
-                                </option>
-                            ))}
-                            {s.record_template_id !== null &&
-                                !(recordTemplates.data ?? []).some((t) => t.id === s.record_template_id) &&
-                                !recordTemplates.isLoading && <option value={s.record_template_id}>{__('Plantilla eliminada')}</option>}
-                        </Select>
-                    </Field>
-                </Section>
-            )}
-
-            <Section title={__('Cuándo recibe respuestas')}>
-                <Field label={__('Hasta el día')} hint={__('Vacío = sin fecha de cierre.')}>
-                    <Input type="date" value={s.closes_at ?? ''} onChange={(e) => set({ closes_at: e.target.value || null })} />
-                </Field>
-                <Field label={__('Hasta un máximo de respuestas')} hint={__('Vacío = sin límite (cupos de un evento, por ejemplo).')}>
-                    <Input
-                        type="number"
-                        min={1}
-                        value={s.max_submissions ?? ''}
-                        onChange={(e) => set({ max_submissions: e.target.value === '' ? null : Math.max(1, Math.floor(Number(e.target.value))) })}
-                    />
-                </Field>
-                <Field label={__('Mensaje cuando está cerrado')}>
-                    <Textarea rows={2} value={s.closed_message} onChange={(e) => set({ closed_message: e.target.value })} />
-                </Field>
-            </Section>
-
-            <Section title={__('Correo de quien responde')}>
-                <Field
-                    label={__('Pregunta con el correo')}
-                    hint={emails.length === 0 ? __('Agrega una pregunta de tipo email para usar estas opciones.') : undefined}
-                >
-                    <Select
-                        value={emailId === null ? '' : String(emailId)}
-                        disabled={emails.length === 0}
-                        onChange={(e) => {
-                            const v = e.target.value === '' ? null : Number(e.target.value);
-                            set(v === null ? { respondent_email_field_id: null, confirm_email: false, send_copy: false } : { respondent_email_field_id: v });
-                        }}
-                        data-testid="form-respondent-email"
-                    >
-                        <option value="">{__('Ninguna')}</option>
-                        {emails.map((f) => (
-                            <option key={f.id} value={f.id}>
-                                {f.label}
-                            </option>
-                        ))}
-                    </Select>
-                </Field>
-                <Check
-                    label={__('Confirmar el correo con un clic')}
-                    checked={s.confirm_email && emailId !== null}
-                    disabled={emailId === null}
-                    onChange={setConfirm}
-                    testId="form-confirm-email"
-                />
-                <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                    <MailCheck className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
-                    {__('La respuesta queda pendiente y le llega a la persona un correo con tu marca para confirmarla. Recién al confirmar se crea el registro, corren las automatizaciones y cuenta para el cupo. Si no confirma en 48 horas, se descarta sola.')}
-                </p>
-                <Check
-                    label={__('Enviarle una copia de sus respuestas')}
-                    checked={s.send_copy && emailId !== null}
-                    disabled={emailId === null}
-                    onChange={(v) => set({ send_copy: v })}
-                    testId="form-send-copy"
-                />
-                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                    {__('Los correos salen por el correo de tu empresa y cuentan en su cuota mensual.')}
-                </p>
-            </Section>
-
-            <Section title={__('Verificación anti-robots')}>
-                {captcha?.provider ? (
-                    <>
-                        <Check label={__('Pedir verificación anti-robots')} checked={s.captcha} onChange={(v) => set({ captcha: v })} testId="form-captcha" />
-                        <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                            <ShieldCheck className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
-                            {__('Se usa')} {CAPTCHA_PROVIDER_INFO[captcha.provider].label}{' '}
-                            {captcha.source === 'tenant' ? __('con las llaves de tu empresa.') : __('con las llaves de la plataforma.')}{' '}
-                            {__('Aparece al final del formulario, antes del botón de enviar.')}
-                        </p>
-                    </>
-                ) : (
-                    <>
-                        <Check label={__('Pedir verificación anti-robots')} checked={false} disabled onChange={() => undefined} testId="form-captcha" />
-                        <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="form-captcha-unavailable">
-                            {__('No hay llaves de captcha configuradas.')}{' '}
-                            {captcha?.can_configure ? (
-                                <a href="/#/settings?s=portal" target="_blank" rel="noreferrer" className="imcrm-text-primary hover:imcrm-underline">
-                                    {__('Cárgalas en Ajustes → Portal y formularios')}
-                                </a>
-                            ) : (
-                                __('Pídele al administrador que las cargue en Ajustes → Portal y formularios.')
-                            )}
-                        </p>
-                    </>
-                )}
-            </Section>
-
-            <Section title={__('Datos personales')}>
-                {dataConsent?.active ? (
-                    <>
-                        <Check
-                            label={__('Pedir la autorización de tratamiento de datos')}
-                            checked={s.data_consent}
-                            onChange={(v) => set({ data_consent: v })}
-                            testId="form-data-consent"
-                        />
-                        <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                            <Scale className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
-                            {s.data_consent
-                                ? __('Al final del formulario aparece una casilla obligatoria con el texto de tu empresa (versión %d). Sin marcarla no se puede enviar, y cada respuesta guarda la prueba de la autorización.').replace(
-                                      '%d',
-                                      String(dataConsent.consent?.version ?? ''),
-                                  )
-                                : __('Apagada: este formulario no pide la autorización. Hazlo sólo si no recoge datos personales o si ya la obtienes por otro medio.')}
-                        </p>
-                    </>
-                ) : dataConsent === null ? (
-                    // Todavía no se sabe (cargando): ni casilla ni aviso, para no mostrar algo que no es.
-                    <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Cargando…')}</p>
-                ) : (
-                    <>
-                        <Check label={__('Pedir la autorización de tratamiento de datos')} checked={false} disabled onChange={() => undefined} testId="form-data-consent" />
-                        <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="form-data-consent-unavailable">
-                            {__('Tu empresa todavía no tiene el texto de la autorización.')}{' '}
-                            {dataConsent.can_configure ? (
-                                <a href="/#/settings?s=privacidad" target="_blank" rel="noreferrer" className="imcrm-text-primary hover:imcrm-underline">
-                                    {__('Configúralo en Ajustes → Datos personales')}
-                                </a>
-                            ) : (
-                                __('Pídele al administrador que lo configure en Ajustes → Datos personales.')
-                            )}
-                        </p>
-                    </>
-                )}
-            </Section>
-
-            <Section title={__('Apariencia')}>
-                <LogoSetting settings={s} hasBrandLogo={!!brandingForLogo.data?.logo_url} onChange={set} />
-                <Button variant="outline" size="sm" className="imcrm-gap-1.5 imcrm-self-start" onClick={onOpenDesign} data-testid="form-open-design">
-                    <Palette className="imcrm-h-3.5 imcrm-w-3.5" />
-                    {__('Colores, fuentes y más')}
-                </Button>
-                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                    {__('Plantillas de diseño, colores, tipografía, tamaños, bordes, fondo y portada: en la pestaña «Diseño».')}
-                </p>
-            </Section>
-
-            <Section title={__('Insertar en tu sitio')}>
-                <Check
-                    label={__('Completar respuestas desde la dirección')}
-                    checked={s.allow_prefill}
-                    onChange={(v) => set({ allow_prefill: v })}
-                />
-                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                    {__('Ej.: …?nombre=Ana&origen=instagram. Sirve para las preguntas ocultas que marcan de dónde vino cada respuesta.')}
-                </p>
-                <Field label={__('Sitios que pueden insertarlo')} hint={__('Uno por renglón (ej.: tusitio.com). Vacío = cualquier sitio.')}>
-                    <Textarea
-                        rows={3}
-                        value={s.allowed_domains.join('\n')}
-                        onChange={(e) =>
-                            set({
-                                allowed_domains: e.target.value
-                                    .split(/\n|,/)
-                                    .map((d) => d.trim())
-                                    .filter(Boolean)
-                                    .slice(0, 50),
-                            })
-                        }
-                    />
-                </Field>
-                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="embed-test-hint">
-                    {__('Para probarlo, pégalo en una página real de tu sitio. Las páginas para probar HTML en línea muestran tu código dentro de un marco protegido y ahí ningún navegador deja cargar un formulario de otro sitio.')}
-                </p>
-            </Section>
-            <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                <Code2 className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
-                {__('Para avisarle a alguien de cada respuesta, arma una automatización con «Cuando se envía un formulario».')}
-            </p>
-        </div>
-    );
-}
-
-/** v0.1.374 — Los campos que el formulario ya escribe (preguntas y resultados de cálculos): no sirven para el origen. */
-function takenByForm(config: FormConfig): Set<number> {
-    const out = new Set<number>();
-    for (const i of config.items) {
-        if (i.type === 'field') {
-            out.add(i.field_id);
-            if (i.other_field_id !== null) out.add(i.other_field_id);
-        } else if (i.type === 'matrix') for (const r of i.rows) out.add(r.field_id);
-    }
-    for (const c of config.settings.calcs) if (c.save_field_id !== null) out.add(c.save_field_id);
-    return out;
-}
-
-/** v0.1.374 — Las variables que se le pueden pasar a la página de gracias (nunca correo ni teléfono). */
-function thankYouVariables(config: FormConfig, fields: FieldEntity[]): Array<{ token: string; label: string }> {
-    const byId = new Map(fields.map((f) => [f.id, f]));
-    const answers = config.items.flatMap((i) => {
-        if (i.type !== 'field') return [];
-        const f = byId.get(i.field_id);
-        if (!f || f.type === 'email' || f.type === 'phone') return [];
-        return [{ token: f.slug, label: f.label }];
-    });
-    return [
-        { token: 'envio.id', label: __('Id único del envío (para no contar dos veces)') },
-        { token: 'valor', label: __('Valor de la conversión') },
-        { token: 'moneda', label: __('Moneda del valor') },
-        { token: 'utm_campaign', label: __('La campaña con la que llegó') },
-        ...answers.slice(0, 8),
-    ];
 }

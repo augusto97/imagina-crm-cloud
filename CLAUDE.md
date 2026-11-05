@@ -12738,6 +12738,61 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         — E2E navegador 28/28 en escritorio y 28/28 en celular oscuro contra el
         Mercado Pago simulado.
 
+  - [x] **El constructor de formularios rediseñado: tocar para editar y un
+        color para cada parte (v0.1.377, addendum ADR-S94, pedido del usuario:
+        "la navegación es súper confusa con muchas opciones no correctamente
+        organizadas… los elementos como logo, nombre y descripción deberían ser
+        clickeables… no sabría dónde quitar u ocultar los títulos… y que se
+        pueda cambiar el color de todo")**. Primera de dos entregas: la agenda
+        recibe el mismo patrón en v0.1.378. Sin migración ni cambios en la API.
+        (a) **Colores por parte** (`theme.elements` en `publicThemeSchema`, 21
+        claves, `null` = el de los colores generales): título, descripción,
+        etiqueta y ayuda de las preguntas, asterisco, títulos de sección y
+        textos, lo que se escribe y el ejemplo, opciones (fondo, texto, borde,
+        la elegida), botón (fondo, texto, borde), avance (hecho y pendiente),
+        franja y enlaces. `elementColorCss` (shared) los pinta con reglas fijas
+        por parte; en el modo oscuro automático los textos se llevan a un
+        contraste legible contra su fondo (`ensureContrast`). Vale para
+        formularios y agenda.
+        (b) **Todo se toca en la vista previa**: la página pública
+        (`public-form/main.ts`, `previewable`) marca cada parte que no es
+        pregunta con un id `@…` (logo, título, descripción, franja, portada,
+        bienvenida, avance, anti-robots, autorización de datos, cobro, planes,
+        botón, agradecimiento, tarjeta, página) y la vista previa lo avisa como
+        una pregunta; lo elegido se resalta con su etiqueta.
+        (c) **Cuatro pestañas** a la izquierda —**Contenido · Diseño · Lógica
+        · Ajustes**—. Contenido es el esquema del formulario
+        (`ContentOutline`): Encabezado, Preguntas (arrastrar, subir/bajar),
+        Al final y Página, con un **ojo** en cada parte que se oculta. A la
+        derecha, el panel de lo elegido (`PageElementInspector`) con
+        **Mostrar** arriba y **Contenido / Estilo**: en Estilo sólo las
+        secciones del tema y los colores que cambian ESA parte
+        (`ThemeInspector` con `only`; las preguntas, con su respuesta y su
+        aspecto separados en `FieldItemDesign part`). `pageElements.ts` (puro,
+        con tests) dice qué es cada parte, si se oculta y dónde vive su
+        interruptor. El tema completo sigue en Diseño, con la sección nueva
+        «Colores de cada elemento».
+        (d) **Ajustes por grupos** (`SettingsGroups.tsx`): índice con General,
+        Bienvenida, Al enviar, Correo de quien responde, Cupos y cierre,
+        Guardar el avance, Cobrar o suscribir, Registros, Seguridad y datos,
+        Insertar y medir, cada uno con su estado; las partes con ajustes
+        (agradecimiento, anti-robots, autorización de datos, cobro, bienvenida)
+        muestran en su panel los MISMOS componentes. `StartSettings` se partió
+        en sus piezas.
+        (e) **Celular**: vista previa primero; tocar una parte abre su panel a
+        pantalla completa con «Volver».
+        Ayuda: guías de formularios y de diseño al día, sección «Toca cualquier
+        parte para editarla» en Aprende → Formularios con la ilustración nueva
+        `form-click-edit`, el paso del recorrido de formularios y novedad con
+        carrusel; capturas del centro de aprendizaje con las pestañas nuevas.
+        Tests: 2 de shared (colores por parte y su contraste en oscuro), 4 del
+        front (`pageElements`)
+        — shared 767, front 821 — + E2E navegador 10/10 en escritorio y 11/11
+        en celular oscuro (elegir el título y el botón en la vista previa,
+        ponerles color, verlo al instante, guardarlo, la página pública con
+        los dos colores, «Sin color» vuelve al del diseño) y la recorrida del
+        constructor (esquema, ocultar el título con el ojo, ajustes por grupo).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

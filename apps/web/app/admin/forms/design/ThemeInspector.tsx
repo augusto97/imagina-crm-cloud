@@ -21,6 +21,7 @@ import { IMAGE_MAX_SIDE } from '@/lib/imageResize';
 import { cn } from '@/lib/utils';
 
 import { Check } from '../../automations/email/EmailBlockInspector';
+import { ELEMENT_COLOR_GROUPS, ElementColors } from './ElementColors';
 import { ImageUpload } from './ImageUpload';
 import {
     WIDTH_PRESETS,
@@ -159,6 +160,7 @@ export function ThemeInspector<C extends Themed>({
     showLogo,
     variant = 'form',
     classicTheme,
+    only,
 }: {
     config: C;
     onChange: (next: C) => void;
@@ -172,8 +174,14 @@ export function ThemeInspector<C extends Themed>({
     variant?: 'form' | 'booking';
     /** v0.1.354 — El diseño «de siempre» (el de la agenda es más ancho y muestra los pasos). */
     classicTheme?: PublicTheme;
+    /**
+     * v0.1.377 — Sólo estas secciones, abiertas y sin el encabezado: el panel
+     * de un elemento (el título, el botón…) muestra lo que lo cambia a él.
+     */
+    only?: ReadonlyArray<ThemeResetKey>;
 }): JSX.Element {
     const booking = variant === 'booking';
+    const show = (k: ThemeResetKey): boolean => !only || only.includes(k);
     const base = classicTheme ?? DEFAULT_PUBLIC_THEME;
     const s = config.settings;
     const t = useMemo(() => effectiveTheme(s, base), [s, base]);
@@ -199,10 +207,11 @@ export function ThemeInspector<C extends Themed>({
 
     return (
         <div
-            className="imcrm-flex imcrm-flex-col imcrm-gap-2.5 imcrm-p-4"
-            data-tour={booking ? 'booking-design-inspector' : 'form-design-inspector'}
-            data-testid={booking ? 'booking-design-inspector' : 'form-design-inspector'}
+            className={only ? 'imcrm-flex imcrm-flex-col imcrm-gap-2.5' : 'imcrm-flex imcrm-flex-col imcrm-gap-2.5 imcrm-p-4'}
+            data-tour={only ? undefined : booking ? 'booking-design-inspector' : 'form-design-inspector'}
+            data-testid={only ? 'form-design-partial' : booking ? 'booking-design-inspector' : 'form-design-inspector'}
         >
+            {!only && (
             <div>
                 <p className="imcrm-text-sm imcrm-font-semibold">{booking ? __('Diseño de la agenda') : __('Diseño del formulario')}</p>
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
@@ -213,7 +222,9 @@ export function ThemeInspector<C extends Themed>({
                           : __('Vale para todo el formulario. Toca una pregunta en la vista previa para darle su propio diseño.')}
                 </p>
             </div>
+            )}
 
+            {show('colors') && (
             <StyleSection title={__('Colores')} defaultOpen testId="form-theme-colors" {...sec('colors')}>
                 <Choice<PublicThemeMode>
                     label={__('Modo')}
@@ -302,8 +313,10 @@ export function ThemeInspector<C extends Themed>({
                     </div>
                 )}
             </StyleSection>
+            )}
 
-            <StyleSection title={__('Tipografía')} testId="form-theme-typography" {...sec('typography')}>
+            {show('typography') && (
+            <StyleSection title={__('Tipografía')} defaultOpen={!!only} testId="form-theme-typography" {...sec('typography')}>
                 <FontSelect label={__('Fuente del texto')} value={t.typography.font} onChange={(f) => f && set('typography', { font: f })} medium="web" />
                 <FontSelect
                     label={__('Fuente de los títulos')}
@@ -373,8 +386,10 @@ export function ThemeInspector<C extends Themed>({
                     onChange={(v) => set('typography', { question_weight: Number(v) as Weight })}
                 />
             </StyleSection>
+            )}
 
-            <StyleSection title={__('Página')} testId="form-theme-layout" {...sec('layout')}>
+            {show('layout') && (
+            <StyleSection title={__('Página')} defaultOpen={!!only} testId="form-theme-layout" {...sec('layout')}>
                 <Choice
                     label={booking ? __('Ancho de la página') : __('Ancho del formulario')}
                     value={String(t.layout.width)}
@@ -496,8 +511,10 @@ export function ThemeInspector<C extends Themed>({
                         : __('El avance sólo se ve si el formulario tiene saltos de página.')}
                 </Hint>
             </StyleSection>
+            )}
 
-            <StyleSection title={__('Fondo')} testId="form-theme-background" {...sec('background')}>
+            {show('background') && (
+            <StyleSection title={__('Fondo')} defaultOpen={!!only} testId="form-theme-background" {...sec('background')}>
                 <Choice
                     label={__('Tipo de fondo')}
                     value={t.background.kind}
@@ -593,8 +610,10 @@ export function ThemeInspector<C extends Themed>({
                     onChange={(v) => set('background', { pattern: v })}
                 />
             </StyleSection>
+            )}
 
-            <StyleSection title={__('Portada')} testId="form-theme-cover" {...sec('cover')}>
+            {show('cover') && (
+            <StyleSection title={__('Portada')} defaultOpen={!!only} testId="form-theme-cover" {...sec('cover')}>
                 <Check label={__('Mostrar una portada arriba de la tarjeta')} checked={t.cover.enabled} onChange={(v) => set('cover', { enabled: v })} testId="form-theme-cover-toggle" />
                 {t.cover.enabled && (
                     <>
@@ -643,8 +662,10 @@ export function ThemeInspector<C extends Themed>({
                     </>
                 )}
             </StyleSection>
+            )}
 
-            <StyleSection title={__('Dividido')} testId="form-theme-split" {...sec('split')}>
+            {show('split') && (
+            <StyleSection title={__('Dividido')} defaultOpen={!!only} testId="form-theme-split" {...sec('split')}>
                 <Check label={__('Dividir la pantalla: una imagen al costado')} checked={t.split.enabled} onChange={(v) => set('split', { enabled: v })} testId="form-theme-split-toggle" />
                 {t.split.enabled && (
                     <>
@@ -691,8 +712,10 @@ export function ThemeInspector<C extends Themed>({
                     </>
                 )}
             </StyleSection>
+            )}
 
-            <StyleSection title={__('Tarjeta')} testId="form-theme-card" {...sec('card')}>
+            {show('card') && (
+            <StyleSection title={__('Tarjeta')} defaultOpen={!!only} testId="form-theme-card" {...sec('card')}>
                 {t.layout.container === 'plain' && <Hint>{__('El formulario está «Sin tarjeta» (Página): estos ajustes no se ven.')}</Hint>}
                 <Grid>
                     <NumberField
@@ -716,8 +739,10 @@ export function ThemeInspector<C extends Themed>({
                 </Grid>
                 <Choice<Shadow> label={__('Sombra')} value={t.card.shadow} options={SHADOW_OPTIONS.map((o) => ({ ...o, label: __(o.label) }))} onChange={(v) => set('card', { shadow: v })} />
             </StyleSection>
+            )}
 
-            <StyleSection title={__('Campos')} testId="form-theme-inputs" {...sec('inputs')}>
+            {show('inputs') && (
+            <StyleSection title={__('Campos')} defaultOpen={!!only} testId="form-theme-inputs" {...sec('inputs')}>
                 <Choice
                     label={__('Estilo')}
                     value={t.inputs.style}
@@ -774,8 +799,10 @@ export function ThemeInspector<C extends Themed>({
                     </>
                 )}
             </StyleSection>
+            )}
 
-            <StyleSection title={__('Opciones')} testId="form-theme-choices" {...sec('choices')}>
+            {show('choices') && (
+            <StyleSection title={__('Opciones')} defaultOpen={!!only} testId="form-theme-choices" {...sec('choices')}>
                 <Choice
                     label={booking ? __('Cómo se ven los servicios y las personas') : __('Cómo se ven las opciones')}
                     value={t.choices.style}
@@ -817,8 +844,10 @@ export function ThemeInspector<C extends Themed>({
                         : __('En el celular, como mucho 2 columnas. Cada pregunta puede elegir otro estilo en «Diseño de esta pregunta».')}
                 </Hint>
             </StyleSection>
+            )}
 
-            <StyleSection title={__('Botón')} testId="form-theme-button" {...sec('button')}>
+            {show('button') && (
+            <StyleSection title={__('Botón')} defaultOpen={!!only} testId="form-theme-button" {...sec('button')}>
                 <Choice
                     label={__('Estilo')}
                     value={t.button.style}
@@ -872,7 +901,21 @@ export function ThemeInspector<C extends Themed>({
                     <Check label={__('Texto en mayúsculas')} checked={t.button.uppercase} onChange={(v) => set('button', { uppercase: v })} />
                 </div>
             </StyleSection>
+            )}
 
+            {show('elements') && (
+            <StyleSection title={__('Colores de cada elemento')} defaultOpen={!!only} testId="form-theme-elements" {...sec('elements')}>
+                <Hint>{__('Vacío = sale de los colores generales (se ve punteado). También se cambian tocando el elemento en la vista previa.')}</Hint>
+                {ELEMENT_COLOR_GROUPS.map((g) => (
+                    <div key={g.title} className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+                        <p className="imcrm-text-[10.5px] imcrm-font-semibold imcrm-text-foreground">{__(g.title)}</p>
+                        <ElementColors config={config} onChange={onChange} keys={g.keys} brand={brand} base={base} />
+                    </div>
+                ))}
+            </StyleSection>
+            )}
+
+            {show('custom_css') && (
             <StyleSection
                 title={__('CSS propio')}
                 testId="form-theme-css"
@@ -928,6 +971,7 @@ export function ThemeInspector<C extends Themed>({
                     </p>
                 )}
             </StyleSection>
+            )}
         </div>
     );
 }

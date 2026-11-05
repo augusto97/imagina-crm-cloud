@@ -1784,4 +1784,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver cómo se usa', href: '/aprende/cobros/cobros-suscripciones' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.377-constructor-formularios-claro',
+        version: '0.1.377',
+        date: '2026-11-05',
+        kind: 'improvement',
+        title: 'El constructor de formularios, más claro: toca lo que quieres cambiar',
+        summary:
+            'Ahora todo lo que se ve en el formulario se toca para editarlo: el título, el logo, la descripción, una pregunta, el botón o el fondo. Cada parte tiene su panel con «Mostrar», «Contenido» y «Estilo», y todo se puede cambiar de color.',
+        media: {
+            slides: [
+                {
+                    title: 'Toca cualquier parte',
+                    text: 'En la vista previa, toca el título, el botón o lo que quieras: a la derecha aparece su panel con lo que dice y su estilo.',
+                    illustration: 'form-click-edit',
+                },
+                {
+                    title: 'Todo en orden, con su ojo',
+                    text: 'La pestaña «Contenido» tiene el encabezado, las preguntas y lo del final. El ojo de cada fila oculta el título, la descripción, el logo o la franja.',
+                    illustration: 'form-builder',
+                },
+                {
+                    title: 'El color de cada cosa',
+                    text: 'Cada parte tiene sus colores propios: el título, las etiquetas, las opciones, el botón, el avance y los enlaces.',
+                    illustration: 'form-design',
+                },
+            ],
+        },
+        body: 'Abre un formulario en **Configurar lista → Formularios** y toca cualquier parte en la vista previa. Lo que no se ve en el formulario (correo, cupos, cobros, seguridad, insertar) está en **Ajustes**, por grupos.',
+        action: { label: 'Ver cómo se usa', href: '/aprende/formularios/formularios-constructor' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

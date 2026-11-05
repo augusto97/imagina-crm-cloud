@@ -245,6 +245,59 @@ export const publicButtonSchema = z.object({
 });
 export type PublicButton = z.infer<typeof publicButtonSchema>;
 
+/**
+ * v0.1.377 — Colores POR ELEMENTO (pedido: «que se pueda cambiar el color de
+ * todo»). Cada uno es opcional: vacío = el que sale de la paleta (texto,
+ * secundario, acento…), así un formulario sin elegirlos se ve igual que antes.
+ * Los de TEXTO, en el modo oscuro automático, se aclaran solos lo justo para
+ * leerse (`ensureContrast`); los de FONDO se respetan.
+ */
+export const PUBLIC_ELEMENT_COLOR_KEYS = [
+    'title',
+    'description',
+    'label',
+    'help',
+    'required',
+    'heading',
+    'text',
+    'input_text',
+    'placeholder',
+    'choice_bg',
+    'choice_text',
+    'choice_border',
+    'choice_selected_bg',
+    'choice_selected_text',
+    'button_bg',
+    'button_text',
+    'button_border',
+    'progress',
+    'progress_track',
+    'band',
+    'link',
+] as const;
+export type PublicElementColorKey = (typeof PUBLIC_ELEMENT_COLOR_KEYS)[number];
+
+/** Los que son color de TEXTO (se ajustan al contraste en el modo oscuro automático). */
+export const PUBLIC_ELEMENT_TEXT_KEYS: ReadonlySet<PublicElementColorKey> = new Set([
+    'title',
+    'description',
+    'label',
+    'help',
+    'required',
+    'heading',
+    'text',
+    'input_text',
+    'placeholder',
+    'choice_text',
+    'link',
+]);
+
+const elementColor = color.nullable().catch(null).default(null);
+export const publicElementColorsSchema = z.object(
+    Object.fromEntries(PUBLIC_ELEMENT_COLOR_KEYS.map((k) => [k, elementColor])) as Record<PublicElementColorKey, typeof elementColor>,
+);
+export type PublicElementColors = z.infer<typeof publicElementColorsSchema>;
+
 /** Tope del CSS propio (caracteres). */
 export const PUBLIC_CSS_MAX = 20_000;
 
@@ -265,6 +318,8 @@ export const publicThemeSchema = z.object({
     inputs: publicInputsSchema.catch(publicInputsSchema.parse({})).default({}),
     choices: publicChoicesSchema.catch(publicChoicesSchema.parse({})).default({}),
     button: publicButtonSchema.catch(publicButtonSchema.parse({})).default({}),
+    /** v0.1.377 — Colores por elemento (vacío = el de la paleta). */
+    elements: publicElementColorsSchema.catch(publicElementColorsSchema.parse({})).default({}),
     /** CSS propio (sólo administradores; se limpia al guardar y al servir). */
     custom_css: z.string().max(PUBLIC_CSS_MAX).catch('').default(''),
 });

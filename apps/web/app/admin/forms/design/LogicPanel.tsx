@@ -62,7 +62,7 @@ export function LogicPanel({
     /** La pantalla final que se ve en la vista previa (`''` = la de siempre; null = el formulario). */
     previewEnding: string | null;
     onPreviewEnding: (id: string | null) => void;
-    /** Abre los ajustes del formulario (donde está el «¡Gracias!» de siempre). */
+    /** Abre el panel de la pantalla de agradecimiento (el «¡Gracias!» de siempre). */
     onOpenSettings: () => void;
 }): JSX.Element {
     const pages = pageChoices(config);
@@ -137,7 +137,7 @@ export function LogicPanel({
                     <div className="imcrm-min-w-0 imcrm-flex-1">
                         <p className="imcrm-truncate imcrm-text-xs imcrm-font-medium">{__('La de siempre')}: «{config.settings.success_title || __('¡Gracias!')}»</p>
                         <button type="button" className="imcrm-text-[11px] imcrm-text-primary hover:imcrm-underline" onClick={onOpenSettings}>
-                            {__('Se cambia en los ajustes del formulario')}
+                            {__('Cambiarla')}
                         </button>
                     </div>
                     <PreviewToggle active={previewEnding === ''} onClick={() => onPreviewEnding(previewEnding === '' ? null : '')} />

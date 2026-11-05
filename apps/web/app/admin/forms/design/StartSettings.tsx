@@ -26,126 +26,141 @@ const LAYOUTS: Array<{ value: FormLayout; title: string; hint: string; icon: typ
 /**
  * v0.1.357 — Cómo empieza y cómo se responde el formulario: todo a la vista
  * o una pregunta por pantalla, y la pantalla de bienvenida.
+ *
+ * v0.1.377 — Cada parte es su propio componente: el constructor las muestra
+ * por grupo en «Ajustes» (y la bienvenida también al tocarla en la vista
+ * previa), en vez de una sola columna con todo mezclado.
  */
-export function StartSettings({
+export function LayoutSettings({ config, onChange }: { config: FormConfig; onChange: (next: FormConfig) => void }): JSX.Element {
+    const s = config.settings;
+    return (
+        <Section title={__('Cómo se responde')}>
+            <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2" role="radiogroup" aria-label={__('Cómo se responde')} data-testid="form-layout" data-tour="form-layout">
+                {LAYOUTS.map((l) => {
+                    const on = s.layout === l.value;
+                    const Icon = l.icon;
+                    return (
+                        <button
+                            key={l.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={on}
+                            onClick={() => onChange(updateSettings(config, { layout: l.value }))}
+                            className={cn(
+                                'imcrm-flex imcrm-flex-col imcrm-items-start imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-p-2 imcrm-text-left imcrm-transition-colors',
+                                on ? 'imcrm-border-primary imcrm-bg-primary/5' : 'imcrm-border-border hover:imcrm-bg-accent',
+                            )}
+                            data-testid={`form-layout-${l.value}`}
+                        >
+                            <Icon className={cn('imcrm-h-4 imcrm-w-4', on ? 'imcrm-text-primary' : 'imcrm-text-muted-foreground')} />
+                            <span className="imcrm-text-xs imcrm-font-medium">{__(l.title)}</span>
+                            <span className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{__(l.hint)}</span>
+                        </button>
+                    );
+                })}
+            </div>
+            {s.layout === 'conversational' && (
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Al elegir una opción, una escala o Sí/No pasa sola a la siguiente; en lo demás, con «Siguiente» o Enter. Los títulos y textos aparecen junto a la pregunta que sigue, y los saltos de página siguen funcionando.')}
+                </p>
+            )}
+        </Section>
+    );
+}
+
+export function WelcomeSettings({
     config,
     fields,
     onChange,
     previewWelcome,
     onPreviewWelcome,
-    formId,
+    bare,
 }: {
     config: FormConfig;
     fields: FieldEntity[];
     onChange: (next: FormConfig) => void;
     previewWelcome: boolean;
     onPreviewWelcome: (on: boolean) => void;
-    /** v0.1.360 — el id del formulario (para la variable del enlace). */
-    formId?: number;
+    /** Sin el título de sección (dentro del panel de la bienvenida). */
+    bare?: boolean;
 }): JSX.Element {
-    const s = config.settings;
-    const w = s.welcome;
+    const w = config.settings.welcome;
     const setWelcome = (patch: Partial<FormConfig['settings']['welcome']>): void => onChange(updateSettings(config, { welcome: { ...w, ...patch } }));
     const minutes = formEstimateMinutes(config);
-    const sp = s.save_progress;
+    const body = (
+        <>
+            <Check label={__('Mostrar una pantalla de bienvenida')} checked={w.enabled} onChange={(v) => setWelcome({ enabled: v })} testId="form-welcome-enabled" />
+            {w.enabled && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="form-welcome-settings">
+                    <Button
+                        variant={previewWelcome ? 'secondary' : 'outline'}
+                        size="sm"
+                        className="imcrm-self-start"
+                        onClick={() => onPreviewWelcome(!previewWelcome)}
+                        aria-pressed={previewWelcome}
+                        data-testid="form-welcome-preview"
+                    >
+                        <Eye className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {previewWelcome ? __('Viendo la bienvenida') : __('Ver la bienvenida')}
+                    </Button>
+                    <Field label={__('Título')} hint={__('Vacío = el título del formulario.')}>
+                        <Input value={w.title} maxLength={200} onChange={(e) => setWelcome({ title: e.target.value })} data-testid="form-welcome-title" />
+                        <RecallPicker config={config} fields={fields} onPick={(t) => setWelcome({ title: withToken(w.title, t) })} />
+                    </Field>
+                    <Field label={__('Mensaje')}>
+                        <Textarea rows={3} value={w.message} maxLength={2000} onChange={(e) => setWelcome({ message: e.target.value })} data-testid="form-welcome-message" />
+                    </Field>
+                    <Field label={__('Texto del botón')}>
+                        <Input value={w.button_label} maxLength={60} placeholder={__('Empezar')} onChange={(e) => setWelcome({ button_label: e.target.value })} />
+                    </Field>
+                    <ImageUpload
+                        label={__('Imagen (opcional)')}
+                        fileId={w.file_id}
+                        maxSide={IMAGE_MAX_SIDE.item}
+                        onChange={(id) => setWelcome({ file_id: id })}
+                        hint={__('Una foto o ilustración arriba del título.')}
+                        testId="form-welcome-image"
+                    />
+                    <Check
+                        label={__('Decir cuánto toma: «Toma unos %s minutos»').replace('%s', String(minutes))}
+                        checked={w.show_time}
+                        onChange={(v) => setWelcome({ show_time: v })}
+                    />
+                </div>
+            )}
+        </>
+    );
+    return bare ? <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">{body}</div> : <Section title={__('Bienvenida')}>{body}</Section>;
+}
+
+export function SaveProgressSettings({ config, onChange }: { config: FormConfig; onChange: (next: FormConfig) => void }): JSX.Element {
+    const sp = config.settings.save_progress;
     const setSave = (patch: Partial<FormConfig['settings']['save_progress']>): void => onChange(updateSettings(config, { save_progress: { ...sp, ...patch } }));
     return (
+        <Section title={__('Guardar el avance')}>
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="form-save-progress" data-tour="form-save-progress">
+                <Check
+                    label={__('Recordar lo que van respondiendo en ese dispositivo')}
+                    checked={sp.device}
+                    onChange={(v) => setSave({ device: v })}
+                />
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Si cierran la página sin enviar, al volver les ofrece «Continuar» donde quedaron. Queda sólo en ese navegador. Apágalo si el formulario se llena en un computador compartido (una recepción, un evento).')}
+                </p>
+                <Check label={__('Botón «Guardar y seguir después»')} checked={sp.email} onChange={(v) => setSave({ email: v })} />
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Les manda un enlace al correo para terminarlo en otro momento o en otro dispositivo (dura 30 días). Sale por el correo de la empresa. Los archivos y la firma no se guardan.')}
+                </p>
+            </div>
+        </Section>
+    );
+}
+
+export function ChargeSettings({ config, fields, onChange }: { config: FormConfig; fields: FieldEntity[]; onChange: (next: FormConfig) => void }): JSX.Element {
+    return (
         <>
-            <Section title={__('Cómo se responde')}>
-                <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2" role="radiogroup" aria-label={__('Cómo se responde')} data-testid="form-layout" data-tour="form-layout">
-                    {LAYOUTS.map((l) => {
-                        const on = s.layout === l.value;
-                        const Icon = l.icon;
-                        return (
-                            <button
-                                key={l.value}
-                                type="button"
-                                role="radio"
-                                aria-checked={on}
-                                onClick={() => onChange(updateSettings(config, { layout: l.value }))}
-                                className={cn(
-                                    'imcrm-flex imcrm-flex-col imcrm-items-start imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-p-2 imcrm-text-left imcrm-transition-colors',
-                                    on ? 'imcrm-border-primary imcrm-bg-primary/5' : 'imcrm-border-border hover:imcrm-bg-accent',
-                                )}
-                                data-testid={`form-layout-${l.value}`}
-                            >
-                                <Icon className={cn('imcrm-h-4 imcrm-w-4', on ? 'imcrm-text-primary' : 'imcrm-text-muted-foreground')} />
-                                <span className="imcrm-text-xs imcrm-font-medium">{__(l.title)}</span>
-                                <span className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{__(l.hint)}</span>
-                            </button>
-                        );
-                    })}
-                </div>
-                {s.layout === 'conversational' && (
-                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                        {__('Al elegir una opción, una escala o Sí/No pasa sola a la siguiente; en lo demás, con «Siguiente» o Enter. Los títulos y textos aparecen junto a la pregunta que sigue, y los saltos de página siguen funcionando.')}
-                    </p>
-                )}
-            </Section>
-
-            <Section title={__('Bienvenida')}>
-                <Check label={__('Mostrar una pantalla de bienvenida')} checked={w.enabled} onChange={(v) => setWelcome({ enabled: v })} />
-                {w.enabled && (
-                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="form-welcome-settings">
-                        <Button
-                            variant={previewWelcome ? 'secondary' : 'outline'}
-                            size="sm"
-                            className="imcrm-self-start"
-                            onClick={() => onPreviewWelcome(!previewWelcome)}
-                            aria-pressed={previewWelcome}
-                            data-testid="form-welcome-preview"
-                        >
-                            <Eye className="imcrm-h-3.5 imcrm-w-3.5" />
-                            {previewWelcome ? __('Viendo la bienvenida') : __('Ver la bienvenida')}
-                        </Button>
-                        <Field label={__('Título')} hint={__('Vacío = el título del formulario.')}>
-                            <Input value={w.title} maxLength={200} onChange={(e) => setWelcome({ title: e.target.value })} data-testid="form-welcome-title" />
-                            <RecallPicker config={config} fields={fields} onPick={(t) => setWelcome({ title: withToken(w.title, t) })} />
-                        </Field>
-                        <Field label={__('Mensaje')}>
-                            <Textarea rows={3} value={w.message} maxLength={2000} onChange={(e) => setWelcome({ message: e.target.value })} data-testid="form-welcome-message" />
-                        </Field>
-                        <Field label={__('Texto del botón')}>
-                            <Input value={w.button_label} maxLength={60} placeholder={__('Empezar')} onChange={(e) => setWelcome({ button_label: e.target.value })} />
-                        </Field>
-                        <ImageUpload
-                            label={__('Imagen (opcional)')}
-                            fileId={w.file_id}
-                            maxSide={IMAGE_MAX_SIDE.item}
-                            onChange={(id) => setWelcome({ file_id: id })}
-                            hint={__('Una foto o ilustración arriba del título.')}
-                            testId="form-welcome-image"
-                        />
-                        <Check
-                            label={__('Decir cuánto toma: «Toma unos %s minutos»').replace('%s', String(minutes))}
-                            checked={w.show_time}
-                            onChange={(v) => setWelcome({ show_time: v })}
-                        />
-                    </div>
-                )}
-            </Section>
-
-            <Section title={__('Guardar el avance')}>
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="form-save-progress" data-tour="form-save-progress">
-                    <Check
-                        label={__('Recordar lo que van respondiendo en ese dispositivo')}
-                        checked={sp.device}
-                        onChange={(v) => setSave({ device: v })}
-                    />
-                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                        {__('Si cierran la página sin enviar, al volver les ofrece «Continuar» donde quedaron. Queda sólo en ese navegador. Apágalo si el formulario se llena en un computador compartido (una recepción, un evento).')}
-                    </p>
-                    <Check label={__('Botón «Guardar y seguir después»')} checked={sp.email} onChange={(v) => setSave({ email: v })} />
-                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                        {__('Les manda un enlace al correo para terminarlo en otro momento o en otro dispositivo (dura 30 días). Sale por el correo de la empresa. Los archivos y la firma no se guardan.')}
-                    </p>
-                </div>
-            </Section>
-
             <PaymentSettings config={config} fields={fields} onChange={onChange} />
             <SubscriptionSettings config={config} fields={fields} onChange={onChange} />
-
-            <EditLinksSettings config={config} onChange={onChange} formId={formId} />
         </>
     );
 }
@@ -155,7 +170,7 @@ export function StartSettings({
  * formulario: se encienden aquí, se mandan desde la ficha («Enlace para
  * actualizar») o desde una automatización con la variable.
  */
-function EditLinksSettings({ config, onChange, formId }: { config: FormConfig; onChange: (next: FormConfig) => void; formId?: number }): JSX.Element {
+export function EditLinksSettings({ config, onChange, formId }: { config: FormConfig; onChange: (next: FormConfig) => void; formId?: number }): JSX.Element {
     const el = config.settings.edit_links;
     const set = (patch: Partial<FormConfig['settings']['edit_links']>): void => onChange(updateSettings(config, { edit_links: { ...el, ...patch } }));
     const [copied, setCopied] = useState(false);

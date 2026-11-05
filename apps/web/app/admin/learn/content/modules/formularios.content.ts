@@ -131,28 +131,34 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'El constructor es la pantalla donde armas el formulario. Se abre a pantalla completa y tiene **tres zonas**: a la izquierda lo que puedes agregar y el orden de las preguntas, en el centro **la página real** que verá quien responde, y a la derecha los ajustes de lo que elegiste. Lo que ves en el centro es exactamente lo que se publica.',
+                md: 'El constructor es la pantalla donde armas el formulario. Se abre a pantalla completa y tiene **tres zonas**: a la izquierda **todo lo que tiene el formulario** en el orden en que se ve, en el centro **la página real** que verá quien responde, y a la derecha el panel de lo que elegiste. **Todo lo que se ve se puede tocar**: una pregunta, pero también el logo, el título, la descripción, el botón o el fondo. Lo que ves en el centro es exactamente lo que se publica.',
             },
             { t: 'anim', key: 'form-builder', caption: 'Agregar una pregunta desde los campos de la lista, elegirla en la vista previa y marcarla como obligatoria.' },
+            { t: 'h', text: 'Toca cualquier parte para editarla' },
+            {
+                t: 'p',
+                md: 'No hace falta saber dónde está cada ajuste: toca en la vista previa lo que quieres cambiar —el título, el logo, una pregunta, el botón, el fondo— y a la derecha aparece su panel. Arriba dice qué es y, si se puede ocultar, trae **Mostrar** con su interruptor. Debajo, dos pestañas: **Contenido** (qué dice) y **Estilo** (sus colores, tamaño y fuente).',
+            },
+            { t: 'anim', key: 'form-click-edit', caption: 'Tocar el título: aparece su panel, se le cambia el color y con el ojo se oculta.' },
             { t: 'h', text: 'Las tres zonas de la pantalla' },
             {
                 t: 'settings',
                 title: 'Lo que hay en cada zona',
                 rows: [
                     { name: 'Barra de arriba', what: 'El nombre del formulario, el interruptor **Publicado / Sin publicar**, **Deshacer** y **Rehacer**, el botón de modo claro u oscuro, **Compartir** y **Guardar**.', tip: 'El nombre de arriba es interno: sólo lo ve tu equipo. Lo que lee el público es el **Título** de los ajustes.' },
-                    { name: 'Pestaña Agregar', what: 'Los **Campos de la lista** que todavía no están en el formulario (cada uno con su ícono y la marca «obligatorio» si la lista lo exige) y el **Contenido**: **Título de sección**, **Texto o aclaración** y **Salto de página**.' },
-                    { name: 'Pestaña Preguntas', what: 'Todas las piezas del formulario en orden. Se reordenan arrastrando o con las flechas **Subir** y **Bajar**. Un ojo tachado marca las ocultas y «si…» las que tienen condición.' },
-                    { name: 'Vista previa (centro)', what: 'La página real. Toca cualquier pregunta para editarla. Arriba a la derecha cambias entre **Computadora** y **Celular**.', tip: 'Revisa siempre la vista de celular: casi todas las respuestas llegan desde un teléfono.' },
-                    { name: 'Panel derecho', what: 'Sin nada elegido muestra los **Ajustes del formulario**; con una pregunta elegida, sus opciones.' },
+                    { name: 'Pestaña Contenido', what: 'Todo lo que tiene el formulario, en orden: el **Encabezado** (logo, título, descripción, franja de color, portada y bienvenida), las **Preguntas** por página, lo que va **Al final** (avance, verificación, autorización de datos, botón y pantalla de agradecimiento) y la **Página** (tarjeta y fondo). Cada fila se toca para editarla y las que se pueden ocultar tienen su **ojo**. Arriba, **Agregar pregunta o contenido**.', tip: 'Para quitar el título o la franja de color, toca el ojo de su fila. Lo oculto se ve tachado y vuelve con otro toque.' },
+                    { name: 'Pestañas Diseño, Lógica y Ajustes', what: '**Diseño**: plantillas y temas guardados, y a la derecha los colores, fuentes y tamaños de todo el formulario. **Lógica**: saltos, pantallas finales y puntaje. **Ajustes**: lo que no se ve en el formulario, en grupos (General, Bienvenida, Al enviar, Correo de quien responde, Cupos y cierre, Guardar el avance, Cobrar o suscribir, Registros, Seguridad y datos, Insertar y medir).' },
+                    { name: 'Vista previa (centro)', what: 'La página real. Toca cualquier parte para editarla: al pasar el mouse se ve su nombre. Arriba a la derecha cambias entre **Computadora**, **Celular** e **Insertado en tu sitio**.', tip: 'Revisa siempre la vista de celular: casi todas las respuestas llegan desde un teléfono.' },
+                    { name: 'Panel derecho', what: 'El panel de lo que elegiste, con dos pestañas: **Contenido** (qué dice y si se muestra) y **Estilo** (sus colores, tamaños y fuente). Sin nada elegido, te invita a tocar algo.' },
                 ],
             },
             { t: 'h', text: 'Agregar, quitar y ordenar preguntas' },
             {
                 t: 'steps',
                 items: [
-                    'En **Agregar**, toca un campo de **Campos de la lista**: la pregunta aparece debajo de la que tengas elegida (o al final).',
+                    'En **Contenido**, toca **Agregar pregunta o contenido** y elige un campo de la lista: la pregunta aparece debajo de la que tengas elegida (o al final).',
                     'Para sumar un título que separe bloques («Datos de la empresa») toca **Título de sección**; para una aclaración larga, **Texto o aclaración**.',
-                    'En la pestaña **Preguntas**, arrastra cada pieza por su asa hasta el lugar que quieras.',
+                    'En **Contenido**, arrastra cada pregunta por su asa hasta el lugar que quieras (o usa las flechas **Subir** y **Bajar**).',
                     'Para sacar una pregunta, elígela y toca **Quitar del formulario** al final de su panel. El campo sigue existiendo en la lista; sólo deja de preguntarse.',
                     'Toca **Guardar**. Mientras no guardes, el formulario publicado sigue como estaba.',
                 ],
@@ -160,7 +166,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Las opciones de cada pregunta' },
             {
                 t: 'p',
-                md: 'Toca una pregunta en la vista previa (o en la pestaña **Preguntas**) y el panel derecho muestra sus opciones. Cada pregunta dice arriba **Se guarda en el campo** y el nombre del campo de la lista donde cae la respuesta.',
+                md: 'Toca una pregunta en la vista previa (o en **Contenido**) y el panel derecho muestra sus opciones. Cada pregunta dice arriba **Se guarda en el campo** y el nombre del campo de la lista donde cae la respuesta. En **Contenido** está lo que pregunta; en **Estilo**, su ancho, si se ve la etiqueta y lo que vale para todas las preguntas (colores, tamaño, campos y opciones).',
             },
             {
                 t: 'settings',
@@ -203,7 +209,7 @@ export const articles: LearnArticle[] = [
             },
             {
                 t: 'p',
-                md: 'Si intentas cerrar con cambios sin guardar, la app te pregunta **¿Salir sin guardar?** para que no pierdas nada por error. En el celular el constructor se divide en tres pestañas: **Preguntas**, **Vista previa** y **Ajustes**.',
+                md: 'Si intentas cerrar con cambios sin guardar, la app te pregunta **¿Salir sin guardar?** para que no pierdas nada por error. En el celular el constructor se divide en pestañas: **Contenido**, **Lógica**, **Vista previa**, **Diseño** y **Ajustes**; al tocar algo se abre su panel a pantalla completa con **Volver**.',
             },
             {
                 t: 'faq',
@@ -370,7 +376,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Título de la página que empieza aquí', what: 'Opcional en cada salto: «Datos de la empresa», «Tu pedido».' },
                     { name: 'Validación por página', what: 'No se puede pasar a la siguiente sin completar las obligatorias de la página actual.' },
                     { name: 'Páginas vacías', what: 'Una página cuyas preguntas están todas escondidas por sus condiciones se salta sola, y el total de pasos se ajusta.', tip: 'Así puedes tener una página entera sólo para empresas.' },
-                    { name: 'En la pestaña Preguntas', what: 'Cada salto se ve como un separador con su número de página.' },
+                    { name: 'En la pestaña Contenido', what: 'Cada salto se ve como un separador con su número de página.' },
                 ],
             },
             { t: 'h', text: 'Preguntas ocultas: datos que llegan en el enlace' },
@@ -383,7 +389,7 @@ export const articles: LearnArticle[] = [
                 t: 'steps',
                 items: [
                     'Agrega al formulario la pregunta del campo que quieres llenar solo (por ejemplo **Origen**) y márcala **Oculta: se completa desde la dirección**.',
-                    'En los ajustes del formulario, deja encendida **Completar respuestas desde la dirección** (sección **Insertar en tu sitio**).',
+                    'En **Ajustes → Insertar y medir**, deja encendida **Completar respuestas desde la dirección**.',
                     'Busca el **nombre interno** del campo en **Configurar lista → Campos** (es la etiqueta del campo en minúsculas y sin espacios, por ejemplo `origen`).',
                     'Arma un enlace por canal: el enlace del formulario + `?origen=instagram`. Para varios datos, únelos con `&`: `?origen=feria&vendedor=ana`.',
                     'En una selección, el valor del enlace tiene que ser el valor interno de la opción (el que ves al editar las opciones del campo).',
@@ -477,7 +483,7 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Un salto que termina en ella', what: 'Si un salto lleva a una pantalla final, esa es la que se muestra.' },
                     { name: 'La primera que se cumple', what: 'Si no, se revisan las pantallas en orden y gana la primera cuya condición se cumple.', tip: 'Pon arriba la más específica.' },
-                    { name: 'La de siempre', what: 'Si ninguna se cumple, se muestra el agradecimiento de los ajustes del formulario.' },
+                    { name: 'La de siempre', what: 'Si ninguna se cumple, se muestra la **Pantalla de agradecimiento** (se edita tocándola en la vista previa o en **Contenido → Al final**).' },
                     { name: 'Llevar a una dirección', what: 'Cada pantalla puede abrir otra página (que empiece con https://) en vez de mostrar el mensaje: por ejemplo, la página de pagos sólo para quien pidió el plan de pago.' },
                     { name: 'Con confirmación por correo', what: 'La pantalla que corresponde se muestra cuando la persona abre el enlace del correo.' },
                 ],
@@ -573,7 +579,7 @@ export const articles: LearnArticle[] = [
             { t: 'anim', key: 'form-conversational', caption: 'Primero la bienvenida y su «Empezar»; cada respuesta pasa sola a la siguiente pregunta hasta el «¡Gracias!».' },
             {
                 t: 'p',
-                md: 'En los ajustes del formulario, en **Cómo se responde**, elige **Una pregunta por pantalla**. Cada pregunta ocupa la pantalla, con «Pregunta 2 de 5» arriba.',
+                md: 'En **Ajustes → General**, en **Cómo se responde**, elige **Una pregunta por pantalla**. Cada pregunta ocupa la pantalla, con «Pregunta 2 de 5» arriba.',
             },
             {
                 t: 'settings',
@@ -588,7 +594,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'En los ajustes del formulario, en **Bienvenida**, marca **Mostrar una pantalla de bienvenida**.',
+                    'Toca **Bienvenida** en **Contenido → Encabezado** (o abre **Ajustes → Bienvenida**) y enciende **Mostrar una pantalla de bienvenida**.',
                     'Escribe el **Título** (vacío = el del formulario), el **Mensaje** y el **Texto del botón** («Empezar»).',
                     'Si quieres, agrega una **Imagen** y deja marcado **Decir cuánto toma**: la app lo calcula con las preguntas.',
                     'Toca **Ver la bienvenida** para mirarla en la vista previa.',
@@ -660,7 +666,7 @@ export const articles: LearnArticle[] = [
             { t: 'anim', key: 'form-save-progress', caption: 'Laura pide el enlace por correo, lo abre más tarde y sigue donde quedó, con lo que ya había escrito.' },
             {
                 t: 'p',
-                md: 'En los ajustes del formulario, en **Guardar el avance**, eliges cómo puede terminarlo alguien que no alcanzó a hacerlo de una vez:',
+                md: 'En **Ajustes → Guardar el avance** eliges cómo puede terminarlo alguien que no alcanzó a hacerlo de una vez:',
             },
             {
                 t: 'settings',
@@ -951,20 +957,20 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Con ninguna pregunta elegida, el panel derecho del constructor muestra los **Ajustes del formulario**: los textos de la página, qué pasa al enviar, hasta cuándo recibe respuestas, con qué datos nace el registro y cómo se ve. Aquí están todos, sección por sección.',
+                md: 'Lo que se **ve** en el formulario (el título, la descripción, el logo, el botón, el agradecimiento) se edita tocándolo en la vista previa o en **Contenido**. Lo que **no se ve** está en la pestaña **Ajustes**, en grupos con nombre: **General**, **Bienvenida**, **Al enviar**, **Correo de quien responde**, **Cupos y cierre**, **Guardar el avance**, **Cobrar o suscribir**, **Registros**, **Seguridad y datos** e **Insertar y medir**. Cada grupo dice cómo está («Sin límite», «Apagado»…) sin abrirlo. Aquí están todos.',
             },
             { t: 'anim', key: 'form-closing', caption: 'Con un cupo de 30, el formulario se cierra solo al llegar a 30 respuestas.' },
-            { t: 'h', text: 'Textos de la página' },
+            { t: 'h', text: 'Textos de la página (se tocan en la vista previa)' },
             {
                 t: 'settings',
                 rows: [
                     { name: 'Nombre interno', what: 'Cómo se llama el formulario dentro de la app. Sólo lo ve tu equipo.', tip: 'Ponle algo que lo distinga si tienes varios: «Cotizaciones · sitio web».' },
-                    { name: 'Título', what: 'El título grande que ve quien responde. Al crear el formulario trae el nombre de la lista; vacío = el nombre interno.' },
-                    { name: 'Descripción', what: 'Un texto debajo del título para explicar de qué se trata y cuánto tarda.', tip: '«Te respondemos en menos de 24 horas hábiles» genera confianza.' },
-                    { name: 'Texto del botón', what: 'Lo que dice el botón de enviar. Por defecto, «Enviar».', tip: 'Que diga lo que pasa: «Pedir mi cotización», «Inscribirme».' },
+                    { name: 'Título', what: 'El título grande que ve quien responde. Al crear el formulario trae el nombre de la lista; vacío = el nombre interno. Tócalo en la vista previa: ahí también lo ocultas, le cambias la fuente, el tamaño y el color.' },
+                    { name: 'Descripción', what: 'Un texto debajo del título para explicar de qué se trata y cuánto tarda. Sin descripción, la vista previa muestra «+ Agregar una descripción» para tocarlo.', tip: '«Te respondemos en menos de 24 horas hábiles» genera confianza.' },
+                    { name: 'Texto del botón', what: 'Lo que dice el botón de enviar. Por defecto, «Enviar». Toca el botón en la vista previa: en **Estilo** están sus colores, tamaño, esquinas e ícono.', tip: 'Que diga lo que pasa: «Pedir mi cotización», «Inscribirme».' },
                 ],
             },
-            { t: 'h', text: 'Después de enviar' },
+            { t: 'h', text: 'Al enviar' },
             {
                 t: 'settings',
                 rows: [
@@ -982,9 +988,9 @@ export const articles: LearnArticle[] = [
             {
                 t: 'callout',
                 tone: 'info',
-                md: 'Las plantillas de registro se crean en **Configurar lista → Plantillas**. Si la lista no tiene ninguna, esta sección no aparece.',
+                md: 'Las plantillas de registro se crean en **Configurar lista → Plantillas**. Están en **Ajustes → Registros**, junto a los enlaces para que un cliente actualice su registro.',
             },
-            { t: 'h', text: 'Cuándo recibe respuestas' },
+            { t: 'h', text: 'Cupos y cierre' },
             {
                 t: 'settings',
                 rows: [
@@ -998,21 +1004,21 @@ export const articles: LearnArticle[] = [
                 tone: 'tip',
                 md: 'Si activas la confirmación por correo (en «Correo de quien responde»), una respuesta cuenta para el cupo sólo cuando la persona la confirma. Así un cupo no se gasta con correos falsos.',
             },
-            { t: 'h', text: 'Apariencia' },
+            { t: 'h', text: 'Logo y colores' },
             {
                 t: 'settings',
                 rows: [
                     {
                         name: 'Logo',
-                        what: '**El de la empresa** (el de **Ajustes → Marca**), **Otro logo** (subes uno sólo para este formulario: sale arriba del título y en los correos del formulario) o **Sin logo**.',
-                        tip: 'Otro logo sirve cuando el formulario es de una marca o un producto tuyo distinto. Acepta PNG, JPG o WebP; el alto se ajusta en **Diseño → Página → Alto del logo**.',
+                        what: 'Toca el logo en la vista previa (o **Logo** en **Contenido**): **El de la empresa** (el de **Ajustes → Marca**), **Otro logo** (sólo para este formulario: sale arriba del título y en los correos) o **Sin logo**. El ojo de su fila lo oculta.',
+                        tip: 'Otro logo sirve cuando el formulario es de una marca o un producto tuyo distinto. Acepta PNG, JPG o WebP; el alto y la alineación están en la pestaña **Estilo** del logo.',
                     },
-                    { name: 'Colores, fuentes y más', what: 'Abre la pestaña **Diseño**: plantillas, colores, tipografía, tamaños, bordes, fondo, portada y el botón.', tip: 'Lo explicamos completo en «Diseña tu formulario: plantillas, colores, fuentes y tamaños».' },
+                    { name: 'Colores de cada parte', what: 'Cada parte que tocas tiene su **Estilo** con sus colores: el título, la descripción, las preguntas, las opciones, el botón, el avance, la franja y los enlaces. Vacío = el color general (se ve punteado). Los colores generales y las plantillas están en la pestaña **Diseño**, que además tiene **Colores de cada elemento** con todos juntos.', tip: 'Lo explicamos completo en «Diseña tu formulario: plantillas, colores, fuentes y tamaños».' },
                 ],
             },
             {
                 t: 'p',
-                md: 'El formulario se adapta solo al ancho del teléfono. Las secciones **Correo de quien responde**, **Verificación anti-robots**, **Datos personales** e **Insertar en tu sitio** tienen su propio artículo.',
+                md: 'El formulario se adapta solo al ancho del teléfono. Los grupos **Correo de quien responde**, **Seguridad y datos** e **Insertar y medir** tienen su propio artículo.',
             },
             {
                 t: 'example',
@@ -1053,7 +1059,7 @@ export const articles: LearnArticle[] = [
                 t: 'steps',
                 items: [
                     'Ve a **Configurar lista → Formularios** y edita el formulario.',
-                    'Toca la pestaña **Diseño** (a la izquierda; en el celular, en la barra de arriba). También llegas desde **Ajustes → Apariencia → Colores, fuentes y más**.',
+                    'Toca la pestaña **Diseño** (a la izquierda; en el celular, en la barra de arriba).',
                     'En **Plantillas** toca la que más se parezca a lo que quieres. Todas toman el color de tu marca.',
                     'Retoca lo que quieras en el panel de la derecha. Si no te convenció, **Ctrl + Z** la deshace.',
                     'Toca **Guardar**. Mientras no guardes, el formulario publicado sigue como estaba.',
@@ -1073,7 +1079,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Todo lo que puedes ajustar' },
             {
                 t: 'p',
-                md: 'Con la pestaña **Diseño** abierta y ninguna pregunta elegida, el panel derecho muestra **Diseño del formulario**, dividido en secciones que se abren y se cierran. Cada sección tiene su botón para volver a lo de la plantilla.',
+                md: 'Con la pestaña **Diseño** abierta y nada elegido, el panel derecho muestra **Diseño del formulario**, dividido en secciones que se abren y se cierran. Cada sección tiene su botón para volver a lo de la plantilla.\n\nPara cambiar **una sola parte**, tócala en la vista previa y abre su pestaña **Estilo**: el título trae su fuente, tamaño, grosor y color; el botón, sus colores, tamaño, esquinas e ícono; una pregunta, su ancho y los colores y tamaños de todas las preguntas.',
             },
             {
                 t: 'settings',
@@ -1089,6 +1095,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Campos', what: 'Estilo de las casillas (**Con borde**, **Con relleno**, **Línea** o **Redondo**), tamaño, esquinas, grosor del borde y dónde va la etiqueta: arriba, **Al costado** o **Dentro del campo**.', tip: 'Con «Dentro del campo» la etiqueta sube cuando la persona empieza a escribir.' },
                     { name: 'Opciones', what: 'Cómo se ven las preguntas de selección: **Lista**, **Botones** o **Tarjetas**, en cuántas columnas, sus esquinas y la forma de las imágenes de las tarjetas.' },
                     { name: 'Botón', what: 'Estilo (relleno, contorno, suave o sólo texto), tamaño, alineación, **Ancho completo**, esquinas, sombra, **Texto en mayúsculas** y un ícono (flecha, avión de papel, visto).' },
+                    { name: 'Colores de cada elemento', what: 'El color propio de cada parte: título, descripción, franja; etiqueta, ayuda, asterisco, texto que se escribe y de ejemplo de las preguntas; fondo, texto y borde de las opciones y de la opción elegida; títulos de sección, textos y enlaces; fondo, texto y borde del botón, y el avance. Vacío = el color general, que se ve punteado.', tip: 'En el modo automático, los colores de texto se aclaran solos lo justo para leerse en oscuro.' },
                     { name: 'CSS propio', what: 'Sólo para administradores: reglas de CSS para retoques finos, sobre el diseño elegido.', tip: 'No se puede cargar nada de afuera: las direcciones, los @import y las fuentes externas se quitan al guardar, y la app te dice qué quitó.' },
                 ],
             },

@@ -8,6 +8,7 @@ import {
 import {
     buildPublicThemeCss,
     contrastRatio,
+    elementColorCss,
     PUBLIC_BASE_CSS,
     cssUrl,
     deriveDarkPalette,
@@ -198,5 +199,33 @@ describe('preguntas con el diseño nuevo', () => {
         expect(config.settings.theme).toBeNull();
         const [item] = buildPublicFormItems(config, fields) as Array<{ choice_style?: string; width?: string; display: string }>;
         expect(item).toMatchObject({ display: 'radio', choice_style: 'list', width: 'full' });
+    });
+
+    it('v0.1.377: colores por elemento — sólo se emiten los elegidos', () => {
+        expect(DEFAULT_PUBLIC_THEME.elements.title).toBeNull();
+        const plain = buildPublicThemeCss(DEFAULT_PUBLIC_THEME, { accent: '#0e7490' });
+        expect(plain).not.toContain('.ib-title,');
+        const t = readPublicTheme({ elements: { title: '#123456', button_bg: '#ff0000', button_text: '#ffffff', label: 'rojo' } });
+        expect(t.elements.title).toBe('#123456');
+        // Un color raro cae a vacío sin tirar los demás.
+        expect(t.elements.label).toBeNull();
+        expect(t.elements.button_bg).toBe('#ff0000');
+        const css = buildPublicThemeCss(t, { accent: '#0e7490' });
+        expect(css).toContain('.ib-title,.ib-done h2,.ib-welcome h2{color:#123456}');
+        expect(css).toContain('body .ib-btn.ib-btn-primary{background-color:#ff0000}');
+        expect(css).toContain('body .ib-btn.ib-btn-primary{color:#ffffff}');
+    });
+
+    it('v0.1.377: en el modo oscuro automático el texto se aclara para leerse; los fondos se respetan', () => {
+        const dark = { surface: '#171a21', inputs: '#12151b' };
+        const css = elementColorCss({ ...DEFAULT_PUBLIC_THEME.elements, title: '#1d2a5a', choice_bg: '#1d2a5a' }, dark);
+        const m = /\.ib-title,\.ib-done h2,\.ib-welcome h2\{color:(#[0-9a-f]{6})\}/.exec(css);
+        expect(m).not.toBeNull();
+        expect(contrastRatio(m![1]!, dark.surface)).toBeGreaterThanOrEqual(4.5);
+        expect(css).toContain('background-color:#1d2a5a');
+        const t = readPublicTheme({ mode: 'auto', elements: { title: '#1d2a5a' } });
+        const full = buildPublicThemeCss(t, { accent: '#0e7490' });
+        expect(full).toContain('.ib-title,.ib-done h2,.ib-welcome h2{color:#1d2a5a}');
+        expect(full).toMatch(/:root\[data-scheme=dark\] \.ib-title/);
     });
 });

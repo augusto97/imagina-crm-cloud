@@ -26,7 +26,7 @@ import {
  *   la plantilla tal cual.
  */
 
-export const THEME_SECTIONS = ['colors', 'typography', 'layout', 'background', 'cover', 'split', 'card', 'inputs', 'choices', 'button'] as const;
+export const THEME_SECTIONS = ['colors', 'typography', 'layout', 'background', 'cover', 'split', 'card', 'inputs', 'choices', 'button', 'elements'] as const;
 export type ThemeSectionKey = (typeof THEME_SECTIONS)[number];
 /** Lo que tiene su botón «Restablecer» en el panel de diseño. */
 export type ThemeResetKey = ThemeSectionKey | 'custom_css';
