@@ -58,7 +58,8 @@ import type {
     TriggerConfig,
 } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
-import { teamIdsOf, type WebhookTestResult } from '@imagina-base/shared';
+import { meetingActionKind, teamIdsOf, type WebhookTestResult } from '@imagina-base/shared';
+import { MeetingSaveFields, MeetingScopeNotice } from './MeetingActionExtras';
 import { TeamPicker } from '@/components/fields/TeamPicker';
 import { ActionTypeSelect } from './ActionTypeSelect';
 import { AskAgentConfig } from '@/admin/agents/AskAgentConfig';
@@ -2373,6 +2374,13 @@ function ConnectorActionConfig({
                 </p>
             </div>
 
+            {/* v0.1.366 — una conexión de Teams de antes no tiene el permiso del calendario. */}
+            <MeetingScopeNotice
+                integrationKey={connection?.integration_key}
+                actionKey={actionKey}
+                grantedScopes={connection?.oauth_status?.granted_scopes}
+            />
+
             {(action?.params ?? []).map((param) => (
                 <ConnectorParamField
                     key={param.key}
@@ -2389,6 +2397,13 @@ function ConnectorActionConfig({
                     {__('Esta acción no pide datos: se ejecuta tal cual está definida.')}
                 </p>
             )}
+
+            {/* v0.1.366 — reuniones: dónde quedan el enlace para unirse y el id
+                del evento (con el id, otra automatización la reprograma o la cancela). */}
+            {(() => {
+                const kind = meetingActionKind(connection?.integration_key ?? '', actionKey);
+                return kind ? <MeetingSaveFields kind={kind} spec={spec} onChange={onChange} fields={fields} listId={listId} /> : null;
+            })()}
 
             {/* v0.1.365 — el link tiene que quedar a la vista: aquí se elige la
                 columna donde se guarda (y el estado, la fecha y el monto del pago). */}
@@ -2870,6 +2885,10 @@ function WebhookTestReport({ result }: { result: WebhookTestResult }): JSX.Eleme
                     <Badge dot variant="destructive">
                         {__('No se pudo conectar')}
                     </Badge>
+                ) : !result.response && result.note ? (
+                    <Badge dot variant="secondary">
+                        {__('Sin enviar')}
+                    </Badge>
                 ) : (
                     <Badge dot variant={good ? 'success' : 'warning'}>
                         HTTP {status}
@@ -2880,6 +2899,11 @@ function WebhookTestReport({ result }: { result: WebhookTestResult }): JSX.Eleme
                 </span>
             </div>
             {result.error && <p className="imcrm-text-sm imcrm-text-destructive">{result.error}</p>}
+            {result.note && (
+                <p className="imcrm-text-sm imcrm-text-muted-foreground" data-testid="imcrm-test-note">
+                    {result.note}
+                </p>
+            )}
             {result.request.body !== null && (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                     <Label className="imcrm-text-[11px] imcrm-text-muted-foreground">

@@ -1,5 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import {
+    meetingActionKind,
     AUTOMATION_ACTIONS,
     COLLECTION_FIELD_ROLES,
     COLLECTION_FIELD_LABELS,
@@ -593,7 +594,7 @@ const automationSpec = z.object({
                 'create_record {target_list: slug, values: {slug: valor}, template_id? (id de una plantilla de registro de la lista destino: el registro nace con sus valores, subtareas y checklists; values pisa la plantilla)} | ' +
                 'create_subtasks_from_template {template_id (id de una de las `record_templates` de get_list_schema), include_checklists?: true} — crea las subtareas de esa plantilla (y, si se pide, sus checklists) DEBAJO del registro que disparó la automatización | ' +
                 'call_webhook {url, method?, headers?, body_template?} | ' +
-                'connector_action {connection_id, action_key, values: {param: valor}} — SÓLO para ejecutar algo en un SERVICIO EXTERNO que la persona pidió explícitamente (mandar un WhatsApp, actualizar un producto en WooCommerce…); usa exactamente las conexiones y acciones que lista `connectors` en get_list_schema, nunca para cambiar un campo de la app. WhatsApp oficial (app whatsapp_cloud): send_template {to: "{{telefono}}", template, language, variables: {"body.1": "{{slug}}"…}, header_media?} con una plantilla de `whatsapp.connections[].approved_templates`; send_text {to, text} sólo dentro de las 24 h desde el último mensaje del contacto (si no, falla: usa una plantilla). SMS (apps sms_twilio, sms_bulkgate, sms_infobip, sms_labsmobile, sms_onurix; ver `sms` en get_list_schema): send_sms {to: "{{telefono}}", message, sender?, strip_accents?, respect_hours?} — respect_hours:true para cobros o mensajes comerciales (Ley 2300 en Colombia). Cobros (apps mercadopago, wompi): create_payment_link {title, amount, currency?, payer_email?, expires_days?} — el link queda solo en la ficha («Cobros») y en las columnas de cobro de la lista (`collections_fields` de get_list_schema); en los pasos siguientes es {{pago.link}} (también {{pago.monto}}, {{pago.concepto}}), no hace falta un update_field para guardarlo | ' +
+                'connector_action {connection_id, action_key, values: {param: valor}} — SÓLO para ejecutar algo en un SERVICIO EXTERNO que la persona pidió explícitamente (mandar un WhatsApp, actualizar un producto en WooCommerce…); usa exactamente las conexiones y acciones que lista `connectors` en get_list_schema, nunca para cambiar un campo de la app. WhatsApp oficial (app whatsapp_cloud): send_template {to: "{{telefono}}", template, language, variables: {"body.1": "{{slug}}"…}, header_media?} con una plantilla de `whatsapp.connections[].approved_templates`; send_text {to, text} sólo dentro de las 24 h desde el último mensaje del contacto (si no, falla: usa una plantilla). SMS (apps sms_twilio, sms_bulkgate, sms_infobip, sms_labsmobile, sms_onurix; ver `sms` en get_list_schema): send_sms {to: "{{telefono}}", message, sender?, strip_accents?, respect_hours?} — respect_hours:true para cobros o mensajes comerciales (Ley 2300 en Colombia). Cobros (apps mercadopago, wompi): create_payment_link {title, amount, currency?, payer_email?, expires_days?} — el link queda solo en la ficha («Cobros») y en las columnas de cobro de la lista (`collections_fields` de get_list_schema); en los pasos siguientes es {{pago.link}} (también {{pago.monto}}, {{pago.concepto}}), no hace falta un update_field para guardarlo. Reuniones y eventos (apps teams, outlook, google_calendar): teams.create_meeting / outlook.create_event / google_calendar.create_event {title, date (un campo fecha y hora: {{fecha_demo}}), time?, end?, duration?, timezone?, description?, location?, attendees ("a@x.co; b@y.co"), optional_attendees?, teams_meeting? / meet?} + en la config (no en values) save_meeting_link: slug del campo url donde guardar el enlace y save_event_id: slug del campo texto donde guardar el id; después {{reunion.enlace}} y {{reunion.id}}. update_event {event_id: "{{id_evento}}", date?, time?, end?, duration? (vacío = la misma), title?, description?, location?, attendees?} reprograma (sólo cambia lo que se completa); cancel_event {event_id, message?} cancela y, con save_meeting_link/save_event_id, vacía esos campos | ' +
                 'bulk_edit {filters: [{field, op, value}], operations: [{field, op, …}]} — EDITA EN LOTE todo lo que coincide con filters cuando corre (mismas operaciones que propose_bulk_edit; ideal con trigger_type scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour, minute, weekday 0-6, day 1-28, tz}); sin filters exige all_records: true | ' +
                 'generate_pdf {document_template_id (id de una de las plantillas que lista `document_templates` en get_list_schema), save_field? (slug de un campo Archivo donde guardarlo), save_mode? append|replace, filename?} — arma un PDF (cuenta de cobro, recibo) y deja {{pdf.link}} y {{pdf.nombre}} para las acciones siguientes; sin save_field el enlace dura 30 días y arma el PDF al abrirlo (no ocupa espacio) | ' +
                 'if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]} | ' +
@@ -1510,6 +1511,28 @@ export class StructureTools implements AiProposalApplier {
                                       _nota: 'El link también se escribe solo en las columnas de cobro de la lista (collections_fields). Para mandarlo al cliente en el paso siguiente usa {{pago.link}}.',
                                   }
                                 : {}),
+                            // v0.1.366 — reuniones y eventos: lo que devuelven y dónde se guarda.
+                            ...(meetingActionKind(c.integration_key, a.key) === 'create' || meetingActionKind(c.integration_key, a.key) === 'update'
+                                ? {
+                                      outputs: {
+                                          '{{reunion.enlace}}': 'el enlace para unirse (Teams o Meet)',
+                                          '{{reunion.id}}': 'el id del evento (para reprogramarlo o cancelarlo)',
+                                          '{{reunion.web}}': 'el enlace para abrir el evento en el calendario',
+                                      },
+                                      save_to_record: {
+                                          save_meeting_link: 'slug de un campo url/text donde guardar el enlace para unirse',
+                                          save_event_id: 'slug de un campo text donde guardar el id del evento',
+                                      },
+                                      _nota: 'save_meeting_link y save_event_id van en la config de la acción (al lado de values), no dentro de values. Guarda SIEMPRE el id si después hay que reprogramar o cancelar.',
+                                  }
+                                : meetingActionKind(c.integration_key, a.key) === 'cancel'
+                                  ? {
+                                        save_to_record: {
+                                            save_meeting_link: 'slug del campo del enlace: se vacía al cancelar',
+                                            save_event_id: 'slug del campo del id: se vacía al cancelar',
+                                        },
+                                    }
+                                  : {}),
                         })),
                     })),
                 // v0.1.365 — dónde guarda la lista cada dato del cobro (link,
@@ -4436,6 +4459,12 @@ export class StructureTools implements AiProposalApplier {
                     case 'generate_pdf':
                         check(cfg.save_field);
                         checkTags(cfg.filename);
+                        break;
+                    case 'connector_action':
+                        // v0.1.366 — dónde guarda una reunión su enlace y su id.
+                        check(cfg.save_meeting_link);
+                        check(cfg.save_event_id);
+                        for (const v of Object.values((cfg.values as Record<string, unknown>) ?? {})) checkTags(v);
                         break;
                     case 'if_else':
                         checkCondition(cfg.condition);

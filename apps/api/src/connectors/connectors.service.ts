@@ -5,6 +5,7 @@ import {
     connectorSettingsSchema,
     integrationDef,
     integrationScopes,
+    scopesForRefresh,
     isIntegrationKey,
     isMailAccountIntegration,
     isSmsProvider,
@@ -242,6 +243,13 @@ export interface ResolvedIntegration {
     key: IntegrationKey;
     def: IntegrationDef;
     creds: IntegrationCreds;
+    /**
+     * v0.1.366 — Los permisos que la conexión recibió al autorizar (vacío si
+     * no usa OAuth o no se sabe). Con esto una acción que necesita un permiso
+     * nuevo —las reuniones de Teams— falla diciendo «reconéctala» en vez de
+     * con el 403 de Microsoft.
+     */
+    grantedScope: string;
 }
 
 /** Estado de la autorización, en `config.oauth_state` (sin tokens). */
@@ -450,6 +458,7 @@ export class ConnectorsService {
                         fields: readFields(row.config.fields),
                         signingSecret: secrets.signing_secret ?? '',
                     },
+                    grantedScope: row.authType === 'oauth2' ? readOAuthState(row.config.oauth_state).scope : '',
                 },
             };
         }
@@ -1319,7 +1328,12 @@ export class ConnectorsService {
                 clientId: app.clientId,
                 clientSecret: app.clientSecret,
             });
-            if (app.scopeOnToken && app.scopes !== '') body += `&scope=${encodeURIComponent(app.scopes)}`;
+            // v0.1.366 — al renovar se piden los permisos que la conexión YA
+            // recibió: uno que la app sumó después (el calendario de Teams) y
+            // la persona no aceptó todavía haría fallar la renovación entera.
+            const def = integrationDef(row.provider);
+            const refreshScopes = def ? scopesForRefresh(def, app.scopes, state.scope) : app.scopes;
+            if (app.scopeOnToken && refreshScopes !== '') body += `&scope=${encodeURIComponent(refreshScopes)}`;
             const token = await this.postToken(app.tokenUrl, body);
             await this.storeTokens(tenantId, row, token, { keepRefresh: true });
             return await this.row(tenantId, row.id);
@@ -1398,7 +1412,9 @@ export class ConnectorsService {
         }
         const state: StoredOAuthState = {
             expiresAt: token.expiresAt,
-            scope: token.scope,
+            // Una renovación que no informa los permisos conserva los que ya se
+            // sabían (con ellos se arma la próxima renovación, v0.1.366).
+            scope: token.scope !== '' || !opts.keepRefresh ? token.scope : readOAuthState(row.config.oauth_state).scope,
             error: null,
         };
         const config = { ...row.config, oauth_state: state };

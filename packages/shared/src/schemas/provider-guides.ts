@@ -256,7 +256,7 @@ export const PROVIDER_GUIDES: Record<IntegrationProvider, ProviderGuide> = {
                 summary: 'Qué puede hacer la app en nombre de cada persona, y la clave que la identifica.',
                 steps: [
                     {
-                        text: 'En «Permisos de API» → «Agregar un permiso» → Microsoft Graph → «Permisos delegados»: marca openid, email, offline_access, User.Read, Mail.Send y Calendars.ReadWrite (Outlook: correo y calendario) y Team.ReadBasic.All, Channel.ReadBasic.All, ChannelMessage.Send, Chat.Create y ChatMessage.Send (Teams). No hace falta «Conceder consentimiento de administrador»: cada persona los acepta al conectar. Si no vas a usar Teams, puedes dejar fuera los cinco de Teams.',
+                        text: 'En «Permisos de API» → «Agregar un permiso» → Microsoft Graph → «Permisos delegados»: marca openid, email, offline_access, User.Read, Mail.Send y Calendars.ReadWrite (Outlook: correo y calendario; Teams también lo usa para crear, reprogramar y cancelar reuniones) y Team.ReadBasic.All, Channel.ReadBasic.All, ChannelMessage.Send, Chat.Create y ChatMessage.Send (mensajes de Teams). No hace falta «Conceder consentimiento de administrador»: cada persona los acepta al conectar. Si no vas a usar Teams, puedes dejar fuera los cinco de mensajes.',
                         copy: ['scopes_lines'],
                     },
                     {

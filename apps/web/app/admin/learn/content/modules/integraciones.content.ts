@@ -155,7 +155,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Microsoft Teams' },
             {
                 t: 'p',
-                md: 'Teams se conecta con un clic, con la cuenta de trabajo de Microsoft 365 que va a mandar los mensajes: **Conectar**, eliges la cuenta y tocas **Aceptar**. Trae tres acciones:\n- **Enviar mensaje a un canal de Teams**: toca **Elegir canal** y aparecen los equipos y canales de esa cuenta (o pega el vínculo que da Teams en «…» junto al canal → «Obtener vínculo al canal»). Lleva un **Título** opcional y el **Mensaje**.\n- **Enviar mensaje directo en Teams**: un chat uno a uno con una persona de tu organización. En **Para** va su correo de trabajo, o una variable con el correo del responsable del registro.\n- **Enviar mensaje a un chat de Teams**: a un chat de grupo que ya existe; pega el vínculo de cualquier mensaje de ese chat («…» sobre un mensaje → «Copiar vínculo»).',
+                md: 'Teams se conecta con un clic, con la cuenta de trabajo de Microsoft 365 que va a mandar los mensajes: **Conectar**, eliges la cuenta y tocas **Aceptar**. Trae tres acciones:\n- **Enviar mensaje a un canal de Teams**: toca **Elegir canal** y aparecen los equipos y canales de esa cuenta (o pega el vínculo que da Teams en «…» junto al canal → «Obtener vínculo al canal»). Lleva un **Título** opcional y el **Mensaje**.\n- **Enviar mensaje directo en Teams**: un chat uno a uno con una persona de tu organización. En **Para** va su correo de trabajo, o una variable con el correo del responsable del registro.\n- **Enviar mensaje a un chat de Teams**: a un chat de grupo que ya existe; pega el vínculo de cualquier mensaje de ese chat («…» sobre un mensaje → «Copiar vínculo»).\n\nY tres para reuniones: **Crear reunión de Teams**, **Reprogramar** y **Cancelar** (se explican en el artículo «Gmail, Outlook, Google Calendar y Google Sheets»).',
             },
             {
                 t: 'callout',
@@ -268,15 +268,63 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Calendario', what: 'Sólo en Google Calendar. Vacío = tu calendario principal; para otro, su identificador (está en la configuración del calendario).' },
                     { name: 'Título', what: 'El nombre del evento: «Visita · {{cliente}}».' },
-                    { name: 'Fecha', what: 'AAAA-MM-DD o una variable como `{{fecha}}`. Si el campo trae hora, el evento se crea a esa hora.' },
+                    { name: 'Inicio', what: 'AAAA-MM-DD o una variable como `{{fecha}}`. Si el campo trae hora, el evento se crea a esa hora.' },
                     { name: 'Hora de inicio', what: 'HH:MM en 24 horas. Vacío = evento de todo el día.' },
-                    { name: 'Duración (minutos)', what: 'Cuánto dura. Por defecto, 60.' },
+                    { name: 'Fin', what: 'Opcional: la hora en que termina (HH:MM) o una fecha y hora completa, como un campo «Fin de la demo». Si lo completas, manda sobre la duración.' },
+                    { name: 'Duración (minutos)', what: 'Cuánto dura cuando no hay **Fin**. Por defecto, 60.' },
                     { name: 'Zona horaria', what: 'En qué hora están la fecha y la hora (Bogotá, Ciudad de México, Santiago…).', tip: 'Si tu campo es «Fecha y hora», la hora ya viaja exacta y la zona sólo importa para fechas sin hora.' },
                     { name: 'Descripción', what: 'El detalle del evento.' },
-                    { name: 'Invitados', what: 'Correos separados por coma. Reciben la invitación del calendario.' },
+                    { name: 'Lugar', what: 'Opcional: la dirección o la sala («Oficina principal, sala 2»).' },
+                    { name: 'Invitados', what: 'Correos separados por coma o por punto y coma. Reciben la invitación del calendario.' },
+                    { name: 'Invitados opcionales', what: 'Igual que Invitados, pero la invitación les llega como opcional (por ejemplo, gerencia).' },
                     { name: 'Agregar reunión de Teams', what: 'Sólo en Outlook. El evento lleva el enlace para unirse por Teams y les llega a los invitados. Necesita una cuenta de trabajo o estudiantil de Microsoft 365.' },
                     { name: 'Agregar videollamada de Google Meet', what: 'Sólo en Google Calendar. El evento lleva el enlace de Meet y les llega a los invitados.' },
                 ],
+            },
+            { t: 'h', text: 'Reuniones: crear, guardar el enlace, reprogramar y cancelar' },
+            { t: 'anim', key: 'reunion-teams', caption: 'El vendedor pone la fecha de la demo: se crea la reunión de Teams con los invitados, el enlace y el id quedan en el registro y el enlace sale por WhatsApp.' },
+            {
+                t: 'p',
+                md: 'Las tres apps de calendario traen el ciclo completo de una reunión: **Microsoft Teams** (**Crear reunión de Teams**), **Outlook** (**Crear evento en Outlook**, con la opción de reunión de Teams) y **Google Calendar** (**Crear evento en Google Calendar**, con Google Meet). Las tres suman **Reprogramar** y **Cancelar** el evento con su id. El evento se crea en el calendario de la cuenta conectada y la invitación les llega a los invitados.',
+            },
+            {
+                t: 'steps',
+                items: [
+                    '**Crea los campos.** En la lista, un campo de fecha y hora para la reunión («Fecha de la demo») y dos de texto para guardar lo que devuelve: **Enlace de la reunión** e **Id del evento**. También puedes crearlos desde la misma acción, con **+ Crear el campo**.',
+                    '**Arma la automatización.** Disparador **Cuando se actualiza un registro** con «Fecha de la demo» en los campos que cambian. Agrega una condición **si/sino**: si «Id del evento» está vacío, **Crear reunión de Teams**; si no, **Reprogramar**.',
+                    '**Guarda el enlace y el id.** En la acción de crear, en **Guardar en el registro**, elige «Enlace de la reunión» e «Id del evento». Así otra automatización puede reprogramar o cancelar después.',
+                    '**Avisa al cliente.** En el paso siguiente, por ejemplo **Enviar mensaje de WhatsApp**, usa `{{reunion.enlace}}` en el mensaje.',
+                    '**Cancela cuando haga falta.** Una automatización para cuando el estado pasa a «No asiste» con **Cancelar una reunión de Teams**: en **Id del evento** va `{{id_del_evento}}`, el mensaje opcional les llega a los invitados y los dos campos se vacían.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Lo que deja una reunión creada',
+                rows: [
+                    { name: '{{reunion.enlace}}', what: 'El enlace para unirse (Teams o Meet). Vacío si el evento no lleva videollamada.' },
+                    { name: '{{reunion.id}}', what: 'El id del evento en el calendario. Es lo que piden **Reprogramar** y **Cancelar**.' },
+                    { name: '{{reunion.web}}', what: 'El enlace para abrir el evento en Outlook o en Google Calendar.' },
+                    { name: 'Guardar en el registro', what: 'Los mismos datos, escritos en los campos que elijas. Guardarlos no dispara otras automatizaciones de cambio, así no se arma un bucle.' },
+                    { name: 'Reprogramar', what: 'Sólo cambia lo que completes: lo que dejes vacío queda como estaba. Si cambias el inicio sin poner fin, la reunión conserva lo que duraba.', tip: 'Los invitados reciben la invitación actualizada.' },
+                    { name: 'Cancelar', what: 'Borra el evento y les avisa a los invitados (en Teams y Outlook, con tu mensaje). Si el evento ya no existía, la corrida termina bien igual.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: '«Probar ahora» no invita a nadie',
+                md: 'Al probar **Crear**, la reunión se crea **sin invitados** y se borra enseguida: ves que funciona sin que a nadie le llegue nada. Al probar **Reprogramar** o **Cancelar**, la prueba sólo muestra lo que se enviaría: no toca reuniones reales.',
+            },
+            {
+                t: 'callout',
+                tone: 'warn',
+                title: 'Teams conectado antes de esta versión',
+                md: 'Una conexión de Teams de antes sólo tiene permiso para mensajes. Toca **Reconectar** en **Ajustes → Integraciones** y acepta el permiso del calendario; los mensajes siguen funcionando mientras tanto. Si tu empresa pide la aprobación del administrador, la ventana de aprobación te avisa que hace falta aprobar un permiso nuevo.',
+            },
+            {
+                t: 'example',
+                title: 'Una empresa de software que agenda demos',
+                md: 'Cuando el vendedor pone la **Fecha de la demo** en la oportunidad, la reunión de Teams se crea en su calendario, invita al cliente y, como opcional, a gerencia, guarda el enlace y el id, y el cliente recibe por WhatsApp «Tu demo es el jueves a las 10:00, únete aquí: {{reunion.enlace}}». Si el vendedor mueve la fecha, la misma automatización la reprograma; si el estado pasa a «No asiste», otra la cancela.',
             },
             { t: 'h', text: 'Google Sheets: una fila por cada cosa que pase' },
             {
@@ -291,7 +339,8 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: '¿La app puede leer mis correos o mi calendario?', a: 'No. Pide sólo el permiso para enviar correos, crear eventos o escribir en planillas. No lee tu bandeja de entrada ni tus otros archivos.' },
+                    { q: '¿La app puede leer mis correos o mi calendario?', a: 'No lee tu bandeja de entrada ni tus otros archivos. En el calendario trabaja con los eventos que crea: los reprograma o los cancela con su id. Para ver tu disponibilidad en la agenda de citas, conecta tu calendario en **Ajustes → Cuenta → Mi calendario**.' },
+                    { q: '¿Necesito el permiso de reuniones en línea (OnlineMeetings)?', a: 'No. La reunión de Teams se crea como parte del evento del calendario, con el permiso del calendario.' },
                     { q: '¿Qué pasa si cambio la contraseña de mi cuenta de Google?', a: 'Google puede cortar las autorizaciones. Si pasa, la fila dice **Hay que volver a conectarla** y te llega un aviso en **Problemas**: toca **Reconectar**.' },
                     { q: '¿Puedo conectar la planilla de otra persona?', a: 'Sí, si la cuenta que conectaste tiene permiso para editarla. La planilla se comparte desde Google Sheets como siempre.' },
                 ],

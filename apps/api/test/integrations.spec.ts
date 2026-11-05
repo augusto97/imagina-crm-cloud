@@ -631,11 +631,18 @@ describe('Integraciones de la galería (v0.1.203)', () => {
         const { url, result } = await authorizeAndReturn('teams');
         expect(result).toEqual({ ok: true, error: null });
         expect(url.searchParams.get('scope')).toBe(
-            'openid email offline_access User.Read Team.ReadBasic.All Channel.ReadBasic.All ChannelMessage.Send Chat.Create ChatMessage.Send',
+            'openid email offline_access User.Read Team.ReadBasic.All Channel.ReadBasic.All ChannelMessage.Send Chat.Create ChatMessage.Send Calendars.ReadWrite',
         );
         const [conn] = await svc.list(tenantId, adminId, 'admin');
         expect(conn).toMatchObject({ provider: 'teams', integration_key: 'teams', account_label: 'yo@acme.co' });
-        expect(conn!.actions.map((a) => a.key)).toEqual(['send_channel_message', 'send_direct_message', 'send_chat_message']);
+        expect(conn!.actions.map((a) => a.key)).toEqual([
+            'send_channel_message',
+            'send_direct_message',
+            'send_chat_message',
+            'create_meeting',
+            'update_event',
+            'cancel_event',
+        ]);
 
         // Los equipos y canales de la cuenta, con «General» primero y el vínculo listo.
         const teams = await svc.teamsChannels(tenantId, adminId, conn!.id);
@@ -697,5 +704,166 @@ describe('Integraciones de la galería (v0.1.203)', () => {
             },
         });
         expect(denied.error).toMatch(/miembro del equipo/);
+    });
+    it('reuniones de Teams (v0.1.366): crear con enlace e id guardados, reprogramar, cancelar, y una conexión de antes', async () => {
+        await apps.update('microsoft', { client_id: 'ms-client', client_secret: 'ms-secreto-5555' }, new Map());
+        let granted = 'Calendars.ReadWrite Channel.ReadBasic.All ChannelMessage.Send Chat.Create ChatMessage.Send email openid Team.ReadBasic.All User.Read profile';
+        const tokenRequests: string[] = [];
+        net.handler = (call) => {
+            if (call.url.includes('login.microsoftonline.com')) {
+                tokenRequests.push(call.body ?? '');
+                return {
+                    status: 200,
+                    body: JSON.stringify({ token_type: 'Bearer', scope: granted, expires_in: 3600, access_token: 'ms-cal-token', refresh_token: 'r-cal' }),
+                };
+            }
+            if (call.url === 'https://graph.microsoft.com/v1.0/me') return { status: 200, body: '{"mail":"mayerli@binapps.co"}' };
+            if (call.url === 'https://graph.microsoft.com/v1.0/me/events' && call.method === 'POST') {
+                return {
+                    status: 201,
+                    body: JSON.stringify({
+                        id: 'AAMkEvento1=',
+                        subject: JSON.parse(call.body!).subject,
+                        webLink: 'https://outlook.office365.com/owa/?itemid=AAMkEvento1',
+                        onlineMeeting: { joinUrl: 'https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc' },
+                    }),
+                };
+            }
+            if (call.url.startsWith('https://graph.microsoft.com/v1.0/me/events/AAMkEvento1%3D?$select')) {
+                return { status: 200, body: JSON.stringify({ start: { dateTime: '2026-11-10T15:00:00.0000000' }, end: { dateTime: '2026-11-10T15:45:00.0000000' } }) };
+            }
+            if (call.url === 'https://graph.microsoft.com/v1.0/me/events/AAMkEvento1%3D' && call.method === 'PATCH') {
+                return { status: 200, body: JSON.stringify({ id: 'AAMkEvento1=', subject: 'Demo', onlineMeeting: { joinUrl: 'https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc' } }) };
+            }
+            if (call.url === 'https://graph.microsoft.com/v1.0/me/events/AAMkEvento1%3D/cancel') return { status: 202, body: '' };
+            if (call.url === 'https://graph.microsoft.com/v1.0/me/events/AAMkEvento1%3D' && call.method === 'DELETE') return { status: 204, body: '' };
+            return { status: 404, body: '{"error":{"message":"not found"}}' };
+        };
+        await authorizeAndReturn('teams');
+        const [conn] = await svc.list(tenantId, adminId, 'admin');
+
+        const list = await listsService.create(tenantId, { name: 'Oportunidades' });
+        const f: Record<string, Field> = {};
+        for (const d of [
+            { label: 'Cliente', type: 'text', slug: 'cliente' },
+            { label: 'Fecha de la demo', type: 'datetime', slug: 'fecha_demo' },
+            { label: 'Correo', type: 'email', slug: 'correo' },
+            { label: 'Enlace de la reunión', type: 'url', slug: 'enlace_reunion' },
+            { label: 'Id del evento', type: 'text', slug: 'id_evento' },
+        ] as CreateFieldInput[]) {
+            f[d.slug!] = await fieldsService.create(tenantId, list.slug, d);
+        }
+        const rec = await recordsService.create(tenantId, admin(), list.slug, {
+            data: { [`f${f.cliente!.id}`]: 'Acme', [`f${f.fecha_demo!.id}`]: '2026-11-10T15:00:00Z', [`f${f.correo!.id}`]: 'compras@acme.co' },
+        });
+        const runAction = async (config: Record<string, unknown>): Promise<{ status: string; log: string }> => {
+            await withTenant(pg.db, tenantId, (tx) => tx.delete(automations).where(eq(automations.tenantId, tenantId)));
+            const auto = await automationsService.create(tenantId, list.slug, {
+                name: 'Demo',
+                trigger_type: 'record_created',
+                actions: [
+                    { type: 'connector_action', config },
+                    { type: 'update_field', config: { values: { cliente: 'Acme · {{reunion.id}}' } } },
+                ],
+            });
+            const current = await recordsService.get(tenantId, admin(), list.slug, rec.id);
+            await engine.process({ tenantId, listId: list.id, recordId: rec.id, trigger: 'record_created', after: current.data });
+            const runs = await automationsService.runsById(tenantId, auto.id, {});
+            const run = runs.data[0]!;
+            return { status: run.status, log: JSON.stringify(run.actions_log) + (run.error ?? '') };
+        };
+
+        // 1) Crear la reunión: enlace e id en el registro, y {{reunion.id}} para el paso siguiente.
+        const created = await runAction({
+            connection_id: conn!.id,
+            action_key: 'create_meeting',
+            values: { title: 'Demo con {{cliente}}', date: '{{fecha_demo}}', duration: '45', attendees: '{{correo}}; gerencia@binapps.co' },
+            save_meeting_link: 'enlace_reunion',
+            save_event_id: 'id_evento',
+        });
+        expect(created.status, created.log).toBe('success');
+        const sent = net.calls.find((c) => c.url === 'https://graph.microsoft.com/v1.0/me/events')!;
+        const body = JSON.parse(sent.body!);
+        expect(body).toMatchObject({ subject: 'Demo con Acme', isOnlineMeeting: true, onlineMeetingProvider: 'teamsForBusiness' });
+        expect(body.attendees.map((a: { emailAddress: { address: string } }) => a.emailAddress.address)).toEqual(['compras@acme.co', 'gerencia@binapps.co']);
+        let row = await recordsService.get(tenantId, admin(), list.slug, rec.id);
+        expect(row.data[`f${f.enlace_reunion!.id}`]).toBe('https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc');
+        expect(row.data[`f${f.id_evento!.id}`]).toBe('AAMkEvento1=');
+        expect(row.data[`f${f.cliente!.id}`]).toBe('Acme · AAMkEvento1=');
+
+        // 2) Reprogramar: lee la duración del evento (45 min) y manda sólo el horario.
+        net.calls.length = 0;
+        const moved = await runAction({
+            connection_id: conn!.id,
+            action_key: 'update_event',
+            values: { event_id: '{{id_evento}}', date: '2026-11-12T16:00:00Z' },
+            save_meeting_link: 'enlace_reunion',
+        });
+        expect(moved.status).toBe('success');
+        const patch = net.calls.find((c) => c.method === 'PATCH')!;
+        expect(JSON.parse(patch.body!)).toEqual({
+            isAllDay: false,
+            start: { dateTime: '2026-11-12T16:00:00', timeZone: 'UTC' },
+            end: { dateTime: '2026-11-12T16:45:00', timeZone: 'UTC' },
+        });
+
+        // 3) Cancelar con mensaje: los campos guardados quedan vacíos.
+        net.calls.length = 0;
+        const cancelled = await runAction({
+            connection_id: conn!.id,
+            action_key: 'cancel_event',
+            values: { event_id: '{{id_evento}}', message: 'El cliente no puede asistir' },
+            save_meeting_link: 'enlace_reunion',
+            save_event_id: 'id_evento',
+        });
+        expect(cancelled.status).toBe('success');
+        expect(net.calls.some((c) => c.url.endsWith('/cancel') && JSON.parse(c.body!).comment === 'El cliente no puede asistir')).toBe(true);
+        row = await recordsService.get(tenantId, admin(), list.slug, rec.id);
+        expect(row.data[`f${f.enlace_reunion!.id}`] ?? null).toBeNull();
+        expect(row.data[`f${f.id_evento!.id}`] ?? null).toBeNull();
+
+        // 4) Cancelar algo que ya no está: no es un error.
+        await recordsService.update(tenantId, admin(), list.slug, rec.id, { data: { [`f${f.id_evento!.id}`]: 'YaBorrado' } });
+        const gone = await runAction({ connection_id: conn!.id, action_key: 'cancel_event', values: { event_id: '{{id_evento}}' } });
+        expect(gone.status).toBe('success');
+        expect(gone.log).toMatch(/ya no estaba en el calendario/);
+
+        // 5) «Probar ahora»: crea SIN invitados y la borra; reprogramar no se envía.
+        net.calls.length = 0;
+        const probe = await automationsService.testWebhook(tenantId, list.slug, {
+            config: { connection_id: conn!.id, action_key: 'create_meeting', values: { title: 'Demo', date: '{{fecha_demo}}', attendees: '{{correo}}' } },
+        });
+        expect(probe.error).toBeNull();
+        expect(JSON.parse(probe.request.body!).attendees).toBeUndefined();
+        expect(probe.note).toMatch(/SIN invitados.*borró/);
+        expect(net.calls.some((c) => c.method === 'DELETE' && c.url.endsWith('/me/events/AAMkEvento1%3D'))).toBe(true);
+        net.calls.length = 0;
+        const probeMove = await automationsService.testWebhook(tenantId, list.slug, {
+            config: { connection_id: conn!.id, action_key: 'update_event', values: { event_id: 'AAMkEvento1=', title: 'Nuevo título' } },
+        });
+        expect(probeMove.response).toBeNull();
+        expect(probeMove.note).toMatch(/no lo envía/);
+        expect(net.calls.some((c) => c.method === 'PATCH')).toBe(false);
+
+        // 6) Una conexión de Teams de ANTES (sin el calendario): al renovar no
+        // pide el permiso nuevo (Microsoft rechazaría la renovación entera) y
+        // la reunión falla diciendo «reconéctala» sin llamar a Graph.
+        granted = 'Channel.ReadBasic.All ChannelMessage.Send Chat.Create ChatMessage.Send email openid Team.ReadBasic.All User.Read profile';
+        await withTenant(pg.db, tenantId, async (tx) => {
+            const [c] = await tx.select().from(connections).where(eq(connections.id, conn!.id));
+            const config = { ...(c!.config as Record<string, unknown>), oauth_state: { expiresAt: Date.now() - 1000, scope: granted, error: null } };
+            await tx.update(connections).set({ config }).where(eq(connections.id, conn!.id));
+        });
+        tokenRequests.length = 0;
+        net.calls.length = 0;
+        const old = await runAction({ connection_id: conn!.id, action_key: 'create_meeting', values: { title: 'Demo', date: '{{fecha_demo}}' } });
+        expect(old.status).toBe('failed');
+        expect(old.log).toMatch(/se conectó antes de que existieran las reuniones/);
+        expect(net.calls.some((c) => c.url.includes('/me/events'))).toBe(false);
+        const refreshScope = new URLSearchParams(tokenRequests[0]!).get('scope')!;
+        expect(refreshScope).toContain('ChatMessage.Send');
+        expect(refreshScope).not.toContain('Calendars.ReadWrite');
+        const [listed] = (await svc.list(tenantId, adminId, 'admin')).filter((c) => c.id === conn!.id);
+        expect(listed!.oauth_status!.granted_scopes).not.toContain('Calendars');
     });
 });

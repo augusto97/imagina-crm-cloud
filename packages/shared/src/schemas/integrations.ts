@@ -265,26 +265,84 @@ export const EVENT_TIMEZONES: Array<{ value: string; label: string }> = [
     { value: 'UTC', label: 'UTC' },
 ];
 
-const eventParams: Array<Record<string, unknown>> = [
-    { key: 'title', label: 'Título', required: true },
-    {
-        key: 'date',
-        label: 'Fecha',
-        required: true,
-        help: 'AAAA-MM-DD o una variable como {{fecha}}. Si el campo trae hora, el evento se crea a esa hora.',
-    },
-    { key: 'time', label: 'Hora de inicio', help: 'HH:MM (24 h). Vacío = evento de todo el día.' },
-    { key: 'duration', label: 'Duración (minutos)', type: 'number', default: '60' },
-    {
-        key: 'timezone',
-        label: 'Zona horaria',
-        type: 'select',
-        default: 'America/Bogota',
-        options: EVENT_TIMEZONES,
-    },
-    { key: 'description', label: 'Descripción', type: 'long_text' },
-    { key: 'attendees', label: 'Invitados', help: 'Correos separados por coma. Reciben la invitación.' },
-];
+/**
+ * Los datos de un evento (v0.1.366: se suman fin, lugar e invitados
+ * opcionales). Para CAMBIAR un evento todo es opcional: lo vacío no se toca,
+ * así una automatización que sólo mueve la fecha no le borra la descripción.
+ */
+function eventParamsFor(mode: 'create' | 'update'): Array<Record<string, unknown>> {
+    const update = mode === 'update';
+    const keep = update ? ' Vacío = no se cambia.' : '';
+    return [
+        { key: 'title', label: update ? 'Título nuevo' : 'Título', required: !update, help: update ? 'Vacío = no se cambia.' : '' },
+        {
+            key: 'date',
+            label: update ? 'Inicio nuevo' : 'Inicio',
+            required: !update,
+            help: update
+                ? 'La fecha nueva: AAAA-MM-DD o una variable como {{fecha_demo}}. Si el campo trae hora, el evento empieza a esa hora. Vacío = no se mueve.'
+                : 'AAAA-MM-DD o una variable como {{fecha}}. Si el campo trae hora, el evento empieza a esa hora.',
+        },
+        { key: 'time', label: 'Hora de inicio', help: 'HH:MM (24 h). Vacío = evento de todo el día, salvo que el campo de Inicio traiga la hora.' },
+        {
+            key: 'end',
+            label: 'Fin',
+            help: 'Opcional: AAAA-MM-DD HH:MM, sólo la hora (HH:MM) o una variable con la fecha y hora. Si lo llenas, manda sobre la duración.',
+        },
+        {
+            key: 'duration',
+            label: 'Duración (minutos)',
+            type: 'number',
+            default: update ? '' : '60',
+            help: update ? 'Vacío = la misma que ya tenía el evento.' : '',
+        },
+        {
+            key: 'timezone',
+            label: 'Zona horaria',
+            type: 'select',
+            default: 'America/Bogota',
+            options: EVENT_TIMEZONES,
+            help: 'La de la hora que escribes a mano. Una fecha y hora de un campo ya trae su zona.',
+        },
+        { key: 'description', label: update ? 'Descripción nueva' : 'Descripción', type: 'long_text', help: keep.trim() },
+        { key: 'location', label: 'Lugar', help: `Opcional: una dirección o una sala.${keep}` },
+        {
+            key: 'attendees',
+            label: 'Invitados',
+            help: update
+                ? 'Si llenas Invitados o Invitados opcionales, la lista queda EXACTAMENTE así (a quien sale le llega la cancelación). Vacío = no se cambia.'
+                : 'Correos separados por coma o punto y coma. Reciben la invitación.',
+        },
+        {
+            key: 'optional_attendees',
+            label: 'Invitados opcionales',
+            help: 'Correos separados por coma o punto y coma. Les llega la invitación como opcional.',
+        },
+    ];
+}
+
+const eventParams = eventParamsFor('create');
+
+/** El evento que se cambia o se cancela, por el id que se guardó al crearlo. */
+const eventIdParam: Record<string, unknown> = {
+    key: 'event_id',
+    label: 'Id del evento',
+    required: true,
+    help: 'El que guardaste al crearlo, por ejemplo {{id_evento}}. La acción que lo crea lo deja en «Guardar en el registro».',
+};
+
+const googleCalendarParam: Record<string, unknown> = {
+    key: 'calendar',
+    label: 'Calendario',
+    help: 'Vacío = tu calendario principal. Para otro, su ID (está en la configuración del calendario).',
+};
+
+const cancelMessageParam: Record<string, unknown> = {
+    key: 'message',
+    label: 'Mensaje para los invitados',
+    type: 'long_text',
+    help: 'Opcional: va en el correo de cancelación que les llega.',
+};
 
 const emailParams: Array<Record<string, unknown>> = [
     { key: 'to', label: 'Para', required: true, help: 'Uno o varios correos separados por coma.' },
@@ -889,11 +947,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                 label: 'Crear evento en Google Calendar',
                 description: 'Con fecha, hora, invitados y videollamada de Meet si quieres.',
                 params: [
-                    {
-                        key: 'calendar',
-                        label: 'Calendario',
-                        help: 'Vacío = tu calendario principal. Para otro, su ID (está en la configuración del calendario).',
-                    },
+                    googleCalendarParam,
                     ...eventParams,
                     {
                         key: 'meet',
@@ -903,6 +957,19 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                         help: 'El evento lleva el enlace de Meet y les llega a los invitados.',
                     },
                 ],
+            }),
+            // v0.1.366 — reprogramar y cancelar por el id que se guardó al crearlo.
+            action({
+                key: 'update_event',
+                label: 'Reprogramar o cambiar un evento de Google Calendar',
+                description: 'Por su id: la fecha, la hora, los invitados o el texto. A los invitados les llega la actualización.',
+                params: [eventIdParam, googleCalendarParam, ...eventParamsFor('update')],
+            }),
+            action({
+                key: 'cancel_event',
+                label: 'Cancelar un evento de Google Calendar',
+                description: 'Por su id. A los invitados les llega la cancelación.',
+                params: [eventIdParam, googleCalendarParam],
             }),
         ],
     },
@@ -992,25 +1059,42 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     },
                 ],
             }),
+            // v0.1.366 — reprogramar y cancelar por el id que se guardó al crearlo.
+            action({
+                key: 'update_event',
+                label: 'Reprogramar o cambiar un evento de Outlook',
+                description: 'Por su id: la fecha, la hora, los invitados o el texto. A los invitados les llega la actualización.',
+                params: [eventIdParam, ...eventParamsFor('update')],
+            }),
+            action({
+                key: 'cancel_event',
+                label: 'Cancelar un evento de Outlook',
+                description: 'Por su id. A los invitados les llega la cancelación.',
+                params: [eventIdParam, cancelMessageParam],
+            }),
         ],
     },
     {
         // v0.1.348 — Teams usa la MISMA app de Microsoft que Outlook (el
         // operador la registra una vez); cada empresa conecta Teams aparte
-        // porque los permisos son otros. Ninguno de estos cinco pide
-        // consentimiento del administrador, y sólo existen en cuentas de
-        // trabajo o estudiantiles (Teams no tiene API para cuentas personales).
+        // porque los permisos son otros. Ninguno pide consentimiento del
+        // administrador, y sólo existen en cuentas de trabajo o estudiantiles
+        // (Teams no tiene API para cuentas personales).
+        // v0.1.366 — `Calendars.ReadWrite`: una reunión de Teams ES un evento
+        // del calendario. Las conexiones de antes no lo tienen (ver
+        // INTEGRATION_SCOPES_ADDED): siguen mandando mensajes y piden
+        // reconectar sólo para las reuniones.
         key: 'teams',
         name: 'Microsoft Teams',
-        tagline: 'Mensajes a canales y chats de Teams.',
+        tagline: 'Mensajes a canales y chats, y reuniones de Teams.',
         description:
-            'Avisa a tu equipo en un canal de Teams o mándale un mensaje directo a una persona cuando pasa algo en una lista: un cliente nuevo, una venta cerrada, un ticket urgente.',
+            'Avisa a tu equipo en un canal de Teams o mándale un mensaje directo a una persona cuando pasa algo en una lista, y agenda reuniones de Teams desde tus registros: una demo, una visita, una llamada de seguimiento.',
         category: 'mensajeria',
         color: '#4B53BC',
         auth: {
             kind: 'oauth',
             provider: 'microsoft',
-            scopes: 'Team.ReadBasic.All Channel.ReadBasic.All ChannelMessage.Send Chat.Create ChatMessage.Send',
+            scopes: 'Team.ReadBasic.All Channel.ReadBasic.All ChannelMessage.Send Chat.Create ChatMessage.Send Calendars.ReadWrite',
         },
         actions: [
             action({
@@ -1055,6 +1139,34 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     },
                     { key: 'message', label: 'Mensaje', type: 'long_text', required: true },
                 ],
+            }),
+            // v0.1.366 — reuniones: crear (con el enlace para unirse), reprogramar y cancelar.
+            action({
+                key: 'create_meeting',
+                label: 'Crear reunión de Teams',
+                description: 'En el calendario de la cuenta conectada, con el enlace para unirse. Les llega a los invitados.',
+                params: [
+                    ...eventParams,
+                    {
+                        key: 'teams_meeting',
+                        label: 'Con enlace de Teams',
+                        type: 'boolean',
+                        default: 'true',
+                        help: 'Apágalo para crear un evento sin videollamada.',
+                    },
+                ],
+            }),
+            action({
+                key: 'update_event',
+                label: 'Reprogramar o cambiar una reunión de Teams',
+                description: 'Por su id: la fecha, la hora, los invitados o el texto. A los invitados les llega la actualización.',
+                params: [eventIdParam, ...eventParamsFor('update')],
+            }),
+            action({
+                key: 'cancel_event',
+                label: 'Cancelar una reunión de Teams',
+                description: 'Por su id. A los invitados les llega la cancelación.',
+                params: [eventIdParam, cancelMessageParam],
             }),
         ],
     },
@@ -1543,6 +1655,122 @@ export function integrationScopes(def: IntegrationDef, opts: { purpose?: 'agenda
         .map((s) => s.trim())
         .filter(Boolean);
     return [...new Set(parts)].join(sep);
+}
+
+// --- Reuniones y eventos (v0.1.366) ---------------------------------------
+
+/**
+ * Las acciones de calendario que crean, cambian o cancelan un evento. Las que
+ * crean o cambian devuelven el evento (su id y el enlace para unirse), que
+ * queda en `{{reunion.*}}` y se puede guardar en campos del registro; cancelar
+ * puede vaciar esos mismos campos.
+ */
+export type MeetingActionKind = 'create' | 'update' | 'cancel';
+
+const MEETING_ACTIONS: Record<string, MeetingActionKind> = {
+    'google_calendar.create_event': 'create',
+    'google_calendar.update_event': 'update',
+    'google_calendar.cancel_event': 'cancel',
+    'outlook.create_event': 'create',
+    'outlook.update_event': 'update',
+    'outlook.cancel_event': 'cancel',
+    'teams.create_meeting': 'create',
+    'teams.update_event': 'update',
+    'teams.cancel_event': 'cancel',
+};
+
+export function meetingActionKind(integration: unknown, actionKey: unknown): MeetingActionKind | null {
+    return MEETING_ACTIONS[`${String(integration ?? '')}.${String(actionKey ?? '')}`] ?? null;
+}
+
+/**
+ * Dónde se guarda lo que devuelve la acción (claves de la config del paso, al
+ * lado de `values`): el enlace para unirse y el id del evento. Al cancelar, las
+ * mismas claves dicen qué campos se vacían.
+ */
+export const MEETING_SAVE_KEYS = ['save_meeting_link', 'save_event_id'] as const;
+export type MeetingSaveKey = (typeof MEETING_SAVE_KEYS)[number];
+
+/** Tipos de campo que aceptan cada dato. */
+export const MEETING_SAVE_FIELD_TYPES: Record<MeetingSaveKey, readonly string[]> = {
+    save_meeting_link: ['url', 'text', 'long_text'],
+    save_event_id: ['text', 'long_text'],
+};
+
+/** Las variables que deja una acción que crea o cambia un evento. */
+export const MEETING_MERGE_TAGS: Array<{ tag: string; label: string }> = [
+    { tag: 'reunion.enlace', label: 'Enlace para unirse a la reunión' },
+    { tag: 'reunion.id', label: 'Id del evento (para reprogramarlo o cancelarlo)' },
+    { tag: 'reunion.web', label: 'Enlace para abrir el evento en el calendario' },
+    { tag: 'reunion.titulo', label: 'Título del evento' },
+];
+
+/**
+ * Permisos que una integración sumó DESPUÉS de salir (v0.1.366). Una conexión
+ * o una aprobación del administrador de antes no los tiene: no se pueden
+ * exigir al renovar el token (Microsoft rechaza la renovación entera con
+ * «consent_required» y la conexión dejaría de funcionar también para lo que sí
+ * podía hacer), sólo pedir reconectar para usar lo nuevo.
+ */
+export const INTEGRATION_SCOPES_ADDED: Partial<Record<IntegrationKey, string>> = {
+    teams: 'Calendars.ReadWrite',
+};
+
+/** Lo que exige cada acción además de lo que la conexión ya tenía antes. */
+const ACTION_SCOPES: Record<string, string> = {
+    'teams.create_meeting': 'Calendars.ReadWrite',
+    'teams.update_event': 'Calendars.ReadWrite',
+    'teams.cancel_event': 'Calendars.ReadWrite',
+};
+
+const OIDC_SCOPES_LOWER = new Set(['openid', 'email', 'profile', 'offline_access']);
+
+/** Un permiso para comparar: sin mayúsculas y sin el recurso de Graph delante. */
+function normScope(scope: string): string {
+    return scope.trim().replace(/^https:\/\/graph\.microsoft\.com\//i, '').toLowerCase();
+}
+
+function scopeSet(scopes: string): Set<string> {
+    return new Set(scopes.split(/[\s,]+/).map(normScope).filter(Boolean));
+}
+
+/**
+ * Permisos de la integración que la conexión NO recibió (vacío si no se sabe:
+ * una conexión sin el registro de lo que se concedió no se bloquea).
+ */
+export function integrationMissingScopes(def: IntegrationDef, granted: string): string[] {
+    if (def.auth.kind !== 'oauth' || granted.trim() === '') return [];
+    const have = scopeSet(granted);
+    return def.auth.scopes
+        .split(/[\s,]+/)
+        .map((s) => s.trim())
+        .filter((s) => s !== '' && !OIDC_SCOPES_LOWER.has(s.toLowerCase()) && !have.has(normScope(s)));
+}
+
+/** Lo que le falta a la conexión para ESTA acción (vacío = puede correr). */
+export function missingActionScopes(integration: unknown, actionKey: unknown, granted: string): string[] {
+    const needed = ACTION_SCOPES[`${String(integration ?? '')}.${String(actionKey ?? '')}`];
+    if (!needed || granted.trim() === '') return [];
+    const have = scopeSet(granted);
+    return needed.split(/\s+/).filter((s) => s !== '' && !have.has(normScope(s)));
+}
+
+/**
+ * Los permisos que se piden al RENOVAR un token de Microsoft (que exige
+ * repetirlos): los que la conexión ya recibió, nunca uno nuevo. Pedir uno que
+ * la persona no aceptó hace fallar la renovación entera. Los de identidad y
+ * renovación (`openid`, `offline_access`, `User.Read`…) van siempre.
+ */
+export function scopesForRefresh(def: IntegrationDef, requested: string, granted: string): string {
+    if (def.auth.kind !== 'oauth' || granted.trim() === '') return requested;
+    const provider = INTEGRATION_PROVIDER_DEFS[def.auth.provider];
+    const base = scopeSet(provider.base_scopes);
+    const have = scopeSet(granted);
+    const kept = requested
+        .split(/[\s,]+/)
+        .map((s) => s.trim())
+        .filter((s) => s !== '' && (OIDC_SCOPES_LOWER.has(s.toLowerCase()) || base.has(normScope(s)) || have.has(normScope(s))));
+    return kept.join(provider.scope_separator);
 }
 
 // --- API: galería de la empresa ----------------------------------------

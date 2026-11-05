@@ -308,6 +308,12 @@ export const webhookTestResultSchema = z.object({
     error: z.string().nullable().default(null),
     /** Id del registro usado para resolver las variables (`null` = ninguno). */
     sample_record_id: z.number().nullable().default(null),
+    /**
+     * v0.1.366 — Qué hizo la prueba cuando NO es exactamente lo que hará la
+     * automatización (una reunión de prueba sin invitados que se borra al
+     * instante, o un cambio que no se envía para no mover una reunión real).
+     */
+    note: z.string().nullable().optional(),
 });
 export type WebhookTestResult = z.infer<typeof webhookTestResultSchema>;
 

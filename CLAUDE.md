@@ -12088,6 +12088,48 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         → pago aprobado → «Pagos recientes» → editor de la automatización →
         ficha diseñada).
 
+  - [x] **Reuniones de Teams, Outlook y Google Calendar desde las
+        automatizaciones (v0.1.366, addendum ADR-S22, pedido del cliente
+        Binapps: "necesitamos agendar las demos comerciales desde nuestras
+        automatizaciones… crear la reunión, guardar el enlace y el id,
+        reprogramarla y cancelarla")**. Hasta acá Teams sólo mandaba mensajes y
+        los eventos de Outlook y Google se creaban sin forma de volver a ellos.
+        (a) **Acciones nuevas**: «Crear reunión de Teams»
+        (`teams.create_meeting`, `POST /me/events` con el enlace de Teams
+        encendido) y **Reprogramar** y **Cancelar** el evento con su id en
+        Teams, Outlook y Google Calendar (`update_event` / `cancel_event`).
+        Crear suma **fin** (hora, fecha y hora o fecha final de todo el día;
+        manda sobre la duración), **lugar** e **invitados opcionales**, y los
+        invitados se separan con coma o punto y coma. Reprogramar sólo cambia
+        lo que se completa; mover el inicio sin fin conserva lo que duraba (se
+        lee el evento). Cancelar avisa a los invitados (con mensaje en Teams y
+        Outlook) y, si el evento ya no existía, termina bien.
+        (b) **Lo que devuelve la reunión**: `{{reunion.enlace}}`,
+        `{{reunion.id}}` y `{{reunion.web}}` para los pasos siguientes (el
+        WhatsApp al cliente), y «Guardar en el registro» con dos campos
+        elegibles (o «+ Crear el campo») — se escriben sin disparar otras
+        automatizaciones; cancelar los vacía.
+        (c) **El permiso del calendario** (`Calendars.ReadWrite`; no hace falta
+        `OnlineMeetings.ReadWrite`): una conexión de Teams de antes sigue
+        mandando mensajes —la renovación pide sólo los permisos que ya tenía
+        (`scopesForRefresh`)— y las reuniones fallan antes de llamar a
+        Microsoft con «vuelve a conectarla»; el editor, la fila de
+        Integraciones y la ventana de aprobación del administrador («Hace falta
+        aprobar un permiso nuevo») lo avisan.
+        (d) **«Probar ahora» no invita a nadie**: crear prueba sin invitados y
+        borra la reunión al toque; reprogramar y cancelar sólo muestran lo que
+        se enviaría.
+        (e) Errores en palabras (evento inexistente, sólo el organizador, cuenta
+        sin Teams, permiso faltante, fin antes del inicio); el asistente/MCP ve
+        las salidas y cómo guardarlas. La disponibilidad para la agenda ya
+        existía en «Mi calendario».
+        Ayuda: guía «¿Cómo agendo una reunión de Teams desde un registro?»,
+        sección en Aprende → Integraciones con la ilustración `reunion-teams` y
+        novedad con carrusel. Tests: 7 de las peticiones, 1 de punta a punta en
+        `integrations.spec` (crear con campos guardados, reprogramar leyendo la
+        duración, cancelar con mensaje, ya borrado, pruebas sin invitados, la
+        conexión de antes), 1 de la aprobación desactualizada y 3 de shared.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

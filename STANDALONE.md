@@ -1304,6 +1304,65 @@ Microsoft es el **consentimiento del administrador**, y la app lo arma:
   parseo de la respuesta de tokens NUNCA repite el cuerpo: trae los tokens, y
   el mensaje viaja a la pantalla, a la dirección y a los registros.
 
+**Addendum v0.1.366 — Reuniones desde las automatizaciones: crear, guardar,
+reprogramar y cancelar.** Pedido de un cliente (Binapps) que agendaba las demos
+comerciales con un puente de Power Automate: cuando el vendedor pone la fecha
+de la demo, crear la reunión de Teams en su calendario, invitar al cliente y a
+gerencia, guardar el enlace y el id, mandarle el enlace por WhatsApp, y
+después reprogramarla o cancelarla con ese id.
+- **Acciones nuevas en el catálogo** (`INTEGRATIONS`, shared):
+  `teams.create_meeting` («Crear reunión de Teams», `POST /me/events` con
+  `isOnlineMeeting` + `teamsForBusiness`, con el enlace encendido por
+  defecto), y `update_event` / `cancel_event` en **Teams, Outlook y Google
+  Calendar**. Los parámetros salen de `eventParamsFor('create'|'update')`:
+  inicio, hora, **fin** (HH:MM local, fecha y hora completa —con `Z` es UTC— o
+  una fecha final de todo el día; manda sobre la duración y se valida que sea
+  después del inicio en la misma base), duración, zona, descripción,
+  **lugar**, invitados e **invitados opcionales** (separados por `,` o `;`,
+  sin repetidos, tope 25). Al reprogramar todo es opcional y sólo viaja lo
+  completado (`eventPatch`): lo vacío no se toca; cambiar el inicio sin fin
+  ni duración LEE el evento (`eventReadRequest`, Graph con
+  `Prefer: outlook.timezone="UTC"`) y conserva lo que duraba. Google usa
+  `sendUpdates=all`. Cancelar en Teams/Outlook con mensaje es
+  `POST /cancel {comment}` (les llega a los invitados), sin mensaje `DELETE`;
+  un 404/410 al cancelar es éxito («ya no existía», `cancelAlreadyGone`). El
+  id del evento se valida antes de llamar (vacío, un enlace en vez de un id).
+- **La respuesta se guarda en el registro.** `meetingResult` lee de la
+  respuesta el enlace para unirse (Graph `onlineMeeting.joinUrl`; Google
+  `hangoutLink` o el `entryPoint` de video, releyendo hasta 2 veces si la
+  conferencia queda pendiente), el id y el enlace web. Quedan como
+  `{{reunion.enlace|id|web|titulo}}` para los pasos siguientes (sobreviven a
+  una espera) y, si la acción elige `save_meeting_link` / `save_event_id`
+  (claves en la config del paso, al lado de `values`; tipos permitidos en
+  `MEETING_SAVE_FIELD_TYPES`), se escriben en esos campos con
+  `patchRecordData` + el hub de cambios, **sin re-disparar automatizaciones**
+  (mismo criterio que «Generar un PDF»). Cancelar vacía esos mismos campos.
+  Plantillas y migración re-mapean las dos claves (`SLUG_KEYS`).
+- **El permiso nuevo y las conexiones de antes.** Teams suma
+  `Calendars.ReadWrite` (delegado, sin consentimiento del administrador por
+  defecto; NO hace falta `OnlineMeetings.ReadWrite`: la reunión nace con el
+  evento). Una conexión de Teams anterior no lo tiene, y Microsoft rechaza la
+  renovación ENTERA si se le piden scopes no consentidos. Por eso:
+  (a) `scopesForRefresh` renueva sólo con los scopes que la conexión YA
+  recibió (`oauth_state.scope`; sin dato, los de siempre) y `storeTokens`
+  conserva el scope concedido si la renovación no lo devuelve — los mensajes
+  siguen andando; (b) `missingActionScopes` hace fallar la acción de reunión
+  ANTES de llamar a Graph con «vuelve a conectarla…», y el editor y la fila de
+  Integraciones lo avisan; (c) el consentimiento del administrador guarda los
+  scopes que se aprobaron y, si el catálogo pide uno nuevo
+  (`INTEGRATION_SCOPES_ADDED`), el diálogo dice «Hace falta aprobar un permiso
+  nuevo» (`outdated` + `missing_permissions`) y ofrece el enlace otra vez.
+- **«Probar ahora» no invita a nadie.** Crear prueba con la reunión SIN
+  invitados y la borra enseguida (con la nota en la tarjeta); reprogramar y
+  cancelar sólo muestran la petición que se enviaría (`note`, sin enviar). La
+  simulación del motor completa `{{reunion.*}}` con valores de ejemplo y dice
+  qué guardaría.
+- **Errores en palabras** (`checkIntegrationResponse` con la clave de la
+  acción): evento inexistente, sólo el organizador puede cambiarlo, cuenta sin
+  Teams o sin buzón, permiso del calendario faltante, fin antes del inicio.
+- **La disponibilidad ya existía**: «Mi calendario» (v0.1.350) lee lo ocupado
+  de Outlook o Google para la agenda de citas; no se duplicó.
+
 ### ADR-S23 — Migrar UNA empresa entre instancias (v0.1.197)
 
 **Contexto.** ADR-S20 mueve el SERVIDOR entero: sirve para cambiar de VPS o
@@ -6842,4 +6901,4 @@ para poner Cloudflare delante y subir el tope está en
 
 ---
 
-**Versión del documento:** 1.150.0 (Los cobros se ven: columnas elegibles y panel en toda ficha)
+**Versión del documento:** 1.151.0 (Reuniones de Teams, Outlook y Google Calendar desde las automatizaciones)

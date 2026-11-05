@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+    meetingActionKind,
     parseTeamsChannelRef,
     parseTeamsChatRef,
     type ConnectorAction,
@@ -38,7 +39,7 @@ export interface IntegrationCreds {
 
 export interface IntegrationRequest {
     url: string;
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     headers: Record<string, string>;
     body?: string;
 }
@@ -155,6 +156,11 @@ function isTrue(value: string | undefined): boolean {
     return ['true', '1', 'si', 'sí', 'yes'].includes((value ?? '').trim().toLowerCase());
 }
 
+/** El `error.message` de una respuesta de Google (vacío si no hay). */
+function googleErrorMessage(json: Record<string, unknown> | null): string {
+    return graphErrorMessage(json);
+}
+
 /** El `error.message` de una respuesta de Microsoft Graph (vacío si no hay). */
 export function graphErrorMessage(json: Record<string, unknown> | null): string {
     const err = json?.error;
@@ -262,6 +268,105 @@ export function eventWindow(dateRaw: string, timeRaw: string, durationRaw: strin
     return { allDay: true, startDate: fmtDate(base), endDate: fmtDate(next) };
 }
 
+/**
+ * v0.1.366 — La ventana del evento con un FIN opcional (que manda sobre la
+ * duración). Inicio y fin pueden venir en bases distintas —una fecha y hora de
+ * un campo (UTC) y una hora escrita a mano (local)—: Graph y Google aceptan la
+ * zona por separado en cada punta, así que cada una lleva la suya.
+ */
+export type EventTimes =
+    | { allDay: true; startDate: string; endDate: string }
+    | { allDay: false; start: string; startUtc: boolean; end: string; endUtc: boolean };
+
+export function eventTimes(v: Record<string, string>): EventTimes {
+    const win = eventWindow(v.date ?? '', v.time ?? '', v.duration ?? '');
+    const endRaw = (v.end ?? '').trim();
+    if (win.allDay) {
+        if (endRaw === '') return win;
+        const d = parseDateOnly(endRaw);
+        if (!d) {
+            throw new IntegrationInputError(
+                `El evento es de todo el día: el fin va sin hora (AAAA-MM-DD). Para un evento con hora, pon la Hora de inicio.`,
+            );
+        }
+        const next = fmtDate(new Date(d.getTime() + 24 * 60 * 60_000));
+        if (next <= win.startDate) throw new IntegrationInputError('El fin del evento es anterior al inicio.');
+        return { allDay: true, startDate: win.startDate, endDate: next };
+    }
+    if (endRaw === '') return { allDay: false, start: win.start, startUtc: win.utc, end: win.end, endUtc: win.utc };
+
+    let end: string;
+    let endUtc: boolean;
+    const hhmm = /^(\d{1,2}):(\d{2})$/.exec(endRaw);
+    const full = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(Z)?$/.exec(endRaw);
+    if (hhmm) {
+        if (win.utc) {
+            throw new IntegrationInputError(
+                'El inicio trae la hora de un campo: el fin tiene que ser otra fecha y hora (o usa la duración).',
+            );
+        }
+        const h = Number(hhmm[1]);
+        const m = Number(hhmm[2]);
+        if (h > 23 || m > 59) throw new IntegrationInputError(`La hora de fin «${endRaw}» no es válida (HH:MM).`);
+        end = `${win.start.slice(0, 10)}T${pad(h)}:${pad(m)}:00`;
+        endUtc = false;
+    } else if (full) {
+        const d = new Date(
+            Date.UTC(Number(full[1]), Number(full[2]) - 1, Number(full[3]), Number(full[4]), Number(full[5]), Number(full[6] ?? 0)),
+        );
+        if (Number.isNaN(d.getTime()) || fmtDate(d) !== `${full[1]}-${full[2]}-${full[3]}`) {
+            throw new IntegrationInputError(`La fecha de fin «${endRaw}» no existe.`);
+        }
+        end = fmtDateTime(d);
+        // Con «Z» es un instante (un campo de fecha y hora); sin ella, una hora
+        // escrita a mano en la zona elegida.
+        endUtc = full[7] === 'Z';
+    } else {
+        throw new IntegrationInputError(
+            `El fin «${endRaw}» no tiene el formato AAAA-MM-DD HH:MM ni HH:MM.`,
+        );
+    }
+    if (endUtc === win.utc && end <= win.start) {
+        throw new IntegrationInputError('El fin del evento tiene que ser después del inicio.');
+    }
+    return { allDay: false, start: win.start, startUtc: win.utc, end, endUtc };
+}
+
+function parseDateOnly(raw: string): Date | null {
+    const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+    const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(raw);
+    const [y, m, d] = iso
+        ? [Number(iso[1]), Number(iso[2]), Number(iso[3])]
+        : dmy
+          ? [Number(dmy[3]), Number(dmy[2]), Number(dmy[1])]
+          : [NaN, NaN, NaN];
+    if (!Number.isFinite(y)) return null;
+    const date = new Date(Date.UTC(y!, m! - 1, d!));
+    return date.getUTCFullYear() === y && date.getUTCMonth() === m! - 1 && date.getUTCDate() === d ? date : null;
+}
+
+/**
+ * El id del evento que se cambia o se cancela. Lo más común al armarlo mal es
+ * pegar el ENLACE de la reunión en vez del id: se dice eso, no «no existe».
+ */
+export function eventIdOf(raw: string): string {
+    const id = raw.trim();
+    if (id === '') {
+        throw new IntegrationInputError(
+            'Falta el id del evento. Guárdalo en un campo al crearlo («Guardar en el registro») y úsalo aquí con su variable.',
+        );
+    }
+    if (/^https?:\/\//i.test(id)) {
+        throw new IntegrationInputError(
+            'Eso es un enlace, no el id del evento: usa la variable del campo donde guardaste el id al crearlo.',
+        );
+    }
+    if (/\s/.test(id) || id.length > 1024) {
+        throw new IntegrationInputError(`«${id.slice(0, 60)}» no parece el id de un evento.`);
+    }
+    return id;
+}
+
 // --- Gmail: mensaje RFC 2822 ---------------------------------------------------
 
 function mimeWord(text: string): string {
@@ -329,20 +434,46 @@ function phone(raw: string): string {
     return raw.replace(/[\s().-]/g, '');
 }
 
-function eventBodyGoogle(v: Record<string, string>): Record<string, unknown> {
-    const win = eventWindow(v.date ?? '', v.time ?? '', v.duration ?? '');
-    const tz = (v.timezone ?? '').trim() || 'UTC';
-    const body: Record<string, unknown> = { summary: v.title ?? '' };
-    if ((v.description ?? '').trim() !== '') body.description = v.description;
-    if (win.allDay) {
-        body.start = { date: win.startDate };
-        body.end = { date: win.endDate };
-    } else {
-        body.start = { dateTime: win.utc ? `${win.start}Z` : win.start, timeZone: win.utc ? 'UTC' : tz };
-        body.end = { dateTime: win.utc ? `${win.end}Z` : win.end, timeZone: win.utc ? 'UTC' : tz };
+/** Invitados obligatorios y opcionales, sin repetir (el tope de SEC-08 vale para la suma). */
+function eventAttendees(v: Record<string, string>): Array<{ email: string; optional: boolean }> {
+    const required = emailList(v.attendees ?? '');
+    const optional = emailList(v.optional_attendees ?? '').filter((e) => !required.includes(e));
+    return [
+        ...required.map((email) => ({ email, optional: false })),
+        ...optional.map((email) => ({ email, optional: true })),
+    ].slice(0, MAX_RECIPIENTS);
+}
+
+function googleTimes(times: EventTimes, tz: string): Record<string, unknown> {
+    if (times.allDay) return { start: { date: times.startDate }, end: { date: times.endDate } };
+    const point = (value: string, utc: boolean): Record<string, string> => ({
+        dateTime: utc ? `${value}Z` : value,
+        timeZone: utc ? 'UTC' : tz,
+    });
+    return { start: point(times.start, times.startUtc), end: point(times.end, times.endUtc) };
+}
+
+function graphTimes(times: EventTimes, tz: string): Record<string, unknown> {
+    if (times.allDay) {
+        return {
+            isAllDay: true,
+            start: { dateTime: `${times.startDate}T00:00:00`, timeZone: tz },
+            end: { dateTime: `${times.endDate}T00:00:00`, timeZone: tz },
+        };
     }
-    const attendees = emailList(v.attendees ?? '');
-    if (attendees.length > 0) body.attendees = attendees.map((email) => ({ email }));
+    return {
+        start: { dateTime: times.start, timeZone: times.startUtc ? 'UTC' : tz },
+        end: { dateTime: times.end, timeZone: times.endUtc ? 'UTC' : tz },
+    };
+}
+
+function eventBodyGoogle(v: Record<string, string>): Record<string, unknown> {
+    const tz = (v.timezone ?? '').trim() || 'UTC';
+    const body: Record<string, unknown> = { summary: v.title ?? '', ...googleTimes(eventTimes(v), tz) };
+    if ((v.description ?? '').trim() !== '') body.description = v.description;
+    if ((v.location ?? '').trim() !== '') body.location = v.location!.trim();
+    const attendees = eventAttendees(v);
+    if (attendees.length > 0) body.attendees = attendees.map((a) => (a.optional ? { email: a.email, optional: true } : { email: a.email }));
     // v0.1.348 — Google crea la sala de Meet si se le pide con un id único
     // por pedido (reusar uno hace que ignore el pedido).
     if (isTrue(v.meet)) {
@@ -351,25 +482,20 @@ function eventBodyGoogle(v: Record<string, string>): Record<string, unknown> {
     return body;
 }
 
+function graphAttendees(v: Record<string, string>): Array<Record<string, unknown>> {
+    return eventAttendees(v).map((a) => ({ emailAddress: { address: a.email }, type: a.optional ? 'optional' : 'required' }));
+}
+
 function eventBodyGraph(v: Record<string, string>): Record<string, unknown> {
-    const win = eventWindow(v.date ?? '', v.time ?? '', v.duration ?? '');
     const tz = (v.timezone ?? '').trim() || 'UTC';
     const body: Record<string, unknown> = {
         subject: v.title ?? '',
         body: { contentType: 'Text', content: v.description ?? '' },
+        ...graphTimes(eventTimes(v), tz),
     };
-    if (win.allDay) {
-        body.isAllDay = true;
-        body.start = { dateTime: `${win.startDate}T00:00:00`, timeZone: tz };
-        body.end = { dateTime: `${win.endDate}T00:00:00`, timeZone: tz };
-    } else {
-        body.start = { dateTime: win.start, timeZone: win.utc ? 'UTC' : tz };
-        body.end = { dateTime: win.end, timeZone: win.utc ? 'UTC' : tz };
-    }
-    const attendees = emailList(v.attendees ?? '');
-    if (attendees.length > 0) {
-        body.attendees = attendees.map((address) => ({ emailAddress: { address }, type: 'required' }));
-    }
+    if ((v.location ?? '').trim() !== '') body.location = { displayName: v.location!.trim() };
+    const attendees = graphAttendees(v);
+    if (attendees.length > 0) body.attendees = attendees;
     // v0.1.348 — reunión de Teams en el evento: Outlook le pone el enlace y se
     // lo manda a los invitados. Sólo cuentas de trabajo o estudiantiles.
     if (isTrue(v.teams_meeting)) {
@@ -377,6 +503,135 @@ function eventBodyGraph(v: Record<string, string>): Record<string, unknown> {
         body.onlineMeetingProvider = 'teamsForBusiness';
     }
     return body;
+}
+
+/**
+ * v0.1.366 — Lo que cambia al reprogramar: SÓLO lo que se completó (una
+ * automatización que mueve la fecha no le borra la descripción). La duración
+ * vacía la completa antes `prepareIntegrationRequest` con la que el evento ya
+ * tenía.
+ */
+function eventPatch(v: Record<string, string>, flavor: 'graph' | 'google'): Record<string, unknown> {
+    const tz = (v.timezone ?? '').trim() || 'UTC';
+    const body: Record<string, unknown> = {};
+    const has = (k: string): boolean => (v[k] ?? '').trim() !== '';
+    if (has('title')) body[flavor === 'graph' ? 'subject' : 'summary'] = headerSafe(v.title!);
+    if (has('description')) body[flavor === 'graph' ? 'body' : 'description'] = flavor === 'graph' ? { contentType: 'Text', content: v.description } : v.description;
+    if (has('location')) body.location = flavor === 'graph' ? { displayName: v.location!.trim() } : v.location!.trim();
+    if (has('date')) {
+        const times = eventTimes(v);
+        Object.assign(body, flavor === 'graph' ? { isAllDay: times.allDay, ...graphTimes(times, tz) } : googleTimes(times, tz));
+    } else if (has('time') || has('end') || has('duration')) {
+        throw new IntegrationInputError('Para cambiar la hora, completa también el Inicio nuevo (la fecha, o una variable con la fecha y hora).');
+    }
+    if (has('attendees') || has('optional_attendees')) {
+        body.attendees =
+            flavor === 'graph'
+                ? graphAttendees(v)
+                : eventAttendees(v).map((a) => (a.optional ? { email: a.email, optional: true } : { email: a.email }));
+    }
+    if (Object.keys(body).length === 0) {
+        throw new IntegrationInputError('No hay nada que cambiar: completa al menos un dato (por ejemplo el Inicio nuevo).');
+    }
+    return body;
+}
+
+function googleCalendarPath(v: Record<string, string>): string {
+    const calendar = (v.calendar ?? '').trim() || 'primary';
+    return `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendar)}/events`;
+}
+
+/** Qué devolvió el calendario al crear o cambiar un evento (para `{{reunion.*}}`). */
+export interface MeetingResult {
+    id: string;
+    /** El enlace para unirse (Teams o Meet); vacío si el evento no tiene videollamada. */
+    enlace: string;
+    /** El enlace para abrir el evento en el calendario. */
+    web: string;
+    titulo: string;
+    /** Google todavía está creando la sala de Meet (hay que volver a leer el evento). */
+    pending: boolean;
+}
+
+function httpsOr(value: unknown): string {
+    return typeof value === 'string' && /^https:\/\//i.test(value) ? value : '';
+}
+
+export function meetingResult(integration: IntegrationKey, body: string): MeetingResult | null {
+    const json = parseJson(body);
+    if (!json || typeof json.id !== 'string' || json.id === '') return null;
+    if (integration === 'google_calendar') {
+        const conf = (json.conferenceData ?? {}) as {
+            entryPoints?: Array<{ entryPointType?: string; uri?: string }>;
+            createRequest?: { status?: { statusCode?: string } };
+        };
+        const video = (conf.entryPoints ?? []).find((e) => e.entryPointType === 'video')?.uri;
+        const enlace = httpsOr(json.hangoutLink) || httpsOr(video);
+        return {
+            id: json.id,
+            enlace,
+            web: httpsOr(json.htmlLink),
+            titulo: typeof json.summary === 'string' ? json.summary : '',
+            pending: enlace === '' && conf.createRequest?.status?.statusCode === 'pending',
+        };
+    }
+    const online = (json.onlineMeeting ?? {}) as { joinUrl?: unknown };
+    return {
+        id: json.id,
+        enlace: httpsOr(online.joinUrl) || httpsOr(json.onlineMeetingUrl),
+        web: httpsOr(json.webLink),
+        titulo: typeof json.subject === 'string' ? json.subject : '',
+        pending: false,
+    };
+}
+
+/** Volver a leer un evento de Google cuya sala de Meet todavía se estaba creando. */
+export function googleEventReadRequest(calendar: string, eventId: string, accessToken: string): IntegrationRequest {
+    const cal = calendar.trim() || 'primary';
+    return {
+        url: `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal)}/events/${encodeURIComponent(eventId)}?fields=id,summary,htmlLink,hangoutLink,conferenceData`,
+        method: 'GET',
+        headers: { accept: 'application/json', ...bearer(accessToken) },
+    };
+}
+
+/** El evento como está (para conservar su duración al reprogramarlo). */
+export function eventReadRequest(integration: IntegrationKey, v: Record<string, string>, accessToken: string): IntegrationRequest {
+    const id = eventIdOf(v.event_id ?? '');
+    if (integration === 'google_calendar') {
+        return {
+            url: `${googleCalendarPath(v)}/${encodeURIComponent(id)}?fields=start,end`,
+            method: 'GET',
+            headers: { accept: 'application/json', ...bearer(accessToken) },
+        };
+    }
+    return {
+        url: `${GRAPH_BASE}/v1.0/me/events/${encodeURIComponent(id)}?$select=start,end,isAllDay`,
+        method: 'GET',
+        headers: { accept: 'application/json', ...bearer(accessToken), Prefer: 'outlook.timezone="UTC"' },
+    };
+}
+
+/** Los minutos que dura un evento leído (null si no se entiende). */
+export function eventDurationMinutes(body: string): number | null {
+    const json = parseJson(body);
+    if (!json) return null;
+    const point = (raw: unknown): number => {
+        const o = (raw ?? {}) as { dateTime?: unknown; date?: unknown };
+        const text = typeof o.dateTime === 'string' ? o.dateTime : typeof o.date === 'string' ? `${o.date}T00:00:00Z` : '';
+        // Graph devuelve la hora sin zona (pedida en UTC); Google, con su desfase.
+        const withZone = /[zZ]|[+-]\d{2}:?\d{2}$/.test(text) ? text : `${text}Z`;
+        return Date.parse(withZone);
+    };
+    const start = point(json.start);
+    const end = point(json.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+    return Math.round((end - start) / 60_000);
+}
+
+/** ¿Cancelar algo que ya no está? (404/410): no es un error, ya no está en el calendario. */
+export function cancelAlreadyGone(status: number): boolean {
+    return status === 404 || status === 410;
 }
 
 // --- Microsoft Teams (v0.1.348) -----------------------------------------------
@@ -534,17 +789,35 @@ export function buildIntegrationRequest(
             };
         }
         case 'google_calendar.create_event': {
-            const calendar = (v.calendar ?? '').trim() || 'primary';
             const body = eventBodyGoogle(v);
             const q = new URLSearchParams();
             if (Array.isArray(body.attendees)) q.set('sendUpdates', 'all');
             if (body.conferenceData) q.set('conferenceDataVersion', '1');
             const query = q.toString() !== '' ? `?${q.toString()}` : '';
             return {
-                url: `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendar)}/events${query}`,
+                url: `${googleCalendarPath(v)}${query}`,
                 method: 'POST',
                 headers: { ...JSON_HEADERS, ...bearer(creds.accessToken) },
                 body: JSON.stringify(body),
+            };
+        }
+        // v0.1.366 — reprogramar y cancelar. `sendUpdates=all`: a los invitados
+        // les llega el cambio o la cancelación, igual que si se hiciera a mano.
+        case 'google_calendar.update_event': {
+            const id = eventIdOf(v.event_id ?? '');
+            return {
+                url: `${googleCalendarPath(v)}/${encodeURIComponent(id)}?sendUpdates=all`,
+                method: 'PATCH',
+                headers: { ...JSON_HEADERS, ...bearer(creds.accessToken) },
+                body: JSON.stringify(eventPatch(v, 'google')),
+            };
+        }
+        case 'google_calendar.cancel_event': {
+            const id = eventIdOf(v.event_id ?? '');
+            return {
+                url: `${googleCalendarPath(v)}/${encodeURIComponent(id)}?sendUpdates=all`,
+                method: 'DELETE',
+                headers: { accept: 'application/json', ...bearer(creds.accessToken) },
             };
         }
         case 'google_sheets.append_row': {
@@ -582,12 +855,45 @@ export function buildIntegrationRequest(
             };
         }
         case 'outlook.create_event':
+        case 'teams.create_meeting':
             return {
-                url: 'https://graph.microsoft.com/v1.0/me/events',
+                url: `${GRAPH_BASE}/v1.0/me/events`,
                 method: 'POST',
                 headers: { ...JSON_HEADERS, ...bearer(creds.accessToken) },
                 body: JSON.stringify(eventBodyGraph(v)),
             };
+        // v0.1.366 — reprogramar y cancelar por el id (Outlook y Teams son el
+        // mismo calendario de Microsoft 365). Microsoft le manda el cambio o la
+        // cancelación a los invitados porque la cuenta conectada es la organizadora.
+        case 'outlook.update_event':
+        case 'teams.update_event': {
+            const id = eventIdOf(v.event_id ?? '');
+            return {
+                url: `${GRAPH_BASE}/v1.0/me/events/${encodeURIComponent(id)}`,
+                method: 'PATCH',
+                headers: { ...JSON_HEADERS, ...bearer(creds.accessToken) },
+                body: JSON.stringify(eventPatch(v, 'graph')),
+            };
+        }
+        case 'outlook.cancel_event':
+        case 'teams.cancel_event': {
+            const id = eventIdOf(v.event_id ?? '');
+            // Con mensaje, `cancel` (lo lleva el correo de cancelación); sin
+            // mensaje, borrarlo: también avisa a los invitados.
+            const message = (v.message ?? '').trim();
+            return message !== ''
+                ? {
+                      url: `${GRAPH_BASE}/v1.0/me/events/${encodeURIComponent(id)}/cancel`,
+                      method: 'POST',
+                      headers: { ...JSON_HEADERS, ...bearer(creds.accessToken) },
+                      body: JSON.stringify({ comment: message }),
+                  }
+                : {
+                      url: `${GRAPH_BASE}/v1.0/me/events/${encodeURIComponent(id)}`,
+                      method: 'DELETE',
+                      headers: { accept: 'application/json', ...bearer(creds.accessToken) },
+                  };
+        }
         case 'teams.send_channel_message': {
             const ref = parseTeamsChannelRef(v.channel ?? '');
             if (!ref) {
@@ -660,9 +966,34 @@ export function checkIntegrationResponse(
     integration: IntegrationKey,
     status: number,
     body: string,
+    /** v0.1.366 — la acción: un error de calendario se explica distinto que uno de un mensaje. */
+    actionKey = '',
 ): string | null {
     if (integration === 'woocommerce') return checkWooResponse(status, body);
     const json = parseJson(body);
+    const meeting = meetingActionKind(integration, actionKey);
+    if (meeting && status >= 400 && status !== 401) {
+        const said = integration === 'google_calendar' ? googleErrorMessage(json) : graphErrorMessage(json);
+        const quote = said !== '' ? ` Dijo: «${said.slice(0, 240)}».` : '';
+        if (status === 404 || status === 410) {
+            return 'No encontramos ese evento: puede que lo hayan borrado del calendario o que el id sea de otra cuenta.';
+        }
+        if (/organi[sz]er/i.test(said)) {
+            return `Sólo quien organizó la reunión puede cambiarla o cancelarla, y la cuenta conectada no es la organizadora.${quote}`;
+        }
+        if (/MSA|personal Microsoft account|consumer|not supported for (this|the) (account|user)/i.test(said) || /onlineMeeting/i.test(said)) {
+            return 'La reunión de Teams sólo se puede crear con cuentas de trabajo o estudiantiles de Microsoft 365 que tengan Teams, no con outlook.com o hotmail. Apaga el enlace de Teams o conecta otra cuenta.';
+        }
+        if (status === 403) {
+            return integration === 'teams'
+                ? `La conexión de Teams no tiene permiso para el calendario: vuelve a conectarla en Ajustes → Integraciones → Microsoft Teams (si tu empresa pide la aprobación del administrador, crea el enlace otra vez).${quote}`
+                : `La cuenta conectada no tiene permiso sobre ese calendario.${quote}`;
+        }
+        if (status === 400 && /end.*(before|after)|start.*end/i.test(said)) {
+            return `El fin del evento tiene que ser después del inicio.${quote}`;
+        }
+        return `${integration === 'google_calendar' ? 'Google Calendar' : 'Microsoft'} rechazó el pedido (HTTP ${status}).${quote}`;
+    }
     if (integration === 'slack') {
         if (json && json.ok === false) {
             const code = String(json.error ?? 'error');

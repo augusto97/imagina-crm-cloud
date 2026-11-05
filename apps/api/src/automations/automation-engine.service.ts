@@ -1,6 +1,11 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import {
+    MEETING_SAVE_FIELD_TYPES,
+    MEETING_SAVE_KEYS,
+    meetingActionKind,
+    missingActionScopes,
+    type MeetingActionKind,
     bulkOperationSchema,
     checklistTriggerMatches,
     bookingMergeValue,
@@ -75,8 +80,12 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import { maskHeaders, redactValues, type ConnectionParts } from '../connectors/connection-parts';
 import { compileConnectorCall } from '../connectors/connector-actions';
 import {
+    cancelAlreadyGone,
     checkIntegrationResponse,
     compileIntegrationValues,
+    googleEventReadRequest,
+    meetingResult,
+    type MeetingResult,
 } from '../connectors/integration-calls';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { buildWebhookRequest, type MergeFn } from './webhook-request';
@@ -230,6 +239,12 @@ interface RunContext {
     pdf?: Record<string, unknown>;
     pdfs?: Map<number, { filename: string; buffer: Buffer; number: string | null }>;
     /**
+     * v0.1.366 — la última reunión o evento que creó o cambió una acción de
+     * calendario (`{{reunion.enlace}}`, `{{reunion.id}}`…): para mandar el
+     * enlace al cliente por WhatsApp en el paso siguiente.
+     */
+    reunion?: Record<string, string>;
+    /**
      * v0.1.290 — Bytes que guardó la acción en curso al CONGELAR un documento
      * emitido: si su transacción revierte, se descartan (un storage no es
      * transaccional) y los PDF armados en ella salen del cache del run.
@@ -362,6 +377,7 @@ export interface ResumeState {
         email?: EmailEventInfo;
         sla?: SlaEventInfo;
         pdf?: Record<string, unknown>;
+        reunion?: Record<string, string>;
         webhook?: ResponseInfo;
         responses?: Record<string, ResponseInfo>;
         chain?: AutomationChain;
@@ -949,6 +965,7 @@ export class AutomationEngine {
             ...(state.ctx.email ? { email: state.ctx.email } : {}),
             ...(state.ctx.sla ? { sla: state.ctx.sla } : {}),
             ...(state.ctx.pdf ? { pdf: state.ctx.pdf } : {}),
+            ...(state.ctx.reunion ? { reunion: state.ctx.reunion } : {}),
             ...(state.ctx.webhook ? { webhook: state.ctx.webhook } : {}),
             ...(state.ctx.responses ? { responses: state.ctx.responses } : {}),
             ...(state.ctx.chain ? { chain: state.ctx.chain } : {}),
@@ -1548,6 +1565,9 @@ export class AutomationEngine {
                 const v = ctx.pago?.[token.slice('pago.'.length)];
                 return v === null ? '' : v;
             }
+            // v0.1.366 — {{reunion.enlace}}, {{reunion.id}}… de la reunión que
+            // creó o cambió una acción de calendario anterior.
+            if (token.startsWith('reunion.')) return ctx.reunion?.[token.slice('reunion.'.length)] ?? '';
             // v0.1.275 — {{formulario.nombre}} del formulario que se envió.
             if (token === 'formulario.nombre') return ctx.form?.name ?? '';
             // C5 — {{aprobacion.resultado}}, {{aprobacion.flujo}}, {{aprobacion.motivo}}…
@@ -1811,6 +1831,7 @@ export class AutomationEngine {
                 ...(ctx.email ? { email: ctx.email } : {}),
                 ...(ctx.sla ? { sla: ctx.sla } : {}),
                 ...(ctx.pdf ? { pdf: ctx.pdf } : {}),
+                ...(ctx.reunion ? { reunion: ctx.reunion } : {}),
                 ...(ctx.webhook ? { webhook: ctx.webhook } : {}),
                 ...(ctx.responses ? { responses: ctx.responses } : {}),
                 ...(ctx.chain ? { chain: ctx.chain } : {}),
@@ -3260,12 +3281,22 @@ export class AutomationEngine {
                 }
                 if (resolved.integration) {
                     const integ = resolved.integration;
+                    // v0.1.366 — una acción que necesita un permiso que la
+                    // conexión no recibió (las reuniones de una conexión de
+                    // Teams de antes): se dice «reconéctala», no el 403 de Microsoft.
+                    const lacking = missingActionScopes(integ.key, resolved.action.key, integ.grantedScope);
+                    if (lacking.length > 0) {
+                        throw new Error(
+                            `«${resolved.name}» se conectó antes de que existieran las reuniones y no tiene permiso para el calendario: vuelve a conectarla en Ajustes → Integraciones → ${integ.def.name} (si tu empresa pide la aprobación del administrador, crea el enlace otra vez).`,
+                        );
+                    }
                     // SEC-33: en el cuerpo HTML de Gmail/Outlook los valores se escapan, igual
                     // que en `send_email` — un registro no inyecta HTML en el correo.
                     const compiled = compileIntegrationValues(integ.key, resolved.action, values, merge, mergeHtml);
                     if (compiled.missing.length > 0) {
                         return skip('connector_action', `Falta completar: ${compiled.missing.join(', ')}.`);
                     }
+                    const meetingKind = meetingActionKind(integ.key, resolved.action.key);
                     // v0.1.348 — algunas acciones necesitan pasos antes (el chat uno a
                     // uno de Teams); en la simulación no se ejecutan.
                     const req = await this.connectors.prepareIntegrationCall(integ.key, resolved.action.key, compiled, integ.creds, realCall);
@@ -3278,7 +3309,11 @@ export class AutomationEngine {
                     };
                     if (!realCall) {
                         this.rememberResponse(ctx, cfg, null, pathKey);
-                        return ok('connector_action', `${resolved.name} → ${resolved.action.label} (sin ejecutar).`, {
+                        if (meetingKind && meetingKind !== 'cancel') {
+                            ctx.reunion = { id: '(se crea al correr)', enlace: '(se crea al correr)', web: '', titulo: compiled.values.title ?? '' };
+                        }
+                        const where = meetingKind ? this.meetingSaveSummary(ctx, cfg, meetingKind) : '';
+                        return ok('connector_action', `${resolved.name} → ${resolved.action.label} (sin ejecutar).${where}`, {
                             _sim: 'would_run',
                             action: resolved.action.key,
                             integration: integ.key,
@@ -3293,8 +3328,29 @@ export class AutomationEngine {
                         maxCaptureBytes: RESPONSE_BODY_MAX_BYTES,
                     });
                     this.rememberResponse(ctx, cfg, res, pathKey, hide);
-                    const problem = checkIntegrationResponse(integ.key, res.status, res.body ?? '');
+                    // v0.1.366 — cancelar algo que ya no está en el calendario no
+                    // es un error: lo borraron a mano, que era justo lo que se quería.
+                    const gone = meetingKind === 'cancel' && cancelAlreadyGone(res.status);
+                    const problem = gone ? null : checkIntegrationResponse(integ.key, res.status, res.body ?? '', resolved.action.key);
                     if (problem) throw new Error(`${resolved.action.label}: ${problem}`);
+                    if (meetingKind) {
+                        const note = await this.afterMeetingCall(tx, ctx, cfg, {
+                            kind: meetingKind,
+                            integration: integ.key,
+                            body: res.body ?? '',
+                            calendar: compiled.values.calendar ?? '',
+                            accessToken: integ.creds.accessToken,
+                            gone,
+                            sim: Boolean(sim),
+                        });
+                        return ok('connector_action', `${resolved.name} → ${resolved.action.label}: ${note}`, {
+                            status: res.status,
+                            action: resolved.action.key,
+                            integration: integ.key,
+                            ...(ctx.reunion?.id ? { event_id: ctx.reunion.id } : {}),
+                            ...(sim ? { _sim: 'ran', request: shownRequest, response: { status: res.status, body: redactValues(res.body ?? '', hide).slice(0, 4000) } } : {}),
+                        });
+                    }
                     return ok(
                         'connector_action',
                         `${resolved.name} → ${resolved.action.label}: ${res.status}`,
@@ -3518,6 +3574,101 @@ export class AutomationEngine {
     }
 
     /**
+     * v0.1.366 — Después de crear, cambiar o cancelar un evento: deja
+     * `{{reunion.*}}` para los pasos siguientes y guarda el enlace y el id en
+     * los campos elegidos (al cancelar, los vacía). Devuelve qué pasó, en
+     * palabras, para el historial.
+     */
+    private async afterMeetingCall(
+        tx: Tx,
+        ctx: RunContext,
+        cfg: Record<string, unknown>,
+        p: {
+            kind: MeetingActionKind;
+            integration: string;
+            body: string;
+            calendar: string;
+            accessToken: string;
+            gone: boolean;
+            sim: boolean;
+        },
+    ): Promise<string> {
+        let meet: MeetingResult | null = null;
+        if (p.kind !== 'cancel') {
+            meet = meetingResult(p.integration as Parameters<typeof meetingResult>[0], p.body);
+            // Google crea la sala de Meet un instante después: se vuelve a leer.
+            for (let i = 0; i < 2 && meet && meet.pending; i++) {
+                await new Promise((r) => setTimeout(r, 1500));
+                const read = googleEventReadRequest(p.calendar, meet.id, p.accessToken);
+                const again = await safeWebhookFetch(read.url, { method: 'GET', headers: read.headers, captureBody: true, maxCaptureBytes: 64 * 1024, timeoutMs: 8000 }).catch(() => null);
+                const next = again && again.status < 300 ? meetingResult('google_calendar', again.body ?? '') : null;
+                if (next) meet = next;
+            }
+            if (meet) ctx.reunion = { id: meet.id, enlace: meet.enlace, web: meet.web, titulo: meet.titulo };
+        }
+
+        const parts: string[] = [];
+        if (p.kind === 'cancel') parts.push(p.gone ? 'el evento ya no estaba en el calendario' : 'cancelado');
+        else if (!meet) parts.push(p.kind === 'create' ? 'creado' : 'actualizado');
+        else {
+            parts.push(p.kind === 'create' ? 'creado' : 'actualizado');
+            if (p.kind === 'create' && meet.enlace === '' && p.integration !== 'google_calendar') {
+                parts.push('sin enlace de Teams (la cuenta no tiene Teams o se apagó la opción)');
+            }
+        }
+
+        // Qué se guarda (o se vacía) en el registro.
+        const writes: Record<string, unknown> = {};
+        const saved: string[] = [];
+        const problems: string[] = [];
+        for (const k of MEETING_SAVE_KEYS) {
+            const slug = typeof cfg[k] === 'string' ? (cfg[k] as string).trim() : '';
+            if (slug === '') continue;
+            const field = ctx.fieldsBySlug.get(slug);
+            const key = ctx.slugToKey.get(slug);
+            if (!field || !key || !MEETING_SAVE_FIELD_TYPES[k].includes(field.type)) {
+                problems.push(`«${field?.label ?? slug}» no es un campo de texto${k === 'save_meeting_link' ? ' o enlace' : ''}: no se guardó ahí`);
+                continue;
+            }
+            const label = field.label ?? slug;
+            if (p.kind === 'cancel') {
+                writes[key] = null;
+                saved.push(`vació «${label}»`);
+                continue;
+            }
+            const value = k === 'save_meeting_link' ? (meet?.enlace ?? '') : (meet?.id ?? '');
+            if (value === '') continue;
+            writes[key] = value;
+            saved.push(`${k === 'save_meeting_link' ? 'enlace' : 'id'} en «${label}»`);
+        }
+        if (Object.keys(writes).length > 0 && ctx.recordId !== null) {
+            if (p.sim) {
+                parts.push(`en la prueba no se guarda en el registro (guardaría: ${saved.join(', ')})`);
+            } else {
+                const current = await this.recordsRepo.findById(tx, ctx.tenantId, ctx.listId, ctx.recordId);
+                const merged = (await patchRecordData(tx, ctx.tenantId, ctx.listId, ctx.recordId, writes)) ?? { ...ctx.data, ...writes };
+                this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId, before: current?.data ?? ctx.data, after: merged, actorId: 0 });
+                ctx.data = merged;
+                parts.push(saved.join(', '));
+            }
+        }
+        if (p.kind !== 'cancel' && meet?.enlace) parts.push(meet.enlace);
+        return [...parts, ...problems].join(' · ');
+    }
+
+    /** Lo que guardaría la acción (para «Probar» sin ejecutar). */
+    private meetingSaveSummary(ctx: RunContext, cfg: Record<string, unknown>, kind: MeetingActionKind): string {
+        const out: string[] = [];
+        for (const k of MEETING_SAVE_KEYS) {
+            const slug = typeof cfg[k] === 'string' ? (cfg[k] as string).trim() : '';
+            if (slug === '') continue;
+            const label = ctx.fieldsBySlug.get(slug)?.label ?? slug;
+            out.push(kind === 'cancel' ? `vaciaría «${label}»` : `guardaría el ${k === 'save_meeting_link' ? 'enlace' : 'id'} en «${label}»`);
+        }
+        return out.length > 0 ? ` Después ${out.join(' y ')}.` : '';
+    }
+
+    /**
      * v0.1.288 — Guarda la respuesta para los pasos siguientes: la del último
      * webhook (`{{webhook.x}}`) y, si el paso tiene nombre, con su nombre
      * (`{{respuestas.<nombre>.x}}`). `null` = «Probar» sin ejecutarla.
@@ -3584,7 +3735,7 @@ export class AutomationEngine {
             uploads: ctx.docUploads,
             // Las variables del contexto del run: {{before.x}}, {{pago.link}}, {{payload.x}}.
             extra: (token) =>
-                token.startsWith('before.') || token.startsWith('pago.') || token.startsWith('payload.') || token.startsWith('pdf.') || token === 'formulario.nombre'
+                token.startsWith('before.') || token.startsWith('pago.') || token.startsWith('payload.') || token.startsWith('pdf.') || token.startsWith('reunion.') || token === 'formulario.nombre'
                     ? fv(token)
                     : undefined,
         });
