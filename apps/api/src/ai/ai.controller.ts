@@ -2,7 +2,9 @@ import {
     BadRequestException,
     Body,
     Controller,
+    Delete,
     ForbiddenException,
+    HttpCode,
     Get,
     NotFoundException,
     Param,
@@ -15,11 +17,14 @@ import {
 } from '@nestjs/common';
 import {
     aiChatRequestSchema,
+    renameAiConversationSchema,
     updateTenantAiSettingsSchema,
     type AiApplyResult,
     type AiChatEvent,
     type AiChatRequest,
     type AiConversation,
+    type AiConversationList,
+    type RenameAiConversationInput,
     type AiModelCatalog,
     type AiStatus,
     type Role,
@@ -35,6 +40,7 @@ import { AiQuotaExceededError } from './ai-quota.service';
 import { AiSettingsService, AiUnavailableError } from './ai-settings.service';
 import { AssistantService } from './assistant.service';
 import { ProposalsService } from './proposals.service';
+import { CONVERSATION_KEEP_DAYS, ConversationsStore } from './conversations.store';
 import type { AiToolContext } from './tools/registry';
 import { aclOf } from '../tenancy/acl-of';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
@@ -54,6 +60,7 @@ export class AiController {
         private readonly proposals: ProposalsService,
         private readonly settings: AiSettingsService,
         private readonly audit: AuditService,
+        private readonly conversations: ConversationsStore,
     ) {}
 
     @Get('status')
@@ -89,8 +96,14 @@ export class AiController {
         const send = (ev: AiChatEvent): void => {
             if (!raw.writableEnded) raw.write(`data: ${JSON.stringify(ev)}\n\n`);
         };
+        // Si la persona toca «Detener» (o cierra el panel), se corta el pedido
+        // al modelo: no se sigue generando ni gastando tokens. Ojo: el `close`
+        // del REQUEST ya se disparó al leer el cuerpo; el que sirve es el de la
+        // RESPUESTA, y sólo cuenta si todavía no terminamos de escribirla.
         const ac = new AbortController();
-        req.raw.on('close', () => ac.abort());
+        raw.on('close', () => {
+            if (!raw.writableFinished) ac.abort();
+        });
         try {
             await this.assistant.chat(ctxOf(req), body, send, ac.signal);
         } catch (err) {
@@ -100,14 +113,44 @@ export class AiController {
         }
     }
 
+    /** v0.1.370 — El historial de conversaciones de la persona en esta empresa. */
+    @PlanModule('ai')
+    @Get('conversations')
+    @RequireCapability('use_ai_assistant')
+    async conversationsList(@Req() req: FastifyRequest): Promise<AiConversationList> {
+        return {
+            conversations: await this.conversations.list(req.tenant!.tenantId, req.authUserId!),
+            keep_days: CONVERSATION_KEEP_DAYS,
+        };
+    }
+
+    @PlanModule('ai')
+    @Patch('conversations/:id')
+    @RequireCapability('use_ai_assistant')
+    async renameConversation(
+        @Req() req: FastifyRequest,
+        @Param('id') id: string,
+        @Body(new ZodValidationPipe(renameAiConversationSchema)) input: RenameAiConversationInput,
+    ): Promise<{ id: string; title: string }> {
+        const conv = await this.conversations.rename(req.tenant!.tenantId, req.authUserId!, id, input.title);
+        if (!conv) throw notFound();
+        return { id: conv.id, title: conv.title ?? '' };
+    }
+
+    @PlanModule('ai')
+    @Delete('conversations/:id')
+    @HttpCode(204)
+    @RequireCapability('use_ai_assistant')
+    async deleteConversation(@Req() req: FastifyRequest, @Param('id') id: string): Promise<void> {
+        if (!(await this.conversations.remove(req.tenant!.tenantId, req.authUserId!, id))) throw notFound();
+    }
+
     @PlanModule('ai')
     @Get('conversations/:id')
     @RequireCapability('use_ai_assistant')
     async conversation(@Req() req: FastifyRequest, @Param('id') id: string): Promise<AiConversation> {
         const conv = await this.assistant.conversation(ctxOf(req), id);
-        if (!conv) {
-            throw new NotFoundException({ code: 'ai_conversation_not_found', message: 'La conversación no existe o venció', data: { status: 404 } });
-        }
+        if (!conv) throw notFound();
         return conv;
     }
 
@@ -175,6 +218,10 @@ export class AiController {
 
 function ctxOf(req: FastifyRequest): AiToolContext {
     return { tenantId: req.tenant!.tenantId, userId: req.authUserId!, role: req.tenant!.role as Role, ...aclOf(req) };
+}
+
+function notFound(): NotFoundException {
+    return new NotFoundException({ code: 'ai_conversation_not_found', message: 'La conversación no existe o venció', data: { status: 404 } });
 }
 
 function assertAdmin(req: FastifyRequest): void {

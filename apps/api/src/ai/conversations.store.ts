@@ -1,10 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { AiProposal, AiTranscriptMessage } from '@imagina-base/shared';
+import { aiConversationTitle, type AiConversationSummary, type AiProposal, type AiTranscriptMessage } from '@imagina-base/shared';
 import type Redis from 'ioredis';
 import { REDIS } from '../redis/redis.module';
 
-/** Una conversación vive 24 h desde el último mensaje. */
-export const CONVERSATION_TTL_SECONDS = 24 * 60 * 60;
+/**
+ * Una conversación vive 30 días desde el último mensaje (v0.1.370: antes,
+ * 24 h — con el historial a la vista, un día era muy poco).
+ */
+export const CONVERSATION_KEEP_DAYS = 30;
+export const CONVERSATION_TTL_SECONDS = CONVERSATION_KEEP_DAYS * 24 * 60 * 60;
+/** Tope de conversaciones guardadas por persona y empresa (las más viejas se borran). */
+export const MAX_CONVERSATIONS = 50;
 /** Tope de mensajes de la API que se conservan (los más viejos se recortan). */
 export const MAX_HISTORY_MESSAGES = 40;
 
@@ -26,6 +32,8 @@ export interface StoredConversation {
     messages: ApiMessage[];
     /** Historial para la persona (texto + tarjetas de propuesta). */
     transcript: AiTranscriptMessage[];
+    /** v0.1.370 — título (el primer pedido o el que le puso la persona). */
+    title?: string;
     updated_at: string;
 }
 
@@ -43,6 +51,11 @@ export class ConversationsStore {
         return `aiconv:${tenantId}:${userId}:${id}`;
     }
 
+    /** v0.1.370 — índice de las conversaciones de la persona (score = último mensaje). */
+    private indexKey(tenantId: number, userId: number): string {
+        return `aiconv:idx:${tenantId}:${userId}`;
+    }
+
     async load(tenantId: number, userId: number, id: string): Promise<StoredConversation | null> {
         if (!/^[a-z0-9_-]{6,64}$/i.test(id)) return null;
         const raw = await this.redis.get(this.key(tenantId, userId, id));
@@ -54,13 +67,95 @@ export class ConversationsStore {
         }
     }
 
-    async save(conv: StoredConversation): Promise<void> {
+    async save(conv: StoredConversation, opts: { touch?: boolean } = {}): Promise<void> {
         conv.messages = trimHistory(conv.messages, MAX_HISTORY_MESSAGES);
-        conv.updated_at = new Date().toISOString();
-        await this.redis.set(this.key(conv.tenantId, conv.userId, conv.id), JSON.stringify(conv), 'EX', CONVERSATION_TTL_SECONDS);
-        // F7 — «Primeros pasos»: la persona ya le preguntó algo al asistente.
-        // Una marca sin vencimiento (las conversaciones duran 24 h).
-        await this.redis.set(usedKey(conv.tenantId, conv.userId), '1');
+        const now = Date.now();
+        // Marcar una propuesta como aplicada o renombrar no la sube en el historial.
+        if (opts.touch !== false || !conv.updated_at) conv.updated_at = new Date(now).toISOString();
+        if (!conv.title) {
+            const first = conv.transcript.find((m) => m.role === 'user')?.text ?? '';
+            if (first) conv.title = aiConversationTitle(first);
+        }
+        const idx = this.indexKey(conv.tenantId, conv.userId);
+        const score = Date.parse(conv.updated_at) || now;
+        await this.redis
+            .multi()
+            .set(this.key(conv.tenantId, conv.userId, conv.id), JSON.stringify(conv), 'EX', CONVERSATION_TTL_SECONDS)
+            .zadd(idx, score, conv.id)
+            .expire(idx, CONVERSATION_TTL_SECONDS)
+            // F7 — «Primeros pasos»: la persona ya le preguntó algo al asistente.
+            // Una marca sin vencimiento.
+            .set(usedKey(conv.tenantId, conv.userId), '1')
+            .exec();
+        await this.prune(conv.tenantId, conv.userId);
+    }
+
+    /** Deja sólo las MAX_CONVERSATIONS más recientes (y saca del índice las vencidas). */
+    private async prune(tenantId: number, userId: number): Promise<void> {
+        const idx = this.indexKey(tenantId, userId);
+        await this.redis.zremrangebyscore(idx, '-inf', Date.now() - CONVERSATION_TTL_SECONDS * 1000);
+        const extra = (await this.redis.zcard(idx)) - MAX_CONVERSATIONS;
+        if (extra <= 0) return;
+        const old = await this.redis.zrange(idx, 0, extra - 1);
+        if (old.length === 0) return;
+        await this.redis
+            .multi()
+            .zrem(idx, ...old)
+            .del(...old.map((id) => this.key(tenantId, userId, id)))
+            .exec();
+    }
+
+    /** v0.1.370 — El historial de la persona en esta empresa, lo más nuevo primero. */
+    async list(tenantId: number, userId: number): Promise<AiConversationSummary[]> {
+        const idx = this.indexKey(tenantId, userId);
+        await this.redis.zremrangebyscore(idx, '-inf', Date.now() - CONVERSATION_TTL_SECONDS * 1000);
+        const ids = await this.redis.zrevrange(idx, 0, MAX_CONVERSATIONS - 1);
+        if (ids.length === 0) return [];
+        const raws = await this.redis.mget(...ids.map((id) => this.key(tenantId, userId, id)));
+        const out: AiConversationSummary[] = [];
+        const gone: string[] = [];
+        ids.forEach((id, i) => {
+            const raw = raws[i];
+            if (!raw) {
+                gone.push(id);
+                return;
+            }
+            try {
+                const conv = JSON.parse(raw) as StoredConversation;
+                const userTurns = conv.transcript.filter((m) => m.role === 'user');
+                if (userTurns.length === 0) return;
+                const last = [...conv.transcript].reverse().find((m) => m.text.trim()) ?? userTurns[userTurns.length - 1]!;
+                out.push({
+                    id: conv.id,
+                    title: conv.title || aiConversationTitle(userTurns[0]!.text),
+                    preview: previewOf(last.text),
+                    messages: conv.transcript.length,
+                    updated_at: conv.updated_at,
+                });
+            } catch {
+                gone.push(id);
+            }
+        });
+        if (gone.length > 0) await this.redis.zrem(idx, ...gone);
+        return out;
+    }
+
+    async rename(tenantId: number, userId: number, id: string, title: string): Promise<StoredConversation | null> {
+        const conv = await this.load(tenantId, userId, id);
+        if (!conv) return null;
+        conv.title = title.trim();
+        await this.save(conv, { touch: false });
+        return conv;
+    }
+
+    async remove(tenantId: number, userId: number, id: string): Promise<boolean> {
+        if (!/^[a-z0-9_-]{6,64}$/i.test(id)) return false;
+        const [, [, removed]] = (await this.redis
+            .multi()
+            .zrem(this.indexKey(tenantId, userId), id)
+            .del(this.key(tenantId, userId, id))
+            .exec()) as [[unknown, number], [unknown, number]];
+        return removed > 0;
     }
 
     /** F7 — ¿Esta persona ya habló con el asistente en esta empresa? */
@@ -75,12 +170,51 @@ export class ConversationsStore {
         for (const m of conv.transcript) {
             m.proposals = m.proposals.map((p) => (p.id === proposal.id ? proposal : p));
         }
-        await this.save(conv);
+        await this.save(conv, { touch: false });
     }
 }
 
 function usedKey(tenantId: number, userId: number): string {
     return `aiconv:used:${tenantId}:${userId}`;
+}
+
+/** Una línea de texto plano para el historial (sin la sintaxis del formato). */
+export function previewOf(text: string): string {
+    const plain = text
+        .replace(/```[\s\S]*?```/g, ' ')
+        .replace(/[#>*_`|~]+/g, ' ')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return plain.length > 120 ? `${plain.slice(0, 117)}…` : plain;
+}
+
+/**
+ * v0.1.370 — «Reintentar»: quita el último turno (el último pedido de la
+ * persona y todo lo que vino después) del historial del modelo y del
+ * transcript. Devuelve el texto de ese pedido, o null si no hay. Puro.
+ */
+export function dropLastTurn(conv: Pick<StoredConversation, 'messages' | 'transcript'>): string | null {
+    let ui = -1;
+    for (let i = conv.transcript.length - 1; i >= 0; i--) {
+        if (conv.transcript[i]!.role === 'user') {
+            ui = i;
+            break;
+        }
+    }
+    if (ui < 0) return null;
+    const text = conv.transcript[ui]!.text;
+    conv.transcript.splice(ui);
+    // En el historial del modelo, el turno empieza en el último mensaje de la
+    // persona que NO es un resultado de herramienta.
+    for (let i = conv.messages.length - 1; i >= 0; i--) {
+        const m = conv.messages[i]!;
+        if (m.role === 'user' && startsClean(m)) {
+            conv.messages.splice(i);
+            break;
+        }
+    }
+    return text;
 }
 
 /**

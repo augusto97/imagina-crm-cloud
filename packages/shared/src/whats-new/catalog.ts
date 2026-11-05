@@ -1571,4 +1571,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Abre el formulario en **Configurar lista → Formularios**. El estilo está en **Compartir → Insertar en tu sitio** (o en **Diseño → Página**) y el logo en **Ajustes → Apariencia**. La agenda de citas tiene el mismo «Sin marco» en su diseño.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.370-asistente-renovado',
+        version: '0.1.370',
+        date: '2026-11-05',
+        kind: 'feature',
+        title: 'El asistente IA, renovado: respuestas con formato y tus conversaciones guardadas',
+        summary:
+            'Las respuestas llegan con títulos, listas y tablas; ves los pasos que dio; copias, reintentas o editas tu pedido; y tus conversaciones quedan guardadas 30 días para retomarlas.',
+        media: {
+            slides: [
+                {
+                    title: 'Respuestas que se leen fácil',
+                    text: 'Títulos, negrita, listas y tablas en vez de un bloque de texto. Pídele «en una tabla» y te lo ordena. Los enlaces te llevan a la lista, el registro o el tablero.',
+                    illustration: 'ia-chat',
+                },
+                {
+                    title: 'Retoma cualquier conversación',
+                    text: 'El botón del reloj abre tus conversaciones: búscalas, ábrelas o cámbiales el nombre. En el computador, el panel ancho las deja al costado.',
+                    illustration: 'ia-chat',
+                },
+                {
+                    title: 'Ideas según dónde estás',
+                    text: 'En una lista, en la ficha de un registro o en un tablero, el asistente sugiere qué pedirle, y sabe qué tienes abierto.',
+                    illustration: 'ia-asistente',
+                },
+            ],
+        },
+        body: 'Toca el botón de la chispa, arriba a la derecha. Sobre cada respuesta tienes **Copiar** y **Reintentar**; en tu último pedido, **Editar**.',
+        action: { label: 'Ver cómo funciona', href: '/aprende/inteligencia-artificial/ia-asistente' },
+    },
 ];

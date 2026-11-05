@@ -57,3 +57,40 @@ export function writeConversationId(tenantId: number | null, id: string | null):
         // sin storage (modo privado) — la conversación dura lo que dure el panel
     }
 }
+
+/**
+ * v0.1.370 — Modo ancho del panel (en el computador): se recuerda en el
+ * dispositivo. En el teléfono el panel ocupa siempre toda la pantalla.
+ */
+const WIDE_KEY = 'imcrm:ai:wide';
+let wide = ((): boolean => {
+    try {
+        return localStorage.getItem(WIDE_KEY) === '1';
+    } catch {
+        return false;
+    }
+})();
+const wideListeners = new Set<() => void>();
+
+export const assistantWide = {
+    get: (): boolean => wide,
+    set: (value: boolean): void => {
+        if (wide === value) return;
+        wide = value;
+        try {
+            if (value) localStorage.setItem(WIDE_KEY, '1');
+            else localStorage.removeItem(WIDE_KEY);
+        } catch {
+            // sin storage: dura lo que dure la pestaña
+        }
+        for (const l of wideListeners) l();
+    },
+    subscribe: (l: () => void): (() => void) => {
+        wideListeners.add(l);
+        return () => wideListeners.delete(l);
+    },
+};
+
+export function useAssistantWide(): boolean {
+    return useSyncExternalStore(assistantWide.subscribe, assistantWide.get, () => false);
+}

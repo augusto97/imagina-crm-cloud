@@ -13,6 +13,13 @@
  *     `propose_*` (una vista de los montos más altos y, si hay un estado con
  *     una opción «vencida» y una fecha, una automatización que la marca); en la
  *     segunda entrega las que validaron con `submit_suggestions`.
+ *   - `list_lists` (v0.1.370, el chat del asistente): la primera vuelta pide
+ *     `list_lists`; la segunda responde en Markdown (título, negrita, tabla con
+ *     enlaces a las listas, lista de tareas, código) en varios pedazos. Si el
+ *     pedido dice «falla», las tres primeras llamadas responden 529 (el SDK
+ *     reintenta dos veces solo; la tercera falla llega a la persona y la
+ *     cuarta —su «Reintentar»— sale bien); si dice «lento», los pedazos llegan de a uno cada 700 ms
+ *     (para probar «Detener» y el texto en vivo).
  *   - cualquier otra: un texto corto.
  *
  * Uso:  node scripts/dev/fake-anthropic.mjs [puerto=4899]
@@ -136,10 +143,61 @@ function suggestionSubmit(p) {
     };
 }
 
-function sse(res, events) {
+function sse(res, events, gapMs = 0) {
     res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
-    for (const [event, data] of events) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    res.end();
+    if (!gapMs) {
+        for (const [event, data] of events) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        res.end();
+        return;
+    }
+    let i = 0;
+    const tick = () => {
+        if (res.destroyed) return;
+        if (i >= events.length) return void res.end();
+        const [event, data] = events[i++];
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        setTimeout(tick, event === 'content_block_delta' ? gapMs : 0);
+    };
+    tick();
+}
+
+/** v0.1.370 — Lo que pidió la persona (el último texto de usuario). */
+function lastUserText(p) {
+    for (let i = p.messages.length - 1; i >= 0; i--) {
+        const m = p.messages[i];
+        if (m.role !== 'user') continue;
+        if (typeof m.content === 'string') return m.content;
+        const t = m.content.find((b) => b.type === 'text');
+        if (t) return t.text;
+    }
+    return '';
+}
+
+const failures = new Map();
+
+function chatAnswer(p) {
+    const last = p.messages[p.messages.length - 1];
+    let lists = [];
+    for (const b of Array.isArray(last.content) ? last.content : []) {
+        if (b.type !== 'tool_result') continue;
+        try {
+            const c = JSON.parse(typeof b.content === 'string' ? b.content : b.content.map((x) => x.text ?? '').join(''));
+            lists = c.lists ?? [];
+        } catch {
+            /* sin datos */
+        }
+    }
+    const top = lists.slice(0, 3);
+    const rows = top.map((l) => `| [${l.name}](/lists/${l.slug}/records) | ${l.fields_count} |`).join('\n');
+    return [
+        '## Tus listas\n\n',
+        `Tienes **${lists.length} listas** en esta empresa. Estas son las primeras:\n\n`,
+        '| Lista | Campos |\n|:---|---:|\n',
+        `${rows}\n\n`,
+        '- [x] Revisé qué listas tienes\n- [ ] Falta armar un tablero con los números\n\n',
+        'Un filtro de ejemplo:\n\n```json\n{ "estado": "pendiente" }\n```\n\n',
+        top[0] ? `Abre [${top[0].name}](/lists/${top[0].slug}/records) o lee más en https://imagina.cloud/base.` : 'Todavía no tienes listas.',
+    ];
 }
 
 createServer((req, res) => {
@@ -159,7 +217,47 @@ createServer((req, res) => {
             const msg = { id: 'msg_fake', type: 'message', role: 'assistant', model: p.model, content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 900, output_tokens: 1 } };
             const events = [['message_start', { type: 'message_start', message: msg }]];
             const sugg = (p.tools ?? []).find((t) => t.name === 'submit_suggestions');
-            if (sugg) {
+            const chat = !sugg && !tool && (p.tools ?? []).some((t) => t.name === 'list_lists');
+            const asked = lastUserText(p);
+            let gap = 0;
+            if (chat && /falla/i.test(asked) && (failures.get(asked) ?? 0) < 3) {
+                failures.set(asked, (failures.get(asked) ?? 0) + 1);
+                res.writeHead(529, { 'content-type': 'application/json' });
+                res.end(JSON.stringify({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }));
+                return;
+            }
+            if (chat) {
+                const last = p.messages[p.messages.length - 1];
+                const firstTurn = typeof last.content === 'string' || !last.content.some((b) => b.type === 'tool_result');
+                if (/lento/i.test(asked)) gap = 700;
+                // «propón un campo de prioridad para <slug>»: una propuesta de verdad.
+                const propose = /prop[oó]n.*prioridad/i.test(asked) ? /para (\S+)/.exec(asked)?.[1] : null;
+                if (firstTurn && propose) {
+                    const input = { list: propose, fields: [{ label: 'Prioridad', type: 'select', options: [{ label: 'Alta', color: 'red' }, { label: 'Media', color: 'amber' }, { label: 'Baja', color: 'green' }] }] };
+                    events.push(['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }]);
+                    events.push(['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Te propongo un campo **Prioridad** con tres opciones.' } }]);
+                    events.push(['content_block_stop', { type: 'content_block_stop', index: 0 }]);
+                    events.push(['content_block_start', { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'toolu_prop', name: 'propose_add_fields', input: {} } }]);
+                    events.push(['content_block_delta', { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: JSON.stringify(input) } }]);
+                    events.push(['content_block_stop', { type: 'content_block_stop', index: 1 }]);
+                    events.push(['message_delta', { type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 80 } }]);
+                } else if (!firstTurn && propose) {
+                    events.push(['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }]);
+                    events.push(['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Revisa la tarjeta y, si te sirve, **aplícala**:\n\n- Alta en rojo\n- Media en ámbar\n- Baja en verde' } }]);
+                    events.push(['content_block_stop', { type: 'content_block_stop', index: 0 }]);
+                    events.push(['message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 40 } }]);
+                } else if (firstTurn) {
+                    events.push(['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_chat', name: 'list_lists', input: {} } }]);
+                    events.push(['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{}' } }]);
+                    events.push(['content_block_stop', { type: 'content_block_stop', index: 0 }]);
+                    events.push(['message_delta', { type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 40 } }]);
+                } else {
+                    events.push(['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }]);
+                    for (const piece of chatAnswer(p)) events.push(['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: piece } }]);
+                    events.push(['content_block_stop', { type: 'content_block_stop', index: 0 }]);
+                    events.push(['message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 220 } }]);
+                }
+            } else if (sugg) {
                 const last = p.messages[p.messages.length - 1];
                 const firstTurn = typeof last.content === 'string';
                 const blocks = firstTurn
@@ -186,7 +284,7 @@ createServer((req, res) => {
                 events.push(['message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 6 } }]);
             }
             events.push(['message_stop', { type: 'message_stop' }]);
-            setTimeout(() => sse(res, events), 800);
+            setTimeout(() => sse(res, events, gap), gap ? 200 : 800);
             return;
         }
         res.writeHead(404, { 'content-type': 'application/json' });

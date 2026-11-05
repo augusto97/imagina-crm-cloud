@@ -64,6 +64,7 @@ const querySpec = z.object({
     list: z.string().max(63).describe('Slug de la lista'),
     filters: z.array(filterRuleSpec).max(20).optional().describe('Condiciones unidas por AND'),
     search: z.string().max(200).optional().describe('Texto libre sobre los campos de texto/email/url/teléfono'),
+    ids: z.array(z.number().int().positive()).max(50).optional().describe('Sólo estos registros (ids exactos), p. ej. el que la persona tiene abierto'),
     sort: sortSpec.optional(),
     limit: z.number().int().min(1).max(MAX_QUERY_ROWS).default(20),
     fields: z.array(fieldSlugSchema).max(30).optional().describe('Sólo estas columnas (default: todas las visibles)'),
@@ -304,6 +305,7 @@ export class DataTools implements AiProposalApplier {
             sort_dir: 'asc',
             ...(filterTree ? { filter_tree: filterTree } : {}),
             ...(input.search ? { search: input.search } : {}),
+            ...(input.ids?.length ? { ids: input.ids.join(',') } : {}),
             ...(sortField ? { sort: `field_${sortField.id}:${input.sort!.dir}` } : {}),
             include_subtasks: true,
         });

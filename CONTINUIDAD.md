@@ -394,8 +394,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.369**
-(formularios «sin marco» al insertarlos en un sitio y logo por formulario,
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.370**
+(el chat del asistente rediseñado: respuestas con formato, hasta 50
+conversaciones guardadas 30 días, los pasos a la vista, copiar/reintentar/
+editar, panel ancho y sugerencias según la pantalla, addendum ADR-S21; arregla
+«Detener», que no frenaba al modelo en el servidor, y la página del registro
+que quedaba en blanco al aplicar una propuesta; antes v0.1.369
+formularios «sin marco» al insertarlos en un sitio y logo por formulario,
 addendum ADR-S95; arregla el marco insertado que nunca bajaba de 640 px; antes
 v0.1.368 «Suscribir al enviar» en los formularios y las suscripciones del
 cliente en el bloque «Pagos» del portal, addendum ADR-S96; arregla el portal de
@@ -432,14 +437,17 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   IA** (pedido del usuario: "en los formularios debería poderse cambiar el
   logo u ocultarse… un estilo más limpio para embeber… que no tenga espacios
   ni fondo… también mejora el chat de IA, rediséñalo, el contenido sale sin
-  formato, como texto plano"). Lo partí en dos: **v0.1.369 hecha** (logo
-  propio/ninguno + «Sin marco») y **v0.1.370** el rediseño del chat del
-  asistente: mostrar las respuestas con formato (Markdown seguro: títulos,
-  listas, tablas, código con copiar, enlaces), historial de conversaciones,
-  los pasos de las herramientas a la vista, copiar/reintentar, modo ancho,
-  sugerencias según la pantalla y el cuadro que crece. Las suscripciones
-  siguen después: **v0.1.371** (lista espejo de cobros, plantilla de tablero,
-  herramienta del asistente/MCP) y **v0.1.372** (PayPal).
+  formato, como texto plano"). Lo partí en dos y **las dos están hechas**:
+  **v0.1.369** (logo propio/ninguno + «Sin marco») y **v0.1.370** el chat del
+  asistente rediseñado (Markdown seguro con títulos, listas, tablas, código
+  con copiar y enlaces; historial de 50 conversaciones por 30 días con
+  renombrar y borrar; los pasos de las herramientas a la vista; copiar,
+  reintentar y editar el último pedido; modo ancho; sugerencias según la
+  pantalla con el registro abierto; cuadro que crece). Las suscripciones
+  siguen: **v0.1.371** (lista espejo de cobros, plantilla de tablero,
+  herramienta del asistente/MCP) y **v0.1.372** (PayPal). Ideas que quedaron
+  para el chat si el usuario las pide: adjuntar archivos al pedido, compartir
+  una conversación con otra persona y elegir el modelo por conversación.
 - 2026-11-05 — **Suscripciones y cobros recurrentes (Mercado Pago y PayPal)
   para los clientes de cada empresa** — EN CURSO. El usuario respondió «hazlo
   todo como lo veas más recomendable»: decidí una suscripción viva por
@@ -452,7 +460,8 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   suscripciones», plantilla de tablero, herramienta propose del
   asistente/MCP para planes y suscripciones) y **v0.1.372** (PayPal como
   conector de la empresa, links y suscripciones en USD); en el medio el
-  usuario pidió logo/«sin marco» (v0.1.369) y el chat de IA (v0.1.370). Ideas que
+  usuario pidió logo/«sin marco» (v0.1.369) y el chat de IA (v0.1.370), ya
+  publicados. Ideas que
   quedaron anotadas para más adelante: bloquear a mano las columnas de la
   suscripción (hoy se pueden editar y la siguiente relectura las pisa) y
   mostrar las fechas del panel en la zona de la empresa (hoy en la del
@@ -1467,6 +1476,23 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.370** — **El chat del asistente, rediseñado** (segunda
+  mitad del pedido: "mejora el chat de IA, rediséñalo; el contenido sale sin
+  formato, como texto plano"). Las respuestas se ven con formato (títulos,
+  listas, tablas, código con «Copiar», enlaces que llevan a la pantalla de la
+  app), dibujado con React a partir de un árbol (nunca HTML del modelo). Tus
+  conversaciones quedan guardadas (hasta 50, 30 días) con buscador, renombrar
+  y borrar; los pasos que dio el asistente se ven en vivo y quedan como
+  «N pasos»; se puede copiar, reintentar la última respuesta y editar el
+  último pedido; panel ancho en escritorio con el historial al costado; el
+  estado vacío sugiere según la pantalla (en la ficha, «Resume este
+  registro», con el registro viajando en el pedido). **Bugs reales
+  encontrados**: «Detener» no frenaba al modelo en el servidor (seguía
+  generando y gastando hasta el final); al detener se perdía lo escrito; los
+  textos de dos vueltas salían pegados; y aplicar una propuesta en la página
+  de un registro dejaba la app en blanco (`RecordDataConsentLine` recibía el
+  sobre `{data}` y no el arreglo). E2E 57/57 contra el simulador de IA.
+  Queda: v0.1.371 y v0.1.372 de suscripciones (ver §10).
 - **2026-11-05 · v0.1.369** — **Formularios «sin marco» al insertarlos y
   logo por formulario** (pedido del usuario: cambiar u ocultar el logo, y un
   estilo sin fondo ni espacio para que el formulario ocupe exactamente el

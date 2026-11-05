@@ -1059,6 +1059,15 @@ export const TOURS: TourDef[] = [
                 title: 'Pídele lo que necesites',
                 body: '«Crea una lista de proveedores», «¿cuánto facturé este mes?»… Te propone los cambios y tú decides si aplicarlos. Si no está activado, aquí te dice qué falta.',
             },
+            {
+                id: 'history',
+                target: 'assistant-history',
+                placement: 'bottom',
+                art: 'ia-chat',
+                title: 'Tus conversaciones quedan guardadas',
+                body: 'Ábrelas, búscalas o cámbiales el nombre desde aquí. Cada respuesta se puede **copiar** o **reintentar**.',
+                tip: 'En el computador, el botón de las flechas agranda el panel y deja tus conversaciones al costado.',
+            },
         ],
     },
 ];

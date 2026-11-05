@@ -162,11 +162,18 @@ export const aiChatRequestSchema = z.object({
     /** Continuar una conversación (se guarda en el servidor, TTL 24 h). */
     conversation_id: z.string().min(1).max(64).optional(),
     message: z.string().trim().min(1).max(4000),
+    /**
+     * v0.1.370 — «Reintentar»: se descarta el último turno de la conversación
+     * (el pedido y su respuesta) y se vuelve a correr con este mensaje.
+     */
+    regenerate: z.boolean().optional(),
     /** Dónde está parada la persona, para que el asistente no pregunte lo obvio. */
     context: z
         .object({
             list_slug: z.string().max(63).optional(),
             route: z.string().max(200).optional(),
+            /** v0.1.370 — el registro abierto (la ficha), para «resume este registro». */
+            record_id: z.number().int().positive().optional(),
         })
         .optional(),
 });
@@ -304,20 +311,74 @@ export const aiChatEventSchema = z.discriminatedUnion('type', [
 ]);
 export type AiChatEvent = z.infer<typeof aiChatEventSchema>;
 
+/** v0.1.370 — Un paso que dio el asistente (una herramienta) en su respuesta. */
+export const aiStepSchema = z.object({
+    name: z.string(),
+    label: z.string(),
+    ok: z.boolean(),
+    summary: z.string(),
+});
+export type AiStep = z.infer<typeof aiStepSchema>;
+
 /** Mensaje del transcript que se muestra en la UI (persistido en el servidor). */
 export const aiTranscriptMessageSchema = z.object({
     role: z.enum(['user', 'assistant']),
     text: z.string(),
     proposals: z.array(aiProposalSchema).default([]),
+    /** v0.1.370 — los pasos (herramientas) de esa respuesta, en orden. */
+    steps: z.array(aiStepSchema).default([]),
+    /** v0.1.370 — si la respuesta terminó con un error (se ve al reabrirla). */
+    error: z.string().nullable().default(null),
     at: z.string(),
 });
 export type AiTranscriptMessage = z.infer<typeof aiTranscriptMessageSchema>;
 
+/** Largo máximo del título de una conversación. */
+export const AI_CONVERSATION_TITLE_MAX = 80;
+
 export const aiConversationSchema = z.object({
     id: z.string(),
+    /** v0.1.370 — el título (el primer pedido o el que le puso la persona). */
+    title: z.string().default(''),
+    updated_at: z.string().default(''),
     messages: z.array(aiTranscriptMessageSchema),
 });
 export type AiConversation = z.infer<typeof aiConversationSchema>;
+
+/** v0.1.370 — Una conversación en el historial (`GET /ai/conversations`). */
+export const aiConversationSummarySchema = z.object({
+    id: z.string(),
+    title: z.string(),
+    /** El comienzo de la última respuesta (o del último pedido). */
+    preview: z.string(),
+    messages: z.number().int(),
+    updated_at: z.string(),
+});
+export type AiConversationSummary = z.infer<typeof aiConversationSummarySchema>;
+
+export const aiConversationListSchema = z.object({
+    conversations: z.array(aiConversationSummarySchema),
+    /** Cuántos días se guarda cada conversación desde el último mensaje. */
+    keep_days: z.number().int(),
+});
+export type AiConversationList = z.infer<typeof aiConversationListSchema>;
+
+export const renameAiConversationSchema = z.object({
+    title: z.string().trim().min(1).max(AI_CONVERSATION_TITLE_MAX),
+});
+export type RenameAiConversationInput = z.infer<typeof renameAiConversationSchema>;
+
+/**
+ * v0.1.370 — El título automático de una conversación: el primer pedido, en
+ * una línea y recortado por palabra.
+ */
+export function aiConversationTitle(firstMessage: string): string {
+    const line = firstMessage.replace(/\s+/g, ' ').trim();
+    if (line.length <= 60) return line;
+    const cut = line.slice(0, 60);
+    const sp = cut.lastIndexOf(' ');
+    return `${(sp > 30 ? cut.slice(0, sp) : cut).replace(/[\s,;:.]+$/, '')}…`;
+}
 
 /** `POST /ai/proposals/:id/apply` */
 export const aiApplyResultSchema = z.object({
