@@ -116,10 +116,10 @@ export const meta: LearnModuleMeta = {
         {
             id: 'formularios-ajustes',
             title: 'Ajustes: agradecimiento, cierre por fecha o cupo y logo',
-            summary: 'Qué ve la persona al enviar, hasta cuándo recibe respuestas, con qué plantilla nace el registro y si muestra tu logo.',
+            summary: 'Qué ve la persona al enviar, hasta cuándo recibe respuestas, con qué plantilla nace el registro y qué logo muestra (el de la empresa, otro o ninguno).',
             minutes: 7,
             level: 'basic',
-            keywords: 'gracias redireccion enviar otra respuesta cupo maximo fecha de cierre cerrado color logo plantilla de registro',
+            keywords: 'gracias redireccion enviar otra respuesta cupo maximo fecha de cierre cerrado color logo otro logo sin logo ocultar logo plantilla de registro',
             needs: 'manage_forms',
         },
         {
@@ -143,10 +143,10 @@ export const meta: LearnModuleMeta = {
         {
             id: 'formularios-publicar',
             title: 'Publicar, compartir el enlace e insertarlo en tu sitio',
-            summary: 'Pon el formulario en línea, copia su enlace o el código para tu página web y decide en qué sitios se puede insertar.',
+            summary: 'Pon el formulario en línea, copia su enlace o el código para tu página web, elige si se ve con su tarjeta o sin marco y en qué sitios se puede insertar.',
             minutes: 6,
             level: 'basic',
-            keywords: 'publicar enlace link compartir insertar iframe pagina web sitio dominios qr codigo qr imprimir volante redes sociales panel lateral pantalla completa ventana emergente popup',
+            keywords: 'publicar enlace link compartir insertar iframe pagina web sitio dominios qr codigo qr imprimir volante redes sociales panel lateral pantalla completa ventana emergente popup sin marco sin fondo sin espacio padding margen transparente formulario de contacto',
             needs: 'manage_forms',
         },
         {

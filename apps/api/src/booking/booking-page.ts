@@ -247,6 +247,8 @@ const CLIENT_JS = String.raw`
   var root = null;
   var embedded = false;
   try { embedded = window.self !== window.top; } catch (e) { embedded = true; }
+  // v0.1.369 — en la ventana o el panel de embed.js, «Sin marco» no aplica.
+  var inPopup = embedded && window.name === 'imagina-popup';
   var PREVIEW = MODE === 'preview';
   var API = MODE === 'manage'
     ? '/api/v1/public/booking/manage/' + encodeURIComponent(BOOT.token)
@@ -308,7 +310,8 @@ const CLIENT_JS = String.raw`
     var v = view(), d = (meta && meta.display) || {};
     var cls = ['ib-body'].concat(v && v.classes ? v.classes : []);
     if (embedded && !PREVIEW) cls.push('ib-embedded');
-    if (embedded && !PREVIEW && v && v.embed_background) cls.push('ib-embed-bg');
+    if (embedded && !PREVIEW && !inPopup && v && v.embed_bare) cls.push('ib-embed-bare');
+    else if (embedded && !PREVIEW && v && v.embed_background) cls.push('ib-embed-bg');
     cls.push('bk-ch-' + (v && v.choice_style ? v.choice_style : 'list'));
     cls.push('bk-cal-' + (d.calendar_layout === 'stacked' ? 'stacked' : 'side'));
     cls.push('bk-slots-' + (d.slot_style === 'list' ? 'list' : 'grid'));
@@ -345,7 +348,10 @@ const CLIENT_JS = String.raw`
   }
   function reportHeight() {
     if (!embedded || PREVIEW) return;
-    try { parent.postMessage({ type: 'imb-form-height', height: Math.ceil(document.documentElement.scrollHeight) }, '*'); } catch (e) {}
+    // v0.1.369 — el alto del CONTENIDO (el del documento nunca baja del alto del iframe).
+    var shell = document.querySelector('.ib-shell');
+    var h = shell ? shell.getBoundingClientRect().height : 0;
+    try { parent.postMessage({ type: 'imb-form-height', height: Math.ceil(h > 0 ? h : document.documentElement.scrollHeight) }, '*'); } catch (e) {}
   }
   if (embedded && !PREVIEW && window.ResizeObserver) new ResizeObserver(reportHeight).observe(document.body);
 

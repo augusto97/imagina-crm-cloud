@@ -455,11 +455,29 @@ export function ThemeInspector<C extends Themed>({
                         onChange={(v) => set('layout', { band: v })}
                     />
                     <Check label={__('Centrar en la pantalla')} checked={t.layout.vertical_center} onChange={(v) => set('layout', { vertical_center: v })} />
-                    <Check
-                        label={__('Al insertarlo en otro sitio, mostrar el fondo')}
-                        checked={t.layout.embed_background}
-                        onChange={(v) => set('layout', { embed_background: v })}
+                </div>
+                {/* v0.1.369 — Cómo se ve insertado en otro sitio. */}
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-testid="theme-embed-style" data-tour="form-embed-style">
+                    <Choice
+                        label={__('Insertado en tu sitio')}
+                        value={t.layout.embed_style}
+                        options={[
+                            { value: 'card', label: __('Con su tarjeta') },
+                            { value: 'bare', label: __('Sin marco') },
+                        ]}
+                        onChange={(v) => set('layout', { embed_style: v })}
                     />
+                    {t.layout.embed_style === 'bare' ? (
+                        <Hint>
+                            {__('Sin fondo, sin borde, sin sombra y sin espacio alrededor: los campos llegan al borde del espacio que le das en tu página, como un formulario de contacto propio. Sólo cuando está insertado; el enlace directo se ve con su diseño completo.')}
+                        </Hint>
+                    ) : (
+                        <Check
+                            label={__('Al insertarlo en otro sitio, mostrar el fondo')}
+                            checked={t.layout.embed_background}
+                            onChange={(v) => set('layout', { embed_background: v })}
+                        />
+                    )}
                 </div>
                 {t.cover.enabled && <Hint>{__('Con portada no se dibuja la franja de color.')}</Hint>}
                 <Choice

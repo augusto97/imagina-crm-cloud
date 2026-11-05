@@ -27,7 +27,24 @@ const OPENS: Array<{ id: EmbedOpen; label: string; hint: string; icon: typeof Pa
  * la empresa: en la página, en una ventana al hacer clic o con un botón
  * flotante. Las dos últimas no cargan nada hasta que alguien las usa.
  */
-export function EmbedCodePicker({ target, accent, testId, dataTour }: { target: EmbedTarget; accent: string; testId: string; dataTour?: string }): JSX.Element {
+export function EmbedCodePicker({
+    target,
+    accent,
+    testId,
+    dataTour,
+    bare,
+}: {
+    target: EmbedTarget;
+    accent: string;
+    testId: string;
+    dataTour?: string;
+    /**
+     * v0.1.369 — «Con su tarjeta» o «Sin marco» al insertarlo en la página. Es
+     * parte del diseño (se guarda con el formulario o la agenda), así que el
+     * cambio necesita «Guardar» para que tu sitio lo muestre.
+     */
+    bare?: { value: boolean; onChange: (bare: boolean) => void; unsaved: boolean };
+}): JSX.Element {
     const [mode, setMode] = useState<EmbedMode>('inline');
     const [label, setLabel] = useState(defaultEmbedLabel(target.kind));
     const [color, setColor] = useState(safeHex(accent));
@@ -73,6 +90,43 @@ export function EmbedCodePicker({ target, accent, testId, dataTour }: { target: 
                 })}
             </div>
             <p className="imcrm-text-xs imcrm-text-muted-foreground">{__(current.hint)}</p>
+            {mode === 'inline' && bare && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-testid={`${testId}-style`}>
+                    <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Cómo se ve en tu página')}</span>
+                    <div role="radiogroup" aria-label={__('Cómo se ve en tu página')} className="imcrm-flex imcrm-flex-wrap imcrm-gap-1">
+                        {([
+                            { id: false, label: __('Con su tarjeta') },
+                            { id: true, label: __('Sin marco') },
+                        ] as const).map((o) => (
+                            <Button
+                                key={String(o.id)}
+                                type="button"
+                                size="sm"
+                                variant={bare.value === o.id ? 'default' : 'outline'}
+                                className="imcrm-h-8 imcrm-text-xs"
+                                role="radio"
+                                aria-checked={bare.value === o.id}
+                                onClick={() => bare.onChange(o.id)}
+                                data-testid={`${testId}-style-${o.id ? 'bare' : 'card'}`}
+                            >
+                                {o.label}
+                            </Button>
+                        ))}
+                    </div>
+                    <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                        {bare.value
+                            ? __('Sin fondo, sin borde y sin espacio alrededor: ocupa exactamente el lugar que le das, como el formulario que ya tenías.')
+                            : __('Se ve con su fondo y su tarjeta, igual que en el enlace directo.')}
+                        {bare.unsaved && ' '}
+                        {bare.unsaved && <strong className="imcrm-font-medium imcrm-text-foreground">{__('Guarda los cambios para que tu sitio lo muestre así.')}</strong>}
+                    </p>
+                </div>
+            )}
+            {mode !== 'inline' && bare?.value && (
+                <p className="imcrm-text-[11px] imcrm-text-muted-foreground" data-testid={`${testId}-style-note`}>
+                    {__('«Sin marco» sólo aplica cuando va dentro de tu página: en una ventana o un panel se ve con su tarjeta.')}
+                </p>
+            )}
             {mode !== 'inline' && (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-testid={`${testId}-open`}>
                     <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Cómo se abre')}</span>

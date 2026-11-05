@@ -12269,6 +12269,42 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el aviso, un plan con botón propio, confirmación por correo, portal
         «Al día» y apagado, celular sin desborde y sin errores de JS).
 
+  - [x] **Formularios «sin marco» al insertarlos + logo por formulario
+        (v0.1.369, addendum ADR-S95, pedido del usuario: "que se pueda cambiar
+        el logo u ocultarlo… y un estilo más limpio para embeber, sin espacios
+        ni fondo, para que ocupe exactamente el espacio de su formulario de
+        contacto")**. (a) **«Sin marco»** (`theme.layout.embed_style` `card` |
+        `bare`, en el tema: el código pegado no cambia): insertado en un sitio,
+        la página marca `ib-embedded ib-embed-bare` y el CSS fijo quita fondo,
+        banda, portada, borde, sombra, esquinas y todo el relleno — los campos
+        llegan de borde a borde del hueco y se ve el fondo del sitio; el foco
+        pasa a anillo interior. El enlace directo y la ventana/panel de
+        `embed.js` (el marco lleva `name="imagina-popup"`) siguen con su
+        tarjeta. Se elige en Diseño → Página y en **Compartir → Insertar en tu
+        sitio → En la página** («Cómo se ve en tu página», con aviso de
+        guardar); también la agenda (Publicar). La vista previa del
+        constructor gana **«En tu sitio»** (ícono del mundo): el formulario
+        dentro de una página de ejemplo con el espacio punteado. (b) **Bug
+        viejo arreglado**: el marco insertado nunca bajaba de 640 px (720 la
+        agenda) porque se medía `scrollHeight`, que no es menor que el alto
+        del propio iframe — un formulario corto dejaba espacio en blanco; ahora
+        se mide `.ib-shell` y, insertado, `min-height:0`. (c) **Logo**:
+        Ajustes → Apariencia → Logo con «El de la empresa» / «Otro logo»
+        (`settings.logo_file_id`, imagen de la empresa, nunca SVG) / «Sin
+        logo», en la página, la confirmación y los correos del formulario;
+        migrar una empresa lo re-mapea. Ayuda: guías `embed-site` y
+        `form-design`, Aprende (sección «Con su tarjeta o sin marco» con la
+        ilustración `form-embed-bare` y la fila del logo) y novedad con
+        carrusel. Tests: 2 de shared (750 en verde), 2 de la API + re-mapeo
+        del logo (specs de formularios, agenda, caché y migración 83/83),
+        front 801; E2E navegador 31/31 con un sitio de OTRO origen real
+        (127.0.0.1:8899 vs localhost:5174: sin fondo ni relleno, campos 0→520
+        de 520, alto 494 = contenido, el amarillo del sitio se ve a través,
+        con tarjeta 570 = contenido, ventana con su espacio, enlace directo
+        con tarjeta, «En tu sitio», Compartir, logo propio/ninguno con URL
+        firmada, celular oscuro sin desborde) y la agenda «sin marco»
+        insertada (alto 444 = contenido).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

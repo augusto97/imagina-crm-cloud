@@ -71,7 +71,7 @@ import type { FieldEntity } from '@/types/field';
 import { Check, Field, Section, Segmented } from '../automations/email/EmailBlockInspector';
 import { useCaptchaAvailability, useDataConsentAvailability } from '../forms/useForms';
 import { useAttachmentUrls } from '../forms/design/useFormThemes';
-import { fallbackAccent, resolvedAccent } from '../forms/design/themeOps';
+import { effectiveTheme, fallbackAccent, patchThemeSection, resolvedAccent } from '../forms/design/themeOps';
 import { BookingDesignEditor } from './BookingDesignEditor';
 import { SmsCounter } from '@/cloud/components/sms/smsUi';
 import { useSmsConnections } from '@/cloud/components/sms/useSmsConnections';
@@ -1565,6 +1565,13 @@ function PublishEditor({ config, onChange, page, problems, onPublish, onRegenera
                 target={{ url: bookingPublicUrl(page), origin: bookingPublicOrigin(page), title: s.title.trim() || page.name, kind: 'booking' }}
                 accent={resolvedAccent(s, '#0e7490', BOOKING_CLASSIC_THEME)}
                 testId="booking-embed-inline"
+                bare={{
+                    value: effectiveTheme(s, BOOKING_CLASSIC_THEME).layout.embed_style === 'bare',
+                    onChange: (v) => onChange(patchThemeSection(config, 'layout', { embed_style: v ? 'bare' : 'card' }, BOOKING_CLASSIC_THEME)),
+                    unsaved:
+                        effectiveTheme(s, BOOKING_CLASSIC_THEME).layout.embed_style !==
+                        effectiveTheme(page.config.settings, BOOKING_CLASSIC_THEME).layout.embed_style,
+                }}
             />
             <PublicQrCard url={bookingPublicUrl(page)} name={s.title.trim() || page.name} kind="booking" />
             <Button variant="ghost" size="sm" className="imcrm-gap-1.5 imcrm-self-start" onClick={onRegenerate} disabled={busy} data-testid="booking-regenerate">

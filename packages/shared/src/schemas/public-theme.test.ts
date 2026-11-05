@@ -8,6 +8,7 @@ import {
 import {
     buildPublicThemeCss,
     contrastRatio,
+    PUBLIC_BASE_CSS,
     cssUrl,
     deriveDarkPalette,
     ensureContrast,
@@ -129,6 +130,34 @@ describe('tema de las páginas públicas', () => {
         const pills = presets.find((p) => p.id === 'pills')!.theme;
         expect(pills.button).toMatchObject({ radius: 999, full_width: true, size: 'lg' });
         expect(pills.choices).toMatchObject({ style: 'buttons', radius: 999 });
+    });
+
+    it('v0.1.369 — «Sin marco» al insertarlo: el CSS lo deja sin fondo, borde ni espacio, y lo de antes sigue «con su tarjeta»', () => {
+        expect(DEFAULT_PUBLIC_THEME.layout.embed_style).toBe('card');
+        expect(publicThemeView(DEFAULT_PUBLIC_THEME).embed_bare).toBe(false);
+        // Un tema guardado antes de esta versión no trae la clave.
+        const viejo = readPublicTheme({ ...DEFAULT_PUBLIC_THEME, layout: { width: 720 } });
+        expect(viejo.layout.embed_style).toBe('card');
+        expect(viejo.layout.width).toBe(720);
+        const bare = publicThemeSchema.parse({ layout: { embed_style: 'bare' } });
+        expect(publicThemeView(bare).embed_bare).toBe(true);
+        // El CSS fijo trae la variante: sólo con las dos clases (insertado + sin marco).
+        const css = buildPublicThemeCss(bare, { accent: '#0e7490' }) + PUBLIC_BASE_CSS;
+        expect(css).toMatch(/body\.ib-embedded\.ib-embed-bare\{[^}]*background:transparent/);
+        expect(css).toMatch(/body\.ib-embedded\.ib-embed-bare \.ib-card\{[^}]*box-shadow:none/);
+        expect(css).toMatch(/body\.ib-embedded\.ib-embed-bare \.ib-inner\{[^}]*padding:0/);
+        expect(css).toMatch(/body\.ib-embedded\.ib-embed-bare \.ib-wrap\{[^}]*padding:0/);
+        // Insertado, la página no estira el marco: el alto es el del contenido.
+        expect(css).toContain('body.ib-embedded .ib-shell{min-height:0}');
+        // Un valor raro se lee con tolerancia: «con su tarjeta».
+        expect(readPublicTheme({ layout: { embed_style: 'otro' } }).layout.embed_style).toBe('card');
+    });
+
+    it('v0.1.369 — el logo propio del formulario cuenta como imagen del formulario', () => {
+        const c = formConfigSchema.parse({ items: [], settings: { logo_file_id: 42 } });
+        expect(formConfigFileIds(c)).toContain(42);
+        expect(formConfigSchema.parse({ items: [] }).settings.logo_file_id).toBeNull();
+        expect(formConfigFileIds(formConfigSchema.parse({ items: [] }))).not.toContain(null);
     });
 });
 

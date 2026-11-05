@@ -116,6 +116,8 @@ const EXPLICIT: Record<string, keyof IdMaps> = {
     staff_user_id: 'user',
     // v0.1.349 — la foto de quien atiende en una página de agenda.
     photo_file_id: 'attachment',
+    // v0.1.369 — el logo propio de un formulario.
+    logo_file_id: 'attachment',
     // D2/E5 — la persona que el SLA pone al escalar (campo Persona).
     escalate_set_user_id: 'user',
     // E6 — el agente de IA de la acción «Pedirle a un agente».
