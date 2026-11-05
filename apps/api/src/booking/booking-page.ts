@@ -11,6 +11,7 @@ import {
     type PublicThemeView,
 } from '@imagina-base/shared';
 import { escapeHtml, inlineScriptHash, inlineScriptText } from '../forms/form-page';
+import { directTagsScriptText } from '../forms/direct-tags';
 
 /**
  * D5 — Página pública de una agenda (`/api/v1/public/b/:token`), la de
@@ -201,6 +202,9 @@ export function renderBookingPage(opts: {
     const preload = opts.preloadFont
         ? `<link rel="preload" href="${escapeHtml(opts.preloadFont)}" as="font" type="font/woff2" crossorigin>\n`
         : '';
+    // v0.1.375 — las etiquetas del enlace directo (Google, Meta), antes que el
+    // cliente, que las arranca sólo si la página no está dentro de un marco.
+    const tags = opts.boot.mode === 'book' && opts.boot.meta?.conversion?.direct ? `<script>${directTagsScriptText()}</script>\n` : '';
     return `<!doctype html>
 <html lang="es">
 <head>
@@ -216,7 +220,7 @@ ${preload}<style>${PUBLIC_BASE_CSS}${BOOKING_CSS}</style>
 <div id="app"></div>
 <noscript><div class="ib-shell"><main class="ib-wrap"><div class="ib-card"><div class="ib-inner"><p>Para agendar una cita, activa JavaScript en tu navegador.</p></div></div></main></div></noscript>
 <script type="application/json" id="boot">${boot}</script>
-<script${nonce}>${inlineScriptText(CLIENT_JS)}</script>
+${tags}<script${nonce}>${inlineScriptText(CLIENT_JS)}</script>
 </body>
 </html>`;
 }
@@ -306,9 +310,22 @@ const CLIENT_JS = String.raw`
   }
   // La página de gracias: insertada, la hace el script del sitio cuando sus
   // etiquetas terminaron; sin ese script (o con uno viejo), se pide como antes.
+  // v0.1.375 — En el enlace directo (no insertada), las etiquetas de la
+  // empresa (Google, Meta) por su ID: se cargan cuando la página ya se pintó y
+  // la conversión se dispara aquí mismo (ver direct-tags.ts).
+  var directTags = !embedded && !PREVIEW && MODE === 'book' && meta && meta.conversion && meta.conversion.direct && window.imbPixels ? meta.conversion.direct : null;
+  if (directTags && !window.imbPixels.start(directTags)) directTags = null;
+  function firePixels(ev, done) {
+    if (!directTags || !ev) { if (done) done(); return; }
+    window.imbPixels.conversion(ev, done || null);
+  }
   function goThankYou(url, ev) {
     var delay = Math.max(0, Math.min(10, meta.redirect_delay || 0)) * 1000;
-    if (!embedded) { setTimeout(function () { location.href = url; }, delay); return; }
+    if (!embedded) {
+      var t0 = Date.now();
+      firePixels(ev, function () { setTimeout(function () { location.href = url; }, Math.max(0, delay - (Date.now() - t0))); });
+      return;
+    }
     var ref = postConversion(ev, url, delay), t0 = Date.now();
     (function wait() {
       if (ref && acks[ref]) return;
@@ -397,7 +414,10 @@ const CLIENT_JS = String.raw`
       if (v.split.headline) media.appendChild(el('div', { cls: 'ib-split-headline', text: v.split.headline }));
       kids.push(media);
     }
-    kids.push(el('main', { cls: 'ib-wrap' }, [card]));
+    var mainKids = [card];
+    // v0.1.375 — el aviso de cookies de medición (sólo con las etiquetas cargadas).
+    if (directTags && directTags.notice) mainKids.push(el('p', { cls: 'ib-pixels-note', 'data-testid': 'booking-pixels-note', text: directTags.notice }));
+    kids.push(el('main', { cls: 'ib-wrap' }, mainKids));
     app.textContent = '';
     app.appendChild(el('div', { cls: 'ib-shell' }, kids));
     applyBodyClasses();
@@ -903,7 +923,7 @@ const CLIENT_JS = String.raw`
           render();
           var conv = conversionEvent(res.body);
           if (st.redirect) goThankYou(st.redirect, conv);
-          else postConversion(conv, null, 0);
+          else { postConversion(conv, null, 0); firePixels(conv, null); }
           try { parent.postMessage({ type: 'imb-form-submitted' }, '*'); } catch (e) {}
           return;
         }

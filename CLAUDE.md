@@ -12619,9 +12619,60 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         de OTRO origen con GTM, gtag y fbq simulados (constructor, insertado con
         página de gracias tras 2 s y las columnas de origen, panel lateral que
         conserva la campaña de la primera página, enlace directo y agenda con
-        `imagina_booking`, `Schedule` y el precio del servicio). Queda
-        propuesta (sin aprobar) la v0.1.375: píxel de Google y Meta por ID en
-        el enlace directo, aislado.
+        `imagina_booking`, `Schedule` y el precio del servicio).
+
+  - [x] **Las etiquetas de Google y Meta en el enlace directo (v0.1.375,
+        addendum ADR-S97, aprobado por el usuario: «Sí, haz la v0.1.375»)**.
+        Si el anuncio lleva directo al enlace del formulario o de la agenda
+        (sin el sitio de la empresa), la página pública carga por **ID** las
+        etiquetas oficiales y mide ahí la conversión.
+        (a) **Medir conversiones → «Cargar mis etiquetas en el enlace
+        directo»** (`conversion.direct_tags`, apagado por defecto, en
+        formularios y agendas): Google Ads sale de la etiqueta de conversión
+        ya pegada (`googleAdsIdFromSendTo`), y se pegan el ID de Google
+        Analytics (`google_tag_id`, `G-…`) y el del píxel de Meta
+        (`meta_pixel_id`, 8-20 dígitos). El panel saca el ID aunque se pegue
+        el fragmento entero (`parseGoogleTagId`, `parseMetaPixelId`, shared) y
+        nunca se guarda código; Tag Manager sigue afuera. Aviso de cookies
+        opcional (`cookie_notice`, encendido por defecto, `directTagsNotice`)
+        al pie de la página (`.ib-pixels-note`).
+        (b) **Encerradas** (`apps/api/src/forms/direct-tags.ts`): la página
+        pública vive en el origen de la app, así que la CSP con etiquetas
+        (`directTagsCsp` + `cacheablePageCsp(…, { tags })`) deja
+        `connect-src` y `form-action` sólo hacia
+        `https://<host>/api/v1/public/` (el origen sale de `req.protocol` +
+        `req.host`, que respetan el proxy de confianza) más los dominios de
+        Google y Meta de sus guías de CSP, `frame-src` sin `'self'`,
+        `worker-src 'none'`, y la respuesta lleva
+        `Cross-Origin-Opener-Policy: same-origin`. `gtag('config')` usa
+        `cookie_path: '/api/v1/public/'` y `page_location` limpia; la
+        dirección se reescribe antes de cargar (`trackingSafeUrl`: sólo los
+        parámetros de campaña). El código propio (`window.imbPixels`) va en
+        línea, autorizado por su hash, y espera a que la página se pinte.
+        (c) **Sólo en el enlace directo**: nunca insertado, en la vista previa
+        del constructor, en el enlace para actualizar un registro ni en la
+        página de la cita (el cliente decide; la página de la agenda sólo
+        trae el script en modo reserva). Al enviar o agendar:
+        conversión de Google Ads con el mismo `transaction_id`,
+        `generate_lead` en Analytics y `Lead`/`Schedule` en Meta con el mismo
+        `eventID` (y los datos de las conversiones mejoradas si están
+        encendidas); la página de gracias, el pago y la suscripción esperan a
+        las etiquetas (máximo 1,6 s). La caché pública no cambia.
+        (d) Asistente/MCP: `get_list_schema` muestra `direct_link_tags`.
+        (e) Por el reporte del usuario («el iframe rechaza la conexión»: lo
+        probaba en un visor de HTML en línea, que dibuja dentro de un marco
+        con `sandbox` y ningún navegador deja cargar ahí otra página), nota
+        bajo «Dominios permitidos» en los dos constructores y una pregunta en
+        Aprende. Ayuda: guía `measure-conversions`, Aprende (formularios y
+        agenda), recorrido de formularios y novedad con carrusel. Tests:
+        `direct-tags.spec` (7, navegador simulado con `vm`), los de
+        conversión en shared (9) y las suites de formularios y agenda (107/107)
+        — E2E navegador 48/48 en escritorio y 48/48 en celular oscuro con
+        `gtag.js` y `fbevents.js` falsos servidos en los dominios reales que
+        intentan escapar: el `fetch` al API privado, el marco de la app, el
+        service worker y `window.open` quedan bloqueados. Queda propuesta (sin
+        aprobar) la v0.1.376: importar las suscripciones y planes que ya están
+        en Mercado Pago.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

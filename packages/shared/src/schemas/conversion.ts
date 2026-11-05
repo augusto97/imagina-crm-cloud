@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { GOOGLE_ADS_SEND_TO_RE, REDIRECT_MAX_DELAY_S, REDIRECT_URL_RE, type AttributionKey } from './conversion-logic';
+import { GOOGLE_ADS_SEND_TO_RE, GOOGLE_TAG_ID_RE, META_PIXEL_ID_RE, REDIRECT_MAX_DELAY_S, REDIRECT_URL_RE, type AttributionKey, type PublicDirectTags } from './conversion-logic';
 
 /**
  * v0.1.374 (ADR-S97) — Medir conversiones de un formulario o una agenda
@@ -34,6 +34,17 @@ export const conversionSettingsSchema = z.object({
      * Apagado por defecto: es un dato personal.
      */
     share_contact: z.boolean().catch(false).default(false),
+    /**
+     * v0.1.375 — En el ENLACE DIRECTO (sin el sitio de por medio), cargar las
+     * etiquetas de la empresa por su ID: la de Google Ads (sale de
+     * `google_ads`), Google Analytics y el píxel de Meta. Apagado por
+     * defecto. Insertado en un sitio no se cargan nunca: ahí manda el sitio.
+     */
+    direct_tags: z.boolean().catch(false).default(false),
+    google_tag_id: z.string().regex(GOOGLE_TAG_ID_RE).nullable().catch(null).default(null),
+    meta_pixel_id: z.string().regex(META_PIXEL_ID_RE).nullable().catch(null).default(null),
+    /** Mostrar «Esta página usa cookies de Google y Meta para medir las campañas». */
+    cookie_notice: z.boolean().catch(true).default(true),
 });
 export type ConversionSettings = z.infer<typeof conversionSettingsSchema>;
 export const CONVERSION_SETTINGS_DEFAULT: ConversionSettings = {
@@ -44,6 +55,10 @@ export const CONVERSION_SETTINGS_DEFAULT: ConversionSettings = {
     currency: 'COP',
     calc_key: null,
     share_contact: false,
+    direct_tags: false,
+    google_tag_id: null,
+    meta_pixel_id: null,
+    cookie_notice: true,
 };
 
 const fieldRef = z.number().int().positive().nullable().catch(null).default(null);
@@ -95,6 +110,8 @@ export interface PublicConversion {
     meta_event: boolean;
     /** ¿Se guarda de dónde vino? (la página manda los datos con el envío). */
     attribution: boolean;
+    /** v0.1.375 — Las etiquetas del enlace directo (null = no carga ninguna). */
+    direct?: PublicDirectTags | null;
 }
 
 /** Lo que vuelve con un envío o una reserva para el evento del sitio. */

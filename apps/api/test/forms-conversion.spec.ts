@@ -155,7 +155,7 @@ describe('v0.1.374 — medir conversiones de un formulario (Postgres + Redis rea
         expect(saved.utm_campaign_field_id).toBe(f.campana!.id);
 
         const meta = await svc.meta(form.token);
-        expect(meta.conversion).toEqual({ google_ads: 'AW-123456789/AbCdEf', meta_event: true, attribution: true });
+        expect(meta.conversion).toEqual({ google_ads: 'AW-123456789/AbCdEf', meta_event: true, attribution: true, direct: null });
         expect(meta.redirect_delay).toBe(0);
 
         const out = await svc.submit(form.token, IP, {
@@ -178,7 +178,7 @@ describe('v0.1.374 — medir conversiones de un formulario (Postgres + Redis rea
 
         // Apagado, no guarda nada aunque el navegador lo mande.
         const off = await contactForm({ attribution: { enabled: false, utm_campaign_field_id: f.campana!.id } });
-        expect((await svc.meta(off.token)).conversion).toEqual({ google_ads: null, meta_event: false, attribution: false });
+        expect((await svc.meta(off.token)).conversion).toEqual({ google_ads: null, meta_event: false, attribution: false, direct: null });
         await svc.submit(off.token, IP, { values: { [f.nombre!.id]: 'Beto' }, uploads: {}, stamp: stamp(off.id), attribution: { utm_campaign: 'X' } });
         const rows = await withTenant(pg.db, tenantId, (tx) => tx.select({ data: records.data }).from(records).where(eq(records.listId, listId)));
         const beto = rows.map((r) => r.data as Record<string, unknown>).find((d) => d[key('nombre')] === 'Beto')!;

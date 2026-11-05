@@ -5244,7 +5244,18 @@ function buttonFieldResolver(fields: Field[]): (slug: string) => number | undefi
  * donde se guarda de dónde vino cada registro.
  */
 function conversionSummary(
-    c: { google_ads: string | null; meta_event: boolean; value: string; amount: number | null; currency: string; calc_key: string | null; share_contact: boolean },
+    c: {
+        google_ads: string | null;
+        meta_event: boolean;
+        value: string;
+        amount: number | null;
+        currency: string;
+        calc_key: string | null;
+        share_contact: boolean;
+        direct_tags?: boolean;
+        google_tag_id?: string | null;
+        meta_pixel_id?: string | null;
+    },
     a: Record<string, unknown> & { enabled: boolean },
     fieldById: Map<number, { slug: string }>,
 ): Record<string, unknown> {
@@ -5261,5 +5272,7 @@ function conversionSummary(
         value: c.value === 'none' ? null : c.value === 'fixed' ? { fixed: c.amount, currency: c.currency } : c.value === 'calc' ? { calc: c.calc_key } : c.value,
         enhanced_conversions: c.share_contact,
         saves_origin: a.enabled && Object.keys(saved).length > 0 ? saved : null,
+        // v0.1.375 — en el enlace directo (sin sitio), las etiquetas por ID.
+        direct_link_tags: c.direct_tags ? { google_ads: c.google_ads ? 'la acción de arriba' : null, google_analytics: c.google_tag_id ?? null, meta_pixel: c.meta_pixel_id ?? null } : null,
     };
 }

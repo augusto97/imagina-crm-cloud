@@ -732,6 +732,8 @@ select.ib-input{appearance:none;-webkit-appearance:none;padding-right:38px;backg
 .ib-done h2{margin:0 0 6px;font-size:calc(var(--ib-title-fs) * .9);font-family:var(--ib-heading-font)}
 .ib-done p{color:var(--ib-muted);margin:0 0 18px;white-space:pre-wrap}
 .ib-done .ib-small{font-size:13px}
+/* v0.1.375 — el aviso de cookies de medición (enlace directo con etiquetas). */
+.ib-pixels-note{margin:12px 0 0;text-align:center;font-size:12px;line-height:1.45;color:var(--ib-muted)}
 .ib-pay-total{margin:4px 0 12px;font-size:15px;color:var(--ib-text)}
 .ib-pay-total strong{font-weight:700;font-size:17px}
 .ib-done .ib-pay-total{color:var(--ib-text);margin:0 0 12px}

@@ -43,6 +43,7 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { cacheablePageCsp, formFrameAncestors, formPageCsp, newNonce } from '../forms/form-page';
+import { directTagsCsp, pageOrigin } from '../forms/direct-tags';
 import { PublicBusyError } from '../public-cache/public-cache';
 import { PUBLIC_PAGE_CACHE_CONTROL, busyPage, precompress, sendPrecompressed, type Precompressed } from '../public-cache/public-send';
 import { TenantGuard } from '../tenancy/tenant.guard';
@@ -405,11 +406,20 @@ export class PublicBookingPageController {
             return;
         }
         const page = this.rendered(cached, token);
+        // v0.1.375 — con etiquetas en el enlace directo: CSP limitada a la ruta
+        // pública de ESTE origen y la ventana en su propio grupo.
+        const tags = cached.info.meta.conversion?.direct ?? null;
+        const csp = tags
+            ? cacheablePageCsp(bookingClientHash(), formFrameAncestors(cached.info.allowed_domains), cached.info.meta.captcha?.provider ?? null, {
+                  tags: { csp: directTagsCsp(tags), origin: pageOrigin(req.protocol, req.host) },
+              })
+            : page.csp;
         reply
-            .header('Content-Security-Policy', page.csp)
+            .header('Content-Security-Policy', csp)
             .header('X-Robots-Tag', 'noindex')
             .header('Cache-Control', PUBLIC_PAGE_CACHE_CONTROL)
             .header('Referrer-Policy', 'strict-origin-when-cross-origin');
+        if (tags) reply.header('Cross-Origin-Opener-Policy', 'same-origin');
         sendPrecompressed(req, reply, page.body, 'text/html; charset=utf-8');
     }
 

@@ -1468,7 +1468,7 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
             };
         });
         const meta = await pub.meta(token);
-        expect(meta.conversion).toEqual({ google_ads: 'AW-123456789/AbCdEf', meta_event: true, attribution: true });
+        expect(meta.conversion).toEqual({ google_ads: 'AW-123456789/AbCdEf', meta_event: true, attribution: true, direct: null });
         expect(meta.redirect_delay).toBe(3);
         const dto = await booking.get(tenantId, 'citas', pageId);
         expect(dto.config.settings.attribution.utm_source_field_id).toBeNull();

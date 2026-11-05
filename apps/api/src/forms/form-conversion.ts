@@ -11,12 +11,15 @@ import {
     attributionFieldKey,
     cleanAttribution,
     conversionValue,
+    directTagsNotice,
+    googleAdsIdFromSendTo,
     jsonbKeyForField,
     validateFieldValue,
     type AttributionSettings,
     type ConversionResult,
     type ConversionSettings,
     type PublicConversion,
+    type PublicDirectTags,
 } from '@imagina-base/shared';
 
 /** Único por envío o reserva: Google y Meta lo usan para no contar dos veces la misma conversión. */
@@ -76,7 +79,26 @@ export function attributionRecordData(a: AttributionSettings, fields: ReadonlyAr
 
 /** Lo que la página necesita para avisarle al sitio (el evento sale siempre; esto suma Google Ads, Meta y el origen). */
 export function publicConversion(c: ConversionSettings, a: AttributionSettings): PublicConversion {
-    return { google_ads: c.google_ads, meta_event: c.meta_event, attribution: attributionActive(a) };
+    return { google_ads: c.google_ads, meta_event: c.meta_event, attribution: attributionActive(a), direct: directTags(c) };
+}
+
+/**
+ * v0.1.375 — Las etiquetas que carga el ENLACE DIRECTO (null = ninguna): las
+ * de la empresa, por ID (la de Google Ads sale de su acción de conversión).
+ */
+export function directTags(c: ConversionSettings): PublicDirectTags | null {
+    if (!c.direct_tags) return null;
+    const google_ads_id = googleAdsIdFromSendTo(c.google_ads);
+    const t: PublicDirectTags = {
+        google_ads: google_ads_id ? c.google_ads : null,
+        google_ads_id,
+        google_tag_id: c.google_tag_id,
+        meta_pixel_id: c.meta_pixel_id,
+        notice: null,
+    };
+    if (!t.google_ads_id && !t.google_tag_id && !t.meta_pixel_id) return null;
+    if (c.cookie_notice) t.notice = directTagsNotice(t) || null;
+    return t;
 }
 
 /**

@@ -3,7 +3,12 @@ import {
     attributionFromSearch,
     cleanAttribution,
     conversionValue,
+    directTagsNotice,
     fillRedirectUrl,
+    googleAdsIdFromSendTo,
+    parseGoogleTagId,
+    parseMetaPixelId,
+    trackingSafeUrl,
     parseGoogleAdsSendTo,
     REDIRECT_URL_RE,
     redirectVariables,
@@ -93,5 +98,43 @@ describe('v0.1.374 — medir conversiones', () => {
         expect(booking.redirect_url).toBe('https://acme.co/gracias?s={{cita.servicio}}');
         expect(booking.redirect_delay).toBe(0);
         expect(bookingSettingsSchema.parse({ redirect_url: 'ftp://x' }).redirect_url).toBeNull();
+    });
+});
+
+describe('v0.1.375 — etiquetas en el enlace directo', () => {
+    it('reconoce los IDs en lo que se pega (nunca guarda código)', () => {
+        expect(parseGoogleTagId('G-AB12CD34EF')).toBe('G-AB12CD34EF');
+        expect(parseGoogleTagId('<script async src="https://www.googletagmanager.com/gtag/js?id=G-XYZ9876"></script>')).toBe('G-XYZ9876');
+        expect(parseGoogleTagId('g-abc123')).toBe('G-ABC123');
+        expect(parseGoogleTagId('GTM-ABC123')).toBeNull();
+        expect(parseGoogleTagId('AW-123456789')).toBeNull();
+        expect(parseMetaPixelId("fbq('init', '1234567890123456');")).toBe('1234567890123456');
+        expect(parseMetaPixelId('https://www.facebook.com/tr?id=987654321012&ev=PageView&noscript=1')).toBe('987654321012');
+        expect(parseMetaPixelId(' 1234 5678 9012 ')).toBe('123456789012');
+        expect(parseMetaPixelId('abc')).toBeNull();
+        expect(googleAdsIdFromSendTo('AW-123456789/AbC-dEf_12')).toBe('AW-123456789');
+        expect(googleAdsIdFromSendTo(null)).toBeNull();
+    });
+
+    it('la dirección que ven Google y Meta lleva sólo la campaña', () => {
+        expect(trackingSafeUrl('https://base.acme.co/api/v1/public/f/tok?nombre=Ana&email=ana%40x.co&utm_source=google&gclid=Cj0K&seguir=abc#x')).toBe(
+            'https://base.acme.co/api/v1/public/f/tok?utm_source=google&gclid=Cj0K',
+        );
+        expect(trackingSafeUrl('https://base.acme.co/api/v1/public/b/tok')).toBe('https://base.acme.co/api/v1/public/b/tok');
+        expect(trackingSafeUrl('https://base.acme.co/f?editar=1.2.3')).toBe('https://base.acme.co/f');
+        expect(trackingSafeUrl('javascript:alert(1)')).toBe('');
+    });
+
+    it('los ajustes nuevos se leen con tolerancia y el aviso nombra lo que se carga', () => {
+        const c = conversionSettingsSchema.parse({ direct_tags: 'si', google_tag_id: 'GTM-XYZ', meta_pixel_id: '12', cookie_notice: 'no' });
+        expect(c).toMatchObject({ direct_tags: false, google_tag_id: null, meta_pixel_id: null, cookie_notice: true });
+        expect(conversionSettingsSchema.parse({ direct_tags: true, google_tag_id: 'G-ABC123', meta_pixel_id: '1234567890' })).toMatchObject({
+            direct_tags: true,
+            google_tag_id: 'G-ABC123',
+            meta_pixel_id: '1234567890',
+        });
+        expect(directTagsNotice({ google_ads_id: 'AW-1', google_tag_id: null, meta_pixel_id: '1' })).toBe('Esta página usa cookies de Google y Meta para medir las campañas.');
+        expect(directTagsNotice({ google_ads_id: null, google_tag_id: null, meta_pixel_id: '1' })).toBe('Esta página usa cookies de Meta para medir las campañas.');
+        expect(directTagsNotice({ google_ads_id: null, google_tag_id: null, meta_pixel_id: null })).toBe('');
     });
 });

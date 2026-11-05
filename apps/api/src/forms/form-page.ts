@@ -10,6 +10,7 @@ import {
     type CaptchaProvider,
     type PublicFormMeta,
 } from '@imagina-base/shared';
+import { directTagsHash, directTagsScriptText, type DirectTagsCsp } from './direct-tags';
 
 /**
  * v0.1.275 (ADR-S39) — Página pública de un formulario. La sirve el API
@@ -76,30 +77,51 @@ export function formPageCsp(nonce: string, frameAncestors: string, captcha: Capt
 }
 
 /**
+ * v0.1.375 — Las etiquetas del enlace directo (Google, Meta): qué orígenes
+ * suman y el origen de la página. Con ellas, la página sólo puede hablar con
+ * la ruta PÚBLICA del API (`connect-src`/`form-action` por ruta), nunca
+ * carga la app en un marco y no registra workers (ver `direct-tags.ts`).
+ */
+export interface PageCspTags {
+    csp: DirectTagsCsp;
+    /** `https://host` de la página; null = no se puede limitar por ruta (queda 'self'). */
+    origin: string | null;
+}
+
+/**
  * v0.1.352 (ADR-S95) — La CSP de una página que se guarda en caché: el script
  * en línea se autoriza por su HASH (es el mismo para todas las visitas de la
  * versión), no por un nonce, que tendría que ser distinto en cada respuesta y
  * por eso obligaba a armar la página de cero en cada carga.
  */
-export function cacheablePageCsp(scriptHash: string | null, frameAncestors: string, captcha: CaptchaProvider | null = null, opts: { dev?: boolean } = {}): string {
+export function cacheablePageCsp(
+    scriptHash: string | null,
+    frameAncestors: string,
+    captcha: CaptchaProvider | null = null,
+    opts: { dev?: boolean; tags?: PageCspTags | null } = {},
+): string {
     return buildPageCsp(scriptHash ? `'${scriptHash}'` : '', frameAncestors, captcha, opts);
 }
 
-function buildPageCsp(scriptToken: string, frameAncestors: string, captcha: CaptchaProvider | null, opts: { dev?: boolean }): string {
+function buildPageCsp(scriptToken: string, frameAncestors: string, captcha: CaptchaProvider | null, opts: { dev?: boolean; tags?: PageCspTags | null }): string {
     const c = captchaCspSources(captcha);
     const join = (base: string, extra: string[]): string => [base, ...extra].join(' ');
+    const t = opts.tags ?? null;
+    // Con etiquetas de afuera: lo propio, sólo la ruta pública (no el resto del API).
+    const own = t && t.origin && !opts.dev ? `${t.origin}/api/v1/public/` : "'self'";
     return [
         "default-src 'none'",
         // En desarrollo el cliente es un módulo de vite que importa otros: 'self'.
-        join(['script-src', ...(opts.dev ? ["'self'"] : []), ...(scriptToken ? [scriptToken] : [])].join(' '), c.script),
+        join(['script-src', ...(opts.dev ? ["'self'"] : []), ...(scriptToken ? [scriptToken] : []), ...(t ? [`'${directTagsHash()}'`] : [])].join(' '), [...c.script, ...(t?.csp.script ?? [])]),
         join("style-src 'unsafe-inline'", c.style),
         // v0.1.351 — sólo imágenes y fuentes propias: el CSS propio de una
         // empresa (ya limpio) tampoco podría cargar nada de afuera.
-        "img-src 'self' data: blob:",
+        join("img-src 'self' data: blob:", t?.csp.img ?? []),
         "font-src 'self'",
-        join(`connect-src 'self'${opts.dev ? ' ws: wss:' : ''}`, c.connect),
-        ...(c.frame.length > 0 ? [join('frame-src', c.frame)] : []),
-        "form-action 'self'",
+        join(`connect-src ${own}${opts.dev ? ' ws: wss:' : ''}`, [...c.connect, ...(t?.csp.connect ?? [])]),
+        ...(c.frame.length + (t?.csp.frame.length ?? 0) > 0 ? [join('frame-src', [...c.frame, ...(t?.csp.frame ?? [])])] : []),
+        join(`form-action ${own}`, t?.csp.formAction ?? []),
+        ...(t ? ["worker-src 'none'"] : []),
         "base-uri 'none'",
         `frame-ancestors ${frameAncestors}`,
     ].join('; ');
@@ -138,6 +160,8 @@ interface PageOpts {
     preloadFont: string | null;
     /** El script compilado (`form.js`) para servir EN LÍNEA; null = desarrollo (módulo de vite). */
     client: string | null;
+    /** v0.1.375 — Sumar el código de las etiquetas del enlace directo (Google, Meta). */
+    directTags?: boolean;
 }
 
 /** Scripts de los widgets: el cliente los carga por URL, nunca otra. */
@@ -164,9 +188,11 @@ export function renderFormPage(opts: PageOpts): string {
         ? `<link rel="preload" href="${escapeHtml(opts.preloadFont)}" as="font" type="font/woff2" crossorigin>\n`
         : '';
     const nonce = opts.nonce ? ` nonce="${opts.nonce}"` : '';
-    const script = opts.client
+    const client = opts.client
         ? `<script${nonce}>${inlineScriptText(opts.client)}</script>`
         : `<script type="module"${nonce} src="/app/public-form/main.ts"></script>`;
+    // v0.1.375 — antes que el cliente (que lo arranca si corresponde).
+    const script = opts.directTags && opts.meta?.conversion?.direct ? `<script>${directTagsScriptText()}</script>\n${client}` : client;
     return `<!doctype html>
 <html lang="es">
 <head>
