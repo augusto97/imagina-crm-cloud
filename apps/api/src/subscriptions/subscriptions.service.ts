@@ -204,6 +204,11 @@ function redact(err: unknown, creds: IntegrationCreds): string {
 export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown {
     private readonly logger = new Logger(SubscriptionsService.name);
     private tickTimer: NodeJS.Timeout | null = null;
+    /**
+     * v0.1.376 — Una suscripción de Mercado Pago que la app no conoce (se creó en
+     * el panel de Mercado Pago): si la conexión trae las nuevas solas, la importa.
+     */
+    private importSink: ((tenantId: number, connectionId: number, preapprovalId: string) => Promise<boolean>) | null = null;
 
     constructor(
         private readonly tenantDb: TenantDb,
@@ -238,6 +243,21 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
 
     onApplicationShutdown(): void {
         if (this.tickTimer) clearInterval(this.tickTimer);
+    }
+
+    /** v0.1.376 — El importador se anota aquí (evita una dependencia circular). */
+    registerImportSink(fn: (tenantId: number, connectionId: number, preapprovalId: string) => Promise<boolean>): void {
+        this.importSink = fn;
+    }
+
+    private async tryImport(tenantId: number, connectionId: number, preapprovalId: string): Promise<boolean> {
+        if (!this.importSink) return false;
+        try {
+            return await this.importSink(tenantId, connectionId, preapprovalId);
+        } catch (err) {
+            this.logger.warn(`Suscripción ${preapprovalId}: no se pudo importar desde el aviso: ${err instanceof Error ? err.message : String(err)}`);
+            return false;
+        }
     }
 
     private get bases() {
@@ -806,8 +826,12 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
 
     // ── Sincronizar con Mercado Pago ────────────────────────────────────
 
-    /** Relee la suscripción y sus cuotas, recalcula el estado, escribe el registro y avisa. */
-    async sync(tenantId: number, id: number, now = new Date()): Promise<Subscription> {
+    /**
+     * Relee la suscripción y sus cuotas, recalcula el estado, escribe el registro y avisa.
+     * `quiet` (v0.1.376): la importación de lo que ya existía no dispara
+     * automatizaciones ni avisos (nadie quiere 300 «Se cobró» al importar).
+     */
+    async sync(tenantId: number, id: number, now = new Date(), opts: { quiet?: boolean } = {}): Promise<Subscription> {
         const [current] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx.select().from(subscriptions).where(and(eq(subscriptions.tenantId, tenantId), eq(subscriptions.id, id))).limit(1),
         );
@@ -819,12 +843,12 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         }
         const outcome = await this.persist(tenantId, id, remote, now);
         if (!outcome) return toDto(current, conn?.name ?? null);
-        await this.after(tenantId, outcome);
+        await this.after(tenantId, outcome, opts.quiet === true);
         // «Cancelar al vencer»: la suscripción venció y el plan pide cancelarla.
         if (outcome.events.some((e) => e.event === 'expired') && outcome.sub.onExpire === 'cancel' && outcome.sub.externalId) {
             try {
                 await this.patchInMp(tenantId, outcome.sub, { kind: 'status', status: 'cancelled' }, 'Se canceló sola: venció sin pago (así lo pide el plan).');
-                return this.sync(tenantId, id, now);
+                return this.sync(tenantId, id, now, opts);
             } catch (err) {
                 this.logger.warn(`Suscripción ${id}: no se pudo cancelar al vencer: ${err instanceof Error ? err.message : String(err)}`);
             }
@@ -1113,17 +1137,17 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
     }
 
     /** Fuera de la transacción: refrescar pantallas, disparar automatizaciones y avisar. */
-    private async after(tenantId: number, out: SyncOutcome): Promise<void> {
+    private async after(tenantId: number, out: SyncOutcome, quiet = false): Promise<void> {
         this.afterWrite(tenantId, out.write);
         if (out.sub.listId) this.realtime.records(tenantId, out.sub.listId);
         // v0.1.371 — cada cobro nuevo o que cambió queda en el registro de cobros
         // (si la lista lo tiene): un cobro nuevo SÍ dispara «Cuando se crea».
         if (out.sub.listId && !out.readOnly && this.chargeLog) {
             await this.chargeLog
-                .syncSubscription(tenantId, out.sub.id, { automations: true })
+                .syncSubscription(tenantId, out.sub.id, { automations: !quiet })
                 .catch((err) => this.logger.warn(`Registro de cobros falló: ${String(err)}`));
         }
-        if (out.events.length === 0 || out.sub.listId === null || out.sub.recordId === null) return;
+        if (quiet || out.events.length === 0 || out.sub.listId === null || out.sub.recordId === null) return;
         const listId = out.sub.listId;
         const recordId = out.sub.recordId;
         const data = out.write?.after ?? (await this.recordData(tenantId, listId, recordId)) ?? null;
@@ -1179,7 +1203,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
 
         if (notice.topic === 'subscription_preapproval') {
             const sub = await find({ externalId: notice.id });
-            if (!sub) return 'ignored';
+            if (!sub) return (await this.tryImport(tenantId, connectionId, notice.id)) ? 'applied' : 'ignored';
             await this.sync(tenantId, sub.id);
             return 'applied';
         }
@@ -1189,7 +1213,8 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
             const inv = parseInvoice(res.status, res.body);
             if (!inv?.preapprovalId) return 'ignored';
             const sub = await find({ externalId: inv.preapprovalId });
-            if (!sub) return 'ignored';
+            // Una cuota de una suscripción que no conocíamos: se importa (y la importación lee sus cuotas).
+            if (!sub) return (await this.tryImport(tenantId, connectionId, inv.preapprovalId)) ? 'applied' : 'ignored';
             if (inv.paymentId && inv.paymentStatus) {
                 await this.tenantDb.withTenant(tenantId, (tx) =>
                     this.upsertCharge(tx, tenantId, sub, {
@@ -1221,7 +1246,10 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         const sub =
             (pay.preapprovalId ? await find({ externalId: pay.preapprovalId }) : undefined) ??
             (pay.externalReference?.startsWith('ibs_') ? await find({ reference: pay.externalReference }) : undefined);
-        if (!sub) return 'not_subscription';
+        if (!sub) {
+            if (pay.preapprovalId && (await this.tryImport(tenantId, connectionId, pay.preapprovalId))) return 'applied';
+            return 'not_subscription';
+        }
         // Un primer intento SIN cuota conocida todavía: la cuota llega con la
         // sincronización; aquí ya queda el medio de pago (la cuota no lo trae).
         await this.tenantDb.withTenant(tenantId, (tx) =>

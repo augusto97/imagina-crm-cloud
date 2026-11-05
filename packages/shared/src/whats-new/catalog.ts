@@ -1753,4 +1753,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver cómo se usa', href: '/aprende/formularios/formularios-medir-conversiones' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.376-importar-suscripciones-mercado-pago',
+        version: '0.1.376',
+        date: '2026-11-05',
+        kind: 'feature',
+        title: 'Trae las suscripciones que ya tienes en Mercado Pago',
+        summary:
+            'Si ya cobrabas con débito automático en Mercado Pago, impórtalas con sus planes, su estado y sus cobros. Llegan a una lista nueva o se vinculan por correo a tus clientes, y las que se creen después llegan solas.',
+        media: {
+            slides: [
+                {
+                    title: 'Mira antes de traer',
+                    text: 'Antes de importar ves cuántas hay activas, pausadas y por autorizar, cuántas encuentran su cliente por correo y algunas de ejemplo.',
+                    illustration: 'cobro-importar',
+                },
+                {
+                    title: 'Como las que creas aquí',
+                    text: 'Cada suscripción importada muestra su estado y sus cobros, se pausa o se cancela desde la ficha y dispara tus automatizaciones como cualquier otra.',
+                    illustration: 'cobro-suscripcion',
+                },
+                {
+                    title: 'Cada cobro en su lista',
+                    text: 'Si lo eliges, los cobros llegan a «Cobros de suscripciones» con un tablero de lo cobrado por mes.',
+                    illustration: 'cobro-registro',
+                },
+            ],
+        },
+        body: 'En **Ajustes → Integraciones**, abre **Cobros** de tu conexión de Mercado Pago y toca **Importar desde Mercado Pago**.',
+        action: { label: 'Ver cómo se usa', href: '/aprende/cobros/cobros-suscripciones' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

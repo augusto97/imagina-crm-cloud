@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils';
 
 import { CopyButton, formatMoney } from '../payments/paymentUi';
 import { SubscriptionStatusChip } from './RecordSubscriptionPanel';
+import { SubscriptionImportCard } from './SubscriptionImport';
 import { cyclesText, frequencyText } from './subscriptionText';
 
 /**
@@ -103,6 +104,9 @@ export function SubscriptionsSection({
                     </div>
                 </section>
             )}
+
+            {/* v0.1.376 — traer lo que ya está en Mercado Pago (PayPal no deja listar las suscripciones). */}
+            {provider === 'mercadopago' && <SubscriptionImportCard connectionId={connectionId} />}
 
             <section className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card" data-testid="imcrm-subscription-plans">
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-4 imcrm-py-3">
@@ -229,7 +233,7 @@ function SubscribersTable({ overview }: { overview: SubscriptionsOverview }): JS
             {rows.length === 0 ? (
                 <p className="imcrm-px-4 imcrm-py-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
                     {overview.subscriptions.length === 0
-                        ? __('Todavía no hay suscripciones. Se crean con «Suscribir» en la ficha de un registro o con la acción «Crear suscripción» de una automatización.')
+                        ? __('Todavía no hay suscripciones. Se crean con «Suscribir» en la ficha de un registro, con la acción «Crear suscripción» de una automatización o importándolas de Mercado Pago.')
                         : __('Ninguna en este filtro.')}
                 </p>
             ) : (
@@ -254,7 +258,7 @@ function SubscribersTable({ overview }: { overview: SubscriptionsOverview }): JS
                                                 {s.record_title}
                                             </Link>
                                         ) : (
-                                            <span className="imcrm-text-muted-foreground">{__('(registro borrado)')}</span>
+                                            <span className="imcrm-text-muted-foreground">{s.list_id === null ? __('(sin registro)') : __('(registro borrado)')}</span>
                                         )}
                                         <div className="imcrm-whitespace-nowrap imcrm-text-xs imcrm-text-muted-foreground">{s.payer_email ?? s.list_name}</div>
                                     </td>

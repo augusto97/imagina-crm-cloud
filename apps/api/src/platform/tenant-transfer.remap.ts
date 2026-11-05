@@ -573,11 +573,26 @@ export function remapButtonConfig(config: Record<string, unknown>, maps: IdMaps,
  * conexión sin lista de entrada en vez de apuntar a la de otra empresa.
  */
 export function remapWhatsappConnectionConfig(provider: string, config: Record<string, unknown>, maps: IdMaps): Record<string, unknown> {
+    if (provider === 'mercadopago') return remapSubscriptionImportConfig(config, maps);
     if (provider !== 'whatsapp_cloud') return config;
     const wa = config.whatsapp;
     if (wa === null || typeof wa !== 'object' || Array.isArray(wa)) return config;
     const w = wa as Record<string, unknown>;
     return { ...config, whatsapp: { ...w, inbound_list_id: w.inbound_list_id === null || w.inbound_list_id === undefined ? null : mapId(maps.list, w.inbound_list_id) } };
+}
+
+/**
+ * v0.1.376 — Mercado Pago: lo que trae las suscripciones nuevas solas
+ * (`config.subscription_import`) apunta a una lista y a su columna de correo.
+ * Una lista que no viajó deja la importación sin destino (y sin traer nada).
+ */
+export function remapSubscriptionImportConfig(config: Record<string, unknown>, maps: IdMaps): Record<string, unknown> {
+    const imp = config.subscription_import;
+    if (imp === null || typeof imp !== 'object' || Array.isArray(imp)) return config;
+    const i = imp as Record<string, unknown>;
+    const listId = i.list_id === null || i.list_id === undefined ? null : mapId(maps.list, i.list_id);
+    const emailId = i.email_field_id === null || i.email_field_id === undefined ? null : mapId(maps.field, i.email_field_id);
+    return { ...config, subscription_import: { ...i, list_id: listId, email_field_id: emailId, auto: listId === null ? false : i.auto } };
 }
 
 /**

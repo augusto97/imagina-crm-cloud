@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { Navigate, Route, Routes } from 'react-router';
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router';
 import { Loader2 } from 'lucide-react';
 
 import { AdminShell } from '@/admin/layout/AdminShell';
@@ -142,6 +142,8 @@ export function App(): JSX.Element {
                     <Suspense fallback={<RouteFallback />}><PortalLayoutEditorPage /></Suspense>
                 } />
                 <Route path="lists/:listSlug/records" element={<RecordsPage />} />
+                {/* «/lists/<slug>» a secas es la lista: varios enlaces la usan así (antes caían en el índice). */}
+                <Route path="lists/:listSlug" element={<ListSlugRedirect />} />
                 <Route path="lists/:listSlug/records/:recordId" element={
                     <Suspense fallback={<RouteFallback />}><RecordPage /></Suspense>
                 } />
@@ -255,4 +257,11 @@ function RouteModuleGate({ module, children }: { module: PlanModuleKey; children
             <PlanModuleNotice module={module} />
         </div>
     );
+}
+
+/** `/lists/<slug>` → los registros de esa lista (conservando `?view=`, `?record=`…). */
+function ListSlugRedirect(): JSX.Element {
+    const { listSlug } = useParams();
+    const { search } = useLocation();
+    return <Navigate to={`/lists/${listSlug ?? ''}/records${search}`} replace />;
 }

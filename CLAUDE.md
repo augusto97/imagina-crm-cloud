@@ -12670,9 +12670,73 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         — E2E navegador 48/48 en escritorio y 48/48 en celular oscuro con
         `gtag.js` y `fbevents.js` falsos servidos en los dominios reales que
         intentan escapar: el `fetch` al API privado, el marco de la app, el
-        service worker y `window.open` quedan bloqueados. Queda propuesta (sin
-        aprobar) la v0.1.376: importar las suscripciones y planes que ya están
-        en Mercado Pago.
+        service worker y `window.open` quedan bloqueados.
+
+  - [x] **Importar las suscripciones que ya están en Mercado Pago (v0.1.376,
+        addendum ADR-S96, pedido del usuario: "una tabla o sincronización de
+        Mercado Pago para ver y controlar las suscripciones y planes ya
+        activos" → «Sí, haz la v0.1.376»)**. En **Cobros** de la conexión de
+        Mercado Pago, la tarjeta «Suscripciones que ya tienes en Mercado Pago»
+        (`SubscriptionImportCard`, `data-tour="collections-subscriptions-import"`)
+        abre **Importar desde Mercado Pago** en tres pasos (Adónde llegan · Qué
+        se trae · Importar).
+        (a) **Destino**: una lista nueva **común** (no espejo) «Suscriptores ·
+        Mercado Pago» armada con el blueprint (suscriptor, correo, estado con
+        sus colores, plan, valor en la moneda más usada, próximo cobro, pagado
+        hasta, cobros fallidos, link, suscrito desde, id en Mercado Pago,
+        notas; vistas Todos / Por estado / Para revisar;
+        `settings.subscriptions.fields` ya puesto y
+        `settings.subscription_import_fields`), o **vincular por correo** a una
+        lista existente (columna email o texto, normalizada; nunca una lista
+        espejo; un registro con una suscripción viva no se toca), creando o no
+        los clientes que no aparecen. Registro de cobros y tablero opcionales
+        (si no hay uno), y traer o no las canceladas.
+        (b) **Vista previa** (`POST collections/connections/:id/subscriptions/
+        import/preview`): recorre `/preapproval/search` (hasta 5.000; el orden
+        por fecha es SUPUESTO) y `/preapproval_plan/search`; cuántas por
+        estado, cuántas ya están, cuántas encuentran su cliente, los planes y
+        25 de ejemplo con lo que pasa con cada una (`decideImport`, puro en
+        shared). Nada se crea hasta confirmar. Un Access Token rechazado da
+        `mp_unauthorized` sin crear la lista.
+        (c) **Importar** (`POST …/import`, en segundo plano con candado y
+        progreso en Redis; `GET …/import` para el estado): planes como planes
+        (`provider_refs.mp_plan_id`; sin monto, el más usado), y cada
+        suscripción insertando PRIMERO su fila con `onConflictDoNothing` sobre
+        el único `(tenant, provider, external_id)` — sólo quien la inserta crea
+        o vincula el registro, así un aviso o la revisión que llegan a la vez
+        no duplican, e importar otra vez tampoco —; el correo, si la búsqueda no
+        lo trae, sale del último pago. Después `subs.sync(…, {quiet})`: estado,
+        cobros y registro de cobros **sin** disparador, avisos ni
+        automatizaciones. Una suscripción con referencia `ibs_…` es de la app y
+        nunca se importa.
+        (d) **Llegan solas** (`PUT …/import/auto`, apagable): un aviso de una
+        suscripción o de un pago desconocidos la importa por la conexión que
+        avisó (`registerImportSink` en `SubscriptionsService`), y cada 5 min se
+        revisan las conexiones cuya búsqueda tiene más de 30 min; una cancelada
+        anterior a la importación no se trae sola; las que llegan así sí
+        disparan; referencias `ibs_imp_` / `ibs_auto_` (para contar «Llegaron
+        solas»); una falla abre un Problema por conexión.
+        (e) Permisos: `manage_lists` (+ `manage_fields` y `create_records` al
+        vincular), conexión editable, nada en solo-lectura; bitácora
+        `subscriptions.import` / `subscriptions.import_auto`; migrar una
+        empresa re-mapea `list_id`/`email_field_id` de
+        `config.subscription_import` (sin la lista, `auto` se apaga). PayPal no
+        tiene un listado de suscripciones en su API: queda fuera.
+        **De paso**: `/lists/:slug` no tenía ruta y caía en el índice de listas;
+        ahora redirige a `/lists/:slug/records` (arregla los enlaces «Ver la
+        lista» de la importación, los kits del sitio WordPress y las
+        sincronizaciones). Ayuda: paso nuevo en la guía de suscripciones,
+        sección «Trae las suscripciones que ya tienes en Mercado Pago» en
+        Aprende → Cobros con la ilustración `cobro-importar` y una pregunta
+        frecuente, y novedad con carrusel. Proveedor simulado de dev con
+        `/mp/preapproval/search` y `/mp/preapproval_plan/search`. Tests:
+        `subscriptions-import.spec` (5: piezas puras y re-mapeo; vista previa
+        e importación a una lista nueva con plan, cobros y sin eventos, y
+        reimportar sin duplicar; vincular por correo; llegan solas por aviso y
+        por revisión, apagado que frena las dos; permisos, token rechazado y
+        dos importaciones a la vez), suscripciones 28/28, shared 765, front 817
+        — E2E navegador 28/28 en escritorio y 28/28 en celular oscuro contra el
+        Mercado Pago simulado.
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

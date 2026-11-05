@@ -1140,10 +1140,11 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
             '5. Toca **Elegir columnas** para ver en la lista el estado, el próximo cobro y el «pagado hasta» de cada cliente.',
             '6. En el mismo lugar, en **Registro de cobros**, elige **Crear la lista «Cobros de suscripciones»**: cada cobro (pagado o rechazado) queda como un registro vinculado al cliente, con un tablero de lo cobrado por mes.',
             'Si un cobro falla, queda **Reintentando** (Mercado Pago o PayPal lo vuelve a intentar); si no se paga, pasa a **En mora** y, después de los días de gracia, a **Vencida**. PayPal cobra en dólares u otra moneda que acepte, nunca en pesos colombianos.',
+            '**¿Ya tienes suscripciones en Mercado Pago?** En **Cobros** de esa conexión toca **Importar desde Mercado Pago**: ves cuántas hay por estado antes de traerlas, y llegan a una lista nueva «Suscriptores · Mercado Pago» (una fila por suscripción) o se vinculan por correo a tu lista de clientes. Sus planes llegan como planes, sus cobros al registro de cobros, y las que se creen después en Mercado Pago llegan solas.',
         ].join('\n'),
         tip: 'Con el disparador **Cuando cambia una suscripción** avisas al cliente que su pago falló, al equipo cuando alguien entra en mora o suspendes el servicio cuando vence. Variables: **{{suscripcion.estado}}**, **{{suscripcion.motivo}}**, **{{suscripcion.link}}**. Para que se suscriban solos, usa un formulario con **Suscribir al enviar**. Y pregúntale al asistente «¿quién está en mora?»: también arma planes y suscribe clientes.',
         screens: ['record', 'settings:conectores'],
-        keywords: 'suscripcion suscripciones debito automatico cobro recurrente mensual mensualidad membresia plan mercado pago paypal dolares usd tarjeta autorizar al dia reintentando mora vencida pausar cancelar cambiar valor registro de cobros lista de cobros tablero historial de pagos asistente',
+        keywords: 'suscripcion suscripciones debito automatico cobro recurrente mensual mensualidad membresia plan mercado pago paypal dolares usd tarjeta autorizar al dia reintentando mora vencida pausar cancelar cambiar valor registro de cobros lista de cobros tablero historial de pagos asistente importar traer ya tengo existentes suscriptores planes de mercado pago',
         related: ['form-subscription', 'payment-links', 'automation-basics'],
     },
 
