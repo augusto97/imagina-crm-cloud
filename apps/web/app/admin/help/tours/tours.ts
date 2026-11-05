@@ -818,15 +818,16 @@ export const TOURS: TourDef[] = [
             },
             {
                 id: 'build',
-                art: 'form-conditional',
-                title: 'Arma las preguntas',
-                body: 'Cada pregunta llena un campo. Muestra una sólo si otra respuesta lo pide, divide en páginas y pon el captcha para frenar robots.',
+                art: 'form-click-edit',
+                title: 'Toca lo que quieras cambiar',
+                body: 'Toca cualquier parte en la vista previa —el título, el logo, una pregunta, el botón— y a la derecha aparece su panel: **Mostrar** para ocultarla, **Contenido** y **Estilo**. En **Contenido** está todo en orden, con su ojo.',
+                tip: 'Lo que no se ve en el formulario (correo, cupos, cobros, seguridad) está en **Ajustes**, por grupos.',
             },
             {
                 id: 'design',
                 art: 'form-design',
                 title: 'Dale tu diseño',
-                body: 'En la pestaña **Diseño** del constructor eliges una de las 13 plantillas o ajustas colores, fuentes, tamaños, bordes, fondo, portada y el botón, viendo el cambio al instante.',
+                body: 'En la pestaña **Diseño** del constructor eliges una de las 13 plantillas o ajustas colores, fuentes, tamaños, bordes, fondo, portada y el botón de todo el formulario. Para una sola parte, tócala y abre su **Estilo**.',
                 tip: 'Guarda el diseño en **Mis temas** para usarlo en todos los formularios de la empresa.',
             },
             {

@@ -394,7 +394,11 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.376**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.377**
+(el constructor de formularios rediseñado: cada parte se toca en la vista
+previa y abre su panel con Mostrar/ocultar, Contenido y Estilo; esquema con
+ojos para ocultar; Contenido · Diseño · Lógica · Ajustes por grupos; y un color
+para cada parte del formulario, addendum ADR-S94); antes v0.1.376
 (importar las suscripciones y los planes que ya están en Mercado Pago: vista
 previa, lista nueva «Suscriptores · Mercado Pago» o vínculo por correo a una
 lista de clientes, cobros y registro de cobros, y las nuevas que llegan solas,
@@ -463,8 +467,20 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 **Hilos abiertos (lo último que se habló)**
 - 2026-11-05 — **Etiquetas en el enlace directo** — **v0.1.375 HECHA** (el
   usuario: «Sí, haz la v0.1.375»).
+- 2026-11-05 — **«¿Para Mercado Pago no hay que configurar un webhook?»** —
+  **RESPONDIDO + PROPUESTA SIN APROBAR**. Cobros de cada empresa
+  (Integraciones): alcanza el Access Token — los links mandan
+  `notification_url` en cada preferencia y las suscripciones se releen cada
+  5 min (el webhook del panel sólo las hace instantáneas). Cobro de los planes
+  de la plataforma (Plataforma → Cobros): el webhook + su **clave secreta**
+  SON obligatorios (`verifyMpSignature` rechaza todo aviso sin firma, incluso
+  los de la `notification_url`) y la renovación automática con tarjeta sólo
+  entra por el aviso (no hay revisión periódica de respaldo). Propuesto: una
+  revisión horaria de respaldo para los pagos y renovaciones de la plataforma.
+  Esperando respuesta.
 - 2026-11-05 — **Rediseño de los constructores de formularios y de la agenda**
-  — **PEDIDO, PENDIENTE** (en el mismo mensaje que aprobó la v0.1.376). El
+  — **FORMULARIOS HECHO EN v0.1.377; AGENDA SIGUE EN v0.1.378** (en el mismo
+  mensaje que aprobó la v0.1.376). El
   usuario: "las interfaces están muy confusas… no se sabe dónde queda qué
   cosa porque la navegación es súper confusa con muchas opciones no
   correctamente organizadas, no se ve muy bonito ese editor… los elementos como
@@ -476,7 +492,10 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   porque vi elementos que no tenían ajuste de color". Es lo siguiente a hacer
   tras la v0.1.376: replantear FormBuilder y BookingBuilder (cada elemento de
   la vista previa seleccionable, con mostrar/ocultar, mover y color; navegación
-  y ajustes reorganizados; color para todo).
+  y ajustes reorganizados; color para todo). Partido en dos entregas:
+  v0.1.377 el de formularios (más los colores por parte en el motor de temas,
+  que la agenda ya recibe) y v0.1.378 el de la agenda con el mismo patrón
+  (partes tocables, esquema, Contenido/Estilo, ajustes por grupos).
 - 2026-11-05 — **Importar las suscripciones y planes que ya están en Mercado
   Pago** — **v0.1.376 HECHA** (el usuario: «Sí, haz la v0.1.376»).
 - 2026-11-05 — **«Al insertar los formularios por iframe está rechazando la
@@ -1572,6 +1591,33 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.377** — **El constructor de formularios rediseñado**
+  (pedido del usuario en el mensaje de la v0.1.376: «la navegación es súper
+  confusa… los elementos deberían ser clickeables… no sabría dónde ocultar
+  los títulos… y que se pueda cambiar el color de todo»). **Cada parte se toca
+  en la vista previa** —logo, título, descripción, franja, portada,
+  bienvenida, avance, preguntas, anti-robots, autorización de datos, cobro,
+  botón, agradecimiento, tarjeta, página— y abre su panel a la derecha con
+  **Mostrar** (para ocultarla) y **Contenido / Estilo**: en Estilo sólo lo que
+  cambia ESA parte, con sus colores. A la izquierda, **Contenido · Diseño ·
+  Lógica · Ajustes**: Contenido es el esquema del formulario (Encabezado,
+  Preguntas, Al final, Página) con un ojo en cada parte que se oculta y las
+  preguntas que se arrastran; Ajustes pasa a un índice por grupos (General,
+  Bienvenida, Al enviar, Correo, Cupos y cierre, Guardar el avance, Cobrar o
+  suscribir, Registros, Seguridad y datos, Insertar y medir) con su estado. En
+  el celular, la vista previa primero y el panel a pantalla completa con
+  «Volver». **Color para todo**: sección nueva `elements` del tema (21 colores:
+  título, descripción, etiquetas, ayuda, asterisco, títulos de sección,
+  textos, lo que se escribe, ejemplo, opciones —fondo/texto/borde/elegida—,
+  botón —fondo/texto/borde—, avance, franja y enlaces), vacío = el de los
+  colores generales; en el modo oscuro automático los textos se llevan a un
+  contraste legible. **Decisiones**: sin migración ni cambios en la API (todo
+  en `forms.config`); un formulario guardado antes se ve igual (`null` en los
+  colores); las partes con ajustes muestran los MISMOS componentes que su
+  grupo de Ajustes (un dato, dos lugares para llegar). E2E 10/10 y 11/11 en
+  celular oscuro. **Queda**: v0.1.378, el constructor de la agenda con el
+  mismo patrón; sigue esperando respuesta la propuesta de la revisión horaria
+  de los cobros de la plataforma en Mercado Pago.
 - **2026-11-05 · v0.1.376** — **Importar las suscripciones de Mercado Pago**
   (el usuario: «Sí, haz la v0.1.376»). En **Cobros** de la conexión de Mercado
   Pago, **Importar desde Mercado Pago**: una vista previa (cuántas hay por

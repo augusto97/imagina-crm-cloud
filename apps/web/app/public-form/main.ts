@@ -1827,9 +1827,16 @@ function pvTag(text: string): HTMLElement {
     return el('span', { cls: 'ib-pv-tag', text });
 }
 
-function previewable(node: HTMLElement, id: string): void {
+/**
+ * v0.1.377 — En la vista previa del constructor TODO lo que se ve se puede
+ * tocar: preguntas, y también el logo, el título, la descripción, el botón, el
+ * avance, la franja… (ids que empiezan con `@`). Al pasar el mouse se ve su
+ * nombre, así queda claro qué se edita.
+ */
+function previewable(node: HTMLElement, id: string, label?: string): void {
     if (!BOOT.preview) return;
     node.classList.add('ib-pv-item');
+    if (label) node.setAttribute('data-pv-label', label);
     if (id === selectedId) node.classList.add('ib-selected');
     node.addEventListener(
         'click',
@@ -1913,7 +1920,8 @@ function itemNode(i: Item, controls: Record<string, Control>): HTMLElement {
         controls[i.id] = node as Control;
     } else node = fieldNode(i as FieldItem, controls);
     if (BOOT.preview && i.show_if) node.insertBefore(pvTag('Condicional · sólo aparece si se cumple su condición'), node.firstChild);
-    previewable(node, i.id);
+    const kindLabel: Record<string, string> = { heading: 'Título de sección', text: 'Texto', image: 'Imagen', matrix: 'Matriz' };
+    previewable(node, i.id, kindLabel[i.type] ?? 'Pregunta');
     // v0.1.358 — para saber en qué pregunta lo dejó (estadísticas).
     if (i.type === 'field' || i.type === 'matrix') node.setAttribute('data-q', i.id);
     itemEls[i.id] = node;
@@ -2043,8 +2051,16 @@ function primaryButton(text: string, type: 'submit' | 'button'): HTMLButtonEleme
 function shell(): HTMLElement {
     const v = view();
     const card = el('div', { cls: 'ib-card' });
-    if (v?.cover) card.appendChild(el('div', { cls: 'ib-cover', role: 'presentation' }));
-    else if (v?.band ?? true) card.appendChild(el('div', { cls: 'ib-band' }));
+    if (v?.cover) {
+        const cover = el('div', { cls: 'ib-cover', role: 'presentation' });
+        previewable(cover, '@cover', 'Portada');
+        card.appendChild(cover);
+    } else if (v?.band ?? true) {
+        const band = el('div', { cls: 'ib-band' });
+        previewable(band, '@band', 'Franja de color');
+        card.appendChild(band);
+    }
+    if (BOOT.preview && selectedId === '@card') card.classList.add('ib-pv-sel');
     root = el('div', { cls: 'ib-inner', id: 'root' });
     card.appendChild(root);
     const main = el('main', { cls: 'ib-wrap' }, [card]);
@@ -2057,7 +2073,8 @@ function shell(): HTMLElement {
         kids.push(media);
     }
     kids.push(main);
-    return el('div', { cls: 'ib-shell' }, kids);
+    const shellEl = el('div', { cls: BOOT.preview && selectedId === '@page' ? 'ib-shell ib-pv-sel-page' : 'ib-shell' }, kids);
+    return shellEl;
 }
 
 function applyBodyClasses(): void {
@@ -2100,6 +2117,7 @@ function welcomeNode(w: NonNullable<PublicFormMeta['welcome']>): HTMLElement {
     kids.push(btn);
     const box = el('div', { cls: 'ib-welcome', 'data-testid': 'form-welcome' }, kids);
     if (BOOT.preview) box.insertBefore(pvTag('Bienvenida · lo primero que ve la persona'), box.firstChild);
+    previewable(box, '@welcome', 'Bienvenida');
     return box;
 }
 
@@ -2111,11 +2129,25 @@ function header(): HTMLElement {
     const showsTitle = !!m.title && !classes.includes('ib-no-title');
     const showsDesc = !!m.description && !classes.includes('ib-no-desc');
     const box = el('header', { cls: m.logo_url || showsTitle || showsDesc ? 'ib-header' : 'ib-header ib-header-empty' });
-    if (m.logo_url) box.appendChild(el('div', { cls: 'ib-logo' }, [el('img', { src: m.logo_url, alt: m.company || 'Logo', decoding: 'async', fetchpriority: 'high' })]));
+    if (m.logo_url) {
+        const logo = el('div', { cls: 'ib-logo' }, [el('img', { src: m.logo_url, alt: m.company || 'Logo', decoding: 'async', fetchpriority: 'high' })]);
+        previewable(logo, '@logo', 'Logo');
+        box.appendChild(logo);
+    }
     const h1 = el('h1', { cls: 'ib-title' });
     setRecall(h1, m.title);
+    previewable(h1, '@title', 'Título');
     box.appendChild(h1);
-    if (m.description) box.appendChild(paragraphs(m.description, 'ib-desc'));
+    if (m.description) {
+        const desc = paragraphs(m.description, 'ib-desc');
+        previewable(desc, '@description', 'Descripción');
+        box.appendChild(desc);
+    } else if (BOOT.preview && !classes.includes('ib-no-desc')) {
+        // En el constructor, un lugar para tocar y escribirla.
+        const add = el('div', { cls: 'ib-desc ib-pv-placeholder', text: '+ Agregar una descripción' });
+        previewable(add, '@description', 'Descripción');
+        box.appendChild(add);
+    }
     return box;
 }
 
@@ -2183,10 +2215,14 @@ function render(keepPage: boolean): void {
         const top = el('div', { cls: 'ib-steps-top' }, [stepsLabel]);
         if (progress === 'steps' && !(conversational() && pages.length > 12)) {
             dotsEl = el('div', { cls: 'ib-dots', role: 'presentation' });
-            form.appendChild(el('div', { cls: 'ib-steps', 'aria-live': 'polite' }, [top, dotsEl]));
+            const steps = el('div', { cls: 'ib-steps', 'aria-live': 'polite' }, [top, dotsEl]);
+            previewable(steps, '@progress', 'Avance');
+            form.appendChild(steps);
         } else {
             barEl = el('span');
-            form.appendChild(el('div', { cls: 'ib-steps', 'aria-live': 'polite' }, [top, el('div', { cls: 'ib-progress', role: 'presentation' }, [barEl])]));
+            const steps = el('div', { cls: 'ib-steps', 'aria-live': 'polite' }, [top, el('div', { cls: 'ib-progress', role: 'presentation' }, [barEl])]);
+            previewable(steps, '@progress', 'Avance');
+            form.appendChild(steps);
         }
     }
     pages.forEach((p) => {
@@ -2210,27 +2246,40 @@ function render(keepPage: boolean): void {
     if (meta.captcha && !editing()) {
         if (BOOT.preview) {
             const names: Record<string, string> = { turnstile: 'Cloudflare Turnstile', hcaptcha: 'hCaptcha', recaptcha: 'Google reCAPTCHA' };
-            form.appendChild(el('div', { cls: 'ib-captcha-ph', text: `Aquí aparece la verificación anti-robots (${names[meta.captcha.provider] ?? meta.captcha.provider}).` }));
+            const ph = el('div', { cls: 'ib-captcha-ph', text: `Aquí aparece la verificación anti-robots (${names[meta.captcha.provider] ?? meta.captcha.provider}).` });
+            previewable(ph, '@captcha', 'Verificación anti-robots');
+            form.appendChild(ph);
         } else {
             captchaBox = el('div', { cls: 'ib-captcha', 'data-provider': meta.captcha.provider });
             form.appendChild(captchaBox);
         }
     }
     // v0.1.368 — suscribir al enviar: el plan (al final, antes de la autorización y el botón).
-    if (meta.subscription && meta.subscription.plans.length && !editing()) form.appendChild(planNode(meta.subscription));
-    if (meta.data_consent) form.appendChild(consentNode(meta.data_consent));
+    if (meta.subscription && meta.subscription.plans.length && !editing()) {
+        const plans = planNode(meta.subscription);
+        previewable(plans, '@subscription', 'Planes');
+        form.appendChild(plans);
+    }
+    if (meta.data_consent) {
+        const consent = consentNode(meta.data_consent);
+        previewable(consent, '@consent', 'Autorización de datos');
+        form.appendChild(consent);
+    }
     alertBox = el('div', { cls: 'ib-alert', role: 'alert', hidden: true });
     form.appendChild(alertBox);
     // v0.1.361 — el total a pagar, al lado del botón.
     payTotalEl = null;
     if (meta.payment && !editing()) {
         payTotalEl = el('p', { cls: 'ib-pay-total', 'data-testid': 'form-pay-total', hidden: true }, [document.createTextNode('Total a pagar: '), el('strong')]);
+        previewable(payTotalEl, '@payment', 'Cobro');
         form.appendChild(payTotalEl);
     }
     submitBtn = primaryButton(editing() ? 'Guardar cambios' : submitLabel(), 'submit');
+    previewable(submitBtn, '@submit', 'Botón');
     if (paged()) {
         prevBtn = el('button', { type: 'button', cls: 'ib-btn ib-btn-secondary', text: 'Anterior' });
         nextBtn = primaryButton('Siguiente', 'button');
+        previewable(nextBtn, '@submit', 'Botón');
         prevBtn.addEventListener('click', () => {
             const before = visiblePages().filter((i) => i < current);
             if (before.length) goToPage(before[before.length - 1]!);
@@ -3075,7 +3124,9 @@ if (BOOT.preview) {
             const r = root!;
             r.textContent = '';
             r.appendChild(header());
-            r.appendChild(el('div', { cls: 'ib-done', 'data-testid': 'form-ending-preview' }, endingKids(d.ending || null)));
+            const done = el('div', { cls: 'ib-done', 'data-testid': 'form-ending-preview' }, endingKids(d.ending || null));
+            previewable(done, '@thanks', 'Pantalla final');
+            r.appendChild(done);
             window.scrollTo(0, 0);
             return;
         }
@@ -3089,6 +3140,15 @@ if (BOOT.preview) {
             }
         }
         window.scrollTo(0, keep);
+    });
+    // v0.1.377 — Tocar la tarjeta (fuera de cualquier elemento) o el fondo de la
+    // página también se edita: su diseño (bordes, sombra, fondo…).
+    document.addEventListener('click', (e) => {
+        if (e.defaultPrevented) return;
+        const target = e.target as HTMLElement | null;
+        if (!target || target.closest('input,select,textarea,button,a,label')) return;
+        const id = target.closest('.ib-card') ? '@card' : '@page';
+        parent.postMessage({ type: 'imb-form-select', id }, location.origin);
     });
     parent.postMessage({ type: 'imb-form-ready' }, location.origin);
 }

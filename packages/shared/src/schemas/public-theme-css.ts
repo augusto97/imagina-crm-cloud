@@ -2,7 +2,10 @@ import { DESIGN_FONT_DEFS, fontStack, selfHostedFontFaces, type DesignFont } fro
 import {
     DEFAULT_LIGHT_PALETTE,
     PUBLIC_CSS_MAX,
+    PUBLIC_ELEMENT_TEXT_KEYS,
     type PublicButton,
+    type PublicElementColorKey,
+    type PublicElementColors,
     type PublicChoiceStyle,
     type PublicLabelPosition,
     type PublicPalette,
@@ -194,6 +197,85 @@ function paletteVars(p: FullPalette, shadow: string): string {
         `--ib-soft:${soft}`,
         `--ib-shadow:${(dark ? SHADOW_DARK : SHADOW)[shadow] ?? SHADOW.md}`,
     ].join(';');
+}
+
+// ───────────────────────── Colores por elemento ─────────────────────────
+
+/**
+ * v0.1.377 — Qué pinta cada color por elemento: `[selectores, propiedad]`.
+ * Las reglas se generan SÓLO para los colores elegidos (un tema sin ellos no
+ * suma ni un byte) y sus selectores le ganan a las variantes de la base
+ * (`.ib-btn-outline .ib-btn-primary`, la etiqueta flotante…). Los nombres son
+ * los mismos del formulario y de la agenda, así un color vale para las dos.
+ */
+const ELEMENT_RULES: Record<PublicElementColorKey, Array<[string, string]>> = {
+    title: [['.ib-title,.ib-done h2,.ib-welcome h2', 'color']],
+    description: [['.ib-desc p,.ib-welcome .ib-welcome-msg,.ib-done-msg,.ib-done-msg p', 'color']],
+    label: [['.ib-label,.ib-labels-floating .ib-float>.ib-control>.ib-label,.ib-matrix tbody th', 'color']],
+    help: [['.ib-help,.ib-scale-labels', 'color']],
+    required: [['.ib-req', 'color']],
+    heading: [['.ib-heading,.ib-page-title', 'color']],
+    text: [['.ib-text p,.ib-text,.ib-image figcaption', 'color']],
+    input_text: [['.ib-input,.ib-files .ib-drop', 'color']],
+    placeholder: [['.ib-input::placeholder', 'color']],
+    choice_bg: [['body .ib-choice,body .ib-scale button,body .ib-yesno button,body .ib-rank li', 'background-color']],
+    choice_text: [['body .ib-choice,body .ib-scale button,body .ib-yesno button,body .ib-rank li', 'color']],
+    choice_border: [['body .ib-choice,body .ib-scale button,body .ib-yesno button,body .ib-rank li', 'border-color']],
+    choice_selected_bg: [
+        [
+            'body .ib-choice.ib-checked,body .ib-choices-buttons .ib-choice.ib-checked,body .ib-scale button[aria-checked="true"],body .ib-yesno button[aria-checked="true"]',
+            'background-color',
+        ],
+        [
+            'body .ib-choice.ib-checked,body .ib-choices-buttons .ib-choice.ib-checked,body .ib-scale button[aria-checked="true"],body .ib-yesno button[aria-checked="true"]',
+            'border-color',
+        ],
+    ],
+    choice_selected_text: [
+        [
+            'body .ib-choice.ib-checked,body .ib-choices-buttons .ib-choice.ib-checked,body .ib-scale button[aria-checked="true"],body .ib-yesno button[aria-checked="true"]',
+            'color',
+        ],
+    ],
+    button_bg: [['body .ib-btn.ib-btn-primary', 'background-color']],
+    button_text: [['body .ib-btn.ib-btn-primary', 'color']],
+    button_border: [['body .ib-btn.ib-btn-primary', 'border-color']],
+    progress: [['.ib-progress span,.ib-dots span.ib-on', 'background-color']],
+    progress_track: [['.ib-progress,.ib-dots span:not(.ib-on)', 'background-color']],
+    band: [['.ib-band', 'background-color']],
+    link: [['a,.ib-linkbtn,.ib-consent-links a,.ib-sign-bar button', 'color']],
+};
+
+/** Contraste mínimo de cada color de texto (el ejemplo dentro del campo pide menos). */
+function textMin(key: PublicElementColorKey): number {
+    return key === 'placeholder' ? 3 : 4.5;
+}
+
+/**
+ * Las reglas de los colores elegidos. Con `against` (la paleta del modo oscuro
+ * automático), los colores de TEXTO se aclaran lo justo para leerse sobre su
+ * superficie; los de fondo se respetan tal cual (son una elección explícita).
+ */
+export function elementColorCss(el: PublicElementColors, against?: { surface: string; inputs: string }): string {
+    const out: string[] = [];
+    for (const key of Object.keys(ELEMENT_RULES) as PublicElementColorKey[]) {
+        const raw = el[key];
+        if (!raw) continue;
+        let value = raw;
+        if (against && PUBLIC_ELEMENT_TEXT_KEYS.has(key)) {
+            const bg =
+                key === 'choice_text'
+                    ? (el.choice_bg ?? against.inputs)
+                    : key === 'input_text' || key === 'placeholder'
+                      ? against.inputs
+                      : against.surface;
+            value = ensureContrast(raw, bg, textMin(key));
+        }
+        for (const [sel, prop] of ELEMENT_RULES[key]) {
+            out.push(`${sel}{${prop}:${value}${key === 'placeholder' ? ';opacity:1' : ''}}`);
+        }
+    }
+    return out.join('');
 }
 
 // ───────────────────────────── Tamaños ─────────────────────────────
@@ -467,9 +549,16 @@ export function buildPublicThemeCss(theme: PublicTheme, opts: PublicThemeCssOpti
     parts.push(backgroundCss(theme, pals.main, images));
     parts.push(coverCss(theme, pals.main, images));
     parts.push(splitCss(theme, pals.main, images));
+    parts.push(elementColorCss(theme.elements));
     if (pals.dark) {
         const dark = paletteVars(pals.dark, theme.card.shadow);
-        const darkExtra = [backgroundCss(theme, pals.dark, images), coverCss(theme, pals.dark, images), splitCss(theme, pals.dark, images)].join('');
+        const surface = theme.layout.container === 'plain' ? pals.dark.background : pals.dark.card;
+        const darkExtra = [
+            backgroundCss(theme, pals.dark, images),
+            coverCss(theme, pals.dark, images),
+            splitCss(theme, pals.dark, images),
+            elementColorCss(theme.elements, { surface, inputs: pals.dark.input_bg }),
+        ].join('');
         // Según el dispositivo… salvo que la vista previa fuerce uno (`data-scheme`).
         parts.push(`@media (prefers-color-scheme: dark){:root:not([data-scheme=light]){${dark}}}`);
         parts.push(`:root[data-scheme=dark]{${dark}}`);
@@ -766,6 +855,15 @@ body.ib-embedded .ib-split-media{display:none}
 .ib-pv-item{cursor:pointer;border-radius:8px;outline-offset:6px}
 .ib-pv-item:hover{outline:1px dashed color-mix(in srgb,var(--ib-muted) 70%,transparent)}
 .ib-pv-item.ib-selected{outline:2px solid var(--ib-accent)}
+.ib-pv-item[data-pv-label]{position:relative}
+.ib-pv-item[data-pv-label]:hover::after,.ib-pv-item.ib-selected[data-pv-label]::after{content:attr(data-pv-label);position:absolute;top:-6px;left:4px;transform:translateY(-50%);z-index:6;padding:1px 7px;border-radius:999px;background:var(--ib-accent);color:var(--ib-accent-ink);font:600 10.5px/1.6 system-ui,-apple-system,sans-serif;letter-spacing:0;text-transform:none;white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.ib-pv-item[data-pv-label]:not(.ib-selected):hover::after{background:color-mix(in srgb,var(--ib-text) 78%,transparent);color:var(--ib-card)}
+.ib-band.ib-pv-item,.ib-cover.ib-pv-item{border-radius:0;outline-offset:-2px}
+.ib-band.ib-pv-item{height:10px}
+.ib-btn.ib-pv-item{outline-offset:3px}
+.ib-pv-placeholder{color:var(--ib-muted);opacity:.7;font-size:13px;border:1px dashed color-mix(in srgb,var(--ib-muted) 45%,transparent);border-radius:8px;padding:6px 10px;margin-top:4px}
+.ib-card.ib-pv-sel{outline:2px solid var(--ib-accent);outline-offset:3px}
+.ib-shell.ib-pv-sel-page{box-shadow:inset 0 0 0 3px var(--ib-accent)}
 .ib-pv-tag{display:inline-block;margin-bottom:6px;padding:1px 6px;border-radius:4px;background:color-mix(in srgb,var(--ib-muted) 16%,transparent);color:var(--ib-muted);font-size:11px;font-weight:500}
 .ib-pv-empty{color:var(--ib-muted);text-align:center;padding:24px 0;font-size:14px}
 .ib-captcha-ph{margin-top:20px;border:1.5px dashed var(--ib-border);border-radius:8px;padding:14px;color:var(--ib-muted);font-size:13px;text-align:center}

@@ -6854,6 +6854,47 @@ entrega de la agenda, segunda mitad).**
    (plantilla de la galería, color y qué se muestra; conserva el CSS propio y
    las imágenes) y `get_list_schema` describe el diseño de cada agenda.
 
+**Addendum v0.1.377 — Un color para cada parte y un constructor que se
+entiende (pedido del usuario: «la navegación es súper confusa… no sabría
+dónde quitar u ocultar los títulos… y se pueda cambiar el color de todo»).**
+
+1. **Colores por parte** (`theme.elements`, sección nueva del tema): título,
+   descripción, etiqueta y ayuda de las preguntas, asterisco, títulos de
+   sección y textos, lo que se escribe y el texto de ejemplo, opciones (fondo,
+   texto, borde y la elegida), botón (fondo, texto, borde), avance, franja y
+   enlaces. Vacío = el que sale de los colores generales (`null`, así un
+   formulario guardado antes no cambia). `elementColorCss` lo pinta con reglas
+   fijas por parte y, en el modo oscuro automático, lleva los textos a un
+   contraste legible contra su fondo (`ensureContrast`) en vez de invertirlos.
+   Las páginas que usan el motor (formularios y agenda) lo reciben solas.
+2. **Todo se toca en la vista previa**: la página pública marca cada parte que
+   no es pregunta con un id que empieza con `@` (`@logo`, `@title`,
+   `@description`, `@band`, `@cover`, `@welcome`, `@progress`, `@captcha`,
+   `@consent`, `@payment`, `@subscription`, `@submit`, `@thanks`, `@card`,
+   `@page`) y la vista previa la avisa con `imb-form-select`, como una
+   pregunta. El constructor resalta lo elegido con una etiqueta.
+3. **El constructor, en cuatro pestañas**: Contenido (el esquema del
+   formulario —encabezado, preguntas, al final, página— con un ojo en cada
+   parte que se puede ocultar y las preguntas que se arrastran), Diseño (el
+   tema completo), Lógica y Ajustes. A la derecha, el panel de lo elegido con
+   **Mostrar** arriba, y **Contenido / Estilo**: en Estilo sólo las secciones
+   del tema y los colores que cambian ESA parte (`ThemeInspector` con `only`),
+   así nadie busca el color del botón en una lista de quince secciones.
+   `pageElements.ts` (puro, con tests) dice qué es cada parte, si se oculta y
+   dónde vive su interruptor (`show_logo`, `layout.show_title`, `cover.enabled`,
+   `welcome.enabled`…).
+4. **Ajustes por grupos** (General, Bienvenida, Al enviar, Correo de quien
+   responde, Cupos y cierre, Guardar el avance, Cobrar o suscribir, Registros,
+   Seguridad y datos, Insertar y medir): un índice con lo que hay en cada uno
+   y su estado, y un grupo por vez. Las partes que tienen ajustes (pantalla de
+   agradecimiento, verificación anti-robots, autorización de datos, cobro y
+   planes, bienvenida) muestran en su panel los MISMOS componentes de su grupo:
+   se edita en un lugar u otro y es el mismo dato.
+5. **Celular**: vista previa primero; tocar una parte abre su panel a pantalla
+   completa con «Volver».
+6. Sin migración ni cambios en la API: todo vive en `forms.config`. La agenda
+   recibe el mismo patrón en v0.1.378.
+
 ### ADR-S95 — Formularios y agenda insertados que aguantan mucho tráfico (v0.1.352)
 
 **Contexto.** El usuario preguntó: "si lo uso como formulario de contacto de

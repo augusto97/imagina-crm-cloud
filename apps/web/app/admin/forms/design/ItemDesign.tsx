@@ -72,9 +72,15 @@ export function FieldItemDesign({
     fields,
     listId,
     onSet,
+    part = 'all',
 }: {
     item: FormFieldItem;
     field: FieldEntity;
+    /**
+     * v0.1.377 — `answer`: cómo se pregunta (en «Contenido»); `look`: ancho,
+     * etiqueta, columnas e imágenes (en «Estilo»); `all`: todo junto.
+     */
+    part?: 'answer' | 'look' | 'all';
     /** Estilo de las opciones del tema del formulario. */
     themeChoiceStyle: PublicChoiceStyle;
     /** v0.1.355 — el formulario y los campos de la lista (para «Otro»). */
@@ -93,8 +99,8 @@ export function FieldItemDesign({
     const imagesAllowed = field.type === 'select' || field.type === 'multi_select';
     const imageCount = Object.keys(item.option_images).length;
 
-    return (
-        <Section title={__('Diseño de esta pregunta')}>
+    const answer = (
+        <>
             <DisplaySelect item={item} field={field} multiple={multiple} themeLabel={STYLE_LABELS[themeChoiceStyle]} onSet={onSet} />
             {isChoice && item.display === 'auto' && !multiple && optionCount > 6 && (
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
@@ -102,6 +108,12 @@ export function FieldItemDesign({
                 </p>
             )}
             <DisplayOptions item={item} field={field} config={config} fields={fields} listId={listId} onSet={onSet} />
+        </>
+    );
+    if (part === 'answer') return <Section title={__('Cómo se pregunta')}>{answer}</Section>;
+    return (
+        <Section title={__('Diseño de esta pregunta')}>
+            {part === 'all' && answer}
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-testid="form-item-design">
                 <WidthControl value={item.width} onChange={(width) => onSet({ width })} />
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
