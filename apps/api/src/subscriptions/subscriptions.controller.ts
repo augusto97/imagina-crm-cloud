@@ -4,6 +4,7 @@ import {
     changeSubscriptionAmountSchema,
     createSubscriptionPlanSchema,
     createSubscriptionSchema,
+    setSubscriptionChargeLogSchema,
     setSubscriptionFieldsSchema,
     updateSubscriptionPlanSchema,
     SUBSCRIPTION_STATUS_OPTIONS,
@@ -12,7 +13,9 @@ import {
     type CreateSubscriptionInput,
     type CreateSubscriptionPlanInput,
     type RecordSubscriptions,
+    type SetSubscriptionChargeLogInput,
     type SetSubscriptionFieldsInput,
+    type SubscriptionChargeLogStatus,
     type Subscription,
     type SubscriptionFields,
     type SubscriptionFrequencyType,
@@ -30,6 +33,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { aclOf } from '../tenancy/acl-of';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { SubscriptionChargeLogService } from './subscription-charge-log.service';
 import { SubscriptionsService } from './subscriptions.service';
 
 /**
@@ -41,7 +45,10 @@ import { SubscriptionsService } from './subscriptions.service';
 @Controller()
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
 export class SubscriptionsController {
-    constructor(private readonly subs: SubscriptionsService) {}
+    constructor(
+        private readonly subs: SubscriptionsService,
+        private readonly chargeLog: SubscriptionChargeLogService,
+    ) {}
 
     @Get('subscriptions/plans')
     @RequireCapability('view_records', 'view_own_records')
@@ -164,6 +171,24 @@ export class SubscriptionsController {
     @RequireCapability('manage_fields')
     setup(@Req() req: FastifyRequest, @Param('list') list: string): Promise<SubscriptionFields> {
         return this.subs.setupFields(tenantId(req), actorOf(req), list);
+    }
+
+    /** v0.1.371 — El registro de cobros de la lista: a dónde va cada cobro. */
+    @Get('lists/:list/subscriptions/charge-log')
+    @RequireCapability('view_records', 'view_own_records')
+    chargeLogStatus(@Req() req: FastifyRequest, @Param('list') list: string): Promise<SubscriptionChargeLogStatus> {
+        return this.chargeLog.status(tenantId(req), actorOf(req), list);
+    }
+
+    @Put('lists/:list/subscriptions/charge-log')
+    @HttpCode(200)
+    @RequireCapability('manage_fields')
+    setChargeLog(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(setSubscriptionChargeLogSchema)) input: SetSubscriptionChargeLogInput,
+    ): Promise<SubscriptionChargeLogStatus> {
+        return this.chargeLog.configure(tenantId(req), actorOf(req), list, input);
     }
 }
 

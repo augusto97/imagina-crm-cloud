@@ -88,6 +88,7 @@ export * from './schemas/ms-admin-consent';
 export * from './schemas/teams-links';
 export * from './schemas/collections';
 export * from './schemas/subscriptions';
+export * from './schemas/subscription-charge-log';
 export * from './schemas/whatsapp';
 export * from './schemas/sms';
 export * from './schemas/provider-guides';

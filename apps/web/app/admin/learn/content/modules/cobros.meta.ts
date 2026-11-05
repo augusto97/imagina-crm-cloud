@@ -73,7 +73,7 @@ export const meta: LearnModuleMeta = {
             summary: 'Cobrar cada mes sin mandar links: los planes, suscribir a un cliente, qué significa cada estado, qué pasa cuando no paga y las automatizaciones de mora.',
             minutes: 9,
             level: 'intermediate',
-            keywords: 'suscripcion suscripciones debito automatico cobro recurrente mensual plan mercado pago preapproval tarjeta autorizar al dia reintentando en mora vencida cancelar pausar cambiar valor dias de gracia mensualidad cuota',
+            keywords: 'suscripcion suscripciones debito automatico cobro recurrente mensual plan mercado pago preapproval tarjeta autorizar al dia reintentando en mora vencida cancelar pausar cambiar valor dias de gracia mensualidad cuota registro de cobros lista de cobros historial tablero cobrado por mes rechazos asistente',
         },
     ],
 };

@@ -1601,4 +1601,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Toca el botón de la chispa, arriba a la derecha. Sobre cada respuesta tienes **Copiar** y **Reintentar**; en tu último pedido, **Editar**.',
         action: { label: 'Ver cómo funciona', href: '/aprende/inteligencia-artificial/ia-asistente' },
     },
+    {
+        key: 'v0.1.371-registro-de-cobros',
+        version: '0.1.371',
+        date: '2026-11-05',
+        kind: 'feature',
+        title: 'Cada cobro de tus suscripciones, en su propia lista y con tablero',
+        summary:
+            'Los cobros del débito automático (pagados, rechazados y reembolsados) quedan como registros vinculados a cada cliente, con un tablero de lo cobrado por mes. Y el asistente ya sabe decirte quién está en mora.',
+        media: {
+            slides: [
+                {
+                    title: 'La historia de cada cobro',
+                    text: 'En la ficha, en Suscripción → Columnas → Registro de cobros, crea la lista «Cobros de suscripciones» o usa una tuya. Los cobros de antes se cargan solos y los nuevos llegan al momento.',
+                    illustration: 'cobro-registro',
+                },
+                {
+                    title: 'Un tablero listo',
+                    text: 'Cobrado este mes, pagados y rechazados, cobros por mes y por plan, y los últimos rechazos con su motivo.',
+                    illustration: 'cobro-registro',
+                },
+                {
+                    title: 'Pregúntale al asistente',
+                    text: '«¿Quién está en mora?», «crea un plan anual», «suscribe a este cliente»: lo que cambia algo llega como una propuesta que apruebas con un botón.',
+                    illustration: 'ia-chat',
+                },
+            ],
+        },
+        body: 'Abre la ficha de un cliente suscrito, toca **Columnas** en **Suscripción** y baja hasta **Registro de cobros**. El asistente está en el botón de la chispa, arriba a la derecha.',
+        action: { label: 'Ver cómo funciona', href: '/aprende/cobros/cobros-suscripciones' },
+    },
 ];

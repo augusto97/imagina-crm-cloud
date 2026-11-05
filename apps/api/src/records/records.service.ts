@@ -245,7 +245,14 @@ export class RecordsService {
          * `lenientRequired`: una automatización crea aunque falte un campo
          * obligatorio (el motor lo avisa en su log); comportamiento histórico.
          */
-        opts: { planChecked?: boolean; automationChain?: AutomationChain; lenientRequired?: boolean; silent?: boolean } = {},
+        opts: {
+            planChecked?: boolean;
+            automationChain?: AutomationChain;
+            lenientRequired?: boolean;
+            silent?: boolean;
+            /** v0.1.371 — un alta del sistema que NO dispara «Cuando se crea» (la carga inicial de un registro de cobros). */
+            noAutomations?: boolean;
+        } = {},
     ): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const listId = list.id;
@@ -269,7 +276,7 @@ export class RecordsService {
         });
         // `silent` (v0.1.294): el alta en lote avisa UNA vez al final.
         if (!opts.silent) this.realtime.records(tenantId, listId);
-        this.afterCreate(tenantId, actor, prep, row, opts.automationChain ? { automationChain: opts.automationChain } : {});
+        if (!opts.noAutomations) this.afterCreate(tenantId, actor, prep, row, opts.automationChain ? { automationChain: opts.automationChain } : {});
         const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
         return toRecord(withComputed(fields, enriched[0] ?? row, rt), {
             ...byFieldToKeys(relFieldIds, undefined),

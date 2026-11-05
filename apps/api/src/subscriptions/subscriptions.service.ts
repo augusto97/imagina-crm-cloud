@@ -103,6 +103,7 @@ import {
     type ParsedInvoice,
     type PreapprovalPatch,
 } from './subscription-gateway';
+import { SubscriptionChargeLogService } from './subscription-charge-log.service';
 
 const FETCH_TIMEOUT_MS = 15_000;
 const DAY = 24 * 60 * 60 * 1000;
@@ -186,6 +187,8 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         @Optional() private readonly incidents?: IncidentHub,
         @Optional() private readonly notify?: NotifyHub,
         @Optional() @Inject(REDIS) private readonly redis?: Redis,
+        // v0.1.371 — el registro de cobros (opcional: los tests arman el servicio sin él).
+        @Optional() private readonly chargeLog?: SubscriptionChargeLogService,
     ) {}
 
     onModuleInit(): void {
@@ -1040,6 +1043,13 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
     private async after(tenantId: number, out: SyncOutcome): Promise<void> {
         this.afterWrite(tenantId, out.write);
         if (out.sub.listId) this.realtime.records(tenantId, out.sub.listId);
+        // v0.1.371 — cada cobro nuevo o que cambió queda en el registro de cobros
+        // (si la lista lo tiene): un cobro nuevo SÍ dispara «Cuando se crea».
+        if (out.sub.listId && !out.readOnly && this.chargeLog) {
+            await this.chargeLog
+                .syncSubscription(tenantId, out.sub.id, { automations: true })
+                .catch((err) => this.logger.warn(`Registro de cobros falló: ${String(err)}`));
+        }
         if (out.events.length === 0 || out.sub.listId === null || out.sub.recordId === null) return;
         const listId = out.sub.listId;
         const recordId = out.sub.recordId;
@@ -1491,6 +1501,71 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
                 },
                 subscriptions: subRows,
                 charges: recent,
+            };
+        });
+    }
+
+    /**
+     * v0.1.371 — Las suscripciones de una lista con el acceso de quien
+     * pregunta (el asistente y el MCP): sólo las de registros que puede ver,
+     * con sus últimos cobros. Lo de un registro borrado no aparece (se maneja
+     * desde la conexión).
+     */
+    async listForList(
+        tenantId: number,
+        actor: CollectionActor,
+        listIdOrSlug: string,
+        opts: { statuses?: readonly SubscriptionStatus[]; planId?: number; recordId?: number; limit?: number; chargesPerSub?: number } = {},
+    ): Promise<{ list: { id: number; slug: string; name: string }; rows: Array<SubscriptionRow & { charges: SubscriptionCharge[] }>; matched: number; byStatus: Partial<Record<SubscriptionStatus, number>> }> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+        const perSub = Math.min(Math.max(opts.chargesPerSub ?? 3, 0), 12);
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const conds = [eq(subscriptions.tenantId, tenantId), eq(subscriptions.listId, list.id), isNull(records.deletedAt)];
+            if (opts.statuses && opts.statuses.length > 0) conds.push(inArray(subscriptions.status, [...opts.statuses]));
+            if (opts.planId !== undefined) conds.push(eq(subscriptions.planId, opts.planId));
+            if (opts.recordId !== undefined) conds.push(eq(subscriptions.recordId, opts.recordId));
+            const rows = await tx
+                .select({ s: subscriptions, connName: connections.name, data: records.data, createdBy: records.createdBy })
+                .from(subscriptions)
+                .innerJoin(records, eq(records.id, subscriptions.recordId))
+                .leftJoin(connections, eq(connections.id, subscriptions.connectionId))
+                .where(and(...conds))
+                .orderBy(desc(subscriptions.updatedAt))
+                .limit(2000);
+            const visible = rows.filter((r) =>
+                listRowInScope(list.settings, actor, 'view', { id: r.s.recordId!, createdBy: r.createdBy, data: (r.data ?? {}) as Record<string, unknown> }),
+            );
+            const page = visible.slice(0, limit);
+            const byStatus: Partial<Record<SubscriptionStatus, number>> = {};
+            for (const r of visible) byStatus[r.s.status as SubscriptionStatus] = (byStatus[r.s.status as SubscriptionStatus] ?? 0) + 1;
+            const titles = await this.titlesFor(tx, tenantId, [{ listId: list.id, settings: list.settings ?? {} }]);
+            const titleId = titles.get(list.id) ?? null;
+            const charges =
+                page.length > 0 && perSub > 0
+                    ? await tx
+                          .select()
+                          .from(subscriptionCharges)
+                          .where(and(eq(subscriptionCharges.tenantId, tenantId), inArray(subscriptionCharges.subscriptionId, page.map((r) => r.s.id))))
+                          .orderBy(desc(subscriptionCharges.createdAt))
+                    : [];
+            return {
+                list: { id: list.id, slug: list.slug, name: list.name },
+                matched: visible.length,
+                byStatus,
+                rows: page.map((r) => {
+                    const v = titleId ? (r.data as Record<string, unknown> | null)?.[jsonbKeyForField(titleId)] : null;
+                    return {
+                        ...toDto(r.s, r.connName ?? null),
+                        list_name: list.name,
+                        list_slug: list.slug,
+                        record_title: typeof v === 'string' && v.trim() !== '' ? v : `Registro #${r.s.recordId}`,
+                        charges: charges
+                            .filter((c) => c.subscriptionId === r.s.id)
+                            .slice(0, perSub)
+                            .map(chargeToDto),
+                    };
+                }),
             };
         });
     }
