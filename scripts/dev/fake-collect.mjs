@@ -1,6 +1,7 @@
-// Mercado Pago + Wompi simulados para el E2E de v0.1.251 (cobros de empresas).
+// Mercado Pago + Wompi simulados para el E2E de v0.1.251 (cobros de empresas)
+// y v0.1.367 (suscripciones de Mercado Pago: preapproval + authorized_payments).
 import http from 'node:http';
-const state = { prefs: [], payments: {}, links: {}, txs: {}, calls: [] };
+const state = { prefs: [], payments: {}, links: {}, txs: {}, pre: {}, invoices: {}, calls: [] };
 let n = 0;
 const json = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
 http.createServer((req, res) => {
@@ -13,6 +14,8 @@ http.createServer((req, res) => {
         state.calls.push({ method: req.method, path: p + u.search, body, auth: req.headers.authorization });
         if (p === '/__state') return json(res, 200, state);
         if (p === '/__set' && req.method === 'POST') { Object.assign(state[body.kind], body.data); return json(res, 200, {}); }
+        // Mezcla campos en un objeto ya guardado (p. ej. autorizar una suscripción).
+        if (p === '/__patch' && req.method === 'POST') { state[body.kind][body.id] = { ...(state[body.kind][body.id] ?? {}), ...body.data }; return json(res, 200, state[body.kind][body.id]); }
         if (p.startsWith('/pay/') || p.startsWith('/wompi-pay/')) { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<h1>Pago (simulado)</h1>'); }
         // ── Mercado Pago
         if (p === '/mp/users/me') {
@@ -28,7 +31,26 @@ http.createServer((req, res) => {
             const ref = u.searchParams.get('external_reference');
             return json(res, 200, { results: Object.values(state.payments).filter((x) => x.external_reference === ref).reverse() });
         }
+        if (p === '/mp/preapproval' && req.method === 'POST') {
+            const id = `pre-${++n}`;
+            state.pre[id] = { id, ...body, status: 'pending', init_point: `http://127.0.0.1:4898/pay/${id}`, date_created: new Date().toISOString() };
+            return json(res, 201, state.pre[id]);
+        }
+        if (p === '/mp/authorized_payments/search') {
+            const pre = u.searchParams.get('preapproval_id');
+            return json(res, 200, { results: Object.values(state.invoices).filter((x) => x.preapproval_id === pre) });
+        }
         let m;
+        if ((m = p.match(/^\/mp\/preapproval\/(.+)$/))) {
+            const cur = state.pre[m[1]];
+            if (!cur) return json(res, 404, { message: 'not found' });
+            if (req.method === 'PUT') {
+                if (body?.status) cur.status = body.status;
+                if (body?.auto_recurring) cur.auto_recurring = { ...cur.auto_recurring, ...body.auto_recurring };
+            }
+            return json(res, 200, cur);
+        }
+        if ((m = p.match(/^\/mp\/authorized_payments\/(.+)$/))) return state.invoices[m[1]] ? json(res, 200, state.invoices[m[1]]) : json(res, 404, {});
         if ((m = p.match(/^\/mp\/v1\/payments\/(.+)$/))) return state.payments[m[1]] ? json(res, 200, state.payments[m[1]]) : json(res, 404, {});
         // ── Wompi
         if ((m = p.match(/^\/wompi\/merchants\/(.+)$/))) {

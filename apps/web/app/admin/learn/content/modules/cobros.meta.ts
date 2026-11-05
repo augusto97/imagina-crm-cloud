@@ -4,8 +4,8 @@ export const meta: LearnModuleMeta = {
     id: 'cobros',
     group: 'connect',
     order: 6,
-    title: 'Cobros y links de pago',
-    tagline: 'Cobra con Mercado Pago o Wompi desde cualquier registro y entérate solo de quién ya te pagó.',
+    title: 'Cobros, links de pago y suscripciones',
+    tagline: 'Cobra con Mercado Pago o Wompi desde cualquier registro, cobra cada mes con débito automático y entérate solo de quién ya te pagó.',
     icon: 'Wallet',
     tone: 'mint',
     hero: 'cobro-hero',
@@ -14,6 +14,7 @@ export const meta: LearnModuleMeta = {
         'El dinero va directo a la cuenta de tu empresa, sin comisión de la plataforma',
         'Cada pago actualiza solo la lista: estado, fecha, monto pagado y medio',
         'Automatizaciones que crean el link, lo mandan por WhatsApp y agradecen cuando llega el pago',
+        'Suscripciones con débito automático de Mercado Pago: el cliente autoriza su tarjeta una vez y se le cobra solo cada mes',
     ],
     articles: [
         {
@@ -65,6 +66,14 @@ export const meta: LearnModuleMeta = {
             minutes: 5,
             level: 'intermediate',
             keywords: 'panel cobros resumen pendientes pagados cobrado ultimos links avisos de pago portal del cliente pagar mi saldo comprobante',
+        },
+        {
+            id: 'cobros-suscripciones',
+            title: 'Suscripciones con débito automático',
+            summary: 'Cobrar cada mes sin mandar links: los planes, suscribir a un cliente, qué significa cada estado, qué pasa cuando no paga y las automatizaciones de mora.',
+            minutes: 9,
+            level: 'intermediate',
+            keywords: 'suscripcion suscripciones debito automatico cobro recurrente mensual plan mercado pago preapproval tarjeta autorizar al dia reintentando en mora vencida cancelar pausar cambiar valor dias de gracia mensualidad cuota',
         },
     ],
 };

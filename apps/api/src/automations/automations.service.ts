@@ -920,7 +920,9 @@ export class AutomationsService {
             return {
                 request: { url: '', method: 'POST', headers: {}, body: null },
                 response: null,
-                error: `Así se crearía la suscripción para ${v.payer_email ?? ''}${v.amount ? ` por ${v.amount}` : ' con el valor del plan'}${v.start_date ? `, con el primer cobro el ${v.start_date}` : ''}. Para no pedirle la tarjeta a un cliente real, la prueba no la crea: pruébala con «Suscripción» en un registro.`,
+                error: null,
+                // Sin enviar no es un error: se ve en gris («Sin enviar»), no en rojo.
+                note: `Así se crearía la suscripción para ${v.payer_email ?? ''}${v.amount ? ` por ${v.amount}` : ' con el valor del plan'}${v.start_date ? `, con el primer cobro el ${v.start_date}` : ''}. Para no pedirle la tarjeta a un cliente real, la prueba no la crea: pruébala con «Suscripción» en un registro.`,
                 sample_record_id: sampleRecordId,
             };
         }
@@ -930,7 +932,9 @@ export class AutomationsService {
             return {
                 request: { url: '', method: 'POST', headers: {}, body: null },
                 response: null,
-                error: `Así se ${what} la suscripción del registro${v.operation === 'amount' && v.amount ? ` (a ${v.amount})` : ''}. Para no tocar la suscripción real de un cliente, la prueba no la cambia.`,
+                error: null,
+                // Sin enviar no es un error: se ve en gris («Sin enviar»), no en rojo.
+                note: `Así se ${what} la suscripción del registro${v.operation === 'amount' && v.amount ? ` (a ${v.amount})` : ''}. Para no tocar la suscripción real de un cliente, la prueba no la cambia.`,
                 sample_record_id: sampleRecordId,
             };
         }
@@ -940,7 +944,9 @@ export class AutomationsService {
             return {
                 request: { url: '', method: 'POST', headers: {}, body: null },
                 response: null,
-                error: `Así se crearía el link: «${v.title ?? ''}» por ${v.amount ?? ''} ${currency}${v.payer_email ? ` para ${v.payer_email}` : ''}. Para no generar un cobro real, la prueba no lo envía: pruébalo con «Cobrar» en un registro.`,
+                error: null,
+                // Sin enviar no es un error: se ve en gris («Sin enviar»), no en rojo.
+                note: `Así se crearía el link: «${v.title ?? ''}» por ${v.amount ?? ''} ${currency}${v.payer_email ? ` para ${v.payer_email}` : ''}. Para no generar un cobro real, la prueba no lo envía: pruébalo con «Cobrar» en un registro.`,
                 sample_record_id: sampleRecordId,
             };
         }

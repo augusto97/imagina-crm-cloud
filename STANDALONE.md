@@ -6899,6 +6899,107 @@ para poner Cloudflare delante y subir el tope está en
    `utm_source=qr`, así las estadísticas del formulario cuentan aparte a quien
    llega escaneándolo («Código QR»).
 
+
+### ADR-S96 — Suscripciones con débito automático de Mercado Pago (v0.1.367)
+
+**Contexto.** Pregunta del usuario: «¿cómo se manejan las suscripciones o
+cobros recurrentes de débito automático que maneja Mercado Pago? Sólo veo
+generar link de pago… reportar los pagos recurrentes que sí se hicieron y
+cuáles no se pagaron o a quién hay que cancelarle el servicio». Los cobros de
+ADR-S31 son un link por cobro: para una mensualidad había que mandar un link
+cada mes y cruzar a mano quién pagó. Mercado Pago tiene suscripciones
+(`preapproval`): el cliente autoriza su tarjeta una vez y Mercado Pago cobra
+solo cada período, reintenta los rechazos y avisa. Se acordó hacerlo en tres
+entregas: (1) Mercado Pago de punta a punta, (2) formulario de suscripción,
+portal, lista espejo «Cobros de suscripciones» y tablero, (3) PayPal como
+conector de la empresa. Wompi recurrente queda afuera (su API no tiene
+suscripciones administradas). Ésta es la primera.
+
+**Decisión.**
+
+1. **Tres tablas con RLS** (migración 0102): `subscription_plans` (nombre,
+   valor, moneda, frecuencia en meses o días —hasta 12 meses o 365 días—,
+   cuotas, días gratis, **días de gracia** —10 por defecto— y qué pasa al
+   vencer: `mark` o `cancel`), `subscriptions` (una por registro **viva a la
+   vez**; plan, conexión, correo del cliente, valor, estado, `paid_until`,
+   `next_charge_at`, cuotas pagadas y fallidas, referencia propia `ibs_…`,
+   id del `preapproval` —único por empresa—) y `subscription_charges` (único
+   por suscripción + id del pago del proveedor). El plan es de la conexión,
+   no de la lista: un mismo «Mantenimiento mensual» sirve en varias listas.
+2. **Crear** = `POST /preapproval` sin plan de Mercado Pago, con `status:
+   pending`, `external_reference` = la referencia, `x-idempotency-key` = la
+   referencia (un reintento no crea dos), `start_date` sólo si es futuro (si
+   no, Mercado Pago cobra al autorizar) y `end_date` derivado de las cuotas.
+   Devuelve el `init_point` (`sandbox_init_point` con credenciales de prueba),
+   que queda en la ficha y, si se eligió, en la columna «Link de la
+   suscripción». Una pendiente se reemplaza al crear otra: el registro no
+   acumula links muertos.
+3. **El estado se RELEE siempre de Mercado Pago, nunca se le cree al aviso**
+   (como ADR-S31): un aviso trae sólo el id; se lee el `preapproval`, sus
+   cuotas (`/authorized_payments/search`) y el pago. Los avisos llegan a la
+   MISMA URL de cobros de la conexión (`collection_hooks`): el tema
+   `subscription_preapproval` / `subscription_authorized_payment` va al
+   servicio de suscripciones; `payment` primero se prueba como link de pago y,
+   si no es de un link, como cuota de una suscripción.
+4. **El estado es DERIVADO y puro** (`deriveSubscriptionStatus`, shared):
+   `pending` (por autorizar), `active` (el período está pagado, o empezó y
+   todavía no hay resultado), `retrying` (la cuota del período fue rechazada y
+   Mercado Pago reintenta), `past_due` (se agotaron los reintentos dentro de
+   la gracia), `expired` (pasaron los días de gracia sin pago; con `cancel`,
+   además se cancela en Mercado Pago), `paused`, `cancelled`, `finished`
+   (todas las cuotas). «Pagado hasta» = fecha del último cobro aprobado + un
+   período. El último cobro se decide por su fecha real (`paidAt ??
+   periodStart ?? createdAt`), no por el orden de inserción.
+5. **Un cobro, una fila**: el mismo pago llega por dos avisos (la cuota y el
+   pago); la clave única lo deja en una fila, y el segundo completa lo que
+   faltaba (medio de pago, fecha) sin pisar lo aprobado. Un rechazo guarda el
+   motivo en lenguaje claro («fondos insuficientes»).
+6. **Revisión periódica** cada 5 min en un nodo (candado en Redis): sin la
+   URL de avisos configurada, igual funciona. Mira las pendientes los primeros
+   30 días (cada 10 min, después cada hora, después una vez por día), las que
+   reintentan o están en mora cada 30 min, las al día cada 12 h o cerca del
+   próximo cobro, y las vencidas o pausadas una vez por día.
+7. **Columnas elegibles** (`settings.subscriptions.fields`, mismo patrón que
+   ADR-S31 / v0.1.365): estado (select con colores), plan, valor, próximo
+   cobro, pagado hasta, cobros fallidos y link; existente, nueva o ninguna.
+   Las fechas se escriben en la zona de la empresa. Escribir esas columnas no
+   pasa por el hub de cambios (no hay ecos ni avisos a seguidores por cada
+   relectura).
+8. **Disparador «Cuando cambia una suscripción»** (`subscription_event`) con
+   filtro por eventos (`activated`, `charged`, `charge_failed`, `past_due`,
+   `expired`, `paused`, `resumed`, `cancelled`, `finished`; sin elegir =
+   todos) y por planes, y las variables `{{suscripcion.*}}`. Dos acciones del
+   conector de Mercado Pago: **Crear suscripción** (`create_subscription_link`,
+   deja `{{suscripcion.link}}`) y **Pausar, reanudar, cancelar o cambiar el
+   valor** (`manage_subscription`). Su «Probar ahora» NO toca a ningún cliente
+   real: devuelve lo que haría como **nota** («Sin enviar»), no como error —
+   lo mismo pasa ahora con el link de pago de ADR-S31, que se veía en rojo.
+9. **Aviso en la campana** (kind `subscription`) a quien creó la suscripción
+   y a los seguidores del registro cuando falla un cobro, entra en mora,
+   vence o se cancela.
+10. **Pantallas**: «Suscripciones (débito automático)» en Cobros de la
+    conexión (totales: ingreso mensual, al día, reintentando/en mora,
+    vencidas; planes; suscriptores con filtro; cobros recientes; la URL de
+    avisos para pegar en Mercado Pago) y la sección **Suscripción** en toda
+    ficha (clásica, modal, página y diseñada) con Suscribir, Copiar link,
+    Verificar, Pausar/Reanudar, Cambiar el valor, Cancelar y los cobros.
+    Las dos consultas usan `staleTime: 0`: lo que las cambia son avisos
+    externos, no la propia pantalla.
+11. El asistente y el MCP ven planes, columnas y las acciones en
+    `get_list_schema`; migrar una empresa lleva planes, suscripciones y cobros
+    (referencia nueva; el `plan_id` dentro de una acción se re-mapea sólo si es
+    número) y borrarla los limpia.
+
+**Descartado.**
+- **Planes de Mercado Pago (`preapproval_plan`)**: obligan a crear el plan
+  allá y no dejan cambiar el valor por cliente; con `preapproval` suelto el
+  plan es nuestro y cada suscripción puede tener su valor y su fecha.
+- **Creerle al aviso**: cualquiera puede mandar un POST a la URL; se relee.
+- **Guardar el estado tal cual lo dice Mercado Pago**: «authorized» no dice si
+  el cliente está al día; el estado útil sale de los cobros y la gracia.
+- **Una lista de cobros desde el día uno**: va en la segunda entrega, como
+  lista espejo (ADR-S83) para no duplicar el modelo.
+
 ---
 
-**Versión del documento:** 1.151.0 (Reuniones de Teams, Outlook y Google Calendar desde las automatizaciones)
+**Versión del documento:** 1.152.0 (Suscripciones con débito automático de Mercado Pago)

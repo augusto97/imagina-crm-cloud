@@ -435,4 +435,136 @@ export const articles: LearnArticle[] = [
             },
         ],
     },
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'cobros-suscripciones',
+        route: '/settings?s=conectores',
+        related: ['cobros-estados', 'cobros-automatizar', 'cobros-panel'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Con una **suscripción** el cliente autoriza su tarjeta **una sola vez** en Mercado Pago y, desde ahí, Mercado Pago le cobra solo cada período: cada mes, cada tres meses o cada cierto número de días. Sirve para mensualidades, membresías, mantenimientos, planes de soporte o cualquier servicio que se paga igual todos los meses. No tienes que mandar un link cada mes.',
+            },
+            { t: 'anim', key: 'cobro-suscripcion', caption: 'La suscripción de un cliente: autoriza la tarjeta, queda al día, un mes se rechaza y Mercado Pago la vuelve a intentar sola.' },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'Las suscripciones son de **Mercado Pago** (débito automático con tarjeta de crédito o débito). Con **Wompi** sigue habiendo links de pago, uno por cobro. El dinero va directo a la cuenta de tu empresa, sin comisión de la plataforma.',
+            },
+            { t: 'h', text: '1. Crea un plan' },
+            {
+                t: 'p',
+                md: 'Un plan es «qué se cobra y cada cuánto». Ve a **Ajustes → Integraciones**, abre **Cobros** de tu conexión de Mercado Pago y, en **Suscripciones (débito automático)**, toca **Nuevo plan**:',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Nombre', what: 'Cómo se llama el plan: «Mantenimiento mensual», «Membresía oro».' },
+                    { name: 'Valor de cada cobro', what: 'Lo que se cobra cada período. Se escribe como siempre: 150.000.' },
+                    { name: 'Cada', what: 'Cada cuántos meses o días se cobra (hasta 12 meses o 365 días).' },
+                    { name: 'Cuántas cuotas', what: 'Vacío = hasta que se cancele. Con un número (por ejemplo 12), al cobrar la última la suscripción queda **Terminada**.' },
+                    { name: 'Días gratis al empezar', what: 'Una prueba gratis: el primer cobro llega después de esos días.' },
+                    { name: 'Días de gracia', what: 'Cuántos días se espera después de que vence el período antes de considerarla **Vencida** (10 por defecto). Mientras tanto Mercado Pago reintenta el cobro.' },
+                    { name: 'Cuando vence sin pago', what: '**Marcarla «Vencida» y avisar** (recomendado: decides tú qué hacer) o también **cancelarla en Mercado Pago**.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                md: 'Si cambias el valor de un plan, vale para las suscripciones **nuevas**. Para subirle el valor a un cliente que ya está suscrito, usa **Cambiar el valor** en su ficha.',
+            },
+            { t: 'h', text: '2. Suscribe a un cliente' },
+            {
+                t: 'steps',
+                items: [
+                    'Abre la ficha del cliente. En la sección **Suscripción** toca **Suscribir**.',
+                    'Elige el plan y revisa el **Correo del cliente** (se completa solo si el registro tiene un correo): Mercado Pago deja la suscripción a nombre de ese correo.',
+                    'Si quieres, cambia el **Valor** para este cliente o pon la fecha del **Primer cobro** (por ejemplo, el día 1 del mes que viene).',
+                    'Toca **Crear el link**: la suscripción queda **Por autorizar** y el link se copia con **Copiar link**.',
+                    'Mándale el link por WhatsApp o correo. Cuando el cliente autoriza su tarjeta, la ficha pasa sola a **Al día**.',
+                ],
+            },
+            { t: 'h', text: 'Qué significa cada estado' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Por autorizar', what: 'Se creó el link y el cliente todavía no autorizó la tarjeta. La ficha revisa sola cada pocos segundos mientras está abierta.' },
+                    { name: 'Al día', what: 'El período actual está pagado.' },
+                    { name: 'Reintentando', what: 'Falló el cobro del período (por ejemplo, fondos insuficientes) y Mercado Pago lo vuelve a intentar en los próximos días.' },
+                    { name: 'En mora', what: 'Se agotaron los reintentos y el período sigue sin pagar, pero todavía no pasaron los días de gracia.' },
+                    { name: 'Vencida', what: 'Pasaron los días de gracia sin pago. Si el plan lo pide, además se cancela en Mercado Pago.' },
+                    { name: 'Pausada', what: 'No se cobra hasta que la reanudes.' },
+                    { name: 'Cancelada', what: 'Ya no se cobra. El cliente puede volver a suscribirse con un link nuevo.' },
+                    { name: 'Terminada', what: 'Se cobraron todas las cuotas del plan.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'Cada cobro aparece en la lista **Cobros** de la ficha con su resultado (Pagado o Rechazado), el valor, la fecha, el medio de pago y, si se rechazó, **por qué**. El mismo pago nunca se cuenta dos veces aunque Mercado Pago avise por dos caminos.',
+            },
+            { t: 'h', text: 'Ver quién está al día en la lista' },
+            {
+                t: 'p',
+                md: 'En la sección **Suscripción** toca **Elegir columnas** (o **Columnas**): el estado, el próximo cobro, el «pagado hasta», el plan, el valor, los cobros fallidos y el link se escriben solos en las columnas que elijas. Con eso armas una vista «En mora» filtrando por **Estado de la suscripción**, un kanban por estado o un tablero con lo que entra cada mes.',
+            },
+            { t: 'anim', key: 'cobro-estados', caption: 'Las columnas se llenan solas y un filtro deja sólo lo que hay que revisar.' },
+            { t: 'h', text: 'Pausar, cambiar el valor o cancelar' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Verificar', what: 'Le pregunta a Mercado Pago cómo va la suscripción en este momento.' },
+                    { name: 'Pausar / Reanudar', what: 'Deja de cobrar mientras está pausada (vacaciones, un mes sin servicio).' },
+                    { name: 'Cambiar el valor', what: 'El valor nuevo se cobra desde el próximo período. Mercado Pago le avisa al cliente.' },
+                    { name: 'Cancelar', what: 'Mercado Pago deja de cobrarle. Puedes anotar el motivo.' },
+                ],
+            },
+            { t: 'h', text: 'Automatizaciones con suscripciones' },
+            {
+                t: 'p',
+                md: 'El disparador **Cuando cambia una suscripción** se ejecuta con lo que pasa: se activó, se cobró una cuota, falló un cobro, entró en mora, venció, se pausó, se reanudó, se canceló o terminó. Marca sólo lo que te interesa y, si quieres, sólo algunos planes. Así avisas al cliente que su pago falló, le avisas al equipo cuando alguien entra en mora o suspendes el servicio cuando vence.',
+            },
+            {
+                t: 'settings',
+                title: 'Variables de la suscripción',
+                rows: [
+                    { name: '{{suscripcion.estado}}', what: 'El estado en palabras: Al día, Reintentando, En mora…' },
+                    { name: '{{suscripcion.plan}} · {{suscripcion.monto}}', what: 'El plan y el valor de cada cobro.' },
+                    { name: '{{suscripcion.proximo_cobro}} · {{suscripcion.pagado_hasta}}', what: 'Cuándo toca el próximo cobro y hasta cuándo está pagado.' },
+                    { name: '{{suscripcion.motivo}}', what: 'Por qué se rechazó el cobro o por qué se canceló.' },
+                    { name: '{{suscripcion.link}}', what: 'El link para autorizar la tarjeta (mientras está por autorizar).' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'Y dos acciones de **Mercado Pago**: **Crear suscripción** (por ejemplo, al marcar un cliente como «Activo», crea el link y en el paso siguiente lo mandas por WhatsApp con **{{suscripcion.link}}**) y **Pausar, reanudar, cancelar o cambiar el valor** de la suscripción del registro. Su **Probar ahora** no toca a ningún cliente real: te muestra lo que haría.',
+            },
+            {
+                t: 'example',
+                title: 'Un gimnasio en Medellín',
+                md: 'Cada socio nuevo recibe por WhatsApp el link de su membresía mensual. Cuando un cobro falla, una automatización le escribe «Tu pago de {{suscripcion.plan}} no pasó: {{suscripcion.motivo}}». Si entra en mora, la recepción ve el estado en la lista al momento del ingreso.',
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'Para enterarte **al instante** de cada cobro, copia la **URL de avisos** que aparece en Suscripciones y pégala en tu aplicación de Mercado Pago → **Webhooks**, con los eventos **Pagos** y **Planes y suscripciones**. Sin ella también funciona: la app revisa cada suscripción sola, sólo que se entera unos minutos después.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Puedo tener dos suscripciones en el mismo registro?', a: 'Una a la vez. Para cambiar de plan, cancela la actual y suscríbelo al nuevo; las anteriores quedan en **Ver las anteriores**.' },
+                    { q: '¿Qué pasa si el cliente nunca abre el link?', a: 'La suscripción queda **Por autorizar** y no se cobra nada. Puedes tocar **Crear otro link** para mandarle uno nuevo.' },
+                    { q: '¿Se cobra el primer mes al autorizar?', a: 'Sí, salvo que el plan tenga días gratis o pongas la fecha del **Primer cobro**.' },
+                    { q: '¿Puedo cambiar a mano el «Estado de la suscripción» en la lista?', a: 'Puedes, pero la siguiente noticia de Mercado Pago lo vuelve a escribir. Para registrar algo propio, usa tu propio campo.' },
+                    { q: '¿Funciona en modo prueba?', a: 'Sí: con las credenciales de prueba de Mercado Pago el link abre el ambiente de prueba y no se cobra dinero real.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a Integraciones', to: '/settings?s=conectores' },
+                    { label: 'Saber quién ya pagó', article: 'cobros-estados' },
+                ],
+            },
+        ],
+    },
 ];

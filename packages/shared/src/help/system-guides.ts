@@ -1075,6 +1075,25 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         related: ['documents', 'integrations', 'whatsapp'],
     },
 
+    {
+        id: 'subscriptions',
+        title: '¿Cómo cobro cada mes con débito automático?',
+        category: 'documents',
+        minutes: 3,
+        body: [
+            '1. Conecta **Mercado Pago** en **Ajustes → Integraciones** y abre **Cobros** de esa conexión.',
+            '2. En **Suscripciones (débito automático)** toca **Nuevo plan**: el nombre, el valor, cada cuánto se cobra, los días de gracia y qué pasa si vence sin pago.',
+            '3. En la ficha del cliente, en **Suscripción**, toca **Suscribir**, elige el plan y revisa el correo.',
+            '4. Copia el link y mándaselo: cuando autoriza su tarjeta, la ficha pasa sola a **Al día** y Mercado Pago le cobra cada período.',
+            '5. Toca **Elegir columnas** para ver en la lista el estado, el próximo cobro y el «pagado hasta» de cada cliente.',
+            'Si un cobro falla, queda **Reintentando** (Mercado Pago lo vuelve a intentar); si no se paga, pasa a **En mora** y, después de los días de gracia, a **Vencida**.',
+        ].join('\n'),
+        tip: 'Con el disparador **Cuando cambia una suscripción** avisas al cliente que su pago falló, al equipo cuando alguien entra en mora o suspendes el servicio cuando vence. Variables: **{{suscripcion.estado}}**, **{{suscripcion.motivo}}**, **{{suscripcion.link}}**.',
+        screens: ['record', 'settings:conectores'],
+        keywords: 'suscripcion suscripciones debito automatico cobro recurrente mensual mensualidad membresia plan mercado pago tarjeta autorizar al dia reintentando mora vencida pausar cancelar cambiar valor',
+        related: ['payment-links', 'integrations', 'automation-basics'],
+    },
+
     // ── Integraciones y canales ───────────────────────────────────────────
     {
         id: 'integrations',

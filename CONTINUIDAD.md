@@ -394,8 +394,11 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.366**
-(reuniones de Teams, Outlook y Google Calendar desde las automatizaciones:
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.367**
+(suscripciones con débito automático de Mercado Pago para los clientes de cada
+empresa: planes, suscribir desde la ficha, estado derivado con gracia, cobros,
+columnas, disparador y acciones, ADR-S96 — primera de tres entregas; antes
+v0.1.366 reuniones de Teams, Outlook y Google Calendar desde las automatizaciones:
 crear con enlace, guardar el enlace y el id en el registro, reprogramar y
 cancelar, addendum ADR-S22; antes v0.1.365 los cobros se ven: el link de pago queda en la columna que se elija, la ficha
 siempre muestra «Cobros» y el botón trae el link para copiar, addendum ADR-S31;
@@ -421,7 +424,19 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
 - 2026-11-05 — **Suscripciones y cobros recurrentes (Mercado Pago y PayPal)
-  para los clientes de cada empresa** — ESPERANDO QUE EL USUARIO ELIJA. Hoy la
+  para los clientes de cada empresa** — EN CURSO. El usuario respondió «hazlo
+  todo como lo veas más recomendable»: decidí una suscripción viva por
+  registro, el historial de cobros como lista espejo (en la segunda entrega),
+  al vencer «marcar Vencida y avisar» por defecto (cancelar en Mercado Pago es
+  opción del plan) y Wompi recurrente afuera. **v0.1.367 hecha** (Mercado Pago
+  de punta a punta, ADR-S96). Siguen **v0.1.368** (formulario «Suscribir al
+  enviar», bloque del portal, lista espejo «Cobros de suscripciones», plantilla
+  de tablero, herramienta propose del asistente/MCP) y **v0.1.369** (PayPal
+  como conector de la empresa, links y suscripciones en USD). Ideas que
+  quedaron anotadas para más adelante: bloquear a mano las columnas de la
+  suscripción (hoy se pueden editar y la siguiente relectura las pisa) y
+  mostrar las fechas del panel en la zona de la empresa (hoy en la del
+  navegador). Antes de la respuesta, la propuesta era: Hoy la
   empresa sólo crea links de pago únicos (ADR-S31); el `preapproval` de Mercado
   Pago existe pero sólo para cobrarle el plan a la empresa (ADR-S30), y PayPal
   sólo para eso mismo (no hay conector de PayPal para empresas). Propuesta
@@ -1432,6 +1447,28 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.367** — **Suscripciones con débito automático de
+  Mercado Pago** (pedido del usuario: "¿cómo se manejan las suscripciones o
+  cobros recurrentes de Mercado Pago?… reportar los pagos recurrentes que sí se
+  hicieron y cuáles no… a quién hay que cancelarle el servicio"; después:
+  "hazlo todo como lo veas más recomendable"). Planes de la conexión de
+  Mercado Pago (valor, cada cuánto, cuotas, días gratis, días de gracia, qué
+  hacer al vencer), «Suscribir» en la ficha (link `init_point` para que el
+  cliente autorice su tarjeta), estado derivado (por autorizar / al día /
+  reintentando / en mora / vencida / pausada / cancelada / terminada) que se
+  relee SIEMPRE de Mercado Pago (avisos por la misma URL de cobros + revisión
+  cada 5 min), cobros con su motivo de rechazo y sin duplicar, columnas
+  elegibles, disparador «Cuando cambia una suscripción», acciones «Crear
+  suscripción» y «Pausar/reanudar/cancelar/cambiar el valor», aviso en la
+  campana, pausar/reanudar/cambiar el valor/cancelar desde la ficha. ADR-S96.
+  De paso: «Probar ahora» de los links de pago (desde v0.1.251) se veía en
+  rojo como «No se pudo conectar» aunque fuera sólo una vista previa — ahora
+  es «Sin enviar»; y las estadísticas de un formulario BORRADO se reintentaban
+  para siempre cada 2 min (el error de la FK venía envuelto por drizzle y no se
+  reconocía) — ahora se descartan, con test. E2E 45/45 contra un Mercado Pago
+  simulado (`scripts/dev/fake-collect.mjs` ganó `preapproval`,
+  `authorized_payments` y `/__patch`), escritorio, celular y oscuro. Queda:
+  v0.1.368 y v0.1.369 (ver §10).
 - **2026-11-05 · v0.1.366** — **Reuniones desde las automatizaciones**
   (pedido del cliente Binapps, reenviado por el usuario: agendar las demos
   comerciales sin el puente de Power Automate). Teams gana «Crear reunión de

@@ -65,6 +65,16 @@ function hashKey(t: FormStatsTarget, day: string): string {
     return `${KEY_PREFIX}${t.tenantId}:${t.formId}:${day}`;
 }
 
+/** ¿El error (o su causa, que es donde drizzle deja el de Postgres) es una FK rota? */
+export function isForeignKeyViolation(err: unknown): boolean {
+    for (let e: unknown = err, i = 0; e && typeof e === 'object' && i < 4; e = (e as { cause?: unknown }).cause, i++) {
+        const x = e as { code?: unknown; message?: unknown };
+        if (x.code === '23503') return true;
+        if (typeof x.message === 'string' && /violates foreign key/i.test(x.message)) return true;
+    }
+    return false;
+}
+
 function parseKey(key: string): { tenantId: number; formId: number; day: string } | null {
     const m = /^fst:(\d+):(\d+):(\d{4}-\d{2}-\d{2})$/.exec(key);
     if (!m) return null;
@@ -164,9 +174,12 @@ export class FormStatsService implements OnModuleInit, OnModuleDestroy {
                     await this.upsert(parsed.tenantId, parsed.formId, parsed.day, counts);
                     done++;
                 } catch (err) {
-                    const msg = String(err);
-                    // El formulario (o la empresa) se borró: esos números ya no van a ningún lado.
-                    if (/foreign key|violates/i.test(msg)) continue;
+                    // El formulario (o la empresa) se borró: esos números ya no van a
+                    // ningún lado. OJO: drizzle envuelve el error de Postgres
+                    // («Failed query: …») y el código 23503 viaja en `cause` — antes
+                    // se miraba sólo el mensaje y el hash volvía a Redis para siempre.
+                    if (isForeignKeyViolation(err)) continue;
+                    const msg = err instanceof Error ? err.message.split('\n')[0] : String(err);
                     this.logger.warn(`Volcado de ${key}: ${msg}`);
                     const back = this.redis.multi();
                     for (const [k, v] of Object.entries(counts)) back.hincrby(key, k, v);

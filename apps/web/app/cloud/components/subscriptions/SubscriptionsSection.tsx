@@ -40,6 +40,8 @@ export function SubscriptionsSection({ connectionId, hookUrl, testMode }: { conn
         queryKey: ['subscriptions-overview', connectionId],
         queryFn: () => api.subscriptionsOverview(connectionId),
         retry: false,
+        // Lo cambian los avisos de Mercado Pago, no esta pantalla: al abrirla, siempre fresco.
+        staleTime: 0,
         refetchInterval: 60_000,
     });
     const [editing, setEditing] = useState<SubscriptionPlan | 'new' | null>(null);
@@ -50,7 +52,7 @@ export function SubscriptionsSection({ connectionId, hookUrl, testMode }: { conn
     }
     const d = q.data;
     return (
-        <div className="imcrm-space-y-4" data-testid="imcrm-subscriptions-section">
+        <div className="imcrm-space-y-4" data-testid="imcrm-subscriptions-section" data-tour="collections-subscriptions">
             <h2 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-pt-2 imcrm-text-lg imcrm-font-semibold">
                 <Repeat className="imcrm-h-5 imcrm-w-5 imcrm-text-muted-foreground" />
                 {__('Suscripciones (débito automático)')}
@@ -124,7 +126,7 @@ export function SubscriptionsSection({ connectionId, hookUrl, testMode }: { conn
                                 )}
                                 <span className="imcrm-text-xs imcrm-text-muted-foreground">
                                     {c.plan_name ? `${c.plan_name} · ` : ''}
-                                    {formatDateTimeStr(c.paid_at ?? c.created_at)}
+                                    {formatDateTimeStr(c.paid_at ?? c.period_start ?? c.created_at)}
                                 </span>
                                 {c.failure_reason && <span className="imcrm-basis-full imcrm-text-xs imcrm-text-muted-foreground">{c.failure_reason}</span>}
                             </li>

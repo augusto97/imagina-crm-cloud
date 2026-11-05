@@ -225,6 +225,16 @@ describe('v0.1.358 — estadísticas y avances guardados (Postgres + Redis reale
         expect(rows[0]!.counts).toEqual({ v: 7, s: 1 });
     });
 
+    it('los números de un formulario que ya no existe se descartan (no vuelven a Redis para siempre)', async () => {
+        const day = zonedToday(TZ);
+        const k = `fst:${tenantId}:987654:${day}`;
+        await redis.hset(k, { v: '2' });
+        await redis.sadd('fst:dirty', k);
+        await stats.flush();
+        expect(await redis.exists(k)).toBe(0);
+        expect(await redis.sismember('fst:dirty', k)).toBe(0);
+    });
+
     it('un token desconocido no cuenta nada; demasiados lotes de una IP se ignoran; los orígenes de más van a «Otros»', async () => {
         const { id, token } = await contactForm();
         await svc.recordEvents('A'.repeat(24), IP, { events: [{ kind: 'view' }] });

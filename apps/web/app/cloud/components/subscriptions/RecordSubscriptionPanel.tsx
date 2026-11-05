@@ -61,6 +61,8 @@ function RecordSubscriptionPanelInner({
         queryFn: () => api.recordSubscriptions(listId, recordId),
         enabled: !isGuest,
         retry: false,
+        // Un cobro llega por un aviso de Mercado Pago: al abrir la ficha, siempre fresco.
+        staleTime: 0,
         // Mientras el cliente no autorice la tarjeta, mirar seguido (puede estar haciéndolo ahora).
         refetchInterval: (query) => ((query.state.data?.subscriptions ?? []).some((s) => s.status === 'pending') ? 15_000 : false),
     });
@@ -96,7 +98,7 @@ function RecordSubscriptionPanelInner({
     const canSubscribe = data.can_edit && data.plans.length > 0 && !blocksNew;
 
     return (
-        <section className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4" data-testid="imcrm-record-subscriptions">
+        <section className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4" data-testid="imcrm-record-subscriptions" data-tour="record-subscription">
             <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
                 <p className="imcrm-flex imcrm-flex-1 imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-semibold">
                     <Repeat className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
@@ -305,7 +307,7 @@ function SubscriptionCard({ sub, canEdit, onChanged }: { sub: SubscriptionWithCh
                                     {__(SUBSCRIPTION_CHARGE_STATUS_LABELS[c.status])}
                                 </span>
                                 <span>{formatMoney(c.amount, c.currency)}</span>
-                                <span className="imcrm-text-muted-foreground">{formatDateTimeStr(c.paid_at ?? c.created_at)}</span>
+                                <span className="imcrm-text-muted-foreground">{formatDateTimeStr(c.paid_at ?? c.period_start ?? c.created_at)}</span>
                                 {c.attempt !== null && c.attempt > 0 && <span className="imcrm-text-muted-foreground">{sprintf(__('reintento %d'), c.attempt)}</span>}
                                 {c.method && <span className="imcrm-text-muted-foreground">{c.method}</span>}
                                 {c.failure_reason && <span className="imcrm-basis-full imcrm-text-muted-foreground">{c.failure_reason}</span>}
