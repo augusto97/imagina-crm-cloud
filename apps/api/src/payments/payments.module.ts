@@ -4,11 +4,13 @@ import { SuperadminGuard } from '../authz/superadmin.guard';
 import { ENV, type Env } from '../config/env';
 import { BillingRemindersBootstrap, BillingRemindersService } from './billing-reminders.service';
 import { PaymentsController, PlatformPaymentsController } from './payments.controller';
+import { PaymentsReconcileService } from './payments-reconcile.service';
 import { PaymentsService } from './payments.service';
 import { PAYMENT_GATEWAYS, type PaymentGateway } from './payment.types';
 import { PlatformPaymentsService } from './platform-payments.service';
 import { MercadoPagoGateway, MP_API } from './providers/mercadopago.provider';
 import { PayPalGateway } from './providers/paypal.provider';
+import { OpenCheckouts } from './reconcile-state';
 
 /**
  * Pagos (ADR-S12). Registra las pasarelas disponibles (PayPal + Mercado Pago);
@@ -32,7 +34,9 @@ import { PayPalGateway } from './providers/paypal.provider';
                 ),
             ],
         },
+        OpenCheckouts,
         PaymentsService,
+        PaymentsReconcileService,
         BillingRemindersService,
         BillingRemindersBootstrap,
         SuperadminGuard,

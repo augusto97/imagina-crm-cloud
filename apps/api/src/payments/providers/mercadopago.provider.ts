@@ -4,11 +4,14 @@ import type { AutoRenewStatus, BillingPaymentStatus } from '@imagina-base/shared
 import type { MercadoPagoCreds } from '../platform-payments.service';
 import {
     decodeReference,
+    emptyReconcileBatch,
     paymentMethodLabel,
     type CheckoutRequest,
     type CheckoutSession,
     type PaymentGateway,
     type PaymentNotice,
+    type ReconcileBatch,
+    type ReconcileInput,
     type SubscriptionRequest,
     type SubscriptionSession,
 } from '../payment.types';
@@ -220,6 +223,12 @@ export class MercadoPagoGateway implements PaymentGateway {
 
     private async fromPayment(accessToken: string, id: string): Promise<PaymentNotice[]> {
         const p = await this.get<MpPayment>(accessToken, `/v1/payments/${id}`);
+        return this.paymentNotices(p, id);
+    }
+
+    /** Un pago de MP (leído por id o venido de una búsqueda) → lo que pasó. */
+    private paymentNotices(p: MpPayment, idHint: string): PaymentNotice[] {
+        const id = String(p.id ?? idHint);
         const ref = p.external_reference ? decodeReference(p.external_reference) : null;
         const subscriptionExternalId =
             p.metadata?.preapproval_id ?? p.point_of_interaction?.transaction_data?.subscription_id ?? undefined;
@@ -242,7 +251,7 @@ export class MercadoPagoGateway implements PaymentGateway {
                 plan: ref?.plan ?? null,
                 mode: ref?.mode ?? 'subscription',
                 months: ref?.months ?? 1,
-                externalId: String(p.id ?? id),
+                externalId: id,
                 status,
                 amount,
                 currency,
@@ -272,27 +281,186 @@ export class MercadoPagoGateway implements PaymentGateway {
 
     private async fromAuthorizedPayment(accessToken: string, id: string): Promise<PaymentNotice[]> {
         const a = await this.get<MpAuthorizedPayment>(accessToken, `/authorized_payments/${id}`);
-        // Una cuota "programada" todavía no intentó cobrar: no hay nada que registrar.
-        if (!a.payment?.id || !a.preapproval_id) return [];
-        const ref = a.external_reference ? decodeReference(a.external_reference) : null;
-        return [
-            {
-                kind: 'payment',
-                tenantId: ref?.tenantId ?? null,
-                plan: ref?.plan ?? null,
-                mode: 'subscription',
-                months: 1,
-                // El id del PAGO, no el de la cuota: el mismo cobro llega también
-                // por el aviso `payment` y tiene que caer en la misma fila.
-                externalId: String(a.payment.id),
-                status: mapMpPaymentStatus(a.payment.status),
-                amount: Number(a.transaction_amount ?? 0),
-                currency: a.currency_id ?? '',
-                method: 'Tarjeta (renovación automática)',
-                subscriptionExternalId: a.preapproval_id,
-            },
-        ];
+        return authorizedPaymentNotices(a);
     }
+
+    /**
+     * v0.1.382 — Revisión de respaldo. Tres búsquedas, todas con nuestra clave
+     * y sin creerle nada a nadie:
+     *
+     *  1. Los pagos de la cuenta que cambiaron desde `since` (atrapa los de
+     *     período, las cuotas de las renovaciones y los reembolsos). SUPUESTO:
+     *     `range=date_last_updated` y `begin_date=NOW-<n>DAYS` como dice la
+     *     documentación de la búsqueda de pagos.
+     *  2. Los pagos abiertos desde la app que esa búsqueda no trajo, por su
+     *     referencia (la misma búsqueda que usa «Verificar» en los cobros).
+     *  3. Cada renovación automática viva: su estado y sus cuotas.
+     */
+    async reconcile(input: ReconcileInput): Promise<ReconcileBatch> {
+        const batch = emptyReconcileBatch();
+        const creds = await this.source.mercadoPago();
+        if (!creds) return batch;
+        const token = creds.accessToken;
+        const seen = new Set<string>();
+        const refsSeen = new Set<string>();
+        /** Referencias con un pago que ya es definitivo (cobrado o devuelto). */
+        const refsDone = new Set<string>();
+        const add = (p: MpPayment): void => {
+            const id = p.id === undefined ? '' : String(p.id);
+            if (!id || seen.has(id)) return;
+            seen.add(id);
+            batch.checked.payments++;
+            if (p.external_reference) {
+                refsSeen.add(p.external_reference);
+                if (p.status === 'approved' || p.status === 'refunded' || p.status === 'charged_back') refsDone.add(p.external_reference);
+            }
+            batch.notices.push(...this.paymentNotices(p, id));
+        };
+        const fail = (what: string, err: unknown): void => {
+            const text = mpErrorText(what, err);
+            if (!batch.errors.includes(text)) batch.errors.push(text);
+        };
+
+        // 1. Lo que cambió en la cuenta.
+        const days = Math.min(30, Math.max(1, Math.ceil((input.now.getTime() - input.since.getTime()) / DAY)));
+        for (let page = 0; page < MAX_SEARCH_PAGES; page++) {
+            const q = new URLSearchParams({
+                sort: 'date_last_updated',
+                criteria: 'desc',
+                range: 'date_last_updated',
+                begin_date: `NOW-${days}DAYS`,
+                end_date: 'NOW',
+                limit: String(SEARCH_PAGE),
+                offset: String(page * SEARCH_PAGE),
+            });
+            try {
+                const res = await this.get<MpSearch<MpPayment>>(token, `/v1/payments/search?${q.toString()}`);
+                const results = Array.isArray(res.results) ? res.results : [];
+                for (const p of results) add(p);
+                const total = Number(res.paging?.total);
+                if (results.length < SEARCH_PAGE || (Number.isFinite(total) && (page + 1) * SEARCH_PAGE >= total)) break;
+            } catch (err) {
+                fail('buscar los pagos recientes', err);
+                break;
+            }
+        }
+
+        // 2. Los abiertos desde la app que no aparecieron.
+        for (const c of input.openCheckouts) {
+            if (!refsSeen.has(c.reference)) {
+                const q = new URLSearchParams({ external_reference: c.reference, sort: 'date_created', criteria: 'desc', limit: '30' });
+                try {
+                    const res = await this.get<MpSearch<MpPayment>>(token, `/v1/payments/search?${q.toString()}`);
+                    for (const p of Array.isArray(res.results) ? res.results : []) add(p);
+                    refsSeen.add(c.reference);
+                } catch (err) {
+                    fail('buscar los pagos abiertos desde la app', err);
+                    continue;
+                }
+            }
+            const old = input.now.getTime() - c.createdAt > OPEN_DAYS * DAY;
+            if (refsDone.has(c.reference) || old) batch.settled.push(c);
+        }
+
+        // 3. Las renovaciones vivas.
+        for (const id of input.liveSubscriptions.slice(0, MAX_SUBSCRIPTIONS)) {
+            if (!/^[A-Za-z0-9-]{1,64}$/.test(id)) continue;
+            let status: string | undefined;
+            try {
+                const notices = await this.fromPreapproval(token, id);
+                batch.checked.subscriptions++;
+                batch.notices.push(...notices);
+                const n = notices[0];
+                status = n && n.kind === 'subscription' ? n.status : undefined;
+            } catch (err) {
+                if (err instanceof MpHttpError && err.status === 404) {
+                    batch.errors.push(`La renovación ${id} no existe en esta cuenta de Mercado Pago (¿cambiaste el Access Token?).`);
+                } else {
+                    fail('leer las renovaciones automáticas', err);
+                }
+                continue;
+            }
+            if (status !== 'authorized' && status !== 'paused') continue;
+            const items = await this.subscriptionPayments(token, id).catch((err: unknown) => {
+                fail('leer las cuotas de las renovaciones', err);
+                return [] as MpAuthorizedPayment[];
+            });
+            for (const a of items) {
+                const paymentId = a.payment?.id === undefined ? '' : String(a.payment.id);
+                if (!paymentId || seen.has(paymentId)) continue;
+                const notices = authorizedPaymentNotices({ ...a, preapproval_id: a.preapproval_id ?? id });
+                if (notices.length === 0) continue;
+                seen.add(paymentId);
+                batch.checked.payments++;
+                batch.notices.push(...notices);
+            }
+        }
+        return batch;
+    }
+
+    /**
+     * Las cuotas de una renovación. Con paginación y, si Mercado Pago lo
+     * rechaza (v0.1.380: hay cuentas que responden 400), sólo con el id.
+     */
+    private async subscriptionPayments(token: string, preapprovalId: string): Promise<MpAuthorizedPayment[]> {
+        const paged = new URLSearchParams({ preapproval_id: preapprovalId, limit: '50', offset: '0' });
+        try {
+            const res = await this.get<MpSearch<MpAuthorizedPayment>>(token, `/authorized_payments/search?${paged.toString()}`);
+            return Array.isArray(res.results) ? res.results : [];
+        } catch (err) {
+            if (!(err instanceof MpHttpError) || err.status !== 400) throw err;
+            const bare = new URLSearchParams({ preapproval_id: preapprovalId });
+            const res = await this.get<MpSearch<MpAuthorizedPayment>>(token, `/authorized_payments/search?${bare.toString()}`);
+            return Array.isArray(res.results) ? res.results : [];
+        }
+    }
+}
+
+const DAY = 24 * 60 * 60 * 1000;
+/** Páginas de la búsqueda de pagos recientes (de a 100). */
+const MAX_SEARCH_PAGES = 5;
+const SEARCH_PAGE = 100;
+/** Renovaciones vivas que se releen por vez. */
+const MAX_SUBSCRIPTIONS = 200;
+/** Cuánto se sigue mirando un pago abierto (PSE y efectivo pueden tardar). */
+const OPEN_DAYS = 7;
+
+/** Una cuota de la renovación → el cobro que hizo (si ya intentó cobrar). */
+export function authorizedPaymentNotices(a: MpAuthorizedPayment): PaymentNotice[] {
+    // Una cuota "programada" todavía no intentó cobrar: no hay nada que registrar.
+    if (!a.payment?.id || !a.preapproval_id) return [];
+    const ref = a.external_reference ? decodeReference(a.external_reference) : null;
+    return [
+        {
+            kind: 'payment',
+            tenantId: ref?.tenantId ?? null,
+            plan: ref?.plan ?? null,
+            mode: 'subscription',
+            months: 1,
+            // El id del PAGO, no el de la cuota: el mismo cobro llega también
+            // por el aviso `payment` y tiene que caer en la misma fila.
+            externalId: String(a.payment.id),
+            status: mapMpPaymentStatus(a.payment.status),
+            amount: Number(a.transaction_amount ?? 0),
+            currency: a.currency_id ?? '',
+            method: 'Tarjeta (renovación automática)',
+            subscriptionExternalId: a.preapproval_id,
+        },
+    ];
+}
+
+/** Un error de la API de Mercado Pago en lenguaje claro, para la consola. */
+export function mpErrorText(what: string, err: unknown): string {
+    if (err instanceof MpHttpError) {
+        if (err.status === 401 || err.status === 403) {
+            return `Mercado Pago rechazó el Access Token al ${what} (${err.status}): revisa las credenciales en esta pantalla.`;
+        }
+        if (err.status === 400) return `Mercado Pago no aceptó el pedido al ${what} (400).`;
+        if (err.status === 429) return `Mercado Pago pidió esperar al ${what} (429): se vuelve a intentar en la próxima revisión.`;
+        return `Mercado Pago respondió ${err.status} al ${what}.`;
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return `No se pudo conectar con Mercado Pago al ${what}: ${msg.slice(0, 160)}`;
 }
 
 /** Estado de un pago de MP → estado en el registro de pagos. */
@@ -358,6 +526,11 @@ export function verifyMpSignature(
     return a.length === b.length && timingSafeEqual(a, b);
 }
 
+interface MpSearch<T> {
+    results?: T[];
+    paging?: { total?: number; limit?: number; offset?: number };
+}
+
 interface MpPayment {
     id?: number | string;
     status?: string;
@@ -379,7 +552,7 @@ interface MpPreapproval {
     auto_recurring?: { transaction_amount?: number; currency_id?: string };
 }
 
-interface MpAuthorizedPayment {
+export interface MpAuthorizedPayment {
     id?: number | string;
     preapproval_id?: string;
     external_reference?: string;

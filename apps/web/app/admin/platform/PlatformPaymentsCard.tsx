@@ -13,6 +13,8 @@ import { Label } from '@/components/ui/label';
 import { CloudApiError } from '@/lib/cloud/client';
 import { __ } from '@/lib/i18n';
 
+import { PlatformReconcileCard } from './PlatformReconcileCard';
+
 const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 const DATE = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -29,12 +31,14 @@ const STATUS: Record<BillingPayment['status'], { label: string; variant: 'succes
  * v0.1.250 — Plataforma → Cobros. Las credenciales con las que la plataforma
  * cobra sus planes (Mercado Pago: access token + clave secreta de los avisos,
  * cifradas; el `.env` queda de respaldo) con los pasos para registrar la URL
- * de avisos, y los últimos pagos de todas las empresas.
+ * de avisos, la revisión de respaldo (v0.1.382: frecuencia y «Revisar ahora»)
+ * y los últimos pagos de todas las empresas.
  */
 export function PlatformPaymentsCard(): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="platform-payments">
             <CredentialsCard />
+            <PlatformReconcileCard />
             <RecentCard />
         </div>
     );

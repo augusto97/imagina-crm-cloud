@@ -22,6 +22,7 @@ import {
     type PaymentConfig,
     type PlatformPaymentRow,
     type PlatformPaymentsView,
+    type PlatformReconcileStatus,
     type SubscriptionInfo,
     type UpdatePlatformPaymentsInput,
 } from '@imagina-base/shared';
@@ -35,6 +36,7 @@ import { users } from '../db/schema';
 import { AllowLocked } from '../tenancy/allow-locked.decorator';
 import { AllowReadOnly } from '../tenancy/allow-read-only.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { PaymentsReconcileService } from './payments-reconcile.service';
 import { PaymentsService } from './payments.service';
 import { PlatformPaymentsService } from './platform-payments.service';
 
@@ -132,6 +134,7 @@ export class PlatformPaymentsController {
     constructor(
         private readonly settings: PlatformPaymentsService,
         private readonly payments: PaymentsService,
+        private readonly reconcile: PaymentsReconcileService,
     ) {}
 
     @Get()
@@ -144,6 +147,17 @@ export class PlatformPaymentsController {
         @Body(new ZodValidationPipe(updatePlatformPaymentsSchema)) input: UpdatePlatformPaymentsInput,
     ): Promise<PlatformPaymentsView> {
         return this.settings.update(input);
+    }
+
+    /**
+     * v0.1.382 — «Revisar ahora»: busca en Mercado Pago y PayPal lo que los
+     * avisos no trajeron. Arranca en segundo plano; la consola pregunta por
+     * `GET /platform/payments` hasta que `reconcile.running` sea false.
+     */
+    @Post('reconcile')
+    @HttpCode(200)
+    startReconcile(): Promise<PlatformReconcileStatus> {
+        return this.reconcile.start();
     }
 
     @Get('recent')

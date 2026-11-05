@@ -394,8 +394,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.381**
-(«Compartir» del formulario y de la agenda es una ventana con tres pestañas
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.382**
+(revisión de respaldo de los cobros de la plataforma: cada cierto tiempo
+—configurable en Plataforma → Cobros— la app le pregunta a Mercado Pago y a
+PayPal qué pagos y renovaciones cambiaron y aplica lo que no llegó por aviso,
+con «Revisar ahora», addendum ADR-S30; antes v0.1.381:
+«Compartir» del formulario y de la agenda es una ventana con tres pestañas
 —enlace, insertar en tu sitio con una demostración en vivo, código QR—; los
 sitios permitidos viven junto al código; la agenda deja de tener dos lugares
 para compartir; el panel «Página y fondo» ya no queda pegado al borde, y con
@@ -487,7 +491,11 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 - 2026-11-05 — **Etiquetas en el enlace directo** — **v0.1.375 HECHA** (el
   usuario: «Sí, haz la v0.1.375»).
 - 2026-11-05 — **«¿Para Mercado Pago no hay que configurar un webhook?»** —
-  **RESPONDIDO + PROPUESTA SIN APROBAR**. Cobros de cada empresa
+  **HECHO en v0.1.382** (el usuario: «Si, hazlo, aunque debería poderse
+  ajustar la periodicidad en los ajustes de la plataforma, y también un botón
+  de sincronizar ahora»): «Revisión de respaldo» en Plataforma → Cobros con
+  «Cada cuánto revisar» (15 min a 1 día, o sólo los avisos; cada hora por
+  defecto) y «Revisar ahora». Lo que se respondió antes: Cobros de cada empresa
   (Integraciones): alcanza el Access Token — los links mandan
   `notification_url` en cada preferencia y las suscripciones se releen cada
   5 min (el webhook del panel sólo las hace instantáneas). Cobro de los planes
@@ -496,7 +504,8 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   los de la `notification_url`) y la renovación automática con tarjeta sólo
   entra por el aviso (no hay revisión periódica de respaldo). Propuesto: una
   revisión horaria de respaldo para los pagos y renovaciones de la plataforma.
-  Esperando respuesta.
+  El webhook + la clave secreta siguen siendo el camino rápido y recomendado:
+  la revisión es la red de seguridad.
 - 2026-11-05 — **Rediseño de los constructores de formularios y de la agenda**
   — **HECHO: formularios en v0.1.377 y agenda en v0.1.378** (en el mismo
   mensaje que aprobó la v0.1.376). El
@@ -1610,6 +1619,33 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.382** — **Revisión de respaldo de los cobros de la
+  plataforma** (pedido del usuario: «Si, hazlo, aunque debería poderse ajustar
+  la periodicidad en los ajustes de la plataforma, y también un botón de
+  sincronizar ahora»). Si un aviso de Mercado Pago o PayPal no llega (servidor
+  apagado, URL cambiada, falta la clave secreta, Mercado Pago dejó de
+  reintentar), la app igual se entera: en Plataforma → Cobros, tarjeta
+  **«Revisión de respaldo»** con **«Cada cuánto revisar»** (15/30 min, cada
+  hora —por defecto—, 3/6/12 h, una vez al día o «Sólo con los avisos»),
+  **«Revisar ahora»** y la **última revisión** (qué se revisó, la lista de lo
+  que aplicó con la empresa y el detalle, y los errores en palabras). Qué
+  mira: en Mercado Pago, los pagos que cambiaron (búsqueda por fecha de
+  actualización, desde la última revisión buena menos 2 h, 7 días a mano), las
+  órdenes de pago de período que la app abrió y todavía no se pagaron
+  (`billing:open_checkouts`, 7 días) y cada renovación automática viva con sus
+  cuotas; en PayPal, las órdenes abiertas (las APROBADAS se capturan, SEC-29).
+  Todo se aplica con el MISMO `applyDetailed` de los avisos: el registro de
+  pagos hace que nada se aplique dos veces, y una renovación que no cambió no
+  se reescribe. Una a la vez (candado en Redis), un reloj cada 5 min que corre
+  sólo si le toca, y una revisión con errores no adelanta el punto de partida
+  de la siguiente. La frecuencia vive en `platform:payments` (viaja en el
+  snapshot); el estado de la revisión, no. Sin novedad en el catálogo (es del
+  operador); artículo de Aprende del operador al día. Tests:
+  `payments-reconcile.spec` (18) + `payments.spec` en verde; E2E navegador
+  19/19 contra el Mercado Pago simulado (frecuencia que persiste, pago que no
+  llegó por aviso aplicado una vez con la empresa en «pro» por 3 meses,
+  segunda revisión «al día», error en palabras, celular en oscuro). En el
+  mismo release, el arreglo de las capturas de la ayuda (`7e96b55`).
 - **2026-11-05 · sin versión (sale con la próxima)** — **Las capturas de la
   ayuda ya no esperan la instalación del navegador.** Revisando la publicación
   de v0.1.381 se vio que algunas máquinas de las capturas tardaban 12-16 min

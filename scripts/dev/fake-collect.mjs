@@ -241,7 +241,12 @@ http.createServer((req, res) => {
         }
         if (p === '/mp/v1/payments/search') {
             const ref = u.searchParams.get('external_reference');
-            return json(res, 200, { results: Object.values(state.payments).filter((x) => x.external_reference === ref).reverse() });
+            if (ref !== null) return json(res, 200, { results: Object.values(state.payments).filter((x) => x.external_reference === ref).reverse() });
+            // v0.1.382 — búsqueda amplia de la revisión de respaldo (`range=date_last_updated`).
+            const offset = Number(u.searchParams.get('offset') ?? 0);
+            const limit = Number(u.searchParams.get('limit') ?? 30);
+            const all = Object.values(state.payments).sort((a, b) => String(b.date_last_updated ?? b.date_created ?? '').localeCompare(String(a.date_last_updated ?? a.date_created ?? '')));
+            return json(res, 200, { paging: { offset, limit, total: all.length }, results: all.slice(offset, offset + limit) });
         }
         if (p === '/mp/preapproval' && req.method === 'POST') {
             const id = `pre-${++n}`;

@@ -86,6 +86,40 @@ export type PaymentNotice =
           authorizeUrl: string | null;
       };
 
+/** v0.1.382 — Un pago que se abrió desde la app y todavía no se confirmó. */
+export interface ReconcileOpenCheckout {
+    externalId: string;
+    reference: string;
+    tenantId: number;
+    /** ms desde 1970. */
+    createdAt: number;
+}
+
+/** v0.1.382 — Qué mirar en una revisión de respaldo. */
+export interface ReconcileInput {
+    /** Desde cuándo buscar pagos recientes. */
+    since: Date;
+    now: Date;
+    /** Pagos abiertos desde la app con ESTE proveedor. */
+    openCheckouts: ReconcileOpenCheckout[];
+    /** Renovaciones automáticas vivas de ESTE proveedor (ids externos). */
+    liveSubscriptions: string[];
+}
+
+/** v0.1.382 — Lo que encontró: se aplica con el mismo `apply` de los avisos. */
+export interface ReconcileBatch {
+    notices: PaymentNotice[];
+    checked: { payments: number; subscriptions: number; orders: number };
+    /** En lenguaje claro, para la consola. */
+    errors: string[];
+    /** Los abiertos que ya no hace falta mirar (cobrados, anulados, vencidos). */
+    settled: ReconcileOpenCheckout[];
+}
+
+export function emptyReconcileBatch(): ReconcileBatch {
+    return { notices: [], checked: { payments: 0, subscriptions: 0, orders: 0 }, errors: [], settled: [] };
+}
+
 /**
  * Pasarela de pago intercambiable (ADR-S12). Cada proveedor implementa esta
  * interfaz; el PaymentsService no conoce el detalle. `isEnabled` es async
@@ -106,6 +140,12 @@ export interface PaymentGateway {
         rawBody: string,
         query: Record<string, string | undefined>,
     ): Promise<PaymentNotice[]>;
+    /**
+     * v0.1.382 — Revisión de respaldo: lo que los avisos no trajeron (servidor
+     * apagado, URL cambiada, sin clave secreta). Se lee siempre de la API del
+     * proveedor con nuestra clave, igual que un aviso.
+     */
+    reconcile?(input: ReconcileInput): Promise<ReconcileBatch>;
 }
 
 export const PAYMENT_GATEWAYS = Symbol('PAYMENT_GATEWAYS');

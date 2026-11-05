@@ -3,10 +3,13 @@ import type { BillingPaymentStatus } from '@imagina-base/shared';
 import type { Env } from '../../config/env';
 import {
     decodeReference,
+    emptyReconcileBatch,
     type CheckoutRequest,
     type CheckoutSession,
     type PaymentGateway,
     type PaymentNotice,
+    type ReconcileBatch,
+    type ReconcileInput,
 } from '../payment.types';
 
 const PAYPAL_API = {
@@ -145,6 +148,79 @@ export class PayPalGateway implements PaymentGateway {
     }
 
     /**
+     * v0.1.382 — Revisión de respaldo. La API de PayPal no deja BUSCAR órdenes,
+     * así que se consultan las que se abrieron desde la app (se guardan al
+     * crearlas): una APROBADA que nadie capturó (se perdió el aviso) se captura
+     * ahora; una ya COMPLETADA se aplica; una anulada, inexistente o sin
+     * aprobar después de 3 días se deja de mirar.
+     */
+    async reconcile(input: ReconcileInput): Promise<ReconcileBatch> {
+        const batch = emptyReconcileBatch();
+        if (!this.enabled || input.openCheckouts.length === 0) return batch;
+        let accessToken: string;
+        try {
+            accessToken = await this.token();
+        } catch (err) {
+            batch.errors.push(`PayPal rechazó las credenciales al revisar las órdenes abiertas: ${String(err instanceof Error ? err.message : err).slice(0, 120)}`);
+            return batch;
+        }
+        for (const c of input.openCheckouts.slice(0, 200)) {
+            if (!/^[A-Za-z0-9-]{1,64}$/.test(c.externalId)) {
+                batch.settled.push(c);
+                continue;
+            }
+            let order: PayPalOrder;
+            try {
+                const res = await this.fetchImpl(`${this.base}/v2/checkout/orders/${c.externalId}`, {
+                    headers: { authorization: `Bearer ${accessToken}` },
+                });
+                if (res.status === 404) {
+                    batch.settled.push(c);
+                    continue;
+                }
+                if (!res.ok) {
+                    const text = `PayPal respondió ${res.status} al leer una orden abierta.`;
+                    if (!batch.errors.includes(text)) batch.errors.push(text);
+                    continue;
+                }
+                order = (await res.json()) as PayPalOrder;
+            } catch (err) {
+                const text = `No se pudo conectar con PayPal al revisar las órdenes abiertas: ${String(err instanceof Error ? err.message : err).slice(0, 120)}`;
+                if (!batch.errors.includes(text)) batch.errors.push(text);
+                continue;
+            }
+            batch.checked.orders++;
+            const unit = order.purchase_units?.[0];
+            const ref = unit?.custom_id ? decodeReference(unit.custom_id) : decodeReference(c.reference);
+            if (!ref) {
+                batch.settled.push(c);
+                continue;
+            }
+            let status = order.status;
+            if (status === 'APPROVED') status = (await this.capture(c.externalId)) ? 'COMPLETED' : status;
+            if (status === 'COMPLETED') {
+                const amount = Number(unit?.amount?.value ?? ref.amount ?? 0);
+                batch.notices.push({
+                    kind: 'payment',
+                    tenantId: ref.tenantId,
+                    plan: ref.plan ?? null,
+                    mode: 'period',
+                    months: ref.months,
+                    externalId: c.externalId,
+                    status: 'approved',
+                    amount: Number.isFinite(amount) ? amount : 0,
+                    currency: 'USD',
+                    method: 'PayPal',
+                });
+                batch.settled.push(c);
+            } else if (status === 'VOIDED' || input.now.getTime() - c.createdAt > 3 * 24 * 60 * 60 * 1000) {
+                batch.settled.push(c);
+            }
+        }
+        return batch;
+    }
+
+    /**
      * Captura la orden aprobada. Idempotente: si otra entrega del mismo aviso
      * ya la capturó (PayPal reintenta), se consulta el estado de la orden en
      * vez de fallar. Sólo `COMPLETED` cuenta como cobrado.
@@ -228,6 +304,12 @@ function extractCustomId(event: PayPalEvent): string | undefined {
     if (typeof resource.custom_id === 'string') return resource.custom_id;
     const unit = resource.purchase_units?.[0];
     return unit?.custom_id;
+}
+
+interface PayPalOrder {
+    id?: string;
+    status?: string;
+    purchase_units?: Array<{ custom_id?: string; amount?: { value?: string } }>;
 }
 
 interface PayPalEvent {
