@@ -395,7 +395,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
 funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.373**
-(PayPal como tercer proveedor de cobros de cada empresa: links de pago en
+(suscripciones con débito automático también con PayPal: planes en dólares,
+producto y plan creados una vez en la cuenta de la empresa, estado releído,
+«En mora» al tercer fallo, pausar/reanudar/cancelar/cambiar el valor, y lo
+público que dice a quién se le paga, addendum ADR-S96 —con ella queda COMPLETO
+el pedido de suscripciones—; antes v0.1.372
+PayPal como tercer proveedor de cobros de cada empresa: links de pago en
 dólares desde la ficha, las automatizaciones, los formularios y el portal, con
 link propio de la app que reusa o crea la orden, captura al volver el cliente,
 aviso o «Verificar», webhook registrado solo con https y páginas con la marca
@@ -444,6 +449,36 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-05 — **Medir conversiones (Google Ads) en formularios y agenda
+  insertados + página de gracias** — ESPERANDO RESPUESTA. Preguntas del
+  usuario: "¿cómo quedó lo de que los formularios consuman pocos recursos?
+  creo que se subía un script a Cloudflare", "¿cómo medir las conversiones de
+  llenadas de formulario o agendamientos de campañas de Google Ads? ¿se puede
+  colocar el código de seguimiento?" y "¿se pueden manejar redirecciones a
+  una página de gracias?". Respuesta: (1) rendimiento resuelto en v0.1.352 SIN
+  Cloudflare (nada se subió allá; `docs/runbook-public-traffic.md` es una guía
+  opcional); su servidor responde nginx directo, sin Cloudflare, y no lo
+  necesita. (2) Hoy NO hay forma cómoda de medir: el marco manda
+  `imb-form-submitted` sin decir cuál formulario y `embed.js` no lo convierte
+  en nada que entienda Tag Manager; una etiqueta DENTRO del marco tampoco
+  sirve (el `gclid` queda en el sitio del cliente y Safari/Firefox bloquean
+  cookies en marcos de otro dominio). (3) La página de gracias YA existe en
+  formularios (redirección general y por pantalla final; insertado navega la
+  página entera) pero NO en la agenda, y la dirección es fija (sin variables).
+  Propuesta: **v0.1.374 «Medir conversiones»** — `embed.js` publica en el sitio
+  `dataLayer.push({event:'imagina_form_submit'|'imagina_booking', …})` + un
+  evento del navegador (nombre, pantalla final, valor/moneda si cobra, id único
+  para no contar dos veces; correo/teléfono para conversiones mejoradas sólo
+  opt-in), ID y etiqueta de conversión de Google Ads por formulario para usar
+  el `gtag` del sitio sin Tag Manager, captura de `gclid/gbraid/wbraid/fbclid/
+  utm_*` y la página en columnas del registro (pasados al marco por mensaje,
+  NO en la URL del iframe, para no romper el caché con cada clic), página de
+  gracias en la agenda, variables en la dirección y guía en Aprende;
+  **v0.1.375** — Google (AW/G) y Meta Pixel POR ID en el enlace directo
+  (nunca código libre ni GTM: la página pública vive en el mismo dominio que la
+  app y ese código correría con la sesión de quien del equipo la abra), con
+  aislamiento; después, conversiones offline (Google Ads API pide developer
+  token) y API de conversiones de Meta.
 - 2026-11-05 — **Logo y «sin marco» en formularios + rediseño del chat de
   IA** (pedido del usuario: "en los formularios debería poderse cambiar el
   logo u ocultarse… un estilo más limpio para embeber… que no tenga espacios
