@@ -167,20 +167,20 @@ describe('Columnas protegidas de los cobros (v0.1.383)', () => {
     });
 
     it('la columna se puede renombrar pero no cambiar de tipo, volverse obligatoria, perder opciones ni borrarse', async () => {
-        const renamed = await fieldsSvc.update(tenantId, 'socios', f.valor!, { label: 'Valor mensual' } as never);
+        const renamed = await fieldsSvc.update(tenantId, 'socios', String(f.valor), { label: 'Valor mensual' } as never);
         expect(renamed.label).toBe('Valor mensual');
 
-        await expect(fieldsSvc.update(tenantId, 'socios', f.valor!, { type: 'text' } as never)).rejects.toMatchObject({
+        await expect(fieldsSvc.update(tenantId, 'socios', String(f.valor), { type: 'text' } as never)).rejects.toMatchObject({
             response: { code: 'managed_field_locked' },
         });
-        await expect(fieldsSvc.update(tenantId, 'socios', f.valor!, { is_required: true } as never)).rejects.toMatchObject({
+        await expect(fieldsSvc.update(tenantId, 'socios', String(f.valor), { is_required: true } as never)).rejects.toMatchObject({
             response: { code: 'managed_field_locked' },
         });
         await expect(
-            fieldsSvc.update(tenantId, 'socios', f.estado!, { config: { options: [{ value: 'active', label: 'Al día' }] } } as never),
+            fieldsSvc.update(tenantId, 'socios', String(f.estado), { config: { options: [{ value: 'active', label: 'Al día' }] } } as never),
         ).rejects.toMatchObject({ response: { code: 'managed_field_locked' } });
         // Cambiar la etiqueta de una opción (no su valor) sí se puede.
-        const relabeled = await fieldsSvc.update(tenantId, 'socios', f.estado!, {
+        const relabeled = await fieldsSvc.update(tenantId, 'socios', String(f.estado), {
             config: {
                 options: [
                     { value: 'active', label: 'Activa' },
@@ -190,13 +190,13 @@ describe('Columnas protegidas de los cobros (v0.1.383)', () => {
         } as never);
         expect((relabeled.config as { options: Array<{ label: string }> }).options[0]!.label).toBe('Activa');
 
-        await expect(fieldsSvc.remove(tenantId, 'socios', f.valor!)).rejects.toMatchObject({
+        await expect(fieldsSvc.remove(tenantId, 'socios', String(f.valor))).rejects.toMatchObject({
             response: { code: 'managed_field_locked', message: expect.stringMatching(/Suscripción/) },
         });
         // Lo que trae la importación sólo se escribe al crear: sí se puede borrar.
-        await fieldsSvc.remove(tenantId, 'socios', f.mp_id!);
+        await fieldsSvc.remove(tenantId, 'socios', String(f.mp_id));
         // Y una columna propia, siempre.
-        await fieldsSvc.remove(tenantId, 'socios', f.notas!);
+        await fieldsSvc.remove(tenantId, 'socios', String(f.notas));
     });
 
     it('un registro o una lista con una suscripción viva no se borran; cancelada, sí', async () => {
