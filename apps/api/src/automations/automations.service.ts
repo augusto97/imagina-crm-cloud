@@ -915,18 +915,18 @@ export class AutomationsService {
         // v0.1.251 — un link de cobro no se "prueba" de verdad: crearía un
         // link real a nombre de la empresa. Se muestra lo que se crearía.
         // v0.1.367 — tampoco una suscripción: le pediría la tarjeta a un cliente real.
-        if (integ.key === 'mercadopago' && action.key === 'create_subscription_link') {
+        if ((integ.key === 'mercadopago' || integ.key === 'paypal') && action.key === 'create_subscription_link') {
             const v = compiled.values;
             return {
                 request: { url: '', method: 'POST', headers: {}, body: null },
                 response: null,
                 error: null,
                 // Sin enviar no es un error: se ve en gris («Sin enviar»), no en rojo.
-                note: `Así se crearía la suscripción para ${v.payer_email ?? ''}${v.amount ? ` por ${v.amount}` : ' con el valor del plan'}${v.start_date ? `, con el primer cobro el ${v.start_date}` : ''}. Para no pedirle la tarjeta a un cliente real, la prueba no la crea: pruébala con «Suscripción» en un registro.`,
+                note: `Así se crearía la suscripción para ${v.payer_email ?? ''}${v.amount ? ` por ${v.amount}` : ' con el valor del plan'}${v.start_date ? `, con el primer cobro el ${v.start_date}` : ''}. Para no pedirle el pago a un cliente real, la prueba no la crea: pruébala con «Suscripción» en un registro.`,
                 sample_record_id: sampleRecordId,
             };
         }
-        if (integ.key === 'mercadopago' && action.key === 'manage_subscription') {
+        if ((integ.key === 'mercadopago' || integ.key === 'paypal') && action.key === 'manage_subscription') {
             const v = compiled.values;
             const what = { pause: 'pausaría', resume: 'reanudaría', cancel: 'cancelaría', amount: 'cambiaría el valor de' }[v.operation ?? ''] ?? 'cambiaría';
             return {

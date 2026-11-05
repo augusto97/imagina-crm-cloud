@@ -298,7 +298,7 @@ export const BLOCK_CATALOG: CatalogEntry[] = [
         type: 'payments',
         category: 'conversation',
         label: __('Pagos'),
-        description: __('Links de pago (Mercado Pago / Wompi) y si ya pagó. En el portal, el cliente puede pagar.'),
+        description: __('Links de pago (Mercado Pago, Wompi o PayPal) y si ya pagó. En el portal, el cliente puede pagar.'),
         icon: Wallet,
         create: () => block('payments'),
     },

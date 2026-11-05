@@ -407,14 +407,14 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'El bloque **Pagos** convierte el portal en una caja: muestra los **links de pago** del cliente con su estado (pendiente, pagado, vencido…) y puede ofrecer un botón **«Pagar mi saldo»** que cobra lo que debe. El dinero va directo a la cuenta de tu empresa en **Mercado Pago** o **Wompi**; la app no cobra comisión.',
+                md: 'El bloque **Pagos** convierte el portal en una caja: muestra los **links de pago** del cliente con su estado (pendiente, pagado, vencido…) y puede ofrecer un botón **«Pagar mi saldo»** que cobra lo que debe. El dinero va directo a la cuenta de tu empresa en **Mercado Pago**, **Wompi** o **PayPal**; la app no cobra comisión.',
             },
             { t: 'anim', key: 'portal-pay', caption: 'El cliente toca «Pagar mi saldo», paga en la pasarela y el portal le muestra «¡Listo! Recibimos tu pago».' },
             { t: 'h', text: 'Antes de empezar' },
             {
                 t: 'callout',
                 tone: 'warn',
-                md: 'Necesitas una **conexión de cobro del equipo** (Mercado Pago o Wompi) en **Ajustes → Integraciones**. Sin ella, tus clientes no ven el bloque **Pagos**.',
+                md: 'Necesitas una **conexión de cobro del equipo** (Mercado Pago, Wompi o PayPal) en **Ajustes → Integraciones**. Sin ella, tus clientes no ven el bloque **Pagos**.',
             },
             { t: 'h', text: 'Agregar el bloque' },
             {
@@ -438,7 +438,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Monto', what: 'Un campo de número, moneda, calculado o resumen del registro.', tip: 'Un resumen «Saldo pendiente» que suma sus facturas pendientes es lo ideal.' },
                     { name: 'Concepto', what: 'El texto que aparece en el cobro. Vacío = el título del registro.' },
                     { name: 'Texto del botón', what: 'Lo que dice el botón: «Pagar mi saldo», «Pagar cuota».' },
-                    { name: 'Mostrar sus suscripciones', what: 'Sus suscripciones de débito automático de Mercado Pago: el plan, el valor, el estado («Al día», «Reintentando», «En mora»…), el próximo cobro y sus últimos pagos, con el motivo si uno falló. Encendido por defecto.', tip: 'Si todavía no autorizó su tarjeta, ve el botón «Autorizar el débito automático».' },
+                    { name: 'Mostrar sus suscripciones', what: 'Sus suscripciones de débito automático (Mercado Pago o PayPal): el plan, el valor, el estado («Al día», «Reintentando», «En mora»…), el próximo cobro y sus últimos pagos, con el motivo si uno falló. Encendido por defecto.', tip: 'Si todavía no autorizó el pago, ve el botón «Autorizar el débito automático».' },
                 ],
             },
             { t: 'h', text: 'Qué ve y hace el cliente' },
@@ -466,7 +466,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: '¿Quién confirma que el pago llegó?', a: 'El proveedor. La app consulta el pago directamente con Mercado Pago o Wompi antes de marcarlo como pagado.' },
+                    { q: '¿Quién confirma que el pago llegó?', a: 'El proveedor. La app consulta el pago directamente con Mercado Pago, Wompi o PayPal antes de marcarlo como pagado.' },
                     { q: '¿Puedo avisar al equipo cuando alguien paga?', a: 'Sí, con una automatización con el disparador **Cuando se recibe un pago**.' },
                     { q: '¿Qué pasa si el saldo es cero?', a: 'El botón aparece sólo cuando el registro tiene un monto mayor a cero.' },
                 ],

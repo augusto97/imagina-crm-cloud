@@ -189,19 +189,26 @@ export function PortalPaymentsBlockView({
     );
 }
 
-/** v0.1.368 — Qué pasa con la suscripción, dicho para el CLIENTE. */
-export function clientSubscriptionSentence(sub: Pick<PortalSubscription, 'status' | 'next_charge_at' | 'paid_until'>): string {
+/** v0.1.368 — Qué pasa con la suscripción, dicho para el CLIENTE. v0.1.373: nombra a quien cobra. */
+export function clientSubscriptionSentence(
+    sub: Pick<PortalSubscription, 'status' | 'next_charge_at' | 'paid_until'> & { provider?: PortalSubscription['provider'] },
+): string {
     const next = sub.next_charge_at ? formatDateStr(sub.next_charge_at.slice(0, 10)) : null;
+    const paypal = sub.provider === 'paypal';
     switch (sub.status) {
         case 'pending':
-            return 'Falta autorizar tu tarjeta en Mercado Pago para activarla.';
+            return paypal ? 'Falta autorizar el pago en tu cuenta de PayPal para activarla.' : 'Falta autorizar tu tarjeta en Mercado Pago para activarla.';
         case 'active':
             return next ? `Al día. El próximo cobro es el ${next}.` : 'Al día.';
         case 'retrying':
-            return 'No pudimos cobrar la última cuota. Mercado Pago lo vuelve a intentar en los próximos días: revisa que tu tarjeta tenga fondos.';
+            return paypal
+                ? 'No pudimos cobrar la última cuota. PayPal lo vuelve a intentar en los próximos días: revisa tu medio de pago en PayPal.'
+                : 'No pudimos cobrar la última cuota. Mercado Pago lo vuelve a intentar en los próximos días: revisa que tu tarjeta tenga fondos.';
         case 'past_due':
         case 'expired':
-            return 'Tienes cuotas sin pagar. Revisa tu tarjeta en Mercado Pago o escríbele a la empresa.';
+            return paypal
+                ? 'Tienes cuotas sin pagar. Revisa tu medio de pago en PayPal o escríbele a la empresa.'
+                : 'Tienes cuotas sin pagar. Revisa tu tarjeta en Mercado Pago o escríbele a la empresa.';
         case 'paused':
             return 'Está en pausa: por ahora no se cobra.';
         case 'cancelled':

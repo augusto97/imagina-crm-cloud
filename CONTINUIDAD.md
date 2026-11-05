@@ -394,7 +394,7 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.372**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.373**
 (PayPal como tercer proveedor de cobros de cada empresa: links de pago en
 dólares desde la ficha, las automatizaciones, los formularios y el portal, con
 link propio de la app que reusa o crea la orden, captura al volver el cliente,
@@ -455,11 +455,12 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   renombrar y borrar; los pasos de las herramientas a la vista; copiar,
   reintentar y editar el último pedido; modo ancho; sugerencias según la
   pantalla con el registro abierto; cuadro que crece). Las suscripciones
-  siguieron con **v0.1.371** y **v0.1.372** (PayPal links), hechas. Ideas que quedaron
+  siguieron con **v0.1.371**, **v0.1.372** (PayPal links) y **v0.1.373**
+  (suscripciones con PayPal), hechas. Ideas que quedaron
   para el chat si el usuario las pide: adjuntar archivos al pedido, compartir
   una conversación con otra persona y elegir el modelo por conversación.
 - 2026-11-05 — **Suscripciones y cobros recurrentes (Mercado Pago y PayPal)
-  para los clientes de cada empresa** — EN CURSO. El usuario respondió «hazlo
+  para los clientes de cada empresa** — HECHO (v0.1.367 a v0.1.373). El usuario respondió «hazlo
   todo como lo veas más recomendable»: decidí una suscripción viva por
   registro, el historial de cobros como lista espejo (en la segunda entrega),
   al vencer «marcar Vencida y avisar» por defecto (cancelar en Mercado Pago es
@@ -472,9 +473,13 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   se pueden sumar columnas propias y borrar un cobro mal registrado — ver el
   addendum de ADR-S96) y **v0.1.372 hecha** (PayPal como conector de la
   empresa con links de pago en dólares; partí PayPal en dos: los links primero
-  y las suscripciones después). Sigue **v0.1.373** (suscripciones con PayPal:
-  plan, suscribir desde la ficha/formulario/acción, estado, cobros, registro de
-  cobros y asistente/MCP, igual que Mercado Pago); en el medio el
+  y las suscripciones después) y **v0.1.373 hecha** (suscripciones con PayPal:
+  plan en dólares, suscribir desde la ficha/formulario/acción, estado, cobros,
+  registro de cobros y asistente/MCP, igual que Mercado Pago — addendum de
+  ADR-S96). Con eso el pedido quedó completo. **Límite**: todo se probó contra
+  un Mercado Pago y un PayPal simulados con la forma de sus APIs; la prueba con
+  cuentas reales de prueba (TEST- de Mercado Pago, app sandbox de PayPal) queda
+  para el servidor del usuario. En el medio el
   usuario pidió logo/«sin marco» (v0.1.369) y el chat de IA (v0.1.370), ya
   publicados. Ideas que
   quedaron anotadas para más adelante: bloquear a mano las columnas de la
@@ -1491,6 +1496,31 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.373** — **Suscripciones con débito automático también
+  con PayPal** (última parte de «hazlo todo como lo veas más recomendable»: el
+  pedido de suscripciones queda completo). Planes en dólares (u otra moneda de
+  PayPal; COP rechazado) en Cobros de la conexión de PayPal; suscribir desde la
+  ficha, la acción de automatización, el asistente/MCP o un formulario; el
+  cliente aprueba en PayPal con su cuenta o tarjeta y la ficha pasa sola a «Al
+  día»; cobros pagados y rechazados con el motivo en palabras; pausar,
+  reanudar, cambiar el valor y cancelar llegan a PayPal; el registro de cobros,
+  el portal y el disparador funcionan igual. **Decisiones**: la app crea sola
+  en la cuenta de la empresa el producto y el plan de PayPal (una vez, con
+  clave de idempotencia, guardados en el plan, migración 0106); el valor de
+  cada cliente va en línea en su suscripción (no hace falta un plan por
+  valor); el estado se relee siempre de PayPal (suscripción + transacciones +
+  el último cobro fallido, que PayPal informa aparte); al tercer cobro fallido
+  PayPal suspende y aquí se ve «En mora», no «Pausada»; una suscripción que
+  nunca se aprobó se cancela aquí (PayPal no lo permite). Lo público dice a
+  quién se le paga (formulario, página de vuelta, portal) y volver de PayPal
+  sin aprobar muestra «No se completó la suscripción» con «Volver a PayPal».
+  **Mejora de paso**: recién vuelto del proveedor el estado se consulta
+  enseguida (antes esperaba hasta 15 s). E2E 41/41 en escritorio y 41/41 en
+  celular oscuro contra el PayPal simulado (plan, suscribir, aprobar, cobro
+  rechazado, pausar, reanudar, cambiar el valor, cancelar, arrepentirse,
+  formulario de punta a punta). **Límite**: sin credenciales reales de PayPal;
+  la prueba con una app sandbox queda para el servidor. Queda: nada de este
+  pedido; ideas anotadas en §10.
 - **2026-11-05 · v0.1.372** — **PayPal para los cobros de cada empresa**
   (cuarta parte de «hazlo todo como lo veas más recomendable»; decidí partir
   PayPal en dos: links ahora, suscripciones en v0.1.373). Integraciones →

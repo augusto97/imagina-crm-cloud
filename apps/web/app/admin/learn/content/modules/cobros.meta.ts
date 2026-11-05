@@ -15,7 +15,7 @@ export const meta: LearnModuleMeta = {
         'PayPal para cobrar en dólares a clientes de cualquier país',
         'Cada pago actualiza solo la lista: estado, fecha, monto pagado y medio',
         'Automatizaciones que crean el link, lo mandan por WhatsApp y agradecen cuando llega el pago',
-        'Suscripciones con débito automático de Mercado Pago: el cliente autoriza su tarjeta una vez y se le cobra solo cada mes',
+        'Suscripciones con débito automático de Mercado Pago o PayPal: el cliente autoriza el pago una vez y se le cobra solo cada mes',
     ],
     articles: [
         {

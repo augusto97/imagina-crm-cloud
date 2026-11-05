@@ -2397,7 +2397,9 @@ function ConnectorActionConfig({
                     fields={fields}
                     onChange={(next) => setValue(param.key, next)}
                     teamsConnectionId={connection?.integration_key === 'teams' ? connection.id : null}
-                    subscriptionConnectionId={connection?.integration_key === 'mercadopago' && actionKey === 'create_subscription_link' ? connection.id : null}
+                    subscriptionConnectionId={
+                        (connection?.integration_key === 'mercadopago' || connection?.integration_key === 'paypal') && actionKey === 'create_subscription_link' ? connection.id : null
+                    }
                 />
             ))}
 
@@ -2415,11 +2417,11 @@ function ConnectorActionConfig({
             })()}
 
             {/* v0.1.367 — dónde queda el estado de la suscripción en la lista. */}
-            {actionKey === 'create_subscription_link' && connection?.integration_key === 'mercadopago' && listId && (
+            {actionKey === 'create_subscription_link' && (connection?.integration_key === 'mercadopago' || connection?.integration_key === 'paypal') && listId && (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3" data-testid="imcrm-subscription-link-columns">
                     <p className="imcrm-text-sm imcrm-font-medium">{__('Dónde queda la suscripción')}</p>
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {__('La suscripción aparece en «Suscripción» de la ficha y en estas columnas de la lista: el estado, el próximo cobro y los rechazos se escriben solos. En un paso siguiente (un WhatsApp o un correo) el link para autorizar la tarjeta es {{suscripcion.link}}.')}
+                        {__('La suscripción aparece en «Suscripción» de la ficha y en estas columnas de la lista: el estado, el próximo cobro y los rechazos se escriben solos. En un paso siguiente (un WhatsApp o un correo) el link para autorizarla es {{suscripcion.link}}.')}
                     </p>
                     <SubscriptionFieldsEditor listId={listId} fields={fields} />
                 </div>

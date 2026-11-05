@@ -25,7 +25,7 @@ export function SubscriptionSettings({ config, fields, onChange }: { config: For
     const conns = useQuery({ queryKey: ['collections-connections'], queryFn: () => api.collectionConnections(), retry: false, staleTime: 60_000 });
     const plansQ = useQuery({ queryKey: ['subscription-plans', 'all'], queryFn: () => api.subscriptionPlans(), retry: false, staleTime: 30_000 });
     // Sólo planes de una conexión de Mercado Pago DEL EQUIPO: una privada es de una persona.
-    const teamMp = new Set((conns.data ?? []).filter((c) => c.shared !== false && c.provider === 'mercadopago').map((c) => c.id));
+    const teamMp = new Set((conns.data ?? []).filter((c) => c.shared !== false && (c.provider === 'mercadopago' || c.provider === 'paypal')).map((c) => c.id));
     const plans = (plansQ.data ?? []).filter((p) => p.active && p.connection_id !== null && teamMp.has(p.connection_id));
     const loading = conns.isLoading || plansQ.isLoading;
 
@@ -47,7 +47,7 @@ export function SubscriptionSettings({ config, fields, onChange }: { config: For
             : chosen.length === 0
               ? __('Elige al menos un plan.')
               : !emailAsked
-                ? __('Pregunta el correo y elígelo en «Correo de quien responde» → «Pregunta con el correo»: Mercado Pago lo pide para la suscripción.')
+                ? __('Pregunta el correo y elígelo en «Correo de quien responde» → «Pregunta con el correo»: Mercado Pago y PayPal lo piden para la suscripción.')
                 : null);
 
     return (
@@ -60,7 +60,7 @@ export function SubscriptionSettings({ config, fields, onChange }: { config: For
                     testId="form-subscription-enabled"
                 />
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                    {__('Al enviar, la persona autoriza su tarjeta en Mercado Pago y desde ahí se le cobra sola cada período (una mensualidad, una membresía). El dinero llega a la cuenta de la empresa y la suscripción aparece en la ficha del registro.')}
+                    {__('Al enviar, la persona autoriza el pago en Mercado Pago o PayPal (según el plan) y desde ahí se le cobra sola cada período (una mensualidad, una membresía). El dinero llega a la cuenta de la empresa y la suscripción aparece en la ficha del registro.')}
                 </p>
                 {s.enabled && (
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2">
@@ -71,13 +71,13 @@ export function SubscriptionSettings({ config, fields, onChange }: { config: For
                         )}
                         <Field
                             label={__('Planes que se ofrecen')}
-                            hint={__('Con varios, la persona elige uno. El orden es el de la lista. Los planes se arman en Ajustes → Integraciones → Mercado Pago → Cobros.')}
+                            hint={__('Con varios, la persona elige uno. El orden es el de la lista. Los planes se arman en Ajustes → Integraciones → Mercado Pago o PayPal → Cobros.')}
                         >
                             {loading ? (
                                 <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Cargando planes…')}</p>
                             ) : plans.length === 0 ? (
                                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-amber-700 dark:imcrm-text-amber-300" data-testid="form-subscription-no-plans">
-                                    {__('No hay planes activos de una conexión de Mercado Pago del equipo.')}{' '}
+                                    {__('No hay planes activos de una conexión de Mercado Pago o PayPal del equipo.')}{' '}
                                     <Link to="/settings?s=conectores" className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline">
                                         {__('Créalos en Ajustes → Integraciones')}
                                     </Link>
@@ -132,7 +132,7 @@ export function SubscriptionSettings({ config, fields, onChange }: { config: For
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" role="radiogroup" aria-label={__('Después de enviar')}>
                                 <label className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-xs">
                                     <input type="radio" checked={s.after === 'redirect'} onChange={() => set({ after: 'redirect' })} data-testid="form-subscription-after-redirect" />
-                                    <span>{__('Llevar directo a Mercado Pago para autorizar la tarjeta')}</span>
+                                    <span>{__('Llevar directo a autorizar el pago (Mercado Pago o PayPal)')}</span>
                                 </label>
                                 <label className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-xs">
                                     <input type="radio" checked={s.after === 'button'} onChange={() => set({ after: 'button' })} data-testid="form-subscription-after-button" />

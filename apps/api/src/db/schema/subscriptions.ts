@@ -1,4 +1,4 @@
-import { bigint, boolean, index, integer, numeric, pgTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
+import { bigint, boolean, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
 import { connections } from './connections';
 import { lists } from './lists';
 import { records } from './records';
@@ -29,6 +29,8 @@ export const subscriptionPlans = pgTable(
         graceDays: integer('grace_days').notNull().default(10),
         onExpire: varchar('on_expire', { length: 12 }).notNull().default('mark'),
         active: boolean('active').notNull().default(true),
+        /** v0.1.373 — PayPal: el producto y los planes que la app creó en la cuenta de la empresa. */
+        providerRefs: jsonb('provider_refs').notNull().default({}),
         createdBy: bigint('created_by', { mode: 'number' }),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

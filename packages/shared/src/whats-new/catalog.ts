@@ -1661,4 +1661,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Ve a **Ajustes → Integraciones** y toca **Conectar** en **PayPal**. Después, en la ficha de un registro, **Cobros → Cobrar** y elige PayPal.',
         action: { label: 'Ver cómo conectarlo', href: '/aprende/cobros/cobros-conectar' },
     },
+    {
+        key: 'v0.1.373-suscripciones-paypal',
+        version: '0.1.373',
+        date: '2026-11-05',
+        kind: 'feature',
+        title: 'Débito automático también con PayPal',
+        summary:
+            'Tus clientes del exterior ya pueden suscribirse en dólares: aprueban una sola vez con su cuenta PayPal o su tarjeta y PayPal les cobra solo cada mes. Planes, ficha, formularios, portal y el registro de cobros funcionan igual que con Mercado Pago.',
+        media: {
+            slides: [
+                {
+                    title: 'Un plan en dólares',
+                    text: 'En Ajustes → Integraciones → PayPal → Cobros, crea el plan en «Suscripciones (débito automático)». La app prepara sola lo que PayPal necesita.',
+                    illustration: 'cobro-suscripcion',
+                },
+                {
+                    title: 'El cliente aprueba una vez',
+                    text: 'Le mandas el link (o se suscribe desde un formulario): aprueba en PayPal y la ficha pasa sola a «Al día». Si se arrepiente, no se le cobra nada.',
+                    illustration: 'cobro-paypal',
+                },
+                {
+                    title: 'Cada cobro, a la vista',
+                    text: 'Los cobros pagados y rechazados aparecen en la ficha con su motivo; si PayPal suspende por falta de pago, la ves «En mora». Pausar, cambiar el valor y cancelar también llegan a PayPal.',
+                    illustration: 'cobro-registro',
+                },
+            ],
+        },
+        body: 'Ve a **Ajustes → Integraciones**, abre **Cobros** de tu conexión de PayPal y crea un plan en **Suscripciones (débito automático)**. Después, en la ficha del cliente, toca **Suscribir**.',
+        action: { label: 'Ver cómo funciona', href: '/aprende/cobros/cobros-suscripciones' },
+    },
 ];

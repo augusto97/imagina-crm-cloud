@@ -3292,12 +3292,12 @@ export class AutomationEngine {
                         url: created.link.url,
                     });
                 }
-                // v0.1.367 (ADR-S96) — suscripciones de Mercado Pago: crear el
+                // v0.1.367 (ADR-S96) — suscripciones de Mercado Pago (y de PayPal desde v0.1.373): crear el
                 // link para que el cliente autorice su tarjeta, o pausar /
                 // reanudar / cancelar / cambiar el valor de la del registro.
                 if (
                     resolved.integration &&
-                    resolved.integration.key === 'mercadopago' &&
+                    (resolved.integration.key === 'mercadopago' || resolved.integration.key === 'paypal') &&
                     (resolved.action.key === 'create_subscription_link' || resolved.action.key === 'manage_subscription')
                 ) {
                     if (ctx.recordId === null) return skip('connector_action', 'Una suscripción necesita un registro.');

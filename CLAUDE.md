@@ -12494,6 +12494,65 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         **Límite de la verificación**: sin credenciales reales de PayPal; la
         prueba con una app sandbox queda para el servidor.
 
+  - [x] **Suscripciones con débito automático también con PayPal (v0.1.373,
+        addendum ADR-S96, quinta y última parte de «hazlo todo como lo veas más
+        recomendable»: el pedido de suscripciones queda completo)**. El mismo
+        modelo de Mercado Pago (planes, una suscripción viva por registro,
+        estado derivado, cobros, columnas, disparador, formulario, portal,
+        registro de cobros y asistente/MCP) con la cuenta PayPal de cada
+        empresa (Billing v1; piezas puras en `paypal-subscriptions.ts`, red por
+        el cliente de PayPal de los cobros con su token cacheado).
+        (a) **Planes en dólares** (u otra moneda de PayPal; COP rechazado con
+        `plan_currency`, USD por defecto) en Cobros de la conexión de PayPal.
+        (b) **Producto y plan de PayPal creados una vez** en la cuenta de la
+        empresa, con `PayPal-Request-Id` y bajo `FOR UPDATE` del plan, y
+        guardados en `subscription_plans.provider_refs` (migración 0106): el
+        plan de PayPal sólo fija la FORMA (`paypalPlanKey`: unidad, frecuencia,
+        cuotas, moneda; cambiar la frecuencia crea otro con el mismo producto)
+        y el VALOR de cada cliente va en línea en su suscripción, así «Cambiar
+        el valor» es un PATCH del precio y no otro plan. Migrar una empresa
+        copia las referencias.
+        (c) **Suscribir** desde la ficha, la acción «Crear suscripción», el
+        asistente/MCP o un formulario: `custom_id` = nuestra referencia,
+        inicio sólo a futuro (la prueba gratis), la marca de la empresa y la
+        vuelta con `cancelado=1` si se arrepiente.
+        (d) **El estado se relee** de PayPal (suscripción con
+        `last_failed_payment` + `/transactions`): cada venta es un cobro; el
+        cobro fallido que PayPal informa aparte entra como rechazado con id
+        estable (`fail-<instante>`) y el motivo en palabras; activa con el
+        último cobro fallido = «Reintentando» y **suspendida al tercer fallo =
+        «En mora», no «Pausada»** (`paypalChargeState`).
+        (e) **Avisos** `BILLING.SUBSCRIPTION.*` y `PAYMENT.SALE.*` por la URL
+        de cobros de la conexión (la venta sin `billing_agreement_id` se
+        busca); sólo dicen qué releer.
+        (f) **Pausar / reanudar / cancelar / cambiar el valor** llegan a
+        PayPal (`suspend` / `activate` / `cancel` / PATCH); una suscripción que
+        nunca se aprobó se cancela aquí (PayPal responde 422) y la relectura no
+        la revive.
+        (g) **Lo público dice a quién se le paga**: `provider` en los planes
+        del formulario, en el estado al volver y en el portal (la nota bajo los
+        planes, «Te llevamos a PayPal…», «Volver a PayPal», las frases del
+        bloque «Pagos»); volver sin aprobar muestra «No se completó la
+        suscripción» en la página de la app y en el formulario. Recién vuelto
+        del proveedor el estado se consulta enseguida (a lo sumo cada 2 s;
+        antes, 15 s).
+        (h) Proveedor simulado de dev (`scripts/dev/fake-collect.mjs`) con
+        productos, planes, suscripciones, página de aprobación, acciones,
+        precio, cobros, ventas y controles `/__paypal-sub`.
+        Ayuda: guías de suscripciones y de «Suscribir al enviar», sección «Con
+        PayPal» en Aprende → Cobros, formularios y portal al día (también
+        «Cobrar al enviar» con PayPal, que no se había actualizado en
+        v0.1.372) y novedad con carrusel. Tests: `subscriptions-paypal.spec`
+        (6: piezas puras; producto y plan una vez con el valor de cada cliente;
+        aprobar y cobrar con avisos que se releen y una venta contada una vez;
+        reintentando → en mora; pausar/reanudar/valor/cancelar y la pendiente
+        cancelada aquí; reemplazo y clave rechazada) + specs de suscripciones,
+        cobros, formularios, portal y migración en verde (135/135), 1 test del
+        front (texto por proveedor) — shared 756, front 816 — y E2E navegador
+        41/41 en escritorio y 41/41 en celular oscuro contra el PayPal simulado.
+        **Límite de la verificación**: sin credenciales reales de PayPal; la
+        prueba con una app sandbox queda para el servidor.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

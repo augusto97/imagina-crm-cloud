@@ -7006,7 +7006,7 @@ espacio alrededor.
    correos del formulario; migrar una empresa lo re-mapea (`logo_file_id` en
    el mapa explícito; la marca de la empresa se re-mapea aparte).
 
-### ADR-S96 — Suscripciones con débito automático de Mercado Pago (v0.1.367)
+### ADR-S96 — Suscripciones con débito automático de Mercado Pago y PayPal (v0.1.367, v0.1.373)
 
 **Contexto.** Pregunta del usuario: «¿cómo se manejan las suscripciones o
 cobros recurrentes de débito automático que maneja Mercado Pago? Sólo veo
@@ -7203,6 +7203,61 @@ a v0.1.370.
    «1 vinculado»; ahora dice el título del vinculado (una consulta por
    columna; no en el tablero público, el portal ni la ficha).
 
+**Addendum v0.1.373 — suscripciones con PayPal.** El mismo modelo (planes,
+una suscripción viva por registro, estado derivado, cobros, columnas,
+disparador, formulario, portal, registro de cobros y asistente/MCP) con la
+cuenta PayPal de cada empresa (Billing v1). Las piezas puras viven en
+`subscriptions/paypal-subscriptions.ts`; el servicio las usa con el cliente de
+PayPal de los cobros (ADR-S31, token en memoria por credencial).
+
+1. **Producto y plan de PayPal, creados una vez**: PayPal exige un producto y
+   un plan propios antes de suscribir. Se crean la primera vez que hacen falta,
+   con `PayPal-Request-Id` (`ib-product-<tenant>-<plan>` /
+   `ib-plan-<tenant>-<plan>-<forma>`: un reintento no duplica) y bajo
+   `FOR UPDATE` del plan, y se recuerdan en `subscription_plans.provider_refs`
+   (migración 0106). El plan de PayPal sólo fija la **forma** del cobro
+   (`paypalPlanKey`: unidad, frecuencia, cuotas y moneda): cambiar la
+   frecuencia crea otro plan de PayPal con el mismo producto y las
+   suscripciones viejas siguen con el suyo. El **valor** va en línea en cada
+   suscripción (el `plan` de la suscripción), así un valor distinto por
+   cliente o «Cambiar el valor» (PATCH a
+   `/plan/billing_cycles/@sequence==1/pricing_scheme/fixed_price`) no exigen
+   otro plan. Migrar una empresa copia `provider_refs` (son de la cuenta de la
+   empresa, que viaja con su conexión).
+2. **Moneda**: un plan de PayPal en pesos colombianos se rechaza
+   (`plan_currency`, el mismo `collectionCurrencyError` de los links); la
+   moneda por defecto es USD.
+3. **Suscribir**: `custom_id` y `PayPal-Request-Id` = nuestra referencia
+   `ibs_…`; `start_time` sólo a futuro (la prueba gratis es un inicio a futuro,
+   no un ciclo de PayPal); `application_context` con la marca de la empresa,
+   `SUBSCRIBE_NOW`, sin envío y `cancel_url` = la vuelta con `cancelado=1`. El
+   link de aprobación queda en la columna, como el de Mercado Pago.
+4. **El estado se relee** (nunca se le cree al aviso): `GET
+   /v1/billing/subscriptions/:id?fields=plan,last_failed_payment` +
+   `/transactions` (desde un día antes de crearla). Cada venta COMPLETED es un
+   cobro aprobado (REFUNDED/REVERSED, reembolsado); el cobro **fallido** que
+   PayPal informa aparte (`billing_info.last_failed_payment`) entra como un
+   rechazado con id estable `fail-<instante>` (el mismo fallo leído dos veces
+   es una fila; cada intento fallido distinto, la suya). `paypalChargeState`:
+   activa con el último cobro fallido = **reintentando** (PayPal reintenta);
+   **suspendida tras 3 fallos** (`payment_failure_threshold`) = autorizada con
+   `failedFinal` → **en mora**, no «pausada» (nadie la pausó); suspendida sin
+   fallos = pausada.
+5. **Avisos** por la misma URL de los cobros: `BILLING.SUBSCRIPTION.*` y
+   `PAYMENT.SALE.*` (`billing_agreement_id`; sin él, se lee la venta) van al
+   servicio de suscripciones, que sólo toma el id y relee.
+6. **Pausar / reanudar / cancelar** = `suspend` / `activate` / `cancel`. PayPal
+   no deja cancelar una suscripción que nunca se aprobó (422): se cancela
+   **aquí** (sin link) y la relectura no la revive; al reemplazar una pendiente
+   la vieja se cancela igual.
+7. **Lo público nombra a quien cobra**: `provider` en los planes del
+   formulario, en el estado al volver y en las suscripciones del portal; la
+   nota del formulario dice dónde se autoriza el plan elegido (si hay planes de
+   los dos); volver de PayPal sin aprobar (`cancelado=1`) muestra «No se
+   completó la suscripción» con «Volver a PayPal» (sólo con un link https), en
+   la página de la app y en el formulario. Recién vuelto del proveedor el
+   estado se consulta enseguida (a lo sumo cada 2 s; antes, 15 s).
+
 ---
 
-**Versión del documento:** 1.156.0 (El registro de cobros de las suscripciones, su tablero y el asistente)
+**Versión del documento:** 1.157.0 (Suscripciones con PayPal)

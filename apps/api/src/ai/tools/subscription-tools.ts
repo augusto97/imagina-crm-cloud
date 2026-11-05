@@ -1,5 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import {
+    collectionCurrencyError,
     SUBSCRIPTION_CHARGE_LOG_LABELS,
     SUBSCRIPTION_CHARGE_LOG_ROLES,
     SUBSCRIPTION_CHARGE_LOG_TYPES,
@@ -64,7 +65,7 @@ const listSpec = z.object({
         .max(8)
         .optional()
         .describe(
-            'Filtrar por estado: pending = por autorizar (el cliente no puso la tarjeta), active = al día, retrying = falló el cobro y Mercado Pago reintenta, past_due = en mora (sigue en los días de gracia), expired = vencida (pasó la gracia: hay que cortar el servicio), paused, cancelled, finished (se cobraron todas las cuotas)',
+            'Filtrar por estado: pending = por autorizar (el cliente no puso la tarjeta), active = al día, retrying = falló el cobro y Mercado Pago o PayPal reintenta, past_due = en mora (sigue en los días de gracia), expired = vencida (pasó la gracia: hay que cortar el servicio), paused, cancelled, finished (se cobraron todas las cuotas)',
         ),
     plan: ref.optional().describe('Sólo de este plan (id o nombre)'),
     record_id: z.number().int().positive().optional().describe('Sólo la(s) de este registro'),
@@ -75,7 +76,7 @@ type ListSpec = z.infer<typeof listSpec>;
 const planSpec = z.object({
     plan: ref.optional().describe('Plan EXISTENTE a cambiar o borrar (id o nombre; los planes están en subscription_plans de get_list_schema). Sin él se crea uno nuevo.'),
     delete: z.boolean().optional().describe('true = borrar el plan. Si ya tiene suscripciones no se puede: se desactiva con active:false (las que existen siguen cobrando).'),
-    connection: ref.optional().describe('Conexión de Mercado Pago (id o nombre). Si hay una sola, no hace falta.'),
+    connection: ref.optional().describe('Conexión de Mercado Pago o PayPal (id o nombre). Si hay una sola, no hace falta. PayPal no cobra en COP: usa USD u otra moneda de PayPal.'),
     name: z.string().trim().min(1).max(120).optional(),
     description: z.string().trim().max(500).nullish(),
     amount: z.number().positive().max(1_000_000_000).optional().describe('Valor de cada cobro'),
@@ -84,8 +85,8 @@ const planSpec = z.object({
     frequency_type: z.enum(SUBSCRIPTION_FREQUENCY_TYPES).optional(),
     cycles: z.number().int().min(1).max(120).nullish().describe('Cuántos cobros en total (12 = un año). null = hasta que se cancele.'),
     trial_days: z.number().int().min(0).max(365).optional().describe('Días gratis antes del primer cobro'),
-    grace_days: z.number().int().min(1).max(60).optional().describe('Días sin pago antes de quedar «Vencida» (10 por defecto: Mercado Pago reintenta unos 10 días)'),
-    on_expire: z.enum(SUBSCRIPTION_EXPIRE_ACTIONS).optional().describe('mark = marcar «Vencida» y avisar; cancel = además cancelarla en Mercado Pago'),
+    grace_days: z.number().int().min(1).max(60).optional().describe('Días sin pago antes de quedar «Vencida» (10 por defecto: Mercado Pago y PayPal reintentan unos días)'),
+    on_expire: z.enum(SUBSCRIPTION_EXPIRE_ACTIONS).optional().describe('mark = marcar «Vencida» y avisar; cancel = además cancelarla en Mercado Pago o PayPal'),
     active: z.boolean().optional().describe('false = deja de ofrecerse para suscripciones nuevas'),
 });
 type PlanSpec = z.infer<typeof planSpec>;
@@ -134,14 +135,14 @@ const manageSpec = z.object({
     record_id: z.number().int().positive().describe('Id del registro del cliente (query_records)'),
     subscription_id: z.number().int().positive().optional().describe('Si el registro tiene más de una, cuál (list_subscriptions)'),
     plan: ref.optional().describe('subscribe: el plan (id o nombre)'),
-    payer_email: z.string().trim().email().max(254).optional().describe('subscribe: correo del cliente (Mercado Pago lo pide). Vacío = el del registro.'),
+    payer_email: z.string().trim().email().max(254).optional().describe('subscribe: correo del cliente (Mercado Pago y PayPal lo piden). Vacío = el del registro.'),
     amount: z.number().positive().max(1_000_000_000).optional().describe('subscribe: otro valor para este cliente (un descuento); change_amount: el valor nuevo'),
     start_date: z
         .string()
         .regex(/^\d{4}-\d{2}-\d{2}$/)
         .optional()
         .describe('subscribe: desde qué día cobra (AAAA-MM-DD). Vacío = hoy, después de la prueba gratis del plan.'),
-    title: z.string().trim().max(200).optional().describe('subscribe: lo que ve el cliente en Mercado Pago (vacío = el nombre del plan)'),
+    title: z.string().trim().max(200).optional().describe('subscribe: lo que ve el cliente al autorizar (vacío = el nombre del plan)'),
     reason: z.string().trim().max(300).optional().describe('cancel: motivo (queda en la ficha)'),
 });
 type ManageSpec = z.infer<typeof manageSpec>;
@@ -195,7 +196,7 @@ export class SubscriptionTools implements AiProposalApplier {
             name: 'list_subscriptions',
             label: 'Revisando suscripciones',
             description:
-                'Las suscripciones con débito automático (Mercado Pago) de los registros de una lista que la persona puede ver: plan, valor, cada cuánto, estado (al día, reintentando, en mora, vencida, pausada…), próximo cobro, «pagado hasta», cuántos cobros salieron y cuántos fallaron, el motivo del último rechazo y los últimos cobros. Sirve para «¿quién está en mora?», «¿a quién hay que cortarle el servicio?» (status expired) o «¿qué cobros fallaron este mes?». Los planes están en subscription_plans de get_list_schema.',
+                'Las suscripciones con débito automático (Mercado Pago o PayPal) de los registros de una lista que la persona puede ver: plan, valor, cada cuánto, estado (al día, reintentando, en mora, vencida, pausada…), próximo cobro, «pagado hasta», cuántos cobros salieron y cuántos fallaron, el motivo del último rechazo y los últimos cobros. Sirve para «¿quién está en mora?», «¿a quién hay que cortarle el servicio?» (status expired) o «¿qué cobros fallaron este mes?». Los planes están en subscription_plans de get_list_schema.',
             capability: VIEW,
             input: listSpec,
             run: (ctx, input) => this.listSubscriptions(ctx, input as ListSpec),
@@ -204,7 +205,7 @@ export class SubscriptionTools implements AiProposalApplier {
             name: 'propose_configure_subscription_plan',
             label: 'Preparando el plan de suscripción',
             description:
-                'Crea, cambia o borra un PLAN de suscripción de la empresa (débito automático de Mercado Pago): nombre, valor, moneda, cada cuántos meses o días, cuántas cuotas, días gratis, días de gracia y qué hacer al vencer. Cambiar un plan vale para las suscripciones NUEVAS (las que existen conservan lo que el cliente autorizó); los días de gracia y qué hacer al vencer sí valen para todas. Los planes los maneja quien puede editar la conexión de Mercado Pago.',
+                'Crea, cambia o borra un PLAN de suscripción de la empresa (débito automático de Mercado Pago o PayPal; PayPal cobra en USD u otra moneda que acepte, nunca en COP): nombre, valor, moneda, cada cuántos meses o días, cuántas cuotas, días gratis, días de gracia y qué hacer al vencer. Cambiar un plan vale para las suscripciones NUEVAS (las que existen conservan lo que el cliente autorizó); los días de gracia y qué hacer al vencer sí valen para todas. Los planes los maneja quien puede editar la conexión.',
             capability: null,
             input: planSpec,
             run: (ctx, input) => this.proposePlan(ctx, input as PlanSpec),
@@ -222,7 +223,7 @@ export class SubscriptionTools implements AiProposalApplier {
             name: 'propose_manage_subscription',
             label: 'Preparando el cambio de la suscripción',
             description:
-                'Una suscripción puntual de un registro: subscribe (crea la suscripción en Mercado Pago con un plan y deja el link para que el cliente autorice la tarjeta, que aparece en la ficha y en la columna «link»), pause, resume, cancel (no se deshace) o change_amount (otro valor desde el próximo cobro). Mira primero list_subscriptions para ver el estado actual.',
+                'Una suscripción puntual de un registro: subscribe (crea la suscripción en Mercado Pago o PayPal —según el plan— y deja el link para que el cliente la autorice, que aparece en la ficha y en la columna «link»), pause, resume, cancel (no se deshace) o change_amount (otro valor desde el próximo cobro). Mira primero list_subscriptions para ver el estado actual.',
             capability: EDIT,
             input: manageSpec,
             run: (ctx, input) => this.proposeManage(ctx, input as ManageSpec),
@@ -371,7 +372,9 @@ export class SubscriptionTools implements AiProposalApplier {
             throw new AiToolError(`Ya existe un plan «${input.name}»: para cambiarlo pasa plan con su id o nombre.`);
         }
         const conn = await this.resolveConnection(ctx, input.connection);
-        const currency = (input.currency ?? 'COP').toUpperCase();
+        const currency = (input.currency ?? (conn.provider === 'paypal' ? 'USD' : 'COP')).toUpperCase();
+        const currencyError = collectionCurrencyError(conn.provider === 'paypal' ? 'paypal' : 'mercadopago', currency);
+        if (currencyError) throw new AiToolError(currencyError);
         const trial = input.trial_days ?? 0;
         const grace = input.grace_days ?? 10;
         const onExpire = input.on_expire ?? 'mark';
@@ -380,7 +383,7 @@ export class SubscriptionTools implements AiProposalApplier {
             kind: 'configure_subscription_plan',
             capability: null,
             title: `Crear el plan de suscripción «${input.name}»`,
-            summary: `${input.amount} ${currency} ${subscriptionFrequencyText(frequency, frequencyType)}, con débito automático de Mercado Pago (${conn.name}).`,
+            summary: `${input.amount} ${currency} ${subscriptionFrequencyText(frequency, frequencyType)}, con débito automático de ${conn.provider === 'paypal' ? 'PayPal' : 'Mercado Pago'} (${conn.name}).`,
             destructive: false,
             listSlug: null,
             preview: {
@@ -572,14 +575,15 @@ export class SubscriptionTools implements AiProposalApplier {
                 );
             }
             const email = input.payer_email ?? panel.suggested.payer_email;
-            if (!email) throw new AiToolError('Falta el correo del cliente (payer_email): Mercado Pago lo pide y el registro no tiene uno.');
+            const pn = plan.provider === 'paypal' ? 'PayPal' : 'Mercado Pago';
+            if (!email) throw new AiToolError(`Falta el correo del cliente (payer_email): ${pn} lo pide y el registro no tiene uno.`);
             const pending = panel.subscriptions.find((s) => s.status === 'pending');
             const amount = input.amount ?? plan.amount;
             return this.save(ctx, {
                 kind: 'manage_subscription',
                 capability: null,
                 title: `Suscribir «${recordTitle}» al plan «${plan.name}»`,
-                summary: `Se crea la suscripción en Mercado Pago y queda el link para que el cliente autorice su tarjeta${pending ? ' (reemplaza la que estaba por autorizar: su link deja de servir)' : ''}.`,
+                summary: `Se crea la suscripción en ${pn} y queda el link para que el cliente la autorice${pending ? ' (reemplaza la que estaba por autorizar: su link deja de servir)' : ''}.`,
                 destructive: false,
                 listSlug: list.slug,
                 preview: {
@@ -618,6 +622,7 @@ export class SubscriptionTools implements AiProposalApplier {
         if (sub.status === 'cancelled' || sub.status === 'finished')
             throw new AiToolError(`La suscripción ya terminó (${stateLabel}): para volver a cobrar, crea una nueva con "subscribe".`);
         const payload = { ...base, subscriptionId: sub.id };
+        const spn = sub.provider === 'paypal' ? 'PayPal' : 'Mercado Pago';
         switch (input.action) {
             case 'pause':
                 if (sub.status === 'paused') throw new AiToolError('Ya está pausada.');
@@ -626,7 +631,7 @@ export class SubscriptionTools implements AiProposalApplier {
                     kind: 'manage_subscription',
                     capability: null,
                     title: `Pausar la suscripción «${name}» de «${recordTitle}»`,
-                    summary: 'Mercado Pago deja de cobrar hasta que se reanude.',
+                    summary: `${spn} deja de cobrar hasta que se reanude.`,
                     destructive: false,
                     listSlug: list.slug,
                     preview: { changes: [{ label: 'Estado', from: stateLabel, to: 'Pausada' }] },
@@ -638,7 +643,7 @@ export class SubscriptionTools implements AiProposalApplier {
                     kind: 'manage_subscription',
                     capability: null,
                     title: `Reanudar la suscripción «${name}» de «${recordTitle}»`,
-                    summary: 'Mercado Pago vuelve a cobrar en la próxima fecha.',
+                    summary: `${spn} vuelve a cobrar en la próxima fecha.`,
                     destructive: false,
                     listSlug: list.slug,
                     preview: { changes: [{ label: 'Estado', from: stateLabel, to: 'Al día' }] },
@@ -649,7 +654,7 @@ export class SubscriptionTools implements AiProposalApplier {
                     kind: 'manage_subscription',
                     capability: null,
                     title: `Cancelar la suscripción «${name}» de «${recordTitle}»`,
-                    summary: 'Se cancela en Mercado Pago y no vuelve a cobrar. No se puede deshacer: para volver a cobrar hay que crear otra.',
+                    summary: `Se cancela en ${spn} y no vuelve a cobrar. No se puede deshacer: para volver a cobrar hay que crear otra.`,
                     destructive: true,
                     listSlug: list.slug,
                     preview: {
@@ -664,7 +669,7 @@ export class SubscriptionTools implements AiProposalApplier {
                     kind: 'manage_subscription',
                     capability: null,
                     title: `Cambiar el valor de la suscripción «${name}» de «${recordTitle}»`,
-                    summary: 'El valor nuevo se cobra desde el próximo cobro (Mercado Pago le avisa al cliente).',
+                    summary: `El valor nuevo se cobra desde el próximo cobro (${spn} le avisa al cliente).`,
                     destructive: true,
                     listSlug: list.slug,
                     preview: { changes: [{ label: 'Valor', from: `${sub.amount} ${sub.currency}`, to: `${input.amount} ${sub.currency}` }] },
@@ -780,19 +785,21 @@ export class SubscriptionTools implements AiProposalApplier {
         return hit;
     }
 
-    private async resolveConnection(ctx: AiToolContext, ref: number | string | undefined): Promise<{ id: number; name: string }> {
-        const all = this.collections ? (await this.collections.connectionsFor(ctx.tenantId, actorOf(ctx))).filter((c) => c.provider === 'mercadopago') : [];
-        if (all.length === 0) throw new AiToolError('La empresa no tiene una conexión de Mercado Pago: se conecta en Ajustes → Integraciones.');
-        let conn: { id: number; name: string } | undefined;
+    private async resolveConnection(ctx: AiToolContext, ref: number | string | undefined): Promise<{ id: number; name: string; provider: string }> {
+        const all = this.collections
+            ? (await this.collections.connectionsFor(ctx.tenantId, actorOf(ctx))).filter((c) => c.provider === 'mercadopago' || c.provider === 'paypal')
+            : [];
+        if (all.length === 0) throw new AiToolError('La empresa no tiene una conexión de Mercado Pago ni de PayPal: se conecta en Ajustes → Integraciones.');
+        let conn: { id: number; name: string; provider: string } | undefined;
         if (ref === undefined) {
-            if (all.length > 1) throw new AiToolError(`Hay varias conexiones de Mercado Pago: indica connection (${all.map((c) => `${c.id} «${c.name}»`).join(', ')}).`);
+            if (all.length > 1) throw new AiToolError(`Hay varias conexiones de cobro: indica connection (${all.map((c) => `${c.id} «${c.name}»`).join(', ')}).`);
             conn = all[0];
         } else {
             conn =
                 typeof ref === 'number' || /^\d+$/.test(String(ref))
                     ? all.find((c) => c.id === Number(ref))
                     : all.find((c) => c.name.toLowerCase() === String(ref).trim().toLowerCase());
-            if (!conn) throw new AiToolError(`La conexión «${String(ref)}» no existe. Conexiones de Mercado Pago: ${all.map((c) => `${c.id} «${c.name}»`).join(', ')}.`);
+            if (!conn) throw new AiToolError(`La conexión «${String(ref)}» no existe. Conexiones de cobro: ${all.map((c) => `${c.id} «${c.name}»`).join(', ')}.`);
         }
         await this.assertEditableConnection(ctx, conn!.id, conn!.name);
         return conn!;
@@ -804,7 +811,7 @@ export class SubscriptionTools implements AiProposalApplier {
         try {
             await this.connectors.editableConnection(ctx.tenantId, ctx.userId, ctx.role, connectionId);
         } catch {
-            throw new AiToolError(`Los planes de «${name ?? 'esa conexión'}» los maneja quien puede editar la conexión de Mercado Pago (un administrador, si es del equipo).`);
+            throw new AiToolError(`Los planes de «${name ?? 'esa conexión'}» los maneja quien puede editar la conexión (un administrador, si es del equipo).`);
         }
     }
 
@@ -867,5 +874,5 @@ function actorOf(ctx: AiToolContext): CollectionActor & ReturnType<typeof aclExt
 }
 
 function expireText(v: unknown): string {
-    return v === 'cancel' ? 'Marcar «Vencida» y cancelarla en Mercado Pago' : 'Marcar «Vencida» y avisar';
+    return v === 'cancel' ? 'Marcar «Vencida» y cancelarla en el proveedor' : 'Marcar «Vencida» y avisar';
 }

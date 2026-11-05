@@ -639,6 +639,8 @@ export interface PublicFormPlan {
     frequency_type: 'months' | 'days';
     trial_days: number;
     cycles: number | null;
+    /** v0.1.373 — Quién cobra: para decir «autorizas el pago en PayPal» o «en Mercado Pago». */
+    provider?: 'mercadopago' | 'paypal';
 }
 
 /** El estado de un pago visto desde la página pública (al volver del checkout). */
@@ -986,7 +988,7 @@ export interface PublicFormSubscription {
     button_label: string;
 }
 
-/** v0.1.368 — Lo que la página muestra al volver de Mercado Pago (`?suscripcion=`). */
+/** v0.1.368 — Lo que la página muestra al volver de Mercado Pago o PayPal (`?suscripcion=`). */
 export interface PublicFormSubscriptionStatus {
     /** pending = todavía no autorizó; active = autorizó; failed = autorizó pero el cobro no pasó; cancelled. */
     state: 'pending' | 'active' | 'failed' | 'cancelled';
@@ -997,6 +999,8 @@ export interface PublicFormSubscriptionStatus {
     frequency_type: 'months' | 'days';
     /** Si todavía no autorizó: el link para terminar (si no, null). */
     url: string | null;
+    /** v0.1.373 — Quién cobra (Mercado Pago o PayPal). */
+    provider?: 'mercadopago' | 'paypal';
 }
 
 export interface PublicFormPayment {
@@ -1106,8 +1110,8 @@ export interface SubmitFormResult {
     payment?: { url: string; amount: number; currency: string; after: 'redirect' | 'button'; button_label: string } | null;
     payment_error?: string;
     /**
-     * v0.1.368 — Suscribir al enviar: el link para que autorice su tarjeta en
-     * Mercado Pago, o por qué no se pudo armar. La respuesta YA quedó guardada.
+     * v0.1.368 — Suscribir al enviar: el link para que autorice el pago en
+     * Mercado Pago o PayPal, o por qué no se pudo armar. La respuesta YA quedó guardada.
      */
     subscription?: {
         url: string;
@@ -1118,6 +1122,8 @@ export interface SubmitFormResult {
         frequency_type: 'months' | 'days';
         after: 'redirect' | 'button';
         button_label: string;
+        /** v0.1.373 — Quién cobra (Mercado Pago o PayPal). */
+        provider?: 'mercadopago' | 'paypal';
     } | null;
     subscription_error?: string;
 }

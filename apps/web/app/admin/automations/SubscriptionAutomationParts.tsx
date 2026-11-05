@@ -89,7 +89,7 @@ export function SubscriptionTriggerConfig({ config, onChange }: { config: Trigge
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
                 <Label>{__('Planes')}</Label>
                 {(plans.data ?? []).length === 0 ? (
-                    <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Cualquier plan. (Los planes se crean en Integraciones → Mercado Pago → Cobros.)')}</p>
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Cualquier plan. (Los planes se crean en Integraciones → Mercado Pago o PayPal → Cobros.)')}</p>
                 ) : (
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
                         {(plans.data ?? []).map((p) => {

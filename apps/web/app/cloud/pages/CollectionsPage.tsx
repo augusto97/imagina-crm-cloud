@@ -124,7 +124,7 @@ export function CollectionsPage(): JSX.Element {
                     <li>{__('Desde una automatización: acción «Crear link de pago» (por ejemplo, al crear una factura) y después «Enviar WhatsApp» o «Enviar correo» con {{pago.link}}.')}</li>
                     <li>{__('Para reaccionar al pago: disparador «Cuando se recibe un pago» (agradecer, marcar la factura, avisar al equipo).')}</li>
                     <li>{__('Con «Elegir columnas» en la sección «Cobros» de un registro (o en la acción de la automatización), la lista guarda el link y el estado de cada pago y puedes filtrar quién debe.')}</li>
-                    {provider === 'mercadopago' && (
+                    {(provider === 'mercadopago' || provider === 'paypal') && (
                         <li>{__('Para cobrar cada mes con débito automático: crea un plan abajo, en «Suscripciones», y toca «Suscribir» en la ficha del cliente (o usa la acción «Crear suscripción» de una automatización).')}</li>
                     )}
                     {provider === 'paypal' && (
@@ -133,7 +133,9 @@ export function CollectionsPage(): JSX.Element {
                 </ul>
             </section>
 
-            {provider === 'mercadopago' && <SubscriptionsSection connectionId={d.connection.id} hookUrl={d.hook_url} testMode={d.connection.test_mode} />}
+            {(provider === 'mercadopago' || provider === 'paypal') && (
+                <SubscriptionsSection connectionId={d.connection.id} hookUrl={d.hook_url} testMode={d.connection.test_mode} provider={provider} />
+            )}
 
             <section className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card">
                 <h2 className="imcrm-border-b imcrm-border-border imcrm-px-4 imcrm-py-3 imcrm-text-sm imcrm-font-semibold">{__('Últimos links de pago')}</h2>

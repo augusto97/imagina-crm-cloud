@@ -2,7 +2,10 @@ import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+    COLLECTION_CURRENCY_OPTIONS,
     SUBSCRIPTION_CHARGE_STATUS_LABELS,
+    defaultCollectionCurrency,
+    type SubscriptionProvider,
     type CreateSubscriptionPlanInput,
     type SubscriptionPlan,
     type SubscriptionsOverview,
@@ -35,7 +38,18 @@ import { cyclesText, frequencyText } from './subscriptionText';
  * últimos cobros. La URL de avisos se pega en la aplicación de Mercado Pago
  * (sin ella igual funciona: la app revisa cada suscripción sola).
  */
-export function SubscriptionsSection({ connectionId, hookUrl, testMode }: { connectionId: number; hookUrl: string; testMode: boolean }): JSX.Element {
+export function SubscriptionsSection({
+    connectionId,
+    hookUrl,
+    testMode,
+    provider = 'mercadopago',
+}: {
+    connectionId: number;
+    hookUrl: string;
+    testMode: boolean;
+    /** v0.1.373 — Mercado Pago o PayPal. */
+    provider?: SubscriptionProvider;
+}): JSX.Element {
     const q = useQuery({
         queryKey: ['subscriptions-overview', connectionId],
         queryFn: () => api.subscriptionsOverview(connectionId),
@@ -68,21 +82,27 @@ export function SubscriptionsSection({ connectionId, hookUrl, testMode }: { conn
                 {sprintf(__('Últimos 30 días: cobrado %1$s · %2$d cobros rechazados · %3$d canceladas · %4$d por autorizar.'), formatMoney(d.totals.charged_30d, d.totals.currency), d.totals.failed_30d, d.totals.cancelled_30d, d.totals.pending)}
             </p>
 
-            <section className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4" data-testid="imcrm-subscriptions-hook">
-                <h3 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-semibold">
-                    <Zap className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
-                    {__('Avisos de las suscripciones')}
-                </h3>
-                <p className="imcrm-mt-2 imcrm-text-sm imcrm-text-muted-foreground">
-                    {__('Para enterarte al instante de cada cobro, pega esta URL en tu aplicación de Mercado Pago → Webhooks (en')}{' '}
-                    {testMode ? __('modo de prueba') : __('modo productivo')}
-                    {__(') y marca los eventos «Pagos» y «Planes y suscripciones». Sin ella igual funciona: la app revisa cada suscripción sola, sólo que se entera unos minutos después.')}
+            {provider === 'paypal' ? (
+                <p className="imcrm-text-sm imcrm-text-muted-foreground" data-testid="imcrm-subscriptions-hook-paypal">
+                    {__('PayPal avisa cada cobro por la misma dirección de los links de pago (arriba, en «Avisos de pago»). Sin avisos igual funciona: la app revisa cada suscripción sola, sólo que se entera unos minutos después.')}
                 </p>
-                <div className="imcrm-mt-2 imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-muted/50 imcrm-px-3 imcrm-py-2">
-                    <code className="imcrm-min-w-0 imcrm-flex-1 imcrm-break-all imcrm-text-xs">{hookUrl}</code>
-                    <CopyButton value={hookUrl} label={__('Copiar')} testId="imcrm-subscriptions-hook-copy" />
-                </div>
-            </section>
+            ) : (
+                <section className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4" data-testid="imcrm-subscriptions-hook">
+                    <h3 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-semibold">
+                        <Zap className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                        {__('Avisos de las suscripciones')}
+                    </h3>
+                    <p className="imcrm-mt-2 imcrm-text-sm imcrm-text-muted-foreground">
+                        {__('Para enterarte al instante de cada cobro, pega esta URL en tu aplicación de Mercado Pago → Webhooks (en')}{' '}
+                        {testMode ? __('modo de prueba') : __('modo productivo')}
+                        {__(') y marca los eventos «Pagos» y «Planes y suscripciones». Sin ella igual funciona: la app revisa cada suscripción sola, sólo que se entera unos minutos después.')}
+                    </p>
+                    <div className="imcrm-mt-2 imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-muted/50 imcrm-px-3 imcrm-py-2">
+                        <code className="imcrm-min-w-0 imcrm-flex-1 imcrm-break-all imcrm-text-xs">{hookUrl}</code>
+                        <CopyButton value={hookUrl} label={__('Copiar')} testId="imcrm-subscriptions-hook-copy" />
+                    </div>
+                </section>
+            )}
 
             <section className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card" data-testid="imcrm-subscription-plans">
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-4 imcrm-py-3">
@@ -136,7 +156,7 @@ export function SubscriptionsSection({ connectionId, hookUrl, testMode }: { conn
             )}
 
             {editing !== null && (
-                <PlanDialog connectionId={connectionId} plan={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
+                <PlanDialog connectionId={connectionId} provider={provider} plan={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
             )}
         </div>
     );
@@ -263,15 +283,25 @@ function SubscribersTable({ overview }: { overview: SubscriptionsOverview }): JS
     );
 }
 
-const CURRENCIES = ['COP', 'MXN', 'ARS', 'CLP', 'PEN', 'UYU', 'BRL'];
-
-function PlanDialog({ connectionId, plan, onClose }: { connectionId: number; plan: SubscriptionPlan | null; onClose: () => void }): JSX.Element {
+function PlanDialog({
+    connectionId,
+    provider,
+    plan,
+    onClose,
+}: {
+    connectionId: number;
+    provider: SubscriptionProvider;
+    plan: SubscriptionPlan | null;
+    onClose: () => void;
+}): JSX.Element {
+    const providerName = provider === 'paypal' ? 'PayPal' : 'Mercado Pago';
+    const currencies = COLLECTION_CURRENCY_OPTIONS[provider];
     const qc = useQueryClient();
     const toast = useToast();
     const [name, setName] = useState(plan?.name ?? '');
     const [description, setDescription] = useState(plan?.description ?? '');
     const [amount, setAmount] = useState(plan ? String(plan.amount) : '');
-    const [currency, setCurrency] = useState(plan?.currency ?? 'COP');
+    const [currency, setCurrency] = useState(plan?.currency ?? defaultCollectionCurrency(provider));
     const [frequency, setFrequency] = useState(String(plan?.frequency ?? 1));
     const [frequencyType, setFrequencyType] = useState<'months' | 'days'>(plan?.frequency_type ?? 'months');
     const [cycles, setCycles] = useState(plan?.cycles ? String(plan.cycles) : '');
@@ -339,7 +369,9 @@ function PlanDialog({ connectionId, plan, onClose }: { connectionId: number; pla
                         <div className="imcrm-min-w-0 imcrm-flex-1">
                             <Dialog.Title className="imcrm-text-base imcrm-font-semibold">{plan ? __('Editar plan') : __('Nuevo plan')}</Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
-                                {__('Cuánto se cobra y cada cuánto. Mercado Pago cobra recurrente sólo con tarjeta de crédito o débito.')}
+                                {provider === 'paypal'
+                                    ? __('Cuánto se cobra y cada cuánto. PayPal cobra con la cuenta PayPal del cliente o con tarjeta, en dólares u otra moneda que acepte (nunca en pesos colombianos).')
+                                    : __('Cuánto se cobra y cada cuánto. Mercado Pago cobra recurrente sólo con tarjeta de crédito o débito.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close className="imcrm-rounded-md imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent" aria-label={__('Cerrar')}>
@@ -357,7 +389,7 @@ function PlanDialog({ connectionId, plan, onClose }: { connectionId: number; pla
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                             <Label htmlFor="plan-name">{__('Nombre')}</Label>
                             <Input id="plan-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder={__('Mantenimiento mensual')} data-testid="imcrm-plan-name" />
-                            <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Lo ve el cliente al autorizar su tarjeta.')}</p>
+                            <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Lo ve el cliente al autorizar el pago.')}</p>
                         </div>
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                             <Label htmlFor="plan-desc">{__('Descripción (opcional)')}</Label>
@@ -376,9 +408,9 @@ function PlanDialog({ connectionId, plan, onClose }: { connectionId: number; pla
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                                 <Label htmlFor="plan-currency">{__('Moneda')}</Label>
                                 <Select id="plan-currency" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                                    {CURRENCIES.map((c) => (
-                                        <option key={c} value={c}>
-                                            {c}
+                                    {currencies.map((c) => (
+                                        <option key={c.value} value={c.value}>
+                                            {c.value}
                                         </option>
                                     ))}
                                 </Select>
@@ -412,13 +444,16 @@ function PlanDialog({ connectionId, plan, onClose }: { connectionId: number; pla
                             </div>
                         </div>
                         <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Si un cobro falla, Mercado Pago lo reintenta unos días. Pasados los días de gracia sin pago, la suscripción queda «Vencida»: es el momento de suspender el servicio.')}
+                            {sprintf(
+                                __('Si un cobro falla, %s lo reintenta unos días. Pasados los días de gracia sin pago, la suscripción queda «Vencida»: es el momento de suspender el servicio.'),
+                                providerName,
+                            )}
                         </p>
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                             <Label htmlFor="plan-expire">{__('Cuando vence sin pago')}</Label>
                             <Select id="plan-expire" value={onExpire} onChange={(e) => setOnExpire(e.target.value as 'mark' | 'cancel')} data-testid="imcrm-plan-expire">
                                 <option value="mark">{__('Marcarla «Vencida» y avisar (recomendado)')}</option>
-                                <option value="cancel">{__('Marcarla y cancelarla en Mercado Pago')}</option>
+                                <option value="cancel">{sprintf(__('Marcarla y cancelarla en %s'), providerName)}</option>
                             </Select>
                         </div>
                         {plan && (
