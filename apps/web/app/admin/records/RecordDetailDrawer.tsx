@@ -79,7 +79,7 @@ import { parseUtcDate } from '@/lib/utcDate';
 import { useRecordDraft } from './recordDraft';
 
 import { formatLongDate } from '@/lib/tenantFormat';
-import { helpdeskLockedReasons, useHelpdeskManaged } from '@/admin/helpdesk/managedFields';
+import { managedLockedReasons, useManagedFields } from '@/admin/records/managedFields';
 interface RecordDetailDrawerProps {
     listId: number;
     /**
@@ -187,10 +187,10 @@ export function RecordDetailDrawer({
     // app o cerrar la pestaña con cambios sin guardar → pregunta antes.
     useUnsavedChangesGuard(open && dirty);
     const view = useRecordView(listId, record?.id, open && record !== null);
-    const helpdeskManaged = useHelpdeskManaged();
+    const managedLocks = useManagedFields();
     const lockedReasons = useMemo(
-        () => ({ ...lockedReasonsFor(storeRules, fields, values), ...helpdeskLockedReasons(helpdeskManaged, fields) }),
-        [storeRules, fields, values, helpdeskManaged],
+        () => ({ ...lockedReasonsFor(storeRules, fields, values), ...managedLockedReasons(managedLocks, fields) }),
+        [storeRules, fields, values, managedLocks],
     );
     const [error, setError] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});

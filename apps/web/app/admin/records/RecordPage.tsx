@@ -64,7 +64,7 @@ import { getBootData } from '@/lib/boot';
 import { __, sprintf } from '@/lib/i18n';
 import { CAP, useCanAny } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
-import { HelpdeskManagedContext, helpdeskLockedReasons, useHelpdeskManagedIds } from '@/admin/helpdesk/managedFields';
+import { ManagedFieldsContext, managedLockedReasons, useManagedFieldLocks } from '@/admin/records/managedFields';
 
 /**
  * Vista "Card" — página completa de un record con:
@@ -127,10 +127,10 @@ export function RecordPage(): JSX.Element {
     // v0.1.336 — lo que la fuente ya borró sí se puede quitar de la app.
     const goneInSource = recordGoneInSource(storeRules, record.data);
     // E5 — las columnas del SLA (si la lista es una mesa de ayuda) tampoco se editan a mano.
-    const helpdeskManaged = useHelpdeskManagedIds(list.data?.settings);
+    const managedLocks = useManagedFieldLocks(list.data?.settings);
     const lockedReasons = useMemo(
-        () => ({ ...lockedReasonsFor(storeRules, fields.data ?? [], values), ...helpdeskLockedReasons(helpdeskManaged, fields.data ?? []) }),
-        [storeRules, fields.data, values, helpdeskManaged],
+        () => ({ ...lockedReasonsFor(storeRules, fields.data ?? [], values), ...managedLockedReasons(managedLocks, fields.data ?? []) }),
+        [storeRules, fields.data, values, managedLocks],
     );
     const [error, setError] = useState<string | null>(null);
     const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -245,7 +245,7 @@ export function RecordPage(): JSX.Element {
     if (useCrmLayout && fields.data) {
         return (
             <StoreRulesContext.Provider value={storeRules}>
-            <HelpdeskManagedContext.Provider value={helpdeskManaged}>
+            <ManagedFieldsContext.Provider value={managedLocks}>
                 <RecordLayoutView
                     key={record.data.id}
                     list={list.data}
@@ -293,7 +293,7 @@ export function RecordPage(): JSX.Element {
                         </>
                     }
                 />
-            </HelpdeskManagedContext.Provider>
+            </ManagedFieldsContext.Provider>
             </StoreRulesContext.Provider>
         );
     }

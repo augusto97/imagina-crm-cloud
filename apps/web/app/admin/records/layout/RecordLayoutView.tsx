@@ -32,7 +32,7 @@ import { planSection } from './sectionPlan';
 import { useLayoutData } from './useLayoutData';
 import { useRecordAutosave } from './useRecordAutosave';
 import { useRecordLayout, type LayoutOrigin } from './useRecordLayout';
-import { helpdeskLockedReasons, useHelpdeskManaged } from '@/admin/helpdesk/managedFields';
+import { managedLockedReasons, useManagedFields } from '@/admin/records/managedFields';
 
 interface Props {
     list: ListSummary;
@@ -67,10 +67,10 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
     const storeRules = useStoreRules();
     const save = useRecordAutosave(list.id, record);
     const { query, override } = useLayoutData(list.id, list.slug, record.id, layout);
-    const helpdeskManaged = useHelpdeskManaged();
+    const managedLocks = useManagedFields();
     const lockedReasons = useMemo(
-        () => ({ ...lockedReasonsFor(storeRules, fields, save.values), ...helpdeskLockedReasons(helpdeskManaged, fields) }),
-        [storeRules, fields, save.values, helpdeskManaged],
+        () => ({ ...lockedReasonsFor(storeRules, fields, save.values), ...managedLockedReasons(managedLocks, fields) }),
+        [storeRules, fields, save.values, managedLocks],
     );
     const fieldsById = useMemo(() => new Map(fields.map((f) => [f.id, f])), [fields]);
     const theme = resolveTheme(layout?.theme);

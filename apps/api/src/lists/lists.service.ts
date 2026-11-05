@@ -542,6 +542,25 @@ export class ListsService {
                     data: { status: 409 },
                 });
             }
+            // v0.1.383 — los registros con una suscripción viva no se van a la
+            // papelera (el débito automático seguiría cobrando sin que nadie lo vea).
+            const live = await tx.execute<{ n: string | number }>(sql`
+                SELECT count(*) AS n FROM subscriptions s
+                JOIN records r ON r.id = s.record_id AND r.tenant_id = s.tenant_id
+                WHERE s.tenant_id = ${tenantId} AND r.list_id = ${current.id} AND r.deleted_at IS NULL
+                  AND s.status NOT IN ('cancelled', 'finished')
+            `);
+            const liveCount = Number(live.rows[0]?.n ?? 0);
+            if (liveCount > 0) {
+                throw new ConflictException({
+                    code: 'subscription_live',
+                    message:
+                        liveCount === 1
+                            ? 'Un registro de esta lista tiene una suscripción con débito automático que sigue cobrando. Borrar la lista no la cancela: cancélala primero en la sección «Suscripción» de su ficha.'
+                            : `${liveCount} registros de esta lista tienen una suscripción con débito automático que sigue cobrando. Borrar la lista no las cancela: cancélalas primero en la sección «Suscripción» de cada ficha.`,
+                    data: { status: 409 },
+                });
+            }
             const res = await trashListCascade(tx, tenantId, current.id, opts.userId ?? null);
             return { id: current.id, name: current.name, automationIds: res.automationIds };
         });

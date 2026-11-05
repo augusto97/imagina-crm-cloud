@@ -757,6 +757,13 @@
       "when": 1784200001400,
       "tag": "0107_mp_subscriptions_reread",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1784200001500,
+      "tag": "0108_charge_log_marker",
+      "breakpoints": true
     }
   ]
 }

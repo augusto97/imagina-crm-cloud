@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SUBSCRIPTION_CHARGE_STATUS_OPTIONS, SUBSCRIPTION_STATUS_OPTIONS } from '@imagina-base/shared';
+import { readChargeLogMarker, SUBSCRIPTION_CHARGE_STATUS_OPTIONS, SUBSCRIPTION_STATUS_OPTIONS } from '@imagina-base/shared';
 
 /**
  * v0.1.367 (ADR-S96) — Suscripciones de las empresas con Mercado Pago, de
@@ -809,6 +809,12 @@ describe('Suscripciones de las empresas — Mercado Pago (v0.1.367)', () => {
         // «Pagado» va a la opción que la lista YA tenía (por su etiqueta).
         expect(data[`f${estado.id}`]).toBe('ok');
         expect(data[`f${monto.id}`]).toBe(150000);
+        // v0.1.383 — la lista destino queda marcada: sus columnas del cobro se protegen.
+        const markerOf = async (id: number) => {
+            const [l] = await withTenant(pg.db, tenantId, (tx) => tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, id)));
+            return readChargeLogMarker(l!.settings);
+        };
+        expect(await markerOf(facturas.id)).toEqual({ list_id: c.listId, record_field_id: cliente.id, field_ids: expect.arrayContaining([monto.id, estado.id]) });
 
         // Alguien borra el registro del cobro: un cambio del cobro no lo vuelve a crear.
         await withTenant(pg.db, tenantId, (tx) => tx.delete(records).where(eq(records.id, rows[0]!.id)));
@@ -820,6 +826,7 @@ describe('Suscripciones de las empresas — Mercado Pago (v0.1.367)', () => {
         // Apagado: la lista deja de recibir cobros (lo escrito se queda donde está).
         const off = await chargeLog.configure(tenantId, admin, c.slug, { mode: 'off' });
         expect(off.config).toBeNull();
+        expect(await markerOf(facturas.id)).toBeNull();
         invoice(mp, 'inv-2', 'pre-1', { status: 'processed', paymentId: 7002, paymentStatus: 'approved', debit: '2026-12-05T12:00:00.000Z' });
         await subs.sync(tenantId, sub.id, new Date('2026-12-06T12:00:00Z'));
         expect(await destRecords(facturas.id)).toHaveLength(0);

@@ -1908,4 +1908,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver cómo se usa', href: '/aprende/formularios/formularios-publicar' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.383-columnas-de-cobros-protegidas',
+        version: '0.1.383',
+        date: '2026-11-05',
+        kind: 'improvement',
+        title: 'Lo que escribe Mercado Pago ya no se cambia por error',
+        summary:
+            'Las columnas que escriben los pagos y las suscripciones (estado, valor, próximo cobro, link…) llevan candado: cambiarlas a mano no cambiaba nada en Mercado Pago. Las columnas que tú agregas llevan un lápiz verde: se editan libres y nunca salen de la app.',
+        media: {
+            slides: [
+                {
+                    title: 'Candado en lo que escribe Mercado Pago',
+                    text: 'Estado, plan, valor, próximo cobro, pagado hasta, cobros fallidos y el link de la suscripción; y en los links de pago, el estado, la fecha, el monto y el medio. Al pasar el mouse ves por qué y qué hacer en su lugar.',
+                    illustration: 'cobro-candados',
+                },
+                {
+                    title: 'Tus columnas, libres',
+                    text: 'Notas, la persona a cargo, lo que quieras: se editan como siempre y nunca se envían a Mercado Pago ni a PayPal. A Mercado Pago sólo sale lo que eliges al crear un link o una suscripción.',
+                    illustration: 'cobro-estados',
+                },
+                {
+                    title: 'Nada se borra con la suscripción viva',
+                    text: 'Un suscriptor (o una lista) con una suscripción que sigue cobrando no se borra: borrarlo no la cancela y el cliente seguiría pagando. Primero se cancela en la ficha.',
+                    illustration: 'cobro-suscripcion',
+                },
+            ],
+        },
+        body: 'Para cambiar algo de verdad usa la sección **Suscripción** de la ficha: **Pausar**, **Reanudar**, **Cambiar el valor** o **Cancelar**. Si quieres usar una de esas columnas a mano, quítala primero en **Columnas** de la sección **Suscripción** (o **Cobros**).',
+        action: { label: 'Ver cómo funciona', href: '/aprende/cobros/cobros-suscripciones' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

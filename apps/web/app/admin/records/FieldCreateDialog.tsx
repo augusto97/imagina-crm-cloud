@@ -15,7 +15,8 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
-import { StoreFieldNote } from './StoreColumnBadge';
+import { ManagedFieldNote, StoreFieldNote } from './StoreColumnBadge';
+import { useManagedFields } from './managedFields';
 import { storeColumnKind, useStoreRules } from './storeRules';
 
 /**
@@ -54,7 +55,9 @@ export function FieldCreateDialog({
     const [submitError, setSubmitError] = useState<string | null>(null);
     // v0.1.213 — una columna de la tienda sólo cambia de nombre.
     const storeKind = storeColumnKind(useStoreRules(), field?.id ?? 0);
-    const storeField = storeKind === 'store_locked' || storeKind === 'store_sync';
+    // v0.1.383 — una columna que escribe una sincronización, igual: sólo el nombre.
+    const managedLock = useManagedFields()?.get(field?.id ?? 0) ?? null;
+    const storeField = storeKind === 'store_locked' || storeKind === 'store_sync' || managedLock !== null;
 
     // Precarga al abrir. `update` queda FUERA de las deps a propósito (misma
     // lección que FieldDialog del builder: el objeto de mutación cambia de
@@ -139,7 +142,7 @@ export function FieldCreateDialog({
                         </div>
 
                         {storeField ? (
-                            <StoreFieldNote />
+                            managedLock ? <ManagedFieldNote lock={managedLock} /> : <StoreFieldNote />
                         ) : (
                             <>
                                 <FieldConfigEditor

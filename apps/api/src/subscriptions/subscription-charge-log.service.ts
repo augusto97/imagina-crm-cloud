@@ -3,11 +3,13 @@ import { ModuleRef } from '@nestjs/core';
 import {
     BLUEPRINT_VERSION,
     CHARGE_LOG_LIST_NAME,
+    CHARGE_LOG_MARKER_KEY,
     EMPTY_CHARGE_LOG_FIELDS,
     SUBSCRIPTION_CHARGE_LOG_LABELS,
     SUBSCRIPTION_CHARGE_LOG_ROLES,
     SUBSCRIPTION_CHARGE_LOG_TYPES,
     SUBSCRIPTION_CHARGE_STATUS_OPTIONS,
+    chargeLogMarkerFor,
     chargeLogTitle,
     chargeLogValue,
     jsonbKeyForField,
@@ -33,6 +35,7 @@ import { ActivityService, computeDiff } from '../activity/activity.service';
 import { AuditService } from '../audit/audit.service';
 import { can } from '../authz/can';
 import type { CollectionActor } from '../collections/collections.service';
+import type { Tx } from '../db/client';
 import { lists, subscriptionCharges, subscriptions, tenants } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
@@ -178,12 +181,14 @@ export class SubscriptionChargeLogService {
     async configure(tenantId: number, actor: CollectionActor, listIdOrSlug: string, input: SetSubscriptionChargeLogInput): Promise<SubscriptionChargeLogStatus> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         if (input.mode === 'off') {
-            await this.tenantDb.withTenant(tenantId, (tx) =>
-                tx
+            await this.tenantDb.withTenant(tenantId, async (tx) => {
+                await tx
                     .update(lists)
                     .set({ settings: sql`coalesce(${lists.settings}, '{}'::jsonb) - 'subscription_charges'`, updatedAt: new Date() })
-                    .where(and(eq(lists.tenantId, tenantId), eq(lists.id, list.id))),
-            );
+                    .where(and(eq(lists.tenantId, tenantId), eq(lists.id, list.id)));
+                // v0.1.383 — las columnas de la lista de cobros vuelven a ser comunes.
+                await writeChargeLogMarker(tx, tenantId, list.id, null);
+            });
             await this.audit.log({
                 tenantId,
                 userId: actor.userId,
@@ -206,15 +211,18 @@ export class SubscriptionChargeLogService {
         } else {
             cfg = await this.useExisting(tenantId, list, input.list_id, input.fields);
         }
-        await this.tenantDb.withTenant(tenantId, (tx) =>
-            tx
+        await this.tenantDb.withTenant(tenantId, async (tx) => {
+            await tx
                 .update(lists)
                 .set({
                     settings: sql`jsonb_set(coalesce(${lists.settings}, '{}'::jsonb), '{subscription_charges}', ${JSON.stringify(cfg)}::jsonb)`,
                     updatedAt: new Date(),
                 })
-                .where(and(eq(lists.tenantId, tenantId), eq(lists.id, list.id))),
-        );
+                .where(and(eq(lists.tenantId, tenantId), eq(lists.id, list.id)));
+            // v0.1.383 — la lista destino sabe qué columnas escribe el registro de
+            // cobros: quedan protegidas (no se editan a mano).
+            await writeChargeLogMarker(tx, tenantId, list.id, cfg);
+        });
         await this.audit.log({
             tenantId,
             userId: actor.userId,
@@ -605,7 +613,8 @@ export class SubscriptionChargeLogService {
                     SYSTEM_ACTOR,
                     String(dest.id),
                     { data },
-                    { lenientRequired: true, silent: true, noAutomations: !opts.automations },
+                    // `sync`: es la dueña de esas columnas (para el resto están protegidas).
+                    { lenientRequired: true, silent: true, noAutomations: !opts.automations, sync: true },
                 );
                 await this.tenantDb.withTenant(tenantId, (tx) =>
                     tx
@@ -678,4 +687,24 @@ export class SubscriptionChargeLogService {
 
 function incidentKey(subscribersListId: number): string {
     return `subscription-charge-log:${subscribersListId}`;
+}
+
+/**
+ * v0.1.383 — La marca en la lista DESTINO del registro de cobros (sus columnas
+ * quedan protegidas): se saca de donde estaba y, si hay configuración, se pone
+ * en la nueva. La configuración vive en la lista de suscriptores; la marca es
+ * lo que permite proteger las columnas sin mirar otras listas.
+ */
+async function writeChargeLogMarker(tx: Tx, tenantId: number, sourceListId: number, cfg: SubscriptionChargeLog | null): Promise<void> {
+    await tx
+        .update(lists)
+        .set({ settings: sql`${lists.settings} - ${CHARGE_LOG_MARKER_KEY}::text` })
+        .where(and(eq(lists.tenantId, tenantId), sql`${lists.settings} -> ${CHARGE_LOG_MARKER_KEY}::text ->> 'list_id' = ${String(sourceListId)}`));
+    if (!cfg) return;
+    const marker = chargeLogMarkerFor(sourceListId, cfg.fields);
+    if (!marker) return;
+    await tx
+        .update(lists)
+        .set({ settings: sql`jsonb_set(coalesce(${lists.settings}, '{}'::jsonb), ${`{${CHARGE_LOG_MARKER_KEY}}`}::text[], ${JSON.stringify(marker)}::jsonb)` })
+        .where(and(eq(lists.tenantId, tenantId), eq(lists.id, cfg.list_id)));
 }

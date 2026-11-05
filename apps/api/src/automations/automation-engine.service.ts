@@ -15,9 +15,9 @@ import {
     BOOKING_EVENT_LABELS,
     type BookingEventInfo,
     emailTriggerMatches,
-    helpdeskManagedFieldIds,
+    managedFieldLockMap,
+    type ManagedFieldLock,
     slaTriggerMatches,
-    HELPDESK_MANAGED_REASON,
     type ChecklistCompletedInfo,
     type EmailEventInfo,
     type SlaEventInfo,
@@ -277,7 +277,8 @@ interface RunContext {
     /** Marca de tienda o de sitio WordPress por lista, leída una vez por corrida. */
     storeMarkers?: Map<number, MirrorListMarker | null>;
     /** E5 — columnas que mantiene el SLA de la mesa de ayuda, por lista (nadie las escribe). */
-    helpdeskManaged?: Map<number, number[]>;
+    /** E5 + v0.1.383 — columnas protegidas por lista (SLA, cobros, suscripciones). */
+    helpdeskManaged?: Map<number, Map<number, ManagedFieldLock>>;
     /**
      * v0.1.288 — la respuesta del ÚLTIMO webhook/conector (`{{webhook.status}}`,
      * `{{webhook.body.x}}`) y las guardadas con nombre
@@ -634,8 +635,18 @@ export class AutomationEngine {
         );
         const marker = readMirrorListMarker(row?.settings);
         ctx.storeMarkers.set(listId, marker);
-        (ctx.helpdeskManaged ??= new Map()).set(listId, helpdeskManagedFieldIds(row?.settings));
+        (ctx.helpdeskManaged ??= new Map()).set(listId, managedFieldLockMap(row?.settings));
         return marker;
+    }
+
+    /**
+     * v0.1.383 — El candado de una columna que escribe una sincronización (cobros, suscripciones,
+     * SLA), o null. Las acciones que guardan algo en una columna elegida (un PDF, el enlace de una
+     * reunión) no la pisan.
+     */
+    private async managedLockOf(ctx: RunContext, listId: number, fieldId: number): Promise<ManagedFieldLock | null> {
+        if (!ctx.helpdeskManaged?.has(listId)) await this.storeMarkerOf(ctx, listId);
+        return ctx.helpdeskManaged?.get(listId)?.get(fieldId) ?? null;
     }
 
     /**
@@ -2653,15 +2664,17 @@ export class AutomationEngine {
                 storeSkipped.push(`${slug} (${err})`);
             }
         }
-        // E5 — los vencimientos y el estado del SLA los calcula la mesa de ayuda.
-        const managed = ctx.helpdeskManaged?.get(target.listId) ?? [];
-        if (managed.length > 0) {
+        // E5 + v0.1.383 — las columnas protegidas (vencimientos y estado del SLA,
+        // lo que escriben los pagos y las suscripciones) no se escriben a mano.
+        const managed = ctx.helpdeskManaged?.get(target.listId);
+        if (managed && managed.size > 0) {
             for (const slug of Object.keys(applied)) {
                 const key = target.slugToKey.get(slug)!;
-                if (!managed.includes(Number(key.slice(1)))) continue;
+                const lock = managed.get(Number(key.slice(1)));
+                if (!lock) continue;
                 delete patch[key];
                 delete applied[slug];
-                storeSkipped.push(`${slug} (${HELPDESK_MANAGED_REASON})`);
+                storeSkipped.push(`${slug} (${lock.reason})`);
             }
         }
 
@@ -3630,6 +3643,8 @@ export class AutomationEngine {
                 if (!field || !key || field.type !== 'file') {
                     throw new Error(`«${saveSlug}» no es un campo Archivo de la lista: elige dónde guardar el PDF.`);
                 }
+                const pdfLock = await this.managedLockOf(ctx, ctx.listId, Number(key.slice(1)));
+                if (pdfLock) throw new Error(`«${field.label}» no se puede usar para guardar el PDF: ${pdfLock.reason}`);
                 const saved = await this.documents.storePdf(ctx.tenantId, SYSTEM_USER, doc.filename, doc.buffer).catch((err: unknown) => {
                     throw new Error(`No se pudo guardar el PDF: ${err instanceof Error ? err.message : String(err)}`);
                 });
@@ -3796,6 +3811,11 @@ export class AutomationEngine {
                 continue;
             }
             const label = field.label ?? slug;
+            const meetLock = await this.managedLockOf(ctx, ctx.listId, Number(key.slice(1)));
+            if (meetLock) {
+                problems.push(`«${label}» no se tocó: ${meetLock.reason}`);
+                continue;
+            }
             if (p.kind === 'cancel') {
                 writes[key] = null;
                 saved.push(`vació «${label}»`);

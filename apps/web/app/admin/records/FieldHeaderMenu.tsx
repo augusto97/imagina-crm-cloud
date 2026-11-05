@@ -35,6 +35,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
+import { useManagedFields } from './managedFields';
 import { storeColumnKind, useStoreRules } from './storeRules';
 
 /**
@@ -122,6 +123,10 @@ export function FieldHeaderMenu({
     // es de sólo lectura (el motor la saltearía).
     const storeKind = storeColumnKind(useStoreRules(), field.id);
     const isStoreField = storeKind === 'store_locked' || storeKind === 'store_sync';
+    // v0.1.383 — una columna que escribe una sincronización (cobros, suscripciones,
+    // registro de cobros, SLA) no se automatiza (el motor la saltearía) y sólo se
+    // borra si es un dato que no necesita (lo que trajo la importación).
+    const managedLock = useManagedFields()?.get(field.id) ?? null;
 
     const handleMove = async (to: 'start' | 'end'): Promise<void> => {
         const all = fields ?? [];
@@ -324,7 +329,7 @@ export function FieldHeaderMenu({
                         {__('Calcular')}
                     </DropdownMenuItem>
                 )}
-                {onEdit && listSlug !== undefined && storeKind !== 'store_locked' && (
+                {onEdit && listSlug !== undefined && storeKind !== 'store_locked' && !managedLock && (
                     <DropdownMenuItem
                         onSelect={() =>
                             // Con el campo en la URL, el editor abre con la
@@ -367,7 +372,7 @@ export function FieldHeaderMenu({
                     <Hash className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
                     {__('Copiar ID de campo')}
                 </DropdownMenuItem>
-                {onEdit && !isStoreField && (
+                {onEdit && !isStoreField && (!managedLock || managedLock.deletable) && (
                     <DropdownMenuItem
                         danger
                         disabled={del.isPending}

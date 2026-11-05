@@ -135,6 +135,7 @@ export * from './schemas/gantt';
 export * from './schemas/workload';
 // D2 + E5 — mesa de ayuda por correo y SLA.
 export * from './schemas/helpdesk';
+export * from './schemas/managed-fields';
 export * from './schemas/business-hours';
 export * from './xlsx';
 export * from './zip-files';

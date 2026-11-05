@@ -5,8 +5,7 @@ import {
     applyBulkOperations,
     bulkOpsFor,
     isThroughField,
-    helpdeskManagedFieldIds,
-    HELPDESK_MANAGED_REASON,
+    managedFieldLockMap,
     mirrorCellAccess,
     mirrorFieldMap,
     mirrorValueError,
@@ -242,8 +241,8 @@ export class BulkEditService {
             operations,
             bulkFields,
             marker,
-            // E5 — las columnas que mantiene el SLA de la mesa de ayuda.
-            managed: new Set(helpdeskManagedFieldIds(list.settings)),
+            // E5 + v0.1.383 — las columnas protegidas (SLA, cobros, suscripciones).
+            managed: managedFieldLockMap(list.settings),
             title: (data: Record<string, unknown>, id: number): string => {
                 const v = titleId ? data[`f${titleId}`] : null;
                 return typeof v === 'string' && v.trim() !== '' ? v.slice(0, 120) : `Registro #${id}`;
@@ -259,7 +258,8 @@ export class BulkEditService {
         const locked = res.changes.find((c) => ctx.managed.has(c.field_id));
         if (locked) {
             const label = ctx.bulkFields.get(locked.field_id)?.label ?? 'Esa columna';
-            return { patch: {}, changes: [], errors: [{ field_id: locked.field_id, message: `${label}: ${HELPDESK_MANAGED_REASON}` }] };
+            const reason = ctx.managed.get(locked.field_id)?.reason ?? 'No se edita a mano.';
+            return { patch: {}, changes: [], errors: [{ field_id: locked.field_id, message: `${label}: ${reason}` }] };
         }
         if (res.errors.length > 0 || !ctx.marker || res.changes.length === 0) return res;
         // Lista de una tienda: las MISMAS reglas que una edición a mano

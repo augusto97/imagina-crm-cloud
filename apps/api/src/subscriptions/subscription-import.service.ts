@@ -1014,7 +1014,8 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
             actor.userId ? actor : SYSTEM_ACTOR,
             String(list.id),
             { data },
-            { lenientRequired: true, silent: true, noAutomations: quiet },
+            // `sync`: la importación llena «Suscrito desde» e «ID en Mercado Pago» (protegidas para el resto).
+            { lenientRequired: true, silent: true, noAutomations: quiet, sync: true },
         );
         return created.id;
     }

@@ -757,6 +757,12 @@ export class TrashService {
                 ).rows.map((a) => Number(a.id));
                 const res = await tx.execute(sql`DELETE FROM lists WHERE tenant_id = ${tenantId} AND deleted_at IS NOT NULL AND id IN (${idList}) RETURNING id`);
                 n = res.rows.length;
+                // v0.1.383 — la lista de cobros de una lista de suscriptores que ya no
+                // existe vuelve a ser común (sus columnas dejan de estar protegidas).
+                await tx.execute(sql`
+                    UPDATE lists SET settings = settings - 'subscription_charge_log_of'
+                    WHERE tenant_id = ${tenantId} AND (settings -> 'subscription_charge_log_of' ->> 'list_id')::bigint IN (${idList})
+                `);
             } else if (type === 'field') {
                 const doomed = (
                     await tx.execute<{ id: number | string; list_id: number | string; type: string }>(sql`

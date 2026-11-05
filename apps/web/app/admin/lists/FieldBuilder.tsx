@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { isMirrorField, mirrorSourceName, readMirrorListMarker, readScanFieldId, SCAN_SEARCH_FIELD_TYPES } from '@imagina-base/shared';
+import { isMirrorField, managedFieldLockMap, mirrorSourceName, readMirrorListMarker, readScanFieldId, SCAN_SEARCH_FIELD_TYPES, type ManagedFieldLock } from '@imagina-base/shared';
 import {
     Columns3,
     GripVertical,
@@ -104,6 +104,9 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     const storeMarker = mirror?.source === 'store' ? mirror.marker : null;
     const siteMarker = mirror?.source === 'site' ? mirror.marker : null;
     const fromStore = (f: FieldEntity): boolean => (mirror ? isMirrorField(mirror, f.id) : false);
+    // v0.1.383 — columnas que escribe una sincronización (cobros, suscripciones, registro de cobros, SLA).
+    const managedLocks = managedFieldLockMap(listData?.settings);
+    const managedOf = (f: FieldEntity | null | undefined): ManagedFieldLock | null => (f ? managedLocks.get(f.id) ?? null : null);
     const lists = useLists();
     const fields = useFields(listId);
     const types = useFieldTypes();
@@ -491,6 +494,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                                                         onCopyId={() => void handleCopyId(field)}
                                                         onDelete={() => void handleDelete(field)}
                                                         storeField={fromStore(field)}
+                                                        managedLock={managedOf(field)}
                                                         onMakeTitle={
                                                             canBeTitle(field) && !field.is_primary
                                                                 ? () => makeTitle(field)
@@ -537,6 +541,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                                 field={selected}
                                 onDelete={() => void handleDelete(selected)}
                                 storeField={fromStore(selected)}
+                                managedLock={managedOf(selected)}
                                 onMakeTitle={
                                     canBeTitle(selected) && !selected.is_primary
                                         ? () => makeTitle(selected)
@@ -576,6 +581,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                                 field={selected}
                                 onDelete={() => void handleDelete(selected)}
                                 storeField={fromStore(selected)}
+                                managedLock={managedOf(selected)}
                                 onMakeTitle={
                                     canBeTitle(selected) && !selected.is_primary
                                         ? () => makeTitle(selected)
@@ -591,6 +597,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                 listId={listId}
                 field={editingField}
                 storeField={editingField ? fromStore(editingField) : false}
+                managedLock={managedOf(editingField)}
                 open={dialogOpen}
                 onOpenChange={setDialogOpen}
             />
@@ -731,6 +738,8 @@ interface FieldRowProps {
     onToggleScanCode?: () => void;
     /** Viene de la tienda: se marca y no se borra. */
     storeField?: boolean;
+    /** v0.1.383 — la escribe una sincronización (cobros, suscripciones, SLA). */
+    managedLock?: ManagedFieldLock | null;
 }
 
 function FieldRow({
@@ -749,6 +758,7 @@ function FieldRow({
     isScanCode = false,
     onToggleScanCode,
     storeField = false,
+    managedLock = null,
 }: FieldRowProps): JSX.Element {
     const Icon = fieldTypeIcon(field.type);
     const rules = useStoreRules();
@@ -806,6 +816,17 @@ function FieldRow({
                         >
                             <Lock className="imcrm-h-3 imcrm-w-3" />
                             {source}
+                        </Badge>
+                    )}
+                    {managedLock && (
+                        <Badge
+                            variant="outline"
+                            className="imcrm-shrink-0 imcrm-gap-1"
+                            title={__(managedLock.reason)}
+                            data-testid="field-managed-badge"
+                        >
+                            <Lock className="imcrm-h-3 imcrm-w-3" />
+                            {managedLock.source === 'helpdesk' ? __('SLA') : __('Sincronizada')}
                         </Badge>
                     )}
                 </span>
@@ -869,7 +890,7 @@ function FieldRow({
                         <Hash className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
                         {__('Copiar ID de campo')}
                     </DropdownMenuItem>
-                    {!storeField && (
+                    {!storeField && (!managedLock || managedLock.deletable) && (
                         <>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem danger onSelect={onDelete}>

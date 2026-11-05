@@ -30,6 +30,7 @@ import {
     isThroughField,
     jsonbKeyForField,
     LOOKUP_TARGET_TYPES,
+    managedFieldLockMap,
     parseFieldConfig,
     readApprovalFlowId,
     resolveTitleFieldId,
@@ -42,6 +43,7 @@ import {
     type CreateFieldInput,
     type Field,
     type FieldType,
+    type ManagedFieldLock,
     type MirrorListMarker,
     type UpdateFieldInput
 } from '@imagina-base/shared';
@@ -581,7 +583,10 @@ export class FieldsService {
         opts: { internal?: boolean } = {},
     ): Promise<Field> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
-        if (!opts.internal) await this.assertStoreFieldPatch(tenantId, listId, fieldIdOrSlug, patch);
+        if (!opts.internal) {
+            await this.assertStoreFieldPatch(tenantId, listId, fieldIdOrSlug, patch);
+            await this.assertManagedFieldPatch(tenantId, listId, fieldIdOrSlug, patch);
+        }
 
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.resolveField(tx, tenantId, listId, fieldIdOrSlug);
@@ -681,12 +686,24 @@ export class FieldsService {
     ): Promise<{ id: number; label: string }> {
         const listId = await this.resolveListId(tenantId, listIdOrSlug);
         const marker = opts.internal ? null : await this.storeMarker(tenantId, listId);
+        const locks = opts.internal ? new Map<number, ManagedFieldLock>() : managedFieldLockMap((await this.lists.get(tenantId, String(listId))).settings);
         const current = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.resolveField(tx, tenantId, listId, fieldIdOrSlug);
             if (marker && isMirrorField(marker, current.id)) {
                 throw new BadRequestException({
                     code: 'store_field_locked',
                     message: `«${current.label}» viene ${mirrorFromPlace(marker)}: no se puede borrar mientras se sincronice.`,
+                    data: { status: 400 },
+                });
+            }
+            // v0.1.383 — una columna que escribe una sincronización (cobros,
+            // suscripciones, registro de cobros, SLA) se deja de usar primero:
+            // borrarla haría que la sincronización deje de escribir ese dato.
+            const lock = locks.get(current.id);
+            if (lock && !lock.deletable) {
+                throw new BadRequestException({
+                    code: 'managed_field_locked',
+                    message: `«${current.label}» la escribe una sincronización: no se puede borrar mientras la use. ${lock.free_hint ?? ''}`.trim(),
                     data: { status: 400 },
                 });
             }
@@ -789,6 +806,48 @@ export class FieldsService {
     private async storeMarker(tenantId: number, listId: number): Promise<MirrorListMarker | null> {
         const list = await this.lists.get(tenantId, String(listId));
         return readMirrorListMarker(list.settings);
+    }
+
+    /**
+     * v0.1.383 — Una columna que escribe una sincronización (cobros, suscripciones,
+     * registro de cobros, SLA) conserva lo que la sincronización necesita: el
+     * tipo (el dato que se escribe tiene que entrar), ni obligatoria ni sin
+     * repetidos (el alta la deja vacía y dos registros pueden tener el mismo
+     * estado) y, en una selección, las opciones que ya tenía (se pueden
+     * renombrar, pintar o sumar otras). El nombre, la descripción y el resto
+     * de la configuración se cambian libremente.
+     */
+    private async assertManagedFieldPatch(
+        tenantId: number,
+        listId: number,
+        fieldIdOrSlug: string,
+        patch: UpdateFieldInput,
+    ): Promise<void> {
+        const list = await this.lists.get(tenantId, String(listId));
+        const locks = managedFieldLockMap(list.settings);
+        if (locks.size === 0) return;
+        const current = await this.tenantDb.withTenant(tenantId, (tx) => this.resolveField(tx, tenantId, listId, fieldIdOrSlug));
+        const lock = locks.get(current.id);
+        if (!lock) return;
+        const fail = (what: string): never => {
+            throw new BadRequestException({
+                code: 'managed_field_locked',
+                message: `«${current.label}» la escribe una sincronización: ${what} ${lock.free_hint ?? ''}`.trim(),
+                data: { status: 400 },
+            });
+        };
+        if (patch.type !== undefined && patch.type !== current.type) fail('no se le puede cambiar el tipo.');
+        if (patch.is_required === true && !current.isRequired) fail('no puede ser obligatoria (la llena la sincronización, no quien crea el registro).');
+        if (patch.is_unique === true && !current.isUnique) fail('no puede ser «sin repetidos».');
+        if (patch.config && (current.type === 'select' || current.type === 'multi_select')) {
+            const values = (cfg: unknown): string[] => {
+                const opts = (cfg as { options?: Array<{ value?: unknown }> } | null | undefined)?.options;
+                return Array.isArray(opts) ? opts.map((o) => String(o?.value ?? '')) : [];
+            };
+            const next = new Set(values(patch.config));
+            const gone = values(current.config).filter((v) => !next.has(v));
+            if (gone.length > 0) fail('no se le pueden quitar opciones (puedes renombrarlas, pintarlas o sumar otras).');
+        }
     }
 
     /**

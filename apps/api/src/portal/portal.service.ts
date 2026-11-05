@@ -26,6 +26,7 @@ import {
     layoutBlocks,
     migratePortalTemplateToV3,
     portalEditableFieldIds,
+    managedFieldIds,
     readPortalConfig,
     readPortalLayoutV3,
     readPortalPaymentsConfig,
@@ -1218,6 +1219,9 @@ export class PortalService implements OnModuleInit {
                     })()
                   : [],
         );
+        // v0.1.383 — una columna que escribe una sincronización (cobros, suscripciones, SLA) nunca la
+        // edita el cliente, aunque el diseño la marque editable: se ve como dato.
+        for (const id of managedFieldIds(settings)) editableIds.delete(id);
         const visible = portalRecordFieldIds(resolved.layout, listFields, { titleFieldId, editableIds });
         return {
             list: { id: list.id, slug: list.slug, name: list.name, settings },

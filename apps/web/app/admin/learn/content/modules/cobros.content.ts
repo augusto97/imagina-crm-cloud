@@ -295,7 +295,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: '¿Puedo cambiar a mano el «Estado del pago»?', a: 'Sí, es un campo de la lista; pero el siguiente aviso del proveedor lo vuelve a escribir. Para registrar un pago en efectivo, mejor usa tu propio campo de estado.' },
+                    { q: '¿Puedo cambiar a mano el «Estado del pago»?', a: 'No: las columnas que escribe el pago (link, estado, fecha, monto y medio) llevan candado, porque cambiarlas no cambia nada en el proveedor. Para registrar un pago en efectivo, usa tu propio campo de estado: tus columnas se editan libres y nunca se envían a Mercado Pago, Wompi ni PayPal.' },
                     { q: '¿Qué pasa si devuelvo el dinero desde Mercado Pago?', a: 'Con el aviso del reembolso, el link pasa a **Reembolsado** y las columnas se actualizan.' },
                     { q: 'Tengo «Monto distinto», ¿qué hago?', a: 'Abre el registro, mira el **Monto pagado** y decide: cobra la diferencia con un link nuevo o márcalo a mano en tu campo de estado.' },
                 ],
@@ -599,6 +599,21 @@ export const articles: LearnArticle[] = [
                 md: 'En la sección **Suscripción** toca **Elegir columnas** (o **Columnas**): el estado, el próximo cobro, el «pagado hasta», el plan, el valor, los cobros fallidos y el link se escriben solos en las columnas que elijas. Con eso armas una vista «En mora» filtrando por **Estado de la suscripción**, un kanban por estado o un tablero con lo que entra cada mes.',
             },
             { t: 'anim', key: 'cobro-estados', caption: 'Las columnas se llenan solas y un filtro deja sólo lo que hay que revisar.' },
+            { t: 'h', text: 'Qué columnas se editan y cuáles no' },
+            {
+                t: 'p',
+                md: 'Las columnas que escribe la suscripción (estado, plan, valor, próximo cobro, pagado hasta, cobros fallidos y el link) llevan un **candado**: no se cambian a mano, ni en la tabla, ni en la ficha, ni al pegar, editar en lote, importar un archivo o con una automatización. Si alguien cambiara el valor a mano, Mercado Pago seguiría cobrando lo de antes y la columna quedaría mintiendo. Al pasar el mouse por el candado ves por qué y qué hacer en su lugar.',
+            },
+            { t: 'anim', key: 'cobro-candados', caption: 'Lo que escribe Mercado Pago lleva candado; tus columnas (con el lápiz) se escriben libres y nunca salen de la app.' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Candado', what: 'Lo escribe la suscripción o el pago. Para cambiar algo de verdad, usa la sección **Suscripción** de la ficha: **Pausar**, **Reanudar**, **Cambiar el valor** o **Cancelar**.' },
+                    { name: 'Lápiz verde', what: 'Una columna **tuya**: notas, teléfono, la persona a cargo, lo que quieras. Se edita libre y **nunca se envía a Mercado Pago ni a PayPal**. A Mercado Pago sólo sale lo que eliges al crear un link o una suscripción.' },
+                    { name: 'La columna misma', what: 'Se le puede cambiar el nombre, pero no el tipo ni sus opciones, y no se borra mientras la suscripción la use. Para usarla a mano, quítala primero en **Columnas** de la sección **Suscripción**.' },
+                    { name: 'Borrar un suscriptor', what: 'Un registro (o una lista) con una suscripción que sigue cobrando no se borra: borrarlo no la cancela y el cliente seguiría pagando sin que la app lo vea. Cancélala primero.' },
+                ],
+            },
             { t: 'h', text: 'Cada cobro en su propia lista (registro de cobros)' },
             {
                 t: 'p',
@@ -681,7 +696,8 @@ export const articles: LearnArticle[] = [
                     { q: '¿Puedo tener dos suscripciones en el mismo registro?', a: 'Una a la vez. Para cambiar de plan, cancela la actual y suscríbelo al nuevo; las anteriores quedan en **Ver las anteriores**.' },
                     { q: '¿Qué pasa si el cliente nunca abre el link?', a: 'La suscripción queda **Por autorizar** y no se cobra nada. Puedes tocar **Crear otro link** para mandarle uno nuevo.' },
                     { q: '¿Se cobra el primer mes al autorizar?', a: 'Sí, salvo que el plan tenga días gratis o pongas la fecha del **Primer cobro**.' },
-                    { q: '¿Puedo cambiar a mano el «Estado de la suscripción» en la lista?', a: 'Puedes, pero la siguiente noticia de Mercado Pago lo vuelve a escribir. Para registrar algo propio, usa tu propio campo.' },
+                    { q: '¿Puedo cambiar a mano el «Estado de la suscripción» en la lista?', a: 'No: lo escribe Mercado Pago (o PayPal) y tiene candado. Para pausar, reanudar o cancelar, usa la sección **Suscripción** de la ficha. Para anotar algo tuyo (un pago en efectivo, una promesa de pago), crea tu propia columna: ésa se edita libre y nunca sale de la app.' },
+                    { q: '¿Y en «Cobros de suscripciones»?', a: 'El valor, el estado, la fecha y el suscriptor de cada cobro también tienen candado. Puedes agregar columnas tuyas (por ejemplo «Conciliado») y borrar un cobro mal registrado: no vuelve a aparecer.' },
                     { q: '¿Funciona en modo prueba?', a: 'Sí: con las credenciales de prueba de Mercado Pago el link abre el ambiente de prueba y no se cobra dinero real.' },
                     { q: 'Ya tengo suscripciones en Mercado Pago, ¿se pueden traer?', a: 'Sí: **Importar desde Mercado Pago** en Cobros de la conexión trae las suscripciones y sus planes, con su estado y sus cobros. Con PayPal todavía no se pueden importar.' },
                 ],

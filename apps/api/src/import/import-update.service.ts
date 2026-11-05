@@ -4,7 +4,7 @@ import {
     IMPORT_MATCH_TYPES,
     IMPORT_UPDATE_CHUNK,
     IMPORT_UPDATE_MAX_ROWS,
-    helpdeskManagedFieldIds,
+    managedFieldIds,
     readMirrorListMarker,
     resolveTitleFieldId,
     sameBulkValue,
@@ -216,8 +216,8 @@ export class ImportUpdateService {
         }
         const truncated = parsed.rows.length > IMPORT_UPDATE_MAX_ROWS;
         const rows = parsed.rows.slice(0, IMPORT_UPDATE_MAX_ROWS);
-        // E5 — las columnas que mantiene el SLA de la mesa de ayuda no se escriben desde un archivo.
-        const managed = new Set(helpdeskManagedFieldIds(list.settings));
+        // E5 + v0.1.383 — las columnas protegidas (SLA, cobros, suscripciones) no se escriben desde un archivo.
+        const managed = new Set(managedFieldIds(list.settings));
         const fields = (await this.importer.importableFields(tenantId, list.id)).filter((f) => !managed.has(f.id));
         const bySlug = new Map(fields.map((f) => [f.slug, f]));
 

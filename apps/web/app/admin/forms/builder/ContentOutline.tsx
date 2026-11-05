@@ -15,6 +15,7 @@ import {
     Heading2,
     Image as ImageIcon,
     LayoutTemplate,
+    Lock,
     MousePointerClick,
     Paintbrush,
     PartyPopper,
@@ -99,6 +100,8 @@ interface Props {
     /** Si la empresa tiene logo (para decir «Sin logo» cuando no hay). */
     hasLogo: boolean;
     base?: PublicTheme;
+    /** v0.1.383 — Columnas que escribe una sincronización (id → motivo): no se preguntan. */
+    locked?: ReadonlyMap<number, string> | null;
 }
 
 export function ContentOutline(p: Props): JSX.Element {
@@ -298,6 +301,11 @@ function ItemList(p: Props & { multiPage: boolean }): JSX.Element {
                                 {isBreak ? (item.title ? `· ${item.title}` : '') : itemTitle(item, p.fieldsById)}
                             </span>
                             {item.type === 'field' && item.hidden && <EyeOff className="imcrm-h-3 imcrm-w-3 imcrm-shrink-0 imcrm-text-muted-foreground" aria-label={__('Oculta')} />}
+                            {item.type === 'field' && p.locked?.has(item.field_id) && (
+                                <span title={`${__('Lo que respondan aquí no se guarda.')} ${p.locked.get(item.field_id) ?? ''}`} className="imcrm-shrink-0" data-testid="form-item-managed">
+                                    <Lock className="imcrm-h-3 imcrm-w-3 imcrm-text-amber-600" aria-label={__('Columna sincronizada: no se guarda')} />
+                                </span>
+                            )}
                             {item.show_if && <span className="imcrm-shrink-0 imcrm-rounded imcrm-bg-muted imcrm-px-1 imcrm-text-[10px] imcrm-text-muted-foreground">{__('si…')}</span>}
                         </button>
                         <span className="imcrm-flex imcrm-opacity-0 group-hover:imcrm-opacity-100 group-focus-within:imcrm-opacity-100">
@@ -324,7 +332,7 @@ const CONTENT_TYPES: Array<{ type: FormContentType | 'matrix'; label: string; hi
 ];
 
 function AddCatalog(p: Props & { onBack: () => void }): JSX.Element {
-    const available = availableFields(p.fields, p.config);
+    const available = availableFields(p.fields, p.config, p.locked);
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-3" data-testid="form-add-catalog">
             <button type="button" onClick={p.onBack} className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-self-start imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground" data-testid="form-add-back">

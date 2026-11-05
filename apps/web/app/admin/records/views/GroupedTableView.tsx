@@ -36,6 +36,7 @@ import type {
 import { EditableCell } from '@/admin/records/EditableCell';
 import { StoreColumnBadge } from '@/admin/records/StoreColumnBadge';
 import { storeAccessFor, useStoreRules, type StoreRules } from '@/admin/records/storeRules';
+import { managedReason, useManagedFields } from '@/admin/records/managedFields';
 import { FieldHeaderMenu } from '@/admin/records/FieldHeaderMenu';
 import { extractFieldOptions } from '@/admin/records/fieldOptions';
 import { orderByCatalog, parseMultiBucket } from '@/lib/multiBucket';
@@ -874,6 +875,7 @@ function GroupBucketSection({
     };
     // v0.1.213 — lista de una tienda: sin altas ni borrados (se hacen allá).
     const storeRules = useStoreRules();
+    const managedLocks = useManagedFields();
     const canCreateRecords = useCan(CAP.CREATE_RECORDS) && storeRules === null;
     // En una lista de la tienda o del sitio, el menú sólo ofrece quitar lo que la fuente ya borró (v0.1.336).
     const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS);
@@ -1046,7 +1048,10 @@ function GroupBucketSection({
             const v = titleField ? r.fields[titleField.slug] : null;
             return typeof v === 'string' && v.trim() !== '' ? v : `#${r.id}`;
         },
-        locked: storeRules ? (field, record) => lockedReasonOf(storeRules, field, record) : undefined,
+        locked:
+            storeRules || managedLocks
+                ? (field, record) => (field ? managedReason(managedLocks, field.id) : null) ?? (field ? lockedReasonOf(storeRules, field, record) : null)
+                : undefined,
         relationTitles,
         onOpenRow: onRowClick,
         scrollToIndex: windowed.scrollToIndex,
