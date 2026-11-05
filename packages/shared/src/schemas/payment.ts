@@ -189,6 +189,78 @@ export type SubscriptionInfo = z.infer<typeof subscriptionInfoSchema>;
 // ── Credenciales de cobro de la PLATAFORMA (v0.1.250) ──────────────────────
 
 /**
+ * v0.1.382 — Revisión de respaldo de los cobros de la plataforma.
+ *
+ * Los avisos (webhooks) de Mercado Pago y PayPal son la vía rápida, pero se
+ * pierden: el servidor estaba apagado, la URL cambió, falta la clave secreta,
+ * Mercado Pago dejó de reintentar. Cada cierto tiempo la app busca ella misma
+ * los pagos recientes, relee las renovaciones automáticas vivas y las órdenes
+ * de PayPal abiertas, y aplica lo que falte con el mismo registro de pagos
+ * (nada se aplica dos veces). Minutos; 0 = sólo con los avisos.
+ */
+export const PLATFORM_RECONCILE_INTERVALS = [0, 15, 30, 60, 180, 360, 720, 1440] as const;
+export type PlatformReconcileInterval = (typeof PLATFORM_RECONCILE_INTERVALS)[number];
+export const DEFAULT_RECONCILE_INTERVAL: PlatformReconcileInterval = 60;
+
+export const platformReconcileIntervalSchema = z
+    .number()
+    .int()
+    .refine((n) => (PLATFORM_RECONCILE_INTERVALS as readonly number[]).includes(n), 'Frecuencia no válida');
+
+/** «Cada hora», «Cada 15 minutos», «Sólo con los avisos». */
+export function reconcileIntervalLabel(minutes: number): string {
+    if (minutes <= 0) return 'Sólo con los avisos (no revisar)';
+    if (minutes < 60) return `Cada ${minutes} minutos`;
+    if (minutes === 60) return 'Cada hora';
+    if (minutes === 1440) return 'Una vez al día';
+    return `Cada ${minutes / 60} horas`;
+}
+
+/** Lo que cambió en una revisión (para mostrarlo en la consola). */
+export const platformReconcileChangeSchema = z.object({
+    tenant_id: z.number(),
+    tenant_name: z.string(),
+    provider: paymentProviderSchema,
+    kind: z.enum(['payment', 'subscription']),
+    status: z.string(),
+    /** «Pago aprobado: plan Pro, 3 meses (597.000 COP)». */
+    text: z.string(),
+});
+export type PlatformReconcileChange = z.infer<typeof platformReconcileChangeSchema>;
+
+export const platformReconcileRunSchema = z.object({
+    trigger: z.enum(['auto', 'manual']),
+    started_at: z.string(),
+    finished_at: z.string(),
+    /** Sin errores al hablar con los proveedores. */
+    ok: z.boolean(),
+    checked: z.object({
+        /** Pagos que se miraron en Mercado Pago. */
+        payments: z.number(),
+        /** Renovaciones automáticas que se releyeron. */
+        subscriptions: z.number(),
+        /** Órdenes de PayPal abiertas que se consultaron. */
+        orders: z.number(),
+    }),
+    /** Cuántos cambios se aplicaron (los que ya estaban no cuentan). */
+    applied: z.number(),
+    changes: z.array(platformReconcileChangeSchema).default([]),
+    errors: z.array(z.string()).default([]),
+    /** Por qué no se revisó nada (p. ej. no hay cobros configurados). */
+    skipped: z.string().nullable().default(null),
+});
+export type PlatformReconcileRun = z.infer<typeof platformReconcileRunSchema>;
+
+export const platformReconcileStatusSchema = z.object({
+    interval_minutes: z.number(),
+    running: z.boolean(),
+    last: platformReconcileRunSchema.nullable(),
+    /** Cuándo toca la próxima automática (aprox.; null = apagada). */
+    next_at: z.string().nullable(),
+});
+export type PlatformReconcileStatus = z.infer<typeof platformReconcileStatusSchema>;
+
+/**
  * Las credenciales de Mercado Pago con las que la PLATAFORMA cobra sus planes.
  * Se cargan desde Plataforma → Cobros (cifradas con `SECRETS_KEY`) en vez del
  * `.env`; el `.env` queda como respaldo. Nunca vuelven: sólo un hint.
@@ -223,6 +295,8 @@ export const platformPaymentsViewSchema = z.object({
             .default(null),
     }),
     paypal: z.object({ configured: z.boolean() }),
+    /** v0.1.382 — la revisión de respaldo (frecuencia, si corre ahora y la última). */
+    reconcile: platformReconcileStatusSchema.default({ interval_minutes: DEFAULT_RECONCILE_INTERVAL, running: false, last: null, next_at: null }),
 });
 export type PlatformPaymentsView = z.infer<typeof platformPaymentsViewSchema>;
 
@@ -232,6 +306,8 @@ export const updatePlatformPaymentsSchema = z.object({
     mercadopago_webhook_secret: z.string().trim().max(512).optional(),
     /** Borra lo cargado en la consola (vuelve al `.env`, si hay). */
     clear_mercadopago: z.boolean().optional(),
+    /** v0.1.382 — cada cuántos minutos se revisan los cobros (0 = sólo los avisos). */
+    reconcile_interval_minutes: platformReconcileIntervalSchema.optional(),
 });
 export type UpdatePlatformPaymentsInput = z.infer<typeof updatePlatformPaymentsSchema>;
 

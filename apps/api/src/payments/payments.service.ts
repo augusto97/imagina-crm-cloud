@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { accessOf, currentBillingPolicy } from '../billing/tenant-access';
 import {
     addMonthsClamped,
@@ -25,6 +25,7 @@ import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { billingPayments, billingSubscriptions, tenants } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { encodeReference, PAYMENT_GATEWAYS, type PaymentGateway, type PaymentNotice } from './payment.types';
+import { OpenCheckouts } from './reconcile-state';
 
 type PaymentRow = typeof billingPayments.$inferSelect;
 type SubscriptionRow = typeof billingSubscriptions.$inferSelect;
@@ -58,8 +59,15 @@ export class PaymentsService {
         private readonly plans: PlansService,
         private readonly tenantDb: TenantDb,
         @Inject(DRIZZLE) private readonly db: Db,
+        /** v0.1.382 — los pagos abiertos, para la revisión de respaldo (opcional en tests). */
+        @Optional() private readonly openCheckouts?: OpenCheckouts,
     ) {
         this.byProvider = new Map(gateways.map((g) => [g.provider, g]));
+    }
+
+    /** Las pasarelas registradas (la revisión de respaldo las recorre). */
+    gateways(): PaymentGateway[] {
+        return [...this.byProvider.values()];
     }
 
     private base(): string {
@@ -110,17 +118,20 @@ export class PaymentsService {
         }
 
         const amount = Math.round(price * input.months * 100) / 100;
+        const reference = encodeReference(tenantId, input.plan, { mode: 'period', months: input.months, amount });
         const session = await gateway.createCheckout({
             tenantId,
             plan: input.plan,
             months: input.months,
             amount,
             currency,
-            reference: encodeReference(tenantId, input.plan, { mode: 'period', months: input.months, amount }),
+            reference,
             title: `${this.appName()} — plan ${planName} · ${input.months} ${input.months === 1 ? 'mes' : 'meses'}`,
             returnUrl: `${back}&checkout=success`,
             cancelUrl: `${back}&checkout=cancel`,
         });
+        // v0.1.382 — si el aviso no llega, la revisión de respaldo lo busca.
+        await this.openCheckouts?.remember({ provider: gateway.provider, externalId: session.externalId, reference, tenantId });
         return { provider: input.provider, plan: input.plan, mode: 'period', url: session.url, external_id: session.externalId };
     }
 
@@ -221,6 +232,19 @@ export class PaymentsService {
 
     /** Aplica un aviso ya verificado. Devuelve si cambió algo. */
     async apply(provider: PaymentProvider, notice: PaymentNotice): Promise<boolean> {
+        return (await this.applyDetailed(provider, notice)).changed;
+    }
+
+    /**
+     * Como `apply`, pero dice también de qué empresa era y con qué plan (la
+     * revisión de respaldo lo muestra). `quiet`: un cobro ajeno (otro negocio
+     * en la misma cuenta de Mercado Pago) no llena el registro de avisos.
+     */
+    async applyDetailed(
+        provider: PaymentProvider,
+        notice: PaymentNotice,
+        opts: { quiet?: boolean } = {},
+    ): Promise<{ changed: boolean; tenantId: number | null; plan: Plan | null }> {
         let tenantId = notice.tenantId;
         let plan = notice.plan;
         const subId = notice.kind === 'subscription' ? notice.externalId : notice.subscriptionExternalId;
@@ -236,15 +260,18 @@ export class PaymentsService {
             plan ??= sub?.plan ?? null;
         }
         if (tenantId === null || plan === null) {
-            this.logger.warn(`aviso ${provider} ${notice.kind} ${notice.externalId} sin empresa reconocible — ignorado`);
-            return false;
+            if (!opts.quiet) this.logger.warn(`aviso ${provider} ${notice.kind} ${notice.externalId} sin empresa reconocible — ignorado`);
+            return { changed: false, tenantId: null, plan: null };
         }
         const [exists] = await this.db.select({ id: tenants.id }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
-        if (!exists) return false;
+        if (!exists) return { changed: false, tenantId: null, plan: null };
         const t = tenantId;
         const p = plan;
-        if (notice.kind === 'subscription') return this.applySubscription(provider, t, p, notice);
-        return this.tenantDb.withTenant(t, (tx) => this.applyPayment(tx, provider, t, p, notice));
+        const changed =
+            notice.kind === 'subscription'
+                ? await this.applySubscription(provider, t, p, notice)
+                : await this.tenantDb.withTenant(t, (tx) => this.applyPayment(tx, provider, t, p, notice));
+        return { changed, tenantId: t, plan: p };
     }
 
     private async applyPayment(
@@ -329,8 +356,25 @@ export class PaymentsService {
         plan: Plan,
         n: Extract<PaymentNotice, { kind: 'subscription' }>,
     ): Promise<boolean> {
+        let unchanged = false;
         const others = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const now = new Date();
+            // v0.1.382 — releer la misma renovación (la revisión de respaldo lo
+            // hace cada hora) no es un cambio: no se toca ni se anuncia.
+            const [prev] = await tx
+                .select()
+                .from(billingSubscriptions)
+                .where(and(eq(billingSubscriptions.provider, provider), eq(billingSubscriptions.externalId, n.externalId)))
+                .limit(1);
+            if (
+                prev &&
+                prev.status === n.status &&
+                (prev.nextPaymentAt?.getTime() ?? null) === (n.nextPaymentAt?.getTime() ?? null) &&
+                (!n.amount || Number(prev.amount) === n.amount)
+            ) {
+                unchanged = true;
+                return [] as SubscriptionRow[];
+            }
             await tx
                 .insert(billingSubscriptions)
                 .values({
@@ -368,6 +412,7 @@ export class PaymentsService {
                     ),
                 );
         });
+        if (unchanged) return false;
         for (const old of others) await this.cancelAt(tenantId, old);
         this.logger.log(`renovación ${provider} ${n.externalId}: empresa ${tenantId} → ${n.status}`);
         return true;

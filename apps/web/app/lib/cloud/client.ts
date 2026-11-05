@@ -211,10 +211,12 @@ import {
     createCheckoutSchema,
     platformPaymentRowSchema,
     platformPaymentsViewSchema,
+    platformReconcileStatusSchema,
     subscriptionInfoSchema,
     updatePlatformPaymentsSchema,
     type PlatformPaymentRow,
     type PlatformPaymentsView,
+    type PlatformReconcileStatus,
     type SubscriptionInfo,
     type UpdatePlatformPaymentsInput,
     magicLinkResultSchema,
@@ -1722,6 +1724,10 @@ export class CloudClient {
             body: updatePlatformPaymentsSchema.parse(input),
             schema: platformPaymentsViewSchema,
         });
+    }
+    /** v0.1.382 — «Revisar ahora»: arranca la revisión de respaldo de los cobros. */
+    platformPaymentsReconcile(): Promise<PlatformReconcileStatus> {
+        return this.request('POST', '/platform/payments/reconcile', { schema: platformReconcileStatusSchema });
     }
     platformPaymentsRecent(): Promise<PlatformPaymentRow[]> {
         return this.request('GET', '/platform/payments/recent', { schema: platformPaymentRowSchema.array() });

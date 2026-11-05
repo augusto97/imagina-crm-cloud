@@ -1,11 +1,17 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { PlatformPaymentsView, UpdatePlatformPaymentsInput } from '@imagina-base/shared';
+import {
+    DEFAULT_RECONCILE_INTERVAL,
+    PLATFORM_RECONCILE_INTERVALS,
+    type PlatformPaymentsView,
+    type UpdatePlatformPaymentsInput,
+} from '@imagina-base/shared';
 import { z } from 'zod';
 import { decryptSecret, encryptSecret, isEncrypted } from '../common/secret-box';
 import { ENV, type Env } from '../config/env';
 import { secretHint } from '../connectors/connection-parts';
 import { REDIS } from '../redis/redis.module';
 import type { MpHookRecord } from './providers/mercadopago.provider';
+import { readReconcileStatus } from './reconcile-state';
 
 /** Subconjunto de ioredis: se testea con un fake en memoria. */
 export interface PaymentsSettingsStore {
@@ -37,6 +43,8 @@ const storedSchema = z.object({
             webhook_secret_enc: z.string().nullable().default(null),
         })
         .default({}),
+    /** v0.1.382 — cada cuántos minutos se revisan los cobros (0 = sólo los avisos). */
+    reconcile_interval_minutes: z.number().optional().catch(undefined),
 });
 type Stored = z.infer<typeof storedSchema>;
 
@@ -95,15 +103,30 @@ export class PlatformPaymentsService {
                 last_hook: await this.lastHook(),
             },
             paypal: { configured: this.env.PAYPAL_CLIENT_ID !== '' && this.env.PAYPAL_CLIENT_SECRET !== '' },
+            reconcile: await readReconcileStatus(this.redis, await this.reconcileInterval()),
         };
+    }
+
+    /**
+     * v0.1.382 — Cada cuántos minutos revisar los cobros. Vive en
+     * `platform:payments` (viaja en el snapshot); un valor raro vuelve al de
+     * fábrica (cada hora).
+     */
+    async reconcileInterval(): Promise<number> {
+        const raw = (await this.read()).reconcile_interval_minutes;
+        return raw !== undefined && (PLATFORM_RECONCILE_INTERVALS as readonly number[]).includes(raw) ? raw : DEFAULT_RECONCILE_INTERVAL;
     }
 
     async update(input: UpdatePlatformPaymentsInput): Promise<PlatformPaymentsView> {
         if (input.clear_mercadopago) {
-            await this.redis.del(KEY);
+            // Quitar las credenciales no cambia cada cuánto se revisa.
+            const kept = (await this.read()).reconcile_interval_minutes;
+            if (kept === undefined) await this.redis.del(KEY);
+            else await this.redis.set(KEY, JSON.stringify({ mercadopago: {}, reconcile_interval_minutes: kept }));
             return this.view();
         }
         const stored = await this.read();
+        if (input.reconcile_interval_minutes !== undefined) stored.reconcile_interval_minutes = input.reconcile_interval_minutes;
         const mp = { ...stored.mercadopago };
         if (input.mercadopago_access_token) {
             mp.access_token_enc = encryptSecret(input.mercadopago_access_token, this.env.SECRETS_KEY);

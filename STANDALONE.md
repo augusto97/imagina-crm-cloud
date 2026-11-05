@@ -2547,6 +2547,41 @@ no prueba la clave: la pasarela anota el último aviso (tipo, id, firma
 `billing:mp:last_hook` —fuera de `platform:`, no viaja en el snapshot— y
 Plataforma → Cobros lo muestra como «Último aviso recibido».
 
+**Addendum v0.1.382 — revisión de respaldo.** Los avisos son el camino rápido
+pero pueden no llegar nunca (servidor apagado o actualizándose, URL cambiada,
+falta la clave secreta y se rechazan todos, Mercado Pago dejó de reintentar), y
+la renovación automática con tarjeta sólo entraba por el aviso. Ahora
+`PaymentsReconcileService` le pregunta a cada pasarela, cada cierto tiempo, qué
+cambió, mediante un método opcional `reconcile(input)` de `PaymentGateway`:
+- **Mercado Pago**: búsqueda de pagos por fecha de actualización (`range=
+  date_last_updated`, hasta 5 páginas de 100) desde la última revisión buena
+  menos 2 h (nunca más de 30 días; a mano, 7 días); las órdenes de período que
+  la app abrió y no aparecieron (se recuerdan en `billing:open_checkouts`, un
+  zset de 7 días) se buscan por su referencia; cada renovación viva
+  (`pending|authorized|paused`) se relee con sus cuotas (`/authorized_payments
+  /search`, con el respaldo sin paginar).
+- **PayPal**: no tiene búsqueda de órdenes, así que se leen las abiertas
+  recordadas; una APROBADA se captura (SEC-29) y una COMPLETADA se aplica.
+- Lo encontrado se aplica con el MISMO `applyDetailed` de los avisos: el único
+  `(provider, external_id)` de `billing_payments` hace que nada se aplique dos
+  veces y `applySubscription` no reescribe una renovación que no cambió (estado,
+  próximo cobro y monto iguales). Primero las renovaciones (una cuota busca su
+  empresa por la renovación).
+- **Una a la vez**: candado `billing:reconcile:lock` (`SET NX EX 900`) que se
+  suelta siempre; el reloj (`reconcile` en la cola de recordatorios, cada 5 min)
+  corre sólo si pasó el intervalo; «Revisar ahora» (`POST /platform/payments/
+  reconcile`) la lanza en segundo plano y la consola pregunta hasta que termina.
+- **Frecuencia** en `platform:payments.reconcile_interval_minutes`
+  (15/30/60/180/360/720/1440, 0 = sólo los avisos; 60 por defecto; viaja en el
+  snapshot). La última revisión (`billing:reconcile:last`) y su punto de partida
+  (`billing:reconcile:last_ok_at`) no: son estado de este servidor. Una revisión
+  con errores no adelanta el punto de partida.
+
+Descartado: reemplazar los avisos por la revisión (con 15 min de demora, el
+pago de un cliente no se acreditaría en el momento) y guardar un historial de
+revisiones en la base (la tarjeta sólo necesita la última; los pagos aplicados
+ya quedan en el registro de pagos).
+
 ### ADR-S31 — Cobros de las empresas con Mercado Pago y Wompi (v0.1.251)
 
 **Contexto.** Las empresas que usan la app para facturar (cartera, cuotas,

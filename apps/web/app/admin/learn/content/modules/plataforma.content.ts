@@ -495,7 +495,33 @@ export const articles: LearnArticle[] = [
                 t: 'callout',
                 tone: 'warn',
                 title: 'Sin la clave secreta, los pagos no se acreditan',
-                md: 'Si falta la clave secreta, las empresas pueden pagar pero la app no puede comprobar que el aviso viene de Mercado Pago: lo rechaza y el período **no se extiende**. La consola lo avisa en rojo.',
+                md: 'Si falta la clave secreta, las empresas pueden pagar pero la app no puede comprobar que el aviso viene de Mercado Pago: lo rechaza y el período **no se extiende**. La consola lo avisa en rojo. La **revisión de respaldo** (abajo) igual encuentra esos pagos y los aplica.',
+            },
+            { t: 'h', text: 'La revisión de respaldo' },
+            {
+                t: 'p',
+                md: 'Los avisos de Mercado Pago y PayPal son el camino rápido, pero a veces no llegan: el servidor estaba apagado o actualizándose, la URL cambió, falta la clave secreta o Mercado Pago dejó de reintentar. Para eso está **Revisión de respaldo**, en **Plataforma → Cobros**: cada cierto tiempo la app le pregunta a cada proveedor qué pagos cambiaron, en qué está cada renovación automática y cómo quedó cada orden de PayPal abierta, y aplica lo que falte. **Nada se aplica dos veces**: un pago que ya llegó por aviso se reconoce y se salta.',
+            },
+            {
+                t: 'settings',
+                title: 'Qué hay en la tarjeta',
+                rows: [
+                    {
+                        name: 'Cada cuánto revisar',
+                        what: 'Cada 15 o 30 minutos, cada hora (recomendado), cada 3, 6 o 12 horas, una vez al día, o **Sólo con los avisos** (no revisa sola).',
+                        tip: 'Más seguido no cuesta más: sólo pregunta por lo que cambió desde la última revisión.',
+                    },
+                    {
+                        name: 'Revisar ahora',
+                        what: 'Corre una revisión en el momento, mirando los últimos 7 días. Sirve después de arreglar la clave secreta o la URL de los avisos.',
+                        tip: 'Si ya hay una corriendo, no se lanza otra.',
+                    },
+                    {
+                        name: 'Última revisión',
+                        what: 'Cuándo fue, si fue automática o a mano, qué se revisó y la lista de lo que aplicó («Acme — Pago de 3 meses · plan «pro» aprobado (597.000 COP)»).',
+                        tip: 'En rojo, lo que no pudo revisar y por qué (por ejemplo, una clave rechazada). La siguiente vuelve a buscar desde la última revisión que salió bien.',
+                    },
+                ],
             },
             {
                 t: 'p',
@@ -515,6 +541,10 @@ export const articles: LearnArticle[] = [
                     {
                         q: '¿Puedo borrar un plan?',
                         a: 'Sólo si ninguna empresa lo tiene. Si no, desmárcalo como activo para que no se venda más.',
+                    },
+                    {
+                        q: 'Una empresa pagó y sigue vencida, ¿qué hago?',
+                        a: 'Toca **Revisar ahora** en **Revisión de respaldo**. Si el pago está aprobado en Mercado Pago o PayPal, se aplica y el período se extiende al momento; en **Última revisión** ves el cambio. Si aparece un error, dice qué pasó (casi siempre, el Access Token).',
                     },
                 ],
             },

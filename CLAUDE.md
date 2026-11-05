@@ -12965,6 +12965,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (830), 1 de API (logo oculto), shared 771, formularios/agenda/caché
         101 — E2E navegador 47/47 en escritorio y 47/47 en celular oscuro.
 
+  - [x] **Revisión de respaldo de los cobros de la plataforma (v0.1.382,
+        addendum ADR-S30, pedido del usuario: "Si, hazlo, aunque debería
+        poderse ajustar la periodicidad en los ajustes de la plataforma, y
+        también un botón de sincronizar ahora")**. Los avisos de Mercado Pago y
+        PayPal son el camino rápido, pero pueden no llegar nunca: el servidor
+        apagado, la URL cambiada, la clave secreta faltante (se rechazan
+        todos) o Mercado Pago que deja de reintentar; y la renovación
+        automática con tarjeta sólo entraba por el aviso.
+        (a) **Tarjeta «Revisión de respaldo»** en Plataforma → Cobros
+        (`PlatformReconcileCard`, `data-tour="platform-payments-reconcile"`):
+        «Cada cuánto revisar» (15/30 min, cada hora —recomendado—, 3/6/12 h,
+        una vez al día o «Sólo con los avisos»), **«Revisar ahora»**, la
+        próxima revisión automática y la **última revisión** (a mano o
+        automática, qué se revisó, la lista de lo aplicado con la empresa y el
+        detalle —«Pago de 3 meses · plan «pro» aprobado (597.000 COP)»— y los
+        errores en palabras, con «La próxima revisión vuelve a buscar desde la
+        última que salió bien»).
+        (b) **Qué mira** (`reconcile?(input)` opcional en `PaymentGateway`):
+        - Mercado Pago: pagos por fecha de actualización (hasta 5 páginas de
+          100, desde la última revisión buena menos 2 h; a mano, 7 días),
+          las órdenes de período que la app abrió y todavía no aparecieron
+          (por referencia; se recuerdan al crear el checkout en
+          `billing:open_checkouts`, 7 días) y cada renovación viva con sus
+          cuotas (con el respaldo sin paginar de v0.1.380);
+        - PayPal: las órdenes abiertas recordadas (una APROBADA se captura,
+          SEC-29; una COMPLETADA se aplica; anulada o vieja se olvida).
+        (c) **Nada se aplica dos veces**: todo pasa por el `applyDetailed` de
+        los avisos (el registro de pagos por proveedor + id) y una renovación
+        que no cambió ya no se reescribe. **Una a la vez** (candado en Redis
+        de 15 min que siempre se suelta), reloj cada 5 min en la cola de
+        recordatorios que corre sólo si le toca, y una revisión con errores no
+        adelanta el punto de partida. La frecuencia vive en `platform:payments`
+        (viaja en el snapshot); el estado de la revisión, no.
+        (d) Endpoint `POST /platform/payments/reconcile` (superadmin) y
+        `reconcile` en `GET /platform/payments`.
+        **De paso**: las capturas de la ayuda usan el Chrome que ya traen las
+        máquinas de GitHub (`ci.sh`): una parte tardaba 12-16 min esperando apt.
+        Ayuda: sección «La revisión de respaldo» y una pregunta en Aprende →
+        Consola de la plataforma. Sin novedad en el catálogo (es del operador).
+        Tests: `payments-reconcile.spec` (18: piezas puras, Mercado Pago y
+        PayPal con la red simulada, y el servicio con Postgres: pago aplicado
+        una vez, renovación sin cambios que no cuenta, órdenes abiertas,
+        candado, intervalo y apagado, errores que no adelantan) +
+        `payments.spec` en verde — E2E navegador 19/19 contra el Mercado Pago
+        simulado (frecuencia que persiste, pago que no llegó por aviso aplicado
+        una vez, segunda revisión «al día», error en palabras, celular oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
