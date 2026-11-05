@@ -18,7 +18,7 @@ import { idSchema } from './common';
  * no y a quién hay que cortarle el servicio.
  */
 
-export const SUBSCRIPTION_PROVIDERS = ['mercadopago'] as const;
+export const SUBSCRIPTION_PROVIDERS = ['mercadopago', 'paypal'] as const;
 export const subscriptionProviderSchema = z.enum(SUBSCRIPTION_PROVIDERS);
 export type SubscriptionProvider = z.infer<typeof subscriptionProviderSchema>;
 

@@ -357,7 +357,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         @Optional() private readonly stats?: FormStatsService,
         // v0.1.361 — cobrar al enviar con la conexión de cobro de la empresa.
         @Optional() private readonly collections?: CollectionsService,
-        // v0.1.368 — suscribir al enviar (débito automático de Mercado Pago).
+        // v0.1.368 — suscribir al enviar (débito automático de Mercado Pago o PayPal).
         @Optional() private readonly subscriptionsSvc?: SubscriptionsService,
     ) {
         this.pcache = cache ?? NO_PUBLIC_CACHE;
@@ -551,7 +551,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
 
     /**
      * v0.1.368 — Los planes que ofrece «Suscribir al enviar»: activos y de una
-     * conexión de Mercado Pago DEL EQUIPO. Se revisa sólo con el interruptor
+     * conexión de Mercado Pago o PayPal DEL EQUIPO. Se revisa sólo con el interruptor
      * encendido (apagado, los planes elegidos se conservan sin validar).
      */
     private async assertSubscription(tenantId: number, config: FormConfig): Promise<void> {
@@ -2486,7 +2486,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
 
     /**
      * v0.1.368 — Arma la suscripción de una respuesta ya guardada: devuelve el
-     * link para que la persona autorice su tarjeta en Mercado Pago. Si no se
+     * link para que la persona autorice el pago en Mercado Pago o PayPal. Si no se
      * puede, la respuesta NO se pierde: se le dice a la persona y se avisa a la
      * empresa (Problemas).
      */
@@ -2536,6 +2536,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                     frequency_type: out.frequency_type,
                     after: s.after,
                     button_label: s.button_label || 'Autorizar el débito automático',
+                    provider: out.provider,
                 },
             };
         } catch (err) {
@@ -2546,7 +2547,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     }
 
     /**
-     * v0.1.368 — Cómo quedó la suscripción al volver de Mercado Pago
+     * v0.1.368 — Cómo quedó la suscripción al volver de Mercado Pago o PayPal
      * (`?suscripcion=<referencia>`). Sólo de una que armó ESTE formulario.
      */
     async subscriptionStatus(token: string, reference: string): Promise<PublicFormSubscriptionStatus> {

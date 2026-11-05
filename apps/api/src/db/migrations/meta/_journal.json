@@ -743,6 +743,13 @@
       "when": 1784200001200,
       "tag": "0105_paypal_collections",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1784200001300,
+      "tag": "0106_paypal_subscriptions",
+      "breakpoints": true
     }
   ]
 }

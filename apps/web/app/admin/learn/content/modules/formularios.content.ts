@@ -779,14 +779,14 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Un formulario puede **cobrar en el mismo momento en que se envía**: una inscripción, una entrada, un plan o un aporte. La respuesta se guarda como siempre y, enseguida, la persona paga con la cuenta de **Mercado Pago** o **Wompi** de tu empresa. El dinero llega a tu cuenta, no pasa por la app.',
+                md: 'Un formulario puede **cobrar en el mismo momento en que se envía**: una inscripción, una entrada, un plan o un aporte. La respuesta se guarda como siempre y, enseguida, la persona paga con la cuenta de **Mercado Pago**, **Wompi** o **PayPal** de tu empresa. El dinero llega a tu cuenta, no pasa por la app.',
             },
             { t: 'anim', key: 'form-payment', caption: 'Ana elige el plan Premium, ve el total cambiar, toca «Enviar y pagar», paga y su registro queda «Pagado».' },
             {
                 t: 'callout',
                 tone: 'info',
                 title: 'Antes: conecta tu cuenta de cobro',
-                md: 'Necesitas una conexión de **Mercado Pago** o **Wompi** del equipo en **Ajustes → Integraciones**. Una conexión privada (sólo tuya) no sirve para cobrar en un formulario.',
+                md: 'Necesitas una conexión de **Mercado Pago**, **Wompi** o **PayPal** del equipo en **Ajustes → Integraciones**. PayPal cobra en dólares u otra moneda que acepte, nunca en pesos colombianos. Una conexión privada (sólo tuya) no sirve para cobrar en un formulario.',
             },
             { t: 'h', text: 'Encenderlo' },
             {
@@ -849,7 +849,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: '¿La app se queda con una comisión?', a: 'No. El cobro sale de la cuenta de tu empresa y el dinero llega ahí. Sólo aplica la comisión de Mercado Pago o Wompi.' },
+                    { q: '¿La app se queda con una comisión?', a: 'No. El cobro sale de la cuenta de tu empresa y el dinero llega ahí. Sólo aplica la comisión de Mercado Pago, Wompi o PayPal.' },
                     { q: '¿Qué pasa si la persona no paga en ese momento?', a: 'La respuesta queda guardada con su pago pendiente. El link sirve los días que elegiste: en la sección **Cobros** de la ficha del registro, **Copiar link** te lo da para mandárselo otra vez.' },
                     { q: '¿Se cobra al actualizar datos con un enlace?', a: 'No. Los enlaces para actualizar un registro nunca cobran.' },
                     { q: '¿Y si el formulario pide confirmar el correo?', a: 'Se cobra cuando la persona confirma: en esa misma página ve el total y el botón para pagar.' },
@@ -858,7 +858,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'actions',
                 items: [
-                    { label: 'Conectar Mercado Pago o Wompi', to: '/settings?s=conectores' },
+                    { label: 'Conectar Mercado Pago, Wompi o PayPal', to: '/settings?s=conectores' },
                     { label: 'Siguiente: suscribir al enviar', article: 'formularios-suscribir' },
                 ],
             },
@@ -872,14 +872,14 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Un formulario también puede **suscribir** a quien lo envía a uno de tus planes de **débito automático** de Mercado Pago: una mensualidad, una membresía, una cuota anual. La persona elige el plan, autoriza su tarjeta **una sola vez** y desde ahí se le cobra sola cada período. El dinero llega a la cuenta de tu empresa y la suscripción aparece en la ficha del registro que creó el formulario.',
+                md: 'Un formulario también puede **suscribir** a quien lo envía a uno de tus planes de **débito automático** de Mercado Pago o PayPal: una mensualidad, una membresía, una cuota anual. La persona elige el plan, autoriza el pago **una sola vez** (su tarjeta en Mercado Pago, o su cuenta PayPal) y desde ahí se le cobra sola cada período. El dinero llega a la cuenta de tu empresa y la suscripción aparece en la ficha del registro que creó el formulario.',
             },
             { t: 'anim', key: 'form-subscription', caption: 'Ana elige el plan anual, toca «Enviar y suscribirme», autoriza su tarjeta en Mercado Pago y en su portal la suscripción queda «Al día».' },
             {
                 t: 'callout',
                 tone: 'info',
                 title: 'Antes: los planes y el correo',
-                md: 'Necesitas **planes activos** en una conexión de **Mercado Pago del equipo** (**Ajustes → Integraciones → Mercado Pago → Cobros → Suscripciones**). Y el formulario tiene que preguntar el **correo** de quien responde: Mercado Pago lo pide para la suscripción.',
+                md: 'Necesitas **planes activos** en una conexión de **Mercado Pago o PayPal del equipo** (**Ajustes → Integraciones → Cobros → Suscripciones**). Y el formulario tiene que preguntar el **correo** de quien responde: la suscripción queda a nombre de ese correo. Si ofreces planes de los dos, la nota bajo los planes dice dónde se autoriza el elegido.',
             },
             { t: 'h', text: 'Encenderlo' },
             {
@@ -898,7 +898,7 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Planes que se ofrecen', what: 'Con varios, la persona elige uno en tarjetas con el precio, cada cuánto se cobra, los días gratis y la cantidad de cobros. Con uno solo, ve el resumen del plan sin tener que elegir.', tip: 'Un plan pausado o de una conexión que dejó de ser del equipo deja de ofrecerse solo; el panel te lo avisa.' },
                     { name: 'Título de la elección', what: 'Lo que dice arriba de los planes. Vacío = «Elige tu plan».', tip: '«Tu membresía» o «Elige tu mensualidad» le habla mejor a tu cliente.' },
-                    { name: 'Llevar directo a Mercado Pago', what: 'Al enviar, la persona pasa a autorizar su tarjeta. Al terminar vuelve al formulario y ve si la suscripción quedó activa.', tip: 'Si el formulario está insertado en tu sitio, en vez de saltar muestra el botón para abrir Mercado Pago en una pestaña nueva.' },
+                    { name: 'Llevar directo a pagar', what: 'Al enviar, la persona pasa a autorizar el pago en Mercado Pago o PayPal. Al terminar vuelve al formulario y ve si la suscripción quedó activa.', tip: 'Si el formulario está insertado en tu sitio, en vez de saltar muestra el botón para abrirlo en una pestaña nueva.' },
                     { name: 'Mostrar el botón en la pantalla de gracias', what: 'La pantalla de gracias muestra el plan, el valor y un botón para autorizar. Útil cuando primero quieres darle un mensaje.' },
                     { name: 'Texto del botón', what: 'Lo que dice el botón. Por defecto, «Autorizar el débito automático».' },
                 ],
@@ -906,7 +906,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Qué pasa al volver' },
             {
                 t: 'p',
-                md: 'Cuando la persona vuelve de Mercado Pago, la página le dice cómo quedó: **«¡Listo! Tu suscripción quedó activa»** si autorizó, o **«Estamos confirmando tu suscripción»** mientras llega la confirmación (la página vuelve a preguntar sola unos segundos). Si no terminó de autorizar, le ofrece volver a Mercado Pago.',
+                md: 'Cuando la persona vuelve de Mercado Pago o PayPal, la página le dice cómo quedó: **«¡Listo! Tu suscripción quedó activa»** si autorizó, o **«Estamos confirmando tu suscripción»** mientras llega la confirmación (la página vuelve a preguntar sola unos segundos). Si no terminó de autorizar (o volvió de PayPal sin aprobar), le dice que no se cobró nada y le ofrece intentarlo de nuevo.',
             },
             {
                 t: 'callout',

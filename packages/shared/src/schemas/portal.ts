@@ -306,6 +306,8 @@ export const portalSubscriptionSchema = z.object({
     paid_until: z.string().nullable(),
     /** Todavía sin autorizar: el link para autorizar la tarjeta (si no, null). */
     url: z.string().nullable(),
+    /** v0.1.373 — Quién cobra (para nombrarlo en los textos). */
+    provider: z.enum(['mercadopago', 'paypal']).default('mercadopago'),
     charges: z
         .array(
             z.object({

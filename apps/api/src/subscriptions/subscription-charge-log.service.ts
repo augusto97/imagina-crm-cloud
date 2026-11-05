@@ -275,7 +275,7 @@ export class SubscriptionChargeLogService {
                         f('Plan', 'plan', 'text'),
                         f('Medio de pago', 'medio', 'text'),
                         f('Motivo del rechazo', 'motivo', 'long_text'),
-                        f('Id del pago', 'id_pago', 'text', { description: 'El número del pago en Mercado Pago.' }),
+                        f('Id del pago', 'id_pago', 'text', { description: 'El número del pago en Mercado Pago o PayPal.' }),
                     ],
                     {
                         settings: { title_field_id: ref('cobro') },

@@ -10,7 +10,10 @@ import {
     Optional,
 } from '@nestjs/common';
 import {
+    COLLECTION_PROVIDER_LABEL,
     EMPTY_SUBSCRIPTION_FIELDS,
+    collectionCurrencyError,
+    isSubscriptionProvider,
     SUBSCRIPTION_FIELD_LABELS,
     SUBSCRIPTION_FIELD_ROLES,
     SUBSCRIPTION_FIELD_TYPES,
@@ -38,6 +41,7 @@ import {
     type SubscriptionFields,
     type SubscriptionFrequencyType,
     type SubscriptionPlan,
+    type SubscriptionProvider,
     type SubscriptionProviderStatus,
     type SubscriptionRow,
     type SubscriptionsOverview,
@@ -58,6 +62,7 @@ import { planModuleOff } from '../billing/plan-module-gate';
 import { CollectionsService, type CollectionActor } from '../collections/collections.service';
 import { providerError } from '../collections/collection-gateways';
 import { gatewayBases } from '../collections/gateway-bases';
+import { paypalError } from '../collections/paypal-gateway';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { ENV, type Env } from '../config/env';
 import { ConnectorsService } from '../connectors/connectors.service';
@@ -104,6 +109,27 @@ import {
     type PreapprovalPatch,
 } from './subscription-gateway';
 import { SubscriptionChargeLogService } from './subscription-charge-log.service';
+import {
+    createBillingPlanRequest,
+    createPaypalSubscriptionRequest,
+    createProductRequest,
+    failedPaymentCharge,
+    getPaypalSubscriptionRequest,
+    parseCreatedId,
+    parseCreatedPaypalSubscription,
+    parsePaypalSubscription,
+    parsePaypalTransactions,
+    parseSaleSubscription,
+    paypalActionError,
+    paypalChargeState,
+    paypalPlanKey,
+    paypalPriceRequest,
+    paypalSaleRequest,
+    paypalSubscriptionActionRequest,
+    paypalSubscriptionNotice,
+    paypalTransactionsRequest,
+    readPaypalPlanRefs,
+} from './paypal-subscriptions';
 
 const FETCH_TIMEOUT_MS = 15_000;
 const DAY = 24 * 60 * 60 * 1000;
@@ -139,6 +165,14 @@ interface RemoteState {
     url: string | null;
     startAt: Date | null;
     invoices: ParsedInvoice[] | null;
+    /** v0.1.373 — PayPal dice el reintento y la mora sin «cuotas»: si viene, manda sobre lo que se deduce de las cuotas. */
+    retrying?: boolean;
+    failedFinal?: boolean;
+}
+
+/** «Mercado Pago» / «PayPal». */
+function providerName(provider: string): string {
+    return isSubscriptionProvider(provider) ? COLLECTION_PROVIDER_LABEL[provider] : 'el proveedor';
 }
 
 function badRequest(code: string, message: string): never {
@@ -261,10 +295,10 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         });
     }
 
-    /** Las conexiones de Mercado Pago que esta persona puede usar (las del equipo y sus privadas). */
+    /** Las conexiones de Mercado Pago o PayPal que esta persona puede usar (las del equipo y sus privadas). */
     private async usableConnections(tenantId: number, actor: CollectionActor) {
         const all = await this.collections.connectionsFor(tenantId, actor);
-        return all.filter((c) => c.provider === 'mercadopago');
+        return all.filter((c) => isSubscriptionProvider(c.provider));
     }
 
     async createPlan(tenantId: number, actor: CollectionActor, input: CreateSubscriptionPlanInput): Promise<SubscriptionPlan> {
@@ -274,14 +308,17 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         }
         if (!(input.amount > 0)) badRequest('invalid_amount', 'El valor del plan tiene que ser mayor a cero.');
         const conn = await this.connectors.editableConnection(tenantId, actor.userId, actor.role, input.connection_id);
-        if (conn.provider !== 'mercadopago') badRequest('not_subscription_provider', 'Las suscripciones se cobran con Mercado Pago: elige una conexión de Mercado Pago.');
+        if (!isSubscriptionProvider(conn.provider)) badRequest('not_subscription_provider', 'Las suscripciones se cobran con Mercado Pago o PayPal: elige una de esas conexiones.');
+        const provider: SubscriptionProvider = conn.provider;
+        const currencyError = collectionCurrencyError(provider, input.currency);
+        if (currencyError) badRequest('plan_currency', currencyError);
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [created] = await tx
                 .insert(subscriptionPlans)
                 .values({
                     tenantId,
                     connectionId: conn.id,
-                    provider: 'mercadopago',
+                    provider,
                     name: input.name,
                     description: input.description ?? null,
                     amount: Math.round(input.amount * 100) / 100,
@@ -326,6 +363,10 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         const freq = patch.frequency ?? plan.frequency;
         const type = (patch.frequencyType ?? plan.frequencyType) as SubscriptionFrequencyType;
         if ((type === 'months' && freq > 12) || (type === 'days' && freq > 365) || freq < 1) badRequest('invalid_frequency', 'Cada cuánto se cobra: hasta 12 meses o 365 días.');
+        if (input.currency !== undefined && isSubscriptionProvider(plan.provider)) {
+            const currencyError = collectionCurrencyError(plan.provider, input.currency);
+            if (currencyError) badRequest('plan_currency', currencyError);
+        }
         const out = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [row] = await tx
                 .update(subscriptionPlans)
@@ -535,10 +576,13 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         if (!plan.active) throw new SubscriptionError(`El plan «${plan.name}» está desactivado.`);
         if (plan.connectionId === null) throw new SubscriptionError(`La conexión del plan «${plan.name}» ya no existe.`);
         const email = opts.payerEmail.trim().toLowerCase();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new SubscriptionError(`«${opts.payerEmail}» no es un correo: Mercado Pago lo necesita para la suscripción.`);
         const conn = await this.connectors.integrationCredsInTx(tx, tenantId, plan.connectionId);
         if (!conn) throw new SubscriptionError(`La conexión #${plan.connectionId} ya no existe.`);
-        if (conn.provider !== 'mercadopago') throw new SubscriptionError(`«${conn.name}» no es una conexión de Mercado Pago.`);
+        if (!isSubscriptionProvider(conn.provider)) throw new SubscriptionError(`«${conn.name}» no es una conexión de Mercado Pago ni de PayPal.`);
+        const provider: SubscriptionProvider = conn.provider;
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new SubscriptionError(`«${opts.payerEmail}» no es un correo: ${providerName(provider)} lo necesita para la suscripción.`);
+        const currencyError = collectionCurrencyError(provider, plan.currency);
+        if (currencyError) throw new SubscriptionError(currencyError);
 
         const existing = await tx
             .select()
@@ -557,36 +601,46 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         const startAt = resolveStart(opts.startDate, plan.trialDays);
         const reference = `ibs_${randomBytes(12).toString('base64url')}`;
         const title = (opts.title?.trim() || plan.name).slice(0, 200);
-        const req = createPreapprovalRequest(
-            conn.creds,
-            {
-                reference,
-                title,
-                payerEmail: email,
-                amount,
-                currency: plan.currency,
-                frequency: plan.frequency,
-                frequencyType: plan.frequencyType as SubscriptionFrequencyType,
-                startAt,
-                cycles: plan.cycles,
-                backUrl: opts.backUrlFor ? opts.backUrlFor(reference) : this.backUrl(reference),
-            },
-            this.bases,
-        );
-        let created;
-        try {
-            const res = await this.fetchMp(req);
-            created = parseCreatedPreapproval(res.status, res.body, conn.creds);
-        } catch (err) {
-            throw new SubscriptionError(`No pudimos comunicarnos con Mercado Pago (${redact(err, conn.creds)}).`);
+        const backUrl = opts.backUrlFor ? opts.backUrlFor(reference) : this.backUrl(reference);
+        // Si el cliente se arrepiente en PayPal vuelve a la misma página, que se lo dice.
+        const cancelUrl = `${backUrl}${backUrl.includes('?') ? '&' : '?'}cancelado=1`;
+        let created: { externalId: string; url: string | null; providerStatus: SubscriptionProviderStatus; startAt: Date | null; nextPaymentAt: Date | null };
+        if (provider === 'paypal') {
+            created = await this.createPaypalSubscription(tx, tenantId, plan, conn.creds, { reference, email, amount, startAt, backUrl, cancelUrl });
+        } else {
+            const req = createPreapprovalRequest(
+                conn.creds,
+                {
+                    reference,
+                    title,
+                    payerEmail: email,
+                    amount,
+                    currency: plan.currency,
+                    frequency: plan.frequency,
+                    frequencyType: plan.frequencyType as SubscriptionFrequencyType,
+                    startAt,
+                    cycles: plan.cycles,
+                    backUrl,
+                },
+                this.bases,
+            );
+            let parsed;
+            try {
+                const res = await this.fetchMp(req);
+                parsed = parseCreatedPreapproval(res.status, res.body, conn.creds);
+            } catch (err) {
+                throw new SubscriptionError(`No pudimos comunicarnos con Mercado Pago (${redact(err, conn.creds)}).`);
+            }
+            if ('error' in parsed) throw new SubscriptionError(parsed.error);
+            created = parsed;
         }
-        if ('error' in created) throw new SubscriptionError(created.error);
 
-        // Un link anterior que nunca se autorizó queda reemplazado (en Mercado
-        // Pago se cancela: si no, el cliente podría autorizar los dos).
+        // Un link anterior que nunca se autorizó queda reemplazado (en el
+        // proveedor se cancela: si no, el cliente podría autorizar los dos).
         for (const old of live) {
-            if (old.externalId) {
-                await this.fetchMp(updatePreapprovalRequest(conn.creds, old.externalId, { kind: 'status', status: 'cancelled' }, this.bases)).catch(() => undefined);
+            if (old.externalId && old.connectionId) {
+                const oldConn = old.connectionId === plan.connectionId ? conn : await this.connectors.integrationCredsInTx(tx, tenantId, old.connectionId).catch(() => null);
+                if (oldConn) await this.cancelRemoteQuietly(old.provider, oldConn.creds, old.externalId);
             }
             await tx
                 .update(subscriptions)
@@ -599,7 +653,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
             .values({
                 tenantId,
                 connectionId: plan.connectionId,
-                provider: 'mercadopago',
+                provider,
                 planId: plan.id,
                 listId: opts.listId,
                 recordId: opts.recordId,
@@ -706,6 +760,10 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         if (!sub.connectionId || !sub.externalId) throw new SubscriptionError('La conexión de esta suscripción ya no existe.');
         const conn = await this.connectors.integrationCredsFor(tenantId, sub.connectionId);
         if (!conn) throw new SubscriptionError('La conexión de esta suscripción ya no existe.');
+        if (sub.provider === 'paypal') {
+            await this.patchPaypal(tenantId, sub, conn.creds, patch, cancelReason);
+            return;
+        }
         let res;
         try {
             res = await this.fetchMp(updatePreapprovalRequest(conn.creds, sub.externalId, patch, this.bases));
@@ -799,6 +857,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
     }
 
     private async readRemote(tenantId: number, sub: SubscriptionRowDb, creds: IntegrationCreds): Promise<RemoteState | null> {
+        if (sub.provider === 'paypal') return this.readRemotePaypal(tenantId, sub, creds);
         const keyIncident = `subscriptions:${sub.connectionId}:read`;
         let res;
         try {
@@ -879,6 +938,15 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
                 retryingInvoiceId = retrying ? (latest?.invoiceId ?? null) : null;
                 failedFinal = Boolean(latest && latest.status === 'processed' && latest.paymentStatus === 'rejected');
             }
+            // PayPal dice el reintento y la mora sin «cuotas» (v0.1.373).
+            if (remote?.retrying !== undefined) {
+                retrying = remote.retrying;
+                const lastRejected = [...(remote.invoices ?? [])]
+                    .filter((i) => i.paymentStatus === 'rejected')
+                    .sort((a, b) => (b.debitDate?.getTime() ?? 0) - (a.debitDate?.getTime() ?? 0))[0];
+                retryingInvoiceId = retrying ? (lastRejected?.invoiceId ?? null) : null;
+            }
+            if (remote?.failedFinal !== undefined) failedFinal = remote.failedFinal;
             const all = await tx
                 .select()
                 .from(subscriptionCharges)
@@ -895,7 +963,12 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
                 })),
                 { frequency: freq, frequencyType: type, retryingInvoiceId },
             );
-            const providerStatus = (remote?.providerStatus ?? (sub.providerStatus as SubscriptionProviderStatus | null)) ?? null;
+            // Una pendiente que la empresa canceló sigue cancelada aunque el
+            // proveedor la muestre «por aprobar» (PayPal no cancela lo que nunca se aprobó).
+            const providerStatus =
+                remote?.providerStatus === 'pending' && sub.providerStatus === 'cancelled'
+                    ? 'cancelled'
+                    : ((remote?.providerStatus ?? (sub.providerStatus as SubscriptionProviderStatus | null)) ?? null);
             // Una cuota aprobada después de la rechazada «apaga» la mora.
             if (summary.lastChargeStatus === 'approved') failedFinal = false;
             const startAt = remote?.startAt ?? sub.startAt;
@@ -914,8 +987,8 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
             const cancelReason =
                 status === 'cancelled' && !sub.cancelReason
                     ? summary.consecutiveFailed >= 3
-                        ? 'Mercado Pago la dio de baja después de 3 cuotas rechazadas.'
-                        : 'La canceló el cliente o Mercado Pago.'
+                        ? `${providerName(sub.provider)} la dio de baja después de 3 cobros rechazados.`
+                        : `La canceló el cliente o ${providerName(sub.provider)}.`
                     : sub.cancelReason;
             const nextChargeAt =
                 status === 'cancelled' || status === 'finished' || status === 'paused'
@@ -1081,6 +1154,8 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
      * de una suscripción (si no, el cobro de links lo sigue procesando).
      */
     async handleNotice(tenantId: number, connectionId: number, query: Record<string, unknown>, body: unknown): Promise<'applied' | 'ignored' | 'not_subscription'> {
+        const pp = paypalSubscriptionNotice(body);
+        if (pp) return this.handlePaypalNotice(tenantId, connectionId, pp);
         const notice = mpNotice(query, body);
         if (!notice) return 'not_subscription';
         const conn = await this.connectors.integrationCredsFor(tenantId, connectionId).catch(() => null);
@@ -1222,11 +1297,22 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
 
     /**
      * Lo que ve el cliente al volver de autorizar la tarjeta. Se busca por
-     * NUESTRA referencia (aleatoria); si sigue pendiente, se le pregunta a
-     * Mercado Pago (a lo sumo cada 15 s). Sólo devuelve lo que el cliente ya
+     * NUESTRA referencia (aleatoria); si sigue pendiente, se le pregunta al
+     * proveedor (a lo sumo cada 15 s; cada 2 s recién vuelto de aprobar). Sólo devuelve lo que el cliente ya
      * sabe: el plan, el valor y si quedó activa.
      */
-    async publicStatus(reference: string): Promise<{ tenantName: string; title: string; status: SubscriptionStatus; amount: number; currency: string; frequency: number; frequencyType: SubscriptionFrequencyType } | null> {
+    async publicStatus(reference: string, opts: { returning?: boolean } = {}): Promise<{
+        tenantName: string;
+        title: string;
+        status: SubscriptionStatus;
+        amount: number;
+        currency: string;
+        frequency: number;
+        frequencyType: SubscriptionFrequencyType;
+        provider: SubscriptionProvider;
+        /** El link para autorizar, mientras siga pendiente (el cliente ya lo tenía). */
+        url: string | null;
+    } | null> {
         if (!/^ibs_[A-Za-z0-9_-]{8,48}$/.test(reference)) return null;
         const [row] = await this.db
             .select({ id: subscriptions.id, tenantId: subscriptions.tenantId, status: subscriptions.status, lastCheckedAt: subscriptions.lastCheckedAt })
@@ -1234,7 +1320,10 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
             .where(eq(subscriptions.reference, reference))
             .limit(1);
         if (!row) return null;
-        const stale = !row.lastCheckedAt || Date.now() - row.lastCheckedAt.getTime() > 15_000;
+        // v0.1.373 — recién vuelto del proveedor se pregunta enseguida (a lo sumo
+        // cada 2 s): la persona acaba de aprobar y espera verlo activo.
+        const minAge = opts.returning ? 2_000 : 15_000;
+        const stale = !row.lastCheckedAt || Date.now() - row.lastCheckedAt.getTime() > minAge;
         if (row.status === 'pending' && stale) {
             await this.sync(row.tenantId, row.id).catch((err: unknown) => {
                 this.logger.warn(`Suscripción ${row.id}: no se pudo consultar al volver: ${err instanceof Error ? err.message : String(err)}`);
@@ -1251,6 +1340,8 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
             currency: sub.currency,
             frequency: sub.frequency,
             frequencyType: sub.frequencyType as SubscriptionFrequencyType,
+            provider: isSubscriptionProvider(sub.provider) ? sub.provider : 'mercadopago',
+            url: sub.status === 'pending' && sub.url && /^https:\/\//.test(sub.url) ? sub.url : null,
         };
     }
 
@@ -1263,7 +1354,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
      */
     async formPlans(tenantId: number, planIds: readonly number[]): Promise<PublicFormPlan[]> {
         if (planIds.length === 0) return [];
-        const team = new Set((await this.collections.teamConnections(tenantId)).filter((c) => c.provider === 'mercadopago').map((c) => c.id));
+        const team = new Set((await this.collections.teamConnections(tenantId)).filter((c) => isSubscriptionProvider(c.provider)).map((c) => c.id));
         if (team.size === 0) return [];
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
@@ -1285,6 +1376,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
                 frequency_type: r.frequencyType as SubscriptionFrequencyType,
                 trial_days: r.trialDays,
                 cycles: r.cycles,
+                provider: isSubscriptionProvider(r.provider) ? r.provider : 'mercadopago',
             }));
     }
 
@@ -1295,7 +1387,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         if (missing.length > 0) {
             badRequest(
                 'form_subscription_plan',
-                'Elige planes activos de una conexión de Mercado Pago del equipo (Ajustes → Integraciones → Cobros → Suscripciones). Una conexión privada no sirve en un formulario público.',
+                'Elige planes activos de una conexión de Mercado Pago o PayPal del equipo (Ajustes → Integraciones → Cobros → Suscripciones). Una conexión privada no sirve en un formulario público.',
             );
         }
     }
@@ -1310,7 +1402,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
     async createForForm(
         tenantId: number,
         opts: { formId: number; planId: number; listId: number; recordId: number; payerEmail: string; backUrlFor: (reference: string) => string },
-    ): Promise<{ url: string; plan: string; amount: number; currency: string; frequency: number; frequency_type: SubscriptionFrequencyType }> {
+    ): Promise<{ url: string; plan: string; amount: number; currency: string; frequency: number; frequency_type: SubscriptionFrequencyType; provider: SubscriptionProvider }> {
         const [plan] = await this.formPlans(tenantId, [opts.planId]);
         if (!plan) throw new SubscriptionError('Ese plan ya no está disponible.');
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
@@ -1334,7 +1426,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
             });
         });
         this.afterWrite(tenantId, result.write);
-        if (!result.sub.url) throw new SubscriptionError('Mercado Pago no devolvió el link para autorizar la tarjeta.');
+        if (!result.sub.url) throw new SubscriptionError(`${providerName(result.sub.provider)} no devolvió el link para autorizar el pago.`);
         return {
             url: result.sub.url,
             plan: plan.name,
@@ -1342,6 +1434,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
             currency: result.sub.currency,
             frequency: plan.frequency,
             frequency_type: plan.frequency_type,
+            provider: result.sub.provider,
         };
     }
 
@@ -1361,7 +1454,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
             .where(and(eq(subscriptions.tenantId, tenantId), eq(subscriptions.formId, formId), eq(subscriptions.reference, reference)))
             .limit(1);
         if (!row) return null;
-        const pub = await this.publicStatus(reference);
+        const pub = await this.publicStatus(reference, { returning: true });
         if (!pub) return null;
         const state =
             pub.status === 'pending'
@@ -1373,7 +1466,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
                     : 'active';
         // Todavía sin autorizar: el mismo link sirve para terminar.
         const url = state === 'pending' && row.url && /^https?:\/\//.test(row.url) ? row.url : null;
-        return { state, plan: pub.title, amount: pub.amount, currency: pub.currency, frequency: pub.frequency, frequency_type: pub.frequencyType, url };
+        return { state, plan: pub.title, amount: pub.amount, currency: pub.currency, frequency: pub.frequency, frequency_type: pub.frequencyType, url, provider: pub.provider };
     }
 
     // ── Portal del cliente (v0.1.368) ───────────────────────────────────
@@ -1417,6 +1510,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
                 next_charge_at: r.nextChargeAt ? r.nextChargeAt.toISOString() : null,
                 paid_until: r.paidUntil ? r.paidUntil.toISOString() : null,
                 url: r.status === 'pending' && r.url && /^https?:\/\//.test(r.url) ? r.url : null,
+                provider: isSubscriptionProvider(r.provider) ? r.provider : ('mercadopago' as const),
                 charges: charges
                     .filter((c) => c.subscriptionId === r.id)
                     .slice(0, 6)
@@ -1435,7 +1529,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
 
     async overview(tenantId: number, actor: CollectionActor, connectionId: number): Promise<SubscriptionsOverview> {
         const conn = await this.connectors.editableConnection(tenantId, actor.userId, actor.role, connectionId);
-        if (conn.provider !== 'mercadopago') badRequest('not_subscription_provider', 'Las suscripciones son de Mercado Pago.');
+        if (!isSubscriptionProvider(conn.provider)) badRequest('not_subscription_provider', 'Las suscripciones son de Mercado Pago o PayPal.');
         const plans = await this.listPlans(tenantId, actor, connectionId).catch(() => [] as SubscriptionPlan[]);
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const rows = await tx
@@ -1842,6 +1936,220 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         );
     }
 
+    // ── PayPal (v0.1.373) ───────────────────────────────────────────────
+
+    /** El nombre de la empresa (lo ve el cliente en PayPal). */
+    private async tenantName(tx: Tx, tenantId: number): Promise<string> {
+        const [t] = await tx.select({ name: tenants.name }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+        return t?.name ?? '';
+    }
+
+    /** Una llamada a PayPal con el token de la empresa; la red caída se dice en palabras. */
+    private async paypalCall(creds: IntegrationCreds, build: (base: string, token: string) => IntegrationRequest): Promise<{ status: number; body: string }> {
+        try {
+            return await this.collections.paypal.call(creds, build);
+        } catch (err) {
+            if (err instanceof SubscriptionError) throw err;
+            throw new SubscriptionError(`No pudimos comunicarnos con PayPal (${redact(err, creds)}).`);
+        }
+    }
+
+    /**
+     * El plan de PayPal de este plan con su forma actual (frecuencia, cuotas,
+     * moneda). La primera vez se crean el producto y el plan, con claves de
+     * idempotencia (un reintento no duplica) y quedan guardados en el plan.
+     */
+    private async ensurePaypalPlan(tx: Tx, tenantId: number, plan: SubscriptionPlanRowDb, creds: IntegrationCreds): Promise<string> {
+        await tx.execute(sql`select id from subscription_plans where tenant_id = ${tenantId} and id = ${plan.id} for update`);
+        const [fresh] = await tx
+            .select({ refs: subscriptionPlans.providerRefs })
+            .from(subscriptionPlans)
+            .where(and(eq(subscriptionPlans.tenantId, tenantId), eq(subscriptionPlans.id, plan.id)))
+            .limit(1);
+        const refs = readPaypalPlanRefs(fresh?.refs);
+        const key = paypalPlanKey({ frequency: plan.frequency, frequencyType: plan.frequencyType as SubscriptionFrequencyType, cycles: plan.cycles, currency: plan.currency });
+        const known = refs.plans?.[key];
+        if (known) return known;
+        let productId = refs.product_id;
+        if (!productId) {
+            const res = await this.paypalCall(creds, (b, t) => createProductRequest(b, t, { name: plan.name, requestId: `ib-product-${tenantId}-${plan.id}` }));
+            const out = parseCreatedId(res.status, res.body);
+            if ('error' in out) throw new SubscriptionError(`PayPal no aceptó crear el producto del plan: ${out.error}`);
+            productId = out.id;
+        }
+        const res = await this.paypalCall(creds, (b, t) =>
+            createBillingPlanRequest(b, t, {
+                productId: productId!,
+                name: plan.name,
+                amount: Number(plan.amount),
+                currency: plan.currency,
+                frequency: plan.frequency,
+                frequencyType: plan.frequencyType as SubscriptionFrequencyType,
+                cycles: plan.cycles,
+                requestId: `ib-plan-${tenantId}-${plan.id}-${key}`,
+            }),
+        );
+        const out = parseCreatedId(res.status, res.body);
+        if ('error' in out) throw new SubscriptionError(`PayPal no aceptó crear el plan: ${out.error}`);
+        await tx
+            .update(subscriptionPlans)
+            .set({ providerRefs: { product_id: productId, plans: { ...(refs.plans ?? {}), [key]: out.id } } })
+            .where(and(eq(subscriptionPlans.tenantId, tenantId), eq(subscriptionPlans.id, plan.id)));
+        return out.id;
+    }
+
+    private async createPaypalSubscription(
+        tx: Tx,
+        tenantId: number,
+        plan: SubscriptionPlanRowDb,
+        creds: IntegrationCreds,
+        input: { reference: string; email: string; amount: number; startAt: Date | null; backUrl: string; cancelUrl: string },
+    ): Promise<{ externalId: string; url: string | null; providerStatus: SubscriptionProviderStatus; startAt: Date | null; nextPaymentAt: Date | null }> {
+        const planId = await this.ensurePaypalPlan(tx, tenantId, plan, creds);
+        const brandName = await this.tenantName(tx, tenantId);
+        const res = await this.paypalCall(creds, (b, t) =>
+            createPaypalSubscriptionRequest(b, t, {
+                planId,
+                reference: input.reference,
+                payerEmail: input.email,
+                amount: input.amount,
+                currency: plan.currency,
+                startAt: input.startAt,
+                brandName,
+                returnUrl: input.backUrl,
+                cancelUrl: input.cancelUrl,
+            }),
+        );
+        const created = parseCreatedPaypalSubscription(res.status, res.body);
+        if ('error' in created) throw new SubscriptionError(created.error);
+        // El primer cobro es el que pidió la empresa (o al aprobar): no el `start_time` que PayPal completa con «ahora».
+        return { externalId: created.externalId, url: created.url, providerStatus: created.providerStatus, startAt: input.startAt, nextPaymentAt: created.nextPaymentAt };
+    }
+
+    /** Cancelar en el proveedor el link viejo que nunca se autorizó (lo que falle, se ignora). */
+    private async cancelRemoteQuietly(provider: string, creds: IntegrationCreds, externalId: string): Promise<void> {
+        if (provider === 'paypal') {
+            await this.collections.paypal
+                .call(creds, (b, t) => paypalSubscriptionActionRequest(b, t, externalId, 'cancel', 'Se reemplazó por un link nuevo.'))
+                .catch(() => undefined);
+            return;
+        }
+        await this.fetchMp(updatePreapprovalRequest(creds, externalId, { kind: 'status', status: 'cancelled' }, this.bases)).catch(() => undefined);
+    }
+
+    private async patchPaypal(tenantId: number, sub: SubscriptionRowDb, creds: IntegrationCreds, patch: PreapprovalPatch, cancelReason: string | null): Promise<void> {
+        const id = sub.externalId!;
+        const pending = sub.status === 'pending';
+        let res: { status: number; body: string };
+        if (patch.kind === 'amount') {
+            res = await this.paypalCall(creds, (b, t) => paypalPriceRequest(b, t, id, patch.amount, sub.currency));
+        } else {
+            const action = patch.status === 'paused' ? 'suspend' : patch.status === 'authorized' ? 'activate' : 'cancel';
+            const reason =
+                action === 'cancel' ? (cancelReason ?? 'La canceló la empresa.') : action === 'suspend' ? 'Pausada por la empresa.' : 'Reanudada por la empresa.';
+            res = await this.paypalCall(creds, (b, t) => paypalSubscriptionActionRequest(b, t, id, action, reason));
+            // Una suscripción que nunca se aprobó no se puede cancelar en PayPal: se
+            // cancela aquí (su link deja de mostrarse y la relectura no la revive).
+            if (action === 'cancel' && pending && res.status === 422) res = { status: 204, body: '' };
+        }
+        if (res.status < 200 || res.status >= 300) throw new SubscriptionError(paypalActionError(res.status, res.body));
+        await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .update(subscriptions)
+                .set(
+                    patch.kind === 'amount'
+                        ? { amount: Math.round(patch.amount * 100) / 100, updatedAt: new Date() }
+                        : patch.status === 'cancelled'
+                          ? {
+                                cancelReason: cancelReason ?? 'La canceló la empresa.',
+                                ...(pending ? { status: 'cancelled', providerStatus: 'cancelled', url: null, cancelledAt: new Date() } : {}),
+                                updatedAt: new Date(),
+                            }
+                          : { updatedAt: new Date() },
+                )
+                .where(and(eq(subscriptions.tenantId, tenantId), eq(subscriptions.id, sub.id))),
+        );
+    }
+
+    private async readRemotePaypal(tenantId: number, sub: SubscriptionRowDb, creds: IntegrationCreds): Promise<RemoteState | null> {
+        const keyIncident = `subscriptions:${sub.connectionId}:read`;
+        let res: { status: number; body: string };
+        try {
+            res = await this.collections.paypal.call(creds, (b, t) => getPaypalSubscriptionRequest(b, t, sub.externalId!));
+        } catch (err) {
+            this.logger.warn(`Suscripción ${sub.id}: PayPal no respondió (${redact(err, creds)}).`);
+            return null;
+        }
+        if (res.status === 401 || res.status === 403) {
+            this.incidents?.report({
+                tenantId,
+                key: keyIncident,
+                source: 'collections',
+                sourceId: sub.connectionId,
+                title: 'Las suscripciones de PayPal no se están actualizando',
+                message: `${paypalError(res.status, res.body)} Vuelve a conectar la cuenta en Ajustes → Integraciones.`,
+            });
+            return null;
+        }
+        const parsed = parsePaypalSubscription(res.status, res.body);
+        if (!parsed) return null;
+        this.incidents?.resolve(tenantId, keyIncident);
+        let invoices: ParsedInvoice[] | null = null;
+        try {
+            const from = new Date(sub.createdAt.getTime() - DAY);
+            const to = new Date(Date.now() + DAY);
+            const tr = await this.collections.paypal.call(creds, (b, t) => paypalTransactionsRequest(b, t, sub.externalId!, from, to));
+            invoices = parsePaypalTransactions(tr.status, tr.body, parsed.externalId);
+        } catch {
+            invoices = null;
+        }
+        // El cobro fallido que PayPal informa aparte (si no está ya entre los cobros).
+        const failed = failedPaymentCharge(parsed, sub.currency);
+        if (invoices && failed && !invoices.some((i) => i.paymentStatus === 'rejected' && Math.abs((i.debitDate?.getTime() ?? 0) - failed.debitDate!.getTime()) < 60_000)) {
+            invoices.push(failed);
+        }
+        const state = paypalChargeState(parsed);
+        // Un inicio a futuro que pidió la empresa (prueba gratis, «desde el día 1»); si no, el que ya teníamos.
+        const futureStart = parsed.startAt && parsed.startAt.getTime() > sub.createdAt.getTime() + 60_000 ? parsed.startAt : null;
+        return {
+            providerStatus: state.providerStatus,
+            nextPaymentAt: parsed.nextPaymentAt,
+            amount: parsed.amount,
+            url: parsed.url,
+            startAt: futureStart ?? sub.startAt,
+            invoices,
+            retrying: state.retrying,
+            failedFinal: state.failedFinal,
+        };
+    }
+
+    /** Un aviso de PayPal de una suscripción (o de un cobro de una): se relee la suscripción. */
+    private async handlePaypalNotice(
+        tenantId: number,
+        connectionId: number,
+        notice: ReturnType<typeof paypalSubscriptionNotice> & object,
+    ): Promise<'applied' | 'ignored' | 'not_subscription'> {
+        const conn = await this.connectors.integrationCredsFor(tenantId, connectionId).catch(() => null);
+        if (!conn || conn.provider !== 'paypal') return 'ignored';
+        let subscriptionId = notice.kind === 'subscription' ? notice.id : notice.subscriptionId;
+        if (!subscriptionId && notice.kind === 'sale') {
+            const res = await this.collections.paypal.call(conn.creds, (b, t) => paypalSaleRequest(b, t, notice.saleId));
+            if (res.status >= 500) throw new Error(`PayPal respondió ${res.status} al releer el cobro`);
+            subscriptionId = parseSaleSubscription(res.status, res.body);
+        }
+        if (!subscriptionId) return 'not_subscription';
+        const [sub] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select()
+                .from(subscriptions)
+                .where(and(eq(subscriptions.tenantId, tenantId), eq(subscriptions.connectionId, connectionId), eq(subscriptions.externalId, subscriptionId!)))
+                .limit(1),
+        );
+        if (!sub) return 'ignored';
+        await this.sync(tenantId, sub.id);
+        return 'applied';
+    }
+
     /** La red a Mercado Pago (por el guard anti-SSRF de SEC-03). */
     private async fetchMp(req: IntegrationRequest): Promise<{ status: number; body: string }> {
         const res = await safeWebhookFetch(req.url, {
@@ -1874,7 +2182,7 @@ function planToDto(r: SubscriptionPlanRowDb, connectionName: string | null, subs
         id: r.id,
         connection_id: r.connectionId,
         connection_name: connectionName,
-        provider: 'mercadopago',
+        provider: isSubscriptionProvider(r.provider) ? r.provider : 'mercadopago',
         name: r.name,
         description: r.description,
         amount: Number(r.amount),
@@ -1895,7 +2203,7 @@ function planToDto(r: SubscriptionPlanRowDb, connectionName: string | null, subs
 export function toDto(r: SubscriptionRowDb, connectionName: string | null): Subscription {
     return {
         id: r.id,
-        provider: 'mercadopago',
+        provider: isSubscriptionProvider(r.provider) ? r.provider : 'mercadopago',
         connection_id: r.connectionId,
         connection_name: connectionName,
         plan_id: r.planId,
@@ -2011,7 +2319,7 @@ function noticeFor(sub: SubscriptionRowDb, event: SubscriptionEvent, charge: Sub
         case 'charge_failed':
             return {
                 title: `Falló el cobro de la suscripción ${who}`,
-                body: `${plan}: ${charge?.failureReason ?? 'el banco rechazó el pago'}. Mercado Pago lo vuelve a intentar.`,
+                body: `${plan}: ${charge?.failureReason ?? 'el banco rechazó el pago'}. ${providerName(sub.provider)} lo vuelve a intentar.`,
             };
         case 'past_due':
             return { title: `La suscripción ${who} está en mora`, body: `${plan}: se agotaron los reintentos del cobro. Todavía está en los días de gracia.` };

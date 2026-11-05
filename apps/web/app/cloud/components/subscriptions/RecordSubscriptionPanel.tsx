@@ -83,7 +83,7 @@ function RecordSubscriptionPanelInner({
                     {__('Suscripción')}
                 </p>
                 <p className="imcrm-mt-1">
-                    {__('Para cobrar cada mes con débito automático, conecta Mercado Pago en')}{' '}
+                    {__('Para cobrar cada mes con débito automático, conecta Mercado Pago o PayPal en')}{' '}
                     <Link to="/settings?s=conectores" className="imcrm-text-primary hover:imcrm-underline">
                         {__('Ajustes → Integraciones')}
                     </Link>{' '}
@@ -140,7 +140,7 @@ function RecordSubscriptionPanelInner({
 
             {!current ? (
                 <p className="imcrm-mt-3 imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Sin suscripción. «Suscribir» crea un link para que el cliente autorice su tarjeta; desde ahí se le cobra solo cada período.')}
+                    {__('Sin suscripción. «Suscribir» crea un link para que el cliente autorice el pago (su tarjeta en Mercado Pago, o su cuenta PayPal); desde ahí se le cobra solo cada período.')}
                 </p>
             ) : (
                 <SubscriptionCard sub={current} canEdit={data.can_edit} onChanged={refresh} />
@@ -242,14 +242,16 @@ function SubscriptionCard({ sub, canEdit, onChanged }: { sub: SubscriptionWithCh
 
             {sub.status === 'pending' && sub.url && (
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-muted/60 imcrm-px-3 imcrm-py-2 imcrm-text-xs">
-                    <span className="imcrm-flex-1">{__('Mándale este link al cliente para que autorice su tarjeta:')}</span>
+                    <span className="imcrm-flex-1">
+                        {sub.provider === 'paypal' ? __('Mándale este link al cliente para que apruebe la suscripción en PayPal:') : __('Mándale este link al cliente para que autorice su tarjeta:')}
+                    </span>
                     <CopyButton value={sub.url} label={__('Copiar link')} testId="imcrm-subscription-copy" />
                     <a
                         href={sub.url}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="imcrm-inline-flex imcrm-items-center imcrm-rounded-md imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
-                        title={__('Abrir la página de Mercado Pago')}
+                        title={sub.provider === 'paypal' ? __('Abrir la página de PayPal') : __('Abrir la página de Mercado Pago')}
                     >
                         <ExternalLink className="imcrm-h-3.5 imcrm-w-3.5" />
                     </a>
@@ -258,7 +260,7 @@ function SubscriptionCard({ sub, canEdit, onChanged }: { sub: SubscriptionWithCh
 
             <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1">
                 {sub.connection_id !== null && (
-                    <SmallAction onClick={() => act.mutate('verify')} disabled={act.isPending} testId="imcrm-subscription-verify" title={__('Preguntarle a Mercado Pago cómo va')}>
+                    <SmallAction onClick={() => act.mutate('verify')} disabled={act.isPending} testId="imcrm-subscription-verify" title={sub.provider === 'paypal' ? __('Preguntarle a PayPal cómo va') : __('Preguntarle a Mercado Pago cómo va')}>
                         <RefreshCw className={cn('imcrm-h-3.5 imcrm-w-3.5', act.isPending && act.variables === 'verify' && 'imcrm-animate-spin')} />
                         {__('Verificar')}
                     </SmallAction>
@@ -374,7 +376,7 @@ function SubscriptionChangeDialog({
     const save = useMutation({
         mutationFn: () => (kind === 'cancel' ? api.cancelSubscription(sub.id, reason.trim() || null) : api.changeSubscriptionAmount(sub.id, parseLocalAmount(amount))),
         onSuccess: (next) => {
-            toast.success(kind === 'cancel' ? __('Suscripción cancelada') : __('Valor cambiado'), kind === 'cancel' ? __('Mercado Pago ya no le cobra al cliente.') : sprintf(__('Desde el próximo cobro: %s.'), formatMoney(next.amount, next.currency)));
+            toast.success(kind === 'cancel' ? __('Suscripción cancelada') : __('Valor cambiado'), kind === 'cancel' ? sprintf(__('%s ya no le cobra al cliente.'), providerLabel(sub.provider)) : sprintf(__('Desde el próximo cobro: %s.'), formatMoney(next.amount, next.currency)));
             onDone();
         },
         onError: (err) => setError(errText(err)),
@@ -396,8 +398,11 @@ function SubscriptionChangeDialog({
                             </Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
                                 {kind === 'cancel'
-                                    ? __('Se cancela en Mercado Pago y no se le vuelve a cobrar. Lo ya cobrado no se devuelve. No se puede deshacer: para volver a cobrarle hay que crear otra suscripción.')
-                                    : __('El valor nuevo se cobra desde el próximo período. Mercado Pago le avisa al cliente del cambio.')}
+                                    ? sprintf(
+                                          __('Se cancela en %s y no se le vuelve a cobrar. Lo ya cobrado no se devuelve. No se puede deshacer: para volver a cobrarle hay que crear otra suscripción.'),
+                                          providerLabel(sub.provider),
+                                      )
+                                    : sprintf(__('El valor nuevo se cobra desde el próximo período. %s le avisa al cliente del cambio.'), providerLabel(sub.provider))}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close className="imcrm-rounded-md imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent" aria-label={__('Cerrar')}>
@@ -477,7 +482,12 @@ function SubscribeDialog({
             }),
         onSuccess: (sub) => {
             if (sub.url) void navigator.clipboard?.writeText(sub.url).catch(() => undefined);
-            toast.success(__('Suscripción creada'), __('El link ya está copiado: mándaselo al cliente para que autorice su tarjeta.'));
+            toast.success(
+                __('Suscripción creada'),
+                sub.provider === 'paypal'
+                    ? __('El link ya está copiado: mándaselo al cliente para que apruebe la suscripción en PayPal.')
+                    : __('El link ya está copiado: mándaselo al cliente para que autorice su tarjeta.'),
+            );
             onCreated(sub);
         },
         onError: (err) => setError(errText(err)),
@@ -494,11 +504,13 @@ function SubscribeDialog({
                     data-testid="imcrm-subscribe-dialog"
                 >
                     <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
-                        <IntegrationLogo integrationKey="mercadopago" size={40} />
+                        <IntegrationLogo integrationKey={plan.provider === 'paypal' ? 'paypal' : 'mercadopago'} size={40} />
                         <div className="imcrm-min-w-0 imcrm-flex-1">
                             <Dialog.Title className="imcrm-text-base imcrm-font-semibold">{__('Suscribir')}</Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
-                                {__('Se crea un link de Mercado Pago. Cuando el cliente autoriza su tarjeta, se le cobra solo cada período y el registro se actualiza con cada cobro.')}
+                                {plan.provider === 'paypal'
+                                    ? __('Se crea un link de PayPal. Cuando el cliente aprueba la suscripción con su cuenta PayPal o tarjeta, se le cobra solo cada período y el registro se actualiza con cada cobro.')
+                                    : __('Se crea un link de Mercado Pago. Cuando el cliente autoriza su tarjeta, se le cobra solo cada período y el registro se actualiza con cada cobro.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close className="imcrm-rounded-md imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent" aria-label={__('Cerrar')}>
@@ -527,7 +539,7 @@ function SubscribeDialog({
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                             <Label htmlFor="sub-email">{__('Correo del cliente')}</Label>
                             <Input id="sub-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} data-testid="imcrm-subscribe-email" />
-                            <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Mercado Pago lo pide: la suscripción queda a nombre de ese correo.')}</p>
+                            <p className="imcrm-text-xs imcrm-text-muted-foreground">{sprintf(__('%s lo pide: la suscripción queda a nombre de ese correo.'), providerLabel(plan.provider))}</p>
                         </div>
                         <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
@@ -542,7 +554,11 @@ function SubscribeDialog({
                         {value > 0 && (
                             <p className="imcrm-rounded-md imcrm-bg-muted/60 imcrm-px-3 imcrm-py-2 imcrm-text-xs" data-testid="imcrm-subscribe-summary">
                                 {__('Se cobra')} <strong>{formatMoney(value, plan.currency)}</strong> {frequencyText(plan.frequency, plan.frequency_type)}
-                                {start ? `, ${__('desde el')} ${formatDate(new Date(`${start}T12:00:00`))}` : `, ${__('desde que autoriza la tarjeta')}`}
+                                {start
+                                    ? `, ${__('desde el')} ${formatDate(new Date(`${start}T12:00:00`))}`
+                                    : plan.provider === 'paypal'
+                                      ? `, ${__('desde que la aprueba en PayPal')}`
+                                      : `, ${__('desde que autoriza la tarjeta en Mercado Pago')}`}
                                 {plan.cycles ? ` · ${cyclesText(plan.cycles)}` : ''}.
                             </p>
                         )}
@@ -614,6 +630,11 @@ function errText(err: unknown): string {
 }
 
 /** Sin el módulo de integraciones en el plan, no aparece. */
+/** «Mercado Pago» / «PayPal». */
+function providerLabel(provider: string): string {
+    return provider === 'paypal' ? 'PayPal' : 'Mercado Pago';
+}
+
 export function RecordSubscriptionPanel(props: Parameters<typeof RecordSubscriptionPanelInner>[0]): JSX.Element | null {
     const off = usePlanModuleOff('integrations');
     return off ? null : <RecordSubscriptionPanelInner {...props} />;

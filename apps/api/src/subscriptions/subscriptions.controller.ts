@@ -39,7 +39,7 @@ import { SubscriptionsService } from './subscriptions.service';
 /**
  * Suscripciones de la empresa a sus clientes (v0.1.367, ADR-S96). Crear,
  * pausar o cancelar una suscripción es EDITAR el registro; los planes los
- * maneja quien puede editar la conexión de Mercado Pago.
+ * maneja quien puede editar la conexión de Mercado Pago o PayPal.
  */
 @PlanModule('integrations')
 @Controller()
@@ -193,26 +193,31 @@ export class SubscriptionsController {
 }
 
 /**
- * La página a la que vuelve el cliente después de autorizar su tarjeta en
- * Mercado Pago. PÚBLICA: la referencia es aleatoria y sólo muestra lo que el
- * cliente ya sabe (el plan y si quedó activa). Sin scripts: mientras Mercado
- * Pago confirma, la página se recarga sola unas veces.
+ * La página a la que vuelve el cliente después de autorizar el pago en
+ * Mercado Pago o PayPal. PÚBLICA: la referencia es aleatoria y sólo muestra lo
+ * que el cliente ya sabe (el plan y si quedó activa). Sin scripts: mientras el
+ * proveedor confirma, la página se recarga sola unas veces.
  */
 @Controller('public/subscriptions')
 export class PublicSubscriptionsController {
     constructor(private readonly subs: SubscriptionsService) {}
 
     @Get(':reference')
-    async page(@Param('reference') reference: string, @Query('n') n: string | undefined, @Res() reply: FastifyReply): Promise<void> {
-        const status = await this.subs.publicStatus(reference);
+    async page(
+        @Param('reference') reference: string,
+        @Query('n') n: string | undefined,
+        @Query('cancelado') cancelled: string | undefined,
+        @Res() reply: FastifyReply,
+    ): Promise<void> {
         const tries = Math.min(30, Math.max(0, Number(n) || 0));
+        const status = await this.subs.publicStatus(reference, { returning: tries < 3 });
         reply
             .status(status ? 200 : 404)
             .header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
             .header('Cache-Control', 'no-store')
             .header('X-Robots-Tag', 'noindex, nofollow')
             .type('text/html; charset=utf-8')
-            .send(returnPage(status, reference, tries));
+            .send(returnPage(status, reference, tries, cancelled === '1'));
     }
 }
 
@@ -238,26 +243,35 @@ export function returnPage(
     s: Awaited<ReturnType<SubscriptionsService['publicStatus']>>,
     reference: string,
     tries: number,
+    cancelled = false,
 ): string {
     let title: string;
     let body: string;
     let refresh = '';
+    let action = '';
     if (!s) {
         title = 'No encontramos esta suscripción';
         body = 'El enlace no es válido. Si acabas de autorizar una suscripción, escríbele a la empresa que te la envió.';
     } else {
         const what = `«${esc(s.title)}» por ${esc(money(s.amount, s.currency))} ${esc(every(s.frequency, s.frequencyType))}`;
         const status = s.status as SubscriptionStatus;
-        if (status === 'pending') {
+        const provider = s.provider === 'paypal' ? 'PayPal' : 'Mercado Pago';
+        const how = s.provider === 'paypal' ? 'con tu cuenta PayPal' : 'con la tarjeta que autorizaste';
+        if (status === 'pending' && cancelled) {
+            // v0.1.373 — el cliente se arrepintió en PayPal: no se le cobró nada.
+            title = 'No se completó la suscripción';
+            body = `No autorizaste ${what}, así que no se te cobrará nada. Si quieres suscribirte, vuelve a intentarlo.`;
+            if (s.url) action = `<a class="btn" href="${esc(s.url)}">Volver a ${provider}</a>`;
+        } else if (status === 'pending') {
             if (tries < 24) refresh = `<meta http-equiv="refresh" content="5;url=${esc(`/api/v1/public/subscriptions/${reference}?n=${tries + 1}`)}">`;
             title = 'Estamos confirmando tu suscripción';
             body =
                 tries < 24
-                    ? `Mercado Pago está confirmando la autorización de tu tarjeta para ${what}. Esta página se actualiza sola.`
-                    : `Todavía no tenemos la confirmación de Mercado Pago para ${what}. Si completaste la autorización, en unos minutos queda activa; puedes cerrar esta página.`;
+                    ? `${provider} está confirmando la autorización para ${what}. Esta página se actualiza sola.`
+                    : `Todavía no tenemos la confirmación de ${provider} para ${what}. Si completaste la autorización, en unos minutos queda activa; puedes cerrar esta página.`;
         } else if (status === 'active' || status === 'retrying' || status === 'past_due') {
             title = '¡Listo! Tu suscripción quedó activa';
-            body = `Mercado Pago te cobrará ${what} con la tarjeta que autorizaste. Puedes cerrar esta página.`;
+            body = `${provider} te cobrará ${what} ${how}. Puedes cerrar esta página.`;
         } else {
             title = `Tu suscripción está ${esc(SUBSCRIPTION_STATUS_OPTIONS[status]?.label.toLowerCase() ?? status)}`;
             body = `Si tienes dudas sobre ${what}, escríbele a ${s.tenantName ? esc(s.tenantName) : 'la empresa'}.`;
@@ -268,8 +282,9 @@ export function returnPage(
 body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f6f7f9;color:#0f172a;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}
 main{max-width:460px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:28px;box-shadow:0 10px 30px -18px rgba(15,23,42,.35)}
 h1{font-size:20px;margin:0 0 10px}p{margin:0;line-height:1.55;color:#334155}.brand{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#64748b;margin-bottom:12px}
+.btn{display:inline-block;margin-top:20px;background:#0070ba;color:#fff;text-decoration:none;font-weight:600;padding:11px 18px;border-radius:999px}
 @media (prefers-color-scheme:dark){body{background:#121212;color:#f1f5f9}main{background:#1c1c1c;border-color:#2b2b2b}p{color:#cbd5e1}}
-</style></head><body><main>${brand}<h1>${title}</h1><p>${body}</p></main></body></html>`;
+</style></head><body><main>${brand}<h1>${title}</h1><p>${body}</p>${action}</main></body></html>`;
 }
 
 function tenantId(req: FastifyRequest): number {

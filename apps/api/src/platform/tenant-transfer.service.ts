@@ -1412,6 +1412,9 @@ export class TenantTransferService {
             graceDays: Number(p.graceDays ?? 10) || 10,
             onExpire: p.onExpire === 'cancel' ? 'cancel' : 'mark',
             active: p.active !== false,
+            // v0.1.373 — el producto y los planes de PayPal son de la cuenta de
+            // la empresa (la conexión viaja con sus credenciales): siguen valiendo.
+            providerRefs: p.providerRefs && typeof p.providerRefs === 'object' ? (p.providerRefs as Record<string, unknown>) : {},
             createdBy: mapId(maps.user, p.createdBy),
             createdAt: this.date(p.createdAt) ?? new Date(),
             updatedAt: this.date(p.updatedAt) ?? new Date(),

@@ -464,18 +464,18 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Con una **suscripción** el cliente autoriza su tarjeta **una sola vez** en Mercado Pago y, desde ahí, Mercado Pago le cobra solo cada período: cada mes, cada tres meses o cada cierto número de días. Sirve para mensualidades, membresías, mantenimientos, planes de soporte o cualquier servicio que se paga igual todos los meses. No tienes que mandar un link cada mes.',
+                md: 'Con una **suscripción** el cliente autoriza el pago **una sola vez** —su tarjeta en Mercado Pago, o su cuenta PayPal— y, desde ahí, le cobran solo cada período: cada mes, cada tres meses o cada cierto número de días. Sirve para mensualidades, membresías, mantenimientos, planes de soporte o cualquier servicio que se paga igual todos los meses. No tienes que mandar un link cada mes.',
             },
             { t: 'anim', key: 'cobro-suscripcion', caption: 'La suscripción de un cliente: autoriza la tarjeta, queda al día, un mes se rechaza y Mercado Pago la vuelve a intentar sola.' },
             {
                 t: 'callout',
                 tone: 'info',
-                md: 'Las suscripciones son de **Mercado Pago** (débito automático con tarjeta de crédito o débito). Con **Wompi** sigue habiendo links de pago, uno por cobro. El dinero va directo a la cuenta de tu empresa, sin comisión de la plataforma.',
+                md: 'Las suscripciones funcionan con **Mercado Pago** (débito automático con tarjeta de crédito o débito, en pesos) y con **PayPal** (la cuenta PayPal o la tarjeta del cliente, en dólares u otra moneda de PayPal). Con **Wompi** sigue habiendo links de pago, uno por cobro. El dinero va directo a la cuenta de tu empresa, sin comisión de la plataforma.',
             },
             { t: 'h', text: '1. Crea un plan' },
             {
                 t: 'p',
-                md: 'Un plan es «qué se cobra y cada cuánto». Ve a **Ajustes → Integraciones**, abre **Cobros** de tu conexión de Mercado Pago y, en **Suscripciones (débito automático)**, toca **Nuevo plan**:',
+                md: 'Un plan es «qué se cobra y cada cuánto». Ve a **Ajustes → Integraciones**, abre **Cobros** de tu conexión de Mercado Pago o de PayPal y, en **Suscripciones (débito automático)**, toca **Nuevo plan**:',
             },
             {
                 t: 'settings',
@@ -486,7 +486,8 @@ export const articles: LearnArticle[] = [
                     { name: 'Cuántas cuotas', what: 'Vacío = hasta que se cancele. Con un número (por ejemplo 12), al cobrar la última la suscripción queda **Terminada**.' },
                     { name: 'Días gratis al empezar', what: 'Una prueba gratis: el primer cobro llega después de esos días.' },
                     { name: 'Días de gracia', what: 'Cuántos días se espera después de que vence el período antes de considerarla **Vencida** (10 por defecto). Mientras tanto Mercado Pago reintenta el cobro.' },
-                    { name: 'Cuando vence sin pago', what: '**Marcarla «Vencida» y avisar** (recomendado: decides tú qué hacer) o también **cancelarla en Mercado Pago**.' },
+                    { name: 'Cuando vence sin pago', what: '**Marcarla «Vencida» y avisar** (recomendado: decides tú qué hacer) o también **cancelarla** en Mercado Pago o PayPal.' },
+                    { name: 'Moneda', what: 'Con Mercado Pago, la de tu cuenta (pesos). Con PayPal, dólares u otra moneda que acepte PayPal: **nunca pesos colombianos**.' },
                 ],
             },
             {
@@ -499,10 +500,10 @@ export const articles: LearnArticle[] = [
                 t: 'steps',
                 items: [
                     'Abre la ficha del cliente. En la sección **Suscripción** toca **Suscribir**.',
-                    'Elige el plan y revisa el **Correo del cliente** (se completa solo si el registro tiene un correo): Mercado Pago deja la suscripción a nombre de ese correo.',
+                    'Elige el plan y revisa el **Correo del cliente** (se completa solo si el registro tiene un correo): la suscripción queda a nombre de ese correo.',
                     'Si quieres, cambia el **Valor** para este cliente o pon la fecha del **Primer cobro** (por ejemplo, el día 1 del mes que viene).',
                     'Toca **Crear el link**: la suscripción queda **Por autorizar** y el link se copia con **Copiar link**.',
-                    'Mándale el link por WhatsApp o correo. Cuando el cliente autoriza su tarjeta, la ficha pasa sola a **Al día**.',
+                    'Mándale el link por WhatsApp o correo. Cuando el cliente autoriza el pago, la ficha pasa sola a **Al día**.',
                 ],
             },
             {
@@ -517,9 +518,9 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Por autorizar', what: 'Se creó el link y el cliente todavía no autorizó la tarjeta. La ficha revisa sola cada pocos segundos mientras está abierta.' },
                     { name: 'Al día', what: 'El período actual está pagado.' },
-                    { name: 'Reintentando', what: 'Falló el cobro del período (por ejemplo, fondos insuficientes) y Mercado Pago lo vuelve a intentar en los próximos días.' },
-                    { name: 'En mora', what: 'Se agotaron los reintentos y el período sigue sin pagar, pero todavía no pasaron los días de gracia.' },
-                    { name: 'Vencida', what: 'Pasaron los días de gracia sin pago. Si el plan lo pide, además se cancela en Mercado Pago.' },
+                    { name: 'Reintentando', what: 'Falló el cobro del período (por ejemplo, fondos insuficientes) y Mercado Pago o PayPal lo vuelve a intentar en los próximos días.' },
+                    { name: 'En mora', what: 'Se agotaron los reintentos y el período sigue sin pagar, pero todavía no pasaron los días de gracia. En PayPal, al tercer cobro fallido PayPal suspende la suscripción: aquí se ve como **En mora**, no como pausada.' },
+                    { name: 'Vencida', what: 'Pasaron los días de gracia sin pago. Si el plan lo pide, además se cancela en Mercado Pago o PayPal.' },
                     { name: 'Pausada', what: 'No se cobra hasta que la reanudes.' },
                     { name: 'Cancelada', what: 'Ya no se cobra. El cliente puede volver a suscribirse con un link nuevo.' },
                     { name: 'Terminada', what: 'Se cobraron todas las cuotas del plan.' },
@@ -527,7 +528,22 @@ export const articles: LearnArticle[] = [
             },
             {
                 t: 'p',
-                md: 'Cada cobro aparece en la lista **Cobros** de la ficha con su resultado (Pagado o Rechazado), el valor, la fecha, el medio de pago y, si se rechazó, **por qué**. El mismo pago nunca se cuenta dos veces aunque Mercado Pago avise por dos caminos.',
+                md: 'Cada cobro aparece en la lista **Cobros** de la ficha con su resultado (Pagado o Rechazado), el valor, la fecha, el medio de pago y, si se rechazó, **por qué**. El mismo pago nunca se cuenta dos veces aunque el proveedor avise por dos caminos.',
+            },
+            { t: 'h', text: 'Con PayPal' },
+            {
+                t: 'p',
+                md: 'Funciona igual que con Mercado Pago, con estas diferencias: el cliente aprueba la suscripción con su **cuenta PayPal o con tarjeta**, se cobra en **dólares** (u otra moneda de PayPal) y la app crea sola, en tu cuenta de PayPal, lo que PayPal necesita para cobrar el plan. El valor de cada cliente puede ser distinto al del plan.',
+            },
+            { t: 'anim', key: 'cobro-paypal', caption: 'El cliente aprueba en PayPal y vuelve: la app lo confirma con PayPal antes de marcarlo al día.' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Avisos', what: 'PayPal avisa cada cobro por la misma dirección de los links de pago (en **Cobros → Avisos de pago**). Sin avisos igual funciona: la app revisa cada suscripción por su cuenta.' },
+                    { name: 'Si el cliente se arrepiente', what: 'Si vuelve de PayPal sin aprobar, la página le dice que no se cobró nada y le ofrece **Volver a PayPal**.' },
+                    { name: 'Cancelar una que nunca se aprobó', what: 'PayPal no deja cancelar una suscripción sin aprobar: la app la cancela aquí y su link deja de mostrarse.' },
+                    { name: 'Cobros fallidos', what: 'PayPal reintenta; cada intento rechazado queda en **Cobros** con su motivo («la cuenta PayPal del cliente no puede pagar»).' },
+                ],
             },
             { t: 'h', text: 'Ver quién está al día en la lista' },
             {
@@ -538,7 +554,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Cada cobro en su propia lista (registro de cobros)' },
             {
                 t: 'p',
-                md: 'Las columnas dicen cómo va **hoy** cada cliente; el **registro de cobros** guarda la historia: cada cobro de Mercado Pago (pagado, rechazado o reembolsado) queda como un **registro** en otra lista, vinculado al cliente. Con eso sumas lo cobrado por mes, ves cuántos cobros se rechazaron y por qué, y armas reportes como con cualquier dato.',
+                md: 'Las columnas dicen cómo va **hoy** cada cliente; el **registro de cobros** guarda la historia: cada cobro de Mercado Pago o PayPal (pagado, rechazado o reembolsado) queda como un **registro** en otra lista, vinculado al cliente. Con eso sumas lo cobrado por mes, ves cuántos cobros se rechazaron y por qué, y armas reportes como con cualquier dato.',
             },
             { t: 'anim', key: 'cobro-registro', caption: 'Cada cobro cae como una fila en «Cobros de suscripciones» y el tablero suma lo cobrado del mes.' },
             {

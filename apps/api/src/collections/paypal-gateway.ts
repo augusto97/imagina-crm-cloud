@@ -71,11 +71,11 @@ export function paypalEnv(creds: IntegrationCreds): 'live' | 'sandbox' {
     return creds.fields.env === 'sandbox' ? 'sandbox' : 'live';
 }
 
-function trimBase(url: string): string {
+export function trimBase(url: string): string {
     return url.replace(/\/+$/, '');
 }
 
-function parseJson(body: string): Record<string, unknown> | null {
+export function parseJson(body: string): Record<string, unknown> | null {
     try {
         const v = JSON.parse(body) as unknown;
         return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
@@ -84,16 +84,16 @@ function parseJson(body: string): Record<string, unknown> | null {
     }
 }
 
-function str(v: unknown): string | null {
+export function str(v: unknown): string | null {
     return typeof v === 'string' && v !== '' ? v : typeof v === 'number' ? String(v) : null;
 }
 
-function num(v: unknown): number | null {
+export function num(v: unknown): number | null {
     const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
     return Number.isFinite(n) ? n : null;
 }
 
-function obj(v: unknown): Record<string, unknown> | null {
+export function obj(v: unknown): Record<string, unknown> | null {
     return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
 

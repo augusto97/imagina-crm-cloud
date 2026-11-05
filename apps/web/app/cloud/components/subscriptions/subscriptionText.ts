@@ -41,14 +41,15 @@ export function statusOption(status: SubscriptionStatus): { label: string; color
 }
 
 /** Una frase de qué pasa ahora con la suscripción. */
-export function statusSentence(sub: Pick<Subscription, 'status' | 'last_failure_reason' | 'consecutive_failed' | 'cancel_reason'>): string {
+export function statusSentence(sub: Pick<Subscription, 'status' | 'last_failure_reason' | 'consecutive_failed' | 'cancel_reason'> & { provider?: string }): string {
+    const provider = sub.provider === 'paypal' ? 'PayPal' : 'Mercado Pago';
     switch (sub.status) {
         case 'pending':
-            return 'Esperando que el cliente autorice su tarjeta con el link.';
+            return sub.provider === 'paypal' ? 'Esperando que el cliente apruebe la suscripción en PayPal con el link.' : 'Esperando que el cliente autorice su tarjeta con el link.';
         case 'active':
             return 'Al día: el período actual está pagado.';
         case 'retrying':
-            return `Falló el último cobro${sub.last_failure_reason ? ` (${sub.last_failure_reason})` : ''}: Mercado Pago lo vuelve a intentar en los próximos días.`;
+            return `Falló el último cobro${sub.last_failure_reason ? ` (${sub.last_failure_reason})` : ''}: ${provider} lo vuelve a intentar en los próximos días.`;
         case 'past_due':
             return `En mora: ${sub.consecutive_failed > 1 ? `${sub.consecutive_failed} cuotas rechazadas` : 'se agotaron los reintentos'}. Sigue en los días de gracia.`;
         case 'expired':
@@ -72,7 +73,7 @@ export const SUB_ROLE_HINTS: Record<SubscriptionFieldRole, string> = {
     next_charge: 'Cuándo toca el próximo cobro.',
     paid_until: 'Hasta cuándo está pagado el servicio.',
     failed: 'Cuántas cuotas seguidas se rechazaron.',
-    link: 'El link para que el cliente autorice su tarjeta.',
+    link: 'El link para que el cliente autorice el pago (Mercado Pago o PayPal).',
 };
 
 /**

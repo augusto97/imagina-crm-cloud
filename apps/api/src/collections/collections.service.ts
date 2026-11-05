@@ -1436,7 +1436,18 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         failed: (message: string) => void,
     ): Promise<'applied' | 'ignored' | 'error'> {
         const notice = paypalNotice(body);
-        // Los de suscripciones llegan desde ya (la app los registra) y se ignoran hasta que PayPal también suscriba.
+        // v0.1.373 — Los de suscripciones (y los cobros de una suscripción) los procesa el servicio de suscripciones.
+        if (notice?.kind === 'other' && /^(BILLING\.SUBSCRIPTION\.|PAYMENT\.SALE\.)/.test(notice.eventType)) {
+            try {
+                return await this.toSubscriptions(tenantId, connectionId, {}, body);
+            } catch (err) {
+                if (err instanceof PaypalCallError) {
+                    failed(`PayPal rechazó la clave al consultar una suscripción (${err.message}). Vuelve a conectar la cuenta en Ajustes → Integraciones.`);
+                    return 'error';
+                }
+                throw err;
+            }
+        }
         if (!notice || notice.kind === 'other') return 'ignored';
         try {
             let orderId = notice.kind === 'order' ? notice.orderId : notice.orderId;

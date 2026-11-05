@@ -2257,7 +2257,7 @@ function submit(hpValue: string): void {
                     return done(b.ending_id ?? null, b.payment);
                 }
                 if (b.payment_error) return done(b.ending_id ?? null, null, b.payment_error);
-                // v0.1.368 — suscribir al enviar: a autorizar la tarjeta en Mercado Pago.
+                // v0.1.368 — suscribir al enviar: a autorizar el pago (Mercado Pago o PayPal).
                 if (b.subscription && /^https?:\/\//.test(b.subscription.url)) {
                     if (b.subscription.after === 'redirect' && !embedded) return goSubscribe(b.subscription);
                     return done(b.ending_id ?? null, null, undefined, b.subscription);
@@ -2467,6 +2467,25 @@ interface SubResult {
     frequency_type: 'months' | 'days';
     after: 'redirect' | 'button';
     button_label: string;
+    provider?: 'mercadopago' | 'paypal';
+}
+
+/** v0.1.373 — Quién cobra la suscripción, dicho por su nombre. */
+function provName(provider: 'mercadopago' | 'paypal' | undefined): string {
+    return provider === 'paypal' ? 'PayPal' : 'Mercado Pago';
+}
+
+/** La nota bajo los planes: dónde se autoriza (si hay planes de los dos, el del elegido). */
+function planNoteText(plans: readonly { id: number; provider?: 'mercadopago' | 'paypal' }[], chosen: number | null): string {
+    const providers = new Set(plans.map((p) => p.provider ?? 'mercadopago'));
+    const picked = plans.find((p) => p.id === chosen);
+    const where =
+        providers.size === 1
+            ? provName([...providers][0])
+            : picked
+              ? provName(picked.provider)
+              : 'Mercado Pago o PayPal (según el plan)';
+    return `Al enviar, autorizas el débito automático en ${where}. Puedes cancelarlo cuando quieras.`;
 }
 
 type PlanView = NonNullable<PublicFormMeta['subscription']>['plans'][number];
@@ -2487,6 +2506,7 @@ function planNode(sub: NonNullable<PublicFormMeta['subscription']>): HTMLElement
     const title = el('div', { cls: 'ib-label', id: 'plan_title', text: sub.plan_label });
     const err = el('div', { cls: 'ib-error', id: 'plan_err', role: 'alert', hidden: true });
     const cards: HTMLElement[] = [];
+    const note = el('p', { cls: 'ib-plan-note', 'data-testid': 'form-plan-note' });
     const body = (p: PlanView): HTMLElement => {
         const extras = subscriptionPlanExtras(p);
         const head = el('span', { cls: 'ib-plan-head' }, [
@@ -2512,15 +2532,13 @@ function planNode(sub: NonNullable<PublicFormMeta['subscription']>): HTMLElement
         input.addEventListener('change', () => {
             chosenPlan = p.id;
             for (const c of cards) c.classList.toggle('ib-checked', c === card);
+            note.textContent = planNoteText(sub.plans, chosenPlan);
             setErr(PLAN, '');
         });
         cards.push(card);
     }
     const list = el('div', { cls: 'ib-plans', role: single ? null : 'radiogroup', 'aria-labelledby': 'plan_title' }, cards);
-    const note = el('p', {
-        cls: 'ib-plan-note',
-        text: 'Al enviar, autorizas el débito automático en Mercado Pago. Puedes cancelarlo cuando quieras.',
-    });
+    note.textContent = planNoteText(sub.plans, chosenPlan);
     const kids: HTMLElement[] = [title, list, note, err];
     if (BOOT.preview) kids.unshift(pvTag('Suscripción · los planes se eligen en Ajustes → Suscribir al enviar'));
     const box = el('div', { cls: 'ib-item ib-plan-pick', 'data-testid': 'form-plans' }, kids);
@@ -2533,7 +2551,7 @@ function planNode(sub: NonNullable<PublicFormMeta['subscription']>): HTMLElement
 /** v0.1.368 — El plan y el botón para autorizar (en la pantalla de gracias). */
 function subNodes(sub: SubResult): HTMLElement[] {
     const link = el('a', { cls: 'ib-btn ib-btn-primary ib-pay-btn', href: sub.url, rel: 'noopener', 'data-testid': 'form-sub-go', text: sub.button_label || 'Autorizar el débito automático' });
-    // Insertado en otro sitio, Mercado Pago se abre en una pestaña nueva.
+    // Insertado en otro sitio, Mercado Pago o PayPal se abre en una pestaña nueva.
     if (embedded) link.setAttribute('target', '_blank');
     return [
         el('p', { cls: 'ib-pay-total', 'data-testid': 'form-sub-amount' }, [
@@ -2549,7 +2567,7 @@ function goSubscribe(sub: SubResult): void {
     finalScreen(
         [
             el('div', { cls: 'ib-tick', text: '✓', 'aria-hidden': 'true' }),
-            el('h2', { text: 'Te llevamos a Mercado Pago…' }),
+            el('h2', { text: `Te llevamos a ${provName(sub.provider)}…` }),
             el('p', { cls: 'ib-done-msg', text: 'Recibimos tu respuesta. Autoriza el débito automático en la página que se abre.' }),
             ...subNodes(sub),
         ],
@@ -2559,41 +2577,44 @@ function goSubscribe(sub: SubResult): void {
 }
 
 /**
- * v0.1.368 — Al volver de Mercado Pago (`?suscripcion=<referencia>`): si quedó
- * activa. Mientras siga «por autorizar» se vuelve a preguntar un rato (el aviso
- * de Mercado Pago a veces llega unos segundos después que la persona).
+ * v0.1.368 — Al volver de Mercado Pago o PayPal (`?suscripcion=<referencia>`):
+ * si quedó activa. Mientras siga «por autorizar» se vuelve a preguntar un rato
+ * (el aviso del proveedor a veces llega unos segundos después que la persona).
  */
-function subscriptionReturn(ref: string, tries = 0): void {
+function subscriptionReturn(ref: string, tries = 0, cancelled = false): void {
     fetch(`${API}/subscription/${encodeURIComponent(ref)}`, { credentials: 'omit', cache: 'no-store' })
         .then((r) =>
             r.ok
-                ? (r.json() as Promise<{ state: string; plan: string; amount: number; currency: string; frequency: number; frequency_type: 'months' | 'days'; url: string | null }>)
+                ? (r.json() as Promise<{ state: string; plan: string; amount: number; currency: string; frequency: number; frequency_type: 'months' | 'days'; url: string | null; provider?: 'mercadopago' | 'paypal' }>)
                 : Promise.reject(new Error(String(r.status))),
         )
         .then((p) => {
             const price = planPrice(p);
+            const pn = provName(p.provider);
             const retry = (label: string): HTMLElement[] =>
                 p.url ? [el('a', { cls: 'ib-btn ib-btn-primary ib-pay-btn', href: p.url, rel: 'noopener', 'data-testid': 'form-sub-retry', text: label })] : [];
             const next = meta?.redirect_url && p.state === 'active' ? [el('a', { cls: 'ib-btn ib-btn-secondary', href: meta.redirect_url, text: 'Continuar' })] : [];
             const screens: Record<string, [string, string, string, HTMLElement[]]> = {
+                abandoned: ['!', 'No se completó la suscripción', `Volviste sin autorizar el pago en ${pn}. Tu respuesta quedó guardada: puedes intentarlo de nuevo cuando quieras.`, retry(`Volver a ${pn}`)],
                 active: ['✓', '¡Listo! Tu suscripción quedó activa', `Autorizaste el débito automático de ${price} («${p.plan}»). ¡Gracias!`, next],
                 pending:
                     tries < 30
-                        ? ['…', 'Estamos confirmando tu suscripción', 'Esto puede tardar unos segundos. No cierres esta página.', retry('Volver a Mercado Pago')]
+                        ? ['…', 'Estamos confirmando tu suscripción', 'Esto puede tardar unos segundos. No cierres esta página.', retry(`Volver a ${pn}`)]
                         : [
                               '…',
                               'Todavía no vemos la autorización',
-                              'Si ya autorizaste tu tarjeta, la confirmación puede tardar un poco más. Si no terminaste, puedes intentarlo de nuevo.',
+                              'Si ya autorizaste el pago, la confirmación puede tardar un poco más. Si no terminaste, puedes intentarlo de nuevo.',
                               retry('Autorizar el débito automático'),
                           ],
-                failed: ['!', 'Tu suscripción está activa, pero el cobro no pasó', `Mercado Pago no pudo cobrar ${price}. Lo volverá a intentar; revisa que tu tarjeta tenga fondos o escríbele a la empresa.`, []],
+                failed: ['!', 'Tu suscripción está activa, pero el cobro no pasó', `${pn} no pudo cobrar ${price}. Lo volverá a intentar; revisa tu medio de pago o escríbele a la empresa.`, []],
                 cancelled: ['!', 'Esta suscripción no está activa', 'Si crees que es un error, escríbele a la empresa.', []],
             };
-            const [mark, title, msg, extra] = screens[p.state] ?? screens.cancelled!;
+            const key = cancelled && p.state === 'pending' ? 'abandoned' : p.state;
+            const [mark, title, msg, extra] = screens[key] ?? screens.cancelled!;
             const r = root!;
             r.textContent = '';
             r.appendChild(
-                el('div', { cls: 'ib-done', 'data-testid': 'form-sub-status', 'data-state': p.state }, [
+                el('div', { cls: 'ib-done', 'data-testid': 'form-sub-status', 'data-state': key }, [
                     el('div', { cls: mark === '✓' ? 'ib-tick' : 'ib-tick ib-tick-error', text: mark, 'aria-hidden': 'true' }),
                     el('h2', { text: title }),
                     el('p', { cls: 'ib-done-msg', role: 'status', text: msg }),
@@ -2601,7 +2622,7 @@ function subscriptionReturn(ref: string, tries = 0): void {
                 ]),
             );
             reportHeight();
-            if (p.state === 'pending' && tries < 30) setTimeout(() => subscriptionReturn(ref, tries + 1), 4000);
+            if (key === 'pending' && tries < 30) setTimeout(() => subscriptionReturn(ref, tries + 1), 4000);
         })
         .catch(() => {
             const r = root!;
@@ -2927,15 +2948,17 @@ if (!BOOT.preview && meta && !meta.closed) {
         }
         paymentReturn(payRef);
     } else if (params.get('suscripcion') && !BOOT.preview) {
-        // v0.1.368 — vuelve de autorizar la tarjeta en Mercado Pago.
+        // v0.1.368 — vuelve de autorizar el pago en Mercado Pago (o PayPal, v0.1.373).
         const subRef = params.get('suscripcion')!;
-        for (const k of ['suscripcion', 'preapproval_id', 'status', 'external_reference']) params.delete(k);
+        // v0.1.373 — PayPal vuelve con `cancelado=1` si la persona se arrepintió.
+        const subCancelled = params.get('cancelado') === '1';
+        for (const k of ['suscripcion', 'cancelado', 'preapproval_id', 'status', 'external_reference', 'subscription_id', 'ba_token', 'token']) params.delete(k);
         try {
             history.replaceState(null, '', location.pathname + (params.toString() ? `?${params.toString()}` : '') + location.hash);
         } catch {
             // nada
         }
-        subscriptionReturn(subRef);
+        subscriptionReturn(subRef, 0, subCancelled);
     } else if (editLoading && pendingEdit) {
         // El código no queda en la barra (se copia o se comparte sin querer):
         // esta pestaña lo recuerda si se recarga.

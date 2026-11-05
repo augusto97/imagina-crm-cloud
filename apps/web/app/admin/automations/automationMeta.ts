@@ -94,13 +94,13 @@ export const TRIGGER_META: Record<string, StepMeta> = {
     payment_received: {
         icon: BadgeDollarSign,
         title: 'Se recibe un pago',
-        description: 'Dispara cuando un cliente paga un link de Mercado Pago o Wompi de un registro de esta lista.',
+        description: 'Dispara cuando un cliente paga un link de Mercado Pago, Wompi o PayPal de un registro de esta lista.',
     },
     // v0.1.367 — suscripciones de Mercado Pago (débito automático).
     subscription_event: {
         icon: Repeat,
         title: 'Cambia una suscripción',
-        description: 'Dispara cuando una suscripción de Mercado Pago de un registro se activa, cobra una cuota, tiene un cobro rechazado, entra en mora, vence, se pausa o se cancela.',
+        description: 'Dispara cuando una suscripción de Mercado Pago o PayPal de un registro se activa, cobra una cuota, tiene un cobro rechazado, entra en mora, vence, se pausa o se cancela.',
     },
     // v0.1.275 — formularios públicos (ADR-S39).
     form_submitted: {

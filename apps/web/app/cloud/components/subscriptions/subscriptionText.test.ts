@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SUBSCRIPTION_STATUS_OPTIONS } from '@imagina-base/shared';
 
+import { clientSubscriptionSentence } from '../../../admin/records/layout/PortalPaymentsBlock';
 import { cyclesText, frequencyText, proposeSubscriptionChoices, statusOption, statusSentence } from './subscriptionText';
 
 describe('textos de suscripciones', () => {
@@ -17,6 +18,18 @@ describe('textos de suscripciones', () => {
         expect(statusOption('past_due').color).toBe(SUBSCRIPTION_STATUS_OPTIONS.past_due.color);
         expect(statusSentence({ status: 'retrying', last_failure_reason: 'Fondos insuficientes', consecutive_failed: 1, cancel_reason: null })).toContain('Fondos insuficientes');
         expect(statusSentence({ status: 'expired', last_failure_reason: null, consecutive_failed: 3, cancel_reason: null })).toContain('suspender');
+    });
+
+    it('v0.1.373 — cada texto nombra a quien cobra (Mercado Pago o PayPal)', () => {
+        const pending = { status: 'pending' as const, last_failure_reason: null, consecutive_failed: 0, cancel_reason: null };
+        expect(statusSentence({ ...pending, provider: 'paypal' })).toMatch(/PayPal/);
+        expect(statusSentence({ ...pending, provider: 'mercadopago' })).not.toMatch(/PayPal/);
+        const forClient = { status: 'pending' as const, next_charge_at: null, paid_until: null };
+        expect(clientSubscriptionSentence({ ...forClient, provider: 'paypal' })).toMatch(/cuenta de PayPal/);
+        expect(clientSubscriptionSentence({ ...forClient, provider: 'mercadopago' })).toMatch(/Mercado Pago/);
+        expect(clientSubscriptionSentence({ ...forClient, status: 'retrying', provider: 'paypal' })).toMatch(/PayPal lo vuelve a intentar/);
+        // Un dato viejo sin proveedor se lee como Mercado Pago.
+        expect(clientSubscriptionSentence(forClient)).toMatch(/Mercado Pago/);
     });
 
     it('propone las columnas que ya hay y crea las básicas', () => {

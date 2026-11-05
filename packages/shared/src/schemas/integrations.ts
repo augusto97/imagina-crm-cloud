@@ -650,6 +650,57 @@ const SMS_INTEGRATIONS: IntegrationDef[] = [
     },
 ];
 
+/**
+ * v0.1.367 / v0.1.373 — Las acciones de suscripción de un proveedor de cobros
+ * (Mercado Pago o PayPal): las mismas claves, así el motor y el editor las
+ * tratan igual; sólo cambian los textos.
+ */
+function subscriptionActions(provider: 'Mercado Pago' | 'PayPal'): ConnectorAction[] {
+    const paypal = provider === 'PayPal';
+    return [
+        action({
+            key: 'create_subscription_link',
+            label: `Crear suscripción (${provider})`,
+            description: paypal
+                ? 'Un link para que el cliente apruebe la suscripción con su cuenta PayPal o tarjeta y se le cobre solo cada período. El estado, el próximo cobro y los cobros rechazados quedan en el registro.'
+                : 'Un link para que el cliente autorice su tarjeta y se le cobre solo cada período. El estado, el próximo cobro y los cobros rechazados quedan en el registro.',
+            params: [
+                { key: 'plan_id', label: 'Plan', required: true, help: `Los planes se crean en Integraciones → ${provider} → Cobros → Suscripciones.` },
+                {
+                    key: 'payer_email',
+                    label: 'Correo del cliente',
+                    required: true,
+                    help: `${provider} lo exige: la suscripción queda a nombre de ese correo. Ej.: {{correo}}.`,
+                },
+                { key: 'amount', label: 'Valor de cada cobro', type: 'number', help: 'Vacío = el del plan. Un número o una variable como {{valor_mensual}}.' },
+                { key: 'start_date', label: 'Primer cobro', help: 'Vacío = al autorizar. Una fecha (AAAA-MM-DD) o una variable como {{fecha_inicio}}.' },
+            ],
+        }),
+        action({
+            key: 'manage_subscription',
+            label: `Pausar, reanudar o cancelar la suscripción (${provider})`,
+            description: 'Cambia la suscripción del registro: pausarla, reanudarla, cancelarla o cambiar el valor de los próximos cobros.',
+            params: [
+                {
+                    key: 'operation',
+                    label: 'Qué hacer',
+                    type: 'select',
+                    required: true,
+                    default: 'pause',
+                    options: [
+                        { value: 'pause', label: 'Pausar los cobros' },
+                        { value: 'resume', label: 'Reanudar los cobros' },
+                        { value: 'cancel', label: 'Cancelar la suscripción' },
+                        { value: 'amount', label: 'Cambiar el valor' },
+                    ],
+                },
+                { key: 'amount', label: 'Valor nuevo', type: 'number', help: 'Sólo para «Cambiar el valor». Un número o una variable.' },
+                { key: 'reason', label: 'Motivo', help: 'Sólo para cancelar: queda en el historial de la suscripción.' },
+            ],
+        }),
+    ];
+}
+
 export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
         key: 'whatsapp',
@@ -1455,45 +1506,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
             }),
             // v0.1.367 (ADR-S96) — suscripciones: el plan se elige de los de la
             // conexión (el editor lo muestra como lista); el resto admite variables.
-            action({
-                key: 'create_subscription_link',
-                label: 'Crear suscripción (Mercado Pago)',
-                description:
-                    'Un link para que el cliente autorice su tarjeta y se le cobre solo cada período. El estado, el próximo cobro y los cobros rechazados quedan en el registro.',
-                params: [
-                    { key: 'plan_id', label: 'Plan', required: true, help: 'Los planes se crean en Integraciones → Mercado Pago → Cobros → Suscripciones.' },
-                    {
-                        key: 'payer_email',
-                        label: 'Correo del cliente',
-                        required: true,
-                        help: 'Mercado Pago lo exige: la suscripción queda a nombre de ese correo. Ej.: {{correo}}.',
-                    },
-                    { key: 'amount', label: 'Valor de cada cobro', type: 'number', help: 'Vacío = el del plan. Un número o una variable como {{valor_mensual}}.' },
-                    { key: 'start_date', label: 'Primer cobro', help: 'Vacío = al autorizar. Una fecha (AAAA-MM-DD) o una variable como {{fecha_inicio}}.' },
-                ],
-            }),
-            action({
-                key: 'manage_subscription',
-                label: 'Pausar, reanudar o cancelar la suscripción (Mercado Pago)',
-                description: 'Cambia la suscripción del registro: pausarla, reanudarla, cancelarla o cambiar el valor de los próximos cobros.',
-                params: [
-                    {
-                        key: 'operation',
-                        label: 'Qué hacer',
-                        type: 'select',
-                        required: true,
-                        default: 'pause',
-                        options: [
-                            { value: 'pause', label: 'Pausar los cobros' },
-                            { value: 'resume', label: 'Reanudar los cobros' },
-                            { value: 'cancel', label: 'Cancelar la suscripción' },
-                            { value: 'amount', label: 'Cambiar el valor' },
-                        ],
-                    },
-                    { key: 'amount', label: 'Valor nuevo', type: 'number', help: 'Sólo para «Cambiar el valor». Un número o una variable.' },
-                    { key: 'reason', label: 'Motivo', help: 'Sólo para cancelar: queda en el historial de la suscripción.' },
-                ],
-            }),
+            ...subscriptionActions('Mercado Pago'),
         ],
     },
     {
@@ -1615,6 +1628,8 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     { key: 'expires_days', label: 'Vence en (días)', type: 'number', help: 'Vacío = no vence.' },
                 ],
             }),
+            // v0.1.373 — suscripciones con PayPal: las mismas acciones que Mercado Pago.
+            ...subscriptionActions('PayPal'),
         ],
     },
     {
