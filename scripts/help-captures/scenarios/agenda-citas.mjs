@@ -51,11 +51,14 @@ export default [
             { click: '[data-booking-edit]', then: '[data-testid="booking-builder"]', caption: 'Abre la agenda con «Editar».' },
             { wait: 1800 },
             { click: '[data-testid="booking-tab-settings"]', then: '[data-testid="booking-settings-index"]', caption: 'Ve a «Ajustes».' },
-            { click: '[data-booking-section="publicar"]', then: '[data-testid="booking-publish-button"]', caption: 'Toca «Publicar y compartir».' },
+            { click: '[data-booking-section="publicar"]', then: '[data-testid="booking-publish-button"]', caption: 'Toca «Publicar».' },
             { wait: 600 },
             { click: '[data-testid="booking-publish-button"]', then: '[data-testid="booking-share-panel"]', caption: 'Toca el botón para publicar: si falta algo, la sección te dice qué.' },
             { wait: 1200 },
-            { shot: '[data-testid="booking-share-panel"]', caption: 'Copia el enlace para tu Instagram o WhatsApp, o el código para insertarla en tu sitio web.' },
+            { shot: '[data-testid="booking-share-panel"]', caption: 'Se abre «Compartir»: copia el enlace para tu Instagram o WhatsApp.' },
+            { click: '[data-testid="booking-share-tab-embed"]', then: '[data-testid="booking-embed-demo"]', caption: 'En «Insertar en tu sitio» eliges cómo va y al lado ves cómo queda, funcionando de verdad.' },
+            { wait: 1800 },
+            { shot: '[data-testid="booking-share-panel"]', caption: 'Copia el código y pégalo en tu sitio web.' },
             {
                 run: async (ctx) => {
                     const p = await bookingPage(ctx);

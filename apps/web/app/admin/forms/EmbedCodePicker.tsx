@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { AppWindow, CheckIcon, Copy, Maximize2, MousePointerClick, PanelRight, PanelTop, SquareMousePointer } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -7,12 +7,31 @@ import { Textarea } from '@/components/ui/textarea';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
+import { EmbedDemo } from './EmbedDemo';
 import { buttonInk, defaultEmbedLabel, embedCode, embedPopupAttribute, safeHex, type EmbedMode, type EmbedOpen, type EmbedTarget } from './embedCode';
 
-const MODES: Array<{ id: EmbedMode; label: string; hint: string; icon: typeof PanelTop }> = [
-    { id: 'inline', label: 'En la página', hint: 'Se ve dentro de tu página. Se carga cuando la persona baja hasta él.', icon: PanelTop },
-    { id: 'popup', label: 'Ventana al hacer clic', hint: 'Un botón abre una ventana. No se carga nada hasta que alguien lo toca: lo más liviano para un sitio con muchas visitas.', icon: MousePointerClick },
-    { id: 'float', label: 'Botón flotante', hint: 'Un botón fijo en una esquina de cada página donde pegues el código. También carga sólo al hacer clic.', icon: SquareMousePointer },
+const MODES: Array<{ id: EmbedMode; label: string; short: string; hint: string; icon: typeof PanelTop }> = [
+    {
+        id: 'inline',
+        label: 'En la página',
+        short: 'Metido en el contenido',
+        hint: 'Se ve dentro de tu página, como una parte más (por ejemplo, en «Contacto»). Se carga cuando la persona baja hasta él.',
+        icon: PanelTop,
+    },
+    {
+        id: 'popup',
+        label: 'Ventana al hacer clic',
+        short: 'Un botón lo abre',
+        hint: 'Pones un botón en tu página y, al tocarlo, se abre en una ventana, un panel o a pantalla completa. No se carga nada hasta que alguien lo toca: lo más liviano para un sitio con muchas visitas.',
+        icon: MousePointerClick,
+    },
+    {
+        id: 'float',
+        label: 'Botón flotante',
+        short: 'Fijo en una esquina',
+        hint: 'Un botón que queda fijo en una esquina de cada página donde pegues el código (como el de un chat). También carga sólo al hacer clic.',
+        icon: SquareMousePointer,
+    },
 ];
 
 /** v0.1.359 — cómo se abre la ventana del botón o del botón flotante. */
@@ -33,6 +52,8 @@ export function EmbedCodePicker({
     testId,
     dataTour,
     bare,
+    demo,
+    extra,
 }: {
     target: EmbedTarget;
     accent: string;
@@ -44,6 +65,13 @@ export function EmbedCodePicker({
      * cambio necesita «Guardar» para que tu sitio lo muestre.
      */
     bare?: { value: boolean; onChange: (bare: boolean) => void; unsaved: boolean };
+    /**
+     * v0.1.381 — La demostración en vivo (un sitio de ejemplo con el formulario
+     * o la agenda reales). Sin esto, sólo las opciones y el código.
+     */
+    demo?: { path: string; version: string; published: boolean; dirty: boolean; onPublish?: () => void; onSave?: () => void; busy?: boolean };
+    /** Lo que va debajo del código (p. ej. los sitios permitidos). */
+    extra?: ReactNode;
 }): JSX.Element {
     const [mode, setMode] = useState<EmbedMode>('inline');
     const [label, setLabel] = useState(defaultEmbedLabel(target.kind));
@@ -63,12 +91,11 @@ export function EmbedCodePicker({
     };
     const current = MODES.find((m) => m.id === mode)!;
 
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-tour={dataTour}>
-            <span className="imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">{__('Insertar en tu sitio')}</span>
-            <div role="radiogroup" aria-label={__('Cómo insertarlo')} className="imcrm-grid imcrm-gap-1.5 sm:imcrm-grid-cols-3">
+    const chooser = (
+        <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-2" data-tour={dataTour}>
+            <span className="imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">{__('Cómo va en tu sitio')}</span>
+            <div role="radiogroup" aria-label={__('Cómo insertarlo')} className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-1.5">
                 {MODES.map((m) => {
-                    const Icon = m.icon;
                     const on = m.id === mode;
                     return (
                         <button
@@ -79,12 +106,13 @@ export function EmbedCodePicker({
                             onClick={() => setMode(m.id)}
                             data-testid={`${testId}-mode-${m.id}`}
                             className={cn(
-                                'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-px-2.5 imcrm-py-2 imcrm-text-left imcrm-text-xs imcrm-transition-colors',
-                                on ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-text-foreground' : 'imcrm-border-border imcrm-bg-background hover:imcrm-bg-muted',
+                                'imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-items-stretch imcrm-gap-1.5 imcrm-rounded-lg imcrm-border imcrm-p-2 imcrm-text-left imcrm-text-xs imcrm-transition-colors',
+                                on ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-text-foreground imcrm-ring-1 imcrm-ring-primary' : 'imcrm-border-border imcrm-bg-background hover:imcrm-bg-muted',
                             )}
                         >
-                            <Icon className={cn('imcrm-h-4 imcrm-w-4 imcrm-shrink-0', on ? 'imcrm-text-primary' : 'imcrm-text-muted-foreground')} />
-                            <span className="imcrm-font-medium">{__(m.label)}</span>
+                            <ModeThumb mode={m.id} on={on} />
+                            <span className="imcrm-font-medium imcrm-leading-tight">{__(m.label)}</span>
+                            <span className="imcrm-hidden imcrm-truncate imcrm-text-[10.5px] imcrm-text-muted-foreground sm:imcrm-block">{__(m.short)}</span>
                         </button>
                     );
                 })}
@@ -198,6 +226,10 @@ export function EmbedCodePicker({
                     </span>
                 </div>
             )}
+        </div>
+    );
+    const codeBlock = (
+        <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-2">
             <div className="imcrm-flex imcrm-items-start imcrm-gap-1.5">
                 <Textarea
                     readOnly
@@ -238,6 +270,65 @@ export function EmbedCodePicker({
                     </div>
                 </div>
             )}
+            {extra}
         </div>
+    );
+    if (!demo)
+        return (
+            <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-2">
+                {chooser}
+                {codeBlock}
+            </div>
+        );
+    // En la computadora: lo que se elige y el código a la izquierda, la demostración a la derecha.
+    // En el celular: elegir → ver cómo queda → copiar el código (en ese orden).
+    return (
+        <div className="imcrm-grid imcrm-items-start imcrm-gap-x-5 imcrm-gap-y-4 lg:imcrm-grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:imcrm-grid-rows-[auto_1fr]">
+            <div className="imcrm-min-w-0 lg:imcrm-col-start-1 lg:imcrm-row-start-1">{chooser}</div>
+            <div className="imcrm-min-w-0 lg:imcrm-sticky lg:imcrm-top-0 lg:imcrm-col-start-2 lg:imcrm-row-span-2 lg:imcrm-row-start-1">
+                <EmbedDemo
+                    kind={target.kind}
+                    path={demo.path}
+                    version={demo.version}
+                    mode={mode}
+                    open={open}
+                    position={position}
+                    label={label}
+                    color={color}
+                    bare={!!bare?.value}
+                    published={demo.published}
+                    dirty={demo.dirty}
+                    onPublish={demo.onPublish}
+                    onSave={demo.onSave}
+                    busy={demo.busy}
+                    testId={testId}
+                />
+            </div>
+            <div className="imcrm-min-w-0 lg:imcrm-col-start-1 lg:imcrm-row-start-2">{codeBlock}</div>
+        </div>
+    );
+}
+
+/** v0.1.381 — Un dibujo chico de cada forma de insertar (la página y dónde queda). */
+function ModeThumb({ mode, on }: { mode: EmbedMode; on: boolean }): JSX.Element {
+    const accent = on ? 'hsl(var(--imcrm-primary))' : 'hsl(var(--imcrm-muted-foreground) / 0.55)';
+    const line = 'hsl(var(--imcrm-muted-foreground) / 0.22)';
+    return (
+        <span
+            aria-hidden="true"
+            className="imcrm-relative imcrm-block imcrm-h-12 imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-background"
+        >
+            <span className="imcrm-absolute imcrm-left-0 imcrm-right-0 imcrm-top-0 imcrm-h-2" style={{ background: line }} />
+            <span className="imcrm-absolute imcrm-left-2 imcrm-top-3.5 imcrm-h-1 imcrm-w-1/2 imcrm-rounded" style={{ background: line }} />
+            <span className="imcrm-absolute imcrm-left-2 imcrm-h-1 imcrm-w-1/3 imcrm-rounded" style={{ background: line, top: 22 }} />
+            {mode === 'inline' && <span className="imcrm-absolute imcrm-bottom-1.5 imcrm-left-2 imcrm-right-2 imcrm-h-4 imcrm-rounded-sm" style={{ border: `1.5px solid ${accent}`, background: on ? 'hsl(var(--imcrm-primary) / 0.12)' : 'transparent' }} />}
+            {mode === 'popup' && (
+                <>
+                    <span className="imcrm-absolute imcrm-bottom-2 imcrm-left-2 imcrm-h-2 imcrm-w-7 imcrm-rounded-full" style={{ background: accent }} />
+                    <span className="imcrm-absolute imcrm-right-2 imcrm-top-3 imcrm-h-6 imcrm-w-8 imcrm-rounded-sm imcrm-shadow-sm" style={{ border: `1.5px solid ${accent}`, background: 'hsl(var(--imcrm-card))' }} />
+                </>
+            )}
+            {mode === 'float' && <span className="imcrm-absolute imcrm-bottom-1.5 imcrm-right-2 imcrm-h-2.5 imcrm-w-9 imcrm-rounded-full imcrm-shadow-sm" style={{ background: accent }} />}
+        </span>
     );
 }

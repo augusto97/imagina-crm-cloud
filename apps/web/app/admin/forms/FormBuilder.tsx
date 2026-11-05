@@ -4,9 +4,6 @@ import { useQuery } from '@tanstack/react-query';
 import {
     ArrowLeft,
     MousePointerClick,
-    Check as CheckIcon,
-    Copy,
-    ExternalLink,
     Globe,
     Link2,
     Loader2,
@@ -103,10 +100,11 @@ import {
     readFormConfig,
     removeItem,
     updateItem,
+    updateSettings,
     type FormContentType,
 } from './formDesignOps';
-import { EmbedCodePicker } from './EmbedCodePicker';
-import { PublicQrCard } from './PublicQrCard';
+import { demoVersion } from './EmbedDemo';
+import { ShareDialog, type ShareTab } from './ShareDialog';
 import { formPublicOrigin, formPublicUrl, useCaptchaAvailability,
     useDataConsentAvailability, useUpdateForm } from './useForms';
 
@@ -185,6 +183,8 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
     // Con el modo «según el dispositivo», qué ver en la vista previa (arranca como la app).
     const [previewScheme, setPreviewScheme] = useState<'light' | 'dark'>(() => getThemeState().resolved);
     const [shareOpen, setShareOpen] = useState(false);
+    // v0.1.381 — «Compartir» es una ventana con pestañas.
+    const [shareTab, setShareTab] = useState<ShareTab>('link');
     // v0.1.358 — las estadísticas del formulario.
     const [statsOpen, setStatsOpen] = useState(false);
     // v0.1.356 — la pantalla final que se mira en la vista previa (null = el formulario; '' = la de siempre).
@@ -462,8 +462,15 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
         }
         if (await save({ enabled: next })) {
             toast.success(next ? __('Formulario publicado') : __('El formulario dejó de recibir respuestas'));
-            if (next) setShareOpen(true);
+            if (next) {
+                setShareTab('link');
+                setShareOpen(true);
+            }
         }
+    };
+    const openShare = (tab: ShareTab): void => {
+        setShareTab(tab);
+        setShareOpen(true);
     };
 
     const close = async (): Promise<void> => {
@@ -565,6 +572,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
         previewWelcome,
         onPreviewWelcome: setPreviewWelcome,
         onSelectElement: pick,
+        onOpenShare: openShare,
     };
     const openSettingsGroup = (g: SettingsGroupId): void => {
         setSelected(null);
@@ -807,7 +815,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                     >
                         <BarChart3 className="imcrm-h-4 imcrm-w-4" />
                     </Button>
-                    <Button variant="outline" size="sm" className="imcrm-gap-1.5" onClick={() => setShareOpen((o) => !o)} data-testid="form-share">
+                    <Button variant="outline" size="sm" className="imcrm-gap-1.5" onClick={() => openShare(shareTab)} data-testid="form-share">
                         <Link2 className="imcrm-h-3.5 imcrm-w-3.5" />
                         <span className="imcrm-hidden sm:imcrm-inline">{__('Compartir')}</span>
                     </Button>
@@ -817,20 +825,34 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                 </div>
             </header>
             {statsOpen && <FormStatsSheet open onOpenChange={setStatsOpen} listId={listId} form={form} fields={fields} />}
-            {shareOpen && (
-                <SharePanel
-                    form={form}
-                    enabled={enabled}
-                    accent={resolvedAccent(config.settings, brandColor)}
-                    bare={{
-                        value: theme.layout.embed_style === 'bare',
-                        onChange: (v) => change(patchThemeSection(config, 'layout', { embed_style: v ? 'bare' : 'card' })),
-                        unsaved: dirty,
-                    }}
-                    onClose={() => setShareOpen(false)}
-                    onPublish={() => void togglePublish()}
-                />
-            )}
+            <ShareDialog
+                open={shareOpen}
+                onOpenChange={setShareOpen}
+                kind="form"
+                name={config.settings.title.trim() || draft.name || form.name}
+                url={formPublicUrl(form)}
+                origin={formPublicOrigin(form)}
+                path={form.public_path}
+                version={demoVersion([saved, enabled])}
+                published={enabled}
+                onPublish={() => void togglePublish()}
+                publishBusy={update.isPending}
+                accent={resolvedAccent(config.settings, brandColor)}
+                bare={{
+                    value: theme.layout.embed_style === 'bare',
+                    onChange: (v) => change(patchThemeSection(config, 'layout', { embed_style: v ? 'bare' : 'card' })),
+                    unsaved: dirty,
+                }}
+                domains={{
+                    value: config.settings.allowed_domains,
+                    onChange: (v) => change(updateSettings(config, { allowed_domains: v })),
+                    unsaved: config.settings.allowed_domains.join('\n') !== saved.config.settings.allowed_domains.join('\n'),
+                }}
+                dirty={dirty}
+                onSave={() => void save().then((ok) => ok && toast.success(__('Formulario guardado')))}
+                tab={shareTab}
+                onTab={setShareTab}
+            />
 
             {narrow ? (
                 <>
@@ -934,89 +956,6 @@ function PublishSwitch({ enabled, busy, onClick }: { enabled: boolean; busy: boo
             </span>
             {enabled ? __('Publicado') : __('Sin publicar')}
         </button>
-    );
-}
-
-function CopyRow({ label, value, testId }: { label: string; value: string; testId?: string }): JSX.Element {
-    const [copied, setCopied] = useState(false);
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-            <span className="imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">{label}</span>
-            <div className="imcrm-flex imcrm-gap-1.5">
-                <Input readOnly value={value} className="imcrm-h-8 imcrm-font-mono imcrm-text-[11px]" onFocus={(e) => e.currentTarget.select()} data-testid={testId} />
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="imcrm-shrink-0 imcrm-gap-1"
-                    onClick={() =>
-                        void navigator.clipboard.writeText(value).then(() => {
-                            setCopied(true);
-                            window.setTimeout(() => setCopied(false), 1500);
-                        })
-                    }
-                >
-                    {copied ? <CheckIcon className="imcrm-h-3.5 imcrm-w-3.5" /> : <Copy className="imcrm-h-3.5 imcrm-w-3.5" />}
-                    {copied ? __('Copiado') : __('Copiar')}
-                </Button>
-            </div>
-        </div>
-    );
-}
-
-function SharePanel({
-    form,
-    enabled,
-    accent,
-    bare,
-    onClose,
-    onPublish,
-}: {
-    form: FormDto;
-    enabled: boolean;
-    accent: string;
-    bare: { value: boolean; onChange: (bare: boolean) => void; unsaved: boolean };
-    onClose: () => void;
-    onPublish: () => void;
-}): JSX.Element {
-    return (
-        <div className="imcrm-flex imcrm-max-h-[65dvh] imcrm-shrink-0 imcrm-flex-col imcrm-gap-3 imcrm-overflow-y-auto imcrm-border-b imcrm-border-border imcrm-bg-muted/40 imcrm-px-4 imcrm-py-3" data-testid="form-share-panel">
-            <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2">
-                <div>
-                    <p className="imcrm-text-sm imcrm-font-medium">{__('Compartir el formulario')}</p>
-                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {enabled
-                            ? __('Cualquiera con el enlace puede responder. Cada respuesta crea un registro en la lista.')
-                            : __('Todavía no está publicado: el enlace responde «no disponible» hasta que lo publiques.')}
-                    </p>
-                </div>
-                <Button variant="ghost" size="icon" aria-label={__('Cerrar')} onClick={onClose}>
-                    <X className="imcrm-h-4 imcrm-w-4" />
-                </Button>
-            </div>
-            {!enabled && (
-                <Button size="sm" className="imcrm-self-start" onClick={onPublish}>
-                    {__('Publicar ahora')}
-                </Button>
-            )}
-            <CopyRow label={__('Enlace')} value={formPublicUrl(form)} testId="form-link" />
-            <EmbedCodePicker
-                target={{ url: formPublicUrl(form), origin: formPublicOrigin(form), title: form.config.settings.title.trim() || form.name, kind: 'form' }}
-                accent={accent}
-                testId="form-embed"
-                dataTour="form-embed-mode"
-                bare={bare}
-            />
-            <PublicQrCard url={formPublicUrl(form)} name={form.config.settings.title.trim() || form.name} kind="form" />
-            <a
-                href={formPublicUrl(form)}
-                target="_blank"
-                rel="noreferrer"
-                className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-self-start imcrm-text-xs imcrm-text-primary hover:imcrm-underline"
-            >
-                <ExternalLink className="imcrm-h-3 imcrm-w-3" />
-                {__('Abrir en otra pestaña')}
-            </a>
-        </div>
     );
 }
 

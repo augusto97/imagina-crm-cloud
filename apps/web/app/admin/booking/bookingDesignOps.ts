@@ -379,6 +379,7 @@ export function buildPreviewMeta(config: BookingConfig, ctx: PreviewContext): Pu
         accent_color: resolvedAccent(s, ctx.accent),
         logo_url: s.show_logo ? ctx.logoUrl : null,
         company: ctx.company,
+        show_logo: s.show_logo,
         time_zone: ctx.timeZone,
         time_zone_label: timeZoneLabel(ctx.timeZone),
         number_format: ctx.numberFormat,

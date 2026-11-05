@@ -64,6 +64,15 @@ try {
 }
 /** v0.1.369 — Abierto en la ventana o el panel de embed.js: ahí «Sin marco» no aplica. */
 const inPopup = embedded && window.name === 'imagina-popup';
+/**
+ * v0.1.381 — La demostración de «Compartir» (dentro de la app): el formulario
+ * se ve y se usa como de verdad, pero nada se envía, no cuenta en las
+ * estadísticas ni manda correos. `imb_style` deja probar «Sin marco» antes de
+ * guardar. Agregar el parámetro a mano sólo le quita cosas a la página.
+ */
+const DEMO_PARAMS = new URLSearchParams(location.search);
+const DEMO = DEMO_PARAMS.get('imb_demo') === '1';
+const DEMO_STYLE = DEMO ? DEMO_PARAMS.get('imb_style') : null;
 
 const CONSENT = '__consent';
 /** v0.1.368 — el error de «elige un plan» (no es una pregunta). */
@@ -83,7 +92,7 @@ let hostAttribution: AttributionData | null = null;
 let hostOrigin: string | null = null;
 const conversionAcks = new Set<string>();
 const contextWaiters: Array<() => void> = [];
-if (embedded && !BOOT.preview) {
+if (embedded && !BOOT.preview && !DEMO) {
     window.addEventListener('message', (e: MessageEvent) => {
         if (e.source !== parent) return;
         const d = e.data as { type?: string; attribution?: unknown; ref?: string } | null;
@@ -237,7 +246,7 @@ function readyStamp(): Promise<string> {
 }
 
 function kickStamp(): void {
-    if (BOOT.preview) return;
+    if (BOOT.preview || DEMO) return;
     void ensureStamp().catch(() => undefined);
 }
 
@@ -283,7 +292,7 @@ function flushStats(beacon = false): void {
 }
 
 function stat(e: FormStatEvent): void {
-    if (BOOT.preview) return;
+    if (BOOT.preview || DEMO) return;
     statQueue.push(e);
     if (statQueue.length >= 12) flushStats();
     else if (statTimer === null) statTimer = window.setTimeout(() => flushStats(), 1500);
@@ -359,7 +368,7 @@ function editMode(): boolean {
 
 /** El código del enlace: de la dirección o, si recargó la página, de esta pestaña. */
 function initialEditCode(): string | null {
-    if (BOOT.preview) return null;
+    if (BOOT.preview || DEMO) return null;
     const p = new URLSearchParams(location.search).get('editar');
     if (p && FORM_EDIT_CODE_RE.test(p)) return p;
     try {
@@ -386,7 +395,7 @@ function draftValues(): Record<string, unknown> {
 }
 
 function persistLocal(): void {
-    if (BOOT.preview || editMode() || !meta?.save_progress?.device || submittedOk || resumeOffer) return;
+    if (BOOT.preview || DEMO || editMode() || !meta?.save_progress?.device || submittedOk || resumeOffer) return;
     if (saveTimer !== null) clearTimeout(saveTimer);
     saveTimer = window.setTimeout(() => {
         saveTimer = null;
@@ -840,7 +849,7 @@ function captchaApi(): CaptchaApi | null {
     return (p === 'turnstile' ? w.turnstile : p === 'hcaptcha' ? w.hcaptcha : w.grecaptcha) ?? null;
 }
 function mountCaptcha(): void {
-    if (!meta?.captcha || BOOT.preview || captchaMounted || !captchaBox) return;
+    if (!meta?.captcha || BOOT.preview || DEMO || captchaMounted || !captchaBox) return;
     captchaMounted = true;
     const c = meta.captcha;
     const box = captchaBox;
@@ -2084,7 +2093,8 @@ function applyBodyClasses(): void {
     // Insertado de verdad, o la vista previa «En tu sitio» del constructor.
     const asEmbed = (embedded && !BOOT.preview) || (BOOT.preview && previewEmbed);
     if (asEmbed) cls.push('ib-embedded');
-    if (asEmbed && v?.embed_bare && !inPopup) cls.push('ib-embed-bare');
+    const bare = DEMO_STYLE === 'bare' ? true : DEMO_STYLE === 'card' ? false : !!v?.embed_bare;
+    if (asEmbed && bare && !inPopup) cls.push('ib-embed-bare');
     else if (asEmbed && v?.embed_background) cls.push('ib-embed-bg');
     document.body.className = cls.join(' ');
 }
@@ -2360,6 +2370,11 @@ function submit(hpValue: string): void {
         if (firstBad && paged()) goToPage(pageOfItem(firstBad.id), false);
         focusFirstError();
         return;
+    }
+    // v0.1.381 — En la demostración se ve la pantalla de gracias, sin enviar nada.
+    if (DEMO) {
+        submittedOk = true;
+        return done(null);
     }
     if (m.captcha && !editing() && !captchaToken) {
         alertBox!.textContent = 'Completa la verificación para enviar.';
@@ -3031,7 +3046,7 @@ function saveLater(honeypot: () => string): { btn: HTMLButtonElement; box: HTMLE
         reportHeight();
     };
     btn.addEventListener('click', () => {
-        if (BOOT.preview) return;
+        if (BOOT.preview || DEMO) return;
         box.hidden = !box.hidden;
         btn.setAttribute('aria-expanded', box.hidden ? 'false' : 'true');
         if (!box.hidden) {
@@ -3270,7 +3285,7 @@ if (!BOOT.preview && meta && !meta.closed) {
                 noteText = 'Ese enlace para seguir venció o ya se usó. Puedes empezar de nuevo aquí.';
                 render(false);
             });
-    } else if (meta.save_progress?.device) {
+    } else if (meta.save_progress?.device && !DEMO) {
         const local = readLocal();
         if (local) {
             resumeOffer = { v: local.v, p: local.p };

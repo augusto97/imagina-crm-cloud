@@ -356,7 +356,7 @@ function AddCatalog(p: Props & { onBack: () => void }): JSX.Element {
                 )}
                 <p className="imcrm-mt-1 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                     {__('Las personas del equipo, las relaciones y los campos calculados no se preguntan en un formulario público.')}
-                    {attributionColumnIds(p.config).size > 0 && ' ' + __('Las columnas de dónde vino cada registro se llenan solas (Ajustes → Insertar y medir).')}
+                    {attributionColumnIds(p.config).size > 0 && ' ' + __('Las columnas de dónde vino cada registro se llenan solas (Ajustes → Medir conversiones).')}
                 </p>
             </div>
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">

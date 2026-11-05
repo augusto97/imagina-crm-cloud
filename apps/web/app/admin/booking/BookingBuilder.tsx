@@ -9,8 +9,8 @@ import {
     ArrowUp,
     CalendarClock,
     CalendarDays,
-    Check as CheckIcon,
-    Copy,
+    ChevronRight,
+    Code2,
     ExternalLink,
     Link2,
     ListChecks,
@@ -20,8 +20,8 @@ import {
     Moon,
     Palette,
     Plus,
+    QrCode,
     Redo2,
-    RefreshCw,
     Send,
     ShieldCheck,
     Smartphone,
@@ -120,8 +120,8 @@ import {
 } from './bookingDesignOps';
 import { CalendarSyncEditor, StaffCalendarPanel } from './BookingCalendarParts';
 import { HolidayPanel, IconBtn, intervalLabel, NOTICE_OPTIONS, ServiceCard, StaffProfile, TimeOffEditor, WeekHoursEditor } from './BookingRulesParts';
-import { EmbedCodePicker } from '../forms/EmbedCodePicker';
-import { PublicQrCard } from '../forms/PublicQrCard';
+import { demoVersion } from '../forms/EmbedDemo';
+import { ShareDialog, type ShareTab } from '../forms/ShareDialog';
 import {
     bookingPublicOrigin,
     bookingPublicUrl,
@@ -197,6 +197,8 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
     const [mobileTab, setMobileTab] = useState<'content' | 'preview' | 'design' | 'settings' | 'edit'>('preview');
     const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
     const [shareOpen, setShareOpen] = useState(false);
+    // v0.1.381 — «Compartir» es una ventana con pestañas (el único lugar para compartir).
+    const [shareTab, setShareTab] = useState<ShareTab>('link');
     // v0.1.354 — con el modo «según el dispositivo», qué ver en la vista previa (arranca como la app).
     const [previewScheme, setPreviewScheme] = useState<'light' | 'dark'>(() => getThemeState().resolved);
     // El CSS propio del diseño lo escribe sólo un administrador (el rol, no la capacidad).
@@ -426,8 +428,15 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
         }
         if (await save({ enabled: next })) {
             toast.success(next ? __('Agenda publicada') : __('La agenda dejó de recibir reservas'));
-            if (next) setShareOpen(true);
+            if (next) {
+                setShareTab('link');
+                setShareOpen(true);
+            }
         }
+    };
+    const openShare = (tab: ShareTab): void => {
+        setShareTab(tab);
+        setShareOpen(true);
     };
 
     const regenerate = async (): Promise<void> => {
@@ -472,6 +481,7 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
         narrow,
         pageName: draft.name,
         onOpenGroup: openGroup,
+        onOpenShare: openShare,
     };
     const withProblems = new Set<BookingElementId>([
         ...((problems.servicios?.length ?? 0) > 0 ? (['@services'] as const) : []),
@@ -651,7 +661,7 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
                         <Redo2 className="imcrm-h-4 imcrm-w-4" />
                     </Button>
                     <ThemeToggle />
-                    <Button variant="outline" size="sm" className="imcrm-gap-1.5" onClick={() => setShareOpen((o) => !o)} data-testid="booking-share">
+                    <Button variant="outline" size="sm" className="imcrm-gap-1.5" onClick={() => openShare(shareTab)} data-testid="booking-share">
                         <Link2 className="imcrm-h-3.5 imcrm-w-3.5" />
                         <span className="imcrm-hidden sm:imcrm-inline">{__('Compartir')}</span>
                     </Button>
@@ -665,14 +675,44 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
                     </Button>
                 </div>
             </header>
-            {shareOpen && (
-                <SharePanel
-                    page={current}
-                    accent={resolvedAccent(current.config.settings, brandColor, BOOKING_CLASSIC_THEME)}
-                    onClose={() => setShareOpen(false)}
-                    onPublish={() => void togglePublish()}
-                />
-            )}
+            <ShareDialog
+                open={shareOpen}
+                onOpenChange={setShareOpen}
+                kind="booking"
+                name={config.settings.title.trim() || draft.name || page.name}
+                url={bookingPublicUrl(current)}
+                origin={bookingPublicOrigin(current)}
+                path={current.public_path}
+                version={demoVersion([current.updated_at, current.enabled, current.public_path])}
+                published={current.enabled}
+                onPublish={() => {
+                    // Con algo pendiente, la ventana se cierra para mostrar dónde se arregla.
+                    if (!current.enabled && problemCount > 0) setShareOpen(false);
+                    void togglePublish();
+                }}
+                publishBusy={update.isPending}
+                publishProblems={Object.values(problems)
+                    .flat()
+                    .map((m) => __(m))}
+                accent={resolvedAccent(config.settings, brandColor, BOOKING_CLASSIC_THEME)}
+                bare={{
+                    value: effectiveTheme(config.settings, BOOKING_CLASSIC_THEME).layout.embed_style === 'bare',
+                    onChange: (v) => change(patchThemeSection(config, 'layout', { embed_style: v ? 'bare' : 'card' }, BOOKING_CLASSIC_THEME)),
+                    unsaved:
+                        effectiveTheme(config.settings, BOOKING_CLASSIC_THEME).layout.embed_style !==
+                        effectiveTheme(current.config.settings, BOOKING_CLASSIC_THEME).layout.embed_style,
+                }}
+                domains={{
+                    value: config.settings.allowed_domains,
+                    onChange: (v) => change({ ...config, settings: { ...config.settings, allowed_domains: v } }),
+                    unsaved: config.settings.allowed_domains.join('\n') !== current.config.settings.allowed_domains.join('\n'),
+                }}
+                dirty={dirty}
+                onSave={() => void save().then((ok) => ok && toast.success(__('Agenda guardada')))}
+                onRegenerate={() => void regenerate()}
+                tab={shareTab}
+                onTab={setShareTab}
+            />
 
             {narrow ? (
                 <>
@@ -1105,69 +1145,6 @@ function PublishSwitch({ enabled, busy, onClick }: { enabled: boolean; busy: boo
     );
 }
 
-function CopyRow({ label, value, testId }: { label: string; value: string; testId?: string }): JSX.Element {
-    const [copied, setCopied] = useState(false);
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-            <span className="imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">{label}</span>
-            <div className="imcrm-flex imcrm-gap-1.5">
-                <Input readOnly value={value} className="imcrm-h-8 imcrm-font-mono imcrm-text-[11px]" onFocus={(e) => e.currentTarget.select()} data-testid={testId} />
-                <Button
-                    variant="outline"
-                    size="sm"
-                    className="imcrm-shrink-0 imcrm-gap-1"
-                    onClick={() =>
-                        void navigator.clipboard.writeText(value).then(() => {
-                            setCopied(true);
-                            window.setTimeout(() => setCopied(false), 1500);
-                        })
-                    }
-                >
-                    {copied ? <CheckIcon className="imcrm-h-3.5 imcrm-w-3.5" /> : <Copy className="imcrm-h-3.5 imcrm-w-3.5" />}
-                    {copied ? __('Copiado') : __('Copiar')}
-                </Button>
-            </div>
-        </div>
-    );
-}
-
-function SharePanel({ page, accent, onClose, onPublish }: { page: BookingPageDto; accent: string; onClose: () => void; onPublish: () => void }): JSX.Element {
-    return (
-        <div className="imcrm-flex imcrm-max-h-[65dvh] imcrm-shrink-0 imcrm-flex-col imcrm-gap-3 imcrm-overflow-y-auto imcrm-border-b imcrm-border-border imcrm-bg-muted/40 imcrm-px-4 imcrm-py-3" data-testid="booking-share-panel">
-            <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2">
-                <div>
-                    <p className="imcrm-text-sm imcrm-font-medium">{__('Compartir la agenda')}</p>
-                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {page.enabled
-                            ? __('Cualquiera con el enlace puede agendar. Cada cita crea un registro en la lista.')
-                            : __('Todavía no está publicada: el enlace responde «no disponible» hasta que la publiques.')}
-                    </p>
-                </div>
-                <Button variant="ghost" size="icon" aria-label={__('Cerrar')} onClick={onClose}>
-                    <X className="imcrm-h-4 imcrm-w-4" />
-                </Button>
-            </div>
-            {!page.enabled && (
-                <Button size="sm" className="imcrm-self-start" onClick={onPublish}>
-                    {__('Publicar ahora')}
-                </Button>
-            )}
-            <CopyRow label={__('Enlace')} value={bookingPublicUrl(page)} testId="booking-link" />
-            <EmbedCodePicker
-                target={{ url: bookingPublicUrl(page), origin: bookingPublicOrigin(page), title: page.config.settings.title.trim() || page.name, kind: 'booking' }}
-                accent={accent}
-                testId="booking-embed"
-                dataTour="booking-embed-mode"
-            />
-            <PublicQrCard url={bookingPublicUrl(page)} name={page.config.settings.title.trim() || page.name} kind="booking" />
-            <a href={bookingPublicUrl(page)} target="_blank" rel="noreferrer" className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-self-start imcrm-text-xs imcrm-text-primary hover:imcrm-underline">
-                <ExternalLink className="imcrm-h-3 imcrm-w-3" />
-                {__('Abrir en otra pestaña')}
-            </a>
-        </div>
-    );
-}
-
 // ─────────────────────────── Secciones ───────────────────────────
 
 interface SectionEditorProps {
@@ -1190,6 +1167,8 @@ interface SectionEditorProps {
     pageName: string;
     /** v0.1.378 — Abre un grupo de «Ajustes» (el horario, las reglas, la página de gracias…). */
     onOpenGroup: (g: BookingSettingsGroup) => void;
+    /** v0.1.381 — abre «Compartir» (enlace, insertar en tu sitio, QR) en una pestaña. */
+    onOpenShare: (tab: ShareTab) => void;
 }
 
 
@@ -2016,10 +1995,15 @@ function SmsRemindersEditor({ config, onChange }: Pick<SectionEditorProps, 'conf
     );
 }
 
-function PublishEditor({ config, onChange, page, problems, onPublish, onRegenerate, busy }: SectionEditorProps): JSX.Element {
+function PublishEditor({ config, onChange, page, problems, onPublish, busy, onOpenShare }: SectionEditorProps): JSX.Element {
     const s = config.settings;
     const setS = (patch: Partial<BookingConfig['settings']>): void => onChange({ ...config, settings: { ...s, ...patch } });
     const all = Object.values(problems).flat();
+    const shares: Array<{ tab: ShareTab; label: string; icon: typeof Link2 }> = [
+        { tab: 'link', label: __('El enlace'), icon: Link2 },
+        { tab: 'embed', label: __('Insertarla en tu sitio'), icon: Code2 },
+        { tab: 'qr', label: __('El código QR'), icon: QrCode },
+    ];
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3 imcrm-text-center" data-testid="booking-counts">
@@ -2044,24 +2028,26 @@ function PublishEditor({ config, onChange, page, problems, onPublish, onRegenera
                     {page.enabled ? __('Dejar de recibir reservas') : __('Publicar la agenda')}
                 </Button>
             )}
-            <CopyRow label={__('Enlace')} value={bookingPublicUrl(page)} testId="booking-link-inline" />
-            <EmbedCodePicker
-                target={{ url: bookingPublicUrl(page), origin: bookingPublicOrigin(page), title: s.title.trim() || page.name, kind: 'booking' }}
-                accent={resolvedAccent(s, '#0e7490', BOOKING_CLASSIC_THEME)}
-                testId="booking-embed-inline"
-                bare={{
-                    value: effectiveTheme(s, BOOKING_CLASSIC_THEME).layout.embed_style === 'bare',
-                    onChange: (v) => onChange(patchThemeSection(config, 'layout', { embed_style: v ? 'bare' : 'card' }, BOOKING_CLASSIC_THEME)),
-                    unsaved:
-                        effectiveTheme(s, BOOKING_CLASSIC_THEME).layout.embed_style !==
-                        effectiveTheme(page.config.settings, BOOKING_CLASSIC_THEME).layout.embed_style,
-                }}
-            />
-            <PublicQrCard url={bookingPublicUrl(page)} name={s.title.trim() || page.name} kind="booking" />
-            <Button variant="ghost" size="sm" className="imcrm-gap-1.5 imcrm-self-start" onClick={onRegenerate} disabled={busy} data-testid="booking-regenerate">
-                <RefreshCw className="imcrm-h-3.5 imcrm-w-3.5" />
-                {__('Cambiar la dirección')}
-            </Button>
+            <Section title={__('Compartir')}>
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Todo para compartirla está en una sola ventana, también con el botón «Compartir» de arriba.')}
+                </p>
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-testid="booking-publish-share">
+                    {shares.map(({ tab, label, icon: Icon }) => (
+                        <button
+                            key={tab}
+                            type="button"
+                            onClick={() => onOpenShare(tab)}
+                            className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-sm hover:imcrm-bg-accent"
+                            data-testid={`booking-publish-share-${tab}`}
+                        >
+                            <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" />
+                            <span className="imcrm-flex-1">{label}</span>
+                            <ChevronRight className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                        </button>
+                    ))}
+                </div>
+            </Section>
             <Section title={__('Cuando no recibe reservas')}>
                 <Field label={__('Mensaje que ve el cliente')} hint={__('Cuando la agenda está apagada o la empresa no puede recibir citas.')}>
                     <Textarea rows={2} value={s.closed_message} onChange={(e) => setS({ closed_message: e.target.value })} data-testid="booking-closed-message" />
@@ -2070,53 +2056,7 @@ function PublishEditor({ config, onChange, page, problems, onPublish, onRegenera
                     {__('El título, la descripción y dónde es la cita se cambian tocándolos en la vista previa (o en «Contenido»).')}
                 </p>
             </Section>
-            <Section title={__('Dónde se puede insertar')}>
-                <Field label={__('Sitios permitidos (uno por línea)')} hint={__('Vacío = cualquier sitio. Ej.: miempresa.com o *.miempresa.com')}>
-                    <DomainsField value={s.allowed_domains} onChange={(v) => setS({ allowed_domains: v })} />
-                </Field>
-                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="embed-test-hint">
-                    {__('Para probarla, pégala en una página real de tu sitio. Las páginas para probar HTML en línea muestran tu código dentro de un marco protegido y ahí ningún navegador deja cargar una agenda de otro sitio.')}
-                </p>
-            </Section>
         </div>
-    );
-}
-
-function parseDomains(text: string): string[] {
-    return text
-        .split('\n')
-        .map((x) => x.trim())
-        .filter(Boolean)
-        .slice(0, 50);
-}
-
-/**
- * Un sitio por línea. El texto se guarda aparte del valor: si se derivara del
- * valor ya limpio, el Enter para escribir el segundo sitio se borraría al
- * instante (la línea vacía no es un sitio).
- */
-function DomainsField({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }): JSX.Element {
-    const joined = value.join('\n');
-    const [text, setText] = useState(joined);
-    const [seen, setSeen] = useState(joined);
-    if (joined !== seen) {
-        // Cambió desde afuera (deshacer, guardar): se adopta salvo que sea lo mismo que ya se escribe.
-        setSeen(joined);
-        if (parseDomains(text).join('\n') !== joined) setText(joined);
-    }
-    return (
-        <Textarea
-            rows={3}
-            value={text}
-            onChange={(e) => {
-                setText(e.target.value);
-                const next = parseDomains(e.target.value);
-                setSeen(next.join('\n'));
-                onChange(next);
-            }}
-            placeholder={'miempresa.com\n*.miempresa.com'}
-            data-testid="booking-domains"
-        />
     );
 }
 

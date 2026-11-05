@@ -206,7 +206,7 @@ export const BOOKING_SETTINGS_GROUP_INFO: Record<BookingSettingsGroup, { title: 
     emails: { title: 'Correos y recordatorios', hint: 'La confirmación, los recordatorios y los avisos al cliente.', section: 'correos' },
     record: { title: 'Dónde se guarda la cita', hint: 'En qué campo de la lista queda cada dato y los valores del estado.', section: 'campos' },
     measure: { title: 'Medir conversiones', hint: 'Google Ads, Meta, la página de gracias y de dónde vino cada cita.', section: 'medir' },
-    publish: { title: 'Publicar y compartir', hint: 'El enlace, insertarla en tu sitio, el código QR y dónde se puede insertar.', section: 'publicar' },
+    publish: { title: 'Publicar', hint: 'Publicarla o apagarla, lo que falta y el mensaje cuando no recibe reservas.', section: 'publicar' },
 };
 
 /**

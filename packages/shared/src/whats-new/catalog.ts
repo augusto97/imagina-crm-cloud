@@ -1877,4 +1877,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver cómo funciona', href: '/aprende/cobros/cobros-suscripciones' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.381-compartir-con-demostracion',
+        version: '0.1.381',
+        date: '2026-11-05',
+        kind: 'improvement',
+        title: 'Compartir un formulario o la agenda, en una ventana y con una demostración en vivo',
+        summary:
+            '«Compartir» se abre en una ventana con el enlace, insertar en tu sitio y el código QR. Al insertar ves una página de ejemplo con tu formulario o tu agenda funcionando de verdad: en la página, en una ventana o con un botón flotante.',
+        media: {
+            slides: [
+                {
+                    title: 'Todo en una ventana',
+                    text: 'El enlace (con WhatsApp y correo a un clic), el código para tu sitio y el código QR, cada uno en su pestaña. Ya no empuja el constructor hacia abajo.',
+                    illustration: 'form-embed',
+                },
+                {
+                    title: 'Mira cómo queda antes de pegarlo',
+                    text: 'Elige cómo va en tu sitio y la demostración cambia al instante. Toca su botón para abrir la ventana, el panel lateral o la pantalla completa. Ahí no se guarda ni se agenda nada.',
+                    illustration: 'form-embed-side',
+                },
+                {
+                    title: 'Un solo lugar',
+                    text: 'Los sitios que pueden insertarlo están junto al código. En la agenda, «Ajustes → Publicar» queda para publicarla y lo de compartir vive en «Compartir».',
+                    illustration: 'embed-popup',
+                },
+            ],
+        },
+        body: 'Abre un formulario o una agenda y toca **Compartir** arriba a la derecha (al publicar se abre sola). En **Insertar en tu sitio** elige la forma, mírala funcionando en la demostración y toca **Copiar**. De paso: al ocultar el logo ya no aparece el nombre de la empresa en su lugar.',
+        action: { label: 'Ver cómo se usa', href: '/aprende/formularios/formularios-publicar' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

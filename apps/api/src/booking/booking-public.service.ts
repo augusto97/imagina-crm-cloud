@@ -520,6 +520,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             accent_color: b.accent,
             logo_url: s.show_logo && b.logoFileId !== null ? this.files.signedUrl(p.tenantId, b.logoFileId, 3600) : null,
             company: b.company,
+            show_logo: s.show_logo,
             time_zone: p.timeZone,
             time_zone_label: timeZoneLabel(p.timeZone),
             number_format: p.format.number_format,

@@ -256,5 +256,5 @@ export const SETTINGS_GROUP_INFO: Record<SettingsGroupId, { title: string; hint:
     charge: { title: 'Cobrar o suscribir', hint: 'Que paguen o se suscriban al enviar.' },
     record: { title: 'Registros', hint: 'El registro que se crea y el enlace para actualizarlo.' },
     security: { title: 'Seguridad y datos', hint: 'Anti-robots y autorización de datos personales.' },
-    embed: { title: 'Insertar y medir', hint: 'Sitios permitidos, respuestas desde la dirección y conversiones.' },
+    embed: { title: 'Medir conversiones', hint: 'Google Ads, Meta, de dónde vino cada respuesta y respuestas desde la dirección.' },
 };

@@ -75,6 +75,8 @@ export interface SettingsContext {
     onPreviewWelcome: (on: boolean) => void;
     /** Ir a una parte del formulario (el título, el botón…). */
     onSelectElement: (id: PageElementId) => void;
+    /** v0.1.381 — abrir «Compartir» en una pestaña (insertar en tu sitio vive ahí). */
+    onOpenShare?: (tab: 'link' | 'embed' | 'qr') => void;
 }
 
 /** Una línea con cómo está cada grupo, para el índice. */
@@ -108,11 +110,11 @@ export function groupSummary(g: SettingsGroupId, config: FormConfig, captcha: Ca
             return [s.captcha && captcha?.provider ? __('Anti-robots') : null, s.data_consent ? __('Autorización de datos') : null].filter(Boolean).join(' · ') || on(false);
         case 'embed':
             return [
-                s.allowed_domains.length ? __('%d sitios').replace('%d', String(s.allowed_domains.length)) : __('Cualquier sitio'),
                 s.conversion.google_ads || s.conversion.meta_event ? __('Mide conversiones') : null,
+                s.allow_prefill ? __('Respuestas desde la dirección') : null,
             ]
                 .filter(Boolean)
-                .join(' · ');
+                .join(' · ') || __('Apagado');
     }
 }
 
@@ -496,31 +498,29 @@ function EmbedSettings({ ctx }: { ctx: SettingsContext }): JSX.Element {
     const set = (patch: Partial<FormConfig['settings']>): void => ctx.onChange(updateSettings(config, patch));
     return (
         <>
-            <Section title={__('Insertar en tu sitio')}>
+            <div className="imcrm-flex imcrm-items-start imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-p-3" data-testid="form-settings-embed-card">
+                <Code2 className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" />
+                <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-1.5">
+                    <p className="imcrm-text-sm imcrm-font-medium">{__('¿Quieres ponerlo en tu sitio web?')}</p>
+                    <p className="imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">
+                        {__('Metido en una página, en una ventana al hacer clic o en un botón flotante: elige la forma, mírala funcionando y copia el código en «Compartir».')}
+                    </p>
+                    {ctx.onOpenShare && (
+                        <button
+                            type="button"
+                            className="imcrm-self-start imcrm-text-xs imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
+                            onClick={() => ctx.onOpenShare?.('embed')}
+                            data-testid="form-settings-open-embed"
+                        >
+                            {__('Abrir «Insertar en tu sitio»')}
+                        </button>
+                    )}
+                </div>
+            </div>
+            <Section title={__('Respuestas desde la dirección')}>
                 <Check label={__('Completar respuestas desde la dirección')} checked={s.allow_prefill} onChange={(v) => set({ allow_prefill: v })} />
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                     {__('Ej.: …?nombre=Ana&origen=instagram. Sirve para las preguntas ocultas que marcan de dónde vino cada respuesta.')}
-                </p>
-                <Field label={__('Sitios que pueden insertarlo')} hint={__('Uno por renglón (ej.: tusitio.com). Vacío = cualquier sitio.')}>
-                    <Textarea
-                        rows={3}
-                        value={s.allowed_domains.join('\n')}
-                        onChange={(e) =>
-                            set({
-                                allowed_domains: e.target.value
-                                    .split(/\n|,/)
-                                    .map((d) => d.trim())
-                                    .filter(Boolean)
-                                    .slice(0, 50),
-                            })
-                        }
-                    />
-                </Field>
-                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="embed-test-hint">
-                    {__('Para probarlo, pégalo en una página real de tu sitio. Las páginas para probar HTML en línea muestran tu código dentro de un marco protegido y ahí ningún navegador deja cargar un formulario de otro sitio.')}
-                </p>
-                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                    {__('El código para pegarlo, el enlace y el código QR están en «Compartir», arriba a la derecha.')}
                 </p>
             </Section>
             <ConversionSettings

@@ -7099,6 +7099,29 @@ espacio alrededor.
    correos del formulario; migrar una empresa lo re-mapea (`logo_file_id` en
    el mapa explícito; la marca de la empresa se re-mapea aparte).
 
+**Addendum v0.1.381 — Compartir en una ventana y la demostración en vivo.**
+Pedido del usuario: el bloque de «Compartir» empujaba el constructor, las tres
+formas de insertar no se podían ver funcionando y la agenda tenía dos lugares
+para compartir.
+1. **Un solo lugar**: `ShareDialog` (Radix, a pantalla completa en el celular)
+   con Enlace / Insertar en tu sitio / Código QR, en los dos constructores. Los
+   **sitios permitidos** viven junto al código; Ajustes queda para lo que no es
+   compartir («Medir conversiones» en formularios, «Publicar» en la agenda).
+2. **Demostración**: la página pública real con `?imb_demo=1&v=<versión>`
+   (`imb_style=bare|card` para mostrar el estilo elegido sin guardar). En ese
+   modo el cliente no pide el sello, no manda eventos de estadísticas, no monta
+   el anti-robots, no ofrece guardar el avance y, al enviar, valida y muestra
+   la pantalla final sin hacer ningún pedido (la agenda: «Es una demostración:
+   no se agendó nada»). El servidor no cambia: lo que se envía es lo mismo de
+   siempre y la demostración nunca lo llama. La página sigue siendo la misma
+   para todos, así la caché pública (ADR-S95) no cambia: el parámetro sólo lo
+   lee el navegador, y `v` (huella de lo guardado) evita ver la versión vieja
+   que el navegador tenía guardada 30 s. La CSP `frame-ancestors` ya incluye
+   `'self'`, así la app puede encuadrarla aunque los sitios estén limitados.
+3. **Logo oculto**: con `show_logo` apagado no se dibuja el nombre de la
+   empresa como sustituto (agenda: `show_logo` en `PublicBookingMeta`;
+   confirmación del formulario: `hideLogo` en la marca del aviso).
+
 ### ADR-S96 — Suscripciones con débito automático de Mercado Pago y PayPal (v0.1.367, v0.1.373)
 
 **Contexto.** Pregunta del usuario: «¿cómo se manejan las suscripciones o
