@@ -7333,4 +7333,51 @@ de Tag Manager de las empresas.
 
 ---
 
-**Versión del documento:** 1.158.0 (Medir conversiones)
+**Addendum v0.1.375 — Las etiquetas en el ENLACE DIRECTO.** Aprobado por el
+usuario («Sí, haz la v0.1.375»). El punto 7 dejaba afuera el caso en que el
+anuncio lleva directo al enlace del formulario o de la agenda: ahí no hay
+sitio que reciba el evento. Ahora, con **Cargar mis etiquetas en el enlace
+directo** (`conversion.direct_tags`, apagado por defecto), la página pública
+carga por **ID** las etiquetas OFICIALES: Google Ads (el `AW-…` sale de la
+etiqueta de conversión ya pegada), Google Analytics (`google_tag_id`, `G-…`) y
+el píxel de Meta (`meta_pixel_id`, 8-20 dígitos). Pegar el fragmento entero se
+acepta: el panel saca el ID con una expresión y nunca se guarda código.
+Google Tag Manager sigue afuera (corre código arbitrario).
+
+Como la página pública vive en el mismo origen que la app, los scripts de
+Google y Meta quedan **encerrados**:
+- la CSP de esa página deja hablar sólo con la ruta pública del API
+  (`connect-src` y `form-action` con `https://<host>/api/v1/public/`, nunca
+  `'self'`), más los dominios de Google y Meta de sus guías de CSP: un script
+  de afuera no puede leer datos con la sesión de alguien del equipo que abra el
+  enlace;
+- `frame-src` sin `'self'` (no puede cargar la app en un marco),
+  `worker-src 'none'` (no registra service workers) y
+  `Cross-Origin-Opener-Policy: same-origin` (si abre la app en otra ventana,
+  quedan en grupos de ventanas distintos y no la toca);
+- `gtag('config', …, { cookie_path: '/api/v1/public/' })`: las cookies de
+  Google no viajan con las llamadas de la app;
+- antes de cargarlas, la dirección se limpia (`trackingSafeUrl`: sólo los
+  parámetros de campaña, nunca respuestas precargadas, el código de edición ni
+  datos personales) y es la única que ven las etiquetas;
+- el código propio (`window.imbPixels`, `forms/direct-tags.ts`) va en línea y
+  se autoriza por su `sha256`, como el cliente (ADR-S95), y espera a que la
+  página se pinte.
+
+Sólo arrancan en la página principal del enlace directo: nunca insertada en
+un sitio (ahí manda el sitio, como siempre), en la vista previa del
+constructor, en el enlace para actualizar un registro ni en la página de la
+cita. Al enviar o agendar se dispara la conversión de Google Ads con el mismo
+`transaction_id`, `generate_lead` en Analytics y `Lead`/`Schedule` en Meta con
+el mismo `eventID`; la página de gracias espera a las etiquetas (máximo 1,6 s).
+Un **aviso de cookies** opcional y encendido por defecto (`cookie_notice`)
+sale al pie. La caché pública (ADR-S95) no cambia: la página sigue siendo la
+misma para todos.
+
+Verificado en un navegador real con scripts falsos de Google y Meta servidos en
+sus dominios que intentan escapar: el `fetch` a la API privada, el marco de la
+app, el service worker y `window.open` quedan bloqueados.
+
+---
+
+**Versión del documento:** 1.159.0 (Etiquetas en el enlace directo)

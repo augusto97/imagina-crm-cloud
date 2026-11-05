@@ -394,7 +394,10 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.374**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.375**
+(las etiquetas de Google Ads, Google Analytics y el píxel de Meta se cargan
+por ID en el ENLACE DIRECTO del formulario y de la agenda, encerradas por CSP
+y COOP, con aviso de cookies, addendum ADR-S97); antes v0.1.374
 (medir conversiones: el formulario y la agenda insertados en el sitio de la
 empresa disparan la conversión EN EL SITIO —Tag Manager, Google Ads y Meta,
 con valor e id único—, guardan de qué campaña vino cada registro y llevan a
@@ -454,6 +457,33 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-05 — **Etiquetas en el enlace directo** — **v0.1.375 HECHA** (el
+  usuario: «Sí, haz la v0.1.375»).
+- 2026-11-05 — **Importar las suscripciones y planes que ya están en Mercado
+  Pago** — **PROPUESTA, SIN APROBAR** (v0.1.376). Pedido del usuario: "una
+  tabla o sincronización de mercadopago para ver y vigilar o controlar las
+  suscripciones y planes ya activos en mercadopago… no se si sea bueno en una
+  nueva lista o una lista automatica que cree la integración". Propuesta:
+  «Importar desde Mercado Pago» en Cobros de la conexión de MP: lee
+  `/preapproval/search` y los planes, vista previa con cuántas hay por estado
+  y cuántas coinciden por correo con registros existentes; las suscripciones
+  van a una lista automática **común** (editable, NO espejo) «Suscriptores ·
+  Mercado Pago» que crea la integración —una fila por suscripción, con las
+  columnas de suscripción ya elegidas y el registro de cobros y el tablero
+  opcionales— o se vinculan por correo a una lista que ya existe; los planes
+  de MP se importan como planes; las suscripciones nuevas que se creen en MP
+  entran solas (aviso + búsqueda periódica). Las importadas se comportan como
+  las creadas en la app (estado, cobros, pausar, cancelar, disparador,
+  portal). NO empezar sin la confirmación del usuario.
+- 2026-11-05 — **«Al insertar los formularios por iframe está rechazando la
+  conexión»** (formulario `5lS1AOGalrzn3gim8h8vIQhD`) — **RESPONDIDO**, sin
+  bug. El usuario probaba en html.onlineviewer.net, que dibuja el HTML dentro
+  de un marco con `sandbox` (origen opaco): ningún navegador deja cargar ahí
+  una página de otro sitio, ni con `frame-ancestors *`. Además los dominios
+  permitidos del formulario sólo tenían html.onlineviewer.net. Se le dijo que
+  agregue su dominio real y pruebe en una página de verdad; en v0.1.375 se
+  sumó la aclaración debajo de «Dominios permitidos» (formulario y agenda) y
+  una pregunta frecuente en Aprende.
 - 2026-11-05 — **Medir conversiones (Google Ads) en formularios y agenda
   insertados + página de gracias** — **v0.1.374 HECHA** (el usuario respondió
   «Si, hazlo»). Queda propuesta, sin aprobar, la **v0.1.375**: píxel de Google
@@ -1538,6 +1568,26 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.375** — **Las etiquetas en el enlace directo** (el
+  usuario: «Sí, haz la v0.1.375»). Si el anuncio lleva directo al enlace del
+  formulario o de la agenda, sin el sitio de por medio, **Medir conversiones →
+  Cargar mis etiquetas en el enlace directo** carga por ID la etiqueta de
+  Google Ads (sale de la de conversión ya pegada), Google Analytics (G-…) y el
+  píxel de Meta, y al enviar o agendar dispara la conversión con el mismo id
+  único, `generate_lead` y Lead/Schedule; la página de gracias espera a las
+  etiquetas. Aviso de cookies opcional al pie. **Decisiones**: sólo los
+  scripts oficiales por ID, nunca código pegado ni Tag Manager; como la página
+  vive en el origen de la app, quedan encerrados — la CSP sólo deja hablar con
+  `/api/v1/public/` (no con el API privado), sin marcos de la app, sin service
+  workers, COOP same-origin, cookies de Google en la ruta pública y la
+  dirección limpia de todo salvo la campaña; nunca insertada, en la vista
+  previa, en el enlace para actualizar un registro ni en la página de la cita.
+  Verificado en un navegador real con scripts falsos en los dominios de Google
+  y Meta que intentan escapar (fetch al API privado, marco de la app, service
+  worker, `window.open`): los cuatro bloqueados. E2E 48/48 en escritorio y en
+  celular oscuro. De paso: aclaración de los probadores de HTML en línea bajo
+  «Dominios permitidos» (por el reporte del iframe). Queda: la propuesta de
+  importar las suscripciones de Mercado Pago (v0.1.376), sin aprobar.
 - **2026-11-05 · v0.1.374** — **Medir conversiones de formularios y agendas
   insertados** (preguntas del usuario sobre Google Ads, el código de
   seguimiento y la página de gracias → «Si, hazlo»). Insertados en el sitio de

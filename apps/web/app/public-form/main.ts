@@ -33,7 +33,7 @@ import {
     type FormCalcLike,
     type FormFlow,
 } from '@imagina-base/shared/src/schemas/form-logic';
-import { attributionFromSearch, cleanAttribution, type AttributionData, type ImaginaConversionEvent } from '@imagina-base/shared/src/schemas/conversion-logic';
+import { attributionFromSearch, cleanAttribution, type AttributionData, type ImaginaConversionEvent, type PublicDirectTags } from '@imagina-base/shared/src/schemas/conversion-logic';
 
 type FieldItem = PublicFormFieldItem;
 type ImageItem = Extract<PublicFormItem, { type: 'image' }>;
@@ -163,6 +163,44 @@ function waitAck(ref: string | null, ms: number): Promise<boolean> {
         };
         tick();
     });
+}
+
+// ─────────────── Enlace directo: las etiquetas (v0.1.375) ───────────────
+// Sin sitio de por medio, las etiquetas de la empresa (Google Ads, Google
+// Analytics, el píxel de Meta) las carga la página por su ID —el código vive
+// en un script aparte del servidor (`window.imbPixels`, ver direct-tags.ts)—.
+// Nunca insertado (ahí manda el sitio), en la vista previa ni actualizando un
+// registro.
+interface DirectPixels {
+    start(cfg: PublicDirectTags): boolean;
+    conversion(ev: ImaginaConversionEvent | null, done: (() => void) | null): void;
+}
+let directTags: PublicDirectTags | null = null;
+/** Se resuelve cuando las etiquetas registraron la conversión (o pasado el tope). */
+let pixelsSettled: Promise<void> = Promise.resolve();
+
+function pixelsApi(): DirectPixels | null {
+    const p = (window as unknown as { imbPixels?: DirectPixels }).imbPixels;
+    return p && typeof p.start === 'function' ? p : null;
+}
+
+function startDirectTags(): void {
+    const t = meta?.conversion?.direct ?? null;
+    const api = pixelsApi();
+    if (!t || !api || embedded || BOOT.preview || meta?.closed || editLoading || editCode !== null) return;
+    if (api.start(t)) directTags = t;
+}
+
+function firePixels(ev: ImaginaConversionEvent | null): Promise<void> {
+    const api = pixelsApi();
+    if (!directTags || !api || !ev) return Promise.resolve();
+    return new Promise((ok) => api.conversion(ev, ok));
+}
+
+/** Espera a las etiquetas y, como mínimo, `minMs` (para que se vea el aviso). */
+function afterPixels(minMs: number, fn: () => void): void {
+    const t0 = Date.now();
+    void pixelsSettled.then(() => window.setTimeout(fn, Math.max(0, minMs - (Date.now() - t0))));
 }
 
 // ─────────────────────── Sello anti-robots (v0.1.352) ───────────────────────
@@ -2010,6 +2048,8 @@ function shell(): HTMLElement {
     root = el('div', { cls: 'ib-inner', id: 'root' });
     card.appendChild(root);
     const main = el('main', { cls: 'ib-wrap' }, [card]);
+    // v0.1.375 — el aviso de cookies de medición (sólo con las etiquetas cargadas).
+    if (directTags?.notice) main.appendChild(el('p', { cls: 'ib-pixels-note', 'data-testid': 'form-pixels-note', text: directTags.notice }));
     const kids: HTMLElement[] = [];
     if (v?.split) {
         const media = el('aside', { cls: 'ib-split-media', 'aria-hidden': v.split.headline ? null : 'true' });
@@ -2355,6 +2395,8 @@ function submit(hpValue: string): void {
                 if (b.calcs && typeof b.calcs === 'object') finalCalcs = b.calcs;
                 // v0.1.374 — la conversión, para el sitio donde está insertado.
                 const conv = conversionEvent(b, b.ending_id ?? null);
+                // v0.1.375 — en el enlace directo, las etiquetas de la empresa.
+                pixelsSettled = firePixels(conv);
                 if (b.redirect_url && !b.pending_confirmation && !b.payment && !b.subscription) return goTo(b.redirect_url, conv, b.ending_id ?? null);
                 postConversion(conv, null, 0);
                 if (b.pending_confirmation) return checkEmail(b.email_hint);
@@ -2481,9 +2523,9 @@ function goTo(url: string, conv: ImaginaConversionEvent | null = null, endingId:
     const delay = Math.max(0, Math.min(10, meta?.redirect_delay ?? 0)) * 1000;
     redirecting(url, endingId, delay);
     if (!embedded) {
-        window.setTimeout(() => {
+        afterPixels(delay, () => {
             location.href = url;
-        }, delay);
+        });
         return;
     }
     const ref = postConversion(conv, url, delay);
@@ -2608,7 +2650,7 @@ function goPay(pay: { url: string; amount: number; currency: string; button_labe
         ],
         'form-pay-redirect',
     );
-    if (!BOOT.preview) setTimeout(() => location.assign(pay.url), 600);
+    if (!BOOT.preview) afterPixels(600, () => location.assign(pay.url));
 }
 
 /** v0.1.368 — Lo que devuelve el servidor al suscribir. */
@@ -2727,7 +2769,7 @@ function goSubscribe(sub: SubResult): void {
         ],
         'form-sub-redirect',
     );
-    if (!BOOT.preview) setTimeout(() => location.assign(sub.url), 600);
+    if (!BOOT.preview) afterPixels(600, () => location.assign(sub.url));
 }
 
 /**
@@ -3054,6 +3096,8 @@ if (BOOT.preview) {
 // v0.1.360 — un enlace para actualizar un registro: el formulario espera sus datos.
 const pendingEdit = initialEditCode();
 if (pendingEdit && meta?.edit_links && !meta.closed) editLoading = true;
+// v0.1.375 — antes de pintar, así el aviso de cookies sale con la página.
+startDirectTags();
 
 render(false);
 

@@ -59,6 +59,7 @@ import {
     formMissingBuildPage,
     formPageCsp,
     cacheablePageCsp,
+    type PageCspTags,
     inlineScriptHash,
     loadFormClient,
     newNonce,
@@ -66,6 +67,7 @@ import {
     renderFormPage,
 } from './form-page';
 import { FormsService, type ConfirmOutcome, type FormPageInfo } from './forms.service';
+import { directTagsCsp, pageOrigin } from './direct-tags';
 import { PublicBusyError } from '../public-cache/public-cache';
 import { PUBLIC_PAGE_CACHE_CONTROL, busyPage, precompress, sendPrecompressed, type Precompressed } from '../public-cache/public-send';
 import { PlanModule } from '../tenancy/plan-module.decorator';
@@ -519,12 +521,25 @@ export class PublicFormPageController {
             return;
         }
         const page = this.rendered(info, token, client);
+        // v0.1.375 — con etiquetas en el enlace directo, la CSP se limita a la
+        // ruta pública de ESTE origen (la página se puede abrir por varios
+        // dominios) y la ventana queda en su propio grupo.
+        const tags = info.meta.conversion?.direct ?? null;
+        const csp = tags ? this.pageCsp(info, client, { csp: directTagsCsp(tags), origin: pageOrigin(req.protocol, req.host) }) : page.csp;
         reply
-            .header('Content-Security-Policy', page.csp)
+            .header('Content-Security-Policy', csp)
             .header('X-Robots-Tag', 'noindex')
             .header('Cache-Control', PUBLIC_PAGE_CACHE_CONTROL)
             .header('Referrer-Policy', 'strict-origin-when-cross-origin');
+        if (tags) reply.header('Cross-Origin-Opener-Policy', 'same-origin');
         sendPrecompressed(req, reply, page.body, 'text/html; charset=utf-8');
+    }
+
+    private pageCsp(info: FormPageInfo, client: string | null, tags: PageCspTags | null): string {
+        return cacheablePageCsp(client === null ? null : this.clientHash(client), formFrameAncestors(info.allowed_domains), info.captcha?.provider ?? null, {
+            dev: client === null,
+            tags,
+        });
     }
 
     /** La página lista y comprimida para un `FormPageInfo` (que vale mientras está en la caché). */
@@ -539,16 +554,12 @@ export class PublicFormPageController {
             bodyClasses: info.body_classes,
             preloadFont: info.preload_font,
             client,
+            directTags: true,
         });
         const page: RenderedPage = {
             body: precompress(html),
             // v0.1.289 — con captcha entran a la CSP SÓLO los dominios de ese proveedor.
-            csp: cacheablePageCsp(
-                client === null ? null : this.clientHash(client),
-                formFrameAncestors(info.allowed_domains),
-                info.captcha?.provider ?? null,
-                { dev: client === null },
-            ),
+            csp: this.pageCsp(info, client, null),
         };
         this.renderedPages.set(info, page);
         return page;

@@ -1476,6 +1476,26 @@ export const articles: LearnArticle[] = [
                 title: 'El correo y el teléfono nunca van en la dirección',
                 md: 'Google Analytics no permite datos personales en las direcciones de las páginas. Por eso las variables del correo y del teléfono quedan vacías en la página de gracias, aunque las escribas. Las variables siempre van después del dominio: la dirección no puede cambiar de sitio con lo que escribe un visitante.',
             },
+            { t: 'h', text: 'Si el anuncio lleva directo al enlace' },
+            {
+                t: 'p',
+                md: 'A veces no hay sitio de por medio: el anuncio de Instagram o de Google lleva **directo al enlace** del formulario o de la agenda. Como ahí no está la etiqueta de tu sitio, la página puede **cargar tus etiquetas** por su ID y registrar la conversión ella misma.\n\nEn **Medir conversiones**, activa **Cargar mis etiquetas en el enlace directo** y completa lo que uses: la conversión de Google Ads sale de la etiqueta que pegaste arriba, y puedes sumar el **ID de Google Analytics** (empieza con «G-») y el **ID del píxel de Meta** (sólo números). Puedes pegar el fragmento completo que te dan Google o Meta: la app toma sólo el ID.',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Google Ads', what: 'Usa la etiqueta de conversión de arriba. Registra la visita y, al enviar, la conversión con su valor y el id del envío.' },
+                    { name: 'ID de Google Analytics', what: 'Registra la visita y el evento «generate_lead» al enviar (o al agendar).' },
+                    { name: 'ID del píxel de Meta', what: 'Registra la visita y «Lead» al enviar (o «Schedule» al agendar), con el id del envío para no contarlo dos veces.' },
+                    { name: 'Aviso de cookies', what: 'Una línea debajo del formulario: «Esta página usa cookies de Google y Meta para medir las campañas».', tip: 'Menciona estas cookies en tu política de datos.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Seguro para ti y para quien responde',
+                md: 'Las etiquetas se cargan **sólo por su ID**: no se pega código. Se cargan cuando la página ya se vio, así el formulario abre igual de rápido. Quedan **encerradas**: sólo pueden hablar con Google y Meta, nunca leer nada de la app aunque quien abra el enlace sea alguien de tu equipo con la sesión abierta. Y a Google y Meta sólo les llega la campaña de la dirección: las respuestas precargadas desde el enlace nunca. Insertado en tu sitio, al actualizar un registro o en la vista previa, las etiquetas no se cargan.',
+            },
             {
                 t: 'example',
                 title: 'Un taller de motos que pauta en Google',
@@ -1485,7 +1505,8 @@ export const articles: LearnArticle[] = [
                 t: 'faq',
                 items: [
                     { q: '¿Tengo que pegar el código de Google Ads dentro del formulario?', a: 'No. Los formularios y las agendas no cargan códigos de afuera. Tu etiqueta de Google sigue en tu sitio y el formulario sólo le avisa cuándo alguien envió.' },
-                    { q: '¿Funciona si comparto el enlace directo, sin insertarlo en mi sitio?', a: 'La página de gracias y el origen (los utm del enlace) sí funcionan. El evento de conversión necesita que el formulario esté insertado en tu sitio, donde está tu etiqueta de Google.' },
+                    { q: '¿Funciona si comparto el enlace directo, sin insertarlo en mi sitio?', a: 'Sí. La página de gracias y el origen (los utm del enlace) funcionan siempre, y si activas **Cargar mis etiquetas en el enlace directo**, la página registra la conversión en Google Ads, Google Analytics y Meta por su ID.' },
+                    { q: 'Lo pegué en una página para probar HTML y no carga. ¿Qué pasa?', a: 'Esas páginas muestran tu código dentro de un marco protegido que no tiene dirección propia, y ningún navegador deja cargar ahí un formulario de otro sitio. Pruébalo en una página real de tu sitio (un borrador sirve) y revisa que el dominio esté en **Sitios donde se puede insertar**.' },
                     { q: '¿Se cuenta dos veces si la persona recarga la página?', a: 'No. Cada envío tiene un id único que viaja como id de la transacción, y Google y Meta lo usan para no contar dos veces.' },
                     { q: '¿Qué pasa si la respuesta espera la confirmación por correo?', a: 'El evento sale al enviar, con la marca de que espera la confirmación, para que puedas decidir en Tag Manager si la cuentas o no.' },
                 ],

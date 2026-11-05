@@ -1711,6 +1711,9 @@ function SettingsInspector({
                         }
                     />
                 </Field>
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="embed-test-hint">
+                    {__('Para probarlo, pégalo en una página real de tu sitio. Las páginas para probar HTML en línea muestran tu código dentro de un marco protegido y ahí ningún navegador deja cargar un formulario de otro sitio.')}
+                </p>
             </Section>
             <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                 <Code2 className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />

@@ -679,6 +679,10 @@ export const articles: LearnArticle[] = [
                 md: 'Si pautas en **Google Ads** o en **Meta**, en la sección **Medir conversiones** del constructor cada cita agendada en tu sitio se vuelve una conversión de tu sitio: el evento **imagina_booking** para Google Tag Manager, tu etiqueta de conversión de Google Ads y el evento **Schedule** del píxel de Meta, con el **precio del servicio** como valor si quieres. Ahí mismo eliges guardar de qué campaña vino cada cita y llevar a la persona a una **página de gracias** con los datos de la cita: `https://tusitio.com/gracias?servicio={{cita.servicio}}&fecha={{cita.fecha}}`.',
             },
             {
+                t: 'p',
+                md: 'Si el anuncio lleva **directo al enlace de la agenda**, sin tu sitio de por medio, activa **Cargar mis etiquetas en el enlace directo** y pega el ID de Google Analytics (G-…) y el ID de tu píxel de Meta: la página carga el código oficial de Google y de Meta, aislado del resto de tu cuenta, y registra la cita al confirmarla.',
+            },
+            {
                 t: 'actions',
                 items: [
                     { label: 'Ir a mis listas', to: '/lists' },

@@ -12,7 +12,10 @@ import {
     COLLECTION_CURRENCY_OPTIONS,
     CONVERSION_EVENT_BOOKING,
     CONVERSION_EVENT_FORM,
+    googleAdsIdFromSendTo,
     parseGoogleAdsSendTo,
+    parseGoogleTagId,
+    parseMetaPixelId,
     REDIRECT_MAX_DELAY_S,
     REDIRECT_URL_RE,
     redirectVariables,
@@ -93,11 +96,19 @@ export function ConversionSettings({
     const [copied, setCopied] = useState(false);
     const [showExtra, setShowExtra] = useState(() => EXTRA_KEYS.some((k) => attributionFieldFor(attribution, k) !== null));
     const [creating, setCreating] = useState(false);
+    const [gaRaw, setGaRaw] = useState(conversion.google_tag_id ?? '');
+    const [pixelRaw, setPixelRaw] = useState(conversion.meta_pixel_id ?? '');
     const create = useCreateField(listId);
     const toast = useToast();
 
     const adsParsed = adsRaw.trim() === '' ? null : parseGoogleAdsSendTo(adsRaw);
     const adsBad = adsRaw.trim() !== '' && adsParsed === null;
+    const gaParsed = gaRaw.trim() === '' ? null : parseGoogleTagId(gaRaw);
+    const gaBad = gaRaw.trim() !== '' && gaParsed === null;
+    const pixelParsed = pixelRaw.trim() === '' ? null : parseMetaPixelId(pixelRaw);
+    const pixelBad = pixelRaw.trim() !== '' && pixelParsed === null;
+    const adsId = googleAdsIdFromSendTo(conversion.google_ads);
+    const directEmpty = conversion.direct_tags && !adsId && !conversion.google_tag_id && !conversion.meta_pixel_id;
     const usable = fields.filter((f) => ATTRIBUTION_FIELD_TYPES.has(f.type) && !takenFieldIds.has(f.id));
     const used = new Set(ATTRIBUTION_KEYS.flatMap((k) => {
         const id = attributionFieldFor(attribution, k);
@@ -280,6 +291,98 @@ export function ConversionSettings({
                         {__('Google los cifra antes de usarlos y así atribuye mejor las conversiones. Son datos personales: actívalo sólo si tu política de datos lo contempla y en Google Ads activaste las conversiones mejoradas.')}
                     </p>
                 )}
+
+                <div
+                    className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3"
+                    data-testid="direct-tags-settings"
+                    data-tour={isBooking ? 'booking-direct-tags' : 'form-direct-tags'}
+                >
+                    <Check
+                        label={__('Cargar mis etiquetas en el enlace directo')}
+                        checked={conversion.direct_tags}
+                        onChange={(v) => setConv({ direct_tags: v })}
+                        testId="direct-tags-enabled"
+                    />
+                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                        {isBooking
+                            ? __('Para cuando el anuncio lleva directo al enlace de la agenda, sin tu sitio de por medio: la página carga tus etiquetas de Google y Meta y registra la cita ahí. Insertada en tu sitio no se cargan (ahí mandan las de tu sitio).')
+                            : __('Para cuando el anuncio lleva directo al enlace del formulario, sin tu sitio de por medio: la página carga tus etiquetas de Google y Meta y registra el envío ahí. Insertado en tu sitio no se cargan (ahí mandan las de tu sitio).')}
+                    </p>
+                    {conversion.direct_tags && (
+                        <>
+                            <p className="imcrm-text-[11px] imcrm-leading-snug" data-testid="direct-tags-ads">
+                                {adsId
+                                    ? __('Google Ads: usa la etiqueta de conversión de arriba (%s).').replace('%s', adsId)
+                                    : __('Google Ads: pega arriba la etiqueta de conversión para medir las campañas de Google Ads.')}
+                            </p>
+                            <Field
+                                label={__('ID de Google Analytics (opcional)')}
+                                hint={
+                                    gaBad
+                                        ? __('No reconocemos ese ID. Empieza con «G-» (por ejemplo, G-AB12CD34EF).')
+                                        : __('Empieza con «G-». En Google Analytics: Administrar → Flujos de datos → tu flujo web. Registra la visita y el evento «generate_lead».')
+                                }
+                            >
+                                <Input
+                                    value={gaRaw}
+                                    placeholder="G-AB12CD34EF"
+                                    onChange={(e) => {
+                                        const raw = e.target.value;
+                                        setGaRaw(raw);
+                                        const parsed = raw.trim() === '' ? null : parseGoogleTagId(raw);
+                                        if (raw.trim() === '' || parsed) setConv({ google_tag_id: parsed });
+                                    }}
+                                    onBlur={() => {
+                                        if (gaParsed) setGaRaw(gaParsed);
+                                    }}
+                                    aria-invalid={gaBad}
+                                    data-testid="direct-tags-ga"
+                                />
+                            </Field>
+                            <Field
+                                label={__('ID del píxel de Meta (opcional)')}
+                                hint={
+                                    pixelBad
+                                        ? __('No reconocemos ese ID. Son sólo números (los encuentras en el Administrador de eventos de Meta).')
+                                        : isBooking
+                                          ? __('Sólo números. En Meta: Administrador de eventos → tu píxel. Registra la visita y «Schedule» al agendar.')
+                                          : __('Sólo números. En Meta: Administrador de eventos → tu píxel. Registra la visita y «Lead» al enviar.')
+                                }
+                            >
+                                <Input
+                                    value={pixelRaw}
+                                    placeholder="1234567890123456"
+                                    inputMode="numeric"
+                                    onChange={(e) => {
+                                        const raw = e.target.value;
+                                        setPixelRaw(raw);
+                                        const parsed = raw.trim() === '' ? null : parseMetaPixelId(raw);
+                                        if (raw.trim() === '' || parsed) setConv({ meta_pixel_id: parsed });
+                                    }}
+                                    onBlur={() => {
+                                        if (pixelParsed) setPixelRaw(pixelParsed);
+                                    }}
+                                    aria-invalid={pixelBad}
+                                    data-testid="direct-tags-pixel"
+                                />
+                            </Field>
+                            {directEmpty && (
+                                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-warning" data-testid="direct-tags-empty">
+                                    {__('Pon al menos un ID (o la etiqueta de Google Ads de arriba): sin ellos la página no carga nada.')}
+                                </p>
+                            )}
+                            <Check
+                                label={__('Mostrar el aviso «Esta página usa cookies para medir las campañas»')}
+                                checked={conversion.cookie_notice}
+                                onChange={(v) => setConv({ cookie_notice: v })}
+                                testId="direct-tags-notice"
+                            />
+                            <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                                {__('Por seguridad, las etiquetas sólo pueden hablar con Google y Meta: no leen nada más de la app. A Google y Meta sólo les llega la campaña de la dirección, nunca las respuestas. Menciona estas cookies en tu política de datos.')}
+                            </p>
+                        </>
+                    )}
+                </div>
 
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3" data-testid="attribution-settings">
                     <Check

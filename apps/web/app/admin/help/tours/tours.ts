@@ -882,7 +882,7 @@ export const TOURS: TourDef[] = [
                 art: 'form-conversions',
                 title: 'Medir conversiones de tus anuncios',
                 body: 'En los ajustes, **Medir conversiones** hace que cada envío en tu sitio cuente en Tag Manager, Google Ads y Meta, con su valor, y guarda de qué campaña vino cada registro.',
-                tip: 'Funciona con el formulario insertado en tu sitio: la conversión se registra donde aterrizó el anuncio.',
+                tip: 'Si el anuncio lleva directo al enlace, activa **Cargar mis etiquetas en el enlace directo** y pega el ID de Google Analytics y el de tu píxel de Meta.',
             },
         ],
     },

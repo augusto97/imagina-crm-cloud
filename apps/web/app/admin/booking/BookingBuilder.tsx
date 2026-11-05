@@ -1648,6 +1648,9 @@ function PublishEditor({ config, onChange, page, problems, onPublish, onRegenera
                 <Field label={__('Sitios permitidos (uno por línea)')} hint={__('Vacío = cualquier sitio. Ej.: miempresa.com o *.miempresa.com')}>
                     <DomainsField value={s.allowed_domains} onChange={(v) => setS({ allowed_domains: v })} />
                 </Field>
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="embed-test-hint">
+                    {__('Para probarla, pégala en una página real de tu sitio. Las páginas para probar HTML en línea muestran tu código dentro de un marco protegido y ahí ningún navegador deja cargar una agenda de otro sitio.')}
+                </p>
             </Section>
         </div>
     );

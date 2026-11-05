@@ -209,3 +209,91 @@ export function fillRedirectUrl(template: string, resolve: (key: string) => stri
     }
     return template.replace(VAR_RE, '');
 }
+
+// ─────────── Enlace directo: las etiquetas de Google y Meta (v0.1.375) ───────────
+// Sin sitio (el anuncio lleva directo al formulario o a la agenda), no hay
+// etiqueta del sitio que reciba el evento: la página carga las de la empresa
+// POR ID —nunca código pegado— y la conversión se dispara ahí.
+
+/** El ID de una etiqueta de Google Analytics 4 (`G-ABC123`). */
+export const GOOGLE_TAG_ID_RE = /^G-[A-Z0-9]{4,20}$/;
+/** El ID de un píxel de Meta (sólo números). */
+export const META_PIXEL_ID_RE = /^\d{8,20}$/;
+
+/** Lo que la persona pega de Google (el fragmento entero o sólo el «G-…») → el ID. */
+export function parseGoogleTagId(raw: string): string | null {
+    const m = /\bG-[A-Z0-9]{4,20}\b/.exec((raw ?? '').toUpperCase());
+    return m && GOOGLE_TAG_ID_RE.test(m[0]) ? m[0] : null;
+}
+
+/** Lo que la persona pega de Meta (`fbq('init', '123…')`, la imagen `tr?id=` o el número) → el ID. */
+export function parseMetaPixelId(raw: string): string | null {
+    const s = (raw ?? '').trim();
+    const m = /fbq\(\s*['"]init['"]\s*,\s*['"]?(\d{8,20})/.exec(s) ?? /[?&]id=(\d{8,20})\b/.exec(s) ?? /^(\d{8,20})$/.exec(s.replace(/\s+/g, ''));
+    return m && META_PIXEL_ID_RE.test(m[1]!) ? m[1]! : null;
+}
+
+/** `AW-123456789/AbC` → `AW-123456789` (la etiqueta que se configura en la página). */
+export function googleAdsIdFromSendTo(sendTo: string | null | undefined): string | null {
+    const m = /^(AW-\d{6,14})\//.exec(sendTo ?? '');
+    return m ? m[1]! : null;
+}
+
+/**
+ * Los parámetros de la dirección que pueden ver Google y Meta: la campaña y
+ * los ids de clic. Nada más (las respuestas precargadas, un código para
+ * seguir o actualizar un registro, el nombre de alguien), porque las
+ * etiquetas mandan la dirección completa y Google prohíbe datos personales.
+ */
+export const TRACKING_URL_PARAMS = [
+    'utm_source',
+    'utm_medium',
+    'utm_campaign',
+    'utm_term',
+    'utm_content',
+    'utm_id',
+    'gclid',
+    'gbraid',
+    'wbraid',
+    'gad_source',
+    'gad_campaignid',
+    'dclid',
+    'fbclid',
+    'msclkid',
+    'ttclid',
+] as const;
+
+/** La dirección que ven las etiquetas: el sitio, la ruta y sólo la campaña. */
+export function trackingSafeUrl(href: string): string {
+    const m = /^(https?:\/\/[^/?#]+)([^?#]*)(\?[^#]*)?/i.exec(href ?? '');
+    if (!m) return '';
+    const base = m[1]! + (m[2] || '/');
+    if (!m[3]) return base;
+    const keep: string[] = [];
+    for (const part of m[3].slice(1).split('&')) {
+        const eq = part.indexOf('=');
+        const key = (eq >= 0 ? part.slice(0, eq) : part).toLowerCase();
+        const val = eq >= 0 ? part.slice(eq + 1) : '';
+        if (val !== '' && val.length <= 400 && (TRACKING_URL_PARAMS as readonly string[]).includes(key)) keep.push(`${key}=${val}`);
+    }
+    return keep.length ? `${base}?${keep.join('&')}` : base;
+}
+
+/** Lo que la página pública necesita para cargar las etiquetas en el enlace directo. */
+export interface PublicDirectTags {
+    /** La acción de conversión de Google Ads (la misma de «Medir conversiones»). */
+    google_ads: string | null;
+    /** La etiqueta de Google Ads que se carga (`AW-…`, sale de la acción). */
+    google_ads_id: string | null;
+    /** Google Analytics 4 (`G-…`). */
+    google_tag_id: string | null;
+    meta_pixel_id: string | null;
+    /** La línea que avisa que la página usa cookies de medición (null = no se muestra). */
+    notice: string | null;
+}
+
+/** El texto del aviso de cookies según qué etiquetas carga la página. */
+export function directTagsNotice(t: Pick<PublicDirectTags, 'google_ads_id' | 'google_tag_id' | 'meta_pixel_id'>): string {
+    const who = [t.google_ads_id || t.google_tag_id ? 'Google' : null, t.meta_pixel_id ? 'Meta' : null].filter(Boolean).join(' y ');
+    return who ? `Esta página usa cookies de ${who} para medir las campañas.` : '';
+}

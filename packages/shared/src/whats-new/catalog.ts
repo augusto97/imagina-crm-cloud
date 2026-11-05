@@ -1722,4 +1722,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver cómo se usa', href: '/aprende/formularios/formularios-medir-conversiones' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.375-etiquetas-enlace-directo',
+        version: '0.1.375',
+        date: '2026-11-05',
+        kind: 'feature',
+        title: 'Mide también cuando el anuncio lleva directo al enlace',
+        summary:
+            'Si tu anuncio lleva directo al enlace del formulario o de la agenda, sin tu sitio de por medio, ahora puedes cargar ahí tu etiqueta de Google Ads, Google Analytics y el píxel de Meta con sólo pegar sus ID.',
+        media: {
+            slides: [
+                {
+                    title: 'Pega sólo los ID',
+                    text: 'En Medir conversiones, activa «Cargar mis etiquetas en el enlace directo» y pega el ID de Google Analytics (G-…) y el de tu píxel de Meta. La etiqueta de Google Ads sale de la que ya tienes.',
+                    illustration: 'form-conversions',
+                },
+                {
+                    title: 'Aislado y seguro',
+                    text: 'La página carga sólo el código oficial de Google y de Meta, sin acceso a tu cuenta ni a otros datos. Insertado en tu sitio, manda el sitio.',
+                    illustration: 'form-embed',
+                },
+                {
+                    title: 'Con aviso de cookies',
+                    text: 'Puedes mostrar al pie una línea que avisa que la página usa cookies para medir las campañas.',
+                    illustration: 'form-stats',
+                },
+            ],
+        },
+        body: 'Abre el constructor del formulario y entra a **Ajustes → Medir conversiones** (en la agenda, la sección **Medir conversiones**). Activa **Cargar mis etiquetas en el enlace directo**.',
+        action: { label: 'Ver cómo se usa', href: '/aprende/formularios/formularios-medir-conversiones' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];
