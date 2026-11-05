@@ -1444,6 +1444,9 @@ export class StructureTools implements AiProposalApplier {
                                   then: st.subscription.after === 'redirect' ? 'lleva directo a autorizar la tarjeta' : 'muestra el botón para autorizar',
                               }
                             : null,
+                        // v0.1.374 — medir conversiones en el sitio donde está insertado y la página de gracias.
+                        conversions: conversionSummary(st.conversion, st.attribution, fieldById),
+                        thank_you_page: st.redirect_url ? { url: st.redirect_url, delay_seconds: st.redirect_delay } : null,
                     };
                 }),
                 // D5 — páginas de agenda: lo que se reserva y quién atiende (las
@@ -1462,6 +1465,9 @@ export class StructureTools implements AiProposalApplier {
                     approval: b.config.approval,
                     verify_email: b.config.settings.verify_email,
                     block_disposable_email: b.config.settings.block_disposable_email,
+                    // v0.1.374 — medir conversiones en el sitio donde está insertada y la página de gracias.
+                    conversions: conversionSummary(b.config.settings.conversion, b.config.settings.attribution, fieldById),
+                    thank_you_page: b.config.settings.redirect_url ? { url: b.config.settings.redirect_url, delay_seconds: b.config.settings.redirect_delay } : null,
                     // v0.1.354 — cómo se ve: la plantilla de diseño (classic = la de siempre) y qué se muestra.
                     design: {
                         template: b.config.settings.theme ? (b.config.settings.theme.preset ?? 'custom') : 'classic',
@@ -5229,4 +5235,31 @@ function translateButtonTrigger(triggerType: string, cfg: Record<string, unknown
 
 function buttonFieldResolver(fields: Field[]): (slug: string) => number | undefined {
     return (slug) => fields.find((f) => f.slug === slug && f.type === 'button')?.id;
+}
+
+/**
+ * v0.1.374 — Qué mide un formulario o una agenda: el evento del sitio sale
+ * siempre (`imagina_form_submit` / `imagina_booking` en el dataLayer); esto
+ * suma la acción de Google Ads, el píxel de Meta, el valor y las columnas
+ * donde se guarda de dónde vino cada registro.
+ */
+function conversionSummary(
+    c: { google_ads: string | null; meta_event: boolean; value: string; amount: number | null; currency: string; calc_key: string | null; share_contact: boolean },
+    a: Record<string, unknown> & { enabled: boolean },
+    fieldById: Map<number, { slug: string }>,
+): Record<string, unknown> {
+    const saved: Record<string, string> = {};
+    for (const [k, v] of Object.entries(a)) {
+        if (!k.endsWith('_field_id') || typeof v !== 'number') continue;
+        const slug = fieldById.get(v)?.slug;
+        if (slug) saved[k.replace(/_field_id$/, '')] = slug;
+    }
+    return {
+        site_event: 'siempre (imagina_form_submit / imagina_booking en el dataLayer del sitio)',
+        google_ads: c.google_ads,
+        meta_pixel: c.meta_event,
+        value: c.value === 'none' ? null : c.value === 'fixed' ? { fixed: c.amount, currency: c.currency } : c.value === 'calc' ? { calc: c.calc_key } : c.value,
+        enhanced_conversions: c.share_contact,
+        saves_origin: a.enabled && Object.keys(saved).length > 0 ? saved : null,
+    };
 }

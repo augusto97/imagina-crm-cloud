@@ -1404,6 +1404,102 @@ export const articles: LearnArticle[] = [
     },
     // ─────────────────────────────────────────────────────────────────────
     {
+        id: 'formularios-medir-conversiones',
+        route: '/lists',
+        related: ['formularios-publicar', 'formularios-estadisticas', 'agenda-publicar', 'formularios-automatizar'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Si haces campañas en **Google Ads** o en **Meta** (Facebook e Instagram) y tu formulario o tu agenda están **insertados en tu sitio web**, puedes saber cuántas personas que llegaron por un anuncio terminaron enviando el formulario o agendando una cita. Eso es una **conversión**, y es lo que usa Google para decirte qué campaña vale la pena.\n\nEl formulario vive dentro de un marco de **otro dominio** dentro de tu página, así que la etiqueta de Google de tu sitio **no ve** lo que pasa adentro. Por eso, cuando alguien envía, el formulario le **avisa a tu sitio**, y el script de inserción convierte ese aviso en un evento **de tu sitio**: justo donde aterrizó el anuncio, que es donde Google atribuye la conversión.',
+            },
+            { t: 'anim', key: 'form-conversions', caption: 'Alguien llega por un anuncio, envía el formulario y tu sitio registra la conversión; el registro guarda de qué campaña vino.' },
+            { t: 'h', text: 'Lo que le llega a tu sitio' },
+            {
+                t: 'cards',
+                items: [
+                    { icon: 'BarChart3', title: 'Google Tag Manager', md: 'Sin configurar nada: cada envío deja el evento **imagina_form_submit** (o **imagina_booking** en la agenda) en el `dataLayer`, con el valor, la moneda y un id único.', tone: 'blue' },
+                    { icon: 'MousePointerClick', title: 'Google Ads', md: 'Si pegas tu etiqueta de conversión, se dispara con la etiqueta de Google que ya tiene tu sitio (`gtag`), con el valor y el id del envío para no contarla dos veces.', tone: 'mint' },
+                    { icon: 'Megaphone', title: 'Píxel de Meta', md: 'Registra **Lead** (formulario) o **Schedule** (cita) con el píxel que ya tiene tu sitio.', tone: 'violet' },
+                    { icon: 'Code', title: 'Cualquier otra herramienta', md: 'Un evento del navegador (`imagina:form-submit` o `imagina:booking`) para quien programa su propio seguimiento.', tone: 'slate' },
+                ],
+            },
+            { t: 'h', text: 'Cómo se activa' },
+            {
+                t: 'steps',
+                items: [
+                    'Inserta el formulario o la agenda en tu sitio con el código de **Compartir → Insertar en tu sitio** (en la página, en una ventana, en un panel lateral o con el botón flotante: todos sirven).',
+                    'Abre el constructor del formulario y entra a **Ajustes → Medir conversiones** (en la agenda, la sección **Medir conversiones**).',
+                    'Si usas **Google Tag Manager**, no tienes que hacer nada más aquí: arma allá un activador de **evento personalizado** con el nombre del evento que te muestra la app.',
+                    'Si **no** usas Tag Manager, pega el fragmento del evento de tu conversión de Google Ads (el que tiene «send_to»). La app reconoce el código aunque pegues el bloque completo.',
+                    'Si tienes el píxel de Meta, activa **Registrar «Lead» en el píxel de Meta del sitio**.',
+                    'Elige el **valor** de la conversión y toca **Guardar**.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Los ajustes de «Medir conversiones»',
+                rows: [
+                    { name: 'Etiqueta de conversión de Google Ads', what: 'El «AW-123456789/AbC…» de tu acción de conversión. En Google Ads: Objetivos → Conversiones → tu acción → Configurar la etiqueta.', tip: 'Si ya armaste la etiqueta en Tag Manager con el evento, déjalo vacío: con las dos, la misma conversión no se cuenta dos veces gracias al id del envío, pero es más simple tener una sola.' },
+                    { name: 'Registrar «Lead» / «Schedule» en Meta', what: 'Manda el evento estándar al píxel de Meta que ya tiene tu sitio, con el mismo id del envío.' },
+                    { name: 'Valor de la conversión', what: 'Sin valor, un valor fijo (por ejemplo, lo que vale para ti un cliente nuevo), lo que se cobra al enviar, el resultado de un cálculo del formulario o, en la agenda, el precio del servicio.', tip: 'Con un valor, Google Ads te muestra cuánto vale cada campaña y no sólo cuántos llegaron.' },
+                    { name: 'Conversiones mejoradas', what: 'Además manda el correo y el teléfono de quien respondió a las etiquetas de tu sitio. Google los cifra antes de usarlos y atribuye mejor.', tip: 'Es un dato personal: actívalo sólo si tu política de datos lo contempla y si en Google Ads activaste las conversiones mejoradas.' },
+                ],
+            },
+            { t: 'h', text: 'Saber de qué campaña vino cada registro' },
+            {
+                t: 'p',
+                md: 'Medir en Google Ads te dice **cuántas** conversiones trajo cada campaña. Guardar el origen te dice **cuáles registros** vinieron de cada una, en tu propia lista: así puedes armar un tablero «clientes por campaña» o saber cuánto vendiste a los que llegaron por Instagram.\n\nActiva **Guardar de dónde vino cada registro** y elige en qué columna va cada dato (o toca **Crear las columnas que faltan**). Esas columnas se llenan solas: no se preguntan en el formulario.',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Origen, Medio, Campaña (utm)', what: 'Lo que traen los enlaces de tus anuncios: «utm_source=google», «utm_campaign=navidad».' },
+                    { name: 'ID de clic de Google / de Meta', what: 'El gclid o el fbclid que el anuncio le agrega a la dirección. Sirve para subir conversiones a mano o cruzar datos.' },
+                    { name: 'Página donde se llenó', what: 'La dirección exacta de tu sitio donde estaba el formulario.' },
+                    { name: 'Llegó desde', what: 'El sitio de donde venía la persona (Google, Instagram, otro sitio).' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Pega el script en todas las páginas',
+                md: 'Muchas personas llegan por el anuncio a tu página de inicio y después navegan hasta la de contacto. El script de inserción recuerda la campaña de la **primera** página de la visita, así que si lo pegas en todas las páginas (pesa muy poco y no carga el formulario hasta que alguien lo abre), la campaña no se pierde en el camino.',
+            },
+            { t: 'h', text: 'Llevar a una página de gracias' },
+            {
+                t: 'p',
+                md: 'En **Ajustes → Después de enviar** (y en la agenda, en **Medir conversiones**) puedes llevar a la persona a una **página de gracias** de tu sitio, por ejemplo `https://tusitio.com/gracias`. Es útil si ya mides las conversiones con esa página. Puedes elegir mostrar el agradecimiento unos segundos antes de ir, y la página entera (no sólo el marco) es la que va a la página de gracias.\n\nLa dirección puede llevar **variables** que se completan con cada envío: `https://tusitio.com/gracias?plan={{plan}}&id={{envio.id}}&valor={{valor}}`. En la agenda también `{{cita.servicio}}`, `{{cita.fecha}}` y `{{cita.hora}}`.',
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'El correo y el teléfono nunca van en la dirección',
+                md: 'Google Analytics no permite datos personales en las direcciones de las páginas. Por eso las variables del correo y del teléfono quedan vacías en la página de gracias, aunque las escribas. Las variables siempre van después del dominio: la dirección no puede cambiar de sitio con lo que escribe un visitante.',
+            },
+            {
+                t: 'example',
+                title: 'Un taller de motos que pauta en Google',
+                md: 'El taller paga anuncios de «mantenimiento de motos en Medellín» que llevan a su sitio. En la página del servicio está insertado el formulario «Pide tu cita». En **Medir conversiones** pega la etiqueta de su acción «Solicitud de cita», pone un valor fijo de **$80.000** y activa **Guardar de dónde vino cada registro**. Cada solicitud cuenta como una conversión en Google Ads con su valor, y en la lista **Solicitudes** cada fila dice de qué campaña vino. A fin de mes arma un tablero agrupado por **Campaña** y ve que «frenos» trae el doble de clientes que «aceite».',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Tengo que pegar el código de Google Ads dentro del formulario?', a: 'No. Los formularios y las agendas no cargan códigos de afuera. Tu etiqueta de Google sigue en tu sitio y el formulario sólo le avisa cuándo alguien envió.' },
+                    { q: '¿Funciona si comparto el enlace directo, sin insertarlo en mi sitio?', a: 'La página de gracias y el origen (los utm del enlace) sí funcionan. El evento de conversión necesita que el formulario esté insertado en tu sitio, donde está tu etiqueta de Google.' },
+                    { q: '¿Se cuenta dos veces si la persona recarga la página?', a: 'No. Cada envío tiene un id único que viaja como id de la transacción, y Google y Meta lo usan para no contar dos veces.' },
+                    { q: '¿Qué pasa si la respuesta espera la confirmación por correo?', a: 'El evento sale al enviar, con la marca de que espera la confirmación, para que puedas decidir en Tag Manager si la cuentas o no.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Cómo insertarlo en tu sitio', article: 'formularios-publicar' },
+                ],
+            },
+        ],
+    },
+    {
         id: 'formularios-automatizar',
         route: '/lists',
         related: ['formularios-que-son', 'formularios-correo-seguridad', 'portal-dar-acceso'],

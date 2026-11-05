@@ -270,6 +270,122 @@ export const FORM_EMBED_JS = String.raw`(function () {
     } catch (e) { return null; }
   }
 
+  // ───────────── De dónde vino la persona (v0.1.374) ─────────────
+  // Lo que traía la dirección de la PRIMERA página de la visita (la campaña,
+  // el id del clic del anuncio y el sitio de donde llegó), guardado en la
+  // pestaña: si después navega hasta la página del formulario, no se pierde.
+  // Un clic nuevo de un anuncio lo reemplaza. Se le pasa al marco por mensaje
+  // (no en su dirección: cada clic trae un id distinto y eso rompería el caché).
+  var ATTR_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid'];
+  var CLICK_ID = /^[A-Za-z0-9._~-]{4,300}$/;
+  function fromQuery() {
+    var out = null;
+    try {
+      var q = new URLSearchParams(location.search);
+      for (var i = 0; i < ATTR_KEYS.length; i++) {
+        var v = q.get(ATTR_KEYS[i]);
+        if (v) { out = out || {}; out[ATTR_KEYS[i]] = String(v).slice(0, 300); }
+      }
+    } catch (e) {}
+    return out;
+  }
+  function outsideReferrer() {
+    try {
+      if (!document.referrer) return '';
+      return new URL(document.referrer).host === location.host ? '' : document.referrer.slice(0, 1000);
+    } catch (e) { return ''; }
+  }
+  function cookie(name) {
+    try {
+      var m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+      return m ? decodeURIComponent(m[1]) : null;
+    } catch (e) { return null; }
+  }
+  var landing = (function () {
+    var cur = fromQuery(), saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem('imb_attr') || 'null'); } catch (e) {}
+    var out = cur ? cur : saved && typeof saved === 'object' ? saved : {};
+    if (cur || !saved) {
+      if (!out.referrer) out.referrer = outsideReferrer();
+      try { sessionStorage.setItem('imb_attr', JSON.stringify(out)); } catch (e) {}
+    }
+    return out;
+  })();
+  function context() {
+    var a = {};
+    for (var k in landing) if (Object.prototype.hasOwnProperty.call(landing, k) && typeof landing[k] === 'string' && landing[k]) a[k] = landing[k];
+    // Si la página de llegada no tenía este script: los ids de clic que
+    // guardaron las etiquetas del propio sitio (Google y Meta).
+    if (!a.gclid) { var g = /^GCL\.\d+\.(.+)$/.exec(cookie('_gcl_aw') || ''); if (g && CLICK_ID.test(g[1])) a.gclid = g[1]; }
+    if (!a.fbclid) { var fb = /^fb\.\d+\.\d+\.(.+)$/.exec(cookie('_fbc') || ''); if (fb && CLICK_ID.test(fb[1])) a.fbclid = fb[1]; }
+    a.page_url = (location.origin + location.pathname).slice(0, 1000);
+    return a;
+  }
+
+  // ───────────── La conversión, en el sitio (v0.1.374) ─────────────
+  // Al enviar un formulario o agendar, el marco avisa y esto lo vuelve un
+  // evento DEL SITIO: Google Tag Manager (dataLayer), la etiqueta de Google
+  // Ads (gtag), el píxel de Meta (fbq) y un evento del navegador. Así la
+  // conversión se dispara donde aterrizó el anuncio. Si después hay una
+  // página de gracias, se va a ella cuando las etiquetas terminaron (o a los
+  // 1,6 s como mucho).
+  var fired = {};
+  function clean(v) { return typeof v === 'string' ? v.slice(0, 300) : null; }
+  function fire(ev, done) {
+    var booking = ev.kind === 'booking';
+    var sub = clean(ev.submission_id) || '';
+    var value = typeof ev.value === 'number' && isFinite(ev.value) ? ev.value : null;
+    var currency = value !== null && /^[A-Z]{3}$/.test(ev.currency || '') ? ev.currency : null;
+    var detail = { type: booking ? 'booking' : 'form', id: clean(ev.id), name: clean(ev.name), submission_id: sub, value: value, currency: currency };
+    if (booking) {
+      detail.service = clean(ev.service); detail.staff = clean(ev.staff); detail.start = clean(ev.start); detail.status = ev.status === 'pending' ? 'pending' : 'confirmed';
+    } else {
+      detail.ending = clean(ev.ending); detail.pending_confirmation = ev.pending_confirmation === true;
+    }
+    var ud = ev.user_data && typeof ev.user_data === 'object' ? ev.user_data : null;
+    var user = ud && (ud.email || ud.phone_number) ? { email: clean(ud.email) || undefined, phone_number: clean(ud.phone_number) || undefined } : null;
+    var waiting = 0, finished = false;
+    function end() { if (finished) return; finished = true; if (done) done(); }
+    function one() { waiting--; if (waiting <= 0) end(); }
+
+    var push = {
+      event: booking ? 'imagina_booking' : 'imagina_form_submit',
+      imagina: detail,
+      value: value,
+      currency: currency,
+      transaction_id: sub
+    };
+    if (booking) {
+      push.booking_id = detail.id; push.booking_name = detail.name; push.booking_service = detail.service;
+      push.booking_staff = detail.staff; push.booking_start = detail.start; push.booking_status = detail.status;
+    } else {
+      push.form_id = detail.id; push.form_name = detail.name; push.form_ending = detail.ending;
+    }
+    if (user) push.user_data = user;
+    try {
+      window.dataLayer = window.dataLayer || [];
+      // Con Tag Manager cargado, se espera a que sus etiquetas terminen.
+      if (done && window.google_tag_manager) { waiting++; push.eventCallback = one; push.eventTimeout = 1500; }
+      window.dataLayer.push(push);
+    } catch (e) {}
+
+    if (ev.google_ads && /^AW-\d{6,14}\/[A-Za-z0-9_-]{4,80}$/.test(ev.google_ads) && typeof window.gtag === 'function') {
+      try {
+        if (user) window.gtag('set', 'user_data', user);
+        var params = { send_to: ev.google_ads, transaction_id: sub };
+        if (value !== null) { params.value = value; params.currency = currency; }
+        if (done) { waiting++; params.event_callback = one; params.event_timeout = 1500; }
+        window.gtag('event', 'conversion', params);
+      } catch (e) {}
+    }
+    if ((ev.meta_event === 'Lead' || ev.meta_event === 'Schedule') && typeof window.fbq === 'function') {
+      try { window.fbq('track', ev.meta_event, value !== null ? { value: value, currency: currency } : {}, { eventID: sub }); } catch (e) {}
+    }
+    try { window.dispatchEvent(new CustomEvent(booking ? 'imagina:booking' : 'imagina:form-submit', { detail: detail })); } catch (e) {}
+    if (waiting <= 0) end();
+    else setTimeout(end, 1600);
+  }
+
   // ───────────── Mensajes de los marcos (insertados y ventanas) ─────────────
   window.addEventListener('message', function (e) {
     var d = e.data;
@@ -281,7 +397,21 @@ export const FORM_EMBED_JS = String.raw`(function () {
       var origin;
       try { origin = new URL(f.src, location.href).origin; } catch (x) { return; }
       if (e.origin !== origin) return;
-      if (d.type === 'imb-form-height' && typeof d.height === 'number' && d.height > 0 && d.height < 20000) {
+      if (d.type === 'imb-hello') {
+        try { f.contentWindow.postMessage({ type: 'imb-context', attribution: context() }, origin); } catch (x) {}
+      } else if (d.type === 'imb-conversion' && d.event && typeof d.event === 'object') {
+        var sid = String(d.event.submission_id || '');
+        var redirect = typeof d.redirect === 'string' && /^https:\/\//i.test(d.redirect) ? d.redirect : null;
+        var delay = typeof d.delay_ms === 'number' && d.delay_ms > 0 ? Math.min(d.delay_ms, 10000) : 0;
+        // El marco sabe así que el sitio se ocupa (también de la página de gracias).
+        try { f.contentWindow.postMessage({ type: 'imb-conversion-ack', ref: d.ref }, origin); } catch (x) {}
+        if (sid && fired[sid]) return;
+        if (sid) fired[sid] = true;
+        var t0 = Date.now();
+        fire(d.event, redirect ? function () {
+          setTimeout(function () { window.location.href = redirect; }, Math.max(0, delay - (Date.now() - t0)));
+        } : null);
+      } else if (d.type === 'imb-form-height' && typeof d.height === 'number' && d.height > 0 && d.height < 20000) {
         f.style.height = Math.ceil(d.height) + 'px';
       } else if (d.type === 'imb-form-redirect' && typeof d.url === 'string' && /^https:\/\//i.test(d.url)) {
         window.location.href = d.url;

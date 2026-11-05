@@ -1691,4 +1691,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Ve a **Ajustes → Integraciones**, abre **Cobros** de tu conexión de PayPal y crea un plan en **Suscripciones (débito automático)**. Después, en la ficha del cliente, toca **Suscribir**.',
         action: { label: 'Ver cómo funciona', href: '/aprende/cobros/cobros-suscripciones' },
     },
+    {
+        key: 'v0.1.374-medir-conversiones',
+        version: '0.1.374',
+        date: '2026-11-05',
+        kind: 'feature',
+        title: 'Mide en Google Ads y Meta los formularios y las citas de tu sitio',
+        summary:
+            'Insertados en tu sitio, cada envío y cada cita se vuelven una conversión de tu sitio: Tag Manager, tu etiqueta de Google Ads y el píxel de Meta, con su valor. Además guardas de qué campaña vino cada registro y llevas a una página de gracias.',
+        media: {
+            slides: [
+                {
+                    title: 'La conversión, en tu sitio',
+                    text: 'Cuando alguien envía el formulario o agenda, tu sitio registra la conversión con el valor y un id único: Google Ads la atribuye al anuncio que trajo a la persona.',
+                    illustration: 'form-conversions',
+                },
+                {
+                    title: 'De qué campaña vino cada registro',
+                    text: 'La campaña, el id del clic del anuncio y la página donde se llenó quedan en columnas de la lista, listas para un tablero por campaña.',
+                    illustration: 'form-stats',
+                },
+                {
+                    title: 'Una página de gracias con datos',
+                    text: 'Lleva a la persona a la página de gracias de tu sitio, también desde la agenda, con variables como el servicio, la fecha o el id del envío.',
+                    illustration: 'form-embed',
+                },
+            ],
+        },
+        body: 'Abre el constructor del formulario y entra a **Ajustes → Medir conversiones** (en la agenda, la sección **Medir conversiones**).',
+        action: { label: 'Ver cómo se usa', href: '/aprende/formularios/formularios-medir-conversiones' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

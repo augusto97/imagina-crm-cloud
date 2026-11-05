@@ -87,7 +87,7 @@ export const meta: LearnModuleMeta = {
             summary: 'Revisa lo que falta, publica, copia el enlace o el código para tu página y ajusta cómo se ve.',
             minutes: 6,
             level: 'basic',
-            keywords: 'publicar agenda enlace insertar sitio web iframe cambiar la direccion color logo donde es la cita',
+            keywords: 'publicar agenda enlace insertar sitio web iframe cambiar la direccion color logo donde es la cita conversion google ads tag manager meta pixel schedule pagina de gracias utm campaña',
             needs: 'manage_lists',
         },
         {

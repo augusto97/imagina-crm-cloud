@@ -18,6 +18,8 @@ export * from './schemas/public-list';
 export * from './schemas/form';
 export * from './schemas/form-logic';
 export * from './schemas/form-stats';
+export * from './schemas/conversion';
+export * from './schemas/conversion-logic';
 export * from './schemas/public-theme';
 export * from './schemas/public-theme-css';
 export * from './schemas/public-theme-presets';

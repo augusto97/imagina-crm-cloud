@@ -1,4 +1,15 @@
 import { z } from 'zod';
+import {
+    attributionInputSchema,
+    attributionSettingsSchema,
+    ATTRIBUTION_SETTINGS_DEFAULT,
+    conversionSettingsSchema,
+    CONVERSION_SETTINGS_DEFAULT,
+    redirectDelaySchema,
+    redirectUrlSchema,
+    type ConversionResult,
+    type PublicConversion,
+} from './conversion';
 import type { PublicDataConsent } from './data-consent';
 import type { FieldType } from './field';
 import { publicThemeSchema, readPublicTheme, type PublicChoiceStyle } from './public-theme';
@@ -504,12 +515,8 @@ export const formEndingSchema = z.object({
     name: z.string().max(80).default(''),
     title: z.string().max(200).default('¡Gracias!'),
     message: z.string().max(2000).default(''),
-    redirect_url: z
-        .string()
-        .max(2000)
-        .regex(/^https:\/\/[^\s]+$/, 'La dirección tiene que empezar con https://')
-        .nullable()
-        .default(null),
+    /** v0.1.374 — admite variables (`{{nombre}}`, `{{envio.id}}`) después del dominio. */
+    redirect_url: redirectUrlSchema.nullable().default(null),
     when: formShowIfSchema.nullable().default(null),
 });
 export type FormEnding = z.infer<typeof formEndingSchema>;
@@ -653,13 +660,14 @@ export const formSettingsSchema = z.object({
     submit_label: z.string().max(60).default('Enviar'),
     success_title: z.string().max(200).default('¡Gracias!'),
     success_message: z.string().max(2000).default('Recibimos tu respuesta.'),
-    /** Al enviar, llevar a esta dirección (https) en vez del mensaje. */
-    redirect_url: z
-        .string()
-        .max(2000)
-        .regex(/^https:\/\/[^\s]+$/, 'La dirección tiene que empezar con https://')
-        .nullable()
-        .default(null),
+    /**
+     * Al enviar, llevar a esta dirección (https) en vez del mensaje. v0.1.374:
+     * admite variables (`{{nombre}}`, `{{envio.id}}`, `{{valor}}`) después del
+     * dominio.
+     */
+    redirect_url: redirectUrlSchema.nullable().default(null),
+    /** v0.1.374 — Segundos que se ve el «¡Gracias!» antes de ir a la dirección. */
+    redirect_delay: redirectDelaySchema,
     /** Botón «Enviar otra respuesta» en la pantalla de gracias. */
     allow_another: z.boolean().default(true),
     /** Completar campos desde la dirección: `?nombre=Ana&origen=web`. */
@@ -743,6 +751,10 @@ export const formSettingsSchema = z.object({
     payment: formPaymentSchema.catch(FORM_PAYMENT_DEFAULT).default(FORM_PAYMENT_DEFAULT),
     /** v0.1.368 — Suscribir al enviar (débito automático de Mercado Pago). */
     subscription: formSubscriptionSchema.catch(FORM_SUBSCRIPTION_DEFAULT).default(FORM_SUBSCRIPTION_DEFAULT),
+    /** v0.1.374 (ADR-S97) — Medir conversiones en el sitio donde está insertado. */
+    conversion: conversionSettingsSchema.catch(CONVERSION_SETTINGS_DEFAULT).default(CONVERSION_SETTINGS_DEFAULT),
+    /** v0.1.374 — Guardar de dónde vino cada registro (campaña, clic del anuncio, página). */
+    attribution: attributionSettingsSchema.catch(ATTRIBUTION_SETTINGS_DEFAULT).default(ATTRIBUTION_SETTINGS_DEFAULT),
 });
 export type FormSettings = z.infer<typeof formSettingsSchema>;
 
@@ -978,6 +990,10 @@ export interface PublicFormMeta {
     payment?: PublicFormPayment | null;
     /** v0.1.368 — suscribir al enviar: los planes que se ofrecen. */
     subscription?: PublicFormSubscription | null;
+    /** v0.1.374 — Qué avisarle al sitio al enviar (null = nada). */
+    conversion?: PublicConversion | null;
+    /** v0.1.374 — Segundos del «¡Gracias!» antes de ir a la página de gracias. */
+    redirect_delay?: number;
 }
 
 /** v0.1.368 — Suscribir al enviar, visto desde la página. */
@@ -1085,6 +1101,8 @@ export const submitFormSchema = z.object({
     edit: z.string().regex(/^\d{1,12}\.\d{9,11}\.[0-9a-f]{32}$/).optional(),
     /** v0.1.368 — El plan que eligió (si el formulario suscribe y ofrece varios). */
     plan_id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+    /** v0.1.374 — De dónde vino (la dirección del sitio o del enlace): campaña, clic del anuncio, página. */
+    attribution: attributionInputSchema,
 });
 export type SubmitFormInput = z.infer<typeof submitFormSchema>;
 
@@ -1126,6 +1144,8 @@ export interface SubmitFormResult {
         provider?: 'mercadopago' | 'paypal';
     } | null;
     subscription_error?: string;
+    /** v0.1.374 — Para el evento del sitio (valor, id único del envío). */
+    conversion?: ConversionResult | null;
 }
 
 export interface FormUploadResult {

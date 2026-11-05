@@ -1,4 +1,15 @@
 import { z } from 'zod';
+import {
+    attributionInputSchema,
+    attributionSettingsSchema,
+    ATTRIBUTION_SETTINGS_DEFAULT,
+    conversionSettingsSchema,
+    CONVERSION_SETTINGS_DEFAULT,
+    redirectDelaySchema,
+    redirectUrlSchema,
+    type ConversionResult,
+    type PublicConversion,
+} from './conversion';
 import type { PublicDataConsent } from './data-consent';
 import { SMS_BOOKING_REMINDER_DEFAULT } from './sms';
 import { holidayCountryForTimeZone } from './holidays';
@@ -592,6 +603,18 @@ export const bookingSettingsSchema = z.object({
     theme: publicThemeSchema.nullable().catch(null).default(null),
     /** v0.1.354 — Qué se muestra y cómo se distribuye la página. */
     display: bookingDisplaySchema.catch(() => bookingDisplaySchema.parse({})).default({}),
+    /**
+     * v0.1.374 — Al agendar, llevar a esta página de gracias (https, con
+     * variables `{{cita.servicio}}`, `{{cita.fecha}}`… después del dominio).
+     * null = el mensaje de siempre.
+     */
+    redirect_url: redirectUrlSchema.nullable().catch(null).default(null),
+    /** v0.1.374 — Segundos que se ve la confirmación antes de ir a la dirección. */
+    redirect_delay: redirectDelaySchema,
+    /** v0.1.374 (ADR-S97) — Medir conversiones en el sitio donde está insertada. */
+    conversion: conversionSettingsSchema.catch(CONVERSION_SETTINGS_DEFAULT).default(CONVERSION_SETTINGS_DEFAULT),
+    /** v0.1.374 — Guardar de dónde vino cada cita (campaña, clic del anuncio, página). */
+    attribution: attributionSettingsSchema.catch(ATTRIBUTION_SETTINGS_DEFAULT).default(ATTRIBUTION_SETTINGS_DEFAULT),
 });
 export type BookingSettings = z.infer<typeof bookingSettingsSchema>;
 
@@ -859,6 +882,11 @@ export interface PublicBookingMeta {
     theme?: PublicThemeView;
     /** v0.1.354 — Qué se muestra y cómo se distribuye. */
     display?: BookingDisplay;
+    /** v0.1.374 — Qué avisarle al sitio al agendar (null = nada). */
+    conversion?: PublicConversion | null;
+    /** v0.1.374 — La página de gracias tras agendar y cuántos segundos esperar antes. */
+    redirect_url?: string | null;
+    redirect_delay?: number;
 }
 
 /** Un horario libre: inicio y fin (ISO UTC) y quién puede atenderlo. */
@@ -909,6 +937,8 @@ export const bookAppointmentSchema = z.object({
     time_zone: z.string().max(64).optional(),
     /** v0.1.353 — La prueba de que el correo es suyo (la devuelve `verify-code`). */
     email_proof: z.string().max(300).optional(),
+    /** v0.1.374 — De dónde vino (la dirección del sitio o del enlace). */
+    attribution: attributionInputSchema,
 });
 export type BookAppointmentInput = z.infer<typeof bookAppointmentSchema>;
 
@@ -980,6 +1010,10 @@ export interface PublicAppointmentSummary {
 export interface BookAppointmentResult {
     ok: true;
     appointment: PublicAppointmentSummary | null;
+    /** v0.1.374 — Para el evento del sitio (valor, id único de la reserva). */
+    conversion?: ConversionResult | null;
+    /** v0.1.374 — La página de gracias con sus variables ya completas (null = no hay). */
+    redirect_url?: string | null;
 }
 
 export const rescheduleAppointmentSchema = z.object({

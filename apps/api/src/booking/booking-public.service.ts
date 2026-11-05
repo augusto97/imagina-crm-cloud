@@ -40,6 +40,10 @@ import {
     timeZoneLabel,
     validateFieldValue,
     zonedDayAndMinute,
+    ATTRIBUTION_KEYS,
+    cleanAttribution,
+    fillRedirectUrl,
+    type ConversionResult,
     type BookAppointmentInput,
     type BookAppointmentResult,
     type BookingConfig,
@@ -76,6 +80,7 @@ import { DomainsService } from '../domains/domains.service';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
 import { CaptchaService } from '../forms/captcha.service';
+import { attributionRecordData, conversionResult, publicConversion } from '../forms/form-conversion';
 import { IncidentHub } from '../incidents/incident-hub';
 import { ListsService } from '../lists/lists.service';
 import { MailService } from '../mail/mail.service';
@@ -559,6 +564,9 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             pending_message: s.pending_message,
             theme: publicThemeView(bookingTheme(s)),
             display: s.display,
+            // v0.1.374 — qué avisarle al sitio al agendar (el evento sale siempre).
+            conversion: publicConversion(s.conversion, s.attribution),
+            redirect_delay: s.redirect_delay,
         };
     }
 
@@ -702,6 +710,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                     meeting,
                     data: {
                         ...answers,
+                        // v0.1.374 — de dónde vino (campaña, clic del anuncio, página del sitio).
+                        ...attributionRecordData(p.config.settings.attribution, p.fields, input.attribution),
                         ...this.meetingData(p, meeting),
                         ...appointmentRecordData({
                             config: p.config,
@@ -768,7 +778,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             if (p.config.notifications.confirm_email) {
                 void this.sendClientMail(p, appt, 'requested', { base, names, withdrawRef: evidence?.withdrawRef ?? null });
             }
-            return { ok: true, appointment: this.summary(p, appt, base, names) };
+            const summary = this.summary(p, appt, base, names);
+            return { ok: true, appointment: summary, ...this.conversionFor(p, service, summary, start, clientEmail, phone, input.attribution) };
         }
         const info = this.eventInfo(p, appt, 'booked', 'client', base, names, null);
         this.notifyStaff(p, appt, staff, 'booked', info);
@@ -781,7 +792,46 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             const ready = await Promise.race([run.calendar, new Promise<null>((ok) => setTimeout(() => ok(null), MEETING_WAIT_MS))]);
             if (ready) shown = ready;
         }
-        return { ok: true, appointment: this.summary(p, shown, base, names) };
+        const summary = this.summary(p, shown, base, names);
+        return { ok: true, appointment: summary, ...this.conversionFor(p, service, summary, start, clientEmail, phone, input.attribution) };
+    }
+
+    /**
+     * v0.1.374 (ADR-S97) — Lo que la página necesita para avisarle al sitio
+     * (valor, id único de la reserva, conversiones mejoradas) y la página de
+     * gracias con sus variables: la cita (`{{cita.servicio}}`,
+     * `{{cita.asesor}}`, `{{cita.fecha}}`, `{{cita.hora}}`, `{{cita.estado}}`),
+     * la reserva (`{{envio.id}}`, `{{valor}}`, `{{moneda}}`) y el origen
+     * (`{{utm_campaign}}`…). Nunca el correo ni el teléfono.
+     */
+    private conversionFor(
+        p: ResolvedPage,
+        service: BookingServiceItem,
+        summary: PublicAppointmentSummary,
+        start: Date,
+        email: string,
+        phone: string | null,
+        attribution: unknown,
+    ): { conversion: ConversionResult; redirect_url: string | null } {
+        const s = p.config.settings;
+        const conversion = conversionResult(s.conversion, { price: service.price, email, phone });
+        const template = s.redirect_url;
+        if (!template) return { conversion, redirect_url: null };
+        const at = zonedDayAndMinute(start, p.timeZone);
+        const origin = cleanAttribution(attribution);
+        const vars: Record<string, string | number | null> = {
+            'cita.servicio': summary.service,
+            'cita.asesor': summary.staff,
+            'cita.fecha': at.ymd,
+            'cita.hora': `${String(Math.floor(at.minute / 60)).padStart(2, '0')}:${String(at.minute % 60).padStart(2, '0')}`,
+            'cita.estado': summary.status === 'pending' ? 'por_confirmar' : 'confirmada',
+            'agenda.nombre': s.title || p.row.name,
+            'envio.id': conversion.submission_id,
+            valor: conversion.value,
+            moneda: conversion.currency,
+        };
+        for (const k of ATTRIBUTION_KEYS) if (k !== 'page_url' && k !== 'referrer') vars[k] = origin[k] ?? null;
+        return { conversion, redirect_url: fillRedirectUrl(template, (k) => vars[k] ?? null) };
     }
 
     /**

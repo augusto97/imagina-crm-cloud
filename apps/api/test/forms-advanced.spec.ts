@@ -404,7 +404,7 @@ describe('v0.1.289 — formularios avanzados (Postgres + Redis reales)', () => {
                 uploads: {},
                 stamp: oldStamp(id),
             });
-            expect(res).toEqual({ ok: true, redirect_url: null, pending_confirmation: true, email_hint: 'an***@acme.co' });
+            expect(res).toEqual({ ok: true, redirect_url: null, pending_confirmation: true, email_hint: 'an***@acme.co', conversion: expect.objectContaining({ submission_id: expect.any(String) }) });
             expect(await countRecords()).toBe(0);
             expect(dispatcher.events).toEqual([]);
             const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(forms).where(eq(forms.id, id)));

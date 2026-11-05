@@ -12553,6 +12553,76 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         **Límite de la verificación**: sin credenciales reales de PayPal; la
         prueba con una app sandbox queda para el servidor.
 
+  - [x] **Medir conversiones de formularios y agendas insertados (v0.1.374,
+        ADR-S97, preguntas del usuario: "¿cómo se miden las conversiones de
+        Google Ads de los formularios y las citas? ¿se puede poner el código de
+        seguimiento? ¿y llevar a una página de gracias?")**. El formulario y la
+        agenda viven en un marco de otro dominio dentro del sitio de la
+        empresa: la etiqueta de Google del sitio no ve lo que pasa adentro, y
+        Google atribuye la conversión donde aterrizó el anuncio.
+        (a) **El evento sale en el sitio**: al enviar o agendar, la página
+        pública manda `imb-conversion` y el `embed.js` (sólo atiende a SUS
+        marcos y su origen) dispara `dataLayer.push` con `event:
+        imagina_form_submit | imagina_booking`, `transaction_id`, `value`,
+        `currency` y el detalle en `imagina` (Tag Manager sin configurar
+        nada; con GTM cargado espera su `eventCallback`), `gtag('event',
+        'conversion', {send_to, transaction_id, value, currency})` con la
+        etiqueta de Google Ads que pega la empresa (`parseGoogleAdsSendTo`
+        reconoce el «AW-…/…» aunque se pegue el fragmento entero; nunca se
+        guarda código), `fbq('track', 'Lead'|'Schedule', …, {eventID})` y un
+        `CustomEvent` (`imagina:form-submit` / `imagina:booking`). Un envío
+        dispara una vez (por su id); funciona en la página, la ventana, el
+        panel lateral y el botón flotante, y con una CSP estricta del sitio.
+        (b) **Del servidor**: `submission_id` único (12 caracteres) que viaja
+        como `transaction_id`/`eventID` para no contar dos veces; **valor**
+        fijo, de lo cobrado, de un cálculo o el precio del servicio
+        (`conversionResult`, `form-conversion.ts`); **conversiones mejoradas**
+        opcionales y apagadas por defecto (correo en minúsculas y teléfono
+        E.164 a `gtag('set','user_data')`). Con la confirmación por correo el
+        evento sale al enviar con `pending_confirmation`.
+        (c) **De dónde vino cada registro** (`settings.attribution` en
+        formularios y agendas): utm, `gclid`/`gbraid`/`wbraid`, `fbclid`,
+        `msclkid`, `ttclid`, la página y el sitio de origen en columnas
+        elegidas o creadas con «Crear las columnas que faltan». El `embed.js`
+        recuerda en la pestaña los datos de la PRIMERA página de la visita (un
+        clic nuevo los reemplaza; respaldo con `_gcl_aw`/`_fbc`) y los pasa al
+        marco por mensaje (`imb-hello` → `imb-context`), nunca en su dirección
+        (cada clic rompería la caché de ADR-S95). El servidor limpia todo
+        (`cleanAttribution`) y nunca escribe en una columna que el formulario
+        pregunta o que otra cosa escribe; esas columnas ya no se ofrecen como
+        pregunta en el constructor ni en la agenda. Las claves terminan en
+        `_field_id`: migrar una empresa las re-mapea solas.
+        (d) **Página de gracias** también en la agenda, con **variables**
+        (`{{nombre}}`, `{{envio.id}}`, `{{valor}}`, `{{moneda}}`,
+        `{{utm_campaign}}`, `{{cita.servicio|fecha|hora|estado}}`…),
+        `redirect_delay` hasta 10 s y la regla de siempre: sólo https, las
+        variables después del dominio y cada valor codificado; **el correo y el
+        teléfono nunca se resuelven** (Google Analytics prohíbe datos
+        personales en las direcciones). Insertado, la página entera va a la de
+        gracias cuando las etiquetas terminaron (o a los 1,6 s); sin respuesta
+        del sitio en 500 ms el marco usa la redirección de antes.
+        (e) **Constructor**: «Medir conversiones» en Ajustes del formulario y
+        sección propia en la agenda (`ConversionSettings`, compartido), el
+        campo de la página de gracias con las variables a un clic
+        (`ThankYouUrlField`). Asistente/MCP: `get_list_schema` muestra
+        conversiones y página de gracias. **Bug encontrado**: la página de
+        gracias sólo resolvía las respuestas que también aparecían en un texto
+        del formulario (`formRecallMap`); ahora resuelve cualquier pregunta.
+        Ayuda: guía `measure-conversions`, artículo «Medir conversiones de
+        Google Ads y Meta» en Aprende → Formularios (con la ilustración
+        `form-conversions`) y sección en la agenda, paso del recorrido de
+        formularios, novedad con carrusel y el runbook de Cloudflare
+        (ignorar los parámetros de campaña en la caché). Tests:
+        `forms-conversion.spec` (3), caso nuevo en `booking.spec`, 6 de shared
+        y 1 del front, y las suites de formularios y agenda en verde — E2E
+        navegador 48/48 en escritorio y 48/48 en celular oscuro contra un sitio
+        de OTRO origen con GTM, gtag y fbq simulados (constructor, insertado con
+        página de gracias tras 2 s y las columnas de origen, panel lateral que
+        conserva la campaña de la primera página, enlace directo y agenda con
+        `imagina_booking`, `Schedule` y el precio del servicio). Queda
+        propuesta (sin aprobar) la v0.1.375: píxel de Google y Meta por ID en
+        el enlace directo, aislado.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

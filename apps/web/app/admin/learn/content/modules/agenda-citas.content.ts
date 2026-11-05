@@ -604,7 +604,7 @@ export const articles: LearnArticle[] = [
     {
         id: 'agenda-publicar',
         route: '/lists',
-        related: ['agenda-que-es', 'agenda-gestionar', 'formularios-publicar'],
+        related: ['agenda-que-es', 'agenda-gestionar', 'formularios-publicar', 'formularios-medir-conversiones'],
         blocks: [
             {
                 t: 'p',
@@ -673,10 +673,16 @@ export const articles: LearnArticle[] = [
                     { q: '¿Qué pasa si mi empresa queda en solo lectura?', a: 'La agenda deja de recibir reservas y muestra el mensaje de cerrada, hasta que se regularice el pago.' },
                 ],
             },
+            { t: 'h', text: 'Medir las citas que traen tus anuncios' },
+            {
+                t: 'p',
+                md: 'Si pautas en **Google Ads** o en **Meta**, en la sección **Medir conversiones** del constructor cada cita agendada en tu sitio se vuelve una conversión de tu sitio: el evento **imagina_booking** para Google Tag Manager, tu etiqueta de conversión de Google Ads y el evento **Schedule** del píxel de Meta, con el **precio del servicio** como valor si quieres. Ahí mismo eliges guardar de qué campaña vino cada cita y llevar a la persona a una **página de gracias** con los datos de la cita: `https://tusitio.com/gracias?servicio={{cita.servicio}}&fecha={{cita.fecha}}`.',
+            },
             {
                 t: 'actions',
                 items: [
                     { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Cómo medir conversiones', article: 'formularios-medir-conversiones' },
                     { label: 'Siguiente: gestionar las citas', article: 'agenda-gestionar' },
                 ],
             },

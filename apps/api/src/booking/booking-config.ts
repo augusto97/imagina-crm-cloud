@@ -14,6 +14,7 @@ import {
     formConditionRules,
     isFormCalcRule,
 } from '@imagina-base/shared';
+import { cleanAttributionSettings } from '../forms/form-conversion';
 
 /**
  * D5 — Piezas puras de la agenda en el servidor: leer y sanear la
@@ -132,8 +133,18 @@ export function sanitizeBookingConfig(config: BookingConfig, fields: ReadonlyArr
     // v0.1.353 — quien aprueba: personas del equipo que pueden trabajar la lista, una vez cada una.
     const approvers = [...new Set(config.approval.approver_user_ids)].filter((id) => !members || members.has(id));
 
+    // v0.1.374 — el origen va a columnas que la página no escribe ni pregunta;
+    // el valor de la conversión, fijo o el precio del servicio.
+    const conv = config.settings.conversion;
+    const settings = {
+        ...config.settings,
+        attribution: cleanAttributionSettings(config.settings.attribution, fields, new Set([...mapped, ...inForm])),
+        conversion: { ...conv, value: conv.value === 'fixed' || conv.value === 'price' ? conv.value : 'none' },
+    };
+
     return bookingConfigSchema.parse({
         ...config,
+        settings,
         approval: { ...config.approval, approver_user_ids: approvers },
         mapping: cleanMapping,
         services,

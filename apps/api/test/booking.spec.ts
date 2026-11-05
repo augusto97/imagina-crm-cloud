@@ -1446,6 +1446,73 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         expect(nueva.config.settings.theme!.custom_css).toBe(brandCss);
     });
 
+    // ─────────────────────────── v0.1.374 ───────────────────────────
+
+    it('v0.1.374 — medir conversiones: el origen va a sus columnas, el valor es el precio y la página de gracias trae la cita', async () => {
+        const campana = await fieldsSvc.create(tenantId, 'citas', { label: 'Campaña', type: 'text', slug: 'campana374' } as never);
+        const clic = await fieldsSvc.create(tenantId, 'citas', { label: 'Clic de Google', type: 'text', slug: 'gclid374' } as never);
+        const pagina = await fieldsSvc.create(tenantId, 'citas', { label: 'Página', type: 'url', slug: 'pagina374' } as never);
+        await pageWith((c) => {
+            c.services[0] = { ...c.services[0]!, price: 80000 };
+            c.settings.redirect_url = 'https://acme.co/gracias?s={{cita.servicio}}&d={{cita.fecha}}&h={{cita.hora}}&id={{envio.id}}&c={{utm_campaign}}&e={{cita.estado}}';
+            c.settings.redirect_delay = 3;
+            c.settings.conversion = { ...c.settings.conversion, google_ads: 'AW-123456789/AbCdEf', meta_event: true, value: 'price', currency: 'COP', share_contact: true };
+            // Una columna que la agenda ya escribe (el nombre del cliente) no sirve para el origen.
+            c.settings.attribution = {
+                ...c.settings.attribution,
+                enabled: true,
+                utm_campaign_field_id: campana.id,
+                gclid_field_id: clic.id,
+                page_url_field_id: pagina.id,
+                utm_source_field_id: f.cliente!.id,
+            };
+        });
+        const meta = await pub.meta(token);
+        expect(meta.conversion).toEqual({ google_ads: 'AW-123456789/AbCdEf', meta_event: true, attribution: true });
+        expect(meta.redirect_delay).toBe(3);
+        const dto = await booking.get(tenantId, 'citas', pageId);
+        expect(dto.config.settings.attribution.utm_source_field_id).toBeNull();
+        expect(dto.config.settings.attribution.utm_campaign_field_id).toBe(campana.id);
+
+        const res = await pub.book(token, nextIp(), {
+            service_id: 'svcconsulta',
+            staff_id: 'stfana',
+            start: at(D, 9),
+            name: 'Ana Ads',
+            email: 'ADS@x.co',
+            phone: '+57 300 111 2233',
+            values: {},
+            stamp: stamp(pageId),
+            attribution: { utm_campaign: 'Black Friday', gclid: 'Cj0KCQ-abc_123', page_url: 'https://acme.co/agenda', fbclid: 'con espacios', otra: 'x' },
+        });
+        expect(res.conversion).toMatchObject({ value: 80000, currency: 'COP', user_data: { email: 'ads@x.co', phone_number: '+573001112233' } });
+        expect(res.conversion!.submission_id).toMatch(/^[A-Za-z0-9_-]{12}$/);
+        const u = new URL(res.redirect_url!);
+        expect(u.host).toBe('acme.co');
+        expect(u.searchParams.get('s')).toBe('Consulta');
+        expect(u.searchParams.get('d')).toBe(D);
+        expect(u.searchParams.get('h')).toBe('09:00');
+        expect(u.searchParams.get('id')).toBe(res.conversion!.submission_id);
+        expect(u.searchParams.get('c')).toBe('Black Friday');
+        expect(u.searchParams.get('e')).toBe('confirmada');
+
+        const appt = (await appointments()).find((a) => a.clientEmail === 'ads@x.co')!;
+        const [rec] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(records).where(eq(records.id, appt.recordId!)));
+        const data = rec!.data as Record<string, unknown>;
+        expect(data[`f${campana.id}`]).toBe('Black Friday');
+        expect(data[`f${clic.id}`]).toBe('Cj0KCQ-abc_123');
+        expect(data[`f${pagina.id}`]).toBe('https://acme.co/agenda');
+        // El nombre del cliente es el de la reserva, no el origen.
+        expect(data[`f${f.cliente!.id}`]).toBe('Ana Ads');
+
+        // Sin página de gracias ni valor: igual vuelve el id de la reserva (el evento del sitio sale siempre).
+        await pageWith(() => undefined);
+        const plain = await book({ staff: 'stfana', start: at(D, 10), email: 'plain@x.co' });
+        expect(plain.redirect_url).toBeNull();
+        expect(plain.conversion).toMatchObject({ value: null, currency: null });
+        expect(plain.conversion!.user_data).toBeUndefined();
+    });
+
 });
 
 describe('v0.1.349 — iCal de festivos (puro)', () => {

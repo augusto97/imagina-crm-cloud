@@ -3,6 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import {
     AlarmClock,
     ArrowDown,
+    BarChart3,
     ArrowUp,
     CalendarClock,
     CalendarDays,
@@ -73,6 +74,7 @@ import { useCaptchaAvailability, useDataConsentAvailability } from '../forms/use
 import { useAttachmentUrls } from '../forms/design/useFormThemes';
 import { effectiveTheme, fallbackAccent, patchThemeSection, resolvedAccent } from '../forms/design/themeOps';
 import { BookingDesignEditor } from './BookingDesignEditor';
+import { ConversionSettings, ThankYouUrlField } from '../forms/design/ConversionSettings';
 import { SmsCounter } from '@/cloud/components/sms/smsUi';
 import { useSmsConnections } from '@/cloud/components/sms/useSmsConnections';
 import { extractFieldOptions } from '../records/fieldOptions';
@@ -145,6 +147,7 @@ const SECTIONS: Array<{ id: BookingSection; label: string; icon: LucideIcon }> =
     { id: 'campos', label: 'Campos de la lista', icon: ListChecks },
     { id: 'correos', label: 'Correos y recordatorios', icon: Mail },
     { id: 'diseno', label: 'Diseño', icon: Palette },
+    { id: 'medir', label: 'Medir conversiones', icon: BarChart3 },
     { id: 'publicar', label: 'Publicar', icon: Send },
 ];
 
@@ -750,6 +753,7 @@ function SectionEditor(p: SectionEditorProps): JSX.Element {
                     suggestedName={p.config.settings.title || p.pageName}
                 />
             )}
+            {p.section === 'medir' && <MeasureEditor {...p} />}
             {p.section === 'publicar' && <PublishEditor {...p} />}
         </div>
     );
@@ -764,8 +768,53 @@ const SECTION_HINTS: Record<BookingSection, string> = {
     campos: __('En qué campo de la lista se guarda cada dato de la cita, y qué más se le pregunta al cliente.'),
     correos: __('El correo de confirmación (con el archivo para agregarla al calendario), los recordatorios y lo que ve al terminar.'),
     diseno: __('Una plantilla o tu propio diseño: colores, tipografía, tamaños, portada, fondo, qué se muestra y cómo se distribuye.'),
+    medir: __('Qué le avisa la agenda a tu sitio cuando alguien agenda (Google Ads, Meta, Tag Manager), la página de gracias y de dónde vino cada cita.'),
     publicar: __('Los textos de la página, dónde se puede insertar y su enlace.'),
 };
+
+/**
+ * v0.1.374 (ADR-S97) — Medir conversiones: la página de gracias (con las
+ * variables de la cita) y lo que la agenda le avisa al sitio donde está
+ * insertada.
+ */
+function MeasureEditor({ config, onChange, fields, listId }: SectionEditorProps): JSX.Element {
+    const s = config.settings;
+    const setS = (patch: Partial<BookingConfig['settings']>): void => onChange({ ...config, settings: { ...s, ...patch } });
+    const taken = new Set<number>();
+    for (const [k, v] of Object.entries(config.mapping)) if (k.endsWith('_field_id') && typeof v === 'number') taken.add(v);
+    for (const q of config.questions) if (q.type === 'field') taken.add(q.field_id);
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-tour="booking-measure">
+            <ThankYouUrlField
+                value={s.redirect_url}
+                delay={s.redirect_delay}
+                onChange={(url) => setS({ redirect_url: url })}
+                onDelay={(n) => setS({ redirect_delay: n })}
+                variables={[
+                    { token: 'cita.servicio', label: __('El servicio') },
+                    { token: 'cita.fecha', label: __('El día (AAAA-MM-DD)') },
+                    { token: 'cita.hora', label: __('La hora (HH:MM)') },
+                    { token: 'cita.asesor', label: __('Quién atiende') },
+                    { token: 'cita.estado', label: __('confirmada o por_confirmar') },
+                    { token: 'envio.id', label: __('Id único de la reserva (para no contar dos veces)') },
+                    { token: 'valor', label: __('Valor de la conversión') },
+                    { token: 'utm_campaign', label: __('La campaña con la que llegó') },
+                ]}
+                placeholder="https://tusitio.com/cita-agendada"
+                testId="booking-redirect-url"
+            />
+            <ConversionSettings
+                kind="booking"
+                conversion={s.conversion}
+                attribution={s.attribution}
+                onChange={(patch) => setS(patch)}
+                fields={fields}
+                takenFieldIds={taken}
+                listId={listId}
+            />
+        </div>
+    );
+}
 
 function ServicesEditor({ config, onChange }: SectionEditorProps): JSX.Element {
     return (

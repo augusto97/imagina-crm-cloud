@@ -258,6 +258,67 @@ const CLIENT_JS = String.raw`
   var manage = BOOT.manage;
   var visitorTz = 'UTC';
   try { visitorTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch (e) {}
+
+  // ── v0.1.374 (ADR-S97) — Medir conversiones ──
+  // Insertada en un sitio: el script del sitio (embed.js) le pasa a la página
+  // de dónde vino la persona y, al agendar, convierte el aviso en un evento
+  // DEL SITIO (Tag Manager, Google Ads, Meta). Sin ese script, como antes.
+  var ATTR_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid'];
+  var hostAttr = null, hostOrigin = null, acks = {}, convSeq = 0;
+  if (embedded && !PREVIEW && MODE !== 'manage') {
+    window.addEventListener('message', function (e) {
+      if (e.source !== parent || !e.data || typeof e.data !== 'object') return;
+      if (e.data.type === 'imb-context' && e.data.attribution && typeof e.data.attribution === 'object') {
+        hostAttr = e.data.attribution;
+        if (/^https?:\/\//.test(e.origin || '')) hostOrigin = e.origin;
+      } else if (e.data.type === 'imb-conversion-ack' && typeof e.data.ref === 'string') acks[e.data.ref] = true;
+    });
+    try { parent.postMessage({ type: 'imb-hello' }, '*'); } catch (e) {}
+  }
+  function attributionNow() {
+    var out = {};
+    try { var q = new URLSearchParams(location.search); ATTR_KEYS.forEach(function (k) { var v = q.get(k); if (v) out[k] = String(v).slice(0, 300); }); } catch (e) {}
+    if (!embedded && document.referrer) { try { if (new URL(document.referrer).host !== location.host) out.referrer = document.referrer.slice(0, 1000); } catch (e) {} }
+    if (hostAttr) for (var k in hostAttr) if (Object.prototype.hasOwnProperty.call(hostAttr, k) && typeof hostAttr[k] === 'string') out[k] = hostAttr[k].slice(0, 1000);
+    return out;
+  }
+  function targetOrigin() {
+    if (hostOrigin) return hostOrigin;
+    try { if (location.ancestorOrigins && location.ancestorOrigins.length) return location.ancestorOrigins[0]; } catch (e) {}
+    return '*';
+  }
+  function postConversion(ev, redirect, delayMs) {
+    if (!ev || !embedded || PREVIEW) return null;
+    var ref = 'b' + (++convSeq) + Date.now().toString(36);
+    try { parent.postMessage({ type: 'imb-conversion', ref: ref, event: ev, redirect: redirect, delay_ms: delayMs }, targetOrigin()); } catch (e) { return null; }
+    return ref;
+  }
+  function conversionEvent(res) {
+    var c = res && res.conversion, a = res && res.appointment;
+    if (!c || !meta || PREVIEW) return null;
+    return {
+      kind: 'booking', id: BOOT.token, name: meta.title, submission_id: c.submission_id, value: c.value, currency: c.currency,
+      service: a ? a.service : '', staff: a ? a.staff : '', start: a ? a.start : '', status: a && a.status === 'pending' ? 'pending' : 'confirmed',
+      google_ads: meta.conversion ? meta.conversion.google_ads : null,
+      meta_event: meta.conversion && meta.conversion.meta_event ? 'Schedule' : null,
+      user_data: c.user_data || null
+    };
+  }
+  // La página de gracias: insertada, la hace el script del sitio cuando sus
+  // etiquetas terminaron; sin ese script (o con uno viejo), se pide como antes.
+  function goThankYou(url, ev) {
+    var delay = Math.max(0, Math.min(10, meta.redirect_delay || 0)) * 1000;
+    if (!embedded) { setTimeout(function () { location.href = url; }, delay); return; }
+    var ref = postConversion(ev, url, delay), t0 = Date.now();
+    (function wait() {
+      if (ref && acks[ref]) return;
+      if (Date.now() - t0 < 500) { setTimeout(wait, 50); return; }
+      setTimeout(function () {
+        try { parent.postMessage({ type: 'imb-form-redirect', url: url }, '*'); } catch (e) {}
+        setTimeout(function () { try { window.open(url, '_top'); } catch (e) { location.href = url; } }, 200);
+      }, Math.max(0, delay - 500));
+    })();
+  }
   var st = {
     step: 'service', service: null, duration: null, staff: 'any', month: null, day: null, slot: null,
     showTz: null, values: {}, busy: false, cache: {}, alert: '', errors: {}, done: null, cancelOpen: false,
@@ -823,6 +884,7 @@ const CLIENT_JS = String.raw`
     };
     if ((st.values.__phone || '').trim()) body.phone = st.values.__phone.trim();
     if (meta.data_consent) { body.consent = st.values.__consent === true; body.consent_version = meta.data_consent.version; }
+    if (meta.conversion && meta.conversion.attribution) { var at = attributionNow(); if (Object.keys(at).length) body.attribution = at; }
     if (meta.captcha) body.captcha = captchaToken || '';
     if (hasProof()) body.email_proof = st.proof.value;
     st.busy = true; st.alert = ''; render();
@@ -837,7 +899,11 @@ const CLIENT_JS = String.raw`
         if (res.status >= 200 && res.status < 300) {
           st.done = res.body.appointment || { pending: true };
           st.step = 'done';
+          st.redirect = typeof res.body.redirect_url === 'string' && /^https:\/\//.test(res.body.redirect_url) ? res.body.redirect_url : null;
           render();
+          var conv = conversionEvent(res.body);
+          if (st.redirect) goThankYou(st.redirect, conv);
+          else postConversion(conv, null, 0);
           try { parent.postMessage({ type: 'imb-form-submitted' }, '*'); } catch (e) {}
           return;
         }
@@ -955,6 +1021,12 @@ const CLIENT_JS = String.raw`
       if (a.can_reschedule || a.can_cancel) acts.appendChild(el('a', { cls: 'ib-btn ib-btn-secondary', href: a.manage_url, target: embedded ? '_blank' : undefined, rel: 'noopener', 'data-testid': 'booking-manage-link', text: 'Cambiar o cancelar' }));
       box.appendChild(acts);
       if (!join && !waiting && a.location_kind === 'video') box.appendChild(el('p', { cls: 'muted', 'data-testid': 'booking-meeting-later', text: 'El enlace de la videollamada te llega en el correo de confirmación.' }));
+    }
+    // v0.1.374 — a la página de gracias (con un enlace para ir ya).
+    if (st.redirect) {
+      var secs = Math.max(0, Math.min(10, meta.redirect_delay || 0));
+      box.appendChild(el('p', { cls: 'muted', 'data-testid': 'booking-redirecting', text: secs > 0 ? 'Te llevamos en ' + secs + ' segundos…' : 'Te llevamos a la siguiente página…' }));
+      box.appendChild(el('a', { cls: 'ib-btn ib-btn-secondary', href: st.redirect, target: '_top', rel: 'noopener', text: 'Ir ahora' }));
     }
     root.appendChild(box);
   }

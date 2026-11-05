@@ -20,6 +20,7 @@ export const meta: LearnModuleMeta = {
         'Plantillas de diseño, colores, fuentes, tamaños, bordes, fondo y portada, con tus propios temas',
         'Cierre por fecha o por cupo, confirmación por correo, anti-robots y autorización de datos',
         'Comparte el enlace o un código QR, o insértalo en tu sitio en una ventana, un panel lateral o a pantalla completa',
+        'Mide las conversiones de Google Ads y Meta en tu sitio y guarda de qué campaña vino cada registro',
         'Deja que una automatización conteste sola',
     ],
     articles: [
@@ -147,6 +148,15 @@ export const meta: LearnModuleMeta = {
             minutes: 6,
             level: 'basic',
             keywords: 'publicar enlace link compartir insertar iframe pagina web sitio dominios qr codigo qr imprimir volante redes sociales panel lateral pantalla completa ventana emergente popup sin marco sin fondo sin espacio padding margen transparente formulario de contacto',
+            needs: 'manage_forms',
+        },
+        {
+            id: 'formularios-medir-conversiones',
+            title: 'Medir conversiones de Google Ads y Meta',
+            summary: 'Que cada envío cuente como conversión en tu sitio (Tag Manager, Google Ads, Meta), guardar de qué campaña vino cada registro y llevar a una página de gracias.',
+            minutes: 7,
+            level: 'intermediate',
+            keywords: 'conversion conversiones google ads adwords gtag tag manager gtm datalayer meta facebook pixel fbq lead utm campaña gclid fbclid origen atribucion pagina de gracias redireccion thank you anuncios pauta',
             needs: 'manage_forms',
         },
         {

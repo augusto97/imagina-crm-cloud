@@ -877,6 +877,13 @@ export const TOURS: TourDef[] = [
                 body: 'En los ajustes, **Suscribir al enviar** ofrece tus planes de débito automático de Mercado Pago: la persona elige uno, autoriza su tarjeta una sola vez y se le cobra solo cada período.',
                 tip: 'En el portal del cliente, el bloque **Pagos** le muestra su suscripción, el próximo cobro y sus pagos.',
             },
+            {
+                id: 'conversions',
+                art: 'form-conversions',
+                title: 'Medir conversiones de tus anuncios',
+                body: 'En los ajustes, **Medir conversiones** hace que cada envío en tu sitio cuente en Tag Manager, Google Ads y Meta, con su valor, y guarda de qué campaña vino cada registro.',
+                tip: 'Funciona con el formulario insertado en tu sitio: la conversión se registra donde aterrizó el anuncio.',
+            },
         ],
     },
 
