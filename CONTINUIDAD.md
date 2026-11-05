@@ -420,6 +420,36 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-05 — **Suscripciones y cobros recurrentes (Mercado Pago y PayPal)
+  para los clientes de cada empresa** — ESPERANDO QUE EL USUARIO ELIJA. Hoy la
+  empresa sólo crea links de pago únicos (ADR-S31); el `preapproval` de Mercado
+  Pago existe pero sólo para cobrarle el plan a la empresa (ADR-S30), y PayPal
+  sólo para eso mismo (no hay conector de PayPal para empresas). Propuesta
+  enviada: (1) planes de suscripción de la empresa en la app; cada cliente =
+  un `preapproval` SIN plan asociado con `status: pending` + `init_point` (el
+  mismo camino que ya usa la plataforma: la tarjeta la toma Mercado Pago y el
+  `external_reference` ata la suscripción al registro); (2) suscribirse desde
+  la ficha, una automatización, un **formulario de suscripción** («Suscribir al
+  enviar», como «Cobrar al enviar» de v0.1.361) y el portal; (3) estado propio
+  por suscripción —por autorizar / al día / reintentando / en mora / vencida
+  (pasó la gracia) / pausada / cancelada / terminada— con «pagado hasta» +
+  gracia y qué hacer al vencer (avisar, marcar el servicio suspendido o
+  cancelar en Mercado Pago), revisión diaria que no depende sólo de los avisos;
+  (4) columnas de la suscripción en la lista que la empresa elija (como las de
+  cobro de v0.1.365) + una **lista espejo «Cobros de suscripciones»** (una fila
+  por cuota cobrada o fallida, vinculada al registro) para los reportes, o
+  escribirlos en una lista de Facturas que ya exista; disparador «Cuando
+  cambia una suscripción» (se cobró, falló, entró en mora, venció, se canceló)
+  y tablero (ingreso recurrente, en mora, canceladas, cobrado vs. fallido por
+  mes); (5) PayPal Subscriptions como conector de la empresa (USD; PayPal no
+  maneja COP). Datos verificados de Mercado Pago: hasta 4 reintentos por cuota
+  en ~10 días, la cuota queda «processed» con pago rechazado si fallan, y la
+  suscripción se da de baja sola tras 3 cuotas rechazadas (leído en la
+  documentación de Colombia); recurrencia sólo con tarjeta (PSE no es
+  recurrente). Wompi no tiene suscripciones nativas (sólo fuentes de pago para
+  cobros que dispara la app): quedó como fase opcional. Fases propuestas:
+  v0.1.367 Mercado Pago de punta a punta, v0.1.368 formulario + portal + lista
+  de cobros + tablero, v0.1.369 PayPal.
 - 2026-11-05 — **Reuniones de Teams para Binapps (v0.1.366)**. El cliente
   Binapps (cuentas mayerli.castano@binapps.co y nestor@binapps.co) pidió por
   escrito crear, reprogramar y cancelar reuniones de Teams desde las
