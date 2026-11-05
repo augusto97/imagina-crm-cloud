@@ -61,6 +61,7 @@ import {
     type WhatsappTestSendInput,
     type CollectionConnectionDetail,
     type CollectionFields,
+    type SetCollectionFieldsInput,
     type CreatePaymentLinkInput,
     type PaymentLink,
     type RecordPayments,
@@ -1147,6 +1148,13 @@ export class CloudClient {
     }
     setupCollectionFields(list: string | number): Promise<CollectionFields> {
         return this.request('POST', `/lists/${list}/collections/setup`, { body: {}, schema: z.custom<CollectionFields>() });
+    }
+    /** v0.1.365 — Dónde guarda la lista cada dato del cobro (null = todavía en ninguna). */
+    collectionFields(list: string | number): Promise<{ fields: CollectionFields | null }> {
+        return this.request('GET', `/lists/${list}/collections/fields`, { schema: z.custom<{ fields: CollectionFields | null }>() });
+    }
+    setCollectionFields(list: string | number, input: SetCollectionFieldsInput): Promise<CollectionFields> {
+        return this.request('PUT', `/lists/${list}/collections/fields`, { body: input, schema: z.custom<CollectionFields>() });
     }
     // ── WhatsApp oficial: Meta WhatsApp Cloud API (D3) ──────────────────
     async whatsappConnections(): Promise<Array<{ id: number; name: string; display_phone: string | null; templates: WhatsappTemplate[] }>> {

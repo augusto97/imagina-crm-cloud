@@ -12048,6 +12048,46 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         índice junta las partes. Esperado: ~5 min de pruebas y ~10 de
         publicación (antes ~36 en total).
 
+  - [x] **Los cobros se ven (v0.1.365, addendum ADR-S31, reporte del usuario:
+        "creé un botón de generar link de pago… crea el link pero no veo
+        ningún link generado; la automatización no creaba ningún campo para
+        mostrar el link")**. Los links SÍ se creaban, pero no quedaban en
+        ninguna columna (eran opt-in detrás de «Agregar columnas»), la ficha
+        diseñada/automática no tenía el panel «Cobros» y
+        `{{respuestas.pago.url}}` quedaba vacío. (a) **Elegir columnas**
+        (`PUT /lists/:l/collections/fields`, `setCollectionFieldsSchema`,
+        `CollectionsService.setFields`): por dato, una columna existente de un
+        tipo que sirva (`COLLECTION_FIELD_TYPES`), una nueva o ninguna; una
+        columna no guarda dos datos (400 `invalid_collection_fields`); un select
+        elegido como estado recibe las opciones del pago que le falten;
+        `suggestCollectionFields` (shared, puro) propone por nombre las que la
+        lista ya tiene; «Agregar columnas» adopta las existentes. Editor
+        `CollectionFieldsEditor` en la ficha («Elegir columnas» / «Columnas») y
+        en la acción «Crear link de pago» («Dónde queda el link»). (b) «Cobros»
+        en toda ficha: la diseñada sin el bloque lo muestra al final de la
+        primera pestaña (`ImplicitPayments`). (c) **Aviso del botón**:
+        `press-status` trae `payment_links` (`paymentLinksOf` sobre el log de la
+        corrida) y el aviso dice «Link de pago listo» con «Copiar link».
+        (d) **Motor**: la acción guarda el link como respuesta con nombre
+        (`body.url`), `{{respuestas.x.campo}}` = `{{respuestas.x.body.campo}}`,
+        el log dice en qué columna quedó (o que en ninguna) y «Actualizar un
+        campo» nombra la variable que quedó vacía. (e) La fecha de pago en una
+        columna de sólo fecha toma el día de la **zona de la empresa** (un pago
+        a las 9 p. m. en Bogotá ya no queda con la fecha de mañana); mapearla a
+        una fecha que dispara una renovación la dispara sola. (f) Asistente/MCP:
+        `get_list_schema` muestra `collections_fields` y las salidas de la
+        acción (`{{pago.link}}`), y la herramienta nueva
+        **`propose_configure_payment_columns`** (`manage_fields`) elige las
+        columnas por slug, `"create"` o null, con la misma validación (pedido
+        del usuario: "actualiza esos campos por el MCP"). Ayuda: guía `payment-links`, Aprende →
+        Cobros y novedad al día. Tests: 2 de integración en `collections.spec`
+        (elegir/validar/opciones/fecha en la zona; `{{respuestas.pago.url}}`,
+        log y aviso del botón), 4 de shared y 2 del front + E2E navegador 26/26
+        en escritorio y 26/26 en celular oscuro (botón → aviso con el link →
+        copiar → ficha con «Cobros» → elegir columnas → link en «Link de pago»
+        → pago aprobado → «Pagos recientes» → editor de la automatización →
+        ficha diseñada).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

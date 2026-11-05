@@ -172,14 +172,30 @@ export class ButtonsService {
         if (runIds.length === 0) return { state: 'done', runs: [] };
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
-                .select({ runId: automationRuns.id, automationId: automationRuns.automationId, status: automationRuns.status, error: automationRuns.error, name: automations.name })
+                .select({
+                    runId: automationRuns.id,
+                    automationId: automationRuns.automationId,
+                    status: automationRuns.status,
+                    error: automationRuns.error,
+                    name: automations.name,
+                    log: automationRuns.actionsLog,
+                })
                 .from(automationRuns)
                 .innerJoin(automations, eq(automations.id, automationRuns.automationId))
                 .where(and(eq(automationRuns.tenantId, tenantId), eq(automations.listId, list.id), inArray(automationRuns.id, runIds))),
         );
         return {
             state: rows.some((r) => r.status === 'running' || r.status === 'pending') ? 'running' : 'done',
-            runs: rows.map((r) => ({ automation_id: r.automationId, name: r.name, status: r.status, error: r.error ?? null })),
+            runs: rows.map((r) => {
+                const links = paymentLinksOf(r.log);
+                return {
+                    automation_id: r.automationId,
+                    name: r.name,
+                    status: r.status,
+                    error: r.error ?? null,
+                    ...(links.length > 0 ? { payment_links: links } : {}),
+                };
+            }),
         };
     }
 
@@ -597,4 +613,20 @@ export function errorMessage(err: unknown): string {
         if (typeof r.message === 'string') return r.message;
     }
     return err instanceof Error ? err.message : 'Error desconocido';
+}
+
+/** v0.1.365 — Los links de pago que dejó una corrida (del log de sus acciones). */
+export function paymentLinksOf(log: unknown): string[] {
+    if (!Array.isArray(log)) return [];
+    const out: string[] = [];
+    for (const entry of log) {
+        if (!entry || typeof entry !== 'object') continue;
+        const e = entry as { action?: unknown; status?: unknown; details?: { url?: unknown; integration?: unknown } };
+        if (e.action !== 'connector_action' || e.status !== 'success') continue;
+        const integration = e.details?.integration;
+        if (integration !== 'mercadopago' && integration !== 'wompi') continue;
+        const url = e.details?.url;
+        if (typeof url === 'string' && /^https?:\/\//.test(url) && !out.includes(url)) out.push(url);
+    }
+    return out.slice(0, 5);
 }

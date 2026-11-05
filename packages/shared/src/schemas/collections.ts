@@ -153,6 +153,89 @@ export function readCollectionFields(settings: unknown): CollectionFields | null
     return parsed.success ? parsed.data : null;
 }
 
+/**
+ * v0.1.365 — Qué tipos de columna sirven para cada dato del cobro. Elegir una
+ * columna que ya existe (el «Link de pago» que la empresa creó a mano, o
+ * «Pagos recientes» como fecha de pago para que dispare su automatización de
+ * renovación) es tan válido como crear las nuevas.
+ */
+export const COLLECTION_FIELD_TYPES: Record<CollectionFieldRole, readonly string[]> = {
+    link: ['url', 'text'],
+    status: ['select', 'text'],
+    paid_at: ['datetime', 'date'],
+    paid_amount: ['currency', 'number'],
+    method: ['text', 'select'],
+};
+
+/** Lo que se manda para elegir las columnas: un id, `'create'` (columna nueva) o null (no se guarda). */
+const collectionFieldChoice = z.union([idSchema, z.literal('create')]).nullable().optional();
+export const setCollectionFieldsSchema = z.object({
+    link: collectionFieldChoice,
+    status: collectionFieldChoice,
+    paid_at: collectionFieldChoice,
+    paid_amount: collectionFieldChoice,
+    method: collectionFieldChoice,
+});
+export type SetCollectionFieldsInput = z.infer<typeof setCollectionFieldsSchema>;
+
+/** Nombres que se reconocen como esa columna al sugerir (sin acentos ni mayúsculas). */
+const SUGGEST_LABELS: Record<CollectionFieldRole, readonly string[]> = {
+    link: ['link de pago', 'enlace de pago', 'link del pago', 'url de pago', 'link pago', 'link para pagar'],
+    status: ['estado del pago', 'estado de pago', 'estado pago'],
+    paid_at: ['fecha de pago', 'fecha del pago', 'pagado el', 'fecha pago'],
+    paid_amount: ['monto pagado', 'valor pagado', 'pagado'],
+    method: ['medio de pago', 'metodo de pago usado', 'medio del pago'],
+};
+
+function normLabel(label: string): string {
+    return label
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+}
+
+/** ¿Un select ya tiene los estados del pago como opciones? */
+function hasPaymentOptions(config: unknown): boolean {
+    const opts = (config as { options?: unknown } | null | undefined)?.options;
+    if (!Array.isArray(opts)) return false;
+    const values = new Set(opts.map((o) => (o && typeof o === 'object' ? (o as { value?: unknown }).value : null)));
+    return values.has(PAYMENT_STATUS_OPTIONS.pending.value) && values.has(PAYMENT_STATUS_OPTIONS.approved.value);
+}
+
+/**
+ * v0.1.365 — Las columnas que YA tiene la lista y sirven para el cobro, por su
+ * nombre y tipo (puro: lo usan el servidor al «Agregar columnas» y la pantalla
+ * para proponer). Lo que ya está elegido se respeta; un estado sólo se adopta
+ * si es texto o una lista de opciones que ya tiene los estados del pago.
+ */
+export function suggestCollectionFields(
+    fields: ReadonlyArray<{ id: number; label: string; type: string; config?: unknown }>,
+    current: CollectionFields | null,
+): CollectionFields {
+    const out: CollectionFields = current ? { ...current } : { link: null, status: null, paid_at: null, paid_amount: null, method: null };
+    const alive = new Set(fields.map((f) => f.id));
+    for (const role of COLLECTION_FIELD_ROLES) if (out[role] !== null && !alive.has(out[role]!)) out[role] = null;
+    const taken = new Set(COLLECTION_FIELD_ROLES.map((r) => out[r]).filter((id): id is number => id !== null));
+    for (const role of COLLECTION_FIELD_ROLES) {
+        if (out[role] !== null) continue;
+        const names = SUGGEST_LABELS[role];
+        const hit = fields.find(
+            (f) =>
+                !taken.has(f.id) &&
+                COLLECTION_FIELD_TYPES[role].includes(f.type) &&
+                names.includes(normLabel(f.label)) &&
+                (role !== 'status' || f.type === 'text' || hasPaymentOptions(f.config)),
+        );
+        if (hit) {
+            out[role] = hit.id;
+            taken.add(hit.id);
+        }
+    }
+    return out;
+}
+
 export const COLLECTION_FIELD_LABELS: Record<CollectionFieldRole, string> = {
     link: 'Link de pago',
     status: 'Estado del pago',

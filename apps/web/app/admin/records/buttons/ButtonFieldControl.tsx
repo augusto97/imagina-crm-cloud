@@ -290,7 +290,15 @@ function useButtonRunner(listId: number | string): ButtonRunner {
                         ? sprintf(__('Se inició la automatización %s…'), names)
                         : sprintf(__('Se iniciaron las automatizaciones %s…'), names),
                 );
-                if (opts.poll && a.press_id) void followAutomations(listId, a.press_id, (title, desc, variant) => notify(variant, title, desc), () => refreshAfterPress(qc, listId, opts.recordId ?? null));
+                if (opts.poll && a.press_id) {
+                    void followAutomations(
+                        listId,
+                        a.press_id,
+                        (title, desc, variant) => notify(variant, title, desc),
+                        () => refreshAfterPress(qc, listId, opts.recordId ?? null),
+                        (url) => notifyPaymentLink(url, toast),
+                    );
+                }
             } else {
                 summary = true;
             }
@@ -334,12 +342,36 @@ export function openButtonUrl(url: string, toast: ReturnType<typeof useToastOpti
     }
 }
 
+/**
+ * v0.1.365 — El link de pago que creó una automatización, con «Copiar link» y
+ * «Abrir». También queda en «Cobros» de la ficha y en la columna elegida.
+ */
+function notifyPaymentLink(url: string, toast: ReturnType<typeof useToastOptional>): void {
+    if (!toast) return;
+    toast.show({
+        title: __('Link de pago listo'),
+        description: url.length > 80 ? `${url.slice(0, 77)}…` : url,
+        variant: 'success',
+        duration: 20_000,
+        action: {
+            label: __('Copiar link'),
+            onClick: () => {
+                void navigator.clipboard?.writeText(url).then(
+                    () => toast.success(__('Link copiado'), __('Pégaselo al cliente por WhatsApp o correo.')),
+                    () => void window.open(url, '_blank', 'noopener,noreferrer'),
+                );
+            },
+        },
+    });
+}
+
 /** Pregunta cómo terminaron las automatizaciones hasta que terminen (o se agote). */
 async function followAutomations(
     listId: number | string,
     pressId: string,
     notify: (title: string, description: string | undefined, variant: 'success' | 'error' | 'info') => void,
     refresh: () => void,
+    onPaymentLink: (url: string) => void,
 ): Promise<void> {
     for (let i = 0; i < POLL_MAX; i++) {
         await new Promise((r) => window.setTimeout(r, POLL_MS));
@@ -354,7 +386,13 @@ async function followAutomations(
         for (const run of st.runs) {
             if (run.status === 'failed') notify(sprintf(__('Falló la automatización «%s»'), run.name), run.error ?? undefined, 'error');
             else if (run.status === 'waiting') notify(sprintf(__('La automatización «%s» quedó en espera'), run.name), __('Sigue sola cuando le toque.'), 'info');
-            else if (run.status === 'success') notify(sprintf(__('La automatización «%s» terminó'), run.name), undefined, 'success');
+            else if (run.status === 'success') {
+                // v0.1.365 — si la automatización creó un link de pago, el aviso
+                // lo trae para copiarlo (antes el link no se veía en ningún lado).
+                const links = run.payment_links ?? [];
+                if (links.length > 0) for (const url of links) onPaymentLink(url);
+                else notify(sprintf(__('La automatización «%s» terminó'), run.name), undefined, 'success');
+            }
         }
         refresh();
         return;

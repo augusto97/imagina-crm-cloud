@@ -20,6 +20,7 @@ import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine'
 import { RecordSubtasks } from '../RecordSubtasks';
 import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
 import { RecordBookingPanel } from '@/admin/booking/RecordBookingPanel';
+import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
 import { lockedReasonsFor, recordGoneInSource, useStoreRules } from '../storeRules';
 import { LayoutBlockView } from './LayoutBlocks';
@@ -122,6 +123,7 @@ export function RecordLayoutView({ list, record, fields, currentUserId, isAdmin,
                                 guest.isGuest ? null : (
                                     <>
                                         <ImplicitSubtasks layout={layout} />
+                                        <ImplicitPayments layout={layout} />
                                         {/* Ley 1581 — autorización de tratamiento de datos (formulario/portal). */}
                                         <RecordDataConsentLine listId={list.id} recordId={record.id} />
                                     </>
@@ -151,6 +153,28 @@ function ImplicitSubtasks({ layout }: { layout: RecordLayoutV3 }): JSX.Element |
     const has = (r.subtask_count ?? 0) > 0 || (r.parent_id !== null && r.parent_id !== undefined);
     if (!onFirst || placed || !has) return null;
     return <RecordSubtasks listId={ctx.list.id} listSlug={ctx.list.slug} record={r} fields={ctx.fields} />;
+}
+
+/**
+ * v0.1.365 — Un diseño sin el bloque «Cobros» no esconde los links de pago:
+ * antes una automatización o un botón creaba el link y en una ficha diseñada
+ * (o automática) no aparecía en ningún lado. Va al final de la primera
+ * pestaña, en el modo de la ficha clásica: sin cobros ni conexión no dibuja
+ * nada, y en una lista que no cobra queda una línea discreta.
+ */
+function ImplicitPayments({ layout }: { layout: RecordLayoutV3 }): JSX.Element | null {
+    const ctx = useLayoutCtx();
+    const [params] = useSearchParams();
+    const tab = params.get('tab');
+    const first = layout.pages[0]!;
+    const onFirst = tab === null || tab === first.id || !layout.pages.some((p) => p.id === tab);
+    const placed = layout.pages.some((p) => p.sections.some((s) => s.blocks.some((col) => col.some((b) => b.type === 'payments'))));
+    if (!onFirst || placed || ctx.preview === true || ctx.mode === 'portal') return null;
+    return (
+        <div className="imcrm-mt-3">
+            <RecordPaymentsPanel listId={ctx.list.id} recordId={ctx.record.id} />
+        </div>
+    );
 }
 
 /**

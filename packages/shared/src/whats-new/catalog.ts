@@ -1436,4 +1436,29 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'En **Ajustes → Integraciones**, en la tarjeta de **Microsoft Teams** u **Outlook**, toca **¿Tu empresa pide aprobación del administrador?**. Para el calendario de la agenda está en **Ajustes → Cuenta → Mi calendario**.',
         action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
     },
+    {
+        key: 'v0.1.365-cobros-que-se-ven',
+        version: '0.1.365',
+        date: '2026-11-05',
+        kind: 'improvement',
+        title: 'Los links de pago ahora se ven y quedan donde tú elijas',
+        summary:
+            'Eliges en qué columna de la lista queda el link, el estado y la fecha de pago, la ficha siempre muestra «Cobros» y el botón que cobra trae el link listo para copiar.',
+        media: {
+            slides: [
+                {
+                    title: 'Tú eliges las columnas',
+                    text: 'Usa una columna que ya tienes, como «Link de pago», crea una nueva o no guardes ese dato. La fecha de pago puede ir en la columna que dispara tu renovación.',
+                    illustration: 'cobro-estados',
+                },
+                {
+                    title: 'El link, a un clic',
+                    text: 'Al presionar el botón que cobra, el aviso trae el link con «Copiar link». Y la sección «Cobros» aparece en todas las fichas, también en las diseñadas.',
+                    illustration: 'cobro-automatizar',
+                },
+            ],
+        },
+        body: 'En la ficha de un registro, en **Cobros**, toca **Elegir columnas**. En una automatización, la acción **Crear link de pago** tiene la misma sección **Dónde queda el link**.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

@@ -1620,10 +1620,13 @@ export class AutomationEngine {
         }
         if (rest === 'status') return info.status;
         if (rest === '' || rest === 'body') return serializeResponseValue(info.body);
-        if (!rest.startsWith('body.')) return undefined;
         const body = info.body;
         if (body === null || typeof body !== 'object') return undefined;
-        return serializeResponseValue(getPath(body as Record<string, unknown>, rest.slice('body.'.length)));
+        // v0.1.365 — `{{respuestas.pago.url}}` es lo mismo que
+        // `{{respuestas.pago.body.url}}`: es como lo escribe casi cualquiera
+        // (y el asistente) y antes quedaba vacío sin avisar.
+        const path = rest.startsWith('body.') ? rest.slice('body.'.length) : rest;
+        return serializeResponseValue(getPath(body as Record<string, unknown>, path));
     }
 
     /** `merge` (valores crudos) y `mergeHtml` (valores escapados) con etiquetas y formato regional. */
@@ -2501,6 +2504,7 @@ export class AutomationEngine {
         const patch: Record<string, unknown> = {};
         const applied: Record<string, unknown> = {};
         const invalid: string[] = [];
+        const emptyVars: string[] = [];
         for (const [slug, raw] of Object.entries(values)) {
             const key = target.slugToKey.get(slug);
             const field = target.fieldsBySlug.get(slug);
@@ -2522,6 +2526,11 @@ export class AutomationEngine {
                 patch[key] = ids;
                 applied[slug] = ids;
                 continue;
+            }
+            // v0.1.365 — una variable que no existe (o vacía) dejaba el campo
+            // igual y el log decía «ya tenían esos valores»: ahora se nombra.
+            if (typeof raw === 'string' && raw.includes('{{') && isBlank(this.fieldInput(ctx, raw, field).value)) {
+                emptyVars.push(`«${field.label ?? slug}» (${raw.trim()} quedó vacía)`);
             }
             const res = this.coerce(ctx, field, raw);
             if (!res.ok) {
@@ -2591,13 +2600,13 @@ export class AutomationEngine {
             }
         }
 
-        const notes = [...storeSkipped, ...invalid];
+        const notes = [...storeSkipped, ...invalid, ...emptyVars];
         const where = onItem ? ` (registro vinculado #${target.recordId})` : '';
         if (Object.keys(patch).length === 0) {
             // Nada válido que escribir por valores que no convierten: la
             // automatización está mal configurada y se tiene que ver.
             if (invalid.length > 0 && storeSkipped.length === 0) {
-                return fail('update_field', `No se pudo escribir ningún valor${where}: ${invalid.join('; ')}.`);
+                return fail('update_field', `No se pudo escribir ningún valor${where}: ${[...invalid, ...emptyVars].join('; ')}.`);
             }
             if (notes.length > 0) return skip('update_field', `Nada que cambiar${where}: ${notes.join('; ')}`);
             return skip('update_field', `Los campos ya tenían esos valores${where}.`);
@@ -3165,6 +3174,10 @@ export class AutomationEngine {
                     if (sim) {
                         // Nunca de verdad en una prueba: crearía un cobro real a nombre de la empresa.
                         ctx.pago = { link: '(se crea al correr)', monto: amount, titulo: v.title ?? '' };
+                        this.rememberNamed(ctx, cfg, {
+                            status: 200,
+                            body: { url: '(se crea al correr)', link: '(se crea al correr)', monto: amount, moneda: v.currency ?? 'COP', concepto: v.title ?? '' },
+                        });
                         return ok('connector_action', `Crearía un link de pago «${v.title ?? ''}» por ${amount} ${v.currency ?? 'COP'}${v.payer_email ? ` para ${v.payer_email}` : ''}.`, {
                             _sim: 'would_run',
                             action: resolved.action.key,
@@ -3186,7 +3199,18 @@ export class AutomationEngine {
                     });
                     if (created.write) ctx.data = created.write.after;
                     ctx.pago = { ...created.context };
-                    return ok('connector_action', `${resolved.name} → link de pago ${created.link.url}`, {
+                    // v0.1.365 — con «Guardar la respuesta como», el link también
+                    // queda en `{{respuestas.<nombre>.url}}` (como un webhook).
+                    this.rememberNamed(ctx, cfg, {
+                        status: 200,
+                        body: { ...created.context, url: created.link.url },
+                    });
+                    // Sin columna de link en la lista, el link sólo se ve en
+                    // «Cobros» de la ficha: se dice, así no parece que no pasó nada.
+                    const where = created.linkField
+                        ? ` · guardado en «${created.linkField}»`
+                        : ' · no quedó en ninguna columna: elige en la acción dónde se guarda el link';
+                    return ok('connector_action', `${resolved.name} → link de pago ${created.link.url}${where}`, {
                         action: resolved.action.key,
                         integration: resolved.integration.key,
                         link_id: created.link.id,
@@ -3508,17 +3532,21 @@ export class AutomationEngine {
                       ...(res.truncated ? { truncated: true } : {}),
                   };
         ctx.webhook = info;
-        const name = typeof cfg.response_name === 'string' ? cfg.response_name.trim() : '';
-        if (RESPONSE_NAME_RE.test(name)) {
-            const next = { ...(ctx.responses ?? {}) };
-            delete next[name];
-            next[name] = info;
-            // Con muchos pasos con nombre, se conservan las 10 más recientes.
-            const names = Object.keys(next);
-            for (const old of names.slice(0, Math.max(0, names.length - 10))) delete next[old];
-            ctx.responses = next;
-        }
+        this.rememberNamed(ctx, cfg, info);
         if (ctx.sim && res !== null) ctx.sim.responses[pathKey] = info.body;
+    }
+
+    /** Guarda un resultado con el nombre del paso (`{{respuestas.<nombre>.x}}`). */
+    private rememberNamed(ctx: RunContext, cfg: Record<string, unknown>, info: ResponseInfo): void {
+        const name = typeof cfg.response_name === 'string' ? cfg.response_name.trim() : '';
+        if (!RESPONSE_NAME_RE.test(name)) return;
+        const next = { ...(ctx.responses ?? {}) };
+        delete next[name];
+        next[name] = info;
+        // Con muchos pasos con nombre, se conservan las 10 más recientes.
+        const names = Object.keys(next);
+        for (const old of names.slice(0, Math.max(0, names.length - 10))) delete next[old];
+        ctx.responses = next;
     }
 
     private async templateName(tx: Tx, tenantId: number, templateId: number): Promise<string | null> {

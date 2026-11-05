@@ -120,7 +120,7 @@ export function CollectionsPage(): JSX.Element {
                     <li>{__('Desde un registro: ábrelo y toca «Cobrar». El link queda copiado para mandarlo por WhatsApp o correo.')}</li>
                     <li>{__('Desde una automatización: acción «Crear link de pago» (por ejemplo, al crear una factura) y después «Enviar WhatsApp» o «Enviar correo» con {{pago.link}}.')}</li>
                     <li>{__('Para reaccionar al pago: disparador «Cuando se recibe un pago» (agradecer, marcar la factura, avisar al equipo).')}</li>
-                    <li>{__('Con «Agregar columnas» en un registro, la lista muestra el estado de cada pago y puedes filtrar quién debe.')}</li>
+                    <li>{__('Con «Elegir columnas» en la sección «Cobros» de un registro (o en la acción de la automatización), la lista guarda el link y el estado de cada pago y puedes filtrar quién debe.')}</li>
                 </ul>
             </section>
 

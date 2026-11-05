@@ -17,6 +17,8 @@ import {
     jsonbKeyForField,
     readCollectionFields,
     resolveTitleFieldId,
+    suggestCollectionFields,
+    COLLECTION_FIELD_TYPES,
     validateFieldValue,
     type CollectionConnection,
     type CollectionConnectionDetail,
@@ -32,6 +34,7 @@ import {
     type PublicFormPaymentStatus,
     type RecordPayments,
     type Role,
+    type SetCollectionFieldsInput,
 } from '@imagina-base/shared';
 import { randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
@@ -44,7 +47,8 @@ import { ConnectorsService } from '../connectors/connectors.service';
 import type { IntegrationCreds } from '../connectors/integration-calls';
 import { assertPlanModule, planModuleOff } from '../billing/plan-module-gate';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { collectionHooks, connections, fields, lists, paymentLinks, records, type PaymentLinkRowDb } from '../db/schema';
+import { collectionHooks, connections, fields, lists, paymentLinks, records, tenants, type PaymentLinkRowDb } from '../db/schema';
+import { parseTenantTimeZone } from '../tenancy/tenant-time-zone.service';
 import { IncidentHub } from '../incidents/incident-hub';
 import { FieldsService } from '../fields/fields.service';
 import { listRowInScope } from '../lists/list-acl';
@@ -587,7 +591,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             /** v0.1.361 — Adónde vuelve la persona al pagar, armado con nuestra referencia. */
             returnUrlFor?: ((reference: string) => string | null) | null;
         },
-    ): Promise<{ link: PaymentLink; write: RecordWrite | null; context: PaymentContext; reference: string }> {
+    ): Promise<{ link: PaymentLink; write: RecordWrite | null; context: PaymentContext; reference: string; linkField: string | null }> {
         const conn = await this.connectors.integrationCredsInTx(tx, tenantId, opts.connectionId);
         if (!conn) throw new CollectionError(`La conexión #${opts.connectionId} ya no existe.`);
         if (!isCollectionProvider(conn.provider)) throw new CollectionError(`«${conn.name}» no es una conexión de cobro.`);
@@ -654,7 +658,24 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             paid_amount: null,
             method: null,
         });
-        return { link: toDto(link, conn.name), write, context: paymentContext(link), reference };
+        return { link: toDto(link, conn.name), write, context: paymentContext(link), reference, linkField: await this.linkFieldLabel(tx, tenantId, link.listId) };
+    }
+
+    /** v0.1.365 — El nombre de la columna donde la lista guarda el link (o null). */
+    private async linkFieldLabel(tx: Tx, tenantId: number, listId: number): Promise<string | null> {
+        const [list] = await tx
+            .select({ settings: lists.settings })
+            .from(lists)
+            .where(and(eq(lists.tenantId, tenantId), eq(lists.id, listId)))
+            .limit(1);
+        const id = readCollectionFields(list?.settings)?.link ?? null;
+        if (!id) return null;
+        const [f] = await tx
+            .select({ label: fields.label })
+            .from(fields)
+            .where(and(eq(fields.tenantId, tenantId), eq(fields.listId, listId), eq(fields.id, id), isNull(fields.deletedAt)))
+            .limit(1);
+        return f?.label ?? null;
     }
 
     /** Anula un link pendiente (en Wompi además lo desactiva). */
@@ -973,46 +994,109 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
     // ── Columnas de cobro en la lista ───────────────────────────────────
 
     /**
-     * Crea en la lista las columnas donde se escribe el cobro (las que falten)
-     * y guarda el mapeo en `settings.collections.fields`.
+     * «Agregar columnas»: usa las que la lista YA tiene para el cobro (un
+     * «Link de pago» creado a mano) y crea sólo las que falten. Guarda el
+     * mapeo en `settings.collections.fields`.
      */
     async setupFields(tenantId: number, actor: CollectionActor, listIdOrSlug: string): Promise<CollectionFields> {
         if (!this.fieldsService) throw new Error('FieldsService no disponible');
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        const existing = readCollectionFields(list.settings) ?? {
+        const current = await this.fieldsService.listByListId(tenantId, list.id);
+        const suggested = suggestCollectionFields(current, readCollectionFields(list.settings));
+        const input: SetCollectionFieldsInput = {};
+        for (const role of COLLECTION_FIELD_ROLES) input[role] = suggested[role] ?? 'create';
+        return this.setFields(tenantId, actor, listIdOrSlug, input);
+    }
+
+    /** Las columnas de cobro de la lista (null = todavía no eligió ninguna). */
+    async getFields(tenantId: number, listIdOrSlug: string): Promise<CollectionFields | null> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        return readCollectionFields(list.settings);
+    }
+
+    /**
+     * v0.1.365 — Elegir dónde se guarda cada dato del cobro: una columna que
+     * ya existe (de un tipo que sirva), una nueva (`'create'`) o ninguna
+     * (`null`). Lo que no viene, queda como estaba. Un estado en una lista de
+     * opciones recibe las opciones del pago que le falten (si no, cada valor
+     * que se escribe se saltearía).
+     */
+    async setFields(tenantId: number, actor: CollectionActor, listIdOrSlug: string, input: SetCollectionFieldsInput): Promise<CollectionFields> {
+        if (!this.fieldsService) throw new Error('FieldsService no disponible');
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const current = await this.fieldsService.listByListId(tenantId, list.id);
+        const byId = new Map(current.map((f) => [f.id, f]));
+        const existing = readCollectionFields(list.settings);
+        const mapping: CollectionFields = {
             link: null,
             status: null,
             paid_at: null,
             paid_amount: null,
             method: null,
+            ...(existing ?? {}),
         };
-        const current = await this.fieldsService.listByListId(tenantId, list.id);
-        const alive = new Set(current.map((f) => f.id));
+        // Columnas borradas desde la última vez: se olvidan.
+        for (const role of COLLECTION_FIELD_ROLES) if (mapping[role] !== null && !byId.has(mapping[role]!)) mapping[role] = null;
+
+        const bad = (message: string): never => {
+            throw new BadRequestException({ code: 'invalid_collection_fields', message, data: { status: 400 } });
+        };
+        // Primero se validan las columnas elegidas (nada se crea si algo está mal).
+        const used = new Map<number, CollectionFieldRole>();
+        for (const role of COLLECTION_FIELD_ROLES) {
+            const choice = input[role];
+            if (typeof choice !== 'number') continue;
+            const f = byId.get(choice);
+            if (!f) bad(`«${COLLECTION_FIELD_LABELS[role]}»: esa columna no es de esta lista.`);
+            if (!COLLECTION_FIELD_TYPES[role].includes(f!.type)) {
+                bad(`«${COLLECTION_FIELD_LABELS[role]}» no se puede guardar en «${f!.label}»: esa columna es de otro tipo.`);
+            }
+            const other = used.get(choice);
+            if (other) bad(`«${f!.label}» no puede guardar a la vez «${COLLECTION_FIELD_LABELS[other]}» y «${COLLECTION_FIELD_LABELS[role]}».`);
+            used.set(choice, role);
+        }
+
         const currencyField = current.find((f) => f.type === 'currency');
         const currency =
             ((currencyField?.config as Record<string, unknown> | undefined)?.currency as string | undefined) ?? 'COP';
-        const mapping: CollectionFields = { ...existing };
+        const statusOptions = Object.values(PAYMENT_STATUS_OPTIONS).map((o) => ({ value: o.value, label: o.label, color: o.color }));
         const spec: Record<CollectionFieldRole, { type: FieldType; config?: Record<string, unknown> }> = {
             link: { type: 'url' },
-            status: {
-                type: 'select',
-                config: {
-                    options: Object.values(PAYMENT_STATUS_OPTIONS).map((o) => ({ value: o.value, label: o.label, color: o.color })),
-                },
-            },
+            status: { type: 'select', config: { options: statusOptions } },
             paid_at: { type: 'datetime' },
             paid_amount: { type: 'currency', config: { currency, precision: currency === 'COP' ? 0 : 2 } },
             method: { type: 'text' },
         };
         for (const role of COLLECTION_FIELD_ROLES) {
-            const id = mapping[role];
-            if (id && alive.has(id)) continue;
-            const created = await this.fieldsService.create(tenantId, String(list.id), {
-                label: COLLECTION_FIELD_LABELS[role],
-                type: spec[role].type,
-                config: spec[role].config,
-            });
-            mapping[role] = created.id;
+            const choice = input[role];
+            if (choice === undefined) continue;
+            if (choice === null) {
+                mapping[role] = null;
+                continue;
+            }
+            if (choice === 'create') {
+                // «Crear» con una columna ya elegida y viva para ese dato no duplica.
+                if (mapping[role] !== null) continue;
+                const created = await this.fieldsService.create(tenantId, String(list.id), {
+                    label: COLLECTION_FIELD_LABELS[role],
+                    type: spec[role].type,
+                    config: spec[role].config,
+                });
+                mapping[role] = created.id;
+                continue;
+            }
+            mapping[role] = choice;
+            const f = byId.get(choice)!;
+            if (role === 'status' && f.type === 'select') {
+                const opts = Array.isArray((f.config as { options?: unknown })?.options) ? ((f.config as { options: Array<{ value?: unknown }> }).options) : [];
+                const have = new Set(opts.map((o) => o?.value));
+                const missing = statusOptions.filter((o) => !have.has(o.value));
+                if (missing.length > 0) {
+                    await this.fieldsService.update(tenantId, String(list.id), String(f.id), {
+                        config: { ...(f.config as Record<string, unknown>), options: [...opts, ...missing] },
+                    });
+                }
+            }
         }
         await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
@@ -1065,12 +1149,17 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         if (!record) return null;
         const before = record.data as Record<string, unknown>;
         const after = { ...before };
+        let timeZone: string | null = null;
         for (const role of COLLECTION_FIELD_ROLES) {
             if (!(role in values)) continue;
             const fieldId = mapping[role];
             const field = fieldId ? fieldRows.find((f) => f.id === fieldId) : undefined;
             if (!field) continue;
-            const raw = toFieldValue(role, values[role], field.type as FieldType);
+            if (role === 'paid_at' && field.type === 'date' && timeZone === null) {
+                const [t] = await tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+                timeZone = parseTenantTimeZone(t?.settings) ?? 'UTC';
+            }
+            const raw = toFieldValue(role, values[role], field.type as FieldType, timeZone ?? 'UTC');
             const key = jsonbKeyForField(field.id);
             if (raw === null) {
                 delete after[key];
@@ -1165,7 +1254,7 @@ function toDto(r: PaymentLinkRowDb, connectionName: string | null): PaymentLink 
 }
 
 /** El valor de un rol en el tipo de su columna (o `null` para vaciarla). */
-export function toFieldValue(role: CollectionFieldRole, value: unknown, type: FieldType): unknown {
+export function toFieldValue(role: CollectionFieldRole, value: unknown, type: FieldType, timeZone = 'UTC'): unknown {
     if (value === null || value === undefined || value === '') return null;
     if (role === 'status') {
         const opt = PAYMENT_STATUS_OPTIONS[value as PaymentLinkStatus];
@@ -1175,7 +1264,14 @@ export function toFieldValue(role: CollectionFieldRole, value: unknown, type: Fi
     if (role === 'paid_at') {
         const d = value instanceof Date ? value : new Date(String(value));
         if (Number.isNaN(d.getTime())) return null;
-        return type === 'date' ? d.toISOString().slice(0, 10) : type === 'datetime' ? d.toISOString() : d.toISOString().slice(0, 10);
+        if (type === 'datetime') return d.toISOString();
+        // v0.1.365 — una columna de sólo fecha toma el día de la empresa: un
+        // pago a las 9 p. m. en Bogotá no puede quedar con la fecha de mañana.
+        try {
+            return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+        } catch {
+            return d.toISOString().slice(0, 10);
+        }
     }
     if (role === 'paid_amount') {
         const n = Number(value);

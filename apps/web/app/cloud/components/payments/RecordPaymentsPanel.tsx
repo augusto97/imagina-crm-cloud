@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
-import { fieldsKeys } from '@/hooks/useFields';
+import { useFields } from '@/hooks/useFields';
 import { invalidateForList, recordsKeys } from '@/hooks/useRecords';
 import { CloudApiError } from '@/lib/cloud/client';
 import { useIsGuest } from '@/lib/guest';
@@ -21,6 +21,7 @@ import { __ } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
+import { CollectionFieldsEditor } from './CollectionFieldsEditor';
 import { CopyButton, PaymentStatusChip, formatMoney } from './paymentUi';
 import { parseLocalAmount } from '@/lib/money';
 import { usePlanModuleOff } from '@/components/PlanModuleNotice';
@@ -78,15 +79,7 @@ function RecordPaymentsPanelInner({
         onSuccess: () => refresh(),
         onError: (err) => toast.error(__('No se pudo anular'), errText(err)),
     });
-    const setup = useMutation({
-        mutationFn: () => api.setupCollectionFields(listId),
-        onSuccess: () => {
-            refresh();
-            invalidateForList(qc, fieldsKeys.all, listId);
-            toast.success(__('Columnas de cobro agregadas'), __('Ahora la lista muestra el link, el estado, la fecha, el monto y el medio de cada pago.'));
-        },
-        onError: (err) => toast.error(__('No se pudieron agregar'), errText(err)),
-    });
+    const [choosingColumns, setChoosingColumns] = useState(false);
 
     if (isGuest || q.isLoading || q.isError || !q.data) return null;
     const data = q.data;
@@ -152,6 +145,18 @@ function RecordPaymentsPanelInner({
                     {__('Cobros')}
                     {paid && <PaymentStatusChip status="approved" />}
                 </p>
+                {data.fields !== null && data.can_setup && (
+                    <button
+                        type="button"
+                        onClick={() => setChoosingColumns(true)}
+                        className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-1.5 imcrm-py-1 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
+                        title={__('En qué columnas de la lista queda cada dato del cobro')}
+                        data-testid="imcrm-payment-columns"
+                    >
+                        <Columns3 className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Columnas')}
+                    </button>
+                )}
                 {data.connections.length > 0 && (
                     <Button size="sm" onClick={() => setCollecting(true)} data-testid="imcrm-payment-collect">
                         <Wallet className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -160,14 +165,14 @@ function RecordPaymentsPanelInner({
                 )}
             </div>
 
-            {data.fields === null && data.can_setup && data.connections.length > 0 && (
-                <div className="imcrm-mt-3 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-muted/50 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
+            {data.fields === null && data.can_setup && (
+                <div className="imcrm-mt-3 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-amber-50 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-amber-900 dark:imcrm-bg-amber-950/40 dark:imcrm-text-amber-200">
                     <span className="imcrm-flex-1">
-                        {__('Agrega las columnas de cobro a la lista (link, estado, fecha, monto y medio) para ver y filtrar quién ya pagó sin abrir cada registro.')}
+                        {__('Los links se ven sólo aquí: elige en qué columnas de la lista se guardan el link, el estado y la fecha de pago para verlos en la tabla y filtrar quién ya pagó.')}
                     </span>
-                    <Button size="sm" variant="outline" disabled={setup.isPending} onClick={() => setup.mutate()} data-testid="imcrm-payment-setup">
+                    <Button size="sm" variant="outline" onClick={() => setChoosingColumns(true)} data-testid="imcrm-payment-setup">
                         <Columns3 className="imcrm-h-3.5 imcrm-w-3.5" />
-                        {__('Agregar columnas')}
+                        {__('Elegir columnas')}
                     </Button>
                 </div>
             )}
@@ -257,7 +262,51 @@ function RecordPaymentsPanelInner({
                     }}
                 />
             )}
+            {choosingColumns && (
+                <CollectionColumnsDialog
+                    listId={listId}
+                    onClose={() => setChoosingColumns(false)}
+                    onSaved={() => {
+                        setChoosingColumns(false);
+                        refresh();
+                    }}
+                />
+            )}
         </section>
+    );
+}
+
+/** v0.1.365 — Elegir en qué columnas de la lista queda cada dato del cobro. */
+function CollectionColumnsDialog({ listId, onClose, onSaved }: { listId: number; onClose: () => void; onSaved: () => void }): JSX.Element {
+    const fields = useFields(listId);
+    return (
+        <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
+            <Dialog.Portal>
+                <Dialog.Overlay className="imcrm-fixed imcrm-inset-0 imcrm-z-50 imcrm-bg-black/40 imcrm-backdrop-blur-sm" />
+                <Dialog.Content
+                    className="imcrm-fixed imcrm-left-1/2 imcrm-top-1/2 imcrm-z-50 imcrm-max-h-[90vh] imcrm-w-[calc(100%-1.5rem)] imcrm-max-w-xl imcrm-overflow-y-auto imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-6 imcrm-shadow-imcrm-lg"
+                    style={{ transform: 'translate(-50%, -50%)' }}
+                    data-testid="imcrm-collection-columns-dialog"
+                >
+                    <div className="imcrm-mb-3 imcrm-flex imcrm-items-start imcrm-gap-3">
+                        <div className="imcrm-min-w-0 imcrm-flex-1">
+                            <Dialog.Title className="imcrm-text-base imcrm-font-semibold">{__('Dónde se guarda cada cobro')}</Dialog.Title>
+                            <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
+                                {__('Cada link nuevo, y cada pago que confirme el proveedor, se escribe en estas columnas de la lista. Vale para «Cobrar», los botones y las automatizaciones.')}
+                            </Dialog.Description>
+                        </div>
+                        <Dialog.Close className="imcrm-rounded-md imcrm-p-1 imcrm-text-muted-foreground hover:imcrm-bg-accent" aria-label={__('Cerrar')}>
+                            <X className="imcrm-h-4 imcrm-w-4" />
+                        </Dialog.Close>
+                    </div>
+                    {fields.data ? (
+                        <CollectionFieldsEditor listId={listId} fields={fields.data} onSaved={onSaved} />
+                    ) : (
+                        <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Cargando…')}</p>
+                    )}
+                </Dialog.Content>
+            </Dialog.Portal>
+        </Dialog.Root>
     );
 }
 

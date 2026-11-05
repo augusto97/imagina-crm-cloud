@@ -2486,6 +2486,32 @@ responsabilidad que el usuario no quiere); suscripciones recurrentes de las
 empresas a sus clientes (otra pieza: hoy se arma con una recurrencia + la
 acción «Crear link de pago»).
 
+**Addendum v0.1.365 — los cobros se ven.** Reporte del usuario: un botón que
+corría «Crear link de pago» creaba el link y no se veía en ningún lado. Causas:
+las columnas eran opt-in detrás de un botón escondido, la ficha diseñada o
+automática no tenía el panel «Cobros» y la acción no dejaba el link en
+`{{respuestas.<nombre>.url}}`. Decisiones:
+- **Elegir columnas, no sólo crearlas** (`PUT /lists/:l/collections/fields`,
+  `setCollectionFieldsSchema`): por dato, una columna existente de un tipo que
+  sirva (`COLLECTION_FIELD_TYPES`), `'create'` o `null`; una columna no guarda
+  dos datos; un select elegido como estado recibe las opciones del pago que le
+  falten. `suggestCollectionFields` (shared, puro) propone por nombre las que la
+  lista ya tiene («Link de pago»). Mapear la fecha de pago a una columna que ya
+  dispara una automatización (una renovación) es válido y se dispara sola; en
+  una columna de sólo fecha se escribe el día de la **zona de la empresa**.
+- El editor (`CollectionFieldsEditor`) vive en la ficha («Elegir columnas» /
+  «Columnas») y dentro de la acción «Crear link de pago» («Dónde queda el link»).
+- La ficha diseñada sin el bloque «Cobros» lo muestra al final de la primera
+  pestaña (como subtareas y aprobaciones).
+- La acción guarda el link como respuesta con nombre (`body.url`) y
+  `{{respuestas.x.campo}}` equivale a `{{respuestas.x.body.campo}}`; su log dice
+  en qué columna quedó o que no quedó en ninguna; una variable que queda vacía en
+  «Actualizar un campo» se nombra en el log.
+- El estado de un botón (`press-status`) trae `payment_links` de la corrida y el
+  aviso muestra «Link de pago listo» con «Copiar link».
+- Asistente/MCP: `propose_configure_payment_columns` (`manage_fields`) elige las
+  columnas por slug / `"create"` / null y aplica con el mismo `setFields`.
+
 
 ### ADR-S32 — Sin índices físicos por campo (v0.1.257)
 
@@ -6816,4 +6842,4 @@ para poner Cloudflare delante y subir el tope está en
 
 ---
 
-**Versión del documento:** 1.149.0 (Pruebas y capturas en varias máquinas a la vez)
+**Versión del documento:** 1.150.0 (Los cobros se ven: columnas elegibles y panel en toda ficha)

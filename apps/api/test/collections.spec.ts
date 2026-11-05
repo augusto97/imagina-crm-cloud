@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { suggestCollectionFields } from '@imagina-base/shared';
 
 /**
  * v0.1.251 (ADR-S31) — Cobros de las empresas con Mercado Pago y Wompi, de
@@ -47,6 +48,7 @@ import {
     type GatewayPayment,
 } from '../src/collections/collection-gateways';
 import { CollectionsService } from '../src/collections/collections.service';
+import { paymentLinksOf } from '../src/buttons/buttons.service';
 import { AutomationDispatcher, type TriggerEvent } from '../src/automations/automation-dispatcher.service';
 import { AutomationEngine, parseAmount } from '../src/automations/automation-engine.service';
 import { AutomationsRepository } from '../src/automations/automations.repository';
@@ -441,6 +443,90 @@ describe('Cobros de las empresas — Mercado Pago y Wompi (v0.1.251)', () => {
         expect(detail.last_hook_at).not.toBeNull();
     });
 
+    it('v0.1.365 — elegir columnas: usa el «Link de pago» de la lista, la fecha en otra columna (día de la empresa) y valida', async () => {
+        const mp = fakeMercadoPago();
+        const connId = await connectMp();
+        const inv = await seedInvoice();
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.update(tenants).set({ settings: { format: { timezone: 'America/Bogota' } } }).where(eq(tenants.id, tenantId)),
+        );
+        const linkCol = await fieldsService.create(tenantId, 'facturas', { label: 'Link de pago', type: 'url' });
+        const renew = await fieldsService.create(tenantId, 'facturas', { label: 'Pagos recientes', type: 'date' });
+        const estado = await fieldsService.create(tenantId, 'facturas', {
+            label: 'Estado',
+            type: 'select',
+            config: { options: [{ value: 'abierta', label: 'Abierta' }] },
+        });
+        const total = (await fieldsService.listByListId(tenantId, inv.listId)).find((f) => f.label === 'Total')!;
+        await listsService.create(tenantId, { name: 'Otra', slug: 'otra' });
+        const ajena = await fieldsService.create(tenantId, 'otra', { label: 'Link', type: 'url' });
+        expect(await svc.getFields(tenantId, inv.slug)).toBeNull();
+
+        // Lo que no sirve se rechaza con el motivo y no crea nada.
+        const invalid = { response: { code: 'invalid_collection_fields' } };
+        await expect(svc.setFields(tenantId, admin, inv.slug, { link: total.id, method: 'create' })).rejects.toMatchObject(invalid);
+        await expect(svc.setFields(tenantId, admin, inv.slug, { status: estado.id, method: estado.id })).rejects.toMatchObject(invalid);
+        await expect(svc.setFields(tenantId, admin, inv.slug, { link: ajena.id })).rejects.toMatchObject(invalid);
+        expect(await fieldsService.listByListId(tenantId, inv.listId)).toHaveLength(6);
+
+        // «Agregar columnas» (el botón de antes) ya no duplica el «Link de pago» de la lista.
+        const viaSetup = suggestCollectionFields(await fieldsService.listByListId(tenantId, inv.listId), null);
+        expect(viaSetup.link).toBe(linkCol.id);
+
+        const mapping = await svc.setFields(tenantId, admin, inv.slug, {
+            link: linkCol.id,
+            status: estado.id,
+            paid_at: renew.id,
+            paid_amount: null,
+            method: 'create',
+        });
+        expect(mapping).toMatchObject({ link: linkCol.id, status: estado.id, paid_at: renew.id, paid_amount: null });
+        expect(mapping.method).toEqual(expect.any(Number));
+        // El estado elegido recibe las opciones del pago, sin perder las suyas.
+        const estadoNow = (await fieldsService.listByListId(tenantId, inv.listId)).find((f) => f.id === estado.id)!;
+        const values = ((estadoNow.config as { options: Array<{ value: string }> }).options ?? []).map((o) => o.value);
+        expect(values).toEqual(expect.arrayContaining(['abierta', 'pendiente', 'pagado', 'vencido']));
+        // «Crear» de nuevo con la columna ya elegida no duplica; null la saca.
+        expect((await svc.setFields(tenantId, admin, inv.slug, { method: 'create' })).method).toBe(mapping.method);
+        expect(await svc.getFields(tenantId, inv.slug)).toMatchObject({ link: linkCol.id });
+
+        const link = await svc.createForRecord(tenantId, admin, inv.slug, inv.recordId, {
+            connection_id: connId,
+            title: 'Anualidad',
+            amount: 150000,
+            currency: 'COP',
+            payer_email: null,
+            expires_days: null,
+        });
+        let data = await recordData(inv.listId, inv.recordId);
+        expect(data[`f${linkCol.id}`]).toBe(link.url);
+        expect(data[`f${estado.id}`]).toBe('pendiente');
+
+        // Pagó a las 9 p. m. de Bogotá (las 2 a. m. del día siguiente en UTC).
+        mp.payments.set('9101', {
+            id: 9101,
+            status: 'approved',
+            transaction_amount: 150000,
+            currency_id: 'COP',
+            date_approved: '2026-10-03T21:00:00.000-05:00',
+            payment_method_id: 'pse',
+            payment_type_id: 'bank_transfer',
+            external_reference: mp.prefs[0]!.external_reference,
+        });
+        dispatcher.events.length = 0;
+        expect(await svc.handleHook(await hookToken(connId), {}, { type: 'payment', data: { id: '9101' } })).toBe('applied');
+        data = await recordData(inv.listId, inv.recordId);
+        expect(data[`f${estado.id}`]).toBe('pagado');
+        expect(data[`f${renew.id}`]).toBe('2026-10-03');
+        // La fecha cambió: una automatización «cuando cambia Pagos recientes» se dispara.
+        expect(dispatcher.events.find((e) => e.trigger === 'record_updated')?.after).toMatchObject({ [`f${renew.id}`]: '2026-10-03' });
+
+        // Sacar el link de las columnas: el próximo link ya no se escribe ahí.
+        await svc.setFields(tenantId, admin, inv.slug, { link: null });
+        expect((await svc.getFields(tenantId, inv.slug))?.link).toBeNull();
+        await withTenant(pg.db, tenantId, (tx) => tx.update(tenants).set({ settings: {} }).where(eq(tenants.id, tenantId)));
+    });
+
     it('un aviso no se cree: con el pago por OTRO monto queda «Monto distinto», y un id ajeno no toca nada', async () => {
         const mp = fakeMercadoPago();
         const connId = await connectMp();
@@ -597,6 +683,63 @@ describe('Cobros de las empresas — Mercado Pago y Wompi (v0.1.251)', () => {
         expect(items).toMatchObject({ unit_price: 150000, title: 'Factura FAC-001' });
         expect(sent[0]!.body).toContain('Paga aquí: https://www.mercadopago.com.co/checkout/v1/redirect?pref_id=pref-1 (150000)');
         expect((await recordData(inv.listId, inv.recordId))[`f${mapping.status}`]).toBe('pendiente');
+    });
+
+    it('v0.1.365 — {{respuestas.pago.url}} lleva el link a otro campo, el log dice dónde quedó y una variable vacía se nombra', async () => {
+        fakeMercadoPago();
+        const connId = await connectMp();
+        const inv = await seedInvoice();
+        const copia = await fieldsService.create(tenantId, 'facturas', { label: 'Link copiado', type: 'url' });
+        const nota = await fieldsService.create(tenantId, 'facturas', { label: 'Nota', type: 'text' });
+        const [auto] = await withTenant(pg.db, tenantId, (tx) =>
+            tx
+                .insert(automations)
+                .values({
+                    tenantId,
+                    listId: inv.listId,
+                    name: 'Cobrar y copiar',
+                    triggerType: 'record_created',
+                    triggerConfig: {},
+                    actions: [
+                        {
+                            type: 'connector_action',
+                            config: {
+                                connection_id: connId,
+                                action_key: 'create_payment_link',
+                                values: { title: 'Anualidad', amount: '150000', currency: 'COP' },
+                                response_name: 'pago',
+                            },
+                        },
+                        { type: 'update_field', config: { values: { link_copiado: '{{respuestas.pago.url}}' } } },
+                        { type: 'update_field', config: { values: { nota: '{{respuestas.nada.url}}' } } },
+                    ],
+                    isActive: true,
+                })
+                .returning(),
+        );
+        const before = await recordData(inv.listId, inv.recordId);
+        await engine.process({ tenantId, listId: inv.listId, recordId: inv.recordId, trigger: 'record_created', after: before });
+        const [run] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(automationRuns).where(eq(automationRuns.automationId, auto!.id)));
+        const log = run!.actionsLog as Array<{ action: string; status: string; message: string }>;
+        // Sin columnas de cobro elegidas, el log lo dice (antes parecía que no pasó nada).
+        expect(log[0]!.message).toContain('no quedó en ninguna columna');
+        expect(log[1]!.status).toBe('success');
+        expect(log[2]!.message).toContain('«Nota» ({{respuestas.nada.url}} quedó vacía)');
+        const data = await recordData(inv.listId, inv.recordId);
+        expect(data[`f${copia.id}`]).toMatch(/^https:\/\/www\.mercadopago\.com\.co\/checkout\/v1\/redirect\?pref_id=/);
+        expect(data[`f${nota.id}`]).toBeUndefined();
+
+        // El botón muestra el link: sale del log de la corrida.
+        expect(paymentLinksOf(run!.actionsLog)).toEqual([data[`f${copia.id}`]]);
+        expect(paymentLinksOf([{ action: 'connector_action', status: 'success', details: { integration: 'whatsapp', url: 'https://x.test' } }])).toEqual([]);
+        expect(paymentLinksOf('nada')).toEqual([]);
+
+        // Con la columna elegida, el log nombra dónde quedó.
+        await svc.setFields(tenantId, admin, inv.slug, { link: 'create' });
+        await withTenant(pg.db, tenantId, (tx) => tx.delete(automationRuns).where(eq(automationRuns.automationId, auto!.id)));
+        await engine.process({ tenantId, listId: inv.listId, recordId: inv.recordId, trigger: 'record_created', after: before });
+        const [run2] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(automationRuns).where(eq(automationRuns.automationId, auto!.id)));
+        expect((run2!.actionsLog as Array<{ message: string }>)[0]!.message).toContain('guardado en «Link de pago»');
     });
 
     it('«Cuando se recibe un pago» corre con {{pago.*}}; en solo-lectura no corre', async () => {

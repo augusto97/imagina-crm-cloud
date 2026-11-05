@@ -65,6 +65,7 @@ import { AskAgentConfig } from '@/admin/agents/AskAgentConfig';
 import { SendEmailConfig } from './email/SendEmailConfig';
 import { GeneratePdfConfig } from '../documents/GeneratePdfConfig';
 import { useForms } from '../forms/useForms';
+import { CollectionFieldsEditor } from '@/cloud/components/payments/CollectionFieldsEditor';
 import { useBookingPages } from '../booking/useBookingPages';
 import { EmailReceivedTriggerConfig, ReplyEmailActionConfig, SlaAlertTriggerConfig, cleanHelpdeskTriggerConfig } from '../helpdesk/helpdeskAutomation';
 import { useRecordTemplates } from '@/hooks/useRecordTemplates';
@@ -2388,6 +2389,20 @@ function ConnectorActionConfig({
                     {__('Esta acción no pide datos: se ejecuta tal cual está definida.')}
                 </p>
             )}
+
+            {/* v0.1.365 — el link tiene que quedar a la vista: aquí se elige la
+                columna donde se guarda (y el estado, la fecha y el monto del pago). */}
+            {actionKey === 'create_payment_link' &&
+                (connection?.integration_key === 'mercadopago' || connection?.integration_key === 'wompi') &&
+                listId && (
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3" data-testid="imcrm-payment-link-columns">
+                        <p className="imcrm-text-sm imcrm-font-medium">{__('Dónde queda el link')}</p>
+                        <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                            {__('El link aparece en «Cobros» de la ficha del registro y en estas columnas de la lista. Cuando el cliente paga, el estado, la fecha y el monto se escriben solos. En un paso siguiente (un WhatsApp o un correo) el link es {{pago.link}}.')}
+                        </p>
+                        <CollectionFieldsEditor listId={listId} fields={fields} />
+                    </div>
+                )}
 
             <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
                 <Button

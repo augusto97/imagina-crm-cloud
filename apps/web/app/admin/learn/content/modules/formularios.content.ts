@@ -827,7 +827,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Ver quién pagó' },
             {
                 t: 'p',
-                md: 'Cada respuesta crea su registro y su **link de pago**, que aparece en la ficha del registro, en **Cobros**. Allí, **Agregar columnas** suma a la lista el estado del pago, la fecha y el medio, así puedes filtrar «Pendiente» o agrupar por estado. Cuando el pago se aprueba, el estado cambia solo.',
+                md: 'Cada respuesta crea su registro y su **link de pago**, que aparece en la ficha del registro, en **Cobros**. Allí, **Elegir columnas** decide en qué columnas de la lista quedan el link, el estado del pago, la fecha y el medio, así puedes filtrar «Pendiente» o agrupar por estado. Cuando el pago se aprueba, el estado cambia solo.',
             },
             {
                 t: 'callout',
