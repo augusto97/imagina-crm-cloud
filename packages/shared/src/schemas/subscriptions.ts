@@ -401,6 +401,21 @@ export const recordSubscriptionsSchema = z.object({
 export type RecordSubscriptions = z.infer<typeof recordSubscriptionsSchema>;
 
 /** El resumen de suscripciones de una conexión (página «Cobros»). */
+/**
+ * v0.1.380 — La última vez que la app le pidió a Mercado Pago las cuotas de
+ * una suscripción de una conexión: si las entregó o qué respondió.
+ */
+export const subscriptionInvoiceReadSchema = z.object({
+    at: z.string(),
+    ok: z.boolean(),
+    /** El código HTTP (0 = no respondió). */
+    status: z.number(),
+    message: z.string().nullable(),
+    count: z.number(),
+    subscription_id: z.number(),
+});
+export type SubscriptionInvoiceRead = z.infer<typeof subscriptionInvoiceReadSchema>;
+
 export const subscriptionsOverviewSchema = z.object({
     plans: z.array(subscriptionPlanSchema),
     totals: z.object({
@@ -427,6 +442,12 @@ export const subscriptionsOverviewSchema = z.object({
             plan_name: z.string().nullable(),
         }),
     ),
+    /**
+     * v0.1.380 — La última vez que la app le pidió a Mercado Pago las cuotas
+     * de una suscripción de esta conexión: si las entregó o qué respondió
+     * (null = todavía no se pidió, o es PayPal).
+     */
+    invoice_read: subscriptionInvoiceReadSchema.nullable().default(null),
 });
 export type SubscriptionsOverview = z.infer<typeof subscriptionsOverviewSchema>;
 

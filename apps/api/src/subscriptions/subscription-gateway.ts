@@ -152,6 +152,53 @@ export interface ParsedPreapproval {
     currency: string | null;
     nextPaymentAt: Date | null;
     startAt: Date | null;
+    /** El número de cliente de Mercado Pago del pagador. */
+    payerId: string | null;
+    /**
+     * v0.1.380 — Nombre y apellido del pagador (`payer_first_name` /
+     * `payer_last_name`): la búsqueda los trae aunque no traiga el correo.
+     */
+    payerName: string | null;
+    /** v0.1.380 — El resumen de cobros que lleva Mercado Pago (`summarized`). */
+    summary: MpChargeSummary | null;
+}
+
+/**
+ * v0.1.380 — Lo que Mercado Pago resume de los cobros de una suscripción. Es
+ * la fuente de respaldo cuando no entrega el detalle de cada cuota: sin él,
+ * una suscripción que paga todos los meses parecía vencida.
+ */
+export interface MpChargeSummary {
+    /** Cobros que salieron bien. */
+    chargedQuantity: number | null;
+    chargedAmount: number | null;
+    /** Cuándo salió bien el último cobro. */
+    lastChargedDate: Date | null;
+    lastChargedAmount: number | null;
+    /** green / yellow / red. */
+    semaphore: string | null;
+}
+
+function readSummary(raw: unknown): MpChargeSummary | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const s = raw as Record<string, unknown>;
+    const out: MpChargeSummary = {
+        chargedQuantity: num(s.charged_quantity),
+        chargedAmount: num(s.charged_amount),
+        lastChargedDate: date(s.last_charged_date),
+        lastChargedAmount: num(s.last_charged_amount),
+        semaphore: str(s.semaphore),
+    };
+    return out.chargedQuantity === null && out.lastChargedDate === null && out.semaphore === null ? null : out;
+}
+
+/** «Ana María Pérez» con lo que mande Mercado Pago (o null). */
+export function mpPayerName(first: unknown, last: unknown): string | null {
+    const parts = [first, last]
+        .map((v) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : ''))
+        .filter((v) => v !== '' && v.toLowerCase() !== 'null');
+    const name = parts.join(' ').trim();
+    return name.length >= 2 ? name.slice(0, 120) : null;
 }
 
 function readPreapproval(json: Record<string, unknown>, creds: IntegrationCreds): ParsedPreapproval | null {
@@ -171,6 +218,9 @@ function readPreapproval(json: Record<string, unknown>, creds: IntegrationCreds)
         currency: str(auto.currency_id)?.toUpperCase() ?? null,
         nextPaymentAt: date(json.next_payment_date),
         startAt: date(auto.start_date),
+        payerId: str(json.payer_id),
+        payerName: mpPayerName(json.payer_first_name, json.payer_last_name),
+        summary: readSummary(json.summarized),
     };
 }
 
@@ -243,8 +293,13 @@ function readInvoice(json: Record<string, unknown>): ParsedInvoice | null {
     };
 }
 
-export function invoicesSearchRequest(creds: IntegrationCreds, preapprovalId: string, bases: GatewayBases): IntegrationRequest {
-    const q = new URLSearchParams({ preapproval_id: preapprovalId, limit: '100', offset: '0' });
+/**
+ * Las cuotas de una suscripción. `paged: false` = sólo el id de la
+ * suscripción (v0.1.380: si Mercado Pago rechaza el pedido con paginación,
+ * se reintenta así antes de darlo por perdido).
+ */
+export function invoicesSearchRequest(creds: IntegrationCreds, preapprovalId: string, bases: GatewayBases, paged = true): IntegrationRequest {
+    const q = new URLSearchParams(paged ? { preapproval_id: preapprovalId, limit: '100', offset: '0' } : { preapproval_id: preapprovalId });
     return {
         url: `${trimBase(bases.mercadopago)}/authorized_payments/search?${q.toString()}`,
         method: 'GET',
@@ -288,6 +343,9 @@ export interface ParsedSubscriptionPayment {
     paidAt: Date | null;
     createdAt: Date | null;
     failureReason: string | null;
+    /** v0.1.380 — quién pagó (para completar al suscriptor que llegó sin correo ni nombre). */
+    payerEmail: string | null;
+    payerName: string | null;
 }
 
 export function parseSubscriptionPayment(status: number, body: string): ParsedSubscriptionPayment | null {
@@ -311,6 +369,10 @@ export function parseSubscriptionPayment(status: number, body: string): ParsedSu
         paidAt: st === 'approved' ? (date(p.date_approved) ?? date(p.date_created)) : null,
         createdAt: date(p.date_created),
         failureReason: st === 'rejected' ? (mpRejectionText(detail) ?? 'el banco rechazó el pago') : null,
+        ...(() => {
+            const who = readPaymentPayer(p);
+            return { payerEmail: who.email, payerName: who.name };
+        })(),
     };
 }
 
@@ -354,6 +416,31 @@ export function mpNotice(query: Record<string, unknown>, body: unknown): { topic
     const id = str(data.id) ?? str(query['data.id']) ?? str(query.id) ?? str(b.id);
     if (!id || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
     return { topic, id };
+}
+
+// ── El resumen de Mercado Pago como cobro (v0.1.380) ────────────────────
+
+/**
+ * Cuando Mercado Pago no entrega el detalle de las cuotas, el último cobro de
+ * su resumen (`summarized.last_charged_date`) se guarda como un cobro con
+ * este prefijo: así «Pagado hasta» y «Cobros de suscripciones» dicen la
+ * verdad. Cuando llega la cuota real de esa fecha, el mismo cobro pasa a
+ * llevar su id de pago (no se duplica).
+ */
+export const MP_SUMMARY_CHARGE_PREFIX = 'mp-resumen-';
+
+export function isSummaryCharge(providerPaymentId: string): boolean {
+    return providerPaymentId.startsWith(MP_SUMMARY_CHARGE_PREFIX);
+}
+
+export function summaryChargeId(lastChargedDate: Date): string {
+    return `${MP_SUMMARY_CHARGE_PREFIX}${lastChargedDate.toISOString().slice(0, 10)}`;
+}
+
+/** El mismo cobro visto por dos lados: cae a no más de 3 días del otro. */
+export function sameChargeDay(a: Date | null, b: Date | null, days = 3): boolean {
+    if (!a || !b) return false;
+    return Math.abs(a.getTime() - b.getTime()) <= days * 86_400_000;
 }
 
 // ── Lo que dicen los cobros guardados (puro) ─────────────────────────────
@@ -447,7 +534,6 @@ export interface ImportedPreapproval extends ParsedPreapproval {
     /** authorized / paused / pending / cancelled (finished cuenta como cancelada). */
     mpStatus: 'authorized' | 'paused' | 'pending' | 'cancelled';
     payerEmail: string | null;
-    payerId: string | null;
     /** El plan de Mercado Pago (si la suscripción salió de un plan). */
     planExternalId: string | null;
     reason: string | null;
@@ -472,7 +558,6 @@ function readImported(json: Record<string, unknown>, creds: IntegrationCreds): I
         ...base,
         mpStatus,
         payerEmail: email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? email.trim().toLowerCase() : null,
-        payerId: str(json.payer_id),
         planExternalId: str(json.preapproval_plan_id),
         reason: str(json.reason),
         frequency: freq,
@@ -564,13 +649,34 @@ export function parsePreapprovalPlans(status: number, body: string): { total: nu
     return { total: num(paging.total) ?? items.length, items };
 }
 
+/**
+ * Quién pagó, según un pago de Mercado Pago (cuando la suscripción no lo
+ * trae): el correo del pagador y su nombre — el del pagador, el de quien
+ * figura en la tarjeta o el de la información adicional, en ese orden.
+ */
+export function readPaymentPayer(json: Record<string, unknown> | null): { email: string | null; name: string | null } {
+    if (!json) return { email: null, name: null };
+    const payer = (json.payer ?? null) as Record<string, unknown> | null;
+    const rawEmail = payer ? str(payer.email) : null;
+    const email = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail.trim()) ? rawEmail.trim().toLowerCase() : null;
+    const card = (json.card ?? null) as Record<string, unknown> | null;
+    const holder = card ? ((card.cardholder ?? null) as Record<string, unknown> | null) : null;
+    const extra = ((json.additional_info ?? {}) as Record<string, unknown>).payer as Record<string, unknown> | undefined;
+    const name =
+        (payer ? mpPayerName(payer.first_name, payer.last_name) : null) ??
+        (holder ? mpPayerName(holder.name, null) : null) ??
+        (extra ? mpPayerName(extra.first_name, extra.last_name) : null);
+    return { email, name };
+}
+
+export function paymentPayer(status: number, body: string): { email: string | null; name: string | null } {
+    if (status !== 200) return { email: null, name: null };
+    return readPaymentPayer(parseJson(body));
+}
+
 /** El correo del pagador en un pago (cuando la suscripción no lo trae). */
 export function paymentPayerEmail(status: number, body: string): string | null {
-    if (status !== 200) return null;
-    const json = parseJson(body);
-    const payer = (json?.payer ?? null) as Record<string, unknown> | null;
-    const email = payer ? str(payer.email) : null;
-    return email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? email.trim().toLowerCase() : null;
+    return paymentPayer(status, body).email;
 }
 
 /** Una sola suscripción leída por id (`GET /preapproval/:id`), con lo que hace falta para importarla. */

@@ -192,6 +192,7 @@ function SubscriptionImportDialog({ connectionId, onClose }: { connectionId: num
     const [emailFieldId, setEmailFieldId] = useState<number | null>(null);
     const [createMissing, setCreateMissing] = useState(true);
     const [includeCancelled, setIncludeCancelled] = useState(false);
+    const [includePending, setIncludePending] = useState(false);
     const [chargeLog, setChargeLog] = useState(true);
     const [dashboard, setDashboard] = useState(true);
     const [auto, setAuto] = useState(true);
@@ -217,6 +218,7 @@ function SubscriptionImportDialog({ connectionId, onClose }: { connectionId: num
         email_field_id: mode === 'match' ? emailFieldId : null,
         create_missing: createMissing,
         include_cancelled: includeCancelled,
+        include_pending: includePending,
         list_name: mode === 'create' ? listName.trim() || null : null,
         charge_log: chargeLog,
         dashboard: chargeLog && dashboard,
@@ -380,8 +382,15 @@ function SubscriptionImportDialog({ connectionId, onClose }: { connectionId: num
                                     checked={includeCancelled}
                                     onChange={setIncludeCancelled}
                                     title={__('Traer también las canceladas')}
-                                    hint={__('Para tener el historial completo. Apagado, sólo se traen las activas, pausadas y por autorizar.')}
+                                    hint={__('Para tener el historial completo. Apagado, sólo se traen las activas y las pausadas.')}
                                     testId="imcrm-subscription-import-cancelled"
+                                />
+                                <Check
+                                    checked={includePending}
+                                    onChange={setIncludePending}
+                                    title={__('Traer también las que quedaron «Por autorizar»')}
+                                    hint={__('Alguien empezó a suscribirse y nunca puso la tarjeta. Apagado no se traen: si después la autoriza, llega sola.')}
+                                    testId="imcrm-subscription-import-pending"
                                 />
                                 <Check
                                     checked={auto}
@@ -478,6 +487,11 @@ function PreviewStep({
                 <Tile label={__('Ya están en la app')} value={preview.known} />
                 <Tile label={__('Canceladas fuera')} value={preview.skipped_cancelled} />
             </section>
+            {(preview.skipped_pending ?? 0) > 0 && (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-subscription-import-skipped-pending">
+                    {sprintf(__('%d quedaron «Por autorizar» (nunca pusieron la tarjeta) y no se traen. Si alguna se autoriza, llega sola.'), preview.skipped_pending)}
+                </p>
+            )}
             <p className="imcrm-flex imcrm-flex-wrap imcrm-gap-1.5 imcrm-text-xs">
                 {MP_PREAPPROVAL_STATUSES.map((st) => (
                     <Badge key={st} variant="secondary" data-testid={`imcrm-subscription-import-status-${st}`}>
@@ -498,7 +512,7 @@ function PreviewStep({
             )}
             {preview.without_email > 0 && (
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {sprintf(__('%d no traen el correo en la búsqueda de Mercado Pago: se toma de su último pago.'), preview.without_email)}
+                    {sprintf(__('%d no traen ni el nombre ni el correo en la búsqueda de Mercado Pago: se toman de su último pago (o quedan con su número de cliente).'), preview.without_email)}
                 </p>
             )}
             {preview.truncated && <p className="imcrm-text-xs imcrm-text-amber-700 dark:imcrm-text-amber-400">{__('Hay más de 5.000 suscripciones: se traen las primeras 5.000 y el resto llega con la revisión periódica.')}</p>}

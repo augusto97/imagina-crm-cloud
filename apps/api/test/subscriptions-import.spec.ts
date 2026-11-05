@@ -1,6 +1,6 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SUBSCRIPTION_STATUS_OPTIONS, decideImport, mpFrequency, mpTrialDays, readSubscriptionFields, readSubscriptionImportConfig } from '@imagina-base/shared';
+import { SUBSCRIPTION_STATUS_OPTIONS, addSubscriptionPeriod, decideImport, mpFrequency, mpTrialDays, readSubscriptionFields, readSubscriptionImportConfig } from '@imagina-base/shared';
 
 /**
  * v0.1.376 (ADR-S96, addendum) — Importar las suscripciones y los planes que la
@@ -64,6 +64,7 @@ import {
     lists,
     records,
     relations,
+    savedViews,
     subscriptionCharges,
     subscriptionPlans,
     subscriptions,
@@ -78,7 +79,15 @@ import { ListsService } from '../src/lists/lists.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { RecordsRepository } from '../src/records/records.repository';
 import { RelationsRepository } from '../src/records/relations.repository';
-import { parsePreapprovalPlans, parsePreapprovalSearch } from '../src/subscriptions/subscription-gateway';
+import {
+    isSummaryCharge,
+    mpPayerName,
+    parsePreapprovalPlans,
+    parsePreapprovalSearch,
+    readPaymentPayer,
+    sameChargeDay,
+    summaryChargeId,
+} from '../src/subscriptions/subscription-gateway';
 import { SubscriptionImportService, cyclesBetween } from '../src/subscriptions/subscription-import.service';
 import { emptyMaps, remapWhatsappConnectionConfig } from '../src/platform/tenant-transfer.remap';
 import { SubscriptionsService } from '../src/subscriptions/subscriptions.service';
@@ -404,13 +413,13 @@ describe('Importar suscripciones de Mercado Pago (v0.1.376)', () => {
         mpSub(mp, 'c1', { status: 'cancelled', email: 'baja@clientes.test' });
         mpSub(mp, 'ours', { email: 'nuestra@clientes.test', ref: 'ibs_abcdef' });
 
-        const preview = await importer.preview(tenantId, admin, connId, { mode: 'create', create_missing: true, include_cancelled: false, charge_log: true, dashboard: true, auto: true });
+        const preview = await importer.preview(tenantId, admin, connId, { mode: 'create', create_missing: true, include_cancelled: false, include_pending: true, charge_log: true, dashboard: true, auto: true });
         expect(preview).toMatchObject({ total: 7, known: 0, to_import: 5, skipped_cancelled: 1, without_email: 1, match: null, truncated: false });
         expect(preview.by_status).toMatchObject({ authorized: 4, paused: 1, pending: 1, cancelled: 1 });
         expect(preview.plans).toEqual([expect.objectContaining({ external_id: 'pl-hosting', subscribers: 2, known: false })]);
         expect(preview.sample.find((x) => x.external_id === 'ours')).toMatchObject({ action: 'skip' });
 
-        const started = await importer.start(tenantId, admin, connId, { mode: 'create', create_missing: true, include_cancelled: false, charge_log: true, dashboard: true, auto: true });
+        const started = await importer.start(tenantId, admin, connId, { mode: 'create', create_missing: true, include_cancelled: false, include_pending: true, charge_log: true, dashboard: true, auto: true });
         expect(started.state).toBe('running');
         const done = await importer.waitFor(tenantId, connId);
         expect(done).toMatchObject({ state: 'done', total: 5, imported: 5, records_created: 5, failed: 0, plans_imported: 1, list_name: 'Suscriptores · Mercado Pago' });
@@ -447,7 +456,7 @@ describe('Importar suscripciones de Mercado Pago (v0.1.376)', () => {
         expect(dispatcher.events).toHaveLength(0);
 
         // Importar otra vez no duplica: todo es «ya está en la app».
-        const again = await importer.preview(tenantId, admin, connId, { mode: 'create', create_missing: true, include_cancelled: false, charge_log: false, dashboard: false, auto: true });
+        const again = await importer.preview(tenantId, admin, connId, { mode: 'create', create_missing: true, include_cancelled: false, include_pending: true, charge_log: false, dashboard: false, auto: true });
         expect(again).toMatchObject({ known: 5, to_import: 0 });
         expect(again.plans[0]!.known).toBe(true);
     });
@@ -492,7 +501,7 @@ describe('Importar suscripciones de Mercado Pago (v0.1.376)', () => {
         mpSub(mp, 'm2', { email: 'nuevo@cliente.test' });
         mpSub(mp, 'm3', { email: 'HOLA@cafeluna.test' });
 
-        const input = { mode: 'match' as const, list_id: list.id, email_field_id: email.id, create_missing: true, include_cancelled: false, charge_log: false, dashboard: false, auto: false };
+        const input = { mode: 'match' as const, list_id: list.id, email_field_id: email.id, create_missing: true, include_cancelled: false, include_pending: true, charge_log: false, dashboard: false, auto: false };
         const preview = await importer.preview(tenantId, admin, connId, input);
         expect(preview.match).toMatchObject({ list_name: 'Clientes', matched: 1, unmatched: 1, conflicts: 1 });
         expect(preview.sample.find((x) => x.external_id === 'm1')).toMatchObject({ action: 'link', record_title: 'Panadería Sol' });
@@ -525,7 +534,7 @@ describe('Importar suscripciones de Mercado Pago (v0.1.376)', () => {
         const connId = await connectMp();
         mpSub(mp, 'old1', { email: 'vieja@clientes.test' });
         mpSub(mp, 'oldc', { status: 'cancelled', email: 'baja-vieja@clientes.test', created: -200 });
-        await importer.start(tenantId, admin, connId, { mode: 'create', create_missing: true, include_cancelled: false, charge_log: false, dashboard: false, auto: true });
+        await importer.start(tenantId, admin, connId, { mode: 'create', create_missing: true, include_cancelled: false, include_pending: true, charge_log: false, dashboard: false, auto: true });
         const first = await importer.waitFor(tenantId, connId);
         expect(first.imported).toBe(1);
         dispatcher.events.length = 0;
@@ -562,7 +571,7 @@ describe('Importar suscripciones de Mercado Pago (v0.1.376)', () => {
         const mp = fakeMercadoPago();
         const connId = await connectMp();
         mpSub(mp, 'x1', { email: 'x@clientes.test' });
-        const input = { mode: 'create' as const, create_missing: true, include_cancelled: false, charge_log: false, dashboard: false, auto: true };
+        const input = { mode: 'create' as const, create_missing: true, include_cancelled: false, include_pending: true, charge_log: false, dashboard: false, auto: true };
         await expect(importer.preview(tenantId, { userId: adminId, role: 'agent' }, connId, input)).rejects.toThrow(/crear listas/);
 
         // Mercado Pago rechaza el token: error claro y ninguna lista creada.
@@ -579,5 +588,154 @@ describe('Importar suscripciones de Mercado Pago (v0.1.376)', () => {
         await importer.waitFor(tenantId, connId);
         await expect(importer.start(tenantId, admin, connId, input)).resolves.toMatchObject({ state: 'running' });
         await importer.waitFor(tenantId, connId);
+    });
+
+    // ── v0.1.380: el caso real (sin correo, sin cuotas, varias por cliente) ──
+
+    it('v0.1.380 — piezas puras: nombre y resumen de la búsqueda, quién pagó y el cobro del resumen', () => {
+        const creds = { secret: 'APP_USR-x', fields: {} } as never;
+        const page = parsePreapprovalSearch(
+            200,
+            JSON.stringify({
+                results: [
+                    {
+                        id: 'a',
+                        status: 'authorized',
+                        payer_id: 261317178,
+                        payer_email: '',
+                        payer_first_name: ' Ana ',
+                        payer_last_name: 'Gómez',
+                        auto_recurring: { frequency: 1, frequency_type: 'months', transaction_amount: 86000, currency_id: 'COP' },
+                        summarized: { charged_quantity: 8, last_charged_date: '2026-10-14T10:00:00.000-04:00', last_charged_amount: 86000, semaphore: 'green' },
+                    },
+                    { id: 'b', status: 'pending', payer_id: 1, payer_first_name: 'null', payer_last_name: '' },
+                ],
+            }),
+            creds,
+        )!;
+        expect(page.items[0]).toMatchObject({ payerName: 'Ana Gómez', payerEmail: null, payerId: '261317178', summary: { chargedQuantity: 8, lastChargedAmount: 86000, semaphore: 'green' } });
+        expect(page.items[0]!.summary!.lastChargedDate!.toISOString()).toBe('2026-10-14T14:00:00.000Z');
+        expect(page.items[1]).toMatchObject({ payerName: null, summary: null });
+        expect(mpPayerName('A', null)).toBeNull();
+
+        expect(readPaymentPayer({ payer: { email: 'Ana@X.co', first_name: null }, card: { cardholder: { name: 'ANA M GOMEZ' } } })).toEqual({ email: 'ana@x.co', name: 'ANA M GOMEZ' });
+        expect(readPaymentPayer({ payer: {}, additional_info: { payer: { first_name: 'Beto', last_name: 'Ruiz' } } })).toEqual({ email: null, name: 'Beto Ruiz' });
+        expect(readPaymentPayer(null)).toEqual({ email: null, name: null });
+
+        const id = summaryChargeId(new Date('2026-10-14T14:00:00Z'));
+        expect(id).toBe('mp-resumen-2026-10-14');
+        expect(isSummaryCharge(id)).toBe(true);
+        expect(isSummaryCharge('9001')).toBe(false);
+        expect(sameChargeDay(new Date('2026-10-14T14:00:00Z'), new Date('2026-10-16T09:00:00Z'))).toBe(true);
+        expect(sameChargeDay(new Date('2026-10-14T14:00:00Z'), new Date('2026-11-14T14:00:00Z'))).toBe(false);
+        expect(sameChargeDay(null, new Date())).toBe(false);
+    });
+
+    it('v0.1.380 — sin correo ni cuotas: el nombre de Mercado Pago, el estado por su resumen, el último cobro y las «Por autorizar» fuera', async () => {
+        const mp = fakeMercadoPago();
+        const connId = await connectMp();
+        const lastCharged = new Date(Date.now() - 21 * DAY);
+        // La de Ana: paga hace 8 meses, Mercado Pago no da su correo ni entrega las cuotas.
+        mpSub(mp, 'vps', { email: '', amount: 86000, created: -245, payerId: 261317178, paid: false });
+        Object.assign(mp.pre.get('vps')!, {
+            payer_first_name: 'Ana',
+            payer_last_name: 'Gómez',
+            next_payment_date: iso(9),
+            summarized: { charged_quantity: 8, charged_amount: 688000, last_charged_date: lastCharged.toISOString(), last_charged_amount: 86000, semaphore: 'green' },
+        });
+        // Una vieja de la misma persona, cancelada, y un pago que nadie terminó.
+        mpSub(mp, 'vps-vieja', { email: '', status: 'cancelled', payerId: 261317178, paid: false });
+        mpSub(mp, 'abandonada', { email: '', status: 'pending', payerId: 27610642, paid: false });
+        const base = net.handler;
+        let rejectInvoices = true;
+        net.handler = (call) =>
+            rejectInvoices && call.url.startsWith(`${MP}/authorized_payments/search`)
+                ? { status: 400, body: JSON.stringify({ message: 'invalid parameters', error: 'bad_request', status: 400 }) }
+                : base(call);
+
+        const input = { mode: 'create' as const, create_missing: true, include_cancelled: false, include_pending: false, charge_log: true, dashboard: false, auto: true };
+        const preview = await importer.preview(tenantId, admin, connId, input);
+        expect(preview).toMatchObject({ to_import: 1, skipped_pending: 1, skipped_cancelled: 1 });
+        expect(preview.sample.find((x) => x.external_id === 'vps')).toMatchObject({ title: 'Ana Gómez', action: 'create_record' });
+
+        await importer.start(tenantId, admin, connId, input);
+        const done = await importer.waitFor(tenantId, connId);
+        expect(done).toMatchObject({ state: 'done', imported: 1, records_created: 1 });
+
+        // El suscriptor se llama como en Mercado Pago, y la lista trae «Por cliente».
+        const [list] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(lists).where(eq(lists.id, done.list_id!)));
+        const titleKey = `f${(list!.settings as { title_field_id: number }).title_field_id}`;
+        const [row] = await recordsOf(done.list_id!);
+        expect(row![titleKey]).toBe('Ana Gómez');
+        const views = await withTenant(pg.db, tenantId, (tx) => tx.select().from(savedViews).where(eq(savedViews.listId, done.list_id!)));
+        expect(views.find((v) => v.name === 'Por cliente')?.config).toMatchObject({ group_by_field_id: (list!.settings as { title_field_id: number }).title_field_id });
+
+        // Al día (antes: «Vencida»), pagado hasta el último cobro + un mes, 8 cobros.
+        const [sub] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(subscriptions).where(eq(subscriptions.externalId, 'vps')));
+        expect(sub).toMatchObject({ status: 'active', chargesPaid: 8 });
+        expect(sub!.paidUntil?.toISOString().slice(0, 10)).toBe(addSubscriptionPeriod(lastCharged, 1, 'months').toISOString().slice(0, 10));
+        const charges = await withTenant(pg.db, tenantId, (tx) => tx.select().from(subscriptionCharges).where(eq(subscriptionCharges.subscriptionId, sub!.id)));
+        expect(charges).toHaveLength(1);
+        expect(charges[0]).toMatchObject({ status: 'approved', amount: 86000, method: 'Según el resumen de Mercado Pago' });
+        expect(charges[0]!.providerPaymentId.startsWith('mp-resumen-')).toBe(true);
+        // Ese cobro queda en «Cobros de suscripciones».
+        expect((await recordsOf(done.charge_log_list_id!)).length).toBe(1);
+        // Y lo que respondió Mercado Pago al pedir las cuotas queda a la vista.
+        const overview = await subs.overview(tenantId, admin, connId);
+        expect(overview.invoice_read).toBeNull(); // sin Redis en el test: no se guarda
+        expect(net.calls.filter((c) => c.url.includes('/authorized_payments/search') && !c.url.includes('limit=')).length).toBeGreaterThan(0);
+
+        // Mercado Pago empieza a entregar la cuota real de esa fecha: el MISMO cobro
+        // pasa a llevar su id de pago (no se duplica en la lista de cobros).
+        rejectInvoices = false;
+        mp.invoices.set('inv-vps', {
+            id: 'inv-vps',
+            preapproval_id: 'vps',
+            status: 'processed',
+            debit_date: lastCharged.toISOString(),
+            date_created: lastCharged.toISOString(),
+            last_modified: lastCharged.toISOString(),
+            retry_attempt: 0,
+            transaction_amount: 86000,
+            currency_id: 'COP',
+            payment: { id: 9001, status: 'approved', status_detail: 'accredited' },
+        });
+        await subs.sync(tenantId, sub!.id);
+        const after = await withTenant(pg.db, tenantId, (tx) => tx.select().from(subscriptionCharges).where(eq(subscriptionCharges.subscriptionId, sub!.id)));
+        expect(after.map((c) => c.providerPaymentId)).toEqual(['9001']);
+        expect((await recordsOf(done.charge_log_list_id!)).length).toBe(1);
+
+        // Una importación anterior (con el título provisorio) se completa sola en
+        // la revisión periódica; un nombre escrito a mano no se toca.
+        mpSub(mp, 'vieja-import', { email: '', amount: 30000, payerId: 555 });
+        mpSub(mp, 'a-mano', { email: '', amount: 30000, payerId: 556 });
+        Object.assign(mp.pre.get('vieja-import')!, { payer_first_name: 'Carlos', payer_last_name: 'Ruiz' });
+        Object.assign(mp.pre.get('a-mano')!, { payer_first_name: 'Dora', payer_last_name: 'Paz' });
+        net.handler = (call) =>
+            call.url.startsWith(`${MP}/preapproval/search`)
+                ? {
+                      status: 200,
+                      body: JSON.stringify({
+                          results: [...mp.pre.values()].map((p) => ({ ...p, payer_first_name: undefined, payer_last_name: undefined })),
+                          paging: { total: mp.pre.size },
+                      }),
+                  }
+                : base(call);
+        expect(await importer.scanConnection(tenantId, connId)).toBe(2);
+        const titles = () => recordsOf(done.list_id!).then((rs) => rs.map((r) => r[titleKey]).sort());
+        expect(await titles()).toEqual(['Ana Gómez', 'Cliente de Mercado Pago #555', 'Cliente de Mercado Pago #556']);
+        const [manual] = await withTenant(pg.db, tenantId, (tx) =>
+            tx.select().from(subscriptions).where(and(eq(subscriptions.tenantId, tenantId), eq(subscriptions.externalId, 'a-mano'))),
+        );
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx
+                .update(records)
+                .set({ data: sql`jsonb_set(${records.data}, ${`{${titleKey}}`}, '"Doña Dora (la de la esquina)"')` })
+                .where(eq(records.id, manual!.recordId!)),
+        );
+        net.handler = base;
+        await withTenant(pg.db, tenantId, (tx) => tx.update(connections).set({ config: sql`jsonb_set(${connections.config}, '{subscription_import,last_scan_at}', 'null')` }).where(eq(connections.id, connId)));
+        await importer.scanConnection(tenantId, connId);
+        expect(await titles()).toEqual(['Ana Gómez', 'Carlos Ruiz', 'Doña Dora (la de la esquina)']);
     });
 });

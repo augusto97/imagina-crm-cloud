@@ -12873,6 +12873,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Tests: payments.spec 41/41 + E2E navegador 8/8 en escritorio y 8/8 en
         celular oscuro contra el Mercado Pago simulado.
 
+  - [x] **Suscripciones importadas: el nombre del cliente, el estado real y
+        sus cobros (v0.1.380, addendum ADR-S96, reporte del usuario: "la lista
+        que trae no trae el nombre del cliente ni agrupa pagos por cliente,
+        solo trae números, quedé perdido")**. Con su cuenta real, la lista
+        «Suscriptores · Mercado Pago» tenía tres problemas:
+        - mostraba «Cliente de Mercado Pago #número»;
+        - «Cobros de suscripciones» estaba vacía;
+        - una suscripción salía «Vencida» aunque Mercado Pago la tenía
+          autorizada.
+        Causas: la búsqueda de Mercado Pago no trae el correo pero sí
+        `payer_first_name`/`payer_last_name` y el resumen `summarized`, y la
+        app ignoraba el nombre. Además su cuenta responde 400 a la búsqueda de
+        cuotas paginada, y sin cuotas «pagado hasta» quedaba en el inicio.
+        (a) **El nombre del cliente** (`ParsedPreapproval.payerName`,
+        `mpPayerName`, `paymentPayer`) es el título del registro
+        (`subscriberTitle`: nombre → correo → id). `refreshKnown` lo completa
+        en lo ya importado, junto con el correo si llega por un pago. Sólo
+        reemplaza títulos provisorios: lo escrito a mano no se toca.
+        (b) **Cuotas**: se piden paginadas y, si Mercado Pago lo rechaza, sin
+        paginar. Lo que respondió la última vez queda a la vista en Cobros
+        (`overview.invoice_read`, Redis 14 días, `InvoiceReadNote`: ámbar con
+        el motivo, o «entregó N cuotas»).
+        (c) **El estado sale del resumen** cuando no hay cuotas. El último cobro
+        se registra como `mp-resumen-AAAA-MM-DD` («Según el resumen de Mercado
+        Pago») y `charges_paid` toma el mayor entre lo contado y el resumen.
+        El cobro real, al llegar con ±3 días, lo reemplaza en su lugar, sin
+        duplicar, también en «Cobros de suscripciones».
+        (d) Las **«Por autorizar»** (checkouts que nunca pusieron la tarjeta)
+        no se importan por defecto: casilla `include_pending` y su conteo en
+        la vista previa.
+        (e) Vista nueva **«Por cliente»** en la lista importada.
+        (f) Migración 0107: las suscripciones de Mercado Pago se releen solas
+        tras actualizar.
+        Ayuda: Aprende → Cobros (fila nueva y tres preguntas), guía de
+        suscripciones y novedad con carrusel. El Mercado Pago simulado suma
+        `/__mp-invoices {fail}`. Tests: `subscriptions-import.spec` 7/7 (el
+        escenario del usuario con las cuotas en 400), suscripciones/cobros/
+        portal 43/43, shared 771 (3 nuevos), front 828. E2E navegador 25/25 en
+        escritorio y en celular oscuro:
+        - nombres en la vista previa y en la lista;
+        - «Al día» y no «Vencida», 8 cobros contados;
+        - sin las «Por autorizar»;
+        - «Por cliente» con 2 grupos;
+        - «Cobros de suscripciones» con el cliente;
+        - el aviso ámbar;
+        - el cobro real que reemplaza al del resumen.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

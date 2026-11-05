@@ -45,6 +45,8 @@ import {
     type SubscriptionProviderStatus,
     type SubscriptionRow,
     type SubscriptionsOverview,
+    subscriptionInvoiceReadSchema,
+    type SubscriptionInvoiceRead,
     type SubscriptionStatus,
     type UpdateSubscriptionPlanInput,
     type PublicFormPlan,
@@ -101,10 +103,14 @@ import {
     parseInvoice,
     parseInvoices,
     parsePreapproval,
+    isSummaryCharge,
     parseSubscriptionPayment,
     preapprovalRequest,
+    sameChargeDay,
     summarizeCharges,
+    summaryChargeId,
     updatePreapprovalRequest,
+    type MpChargeSummary,
     type ParsedInvoice,
     type PreapprovalPatch,
 } from './subscription-gateway';
@@ -165,9 +171,19 @@ interface RemoteState {
     url: string | null;
     startAt: Date | null;
     invoices: ParsedInvoice[] | null;
+    /** v0.1.380 — el resumen de cobros de Mercado Pago (respaldo cuando no hay detalle de cuotas). */
+    summary?: MpChargeSummary | null;
     /** v0.1.373 — PayPal dice el reintento y la mora sin «cuotas»: si viene, manda sobre lo que se deduce de las cuotas. */
     retrying?: boolean;
     failedFinal?: boolean;
+}
+
+/** El «medio» del cobro que salió del resumen de Mercado Pago (v0.1.380). */
+const SUMMARY_CHARGE_METHOD = 'Según el resumen de Mercado Pago';
+
+/** La última lectura de cuotas de una conexión de Mercado Pago (v0.1.380). */
+function invoiceReadKey(tenantId: number, connectionId: number): string {
+    return `subs:mp:invoices:${tenantId}:${connectionId}`;
 }
 
 /** «Mercado Pago» / «PayPal». */
@@ -904,13 +920,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         const pre = parsePreapproval(res.status, res.body, creds);
         if (!pre) return null;
         this.incidents?.resolve(tenantId, keyIncident);
-        let invoices: ParsedInvoice[] | null = null;
-        try {
-            const inv = await this.fetchMp(invoicesSearchRequest(creds, sub.externalId!, this.bases));
-            invoices = parseInvoices(inv.status, inv.body);
-        } catch {
-            invoices = null;
-        }
+        const invoices = await this.readInvoices(tenantId, sub, creds);
         return {
             providerStatus: pre.providerStatus,
             nextPaymentAt: pre.nextPaymentAt,
@@ -918,7 +928,66 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
             url: pre.url,
             startAt: pre.startAt,
             invoices,
+            summary: pre.summary,
         };
+    }
+
+    /**
+     * Las cuotas de una suscripción de Mercado Pago. v0.1.380: si rechaza el
+     * pedido con paginación se reintenta sin ella, y lo que respondió queda a
+     * la vista en Cobros de la conexión (antes un rechazo se tragaba en
+     * silencio y la suscripción quedaba sin cobros).
+     */
+    private async readInvoices(tenantId: number, sub: SubscriptionRowDb, creds: IntegrationCreds): Promise<ParsedInvoice[] | null> {
+        let status = 0;
+        let message: string | null = null;
+        let invoices: ParsedInvoice[] | null = null;
+        for (const paged of [true, false]) {
+            try {
+                const inv = await this.fetchMp(invoicesSearchRequest(creds, sub.externalId!, this.bases, paged));
+                status = inv.status;
+                invoices = parseInvoices(inv.status, inv.body);
+                if (invoices) break;
+                message = providerError('mercadopago', inv.status, inv.body).slice(0, 240);
+                if (inv.status === 401 || inv.status === 403 || inv.status >= 500) break;
+            } catch (err) {
+                status = 0;
+                message = redact(err, creds).slice(0, 240);
+                break;
+            }
+        }
+        if (sub.connectionId) {
+            await this.saveInvoiceRead(tenantId, sub.connectionId, {
+                at: new Date().toISOString(),
+                ok: invoices !== null,
+                status,
+                message: invoices ? null : message,
+                count: invoices?.length ?? 0,
+                subscription_id: sub.id,
+            });
+        }
+        if (!invoices) this.logger.warn(`Suscripción ${sub.id}: Mercado Pago no entregó las cuotas (${status}${message ? `: ${message}` : ''}).`);
+        return invoices;
+    }
+
+    /** La última lectura de cuotas de una conexión (Redis, 14 días): qué respondió Mercado Pago. */
+    private async saveInvoiceRead(tenantId: number, connectionId: number, read: SubscriptionInvoiceRead): Promise<void> {
+        if (!this.redis) return;
+        await this.redis.set(invoiceReadKey(tenantId, connectionId), JSON.stringify(read), 'EX', 14 * 24 * 3600).catch(() => undefined);
+    }
+
+    async lastInvoiceRead(tenantId: number, connectionId: number): Promise<SubscriptionInvoiceRead | null> {
+        if (!this.redis) return null;
+        const raw = await this.redis.get(invoiceReadKey(tenantId, connectionId)).catch(() => null);
+        if (!raw) return null;
+        const parsed = subscriptionInvoiceReadSchema.safeParse((() => {
+            try {
+                return JSON.parse(raw) as unknown;
+            } catch {
+                return null;
+            }
+        })());
+        return parsed.success ? parsed.data : null;
     }
 
     /**
@@ -962,6 +1031,34 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
                 retryingInvoiceId = retrying ? (latest?.invoiceId ?? null) : null;
                 failedFinal = Boolean(latest && latest.status === 'processed' && latest.paymentStatus === 'rejected');
             }
+            // v0.1.380 — El último cobro del resumen de Mercado Pago, cuando no
+            // hay una cuota real de esa fecha (Mercado Pago no entregó el detalle,
+            // o todavía no llegó): sin esto, una suscripción que paga todos los
+            // meses quedaba «Vencida» y «Cobros de suscripciones» vacía.
+            const summary0 = remote?.summary ?? null;
+            if (sub.provider === 'mercadopago' && summary0?.lastChargedDate) {
+                const when = summary0.lastChargedDate;
+                const near = await tx
+                    .select({ id: subscriptionCharges.id, providerPaymentId: subscriptionCharges.providerPaymentId, paidAt: subscriptionCharges.paidAt, periodStart: subscriptionCharges.periodStart })
+                    .from(subscriptionCharges)
+                    .where(and(eq(subscriptionCharges.tenantId, tenantId), eq(subscriptionCharges.subscriptionId, sub.id), inArray(subscriptionCharges.status, ['approved', 'refunded'])));
+                const covered = near.some((c) => sameChargeDay(c.paidAt ?? c.periodStart, when));
+                if (!covered) {
+                    const changed = await this.upsertCharge(tx, tenantId, sub, {
+                        providerPaymentId: summaryChargeId(when),
+                        invoiceId: null,
+                        amount: summary0.lastChargedAmount && summary0.lastChargedAmount > 0 ? summary0.lastChargedAmount : Number(sub.amount),
+                        currency: sub.currency,
+                        status: 'approved',
+                        attempt: null,
+                        failureReason: null,
+                        method: SUMMARY_CHARGE_METHOD,
+                        periodStart: when,
+                        paidAt: when,
+                    });
+                    if (changed) newCharges.push(changed);
+                }
+            }
             // PayPal dice el reintento y la mora sin «cuotas» (v0.1.373).
             if (remote?.retrying !== undefined) {
                 retrying = remote.retrying;
@@ -995,6 +1092,9 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
                     : ((remote?.providerStatus ?? (sub.providerStatus as SubscriptionProviderStatus | null)) ?? null);
             // Una cuota aprobada después de la rechazada «apaga» la mora.
             if (summary.lastChargeStatus === 'approved') failedFinal = false;
+            // Mercado Pago cuenta TODOS los cobros (también los de antes de traerla a la app).
+            const chargedByProvider = summary0?.chargedQuantity ?? 0;
+            if (chargedByProvider > summary.chargesPaid) summary.chargesPaid = chargedByProvider;
             const startAt = remote?.startAt ?? sub.startAt;
             const status = deriveSubscriptionStatus({
                 providerStatus,
@@ -1074,11 +1174,40 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
             paidAt: Date | null;
         },
     ): Promise<SubscriptionChargeRowDb | null> {
-        const [prev] = await tx
+        let [prev] = await tx
             .select()
             .from(subscriptionCharges)
             .where(and(eq(subscriptionCharges.subscriptionId, sub.id), eq(subscriptionCharges.providerPaymentId, c.providerPaymentId)))
             .limit(1);
+        // v0.1.380 — La cuota real de un cobro que ya estaba por el resumen de
+        // Mercado Pago: el MISMO cobro pasa a llevar su id de pago (no se
+        // duplica, y su fila en «Cobros de suscripciones» se actualiza).
+        if (!prev && !isSummaryCharge(c.providerPaymentId) && (c.status === 'approved' || c.status === 'refunded')) {
+            const day = c.periodStart ?? c.paidAt;
+            const candidates = await tx
+                .select()
+                .from(subscriptionCharges)
+                .where(and(eq(subscriptionCharges.subscriptionId, sub.id), sql`${subscriptionCharges.providerPaymentId} like ${'mp-resumen-%'}`));
+            const synthetic = candidates.find((x) => sameChargeDay(x.paidAt ?? x.periodStart, day));
+            if (synthetic) {
+                const [renamed] = await tx
+                    .update(subscriptionCharges)
+                    .set({
+                        providerPaymentId: c.providerPaymentId,
+                        invoiceId: c.invoiceId,
+                        method: c.method,
+                        periodStart: c.periodStart ?? synthetic.periodStart,
+                        paidAt: c.paidAt ?? synthetic.paidAt,
+                        amount: c.amount || synthetic.amount,
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(subscriptionCharges.id, synthetic.id))
+                    .returning();
+                // Ya contaba como cobrado: si ahora es un reembolso, sigue abajo como cambio de estado.
+                if (c.status === 'approved') return null;
+                prev = renamed;
+            }
+        }
         if (!prev) {
             const [row] = await tx
                 .insert(subscriptionCharges)
@@ -1249,6 +1378,12 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         if (!sub) {
             if (pay.preapprovalId && (await this.tryImport(tenantId, connectionId, pay.preapprovalId))) return 'applied';
             return 'not_subscription';
+        }
+        // v0.1.380 — Quién pagó: completa el correo del suscriptor que llegó sin él.
+        if (!sub.payerEmail && pay.payerEmail) {
+            await this.tenantDb.withTenant(tenantId, (tx) =>
+                tx.update(subscriptions).set({ payerEmail: pay.payerEmail }).where(and(eq(subscriptions.tenantId, tenantId), eq(subscriptions.id, sub.id))),
+            );
         }
         // Un primer intento SIN cuota conocida todavía: la cuota llega con la
         // sincronización; aquí ya queda el medio de pago (la cuota no lo trae).
@@ -1623,6 +1758,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
                 },
                 subscriptions: subRows,
                 charges: recent,
+                invoice_read: conn.provider === 'mercadopago' ? await this.lastInvoiceRead(tenantId, connectionId) : null,
             };
         });
     }

@@ -96,7 +96,7 @@ export function SubscriptionsSection({
                     <p className="imcrm-mt-2 imcrm-text-sm imcrm-text-muted-foreground">
                         {__('Para enterarte al instante de cada cobro, pega esta URL en tu aplicación de Mercado Pago → Webhooks (en')}{' '}
                         {testMode ? __('modo de prueba') : __('modo productivo')}
-                        {__(') y marca los eventos «Pagos» y «Planes y suscripciones». Sin ella igual funciona: la app revisa cada suscripción sola, sólo que se entera unos minutos después.')}
+                        {__(') y marca los eventos «Pagos» (en el panel puede decir «Pagos (legacy)») y «Planes y suscripciones». Sin ella igual funciona: la app revisa cada suscripción sola, sólo que se entera unos minutos después.')}
                     </p>
                     <div className="imcrm-mt-2 imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-muted/50 imcrm-px-3 imcrm-py-2">
                         <code className="imcrm-min-w-0 imcrm-flex-1 imcrm-break-all imcrm-text-xs">{hookUrl}</code>
@@ -104,6 +104,8 @@ export function SubscriptionsSection({
                     </div>
                 </section>
             )}
+
+            {provider === 'mercadopago' && d.invoice_read && <InvoiceReadNote read={d.invoice_read} />}
 
             {/* v0.1.376 — traer lo que ya está en Mercado Pago (PayPal no deja listar las suscripciones). */}
             {provider === 'mercadopago' && <SubscriptionImportCard connectionId={connectionId} />}
@@ -503,5 +505,40 @@ function Stat({ label, value, hint, tone }: { label: string; value: string; hint
             </div>
             {hint && <div className="imcrm-text-[11px] imcrm-text-muted-foreground">{hint}</div>}
         </div>
+    );
+}
+
+/**
+ * v0.1.380 — Qué respondió Mercado Pago la última vez que la app le pidió
+ * las cuotas de una suscripción. Si no las entregó, el estado igual está
+ * bien (sale del resumen de cobros de Mercado Pago), y se dice.
+ */
+function InvoiceReadNote({ read }: { read: NonNullable<SubscriptionsOverview['invoice_read']> }): JSX.Element {
+    const when = formatDateTimeStr(read.at);
+    if (read.ok) {
+        return (
+            <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-subscriptions-invoice-read" data-tone="ok">
+                {sprintf(__('Última lectura de cobros en Mercado Pago: %1$s · entregó %2$d cuotas.'), when, read.count)}
+            </p>
+        );
+    }
+    return (
+        <section
+            className="imcrm-rounded-lg imcrm-border imcrm-border-amber-300 imcrm-bg-amber-50 imcrm-p-3 imcrm-text-sm imcrm-text-amber-900 dark:imcrm-border-amber-700/60 dark:imcrm-bg-amber-950/40 dark:imcrm-text-amber-200"
+            data-testid="imcrm-subscriptions-invoice-read"
+            data-tone="warn"
+        >
+            <p className="imcrm-font-medium">{__('Mercado Pago no entregó el detalle de los cobros')}</p>
+            <p className="imcrm-mt-1">
+                {read.message
+                    ? sprintf(__('La última vez (%1$s): %2$s'), when, read.message)
+                    : read.status > 0
+                      ? sprintf(__('La última vez (%1$s) respondió con el código %2$d.'), when, read.status)
+                      : sprintf(__('La última vez (%1$s) no respondió.'), when)}
+            </p>
+            <p className="imcrm-mt-1">
+                {__('El estado y «Pagado hasta» igual están bien: salen del resumen que lleva Mercado Pago (cuántos cobros salieron y cuándo fue el último). El último cobro de cada suscripción aparece como «Según el resumen de Mercado Pago»; el detalle de cada pago llega con los avisos de «Pagos».')}
+            </p>
+        </section>
     );
 }

@@ -532,7 +532,8 @@ export const articles: LearnArticle[] = [
                 title: 'Opciones al importar',
                 rows: [
                     { name: 'Crear el cliente que no está en la lista', what: 'Al vincular por correo, si el correo no coincide con ningún registro se crea uno con ese correo. Apagado, la suscripción queda sin registro y se ve en **Cobros**.' },
-                    { name: 'Traer también las canceladas', what: 'Para tener el historial completo. Apagado, sólo se traen las activas, pausadas y por autorizar.' },
+                    { name: 'Traer también las canceladas', what: 'Para tener el historial completo. Apagado, sólo se traen las activas y las pausadas.' },
+                    { name: 'Traer también las que quedaron «Por autorizar»', what: 'Son de alguien que empezó a suscribirse y nunca puso la tarjeta. Apagado (lo normal) no se traen: si después la autoriza, llega sola.' },
                     { name: 'Guardar cada cobro como un registro · Crear también su tablero', what: 'Crea la lista «Cobros de suscripciones» con lo pagado y lo rechazado mes a mes, y su tablero (si todavía no tienes un registro de cobros).' },
                     { name: 'Traer solas las suscripciones nuevas', what: 'Las que se creen después en Mercado Pago (por ejemplo, desde el link de un plan que ya tenías publicado) llegan solas a la misma lista, por los avisos y una revisión cada 30 minutos. Se apaga cuando quieras desde la misma tarjeta.' },
                 ],
@@ -541,6 +542,23 @@ export const articles: LearnArticle[] = [
                 t: 'callout',
                 tone: 'tip',
                 md: 'Puedes importar cuantas veces quieras: lo que ya está en la app no se duplica. La lista nueva es una lista común: le agregas columnas, la filtras o le pones automatizaciones como a cualquier otra.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    {
+                        q: '¿Por qué un suscriptor sale como «Cliente de Mercado Pago #número»?',
+                        a: 'Mercado Pago no siempre da el correo de quien se suscribe; la app usa su **nombre** (el que tiene en Mercado Pago) y, si tampoco lo da, su número de cliente. Cuando llega un pago con su correo o su nombre, el registro se completa solo. Puedes escribirle el nombre a mano: la app no lo vuelve a cambiar.',
+                    },
+                    {
+                        q: '¿Cómo veo todas las suscripciones de un mismo cliente juntas?',
+                        a: 'En la vista **Por cliente** de la lista: agrupa por el suscriptor, así quien tuvo una suscripción cancelada y otra nueva aparece en un solo grupo.',
+                    },
+                    {
+                        q: '¿Qué es un cobro «Según el resumen de Mercado Pago»?',
+                        a: 'Cuando Mercado Pago no entrega el detalle de cada pago de una suscripción, la app usa el resumen que lleva Mercado Pago (cuántos cobros salieron y cuándo fue el último) para que el estado y «Pagado hasta» digan la verdad. Ese último cobro aparece así hasta que llega su pago real, que lo reemplaza sin duplicarlo. En **Cobros** de la conexión ves qué respondió Mercado Pago la última vez.',
+                    },
+                ],
             },
             { t: 'h', text: 'Qué significa cada estado' },
             {
