@@ -69,7 +69,29 @@ PASS=Clave-de-demo-$RANDOM-1
 node scripts/help-captures/prepare.mjs --api "http://localhost:$API_PORT" --email "$EMAIL" --password "$PASS"
 node scripts/help-captures/prepare-operator.mjs --email "$HC_SUPERADMIN_EMAIL" --password "$HC_SUPERADMIN_PASSWORD"
 
+# v0.1.382 — El navegador de las capturas. Instalarlo con `--with-deps` corre
+# apt en cada máquina y a veces tardaba 8-12 minutos (la parte 3 llegó a 16).
+# Las máquinas de GitHub ya traen Google Chrome con sus dependencias: si
+# arranca bajo playwright-core se usa ése; si no, se instala como antes.
 if [ -z "${PW_CHROMIUM:-}" ]; then
+    for candidate in google-chrome-stable google-chrome chromium chromium-browser; do
+        bin=$(command -v "$candidate" 2>/dev/null || true)
+        [ -n "$bin" ] || continue
+        if PW_CHROMIUM="$bin" timeout 60 node -e '
+            const { createRequire } = require("node:module");
+            const { chromium } = createRequire(process.cwd() + "/package.json")("playwright-core");
+            chromium.launch({ executablePath: process.env.PW_CHROMIUM })
+                .then((b) => b.close())
+                .catch((e) => { console.error(e.message); process.exit(1); });
+        ' > "$LOGS/chrome-check.log" 2>&1; then
+            export PW_CHROMIUM="$bin"
+            echo "navegador de las capturas: $bin ($("$bin" --version 2>/dev/null || echo '?'))"
+            break
+        fi
+    done
+fi
+if [ -z "${PW_CHROMIUM:-}" ]; then
+    echo "navegador de las capturas: el de playwright-core (se instala)"
     pnpm exec playwright-core install --with-deps chromium > "$LOGS/playwright.log" 2>&1
 fi
 node scripts/help-captures/run.mjs --base "http://localhost:$WEB_PORT" --email "$EMAIL" --password "$PASS" --out "$OUT" ${HC_ONLY:+--only "$HC_ONLY"} ${HC_SHARD:+--shard "$HC_SHARD"}
