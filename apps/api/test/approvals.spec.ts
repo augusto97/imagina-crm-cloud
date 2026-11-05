@@ -93,6 +93,16 @@ interface Delivered {
  * la concurrencia, la papelera, el campo derivado «Aprobación» y las
  * automatizaciones (disparador, «Pedir aprobación» y «Esperar aprobación»).
  */
+
+/** Espera a que algo que corre en segundo plano termine (sin esperas fijas que fallan en CI). */
+async function until(check: () => Promise<boolean>, timeoutMs = 5000): Promise<void> {
+    const end = Date.now() + timeoutMs;
+    while (Date.now() < end) {
+        if (await check()) return;
+        await new Promise((r) => setTimeout(r, 50));
+    }
+}
+
 describe('Aprobaciones (Postgres real + RLS)', () => {
     let pg: TestPg;
     let tenantDb: TenantDb;
@@ -663,8 +673,10 @@ describe('Aprobaciones (Postgres real + RLS)', () => {
 
         // Decidir despierta a la corrida al instante (el hub), sin esperar al reloj.
         await approvals.decide(tenantA, m1, pending.pending[0]!.id, { decision: 'approve', step: 0 });
-        await new Promise((r) => setTimeout(r, 300));
-        const [done] = await withTenant(pg.db, tenantA, (tx) => tx.select().from(automationRuns).where(eq(automationRuns.automationId, auto.id)));
+        // La reanudación corre en segundo plano: se espera a que termine (en CI puede pasar de 300 ms).
+        const runOf = async () => (await withTenant(pg.db, tenantA, (tx) => tx.select().from(automationRuns).where(eq(automationRuns.automationId, auto.id))))[0];
+        await until(async () => (await runOf())?.status === 'success');
+        const done = await runOf();
         expect(done!.status).toBe('success');
         expect((await recs.get(tenantA, ana, 'gastos', g.id)).data[k('concepto')]).toBe('OK por Marta');
 
@@ -673,7 +685,7 @@ describe('Aprobaciones (Postgres real + RLS)', () => {
         await engine.process({ tenantId: tenantA, listId: g2.list_id, recordId: g2.id, trigger: 'record_created', after: g2.data });
         const p2 = (await approvals.myApprovals(tenantA, m1)).pending[0]!;
         await approvals.decide(tenantA, m1, p2.id, { decision: 'reject', step: 0, reason: 'Sin presupuesto' });
-        await new Promise((r) => setTimeout(r, 300));
+        await until(async () => (await recs.get(tenantA, ana, 'gastos', g2.id)).data[k('concepto')] === 'NO: Sin presupuesto');
         expect((await recs.get(tenantA, ana, 'gastos', g2.id)).data[k('concepto')]).toBe('NO: Sin presupuesto');
     });
 
