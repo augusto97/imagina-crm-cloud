@@ -394,8 +394,11 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.367**
-(suscripciones con débito automático de Mercado Pago para los clientes de cada
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.368**
+(«Suscribir al enviar» en los formularios y las suscripciones del cliente en
+el bloque «Pagos» del portal, addendum ADR-S96; arregla el portal de los
+clientes cuyo registro llegó por un formulario; antes v0.1.367
+suscripciones con débito automático de Mercado Pago para los clientes de cada
 empresa: planes, suscribir desde la ficha, estado derivado con gracia, cobros,
 columnas, disparador y acciones, ADR-S96 — primera de tres entregas; antes
 v0.1.366 reuniones de Teams, Outlook y Google Calendar desde las automatizaciones:
@@ -429,10 +432,12 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   registro, el historial de cobros como lista espejo (en la segunda entrega),
   al vencer «marcar Vencida y avisar» por defecto (cancelar en Mercado Pago es
   opción del plan) y Wompi recurrente afuera. **v0.1.367 hecha** (Mercado Pago
-  de punta a punta, ADR-S96). Siguen **v0.1.368** (formulario «Suscribir al
-  enviar», bloque del portal, lista espejo «Cobros de suscripciones», plantilla
-  de tablero, herramienta propose del asistente/MCP) y **v0.1.369** (PayPal
-  como conector de la empresa, links y suscripciones en USD). Ideas que
+  de punta a punta, ADR-S96) y **v0.1.368 hecha** (formulario «Suscribir al
+  enviar» + bloque del portal; partí la segunda entrega para no hacer un
+  release gigante). Siguen **v0.1.369** (lista espejo «Cobros de
+  suscripciones», plantilla de tablero, herramienta propose del
+  asistente/MCP para planes y suscripciones) y **v0.1.370** (PayPal como
+  conector de la empresa, links y suscripciones en USD). Ideas que
   quedaron anotadas para más adelante: bloquear a mano las columnas de la
   suscripción (hoy se pueden editar y la siguiente relectura las pisa) y
   mostrar las fechas del panel en la zona de la empresa (hoy en la del
@@ -1447,6 +1452,24 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.368** — **Suscribir al enviar un formulario y las
+  suscripciones en el portal** (segunda entrega del pedido de suscripciones,
+  partida: lo que falta pasa a v0.1.369 y PayPal a v0.1.370). Ajustes del
+  formulario → «Suscribir al enviar»: planes de Mercado Pago del equipo que se
+  ofrecen (hasta 6), título de la elección y qué pasa al enviar; exige la
+  pregunta del correo y excluye «Cobrar al enviar». La persona elige el plan
+  en tarjetas, autoriza su tarjeta en Mercado Pago y al volver la página le
+  dice si quedó activa (pregunta sola cada 4 s). Con confirmación por correo,
+  la suscripción espera a confirmar (migración 0103). En el portal, el bloque
+  «Pagos» muestra sus suscripciones con estado, próximo cobro y pagos.
+  **Bug real encontrado en el E2E** (viejo): un registro creado por un
+  formulario, una automatización o la mesa de ayuda tiene `created_by = 0` y
+  el esquema compartido exigía un número positivo → el portal de ese cliente
+  mostraba «Entrar a tu portal» en vez de su portal. Arreglado en
+  `recordSchema` (y `comment.user_id`), con test. De paso: la vuelta fallida de
+  una confirmación perdía la pantalla final elegida. E2E 48/48 contra el
+  Mercado Pago simulado (escritorio, celular y portal). Queda: v0.1.369 y
+  v0.1.370 (ver §10).
 - **2026-11-05 · v0.1.367** — **Suscripciones con débito automático de
   Mercado Pago** (pedido del usuario: "¿cómo se manejan las suscripciones o
   cobros recurrentes de Mercado Pago?… reportar los pagos recurrentes que sí se

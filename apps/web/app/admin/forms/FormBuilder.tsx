@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import { useQuery } from '@tanstack/react-query';
 import {
     AlertTriangle,
     ArrowDown,
@@ -38,6 +39,7 @@ import {
     CAPTCHA_PROVIDER_INFO,
     formEstimateMinutes,
     formPaymentActive,
+    formSubscriptionActive,
     formRecallMap,
     FORM_FILE_ACCEPT_INFO,
     FORM_FILE_ACCEPTS,
@@ -64,7 +66,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
-import { useSession } from '@/cloud/session';
+import { api, useSession } from '@/cloud/session';
 import { useBrandingData } from '@/hooks/useBranding';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useRecordTemplates } from '@/hooks/useRecordTemplates';
@@ -201,6 +203,9 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
 
     const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
     const config = draft.config;
+    // v0.1.368 — la vista previa muestra los planes de «Suscribir al enviar».
+    const subOn = config.settings.subscription.enabled;
+    const subPlans = useQuery({ queryKey: ['subscription-plans', 'all'], queryFn: () => api.subscriptionPlans(), retry: false, staleTime: 30_000, enabled: subOn });
     const fieldsById = useMemo(() => new Map(fields.map((f) => [f.id, f])), [fields]);
 
     const change = useCallback((next: FormConfig) => {
@@ -350,8 +355,26 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
                       button_label: s.payment.button_label || 'Ir a pagar',
                   }
                 : null,
+            // v0.1.368 — suscribir al enviar: los planes elegidos, en su orden.
+            subscription: (() => {
+                if (!formSubscriptionActive(config)) return null;
+                const byId = new Map((subPlans.data ?? []).filter((p) => p.active).map((p) => [p.id, p]));
+                const plans = s.subscription.plan_ids.flatMap((id) => {
+                    const p = byId.get(id);
+                    return p
+                        ? [{ id: p.id, name: p.name, description: p.description, amount: p.amount, currency: p.currency, frequency: p.frequency, frequency_type: p.frequency_type, trial_days: p.trial_days, cycles: p.cycles }]
+                        : [];
+                });
+                if (plans.length === 0) return null;
+                return {
+                    plans,
+                    plan_label: s.subscription.plan_label || (plans.length > 1 ? 'Elige tu plan' : 'Tu plan'),
+                    after: s.subscription.after,
+                    button_label: s.subscription.button_label || 'Autorizar el débito automático',
+                };
+            })(),
         };
-    }, [config, draft.name, fields, branding.data, captcha.data?.provider, dataConsent.data, teamOptions, imageUrl, theme]);
+    }, [config, draft.name, fields, branding.data, captcha.data?.provider, dataConsent.data, teamOptions, imageUrl, theme, subPlans.data]);
 
     useEffect(() => {
         const onMessage = (e: MessageEvent): void => {

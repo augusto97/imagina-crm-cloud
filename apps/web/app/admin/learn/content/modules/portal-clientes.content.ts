@@ -438,6 +438,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Monto', what: 'Un campo de número, moneda, calculado o resumen del registro.', tip: 'Un resumen «Saldo pendiente» que suma sus facturas pendientes es lo ideal.' },
                     { name: 'Concepto', what: 'El texto que aparece en el cobro. Vacío = el título del registro.' },
                     { name: 'Texto del botón', what: 'Lo que dice el botón: «Pagar mi saldo», «Pagar cuota».' },
+                    { name: 'Mostrar sus suscripciones', what: 'Sus suscripciones de débito automático de Mercado Pago: el plan, el valor, el estado («Al día», «Reintentando», «En mora»…), el próximo cobro y sus últimos pagos, con el motivo si uno falló. Encendido por defecto.', tip: 'Si todavía no autorizó su tarjeta, ve el botón «Autorizar el débito automático».' },
                 ],
             },
             { t: 'h', text: 'Qué ve y hace el cliente' },

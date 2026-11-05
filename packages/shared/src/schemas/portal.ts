@@ -7,6 +7,7 @@ import { publicBootSchema } from './domains';
 import { fieldSchema } from './field';
 import { recordSchema } from './record';
 import { recordLayoutV3Schema } from './record-layout';
+import { SUBSCRIPTION_CHARGE_STATUSES, SUBSCRIPTION_FREQUENCY_TYPES, subscriptionStatusSchema } from './subscriptions';
 import { publicBrandingSchema, tenantFormatSchema } from './tenant';
 
 /**
@@ -238,6 +239,8 @@ export const portalPaymentsBlockConfigSchema = z
     .object({
         /** Mostrar los links de pago de sus registros. */
         show_links: z.boolean().default(true),
+        /** v0.1.368 — Mostrar sus suscripciones de débito automático (estado, próximo cobro, cobros). */
+        show_subscriptions: z.boolean().default(true),
         /**
          * Listas vinculadas al cliente cuyos links también se muestran (las
          * facturas de su cuenta). Se acotan con el mismo scope del portal.
@@ -286,8 +289,42 @@ export const portalPaymentLinkSchema = z.object({
 });
 export type PortalPaymentLink = z.infer<typeof portalPaymentLinkSchema>;
 
+/**
+ * v0.1.368 — Una suscripción de débito automático tal como la ve el CLIENTE:
+ * el plan, el valor, el estado en palabras, el próximo cobro y sus últimos
+ * cobros. Nada interno (ni el id de Mercado Pago, ni la conexión).
+ */
+export const portalSubscriptionSchema = z.object({
+    id: idSchema,
+    title: z.string(),
+    amount: z.number(),
+    currency: z.string(),
+    frequency: z.number(),
+    frequency_type: z.enum(SUBSCRIPTION_FREQUENCY_TYPES),
+    status: subscriptionStatusSchema,
+    next_charge_at: z.string().nullable(),
+    paid_until: z.string().nullable(),
+    /** Todavía sin autorizar: el link para autorizar la tarjeta (si no, null). */
+    url: z.string().nullable(),
+    charges: z
+        .array(
+            z.object({
+                status: z.enum(SUBSCRIPTION_CHARGE_STATUSES),
+                amount: z.number(),
+                currency: z.string(),
+                date: z.string().nullable(),
+                /** El motivo de un rechazo en palabras («fondos insuficientes»). */
+                reason: z.string().nullable(),
+            }),
+        )
+        .max(6),
+});
+export type PortalSubscription = z.infer<typeof portalSubscriptionSchema>;
+
 export const portalPaymentsBlockDataSchema = z.object({
     links: z.array(portalPaymentLinkSchema),
+    /** v0.1.368 — Sus suscripciones (vacío = no tiene, o el bloque no las muestra). */
+    subscriptions: z.array(portalSubscriptionSchema).default([]),
     /** El botón «Pagar» por el monto del registro (null = no se ofrece). */
     pay: z
         .object({

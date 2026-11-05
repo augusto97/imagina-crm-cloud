@@ -1516,4 +1516,29 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'En **Ajustes → Integraciones**, abre **Cobros** de tu conexión de Mercado Pago y crea un plan en **Suscripciones (débito automático)**. Después, en la ficha del cliente, toca **Suscribir**.',
         action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
     },
+    {
+        key: 'v0.1.368-suscribir-formulario',
+        version: '0.1.368',
+        date: '2026-11-05',
+        kind: 'feature',
+        title: 'Tus clientes se suscriben solos desde un formulario',
+        summary:
+            'Ofrece tus planes de débito automático en un formulario: la persona elige el plan, autoriza su tarjeta en Mercado Pago y queda suscrita. En su portal ve su suscripción y sus pagos.',
+        media: {
+            slides: [
+                {
+                    title: 'Elige el plan y autoriza una vez',
+                    text: 'En el formulario, cada plan aparece con su precio y cada cuánto se cobra. Al enviar, la persona autoriza su tarjeta en Mercado Pago y vuelve a una página que le dice que su suscripción quedó activa.',
+                    illustration: 'form-subscription',
+                },
+                {
+                    title: 'Y la ve en su portal',
+                    text: 'El bloque «Pagos» del portal le muestra su suscripción: el estado, el próximo cobro y sus últimos pagos. Si todavía no autorizó la tarjeta, tiene el botón para hacerlo.',
+                    illustration: 'portal-pay',
+                },
+            ],
+        },
+        body: 'Abre el formulario en **Configurar lista → Formularios**, ve a **Ajustes → Suscribir al enviar** y marca los planes que se ofrecen. El formulario tiene que preguntar el correo.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

@@ -45,6 +45,7 @@ import {
     type MagicLinkResult,
     type PortalBoot,
     type PortalPaymentLink,
+    type PortalSubscription,
     type PortalPaymentsBlockConfig,
     type PortalPaymentsBlockData,
     type PortalPayResult,
@@ -70,6 +71,7 @@ import { ActivityService, computeDiff } from '../activity/activity.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { SessionService } from '../auth/session.service';
 import { CollectionsService } from '../collections/collections.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { CommentsRepository } from '../comments/comments.repository';
 import { DataConsentService } from '../data-consent/data-consent.service';
 import { ENV, type Env } from '../config/env';
@@ -204,6 +206,8 @@ export class PortalService implements OnModuleInit {
         @Optional() private readonly dataConsent?: DataConsentService,
         // Campo «Botón» — los botones que el diseño del portal muestra.
         @Optional() private readonly buttons?: ButtonsService,
+        // v0.1.368 — el bloque «Pagos» también muestra sus suscripciones.
+        @Optional() private readonly subscriptionsSvc?: SubscriptionsService,
     ) {}
 
     onModuleInit(): void {
@@ -1941,6 +1945,15 @@ export class PortalService implements OnModuleInit {
         if (conns.length === 0) return {};
         const out: Record<string, PortalPaymentsBlockData> = {};
         const linksCache = new Map<string, Promise<PortalPaymentLink[]>>();
+        // v0.1.368 — las suscripciones del registro del cliente (una consulta para todos los bloques).
+        let subsOnce: Promise<PortalSubscription[]> | null = null;
+        const clientSubs = (): Promise<PortalSubscription[]> =>
+            (subsOnce ??= this.subscriptionsSvc
+                ? this.subscriptionsSvc.portalSubscriptions(link.tenantId, link.listId, link.recordId).catch((err: unknown) => {
+                      this.logger.warn(`Suscripciones del portal: ${err instanceof Error ? err.message : String(err)}`);
+                      return [];
+                  })
+                : Promise.resolve([]));
         for (const b of blocks) {
             const cfg = readPortalPaymentsConfig(b.config);
             let links: PortalPaymentLink[] = [];
@@ -1956,6 +1969,7 @@ export class PortalService implements OnModuleInit {
             const offer = await this.payOffer(link, ctx, cfg, conns);
             out[b.id] = {
                 links,
+                subscriptions: cfg.show_subscriptions ? await clientSubs() : [],
                 pay: offer
                     ? { label: offer.label, amount: offer.amount, currency: offer.currency, concept: offer.concept, provider: offer.provider }
                     : null,

@@ -43,6 +43,13 @@ describe('mapId', () => {
 });
 
 describe('remapJson', () => {
+    it('v0.1.368 — los planes de «Suscribir al enviar» de un formulario apuntan a los planes nuevos', () => {
+        const m = maps();
+        m.subscriptionPlan.set(80, 180).set(81, 181);
+        const out = remapJson({ settings: { subscription: { enabled: true, plan_ids: [81, 80, 999] }, payment: { connection_id: 50 } } }, m);
+        expect(out).toEqual({ settings: { subscription: { enabled: true, plan_ids: [181, 180] }, payment: { connection_id: 150 } } });
+    });
+
     it('traduce las claves por convención, incluso anidadas', () => {
         const out = remapJson(
             {

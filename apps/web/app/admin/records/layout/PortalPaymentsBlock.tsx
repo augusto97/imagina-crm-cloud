@@ -1,14 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import * as RDialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { COLLECTION_PROVIDER_LABEL, readPortalPaymentsConfig, type PortalPaymentLink, type PortalPaymentsBlockData } from '@imagina-base/shared';
-import { ExternalLink, Loader2, Receipt, Wallet, X } from 'lucide-react';
+import {
+    COLLECTION_PROVIDER_LABEL,
+    readPortalPaymentsConfig,
+    SUBSCRIPTION_CHARGE_STATUS_LABELS,
+    type PortalPaymentLink,
+    type PortalPaymentsBlockData,
+    type PortalSubscription,
+} from '@imagina-base/shared';
+import { ExternalLink, Loader2, Receipt, Repeat, Wallet, X } from 'lucide-react';
 
 import { CopyButton, PaymentStatusChip, formatMoney } from '@/cloud/components/payments/paymentUi';
+import { frequencyText, statusOption } from '@/cloud/components/subscriptions/subscriptionText';
 import { portalApi } from '@/cloud-portal/portalClient';
 import { api } from '@/cloud/session';
 import { CloudApiError } from '@/lib/cloud/client';
-import { formatDateTimeStr } from '@/lib/tenantFormat';
+import { formatDateStr, formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
 /** Cuánto se sigue mirando si el pago llegó después de mandar al checkout. */
@@ -84,7 +92,8 @@ export function PortalPaymentsBlockView({
         });
     };
 
-    if (data.links.length === 0 && !data.pay) {
+    const subs = data.subscriptions ?? [];
+    if (data.links.length === 0 && !data.pay && subs.length === 0) {
         return (
             <div className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-4 imcrm-py-5 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground" data-testid="portal-payments-empty">
                 No tienes pagos por ahora.
@@ -136,6 +145,7 @@ export function PortalPaymentsBlockView({
                     {error}
                 </p>
             )}
+            {subs.length > 0 && <PortalSubscriptionsList subs={subs} onAuthorize={() => setWatchUntil(Date.now() + WATCH_MS)} />}
             {data.links.length > 0 && (
                 <ul className="imcrm-divide-y imcrm-divide-border imcrm-overflow-hidden imcrm-rounded-lg imcrm-border imcrm-border-border">
                     {data.links.map((l) => (
@@ -174,6 +184,95 @@ export function PortalPaymentsBlockView({
                 </ul>
             )}
             <ReceiptDialog link={receipt} onClose={() => setReceipt(null)} />
+        </div>
+    );
+}
+
+/** v0.1.368 — Qué pasa con la suscripción, dicho para el CLIENTE. */
+export function clientSubscriptionSentence(sub: Pick<PortalSubscription, 'status' | 'next_charge_at' | 'paid_until'>): string {
+    const next = sub.next_charge_at ? formatDateStr(sub.next_charge_at.slice(0, 10)) : null;
+    switch (sub.status) {
+        case 'pending':
+            return 'Falta autorizar tu tarjeta en Mercado Pago para activarla.';
+        case 'active':
+            return next ? `Al día. El próximo cobro es el ${next}.` : 'Al día.';
+        case 'retrying':
+            return 'No pudimos cobrar la última cuota. Mercado Pago lo vuelve a intentar en los próximos días: revisa que tu tarjeta tenga fondos.';
+        case 'past_due':
+        case 'expired':
+            return 'Tienes cuotas sin pagar. Revisa tu tarjeta en Mercado Pago o escríbele a la empresa.';
+        case 'paused':
+            return 'Está en pausa: por ahora no se cobra.';
+        case 'cancelled':
+            return 'Se canceló: ya no se cobra.';
+        case 'finished':
+            return 'Terminó: ya se cobraron todas las cuotas.';
+        default:
+            return '';
+    }
+}
+
+/** v0.1.368 — Las suscripciones de débito automático del cliente: estado, próximo cobro y últimos cobros. */
+function PortalSubscriptionsList({ subs, onAuthorize }: { subs: PortalSubscription[]; onAuthorize: () => void }): JSX.Element {
+    return (
+        <div className="imcrm-space-y-2" data-testid="portal-subscriptions">
+            {subs.map((sub) => {
+                const opt = statusOption(sub.status);
+                return (
+                    <div key={sub.id} className="imcrm-space-y-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-px-4 imcrm-py-3" data-testid="portal-subscription" data-status={sub.status}>
+                        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-3 imcrm-gap-y-1">
+                            <span className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-primary/10 imcrm-text-primary">
+                                <Repeat className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                            </span>
+                            <div className="imcrm-min-w-0 imcrm-flex-1">
+                                <p className="imcrm-truncate imcrm-text-sm imcrm-font-medium">{sub.title}</p>
+                                <p className="imcrm-text-xs imcrm-text-muted-foreground imcrm-tabular-nums">
+                                    {formatMoney(sub.amount, sub.currency)} {frequencyText(sub.frequency, sub.frequency_type)} · débito automático
+                                </p>
+                            </div>
+                            <span
+                                className="imcrm-inline-flex imcrm-items-center imcrm-rounded-full imcrm-px-2 imcrm-py-0.5 imcrm-text-[11px] imcrm-font-semibold imcrm-text-white"
+                                style={{ backgroundColor: opt.color }}
+                                data-testid="portal-subscription-status"
+                            >
+                                {opt.label}
+                            </span>
+                        </div>
+                        <p className="imcrm-text-xs imcrm-text-muted-foreground">{clientSubscriptionSentence(sub)}</p>
+                        {sub.status === 'pending' && sub.url && (
+                            <a
+                                href={sub.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={onAuthorize}
+                                data-testid="portal-subscription-authorize"
+                                className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-bg-primary imcrm-px-3 imcrm-py-1.5 imcrm-text-xs imcrm-font-semibold imcrm-text-primary-foreground"
+                            >
+                                Autorizar el débito automático <ExternalLink className="imcrm-h-3 imcrm-w-3" aria-hidden />
+                            </a>
+                        )}
+                        {sub.charges.length > 0 && (
+                            <ul className="imcrm-divide-y imcrm-divide-border imcrm-rounded-md imcrm-bg-muted/40" aria-label="Últimos cobros">
+                                {sub.charges.map((c, i) => (
+                                    <li key={i} className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-3 imcrm-gap-y-0.5 imcrm-px-3 imcrm-py-1.5 imcrm-text-xs" data-testid="portal-subscription-charge">
+                                        <span className="imcrm-text-muted-foreground">{c.date ? formatDateStr(c.date.slice(0, 10)) : '—'}</span>
+                                        <span className="imcrm-font-medium imcrm-tabular-nums">{formatMoney(c.amount, c.currency)}</span>
+                                        <span
+                                            className={cn(
+                                                'imcrm-ml-auto imcrm-font-semibold',
+                                                c.status === 'approved' ? 'imcrm-text-emerald-700 dark:imcrm-text-emerald-300' : c.status === 'rejected' ? 'imcrm-text-destructive' : 'imcrm-text-muted-foreground',
+                                            )}
+                                        >
+                                            {SUBSCRIPTION_CHARGE_STATUS_LABELS[c.status]}
+                                        </span>
+                                        {c.reason && <span className="imcrm-w-full imcrm-text-muted-foreground">{c.reason}</span>}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                );
+            })}
         </div>
     );
 }
@@ -272,9 +371,10 @@ export function PortalPaymentsPreview({
             : null;
     return (
         <div className="imcrm-space-y-2" data-testid="portal-payments-preview">
-            <PortalPaymentsBlockView blockId="preview" data={{ links: [], pay }} preview />
+            <PortalPaymentsBlockView blockId="preview" data={{ links: [], pay, subscriptions: [] }} preview />
             <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
                 {cfg.show_links ? 'Debajo, el cliente ve los links de pago de sus registros con su estado. ' : ''}
+                {cfg.show_subscriptions ? 'Si tiene una suscripción de débito automático, ve su estado, el próximo cobro y sus últimos cobros. ' : ''}
                 {cfg.pay_button.enabled && !pay ? 'El botón aparece cuando el registro tiene un monto mayor a cero. ' : ''}
                 {cfg.pay_button.enabled && !conn ? 'Elige la conexión de cobro del botón. ' : ''}
             </p>

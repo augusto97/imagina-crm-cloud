@@ -28,6 +28,8 @@ import {
     formRecallText,
     formScaleValues,
     splitFormPages,
+    subscriptionFrequencyText,
+    subscriptionPlanExtras,
     type FormCalcLike,
     type FormFlow,
 } from '@imagina-base/shared/src/schemas/form-logic';
@@ -61,6 +63,8 @@ try {
 }
 
 const CONSENT = '__consent';
+/** v0.1.368 — el error de «elige un plan» (no es una pregunta). */
+const PLAN = '__plan';
 /** Tipos cuya etiqueta puede ir DENTRO del campo (se sube al escribir). */
 const FLOAT_TYPES = new Set(['text', 'long_text', 'email', 'url', 'phone', 'number', 'duration']);
 
@@ -375,6 +379,9 @@ let captchaBox: HTMLElement | null = null;
 let alertBox: HTMLElement | null = null;
 let consentCb: HTMLInputElement | null = null;
 let consentBox: HTMLElement | null = null;
+/** v0.1.368 — Suscribir al enviar: el recuadro de planes y el elegido. */
+let planBox: HTMLElement | null = null;
+let chosenPlan: number | null = null;
 let captchaToken: string | null = null;
 let captchaWidget: unknown = null;
 let captchaMounted = false;
@@ -1848,6 +1855,7 @@ function paintPages(): void {
     if (submitBtn) submitBtn.hidden = !last;
     if (captchaBox) captchaBox.hidden = !last;
     if (consentBox) consentBox.hidden = !last;
+    if (planBox) planBox.hidden = !last;
     if (last) mountCaptcha();
 }
 
@@ -1974,6 +1982,7 @@ function render(keepPage: boolean): void {
     captchaBox = alertBox = null;
     consentCb = null;
     consentBox = null;
+    planBox = null;
     captchaMounted = false;
     captchaWidget = null;
     captchaToken = null;
@@ -2058,6 +2067,8 @@ function render(keepPage: boolean): void {
             form.appendChild(captchaBox);
         }
     }
+    // v0.1.368 — suscribir al enviar: el plan (al final, antes de la autorización y el botón).
+    if (meta.subscription && meta.subscription.plans.length && !editing()) form.appendChild(planNode(meta.subscription));
     if (meta.data_consent) form.appendChild(consentNode(meta.data_consent));
     alertBox = el('div', { cls: 'ib-alert', role: 'alert', hidden: true });
     form.appendChild(alertBox);
@@ -2144,7 +2155,9 @@ function submit(hpValue: string): void {
     alertBox!.hidden = true;
     const badConsent = !!(m.data_consent && consentCb && !consentCb.checked);
     if (badConsent) setErr(CONSENT, 'Para enviar, acepta la autorización para el tratamiento de tus datos personales.');
-    if (validate(m.items) || badConsent) {
+    const badPlan = !editing() && !!m.subscription && m.subscription.plans.length > 1 && chosenPlan === null;
+    if (badPlan) setErr(PLAN, 'Elige un plan.');
+    if (validate(m.items) || badConsent || badPlan) {
         const firstBad = m.items.find((i) => itemEls[i.id]?.classList.contains('ib-invalid'));
         if (firstBad && paged()) goToPage(pageOfItem(firstBad.id), false);
         focusFirstError();
@@ -2180,6 +2193,9 @@ function submit(hpValue: string): void {
         body.consent = consentCb.checked;
         body.consent_version = m.data_consent.version;
     }
+    // v0.1.368 — el plan elegido (con uno solo, ése).
+    const planPick = !editing() && m.subscription ? (chosenPlan ?? (m.subscription.plans.length === 1 ? m.subscription.plans[0]!.id : null)) : null;
+    if (planPick !== null) body.plan_id = planPick;
     // v0.1.358 — cuánto tardó (para el tiempo promedio) y el avance que termina.
     if (startedAt && !editing()) body.elapsed_ms = Math.min(7 * 86_400_000, Date.now() - startedAt);
     if (draftCode && !editing()) body.draft = draftCode;
@@ -2205,6 +2221,8 @@ function submit(hpValue: string): void {
                 updated?: boolean;
                 payment?: { url: string; amount: number; currency: string; after: 'redirect' | 'button'; button_label: string } | null;
                 payment_error?: string;
+                subscription?: SubResult | null;
+                subscription_error?: string;
                 code?: string;
                 data?: { errors?: Record<string, string> };
             };
@@ -2227,6 +2245,12 @@ function submit(hpValue: string): void {
                     return done(b.ending_id ?? null, b.payment);
                 }
                 if (b.payment_error) return done(b.ending_id ?? null, null, b.payment_error);
+                // v0.1.368 — suscribir al enviar: a autorizar la tarjeta en Mercado Pago.
+                if (b.subscription && /^https?:\/\//.test(b.subscription.url)) {
+                    if (b.subscription.after === 'redirect' && !embedded) return goSubscribe(b.subscription);
+                    return done(b.ending_id ?? null, null, undefined, b.subscription);
+                }
+                if (b.subscription_error) return done(b.ending_id ?? null, null, b.subscription_error);
                 if (b.redirect_url) return goTo(b.redirect_url);
                 return done(b.ending_id ?? null);
             }
@@ -2238,8 +2262,8 @@ function submit(hpValue: string): void {
             if (errs) {
                 const ids = Object.keys(errs);
                 for (const id of ids) setErr(id, errs[id]!);
-                // La casilla de la autorización está en la última página.
-                const target = ids.find((id) => id !== CONSENT);
+                // La casilla de la autorización (y el plan) están en la última página.
+                const target = ids.find((id) => id !== CONSENT && id !== PLAN);
                 if (paged() && ids.length) {
                     if (target) goToPage(pageOfItem(target), false);
                     else {
@@ -2372,12 +2396,14 @@ function done(
     endingId: string | null = null,
     pay: { url: string; amount: number; currency: string; button_label: string } | null = null,
     payError?: string,
+    sub: SubResult | null = null,
 ): void {
     const m = meta!;
     const kids = endingKids(endingId);
     if (pay) kids.push(...payNodes(pay));
+    if (sub) kids.push(...subNodes(sub));
     if (payError) kids.push(el('p', { cls: 'ib-pay-error', role: 'alert', 'data-testid': 'form-pay-error', text: payError }));
-    if (m.allow_another && !pay) {
+    if (m.allow_another && !pay && !sub) {
         const again = el('button', { type: 'button', cls: 'ib-btn ib-btn-secondary', text: 'Enviar otra respuesta' });
         again.addEventListener('click', () => location.reload());
         kids.push(again);
@@ -2389,6 +2415,7 @@ function done(
 function submitLabel(): string {
     const m = meta!;
     const label = m.submit_label || 'Enviar';
+    if (m.subscription?.after === 'redirect' && label === 'Enviar') return 'Enviar y suscribirme';
     return m.payment?.after === 'redirect' && label === 'Enviar' ? 'Enviar y pagar' : label;
 }
 
@@ -2404,6 +2431,165 @@ function goPay(pay: { url: string; amount: number; currency: string; button_labe
         'form-pay-redirect',
     );
     if (!BOOT.preview) setTimeout(() => location.assign(pay.url), 600);
+}
+
+/** v0.1.368 — Lo que devuelve el servidor al suscribir. */
+interface SubResult {
+    url: string;
+    plan: string;
+    amount: number;
+    currency: string;
+    frequency: number;
+    frequency_type: 'months' | 'days';
+    after: 'redirect' | 'button';
+    button_label: string;
+}
+
+type PlanView = NonNullable<PublicFormMeta['subscription']>['plans'][number];
+
+/** «150.000 COP cada mes». */
+function planPrice(p: { amount: number; currency: string; frequency: number; frequency_type: 'months' | 'days' }): string {
+    return `${fmtNum(p.amount)} ${p.currency} ${subscriptionFrequencyText(p.frequency, p.frequency_type)}`;
+}
+
+/**
+ * v0.1.368 — Los planes de «Suscribir al enviar». Con uno solo se muestra como
+ * resumen (no hay nada que elegir); con varios, una tarjeta por plan.
+ */
+function planNode(sub: NonNullable<PublicFormMeta['subscription']>): HTMLElement {
+    const single = sub.plans.length === 1;
+    if (single) chosenPlan = sub.plans[0]!.id;
+    else if (chosenPlan !== null && !sub.plans.some((p) => p.id === chosenPlan)) chosenPlan = null;
+    const title = el('div', { cls: 'ib-label', id: 'plan_title', text: sub.plan_label });
+    const err = el('div', { cls: 'ib-error', id: 'plan_err', role: 'alert', hidden: true });
+    const cards: HTMLElement[] = [];
+    const body = (p: PlanView): HTMLElement => {
+        const extras = subscriptionPlanExtras(p);
+        const head = el('span', { cls: 'ib-plan-head' }, [
+            el('span', { cls: 'ib-plan-name', text: p.name }),
+            el('span', { cls: 'ib-plan-price' }, [
+                document.createTextNode(`${fmtNum(p.amount)} ${p.currency}`),
+                el('small', { text: subscriptionFrequencyText(p.frequency, p.frequency_type) }),
+            ]),
+        ]);
+        const kids: HTMLElement[] = [head];
+        if (p.description) kids.push(el('span', { cls: 'ib-plan-desc', text: p.description }));
+        if (extras) kids.push(el('span', { cls: 'ib-plan-extra', text: extras }));
+        return el('span', { cls: 'ib-plan-body' }, kids);
+    };
+    for (const p of sub.plans) {
+        if (single) {
+            cards.push(el('div', { cls: 'ib-plan ib-plan-single ib-checked', 'data-testid': 'form-plan', 'data-plan': String(p.id) }, [body(p)]));
+            continue;
+        }
+        const input = el('input', { type: 'radio', name: 'ib_plan', value: String(p.id), 'aria-describedby': 'plan_err' }) as HTMLInputElement;
+        input.checked = chosenPlan === p.id;
+        const card = el('label', { cls: 'ib-plan' + (input.checked ? ' ib-checked' : ''), 'data-testid': 'form-plan', 'data-plan': String(p.id) }, [input, body(p)]);
+        input.addEventListener('change', () => {
+            chosenPlan = p.id;
+            for (const c of cards) c.classList.toggle('ib-checked', c === card);
+            setErr(PLAN, '');
+        });
+        cards.push(card);
+    }
+    const list = el('div', { cls: 'ib-plans', role: single ? null : 'radiogroup', 'aria-labelledby': 'plan_title' }, cards);
+    const note = el('p', {
+        cls: 'ib-plan-note',
+        text: 'Al enviar, autorizas el débito automático en Mercado Pago. Puedes cancelarlo cuando quieras.',
+    });
+    const kids: HTMLElement[] = [title, list, note, err];
+    if (BOOT.preview) kids.unshift(pvTag('Suscripción · los planes se eligen en Ajustes → Suscribir al enviar'));
+    const box = el('div', { cls: 'ib-item ib-plan-pick', 'data-testid': 'form-plans' }, kids);
+    planBox = box;
+    itemEls[PLAN] = box;
+    errEls[PLAN] = err;
+    return box;
+}
+
+/** v0.1.368 — El plan y el botón para autorizar (en la pantalla de gracias). */
+function subNodes(sub: SubResult): HTMLElement[] {
+    const link = el('a', { cls: 'ib-btn ib-btn-primary ib-pay-btn', href: sub.url, rel: 'noopener', 'data-testid': 'form-sub-go', text: sub.button_label || 'Autorizar el débito automático' });
+    // Insertado en otro sitio, Mercado Pago se abre en una pestaña nueva.
+    if (embedded) link.setAttribute('target', '_blank');
+    return [
+        el('p', { cls: 'ib-pay-total', 'data-testid': 'form-sub-amount' }, [
+            document.createTextNode(`${sub.plan}: `),
+            el('strong', { text: planPrice(sub) }),
+        ]),
+        link,
+    ];
+}
+
+/** v0.1.368 — Respuesta guardada: a autorizar la tarjeta (con el botón por si el navegador no redirige). */
+function goSubscribe(sub: SubResult): void {
+    finalScreen(
+        [
+            el('div', { cls: 'ib-tick', text: '✓', 'aria-hidden': 'true' }),
+            el('h2', { text: 'Te llevamos a Mercado Pago…' }),
+            el('p', { cls: 'ib-done-msg', text: 'Recibimos tu respuesta. Autoriza el débito automático en la página que se abre.' }),
+            ...subNodes(sub),
+        ],
+        'form-sub-redirect',
+    );
+    if (!BOOT.preview) setTimeout(() => location.assign(sub.url), 600);
+}
+
+/**
+ * v0.1.368 — Al volver de Mercado Pago (`?suscripcion=<referencia>`): si quedó
+ * activa. Mientras siga «por autorizar» se vuelve a preguntar un rato (el aviso
+ * de Mercado Pago a veces llega unos segundos después que la persona).
+ */
+function subscriptionReturn(ref: string, tries = 0): void {
+    fetch(`${API}/subscription/${encodeURIComponent(ref)}`, { credentials: 'omit', cache: 'no-store' })
+        .then((r) =>
+            r.ok
+                ? (r.json() as Promise<{ state: string; plan: string; amount: number; currency: string; frequency: number; frequency_type: 'months' | 'days'; url: string | null }>)
+                : Promise.reject(new Error(String(r.status))),
+        )
+        .then((p) => {
+            const price = planPrice(p);
+            const retry = (label: string): HTMLElement[] =>
+                p.url ? [el('a', { cls: 'ib-btn ib-btn-primary ib-pay-btn', href: p.url, rel: 'noopener', 'data-testid': 'form-sub-retry', text: label })] : [];
+            const next = meta?.redirect_url && p.state === 'active' ? [el('a', { cls: 'ib-btn ib-btn-secondary', href: meta.redirect_url, text: 'Continuar' })] : [];
+            const screens: Record<string, [string, string, string, HTMLElement[]]> = {
+                active: ['✓', '¡Listo! Tu suscripción quedó activa', `Autorizaste el débito automático de ${price} («${p.plan}»). ¡Gracias!`, next],
+                pending:
+                    tries < 30
+                        ? ['…', 'Estamos confirmando tu suscripción', 'Esto puede tardar unos segundos. No cierres esta página.', retry('Volver a Mercado Pago')]
+                        : [
+                              '…',
+                              'Todavía no vemos la autorización',
+                              'Si ya autorizaste tu tarjeta, la confirmación puede tardar un poco más. Si no terminaste, puedes intentarlo de nuevo.',
+                              retry('Autorizar el débito automático'),
+                          ],
+                failed: ['!', 'Tu suscripción está activa, pero el cobro no pasó', `Mercado Pago no pudo cobrar ${price}. Lo volverá a intentar; revisa que tu tarjeta tenga fondos o escríbele a la empresa.`, []],
+                cancelled: ['!', 'Esta suscripción no está activa', 'Si crees que es un error, escríbele a la empresa.', []],
+            };
+            const [mark, title, msg, extra] = screens[p.state] ?? screens.cancelled!;
+            const r = root!;
+            r.textContent = '';
+            r.appendChild(
+                el('div', { cls: 'ib-done', 'data-testid': 'form-sub-status', 'data-state': p.state }, [
+                    el('div', { cls: mark === '✓' ? 'ib-tick' : 'ib-tick ib-tick-error', text: mark, 'aria-hidden': 'true' }),
+                    el('h2', { text: title }),
+                    el('p', { cls: 'ib-done-msg', role: 'status', text: msg }),
+                    ...extra,
+                ]),
+            );
+            reportHeight();
+            if (p.state === 'pending' && tries < 30) setTimeout(() => subscriptionReturn(ref, tries + 1), 4000);
+        })
+        .catch(() => {
+            const r = root!;
+            r.textContent = '';
+            r.appendChild(
+                el('div', { cls: 'ib-done', 'data-testid': 'form-sub-status', 'data-state': 'unknown' }, [
+                    el('div', { cls: 'ib-tick ib-tick-error', text: '!', 'aria-hidden': 'true' }),
+                    el('h2', { text: 'No encontramos esa suscripción' }),
+                    el('p', { cls: 'ib-done-msg', text: 'Si ya autorizaste tu tarjeta, la empresa recibirá la confirmación igual.' }),
+                ]),
+            );
+        });
 }
 
 /**
@@ -2713,6 +2899,16 @@ if (!BOOT.preview && meta && !meta.closed) {
             // nada
         }
         paymentReturn(payRef);
+    } else if (params.get('suscripcion') && !BOOT.preview) {
+        // v0.1.368 — vuelve de autorizar la tarjeta en Mercado Pago.
+        const subRef = params.get('suscripcion')!;
+        for (const k of ['suscripcion', 'preapproval_id', 'status', 'external_reference']) params.delete(k);
+        try {
+            history.replaceState(null, '', location.pathname + (params.toString() ? `?${params.toString()}` : '') + location.hash);
+        } catch {
+            // nada
+        }
+        subscriptionReturn(subRef);
     } else if (editLoading && pendingEdit) {
         // El código no queda en la barra (se copia o se comparte sin querer):
         // esta pestaña lo recuerda si se recarga.

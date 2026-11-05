@@ -43,6 +43,9 @@ import {
     type SubscriptionsOverview,
     type SubscriptionStatus,
     type UpdateSubscriptionPlanInput,
+    type PublicFormPlan,
+    type PublicFormSubscriptionStatus,
+    type PortalSubscription,
 } from '@imagina-base/shared';
 import { randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -1239,6 +1242,183 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
             frequency: sub.frequency,
             frequencyType: sub.frequencyType as SubscriptionFrequencyType,
         };
+    }
+
+    // ── Formularios (v0.1.368) ──────────────────────────────────────────
+
+    /**
+     * Los planes de un formulario público: activos y de una conexión de
+     * Mercado Pago DEL EQUIPO (una privada es de una persona: no se cobra con
+     * ella desde una página pública). En el orden que eligió la empresa.
+     */
+    async formPlans(tenantId: number, planIds: readonly number[]): Promise<PublicFormPlan[]> {
+        if (planIds.length === 0) return [];
+        const team = new Set((await this.collections.teamConnections(tenantId)).filter((c) => c.provider === 'mercadopago').map((c) => c.id));
+        if (team.size === 0) return [];
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select()
+                .from(subscriptionPlans)
+                .where(and(eq(subscriptionPlans.tenantId, tenantId), inArray(subscriptionPlans.id, [...planIds]))),
+        );
+        const byId = new Map(rows.filter((r) => r.active && r.connectionId !== null && team.has(r.connectionId)).map((r) => [r.id, r]));
+        return planIds
+            .map((id) => byId.get(id))
+            .filter((r): r is SubscriptionPlanRowDb => r !== undefined)
+            .map((r) => ({
+                id: r.id,
+                name: r.name,
+                description: r.description ?? null,
+                amount: Number(r.amount),
+                currency: r.currency,
+                frequency: r.frequency,
+                frequency_type: r.frequencyType as SubscriptionFrequencyType,
+                trial_days: r.trialDays,
+                cycles: r.cycles,
+            }));
+    }
+
+    /** Al guardar un formulario: cada plan elegido tiene que poder usarse desde una página pública. */
+    async assertFormPlans(tenantId: number, planIds: readonly number[]): Promise<void> {
+        const ok = await this.formPlans(tenantId, planIds);
+        const missing = planIds.filter((id) => !ok.some((p) => p.id === id));
+        if (missing.length > 0) {
+            badRequest(
+                'form_subscription_plan',
+                'Elige planes activos de una conexión de Mercado Pago del equipo (Ajustes → Integraciones → Cobros → Suscripciones). Una conexión privada no sirve en un formulario público.',
+            );
+        }
+    }
+
+    /**
+     * Suscribir desde la respuesta de un formulario: el registro ya existe. No
+     * hay persona que actúe (es un visitante): se valida el plan de nuevo
+     * contra las conexiones del equipo y se crea con la misma función de la
+     * ficha. Al volver de Mercado Pago, el cliente llega a la página del
+     * formulario (`backUrlFor`).
+     */
+    async createForForm(
+        tenantId: number,
+        opts: { formId: number; planId: number; listId: number; recordId: number; payerEmail: string; backUrlFor: (reference: string) => string },
+    ): Promise<{ url: string; plan: string; amount: number; currency: string; frequency: number; frequency_type: SubscriptionFrequencyType }> {
+        const [plan] = await this.formPlans(tenantId, [opts.planId]);
+        if (!plan) throw new SubscriptionError('Ese plan ya no está disponible.');
+        const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [row] = await tx
+                .select()
+                .from(subscriptionPlans)
+                .where(and(eq(subscriptionPlans.tenantId, tenantId), eq(subscriptionPlans.id, opts.planId)))
+                .limit(1);
+            if (!row) throw new SubscriptionError('Ese plan ya no está disponible.');
+            return this.createInTx(tx, tenantId, {
+                plan: row,
+                listId: opts.listId,
+                recordId: opts.recordId,
+                payerEmail: opts.payerEmail,
+                amount: null,
+                startDate: null,
+                title: null,
+                userId: null,
+                formId: opts.formId,
+                backUrlFor: opts.backUrlFor,
+            });
+        });
+        this.afterWrite(tenantId, result.write);
+        if (!result.sub.url) throw new SubscriptionError('Mercado Pago no devolvió el link para autorizar la tarjeta.');
+        return {
+            url: result.sub.url,
+            plan: plan.name,
+            amount: result.sub.amount,
+            currency: result.sub.currency,
+            frequency: plan.frequency,
+            frequency_type: plan.frequency_type,
+        };
+    }
+
+    /**
+     * Cómo quedó la suscripción al volver de Mercado Pago (`?suscripcion=`).
+     * Sólo una que armó ESE formulario de ESA empresa; si no, null (404 opaco).
+     */
+    async formSubscriptionStatus(
+        tenantId: number,
+        formId: number,
+        reference: string,
+    ): Promise<PublicFormSubscriptionStatus | null> {
+        if (!/^ibs_[A-Za-z0-9_-]{8,48}$/.test(reference)) return null;
+        const [row] = await this.db
+            .select({ id: subscriptions.id, url: subscriptions.url })
+            .from(subscriptions)
+            .where(and(eq(subscriptions.tenantId, tenantId), eq(subscriptions.formId, formId), eq(subscriptions.reference, reference)))
+            .limit(1);
+        if (!row) return null;
+        const pub = await this.publicStatus(reference);
+        if (!pub) return null;
+        const state =
+            pub.status === 'pending'
+                ? 'pending'
+                : pub.status === 'cancelled' || pub.status === 'finished'
+                  ? 'cancelled'
+                  : pub.status === 'retrying' || pub.status === 'past_due' || pub.status === 'expired'
+                    ? 'failed'
+                    : 'active';
+        // Todavía sin autorizar: el mismo link sirve para terminar.
+        const url = state === 'pending' && row.url && /^https?:\/\//.test(row.url) ? row.url : null;
+        return { state, plan: pub.title, amount: pub.amount, currency: pub.currency, frequency: pub.frequency, frequency_type: pub.frequencyType, url };
+    }
+
+    // ── Portal del cliente (v0.1.368) ───────────────────────────────────
+
+    /**
+     * Las suscripciones de UN registro tal como las ve su cliente: las vivas y
+     * las que terminaron hace poco (60 días), con sus últimos cobros. Nada
+     * interno: ni el id de Mercado Pago, ni la conexión, ni quién la creó.
+     */
+    async portalSubscriptions(tenantId: number, listId: number, recordId: number, now = new Date()): Promise<PortalSubscription[]> {
+        const since = new Date(now.getTime() - 60 * 86_400_000);
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const rows = await tx
+                .select()
+                .from(subscriptions)
+                .where(
+                    and(
+                        eq(subscriptions.tenantId, tenantId),
+                        eq(subscriptions.listId, listId),
+                        eq(subscriptions.recordId, recordId),
+                        sql`(${subscriptions.status} NOT IN ('cancelled', 'finished') OR ${subscriptions.updatedAt} > ${since})`,
+                    ),
+                )
+                .orderBy(desc(subscriptions.createdAt))
+                .limit(5);
+            if (rows.length === 0) return [];
+            const charges = await tx
+                .select()
+                .from(subscriptionCharges)
+                .where(and(eq(subscriptionCharges.tenantId, tenantId), inArray(subscriptionCharges.subscriptionId, rows.map((r) => r.id))))
+                .orderBy(desc(sql`coalesce(${subscriptionCharges.paidAt}, ${subscriptionCharges.periodStart}, ${subscriptionCharges.createdAt})`))
+                .limit(60);
+            return rows.map((r) => ({
+                id: r.id,
+                title: r.planName || r.title,
+                amount: Number(r.amount),
+                currency: r.currency,
+                frequency: r.frequency,
+                frequency_type: r.frequencyType as SubscriptionFrequencyType,
+                status: r.status as SubscriptionStatus,
+                next_charge_at: r.nextChargeAt ? r.nextChargeAt.toISOString() : null,
+                paid_until: r.paidUntil ? r.paidUntil.toISOString() : null,
+                url: r.status === 'pending' && r.url && /^https?:\/\//.test(r.url) ? r.url : null,
+                charges: charges
+                    .filter((c) => c.subscriptionId === r.id)
+                    .slice(0, 6)
+                    .map((c) => ({
+                        status: c.status as SubscriptionChargeStatus,
+                        amount: Number(c.amount),
+                        currency: c.currency,
+                        date: (c.paidAt ?? c.periodStart ?? c.createdAt)?.toISOString() ?? null,
+                        reason: c.status === 'rejected' ? c.failureReason : null,
+                    })),
+            }));
+        });
     }
 
     // ── Resumen de la conexión ──────────────────────────────────────────

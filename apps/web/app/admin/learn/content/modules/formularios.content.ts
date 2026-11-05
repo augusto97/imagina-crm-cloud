@@ -859,6 +859,85 @@ export const articles: LearnArticle[] = [
                 t: 'actions',
                 items: [
                     { label: 'Conectar Mercado Pago o Wompi', to: '/settings?s=conectores' },
+                    { label: 'Siguiente: suscribir al enviar', article: 'formularios-suscribir' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'formularios-suscribir',
+        route: '/lists',
+        related: ['cobros-suscripciones', 'formularios-cobrar', 'portal-pagos'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Un formulario también puede **suscribir** a quien lo envía a uno de tus planes de **débito automático** de Mercado Pago: una mensualidad, una membresía, una cuota anual. La persona elige el plan, autoriza su tarjeta **una sola vez** y desde ahí se le cobra sola cada período. El dinero llega a la cuenta de tu empresa y la suscripción aparece en la ficha del registro que creó el formulario.',
+            },
+            { t: 'anim', key: 'form-subscription', caption: 'Ana elige el plan anual, toca «Enviar y suscribirme», autoriza su tarjeta en Mercado Pago y en su portal la suscripción queda «Al día».' },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Antes: los planes y el correo',
+                md: 'Necesitas **planes activos** en una conexión de **Mercado Pago del equipo** (**Ajustes → Integraciones → Mercado Pago → Cobros → Suscripciones**). Y el formulario tiene que preguntar el **correo** de quien responde: Mercado Pago lo pide para la suscripción.',
+            },
+            { t: 'h', text: 'Encenderlo' },
+            {
+                t: 'steps',
+                items: [
+                    'Abre el formulario en **Configurar lista → Formularios** y ve a la pestaña **Ajustes**.',
+                    'En **Correo de quien responde**, elige la pregunta con el correo.',
+                    'En **Suscribir al enviar**, enciende **Suscribir con débito automático al enviar**.',
+                    'Marca los **planes que se ofrecen** (hasta 6). Se muestran en el orden de la lista.',
+                    'Elige qué pasa **después de enviar** y guarda. La vista previa muestra los planes con su precio.',
+                ],
+            },
+            { t: 'h', text: 'Los ajustes' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Planes que se ofrecen', what: 'Con varios, la persona elige uno en tarjetas con el precio, cada cuánto se cobra, los días gratis y la cantidad de cobros. Con uno solo, ve el resumen del plan sin tener que elegir.', tip: 'Un plan pausado o de una conexión que dejó de ser del equipo deja de ofrecerse solo; el panel te lo avisa.' },
+                    { name: 'Título de la elección', what: 'Lo que dice arriba de los planes. Vacío = «Elige tu plan».', tip: '«Tu membresía» o «Elige tu mensualidad» le habla mejor a tu cliente.' },
+                    { name: 'Llevar directo a Mercado Pago', what: 'Al enviar, la persona pasa a autorizar su tarjeta. Al terminar vuelve al formulario y ve si la suscripción quedó activa.', tip: 'Si el formulario está insertado en tu sitio, en vez de saltar muestra el botón para abrir Mercado Pago en una pestaña nueva.' },
+                    { name: 'Mostrar el botón en la pantalla de gracias', what: 'La pantalla de gracias muestra el plan, el valor y un botón para autorizar. Útil cuando primero quieres darle un mensaje.' },
+                    { name: 'Texto del botón', what: 'Lo que dice el botón. Por defecto, «Autorizar el débito automático».' },
+                ],
+            },
+            { t: 'h', text: 'Qué pasa al volver' },
+            {
+                t: 'p',
+                md: 'Cuando la persona vuelve de Mercado Pago, la página le dice cómo quedó: **«¡Listo! Tu suscripción quedó activa»** si autorizó, o **«Estamos confirmando tu suscripción»** mientras llega la confirmación (la página vuelve a preguntar sola unos segundos). Si no terminó de autorizar, le ofrece volver a Mercado Pago.',
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Que el cliente la vea en su portal',
+                md: 'El bloque **Pagos** del portal del cliente muestra su suscripción: el plan, el valor, el estado («Al día», «Reintentando», «En mora»…), el próximo cobro y sus últimos pagos. Si todavía no la autorizó, le muestra el botón para hacerlo. Lo apagas con **Mostrar sus suscripciones** en los ajustes del bloque.',
+            },
+            {
+                t: 'callout',
+                tone: 'warn',
+                title: 'Cobra una vez o suscribe',
+                md: 'Un formulario cobra una vez **o** suscribe. Si enciendes **Cobrar al enviar** y **Suscribir al enviar** a la vez, manda la suscripción y el panel te lo avisa.',
+            },
+            {
+                t: 'example',
+                title: 'Las membresías de un gimnasio',
+                md: 'Un gimnasio de Bogotá ofrece dos planes: **Mensual** a 150.000 y **Anual** a 1.500.000 con 7 días gratis. Su formulario «Únete al gimnasio» pide nombre y correo y suscribe con los dos planes. Cada socio nuevo elige, autoriza su tarjeta y queda en la lista de socios con su suscripción **Al día**. Una automatización **Cuando cambia una suscripción** le avisa al socio por WhatsApp si un cobro falla, y en su portal ve cuándo es el próximo cobro.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Qué pasa si la persona no autoriza la tarjeta?', a: 'La respuesta y el registro quedan guardados con la suscripción **Por autorizar**. Desde la ficha, en **Suscripción**, copias el link y se lo mandas otra vez; también lo ve en su portal.' },
+                    { q: '¿Y si el formulario pide confirmar el correo?', a: 'La suscripción se prepara cuando la persona confirma: en esa misma página ve el plan, el valor y el botón para autorizar.' },
+                    { q: '¿Y si Mercado Pago no responde?', a: 'La respuesta igual se guarda y la persona ve que la contactarás para completar la suscripción. En **Problemas** te aparece un aviso con el motivo.' },
+                    { q: '¿La app se queda con una comisión?', a: 'No. El dinero va a la cuenta de Mercado Pago de tu empresa. Sólo aplica la comisión de Mercado Pago.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Crear mis planes', to: '/settings?s=conectores' },
                     { label: 'Siguiente: agradecimiento y cierre', article: 'formularios-ajustes' },
                 ],
             },

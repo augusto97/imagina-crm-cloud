@@ -523,7 +523,7 @@ export function renderFormNoticePage(opts: {
     /** Botón «Continuar» (la redirección del formulario, https). */
     continueUrl?: string | null;
     /** v0.1.361 — Con cobro al enviar: el botón para pagar (va antes que «Continuar»). */
-    pay?: { url: string; label: string; amountText: string } | null;
+    pay?: { url: string; label: string; amountText: string; /** v0.1.368 — «Suscripción» en vez de «Total a pagar». */ totalLabel?: string } | null;
     /** v0.1.361 — No se pudo armar el pago (la respuesta sí quedó guardada). */
     payError?: string | null;
 }): string {
@@ -540,7 +540,7 @@ export function renderFormNoticePage(opts: {
         ? `<form method="post" action="${e(opts.confirmAction)}" id="confirm"><button type="submit" class="ib-btn ib-btn-primary">Confirmar mi correo</button></form>
 <script nonce="${opts.nonce}">(function(){var f=document.getElementById('confirm');if(f){var b=f.querySelector('button');b.disabled=true;b.textContent='Confirmando…';f.submit();}})();</script>`
         : opts.pay && /^https?:\/\//.test(opts.pay.url)
-          ? `<p class="ib-pay-total" data-testid="form-notice-pay-total">Total a pagar: <strong>${e(opts.pay.amountText)}</strong></p>
+          ? `<p class="ib-pay-total" data-testid="form-notice-pay-total">${e(opts.pay.totalLabel || 'Total a pagar')}: <strong>${e(opts.pay.amountText)}</strong></p>
 <a class="ib-btn ib-btn-primary" href="${e(opts.pay.url)}" rel="noopener" data-testid="form-notice-pay">${e(opts.pay.label)}</a>`
           : opts.continueUrl
             ? `<a class="ib-btn ib-btn-primary" href="${e(opts.continueUrl)}">Continuar</a>`

@@ -40,6 +40,7 @@ import {
     APPROVAL_TRIGGER_RESULTS,
     splitFormPages,
     formPaymentActive,
+    formSubscriptionActive,
     formRecallTexts,
     crmTemplateIdSchema,
     fieldSlugSchema,
@@ -1413,6 +1414,14 @@ export class StructureTools implements AiProposalApplier {
                                             : { question: st.payment.field_id !== null ? (fieldById.get(st.payment.field_id)?.slug ?? null) : null, min: st.payment.min, max: st.payment.max },
                                   currency: st.payment.currency,
                                   then: st.payment.after === 'redirect' ? 'lleva directo a pagar' : 'muestra el botón para pagar',
+                              }
+                            : null,
+                        // v0.1.368 — suscribe al enviar (débito automático de Mercado Pago)
+                        // con uno de estos planes (ids de `get_list_schema` → planes de suscripción).
+                        subscribes_on_submit: formSubscriptionActive(f.config)
+                            ? {
+                                  plan_ids: st.subscription.plan_ids,
+                                  then: st.subscription.after === 'redirect' ? 'lleva directo a autorizar la tarjeta' : 'muestra el botón para autorizar',
                               }
                             : null,
                     };

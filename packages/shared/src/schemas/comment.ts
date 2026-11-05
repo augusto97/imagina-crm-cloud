@@ -47,7 +47,8 @@ export const commentSchema = z.object({
     id: idSchema,
     list_id: idSchema,
     record_id: idSchema,
-    user_id: idSchema,
+    /** 0 = el sistema (un correo que entra por la mesa de ayuda, una automatización). */
+    user_id: z.number().int().nonnegative(),
     /**
      * Nombre visible del autor (o su email si no tiene nombre). Se resuelve en
      * la misma query del listado: sin esto la ficha mostraba "Usuario #2".

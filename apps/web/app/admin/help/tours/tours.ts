@@ -870,6 +870,13 @@ export const TOURS: TourDef[] = [
                 body: 'En los ajustes, **Cobrar al enviar** cobra un monto fijo, el resultado de un cálculo o lo que escribe la persona, con el Mercado Pago o Wompi de tu empresa. El pago aparece en la ficha del registro.',
                 tip: 'La persona ve el total antes de enviar, y el monto lo calcula siempre el servidor.',
             },
+            {
+                id: 'subscription',
+                art: 'form-subscription',
+                title: 'Suscribir al enviar',
+                body: 'En los ajustes, **Suscribir al enviar** ofrece tus planes de débito automático de Mercado Pago: la persona elige uno, autoriza su tarjeta una sola vez y se le cobra solo cada período.',
+                tip: 'En el portal del cliente, el bloque **Pagos** le muestra su suscripción, el próximo cobro y sus pagos.',
+            },
         ],
     },
 
