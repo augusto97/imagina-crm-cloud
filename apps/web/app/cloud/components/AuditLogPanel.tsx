@@ -75,6 +75,8 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'dashboard.subscription_create': { text: 'programó un envío por correo del tablero', danger: true },
     'dashboard.subscription_update': { text: 'cambió un envío por correo del tablero' },
     'dashboard.subscription_delete': { text: 'eliminó un envío por correo del tablero' },
+    'subscriptions.import': { text: 'importó suscripciones de Mercado Pago' },
+    'subscriptions.import_auto': { text: 'cambió si las suscripciones nuevas de Mercado Pago llegan solas' },
     'field.delete': { text: 'borró el campo', danger: true },
     'field.type_change': { text: 'cambió el tipo del campo', danger: true },
     'member.add': { text: 'agregó al workspace a' },

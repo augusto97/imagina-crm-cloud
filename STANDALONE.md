@@ -7258,6 +7258,62 @@ PayPal de los cobros (ADR-S31, token en memoria por credencial).
    la página de la app y en el formulario. Recién vuelto del proveedor el
    estado se consulta enseguida (a lo sumo cada 2 s; antes, 15 s).
 
+**Addendum v0.1.376 — importar lo que ya está en Mercado Pago.** Una empresa
+que ya cobraba con débito automático desde el panel de Mercado Pago (o desde otra
+herramienta) trae esas suscripciones a la app sin volver a suscribir a nadie.
+Pedido del usuario: «una tabla o sincronización de Mercado Pago para ver y
+controlar las suscripciones y planes ya activos». Decisiones:
+
+1. **No es una lista espejo.** A diferencia de WooCommerce o WordPress (ADR-S24,
+   ADR-S83), la fuente de verdad del ESTADO sigue siendo la fila de
+   `subscriptions` (que siempre se relee de Mercado Pago, como las propias), y
+   el registro es de la empresa: le agrega columnas, notas y automatizaciones, y
+   lo borra si quiere. Así una importada se comporta EXACTAMENTE como una creada
+   aquí (estado derivado, cobros, columnas, pausar/reanudar/cancelar/cambiar el
+   valor, disparador, portal, registro de cobros, asistente/MCP).
+2. **Dos destinos**: una lista nueva «Suscriptores · Mercado Pago» (blueprint
+   propio: suscriptor, correo, estado con los colores de siempre, plan, valor en
+   la moneda más usada, próximo cobro, pagado hasta, cobros fallidos, link,
+   suscrito desde, id en Mercado Pago y notas; vistas Todos / Por estado /
+   Para revisar; `settings.subscriptions.fields` ya puesto), o **vincular por
+   correo** a una lista existente (columna email o texto; normalizado; nunca a
+   una lista espejo; un registro que ya tiene una suscripción viva no se toca —
+   «una viva por registro»— y la importada queda sin registro). Lo que no
+   encuentra su cliente se crea o queda sin registro, a elección.
+3. **Mirar antes de traer**: `POST …/subscriptions/import/preview` recorre
+   `/preapproval/search` (hasta 5.000, orden por fecha — SUPUESTO de la API
+   documentada) y `/preapproval_plan/search`, y devuelve cuántas por estado,
+   cuántas ya están, cuántas encuentran su cliente, los planes y 25 de ejemplo
+   con lo que pasará con cada una (`decideImport`, puro en shared). Nada se
+   crea hasta confirmar.
+4. **Sin duplicados por construcción**: la fila de `subscriptions` se inserta
+   PRIMERO con `onConflictDoNothing` sobre el único `(tenant, provider,
+   external_id)`; sólo quien la insertó crea o vincula el registro. Así un aviso
+   o la revisión periódica que llegan a la vez no crean dos registros, e importar
+   otra vez no duplica. Una suscripción con `external_reference` `ibs_…` es de la
+   app y nunca se importa.
+5. **Carga en silencio**: `subs.sync(…, {quiet})` no dispara el disparador, no
+   avisa en la campana y el registro de cobros escribe sin automatizaciones
+   (igual que la carga inicial de v0.1.371). Lo que llega DESPUÉS (avisos o
+   revisión) sí dispara, como una suscripción nueva cualquiera.
+6. **Lo nuevo llega solo** (`config.subscription_import.auto`, apagable): un
+   aviso `subscription_preapproval` o un `payment` de una suscripción
+   desconocida la importa por la conexión que avisó; además, cada 5 minutos se
+   revisan (candado) las conexiones cuya última búsqueda pasó hace 30 minutos.
+   Una cancelada vieja (anterior a la importación) no se trae sola. Las
+   referencias distinguen `ibs_imp_` (importación) de `ibs_auto_` (llegó sola,
+   para contarlas). Una falla abre un Problema por conexión.
+7. **Planes**: un plan de Mercado Pago se importa como plan (con
+   `provider_refs.mp_plan_id`, sin duplicar); sin monto propio toma el más usado
+   por sus suscripciones. Cuotas y días gratis salen de `repetitions` y
+   `free_trial`.
+8. Permisos: `manage_lists` para importar (más `manage_fields` y
+   `create_records` al vincular), la conexión editable por quien importa, y nada
+   en solo-lectura. Estado en Redis por conexión (30 días) con progreso en vivo;
+   bitácora `subscriptions.import` / `subscriptions.import_auto`. Migrar una
+   empresa re-mapea `list_id`/`email_field_id` (sin la lista, `auto` se apaga).
+   PayPal no tiene un listado de suscripciones en su API: queda fuera.
+
 
 ### ADR-S97 — Medir conversiones de formularios y agendas insertados (v0.1.374)
 
@@ -7380,4 +7436,4 @@ app, el service worker y `window.open` quedan bloqueados.
 
 ---
 
-**Versión del documento:** 1.159.0 (Etiquetas en el enlace directo)
+**Versión del documento:** 1.160.0 (Importar suscripciones de Mercado Pago)

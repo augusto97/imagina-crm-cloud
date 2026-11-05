@@ -68,6 +68,9 @@ import {
     type CreateSubscriptionPlanInput,
     type UpdateSubscriptionPlanInput,
     type SubscriptionsOverview,
+    type SubscriptionImportInput,
+    type SubscriptionImportPreview,
+    type SubscriptionImportStatus,
     type RecordSubscriptions,
     type CreateSubscriptionInput,
     type Subscription,
@@ -1185,6 +1188,19 @@ export class CloudClient {
     }
     subscriptionsOverview(connectionId: number): Promise<SubscriptionsOverview> {
         return this.request('GET', `/collections/connections/${connectionId}/subscriptions`, { schema: z.custom<SubscriptionsOverview>() });
+    }
+    // v0.1.376 — importar lo que ya está en Mercado Pago.
+    subscriptionImportPreview(connectionId: number, input: SubscriptionImportInput): Promise<SubscriptionImportPreview> {
+        return this.request('POST', `/collections/connections/${connectionId}/subscriptions/import/preview`, { body: input, schema: z.custom<SubscriptionImportPreview>() });
+    }
+    startSubscriptionImport(connectionId: number, input: SubscriptionImportInput): Promise<SubscriptionImportStatus> {
+        return this.request('POST', `/collections/connections/${connectionId}/subscriptions/import`, { body: input, schema: z.custom<SubscriptionImportStatus>() });
+    }
+    subscriptionImportStatus(connectionId: number): Promise<SubscriptionImportStatus> {
+        return this.request('GET', `/collections/connections/${connectionId}/subscriptions/import`, { schema: z.custom<SubscriptionImportStatus>() });
+    }
+    setSubscriptionImportAuto(connectionId: number, auto: boolean): Promise<SubscriptionImportStatus> {
+        return this.request('PUT', `/collections/connections/${connectionId}/subscriptions/import/auto`, { body: { auto }, schema: z.custom<SubscriptionImportStatus>() });
     }
     recordSubscriptions(list: string | number, recordId: number): Promise<RecordSubscriptions> {
         return this.request('GET', `/lists/${list}/records/${recordId}/subscriptions`, { schema: z.custom<RecordSubscriptions>() });

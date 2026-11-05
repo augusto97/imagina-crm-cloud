@@ -394,7 +394,11 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.375**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.376**
+(importar las suscripciones y los planes que ya están en Mercado Pago: vista
+previa, lista nueva «Suscriptores · Mercado Pago» o vínculo por correo a una
+lista de clientes, cobros y registro de cobros, y las nuevas que llegan solas,
+addendum ADR-S96); antes v0.1.375
 (las etiquetas de Google Ads, Google Analytics y el píxel de Meta se cargan
 por ID en el ENLACE DIRECTO del formulario y de la agenda, encerradas por CSP
 y COOP, con aviso de cookies, addendum ADR-S97); antes v0.1.374
@@ -459,22 +463,22 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 **Hilos abiertos (lo último que se habló)**
 - 2026-11-05 — **Etiquetas en el enlace directo** — **v0.1.375 HECHA** (el
   usuario: «Sí, haz la v0.1.375»).
+- 2026-11-05 — **Rediseño de los constructores de formularios y de la agenda**
+  — **PEDIDO, PENDIENTE** (en el mismo mensaje que aprobó la v0.1.376). El
+  usuario: "las interfaces están muy confusas… no se sabe dónde queda qué
+  cosa porque la navegación es súper confusa con muchas opciones no
+  correctamente organizadas, no se ve muy bonito ese editor… los elementos como
+  logo, nombre y descripción así como todos los elementos del formulario
+  deberían ser clickeables para no confundir al usuario de dónde puede ajustar,
+  mover o desactivar algún elemento (ej. no sabría dónde ocultar los títulos de
+  los formularios o de los agendamientos)… muchos ajustes están mezclados…
+  también tener presente que se pueda ajustar y cambiar el color de todo
+  porque vi elementos que no tenían ajuste de color". Es lo siguiente a hacer
+  tras la v0.1.376: replantear FormBuilder y BookingBuilder (cada elemento de
+  la vista previa seleccionable, con mostrar/ocultar, mover y color; navegación
+  y ajustes reorganizados; color para todo).
 - 2026-11-05 — **Importar las suscripciones y planes que ya están en Mercado
-  Pago** — **PROPUESTA, SIN APROBAR** (v0.1.376). Pedido del usuario: "una
-  tabla o sincronización de mercadopago para ver y vigilar o controlar las
-  suscripciones y planes ya activos en mercadopago… no se si sea bueno en una
-  nueva lista o una lista automatica que cree la integración". Propuesta:
-  «Importar desde Mercado Pago» en Cobros de la conexión de MP: lee
-  `/preapproval/search` y los planes, vista previa con cuántas hay por estado
-  y cuántas coinciden por correo con registros existentes; las suscripciones
-  van a una lista automática **común** (editable, NO espejo) «Suscriptores ·
-  Mercado Pago» que crea la integración —una fila por suscripción, con las
-  columnas de suscripción ya elegidas y el registro de cobros y el tablero
-  opcionales— o se vinculan por correo a una lista que ya existe; los planes
-  de MP se importan como planes; las suscripciones nuevas que se creen en MP
-  entran solas (aviso + búsqueda periódica). Las importadas se comportan como
-  las creadas en la app (estado, cobros, pausar, cancelar, disparador,
-  portal). NO empezar sin la confirmación del usuario.
+  Pago** — **v0.1.376 HECHA** (el usuario: «Sí, haz la v0.1.376»).
 - 2026-11-05 — **«Al insertar los formularios por iframe está rechazando la
   conexión»** (formulario `5lS1AOGalrzn3gim8h8vIQhD`) — **RESPONDIDO**, sin
   bug. El usuario probaba en html.onlineviewer.net, que dibuja el HTML dentro
@@ -1568,6 +1572,28 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.376** — **Importar las suscripciones de Mercado Pago**
+  (el usuario: «Sí, haz la v0.1.376»). En **Cobros** de la conexión de Mercado
+  Pago, **Importar desde Mercado Pago**: una vista previa (cuántas hay por
+  estado, cuántas ya están, cuántas encuentran su cliente por correo, los
+  planes y 25 de ejemplo) y después la importación en segundo plano con
+  progreso. Destino: una **lista nueva común** «Suscriptores · Mercado Pago»
+  (una fila por suscripción, columnas ya puestas, vistas Por estado y Para
+  revisar) o **vincular por correo** a una lista de clientes (creando o no los
+  que no aparecen). Los planes llegan como planes, los cobros al registro de
+  cobros (con tablero si se pide) y las nuevas que se crean en Mercado Pago
+  **llegan solas** (avisos + revisión cada 30 min, apagable). **Decisiones**:
+  no es lista espejo (el estado vive en `subscriptions` y se relee, el
+  registro es de la empresa); sin duplicados por construcción (la fila de la
+  suscripción se inserta primero con `onConflictDoNothing`); la importación no
+  dispara automatizaciones ni avisos, lo que llega después sí; nunca se
+  importa una suscripción creada por la app (`ibs_…`); PayPal no tiene listado
+  de suscripciones y queda fuera. De paso: `/lists/:slug` ahora redirige a sus
+  registros (los enlaces «Ver la lista» de varias pantallas caían en el índice).
+  Tests: `subscriptions-import.spec` 5/5 + suscripciones 28/28; E2E 28/28 en
+  escritorio y en celular oscuro contra el Mercado Pago simulado. Queda: el
+  rediseño de los constructores de formularios y agenda (pedido en el mismo
+  mensaje).
 - **2026-11-05 · v0.1.375** — **Las etiquetas en el enlace directo** (el
   usuario: «Sí, haz la v0.1.375»). Si el anuncio lleva directo al enlace del
   formulario o de la agenda, sin el sitio de por medio, **Medir conversiones →

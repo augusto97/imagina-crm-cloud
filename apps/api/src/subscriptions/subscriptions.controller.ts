@@ -6,6 +6,8 @@ import {
     createSubscriptionSchema,
     setSubscriptionChargeLogSchema,
     setSubscriptionFieldsSchema,
+    subscriptionImportAutoSchema,
+    subscriptionImportSchema,
     updateSubscriptionPlanSchema,
     SUBSCRIPTION_STATUS_OPTIONS,
     type CancelSubscriptionInput,
@@ -19,6 +21,10 @@ import {
     type Subscription,
     type SubscriptionFields,
     type SubscriptionFrequencyType,
+    type SubscriptionImportAutoInput,
+    type SubscriptionImportInput,
+    type SubscriptionImportPreview,
+    type SubscriptionImportStatus,
     type SubscriptionPlan,
     type SubscriptionsOverview,
     type SubscriptionStatus,
@@ -34,6 +40,7 @@ import { aclOf } from '../tenancy/acl-of';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { SubscriptionChargeLogService } from './subscription-charge-log.service';
+import { SubscriptionImportService } from './subscription-import.service';
 import { SubscriptionsService } from './subscriptions.service';
 
 /**
@@ -48,6 +55,7 @@ export class SubscriptionsController {
     constructor(
         private readonly subs: SubscriptionsService,
         private readonly chargeLog: SubscriptionChargeLogService,
+        private readonly importer: SubscriptionImportService,
     ) {}
 
     @Get('subscriptions/plans')
@@ -86,6 +94,42 @@ export class SubscriptionsController {
     @Get('collections/connections/:id/subscriptions')
     overview(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<SubscriptionsOverview> {
         return this.subs.overview(tenantId(req), actorOf(req), id);
+    }
+
+    /** v0.1.376 — Importar lo que ya está en Mercado Pago: qué se traería (no escribe nada). */
+    @Post('collections/connections/:id/subscriptions/import/preview')
+    @HttpCode(200)
+    importPreview(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(subscriptionImportSchema)) input: SubscriptionImportInput,
+    ): Promise<SubscriptionImportPreview> {
+        return this.importer.preview(tenantId(req), actorOf(req), id, input);
+    }
+
+    @Post('collections/connections/:id/subscriptions/import')
+    @HttpCode(200)
+    importStart(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(subscriptionImportSchema)) input: SubscriptionImportInput,
+    ): Promise<SubscriptionImportStatus> {
+        return this.importer.start(tenantId(req), actorOf(req), id, input);
+    }
+
+    @Get('collections/connections/:id/subscriptions/import')
+    importStatus(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<SubscriptionImportStatus> {
+        return this.importer.status(tenantId(req), actorOf(req), id);
+    }
+
+    @Put('collections/connections/:id/subscriptions/import/auto')
+    @HttpCode(200)
+    importAuto(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(subscriptionImportAutoSchema)) input: SubscriptionImportAutoInput,
+    ): Promise<SubscriptionImportStatus> {
+        return this.importer.setAuto(tenantId(req), actorOf(req), id, input.auto);
     }
 
     @Get('lists/:list/records/:recordId/subscriptions')

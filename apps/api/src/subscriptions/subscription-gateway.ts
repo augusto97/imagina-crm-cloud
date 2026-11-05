@@ -439,3 +439,143 @@ export function summarizeCharges(
         lastFailureReason: latest?.status === 'rejected' ? latest.failureReason : null,
     };
 }
+
+// ── Importar lo que ya está en Mercado Pago (v0.1.376) ───────────────────
+
+/** Una suscripción de la búsqueda de Mercado Pago, con lo que hace falta para traerla. */
+export interface ImportedPreapproval extends ParsedPreapproval {
+    /** authorized / paused / pending / cancelled (finished cuenta como cancelada). */
+    mpStatus: 'authorized' | 'paused' | 'pending' | 'cancelled';
+    payerEmail: string | null;
+    payerId: string | null;
+    /** El plan de Mercado Pago (si la suscripción salió de un plan). */
+    planExternalId: string | null;
+    reason: string | null;
+    frequency: number;
+    frequencyType: SubscriptionFrequencyType;
+    endAt: Date | null;
+    createdAt: Date | null;
+}
+
+function readImported(json: Record<string, unknown>, creds: IntegrationCreds): ImportedPreapproval | null {
+    const base = readPreapproval(json, creds);
+    if (!base) return null;
+    const auto = (json.auto_recurring ?? {}) as Record<string, unknown>;
+    const raw = str(json.status);
+    const mpStatus: ImportedPreapproval['mpStatus'] =
+        raw === 'authorized' ? 'authorized' : raw === 'paused' ? 'paused' : raw === 'cancelled' || raw === 'finished' ? 'cancelled' : 'pending';
+    const freqRaw = num(auto.frequency);
+    const type: SubscriptionFrequencyType = str(auto.frequency_type) === 'days' ? 'days' : 'months';
+    const freq = freqRaw && freqRaw >= 1 ? Math.min(Math.round(freqRaw), type === 'days' ? 365 : 12) : 1;
+    const email = str(json.payer_email);
+    return {
+        ...base,
+        mpStatus,
+        payerEmail: email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? email.trim().toLowerCase() : null,
+        payerId: str(json.payer_id),
+        planExternalId: str(json.preapproval_plan_id),
+        reason: str(json.reason),
+        frequency: freq,
+        frequencyType: type,
+        endAt: date(auto.end_date),
+        createdAt: date(json.date_created),
+    };
+}
+
+/** Una página de la búsqueda de suscripciones (las más nuevas primero cuando Mercado Pago lo permite). */
+export function preapprovalSearchRequest(creds: IntegrationCreds, offset: number, bases: GatewayBases, limit = 100): IntegrationRequest {
+    // SUPUESTO: `sort=date_created:desc` (documentado para los pagos); si
+    // Mercado Pago lo ignora, igual se recorren todas las páginas.
+    const q = new URLSearchParams({ limit: String(limit), offset: String(offset), sort: 'date_created:desc' });
+    return {
+        url: `${trimBase(bases.mercadopago)}/preapproval/search?${q.toString()}`,
+        method: 'GET',
+        headers: authHeaders(creds),
+    };
+}
+
+/** null = no se pudo leer (credencial rechazada o respuesta inesperada). */
+export function parsePreapprovalSearch(
+    status: number,
+    body: string,
+    creds: IntegrationCreds,
+): { total: number; items: ImportedPreapproval[] } | null {
+    if (status !== 200) return null;
+    const json = parseJson(body);
+    if (!json || !Array.isArray(json.results)) return null;
+    const paging = (json.paging ?? {}) as Record<string, unknown>;
+    const items = (json.results as unknown[])
+        .map((r) => (r && typeof r === 'object' ? readImported(r as Record<string, unknown>, creds) : null))
+        .filter((r): r is ImportedPreapproval => r !== null);
+    return { total: num(paging.total) ?? items.length, items };
+}
+
+/** Un plan de suscripción de Mercado Pago (preapproval_plan). */
+export interface ImportedPlan {
+    externalId: string;
+    name: string;
+    amount: number | null;
+    currency: string;
+    frequency: number;
+    frequencyType: SubscriptionFrequencyType;
+    cycles: number | null;
+    trialDays: number;
+    active: boolean;
+}
+
+export function preapprovalPlanSearchRequest(creds: IntegrationCreds, offset: number, bases: GatewayBases, limit = 100): IntegrationRequest {
+    const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    return {
+        url: `${trimBase(bases.mercadopago)}/preapproval_plan/search?${q.toString()}`,
+        method: 'GET',
+        headers: authHeaders(creds),
+    };
+}
+
+export function parsePreapprovalPlans(status: number, body: string): { total: number; items: ImportedPlan[] } | null {
+    if (status !== 200) return null;
+    const json = parseJson(body);
+    if (!json || !Array.isArray(json.results)) return null;
+    const paging = (json.paging ?? {}) as Record<string, unknown>;
+    const items: ImportedPlan[] = [];
+    for (const r of json.results as unknown[]) {
+        if (!r || typeof r !== 'object') continue;
+        const p = r as Record<string, unknown>;
+        const id = str(p.id);
+        if (!id) continue;
+        const auto = (p.auto_recurring ?? {}) as Record<string, unknown>;
+        const type: SubscriptionFrequencyType = str(auto.frequency_type) === 'days' ? 'days' : 'months';
+        const freqRaw = num(auto.frequency);
+        const trial = (auto.free_trial ?? null) as Record<string, unknown> | null;
+        const trialN = trial ? num(trial.frequency) : null;
+        const reps = num(auto.repetitions);
+        items.push({
+            externalId: id,
+            name: (str(p.reason) ?? `Plan ${id}`).slice(0, 120),
+            amount: num(auto.transaction_amount),
+            currency: (str(auto.currency_id) ?? 'COP').toUpperCase(),
+            frequency: freqRaw && freqRaw >= 1 ? Math.min(Math.round(freqRaw), type === 'days' ? 365 : 12) : 1,
+            frequencyType: type,
+            cycles: reps && reps >= 1 ? Math.min(Math.round(reps), 120) : null,
+            trialDays: trialN && trialN > 0 ? Math.min(365, Math.round(str(trial!.frequency_type) === 'months' ? trialN * 30 : trialN)) : 0,
+            active: str(p.status) !== 'cancelled' && str(p.status) !== 'inactive',
+        });
+    }
+    return { total: num(paging.total) ?? items.length, items };
+}
+
+/** El correo del pagador en un pago (cuando la suscripción no lo trae). */
+export function paymentPayerEmail(status: number, body: string): string | null {
+    if (status !== 200) return null;
+    const json = parseJson(body);
+    const payer = (json?.payer ?? null) as Record<string, unknown> | null;
+    const email = payer ? str(payer.email) : null;
+    return email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? email.trim().toLowerCase() : null;
+}
+
+/** Una sola suscripción leída por id (`GET /preapproval/:id`), con lo que hace falta para importarla. */
+export function parseImportedPreapproval(status: number, body: string, creds: IntegrationCreds): ImportedPreapproval | null {
+    if (status !== 200) return null;
+    const json = parseJson(body);
+    return json ? readImported(json, creds) : null;
+}

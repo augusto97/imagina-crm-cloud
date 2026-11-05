@@ -512,6 +512,36 @@ export const articles: LearnArticle[] = [
                 title: 'Que se suscriban solos',
                 md: 'Con un formulario con **Suscribir al enviar**, cada persona elige el plan y autoriza su tarjeta sin que tengas que mandarle un link. Y en el portal, el bloque **Pagos** le muestra su suscripción, el próximo cobro y sus pagos.',
             },
+            { t: 'h', text: 'Trae las suscripciones que ya tienes en Mercado Pago' },
+            {
+                t: 'p',
+                md: 'Si ya cobrabas con débito automático desde Mercado Pago, no tienes que volver a suscribir a nadie: la app las **importa** con sus planes, su estado y sus cobros, y desde ahí las ves y las manejas como las que creas aquí (pausar, cambiar el valor, cancelar, automatizaciones, portal).',
+            },
+            { t: 'anim', key: 'cobro-importar', caption: 'Las suscripciones de tu cuenta de Mercado Pago pasan a la lista con su estado, y una nueva que se crea allá llega sola.' },
+            {
+                t: 'steps',
+                items: [
+                    'En **Ajustes → Integraciones**, abre **Cobros** de tu conexión de Mercado Pago y toca **Importar desde Mercado Pago**.',
+                    'Elige **adónde llegan**: **A una lista nueva** «Suscriptores · Mercado Pago» (un registro por suscripción, con las columnas ya puestas) o **A mis clientes de una lista**, vinculando cada suscripción al registro cuyo correo coincide (eliges la lista y la **Columna del correo**).',
+                    'Toca **Ver qué se trae**: antes de importar nada ves cuántas hay activas, pausadas, por autorizar y canceladas, cuántas encuentran su cliente por correo y algunas de ejemplo.',
+                    'Toca **Importar** (o **Crear la lista e importar**): los planes de Mercado Pago llegan como planes, cada suscripción con su estado y sus cobros, y —si lo eliges— cada cobro al **registro de cobros** con su tablero. Puedes cerrar la ventana: sigue sola. Importar no dispara automatizaciones.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Opciones al importar',
+                rows: [
+                    { name: 'Crear el cliente que no está en la lista', what: 'Al vincular por correo, si el correo no coincide con ningún registro se crea uno con ese correo. Apagado, la suscripción queda sin registro y se ve en **Cobros**.' },
+                    { name: 'Traer también las canceladas', what: 'Para tener el historial completo. Apagado, sólo se traen las activas, pausadas y por autorizar.' },
+                    { name: 'Guardar cada cobro como un registro · Crear también su tablero', what: 'Crea la lista «Cobros de suscripciones» con lo pagado y lo rechazado mes a mes, y su tablero (si todavía no tienes un registro de cobros).' },
+                    { name: 'Traer solas las suscripciones nuevas', what: 'Las que se creen después en Mercado Pago (por ejemplo, desde el link de un plan que ya tenías publicado) llegan solas a la misma lista, por los avisos y una revisión cada 30 minutos. Se apaga cuando quieras desde la misma tarjeta.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                md: 'Puedes importar cuantas veces quieras: lo que ya está en la app no se duplica. La lista nueva es una lista común: le agregas columnas, la filtras o le pones automatizaciones como a cualquier otra.',
+            },
             { t: 'h', text: 'Qué significa cada estado' },
             {
                 t: 'settings',
@@ -635,6 +665,7 @@ export const articles: LearnArticle[] = [
                     { q: '¿Se cobra el primer mes al autorizar?', a: 'Sí, salvo que el plan tenga días gratis o pongas la fecha del **Primer cobro**.' },
                     { q: '¿Puedo cambiar a mano el «Estado de la suscripción» en la lista?', a: 'Puedes, pero la siguiente noticia de Mercado Pago lo vuelve a escribir. Para registrar algo propio, usa tu propio campo.' },
                     { q: '¿Funciona en modo prueba?', a: 'Sí: con las credenciales de prueba de Mercado Pago el link abre el ambiente de prueba y no se cobra dinero real.' },
+                    { q: 'Ya tengo suscripciones en Mercado Pago, ¿se pueden traer?', a: 'Sí: **Importar desde Mercado Pago** en Cobros de la conexión trae las suscripciones y sus planes, con su estado y sus cobros. Con PayPal todavía no se pueden importar.' },
                 ],
             },
             {

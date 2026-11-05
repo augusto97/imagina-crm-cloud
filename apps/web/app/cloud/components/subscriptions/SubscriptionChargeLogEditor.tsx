@@ -342,7 +342,7 @@ function ChargeLogSetup({
     );
 }
 
-function ModeCard({
+export function ModeCard({
     active,
     disabled,
     icon,

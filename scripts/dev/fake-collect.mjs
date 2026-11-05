@@ -4,8 +4,10 @@
 // captura, capturas, webhooks y una página de aprobación que vuelve sola.
 // v0.1.373 — Suscripciones de PayPal (Billing v1): productos, planes,
 // suscripciones con su página de aprobación, acciones, precio, cobros y ventas.
+// v0.1.376 — Búsqueda de suscripciones y de planes de Mercado Pago (importar):
+// se siembran con `/__set` (`pre`, `mpPlans`, `invoices`, `payments`).
 import http from 'node:http';
-const state = { prefs: [], payments: {}, links: {}, txs: {}, pre: {}, invoices: {}, calls: [], ppOrders: {}, ppCaptures: {}, ppWebhooks: [], ppDecline: false, ppProducts: {}, ppPlans: {}, ppSubs: {}, ppTx: {}, ppSales: {}, ppReq: {} };
+const state = { prefs: [], payments: {}, links: {}, txs: {}, pre: {}, mpPlans: {}, invoices: {}, calls: [], ppOrders: {}, ppCaptures: {}, ppWebhooks: [], ppDecline: false, ppProducts: {}, ppPlans: {}, ppSubs: {}, ppTx: {}, ppSales: {}, ppReq: {} };
 let n = 0;
 const json = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
 const ppNext = (sub) => {
@@ -244,6 +246,16 @@ http.createServer((req, res) => {
             const id = `pre-${++n}`;
             state.pre[id] = { id, ...body, status: 'pending', init_point: `http://127.0.0.1:4898/pay/${id}`, date_created: new Date().toISOString() };
             return json(res, 201, state.pre[id]);
+        }
+        if (p === '/mp/preapproval/search') {
+            const offset = Number(u.searchParams.get('offset') ?? 0);
+            const limit = Number(u.searchParams.get('limit') ?? 100);
+            const all = Object.values(state.pre).sort((a, b) => String(b.date_created ?? '').localeCompare(String(a.date_created ?? '')));
+            return json(res, 200, { paging: { offset, limit, total: all.length }, results: all.slice(offset, offset + limit) });
+        }
+        if (p === '/mp/preapproval_plan/search') {
+            const all = Object.values(state.mpPlans);
+            return json(res, 200, { paging: { offset: 0, limit: 100, total: all.length }, results: all });
         }
         if (p === '/mp/authorized_payments/search') {
             const pre = u.searchParams.get('preapproval_id');

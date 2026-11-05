@@ -137,6 +137,8 @@ export type AuditAction =
     | 'subscriptions.setup'
     // v0.1.371 — el registro de cobros de una lista de suscriptores.
     | 'subscriptions.charge_log'
+    | 'subscriptions.import'
+    | 'subscriptions.import_auto'
     // v0.1.266 — plantillas de documentos PDF.
     | 'document_template.create'
     | 'document_template.update'
