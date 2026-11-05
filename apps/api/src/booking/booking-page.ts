@@ -254,6 +254,15 @@ const CLIENT_JS = String.raw`
   // v0.1.369 — en la ventana o el panel de embed.js, «Sin marco» no aplica.
   var inPopup = embedded && window.name === 'imagina-popup';
   var PREVIEW = MODE === 'preview';
+  // v0.1.381 — La demostración de «Compartir» (dentro de la app): la agenda se
+  // ve y se usa como de verdad, pero no se agenda nada ni se manda el código por
+  // correo. imb_style deja probar «Sin marco» antes de guardar.
+  var DEMO = false, DEMO_STYLE = null;
+  try {
+    var dq = new URLSearchParams(location.search);
+    DEMO = MODE === 'book' && dq.get('imb_demo') === '1';
+    DEMO_STYLE = DEMO ? dq.get('imb_style') : null;
+  } catch (e) {}
   var API = MODE === 'manage'
     ? '/api/v1/public/booking/manage/' + encodeURIComponent(BOOT.token)
     : '/api/v1/public/booking/' + encodeURIComponent(BOOT.token);
@@ -269,7 +278,7 @@ const CLIENT_JS = String.raw`
   // DEL SITIO (Tag Manager, Google Ads, Meta). Sin ese script, como antes.
   var ATTR_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'ttclid'];
   var hostAttr = null, hostOrigin = null, acks = {}, convSeq = 0;
-  if (embedded && !PREVIEW && MODE !== 'manage') {
+  if (embedded && !PREVIEW && !DEMO && MODE !== 'manage') {
     window.addEventListener('message', function (e) {
       if (e.source !== parent || !e.data || typeof e.data !== 'object') return;
       if (e.data.type === 'imb-context' && e.data.attribution && typeof e.data.attribution === 'object') {
@@ -423,7 +432,8 @@ const CLIENT_JS = String.raw`
     var v = view(), d = (meta && meta.display) || {};
     var cls = ['ib-body'].concat(v && v.classes ? v.classes : []);
     if (embedded && !PREVIEW) cls.push('ib-embedded');
-    if (embedded && !PREVIEW && !inPopup && v && v.embed_bare) cls.push('ib-embed-bare');
+    var bare = DEMO_STYLE === 'bare' ? true : DEMO_STYLE === 'card' ? false : !!(v && v.embed_bare);
+    if (embedded && !PREVIEW && !inPopup && bare) cls.push('ib-embed-bare');
     else if (embedded && !PREVIEW && v && v.embed_background) cls.push('ib-embed-bg');
     cls.push('bk-ch-' + (v && v.choice_style ? v.choice_style : 'list'));
     cls.push('bk-cal-' + (d.calendar_layout === 'stacked' ? 'stacked' : 'side'));
@@ -564,7 +574,8 @@ const CLIENT_JS = String.raw`
   function header() {
     var box = el('header', { cls: 'ib-header' });
     if (meta.logo_url) box.appendChild(pv(el('div', { cls: 'ib-logo' }, [el('img', { src: meta.logo_url, alt: meta.company })]), '@logo', 'Logo'));
-    else if (meta.company) box.appendChild(pv(el('div', { cls: 'ib-logo', text: meta.company }), '@logo', 'Logo'));
+    // v0.1.381 — sin logo subido va el nombre; con el logo OCULTO, nada.
+    else if (meta.company && meta.show_logo !== false) box.appendChild(pv(el('div', { cls: 'ib-logo', text: meta.company }), '@logo', 'Logo'));
     // En la página de una cita, «Tu cita» se ve aunque el diseño oculte el título.
     box.appendChild(pv(el('h1', { cls: MODE === 'manage' ? 'ib-title bk-manage-title' : 'ib-title', text: MODE === 'manage' ? 'Tu cita' : meta.title }), '@title', 'Título'));
     if (MODE !== 'manage' && meta.description) {
@@ -899,7 +910,7 @@ const CLIENT_JS = String.raw`
     var hp = el('div', { cls: 'ib-hp', 'aria-hidden': 'true' }, [el('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off', id: 'hp' })]);
     form.appendChild(hp);
     var captchaBox = null;
-    if (meta.captcha && !PREVIEW) { captchaBox = el('div', { cls: 'captcha' }); form.appendChild(captchaBox); }
+    if (meta.captcha && !PREVIEW && !DEMO) { captchaBox = el('div', { cls: 'captcha' }); form.appendChild(captchaBox); }
     if (meta.captcha && PREVIEW) form.appendChild(pv(el('div', { cls: 'pv', text: 'Aquí va la verificación anti-robots.' }), '@captcha', 'Verificación anti-robots'));
     if (meta.verify_email) form.appendChild(el('p', { cls: 'muted small', 'data-testid': 'booking-verify-note', text: 'Para terminar, te enviaremos un código a tu correo.' }));
     if (st.alert) form.appendChild(el('div', { cls: 'ib-alert', role: 'alert', text: st.alert, 'data-testid': 'booking-alert' }));
@@ -937,7 +948,7 @@ const CLIENT_JS = String.raw`
     });
     if (meta.data_consent && st.values.__consent !== true) { st.errors.__consent = 'Para agendar, acepta la autorización para el tratamiento de tus datos personales.'; bad = true; }
     if (bad) { st.alert = 'Revisa los datos marcados.'; render(); return; }
-    if (PREVIEW) { st.done = { preview: true }; st.step = 'done'; render(); return; }
+    if (PREVIEW || DEMO) { st.done = { preview: true, demo: DEMO }; st.step = 'done'; render(); return; }
     // v0.1.353 — primero el código del correo (si la página lo pide y todavía no se confirmó ESE correo).
     if (meta.verify_email && !hasProof()) { requestCode(); return; }
     var values = {};
@@ -1069,7 +1080,7 @@ const CLIENT_JS = String.raw`
     } else if (meta.success_message) box.appendChild(el('p', { cls: 'muted', text: meta.success_message }));
     if (a.preview) {
       box.appendChild(summaryBox(true));
-      box.appendChild(el('div', { cls: 'pv', text: 'En la vista previa no se agenda nada.' }));
+      box.appendChild(el('div', { cls: 'pv', text: a.demo ? 'Es una demostración: no se agendó nada.' : 'En la vista previa no se agenda nada.' }));
       root.appendChild(box);
       return;
     }

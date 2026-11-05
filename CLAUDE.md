@@ -12920,6 +12920,51 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         - el aviso ámbar;
         - el cobro real que reemplaza al del resumen.
 
+  - [x] **Compartir en una ventana, con demostración en vivo (v0.1.381,
+        addendum ADR-S95, pedido del usuario con 4 capturas: "compartir se ve
+        horrible como un bloque arriba que desplaza todo… las 3 opciones de
+        inserción no muestran ningún demo… en la agenda varios menús pegados a
+        los bordes… insertar y medir en ajustes no se entiende… en la agenda
+        hay 2 lugares que hacen lo mismo… cuando oculto el logo sale el texto
+        de la empresa")**.
+        (a) **«Compartir» es una ventana** (`forms/ShareDialog.tsx`, Radix; a
+        pantalla completa en el celular), igual en el formulario y la agenda,
+        con tres pestañas: **Enlace** (copiar, abrir, WhatsApp, correo y, en
+        la agenda, «Cambiar la dirección»), **Insertar en tu sitio** y
+        **Código QR**. Se abre desde el botón de arriba y sola al publicar;
+        sin publicar avisa (en la agenda, con lo que falta) y ofrece «Publicar
+        ahora».
+        (b) **Demostración en vivo** (`forms/EmbedDemo.tsx`): una página de
+        ejemplo («tusitio.com») con la página REAL publicada dentro, en la
+        forma elegida — en la página (crece con su contenido por
+        `imb-form-height`), con el botón que abre la ventana, el panel lateral
+        o la pantalla completa, o el botón flotante en su esquina —, con el
+        texto, el color y el lado elegidos. La página pública lee
+        `?imb_demo=1&v=<huella de lo guardado>[&imb_style=bare|card]`: no pide
+        el sello, no cuenta estadísticas, no monta el anti-robots y al enviar
+        valida y muestra la pantalla final sin hacer ningún pedido (la agenda:
+        «Es una demostración: no se agendó nada»). «Sin marco» se ve al
+        instante, con aviso de guardar. `EmbedCodePicker` gana tarjetas con un
+        dibujo de cada forma y la columna de la demostración (en el celular:
+        elegir → ver → copiar).
+        (c) **Un solo lugar para compartir**: los sitios que pueden insertarlo
+        pasan junto al código; en formularios el grupo de Ajustes pasa a
+        «Medir conversiones» (con «Respuestas desde la dirección») y explica
+        dónde se inserta; en la agenda «Ajustes → Publicar» queda con lo que
+        falta, el botón, los conteos y el mensaje de cerrada, y tres botones
+        que abren Compartir en su pestaña.
+        (d) El panel de estilo de la agenda tenía un margen negativo
+        (`-imcrm-mx-4`) que pegaba «Página y fondo» al borde.
+        (e) **Logo oculto**: la agenda (`show_logo` en `PublicBookingMeta`) y
+        la página de confirmación del formulario (`hideLogo`) ya no dibujan el
+        nombre de la empresa en su lugar.
+        Antes del release, por el MCP y con su confirmación: vista «Por
+        cliente» en `suscriptores_mercado_pago` y las 10 «Por autorizar» a la
+        papelera. Ayuda: guías, Aprende (formularios y agenda), capturas con
+        la pestaña de insertar y novedad con carrusel. Tests: 2 del front
+        (830), 1 de API (logo oculto), shared 771, formularios/agenda/caché
+        101 — E2E navegador 47/47 en escritorio y 47/47 en celular oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

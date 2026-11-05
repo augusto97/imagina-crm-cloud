@@ -173,6 +173,12 @@ describe('v0.1.289 — formularios (puro)', () => {
         expect(landing).toContain('<script nonce="n">');
         // Sobre un color claro la tinta es oscura.
         expect(landing).toContain('--ib-accent-ink:#111827');
+        // Sin logo, el nombre de la empresa va en su lugar…
+        expect(landing).toContain('<div class="ib-logo">Acme</div>');
+        // …salvo que el formulario haya ocultado el logo (v0.1.381): ahí no va nada.
+        const hidden = renderFormNoticePage({ nonce: 'n', brand: { company: 'Acme', accent: '#ffffff', logoUrl: null, hideLogo: true }, title: 'T', message: 'M', tone: 'info' });
+        expect(hidden).not.toContain('class="ib-logo"');
+        expect(hidden).not.toContain('Acme');
     });
 });
 

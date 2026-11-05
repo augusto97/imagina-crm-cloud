@@ -40,7 +40,7 @@ export const articles: LearnArticle[] = [
                     'Entra a la pestaña **Agenda** y toca **Nueva agenda** (o **Crear la primera**). Arranca con un servicio y contigo atendiendo de lunes a viernes.',
                     'Se abre el constructor: al centro **la página real** con los horarios de verdad; a la izquierda, tres pestañas: **Contenido** (las partes de la página en el orden en que las recorre el cliente), **Diseño** y **Ajustes**.',
                     'Toca **Servicios** y **Quién atiende** para cargar los tuyos; el horario está en **Ajustes → Horario y disponibilidad**.',
-                    'Toca **Guardar** y, en **Ajustes → Publicar y compartir**, toca **Publicar la agenda**.',
+                    'Toca **Guardar** y, en **Ajustes → Publicar**, toca **Publicar la agenda**.',
                 ],
             },
             { t: 'demo', key: 'citas-editar', caption: 'Abrir la agenda de la lista de citas y recorrer sus partes.', fallback: 'citas-hero' },
@@ -617,17 +617,17 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'En el constructor, **Ajustes → Publicar y compartir** reúne todo lo de salir al mundo: qué falta para publicar, el botón para hacerlo, el enlace, el código para tu sitio y cómo se ve la página.',
+                md: 'En el constructor, **Ajustes → Publicar** dice qué falta y tiene el botón para publicarla. Todo lo de compartirla (el enlace, el código para tu sitio con su demostración y el código QR) está en una sola ventana: el botón **Compartir** de arriba.',
             },
             { t: 'anim', key: 'citas-embed', caption: 'La agenda insertada en el sitio web de la empresa y el enlace en la biografía de Instagram.' },
             { t: 'h', text: 'Publicar' },
             {
                 t: 'steps',
                 items: [
-                    'Entra a **Ajustes → Publicar y compartir**. Arriba ves las **citas próximas** y las **reservas en total**.',
+                    'Entra a **Ajustes → Publicar**. Arriba ves las **citas próximas** y las **reservas en total**.',
                     'Si algo falta, aparece **Para publicarla falta:** con la lista (por ejemplo, un servicio sin nadie que lo atienda). Lo que tiene un problema se marca con un punto rojo, y al tocar **Publicar** te lleva a donde se arregla.',
                     'Toca **Publicar la agenda** (o enciende el interruptor **Sin publicar** de arriba).',
-                    'Copia el **Enlace** o el código para **Insertar en tu sitio**, o toca **Compartir** en la barra de arriba.',
+                    'Al publicarla se abre sola la ventana **Compartir la agenda**: copia el **Enlace**, el código para **Insertar en tu sitio** (con la demostración de cómo queda) o descarga el **Código QR**.',
                 ],
             },
             { t: 'demo', key: 'citas-publicar', caption: 'Publicar la agenda y copiar su enlace.', fallback: 'citas-embed' },
@@ -642,24 +642,24 @@ export const articles: LearnArticle[] = [
                     { name: 'Título y Descripción', what: 'Tócalos en la vista previa: lo primero que lee el cliente, «Agenda tu cita» y «Elige el servicio, el día y la hora que te quedan bien».' },
                     { name: 'Dónde es la cita', what: 'Una dirección, «Videollamada»… Va en la página, el correo y el archivo del calendario.' },
                     { name: 'El texto de cada paso y del botón', what: 'En el **Contenido** de **Servicios**, **Quién atiende**, **Fecha y hora**, **Tus datos**, **Botón de agendar** y **Confirmación**. Vacío = el de siempre.' },
-                    { name: 'Mensaje cuando no recibe reservas', what: 'En **Ajustes → Publicar y compartir**: lo que se ve si la agenda está sin publicar o tu empresa está en solo lectura.' },
+                    { name: 'Mensaje cuando no recibe reservas', what: 'En **Ajustes → Publicar**: lo que se ve si la agenda está sin publicar o tu empresa está en solo lectura.' },
                 ],
             },
             { t: 'h', text: 'Dónde se puede insertar' },
             {
                 t: 'p',
-                md: 'En **Insertar en tu sitio** eliges cómo se ve: **En la página** (la agenda dentro de tu página), **Ventana al hacer clic** (un botón la abre sobre la página) o **Botón flotante** (un botón fijo en la esquina de cada página). Las dos últimas no cargan nada hasta que alguien las toca: lo más liviano para un sitio con muchas visitas. Es igual que en los formularios.',
+                md: 'En **Insertar en tu sitio** eliges cómo se ve: **En la página** (la agenda dentro de tu página), **Ventana al hacer clic** (un botón la abre sobre la página) o **Botón flotante** (un botón fijo en la esquina de cada página). Las dos últimas no cargan nada hasta que alguien las toca: lo más liviano para un sitio con muchas visitas. Al lado tienes una **demostración en vivo** de cómo queda (ahí no se agenda nada). Es igual que en los formularios.',
             },
             { t: 'anim', key: 'embed-popup', caption: 'El botón flotante «Agenda tu cita»: la agenda se abre en una ventana al tocarlo.' },
             {
                 t: 'p',
-                md: 'En **Sitios permitidos (uno por línea)** escribe los dominios donde se puede insertar la agenda (por ejemplo `miempresa.com` o `*.miempresa.com` para todos sus subdominios). Vacío = cualquier sitio. El enlace directo funciona siempre, desde cualquier lugar.',
+                md: 'Debajo del código, en **Sitios que pueden insertarlo** (uno por renglón), escribe los dominios donde se puede insertar la agenda (por ejemplo `miempresa.com` o `*.miempresa.com` para todos sus subdominios). Vacío = cualquier sitio. El enlace directo funciona siempre, desde cualquier lugar.',
             },
             {
                 t: 'callout',
                 tone: 'warn',
                 title: 'Cambiar la dirección',
-                md: '**Cambiar la dirección** genera un enlace nuevo: el actual deja de funcionar al instante, también donde lo hayas insertado. Las citas ya agendadas y sus enlaces para cambiar o cancelar no se ven afectados. Úsalo sólo si el enlace se filtró donde no debía.',
+                md: '**Cambiar la dirección** (en **Compartir → Enlace**) genera un enlace nuevo: el actual deja de funcionar al instante, también donde lo hayas insertado. Las citas ya agendadas y sus enlaces para cambiar o cancelar no se ven afectados. Úsalo sólo si el enlace se filtró donde no debía.',
             },
             {
                 t: 'cards',

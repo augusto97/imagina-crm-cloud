@@ -394,7 +394,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.380**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.381**
+(«Compartir» del formulario y de la agenda es una ventana con tres pestañas
+—enlace, insertar en tu sitio con una demostración en vivo, código QR—; los
+sitios permitidos viven junto al código; la agenda deja de tener dos lugares
+para compartir; el panel «Página y fondo» ya no queda pegado al borde, y con
+el logo oculto ya no aparece el nombre de la empresa); antes v0.1.380
 (la lista importada de Mercado Pago muestra el nombre de cada cliente, el
 estado real aunque Mercado Pago no entregue las cuotas —sale del resumen de
 cobros— y los cobros en «Cobros de suscripciones»; las «Por autorizar» quedan
@@ -1604,6 +1609,45 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-05 · v0.1.381** — **Compartir en una ventana, con demostración
+  en vivo** (pedido del usuario con 4 capturas: «compartir se ve horrible como
+  bloque arriba de todo… las 3 opciones de inserción no muestran ningún demo…
+  menús de la agenda pegados a los bordes… insertar y medir en ajustes no se
+  entiende… en la agenda hay 2 lugares que hacen lo mismo… cuando oculto el
+  logo sale el texto de la empresa»). Antes, por el MCP y con su
+  confirmación, en su lista `suscriptores_mercado_pago`: se creó la vista «Por
+  cliente» y se mandaron a la papelera las 10 «Por autorizar» abandonadas.
+  **Arreglos**:
+  - «Compartir» (formulario y agenda) es una ventana (`ShareDialog`) con
+    **Enlace** (copiar, WhatsApp, correo, «Cambiar la dirección» en la
+    agenda), **Insertar en tu sitio** y **Código QR**; al publicar se abre
+    sola;
+  - **demostración en vivo** (`EmbedDemo`): una página de ejemplo con la
+    página REAL publicada en modo `?imb_demo=1` (no envía, no cuenta
+    estadísticas, sin anti-robots ni sello; muestra la pantalla final) para
+    las tres formas, con el botón de la ventana, el panel lateral, la
+    pantalla completa y el botón flotante funcionando; «Sin marco» se ve al
+    instante; sin publicar, ofrece «Publicar ahora»;
+  - los **sitios que pueden insertarlo** pasan a la pestaña de insertar;
+  - formularios: el grupo de Ajustes pasa a **«Medir conversiones»** (con
+    «Respuestas desde la dirección») y un aviso que abre Compartir →
+    Insertar;
+  - agenda: **Ajustes → Publicar** queda con lo que falta, el botón de
+    publicar, los conteos y el mensaje de cerrada, y botones a Compartir (se
+    fue el enlace/código/QR duplicado);
+  - el panel de estilo de la agenda tenía un margen negativo
+    (`-imcrm-mx-4`) que pegaba «Página y fondo» al borde;
+  - **logo oculto**: la agenda (`show_logo` en la meta pública) y la página
+    de confirmación del formulario (`hideLogo`) ya no ponen el nombre de la
+    empresa en su lugar.
+  Tests: front 830 (2 nuevos de la demostración), shared 771, API de
+  formularios/agenda/caché 101; E2E navegador 47/47 en escritorio y 47/47 en
+  celular oscuro (ventana fija, enlace y WhatsApp, demostración que no crea
+  registros ni citas, sin marco, ventana/panel/flotante, QR, Ajustes, sin
+  publicar → publicar, «Página y fondo» con 16 px de margen, logo oculto).
+  Sigue sin respuesta lo de revisar cada hora los pagos y renovaciones de la
+  plataforma.
 
 - **2026-11-05 · v0.1.380** — **Suscripciones importadas: el nombre del
   cliente, el estado real y sus cobros** (reporte del usuario tras importar su

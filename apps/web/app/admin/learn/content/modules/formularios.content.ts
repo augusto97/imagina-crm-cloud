@@ -147,7 +147,7 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Barra de arriba', what: 'El nombre del formulario, el interruptor **Publicado / Sin publicar**, **Deshacer** y **Rehacer**, el botón de modo claro u oscuro, **Compartir** y **Guardar**.', tip: 'El nombre de arriba es interno: sólo lo ve tu equipo. Lo que lee el público es el **Título** de los ajustes.' },
                     { name: 'Pestaña Contenido', what: 'Todo lo que tiene el formulario, en orden: el **Encabezado** (logo, título, descripción, franja de color, portada y bienvenida), las **Preguntas** por página, lo que va **Al final** (avance, verificación, autorización de datos, botón y pantalla de agradecimiento) y la **Página** (tarjeta y fondo). Cada fila se toca para editarla y las que se pueden ocultar tienen su **ojo**. Arriba, **Agregar pregunta o contenido**.', tip: 'Para quitar el título o la franja de color, toca el ojo de su fila. Lo oculto se ve tachado y vuelve con otro toque.' },
-                    { name: 'Pestañas Diseño, Lógica y Ajustes', what: '**Diseño**: plantillas y temas guardados, y a la derecha los colores, fuentes y tamaños de todo el formulario. **Lógica**: saltos, pantallas finales y puntaje. **Ajustes**: lo que no se ve en el formulario, en grupos (General, Bienvenida, Al enviar, Correo de quien responde, Cupos y cierre, Guardar el avance, Cobrar o suscribir, Registros, Seguridad y datos, Insertar y medir).' },
+                    { name: 'Pestañas Diseño, Lógica y Ajustes', what: '**Diseño**: plantillas y temas guardados, y a la derecha los colores, fuentes y tamaños de todo el formulario. **Lógica**: saltos, pantallas finales y puntaje. **Ajustes**: lo que no se ve en el formulario, en grupos (General, Bienvenida, Al enviar, Correo de quien responde, Cupos y cierre, Guardar el avance, Cobrar o suscribir, Registros, Seguridad y datos, Medir conversiones).' },
                     { name: 'Vista previa (centro)', what: 'La página real. Toca cualquier parte para editarla: al pasar el mouse se ve su nombre. Arriba a la derecha cambias entre **Computadora**, **Celular** e **Insertado en tu sitio**.', tip: 'Revisa siempre la vista de celular: casi todas las respuestas llegan desde un teléfono.' },
                     { name: 'Panel derecho', what: 'El panel de lo que elegiste, con dos pestañas: **Contenido** (qué dice y si se muestra) y **Estilo** (sus colores, tamaños y fuente). Sin nada elegido, te invita a tocar algo.' },
                 ],
@@ -389,7 +389,7 @@ export const articles: LearnArticle[] = [
                 t: 'steps',
                 items: [
                     'Agrega al formulario la pregunta del campo que quieres llenar solo (por ejemplo **Origen**) y márcala **Oculta: se completa desde la dirección**.',
-                    'En **Ajustes → Insertar y medir**, deja encendida **Completar respuestas desde la dirección**.',
+                    'En **Ajustes → Medir conversiones**, deja encendida **Completar respuestas desde la dirección**.',
                     'Busca el **nombre interno** del campo en **Configurar lista → Campos** (es la etiqueta del campo en minúsculas y sin espacios, por ejemplo `origen`).',
                     'Arma un enlace por canal: el enlace del formulario + `?origen=instagram`. Para varios datos, únelos con `&`: `?origen=feria&vendedor=ana`.',
                     'En una selección, el valor del enlace tiene que ser el valor interno de la opción (el que ves al editar las opciones del campo).',
@@ -957,7 +957,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Lo que se **ve** en el formulario (el título, la descripción, el logo, el botón, el agradecimiento) se edita tocándolo en la vista previa o en **Contenido**. Lo que **no se ve** está en la pestaña **Ajustes**, en grupos con nombre: **General**, **Bienvenida**, **Al enviar**, **Correo de quien responde**, **Cupos y cierre**, **Guardar el avance**, **Cobrar o suscribir**, **Registros**, **Seguridad y datos** e **Insertar y medir**. Cada grupo dice cómo está («Sin límite», «Apagado»…) sin abrirlo. Aquí están todos.',
+                md: 'Lo que se **ve** en el formulario (el título, la descripción, el logo, el botón, el agradecimiento) se edita tocándolo en la vista previa o en **Contenido**. Lo que **no se ve** está en la pestaña **Ajustes**, en grupos con nombre: **General**, **Bienvenida**, **Al enviar**, **Correo de quien responde**, **Cupos y cierre**, **Guardar el avance**, **Cobrar o suscribir**, **Registros**, **Seguridad y datos** y **Medir conversiones**. Cada grupo dice cómo está («Sin límite», «Apagado»…) sin abrirlo. Aquí están todos.',
             },
             { t: 'anim', key: 'form-closing', caption: 'Con un cupo de 30, el formulario se cierra solo al llegar a 30 respuestas.' },
             { t: 'h', text: 'Textos de la página (se tocan en la vista previa)' },
@@ -1018,7 +1018,7 @@ export const articles: LearnArticle[] = [
             },
             {
                 t: 'p',
-                md: 'El formulario se adapta solo al ancho del teléfono. Los grupos **Correo de quien responde**, **Seguridad y datos** e **Insertar y medir** tienen su propio artículo.',
+                md: 'El formulario se adapta solo al ancho del teléfono. Los grupos **Correo de quien responde**, **Seguridad y datos** y **Medir conversiones** tienen su propio artículo.',
             },
             {
                 t: 'example',
@@ -1270,7 +1270,7 @@ export const articles: LearnArticle[] = [
                 t: 'steps',
                 items: [
                     'En el constructor, toca el interruptor **Sin publicar** de la barra de arriba. Se guarda y pasa a **Publicado**.',
-                    'Se abre solo el panel **Compartir el formulario** con el **Enlace** y el código para **Insertar en tu sitio**, cada uno con su botón **Copiar**.',
+                    'Se abre sola la ventana **Compartir el formulario**, con tres pestañas: **Enlace** (para copiarlo o mandarlo por WhatsApp o correo), **Insertar en tu sitio** y **Código QR**.',
                     'Toca **Abrir en otra pestaña** y llénalo tú una vez para ver llegar la respuesta a la lista.',
                     'Para dejar de recibir respuestas, toca **Publicado**: el enlace pasa a responder «no disponible» y lo que ya llegó se conserva.',
                 ],
@@ -1298,7 +1298,7 @@ export const articles: LearnArticle[] = [
             },
             {
                 t: 'p',
-                md: 'Antes de copiarlo, elige **cómo se ve** en tu sitio. Las tres formas reciben las respuestas igual; cambia sólo cuándo se carga el formulario:',
+                md: 'Antes de copiarlo, elige en **Cómo va en tu sitio** una de las tres formas. Las tres reciben las respuestas igual; cambia sólo cómo se ve y cuándo se carga el formulario. Al lado tienes una **demostración en vivo**: una página de ejemplo con tu formulario funcionando de verdad, tal como quedaría (toca el botón de la demostración para abrir la ventana o el panel; ahí no se guarda ninguna respuesta).',
             },
             {
                 t: 'cards',
@@ -1326,7 +1326,7 @@ export const articles: LearnArticle[] = [
                 t: 'steps',
                 items: [
                     'Elígelo en **Compartir → Insertar en tu sitio → En la página → Cómo se ve en tu página**, o en **Diseño → Página → Insertado en tu sitio**. Es lo mismo en los dos lugares.',
-                    'Para ver cómo queda antes de pegarlo, toca el ícono del **mundo** arriba de la vista previa (**En tu sitio**): muestra el formulario dentro de una página de ejemplo, con una línea punteada en el espacio que le da la página.',
+                    'La demostración de al lado cambia al instante; también puedes verlo con el ícono del **mundo** arriba de la vista previa (**En tu sitio**), con una línea punteada en el espacio que le da la página.',
                     'Toca **Guardar**: el sitio donde ya lo pegaste se actualiza solo, sin cambiar el código.',
                 ],
             },
@@ -1361,10 +1361,10 @@ export const articles: LearnArticle[] = [
             },
             {
                 t: 'settings',
-                title: 'Sección «Insertar en tu sitio» del constructor',
+                title: 'Más opciones',
                 rows: [
-                    { name: 'Completar respuestas desde la dirección', what: 'Permite que el enlace traiga respuestas ya escritas (`?nombre=Ana&origen=instagram`).', tip: 'Necesario para las preguntas ocultas que marcan de dónde vino cada respuesta.' },
-                    { name: 'Sitios que pueden insertarlo', what: 'Uno por renglón (ej.: tusitio.com). Vacío = cualquier sitio.', tip: 'Ponle tu dominio para que nadie copie tu formulario en otra página.' },
+                    { name: 'Sitios que pueden insertarlo', what: 'En **Compartir → Insertar en tu sitio**, debajo del código. Uno por renglón (ej.: tusitio.com). Vacío = cualquier sitio.', tip: 'Ponle tu dominio para que nadie copie tu formulario en otra página.' },
+                    { name: 'Completar respuestas desde la dirección', what: 'En **Ajustes → Medir conversiones**. Permite que el enlace traiga respuestas ya escritas (`?nombre=Ana&origen=instagram`).', tip: 'Necesario para las preguntas ocultas que marcan de dónde vino cada respuesta.' },
                 ],
             },
             {
@@ -1376,15 +1376,15 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'En el constructor, toca **Compartir** (o **Publicar**).',
-                    'Baja hasta **Código QR**: ya está dibujado con el enlace del formulario.',
+                    'En el constructor, toca **Compartir** (o publícalo: la ventana se abre sola).',
+                    'Entra a la pestaña **Código QR**: ya está dibujado con el enlace del formulario.',
                     'Toca **Imagen (PNG)** para usarlo en una publicación o un documento, o **Para imprenta (SVG)** para que la imprenta lo haga del tamaño que quiera sin que se pixele.',
                 ],
             },
             {
                 t: 'callout',
                 tone: 'info',
-                md: 'El QR lleva la marca de que viene del código impreso: en las **Estadísticas** del formulario, quienes lleguen por ahí aparecen como **Código QR** en «De dónde llegan». La agenda de citas también tiene su QR en **Publicar**.',
+                md: 'El QR lleva la marca de que viene del código impreso: en las **Estadísticas** del formulario, quienes lleguen por ahí aparecen como **Código QR** en «De dónde llegan». La agenda de citas también tiene su QR en **Compartir**.',
             },
             {
                 t: 'example',

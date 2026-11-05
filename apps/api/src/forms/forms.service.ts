@@ -281,7 +281,7 @@ export interface ConfirmOutcome {
     status: 'confirmed' | 'invalid' | 'closed' | 'failed';
     title: string;
     message: string;
-    brand: { company: string; accent: string; logoUrl: string | null; themeCss?: string; bodyClasses?: string[] } | null;
+    brand: { company: string; accent: string; logoUrl: string | null; hideLogo?: boolean; themeCss?: string; bodyClasses?: string[] } | null;
     continueUrl: string | null;
     /** v0.1.361 — Con cobro: el link para pagar (o por qué no se pudo armar). */
     payUrl?: string;
@@ -2014,6 +2014,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             company: b.app_name || f.tenantName,
             accent: f.config.settings.theme?.colors.accent ?? f.config.settings.accent_color ?? b.primary_color ?? '#0e7490',
             logoUrl: ((id) => (id !== null ? this.files.signedUrl(f.row.tenantId, id, 3600) : null))(formLogoFileId(f.config, b.logo_file_id)),
+            hideLogo: !f.config.settings.show_logo,
             themeCss: look.css,
             bodyClasses: look.classes,
         };

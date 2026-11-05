@@ -885,6 +885,8 @@ export interface PublicBookingMeta {
     accent_color: string;
     logo_url: string | null;
     company: string;
+    /** v0.1.381 — Con el logo oculto no va ni el logo ni el nombre de la empresa en su lugar. */
+    show_logo?: boolean;
     /** Zona de la empresa: los horarios se calculan en ese reloj. */
     time_zone: string;
     time_zone_label: string;

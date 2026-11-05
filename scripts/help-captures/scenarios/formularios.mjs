@@ -120,7 +120,10 @@ export default [
             { wait: 1500 },
             { click: '[data-testid="form-publish"]', then: '[data-testid="form-share-panel"]', caption: 'Enciende el interruptor de publicar: desde ese momento el enlace recibe respuestas.' },
             { wait: 1500 },
-            { shot: '[data-testid="form-share-panel"]', caption: 'Copia el enlace para enviarlo, o el código para insertarlo en tu sitio web.' },
+            { shot: '[data-testid="form-share-panel"]', caption: 'Se abre «Compartir»: copia el enlace para enviarlo por WhatsApp o correo.' },
+            { click: '[data-testid="form-share-tab-embed"]', then: '[data-testid="form-embed-demo"]', caption: 'En «Insertar en tu sitio» eliges cómo va y al lado ves cómo queda, funcionando de verdad.' },
+            { wait: 1800 },
+            { shot: '[data-testid="form-share-panel"]', caption: 'Copia el código y pégalo en tu sitio web.' },
             {
                 run: async ({ page, base, api, lists, sleep }) => {
                     const id = lists[LIST].id;

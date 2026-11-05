@@ -94,18 +94,17 @@ export function BookingElementInspector({
                         </Section>
                     )}
                     {info.sections.length > 0 && (
-                        <div className="-imcrm-mx-4 imcrm-border-t imcrm-border-border">
-                            <ThemeInspector
-                                config={config}
-                                onChange={onChange}
-                                brand={brand}
-                                isAdmin={isAdmin}
-                                showLogo={config.settings.show_logo}
-                                variant="booking"
-                                classicTheme={BOOKING_CLASSIC_THEME}
-                                only={info.sections}
-                            />
-                        </div>
+                        // v0.1.381 — sin margen negativo: con él, las secciones quedaban pegadas al borde del panel.
+                        <ThemeInspector
+                            config={config}
+                            onChange={onChange}
+                            brand={brand}
+                            isAdmin={isAdmin}
+                            showLogo={config.settings.show_logo}
+                            variant="booking"
+                            classicTheme={BOOKING_CLASSIC_THEME}
+                            only={info.sections}
+                        />
                     )}
                 </div>
             )}

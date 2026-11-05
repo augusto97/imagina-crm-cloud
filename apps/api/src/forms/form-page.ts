@@ -657,6 +657,8 @@ export interface FormNoticeBrand {
     company: string;
     accent: string;
     logoUrl: string | null;
+    /** v0.1.381 — el formulario ocultó el logo: tampoco va el nombre de la empresa en su lugar. */
+    hideLogo?: boolean;
     /** v0.1.351 — el diseño del formulario (CSS y clases); sin él, el clásico con el acento. */
     themeCss?: string;
     bodyClasses?: string[];
@@ -689,7 +691,9 @@ export function renderFormNoticePage(opts: {
     const accent = /^#[0-9a-fA-F]{6}$/.test(opts.brand.accent) ? opts.brand.accent : '#0e7490';
     const themeCss = opts.brand.themeCss ?? buildPublicThemeCss(DEFAULT_PUBLIC_THEME, { accent });
     const icon = opts.tone === 'ok' ? '✓' : opts.tone === 'error' ? '!' : '✉';
-    const logo = opts.brand.logoUrl
+    const logo = opts.brand.hideLogo
+        ? ''
+        : opts.brand.logoUrl
         ? `<header class="ib-header"><div class="ib-logo"><img src="${e(opts.brand.logoUrl)}" alt="${e(opts.brand.company)}"></div></header>`
         : opts.brand.company
           ? `<header class="ib-header"><div class="ib-logo">${e(opts.brand.company)}</div></header>`
