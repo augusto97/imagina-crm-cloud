@@ -1198,10 +1198,12 @@ export class StructureTools implements AiProposalApplier {
     // ── Lectura ──────────────────────────────────────────────────────────
 
     private async listLists(ctx: AiToolContext): Promise<AiToolResult> {
-        const lists = await this.lists.list(ctx.tenantId);
+        // Los campos de todas las listas en UNA consulta (con muchas listas, una
+        // por lista tardaba segundos antes de que el asistente pudiera hablar).
+        const [lists, byList] = await Promise.all([this.lists.list(ctx.tenantId), this.fields.listByTenantGrouped(ctx.tenantId)]);
         const out = [];
         for (const l of lists) {
-            const fields = await this.fields.listByListId(ctx.tenantId, l.id);
+            const fields = byList.get(l.id) ?? [];
             out.push({ slug: l.slug, name: l.name, icon: l.icon, fields_count: fields.length, field_slugs: fields.map((f) => f.slug) });
         }
         return { content: { lists: out, current_list: ctx.listSlug ?? null } };

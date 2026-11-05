@@ -992,6 +992,44 @@ de la marca. Al leer se hace el camino inverso, así lo que se lee se puede
 devolver con un cambio. Lo aplicado queda editable en el editor visual (el
 enlace de la propuesta abre la plantilla con `?doc=`).
 
+**Addendum v0.1.370 — el chat, rediseñado: formato, historial, pasos y
+reintentos.** Las respuestas se dibujaban como texto plano (`whitespace-pre-wrap`)
+aunque el modelo escribiera Markdown. Decisiones:
+
+- **Markdown propio, sin HTML.** `chatMarkdown.ts` (puro, con tests) convierte el
+  texto a una estructura de bloques (títulos, párrafos, listas anidadas y de
+  tareas, citas, tablas con alineación, código, separador) e `inline` (negrita,
+  cursiva, tachado, código, enlaces). `ChatMarkdown.tsx` la dibuja con React:
+  el contenido del modelo jamás llega como HTML. Un enlace sólo es enlace si es
+  `https`/`mailto`/`tel` o una ruta de la app (`/…` → `<Link>` del router); lo
+  demás queda como texto. Un bloque de código abierto se dibuja mientras llega.
+  La regla 21 del prompt le pide formato con mesura y enlaces internos por ruta.
+- **Historial en Redis, por persona y empresa.** Cada conversación vive
+  `aiconv:{tenant}:{user}:{id}` con TTL de **30 días desde el último mensaje**
+  (antes 24 h) y un índice `aiconv:idx:{tenant}:{user}` (zset por fecha); tope de
+  50 por persona (las más viejas se borran). Título = el primer pedido
+  (`aiConversationTitle`), renombrable; renombrar no la sube en el historial.
+  `GET /ai/conversations`, `PATCH|DELETE /ai/conversations/:id`, con
+  `@PlanModule('ai')` y `use_ai_assistant`.
+- **El transcript guarda los pasos y el error.** Cada respuesta lleva `steps`
+  (herramienta, etiqueta, si salió bien y un resumen en palabras —
+  `summarizeResult`: «12 registros de «clientes»», «3 grupos»…) y `error`
+  (el motivo si falló o se detuvo), así reabrir muestra lo mismo que se vio.
+- **Reintentar y Editar = `regenerate`.** El cliente manda el último pedido (o
+  el editado) con `regenerate: true`; el servidor descarta el último turno
+  (`dropLastTurn`) y lo vuelve a correr. Las propuestas ya aplicadas quedan
+  aplicadas.
+- **Detener corta de verdad.** El `close` del *request* de Node ya se disparó al
+  leer el cuerpo, así que el pedido al modelo seguía hasta el final (gastando
+  tokens) aunque la persona tocara «Detener». Ahora escucha el `close` de la
+  *respuesta* (si todavía no terminó de escribirse). Lo que alcanzó a llegar se
+  guarda con «Se detuvo antes de terminar.».
+- **Contexto de la pantalla.** El pedido lleva `record_id` además de la lista:
+  en la ficha, «este registro» es ése (`query_records` ganó `ids`). Las
+  sugerencias del panel cambian según la pantalla (`assistantContext.ts`).
+- El texto de cada vuelta del bucle va en su párrafo (antes se pegaba al de la
+  vuelta anterior), y `list_lists` lee los campos en una consulta.
+
 ### ADR-S22 — Conectores: la credencial se guarda una vez y se referencia (v0.1.196)
 
 **Contexto.** Hasta acá una credencial de servicio externo se tipeaba DENTRO de
@@ -7082,4 +7120,4 @@ a v0.1.370.
 
 ---
 
-**Versión del documento:** 1.154.0 (Formularios «sin marco» al insertarlos y logo por formulario)
+**Versión del documento:** 1.155.0 (El chat del asistente rediseñado: formato, historial, pasos y reintentos)

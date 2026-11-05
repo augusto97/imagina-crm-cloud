@@ -9,11 +9,12 @@ import {
     type AiConversation,
     type AiProposal,
     type AiStatus,
+    type AiStep,
 } from '@imagina-base/shared';
 import { randomBytes } from 'node:crypto';
 import { AiQuotaExceededError, AiQuotaService } from './ai-quota.service';
 import { AiSettingsService, AiUnavailableError } from './ai-settings.service';
-import { ConversationsStore, prepareHistoryForNewTurn, type ApiMessage, type StoredConversation } from './conversations.store';
+import { ConversationsStore, dropLastTurn, prepareHistoryForNewTurn, type ApiMessage, type StoredConversation } from './conversations.store';
 import { assistantMaxTokens, assistantModelParams } from './model-params';
 import { AiToolRegistry, type AiToolContext } from './tools/registry';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
@@ -102,7 +103,14 @@ export class AssistantService {
 
     async conversation(ctx: AiToolContext, id: string): Promise<AiConversation | null> {
         const conv = await this.conversations.load(ctx.tenantId, ctx.userId, id);
-        return conv ? { id: conv.id, messages: conv.transcript } : null;
+        if (!conv) return null;
+        return {
+            id: conv.id,
+            title: conv.title ?? '',
+            updated_at: conv.updated_at,
+            // Lo guardado antes de v0.1.370 no trae pasos ni error.
+            messages: conv.transcript.map((m) => ({ ...m, steps: m.steps ?? [], error: m.error ?? null })),
+        };
     }
 
     /**
@@ -119,23 +127,32 @@ export class AssistantService {
             newConversation(ctx, req.conversation_id);
         const toolCtx: AiToolContext = { ...ctx, listSlug: req.context?.list_slug ?? ctx.listSlug, conversationId: conv.id };
         emit({ type: 'start', conversation_id: conv.id });
+        // v0.1.370 — «Reintentar»: el último turno se descarta y se vuelve a
+        // correr (las propuestas que ya se aplicaron quedan aplicadas).
+        if (req.regenerate) dropLastTurn(conv);
         // Los turnos anteriores viajan sin su pensamiento y bien cerrados
         // (ver `prepareHistoryForNewTurn`): entre turnos cambian el sistema,
         // el recorte del historial y hasta el modelo.
         conv.messages = prepareHistoryForNewTurn(conv.messages);
 
         conv.messages.push({ role: 'user', content: req.message });
-        conv.transcript.push({ role: 'user', text: req.message, proposals: [], at: new Date().toISOString() });
+        conv.transcript.push({ role: 'user', text: req.message, proposals: [], steps: [], error: null, at: new Date().toISOString() });
 
         const client = this.clientFactory(access.apiKey);
         const tools = this.registry.toAnthropicTools(ctx);
         const timeZone = this.timeZones ? await this.timeZones.get(toolCtx.tenantId) : null;
-        const system = buildSystemPrompt(toolCtx, this.registry, timeZone);
+        const system = buildSystemPrompt(toolCtx, this.registry, timeZone, { recordId: req.context?.record_id });
         const textParts: string[] = [];
         const proposals: AiProposal[] = [];
+        const steps: AiStep[] = [];
+        // El error también queda en el transcript (se ve al reabrir la conversación).
+        let turnError: string | null = null;
         let inputTokens = 0;
         let outputTokens = 0;
         let stoppedBy: string = 'end_turn';
+        // Lo que va llegando de la vuelta en curso: si se corta (Detener, una
+        // falla), se guarda igual — es lo que la persona alcanzó a leer.
+        let partial = '';
 
         try {
             for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
@@ -153,10 +170,15 @@ export class AssistantService {
                 );
                 for await (const ev of stream as AsyncIterable<MessageStreamEvent>) {
                     if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta' && ev.delta.text) {
-                        emit({ type: 'text_delta', text: ev.delta.text });
+                        // El texto de esta vuelta empieza en otro párrafo (si no,
+                        // se pegaba al de la vuelta anterior: «…revisar.Tienes»).
+                        const sep = partial === '' && textParts.length > 0 ? '\n\n' : '';
+                        partial += ev.delta.text;
+                        emit({ type: 'text_delta', text: sep + ev.delta.text });
                     }
                 }
                 const final: Message = await stream.finalMessage();
+                partial = '';
                 inputTokens += final.usage.input_tokens + (final.usage.cache_creation_input_tokens ?? 0) + (final.usage.cache_read_input_tokens ?? 0);
                 outputTokens += final.usage.output_tokens;
                 conv.messages.push({ role: 'assistant', content: final.content });
@@ -178,7 +200,9 @@ export class AssistantService {
                         proposals.push(res.proposal);
                         emit({ type: 'proposal', proposal: res.proposal });
                     }
-                    emit({ type: 'tool_end', name: tu.name, ok: !res.isError, summary: summarizeResult(res.content, Boolean(res.isError)) });
+                    const summary = summarizeResult(res.content, Boolean(res.isError));
+                    steps.push({ name: tu.name, label: def?.label ?? tu.name, ok: !res.isError, summary });
+                    emit({ type: 'tool_end', name: tu.name, ok: !res.isError, summary });
                     results.push({
                         type: 'tool_result',
                         tool_use_id: tu.id,
@@ -194,13 +218,22 @@ export class AssistantService {
                     emit({ type: 'text_delta', text: `\n\n${note}` });
                 }
             }
+        } catch (err) {
+            // Detener (la persona cortó): el SDK lanza su propio error de abort.
+            turnError = signal?.aborted ? STOPPED_MESSAGE : errorText(err);
+            throw err;
         } finally {
+            if (partial.trim()) textParts.push(partial);
+            if (stoppedBy === 'max_tokens') turnError = MAX_TOKENS_MESSAGE;
+            if (stoppedBy === 'refusal') turnError = REFUSAL_MESSAGE;
             // Lo que se alcanzó a hablar se guarda igual (una desconexión a
             // mitad de camino no pierde la conversación).
             conv.transcript.push({
                 role: 'assistant',
                 text: textParts.join('\n\n'),
                 proposals,
+                steps,
+                error: turnError,
                 at: new Date().toISOString(),
             });
             await this.conversations.save(conv).catch((err) => this.logger.warn(`No se pudo guardar la conversación: ${String(err)}`));
@@ -211,17 +244,27 @@ export class AssistantService {
             }
         }
 
-        if (stoppedBy === 'max_tokens') {
-            emit({ type: 'error', code: 'max_tokens', message: 'La respuesta salió demasiado larga y se cortó. Pídelo por partes.' });
-        }
-        if (stoppedBy === 'refusal') {
-            emit({ type: 'error', code: 'refusal', message: 'El modelo declinó responder ese pedido.' });
-        }
+        if (stoppedBy === 'max_tokens') emit({ type: 'error', code: 'max_tokens', message: MAX_TOKENS_MESSAGE });
+        if (stoppedBy === 'refusal') emit({ type: 'error', code: 'refusal', message: REFUSAL_MESSAGE });
         emit({ type: 'done', conversation_id: conv.id, usage: { input_tokens: inputTokens, output_tokens: outputTokens } });
     }
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
+
+const STOPPED_MESSAGE = 'Se detuvo antes de terminar.';
+const MAX_TOKENS_MESSAGE = 'La respuesta salió demasiado larga y se cortó. Pídelo por partes.';
+const REFUSAL_MESSAGE = 'El modelo declinó responder ese pedido.';
+
+/** Para el transcript: el motivo en una línea (sin la pila). */
+function errorText(err: unknown): string {
+    if ((err as { name?: string }).name === 'AbortError') return STOPPED_MESSAGE;
+    if (err instanceof AiUnavailableError || err instanceof AiQuotaExceededError) return err.message;
+    const status = (err as { status?: number }).status;
+    if (status === 429) return 'El proveedor está limitando las solicitudes. Prueba de nuevo en unos segundos.';
+    if (status === 529 || status === 503) return 'El proveedor está sobrecargado. Prueba de nuevo en un momento.';
+    return 'No se pudo completar el pedido.';
+}
 
 function newConversation(ctx: AiToolContext, requestedId?: string): StoredConversation {
     return {
@@ -234,7 +277,7 @@ function newConversation(ctx: AiToolContext, requestedId?: string): StoredConver
     };
 }
 
-function summarizeResult(content: unknown, isError: boolean): string {
+export function summarizeResult(content: unknown, isError: boolean): string {
     if (isError) {
         const e = (content as { error?: unknown })?.error;
         return typeof e === 'string' ? e.slice(0, 200) : 'Error';
@@ -242,8 +285,28 @@ function summarizeResult(content: unknown, isError: boolean): string {
     const c = content as Record<string, unknown> | null;
     if (c && typeof c === 'object') {
         if (typeof c.title === 'string') return c.title;
-        if (Array.isArray(c.lists)) return `${c.lists.length} lista${c.lists.length === 1 ? '' : 's'}`;
-        if (Array.isArray(c.fields)) return `${c.fields.length} campo${c.fields.length === 1 ? '' : 's'}`;
+        const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+        const of = typeof c.list === 'string' ? ` de «${c.list}»` : '';
+        if (Array.isArray(c.rows) && typeof c.returned === 'number') {
+            return `${plural(c.returned, 'registro', 'registros')}${of}${c.has_more === true ? ' (hay más)' : ''}`;
+        }
+        if (Array.isArray(c.groups)) return `${plural(c.groups.length, 'grupo', 'grupos')}${of}`;
+        if (typeof c.metric === 'string' && (typeof c.value === 'number' || c.value === null)) {
+            return `${c.value === null ? 'sin datos' : new Intl.NumberFormat('es').format(c.value)}${of}`;
+        }
+        if (Array.isArray(c.lists)) return plural(c.lists.length, 'lista', 'listas');
+        if (Array.isArray(c.fields)) return `${plural(c.fields.length, 'campo', 'campos')}${of}`;
+        for (const [key, one, many] of [
+            ['dashboards', 'tablero', 'tableros'],
+            ['runs', 'corrida', 'corridas'],
+            ['comments', 'comentario', 'comentarios'],
+            ['members', 'persona', 'personas'],
+            ['teams', 'equipo', 'equipos'],
+            ['requests', 'solicitud', 'solicitudes'],
+        ] as const) {
+            const v = c[key];
+            if (Array.isArray(v)) return plural(v.length, one, many);
+        }
     }
     return 'Listo';
 }
@@ -252,7 +315,12 @@ function summarizeResult(content: unknown, isError: boolean): string {
  * Instrucciones del asistente. Estables entre turnos (se cachean); lo que
  * cambia por persona va al final en pocas líneas.
  */
-export function buildSystemPrompt(ctx: AiToolContext, registry: AiToolRegistry, timeZone: string | null = null): string {
+export function buildSystemPrompt(
+    ctx: AiToolContext,
+    registry: AiToolRegistry,
+    timeZone: string | null = null,
+    screen: { recordId?: number } = {},
+): string {
     const caps = (['manage_lists', 'manage_fields', 'manage_views', 'manage_dashboards', 'manage_automations'] as const).filter((c) =>
         can(ctx, c),
     );
@@ -285,8 +353,10 @@ export function buildSystemPrompt(ctx: AiToolContext, registry: AiToolRegistry, 
         '18. Plantillas y checklists: get_list_schema devuelve `record_templates` (plantillas de registro de la lista, con sus valores, subtareas y checklists). Para crear registros «como siempre» (un proyecto con sus tareas, un cliente con su checklist de alta) usa `template` en propose_create_records; para guardar un modelo nuevo, propose_create_record_template. En automatizaciones: create_subtasks_from_template sobre el registro que disparó y el trigger checklist_completed.',
         '19. Agenda de citas: get_list_schema trae las `booking_pages` de la lista (servicios, quién atiende, reglas y qué campo guarda cada dato de la cita). Para que los clientes agenden solos por un enlace usa propose_configure_booking_page: servicios con su duración, quién atiende (personas por id de list_members y/o recursos como una sala) con su horario semanal en la zona de la empresa, reglas (margen, aviso mínimo, días hacia adelante) y `writes` con el slug del campo donde va cada dato (inicio = un campo Fecha y hora). Para cómo se ve usa `design` (una plantilla de la galería, el color y qué se muestra; lo fino se ajusta en el editor). Publicarla deja que cualquiera con el enlace agende: confírmalo antes. Para reaccionar a una cita usa el disparador booking_event con {{cita.servicio}}, {{cita.inicio}}, {{cita.enlace_cancelar}}…',
         '20. Agentes de IA: cuando la persona quiere que algo se haga SOLO y con criterio sobre cada registro (clasificar tickets, resumir un caso al cerrarlo, completar datos faltantes, sugerir una respuesta, asignar por tema), propón propose_create_ai_agent con instrucciones concretas, sólo las herramientas necesarias y, salvo que pida lo contrario, en modo propose (una persona aprueba). get_list_schema trae los `ai_agents` de la lista; para que uno trabaje con otro disparador, usa la acción ask_agent en una automatización.',
+        '21. Formato: tu respuesta se ve con formato (Markdown). Usa **negrita** para lo clave, listas cortas para pasos, una tabla cuando compares o muestres varios registros (máximo 10 filas) y `código` sólo para slugs o valores técnicos. Para llevar a la persona a algo de la app, enlázalo con su ruta: una lista [nombre](/lists/<slug>/records), un registro [título](/lists/<slug>/records/<id>), un tablero [nombre](/dashboards/<id>), una automatización [nombre](/lists/<slug>/automations/<id>). Sin títulos grandes en respuestas cortas, y nunca HTML.',
         '',
         `Contexto: hoy es ${today}.${zoneLine} Rol de la persona: ${ctx.role}. Puede: ${caps.length ? caps.join(', ') : 'sólo consultar'}. Herramientas disponibles: ${toolNames.join(', ')}.` +
-            (ctx.listSlug ? ` La persona tiene abierta la lista «${ctx.listSlug}»: si no dice otra cosa, se refiere a esa.` : ''),
+            (ctx.listSlug ? ` La persona tiene abierta la lista «${ctx.listSlug}»: si no dice otra cosa, se refiere a esa.` : '') +
+            (ctx.listSlug && screen.recordId ? ` Está mirando el registro #${screen.recordId} de esa lista: «este registro» es ése (léelo con query_records con ids [${screen.recordId}]).` : ''),
     ].join('\n');
 }

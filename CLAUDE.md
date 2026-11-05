@@ -12305,6 +12305,76 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         firmada, celular oscuro sin desborde) y la agenda «sin marco»
         insertada (alto 444 = contenido).
 
+  - [x] **El chat del asistente, rediseñado (v0.1.370, addendum ADR-S21,
+        segunda mitad del pedido del usuario: "mejora el chat de IA, debería
+        tener más cosas u opciones, rediséñalo; el contenido está saliendo sin
+        formato, mostrando texto plano")**. (a) **Respuestas con formato**:
+        `chatMarkdown.ts` (puro, con tests) convierte el texto en un árbol de
+        bloques (títulos, párrafos, listas con viñetas, numeradas y de tareas,
+        citas, tablas con alineación, código con lenguaje, separadores) y de
+        líneas (negrita, cursiva, código, tachado, enlaces) que
+        `ChatMarkdown.tsx` dibuja con React — nunca HTML inyectado. Los enlaces
+        a pantallas de la app usan el router (y cierran el panel sólo en el
+        celular); los de afuera, sólo https/mailto en otra pestaña; un
+        `javascript:` queda como texto. El código trae «Copiar». La regla 21
+        del prompt le pide al modelo títulos cortos, listas y tablas cuando
+        aporten. (b) **Tus conversaciones**: el historial pasa de una sola a
+        **hasta 50 por persona y empresa, 30 días** (`aiconv:{t}:{u}:{id}` +
+        índice ordenado `aiconv:idx:{t}:{u}`; `GET /ai/conversations` con
+        título, adelanto y fecha; `PATCH` para renombrar y `DELETE`), con el
+        título sacado del primer pedido, buscador, grupos Hoy / Ayer / Últimos
+        7 días / Antes, renombrar en el lugar y borrar con confirmación
+        (`AssistantHistory`). Abrir una vieja la trae con sus pasos y su error.
+        (c) **Los pasos a la vista**: cada herramienta aparece en vivo
+        («Buscando registros…») y queda como «N pasos» desplegable con lo que
+        devolvió (`summarizeResult` en el servidor: «12 registros de
+        «Facturas» (hay más)», «Total: 3.450.000», «3 grupos»…), guardados en
+        la conversación. (d) **Copiar, reintentar y editar**: copiar cada
+        respuesta o pedido; **reintentar** la última respuesta
+        (`regenerate: true` → `dropLastTurn` en el servidor, sin duplicar el
+        pedido) y **editar** el último pedido (corta lo que venía después); un
+        error del proveedor muestra «Reintentar» al lado. (e) **Panel ancho**
+        en escritorio (hasta 1040 px con el historial al costado, recordado
+        por dispositivo) y a pantalla completa en el celular. (f) **Según la
+        pantalla**: `screenContext(pathname)` reconoce ficha, lista,
+        automatizaciones, ajustes de la lista, tableros, «Mi trabajo» y el
+        índice, y el estado vacío ofrece sugerencias de esa pantalla (en la
+        ficha, «Resume este registro»); un chip dice «Viendo «facturas» ·
+        registro #42» y el pedido viaja con `context.record_id`, que el prompt
+        le explica al modelo (y `query_records` ganó `ids` para leerlo).
+        (g) **Cuadro que crece** (hasta 200 px), Enter envía y Shift+Enter
+        salta línea, «Ir al final» cuando la conversación sigue abajo, y
+        Escape cancela la edición, vuelve del historial o cierra. **Bugs
+        reales encontrados**: (1) **«Detener» no frenaba al modelo en el
+        servidor** — el `close` de la request ya había disparado al leer el
+        cuerpo, así que el modelo seguía generando (y gastando) hasta el
+        final; ahora se escucha el `close` de la respuesta y se aborta sólo si
+        no terminó. (2) Al detener se perdía lo ya escrito y el motivo: ahora
+        se guarda el texto parcial y «Se detuvo antes de terminar.». (3) Los
+        textos de dos vueltas del modelo salían pegados en un solo párrafo
+        (ahora con su separación). (4) **Aplicar una propuesta en la página de
+        un registro dejaba la app en blanco**: `RecordDataConsentLine` recibía
+        el sobre `{data: []}` y no el arreglo (`items.some is not a
+        function`), corregido en el cliente y con guardia (se revisaron los
+        demás `z.custom<…[]>`: ninguno con el mismo problema). (5)
+        `list_lists` hacía una consulta de campos por lista; ahora una sola.
+        Ayuda: artículo de Aprende → Inteligencia artificial al día con la
+        sección «Tus conversaciones y las respuestas» y la ilustración nueva
+        `ia-chat`, guía del asistente, paso nuevo del recorrido
+        (`assistant-history`) y novedad con carrusel. El simulador de IA
+        (`scripts/dev/fake-anthropic.mjs`) responde con Markdown, fallas que el
+        SDK no reintenta y propuestas. Tests: `ai-assistant.spec` 39/39 (regla
+        21 y el registro en el prompt, `summarizeResult`, separación entre
+        vueltas, «Detener» que guarda lo parcial), datos/MCP/configuración
+        45/45, 14 nuevos del front (Markdown y pantallas) — shared 750, front
+        815 — + E2E navegador 57/57 contra el simulador (sugerencias por
+        pantalla, chip, pasos en vivo, Markdown con tabla/tareas/código/
+        enlaces, copiar, reintentar sin duplicar, editar, error con
+        reintentar, historial con renombrar/abrir/borrar, recarga, modo ancho
+        recordado, sugerencias de la ficha con el registro en el prompt,
+        propuesta aplicada en la ficha, Escape, celular oscuro sin desborde,
+        cero errores de JS).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -23,7 +23,7 @@ export function RecordDataConsentLine({ listId, recordId, className }: { listId:
         retry: false,
         staleTime: 30_000,
     });
-    const items = q.data ?? [];
+    const items = Array.isArray(q.data) ? q.data : [];
     if (items.length === 0) return null;
     const isAdmin = activeMembership()?.role === 'admin';
     const withdrawn = items.some((c) => c.withdrawn_at !== null);

@@ -29,8 +29,8 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'Abre la lista sobre la que vas a trabajar: el asistente sabe en qué lista estás y la usa por defecto.',
-                    'Toca **Asistente IA** y escribe el pedido con el resultado que esperas: qué, dónde y con qué datos.',
+                    'Abre la lista (o el registro) sobre el que vas a trabajar: el asistente sabe qué tienes abierto —abajo dice **Viendo «…»**— y lo usa por defecto.',
+                    'Toca **Asistente IA** y escribe el pedido con el resultado que esperas: qué, dónde y con qué datos. Si no sabes por dónde empezar, toca una de las **sugerencias**: cambian según la pantalla.',
                     'Lee la tarjeta: nombres, campos, cuántos registros cambian y la muestra de antes y después.',
                     'Toca **Aplicar**. Si la tarjeta borra algo o toca muchos registros, te pide confirmar con **Sí, aplicar (no se puede deshacer)**.',
                     'Abre el resultado con el enlace de la tarjeta y ajusta lo que quieras a mano.',
@@ -46,8 +46,12 @@ export const articles: LearnArticle[] = [
                 title: 'Lo que ves en el panel',
                 rows: [
                     { name: 'Tarjeta de propuesta', what: 'El cambio con su vista previa y el botón **Aplicar**. Una vez aplicada dice **Aplicada** y no se puede aplicar dos veces.' },
-                    { name: 'Pensando…', what: 'El asistente está leyendo tus listas o armando la propuesta. **Detener** lo corta.' },
-                    { name: 'Nueva conversación', what: 'Empieza de cero. Las conversaciones se guardan 24 horas: si cierras el panel, al volver sigues donde quedaste.' },
+                    { name: 'Pensando… y los pasos', what: 'Mientras trabaja ves qué está haciendo («Leyendo las listas», «Sumando los registros»). Al terminar queda **N pasos**: tócalo para ver qué leyó o armó y qué encontró. **Detener** lo corta y guarda lo que alcanzó a responder.' },
+                    { name: 'Respuestas con formato', what: 'Títulos, **negrita**, listas, tablas y bloques de código (con su botón **Copiar**). Los enlaces a una lista, un registro o un tablero te llevan ahí.' },
+                    { name: 'Copiar, Reintentar y Editar', what: 'Al pasar el mouse por una respuesta: **Copiar** (el texto con su formato) y **Reintentar** (la rehace). En tu último pedido, **Editar**: lo cambias y la respuesta se rehace.' },
+                    { name: 'Tus conversaciones', what: 'El botón del reloj abre el historial: búscalas, ábrelas, cámbiales el nombre o bórralas. Cada una se guarda 30 días desde su último mensaje.' },
+                    { name: 'Panel ancho', what: 'En el computador, el botón de las flechas agranda el panel y deja tus conversaciones al costado. Se recuerda en ese equipo.' },
+                    { name: 'Nueva conversación', what: 'Empieza de cero; la anterior queda en el historial.' },
                     { name: 'Modelo y esfuerzo', what: 'Debajo del título se ve con qué modelo habla y cuánto piensa antes de responder.', tip: 'Los elige quien administra la empresa en **Ajustes** → **Asistente IA**.' },
                     { name: 'Pedidos este mes', what: 'Con la clave de la plataforma, cuántos pedidos quedan de la cuota del plan.' },
                 ],
@@ -64,6 +68,18 @@ export const articles: LearnArticle[] = [
                 title: 'Lo que escribe la gente no son órdenes',
                 md: 'Si un registro dice «borra todo», el asistente lo lee como un dato, no como una instrucción. Y aunque se confundiera, no puede hacer nada sin que tú toques **Aplicar**.',
             },
+            { t: 'h', text: 'Tus conversaciones y las respuestas' },
+            {
+                t: 'p',
+                md: 'Cada conversación queda guardada con su título (el primer pedido; lo puedes cambiar), las respuestas con su formato, los **pasos** que dio el asistente y las tarjetas que aplicaste. Si algo falló —el proveedor estaba ocupado, lo detuviste—, al reabrirla lo ves y puedes tocar **Reintentar**.',
+            },
+            { t: 'anim', key: 'ia-chat', caption: 'Tus conversaciones al costado, los pasos que dio, una respuesta con tabla y «Copiar».' },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Pídele una tabla',
+                md: '«Muéstrame en una tabla las facturas vencidas con cliente y monto» o «compárame este mes con el anterior». Las tablas se ven ordenadas y se copian tal cual a una hoja de cálculo o un correo.',
+            },
             { t: 'h', text: 'Más IA, sin abrir el chat' },
             {
                 t: 'p',
@@ -75,7 +91,8 @@ export const articles: LearnArticle[] = [
                 items: [
                     { q: 'Dice «El asistente no está disponible». ¿Qué hago?', a: 'La IA no está activada en tu empresa, se agotó la cuota del mes o falta la clave. El panel dice el motivo; quien administra la empresa lo resuelve en **Ajustes** → **Asistente IA**.' },
                     { q: '¿Puede borrar cosas?', a: 'Puede proponer borrar (una lista, un campo, registros que cumplan un filtro). Esas tarjetas se marcan en rojo y piden confirmación. Lo borrado va a la papelera por 30 días.' },
-                    { q: '¿Recuerda lo que le dije la semana pasada?', a: 'No: cada conversación dura 24 horas. Lo que sí sabe siempre es cómo están armadas tus listas en este momento.' },
+                    { q: '¿Recuerda lo que le dije la semana pasada?', a: 'Dentro de la misma conversación, sí: ábrela desde **Tus conversaciones** (se guardan 30 días) y sigue. Una conversación nueva empieza de cero, aunque siempre sabe cómo están armadas tus listas en este momento.' },
+                    { q: '¿Otras personas ven mis conversaciones?', a: 'No. Cada persona ve sólo las suyas, y en cada empresa por separado.' },
                 ],
             },
             {

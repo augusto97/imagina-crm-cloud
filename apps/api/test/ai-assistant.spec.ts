@@ -7,8 +7,8 @@ import { z } from 'zod';
 import { AiModelCatalogService, capsFrom, type ProviderModel } from '../src/ai/ai-model-catalog.service';
 import { AiQuotaExceededError, AiQuotaService } from '../src/ai/ai-quota.service';
 import { AiSettingsService, AiUnavailableError } from '../src/ai/ai-settings.service';
-import { AssistantService, buildSystemPrompt, type AiClientFactory } from '../src/ai/assistant.service';
-import { ConversationsStore, INTERRUPTED_TURN_NOTE, prepareHistoryForNewTurn, trimHistory } from '../src/ai/conversations.store';
+import { AssistantService, buildSystemPrompt, summarizeResult, type AiClientFactory } from '../src/ai/assistant.service';
+import { ConversationsStore, INTERRUPTED_TURN_NOTE, dropLastTurn, prepareHistoryForNewTurn, previewOf, trimHistory } from '../src/ai/conversations.store';
 import { assistantMaxTokens, assistantModelParams } from '../src/ai/model-params';
 import { ProposalsService } from '../src/ai/proposals.service';
 import { ProposalsStore } from '../src/ai/proposals.store';
@@ -221,6 +221,27 @@ describe('Herramientas del asistente (puras)', () => {
         expect(p).toContain('Rol de la persona: manager');
         expect(p).toContain('«facturas»');
         expect(p).toContain('Jamás digas "ya lo creé"');
+    });
+
+    it('v0.1.370 — el prompt pide formato y sabe qué registro está mirando la persona', () => {
+        const registry = new AiToolRegistry();
+        const p = buildSystemPrompt({ tenantId: 1, userId: 1, role: 'admin', listSlug: 'facturas' }, registry, null, { recordId: 42 });
+        expect(p).toContain('21. Formato');
+        expect(p).toContain('registro #42');
+        // Sin lista abierta el registro no se menciona (no se sabe de qué lista es).
+        expect(buildSystemPrompt({ tenantId: 1, userId: 1, role: 'admin' }, registry, null, { recordId: 42 })).not.toContain('registro #42');
+    });
+
+    it('v0.1.370 — cada paso se resume en palabras', () => {
+        expect(summarizeResult({ list: 'clientes', returned: 12, has_more: true, rows: [] }, false)).toBe('12 registros de «clientes» (hay más)');
+        expect(summarizeResult({ list: 'clientes', returned: 1, rows: [] }, false)).toBe('1 registro de «clientes»');
+        expect(summarizeResult({ list: 'ventas', metric: 'sum', value: 1500000 }, false)).toBe(`${new Intl.NumberFormat('es').format(1500000)} de «ventas»`);
+        expect(summarizeResult({ list: 'ventas', metric: 'count', value: 3, groups: [{}, {}] }, false)).toBe('2 grupos de «ventas»');
+        expect(summarizeResult({ lists: [{}, {}, {}] }, false)).toBe('3 listas');
+        expect(summarizeResult({ runs: [{}] }, false)).toBe('1 corrida');
+        expect(summarizeResult({ error: 'No existe la lista «x»' }, true)).toBe('No existe la lista «x»');
+        expect(summarizeResult({ title: 'Agregar 2 campos' }, false)).toBe('Agregar 2 campos');
+        expect(summarizeResult('raro', false)).toBe('Listo');
     });
 });
 
@@ -831,6 +852,157 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         // Primera llamada del turno siguiente: ningún pensamiento de antes.
         expect(JSON.stringify(fake.seen[2])).not.toContain('"thinking"');
         expect(JSON.stringify(fake.seen[2])).toContain('Tienes 0 listas.');
+    });
+
+    // ── Historial de conversaciones y «reintentar» (v0.1.370) ─────────
+
+    it('v0.1.370 — historial: título del primer pedido, pasos y vista previa; renombrar y borrar; cada persona ve lo suyo', async () => {
+        const { svc } = assistantWith([
+            { tool: 'list_lists', input: {} },
+            { text: '## Tus listas\n\nTodavía **no** tienes listas.' },
+            { text: 'Te armo una de **contactos**.' },
+        ]);
+        const first = await run(svc, ctx, 'Hola, ¿qué listas tengo en esta empresa? Quiero ordenar mis clientes y proveedores de este año');
+        const id = (first.at(-1) as { conversation_id: string }).conversation_id;
+        const conv = await svc.conversation(ctx, id);
+        // El paso de la herramienta queda guardado con su resumen.
+        expect(conv!.messages[1]!.steps).toEqual([{ name: 'list_lists', label: expect.any(String), ok: true, summary: '0 listas' }]);
+        expect(conv!.messages[1]!.error).toBeNull();
+        expect(conv!.title).toBe('Hola, ¿qué listas tengo en esta empresa? Quiero ordenar mis…');
+
+        // Otra conversación, más nueva.
+        const second = await run(svc, ctx, 'Ármame una lista de contactos');
+        const id2 = (second.at(-1) as { conversation_id: string }).conversation_id;
+        let list = await conversations.list(tenantId, userId);
+        expect(list.map((c) => c.id)).toEqual([id2, id]);
+        expect(list[1]).toMatchObject({ messages: 2, preview: 'Tus listas Todavía no tienes listas.' });
+
+        // Renombrar no la sube en el historial; un título vacío no vale.
+        expect((await conversations.rename(tenantId, userId, id, '  Listas del año  '))!.title).toBe('Listas del año');
+        list = await conversations.list(tenantId, userId);
+        expect(list.map((c) => c.title)).toEqual(['Ármame una lista de contactos', 'Listas del año']);
+
+        // Otra persona u otra empresa no la ven ni la borran.
+        expect(await conversations.list(tenantId, userId + 999)).toEqual([]);
+        expect(await conversations.list(otherTenantId, userId)).toEqual([]);
+        expect(await conversations.remove(otherTenantId, userId, id)).toBe(false);
+        expect(await svc.conversation({ ...ctx, userId: userId + 999 }, id)).toBeNull();
+
+        // Borrar la saca del historial y ya no se puede abrir.
+        expect(await conversations.remove(tenantId, userId, id)).toBe(true);
+        expect((await conversations.list(tenantId, userId)).map((c) => c.id)).toEqual([id2]);
+        expect(await svc.conversation(ctx, id)).toBeNull();
+        // Se guarda 30 días desde el último mensaje.
+        expect(await redis.ttl(`aiconv:${tenantId}:${userId}:${id2}`)).toBeGreaterThan(29 * 24 * 3600);
+    });
+
+    it('v0.1.370 — el historial guarda las 50 más recientes y borra las más viejas', async () => {
+        for (let i = 0; i < 52; i++) {
+            await conversations.save({
+                id: `conv-${String(i).padStart(4, '0')}`,
+                tenantId,
+                userId,
+                messages: [],
+                transcript: [{ role: 'user', text: `Pedido ${i}`, proposals: [], steps: [], error: null, at: '' }],
+                updated_at: new Date(Date.now() - (52 - i) * 1000).toISOString(),
+            }, { touch: false });
+        }
+        const list = await conversations.list(tenantId, userId);
+        expect(list).toHaveLength(50);
+        expect(list[0]!.title).toBe('Pedido 51');
+        expect(list.at(-1)!.title).toBe('Pedido 2');
+        expect(await redis.exists(`aiconv:${tenantId}:${userId}:conv-0000`)).toBe(0);
+    });
+
+    it('v0.1.370 — «Reintentar» descarta el último turno y lo vuelve a correr; el error queda en el transcript', async () => {
+        const { svc, fake } = assistantWith([
+            { text: 'Primera respuesta.' },
+            { tool: 'list_lists', input: {} },
+            { text: 'Respuesta que no gustó.' },
+            { text: 'Mejor respuesta.' },
+        ]);
+        const first = await run(svc, ctx, '¿qué puedes hacer?');
+        const id = (first.at(-1) as { conversation_id: string }).conversation_id;
+        await run(svc, ctx, '¿cuántas listas tengo?', id);
+        const events: AiChatEvent[] = [];
+        await svc.chat(ctx, { message: '¿cuántas listas tengo?', conversation_id: id, regenerate: true }, (e) => events.push(e));
+        const conv = await svc.conversation(ctx, id);
+        expect(conv!.messages.map((m) => `${m.role}:${m.text}`)).toEqual([
+            'user:¿qué puedes hacer?',
+            'assistant:Primera respuesta.',
+            'user:¿cuántas listas tengo?',
+            'assistant:Mejor respuesta.',
+        ]);
+        // Al modelo le llegó la conversación SIN el turno descartado (ni su herramienta).
+        const sent = JSON.stringify(fake.seen.at(-1));
+        expect(sent).not.toContain('Respuesta que no gustó');
+        expect(sent).not.toContain('tool_result');
+        expect(fake.seen.at(-1)!.filter((m) => m.role === 'user')).toHaveLength(2);
+
+        // Un corte del modelo deja el motivo en la respuesta guardada.
+        const broken = new AssistantService(settings, quota, conversations, registry, () =>
+            ({
+                messages: {
+                    stream: () => {
+                        throw Object.assign(new Error('sobrecarga'), { status: 529 });
+                    },
+                },
+            }) as never,
+        );
+        await expect(broken.chat(ctx, { message: 'otra cosa', conversation_id: id }, () => undefined)).rejects.toMatchObject({ status: 529 });
+        const after = await svc.conversation(ctx, id);
+        expect(after!.messages.at(-1)).toMatchObject({ role: 'assistant', error: 'El proveedor está sobrecargado. Prueba de nuevo en un momento.' });
+    });
+
+    it('v0.1.370 — el texto de cada vuelta va en su párrafo; «Detener» corta, guarda lo que se leyó y lo dice', async () => {
+        const { svc } = assistantWith([{ tool: 'list_lists', input: {}, text: 'Voy a revisar tus listas.' }, { text: 'Tienes varias listas.' }]);
+        const events = await run(svc, ctx, '¿qué listas tengo?');
+        const deltas = events.filter((e): e is Extract<AiChatEvent, { type: 'text_delta' }> => e.type === 'text_delta').map((e) => e.text);
+        expect(deltas).toEqual(['Voy a revisar tus listas.', '\n\nTienes varias listas.']);
+        const id = (events.at(-1) as { conversation_id: string }).conversation_id;
+        expect((await svc.conversation(ctx, id))!.messages.at(-1)!.steps).toEqual([expect.objectContaining({ name: 'list_lists', ok: true })]);
+
+        // Detener a mitad: el modelo alcanzó a escribir una parte y el pedido se corta.
+        const ac = new AbortController();
+        const stopping = new AssistantService(settings, quota, conversations, registry, () =>
+            ({
+                messages: {
+                    stream: () => ({
+                        async *[Symbol.asyncIterator]() {
+                            yield { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Tienes **3 listas**: ' } };
+                            ac.abort();
+                            throw new Error('Request was aborted.');
+                        },
+                        finalMessage: async () => {
+                            throw new Error('nunca');
+                        },
+                    }),
+                },
+            }) as never,
+        );
+        await expect(stopping.chat(ctx, { message: 'cuéntame más', conversation_id: id }, () => undefined, ac.signal)).rejects.toThrow('aborted');
+        const after = await svc.conversation(ctx, id);
+        expect(after!.messages.at(-1)).toMatchObject({ role: 'assistant', text: 'Tienes **3 listas**: ', error: 'Se detuvo antes de terminar.' });
+    });
+
+    it('v0.1.370 — dropLastTurn y previewOf son puros', () => {
+        const conv = {
+            messages: [
+                { role: 'user' as const, content: 'a' },
+                { role: 'assistant' as const, content: [{ type: 'tool_use', id: 't1' }] },
+                { role: 'user' as const, content: [{ type: 'tool_result', tool_use_id: 't1' }] },
+                { role: 'assistant' as const, content: [{ type: 'text', text: 'r' }] },
+            ],
+            transcript: [
+                { role: 'user' as const, text: 'a', proposals: [], steps: [], error: null, at: '' },
+                { role: 'assistant' as const, text: 'r', proposals: [], steps: [], error: null, at: '' },
+            ],
+        };
+        expect(dropLastTurn(conv)).toBe('a');
+        expect(conv.messages).toEqual([]);
+        expect(conv.transcript).toEqual([]);
+        expect(dropLastTurn(conv)).toBeNull();
+        expect(previewOf('## Título\n\n- **uno** y [enlace](https://x.co)\n```js\ncode\n```')).toBe('Título - uno y enlace');
     });
 
     // ── Nivel de esfuerzo (v0.1.306) ───────────────────────────────────

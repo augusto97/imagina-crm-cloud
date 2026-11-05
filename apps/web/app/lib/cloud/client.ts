@@ -125,6 +125,7 @@ import {
     aiApplyResultSchema,
     aiChatEventSchema,
     aiConversationSchema,
+    aiConversationListSchema,
     aiStatusSchema,
     aiModelCatalogSchema,
     type AiModelCatalog,
@@ -142,6 +143,7 @@ import {
     type AiChatEvent,
     type AiChatRequest,
     type AiConversation,
+    type AiConversationList,
     type AiStatus,
     type CreatePersonalTokenInput,
     type CreatedPersonalToken,
@@ -1348,6 +1350,16 @@ export class CloudClient {
     aiConversation(id: string): Promise<AiConversation> {
         return this.request('GET', `/ai/conversations/${encodeURIComponent(id)}`, { schema: aiConversationSchema });
     }
+    /** v0.1.370 — El historial: las conversaciones de la persona en esta empresa. */
+    aiConversations(): Promise<AiConversationList> {
+        return this.request('GET', '/ai/conversations', { schema: aiConversationListSchema });
+    }
+    async aiRenameConversation(id: string, title: string): Promise<void> {
+        await this.request('PATCH', `/ai/conversations/${encodeURIComponent(id)}`, { body: { title } });
+    }
+    async aiDeleteConversation(id: string): Promise<void> {
+        await this.request('DELETE', `/ai/conversations/${encodeURIComponent(id)}`, {});
+    }
     aiApply(proposalId: string): Promise<AiApplyResult> {
         return this.request('POST', `/ai/proposals/${encodeURIComponent(proposalId)}/apply`, { schema: aiApplyResultSchema });
     }
@@ -1795,7 +1807,10 @@ export class CloudClient {
     }
     /** Las autorizaciones de datos que tocan a un registro (para la ficha, sin IP ni navegador). */
     recordDataConsents(list: string | number, recordId: number): Promise<RecordDataConsentDto[]> {
-        return this.request('GET', `/lists/${list}/records/${recordId}/data-consents`, { schema: z.custom<RecordDataConsentDto[]>() });
+        // El API responde `{ data: [...] }`: sin abrir el sobre, un refresco de
+        // la ficha (p. ej. tras aplicar una propuesta del asistente) recibía
+        // un objeto y la línea de la ficha se rompía.
+        return this.unwrap(this.request('GET', `/lists/${list}/records/${recordId}/data-consents`, { schema: z.object({ data: z.custom<RecordDataConsentDto[]>() }) }));
     }
     /** Portal: el estado de la autorización y el texto vigente (se pide aunque no esté aceptada). */
     portalConsent(): Promise<PortalConsentDto> {
