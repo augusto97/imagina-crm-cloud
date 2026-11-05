@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { COLLECTION_PROVIDER_LABEL, type PaymentLink, type RecordPayments } from '@imagina-base/shared';
+import { COLLECTION_CURRENCY_OPTIONS, COLLECTION_PROVIDER_LABEL, collectionCurrencyError, collectionCurrencyFor, type PaymentLink, type RecordPayments } from '@imagina-base/shared';
 import { Ban, Columns3, ExternalLink, Loader2, RefreshCw, Wallet, X } from 'lucide-react';
 import { Link } from 'react-router';
 
@@ -229,7 +229,9 @@ function RecordPaymentsPanelInner({
                                                 description:
                                                     l.provider === 'wompi'
                                                         ? __('El link se desactiva en Wompi y queda «Anulado».')
-                                                        : __('Queda «Anulado» aquí. Mercado Pago no permite desactivar el link: si el cliente igual paga, se registra el pago.'),
+                                                        : l.provider === 'paypal'
+                                                          ? __('Queda «Anulado»: el link deja de llevar a PayPal y el cliente ve que el cobro se anuló.')
+                                                          : __('Queda «Anulado» aquí. Mercado Pago no permite desactivar el link: si el cliente igual paga, se registra el pago.'),
                                                 confirmLabel: __('Anular'),
                                                 destructive: true,
                                             });
@@ -327,15 +329,23 @@ function CollectDialog({
     const conn = data.connections.find((c) => c.id === connectionId) ?? data.connections[0]!;
     const [title, setTitle] = useState(data.suggested.title);
     const [amount, setAmount] = useState(data.suggested.amount !== null ? String(data.suggested.amount) : '');
-    const [currency, setCurrency] = useState(data.suggested.currency ?? 'COP');
+    const [currency, setCurrency] = useState(collectionCurrencyFor(conn.provider, data.suggested.currency));
     const [email, setEmail] = useState(data.suggested.payer_email ?? '');
     const [days, setDays] = useState('');
     const [error, setError] = useState<string | null>(null);
+    // v0.1.372 — PayPal no cobra en pesos: un monto sugerido en COP no se manda
+    // como si fueran dólares; se pide escribir el valor en la moneda de PayPal.
+    const suggestedUnsupported = data.suggested.currency !== null && collectionCurrencyError(conn.provider, data.suggested.currency) !== null;
 
-    // Wompi cobra sólo en pesos colombianos.
+    // Wompi cobra sólo en pesos colombianos; PayPal nunca en pesos.
     useEffect(() => {
-        if (conn.provider === 'wompi') setCurrency('COP');
-    }, [conn.provider]);
+        setCurrency((cur) => collectionCurrencyFor(conn.provider, collectionCurrencyError(conn.provider, cur) ? data.suggested.currency : cur));
+        if (data.suggested.currency !== null && collectionCurrencyError(conn.provider, data.suggested.currency)) setAmount('');
+        else if (data.suggested.amount !== null) setAmount((a) => (a === '' ? String(data.suggested.amount) : a));
+    }, [conn.provider, data.suggested.currency, data.suggested.amount]);
+    const currencyOptions = COLLECTION_CURRENCY_OPTIONS[conn.provider].some((o) => o.value === currency)
+        ? COLLECTION_CURRENCY_OPTIONS[conn.provider]
+        : [...COLLECTION_CURRENCY_OPTIONS[conn.provider], { value: currency, label: currency }];
 
     const create = useMutation({
         mutationFn: () =>
@@ -418,15 +428,21 @@ function CollectDialog({
                                     value={currency}
                                     disabled={conn.provider === 'wompi'}
                                     onChange={(e) => setCurrency(e.target.value)}
+                                    data-testid="imcrm-pay-currency"
                                 >
-                                    {['COP', 'MXN', 'ARS', 'CLP', 'PEN', 'UYU', 'BRL', 'USD'].map((c) => (
-                                        <option key={c} value={c}>
-                                            {c}
+                                    {currencyOptions.map((c) => (
+                                        <option key={c.value} value={c.value}>
+                                            {c.value}
                                         </option>
                                     ))}
                                 </Select>
                             </div>
                         </div>
+                        {conn.provider === 'paypal' && suggestedUnsupported && (
+                            <p className="imcrm-rounded-md imcrm-bg-amber-500/10 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-amber-800 dark:imcrm-text-amber-300" data-testid="imcrm-pay-paypal-currency">
+                                {__('PayPal no cobra en pesos colombianos: escribe el monto en dólares (u otra moneda de PayPal).')}
+                            </p>
+                        )}
                         {amountValue > 0 && (
                             <p className="imcrm-text-xs imcrm-text-muted-foreground">
                                 {__('Se cobra')} <strong>{formatMoney(amountValue, currency)}</strong>

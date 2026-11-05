@@ -534,7 +534,7 @@ function ConnectedRow({
                     </Link>
                 </Button>
             )}
-            {(c.integration_key === 'mercadopago' || c.integration_key === 'wompi') && c.can_edit && (
+            {(c.integration_key === 'mercadopago' || c.integration_key === 'wompi' || c.integration_key === 'paypal') && c.can_edit && (
                 <Button size="sm" variant="outline" asChild>
                     <Link to={`/settings/collections/${c.id}`} data-testid="imcrm-collections-open">
                         <Wallet className="imcrm-h-3.5 imcrm-w-3.5" />

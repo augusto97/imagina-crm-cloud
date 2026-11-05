@@ -12,7 +12,9 @@ import { idSchema } from './common';
  * pago con la credencial de la empresa— y lo escribe en el registro.
  */
 
-export const COLLECTION_PROVIDERS = ['mercadopago', 'wompi'] as const;
+// v0.1.372 — PayPal: cobros en dólares (u otra moneda que acepte PayPal) con
+// la cuenta de la empresa. Ver `paypal-gateway.ts` en la API.
+export const COLLECTION_PROVIDERS = ['mercadopago', 'wompi', 'paypal'] as const;
 export const collectionProviderSchema = z.enum(COLLECTION_PROVIDERS);
 export type CollectionProvider = z.infer<typeof collectionProviderSchema>;
 
@@ -23,7 +25,95 @@ export function isCollectionProvider(value: unknown): value is CollectionProvide
 export const COLLECTION_PROVIDER_LABEL: Record<CollectionProvider, string> = {
     mercadopago: 'Mercado Pago',
     wompi: 'Wompi',
+    paypal: 'PayPal',
 };
+
+/**
+ * v0.1.372 — Monedas en que cobra PayPal (las de su API REST). PayPal NO cobra
+ * en pesos colombianos: una empresa de Colombia cobra con PayPal en dólares.
+ * Las tres sin decimales (JPY, HUF, TWD) se mandan sin centavos.
+ */
+export const PAYPAL_CURRENCIES = [
+    'USD',
+    'EUR',
+    'MXN',
+    'CAD',
+    'GBP',
+    'AUD',
+    'BRL',
+    'CHF',
+    'JPY',
+    'SEK',
+    'NOK',
+    'DKK',
+    'PLN',
+    'CZK',
+    'HUF',
+    'ILS',
+    'NZD',
+    'SGD',
+    'HKD',
+    'PHP',
+    'THB',
+    'TWD',
+    'MYR',
+    'CNY',
+] as const;
+export const PAYPAL_ZERO_DECIMAL_CURRENCIES: readonly string[] = ['JPY', 'HUF', 'TWD'];
+
+/** Las monedas que se ofrecen al cobrar, por proveedor (la primera es la sugerida). */
+export const COLLECTION_CURRENCY_OPTIONS: Record<CollectionProvider, ReadonlyArray<{ value: string; label: string }>> = {
+    mercadopago: [
+        { value: 'COP', label: 'Peso colombiano (COP)' },
+        { value: 'MXN', label: 'Peso mexicano (MXN)' },
+        { value: 'ARS', label: 'Peso argentino (ARS)' },
+        { value: 'CLP', label: 'Peso chileno (CLP)' },
+        { value: 'PEN', label: 'Sol peruano (PEN)' },
+        { value: 'UYU', label: 'Peso uruguayo (UYU)' },
+        { value: 'BRL', label: 'Real (BRL)' },
+    ],
+    wompi: [{ value: 'COP', label: 'Peso colombiano (COP)' }],
+    paypal: [
+        { value: 'USD', label: 'Dólar estadounidense (USD)' },
+        { value: 'EUR', label: 'Euro (EUR)' },
+        { value: 'MXN', label: 'Peso mexicano (MXN)' },
+        { value: 'CAD', label: 'Dólar canadiense (CAD)' },
+        { value: 'GBP', label: 'Libra esterlina (GBP)' },
+        { value: 'AUD', label: 'Dólar australiano (AUD)' },
+        { value: 'BRL', label: 'Real (BRL)' },
+        { value: 'CHF', label: 'Franco suizo (CHF)' },
+        { value: 'JPY', label: 'Yen (JPY)' },
+    ],
+};
+
+/** La moneda con la que arranca un cobro de ese proveedor. */
+export function defaultCollectionCurrency(provider: CollectionProvider): string {
+    return COLLECTION_CURRENCY_OPTIONS[provider][0]!.value;
+}
+
+/**
+ * v0.1.372 — ¿Ese proveedor cobra en esa moneda? (null = sí). Mercado Pago
+ * cobra en la moneda de la cuenta (la valida él); Wompi sólo en pesos; PayPal,
+ * en las de su lista.
+ */
+export function collectionCurrencyError(provider: CollectionProvider, currency: string): string | null {
+    const c = currency.trim().toUpperCase();
+    if (provider === 'wompi') return c === 'COP' ? null : 'Wompi sólo cobra en pesos colombianos (COP).';
+    if (provider === 'paypal') {
+        if ((PAYPAL_CURRENCIES as readonly string[]).includes(c)) return null;
+        return c === 'COP'
+            ? 'PayPal no cobra en pesos colombianos (COP): cobra en dólares (USD) u otra moneda que acepte PayPal.'
+            : `PayPal no cobra en ${c}: usa dólares (USD) u otra moneda que acepte PayPal.`;
+    }
+    return null;
+}
+
+/** La moneda que se usa de verdad: la pedida si el proveedor la acepta; si no, la suya. */
+export function collectionCurrencyFor(provider: CollectionProvider, currency: string | null | undefined): string {
+    const c = (currency ?? '').trim().toUpperCase();
+    if (c !== '' && collectionCurrencyError(provider, c) === null) return c;
+    return defaultCollectionCurrency(provider);
+}
 
 /**
  * Estado de un link. `mismatch` = el proveedor dice «aprobado» pero por otro
@@ -113,7 +203,7 @@ export const createPaymentLinkSchema = z.object({
 });
 export type CreatePaymentLinkInput = z.infer<typeof createPaymentLinkSchema>;
 
-/** Una conexión que sirve para cobrar (Mercado Pago o Wompi). */
+/** Una conexión que sirve para cobrar (Mercado Pago, Wompi o PayPal). */
 export const collectionConnectionSchema = z.object({
     id: idSchema,
     name: z.string(),
@@ -281,6 +371,12 @@ export const collectionConnectionDetailSchema = z.object({
     events_secret_set: z.boolean(),
     /** Último aviso recibido (para saber si la URL quedó bien pegada). */
     last_hook_at: z.string().nullable(),
+    /**
+     * v0.1.372 — PayPal: la app registró sola la URL de avisos en la cuenta
+     * (`true`), o no pudo (`hook_error` dice por qué y la URL se pega a mano).
+     */
+    hook_auto: z.boolean().default(false),
+    hook_error: z.string().nullable().default(null),
     links: z.array(paymentLinkRowSchema),
     totals: z.object({
         pending: z.number(),

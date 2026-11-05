@@ -394,8 +394,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.371**
-(el registro de cobros de las suscripciones: cada cobro como un registro de
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.372**
+(PayPal como tercer proveedor de cobros de cada empresa: links de pago en
+dólares desde la ficha, las automatizaciones, los formularios y el portal, con
+link propio de la app que reusa o crea la orden, captura al volver el cliente,
+aviso o «Verificar», webhook registrado solo con https y páginas con la marca
+de la empresa, addendum ADR-S31; antes v0.1.371
+el registro de cobros de las suscripciones: cada cobro como un registro de
 otra lista vinculada al cliente, con su tablero, y cuatro herramientas del
 asistente/MCP para leer suscripciones, armar planes, elegir columnas y
 suscribir/pausar/cancelar, addendum ADR-S96; arregla las tablas de los
@@ -450,7 +455,7 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   renombrar y borrar; los pasos de las herramientas a la vista; copiar,
   reintentar y editar el último pedido; modo ancho; sugerencias según la
   pantalla con el registro abierto; cuadro que crece). Las suscripciones
-  siguieron con **v0.1.371** (hecha) y queda **v0.1.372** (PayPal). Ideas que quedaron
+  siguieron con **v0.1.371** y **v0.1.372** (PayPal links), hechas. Ideas que quedaron
   para el chat si el usuario las pide: adjuntar archivos al pedido, compartir
   una conversación con otra persona y elegir el modelo por conversación.
 - 2026-11-05 — **Suscripciones y cobros recurrentes (Mercado Pago y PayPal)
@@ -465,8 +470,11 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   herramientas del asistente/MCP; al final NO es una lista espejo: es una
   lista común de la empresa donde la app escribe las columnas elegidas, así
   se pueden sumar columnas propias y borrar un cobro mal registrado — ver el
-  addendum de ADR-S96). Sigue **v0.1.372** (PayPal como
-  conector de la empresa, links y suscripciones en USD); en el medio el
+  addendum de ADR-S96) y **v0.1.372 hecha** (PayPal como conector de la
+  empresa con links de pago en dólares; partí PayPal en dos: los links primero
+  y las suscripciones después). Sigue **v0.1.373** (suscripciones con PayPal:
+  plan, suscribir desde la ficha/formulario/acción, estado, cobros, registro de
+  cobros y asistente/MCP, igual que Mercado Pago); en el medio el
   usuario pidió logo/«sin marco» (v0.1.369) y el chat de IA (v0.1.370), ya
   publicados. Ideas que
   quedaron anotadas para más adelante: bloquear a mano las columnas de la
@@ -1483,6 +1491,27 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.372** — **PayPal para los cobros de cada empresa**
+  (cuarta parte de «hazlo todo como lo veas más recomendable»; decidí partir
+  PayPal en dos: links ahora, suscripciones en v0.1.373). Integraciones →
+  PayPal con Client ID + Secret (detecta solo si es de producción o de
+  prueba); «Cobrar» en la ficha, la acción «Crear link de pago», «Cobrar al
+  enviar» y el bloque «Pagos» del portal cobran en dólares (u otra moneda de
+  PayPal). **Decisiones**: el link es de la app (`/public/pay/<ref>`) y no de
+  PayPal, porque una orden sin aprobar vence: cada visita reusa la orden de la
+  última hora o crea otra; aprobar no es pagar, así que la app captura al
+  volver el cliente, al llegar el aviso o con «Verificar» (idempotente); el
+  webhook se registra solo cuando la instalación tiene https (si no, la página
+  de Cobros da la URL para pegarla) y se borra al eliminar la conexión; PayPal
+  no cobra en pesos colombianos y la app lo dice en cada lugar. Páginas
+  propias (pagado, cancelaste, rechazado, vencido…) con el nombre de la
+  empresa y «Volver a intentar». **De paso**: el proveedor simulado de dev se
+  caía con cuerpos de formulario (el token de PayPal). E2E 38/38 en escritorio
+  y en celular oscuro contra el PayPal simulado (conectar, link en USD,
+  aprobar → «¡Pago recibido!» y la ficha en «Pagado», cancelar y reintentar con
+  la misma orden, «Verificar», COP rechazado en la ficha y el formulario).
+  **Límite**: sin credenciales reales de PayPal; la prueba con una app sandbox
+  queda para el servidor. Queda: **v0.1.373 suscripciones con PayPal**.
 - **2026-11-05 · v0.1.371** — **Cada cobro de las suscripciones en su propia
   lista, con tablero, y el asistente/MCP para suscripciones** (tercera parte
   del pedido «hazlo todo como lo veas más recomendable»). En la ficha,

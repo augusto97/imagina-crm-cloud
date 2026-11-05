@@ -3231,7 +3231,7 @@ export class AutomationEngine {
                 // registro y se sigue solo hasta que el cliente paga.
                 if (
                     resolved.integration &&
-                    (resolved.integration.key === 'mercadopago' || resolved.integration.key === 'wompi') &&
+                    (resolved.integration.key === 'mercadopago' || resolved.integration.key === 'wompi' || resolved.integration.key === 'paypal') &&
                     resolved.action.key === 'create_payment_link'
                 ) {
                     if (ctx.recordId === null) return skip('connector_action', 'Un link de pago necesita un registro.');
@@ -3251,9 +3251,9 @@ export class AutomationEngine {
                         ctx.pago = { link: '(se crea al correr)', monto: amount, titulo: v.title ?? '' };
                         this.rememberNamed(ctx, cfg, {
                             status: 200,
-                            body: { url: '(se crea al correr)', link: '(se crea al correr)', monto: amount, moneda: v.currency ?? 'COP', concepto: v.title ?? '' },
+                            body: { url: '(se crea al correr)', link: '(se crea al correr)', monto: amount, moneda: v.currency || (resolved.integration.key === 'paypal' ? 'USD' : 'COP'), concepto: v.title ?? '' },
                         });
-                        return ok('connector_action', `Crearía un link de pago «${v.title ?? ''}» por ${amount} ${v.currency ?? 'COP'}${v.payer_email ? ` para ${v.payer_email}` : ''}.`, {
+                        return ok('connector_action', `Crearía un link de pago «${v.title ?? ''}» por ${amount} ${v.currency || (resolved.integration.key === 'paypal' ? 'USD' : 'COP')}${v.payer_email ? ` para ${v.payer_email}` : ''}.`, {
                             _sim: 'would_run',
                             action: resolved.action.key,
                             integration: resolved.integration.key,
@@ -3265,7 +3265,7 @@ export class AutomationEngine {
                         recordId: ctx.recordId,
                         title: v.title ?? '',
                         amount,
-                        currency: v.currency ?? 'COP',
+                        currency: v.currency || (resolved.integration.key === 'paypal' ? 'USD' : 'COP'),
                         payerEmail: (v.payer_email ?? '').trim() || null,
                         expiresDays: Number.isFinite(days) && days > 0 ? Math.min(365, Math.floor(days)) : null,
                         userId: null,

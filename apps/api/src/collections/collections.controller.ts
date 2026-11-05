@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
 import {
     createPaymentLinkSchema,
     setCollectionFieldsSchema,
@@ -10,13 +10,14 @@ import {
     type PaymentLink,
     type RecordPayments,
 } from '@imagina-base/shared';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
-import { CollectionsService, type CollectionActor } from './collections.service';
+import { CollectionsService, type CollectionActor, type PaypalPayOutcome } from './collections.service';
+import { renderPaypalPayPage } from './paypal-pay-page';
 import { aclOf } from '../tenancy/acl-of';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 
@@ -125,6 +126,45 @@ export class CollectionHooksController {
         await this.collections.handleHook(token, query ?? {}, body ?? {});
         return { ok: true };
     }
+}
+
+/**
+ * v0.1.372 — El link de pago de PayPal que recibe el cliente. PÚBLICO: la
+ * referencia (aleatoria) es la llave. Abrirlo lleva a PayPal con una orden
+ * vigente; al volver, la app CAPTURA la orden aprobada (aprobar no es pagar) y
+ * muestra el resultado o vuelve al formulario que lo armó.
+ */
+@Controller('public/pay')
+export class PublicPayController {
+    constructor(private readonly collections: CollectionsService) {}
+
+    @Get(':reference')
+    async visit(@Param('reference') reference: string, @Res() reply: FastifyReply): Promise<void> {
+        await send(reply, await this.collections.paypalVisit(reference));
+    }
+
+    @Get(':reference/return')
+    async back(@Param('reference') reference: string, @Query('token') token: string | undefined, @Res() reply: FastifyReply): Promise<void> {
+        await send(reply, await this.collections.paypalReturn(reference, typeof token === 'string' ? token : null));
+    }
+
+    @Get(':reference/cancel')
+    async cancel(@Param('reference') reference: string, @Res() reply: FastifyReply): Promise<void> {
+        await send(reply, await this.collections.paypalCancel(reference));
+    }
+}
+
+async function send(reply: FastifyReply, out: PaypalPayOutcome): Promise<void> {
+    reply.header('Cache-Control', 'no-store').header('X-Robots-Tag', 'noindex, nofollow').header('Referrer-Policy', 'no-referrer');
+    if (out.kind === 'redirect') {
+        await reply.redirect(out.url, 302);
+        return;
+    }
+    await reply
+        .status(out.page.state === 'not_found' ? 404 : 200)
+        .header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+        .type('text/html; charset=utf-8')
+        .send(renderPaypalPayPage(out.page));
 }
 
 function tenantId(req: FastifyRequest): number {

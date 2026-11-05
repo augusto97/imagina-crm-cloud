@@ -13,6 +13,8 @@ import {
     Optional,
 } from '@nestjs/common';
 import {
+    collectionCurrencyError,
+    type CollectionProvider,
     autoPortalLayout,
     brandingSchema,
     buttonPortalProblems,
@@ -2135,13 +2137,13 @@ export class PortalService implements OnModuleInit {
         link: { tenantId: number; listId: number; recordId: number },
         ctx: PortalCtx,
         cfg: PortalPaymentsBlockConfig,
-        conns: ReadonlyArray<{ id: number; provider: 'mercadopago' | 'wompi' }>,
+        conns: ReadonlyArray<{ id: number; provider: CollectionProvider }>,
     ): Promise<{
         label: string;
         amount: number;
         currency: string;
         concept: string;
-        provider: 'mercadopago' | 'wompi';
+        provider: CollectionProvider;
         connectionId: number;
     } | null> {
         const pb = cfg.pay_button;
@@ -2160,7 +2162,13 @@ export class PortalService implements OnModuleInit {
                 ? 'COP'
                 : typeof fieldCurrency === 'string' && /^[A-Za-z]{3}$/.test(fieldCurrency)
                   ? fieldCurrency.toUpperCase()
-                  : 'COP';
+                  : conn.provider === 'paypal'
+                    ? 'USD'
+                    : 'COP';
+        // v0.1.372 — un monto en pesos NO se cobra con PayPal como si fueran
+        // dólares: si el campo está en una moneda que PayPal no acepta, no se
+        // ofrece pagar (el editor del portal lo avisa).
+        if (collectionCurrencyError(conn.provider, currency)) return null;
         const titleRaw = ctx.titleFieldId !== null ? data[jsonbKeyForField(ctx.titleFieldId)] : null;
         const title = typeof titleRaw === 'string' || typeof titleRaw === 'number' ? String(titleRaw).trim() : '';
         return {

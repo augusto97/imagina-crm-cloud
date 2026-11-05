@@ -2232,7 +2232,7 @@ export class TenantTransferService {
         const [collections] = await tx
             .select({ n: sql<number>`count(*)::int` })
             .from(connections)
-            .where(and(eq(connections.tenantId, tenantId), inArray(connections.provider, ['mercadopago', 'wompi'])));
+            .where(and(eq(connections.tenantId, tenantId), inArray(connections.provider, ['mercadopago', 'wompi', 'paypal'])));
         // D3 — WhatsApp oficial: la conexión viaja SIN su token ni la clave de
         // la app, y la URL de avisos es nueva.
         const [whatsapp] = await tx

@@ -22,6 +22,7 @@ export const articles: LearnArticle[] = [
                 items: [
                     { icon: 'Wallet', title: 'Mercado Pago', md: 'Colombia, México, Argentina, Chile, Perú, Uruguay y Brasil, cada uno con su moneda. PSE, tarjetas, efectivo y los medios de cada país.', tone: 'blue' },
                     { icon: 'CreditCard', title: 'Wompi', md: 'Colombia, en pesos. Links de Bancolombia con PSE, Nequi, tarjeta y corresponsales.', tone: 'slate' },
+                    { icon: 'Globe', title: 'PayPal', md: 'Para cobrar en **dólares** (o euros y otras monedas de PayPal), a clientes de cualquier país. Pagan con su cuenta PayPal o con tarjeta. PayPal **no** cobra en pesos colombianos.', tone: 'violet' },
                 ],
             },
             { t: 'h', text: 'El recorrido de un cobro' },
@@ -53,7 +54,7 @@ export const articles: LearnArticle[] = [
                 items: [
                     { q: '¿Necesito una cuenta empresarial en el proveedor?', a: 'Necesitas una cuenta de Mercado Pago o de Wompi habilitada para cobrar, con acceso a sus credenciales. Puedes empezar con las credenciales de **prueba** para ensayar sin dinero real.' },
                     { q: '¿La app guarda los datos de tarjeta del cliente?', a: 'No. El cliente paga en la página del proveedor; la app sólo recibe el resultado: estado, monto, fecha y medio.' },
-                    { q: '¿Puedo tener Mercado Pago y Wompi a la vez?', a: 'Sí. Al cobrar eliges con cuál, y en una automatización eliges la acción del proveedor.' },
+                    { q: '¿Puedo tener Mercado Pago, Wompi y PayPal a la vez?', a: 'Sí. Al cobrar eliges con cuál, y en una automatización eliges la acción del proveedor. Es común cobrar en pesos con Mercado Pago o Wompi y en dólares con PayPal.' },
                 ],
             },
             {
@@ -97,6 +98,23 @@ export const articles: LearnArticle[] = [
                     'Después de conectar, abre **Cobros** en esa conexión, **copia la URL de eventos** y pégala en Wompi → Desarrolladores → **URL de Eventos**. Sin este paso Wompi no le avisa a la app.',
                 ],
             },
+            { t: 'h', text: 'PayPal' },
+            { t: 'anim', key: 'cobro-paypal', caption: 'El link sale del pedido en dólares, el cliente aprueba en PayPal, la app cobra la orden al volver y el pedido pasa solo a «Pagado».' },
+            {
+                t: 'steps',
+                items: [
+                    'Entra a **developer.paypal.com** con tu cuenta **PayPal Business** y abre **Apps & Credentials**.',
+                    'Arriba elige **Live** (para cobrar de verdad) o **Sandbox** (para ensayar) y toca **Create App**, o abre la que ya tengas.',
+                    'Copia el **Client ID** y el **Secret** de esa app (toca **Show** para ver el Secret).',
+                    'En **Ajustes → Integraciones**, toca **Conectar** en **PayPal** y pega los dos. La app reconoce sola si son de producción o de prueba, y registra sola en tu cuenta la dirección de avisos de pago: no hay que tocar nada más.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Con PayPal, aprobar no es pagar',
+                md: 'Cuando el cliente toca «Pagar» en PayPal, el pago queda **aprobado** pero todavía no se cobró. La app lo **cobra** apenas el cliente vuelve de PayPal, cuando llega el aviso o cuando tocas **Verificar** —una sola vez, aunque pase por los tres caminos—, y recién ahí el registro pasa a «Pagado».',
+            },
             {
                 t: 'settings',
                 title: 'Qué pide cada proveedor',
@@ -105,6 +123,8 @@ export const articles: LearnArticle[] = [
                     { name: 'Llave pública (Wompi)', what: 'Identifica a tu comercio. Debe ser del mismo ambiente que la privada (las dos de producción o las dos de prueba).' },
                     { name: 'Llave privada (Wompi)', what: 'Crea los links. Se guarda cifrada.' },
                     { name: 'Secreto de eventos (Wompi)', what: 'Verifica la firma de cada aviso de pago que manda Wompi. Se guarda cifrado.' },
+                    { name: 'Client ID (PayPal)', what: 'Identifica a tu app de PayPal. Dice si las credenciales son de producción o de prueba.' },
+                    { name: 'Secret (PayPal)', what: 'La clave de esa misma app. Se guarda cifrada y nunca vuelve a mostrarse.' },
                 ],
             },
             { t: 'h', text: 'Modo prueba' },
@@ -125,7 +145,8 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: 'Dice que la credencial no sirve', a: 'Revisa que la copiaste completa y que es la de producción o la de prueba que querías. En Wompi, que las llaves sean del mismo ambiente.' },
+                    { q: 'Dice que la credencial no sirve', a: 'Revisa que la copiaste completa y que es la de producción o la de prueba que querías. En Wompi, que las llaves sean del mismo ambiente. En PayPal, que el Client ID y el Secret sean de la MISMA app.' },
+                    { q: '¿Por qué PayPal no me deja cobrar en pesos?', a: 'PayPal no procesa pesos colombianos. Con PayPal se cobra en dólares (USD) u otra moneda que acepte (euros, pesos mexicanos…). Si el monto del registro está en pesos, escríbelo en dólares al cobrar.' },
                     { q: '¿Puedo conectar dos cuentas de Mercado Pago?', a: 'Sí: toca **Conectar otra cuenta**. Al cobrar eliges con cuál.' },
                     { q: '¿Quién puede conectar?', a: 'Un administrador de la empresa. Si el administrador habilitó las conexiones privadas, cada persona puede conectar una que sólo usa ella.' },
                 ],

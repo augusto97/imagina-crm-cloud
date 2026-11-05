@@ -1631,4 +1631,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Abre la ficha de un cliente suscrito, toca **Columnas** en **Suscripción** y baja hasta **Registro de cobros**. El asistente está en el botón de la chispa, arriba a la derecha.',
         action: { label: 'Ver cómo funciona', href: '/aprende/cobros/cobros-suscripciones' },
     },
+    {
+        key: 'v0.1.372-paypal',
+        version: '0.1.372',
+        date: '2026-11-05',
+        kind: 'feature',
+        title: 'Cobra en dólares con PayPal',
+        summary:
+            'Conecta la cuenta PayPal de tu empresa y crea links de pago en dólares (u otra moneda de PayPal) desde un registro, una automatización, un formulario o el portal del cliente. El cliente paga con su cuenta PayPal o con tarjeta y la lista se actualiza sola.',
+        media: {
+            slides: [
+                {
+                    title: 'Conectar es pegar dos datos',
+                    text: 'El Client ID y el Secret de tu app de PayPal. La app reconoce sola si son de producción o de prueba y registra sola la dirección de avisos.',
+                    illustration: 'cobro-conectar',
+                },
+                {
+                    title: 'Cobra y se confirma solo',
+                    text: 'El cliente aprueba el pago en PayPal y la app lo cobra al volver: el registro pasa a «Pagado» con la fecha, el monto y el medio.',
+                    illustration: 'cobro-paypal',
+                },
+                {
+                    title: 'En pesos y en dólares a la vez',
+                    text: 'Puedes tener Mercado Pago o Wompi para cobrar en pesos y PayPal para tus clientes del exterior. Al cobrar eliges con cuál.',
+                    illustration: 'cobro-hero',
+                },
+            ],
+        },
+        body: 'Ve a **Ajustes → Integraciones** y toca **Conectar** en **PayPal**. Después, en la ficha de un registro, **Cobros → Cobrar** y elige PayPal.',
+        action: { label: 'Ver cómo conectarlo', href: '/aprende/cobros/cobros-conectar' },
+    },
 ];

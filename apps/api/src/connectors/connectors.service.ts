@@ -51,6 +51,7 @@ import {
     precheckCreds,
 } from '../collections/collection-gateways';
 import { gatewayBases } from '../collections/gateway-bases';
+import { requestPaypalToken } from '../collections/paypal-client';
 import { devPrivateEgressAllowed, safeWebhookFetch } from '../common/safe-fetch';
 import { SMS_PROVIDERS, SMS_TEST_MESSAGE, infobipBase, smsBases } from '../sms/sms-providers';
 import { decryptSecret, encryptSecret, isEncrypted } from '../common/secret-box';
@@ -1795,6 +1796,46 @@ export class ConnectorsService {
         }
     }
 
+    /**
+     * v0.1.372 — PayPal: el mismo Client ID existe en UN solo ambiente, así que
+     * se prueba producción y, si PayPal no lo conoce ahí, sandbox. La persona
+     * pega el Client ID y el Secret y nada más: no hay que preguntarle si son
+     * «Live» o «Sandbox». Una credencial que no funciona NO se guarda.
+     */
+    private async runPaypalVerify(creds: IntegrationCreds): Promise<VerifyOutcome> {
+        const base: VerifyOutcome = { ok: false, label: null, error: null, warning: null, options: {} };
+        const pre = precheckCreds('paypal', creds);
+        if (pre) return { ...base, error: pre };
+        const bases = gatewayBases(this.env);
+        const clientId = (creds.fields.client_id ?? '').trim();
+        try {
+            const live = await requestPaypalToken(clientId, creds.secret, bases.paypalLive);
+            if ('token' in live) {
+                return { ...base, ok: true, fields: { env: 'live', test_mode: 'false' } };
+            }
+            if (!live.invalidClient) return { ...base, error: live.error };
+            const sandbox = await requestPaypalToken(clientId, creds.secret, bases.paypalSandbox);
+            if ('token' in sandbox) {
+                return {
+                    ...base,
+                    ok: true,
+                    label: 'Prueba (sandbox)',
+                    warning: 'Estas credenciales son de PRUEBA (Sandbox): los pagos no son dinero real. Para cobrar de verdad, usa las de «Live».',
+                    fields: { env: 'sandbox', test_mode: 'true' },
+                };
+            }
+            return {
+                ...base,
+                error: sandbox.invalidClient
+                    ? 'PayPal no reconoce ese Client ID con ese Secret (ni en producción ni en prueba). Cópialos de nuevo de la misma app en developer.paypal.com → Apps & Credentials.'
+                    : sandbox.error,
+            };
+        } catch (err) {
+            const message = redactValues(err instanceof Error ? err.message : String(err), [creds.secret]);
+            return { ...base, error: `No pudimos comunicarnos con PayPal (${message}). Prueba de nuevo en un momento.` };
+        }
+    }
+
     private async runVerify(key: IntegrationKey, creds: IntegrationCreds): Promise<VerifyOutcome> {
         if (key === 'woocommerce') return this.runWooVerify(creds);
         // v0.1.333 (ADR-S83): descubre el sitio y confirma que la persona puede editar.
@@ -1803,6 +1844,8 @@ export class ConnectorsService {
         // v0.1.268 (ADR-S36): sube, lee y borra un archivo de prueba.
         if (key === 's3') return verifyS3(creds, { allowPrivate: this.env.STORAGE_ALLOW_PRIVATE_HOSTS });
         if (key === 'mercadopago' || key === 'wompi') return this.runCollectionVerify(key, creds);
+        // v0.1.372 — PayPal: el ambiente (producción o sandbox) se descubre probando.
+        if (key === 'paypal') return this.runPaypalVerify(creds);
         // D3 — WhatsApp oficial: el número, la cuenta, el token y la clave de la app.
         if (key === 'whatsapp_cloud') return verifyWhatsappCloud(creds, graphBase(this.env));
         // v0.1.332 — SMS: la cuenta (o su saldo) con el proveedor.

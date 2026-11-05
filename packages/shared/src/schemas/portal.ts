@@ -332,7 +332,7 @@ export const portalPaymentsBlockDataSchema = z.object({
             amount: z.number(),
             currency: z.string(),
             concept: z.string(),
-            provider: z.enum(['mercadopago', 'wompi']),
+            provider: z.enum(['mercadopago', 'wompi', 'paypal']),
         })
         .nullable(),
 });

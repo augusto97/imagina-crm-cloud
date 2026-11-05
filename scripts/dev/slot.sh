@@ -62,6 +62,7 @@ start_api() {
             MERCADOPAGO_API_URL=http://127.0.0.1:4898/mp \
             WOMPI_API_URL=http://127.0.0.1:4898/wompi \
             WOMPI_CHECKOUT_URL=http://127.0.0.1:4898/wompi-pay/ \
+            PAYPAL_COLLECT_API_URL=http://127.0.0.1:4898/paypal \
             SMS_TWILIO_API_URL=http://127.0.0.1:4897/twilio \
             SMS_BULKGATE_API_URL=http://127.0.0.1:4897/bulkgate \
             SMS_LABSMOBILE_API_URL=http://127.0.0.1:4897/labsmobile \

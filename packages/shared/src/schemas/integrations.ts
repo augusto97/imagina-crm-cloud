@@ -131,6 +131,8 @@ export const INTEGRATION_KEYS = [
     'sqlserver',
     'mercadopago',
     'wompi',
+    // v0.1.372 — PayPal: links de pago en dólares con la cuenta de la empresa.
+    'paypal',
     's3',
 ] as const;
 export const integrationKeySchema = z.enum(INTEGRATION_KEYS);
@@ -1544,6 +1546,72 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     { key: 'title', label: 'Concepto', required: true, help: 'Lo que ve el cliente al pagar. Ej.: Factura {{numero}}.' },
                     { key: 'amount', label: 'Monto (COP)', type: 'number', required: true, help: 'Un número o una variable como {{total}}.' },
                     { key: 'payer_email', label: 'Correo del cliente', help: 'Opcional.' },
+                    { key: 'expires_days', label: 'Vence en (días)', type: 'number', help: 'Vacío = no vence.' },
+                ],
+            }),
+        ],
+    },
+    {
+        key: 'paypal',
+        name: 'PayPal',
+        tagline: 'Cobra en dólares con tu cuenta PayPal: cuenta PayPal o tarjeta.',
+        description:
+            'Crea links de pago de PayPal desde un registro, una automatización, un formulario o el portal del cliente. El cliente paga con su cuenta PayPal o con tarjeta; la app confirma el cobro y la lista se actualiza sola: estado, fecha, monto y medio. PayPal no cobra en pesos colombianos: se cobra en dólares (USD) u otra moneda que acepte PayPal.',
+        category: 'pagos',
+        color: '#003087',
+        auth: {
+            kind: 'key',
+            fields: [
+                field({
+                    key: 'client_id',
+                    label: 'Client ID',
+                    required: true,
+                    placeholder: 'AbCd…',
+                    help: 'El «Client ID» de tu app de PayPal (developer.paypal.com → Apps & Credentials). Es largo: cópialo completo.',
+                }),
+                field({
+                    key: 'client_secret',
+                    label: 'Secret',
+                    secret: true,
+                    required: true,
+                    placeholder: 'EFgh…',
+                    help: 'El «Secret» de la misma app (toca «Show» para verlo). Se guarda cifrado.',
+                }),
+                // Los completa la verificación: si las credenciales son de producción o de prueba (sandbox).
+                field({ key: 'env', label: 'Ambiente', hidden: true, default: 'live' }),
+            ],
+            how_to: [
+                'Entra a developer.paypal.com con tu cuenta PayPal Business y abre «Apps & Credentials».',
+                'Arriba elige «Live» (para cobrar de verdad) o «Sandbox» (para probar sin dinero real) y toca «Create App» (o abre la que ya tengas).',
+                'Copia el «Client ID» y el «Secret» de esa app y pégalos aquí. La app reconoce sola si son de producción o de prueba.',
+                'Listo: la app registra sola en tu cuenta de PayPal la dirección de avisos de pago. Los pagos llegan a TU cuenta, sin comisiones de la app (sólo las de PayPal).',
+            ],
+        },
+        actions: [
+            action({
+                key: 'create_payment_link',
+                label: 'Crear link de pago (PayPal)',
+                description: 'Un link para que el cliente pague con PayPal o con tarjeta; queda en el registro y se actualiza solo cuando paga.',
+                params: [
+                    { key: 'title', label: 'Concepto', required: true, help: 'Lo que ve el cliente al pagar. Ej.: Factura {{numero}}.' },
+                    { key: 'amount', label: 'Monto', type: 'number', required: true, help: 'Un número o una variable como {{total}}.' },
+                    {
+                        key: 'currency',
+                        label: 'Moneda',
+                        type: 'select',
+                        default: 'USD',
+                        options: [
+                            { value: 'USD', label: 'Dólar estadounidense (USD)' },
+                            { value: 'EUR', label: 'Euro (EUR)' },
+                            { value: 'MXN', label: 'Peso mexicano (MXN)' },
+                            { value: 'CAD', label: 'Dólar canadiense (CAD)' },
+                            { value: 'GBP', label: 'Libra esterlina (GBP)' },
+                            { value: 'AUD', label: 'Dólar australiano (AUD)' },
+                            { value: 'BRL', label: 'Real (BRL)' },
+                        ],
+                        help: 'PayPal no cobra en pesos colombianos (COP).',
+                    },
+                    { key: 'payer_email', label: 'Correo del cliente', help: 'Opcional: PayPal lo usa para precompletar el pago.' },
                     { key: 'expires_days', label: 'Vence en (días)', type: 'number', help: 'Vacío = no vence.' },
                 ],
             }),

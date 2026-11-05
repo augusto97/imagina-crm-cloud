@@ -1,4 +1,4 @@
-import { bigint, index, numeric, pgTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
+import { bigint, index, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
 import { connections } from './connections';
 import { lists } from './lists';
 import { records } from './records';
@@ -50,6 +50,10 @@ export const paymentLinks = pgTable(
         reference: varchar('reference', { length: 64 }),
         /** v0.1.361 — El formulario que armó el link (null = ficha, automatización o portal). */
         formId: bigint('form_id', { mode: 'number' }),
+        /** v0.1.372 — PayPal: las órdenes que creó este link (`PaypalOrderRef[]`, las últimas 10). */
+        providerOrders: jsonb('provider_orders').notNull().default([]),
+        /** v0.1.372 — Adónde vuelve el cliente al pagar (la página del formulario), si hay. */
+        returnUrl: text('return_url'),
     },
     (t) => [
         uniqueIndex('payment_links_external_ux').on(t.provider, t.externalId),

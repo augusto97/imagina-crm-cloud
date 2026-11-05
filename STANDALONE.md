@@ -2610,6 +2610,40 @@ automática no tenía el panel «Cobros» y la acción no dejaba el link en
   columnas por slug / `"create"` / null y aplica con el mismo `setFields`.
 
 
+**Addendum v0.1.372 — PayPal como tercer proveedor de cobros.** Para cobrar en
+dólares (clientes del exterior, servicios en USD) cada empresa conecta SU app de
+PayPal (Client ID + Secret, cifrados). Decisiones:
+- **Conectar sin elegir el ambiente**: la credencial se prueba con un token en
+  producción y, si no, en prueba (sandbox); se guarda el que respondió
+  (`fields.env`) y la conexión dice «Prueba (sandbox)» cuando es de prueba.
+- **El link es de la app, no de PayPal** (`/api/v1/public/pay/<referencia>`):
+  una orden de PayPal sin aprobar vence, así que el link no puede ser el de la
+  orden. Cada visita reusa la orden de la última hora (candado por link) o crea
+  otra (`payment_links.provider_orders`, las 10 más nuevas, migración 0105) y
+  redirige a PayPal con la marca de la empresa, sin envío y «Pagar ahora».
+- **Aprobar no es pagar** (`intent: CAPTURE`): la app CAPTURA la orden al volver
+  el cliente, al llegar el aviso o con «Verificar» — idempotente con
+  `PayPal-Request-Id`; `ORDER_ALREADY_CAPTURED` se resuelve releyendo la orden y
+  `INSTRUMENT_DECLINED` deja el link «Rechazado» con «Volver a intentar». La
+  orden tiene que traer la referencia del link (`custom_id`): una orden ajena no
+  se aplica.
+- **Páginas propias** para lo que no es PayPal (pagado, ya pagado, vencido,
+  anulado, cancelaste, en revisión, confirmando, PayPal no respondió): servidas
+  por el API, sin scripts, todo escapado, con el nombre de la EMPRESA y nunca el
+  de la plataforma; `return_url` opcional (https) para volver a un formulario.
+- **Avisos**: con `APP_BASE_URL` en https la app registra sola el webhook en la
+  cuenta de la empresa (órdenes aprobadas/completadas y capturas
+  completadas/negadas/reembolsadas) y lo borra al eliminar la conexión; si no
+  puede (http, permisos), la página de Cobros da la URL para pegarla. Del aviso
+  sólo se toma el id: la orden o la captura se relee con la credencial de la
+  empresa (un reembolso llega por la captura y se aplica a su orden).
+- **Monedas**: PayPal no cobra en pesos colombianos. `collectionCurrencyError`
+  (shared) lo rechaza en la ficha, la acción, el formulario (400
+  `form_payment_currency`) y el portal (no ofrece pagar); el panel de la ficha
+  propone USD y no arrastra un monto que estaba en pesos.
+- Suscripciones con PayPal: v0.1.373 (este addendum sólo cubre links).
+
+
 ### ADR-S32 — Sin índices físicos por campo (v0.1.257)
 
 **Contexto.** `is_indexed` (PERF-01) creaba 1-2 índices por expresión por campo
