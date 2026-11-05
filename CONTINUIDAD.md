@@ -1610,6 +1610,15 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · sin versión (sale con la próxima)** — **Las capturas de la
+  ayuda ya no esperan la instalación del navegador.** Revisando la publicación
+  de v0.1.381 se vio que algunas máquinas de las capturas tardaban 12-16 min
+  y otras 3,5: el atraso era `playwright-core install --with-deps chromium`
+  (apt en cada máquina, a veces 8 min esperando paquetes). `ci.sh` ahora prueba
+  primero el Google Chrome que ya traen las máquinas de GitHub (un arranque
+  corto con playwright-core) y sólo instala si no sirve. Commit `7e96b55` en
+  la rama; no cambia nada de lo que se publica. v0.1.381 salió completa (zip,
+  `.sha256`, `install.sh`, las 5 partes de las capturas en verde).
 - **2026-11-05 · v0.1.381** — **Compartir en una ventana, con demostración
   en vivo** (pedido del usuario con 4 capturas: «compartir se ve horrible como
   bloque arriba de todo… las 3 opciones de inserción no muestran ningún demo…
