@@ -1090,15 +1090,15 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         category: 'documents',
         minutes: 2,
         body: [
-            '1. Conecta **Mercado Pago** o **Wompi** en **Ajustes → Integraciones** (lo hace quien administra la empresa).',
-            '2. En la ficha del registro, en **Cobros**, toca **Cobrar**: revisa el concepto y el monto y crea el link.',
+            '1. Conecta **Mercado Pago**, **Wompi** o **PayPal** en **Ajustes → Integraciones** (lo hace quien administra la empresa). Con PayPal se cobra en dólares (USD) u otra moneda de PayPal, nunca en pesos colombianos.',
+            '2. En la ficha del registro, en **Cobros**, toca **Cobrar**: revisa el concepto, el monto y la moneda y crea el link.',
             '3. El link queda copiado: mándaselo al cliente por WhatsApp o correo.',
             '4. En **Cobros**, toca **Elegir columnas** y decide dónde queda el link, el estado y la fecha de pago: una columna que ya tienes (como «Link de pago»), una nueva o ninguna.',
             'Cuando paga, el registro se actualiza solo: el estado pasa a «Pagado» y la fecha de pago se escribe en la columna que elegiste (si esa fecha dispara una automatización de renovación, se dispara sola).',
         ].join('\n'),
         tip: 'Una automatización o un botón también pueden crear el link: el aviso del botón lo trae con **Copiar link**, y en la acción **Crear link de pago** está la misma sección **Dónde queda el link**. En un paso siguiente el link es **{{pago.link}}**.',
         screens: ['record'],
-        keywords: 'cobrar link de pago mercado pago wompi pse tarjeta pago cobro columna donde queda el link boton automatizacion copiar link fecha de pago renovacion',
+        keywords: 'cobrar link de pago mercado pago wompi paypal dolares usd pse tarjeta pago cobro columna donde queda el link boton automatizacion copiar link fecha de pago renovacion',
         related: ['documents', 'integrations', 'whatsapp'],
     },
 

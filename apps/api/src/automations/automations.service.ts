@@ -938,9 +938,9 @@ export class AutomationsService {
                 sample_record_id: sampleRecordId,
             };
         }
-        if (integ.key === 'mercadopago' || integ.key === 'wompi') {
+        if (integ.key === 'mercadopago' || integ.key === 'wompi' || integ.key === 'paypal') {
             const v = compiled.values;
-            const currency = integ.key === 'wompi' ? 'COP' : (v.currency || 'COP');
+            const currency = integ.key === 'wompi' ? 'COP' : (v.currency || (integ.key === 'paypal' ? 'USD' : 'COP'));
             return {
                 request: { url: '', method: 'POST', headers: {}, body: null },
                 response: null,

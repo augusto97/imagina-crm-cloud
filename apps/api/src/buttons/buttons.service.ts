@@ -624,7 +624,7 @@ export function paymentLinksOf(log: unknown): string[] {
         const e = entry as { action?: unknown; status?: unknown; details?: { url?: unknown; integration?: unknown } };
         if (e.action !== 'connector_action' || e.status !== 'success') continue;
         const integration = e.details?.integration;
-        if (integration !== 'mercadopago' && integration !== 'wompi') continue;
+        if (integration !== 'mercadopago' && integration !== 'wompi' && integration !== 'paypal') continue;
         const url = e.details?.url;
         if (typeof url === 'string' && /^https?:\/\//.test(url) && !out.includes(url)) out.push(url);
     }

@@ -14,7 +14,8 @@ export NODE_ENV=development \
     FILES_SIGNING_SECRET=firma-dev-para-archivos \
     MERCADOPAGO_API_URL=http://127.0.0.1:4898/mp \
     WOMPI_API_URL=http://127.0.0.1:4898/wompi \
-    WOMPI_CHECKOUT_URL=http://127.0.0.1:4898/wompi-pay/
+    WOMPI_CHECKOUT_URL=http://127.0.0.1:4898/wompi-pay/ \
+    PAYPAL_COLLECT_API_URL=http://127.0.0.1:4898/paypal
 # El proxy de salida del contenedor usa su propia CA.
 [ -f /root/.ccr/ca-bundle.crt ] && export NODE_EXTRA_CA_CERTS=/root/.ccr/ca-bundle.crt
 exec node dist/main.js > "$LOGS/api.log" 2>&1

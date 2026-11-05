@@ -736,6 +736,13 @@
       "when": 1784200001100,
       "tag": "0104_subscription_charge_log",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1784200001200,
+      "tag": "0105_paypal_collections",
+      "breakpoints": true
     }
   ]
 }

@@ -12,6 +12,8 @@ import {
     COLLECTION_FIELD_LABELS,
     COLLECTION_FIELD_ROLES,
     COLLECTION_PROVIDER_LABEL,
+    COLLECTION_PROVIDERS,
+    collectionCurrencyFor,
     PAYMENT_STATUS_OPTIONS,
     isCollectionProvider,
     jsonbKeyForField,
@@ -76,6 +78,30 @@ import {
     type LinkInput,
 } from './collection-gateways';
 import { gatewayBases } from './gateway-bases';
+import { PaypalCallError, PaypalClient } from './paypal-client';
+import {
+    appendOrder,
+    captureOrderRequest,
+    createOrderRequest,
+    createWebhookRequest,
+    deleteWebhookRequest,
+    findWebhook,
+    getCaptureRequest,
+    getOrderRequest,
+    isPaypalId,
+    listWebhooksRequest,
+    parseCaptureOrderId,
+    parseCreatedOrder,
+    parseCreatedWebhook,
+    parseOrder,
+    paypalError,
+    paypalNotice,
+    markOrderDone,
+    readPaypalOrders,
+    reusableOrder,
+    type PaypalOrderRef,
+    type PaypalOrderView,
+} from './paypal-gateway';
 import { can } from '../authz/can';
 import { mpNotice } from '../subscriptions/subscription-gateway';
 
@@ -122,6 +148,41 @@ export type PaymentContext = {
 /** Un error de cobro con un motivo legible (el controller lo vuelve 400). */
 export class CollectionError extends Error {}
 
+/** v0.1.372 — Lo que ve el cliente al abrir (o volver de) un link de PayPal. */
+export interface PaypalPayPage {
+    state:
+        | 'paid'
+        | 'paid_now'
+        | 'refunded'
+        | 'expired'
+        | 'cancelled'
+        | 'cancelled_by_payer'
+        | 'not_found'
+        | 'unavailable'
+        | 'error'
+        | 'failed'
+        | 'review'
+        | 'confirming';
+    company: string | null;
+    title: string | null;
+    amount: number | null;
+    currency: string | null;
+    /** «Volver a intentar»: el mismo link (crea otra orden si hace falta). */
+    retryUrl: string | null;
+    message: string | null;
+}
+
+export type PaypalPayOutcome = { kind: 'redirect'; url: string } | { kind: 'page'; page: PaypalPayPage };
+
+/** v0.1.372 — La dirección de avisos que la app registró en la cuenta de PayPal. */
+export interface PaypalWebhookState {
+    id: string | null;
+    /** Con qué app (Client ID) se registró: otra app = registrar de nuevo. */
+    client_id: string | null;
+    error: string | null;
+    at: string | null;
+}
+
 const DAY = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 15_000;
 
@@ -142,6 +203,8 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
     private readonly logger = new Logger(CollectionsService.name);
     private expireTimer: NodeJS.Timeout | null = null;
     private subscriptionSink: SubscriptionNoticeSink | null = null;
+    /** v0.1.372 — La API de PayPal con el token de cada empresa en memoria. */
+    readonly paypal = new PaypalClient(() => this.bases);
 
     constructor(
         private readonly tenantDb: TenantDb,
@@ -160,6 +223,10 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
     ) {}
 
     onModuleInit(): void {
+        // v0.1.372 — al borrar una conexión de PayPal, la dirección de avisos
+        // que la app registró en esa cuenta también se borra (si no, PayPal le
+        // seguiría avisando a una URL que ya no existe).
+        this.connectors.onBeforeRemove((tenantId, connectionId) => this.forgetPaypalWebhook(tenantId, connectionId));
         if (this.env.NODE_ENV === 'test') return;
         // Vencer los links pendientes cuya fecha pasó. Idempotente (sólo toca
         // los `pending`), así varios nodos pueden correrlo a la vez.
@@ -209,7 +276,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
                     ownerUserId: connections.ownerUserId,
                 })
                 .from(connections)
-                .where(and(eq(connections.tenantId, tenantId), inArray(connections.provider, ['mercadopago', 'wompi'])))
+                .where(and(eq(connections.tenantId, tenantId), inArray(connections.provider, [...COLLECTION_PROVIDERS])))
                 .orderBy(connections.name),
         );
         return rows
@@ -235,7 +302,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
                     visibility: connections.visibility,
                 })
                 .from(connections)
-                .where(and(eq(connections.tenantId, tenantId), inArray(connections.provider, ['mercadopago', 'wompi'])))
+                .where(and(eq(connections.tenantId, tenantId), inArray(connections.provider, [...COLLECTION_PROVIDERS])))
                 .orderBy(connections.name),
         );
         return rows.filter((r) => r.visibility !== 'private').map((r) => toConnection(r));
@@ -423,6 +490,8 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         }
         const provider = editable.provider;
         const hookUrl = await this.hookUrlFor(tenantId, connectionId, provider);
+        // v0.1.372 — PayPal: la app registra sola la dirección de avisos al abrir este panel.
+        const paypalHook = provider === 'paypal' ? await this.ensurePaypalWebhook(tenantId, connectionId).catch(() => null) : null;
         const [hook] = await this.db
             .select({ lastHookAt: collectionHooks.lastHookAt })
             .from(collectionHooks)
@@ -475,7 +544,9 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
                     visibility: conn?.visibility,
                 }),
                 hook_url: hookUrl,
-                hook_needs_setup: provider === 'wompi',
+                hook_needs_setup: provider === 'wompi' || (provider === 'paypal' && !paypalHook?.id),
+                hook_auto: provider === 'paypal' && !!paypalHook?.id,
+                hook_error: provider === 'paypal' ? (paypalHook?.error ?? null) : null,
                 events_secret_set: typeof secrets.signing_secret === 'string' && secrets.signing_secret !== '',
                 last_hook_at: hook?.lastHookAt ? hook.lastHookAt.toISOString() : null,
                 links,
@@ -626,10 +697,13 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         if (!conn) throw new CollectionError(`La conexión #${opts.connectionId} ya no existe.`);
         if (!isCollectionProvider(conn.provider)) throw new CollectionError(`«${conn.name}» no es una conexión de cobro.`);
         const provider = conn.provider;
-        const currency = (provider === 'wompi' ? 'COP' : opts.currency || 'COP').toUpperCase();
+        // v0.1.372 — Wompi sólo cobra en pesos y PayPal nunca en pesos: una
+        // moneda que el proveedor no acepta se rechaza con el motivo.
+        const currency = (provider === 'wompi' ? 'COP' : opts.currency || collectionCurrencyFor(provider, null)).toUpperCase();
         const amount = Math.round(opts.amount * 100) / 100;
         const expiresAt = opts.expiresDays && opts.expiresDays > 0 ? new Date(Date.now() + opts.expiresDays * DAY) : null;
         const reference = `ib_${randomBytes(12).toString('base64url')}`;
+        const returnUrl = opts.returnUrlFor ? opts.returnUrlFor(reference) : null;
         const input: LinkInput = {
             title: opts.title.trim().slice(0, 200) || 'Pago',
             amount,
@@ -638,25 +712,36 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             expiresAt,
             reference,
             notificationUrl: provider === 'mercadopago' ? await this.hookUrlFor(tenantId, opts.connectionId, provider) : null,
-            returnUrl: opts.returnUrlFor ? opts.returnUrlFor(reference) : null,
+            returnUrl,
         };
         const invalid = linkInputError(provider, input);
         if (invalid) throw new CollectionError(invalid);
 
-        const req = createLinkRequest(provider, conn.creds, input, this.bases);
         let created: { externalId: string; url: string } | { error: string };
-        try {
-            const res = await safeWebhookFetch(req.url, {
-                method: req.method,
-                headers: req.headers,
-                body: req.body,
-                captureBody: true,
-                timeoutMs: FETCH_TIMEOUT_MS,
-            });
-            created = parseCreatedLink(provider, res.status, res.body ?? '', conn.creds, input, this.bases);
-        } catch (err) {
-            const label = COLLECTION_PROVIDER_LABEL[provider];
-            throw new CollectionError(`No pudimos comunicarnos con ${label} (${redact(err, conn.creds)}).`);
+        let providerOrders: PaypalOrderRef[] = [];
+        if (provider === 'paypal') {
+            // El link que se manda es NUESTRO; la primera orden se crea ya
+            // (así una credencial que no sirve se nota ahora y no cuando el
+            // cliente intenta pagar). Ver `paypal-gateway.ts`.
+            const order = await this.createPaypalOrder(tx, tenantId, conn.creds, input, 0);
+            providerOrders = [order];
+            created = { externalId: reference, url: this.payUrl(reference) };
+            void this.ensurePaypalWebhook(tenantId, opts.connectionId).catch(() => undefined);
+        } else {
+            const req = createLinkRequest(provider, conn.creds, input, this.bases);
+            try {
+                const res = await safeWebhookFetch(req.url, {
+                    method: req.method,
+                    headers: req.headers,
+                    body: req.body,
+                    captureBody: true,
+                    timeoutMs: FETCH_TIMEOUT_MS,
+                });
+                created = parseCreatedLink(provider, res.status, res.body ?? '', conn.creds, input, this.bases);
+            } catch (err) {
+                const label = COLLECTION_PROVIDER_LABEL[provider];
+                throw new CollectionError(`No pudimos comunicarnos con ${label} (${redact(err, conn.creds)}).`);
+            }
         }
         if ('error' in created) throw new CollectionError(created.error);
 
@@ -678,6 +763,8 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
                 createdBy: opts.userId,
                 reference,
                 formId: opts.formId ?? null,
+                providerOrders,
+                returnUrl: provider === 'paypal' ? returnUrl : null,
             })
             .returning();
         const link = row!;
@@ -808,6 +895,13 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             throw new BadRequestException({ code: 'connection_gone', message: 'La conexión de este link ya no existe: no se puede consultar.', data: { status: 400 } });
         }
         const provider = link.provider;
+        if (provider === 'paypal') {
+            await this.refreshPaypalLink(tenantId, link, conn.creds);
+            const fresh = await this.tenantDb.withTenant(tenantId, (tx) =>
+                tx.select().from(paymentLinks).where(and(eq(paymentLinks.tenantId, tenantId), eq(paymentLinks.id, link.id))).limit(1),
+            );
+            return toDto(fresh[0] ?? link, conn.name);
+        }
         const req = searchPaymentsRequest(provider, conn.creds, { externalId: link.externalId, createdAt: link.createdAt }, this.bases);
         let payments: GatewayPayment[] | null;
         try {
@@ -880,6 +974,13 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         if (!conn) {
             failed(`Llegó un aviso de pago y no se pudo leer la clave de ${label}. Vuelve a conectar la cuenta en Ajustes → Integraciones.`);
             return 'ignored';
+        }
+
+        // v0.1.372 — PayPal: del aviso sólo se toma QUÉ orden mirar.
+        if (hook.provider === 'paypal') {
+            const out = await this.paypalHook(tenantId, hook.connectionId, conn.creds, body, failed);
+            if (out !== 'error') this.incidents?.resolve(tenantId, `collections:${hook.connectionId}:hooks`);
+            return out === 'error' ? 'ignored' : out;
         }
 
         let paymentId: string | null;
@@ -1031,6 +1132,433 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             .limit(500);
         for (const d of due) await this.expireIfDue(d.tenantId, d.id);
         return due.length;
+    }
+
+    // ── PayPal (v0.1.372) ───────────────────────────────────────────────
+
+    private appBase(): string {
+        return this.env.APP_BASE_URL.replace(/\/+$/, '');
+    }
+
+    /** El link que se le manda al cliente: NUESTRO (reusa o crea la orden de PayPal al abrirlo). */
+    payUrl(reference: string): string {
+        return `${this.appBase()}/api/v1/public/pay/${reference}`;
+    }
+
+    /** El nombre que ve el cliente en PayPal: el de la app de la empresa o el de la empresa. */
+    private async brandName(tx: Tx, tenantId: number): Promise<string | null> {
+        const [t] = await tx.select({ name: tenants.name, settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+        const appName = (t?.settings as { branding?: { app_name?: unknown } } | undefined)?.branding?.app_name;
+        return typeof appName === 'string' && appName.trim() !== '' ? appName.trim() : (t?.name ?? null);
+    }
+
+    /** Crea una orden de PayPal para el link (`n` = las que ya creó: hace única la clave de idempotencia). */
+    private async createPaypalOrder(tx: Tx, tenantId: number, creds: IntegrationCreds, input: LinkInput, n: number): Promise<PaypalOrderRef> {
+        const brand = await this.brandName(tx, tenantId);
+        const base = this.payUrl(input.reference);
+        let res: { status: number; body: string };
+        try {
+            res = await this.paypal.call(creds, (b, token) =>
+                createOrderRequest(
+                    b,
+                    token,
+                    {
+                        reference: input.reference,
+                        title: input.title,
+                        amount: input.amount,
+                        currency: input.currency,
+                        payerEmail: input.payerEmail,
+                        returnUrl: `${base}/return`,
+                        cancelUrl: `${base}/cancel`,
+                        brandName: brand,
+                    },
+                    `order-${input.reference}-${n}`,
+                ),
+            );
+        } catch (err) {
+            if (err instanceof PaypalCallError) throw new CollectionError(err.message);
+            throw new CollectionError(`No pudimos comunicarnos con PayPal (${redact(err, creds)}).`);
+        }
+        const created = parseCreatedOrder(res.status, res.body);
+        if ('error' in created) throw new CollectionError(created.error);
+        return { id: created.orderId, approve_url: created.approveUrl, created_at: new Date().toISOString() };
+    }
+
+    /** Un link de PayPal por nuestra referencia (la que lleva el link que tiene el cliente). */
+    private async paypalLinkByReference(reference: string): Promise<PaymentLinkRowDb | null> {
+        if (!/^ib_[A-Za-z0-9_-]{8,48}$/.test(reference)) return null;
+        // Conexión base: el cliente no tiene sesión y la referencia (aleatoria) es la llave.
+        const [row] = await this.db
+            .select()
+            .from(paymentLinks)
+            .where(and(eq(paymentLinks.reference, reference), eq(paymentLinks.provider, 'paypal')))
+            .limit(1);
+        return row ?? null;
+    }
+
+    private async companyName(tenantId: number): Promise<string | null> {
+        const [t] = await this.db.select({ name: tenants.name, settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+        const appName = (t?.settings as { branding?: { app_name?: unknown } } | undefined)?.branding?.app_name;
+        return typeof appName === 'string' && appName.trim() !== '' ? appName.trim() : (t?.name ?? null);
+    }
+
+    private payPage(link: PaymentLinkRowDb | null, company: string | null, state: PaypalPayPage['state'], extra: Partial<PaypalPayPage> = {}): PaypalPayOutcome {
+        return {
+            kind: 'page',
+            page: {
+                state,
+                company,
+                title: link?.title ?? null,
+                amount: link ? Number(link.amount) : null,
+                currency: link?.currency ?? null,
+                retryUrl: null,
+                message: null,
+                ...extra,
+            },
+        };
+    }
+
+    /** Cómo se ve el link según su estado (pagado, vencido, anulado…). Null = se puede pagar. */
+    private settledPage(link: PaymentLinkRowDb, company: string | null): PaypalPayOutcome | null {
+        const status = link.status as PaymentLinkStatus;
+        if (status === 'approved' || status === 'mismatch') return this.payPage(link, company, 'paid');
+        if (status === 'refunded') return this.payPage(link, company, 'refunded');
+        if (status === 'cancelled') return this.payPage(link, company, 'cancelled');
+        if (status === 'expired' || (link.expiresAt && link.expiresAt.getTime() <= Date.now())) return this.payPage(link, company, 'expired');
+        return null;
+    }
+
+    /**
+     * El cliente abre el link: si se puede pagar, a PayPal (con la orden
+     * reciente, o con una nueva si la anterior ya se usó o venció); si no, una
+     * página que dice por qué (ya pagado, vencido, anulado). Dos clics a la vez
+     * no crean dos órdenes: un lock por link.
+     */
+    async paypalVisit(reference: string): Promise<PaypalPayOutcome> {
+        const link = await this.paypalLinkByReference(reference);
+        if (!link) return this.payPage(null, null, 'not_found');
+        const company = await this.companyName(link.tenantId);
+        if (await planModuleOff(this.db, link.tenantId, 'integrations')) return this.payPage(link, company, 'unavailable');
+        const settled = this.settledPage(link, company);
+        if (settled) return settled;
+        if (!link.connectionId) return this.payPage(link, company, 'unavailable');
+        const conn = await this.connectors.integrationCredsFor(link.tenantId, link.connectionId).catch(() => null);
+        if (!conn || conn.provider !== 'paypal') return this.payPage(link, company, 'unavailable');
+        try {
+            const url = await this.tenantDb.withTenant(link.tenantId, async (tx) => {
+                await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`paypalorder:${link.id}`}))`);
+                const [fresh] = await tx
+                    .select()
+                    .from(paymentLinks)
+                    .where(and(eq(paymentLinks.tenantId, link.tenantId), eq(paymentLinks.id, link.id)))
+                    .limit(1);
+                if (!fresh) return null;
+                const orders = readPaypalOrders(fresh.providerOrders);
+                const reuse = fresh.status === 'pending' ? reusableOrder(orders, new Date()) : null;
+                if (reuse) return reuse.approve_url;
+                const order = await this.createPaypalOrder(
+                    tx,
+                    link.tenantId,
+                    conn.creds,
+                    {
+                        title: fresh.title,
+                        amount: Number(fresh.amount),
+                        currency: fresh.currency,
+                        payerEmail: fresh.payerEmail,
+                        expiresAt: fresh.expiresAt,
+                        reference,
+                        notificationUrl: null,
+                    },
+                    orders.length,
+                );
+                await tx
+                    .update(paymentLinks)
+                    .set({ providerOrders: appendOrder(orders, order), updatedAt: new Date() })
+                    .where(and(eq(paymentLinks.tenantId, link.tenantId), eq(paymentLinks.id, link.id)));
+                return order.approve_url;
+            });
+            if (!url) return this.payPage(link, company, 'not_found');
+            return { kind: 'redirect', url };
+        } catch (err) {
+            this.logger.warn(`Link ${link.id}: no se pudo abrir el pago en PayPal: ${err instanceof Error ? err.message : String(err)}`);
+            return this.payPage(link, company, 'error', { retryUrl: this.payUrl(reference) });
+        }
+    }
+
+    /**
+     * El cliente vuelve de PayPal (`?token=<orden>`): la app CAPTURA la orden
+     * aprobada — aprobar no es pagar — y aplica el resultado. Después, a la
+     * página del formulario si el link vino de uno; si no, a una página propia.
+     */
+    async paypalReturn(reference: string, orderId: string | null): Promise<PaypalPayOutcome> {
+        const link = await this.paypalLinkByReference(reference);
+        if (!link) return this.payPage(null, null, 'not_found');
+        const company = await this.companyName(link.tenantId);
+        const conn = link.connectionId ? await this.connectors.integrationCredsFor(link.tenantId, link.connectionId).catch(() => null) : null;
+        let processed: PaypalOrderView | null = null;
+        if (conn && conn.provider === 'paypal' && !(await planModuleOff(this.db, link.tenantId, 'integrations'))) {
+            const known = readPaypalOrders(link.providerOrders).some((o) => o.id === orderId);
+            try {
+                if (orderId && isPaypalId(orderId) && known) processed = await this.processPaypalOrder(link.tenantId, link, conn.creds, orderId);
+                else await this.refreshPaypalLink(link.tenantId, link, conn.creds);
+            } catch (err) {
+                this.logger.warn(`Link ${link.id}: no se pudo confirmar el pago al volver de PayPal: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+        const [fresh] = await this.tenantDb.withTenant(link.tenantId, (tx) =>
+            tx.select().from(paymentLinks).where(and(eq(paymentLinks.tenantId, link.tenantId), eq(paymentLinks.id, link.id))).limit(1),
+        );
+        const now = fresh ?? link;
+        if (now.returnUrl && now.returnUrl.startsWith('https://')) return { kind: 'redirect', url: now.returnUrl };
+        const status = now.status as PaymentLinkStatus;
+        if (status === 'approved' || status === 'mismatch') return this.payPage(now, company, 'paid_now');
+        if (status === 'refunded') return this.payPage(now, company, 'refunded');
+        if (status === 'rejected') return this.payPage(now, company, 'failed', { retryUrl: this.payUrl(reference), message: now.note });
+        if (processed?.payment?.status === 'pending' && processed.payment.note) {
+            return this.payPage(now, company, 'review', { message: processed.payment.note });
+        }
+        return this.payPage(now, company, 'confirming', { retryUrl: this.payUrl(reference) });
+    }
+
+    /** El cliente tocó «Cancelar» en PayPal: vuelve al formulario, o una página para reintentar. */
+    async paypalCancel(reference: string): Promise<PaypalPayOutcome> {
+        const link = await this.paypalLinkByReference(reference);
+        if (!link) return this.payPage(null, null, 'not_found');
+        if (link.returnUrl && link.returnUrl.startsWith('https://')) return { kind: 'redirect', url: link.returnUrl };
+        const company = await this.companyName(link.tenantId);
+        const settled = this.settledPage(link, company);
+        if (settled) return settled;
+        return this.payPage(link, company, 'cancelled_by_payer', { retryUrl: this.payUrl(reference) });
+    }
+
+    /**
+     * Lee una orden del link en PayPal, la CAPTURA si el cliente la aprobó y
+     * aplica el pago. La orden tiene que ser de ESE link (su `custom_id` es
+     * nuestra referencia): una orden de otro link o de otra cuenta no toca nada.
+     */
+    private async processPaypalOrder(
+        tenantId: number,
+        link: PaymentLinkRowDb,
+        creds: IntegrationCreds,
+        orderId: string,
+        prefetched: PaypalOrderView | null = null,
+    ): Promise<PaypalOrderView | null> {
+        let view = prefetched;
+        if (!view) {
+            const res = await this.paypal.call(creds, (b, t) => getOrderRequest(b, t, orderId));
+            if (res.status >= 500) throw new Error(`PayPal respondió ${res.status} al leer la orden`);
+            if (res.status === 401 || res.status === 403) throw new PaypalCallError(paypalError(res.status, res.body));
+            view = parseOrder(res.status, res.body);
+        }
+        if (!view || view.reference !== link.reference) return null;
+        if (view.needsCapture && (link.status === 'pending' || link.status === 'rejected')) {
+            const cap = await this.paypal.call(creds, (b, t) => captureOrderRequest(b, t, orderId));
+            if (cap.status === 200 || cap.status === 201) {
+                view = parseOrder(cap.status, cap.body) ?? view;
+            } else if (cap.status >= 500) {
+                throw new Error(`PayPal respondió ${cap.status} al cobrar la orden`);
+            } else {
+                // 422: ya estaba cobrada (otro aviso llegó primero) o el medio de pago se rechazó.
+                const again = await this.paypal.call(creds, (b, t) => getOrderRequest(b, t, orderId));
+                const reread = parseOrder(again.status, again.body);
+                if (reread && !reread.needsCapture) {
+                    view = reread;
+                } else if (/INSTRUMENT_DECLINED|PAYER_ACTION_REQUIRED|TRANSACTION_REFUSED/.test(cap.body)) {
+                    view = {
+                        ...view,
+                        needsCapture: false,
+                        payment: {
+                            paymentId: orderId,
+                            status: 'rejected',
+                            amount: view.payment?.amount ?? Number(link.amount),
+                            currency: view.payment?.currency ?? link.currency,
+                            paidAt: null,
+                            method: view.payment?.method ?? 'PayPal',
+                            linkRef: link.reference,
+                            note: 'Rechazado: el medio de pago no se aprobó en PayPal. El cliente puede volver a intentar con otro.',
+                        },
+                    };
+                } else {
+                    this.logger.warn(`Link ${link.id}: PayPal no cobró la orden ${orderId}: ${paypalError(cap.status, cap.body)}`);
+                }
+            }
+        }
+        if (view.status !== 'CREATED' && view.status !== 'PAYER_ACTION_REQUIRED') {
+            await this.tenantDb.withTenant(tenantId, async (tx) => {
+                const [row] = await tx
+                    .select({ orders: paymentLinks.providerOrders })
+                    .from(paymentLinks)
+                    .where(and(eq(paymentLinks.tenantId, tenantId), eq(paymentLinks.id, link.id)))
+                    .limit(1);
+                if (!row) return;
+                await tx
+                    .update(paymentLinks)
+                    .set({ providerOrders: markOrderDone(readPaypalOrders(row.orders), orderId) })
+                    .where(and(eq(paymentLinks.tenantId, tenantId), eq(paymentLinks.id, link.id)));
+            });
+        }
+        if (view.payment) await this.applyPayment(tenantId, link.id, view.payment);
+        return view;
+    }
+
+    /** «Verificar» de un link de PayPal: revisa sus órdenes (las más nuevas primero). */
+    private async refreshPaypalLink(tenantId: number, link: PaymentLinkRowDb, creds: IntegrationCreds): Promise<void> {
+        const orders = readPaypalOrders(link.providerOrders).slice(-5).reverse();
+        let any = false;
+        try {
+            for (const o of orders) {
+                // Releer el link: una orden anterior puede haberlo dejado pagado.
+                const [current] = await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx.select().from(paymentLinks).where(and(eq(paymentLinks.tenantId, tenantId), eq(paymentLinks.id, link.id))).limit(1),
+                );
+                const view = await this.processPaypalOrder(tenantId, current ?? link, creds, o.id);
+                if (view?.payment) any = true;
+            }
+        } catch (err) {
+            throw new BadRequestException({
+                code: 'verify_failed',
+                message: err instanceof PaypalCallError ? err.message : `No pudimos comunicarnos con PayPal (${redact(err, creds)}).`,
+                data: { status: 400 },
+            });
+        }
+        if (!any) await this.expireIfDue(tenantId, link.id);
+        await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.update(paymentLinks).set({ lastCheckedAt: new Date() }).where(and(eq(paymentLinks.tenantId, tenantId), eq(paymentLinks.id, link.id))),
+        );
+    }
+
+    /** Un aviso de PayPal: qué orden mirar; el estado se relee y se aplica. */
+    private async paypalHook(
+        tenantId: number,
+        connectionId: number,
+        creds: IntegrationCreds,
+        body: unknown,
+        failed: (message: string) => void,
+    ): Promise<'applied' | 'ignored' | 'error'> {
+        const notice = paypalNotice(body);
+        // Los de suscripciones llegan desde ya (la app los registra) y se ignoran hasta que PayPal también suscriba.
+        if (!notice || notice.kind === 'other') return 'ignored';
+        try {
+            let orderId = notice.kind === 'order' ? notice.orderId : notice.orderId;
+            if (!orderId && notice.kind === 'capture') {
+                const res = await this.paypal.call(creds, (b, t) => getCaptureRequest(b, t, notice.captureId));
+                if (res.status >= 500) throw new Error(`PayPal respondió ${res.status} al leer el cobro`);
+                orderId = parseCaptureOrderId(res.status, res.body);
+            }
+            if (!orderId) return 'ignored';
+            const res = await this.paypal.call(creds, (b, t) => getOrderRequest(b, t, orderId!));
+            if (res.status >= 500) throw new Error(`PayPal respondió ${res.status} al leer la orden`);
+            if (res.status === 401 || res.status === 403) throw new PaypalCallError(paypalError(res.status, res.body));
+            const view = parseOrder(res.status, res.body);
+            if (!view?.reference) return 'ignored';
+            const [link] = await this.tenantDb.withTenant(tenantId, (tx) =>
+                tx
+                    .select()
+                    .from(paymentLinks)
+                    .where(
+                        and(
+                            eq(paymentLinks.tenantId, tenantId),
+                            eq(paymentLinks.provider, 'paypal'),
+                            eq(paymentLinks.reference, view.reference!),
+                            eq(paymentLinks.connectionId, connectionId),
+                        ),
+                    )
+                    .limit(1),
+            );
+            if (!link) return 'ignored';
+            const before = link.status;
+            const out = await this.processPaypalOrder(tenantId, link, creds, orderId, view);
+            const [after] = await this.tenantDb.withTenant(tenantId, (tx) =>
+                tx.select({ status: paymentLinks.status }).from(paymentLinks).where(and(eq(paymentLinks.tenantId, tenantId), eq(paymentLinks.id, link.id))).limit(1),
+            );
+            return out?.payment && after?.status !== before ? 'applied' : 'ignored';
+        } catch (err) {
+            if (err instanceof PaypalCallError) {
+                failed(`PayPal rechazó la clave al consultar un pago (${err.message}). Vuelve a conectar la cuenta en Ajustes → Integraciones.`);
+                return 'error';
+            }
+            throw err;
+        }
+    }
+
+    /** El estado guardado del registro automático de avisos en PayPal. */
+    private async paypalWebhookState(tenantId: number, connectionId: number): Promise<PaypalWebhookState | null> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ provider: connections.provider, config: connections.config })
+                .from(connections)
+                .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
+                .limit(1),
+        );
+        if (!row || row.provider !== 'paypal') return null;
+        const raw = (row.config as Record<string, unknown>).paypal_webhook;
+        const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+        return {
+            id: typeof o.id === 'string' && isPaypalId(o.id) ? o.id : null,
+            client_id: typeof o.client_id === 'string' ? o.client_id : null,
+            error: typeof o.error === 'string' ? o.error : null,
+            at: typeof o.at === 'string' ? o.at : null,
+        };
+    }
+
+    /**
+     * Registra SOLA la URL de avisos en la cuenta de PayPal de la empresa (la
+     * persona no tiene que entrar a developer.paypal.com). Se recuerda con qué
+     * Client ID se registró: si la empresa cambia de app, se registra de nuevo.
+     * Un intento fallido se reintenta a lo sumo cada hora.
+     */
+    async ensurePaypalWebhook(tenantId: number, connectionId: number, force = false): Promise<PaypalWebhookState | null> {
+        const state = await this.paypalWebhookState(tenantId, connectionId);
+        if (!state) return null;
+        const conn = await this.connectors.integrationCredsFor(tenantId, connectionId).catch(() => null);
+        if (!conn) return state;
+        const clientId = (conn.creds.fields.client_id ?? '').trim();
+        if (state.id && state.client_id === clientId) return state;
+        const recent = state.at && Date.now() - new Date(state.at).getTime() < 60 * 60 * 1000;
+        if (!force && state.error && recent && state.client_id === clientId) return state;
+        const save = async (next: PaypalWebhookState): Promise<PaypalWebhookState> => {
+            await this.connectors.rememberConfig(tenantId, connectionId, { paypal_webhook: next });
+            return next;
+        };
+        const now = new Date().toISOString();
+        if (!this.appBase().startsWith('https://')) {
+            return save({
+                id: null,
+                client_id: clientId,
+                at: now,
+                error: 'Esta instalación no tiene una dirección https y PayPal sólo avisa a direcciones https. La app igual confirma cada pago cuando el cliente vuelve de PayPal y con «Verificar».',
+            });
+        }
+        const url = await this.hookUrlFor(tenantId, connectionId, 'paypal');
+        try {
+            const listed = await this.paypal.call(conn.creds, (b, t) => listWebhooksRequest(b, t));
+            let id = findWebhook(listed.status, listed.body, url);
+            if (!id) {
+                const created = await this.paypal.call(conn.creds, (b, t) => createWebhookRequest(b, t, url));
+                const parsed = parseCreatedWebhook(created.status, created.body);
+                if ('id' in parsed) id = parsed.id;
+                else if (parsed.exists) {
+                    const again = await this.paypal.call(conn.creds, (b, t) => listWebhooksRequest(b, t));
+                    id = findWebhook(again.status, again.body, url);
+                } else {
+                    return save({ id: null, client_id: clientId, at: now, error: parsed.error });
+                }
+            }
+            if (!id) return save({ id: null, client_id: clientId, at: now, error: 'PayPal no devolvió la dirección de avisos registrada.' });
+            return save({ id, client_id: clientId, at: now, error: null });
+        } catch (err) {
+            const message = err instanceof PaypalCallError ? err.message : `No pudimos comunicarnos con PayPal (${redact(err, conn.creds)}).`;
+            return save({ id: null, client_id: clientId, at: now, error: message });
+        }
+    }
+
+    /** Al borrar la conexión: saca de la cuenta de PayPal la dirección de avisos que registró la app. */
+    private async forgetPaypalWebhook(tenantId: number, connectionId: number): Promise<void> {
+        const state = await this.paypalWebhookState(tenantId, connectionId);
+        if (!state?.id) return;
+        const conn = await this.connectors.integrationCredsFor(tenantId, connectionId).catch(() => null);
+        if (!conn || (conn.creds.fields.client_id ?? '').trim() !== state.client_id) return;
+        await this.paypal.call(conn.creds, (b, t) => deleteWebhookRequest(b, t, state.id!));
     }
 
     // ── Columnas de cobro en la lista ───────────────────────────────────

@@ -91,6 +91,7 @@ import {
     type PublicFormEdit,
     type SaveFormDraftInput,
     type SaveFormDraftResult,
+    collectionCurrencyError,
 } from '@imagina-base/shared';
 import { accessOf } from '../billing/tenant-access';
 import { and, asc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
@@ -539,9 +540,13 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         const team = this.collections ? await this.collections.teamConnections(tenantId) : [];
         const conn = team.find((c) => c.id === pay.connection_id);
         if (!conn) {
-            throw badRequest('form_payment_connection', 'Elige una conexión de cobro del equipo (Mercado Pago o Wompi) en Ajustes → Integraciones.');
+            throw badRequest('form_payment_connection', 'Elige una conexión de cobro del equipo (Mercado Pago, Wompi o PayPal) en Ajustes → Integraciones.');
         }
         if (conn.provider === 'wompi') pay.currency = 'COP';
+        // v0.1.372 — PayPal no cobra en pesos colombianos: un monto en COP no
+        // se manda como si fueran dólares; se pide elegir la moneda.
+        const wrongCurrency = collectionCurrencyError(conn.provider, pay.currency);
+        if (wrongCurrency) throw badRequest('form_payment_currency', wrongCurrency);
     }
 
     /**

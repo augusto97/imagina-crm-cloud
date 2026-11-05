@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Calculator, CreditCard, PenLine } from 'lucide-react';
 import { Link } from 'react-router';
 
-import { COLLECTION_PROVIDER_LABEL, type FormConfig, type FormPaymentSource } from '@imagina-base/shared';
+import { COLLECTION_CURRENCY_OPTIONS, COLLECTION_PROVIDER_LABEL, collectionCurrencyError, collectionCurrencyFor, type FormConfig, type FormPaymentSource } from '@imagina-base/shared';
 
 import { Input } from '@/components/ui/input';
 import { api } from '@/cloud/session';
@@ -23,6 +23,17 @@ const SOURCES: Array<{ value: FormPaymentSource; title: string; hint: string; ic
 const selectClass =
     'imcrm-h-9 imcrm-w-full imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-ring';
 
+/**
+ * «PayPal · Prueba (sandbox)» ya dice el proveedor y que es de prueba: no se
+ * repite («… · PayPal (prueba)»). Una conexión con otro nombre sí lo lleva.
+ */
+function connectionOptionLabel(name: string, provider: string, test: boolean): string {
+    const lower = name.toLowerCase();
+    let label = lower.includes(provider.toLowerCase()) ? name : `${name} · ${provider}`;
+    if (test && !lower.includes('prueba')) label += ` (${__('prueba')})`;
+    return label;
+}
+
 const toAmount = (raw: string): number | null => {
     if (raw.trim() === '') return null;
     const n = Number(raw);
@@ -41,6 +52,8 @@ export function PaymentSettings({ config, fields, onChange }: { config: FormConf
     const team = (conns.data ?? []).filter((c) => c.shared !== false);
     const conn = team.find((c) => c.id === p.connection_id) ?? null;
     const wompi = conn?.provider === 'wompi';
+    const paypal = conn?.provider === 'paypal';
+    const currencyProblem = conn ? collectionCurrencyError(conn.provider, p.currency) : null;
     const asked = new Set(config.items.flatMap((i) => (i.type === 'field' ? [i.field_id] : [])));
     const amountFields = fields.filter((f) => asked.has(f.id) && (f.type === 'number' || f.type === 'currency'));
     const calcs = config.settings.calcs;
@@ -61,14 +74,14 @@ export function PaymentSettings({ config, fields, onChange }: { config: FormConf
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="form-payment" data-tour="form-payment">
                 <Check label={__('Cobrar al enviar el formulario')} checked={p.enabled} onChange={(v) => set({ enabled: v })} testId="form-payment-enabled" />
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                    {__('Al enviar, la persona paga con la cuenta de Mercado Pago o Wompi de la empresa: el dinero llega a esa cuenta. La respuesta queda guardada y su pago aparece en la ficha del registro.')}
+                    {__('Al enviar, la persona paga con la cuenta de Mercado Pago, Wompi o PayPal de la empresa: el dinero llega a esa cuenta. La respuesta queda guardada y su pago aparece en la ficha del registro.')}
                 </p>
                 {p.enabled && (
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-2">
                         <Field label={__('Con qué cuenta se cobra')}>
                             {!conns.isLoading && team.length === 0 ? (
                                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-amber-700 dark:imcrm-text-amber-300" data-testid="form-payment-no-connection">
-                                    {__('No hay una conexión de cobro del equipo (Mercado Pago o Wompi).')}{' '}
+                                    {__('No hay una conexión de cobro del equipo (Mercado Pago, Wompi o PayPal).')}{' '}
                                     <Link to="/settings?s=conectores" className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline">
                                         {__('Conéctala en Ajustes → Integraciones')}
                                     </Link>
@@ -80,14 +93,15 @@ export function PaymentSettings({ config, fields, onChange }: { config: FormConf
                                     onChange={(e) => {
                                         const id = e.target.value ? Number(e.target.value) : null;
                                         const next = team.find((c) => c.id === id);
-                                        set({ connection_id: id, ...(next?.provider === 'wompi' ? { currency: 'COP' } : {}) });
+                                        // Wompi cobra en pesos; PayPal nunca en pesos (pasa a dólares).
+                                        set({ connection_id: id, ...(next ? { currency: collectionCurrencyFor(next.provider, p.currency) } : {}) });
                                     }}
                                     data-testid="form-payment-connection"
                                 >
                                     <option value="">{__('Elige una conexión…')}</option>
                                     {team.map((c) => (
                                         <option key={c.id} value={c.id}>
-                                            {`${c.name} · ${COLLECTION_PROVIDER_LABEL[c.provider]}${c.test_mode ? ` (${__('prueba')})` : ''}`}
+                                            {connectionOptionLabel(c.name, COLLECTION_PROVIDER_LABEL[c.provider], c.test_mode)}
                                         </option>
                                     ))}
                                 </select>
@@ -196,17 +210,36 @@ export function PaymentSettings({ config, fields, onChange }: { config: FormConf
                             ))}
 
                         <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2">
-                            <Field label={__('Moneda')} hint={wompi ? __('Wompi cobra en pesos colombianos.') : undefined}>
-                                <Input
-                                    value={p.currency}
-                                    maxLength={3}
-                                    disabled={wompi}
-                                    onChange={(e) => {
-                                        const v = e.target.value.toUpperCase().replace(/[^A-Z]/g, '');
-                                        if (v.length === 3) set({ currency: v });
-                                    }}
-                                    data-testid="form-payment-currency"
-                                />
+                            <Field
+                                label={__('Moneda')}
+                                hint={wompi ? __('Wompi cobra en pesos colombianos.') : paypal ? __('PayPal no cobra en pesos colombianos.') : undefined}
+                            >
+                                {paypal ? (
+                                    <select className={selectClass} value={p.currency} onChange={(e) => set({ currency: e.target.value })} data-testid="form-payment-currency">
+                                        {!COLLECTION_CURRENCY_OPTIONS.paypal.some((o) => o.value === p.currency) && <option value={p.currency}>{p.currency}</option>}
+                                        {COLLECTION_CURRENCY_OPTIONS.paypal.map((o) => (
+                                            <option key={o.value} value={o.value}>
+                                                {o.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <Input
+                                        value={p.currency}
+                                        maxLength={3}
+                                        disabled={wompi}
+                                        onChange={(e) => {
+                                            const v = e.target.value.toUpperCase().replace(/[^A-Z]/g, '');
+                                            if (v.length === 3) set({ currency: v });
+                                        }}
+                                        data-testid="form-payment-currency"
+                                    />
+                                )}
+                                {currencyProblem && (
+                                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-amber-700 dark:imcrm-text-amber-300" data-testid="form-payment-currency-problem">
+                                        {currencyProblem}
+                                    </p>
+                                )}
                             </Field>
                             <Field label={__('El link sirve (días)')}>
                                 <Input

@@ -4,7 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { FieldsModule } from '../fields/fields.module';
 import { ListsModule } from '../lists/lists.module';
 import { RecordsRepository } from '../records/records.repository';
-import { CollectionHooksController, CollectionsController } from './collections.controller';
+import { CollectionHooksController, CollectionsController, PublicPayController } from './collections.controller';
 import { CollectionsService } from './collections.service';
 import { PublicSubscriptionsController, SubscriptionsController } from '../subscriptions/subscriptions.controller';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
@@ -20,7 +20,7 @@ import { SubscriptionChargeLogService } from '../subscriptions/subscription-char
 @Global()
 @Module({
     imports: [AuthModule, ListsModule, FieldsModule, ActivityModule],
-    controllers: [CollectionsController, CollectionHooksController, SubscriptionsController, PublicSubscriptionsController],
+    controllers: [CollectionsController, CollectionHooksController, PublicPayController, SubscriptionsController, PublicSubscriptionsController],
     providers: [CollectionsService, SubscriptionsService, SubscriptionChargeLogService, RecordsRepository],
     exports: [CollectionsService, SubscriptionsService, SubscriptionChargeLogService],
 })

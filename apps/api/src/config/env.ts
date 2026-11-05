@@ -208,6 +208,11 @@ const envSchema = z.object({
     WOMPI_API_URL: z.string().default(''),
     WOMPI_CHECKOUT_URL: z.string().default(''),
     /**
+     * v0.1.372 — sólo desarrollo/pruebas: PayPal SIMULADO para los cobros de
+     * las empresas (`<base>/live` y `<base>/sandbox`). En producción se ignora.
+     */
+    PAYPAL_COLLECT_API_URL: z.string().default(''),
+    /**
      * v0.1.289 — sólo desarrollo/pruebas: verificación de captcha SIMULADA
      * (Turnstile/hCaptcha/reCAPTCHA no alcanzan el entorno de pruebas). En
      * producción se ignora: los tokens se verifican siempre con el proveedor.

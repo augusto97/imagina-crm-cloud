@@ -42,6 +42,7 @@ const APP_NAMES: Record<string, string> = {
     slack: 'Slack',
     mercadopago: 'Mercado Pago',
     wompi: 'Wompi',
+    paypal: 'PayPal',
     google_sheets: 'Google Sheets',
     google_calendar: 'Google Calendar',
 };

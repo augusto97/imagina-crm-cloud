@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import type { CollectionProvider, PaymentLinkStatus } from '@imagina-base/shared';
+import { collectionCurrencyError, type CollectionProvider, type PaymentLinkStatus } from '@imagina-base/shared';
 import type { IntegrationCreds, IntegrationRequest, VerifyOutcome } from '../connectors/integration-calls';
+import { PAYPAL_LIVE, PAYPAL_SANDBOX, paypalError } from './paypal-gateway';
 
 /**
  * Cobros de las empresas (v0.1.251, ADR-S31) — las piezas PURAS de cada
@@ -23,6 +24,9 @@ export interface GatewayBases {
     wompiProduction: string;
     wompiSandbox: string;
     wompiCheckout: string;
+    /** v0.1.372 — PayPal (producción y sandbox). */
+    paypalLive: string;
+    paypalSandbox: string;
 }
 
 export const DEFAULT_GATEWAY_BASES: GatewayBases = {
@@ -30,10 +34,18 @@ export const DEFAULT_GATEWAY_BASES: GatewayBases = {
     wompiProduction: WOMPI_PRODUCTION,
     wompiSandbox: WOMPI_SANDBOX,
     wompiCheckout: WOMPI_CHECKOUT,
+    paypalLive: PAYPAL_LIVE,
+    paypalSandbox: PAYPAL_SANDBOX,
 };
+
+/** v0.1.372 — La API de PayPal del ambiente de esas credenciales. */
+export function paypalBase(creds: IntegrationCreds, bases: GatewayBases): string {
+    return creds.fields.env === 'sandbox' ? bases.paypalSandbox : bases.paypalLive;
+}
 
 /** Credenciales de prueba: los pagos no son dinero real. */
 export function isTestCreds(provider: CollectionProvider, creds: IntegrationCreds): boolean {
+    if (provider === 'paypal') return creds.fields.env === 'sandbox';
     if (provider === 'mercadopago') return creds.secret.startsWith('TEST-');
     return (creds.fields.public_key ?? '').startsWith('pub_test_') || creds.secret.startsWith('prv_test_');
 }
@@ -66,6 +78,7 @@ function num(v: unknown): number | null {
 
 /** El mensaje de error que devuelve cada API, legible. */
 export function providerError(provider: CollectionProvider, status: number, body: string): string {
+    if (provider === 'paypal') return paypalError(status, body);
     const json = parseJson(body);
     if (provider === 'mercadopago') {
         const message = str(json?.message) ?? str(json?.error);
@@ -97,6 +110,13 @@ export function providerError(provider: CollectionProvider, status: number, body
  * Wompi y su API sólo dice «no autorizado».
  */
 export function precheckCreds(provider: CollectionProvider, creds: IntegrationCreds): string | null {
+    if (provider === 'paypal') {
+        const id = (creds.fields.client_id ?? '').trim();
+        if (id.length < 20 || /\s/.test(id)) return 'Ese no parece un Client ID de PayPal: es una cadena larga, sin espacios. Cópialo completo de developer.paypal.com → Apps & Credentials.';
+        if (creds.secret.trim().length < 20) return 'Falta el «Secret» de la app de PayPal (toca «Show» en developer.paypal.com para verlo).';
+        if (id === creds.secret.trim()) return 'Pegaste el Client ID también como Secret: son dos datos distintos de la misma app.';
+        return null;
+    }
     if (provider === 'mercadopago') {
         const t = creds.secret.trim();
         if (!/^(APP_USR|TEST)-/.test(t)) {
@@ -204,14 +224,18 @@ export interface LinkInput {
     returnUrl?: string | null;
 }
 
-/** Wompi sólo cobra en pesos colombianos; Mercado Pago, en la moneda de la cuenta. */
+/**
+ * Wompi sólo cobra en pesos colombianos; Mercado Pago, en la moneda de la
+ * cuenta; PayPal, en las de su lista (nunca en COP).
+ */
 export function linkInputError(provider: CollectionProvider, input: LinkInput): string | null {
     if (!(input.amount > 0)) return 'El monto tiene que ser mayor a cero.';
-    if (provider === 'wompi') {
-        if (input.currency.toUpperCase() !== 'COP') return 'Wompi sólo cobra en pesos colombianos (COP).';
-        // Wompi pide al menos $1.500 COP por transacción.
-        if (input.amount < 1500) return 'Wompi no acepta cobros menores a $1.500 COP.';
-    }
+    const currency = collectionCurrencyError(provider, input.currency);
+    if (currency) return currency;
+    // Wompi pide al menos $1.500 COP por transacción.
+    if (provider === 'wompi' && input.amount < 1500) return 'Wompi no acepta cobros menores a $1.500 COP.';
+    // PayPal no acepta montos con más de 7 dígitos enteros por orden.
+    if (provider === 'paypal' && input.amount >= 10_000_000) return 'PayPal no acepta un cobro tan alto en una sola orden.';
     return null;
 }
 

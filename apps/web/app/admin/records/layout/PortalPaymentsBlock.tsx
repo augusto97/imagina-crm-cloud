@@ -3,6 +3,7 @@ import * as RDialog from '@radix-ui/react-dialog';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
     COLLECTION_PROVIDER_LABEL,
+    collectionCurrencyError,
     readPortalPaymentsConfig,
     SUBSCRIPTION_CHARGE_STATUS_LABELS,
     type PortalPaymentLink,
@@ -352,15 +353,18 @@ export function PortalPaymentsPreview({
             <div className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-amber-500/50 imcrm-bg-amber-500/5 imcrm-px-4 imcrm-py-3 imcrm-text-sm" data-testid="portal-payments-no-connection">
                 <p className="imcrm-font-medium">Falta una conexión de cobro</p>
                 <p className="imcrm-mt-1 imcrm-text-xs imcrm-text-muted-foreground">
-                    Conecta Mercado Pago o Wompi en Ajustes → Integraciones (para todo el equipo). Sin una, tus clientes no ven este bloque.
+                    Conecta Mercado Pago, Wompi o PayPal en Ajustes → Integraciones (para todo el equipo). Sin una, tus clientes no ven este bloque.
                 </p>
             </div>
         );
     }
     const n = typeof amount === 'number' ? amount : typeof amount === 'string' && amount.trim() !== '' ? Number(amount) : NaN;
     const conn = shared.find((c) => c.id === cfg.pay_button.connection_id);
+    // v0.1.372 — PayPal no cobra en pesos: con el monto en COP el botón no se ofrece.
+    const payCurrency = conn ? (conn.provider === 'wompi' ? 'COP' : currency) : currency;
+    const wrongCurrency = conn ? collectionCurrencyError(conn.provider, payCurrency) : null;
     const pay =
-        cfg.pay_button.enabled && conn && Number.isFinite(n) && n > 0
+        cfg.pay_button.enabled && conn && !wrongCurrency && Number.isFinite(n) && n > 0
             ? {
                   label: cfg.pay_button.label || 'Pagar ahora',
                   amount: n,
@@ -377,6 +381,7 @@ export function PortalPaymentsPreview({
                 {cfg.show_subscriptions ? 'Si tiene una suscripción de débito automático, ve su estado, el próximo cobro y sus últimos cobros. ' : ''}
                 {cfg.pay_button.enabled && !pay ? 'El botón aparece cuando el registro tiene un monto mayor a cero. ' : ''}
                 {cfg.pay_button.enabled && !conn ? 'Elige la conexión de cobro del botón. ' : ''}
+                {cfg.pay_button.enabled && wrongCurrency ? `${wrongCurrency} El botón no aparece mientras el monto esté en ${payCurrency}. ` : ''}
             </p>
         </div>
     );

@@ -2428,7 +2428,7 @@ function ConnectorActionConfig({
             {/* v0.1.365 — el link tiene que quedar a la vista: aquí se elige la
                 columna donde se guarda (y el estado, la fecha y el monto del pago). */}
             {actionKey === 'create_payment_link' &&
-                (connection?.integration_key === 'mercadopago' || connection?.integration_key === 'wompi') &&
+                (connection?.integration_key === 'mercadopago' || connection?.integration_key === 'wompi' || connection?.integration_key === 'paypal') &&
                 listId && (
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3" data-testid="imcrm-payment-link-columns">
                         <p className="imcrm-text-sm imcrm-font-medium">{__('Dónde queda el link')}</p>

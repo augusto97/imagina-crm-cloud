@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { COLLECTION_PROVIDER_LABEL } from '@imagina-base/shared';
+import { COLLECTION_PROVIDER_LABEL, type CollectionConnectionDetail } from '@imagina-base/shared';
 import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink, Wallet, Zap } from 'lucide-react';
 import { Link, useParams } from 'react-router';
 
@@ -83,7 +83,9 @@ export function CollectionsPage(): JSX.Element {
                         </span>
                     ) : null}
                 </h2>
-                {d.hook_needs_setup ? (
+                {provider === 'paypal' ? (
+                    <PaypalHookNote detail={d} />
+                ) : d.hook_needs_setup ? (
                     <div className="imcrm-mt-2 imcrm-space-y-2 imcrm-text-sm">
                         <p className="imcrm-text-muted-foreground">
                             {__('Para que la app se entere sola de cada pago, pega esta URL en Wompi → Desarrolladores → «URL de Eventos» (en el ambiente de')}{' '}
@@ -124,6 +126,9 @@ export function CollectionsPage(): JSX.Element {
                     <li>{__('Con «Elegir columnas» en la sección «Cobros» de un registro (o en la acción de la automatización), la lista guarda el link y el estado de cada pago y puedes filtrar quién debe.')}</li>
                     {provider === 'mercadopago' && (
                         <li>{__('Para cobrar cada mes con débito automático: crea un plan abajo, en «Suscripciones», y toca «Suscribir» en la ficha del cliente (o usa la acción «Crear suscripción» de una automatización).')}</li>
+                    )}
+                    {provider === 'paypal' && (
+                        <li>{__('PayPal cobra en dólares (USD) u otra moneda que acepte, nunca en pesos colombianos. El cliente paga con su cuenta PayPal o con tarjeta, y la app confirma el cobro sola cuando vuelve de PayPal.')}</li>
                     )}
                 </ul>
             </section>
@@ -186,6 +191,38 @@ function Stat({ label, value }: { label: string; value: string }): JSX.Element {
         <div className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-px-4 imcrm-py-3">
             <div className="imcrm-text-xs imcrm-text-muted-foreground">{label}</div>
             <div className="imcrm-mt-0.5 imcrm-text-xl imcrm-font-semibold imcrm-tabular-nums">{value}</div>
+        </div>
+    );
+}
+
+/**
+ * v0.1.372 — PayPal: la app registra SOLA la dirección de avisos en la cuenta
+ * (no hay que entrar a developer.paypal.com). Si no pudo, se dice por qué y se
+ * da la URL para pegarla a mano.
+ */
+function PaypalHookNote({ detail: d }: { detail: CollectionConnectionDetail }): JSX.Element {
+    if (d.hook_auto) {
+        return (
+            <p className="imcrm-mt-2 imcrm-text-sm imcrm-text-muted-foreground" data-testid="imcrm-collections-paypal-auto">
+                {__('No hay que configurar nada: la app registró sola la dirección de avisos en tu cuenta de PayPal. Cada aviso se confirma consultando la orden en PayPal antes de marcar nada como pagado, y la app cobra la orden apenas el cliente la aprueba.')}
+            </p>
+        );
+    }
+    return (
+        <div className="imcrm-mt-2 imcrm-space-y-2 imcrm-text-sm" data-testid="imcrm-collections-paypal-manual">
+            {d.hook_error && (
+                <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-xs imcrm-text-amber-700 dark:imcrm-text-amber-400">
+                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                    {d.hook_error}
+                </p>
+            )}
+            <p className="imcrm-text-muted-foreground">
+                {__('Los pagos se confirman igual cuando el cliente vuelve de PayPal y con «Verificar». Si quieres que la app se entere también de reembolsos y pagos que el cliente no terminó de volver, agrega esta URL en developer.paypal.com → tu app → Webhooks (eventos «Checkout order approved» y «Payment capture»):')}
+            </p>
+            <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-muted/50 imcrm-px-3 imcrm-py-2">
+                <code className="imcrm-min-w-0 imcrm-flex-1 imcrm-break-all imcrm-text-xs" data-testid="imcrm-collections-hook-url">{d.hook_url}</code>
+                <CopyButton value={d.hook_url} label={__('Copiar')} testId="imcrm-collections-hook-copy" />
+            </div>
         </div>
     );
 }

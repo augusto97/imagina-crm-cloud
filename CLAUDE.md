@@ -12435,6 +12435,65 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         cuatro herramientas, `list_subscriptions` y proponer → aplicar el
         registro de cobros).
 
+  - [x] **PayPal para los cobros de cada empresa: links de pago en dólares
+        (v0.1.372, addendum ADR-S31, cuarta parte de «hazlo todo como lo veas
+        más recomendable»; PayPal se partió en dos y las suscripciones pasan a
+        v0.1.373)**. (a) **Conectar**: Integraciones → **PayPal** (categoría
+        Cobros y pagos) con Client ID + Secret cifrados; la credencial se prueba
+        en producción y, si no, en prueba (`runPaypalVerify`), así nadie elige
+        el ambiente (`fields.env`; la conexión dice «Prueba (sandbox)»). El
+        proveedor vive en `paypal-gateway.ts` (puro: pedido de token, crear,
+        leer y capturar la orden, leer la captura, avisos, órdenes del link) y
+        `paypal-client.ts` (token en memoria por credencial con hash, renovado
+        cinco minutos antes, y un reintento con token nuevo ante un 401).
+        (b) **El link es de la app** (`PublicPayController`,
+        `GET /api/v1/public/pay/:reference`): una orden de PayPal sin aprobar
+        vence, así que cada visita reusa la orden de la última hora o crea otra
+        con un candado por link (`payment_links.provider_orders`, las 10 más
+        nuevas, y `return_url`; migración 0105) y redirige a PayPal con la marca
+        de la empresa, «Pagar ahora» y sin envío. (c) **Aprobar no es pagar**:
+        la app CAPTURA la orden al volver el cliente (`/return`), con el aviso o
+        con «Verificar» (las 5 órdenes más nuevas), idempotente con
+        `PayPal-Request-Id`; `ORDER_ALREADY_CAPTURED` se resuelve releyendo y
+        `INSTRUMENT_DECLINED` deja el link rechazado con «Volver a intentar»; una
+        orden sin la referencia del link (`custom_id`) no se aplica.
+        (d) **Páginas propias** (`paypal-pay-page.ts`, servidas por el API, sin
+        scripts, todo escapado, CSP cerrada, `noindex`): pago recibido, ya
+        pagado, reembolsado, vencido, anulado, cancelaste (con reintentar),
+        rechazado, en revisión, confirmando y PayPal no respondió — con el
+        nombre de la empresa y nunca el de la plataforma. (e) **Avisos**: con
+        `APP_BASE_URL` en https la app registra sola el webhook en la cuenta de
+        la empresa (`ensurePaypalWebhook`, y lo borra al eliminar la conexión
+        con `connectors.onBeforeRemove`); si no puede, la página de Cobros da la
+        URL para pegarla (`PaypalHookNote`, `hook_auto`/`hook_error`). Del aviso
+        sólo se toma el id y se relee la orden o la captura (un reembolso llega
+        por la captura). (f) **Monedas**: PayPal no cobra en pesos colombianos —
+        `collectionCurrencyError`/`collectionCurrencyFor`/
+        `COLLECTION_CURRENCY_OPTIONS` en shared—: la ficha propone USD y no
+        arrastra un monto en pesos (`imcrm-pay-paypal-currency`), la acción usa
+        USD por defecto, el formulario rechaza COP (400
+        `form_payment_currency`) y el portal no ofrece pagar en una moneda que
+        la conexión no acepta. (g) Botón «Cobros» en la tarjeta de PayPal,
+        logo, asistente/MCP (la acción de PayPal en el catálogo y la nota de
+        monedas), migración de empresa con la conexión. Env
+        `PAYPAL_COLLECT_API_URL` (sólo desarrollo: el proveedor simulado). De
+        paso: el selector de conexión del formulario repetía «PayPal ·
+        Prueba (sandbox) · PayPal (prueba)», y el proveedor simulado de
+        desarrollo se caía con cuerpos de formulario. Ayuda: sección de PayPal
+        en Aprende → Cobros con la ilustración `cobro-paypal`, guía de links de
+        pago y novedad con carrusel. Tests: `collections-paypal.spec` (7: piezas
+        puras, conectar en producción/prueba, link propio con reuso y captura,
+        avisos que capturan una vez y reembolso, «Verificar» y rechazo, orden
+        vieja y ajena, borrar la conexión borra el webhook) y `collections.spec`
+        12/12 — E2E navegador 38/38 en escritorio y en celular oscuro contra el
+        PayPal simulado de `scripts/dev/fake-collect.mjs` (credencial mala,
+        sandbox detectado, link en USD por 49.90, aprobar → «¡Pago recibido!» y
+        la ficha en «Pagado · Cuenta PayPal», reabrir → «ya está pagado»,
+        cancelar y reintentar con la misma orden, «Verificar», COP rechazado en
+        la ficha y el formulario, Aprende) y 4/4 del panel del formulario.
+        **Límite de la verificación**: sin credenciales reales de PayPal; la
+        prueba con una app sandbox queda para el servidor.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

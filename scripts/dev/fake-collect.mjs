@@ -1,14 +1,22 @@
 // Mercado Pago + Wompi simulados para el E2E de v0.1.251 (cobros de empresas)
 // y v0.1.367 (suscripciones de Mercado Pago: preapproval + authorized_payments).
+// v0.1.372 — PayPal (`/paypal/live` y `/paypal/sandbox`): token, órdenes,
+// captura, capturas, webhooks y una página de aprobación que vuelve sola.
 import http from 'node:http';
-const state = { prefs: [], payments: {}, links: {}, txs: {}, pre: {}, invoices: {}, calls: [] };
+const state = { prefs: [], payments: {}, links: {}, txs: {}, pre: {}, invoices: {}, calls: [], ppOrders: {}, ppCaptures: {}, ppWebhooks: [], ppDecline: false };
 let n = 0;
 const json = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
 http.createServer((req, res) => {
     let raw = '';
     req.on('data', (c) => (raw += c));
     req.on('end', () => {
-        const body = raw ? JSON.parse(raw) : null;
+        let body = null;
+        // El token de PayPal llega como formulario, no como JSON.
+        try {
+            body = raw ? JSON.parse(raw) : null;
+        } catch {
+            body = Object.fromEntries(new URLSearchParams(raw));
+        }
         const u = new URL(req.url, 'http://x');
         const p = u.pathname;
         state.calls.push({ method: req.method, path: p + u.search, body, auth: req.headers.authorization });
@@ -17,6 +25,71 @@ http.createServer((req, res) => {
         // Mezcla campos en un objeto ya guardado (p. ej. autorizar una suscripción).
         if (p === '/__patch' && req.method === 'POST') { state[body.kind][body.id] = { ...(state[body.kind][body.id] ?? {}), ...body.data }; return json(res, 200, state[body.kind][body.id]); }
         if (p.startsWith('/pay/') || p.startsWith('/wompi-pay/')) { res.writeHead(200, { 'content-type': 'text/html' }); return res.end('<h1>Pago (simulado)</h1>'); }
+        // ── PayPal (v0.1.372)
+        let pm;
+        if ((pm = p.match(/^\/paypal\/(live|sandbox)(\/.*)$/))) {
+            const env = pm[1];
+            const path = pm[2];
+            if (path === '/v1/oauth2/token') {
+                const raw = Buffer.from((req.headers.authorization ?? '').replace(/^Basic /, ''), 'base64').toString();
+                const good = env === 'live' ? 'LIVE-e2e-client-id-0000000000000001:LIVE-e2e-secret-00000000000000000001' : 'SB-e2e-client-id-00000000000000000001:SB-e2e-secret-0000000000000000000001';
+                return raw === good ? json(res, 200, { access_token: `pp-${env}`, expires_in: 32400 }) : json(res, 401, { error: 'invalid_client', error_description: 'Client Authentication failed' });
+            }
+            if (!/^Bearer pp-/.test(req.headers.authorization ?? '')) return json(res, 401, {});
+            if (path === '/v2/checkout/orders' && req.method === 'POST') {
+                const id = `ORD${String(++n).padStart(8, '0')}`;
+                const ctx = body?.payment_source?.paypal?.experience_context ?? {};
+                state.ppOrders[id] = { id, status: 'PAYER_ACTION_REQUIRED', purchase_units: body.purchase_units, return_url: ctx.return_url, cancel_url: ctx.cancel_url, brand: ctx.brand_name, links: [{ rel: 'payer-action', href: `http://127.0.0.1:4898/paypal-checkout?token=${id}` }] };
+                return json(res, 200, state.ppOrders[id]);
+            }
+            let om;
+            if ((om = path.match(/^\/v2\/checkout\/orders\/([A-Z0-9]+)\/capture$/)) && req.method === 'POST') {
+                const o = state.ppOrders[om[1]];
+                if (!o) return json(res, 404, { name: 'RESOURCE_NOT_FOUND' });
+                if (o.status === 'COMPLETED') return json(res, 422, { name: 'UNPROCESSABLE_ENTITY', details: [{ issue: 'ORDER_ALREADY_CAPTURED' }] });
+                if (o.status !== 'APPROVED') return json(res, 422, { name: 'UNPROCESSABLE_ENTITY', details: [{ issue: 'ORDER_NOT_APPROVED' }] });
+                if (state.ppDecline) { state.ppDecline = false; return json(res, 422, { name: 'UNPROCESSABLE_ENTITY', details: [{ issue: 'INSTRUMENT_DECLINED' }] }); }
+                const unit = o.purchase_units[0];
+                const capId = `CAP${String(++n).padStart(8, '0')}`;
+                const cap = { id: capId, status: 'COMPLETED', amount: unit.amount, create_time: new Date().toISOString(), supplementary_data: { related_ids: { order_id: o.id } } };
+                state.ppCaptures[capId] = cap;
+                o.status = 'COMPLETED';
+                o.payment_source = { paypal: { email_address: 'cliente@correo.test' } };
+                o.purchase_units = [{ ...unit, payments: { captures: [cap] } }];
+                return json(res, 201, o);
+            }
+            if ((om = path.match(/^\/v2\/checkout\/orders\/([A-Z0-9]+)$/))) return state.ppOrders[om[1]] ? json(res, 200, state.ppOrders[om[1]]) : json(res, 404, { name: 'RESOURCE_NOT_FOUND' });
+            if ((om = path.match(/^\/v2\/payments\/captures\/([A-Z0-9]+)$/))) return state.ppCaptures[om[1]] ? json(res, 200, state.ppCaptures[om[1]]) : json(res, 404, {});
+            if (path === '/v1/notifications/webhooks' && req.method === 'GET') return json(res, 200, { webhooks: state.ppWebhooks });
+            if (path === '/v1/notifications/webhooks' && req.method === 'POST') {
+                if (state.ppWebhooks.some((w) => w.url === body.url)) return json(res, 400, { name: 'WEBHOOK_URL_ALREADY_EXISTS' });
+                const hook = { id: `WH-${++n}`, url: body.url, event_types: body.event_types };
+                state.ppWebhooks.push(hook);
+                return json(res, 201, hook);
+            }
+            if ((om = path.match(/^\/v1\/notifications\/webhooks\/(.+)$/)) && req.method === 'DELETE') {
+                state.ppWebhooks = state.ppWebhooks.filter((w) => w.id !== om[1]);
+                res.writeHead(204); return res.end();
+            }
+            return json(res, 404, {});
+        }
+        // La página «de PayPal»: aprueba (o cancela) y vuelve a la app como PayPal.
+        if (p === '/paypal-checkout') {
+            const o = state.ppOrders[u.searchParams.get('token') ?? ''];
+            if (!o) { res.writeHead(404, { 'content-type': 'text/html' }); return res.end('<h1>Orden no encontrada</h1>'); }
+            const unit = o.purchase_units[0];
+            res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+            return res.end(`<!doctype html><meta charset="utf-8"><title>PayPal (simulado)</title><h1>PayPal (simulado)</h1><p>${o.brand ?? ''} te cobra ${unit.amount.value} ${unit.amount.currency_code}: ${unit.description ?? ''}</p><a id="pp-approve" href="/paypal-approve?token=${o.id}">Pagar ahora</a> · <a id="pp-cancel" href="${o.cancel_url}?token=${o.id}">Cancelar y volver</a>`);
+        }
+        if (p === '/paypal-approve') {
+            const o = state.ppOrders[u.searchParams.get('token') ?? ''];
+            if (!o) return json(res, 404, {});
+            if (o.status !== 'COMPLETED') o.status = 'APPROVED';
+            o.payment_source = { paypal: { email_address: 'cliente@correo.test' } };
+            res.writeHead(302, { location: `${o.return_url}?token=${o.id}&PayerID=PAYER123` });
+            return res.end();
+        }
+        if (p === '/__paypal' && req.method === 'POST') { if (body?.decline) state.ppDecline = true; if (body?.approve && state.ppOrders[body.approve]) state.ppOrders[body.approve].status = 'APPROVED'; return json(res, 200, {}); }
         // ── Mercado Pago
         if (p === '/mp/users/me') {
             return req.headers.authorization === 'Bearer APP_USR-e2e-buena'
