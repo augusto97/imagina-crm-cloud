@@ -19,6 +19,30 @@ export const MP_API = 'https://api.mercadopago.com';
 export interface MercadoPagoCredsSource {
     mercadoPago(): Promise<MercadoPagoCreds | null>;
     webhookUrl(): string;
+    /**
+     * v0.1.379 — anota el último aviso recibido (firma y qué pasó) para
+     * mostrarlo en Plataforma → Cobros. Best-effort: nunca rompe el aviso.
+     */
+    recordHook?(entry: MpHookRecord): Promise<void>;
+}
+
+/** Lo que se anota de cada aviso de Mercado Pago (sin datos del pago). */
+export interface MpHookRecord {
+    type: string | null;
+    dataId: string | null;
+    signature: 'ok' | 'bad' | 'no_secret';
+    result: 'read' | 'unrelated' | 'not_found' | 'error';
+    message?: string;
+}
+
+/** Una respuesta no-2xx de la API de Mercado Pago (para distinguir 404 de una falla). */
+class MpHttpError extends Error {
+    constructor(
+        path: string,
+        readonly status: number,
+    ) {
+        super(`GET ${path} → ${status}`);
+    }
 }
 
 /**
@@ -139,33 +163,58 @@ export class MercadoPagoGateway implements PaymentGateway {
         if (!creds) return [];
         const body = safeJson(rawBody);
         const dataId = query['data.id'] ?? (body?.data?.id !== undefined ? String(body.data.id) : undefined);
+        const type = body?.type ?? query.type ?? query.topic ?? null;
+        const record = (entry: Omit<MpHookRecord, 'type' | 'dataId'>): void => {
+            void this.source
+                .recordHook?.({ type: type ? String(type).slice(0, 64) : null, dataId: dataId ? dataId.slice(0, 64) : null, ...entry })
+                .catch(() => undefined);
+        };
         if (!verifyMpSignature(headers, dataId, creds.webhookSecret)) {
             this.logger.warn('firma x-signature inválida — aviso rechazado');
+            record({ signature: creds.webhookSecret ? 'bad' : 'no_secret', result: 'unrelated' });
             return [];
         }
-        const type = body?.type ?? query.type ?? query.topic;
-        if (!dataId || !/^[A-Za-z0-9-]{1,64}$/.test(dataId)) return [];
+        if (!dataId || !/^[A-Za-z0-9-]{1,64}$/.test(dataId)) {
+            record({ signature: 'ok', result: 'unrelated' });
+            return [];
+        }
         try {
+            let notices: PaymentNotice[];
             switch (type) {
                 case 'payment':
-                    return this.fromPayment(creds.accessToken, dataId);
+                    notices = await this.fromPayment(creds.accessToken, dataId);
+                    break;
                 case 'subscription_preapproval':
-                    return this.fromPreapproval(creds.accessToken, dataId);
+                    notices = await this.fromPreapproval(creds.accessToken, dataId);
+                    break;
                 case 'subscription_authorized_payment':
-                    return this.fromAuthorizedPayment(creds.accessToken, dataId);
+                    notices = await this.fromAuthorizedPayment(creds.accessToken, dataId);
+                    break;
                 default:
-                    return [];
+                    notices = [];
             }
+            record({ signature: 'ok', result: notices.length > 0 ? 'read' : 'unrelated' });
+            return notices;
         } catch (err) {
-            // Se relanza: el controller responde 500 y Mercado Pago reintenta.
+            // Un id que Mercado Pago no tiene (la «Simular notificación» del
+            // panel manda 12345; un aviso de otra cuenta) nunca va a existir:
+            // reintentar no sirve, se contesta 200 sin hacer nada.
+            if (err instanceof MpHttpError && err.status === 404) {
+                this.logger.warn(`aviso de ${type} ${dataId}: Mercado Pago no lo tiene (404) — ignorado`);
+                record({ signature: 'ok', result: 'not_found' });
+                return [];
+            }
+            // El resto (red, 5xx, clave rechazada) se relanza: el controller
+            // responde 500 y Mercado Pago reintenta.
             this.logger.error(`no se pudo leer el ${type} ${dataId}: ${String(err)}`);
+            record({ signature: 'ok', result: 'error', message: String(err instanceof Error ? err.message : err).slice(0, 200) });
             throw err;
         }
     }
 
     private async get<T>(accessToken: string, path: string): Promise<T> {
         const res = await this.fetchImpl(`${this.apiBase}${path}`, { headers: { authorization: `Bearer ${accessToken}` } });
-        if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
+        if (!res.ok) throw new MpHttpError(path, res.status);
         return (await res.json()) as T;
     }
 

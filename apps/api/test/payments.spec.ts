@@ -25,9 +25,11 @@ import {
     type SubscriptionRequest,
 } from '../src/payments/payment.types';
 import { PaymentsService } from '../src/payments/payments.service';
+import { PlatformPaymentsService } from '../src/payments/platform-payments.service';
 import {
     mapMpPaymentStatus,
     MercadoPagoGateway,
+    type MpHookRecord,
     verifyMpSignature,
 } from '../src/payments/providers/mercadopago.provider';
 import { mapPayPalEvent, PayPalGateway } from '../src/payments/providers/paypal.provider';
@@ -246,6 +248,36 @@ describe('Mercado Pago (pasarela, red simulada)', () => {
         });
         const [n] = await new MercadoPagoGateway(source(), f.impl).handleWebhook(signed('556'), JSON.stringify({ type: 'payment', data: { id: '556' } }), {});
         expect(n).toMatchObject({ status: 'rejected' });
+    });
+
+    it('«Simular notificación» del panel (id 12345 que no existe) → 200 sin hacer nada; una caída de Mercado Pago sí se reintenta', async () => {
+        // Mercado Pago firma la simulación con la firma secreta real, así que
+        // pasa la firma; el pago 12345 no existe (404). Antes eso subía como 500
+        // y el panel decía «La prueba de esta URL falló».
+        const f = fakeFetch({});
+        const hooks: MpHookRecord[] = [];
+        const src = { ...source(), recordHook: async (h: MpHookRecord) => void hooks.push(h) };
+        const out = await new MercadoPagoGateway(src, f.impl).handleWebhook(
+            signed('12345'),
+            JSON.stringify({ action: 'payment.updated', type: 'payment', data: { id: '12345' } }),
+            { 'data.id': '12345', type: 'payment' },
+        );
+        expect(out).toEqual([]);
+        expect(f.calls.map((c) => c.url)).toEqual(['https://api.mercadopago.com/v1/payments/12345']);
+
+        const down = (async () => new Response('{}', { status: 503 })) as typeof fetch;
+        await expect(
+            new MercadoPagoGateway(src, down).handleWebhook(signed('12345'), JSON.stringify({ type: 'payment', data: { id: '12345' } }), {}),
+        ).rejects.toThrow('503');
+
+        // Firma de OTRA clave: se contesta 200 igual, pero queda anotado que no coincidió.
+        await new MercadoPagoGateway(src, f.impl).handleWebhook({ 'x-signature': 'ts=1,v1=00' }, JSON.stringify({ type: 'payment', data: { id: '12345' } }), {});
+        await new Promise((r) => setTimeout(r, 0));
+        expect(hooks).toEqual([
+            { type: 'payment', dataId: '12345', signature: 'ok', result: 'not_found' },
+            expect.objectContaining({ type: 'payment', dataId: '12345', signature: 'ok', result: 'error', message: expect.stringContaining('503') }),
+            { type: 'payment', dataId: '12345', signature: 'bad', result: 'unrelated' },
+        ]);
     });
 
     it('firma inválida → nada (y no se consulta la API)', async () => {
@@ -611,5 +643,36 @@ describe('PaymentsService (Postgres real)', () => {
         // Leer la tabla con el scope de la otra empresa no trae nada ajeno.
         const fromB = await withTenant(pg.db, tB, (tx) => tx.select().from(billingPayments).where(eq(billingPayments.tenantId, tA)));
         expect(fromB).toEqual([]);
+    });
+});
+
+describe('Plataforma → Cobros: último aviso de Mercado Pago (v0.1.379)', () => {
+    it('se anota y aparece en la vista; un valor roto no la rompe', async () => {
+        const store = new Map<string, string>();
+        const redis = {
+            get: async (k: string) => store.get(k) ?? null,
+            set: async (k: string, v: string) => void store.set(k, v),
+            del: async (k: string) => void store.delete(k),
+        };
+        const env = {
+            APP_BASE_URL: 'https://base.example.test/',
+            SECRETS_KEY: '',
+            MERCADOPAGO_ACCESS_TOKEN: 'APP_USR-tok',
+            MERCADOPAGO_WEBHOOK_SECRET: 's3cr3t',
+            PAYPAL_CLIENT_ID: '',
+            PAYPAL_CLIENT_SECRET: '',
+        } as unknown as Env;
+        const svc = new PlatformPaymentsService(redis, env);
+        expect((await svc.view()).mercadopago.last_hook).toBeNull();
+
+        await svc.recordHook({ type: 'payment', dataId: '12345', signature: 'ok', result: 'not_found' });
+        const hook = (await svc.view()).mercadopago.last_hook;
+        expect(hook).toMatchObject({ type: 'payment', data_id: '12345', signature: 'ok', result: 'not_found', message: null });
+        expect(Number.isNaN(Date.parse(hook!.at))).toBe(false);
+        // No viaja en el snapshot (fuera de `platform:`).
+        expect([...store.keys()].some((k) => k.startsWith('platform:'))).toBe(false);
+
+        store.set('billing:mp:last_hook', '{roto');
+        expect((await svc.view()).mercadopago.last_hook).toBeNull();
     });
 });

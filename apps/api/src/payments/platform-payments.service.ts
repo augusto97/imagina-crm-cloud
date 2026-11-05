@@ -5,6 +5,7 @@ import { decryptSecret, encryptSecret, isEncrypted } from '../common/secret-box'
 import { ENV, type Env } from '../config/env';
 import { secretHint } from '../connectors/connection-parts';
 import { REDIS } from '../redis/redis.module';
+import type { MpHookRecord } from './providers/mercadopago.provider';
 
 /** Subconjunto de ioredis: se testea con un fake en memoria. */
 export interface PaymentsSettingsStore {
@@ -14,6 +15,20 @@ export interface PaymentsSettingsStore {
 }
 
 const KEY = 'platform:payments';
+/**
+ * v0.1.379 — el último aviso de Mercado Pago. Fuera de `platform:` a propósito:
+ * no tiene que viajar en el snapshot a otro servidor.
+ */
+const LAST_HOOK_KEY = 'billing:mp:last_hook';
+
+const lastHookSchema = z.object({
+    at: z.string(),
+    type: z.string().nullable(),
+    data_id: z.string().nullable(),
+    signature: z.enum(['ok', 'bad', 'no_secret']),
+    result: z.enum(['read', 'unrelated', 'not_found', 'error']),
+    message: z.string().nullable().default(null),
+});
 
 const storedSchema = z.object({
     mercadopago: z
@@ -77,6 +92,7 @@ export class PlatformPaymentsService {
                 access_token_hint: creds ? secretHint(creds.accessToken) : null,
                 webhook_secret_set: Boolean(creds?.webhookSecret),
                 webhook_url: this.webhookUrl(),
+                last_hook: await this.lastHook(),
             },
             paypal: { configured: this.env.PAYPAL_CLIENT_ID !== '' && this.env.PAYPAL_CLIENT_SECRET !== '' },
         };
@@ -97,6 +113,30 @@ export class PlatformPaymentsService {
         }
         await this.redis.set(KEY, JSON.stringify({ ...stored, mercadopago: mp } satisfies Stored));
         return this.view();
+    }
+
+    /** Anota el último aviso de Mercado Pago (best-effort). */
+    async recordHook(entry: MpHookRecord): Promise<void> {
+        const value = {
+            at: new Date().toISOString(),
+            type: entry.type,
+            data_id: entry.dataId,
+            signature: entry.signature,
+            result: entry.result,
+            message: entry.message ?? null,
+        };
+        await this.redis.set(LAST_HOOK_KEY, JSON.stringify(value));
+    }
+
+    private async lastHook(): Promise<z.infer<typeof lastHookSchema> | null> {
+        try {
+            const raw = await this.redis.get(LAST_HOOK_KEY);
+            if (!raw) return null;
+            const parsed = lastHookSchema.safeParse(JSON.parse(raw));
+            return parsed.success ? parsed.data : null;
+        } catch {
+            return null;
+        }
     }
 
     private async read(): Promise<Stored> {

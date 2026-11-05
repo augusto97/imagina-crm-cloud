@@ -394,7 +394,11 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.378**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.379**
+(la «Simular notificación» de Mercado Pago fallaba contra la URL de cobro de
+los planes —el pago 12345 no existe y la app respondía 500—; ahora se contesta
+200 y Plataforma → Cobros muestra el último aviso recibido y si la firma
+coincidió, addendum ADR-S30); antes v0.1.378
 (el constructor de la agenda con el mismo patrón: cada parte se toca en la
 vista previa —también los pasos, que llevan la vista previa a ese paso— y
 abre su panel con Mostrar, Contenido y Estilo; Contenido · Diseño · Ajustes
@@ -1596,6 +1600,27 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-05 · v0.1.379** — **La simulación del webhook de Mercado Pago ya
+  no falla** (reporte del usuario con captura: «estoy testeando en mercadopago
+  y falla» — «Simular notificación», Pagos (legacy), id 12345, contra
+  `/api/v1/billing/webhook/mercadopago`). Causa: la simulación viene FIRMADA
+  con la clave real, pasa la firma, la app relee el pago 12345 en Mercado Pago
+  (404: no existe) y lo trataba como una caída → 500 → «La prueba de esta URL
+  falló». Un id que Mercado Pago no tiene se contesta 200 sin hacer nada; red,
+  5xx y clave rechazada siguen respondiendo 500 para que reintente. De paso,
+  el `try` devolvía la promesa sin esperarla y ningún error de relectura se
+  registraba. Como una firma equivocada también se contesta 200 (si no,
+  Mercado Pago reintenta sin fin), la simulación no prueba la clave: por eso
+  **Plataforma → Cobros → «Último aviso recibido»** (Redis
+  `billing:mp:last_hook`, fuera de `platform:` para no viajar en el snapshot)
+  dice si llegó, si la firma coincidió o no (o falta la clave) y qué pasó, con
+  «Volver a revisar». El paso 2 de la consola y Aprende aclaran que el evento
+  se llama «Pagos (legacy)» en el panel. Tests: payments.spec 41/41 (404 → [],
+  503 → reintenta, firma mala anotada, vista que tolera un valor roto) + E2E
+  navegador 8/8 en escritorio y 8/8 en celular oscuro contra el Mercado Pago
+  simulado. Sigue pendiente la respuesta del usuario sobre la revisión cada
+  hora de los pagos y renovaciones de la plataforma.
 
 - **2026-11-05 · v0.1.378** — **El constructor de la agenda con el mismo
   patrón** (segunda entrega del pedido de la v0.1.376: «replantéate la UI/UX
