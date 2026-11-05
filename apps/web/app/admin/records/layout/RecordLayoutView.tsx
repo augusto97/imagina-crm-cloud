@@ -21,6 +21,7 @@ import { RecordSubtasks } from '../RecordSubtasks';
 import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
 import { RecordBookingPanel } from '@/admin/booking/RecordBookingPanel';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
+import { RecordSubscriptionPanel } from '@/cloud/components/subscriptions/RecordSubscriptionPanel';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
 import { lockedReasonsFor, recordGoneInSource, useStoreRules } from '../storeRules';
 import { LayoutBlockView } from './LayoutBlocks';
@@ -173,6 +174,9 @@ function ImplicitPayments({ layout }: { layout: RecordLayoutV3 }): JSX.Element |
     return (
         <div className="imcrm-mt-3">
             <RecordPaymentsPanel listId={ctx.list.id} recordId={ctx.record.id} />
+            <div className="imcrm-mt-3 empty:imcrm-hidden">
+                <RecordSubscriptionPanel listId={ctx.list.id} recordId={ctx.record.id} />
+            </div>
         </div>
     );
 }

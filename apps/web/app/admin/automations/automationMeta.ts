@@ -30,7 +30,7 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 
-import { APPROVAL_STATUS_LABELS, describeWait, describeWaitApproval, readApprovalTriggerResults, scheduleParts } from '@imagina-base/shared';
+import { APPROVAL_STATUS_LABELS, SUBSCRIPTION_EVENT_LABELS, type SubscriptionEvent, describeWait, describeWaitApproval, readApprovalTriggerResults, scheduleParts } from '@imagina-base/shared';
 
 import { __, _n, sprintf } from '@/lib/i18n';
 import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
@@ -95,6 +95,12 @@ export const TRIGGER_META: Record<string, StepMeta> = {
         icon: BadgeDollarSign,
         title: 'Se recibe un pago',
         description: 'Dispara cuando un cliente paga un link de Mercado Pago o Wompi de un registro de esta lista.',
+    },
+    // v0.1.367 — suscripciones de Mercado Pago (débito automático).
+    subscription_event: {
+        icon: Repeat,
+        title: 'Cambia una suscripción',
+        description: 'Dispara cuando una suscripción de Mercado Pago de un registro se activa, cobra una cuota, tiene un cobro rechazado, entra en mora, vence, se pausa o se cancela.',
     },
     // v0.1.275 — formularios públicos (ADR-S39).
     form_submitted: {
@@ -347,6 +353,14 @@ export function summarizeTrigger(
             return __('Cuando llega un webhook entrante');
         case 'payment_received':
             return __('Cuando un cliente paga un link de cobro');
+        case 'subscription_event': {
+            const events = Array.isArray(config.subscription_events) ? (config.subscription_events as string[]) : [];
+            const which = events
+                .map((e) => SUBSCRIPTION_EVENT_LABELS[e as SubscriptionEvent]?.replace(/\s*\(.*\)$/, '').toLowerCase())
+                .filter((x): x is string => !!x);
+            if (which.length === 0 || which.length > 2) return __('Cuando cambia una suscripción');
+            return sprintf(__('Cuando una suscripción %s'), which.join(` ${__('o')} `));
+        }
         case 'whatsapp_message_received':
             return __('Cuando llega un mensaje de WhatsApp');
         case 'form_submitted':

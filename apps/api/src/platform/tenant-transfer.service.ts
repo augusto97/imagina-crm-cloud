@@ -20,6 +20,7 @@ import { pipeline } from 'node:stream/promises';
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import {
     BOOKING_STATUSES,
+    SUBSCRIPTION_STATUSES,
     SMS_PROVIDER_KEYS,
     TENANT_TRANSFER_FORMAT,
     remapFormulaConfig,
@@ -86,6 +87,9 @@ import {
     forms,
     bookingPages,
     bookingAppointments,
+    subscriptionPlans,
+    subscriptions,
+    subscriptionCharges,
     templates,
     tenants,
     timeEntries,
@@ -331,6 +335,11 @@ export class TenantTransferService {
             await dump('forms', await this.byTenant(forms, tenantId, liveList(forms.listId)));
             // D5 — páginas de agenda (la configuración apunta a campos y personas por id).
             await dump('booking_pages', await this.byTenant(bookingPages, tenantId, liveList(bookingPages.listId)));
+            // v0.1.367 — suscripciones de Mercado Pago: los planes y cada
+            // suscripción (siguen cobrándose en Mercado Pago; con la conexión
+            // que viaja, el destino las sigue revisando). Los cobros van abajo.
+            await dump('subscription_plans', await this.byTenant(subscriptionPlans, tenantId));
+            await dump('subscriptions', await this.byTenant(subscriptions, tenantId));
             // Autorización de tratamiento de datos (Ley 1581): las versiones
             // del texto (la evidencia va abajo, por páginas).
             await dump('data_consent_versions', await this.byTenant(dataConsentVersions, tenantId));
@@ -441,6 +450,7 @@ export class TenantTransferService {
             counts.time_entries = await this.dumpPaged(work, 'time_entries', timeEntries, tenantId, liveRecord(timeEntries.recordId));
             // D5 — las citas de la agenda (cada una cuelga de su registro).
             counts.booking_appointments = await this.dumpPaged(work, 'booking_appointments', bookingAppointments, tenantId, liveRecord(bookingAppointments.recordId));
+            counts.subscription_charges = await this.dumpPaged(work, 'subscription_charges', subscriptionCharges, tenantId);
             counts.activity = await this.dumpPaged(work, 'activity', activity, tenantId, and(liveList(activity.listId), liveRecord(activity.recordId)));
             // La EVIDENCIA de cada autorización de datos: es prueba legal de la
             // empresa (la tiene que conservar), así que viaja con ella — también
@@ -1466,6 +1476,96 @@ export class TenantTransferService {
             };
         });
 
+        // 7c-ter. Suscripciones (v0.1.367, ADR-S96), antes que las
+        //     automatizaciones: «Crear suscripción» y el disparador nombran el
+        //     plan por id. La referencia es NUEVA (la página de vuelta de este
+        //     servidor); el id de Mercado Pago se conserva: con la conexión que
+        //     viaja, la revisión periódica las sigue al día.
+        const subPlanRows = await this.readAll(rows('subscription_plans'));
+        counts.subscription_plans = await this.insertMapped(tx, subPlanRows, subscriptionPlans, maps.subscriptionPlan, (p) => ({
+            tenantId,
+            connectionId: mapId(maps.connection, p.connectionId),
+            provider: String(p.provider ?? 'mercadopago').slice(0, 24),
+            name: String(p.name ?? '').slice(0, 120),
+            description: (p.description as string | null) ?? null,
+            amount: Number(p.amount ?? 0) || 0,
+            currency: String(p.currency ?? 'COP').slice(0, 8),
+            frequency: Number(p.frequency ?? 1) || 1,
+            frequencyType: p.frequencyType === 'days' ? 'days' : 'months',
+            cycles: p.cycles === null || p.cycles === undefined ? null : Number(p.cycles),
+            trialDays: Number(p.trialDays ?? 0) || 0,
+            graceDays: Number(p.graceDays ?? 10) || 10,
+            onExpire: p.onExpire === 'cancel' ? 'cancel' : 'mark',
+            active: p.active !== false,
+            createdBy: mapId(maps.user, p.createdBy),
+            createdAt: this.date(p.createdAt) ?? new Date(),
+            updatedAt: this.date(p.updatedAt) ?? new Date(),
+        }));
+        const subRows = await this.readAll(rows('subscriptions'));
+        const subMap = new Map<number, number>();
+        counts.subscriptions = await this.insertMapped(tx, subRows, subscriptions, subMap, (x) => ({
+            tenantId,
+            connectionId: mapId(maps.connection, x.connectionId),
+            provider: String(x.provider ?? 'mercadopago').slice(0, 24),
+            planId: mapId(maps.subscriptionPlan, x.planId),
+            listId: mapId(maps.list, x.listId),
+            recordId: mapId(maps.record, x.recordId),
+            externalId: typeof x.externalId === 'string' ? x.externalId.slice(0, 128) : null,
+            reference: `ibs_${randomBytes(12).toString('base64url')}`,
+            url: (x.url as string | null) ?? null,
+            title: String(x.title ?? '').slice(0, 200),
+            planName: typeof x.planName === 'string' ? x.planName.slice(0, 120) : null,
+            amount: Number(x.amount ?? 0) || 0,
+            currency: String(x.currency ?? 'COP').slice(0, 8),
+            frequency: Number(x.frequency ?? 1) || 1,
+            frequencyType: x.frequencyType === 'days' ? 'days' : 'months',
+            cycles: x.cycles === null || x.cycles === undefined ? null : Number(x.cycles),
+            graceDays: Number(x.graceDays ?? 10) || 10,
+            onExpire: x.onExpire === 'cancel' ? 'cancel' : 'mark',
+            payerEmail: typeof x.payerEmail === 'string' ? x.payerEmail.slice(0, 254) : null,
+            status: (SUBSCRIPTION_STATUSES as readonly string[]).includes(String(x.status)) ? String(x.status) : 'pending',
+            providerStatus: typeof x.providerStatus === 'string' ? x.providerStatus.slice(0, 16) : null,
+            startAt: this.date(x.startAt),
+            nextChargeAt: this.date(x.nextChargeAt),
+            paidUntil: this.date(x.paidUntil),
+            chargesPaid: Number(x.chargesPaid ?? 0) || 0,
+            chargesFailed: Number(x.chargesFailed ?? 0) || 0,
+            consecutiveFailed: Number(x.consecutiveFailed ?? 0) || 0,
+            retrying: x.retrying === true,
+            failedFinal: x.failedFinal === true,
+            lastChargeAt: this.date(x.lastChargeAt),
+            lastChargeStatus: typeof x.lastChargeStatus === 'string' ? x.lastChargeStatus.slice(0, 16) : null,
+            lastFailureReason: (x.lastFailureReason as string | null) ?? null,
+            cancelledAt: this.date(x.cancelledAt),
+            cancelReason: (x.cancelReason as string | null) ?? null,
+            formId: mapId(maps.form, x.formId),
+            createdBy: mapId(maps.user, x.createdBy),
+            createdAt: this.date(x.createdAt) ?? new Date(),
+            updatedAt: this.date(x.updatedAt) ?? new Date(),
+            lastCheckedAt: null,
+        }));
+        counts.subscription_charges = await this.insertPlain(tx, rows('subscription_charges'), subscriptionCharges, (c) => {
+            const subscriptionId = mapId(subMap, c.subscriptionId);
+            if (subscriptionId === null) return null;
+            return {
+                tenantId,
+                subscriptionId,
+                provider: String(c.provider ?? 'mercadopago').slice(0, 24),
+                providerPaymentId: String(c.providerPaymentId ?? '').slice(0, 128),
+                invoiceId: typeof c.invoiceId === 'string' ? c.invoiceId.slice(0, 128) : null,
+                amount: Number(c.amount ?? 0) || 0,
+                currency: String(c.currency ?? 'COP').slice(0, 8),
+                status: String(c.status ?? 'pending').slice(0, 16),
+                attempt: c.attempt === null || c.attempt === undefined ? null : Number(c.attempt),
+                failureReason: (c.failureReason as string | null) ?? null,
+                method: typeof c.method === 'string' ? c.method.slice(0, 64) : null,
+                periodStart: this.date(c.periodStart),
+                paidAt: this.date(c.paidAt),
+                createdAt: this.date(c.createdAt) ?? new Date(),
+                updatedAt: this.date(c.updatedAt) ?? new Date(),
+            };
+        });
+
         // 7d. Autorización de tratamiento de datos (Ley 1581). Las versiones y
         //     la EVIDENCIA de cada aceptación viajan: son la prueba que la
         //     empresa tiene que conservar. El número de versión se conserva
@@ -2148,7 +2248,7 @@ export class TenantTransferService {
         }
         if (Number(collections?.n ?? 0) > 0) {
             warnings.push(
-                'Cobros (Mercado Pago / Wompi): la conexión viajó, pero el historial de links de pago no — y la URL de avisos es nueva. En Wompi pega la nueva en Desarrolladores → «URL de Eventos» (la ves en Integraciones → Cobros).',
+                'Cobros (Mercado Pago / Wompi): la conexión viajó, pero el historial de links de pago no — y la URL de avisos es nueva. En Wompi pega la nueva en Desarrolladores → «URL de Eventos»; si usas suscripciones de Mercado Pago, pégala en tu aplicación de Mercado Pago → Webhooks (la ves en Integraciones → Cobros). Las suscripciones viajaron y siguen cobrándose en Mercado Pago.',
             );
         }
 

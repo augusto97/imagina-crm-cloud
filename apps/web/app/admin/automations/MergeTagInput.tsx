@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Plus, Search, Sparkles } from 'lucide-react';
-import { APPROVAL_MERGE_TAGS, BOOKING_MERGE_TAGS, EMAIL_MERGE_TAGS, MEETING_MERGE_TAGS, PAYMENT_MERGE_TAGS, SLA_MERGE_TAGS, WHATSAPP_MERGE_TAGS } from '@imagina-base/shared';
+import { APPROVAL_MERGE_TAGS, BOOKING_MERGE_TAGS, EMAIL_MERGE_TAGS, MEETING_MERGE_TAGS, PAYMENT_MERGE_TAGS, SLA_MERGE_TAGS, SUBSCRIPTION_MERGE_TAGS, WHATSAPP_MERGE_TAGS } from '@imagina-base/shared';
 
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -385,6 +385,9 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
     // en una acción anterior, o el pago recién recibido (trigger «Cuando se
     // recibe un pago»).
     const visiblePayment = PAYMENT_MERGE_TAGS.filter((t) => matches(t.label) || matches(t.tag) || matches(__('Cobro')));
+    // v0.1.367 — la suscripción (disparador «Cuando cambia una suscripción» o
+    // la que creó «Crear suscripción» en una acción anterior).
+    const visibleSubscription = SUBSCRIPTION_MERGE_TAGS.filter((t) => matches(t.label) || matches(t.tag) || matches(__('Suscripción')));
     // v0.1.366 — la reunión que creó o cambió una acción de calendario anterior.
     const visibleMeeting = MEETING_MERGE_TAGS.filter((t) => matches(t.label) || matches(t.tag) || matches(__('Reunión')));
     // D3 — el mensaje de WhatsApp que llegó (trigger «Cuando llega un mensaje de WhatsApp»).
@@ -462,6 +465,13 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
                     <Section
                         title={__('Cobro (link de pago / pago recibido)')}
                         items={visiblePayment.map((t) => ({ tag: t.tag, label: t.label, hint: `{{${t.tag}}}` }))}
+                        onPick={onPick}
+                    />
+                )}
+                {context === 'automation' && visibleSubscription.length > 0 && (
+                    <Section
+                        title={__('Suscripción (débito automático)')}
+                        items={visibleSubscription.map((t) => ({ tag: t.tag, label: __(t.label), hint: `{{${t.tag}}}` }))}
                         onPick={onPick}
                     />
                 )}

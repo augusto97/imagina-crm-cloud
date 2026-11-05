@@ -715,6 +715,13 @@
       "when": 1784200000800,
       "tag": "0101_form_payments",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1784200000900,
+      "tag": "0102_subscriptions",
+      "breakpoints": true
     }
   ]
 }

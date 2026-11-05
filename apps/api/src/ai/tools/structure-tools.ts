@@ -7,6 +7,10 @@ import {
     COLLECTION_FIELD_TYPES,
     type SetCollectionFieldsInput,
     readCollectionFields,
+    readSubscriptionFields,
+    SUBSCRIPTION_FIELD_ROLES,
+    SUBSCRIPTION_EVENT_LABELS,
+    type SubscriptionEvent,
     FORMULA_RESULT_TYPES,
     formulaToDisplay,
     prepareFormula,
@@ -147,6 +151,7 @@ import { templateForModel } from './record-template-spec';
 import { DataConsentService } from '../../data-consent/data-consent.service';
 import { TeamsService } from '../../teams/teams.service';
 import { CollectionsService } from '../../collections/collections.service';
+import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
 import { ProposalsStore, type AiApplyOutcome, type AiProposalApplier, type StoredProposal } from '../proposals.store';
 import {
     buildCrmCustomConfig,
@@ -563,7 +568,7 @@ const automationSpec = z.object({
     list: z.string().max(63).describe('Slug de la lista'),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).optional(),
-    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'email_received', 'sla_alert']),
+    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'email_received', 'sla_alert', 'subscription_event']),
     trigger_config: z
         .record(z.unknown())
         .optional()
@@ -574,6 +579,7 @@ const automationSpec = z.object({
                 'Con for_each_record: true + records_filters: [{field, op, value}] corre las acciones UNA VEZ POR CADA registro que cumpla (con sus {{slug}}; hasta 1.000 por disparo; fechas relativas en la zona de la empresa) — ej. «cada lunes, a cada cliente con saldo pendiente, un correo». ' +
                 'record_created/incoming_webhook: {field_filters?}. ' +
                 'payment_received (un cliente pagó un link de Mercado Pago/Wompi del registro; las acciones usan {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.link}}): {field_filters?}. ' +
+                'subscription_event (cambió una suscripción de Mercado Pago del registro: se activó, se cobró una cuota, se rechazó un cobro, quedó en mora, se venció, se pausó, se reanudó, se canceló o terminó; las acciones usan {{suscripcion.evento}}, {{suscripcion.estado}}, {{suscripcion.plan}}, {{suscripcion.monto}}, {{suscripcion.link}}, {{suscripcion.proximo_cobro}}, {{suscripcion.pagado_hasta}}, {{suscripcion.cobros_fallidos}}, {{suscripcion.motivo}}, {{suscripcion.monto_cobrado}}, {{suscripcion.fecha_cobro}}): {subscription_events?: [activated|charged|charge_failed|past_due|expired|paused|resumed|cancelled|finished] (vacío = todos), plan_ids?: [ids de connectors[].actions[].plan_ids], field_filters?}. ' +
                 'form_submitted (alguien llenó un formulario público de la lista; el registro ya existe; las acciones usan {{formulario.nombre}}): {form_id? (id de uno de los `forms` de get_list_schema; sin él, cualquiera), field_filters?}. ' +
                 'button_pressed (alguien presionó un campo Botón del registro cuya acción es «correr una automatización»; las acciones usan {{boton.nombre}}, {{boton.persona}}, {{boton.email}}): {button_field? (slug del campo botón; sin él, cualquier botón de la lista), field_filters?}. ' +
                 'approval_resolved («Cuando se aprueba o se rechaza» una solicitud de aprobación del registro; las acciones usan {{aprobacion.resultado}} (aprobada|rechazada|devuelta|cancelada), {{aprobacion.flujo}}, {{aprobacion.motivo}}, {{aprobacion.decidio}}): {approval_flow? (id o nombre de un flujo de approval_flows; sin él, cualquiera), results?: [approved|rejected|returned|cancelled] (default approved y rejected), field_filters?}. ' +
@@ -772,6 +778,8 @@ export class StructureTools implements AiProposalApplier {
         @Optional() private readonly booking?: BookingService,
         // v0.1.365 — columnas de cobro (propose_configure_payment_columns).
         @Optional() private readonly collections?: CollectionsService,
+        // v0.1.367 — planes de suscripción y columnas (get_list_schema).
+        @Optional() private readonly subscriptionsSvc?: SubscriptionsService,
     ) {}
 
     /** E6 — para sumarle a `get_list_schema` lo de otros módulos (agentes de IA). */
@@ -1022,7 +1030,7 @@ export class StructureTools implements AiProposalApplier {
                 name: z.string().min(1).max(190).optional(),
                 description: z.string().max(2000).nullable().optional(),
                 is_active: z.boolean().optional(),
-                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'email_received', 'sla_alert']).optional(),
+                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'email_received', 'sla_alert', 'subscription_event']).optional(),
                 trigger_config: z.record(z.unknown()).optional(),
                 actions: z.array(z.record(z.unknown())).min(1).max(20).optional(),
             }),
@@ -1217,6 +1225,10 @@ export class StructureTools implements AiProposalApplier {
         // C5 — flujos de aprobación de la lista.
         const approvalFlowList = this.approvals ? await this.approvals.listFlows(ctx.tenantId, String(list.id)).catch(() => []) : [];
         const recordTpls = this.recordTemplates ? await this.recordTemplates.list(ctx.tenantId, String(list.id)).catch(() => []) : [];
+        // v0.1.367 — planes de suscripción de las conexiones de Mercado Pago que la persona puede usar.
+        const subscriptionPlans = this.subscriptionsSvc
+            ? await this.subscriptionsSvc.listPlans(ctx.tenantId, { userId: ctx.userId, role: ctx.role, teamIds: ctx.teamIds }).catch(() => [])
+            : [];
         // ¿La empresa pide la autorización de datos? (versión vigente o null).
         const consent = this.dataConsent && listForms.length > 0 ? await this.dataConsent.active(ctx.tenantId).catch(() => null) : null;
         const allLists = await this.lists.list(ctx.tenantId);
@@ -1511,6 +1523,20 @@ export class StructureTools implements AiProposalApplier {
                                       _nota: 'El link también se escribe solo en las columnas de cobro de la lista (collections_fields). Para mandarlo al cliente en el paso siguiente usa {{pago.link}}.',
                                   }
                                 : {}),
+                            // v0.1.367 — suscripción: lo que deja para el paso siguiente.
+                            ...(a.key === 'create_subscription_link'
+                                ? {
+                                      outputs: {
+                                          '{{suscripcion.link}}': 'el link para que el cliente autorice su tarjeta',
+                                          '{{suscripcion.plan}}': 'el nombre del plan',
+                                          '{{suscripcion.monto}}': 'el valor de cada cobro',
+                                      },
+                                      plan_ids: subscriptionPlans
+                                          .filter((p) => p.connection_id === c.id && p.active)
+                                          .map((p) => ({ id: p.id, name: p.name, amount: p.amount, currency: p.currency, every: `${p.frequency} ${p.frequency_type}` })),
+                                      _nota: 'values.plan_id es el id de uno de plan_ids. El estado, el próximo cobro y los rechazos se escriben solos en las columnas de suscripción de la lista (subscription_fields).',
+                                  }
+                                : {}),
                             // v0.1.366 — reuniones y eventos: lo que devuelven y dónde se guarda.
                             ...(meetingActionKind(c.integration_key, a.key) === 'create' || meetingActionKind(c.integration_key, a.key) === 'update'
                                 ? {
@@ -1535,6 +1561,15 @@ export class StructureTools implements AiProposalApplier {
                                   : {}),
                         })),
                     })),
+                // v0.1.367 — dónde guarda la lista cada dato de la suscripción
+                // (estado, plan, valor, próximo cobro, pagado hasta, rechazos, link).
+                subscription_fields: (() => {
+                    const m = readSubscriptionFields(settings);
+                    if (!m) return null;
+                    return Object.fromEntries(
+                        SUBSCRIPTION_FIELD_ROLES.map((r) => [r, m[r] === null ? null : (fieldById.get(m[r]!)?.slug ?? null)]),
+                    );
+                })(),
                 // v0.1.365 — dónde guarda la lista cada dato del cobro (link,
                 // estado, fecha, monto, medio); null = todavía no se eligió.
                 collections_fields: (() => {
@@ -5005,6 +5040,11 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
             return 'Al recibir un webhook';
         case 'payment_received':
             return 'Cuando se recibe un pago';
+        case 'subscription_event': {
+            const events = Array.isArray(cfg.subscription_events) ? (cfg.subscription_events as string[]) : [];
+            const which = events.map((e) => SUBSCRIPTION_EVENT_LABELS[e as SubscriptionEvent]?.replace(/\s*\(.*\)$/, '')).filter((x): x is string => !!x);
+            return which.length > 0 && which.length <= 2 ? `Cuando una suscripción ${which.join(' o ').toLowerCase()}` : 'Cuando cambia una suscripción';
+        }
         case 'whatsapp_message_received':
             return 'Cuando llega un mensaje de WhatsApp';
         case 'form_submitted':

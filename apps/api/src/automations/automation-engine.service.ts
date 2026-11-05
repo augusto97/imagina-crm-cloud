@@ -21,6 +21,9 @@ import {
     type ChecklistCompletedInfo,
     type EmailEventInfo,
     type SlaEventInfo,
+    type SubscriptionEventInfo,
+    SUBSCRIPTION_EVENT_LABELS,
+    subscriptionTriggerMatches,
     SLA_ALERT_LABELS,
     SLA_STATUS_LABELS,
     SLA_TARGET_LABELS,
@@ -92,6 +95,8 @@ import { buildWebhookRequest, type MergeFn } from './webhook-request';
 import type { Tx } from '../db/client';
 import { BillingService } from '../billing/billing.service';
 import { CollectionsService } from '../collections/collections.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { subscriptionPlans, subscriptions as subscriptionsTable } from '../db/schema/subscriptions';
 import { automationRuns, documentTemplates, forms, lists, memberships, records, teams, tenants, users } from '../db/schema';
 import { editLinkFormId, editLinkMaker, readEditLinks, type EditLinkForm } from '../forms/form-edit-links';
 import { connectionModuleStepError, moduleForIntegration, planModuleOff, planModuleStepError } from '../billing/plan-module-gate';
@@ -171,6 +176,8 @@ const TRIGGERS_FOR_EVENT: Record<TriggerEvent['trigger'], string[]> = {
     email_received: ['email_received'],
     // E5 — un SLA de la mesa de ayuda entró en riesgo o se venció.
     sla_alert: ['sla_alert'],
+    // v0.1.367 — una suscripción del registro se cobró, falló, venció, se canceló…
+    subscription_event: ['subscription_event'],
 };
 
 interface PersonInfo {
@@ -215,6 +222,11 @@ interface RunContext {
     email?: EmailEventInfo;
     /** E5 — la alerta de SLA (`{{sla.alerta}}`, `{{sla.vence}}`…). */
     sla?: SlaEventInfo;
+    /**
+     * v0.1.367 — la suscripción del registro: lo que pasó (trigger
+     * `subscription_event`) o la que creó una acción anterior. `{{suscripcion.x}}`.
+     */
+    suscripcion?: SubscriptionEventInfo;
     /** v0.1.263 — zona de la empresa: `{{date.today}}` es el "hoy" de su reloj. */
     timeZone?: string;
     /**
@@ -376,6 +388,7 @@ export interface ResumeState {
         booking?: BookingEventInfo;
         email?: EmailEventInfo;
         sla?: SlaEventInfo;
+        suscripcion?: SubscriptionEventInfo;
         pdf?: Record<string, unknown>;
         reunion?: Record<string, string>;
         webhook?: ResponseInfo;
@@ -511,6 +524,24 @@ export class AutomationEngine {
             }
         }
         return this.approvalsSvc;
+    }
+
+    /** v0.1.367 — las suscripciones (viven en el módulo de cobros, global). */
+    private subsSvc: SubscriptionsService | null | undefined;
+    private subscriptionsSvc(): SubscriptionsService | null {
+        if (this.subsSvc === undefined) {
+            try {
+                this.subsSvc = this.moduleRef?.get(SubscriptionsService, { strict: false }) ?? null;
+            } catch {
+                this.subsSvc = null;
+            }
+        }
+        return this.subsSvc;
+    }
+
+    /** Para los specs que arman el motor a mano. */
+    setSubscriptions(svc: SubscriptionsService | null): void {
+        this.subsSvc = svc;
     }
 
     /** D3 — WhatsApp oficial (se resuelve al usarlo: su módulo depende de registros y campos). */
@@ -654,6 +685,7 @@ export class AutomationEngine {
                 ...(event.whatsapp ? { whatsapp: event.whatsapp } : {}),
                 ...(event.email ? { email: event.email } : {}),
                 ...(event.sla ? { sla: event.sla } : {}),
+                ...(event.subscription ? { suscripcion: event.subscription } : {}),
                 ...(chain ? { chain } : {}),
             };
             if (!this.triggerMatches(auto, ctx)) continue;
@@ -964,6 +996,7 @@ export class AutomationEngine {
             ...(state.ctx.booking ? { booking: state.ctx.booking } : {}),
             ...(state.ctx.email ? { email: state.ctx.email } : {}),
             ...(state.ctx.sla ? { sla: state.ctx.sla } : {}),
+            ...(state.ctx.suscripcion ? { suscripcion: state.ctx.suscripcion } : {}),
             ...(state.ctx.pdf ? { pdf: state.ctx.pdf } : {}),
             ...(state.ctx.reunion ? { reunion: state.ctx.reunion } : {}),
             ...(state.ctx.webhook ? { webhook: state.ctx.webhook } : {}),
@@ -1319,6 +1352,20 @@ export class AutomationEngine {
                 );
                 break;
             }
+            case 'subscription_event': {
+                // v0.1.367 — el primer evento que escucha el disparador, con la
+                // suscripción del registro (o datos de ejemplo si no tiene).
+                const events = Array.isArray(cfg.subscription_events) ? (cfg.subscription_events as unknown[]).map(String) : [];
+                const evento = (events[0] ?? 'charged') as SubscriptionEventInfo['evento'];
+                const sample = ctx.recordId !== null ? await this.subscriptionsSvc()?.sampleEvent(ctx.tenantId, ctx.recordId, evento) : null;
+                ctx.suscripcion = sample ?? sampleSubscriptionEvent(evento);
+                notes.push(
+                    sample
+                        ? `Se asume que en la suscripción de este registro pasó: ${SUBSCRIPTION_EVENT_LABELS[evento].toLowerCase()}.`
+                        : `Este registro no tiene suscripción: {{suscripcion.x}} usa datos de ejemplo (${SUBSCRIPTION_EVENT_LABELS[evento].toLowerCase()}).`,
+                );
+                break;
+            }
             default:
                 break;
         }
@@ -1469,6 +1516,10 @@ export class AutomationEngine {
         if (auto.triggerType === 'sla_alert') {
             if (!ctx.sla || !slaTriggerMatches(cfg, ctx.sla)) return false;
         }
+        // v0.1.367 — «Cuando cambia una suscripción»: los eventos y planes elegidos.
+        if (auto.triggerType === 'subscription_event') {
+            if (!ctx.suscripcion || !subscriptionTriggerMatches(cfg, ctx.suscripcion)) return false;
+        }
         const fv = this.accessor(ctx);
         if (!evaluateCondition(cfg.field_filters as ConditionData | undefined, fv, this.condOpts(ctx))) return false;
 
@@ -1592,6 +1643,8 @@ export class AutomationEngine {
             if (token.startsWith('correo.')) return emailValue(ctx.email, token.slice('correo.'.length));
             // E5 — la alerta de SLA (el vencimiento, en el formato y la zona de la empresa).
             if (token.startsWith('sla.')) return slaValue(ctx, token.slice('sla.'.length));
+            // v0.1.367 — la suscripción del registro (fechas en la zona de la empresa).
+            if (token.startsWith('suscripcion.')) return subscriptionValue(ctx, token.slice('suscripcion.'.length));
             // v0.1.266 — {{pdf.link}}, {{pdf.nombre}} del último PDF generado.
             if (token.startsWith('pdf.')) {
                 const v = ctx.pdf?.[token.slice('pdf.'.length)];
@@ -1836,6 +1889,7 @@ export class AutomationEngine {
                 ...(ctx.responses ? { responses: ctx.responses } : {}),
                 ...(ctx.chain ? { chain: ctx.chain } : {}),
                 ...(ctx.approval ? { approval: ctx.approval } : {}),
+                ...(ctx.suscripcion ? { suscripcion: ctx.suscripcion } : {}),
             },
         };
     }
@@ -3238,6 +3292,117 @@ export class AutomationEngine {
                         url: created.link.url,
                     });
                 }
+                // v0.1.367 (ADR-S96) — suscripciones de Mercado Pago: crear el
+                // link para que el cliente autorice su tarjeta, o pausar /
+                // reanudar / cancelar / cambiar el valor de la del registro.
+                if (
+                    resolved.integration &&
+                    resolved.integration.key === 'mercadopago' &&
+                    (resolved.action.key === 'create_subscription_link' || resolved.action.key === 'manage_subscription')
+                ) {
+                    if (ctx.recordId === null) return skip('connector_action', 'Una suscripción necesita un registro.');
+                    const subsSvc = this.subscriptionsSvc();
+                    if (!subsSvc) throw new Error('Las suscripciones no están disponibles en este servidor.');
+                    const compiled = compileIntegrationValues(resolved.integration.key, resolved.action, values, merge, merge);
+                    if (compiled.missing.length > 0) {
+                        return skip('connector_action', `Falta completar: ${compiled.missing.join(', ')}.`);
+                    }
+                    const v = compiled.values;
+                    if (resolved.action.key === 'create_subscription_link') {
+                        const planId = Number(v.plan_id);
+                        const [plan] = Number.isInteger(planId) && planId > 0
+                            ? await tx
+                                  .select()
+                                  .from(subscriptionPlans)
+                                  .where(and(eq(subscriptionPlans.tenantId, ctx.tenantId), eq(subscriptionPlans.id, planId)))
+                                  .limit(1)
+                            : [];
+                        if (!plan || plan.connectionId !== connId) {
+                            throw new Error(`${resolved.action.label}: el plan elegido ya no existe o es de otra conexión: elígelo de nuevo en la acción.`);
+                        }
+                        const amountRaw = (v.amount ?? '').trim();
+                        const amount = amountRaw === '' ? null : parseAmount(amountRaw);
+                        if (amountRaw !== '' && amount === null) {
+                            throw new Error(`${resolved.action.label}: el valor «${amountRaw}» no es un número.`);
+                        }
+                        if (sim) {
+                            // Nunca de verdad en una prueba: le crearía una suscripción real al cliente.
+                            ctx.suscripcion = { ...sampleSubscriptionEvent('activated'), plan: plan.name, monto: amount ?? Number(plan.amount), moneda: plan.currency, link: '(se crea al correr)', estado: 'Por autorizar' };
+                            this.rememberNamed(ctx, cfg, { status: 200, body: { link: '(se crea al correr)', url: '(se crea al correr)', plan: plan.name } });
+                            return ok('connector_action', `Crearía una suscripción «${plan.name}» por ${amount ?? Number(plan.amount)} ${plan.currency} para ${v.payer_email ?? ''}.`, {
+                                _sim: 'would_run',
+                                action: resolved.action.key,
+                                integration: resolved.integration.key,
+                            });
+                        }
+                        const created = await subsSvc
+                            .createInTx(tx, ctx.tenantId, {
+                                plan,
+                                listId: ctx.listId,
+                                recordId: ctx.recordId,
+                                payerEmail: v.payer_email ?? '',
+                                amount,
+                                startDate: (v.start_date ?? '').trim() || null,
+                                title: null,
+                                userId: null,
+                            })
+                            .catch((err: unknown) => {
+                                throw new Error(`${resolved.action!.label}: ${err instanceof Error ? err.message : String(err)}`);
+                            });
+                        if (created.write) ctx.data = created.write.after;
+                        ctx.suscripcion = { ...created.info, link: created.sub.url };
+                        this.rememberNamed(ctx, cfg, { status: 200, body: { link: created.sub.url, url: created.sub.url, plan: plan.name, monto: created.sub.amount } });
+                        const where = created.linkField
+                            ? ` · guardado en «${created.linkField}»`
+                            : ' · el link no quedó en ninguna columna: úsalo con {{suscripcion.link}} en el paso siguiente';
+                        return ok('connector_action', `${resolved.name} → suscripción «${plan.name}»: ${created.sub.url ?? ''}${where}`, {
+                            action: resolved.action.key,
+                            integration: resolved.integration.key,
+                            subscription_id: created.sub.id,
+                            url: created.sub.url,
+                        });
+                    }
+                    // manage_subscription: la suscripción más nueva del registro.
+                    const operation = (v.operation ?? '').trim();
+                    if (!['pause', 'resume', 'cancel', 'amount'].includes(operation)) {
+                        throw new Error(`${resolved.action.label}: elige qué hacer (pausar, reanudar, cancelar o cambiar el valor).`);
+                    }
+                    const [sub] = await tx
+                        .select()
+                        .from(subscriptionsTable)
+                        .where(and(eq(subscriptionsTable.tenantId, ctx.tenantId), eq(subscriptionsTable.recordId, ctx.recordId)))
+                        .orderBy(sql`${subscriptionsTable.createdAt} desc`)
+                        .limit(1);
+                    if (!sub || sub.connectionId !== connId) return skip('connector_action', 'El registro no tiene una suscripción de esta conexión.');
+                    const verb = { pause: 'Pausaría', resume: 'Reanudaría', cancel: 'Cancelaría', amount: 'Cambiaría el valor de' }[operation]!;
+                    let newAmount: number | null = null;
+                    if (operation === 'amount') {
+                        newAmount = parseAmount((v.amount ?? '').trim());
+                        if (newAmount === null || newAmount <= 0) throw new Error(`${resolved.action.label}: el valor nuevo «${v.amount ?? ''}» no es un número.`);
+                    }
+                    if (sim) {
+                        return ok('connector_action', `${verb} la suscripción «${sub.title}»${newAmount !== null ? ` a ${newAmount} ${sub.currency}` : ''}.`, {
+                            _sim: 'would_run',
+                            action: resolved.action.key,
+                            integration: resolved.integration.key,
+                        });
+                    }
+                    const patch =
+                        operation === 'amount'
+                            ? ({ kind: 'amount', amount: newAmount!, currency: sub.currency } as const)
+                            : ({ kind: 'status', status: operation === 'pause' ? 'paused' : operation === 'resume' ? 'authorized' : 'cancelled' } as const);
+                    await subsSvc.patchInMp(ctx.tenantId, sub, patch, operation === 'cancel' ? ((v.reason ?? '').trim() || 'La canceló una automatización.') : null).catch((err: unknown) => {
+                        throw new Error(`${resolved.action!.label}: ${err instanceof Error ? err.message : String(err)}`);
+                    });
+                    // El estado nuevo lo trae la sincronización (fuera de esta transacción).
+                    subsSvc.syncSoon(ctx.tenantId, sub.id);
+                    const done = { pause: 'pausó', resume: 'reanudó', cancel: 'canceló', amount: 'cambió el valor de' }[operation]!;
+                    return ok('connector_action', `${resolved.name} → se ${done} la suscripción «${sub.title}»${newAmount !== null ? ` (ahora ${newAmount} ${sub.currency})` : ''}.`, {
+                        action: resolved.action.key,
+                        integration: resolved.integration.key,
+                        subscription_id: sub.id,
+                    });
+                }
                 // D3 — WhatsApp oficial: la petición la arma el canal (plantilla
                 // aprobada, ventana de 24 h) y el envío queda en el registro.
                 if (resolved.integration && resolved.integration.key === 'whatsapp_cloud') {
@@ -4138,6 +4303,83 @@ function slaValue(ctx: RunContext, key: string): unknown {
         default:
             return '';
     }
+}
+
+/**
+ * v0.1.367 — `{{suscripcion.x}}`. Los montos y contadores van crudos (como
+ * `{{pago.monto}}`: `{{suscripcion.monto|moneda}}` los formatea); las fechas,
+ * en el formato y la zona de la empresa.
+ */
+function subscriptionValue(ctx: RunContext, key: string): unknown {
+    const info = ctx.suscripcion;
+    if (!info) return '';
+    const day = (iso: string | null): string => {
+        if (!iso) return '';
+        const at = new Date(iso);
+        if (Number.isNaN(at.getTime())) return '';
+        let ymd: string;
+        try {
+            ymd = new Intl.DateTimeFormat('en-CA', { timeZone: ctx.timeZone ?? FALLBACK_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
+        } catch {
+            ymd = at.toISOString().slice(0, 10);
+        }
+        return String(formatEmailFieldValue({ type: 'date', config: {} }, ymd, { ...(ctx.format ?? DEFAULT_FORMAT), timezone: ctx.timeZone ?? FALLBACK_TIME_ZONE }));
+    };
+    switch (key) {
+        case 'evento':
+            return SUBSCRIPTION_EVENT_LABELS[info.evento] ?? info.evento;
+        case 'estado':
+            return info.estado;
+        case 'plan':
+            return info.plan;
+        case 'monto':
+            return info.monto;
+        case 'moneda':
+            return info.moneda;
+        case 'link':
+            return info.link ?? '';
+        case 'proximo_cobro':
+            return day(info.proximo_cobro);
+        case 'pagado_hasta':
+            return day(info.pagado_hasta);
+        case 'cobros_pagados':
+            return info.cobros_pagados;
+        case 'cobros_fallidos':
+            return info.cobros_fallidos;
+        case 'motivo':
+            return info.motivo ?? '';
+        case 'monto_cobrado':
+            return info.monto_cobrado ?? '';
+        case 'fecha_cobro':
+            return day(info.fecha_cobro);
+        case 'id':
+            return info.id ?? '';
+        default:
+            return '';
+    }
+}
+
+/** v0.1.367 — una suscripción de ejemplo para «Probar» (el registro no tiene). */
+function sampleSubscriptionEvent(evento: SubscriptionEventInfo['evento']): SubscriptionEventInfo {
+    const now = new Date();
+    return {
+        subscription_id: 0,
+        plan_id: null,
+        evento,
+        estado: evento === 'expired' ? 'Vencida' : evento === 'past_due' ? 'En mora' : evento === 'cancelled' ? 'Cancelada' : 'Al día',
+        plan: 'Plan mensual (ejemplo)',
+        monto: 50_000,
+        moneda: 'COP',
+        link: null,
+        proximo_cobro: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        pagado_hasta: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        cobros_pagados: 3,
+        cobros_fallidos: evento === 'charge_failed' || evento === 'past_due' || evento === 'expired' ? 1 : 0,
+        motivo: evento === 'charge_failed' || evento === 'past_due' ? 'fondos insuficientes' : null,
+        monto_cobrado: evento === 'charged' || evento === 'charge_failed' ? 50_000 : null,
+        fecha_cobro: evento === 'charged' || evento === 'charge_failed' ? now.toISOString() : null,
+        id: null,
+    };
 }
 
 /** C5 — el estado de la solicitud que corresponde a un resultado simulado. */

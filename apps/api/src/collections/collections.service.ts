@@ -77,6 +77,18 @@ import {
 } from './collection-gateways';
 import { gatewayBases } from './gateway-bases';
 import { can } from '../authz/can';
+import { mpNotice } from '../subscriptions/subscription-gateway';
+
+/**
+ * v0.1.367 — Quien procesa los avisos de SUSCRIPCIONES (el servicio de
+ * suscripciones se registra al arrancar: así no hay un ciclo de dependencias).
+ */
+export type SubscriptionNoticeSink = (
+    tenantId: number,
+    connectionId: number,
+    query: Record<string, unknown>,
+    body: unknown,
+) => Promise<'applied' | 'ignored' | 'not_subscription'>;
 
 export interface CollectionActor {
     userId: number;
@@ -129,6 +141,7 @@ const FETCH_TIMEOUT_MS = 15_000;
 export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
     private readonly logger = new Logger(CollectionsService.name);
     private expireTimer: NodeJS.Timeout | null = null;
+    private subscriptionSink: SubscriptionNoticeSink | null = null;
 
     constructor(
         private readonly tenantDb: TenantDb,
@@ -162,6 +175,23 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
 
     private get bases() {
         return gatewayBases(this.env);
+    }
+
+    /** v0.1.367 — El servicio de suscripciones se anota para recibir sus avisos. */
+    registerSubscriptionSink(sink: SubscriptionNoticeSink): void {
+        this.subscriptionSink = sink;
+    }
+
+    /** Un aviso que no era de un link: ¿es de una suscripción? */
+    private async toSubscriptions(
+        tenantId: number,
+        connectionId: number,
+        query: Record<string, unknown>,
+        body: unknown,
+    ): Promise<'applied' | 'ignored'> {
+        if (!this.subscriptionSink) return 'ignored';
+        const out = await this.subscriptionSink(tenantId, connectionId, query, body);
+        return out === 'applied' ? 'applied' : 'ignored';
     }
 
     // ── Conexiones ──────────────────────────────────────────────────────
@@ -854,6 +884,13 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
 
         let paymentId: string | null;
         if (hook.provider === 'mercadopago') {
+            // v0.1.367 — los avisos de una SUSCRIPCIÓN (la suscripción o una de
+            // sus cuotas) van directo al servicio de suscripciones.
+            const notice = mpNotice(query, body);
+            if (notice && notice.topic !== 'payment') {
+                this.incidents?.resolve(tenantId, `collections:${hook.connectionId}:hooks`);
+                return this.toSubscriptions(tenantId, hook.connectionId, query, body);
+            }
             paymentId = mpNotificationPaymentId(query, body);
         } else {
             const secret = (conn.creds.signingSecret ?? '').trim();
@@ -874,7 +911,10 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             return 'ignored';
         }
         const payment = parsePayment(hook.provider, res.status, res.body ?? '');
-        if (!payment || !payment.linkRef) return 'ignored';
+        // v0.1.367 — un pago sin link puede ser la cuota de una suscripción.
+        if (!payment || !payment.linkRef) {
+            return hook.provider === 'mercadopago' ? this.toSubscriptions(tenantId, hook.connectionId, query, body) : 'ignored';
+        }
 
         const [link] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
@@ -891,7 +931,9 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
                 .limit(1),
         );
         this.incidents?.resolve(tenantId, `collections:${hook.connectionId}:hooks`);
-        if (!link) return 'ignored';
+        if (!link) {
+            return hook.provider === 'mercadopago' ? this.toSubscriptions(tenantId, hook.connectionId, query, body) : 'ignored';
+        }
         const changed = await this.applyPayment(tenantId, link.id, payment);
         return changed ? 'applied' : 'ignored';
     }

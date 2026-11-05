@@ -55,6 +55,7 @@ import { useIsGuest } from '@/lib/guest';
 import { useGuestAccess } from '@/hooks/useGuests';
 import { IssuedDocumentsSection } from '@/admin/documents/IssuedDocuments';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
+import { RecordSubscriptionPanel } from '@/cloud/components/subscriptions/RecordSubscriptionPanel';
 import { SendWhatsappButton } from '@/cloud/components/whatsapp/SendWhatsappButton';
 import { SendSmsButton } from '@/cloud/components/sms/SendSmsButton';
 import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine';
@@ -703,6 +704,10 @@ export function RecordDetailDrawer({
                                     {listData.data !== undefined && view.ready && !isGuest && (
                                         <div className="imcrm-mt-4">
                                             <RecordPaymentsPanel listId={listData.data.id} recordId={record.id} />
+                                            {/* v0.1.367 — suscripción de Mercado Pago (débito automático). */}
+                                            <div className="imcrm-mt-3 empty:imcrm-hidden">
+                                                <RecordSubscriptionPanel listId={listData.data.id} recordId={record.id} />
+                                            </div>
                                         </div>
                                     )}
 

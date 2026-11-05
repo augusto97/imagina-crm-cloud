@@ -26,6 +26,7 @@ import { useIsGuest } from '@/lib/guest';
 import { useGuestAccess } from '@/hooks/useGuests';
 import { IssuedDocumentsSection } from '@/admin/documents/IssuedDocuments';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
+import { RecordSubscriptionPanel } from '@/cloud/components/subscriptions/RecordSubscriptionPanel';
 import { SendWhatsappButton } from '@/cloud/components/whatsapp/SendWhatsappButton';
 import { SendSmsButton } from '@/cloud/components/sms/SendSmsButton';
 import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine';
@@ -514,6 +515,9 @@ export function RecordPage(): JSX.Element {
                                 <RecordDataConsentLine className="imcrm-mt-4" listId={listInfo.id} recordId={id} />
                                 <div className="imcrm-mt-4">
                                     <RecordPaymentsPanel listId={listInfo.id} recordId={id} />
+                                </div>
+                                <div className="imcrm-mt-3 empty:imcrm-hidden">
+                                    <RecordSubscriptionPanel listId={listInfo.id} recordId={id} />
                                 </div>
                                 {/* v0.1.290 — documentos emitidos (numerados): congelados, anulados. */}
                                 <IssuedDocumentsSection className="imcrm-mt-4" listId={listInfo.id} listSlug={listInfo.slug} recordId={id} />

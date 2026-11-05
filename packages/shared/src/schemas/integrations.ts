@@ -1399,9 +1399,9 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
         key: 'mercadopago',
         name: 'Mercado Pago',
-        tagline: 'Cobra con links de pago y entérate solo cuando te pagan.',
+        tagline: 'Cobra con links de pago o con suscripciones de débito automático.',
         description:
-            'Crea links de pago desde un registro o una automatización (PSE, Nequi, tarjeta, efectivo), mándalos por WhatsApp o correo, y la lista se actualiza sola cuando el cliente paga: estado, fecha, monto y medio.',
+            'Crea links de pago desde un registro o una automatización (PSE, Nequi, tarjeta, efectivo) y suscripciones que se cobran solas cada mes con la tarjeta del cliente. La lista se actualiza sola: quién pagó, quién está al día, quién tiene un cobro rechazado y a quién se le vence el servicio.',
         category: 'pagos',
         color: '#00B1EA',
         auth: {
@@ -1420,6 +1420,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                 'Entra a mercadopago.com.co/developers → Tus integraciones y crea una aplicación (o abre la que ya tengas).',
                 'En «Credenciales de producción» copia el Access Token (empieza con APP_USR-) y pégalo aquí. Para probar sin dinero real, usa el de prueba (TEST-).',
                 'Listo: los pagos te llegan a TU cuenta de Mercado Pago, sin comisiones de la app. Cada link le avisa a la app cuando se paga; no hay que configurar nada más.',
+                'Para las suscripciones: abre «Cobros» en esta conexión, copia la URL de avisos y pégala en tu aplicación de Mercado Pago → Webhooks, con los eventos «Pagos» y «Planes y suscripciones». Sin eso igual funciona: la app revisa cada suscripción sola, sólo que se entera unos minutos después.',
             ],
         },
         actions: [
@@ -1448,6 +1449,47 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     },
                     { key: 'payer_email', label: 'Correo del cliente', help: 'Opcional: Mercado Pago lo usa para precompletar el pago.' },
                     { key: 'expires_days', label: 'Vence en (días)', type: 'number', help: 'Vacío = no vence.' },
+                ],
+            }),
+            // v0.1.367 (ADR-S96) — suscripciones: el plan se elige de los de la
+            // conexión (el editor lo muestra como lista); el resto admite variables.
+            action({
+                key: 'create_subscription_link',
+                label: 'Crear suscripción (Mercado Pago)',
+                description:
+                    'Un link para que el cliente autorice su tarjeta y se le cobre solo cada período. El estado, el próximo cobro y los cobros rechazados quedan en el registro.',
+                params: [
+                    { key: 'plan_id', label: 'Plan', required: true, help: 'Los planes se crean en Integraciones → Mercado Pago → Cobros → Suscripciones.' },
+                    {
+                        key: 'payer_email',
+                        label: 'Correo del cliente',
+                        required: true,
+                        help: 'Mercado Pago lo exige: la suscripción queda a nombre de ese correo. Ej.: {{correo}}.',
+                    },
+                    { key: 'amount', label: 'Valor de cada cobro', type: 'number', help: 'Vacío = el del plan. Un número o una variable como {{valor_mensual}}.' },
+                    { key: 'start_date', label: 'Primer cobro', help: 'Vacío = al autorizar. Una fecha (AAAA-MM-DD) o una variable como {{fecha_inicio}}.' },
+                ],
+            }),
+            action({
+                key: 'manage_subscription',
+                label: 'Pausar, reanudar o cancelar la suscripción (Mercado Pago)',
+                description: 'Cambia la suscripción del registro: pausarla, reanudarla, cancelarla o cambiar el valor de los próximos cobros.',
+                params: [
+                    {
+                        key: 'operation',
+                        label: 'Qué hacer',
+                        type: 'select',
+                        required: true,
+                        default: 'pause',
+                        options: [
+                            { value: 'pause', label: 'Pausar los cobros' },
+                            { value: 'resume', label: 'Reanudar los cobros' },
+                            { value: 'cancel', label: 'Cancelar la suscripción' },
+                            { value: 'amount', label: 'Cambiar el valor' },
+                        ],
+                    },
+                    { key: 'amount', label: 'Valor nuevo', type: 'number', help: 'Sólo para «Cambiar el valor». Un número o una variable.' },
+                    { key: 'reason', label: 'Motivo', help: 'Sólo para cancelar: queda en el historial de la suscripción.' },
                 ],
             }),
         ],

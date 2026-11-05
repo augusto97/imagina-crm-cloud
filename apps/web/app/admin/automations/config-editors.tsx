@@ -16,6 +16,8 @@ import { BulkEditActionConfig } from './BulkEditActionConfig';
 import { WhatsappActionConfig, WhatsappTriggerConfig } from './WhatsappActionConfig';
 import { SmsActionConfig } from './SmsActionConfig';
 import { TeamsChannelField, TeamsChatStatus } from './TeamsChannelField';
+import { SubscriptionPlanPicker, SubscriptionTriggerConfig } from './SubscriptionAutomationParts';
+import { SubscriptionFieldsEditor } from '@/cloud/components/subscriptions/SubscriptionFieldsEditor';
 import { MergeTagInput } from './MergeTagInput';
 import { ConditionEditor, type ConditionRule } from './ConditionEditor';
 import { FilterOptionPicker } from '../records/FilterOptionPicker';
@@ -194,6 +196,9 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
         out.for_each_record = true;
         if (c.records_filter && typeof c.records_filter === 'object') out.records_filter = c.records_filter;
     }
+    // v0.1.367 — subscription_event: qué eventos y qué planes (vacío = todos).
+    if (Array.isArray(c.subscription_events) && c.subscription_events.length > 0) out.subscription_events = c.subscription_events;
+    if (Array.isArray(c.plan_ids) && c.plan_ids.length > 0) out.plan_ids = c.plan_ids;
     // D2/E5 — email_received (qué correos) y sla_alert (qué alertas y objetivos).
     cleanHelpdeskTriggerConfig(c, out);
     return out;
@@ -230,6 +235,8 @@ export function helpForTrigger(triggerType: string): string {
             return __('Se ejecuta cuando llega un correo al buzón de soporte de esta lista: un ticket nuevo (el registro ya está creado con el asunto, el remitente y el texto) o la respuesta del cliente a un ticket abierto. Puedes usar {{correo.de}}, {{correo.nombre}}, {{correo.asunto}} y {{correo.texto}}.');
         case 'sla_alert':
             return __('Se ejecuta cuando el SLA de un ticket de esta lista queda en riesgo (pasó el porcentaje de aviso) o se vence, una sola vez por alerta. Sirve para escalar a otro equipo, cambiar la prioridad o avisar por WhatsApp. Puedes usar {{sla.alerta}}, {{sla.objetivo}}, {{sla.vence}} y {{sla.prioridad}}.');
+        case 'subscription_event':
+            return __('Se ejecuta cuando cambia una suscripción de Mercado Pago de un registro de esta lista: el cliente autorizó la tarjeta, se cobró una cuota, se rechazó un cobro (Mercado Pago lo reintenta), entró en mora, se venció (pasaron los días de gracia), se pausó o se canceló. Sirve para agradecer el pago, avisar al cliente que actualice su tarjeta o suspender el servicio. Puedes usar {{suscripcion.evento}}, {{suscripcion.estado}}, {{suscripcion.monto}}, {{suscripcion.proximo_cobro}} y {{suscripcion.motivo}}.');
         case 'payment_received':
             return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones puedes usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
         case 'whatsapp_message_received':
@@ -339,6 +346,7 @@ export function TriggerConfigEditor({
             {triggerType === 'approval_resolved' && <ApprovalTriggerConfigHost config={config} onChange={onChange} />}
             {triggerType === 'checklist_completed' && <ChecklistCompletedConfig config={config} onChange={onChange} />}
             {triggerType === 'whatsapp_message_received' && <WhatsappTriggerConfig config={config} onChange={onChange} />}
+            {triggerType === 'subscription_event' && <SubscriptionTriggerConfig config={config} onChange={onChange} />}
         </div>
     );
 }
@@ -2389,6 +2397,7 @@ function ConnectorActionConfig({
                     fields={fields}
                     onChange={(next) => setValue(param.key, next)}
                     teamsConnectionId={connection?.integration_key === 'teams' ? connection.id : null}
+                    subscriptionConnectionId={connection?.integration_key === 'mercadopago' && actionKey === 'create_subscription_link' ? connection.id : null}
                 />
             ))}
 
@@ -2404,6 +2413,17 @@ function ConnectorActionConfig({
                 const kind = meetingActionKind(connection?.integration_key ?? '', actionKey);
                 return kind ? <MeetingSaveFields kind={kind} spec={spec} onChange={onChange} fields={fields} listId={listId} /> : null;
             })()}
+
+            {/* v0.1.367 — dónde queda el estado de la suscripción en la lista. */}
+            {actionKey === 'create_subscription_link' && connection?.integration_key === 'mercadopago' && listId && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3" data-testid="imcrm-subscription-link-columns">
+                    <p className="imcrm-text-sm imcrm-font-medium">{__('Dónde queda la suscripción')}</p>
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('La suscripción aparece en «Suscripción» de la ficha y en estas columnas de la lista: el estado, el próximo cobro y los rechazos se escriben solos. En un paso siguiente (un WhatsApp o un correo) el link para autorizar la tarjeta es {{suscripcion.link}}.')}
+                    </p>
+                    <SubscriptionFieldsEditor listId={listId} fields={fields} />
+                </div>
+            )}
 
             {/* v0.1.365 — el link tiene que quedar a la vista: aquí se elige la
                 columna donde se guarda (y el estado, la fecha y el monto del pago). */}
@@ -2450,6 +2470,7 @@ function ConnectorParamField({
     fields,
     onChange,
     teamsConnectionId = null,
+    subscriptionConnectionId = null,
 }: {
     param: ConnectorParam;
     value: string;
@@ -2457,6 +2478,8 @@ function ConnectorParamField({
     onChange: (next: string) => void;
     /** v0.1.348 — conexión de Teams: el canal se elige de una lista. */
     teamsConnectionId?: number | null;
+    /** v0.1.367 — conexión de Mercado Pago en «Crear suscripción»: el plan se elige de una lista. */
+    subscriptionConnectionId?: number | null;
 }): JSX.Element {
     const hasOptions = param.type === 'select' && param.options.length > 0;
     // Una opción de lista también puede venir de una variable del registro:
@@ -2464,6 +2487,19 @@ function ConnectorParamField({
     const [asTag, setAsTag] = useState(
         () => hasOptions && value !== '' && !param.options.some((o) => o.value === value),
     );
+
+    // v0.1.367 — el plan de una suscripción se elige de los de la conexión.
+    if (subscriptionConnectionId !== null && param.key === 'plan_id') {
+        return (
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                <Label className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {param.label || param.key}
+                    {param.required && <span className="imcrm-text-destructive"> *</span>}
+                </Label>
+                <SubscriptionPlanPicker connectionId={subscriptionConnectionId} value={value} onChange={onChange} />
+            </div>
+        );
+    }
 
     if (teamsConnectionId !== null && param.key === 'channel') {
         return (

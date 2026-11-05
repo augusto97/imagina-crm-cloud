@@ -125,6 +125,16 @@ export type AuditAction =
     | 'collections.setup'
     | 'payment_link.create'
     | 'payment_link.cancel'
+    // v0.1.367 — suscripciones de la empresa a sus clientes (Mercado Pago).
+    | 'subscription_plan.create'
+    | 'subscription_plan.update'
+    | 'subscription_plan.delete'
+    | 'subscription.create'
+    | 'subscription.pause'
+    | 'subscription.resume'
+    | 'subscription.cancel'
+    | 'subscription.amount'
+    | 'subscriptions.setup'
     // v0.1.266 — plantillas de documentos PDF.
     | 'document_template.create'
     | 'document_template.update'

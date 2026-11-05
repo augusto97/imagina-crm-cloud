@@ -36,6 +36,8 @@ import { idSchema } from './common';
  * quien la política de SLA indica, y al escalar).
  * E6 — `agent`: un agente de IA dejó una propuesta para revisar (a las
  * personas que revisan sus propuestas o, si no hay, a su dueño).
+ * v0.1.367 — `subscription`: una suscripción de un cliente falló un cobro, entró
+ * en mora, venció o se canceló (a quien la creó y a quienes siguen el registro).
  */
 export const NOTIFICATION_KINDS = [
     'mention',
@@ -50,6 +52,7 @@ export const NOTIFICATION_KINDS = [
     'team_assigned',
     'sla',
     'agent',
+    'subscription',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
@@ -66,6 +69,7 @@ export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
     team_assigned: 'Asignan un registro a uno de tus equipos',
     sla: 'Mesa de ayuda: un ticket entra en riesgo o se vence',
     agent: 'Agentes de IA: propuestas que esperan tu revisión',
+    subscription: 'Suscripciones: un cobro falla, una suscripción vence o se cancela',
 };
 
 export interface NotificationDto {
@@ -166,6 +170,11 @@ export const notificationPrefsSchema = z.object({
              * la casilla; la campana y «Mi trabajo» lo muestran igual.
              */
             agent: z.boolean().default(false),
+            /**
+             * v0.1.367 — una suscripción que falla, vence o se cancela: hay
+             * que actuar (cortar el servicio o llamar al cliente): encendido.
+             */
+            subscription: z.boolean().default(true),
         })
         .default({}),
     /**
