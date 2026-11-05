@@ -35,6 +35,7 @@ export * from './store-sync';
 export * from './bulk-edits';
 export * from './billing-payments';
 export * from './collections';
+export * from './subscriptions';
 export * from './document-templates';
 export * from './forms';
 export * from './data-consents';

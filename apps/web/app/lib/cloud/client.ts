@@ -64,6 +64,15 @@ import {
     type SetCollectionFieldsInput,
     type CreatePaymentLinkInput,
     type PaymentLink,
+    type SubscriptionPlan,
+    type CreateSubscriptionPlanInput,
+    type UpdateSubscriptionPlanInput,
+    type SubscriptionsOverview,
+    type RecordSubscriptions,
+    type CreateSubscriptionInput,
+    type Subscription,
+    type SubscriptionFields,
+    type SetSubscriptionFieldsInput,
     type RecordPayments,
     type SqlPreviewInput,
     type SqlPreviewResult,
@@ -1155,6 +1164,47 @@ export class CloudClient {
     }
     setCollectionFields(list: string | number, input: SetCollectionFieldsInput): Promise<CollectionFields> {
         return this.request('PUT', `/lists/${list}/collections/fields`, { body: input, schema: z.custom<CollectionFields>() });
+    }
+    // ── Suscripciones de Mercado Pago (v0.1.367, ADR-S96) ────────────────
+    async subscriptionPlans(connectionId?: number): Promise<SubscriptionPlan[]> {
+        const q = connectionId ? `?connection_id=${connectionId}` : '';
+        return (await this.request('GET', `/subscriptions/plans${q}`, { schema: z.object({ data: z.array(z.custom<SubscriptionPlan>()) }) })).data;
+    }
+    createSubscriptionPlan(input: CreateSubscriptionPlanInput): Promise<SubscriptionPlan> {
+        return this.request('POST', '/subscriptions/plans', { body: input, schema: z.custom<SubscriptionPlan>() });
+    }
+    updateSubscriptionPlan(id: number, input: UpdateSubscriptionPlanInput): Promise<SubscriptionPlan> {
+        return this.request('PATCH', `/subscriptions/plans/${id}`, { body: input, schema: z.custom<SubscriptionPlan>() });
+    }
+    async deleteSubscriptionPlan(id: number): Promise<void> {
+        await this.request('DELETE', `/subscriptions/plans/${id}`, {});
+    }
+    subscriptionsOverview(connectionId: number): Promise<SubscriptionsOverview> {
+        return this.request('GET', `/collections/connections/${connectionId}/subscriptions`, { schema: z.custom<SubscriptionsOverview>() });
+    }
+    recordSubscriptions(list: string | number, recordId: number): Promise<RecordSubscriptions> {
+        return this.request('GET', `/lists/${list}/records/${recordId}/subscriptions`, { schema: z.custom<RecordSubscriptions>() });
+    }
+    createSubscription(list: string | number, recordId: number, input: CreateSubscriptionInput): Promise<Subscription> {
+        return this.request('POST', `/lists/${list}/records/${recordId}/subscriptions`, { body: input, schema: z.custom<Subscription>() });
+    }
+    subscriptionAction(id: number, action: 'pause' | 'resume' | 'verify'): Promise<Subscription> {
+        return this.request('POST', `/subscriptions/${id}/${action}`, { body: {}, schema: z.custom<Subscription>() });
+    }
+    cancelSubscription(id: number, reason: string | null): Promise<Subscription> {
+        return this.request('POST', `/subscriptions/${id}/cancel`, { body: { reason }, schema: z.custom<Subscription>() });
+    }
+    changeSubscriptionAmount(id: number, amount: number): Promise<Subscription> {
+        return this.request('POST', `/subscriptions/${id}/amount`, { body: { amount }, schema: z.custom<Subscription>() });
+    }
+    subscriptionFields(list: string | number): Promise<{ fields: SubscriptionFields | null }> {
+        return this.request('GET', `/lists/${list}/subscriptions/fields`, { schema: z.custom<{ fields: SubscriptionFields | null }>() });
+    }
+    setSubscriptionFields(list: string | number, input: SetSubscriptionFieldsInput): Promise<SubscriptionFields> {
+        return this.request('PUT', `/lists/${list}/subscriptions/fields`, { body: input, schema: z.custom<SubscriptionFields>() });
+    }
+    setupSubscriptionFields(list: string | number): Promise<SubscriptionFields> {
+        return this.request('POST', `/lists/${list}/subscriptions/setup`, { body: {}, schema: z.custom<SubscriptionFields>() });
     }
     // ── WhatsApp oficial: Meta WhatsApp Cloud API (D3) ──────────────────
     async whatsappConnections(): Promise<Array<{ id: number; name: string; display_phone: string | null; templates: WhatsappTemplate[] }>> {

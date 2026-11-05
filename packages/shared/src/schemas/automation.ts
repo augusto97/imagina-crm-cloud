@@ -37,6 +37,8 @@ export const AUTOMATION_TRIGGERS = [
     'email_received',
     // E5 — un SLA del ticket entró en riesgo o se venció.
     'sla_alert',
+    // v0.1.367 — una suscripción cambió (se cobró, falló, venció, se canceló…).
+    'subscription_event',
 ] as const;
 export const automationTriggerSlugSchema = z.string().min(1);
 export type AutomationTriggerSlug = z.infer<typeof automationTriggerSlugSchema>;

@@ -84,6 +84,20 @@ export type NotifyEvent =
           body: string;
       }
     | {
+          /**
+           * v0.1.367 — una suscripción del registro falló un cobro, entró en
+           * mora, venció o se canceló: a quien la creó y a quienes siguen el
+           * registro (con el ACL de siempre), kind `subscription`.
+           */
+          type: 'subscription';
+          tenantId: number;
+          listId: number;
+          recordId: number;
+          userIds: number[];
+          title: string;
+          body: string;
+      }
+    | {
           type: 'description_mention';
           tenantId: number;
           listId: number;

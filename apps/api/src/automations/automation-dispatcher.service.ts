@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import type { BookingEventInfo, ChecklistCompletedInfo, EmailEventInfo, SlaEventInfo, WhatsappEventInfo } from '@imagina-base/shared';
+import type { BookingEventInfo, ChecklistCompletedInfo, EmailEventInfo, SlaEventInfo, SubscriptionEventInfo, WhatsappEventInfo } from '@imagina-base/shared';
 import { randomUUID } from 'node:crypto';
 import type { Queue } from 'bullmq';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -32,6 +32,8 @@ const TRIGGER_TYPES_FOR_EVENT: Record<string, readonly string[]> = {
     email_received: ['email_received'],
     // E5 — un SLA de la mesa de ayuda entró en riesgo o se venció.
     sla_alert: ['sla_alert'],
+    // v0.1.367 — una suscripción del registro se cobró, falló, venció, se canceló…
+    subscription_event: ['subscription_event'],
 };
 
 /** Cuánto vive en Redis la lista de disparadores activos de una lista (se invalida al guardar). */
@@ -78,7 +80,8 @@ export interface TriggerEvent {
         | 'booking_event'
         | 'whatsapp_message_received'
         | 'email_received'
-        | 'sla_alert';
+        | 'sla_alert'
+        | 'subscription_event';
     /** Snapshot de `data` tras la mutación (para merge tags / condición). */
     after: Record<string, unknown>;
     /** Snapshot previo (para field_changed). */
@@ -129,6 +132,11 @@ export interface TriggerEvent {
      * objetivo, y `{{sla.alerta}}`, `{{sla.vence}}`…
      */
     sla?: SlaEventInfo;
+    /**
+     * v0.1.367 — lo que pasó con la suscripción del registro (trigger
+     * `subscription_event`): el filtro por evento y plan, y `{{suscripcion.x}}`.
+     */
+    subscription?: SubscriptionEventInfo;
     /** Sólo estas automatizaciones (un botón que corre una puntual). */
     automation_ids?: number[];
     /** El cambio lo hizo una automatización (ver `AutomationChain`). */

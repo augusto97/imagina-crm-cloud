@@ -77,6 +77,10 @@ export function notificationTitle(
             // E6 — las propuestas de los agentes arman su propio título.
             out = `Un agente de IA propone cambios en ${rec}`;
             break;
+        case 'subscription':
+            // v0.1.367 — las suscripciones arman su propio título (SubscriptionsService).
+            out = `La suscripción de ${rec} cambió`;
+            break;
     }
     return out.length > MAX_TITLE ? `${out.slice(0, MAX_TITLE - 1)}…` : out;
 }

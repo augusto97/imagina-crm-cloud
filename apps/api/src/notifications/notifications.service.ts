@@ -152,6 +152,18 @@ export class NotificationsService implements OnModuleInit {
             await this.deliver(e.tenantId, e.kind, e.userIds, { listId: e.listId, recordId: e.recordId, actorId: null, title: e.title, body: e.body });
             return;
         }
+        if (e.type === 'subscription') {
+            // v0.1.367 — quien creó la suscripción y quienes siguen el registro.
+            const followers = await this.followerIds(e.tenantId, e.recordId);
+            await this.deliver(e.tenantId, 'subscription', [...e.userIds, ...followers], {
+                listId: e.listId,
+                recordId: e.recordId,
+                actorId: null,
+                title: e.title,
+                body: e.body,
+            });
+            return;
+        }
         if (e.type === 'portal_record_created') {
             // Lo que el cliente abre desde su portal le llega a quien sigue SU
             // registro (no hay seguidores en uno recién creado).

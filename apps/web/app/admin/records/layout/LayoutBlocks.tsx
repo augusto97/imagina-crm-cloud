@@ -45,6 +45,7 @@ import { CompactFieldRow } from '@/admin/records/crm/CompactFieldRow';
 import { FieldHistoryButton } from '@/admin/records/history/FieldHistory';
 import { PortalAccessButton } from '@/admin/records/crm/PortalAccessButton';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
+import { RecordSubscriptionPanel } from '@/cloud/components/subscriptions/RecordSubscriptionPanel';
 import { PortalPaymentsBlockView, PortalPaymentsPreview } from './PortalPaymentsBlock';
 import { renderMarkdown } from '@/admin/records/crm/blocks/SimpleBlockViews';
 import { RecordDescription } from '@/admin/records/description/RecordDescription';
@@ -348,7 +349,14 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
             if (ctx.mode === 'portal') return null;
             return <PortalAccessButton list={ctx.list} record={ctx.record} />;
         case 'payments': {
-            if (ctx.mode !== 'portal') return <RecordPaymentsPanel listId={ctx.list.id} recordId={ctx.record.id} showEmptyHint />;
+            if (ctx.mode !== 'portal')
+                return (
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
+                        <RecordPaymentsPanel listId={ctx.list.id} recordId={ctx.record.id} showEmptyHint />
+                        {/* v0.1.367 — la suscripción va con los cobros (sin planes ni suscripciones no dibuja nada). */}
+                        <RecordSubscriptionPanel listId={ctx.list.id} recordId={ctx.record.id} />
+                    </div>
+                );
             // v0.1.289 — en el portal: los pagos del cliente y «Pagar». En el
             // editor, una vista previa (con el monto del registro de muestra).
             if (ctx.preview) {

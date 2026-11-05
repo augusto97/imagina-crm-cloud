@@ -102,6 +102,9 @@ import {
     helpdeskMessages,
     helpdeskTickets,
     paymentLinks,
+    subscriptionPlans,
+    subscriptions,
+    subscriptionCharges,
     collectionHooks,
     whatsappContacts,
     whatsappHooks,
@@ -412,6 +415,10 @@ export class PlatformService {
             // v0.1.251 — cobros de la empresa (links de pago y su URL de avisos).
             await tx.delete(paymentLinks).where(eq(paymentLinks.tenantId, id));
             await tx.delete(collectionHooks).where(eq(collectionHooks.tenantId, id));
+            // v0.1.367 — suscripciones (los cobros caen en cascada; los planes después).
+            await tx.delete(subscriptionCharges).where(eq(subscriptionCharges.tenantId, id));
+            await tx.delete(subscriptions).where(eq(subscriptions.tenantId, id));
+            await tx.delete(subscriptionPlans).where(eq(subscriptionPlans.tenantId, id));
             // D3 — WhatsApp oficial (contactos antes que registros/listas; todo antes que las conexiones).
             await tx.delete(whatsappContacts).where(eq(whatsappContacts.tenantId, id));
             await tx.delete(whatsappTemplates).where(eq(whatsappTemplates.tenantId, id));

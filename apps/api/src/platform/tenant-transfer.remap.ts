@@ -41,6 +41,8 @@ export interface IdMaps {
     bookingPage: Map<number, number>;
     /** E6 — agentes de IA (la acción «Pedirle a un agente» y la actividad que dejan). */
     agent: Map<number, number>;
+    /** v0.1.367 — planes de suscripción (la acción «Crear suscripción» y el disparador). */
+    subscriptionPlan: Map<number, number>;
 }
 
 export function emptyMaps(): IdMaps {
@@ -62,6 +64,7 @@ export function emptyMaps(): IdMaps {
         customRole: new Map(),
         bookingPage: new Map(),
         agent: new Map(),
+        subscriptionPlan: new Map(),
     };
 }
 
@@ -131,6 +134,16 @@ const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {
     escalate_team_ids: 'team',
     // E6 — quienes revisan las propuestas de un agente de IA.
     reviewer_user_ids: 'user',
+    // v0.1.367 — los planes que filtra el disparador «Cuando cambia una suscripción».
+    plan_ids: 'subscriptionPlan',
+};
+/**
+ * v0.1.367 — ids que pueden venir como texto LIBRE (el plan de la acción
+ * «Crear suscripción» vive en `values`, que admite variables): sólo se
+ * traduce si es un número; si no, queda como estaba.
+ */
+const NUMERIC_ONLY: Record<string, keyof IdMaps> = {
+    plan_id: 'subscriptionPlan',
 };
 /** Arrays de list ids con nombre propio. */
 const LIST_ID_ARRAY_KEYS = new Set(['related_lists']);
@@ -159,6 +172,9 @@ export function remapJson(value: unknown, maps: IdMaps): unknown {
         const explicit = EXPLICIT[key];
         if (explicit) {
             out[key] = raw === null || raw === undefined ? raw : mapId(maps[explicit], raw);
+        } else if (NUMERIC_ONLY[key] && (typeof raw === 'number' || (typeof raw === 'string' && /^\d+$/.test(raw.trim())))) {
+            const id = mapId(maps[NUMERIC_ONLY[key]!], raw);
+            out[key] = id === null ? null : typeof raw === 'string' ? String(id) : id;
         } else if (FIELD_ID_KEY.test(key)) {
             out[key] = raw === null || raw === undefined ? raw : mapId(maps.field, raw);
         } else if (FIELD_IDS_KEY.test(key) || FIELD_ID_ARRAY_KEYS.has(key)) {

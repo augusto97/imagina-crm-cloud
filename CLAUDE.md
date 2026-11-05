@@ -12130,6 +12130,84 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         duración, cancelar con mensaje, ya borrado, pruebas sin invitados, la
         conexión de antes), 1 de la aprobación desactualizada y 3 de shared.
 
+  - [x] **Suscripciones con débito automático de Mercado Pago (v0.1.367,
+        ADR-S96, primera de tres entregas; pedido del usuario: "¿cómo se
+        manejan las suscripciones o cobros recurrentes de débito automático de
+        Mercado Pago?… reportar los pagos recurrentes que sí se hicieron y
+        cuáles no, o a quién hay que cancelarle el servicio" → "hazlo todo
+        como lo veas más recomendable")**. Hasta acá la empresa sólo creaba un
+        link por cobro (ADR-S31): para una mensualidad había que mandar un link
+        cada mes y cruzar a mano quién pagó. Ahora el cliente autoriza su
+        tarjeta UNA vez y Mercado Pago le cobra solo cada período.
+        (a) **Planes** en Cobros de la conexión de Mercado Pago
+        («Suscripciones (débito automático)»): nombre, valor, moneda, cada
+        cuántos meses o días (hasta 12 meses / 365 días), cuántas cuotas (vacío
+        = hasta cancelar), días gratis, **días de gracia** (10 por defecto) y
+        qué hacer al vencer (marcar «Vencida» y avisar, o además cancelarla en
+        Mercado Pago). Migración 0102: `subscription_plans`, `subscriptions`
+        (una viva por registro; único externo por empresa) y
+        `subscription_charges` (único por suscripción + pago), con RLS.
+        (b) **Suscribir** desde la ficha (sección «Suscripción» en la clásica,
+        el modal, la página y la diseñada): plan, correo (sugerido del
+        registro), valor y primer cobro opcionales → `POST /preapproval` sin
+        plan de Mercado Pago, `status: pending`, idempotente por la referencia
+        `ibs_…`, `start_date` sólo a futuro, `end_date` por las cuotas; el
+        `init_point` (el de sandbox con credenciales de prueba) queda con
+        «Copiar link» y en la columna si se eligió; una pendiente se reemplaza
+        al crear otra.
+        (c) **El estado se relee siempre de Mercado Pago** (nunca se le cree al
+        aviso): los avisos llegan a la misma URL de cobros —los temas de
+        suscripción van directo; un `payment` se prueba primero como link de
+        pago y si no, como cuota—, y una **revisión cada 5 min** (candado en
+        Redis) cubre a quien no configuró los avisos. El estado es DERIVADO y
+        puro (`deriveSubscriptionStatus`, shared): por autorizar · al día ·
+        reintentando · en mora · vencida (pasó la gracia) · pausada · cancelada
+        · terminada; «pagado hasta» = último cobro aprobado + un período.
+        (d) **Cobros** con resultado, fecha de Mercado Pago, medio y motivo del
+        rechazo en lenguaje claro («fondos insuficientes»); el mismo pago por
+        dos avisos queda en UNA fila.
+        (e) **Columnas elegibles** (estado con colores, plan, valor, próximo
+        cobro, pagado hasta, cobros fallidos, link; existente, nueva o ninguna)
+        con las fechas en la zona de la empresa, sin pasar por el hub de
+        cambios.
+        (f) **Pausar, reanudar, cambiar el valor y cancelar** desde la ficha
+        (con motivo) y **Verificar** a pedido.
+        (g) **Automatizaciones**: disparador «Cuando cambia una suscripción»
+        (se activó, se cobró, falló un cobro, en mora, venció, pausada,
+        reanudada, cancelada, terminada; filtro por planes) con
+        `{{suscripcion.*}}`, y las acciones de Mercado Pago «Crear suscripción»
+        (con selector de plan y «Dónde queda la suscripción») y «Pausar,
+        reanudar, cancelar o cambiar el valor». Aviso en la campana (kind
+        `subscription`) cuando falla un cobro, entra en mora, vence o se
+        cancela.
+        (h) Asistente/MCP (`get_list_schema` muestra planes, columnas y las
+        salidas de las acciones), migración de empresa (referencia nueva,
+        `plan_id` de una acción re-mapeado sólo si es número) y borrado de
+        empresa al día.
+        **De paso**: «Probar ahora» de los links de pago (desde v0.1.251) se
+        veía en rojo como «No se pudo conectar» siendo una vista previa —
+        ahora es una nota «Sin enviar»—; y las estadísticas de un formulario
+        BORRADO se reintentaban cada 2 minutos para siempre (drizzle envuelve
+        el error de Postgres y el código 23503 viaja en `cause`, que no se
+        miraba; `isForeignKeyViolation` + test). Ayuda: artículo «Suscripciones
+        con débito automático» en Aprende → Cobros con la ilustración
+        `cobro-suscripcion`, guía «¿Cómo cobro cada mes con débito
+        automático?», anclas `collections-subscriptions` y
+        `record-subscription`, y novedad con carrusel. Tests: 9 de
+        integración en `subscriptions.spec` (con un Mercado Pago falso), 1 de
+        `form-stats`, shared 742 y front 801 en verde — E2E navegador 45/45
+        contra el Mercado Pago simulado de `scripts/dev/fake-collect.mjs`
+        (plan con «150.000», columnas, suscribir con el correo sugerido, link
+        copiado y en la columna, avisos → «Al día» sin recargar, un cobro por
+        dos avisos, pausar/reanudar/cambiar el valor en Mercado Pago, cuota
+        rechazada → «Reintentando» con el motivo, tabla, totales, editor de
+        automatizaciones, cancelar, celular en oscuro sin desborde).
+        **Límite de la verificación**: sin credenciales reales de Mercado Pago
+        la API se simuló con su forma documentada; la prueba con una cuenta de
+        prueba queda para el servidor. Siguen v0.1.368 (formulario de
+        suscripción, portal, lista espejo de cobros y tablero) y v0.1.369
+        (PayPal).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

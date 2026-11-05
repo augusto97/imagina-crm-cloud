@@ -1486,4 +1486,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Conecta **Microsoft Teams** en **Ajustes → Integraciones** (si ya la tenías, toca **Reconectar** y acepta el permiso del calendario) y usa las acciones **Crear reunión de Teams**, **Reprogramar o cambiar una reunión de Teams** y **Cancelar una reunión de Teams** en tus automatizaciones.',
         action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
     },
+    {
+        key: 'v0.1.367-suscripciones',
+        version: '0.1.367',
+        date: '2026-11-05',
+        kind: 'feature',
+        title: 'Cobra cada mes con débito automático',
+        summary:
+            'Crea planes de suscripción con Mercado Pago, suscribe a un cliente desde su ficha y entérate solo de quién está al día, quién tiene un cobro rechazado y quién se venció.',
+        media: {
+            slides: [
+                {
+                    title: 'El cliente autoriza su tarjeta una vez',
+                    text: 'Creas el plan (valor, cada cuánto, días de gracia), tocas «Suscribir» en la ficha y le mandas el link. Desde ahí Mercado Pago le cobra solo cada período, sin mandar links cada mes.',
+                    illustration: 'cobro-suscripcion',
+                },
+                {
+                    title: 'Sabes quién pagó y quién no',
+                    text: 'Cada cobro llega con su resultado y, si se rechazó, el motivo. El estado (Al día, Reintentando, En mora, Vencida) se escribe solo en la columna que elijas para filtrar la mora.',
+                    illustration: 'cobro-estados',
+                },
+                {
+                    title: 'Y reaccionas en automático',
+                    text: 'Con «Cuando cambia una suscripción» le avisas al cliente que su pago falló, al equipo cuando alguien entra en mora o suspendes el servicio cuando vence.',
+                    illustration: 'cobro-automatizar',
+                },
+            ],
+        },
+        body: 'En **Ajustes → Integraciones**, abre **Cobros** de tu conexión de Mercado Pago y crea un plan en **Suscripciones (débito automático)**. Después, en la ficha del cliente, toca **Suscribir**.',
+        action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
+    },
 ];

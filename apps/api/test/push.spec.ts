@@ -106,6 +106,8 @@ describe('H1 — manifiesto (puro)', () => {
             sla: true,
             // E6 — una propuesta de un agente: campana y «Mi trabajo», sin push.
             agent: false,
+            // Una suscripción que falla un cobro: campana y correo, sin push.
+            subscription: false,
         });
         expect(readNotificationPrefs({ push: { update: true } }).push).toMatchObject({ update: true, mention: true });
     });

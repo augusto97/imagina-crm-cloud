@@ -390,6 +390,17 @@ const MP_REJECTED: Record<string, string> = {
     cc_rejected_other_reason: 'el banco rechazó el pago',
 };
 
+/** v0.1.367 — El motivo legible de un rechazo de Mercado Pago (`status_detail`). */
+export function mpRejectionText(detail: string | null | undefined): string | null {
+    if (!detail) return null;
+    return MP_REJECTED[detail] ?? null;
+}
+
+/** v0.1.367 — «Tarjeta de crédito», «PSE»… a partir del tipo y el medio de Mercado Pago. */
+export function mpMethodText(typeId: string | null | undefined, methodId: string | null | undefined): string | null {
+    return (methodId && MP_METHOD[methodId]) || (typeId && MP_TYPE[typeId]) || methodId || null;
+}
+
 export function paymentRequest(
     provider: CollectionProvider,
     creds: IntegrationCreds,
