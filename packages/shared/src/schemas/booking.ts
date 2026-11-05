@@ -564,6 +564,36 @@ export const bookingDisplaySchema = z.object({
 });
 export type BookingDisplay = z.infer<typeof bookingDisplaySchema>;
 
+/**
+ * v0.1.378 — Los textos de la página que cada empresa puede cambiar (vacío =
+ * el de siempre). Se editan tocándolos en la vista previa del constructor.
+ */
+export const BOOKING_LABEL_DEFAULTS = {
+    service: 'Elige el servicio',
+    staff: '¿Con quién?',
+    date: 'Elige el día y la hora',
+    details: 'Tus datos',
+    submit: 'Confirmar cita',
+    done: '¡Tu cita quedó agendada!',
+} as const;
+export type BookingLabelKey = keyof typeof BOOKING_LABEL_DEFAULTS;
+const labelText = z.string().trim().max(120).catch('').default('');
+export const bookingLabelsSchema = z.object({
+    service: labelText,
+    staff: labelText,
+    date: labelText,
+    details: labelText,
+    submit: labelText,
+    done: labelText,
+});
+export type BookingLabels = z.infer<typeof bookingLabelsSchema>;
+
+/** El texto que se ve: el propio o, vacío, el de siempre. */
+export function bookingLabel(labels: Partial<BookingLabels> | null | undefined, key: BookingLabelKey): string {
+    const own = labels?.[key];
+    return typeof own === 'string' && own.trim() ? own.trim() : BOOKING_LABEL_DEFAULTS[key];
+}
+
 export const bookingSettingsSchema = z.object({
     title: z.string().max(200).default(''),
     description: z.string().max(5000).default(''),
@@ -603,6 +633,8 @@ export const bookingSettingsSchema = z.object({
     theme: publicThemeSchema.nullable().catch(null).default(null),
     /** v0.1.354 — Qué se muestra y cómo se distribuye la página. */
     display: bookingDisplaySchema.catch(() => bookingDisplaySchema.parse({})).default({}),
+    /** v0.1.378 — Los títulos de cada paso, el botón y la confirmación (vacío = el de siempre). */
+    labels: bookingLabelsSchema.catch(() => bookingLabelsSchema.parse({})).default({}),
     /**
      * v0.1.374 — Al agendar, llevar a esta página de gracias (https, con
      * variables `{{cita.servicio}}`, `{{cita.fecha}}`… después del dominio).
@@ -882,6 +914,8 @@ export interface PublicBookingMeta {
     theme?: PublicThemeView;
     /** v0.1.354 — Qué se muestra y cómo se distribuye. */
     display?: BookingDisplay;
+    /** v0.1.378 — Los textos propios de la página (vacío = el de siempre). */
+    labels?: BookingLabels;
     /** v0.1.374 — Qué avisarle al sitio al agendar (null = nada). */
     conversion?: PublicConversion | null;
     /** v0.1.374 — La página de gracias tras agendar y cuántos segundos esperar antes. */

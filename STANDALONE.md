@@ -6895,6 +6895,47 @@ dónde quitar u ocultar los títulos… y se pueda cambiar el color de todo»).*
 6. Sin migración ni cambios en la API: todo vive en `forms.config`. La agenda
    recibe el mismo patrón en v0.1.378.
 
+**Addendum v0.1.378 — El constructor de la agenda con el mismo patrón.**
+
+1. **Partes de la agenda** (`builder/bookingElements.ts`, puro, con tests):
+   `@page`, `@card`, `@cover`, `@band`, `@logo`, `@title`, `@description`,
+   `@location`, `@progress`, los pasos `@services`, `@staff`, `@calendar`,
+   `@details`, `@done`, y `@consent`, `@captcha`, `@submit`. Cada una sabe en
+   qué paso de la página se ve (`step`), qué secciones del tema y qué colores
+   la cambian, y si se puede ocultar y dónde vive su interruptor
+   (`show_logo`, `layout.show_title`, `display.show_location`, `cover.enabled`,
+   `choose_staff` —«oculto» en quién atiende es «se asigna solo»—,
+   `data_consent`, `captcha`).
+2. **La página pública de la agenda** marca esas partes en la vista previa
+   (`pv()` en el cliente, `data-pv-id`) y avisa con `imb-booking-select`; el
+   constructor marca lo elegido con `imb-booking-mark` y lleva la vista
+   previa al paso de una parte elegida en la lista con `imb-booking-goto`
+   (recordado por si la vista previa se recarga, como en el celular). Los
+   pasos se siguen usando: tocar un servicio, un día o un horario avanza como
+   siempre; sólo el resto de la parte la elige. La página publicada no lleva
+   ninguna marca.
+3. **Constructor**: Contenido (el esquema —Encabezado, Pasos del cliente, En
+   «Tus datos», Página— con un ojo en lo que se oculta y un punto rojo donde
+   falta algo para publicar), Diseño (plantillas y «Mis temas» a la
+   izquierda, el tema completo a la derecha) y Ajustes por grupos (Horario y
+   disponibilidad, Reglas, Aprobación y seguridad, Correos y recordatorios,
+   Dónde se guarda la cita, Medir conversiones, Publicar y compartir). A la
+   derecha, el panel de la parte con Mostrar, Contenido y Estilo (los mismos
+   `InspectorTabs`/`VisibilitySwitch` de los formularios). Lo que se veía en
+   «Diseño → Mostrar u ocultar / Distribución» pasó a la parte que cambia
+   (Servicios, Quién atiende, Fecha y hora). Publicar con algo pendiente
+   lleva a la parte o al grupo donde se arregla (`problemTarget`). La
+   autorización de datos y el anti-robots no se encienden desde su parte si
+   la empresa no los tiene (sin autorización activa, sin llaves): lo dice.
+4. **Textos de cada paso** (`settings.labels`: servicio, quién atiende, fecha,
+   tus datos, botón y confirmación; tolerante, 120 caracteres, vacío = el de
+   siempre con `bookingLabel`) y **siete colores nuevos** en `theme.elements`
+   para el calendario y los horarios (día con horarios —fondo y número—, día
+   elegido —fondo y número—, horarios —fondo, texto y borde—), sólo
+   ofrecidos en la agenda.
+5. El asistente/MCP acepta `labels` en `propose_configure_booking_page`.
+6. Sin migración: todo vive en `booking_pages.config`.
+
 ### ADR-S95 — Formularios y agenda insertados que aguantan mucho tráfico (v0.1.352)
 
 **Contexto.** El usuario preguntó: "si lo uso como formulario de contacto de

@@ -394,7 +394,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.377**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.378**
+(el constructor de la agenda con el mismo patrón: cada parte se toca en la
+vista previa —también los pasos, que llevan la vista previa a ese paso— y
+abre su panel con Mostrar, Contenido y Estilo; Contenido · Diseño · Ajustes
+por grupos; textos propios de cada paso y colores del calendario y los
+horarios, addendum ADR-S94 —con ella queda COMPLETO el rediseño de los dos
+constructores—); antes v0.1.377
 (el constructor de formularios rediseñado: cada parte se toca en la vista
 previa y abre su panel con Mostrar/ocultar, Contenido y Estilo; esquema con
 ojos para ocultar; Contenido · Diseño · Lógica · Ajustes por grupos; y un color
@@ -479,7 +485,7 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   revisión horaria de respaldo para los pagos y renovaciones de la plataforma.
   Esperando respuesta.
 - 2026-11-05 — **Rediseño de los constructores de formularios y de la agenda**
-  — **FORMULARIOS HECHO EN v0.1.377; AGENDA SIGUE EN v0.1.378** (en el mismo
+  — **HECHO: formularios en v0.1.377 y agenda en v0.1.378** (en el mismo
   mensaje que aprobó la v0.1.376). El
   usuario: "las interfaces están muy confusas… no se sabe dónde queda qué
   cosa porque la navegación es súper confusa con muchas opciones no
@@ -1591,6 +1597,26 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.378** — **El constructor de la agenda con el mismo
+  patrón** (segunda entrega del pedido de la v0.1.376: «replantéate la UI/UX
+  de estos módulos… y que se pueda cambiar el color de todo»). **Cada parte de
+  la agenda se toca en la vista previa** —logo, título, descripción, lugar,
+  franja, portada, avance, los cinco pasos, autorización de datos,
+  anti-robots, botón, tarjeta y página— y abre su panel con **Mostrar**,
+  **Contenido** y **Estilo**; los pasos siguen funcionando en la vista previa
+  y, elegidos en la lista, la llevan a ese paso. A la izquierda **Contenido**
+  (el esquema con ojos y un punto rojo donde falta algo para publicar),
+  **Diseño** (plantillas y temas; el tema completo a la derecha) y **Ajustes**
+  por grupos (horario, reglas, aprobación y seguridad, correos, dónde se
+  guarda, medir conversiones, publicar). **Nuevo**: el texto de cada paso y
+  del botón (`settings.labels`) y siete colores del calendario y los horarios.
+  **Decisiones**: sin migración (todo en `booking_pages.config`); lo que estaba
+  en «Diseño → Mostrar u ocultar / Distribución» pasó a la parte que cambia;
+  publicar con algo pendiente lleva a donde se arregla; autorización y
+  anti-robots no se encienden si la empresa no los tiene. E2E 24/24 en
+  escritorio y 24/24 en celular oscuro. **Queda**: sigue esperando respuesta
+  la propuesta de la revisión horaria de los cobros de la plataforma en
+  Mercado Pago.
 - **2026-11-05 · v0.1.377** — **El constructor de formularios rediseñado**
   (pedido del usuario en el mensaje de la v0.1.376: «la navegación es súper
   confusa… los elementos deberían ser clickeables… no sabría dónde ocultar

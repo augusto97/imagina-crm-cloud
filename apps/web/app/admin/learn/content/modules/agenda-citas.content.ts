@@ -38,16 +38,23 @@ export const articles: LearnArticle[] = [
                 items: [
                     'Abre la lista de citas y toca **Configurar lista**.',
                     'Entra a la pestaña **Agenda** y toca **Nueva agenda** (o **Crear la primera**). Arranca con un servicio y contigo atendiendo de lunes a viernes.',
-                    'Se abre el constructor: a la izquierda las secciones (**Servicios**, **Quién atiende**, **Disponibilidad**, **Reglas**, **Campos de la lista**, **Correos y recordatorios**, **Publicar**), en el centro su configuración y a la derecha **la página real** con los horarios de verdad.',
-                    'Ajusta servicios y horarios, toca **Guardar** y, en **Publicar**, toca **Publicar la agenda**.',
+                    'Se abre el constructor: al centro **la página real** con los horarios de verdad; a la izquierda, tres pestañas: **Contenido** (las partes de la página en el orden en que las recorre el cliente), **Diseño** y **Ajustes**.',
+                    'Toca **Servicios** y **Quién atiende** para cargar los tuyos; el horario está en **Ajustes → Horario y disponibilidad**.',
+                    'Toca **Guardar** y, en **Ajustes → Publicar y compartir**, toca **Publicar la agenda**.',
                 ],
             },
-            { t: 'demo', key: 'citas-editar', caption: 'Abrir la agenda de la lista de citas y recorrer sus secciones.', fallback: 'citas-hero' },
+            { t: 'demo', key: 'citas-editar', caption: 'Abrir la agenda de la lista de citas y recorrer sus partes.', fallback: 'citas-hero' },
             {
                 t: 'callout',
                 tone: 'tip',
                 title: 'La vista previa es de verdad',
-                md: 'La página de la derecha calcula los horarios con lo que estás editando, sin guardar: si cambias el horario de alguien, ves las horas nuevas al instante. Nada se reserva ahí: es sólo para mirar.',
+                md: 'La página del centro calcula los horarios con lo que estás editando, sin guardar: si cambias el horario de alguien, ves las horas nuevas al instante. Nada se reserva ahí: es sólo para mirar.',
+            },
+            { t: 'h', text: 'Toca cualquier parte para editarla' },
+            { t: 'anim', key: 'agenda-click-edit', caption: 'Tocar los horarios en la vista previa: aparece el panel de «Fecha y hora» y los horarios toman el color elegido.' },
+            {
+                t: 'p',
+                md: 'Cada parte de la página (el título, la descripción, los servicios, el calendario, tus datos, el botón, la confirmación) se toca **en la vista previa** o en la lista de **Contenido**, y a la derecha aparece su panel:\n\n- **Mostrar**, arriba, si esa parte se puede ocultar (el título, la descripción, el logo, la franja, el avance). En la lista, el **ojo** hace lo mismo.\n- **Contenido**: lo que dice y lo que ofrece. Por ejemplo, el texto de cada paso («Elige el servicio», «Confirmar cita»).\n- **Estilo**: sus colores y su parte del diseño. Por ejemplo, el color de los horarios, del día elegido o del botón.\n\nAl tocar un paso en la lista, la vista previa va a ese paso. Lo que no es una parte de la página (el horario, las reglas, los correos, dónde se guarda cada dato, publicar) está en **Ajustes**.',
             },
             { t: 'h', text: 'La lista de agendas' },
             {
@@ -100,7 +107,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Las dos primeras secciones del constructor responden «¿qué se puede agendar?» y «¿quién lo atiende?». Un **servicio** es algo que el cliente reserva, con su duración. Quien atiende puede ser una **persona** de tu equipo o un **recurso** (una sala, un consultorio, una cancha).',
+                md: 'Los dos primeros pasos de la agenda responden «¿qué se puede agendar?» y «¿quién lo atiende?». Un **servicio** es algo que el cliente reserva, con su duración. Quien atiende puede ser una **persona** de tu equipo o un **recurso** (una sala, un consultorio, una cancha).',
             },
             { t: 'anim', key: 'citas-roundrobin', caption: 'Con «El primero disponible», las citas se reparten por turno entre quienes están libres.' },
             { t: 'h', text: 'Servicios' },
@@ -125,7 +132,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Quién atiende' },
             {
                 t: 'p',
-                md: 'En **Quién atiende** agregas a cada persona (**Agregar persona**) o recurso (**Agregar recurso**). Una persona aparece en la lista para elegir si **puede editar esta lista**: si no, no vería sus propias citas. Si atiende en otras agendas de la empresa, sus citas de allá también ocupan su horario aquí, así nunca le dan dos citas a la misma hora.',
+                md: 'Tocando **Quién atiende** agregas a cada persona (**Agregar persona**) o recurso (**Agregar recurso**). Una persona aparece en la lista para elegir si **puede editar esta lista**: si no, no vería sus propias citas. Si atiende en otras agendas de la empresa, sus citas de allá también ocupan su horario aquí, así nunca le dan dos citas a la misma hora.',
             },
             {
                 t: 'settings',
@@ -229,7 +236,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'La videollamada de cada cita' },
             {
                 t: 'p',
-                md: 'En el servicio elige **Dónde es → Videollamada**. Con **La del calendario de quien atiende**, quien usa Google Calendar recibe un enlace de **Google Meet** y quien usa Outlook uno de **Microsoft Teams**; también puedes fijar una de las dos. El enlace llega al cliente en el **correo de confirmación**, en el botón **Unirse a la videollamada** de la página de su cita y en el archivo del calendario. Si en **Campos de la lista** eliges **Enlace de la reunión**, también queda guardado en el registro.',
+                md: 'En el servicio elige **Dónde es → Videollamada**. Con **La del calendario de quien atiende**, quien usa Google Calendar recibe un enlace de **Google Meet** y quien usa Outlook uno de **Microsoft Teams**; también puedes fijar una de las dos. El enlace llega al cliente en el **correo de confirmación**, en el botón **Unirse a la videollamada** de la página de su cita y en el archivo del calendario. Si en **Ajustes → Dónde se guarda la cita** eliges **Enlace de la reunión**, también queda guardado en el registro.',
             },
             {
                 t: 'callout',
@@ -247,7 +254,7 @@ export const articles: LearnArticle[] = [
             },
             {
                 t: 'p',
-                md: 'La app revisa los calendarios cada pocos minutos. Si en **Correos y recordatorios** está encendido avisarle al cliente cuando el equipo cambia la cita, le llega el correo con la nueva hora. Lo que mueve el propio cliente desde su enlace no se confunde con un cambio de quien atiende.',
+                md: 'La app revisa los calendarios cada pocos minutos. Si en **Ajustes → Correos y recordatorios** está encendido avisarle al cliente cuando el equipo cambia la cita, le llega el correo con la nueva hora. Lo que mueve el propio cliente desde su enlace no se confunde con un cambio de quien atiende.',
             },
             {
                 t: 'example',
@@ -287,7 +294,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'En **Disponibilidad**, elige arriba a la persona o recurso.',
+                    'En **Ajustes → Horario y disponibilidad**, elige arriba a la persona o recurso.',
                     'Para cada día pon uno o más tramos **Desde** / **Hasta** (por ejemplo 8:00–12:00 y 14:00–18:00). Con **Agregar otro tramo** sumas la jornada de la tarde.',
                     'Usa **Copiar a lun–vie** para repetir el horario del lunes en toda la semana.',
                     'Marca **No atiende** en los días libres.',
@@ -317,7 +324,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Reglas' },
             {
                 t: 'settings',
-                title: 'Sección Reglas',
+                title: 'Ajustes → Reglas',
                 rows: [
                     { name: 'Margen antes (min)', what: 'Tiempo libre antes de cada cita, para prepararse.' },
                     { name: 'Margen después (min)', what: 'Tiempo libre después: limpieza, traslado o notas.', tip: 'Un spa con 15 minutos para cambiar la camilla nunca recibe citas pegadas.' },
@@ -341,7 +348,7 @@ export const articles: LearnArticle[] = [
                 items: [
                     { q: '¿Por qué un día no aparece marcado en la página?', a: 'Puede ser que no haya tramos ese día, que sea festivo, que esté fuera de los días adelante permitidos, que ya esté lleno o que el aviso mínimo lo deje afuera. La vista previa del constructor te ayuda a probar.' },
                     { q: '¿Las citas cargadas a mano en la lista también ocupan el horario?', a: 'Sí: los registros de la lista con esa persona y esa hora también cuentan como ocupado, aunque no hayan llegado por la agenda.' },
-                    { q: '¿Puedo tener horarios distintos por servicio?', a: 'Sí: en **Servicios**, abre **Horario propio del servicio** y elige sus franjas. Se ofrece sólo lo que coincide con el horario de quien atiende.' },
+                    { q: '¿Puedo tener horarios distintos por servicio?', a: 'Sí: toca **Servicios** y abre **Horario propio del servicio** y elige sus franjas. Se ofrece sólo lo que coincide con el horario de quien atiende.' },
                     { q: '¿Una misma persona puede reservar dos cupos de un horario grupal?', a: 'No con el mismo correo: la segunda reserva del mismo horario se rechaza. Para inscribir a otra persona, se usa su correo.' },
                 ],
             },
@@ -362,7 +369,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Cada cita se guarda como un registro, así que hay que decirle a la app **en qué campo** va cada dato: la fecha y hora, el servicio, quién atiende, el cliente. Esto se hace en **Campos de la lista**. En **Correos y recordatorios** decides qué le llega al cliente y cuándo.',
+                md: 'Cada cita se guarda como un registro, así que hay que decirle a la app **en qué campo** va cada dato: la fecha y hora, el servicio, quién atiende, el cliente. Esto se hace en **Ajustes → Dónde se guarda la cita**. En **Ajustes → Correos y recordatorios** decides qué le llega al cliente y cuándo.',
             },
             { t: 'anim', key: 'citas-mapping', caption: 'Los datos de la reserva caen en los campos de la lista: la cita es un registro más.' },
             { t: 'h', text: 'Campos de la lista' },
@@ -411,7 +418,7 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Pedir la autorización de tratamiento de datos (Ley 1581)', what: 'La casilla obligatoria con el texto de tu empresa, igual que en los formularios. Se activa en **Ajustes → Datos personales**.' },
                     { name: 'Pedir la verificación anti-robots (captcha)', what: 'Para frenar reservas falsas. Las llaves se cargan en **Ajustes → Portal y formularios**.' },
-                    { name: 'Código por correo y correos temporales', what: 'Están en **Aprobación y seguridad**: el cliente confirma su correo con un código de 6 números y no se aceptan los correos que duran unos minutos.' },
+                    { name: 'Código por correo y correos temporales', what: 'Están en **Ajustes → Aprobación y seguridad**: el cliente confirma su correo con un código de 6 números y no se aceptan los correos que duran unos minutos.' },
                 ],
             },
             {
@@ -444,13 +451,13 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Hay negocios que no pueden confirmar una cita sin mirarla antes: un consultorio que revisa el motivo, una asesoría que primero quiere saber quién es el cliente, un taller con cupos limitados. En **Aprobación y seguridad** decides si cada cita **espera la aprobación** de alguien del equipo y cómo se protege la página de reservas falsas.',
+                md: 'Hay negocios que no pueden confirmar una cita sin mirarla antes: un consultorio que revisa el motivo, una asesoría que primero quiere saber quién es el cliente, un taller con cupos limitados. En **Ajustes → Aprobación y seguridad** decides si cada cita **espera la aprobación** de alguien del equipo y cómo se protege la página de reservas falsas.',
             },
             { t: 'anim', key: 'citas-aprobacion', caption: 'Carla confirma su correo con un código, su cita queda «Por confirmar» con el horario apartado, Ana la aprueba desde la ficha y a Carla le llega la confirmación.' },
             { t: 'h', text: 'Elegir cuándo se aprueba' },
             {
                 t: 'settings',
-                title: 'Aprobación y seguridad → Aprobación de las citas',
+                title: 'Ajustes → Aprobación y seguridad → Aprobación de las citas',
                 rows: [
                     { name: 'Se confirman solas', what: 'Cada reserva queda confirmada al instante. Es lo de siempre.' },
                     { name: 'Alguien del equipo las aprueba', what: 'Cada reserva queda **Por confirmar** hasta que alguien la aprueba. Mientras tanto, el horario queda apartado: nadie más lo puede tomar.' },
@@ -490,7 +497,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Seguridad de la página' },
             {
                 t: 'settings',
-                title: 'Aprobación y seguridad → Seguridad de la página',
+                title: 'Ajustes → Aprobación y seguridad → Seguridad de la página',
                 rows: [
                     { name: 'Pedir que confirme su correo con un código', what: 'Antes de agendar, al cliente le llega un código de 6 números. Así nadie reserva con el correo de otra persona. Recomendado con «Sólo la primera cita de cada cliente».' },
                     { name: 'No aceptar correos temporales', what: 'Rechaza los correos que duran unos minutos, que suelen usarse para reservas falsas. Viene encendido.' },
@@ -531,14 +538,14 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'La página donde tus clientes agendan es tu vitrina: tiene que verse como tu negocio. En **Diseño** eliges una plantilla, el color, la tipografía, los tamaños y qué se muestra, con la **vista previa a la derecha** que cambia al instante. Es el mismo diseño que tienen los formularios, así tus páginas se ven iguales.',
+                md: 'La página donde tus clientes agendan es tu vitrina: tiene que verse como tu negocio. En **Diseño** eliges una plantilla, el color, la tipografía y los tamaños; y tocando cada parte de la página cambias su color o la ocultas, con la **vista previa** que cambia al instante. Es el mismo diseño que tienen los formularios, así tus páginas se ven iguales.',
             },
             { t: 'anim', key: 'agenda-diseno', caption: 'Elegir la plantilla «Tarjetas», cambiar el color y ocultar los precios: la página de la agenda cambia en la vista previa.' },
             { t: 'h', text: 'Elegir una plantilla' },
             {
                 t: 'steps',
                 items: [
-                    'En el constructor de la agenda (**Configurar lista → Agenda → Editar**) abre **Diseño**.',
+                    'En el constructor de la agenda (**Configurar lista → Agenda → Editar**) abre **Diseño**: a la izquierda, las plantillas y **Mis temas**; a la derecha, todos los ajustes del tema.',
                     'En **Plantillas** toca una: **Clásico** es el diseño de siempre; las demás (Minimalista, Tarjetas, Oscuro, Píldoras, Con portada, Dividido…) toman el color de tu marca.',
                     'Mira la vista previa: los servicios, quién atiende, el calendario y los horarios ya se ven con el diseño.',
                     'Toca **Guardar**. Si quieres usar el mismo diseño en otras agendas o formularios, guárdalo en **Mis temas**.',
@@ -547,31 +554,33 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Mostrar u ocultar' },
             {
                 t: 'settings',
-                title: 'Diseño → Mostrar u ocultar',
+                title: 'Lo que se oculta tocando cada parte',
                 rows: [
-                    { name: 'El logo de la empresa', what: 'Tu logo arriba del título (el de Ajustes → Marca).' },
-                    { name: 'Dónde es la cita', what: 'La dirección o «Videollamada», arriba y en cada servicio.' },
-                    { name: 'La duración y la descripción de cada servicio', what: 'Útil cuando los servicios se explican solos y quieres una página más limpia.' },
-                    { name: 'El precio de cada servicio', what: 'Ocúltalo si prefieres hablar de precios después.' },
-                    { name: 'Las fotos de quienes atienden', what: 'La foto (o las iniciales) de cada persona del equipo.' },
-                    { name: 'El cargo y la descripción de quienes atienden', what: '«Odontóloga», «Doce años de experiencia»…' },
+                    { name: 'El logo, el título, la descripción y dónde es la cita', what: 'Con su **ojo** en la lista de **Contenido**, o tócalos en la vista previa y apaga **Mostrar**. El logo es el de Ajustes → Marca.' },
+                    { name: 'La franja de color, la portada, el avance y la tarjeta', what: 'Igual: con su ojo. Sin tarjeta, la agenda queda sobre el fondo de la página.' },
+                    { name: 'La duración, la descripción y el precio de cada servicio', what: 'Toca **Servicios** → **Qué se ve de cada servicio**. Ocultar el precio sirve si prefieres hablar de precios después.' },
+                    { name: 'La foto, el cargo y la descripción de quienes atienden', what: 'Toca **Quién atiende** → **Qué se ve de cada persona**: «Odontóloga», «Doce años de experiencia»…' },
                 ],
             },
-            { t: 'p', md: 'El título y la descripción se muestran u ocultan en **Página**, dentro del mismo panel.' },
-            { t: 'h', text: 'Distribución' },
+            { t: 'h', text: 'El calendario y los horarios' },
             {
                 t: 'settings',
-                title: 'Diseño → Distribución',
+                title: 'Toca «Fecha y hora» → Cómo se ve',
                 rows: [
                     { name: 'El calendario', what: '**Al lado de los horarios** (en pantallas anchas) o **Arriba de los horarios**. En el celular siempre va arriba.' },
                     { name: 'Los horarios', what: '**Cuadrícula** de botones o **Lista**, uno debajo del otro (con los cupos a la derecha).' },
                     { name: 'La semana empieza el', what: 'Lunes o domingo, como se usa en tu país.' },
                 ],
             },
+            { t: 'h', text: 'El color de cada parte' },
+            {
+                t: 'p',
+                md: 'Toca una parte y abre **Estilo**: ahí están **sus** colores. Los horarios tienen su fondo, su texto y su borde; los días del calendario, el día con horarios y el día elegido; el botón, su fondo, texto y borde; el título, los títulos de cada paso, las etiquetas de los datos… Vacío = sale de los colores generales del diseño (se ve punteado).',
+            },
             { t: 'h', text: 'El resto del diseño' },
             {
                 t: 'p',
-                md: 'Más abajo, en **Diseño de la agenda**, ajustas cada parte con la misma lógica de los formularios: **Colores** (y el modo oscuro), **Tipografía**, **Página** (ancho, aire, título y avance), **Fondo** (color, degradado o imagen), **Portada**, **Pantalla dividida**, **Tarjeta**, **Campos** (los datos del cliente), **Opciones** (los servicios y quién atiende como lista, botones o tarjetas) y **Botón**.',
+                md: 'En **Diseño**, a la derecha, ajustas toda la página con la misma lógica de los formularios: **Colores** (y el modo oscuro), **Tipografía**, **Página** (ancho, aire, título y avance), **Fondo** (color, degradado o imagen), **Portada**, **Pantalla dividida**, **Tarjeta**, **Campos** (los datos del cliente), **Opciones** (los servicios y quién atiende como lista, botones o tarjetas) y **Botón**.',
             },
             {
                 t: 'callout',
@@ -608,15 +617,15 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'La última sección del constructor, **Publicar**, reúne todo lo de salir al mundo: qué falta para publicar, el botón para hacerlo, el enlace, el código para tu sitio y cómo se ve la página.',
+                md: 'En el constructor, **Ajustes → Publicar y compartir** reúne todo lo de salir al mundo: qué falta para publicar, el botón para hacerlo, el enlace, el código para tu sitio y cómo se ve la página.',
             },
             { t: 'anim', key: 'citas-embed', caption: 'La agenda insertada en el sitio web de la empresa y el enlace en la biografía de Instagram.' },
             { t: 'h', text: 'Publicar' },
             {
                 t: 'steps',
                 items: [
-                    'Entra a **Publicar**. Arriba ves las **citas próximas** y las **reservas en total**.',
-                    'Si algo falta, aparece **Para publicarla falta:** con la lista (por ejemplo, un servicio sin nadie que lo atienda). Las secciones con problemas se marcan con **Falta algo**.',
+                    'Entra a **Ajustes → Publicar y compartir**. Arriba ves las **citas próximas** y las **reservas en total**.',
+                    'Si algo falta, aparece **Para publicarla falta:** con la lista (por ejemplo, un servicio sin nadie que lo atienda). Lo que tiene un problema se marca con un punto rojo, y al tocar **Publicar** te lleva a donde se arregla.',
                     'Toca **Publicar la agenda** (o enciende el interruptor **Sin publicar** de arriba).',
                     'Copia el **Enlace** o el código para **Insertar en tu sitio**, o toca **Compartir** en la barra de arriba.',
                 ],
@@ -625,14 +634,15 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Textos de la página' },
             {
                 t: 'p',
-                md: 'Los colores, el logo, la tipografía y qué se muestra están en **Diseño** (ver «Diseñar la página de la agenda»). Aquí van los textos:',
+                md: 'Los colores, el logo, la tipografía y qué se muestra están en **Diseño** (ver «Diseñar la página de la agenda»). Los textos se cambian tocando cada parte:',
             },
             {
                 t: 'settings',
                 rows: [
-                    { name: 'Título y Descripción', what: 'Lo primero que lee el cliente: «Agenda tu cita» y «Elige el servicio, el día y la hora que te quedan bien».' },
+                    { name: 'Título y Descripción', what: 'Tócalos en la vista previa: lo primero que lee el cliente, «Agenda tu cita» y «Elige el servicio, el día y la hora que te quedan bien».' },
                     { name: 'Dónde es la cita', what: 'Una dirección, «Videollamada»… Va en la página, el correo y el archivo del calendario.' },
-                    { name: 'Mensaje cuando no recibe reservas', what: 'Lo que se ve si la agenda está sin publicar o tu empresa está en solo lectura.' },
+                    { name: 'El texto de cada paso y del botón', what: 'En el **Contenido** de **Servicios**, **Quién atiende**, **Fecha y hora**, **Tus datos**, **Botón de agendar** y **Confirmación**. Vacío = el de siempre.' },
+                    { name: 'Mensaje cuando no recibe reservas', what: 'En **Ajustes → Publicar y compartir**: lo que se ve si la agenda está sin publicar o tu empresa está en solo lectura.' },
                 ],
             },
             { t: 'h', text: 'Dónde se puede insertar' },
@@ -676,7 +686,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Medir las citas que traen tus anuncios' },
             {
                 t: 'p',
-                md: 'Si pautas en **Google Ads** o en **Meta**, en la sección **Medir conversiones** del constructor cada cita agendada en tu sitio se vuelve una conversión de tu sitio: el evento **imagina_booking** para Google Tag Manager, tu etiqueta de conversión de Google Ads y el evento **Schedule** del píxel de Meta, con el **precio del servicio** como valor si quieres. Ahí mismo eliges guardar de qué campaña vino cada cita y llevar a la persona a una **página de gracias** con los datos de la cita: `https://tusitio.com/gracias?servicio={{cita.servicio}}&fecha={{cita.fecha}}`.',
+                md: 'Si pautas en **Google Ads** o en **Meta**, en **Ajustes → Medir conversiones** del constructor cada cita agendada en tu sitio se vuelve una conversión de tu sitio: el evento **imagina_booking** para Google Tag Manager, tu etiqueta de conversión de Google Ads y el evento **Schedule** del píxel de Meta, con el **precio del servicio** como valor si quieres. Ahí mismo eliges guardar de qué campaña vino cada cita y llevar a la persona a una **página de gracias** con los datos de la cita: `https://tusitio.com/gracias?servicio={{cita.servicio}}&fecha={{cita.fecha}}`.',
             },
             {
                 t: 'p',

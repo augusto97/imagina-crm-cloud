@@ -228,4 +228,20 @@ describe('preguntas con el diseño nuevo', () => {
         expect(full).toContain('.ib-title,.ib-done h2,.ib-welcome h2{color:#1d2a5a}');
         expect(full).toMatch(/:root\[data-scheme=dark\] \.ib-title/);
     });
+
+    it('v0.1.378: los días y los horarios de la agenda tienen su color; el día elegido no toma el de los demás', () => {
+        const t = readPublicTheme({ elements: { day_bg: '#e0f2fe', day_text: '#0c4a6e', day_selected_bg: '#7c3aed', slot_border: '#7c3aed', slot_text: '#111111' } });
+        const css = buildPublicThemeCss(t, { accent: '#0e7490' });
+        expect(css).toContain('body .ib-day.on:not(.sel){background-color:#e0f2fe}');
+        expect(css).toContain('body .ib-day.sel{background-color:#7c3aed}');
+        expect(css).toContain('body .ib-slot{border-color:#7c3aed}');
+        expect(css).toContain('body .ib-slot{color:#111111}');
+        // En oscuro, el texto del horario se lleva a un contraste legible contra su fondo.
+        const dark = { surface: '#171a21', inputs: '#12151b' };
+        const darkCss = elementColorCss({ ...t.elements, slot_text: '#222222', day_selected_text: '#333333' }, dark);
+        const m = /body \.ib-slot\{color:(#[0-9a-f]{6})\}/.exec(darkCss);
+        expect(contrastRatio(m![1]!, dark.inputs)).toBeGreaterThanOrEqual(4.5);
+        const sel = /body \.ib-day\.sel\{color:(#[0-9a-f]{6})\}/.exec(darkCss);
+        expect(contrastRatio(sel![1]!, '#7c3aed')).toBeGreaterThanOrEqual(4.5);
+    });
 });

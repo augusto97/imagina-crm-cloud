@@ -438,7 +438,7 @@ export function ThemeInspector<C extends Themed>({
                 {!showLogo && (
                     <Hint>
                         {booking
-                            ? __('El logo se muestra si lo enciendes en «Mostrar u ocultar» (Mostrar el logo de la empresa).')
+                            ? __('El logo se muestra si lo enciendes tocándolo en la vista previa o en «Contenido» (Mostrar el logo de la empresa).')
                             : __('El logo se muestra si lo enciendes en «Ajustes» (Mostrar el logo de la empresa).')}
                     </Hint>
                 )}
@@ -906,7 +906,7 @@ export function ThemeInspector<C extends Themed>({
             {show('elements') && (
             <StyleSection title={__('Colores de cada elemento')} defaultOpen={!!only} testId="form-theme-elements" {...sec('elements')}>
                 <Hint>{__('Vacío = sale de los colores generales (se ve punteado). También se cambian tocando el elemento en la vista previa.')}</Hint>
-                {ELEMENT_COLOR_GROUPS.map((g) => (
+                {ELEMENT_COLOR_GROUPS.filter((g) => !g.booking || booking).map((g) => (
                     <div key={g.title} className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
                         <p className="imcrm-text-[10.5px] imcrm-font-semibold imcrm-text-foreground">{__(g.title)}</p>
                         <ElementColors config={config} onChange={onChange} keys={g.keys} brand={brand} base={base} />

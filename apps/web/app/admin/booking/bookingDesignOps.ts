@@ -422,6 +422,7 @@ export function buildPreviewMeta(config: BookingConfig, ctx: PreviewContext): Pu
         pending_message: s.pending_message,
         theme: publicThemeView(bookingTheme(s)),
         display: s.display,
+        labels: s.labels,
     };
 }
 

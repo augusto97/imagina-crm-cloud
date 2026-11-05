@@ -40,15 +40,24 @@ export const ELEMENT_COLOR_LABELS: Record<PublicElementColorKey, string> = {
     progress_track: 'Avance (lo que falta)',
     band: 'Franja de color',
     link: 'Enlaces',
+    day_bg: 'Días con horarios (fondo)',
+    day_text: 'Días con horarios (número)',
+    day_selected_bg: 'Día elegido (fondo)',
+    day_selected_text: 'Día elegido (número)',
+    slot_bg: 'Horarios (fondo)',
+    slot_text: 'Horarios (texto)',
+    slot_border: 'Horarios (borde)',
 };
 
 /** Los grupos de «Colores de cada elemento», en el orden en que se ven en la página. */
-export const ELEMENT_COLOR_GROUPS: ReadonlyArray<{ title: string; keys: PublicElementColorKey[] }> = [
+export const ELEMENT_COLOR_GROUPS: ReadonlyArray<{ title: string; keys: PublicElementColorKey[]; booking?: true }> = [
     { title: 'Encabezado', keys: ['title', 'description', 'band'] },
     { title: 'Preguntas', keys: ['label', 'help', 'required', 'input_text', 'placeholder'] },
     { title: 'Opciones', keys: ['choice_bg', 'choice_text', 'choice_border', 'choice_selected_bg', 'choice_selected_text'] },
     { title: 'Contenido', keys: ['heading', 'text', 'link'] },
     { title: 'Botón y avance', keys: ['button_bg', 'button_text', 'button_border', 'progress', 'progress_track'] },
+    // v0.1.378 — Sólo en la agenda.
+    { title: 'Calendario y horarios', keys: ['day_bg', 'day_text', 'day_selected_bg', 'day_selected_text', 'slot_bg', 'slot_text', 'slot_border'], booking: true },
 ];
 
 /** El color que tiene cada elemento cuando no se le eligió uno (el de la paleta). */
@@ -76,6 +85,13 @@ export function elementFallbacks(theme: PublicTheme, accent: string): Record<Pub
         progress_track: p.border,
         band: p.accent,
         link: p.accent,
+        day_bg: p.input_bg,
+        day_text: p.text,
+        day_selected_bg: p.accent,
+        day_selected_text: p.accent_ink,
+        slot_bg: p.input_bg,
+        slot_text: p.text,
+        slot_border: p.accent,
     };
 }
 

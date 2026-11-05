@@ -139,6 +139,17 @@ const pageSpec = z.object({
     title: z.string().max(200).optional().describe('Título que ve el cliente'),
     description: z.string().max(2000).optional(),
     location: z.string().max(500).optional().describe('Dónde es la cita (dirección o «Videollamada»)'),
+    labels: z
+        .object({
+            service: z.string().max(120).optional().describe('Título del paso de los servicios (por defecto «Elige el servicio»)'),
+            staff: z.string().max(120).optional().describe('Título del paso de quién atiende (por defecto «¿Con quién?»)'),
+            date: z.string().max(120).optional().describe('Título del paso de la fecha (por defecto «Elige el día y la hora»)'),
+            details: z.string().max(120).optional().describe('Título del paso de los datos (por defecto «Tus datos»)'),
+            submit: z.string().max(120).optional().describe('Texto del botón para agendar (por defecto «Confirmar cita»)'),
+            done: z.string().max(120).optional().describe('Título de la confirmación (por defecto «¡Tu cita quedó agendada!»)'),
+        })
+        .optional()
+        .describe('v0.1.378 — Textos propios de cada paso y del botón; "" = el de siempre'),
     services: z
         .array(
             z.object({
@@ -281,6 +292,13 @@ export class BookingTools implements AiProposalApplier {
 
         for (const k of ['title', 'description', 'location'] as const) {
             if (input[k] !== undefined) config.settings[k] = input[k]!;
+        }
+        if (input.labels !== undefined) {
+            const labels = { ...config.settings.labels };
+            for (const [k, v] of Object.entries(input.labels) as Array<[keyof typeof labels, string | undefined]>) {
+                if (v !== undefined) labels[k] = v.trim();
+            }
+            config.settings.labels = labels;
         }
         if (input.choose_staff !== undefined) config.settings.choose_staff = input.choose_staff;
         if (input.allowed_domains !== undefined) config.settings.allowed_domains = input.allowed_domains;

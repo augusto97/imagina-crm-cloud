@@ -210,11 +210,11 @@ function paletteVars(p: FullPalette, shadow: string): string {
  */
 const ELEMENT_RULES: Record<PublicElementColorKey, Array<[string, string]>> = {
     title: [['.ib-title,.ib-done h2,.ib-welcome h2', 'color']],
-    description: [['.ib-desc p,.ib-welcome .ib-welcome-msg,.ib-done-msg,.ib-done-msg p', 'color']],
+    description: [['.ib-desc p,.ib-welcome .ib-welcome-msg,.ib-done-msg,.ib-done-msg p,.ib-header .ib-loc,.done>.muted', 'color']],
     label: [['.ib-label,.ib-labels-floating .ib-float>.ib-control>.ib-label,.ib-matrix tbody th', 'color']],
     help: [['.ib-help,.ib-scale-labels', 'color']],
     required: [['.ib-req', 'color']],
-    heading: [['.ib-heading,.ib-page-title', 'color']],
+    heading: [['.ib-heading,.ib-page-title,.ib-step-title', 'color']],
     text: [['.ib-text p,.ib-text,.ib-image figcaption', 'color']],
     input_text: [['.ib-input,.ib-files .ib-drop', 'color']],
     placeholder: [['.ib-input::placeholder', 'color']],
@@ -244,6 +244,15 @@ const ELEMENT_RULES: Record<PublicElementColorKey, Array<[string, string]>> = {
     progress_track: [['.ib-progress,.ib-dots span:not(.ib-on)', 'background-color']],
     band: [['.ib-band', 'background-color']],
     link: [['a,.ib-linkbtn,.ib-consent-links a,.ib-sign-bar button', 'color']],
+    // v0.1.378 — La agenda: el día elegido nunca toma el color de los demás días.
+    day_bg: [['body .ib-day.on:not(.sel)', 'background-color']],
+    day_text: [['body .ib-day.on:not(.sel)', 'color']],
+    day_selected_bg: [['body .ib-day.sel', 'background-color']],
+    day_selected_text: [['body .ib-day.sel', 'color']],
+    // Al pasar el mouse el horario sigue tomando el color principal (la regla del hover pesa más).
+    slot_bg: [['body .ib-slot', 'background-color']],
+    slot_text: [['body .ib-slot', 'color']],
+    slot_border: [['body .ib-slot', 'border-color']],
 };
 
 /** Contraste mínimo de cada color de texto (el ejemplo dentro del campo pide menos). */
@@ -268,8 +277,15 @@ export function elementColorCss(el: PublicElementColors, against?: { surface: st
                     ? (el.choice_bg ?? against.inputs)
                     : key === 'input_text' || key === 'placeholder'
                       ? against.inputs
-                      : against.surface;
-            value = ensureContrast(raw, bg, textMin(key));
+                      : key === 'slot_text'
+                        ? (el.slot_bg ?? against.inputs)
+                        : key === 'day_text'
+                          ? (el.day_bg ?? against.surface)
+                          : key === 'day_selected_text'
+                            ? el.day_selected_bg
+                            : against.surface;
+            // El texto del día elegido sin un fondo propio queda como se eligió (va sobre el color principal).
+            if (bg) value = ensureContrast(raw, bg, textMin(key));
         }
         for (const [sel, prop] of ELEMENT_RULES[key]) {
             out.push(`${sel}{${prop}:${value}${key === 'placeholder' ? ';opacity:1' : ''}}`);
