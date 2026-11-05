@@ -411,6 +411,22 @@ describe('remapListSettings', () => {
         expect((out.store_sync as { connection_id: number }).connection_id).toBe(150);
     });
 
+    it('v0.1.371 — las columnas de cobro, de suscripción y del registro de cobros apuntan a los campos nuevos', () => {
+        const out = remapListSettings(
+            {
+                collections: { fields: { link: 10, status: 11, paid_at: null } },
+                subscriptions: { fields: { status: 12, plan: 999 } },
+                subscription_charges: { list_id: 2, fields: { record: 10, amount: 11, status: null }, dashboard_id: 77 },
+            },
+            maps(),
+            null,
+        );
+        expect(out.collections).toEqual({ fields: { link: 110, status: 111, paid_at: null } });
+        // Un campo que no viajó queda vacío: dejarlo apuntaría a la columna de otra empresa.
+        expect(out.subscriptions).toEqual({ fields: { status: 112, plan: null } });
+        expect(out.subscription_charges).toEqual({ list_id: 102, fields: { record: 110, amount: 111, status: null }, dashboard_id: null });
+    });
+
     it('sin publicación no inventa el bloque público', () => {
         const out = remapListSettings({ title_field_id: 11 }, maps(), null);
         expect(out).toEqual({ title_field_id: 111 });

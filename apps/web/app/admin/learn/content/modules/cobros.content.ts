@@ -514,6 +514,42 @@ export const articles: LearnArticle[] = [
                 md: 'En la sección **Suscripción** toca **Elegir columnas** (o **Columnas**): el estado, el próximo cobro, el «pagado hasta», el plan, el valor, los cobros fallidos y el link se escriben solos en las columnas que elijas. Con eso armas una vista «En mora» filtrando por **Estado de la suscripción**, un kanban por estado o un tablero con lo que entra cada mes.',
             },
             { t: 'anim', key: 'cobro-estados', caption: 'Las columnas se llenan solas y un filtro deja sólo lo que hay que revisar.' },
+            { t: 'h', text: 'Cada cobro en su propia lista (registro de cobros)' },
+            {
+                t: 'p',
+                md: 'Las columnas dicen cómo va **hoy** cada cliente; el **registro de cobros** guarda la historia: cada cobro de Mercado Pago (pagado, rechazado o reembolsado) queda como un **registro** en otra lista, vinculado al cliente. Con eso sumas lo cobrado por mes, ves cuántos cobros se rechazaron y por qué, y armas reportes como con cualquier dato.',
+            },
+            { t: 'anim', key: 'cobro-registro', caption: 'Cada cobro cae como una fila en «Cobros de suscripciones» y el tablero suma lo cobrado del mes.' },
+            {
+                t: 'steps',
+                items: [
+                    'En la sección **Suscripción** de la ficha toca **Columnas** y baja hasta **Registro de cobros**.',
+                    'Elige **Crear la lista «Cobros de suscripciones»** (con su tablero, si quieres) o **Usar una lista que ya existe**, por ejemplo tu lista de facturas.',
+                    'Si usas una lista tuya, elige qué columna guarda cada dato: el **Suscriptor** (una relación hacia la lista de clientes), el valor, el estado, la fecha, el período, el plan, el medio de pago, el motivo del rechazo y el id del pago. Lo que falte se crea solo.',
+                    'Guarda: los cobros que ya existían se cargan al momento, sin disparar automatizaciones. Desde ahí, cada cobro nuevo llega solo y sí dispara las automatizaciones de esa lista.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Lo que trae el tablero de la lista nueva',
+                rows: [
+                    { name: 'Cobrado este mes · Cobrado en total', what: 'La suma de los cobros pagados.' },
+                    { name: 'Pagados y rechazados este mes', what: 'Cuántos cobros salieron y cuántos no.' },
+                    { name: 'Cobros por mes', what: 'Barras apiladas por estado: ves de un vistazo si los rechazos suben.' },
+                    { name: 'Por estado y por plan', what: 'Una dona por estado y cuánto deja cada plan.' },
+                    { name: 'Últimos rechazos', what: 'La tabla con el cliente, el valor y el motivo, para llamar a quien toca.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                md: 'Si alguien borra un registro de cobro, no vuelve a aparecer: la app respeta lo que borras. Y si un cobro cambia después (un reembolso), su registro se actualiza en lugar de crear otro.',
+            },
+            { t: 'h', text: 'Pídeselo al asistente' },
+            {
+                t: 'p',
+                md: 'El asistente de IA (y Claude por el conector MCP) también trabaja con las suscripciones: «¿quién está en mora?», «¿a quién hay que cortarle el servicio?», «crea un plan anual de 900.000», «guarda los cobros en su propia lista con tablero» o «suscribe a Panadería Sol al plan mensual». Lo que cambia algo llega como una **propuesta** que apruebas con un botón; al suscribir, te deja el link para el cliente.',
+            },
             { t: 'h', text: 'Pausar, cambiar el valor o cancelar' },
             {
                 t: 'settings',

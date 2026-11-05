@@ -394,8 +394,14 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.370**
-(el chat del asistente rediseñado: respuestas con formato, hasta 50
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.371**
+(el registro de cobros de las suscripciones: cada cobro como un registro de
+otra lista vinculada al cliente, con su tablero, y cuatro herramientas del
+asistente/MCP para leer suscripciones, armar planes, elegir columnas y
+suscribir/pausar/cancelar, addendum ADR-S96; arregla las tablas de los
+tableros que decían «1 vinculado» y la migración de empresa que no re-mapeaba
+las columnas de cobros y suscripciones; antes v0.1.370
+el chat del asistente rediseñado: respuestas con formato, hasta 50
 conversaciones guardadas 30 días, los pasos a la vista, copiar/reintentar/
 editar, panel ancho y sugerencias según la pantalla, addendum ADR-S21; arregla
 «Detener», que no frenaba al modelo en el servidor, y la página del registro
@@ -444,8 +450,7 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   renombrar y borrar; los pasos de las herramientas a la vista; copiar,
   reintentar y editar el último pedido; modo ancho; sugerencias según la
   pantalla con el registro abierto; cuadro que crece). Las suscripciones
-  siguen: **v0.1.371** (lista espejo de cobros, plantilla de tablero,
-  herramienta del asistente/MCP) y **v0.1.372** (PayPal). Ideas que quedaron
+  siguieron con **v0.1.371** (hecha) y queda **v0.1.372** (PayPal). Ideas que quedaron
   para el chat si el usuario las pide: adjuntar archivos al pedido, compartir
   una conversación con otra persona y elegir el modelo por conversación.
 - 2026-11-05 — **Suscripciones y cobros recurrentes (Mercado Pago y PayPal)
@@ -456,9 +461,11 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   opción del plan) y Wompi recurrente afuera. **v0.1.367 hecha** (Mercado Pago
   de punta a punta, ADR-S96) y **v0.1.368 hecha** (formulario «Suscribir al
   enviar» + bloque del portal; partí la segunda entrega para no hacer un
-  release gigante). Siguen **v0.1.371** (lista espejo «Cobros de
-  suscripciones», plantilla de tablero, herramienta propose del
-  asistente/MCP para planes y suscripciones) y **v0.1.372** (PayPal como
+  release gigante) y **v0.1.371 hecha** (registro de cobros con su tablero +
+  herramientas del asistente/MCP; al final NO es una lista espejo: es una
+  lista común de la empresa donde la app escribe las columnas elegidas, así
+  se pueden sumar columnas propias y borrar un cobro mal registrado — ver el
+  addendum de ADR-S96). Sigue **v0.1.372** (PayPal como
   conector de la empresa, links y suscripciones en USD); en el medio el
   usuario pidió logo/«sin marco» (v0.1.369) y el chat de IA (v0.1.370), ya
   publicados. Ideas que
@@ -1476,6 +1483,22 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.371** — **Cada cobro de las suscripciones en su propia
+  lista, con tablero, y el asistente/MCP para suscripciones** (tercera parte
+  del pedido «hazlo todo como lo veas más recomendable»). En la ficha,
+  Suscripción → Columnas → **Registro de cobros**: crear la lista «Cobros de
+  suscripciones» (con un tablero de lo cobrado por mes, rechazos y por plan) o
+  usar una lista propia eligiendo la columna de cada dato; cada cobro
+  (pagado, rechazado, reembolsado) queda como un registro vinculado al
+  cliente, la carga inicial no dispara automatizaciones, un reembolso
+  actualiza el mismo registro y lo que se borra no vuelve. **Decisión**: no
+  es lista espejo (se había anotado así): es de la empresa. Asistente y MCP:
+  `list_subscriptions`, `propose_configure_subscription_plan`,
+  `propose_configure_subscription_columns` y `propose_manage_subscription`.
+  **Bugs de paso**: migrar una empresa no re-mapeaba los mapas de columnas de
+  cobros y suscripciones; las tablas de los tableros decían «1 vinculado» en
+  vez del nombre. E2E 26/26 en escritorio y 27/27 en celular oscuro contra el
+  Mercado Pago simulado, más el MCP real por HTTP. Queda: **v0.1.372 PayPal**.
 - **2026-11-05 · v0.1.370** — **El chat del asistente, rediseñado** (segunda
   mitad del pedido: "mejora el chat de IA, rediséñalo; el contenido sale sin
   formato, como texto plano"). Las respuestas se ven con formato (títulos,

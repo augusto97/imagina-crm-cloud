@@ -7118,6 +7118,57 @@ a v0.1.370.
    cliente y le mostraba «Entrar a tu portal». Ahora `created_by` (y
    `comment.user_id`) aceptan 0, la misma convención que `updated_by`.
 
+**Addendum v0.1.371 — el registro de cobros, su tablero y el asistente.**
+
+1. **Registro de cobros** (`settings.subscription_charges` de la lista de
+   suscritos: `{list_id, fields, dashboard_id}`; `subscriptionChargeLogSchema`
+   en shared, leído con tolerancia): cada fila de `subscription_charges` se
+   escribe como un **registro** de OTRA lista. Nueve datos con su rol
+   (`record` —una relación hacia la lista de suscritos—, `amount`, `status`
+   —select con pagado/rechazado/procesando/reembolsado o texto—, `date`,
+   `period` —el inicio de la cuota—, `plan`, `method`, `reason`,
+   `payment_id`), cada uno a una columna existente de un tipo que sirva, a
+   una nueva (`'create'`) o a ninguna. «Crear» arma con el motor de
+   plantillas la lista **«Cobros de suscripciones»** (vistas Todos, Por
+   estado y Rechazados) y, si se pide, el tablero **«Suscripciones · <lista>»**
+   (KPIs del mes, barras apiladas por mes y estado, dona, cobrado por plan y
+   los últimos rechazos). El título del registro, si la lista no lo usa para
+   otro dato, es «Plan · mes de año» en la zona de la empresa.
+2. **NO es una lista espejo** (se había anotado así arriba). Una lista espejo
+   (ADR-S83) prohíbe crear y borrar a mano y bloquea columnas: aquí el
+   registro de cobros es de la empresa — puede sumar columnas propias,
+   comentar, borrar un cobro mal registrado (no se vuelve a crear: la fila
+   recuerda `log_record_id`) y usar la lista en automatizaciones como
+   cualquier otra. La app sólo escribe las columnas elegidas.
+3. **Idempotente y sin pisar**: `subscription_charges` gana `log_list_id`,
+   `log_record_id` y `logged_at` (migración 0104). Se escribe lo que no tiene
+   registro o cambió después de escribirse (`updated_at > logged_at`, p. ej.
+   un reembolso actualiza el MISMO registro); un candado en Redis por
+   suscripción evita dos registros del mismo cobro.
+4. **La carga inicial no dispara automatizaciones** (al configurarlo se
+   cargan los cobros existentes —en línea hasta 300, el resto en segundo
+   plano— con `noAutomations`); los cobros siguientes sí, como un alta
+   normal. Respeta el límite de registros del plan y el solo-lectura; si no
+   se puede escribir, abre un Problema (ADR-S44) que se cierra solo.
+5. **Asistente y MCP** (`SubscriptionTools`, cuatro herramientas en el mismo
+   registro): `list_subscriptions` (lectura con el ACL de la persona: plan,
+   valor, estado, próximo cobro, «pagado hasta», rechazos, motivo y últimos
+   cobros; filtros por estado, plan y registro),
+   `propose_configure_subscription_plan` (crear, cambiar o borrar un plan;
+   lo maneja quien puede editar la conexión), `propose_configure_subscription_columns`
+   (columnas + `charge_log` create/existing/off; `manage_fields`, y crear la
+   lista exige `manage_lists`) y `propose_manage_subscription` (subscribe con
+   el link en el resultado, pause, resume, cancel y change_amount; editar el
+   registro; cancelar y cambiar el valor son destructivos). `get_list_schema`
+   suma `subscription_plans` y `subscription_charge_log`; regla 22 del prompt.
+6. Migrar una empresa re-mapea los roles de las columnas (`collections`,
+   `subscriptions` y `subscription_charges` → ids de campo nuevos; bug latente:
+   antes los mapas de cobros y suscripciones llegaban con los ids del origen)
+   y los vínculos de cada cobro; el tablero no viaja como referencia.
+7. **De paso**: la tabla de un tablero mostraba una relación como
+   «1 vinculado»; ahora dice el título del vinculado (una consulta por
+   columna; no en el tablero público, el portal ni la ficha).
+
 ---
 
-**Versión del documento:** 1.155.0 (El chat del asistente rediseñado: formato, historial, pasos y reintentos)
+**Versión del documento:** 1.156.0 (El registro de cobros de las suscripciones, su tablero y el asistente)

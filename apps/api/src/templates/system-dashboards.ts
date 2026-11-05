@@ -176,6 +176,48 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
             w('chart_bar', 'Por mes', { metric: 'count', date_field_id: ref('fecha'), time_bucket: 'month' }, 0, 6, 12, 4),
         ],
     ),
+    // v0.1.371 — Para la lista «Cobros de suscripciones» (o una de facturas
+    // o cuotas): lo cobrado y lo rechazado mes a mes, apilado por estado.
+    dash(
+        'cobros-recurrentes',
+        'Cobros recurrentes',
+        'Cuánto se cobra cada mes, cuánto se rechaza y de qué planes viene. Para la lista de cobros de las suscripciones o una de cuotas.',
+        'finanzas',
+        'repeat',
+        '#14b8a6',
+        [
+            role('estado', 'Estado del cobro', ['select']),
+            MONTO,
+            role('fecha', 'Fecha del cobro', ['date', 'datetime']),
+            role('plan', 'Plan', ['text', 'select'], false),
+        ],
+        [
+            kpi('Cobros', { icon: 'receipt' }, 0, 0),
+            kpi('Monto total', { metric: 'sum', metric_field_id: ref('monto'), prefix: '$', icon: 'wallet' }, 3, 0),
+            w('stat_delta', 'Cobros (30 días)', { metric: 'sum', metric_field_id: ref('monto'), date_field_id: ref('fecha'), period_days: 30 }, 6, 0, 6, 2),
+            w(
+                'chart_bar',
+                'Por mes y estado',
+                {
+                    metric: 'sum',
+                    metric_field_id: ref('monto'),
+                    group_by_field_id: ref('fecha'),
+                    date_field_id: ref('fecha'),
+                    time_bucket: 'month',
+                    sub_group_by_field_id: ref('estado'),
+                    stack_mode: 'stacked',
+                    bar_orientation: 'vertical',
+                },
+                0,
+                2,
+                8,
+                5,
+            ),
+            w('chart_pie', 'Por estado', { metric: 'count', group_by_field_id: ref('estado'), center_label: 'Cobros' }, 8, 2, 4, 5),
+            w('chart_bar', 'Monto por plan', { metric: 'sum', metric_field_id: ref('monto'), group_by_field_id: ref('plan'), hide_zero_groups: true }, 0, 7, 6, 4),
+            w('table', 'Últimos cobros', { limit: 10, sort_field_id: ref('fecha'), sort_dir: 'desc' }, 6, 7, 6, 4),
+        ],
+    ),
     dash(
         'satisfaccion',
         'Satisfacción',

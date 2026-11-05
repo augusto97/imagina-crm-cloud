@@ -72,6 +72,8 @@ import {
     type CreateSubscriptionInput,
     type Subscription,
     type SubscriptionFields,
+    type SubscriptionChargeLogStatus,
+    type SetSubscriptionChargeLogInput,
     type SetSubscriptionFieldsInput,
     type RecordPayments,
     type SqlPreviewInput,
@@ -1207,6 +1209,13 @@ export class CloudClient {
     }
     setupSubscriptionFields(list: string | number): Promise<SubscriptionFields> {
         return this.request('POST', `/lists/${list}/subscriptions/setup`, { body: {}, schema: z.custom<SubscriptionFields>() });
+    }
+    /** v0.1.371 — a qué lista va cada cobro de las suscripciones de esta lista. */
+    subscriptionChargeLog(list: string | number): Promise<SubscriptionChargeLogStatus> {
+        return this.request('GET', `/lists/${list}/subscriptions/charge-log`, { schema: z.custom<SubscriptionChargeLogStatus>() });
+    }
+    setSubscriptionChargeLog(list: string | number, input: SetSubscriptionChargeLogInput): Promise<SubscriptionChargeLogStatus> {
+        return this.request('PUT', `/lists/${list}/subscriptions/charge-log`, { body: input, schema: z.custom<SubscriptionChargeLogStatus>() });
     }
     // ── WhatsApp oficial: Meta WhatsApp Cloud API (D3) ──────────────────
     async whatsappConnections(): Promise<Array<{ id: number; name: string; display_phone: string | null; templates: WhatsappTemplate[] }>> {

@@ -1,9 +1,12 @@
+import { useContext, useMemo } from 'react';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 
 import { renderCellValue } from '@/admin/records/renderCellValue';
 import { useFields } from '@/hooks/useFields';
 import { __, sprintf } from '@/lib/i18n';
-import { useWidgetData } from '@/hooks/useDashboards';
+import { useWidgetData, WidgetDataOverrideContext } from '@/hooks/useDashboards';
+import { fetchRelationTitles, relationIds, relationTarget, type RelationTitles } from '@/hooks/useRelationTitles';
 import type { FieldEntity } from '@/types/field';
 import type { WidgetSpec } from '@/types/dashboard';
 
@@ -70,6 +73,7 @@ function Body({
 }): JSX.Element {
     const byId = new Map(fields.map((f) => [f.id, f]));
     const bySlug = new Map(fields.map((f) => [f.slug, f]));
+    const titles = useRelationColumnTitles(columns, rows, fields);
     if (rows.length === 0) {
         return (
             <p className="imcrm-py-6 imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
@@ -107,7 +111,7 @@ function Body({
                                     className="imcrm-max-w-[260px] imcrm-whitespace-nowrap imcrm-px-3 imcrm-py-1.5 imcrm-align-middle imcrm-text-[13px]"
                                 >
                                     <div className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-overflow-hidden">
-                                        {cell(col, row.fields[col.slug], field)}
+                                        {cell(col, row.fields[col.slug], field, titles.get(col.slug))}
                                     </div>
                                 </td>
                             );
@@ -119,10 +123,62 @@ function Body({
     );
 }
 
-function cell(col: Column, value: unknown, field: FieldEntity | undefined): React.ReactNode {
+/**
+ * v0.1.371 — Los títulos de los registros vinculados de las columnas de
+ * relación (una consulta por columna, con todos los ids de la tabla), como en
+ * la tabla de registros. Dentro de un tablero público, el portal o la ficha
+ * (`WidgetDataOverrideContext`) no se piden: ahí no hay sesión del equipo.
+ */
+function useRelationColumnTitles(
+    columns: Column[],
+    rows: Array<{ id: number; fields: Record<string, unknown> }>,
+    fields: FieldEntity[],
+): Map<string, RelationTitles> {
+    const qc = useQueryClient();
+    const override = useContext(WidgetDataOverrideContext);
+    const specs = useMemo(() => {
+        if (override) return [];
+        const out: Array<{ slug: string; target: number; ids: number[] }> = [];
+        for (const col of columns) {
+            if (col.type !== 'relation') continue;
+            const f = fields.find((x) => (col.id !== undefined && x.id === col.id) || x.slug === col.slug);
+            const target = f ? relationTarget(f) : null;
+            if (!target) continue;
+            const ids = new Set<number>();
+            for (const r of rows) for (const id of relationIds(r.fields[col.slug])) ids.add(id);
+            if (ids.size > 0) out.push({ slug: col.slug, target, ids: [...ids].sort((a, b) => a - b) });
+        }
+        return out;
+    }, [columns, rows, fields, override]);
+    const results = useQueries({
+        queries: specs.map((s) => ({
+            queryKey: ['relation-titles', String(s.target), s.ids.join(',')],
+            queryFn: () => fetchRelationTitles(qc, s.target, s.ids),
+            staleTime: 30_000,
+        })),
+    });
+    const sig = results.map((r) => r.dataUpdatedAt).join(',');
+    return useMemo(() => {
+        const m = new Map<string, RelationTitles>();
+        specs.forEach((s, i) => {
+            const d = results[i]?.data;
+            if (d) m.set(s.slug, d);
+        });
+        return m;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [specs, sig]);
+}
+
+function cell(col: Column, value: unknown, field: FieldEntity | undefined, titles?: RelationTitles): React.ReactNode {
     if (col.type === 'relation') {
-        const n = Array.isArray(value) ? value.length : 0;
+        const ids = relationIds(value);
+        const n = ids.length;
         if (n === 0) return <span className="imcrm-text-muted-foreground">—</span>;
+        const names = titles ? ids.map((id) => titles[id]).filter((t): t is string => typeof t === 'string' && t !== '') : [];
+        if (names.length > 0) {
+            const shown = names.slice(0, 2).join(', ');
+            return <span className="imcrm-truncate">{n > 2 ? `${shown} ${sprintf(__('+%d'), n - 2)}` : shown}</span>;
+        }
         return n === 1 ? __('1 vinculado') : sprintf(__('%d vinculados'), n);
     }
     if (field) return renderCellValue(field, value);

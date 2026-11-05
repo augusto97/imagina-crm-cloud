@@ -232,6 +232,11 @@ export const AI_PROPOSAL_KINDS = [
     'create_ai_agent',
     // v0.1.365 — en qué columnas de la lista se guardan los cobros.
     'configure_payment_columns',
+    // v0.1.371 — suscripciones: planes, columnas + registro de cobros, y
+    // suscribir / pausar / reanudar / cancelar / cambiar el valor.
+    'configure_subscription_plan',
+    'configure_subscription_columns',
+    'manage_subscription',
 ] as const;
 export const aiProposalKindSchema = z.enum(AI_PROPOSAL_KINDS);
 export type AiProposalKind = z.infer<typeof aiProposalKindSchema>;

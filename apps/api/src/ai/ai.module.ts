@@ -34,6 +34,7 @@ import { BookingTools } from './tools/booking-tools';
 import { DataTools } from './tools/data-tools';
 import { AiToolRegistry } from './tools/registry';
 import { StructureTools } from './tools/structure-tools';
+import { SubscriptionTools } from './tools/subscription-tools';
 
 /**
  * Asistente IA (ADR-S21, v0.1.181). @Global porque BillingService y
@@ -58,10 +59,11 @@ import { StructureTools } from './tools/structure-tools';
         DataTools,
         ApprovalTools,
         BookingTools,
+        SubscriptionTools,
         {
             provide: AiToolRegistry,
-            inject: [StructureTools, DataTools, ApprovalTools, BookingTools],
-            useFactory: (structure: StructureTools, data: DataTools, approvals: ApprovalTools, booking: BookingTools): AiToolRegistry => {
+            inject: [StructureTools, DataTools, ApprovalTools, BookingTools, SubscriptionTools],
+            useFactory: (structure: StructureTools, data: DataTools, approvals: ApprovalTools, booking: BookingTools, subscriptions: SubscriptionTools): AiToolRegistry => {
                 const registry = new AiToolRegistry();
                 structure.registerInto(registry);
                 data.registerInto(registry);
@@ -69,6 +71,9 @@ import { StructureTools } from './tools/structure-tools';
                 approvals.registerInto(registry);
                 // D5 — agenda de citas pública.
                 booking.registerInto(registry);
+                // v0.1.371 — suscripciones: leer, planes, columnas + registro de cobros, y cambiar una.
+                subscriptions.registerInto(registry);
+                registry.registerApplier(SubscriptionTools.KINDS, subscriptions);
                 return registry;
             },
         },

@@ -30,6 +30,7 @@ import { formatDate, formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
 import { CopyButton, formatMoney } from '../payments/paymentUi';
+import { SubscriptionChargeLogEditor } from './SubscriptionChargeLogEditor';
 import { SubscriptionFieldsEditor } from './SubscriptionFieldsEditor';
 import { cyclesText, frequencyText, statusOption, statusSentence } from './subscriptionText';
 
@@ -579,7 +580,7 @@ function SubscriptionColumnsDialog({ listId, onClose, onSaved }: { listId: numbe
                 >
                     <div className="imcrm-mb-3 imcrm-flex imcrm-items-start imcrm-gap-3">
                         <div className="imcrm-min-w-0 imcrm-flex-1">
-                            <Dialog.Title className="imcrm-text-base imcrm-font-semibold">{__('Dónde se guarda la suscripción')}</Dialog.Title>
+                            <Dialog.Title className="imcrm-text-base imcrm-font-semibold">{__('Columnas y registro de cobros')}</Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
                                 {__('Cada cambio de la suscripción (un cobro, un rechazo, la mora) se escribe en estas columnas. Así filtras quién está al día y agrupas por estado.')}
                             </Dialog.Description>
@@ -593,6 +594,14 @@ function SubscriptionColumnsDialog({ listId, onClose, onSaved }: { listId: numbe
                     ) : (
                         <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Cargando…')}</p>
                     )}
+                    {/* v0.1.371 — cada cobro como un registro en otra lista (con su tablero). */}
+                    <section className="imcrm-mt-5 imcrm-border-t imcrm-border-border imcrm-pt-4" data-tour="subscription-charge-log">
+                        <h3 className="imcrm-text-sm imcrm-font-semibold">{__('Registro de cobros')}</h3>
+                        <p className="imcrm-mb-2 imcrm-text-xs imcrm-text-muted-foreground">
+                            {__('Cada cobro (pagado, rechazado o reembolsado) queda como un registro en otra lista, vinculado a este cliente: lo filtras, lo sumas y lo graficas como cualquier dato.')}
+                        </p>
+                        <SubscriptionChargeLogEditor listId={listId} />
+                    </section>
                 </Dialog.Content>
             </Dialog.Portal>
         </Dialog.Root>

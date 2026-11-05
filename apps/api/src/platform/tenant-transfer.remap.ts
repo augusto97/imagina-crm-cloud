@@ -359,6 +359,26 @@ export function remapListSettings(
         out[key] = m;
     }
 
+    // v0.1.371 — las columnas de cobro (v0.1.365), de suscripción (v0.1.367) y
+    // del registro de cobros (v0.1.371) son mapas `dato → id de campo` cuyas
+    // CLAVES son nombres («status», «link»): `remapJson` no los ve.
+    for (const key of ['collections', 'subscriptions', 'subscription_charges'] as const) {
+        const block = out[key];
+        if (block === null || typeof block !== 'object' || Array.isArray(block)) continue;
+        const b = { ...(block as Record<string, unknown>) };
+        const fields = (settings[key] as Record<string, unknown> | undefined)?.fields;
+        if (fields !== null && typeof fields === 'object' && !Array.isArray(fields)) {
+            const remapped: Record<string, number | null> = {};
+            for (const [role, oldId] of Object.entries(fields as Record<string, unknown>)) {
+                remapped[role] = oldId === null || oldId === undefined ? null : mapId(maps.field, oldId);
+            }
+            b.fields = remapped;
+        }
+        // El tablero del registro de cobros se re-crea a mano: el id viejo es de la otra instancia.
+        if (key === 'subscription_charges') b.dashboard_id = null;
+        out[key] = b;
+    }
+
     const pub = out.public;
     if (pub !== null && typeof pub === 'object') {
         // El token es la credencial del enlace público: se emite uno nuevo en

@@ -8,6 +8,8 @@ import {
     type SetCollectionFieldsInput,
     readCollectionFields,
     readSubscriptionFields,
+    readSubscriptionChargeLog,
+    SUBSCRIPTION_CHARGE_LOG_ROLES,
     SUBSCRIPTION_FIELD_ROLES,
     SUBSCRIPTION_EVENT_LABELS,
     type SubscriptionEvent,
@@ -709,6 +711,9 @@ type StructureKind = Exclude<
     | 'create_record_template'
     | 'configure_booking_page'
     | 'create_ai_agent'
+    | 'configure_subscription_plan'
+    | 'configure_subscription_columns'
+    | 'manage_subscription'
 >;
 
 const CAPABILITY_BY_KIND: Record<StructureKind, Capability> = {
@@ -1256,6 +1261,19 @@ export class StructureTools implements AiProposalApplier {
         const depCount = await this.tenantDb
             .withTenant(ctx.tenantId, (tx) => new DependenciesRepository().countForList(tx, ctx.tenantId, list.id))
             .catch(() => 0);
+        // v0.1.371 — registro de cobros de suscripciones (a qué lista va cada cobro, con sus slugs).
+        const chargeLogCfg = readSubscriptionChargeLog(settings);
+        const chargeLogInfo = chargeLogCfg
+            ? await (async () => {
+                  const target = listById.get(chargeLogCfg.list_id);
+                  const tFields = target ? await this.fields.listByListId(ctx.tenantId, target.id).catch(() => []) : [];
+                  const slugOf = (id: number | null): string | null => (id ? (tFields.find((f) => f.id === id)?.slug ?? null) : null);
+                  return {
+                      list: target?.slug ?? null,
+                      columns: Object.fromEntries(SUBSCRIPTION_CHARGE_LOG_ROLES.map((r) => [r, slugOf(chargeLogCfg.fields[r] ?? null)])),
+                  };
+              })()
+            : null;
         // E6 — lo que suman otros módulos (los agentes de IA de la lista).
         const extras = this.registry ? await this.registry.listSchemaExtras(ctx, { id: list.id, slug: list.slug }) : {};
         return {
@@ -1581,6 +1599,25 @@ export class StructureTools implements AiProposalApplier {
                         SUBSCRIPTION_FIELD_ROLES.map((r) => [r, m[r] === null ? null : (fieldById.get(m[r]!)?.slug ?? null)]),
                     );
                 })(),
+                // v0.1.371 — los planes de suscripción que la persona puede usar
+                // (para propose_configure_subscription_plan / manage_subscription).
+                subscription_plans: subscriptionPlans.map((p) => ({
+                    id: p.id,
+                    name: p.name,
+                    amount: p.amount,
+                    currency: p.currency,
+                    every: `${p.frequency} ${p.frequency_type}`,
+                    cycles: p.cycles,
+                    trial_days: p.trial_days,
+                    grace_days: p.grace_days,
+                    on_expire: p.on_expire,
+                    active: p.active,
+                    connection: p.connection_name,
+                    subscribers: p.subscribers.live,
+                })),
+                // v0.1.371 — registro de cobros: cada cobro de una suscripción como
+                // un registro en otra lista (null = no se registran).
+                subscription_charge_log: chargeLogInfo,
                 // v0.1.365 — dónde guarda la lista cada dato del cobro (link,
                 // estado, fecha, monto, medio); null = todavía no se eligió.
                 collections_fields: (() => {

@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SUBSCRIPTION_STATUS_OPTIONS } from '@imagina-base/shared';
+import { SUBSCRIPTION_CHARGE_STATUS_OPTIONS, SUBSCRIPTION_STATUS_OPTIONS } from '@imagina-base/shared';
 
 /**
  * v0.1.367 (ADR-S96) — Suscripciones de las empresas con Mercado Pago, de
@@ -41,7 +41,19 @@ import { AuditService } from '../src/audit/audit.service';
 import { AutomationDispatcher, type TriggerEvent } from '../src/automations/automation-dispatcher.service';
 import { AutomationEngine } from '../src/automations/automation-engine.service';
 import { AutomationsRepository } from '../src/automations/automations.repository';
+import { AutomationScheduler } from '../src/automations/automation-scheduler.service';
+import { AutomationsService, type HookCaptureStore } from '../src/automations/automations.service';
+import { BillingService } from '../src/billing/billing.service';
+import { PlansService } from '../src/billing/plans.service';
 import { CollectionsService } from '../src/collections/collections.service';
+import { DashboardsService } from '../src/dashboards/dashboards.service';
+import { EmailQuotaService } from '../src/mail/email-quota.service';
+import { TenantSmtpService } from '../src/mail/tenant-smtp.service';
+import { RecordsService } from '../src/records/records.service';
+import { SubscriptionChargeLogService } from '../src/subscriptions/subscription-charge-log.service';
+import { BlueprintService } from '../src/templates/blueprint.service';
+import { ViewsRepository } from '../src/views/views.repository';
+import { ViewsService } from '../src/views/views.service';
 import { loadEnv } from '../src/config/env';
 import { ConnectorsService } from '../src/connectors/connectors.service';
 import { IntegrationAppsService } from '../src/connectors/integration-apps.service';
@@ -49,9 +61,11 @@ import {
     automationRuns,
     automations,
     connections,
+    dashboards,
     fields,
     lists,
     records,
+    relations,
     subscriptionCharges,
     subscriptionPlans,
     subscriptions,
@@ -68,6 +82,9 @@ import type { MailMessage, MailTransport } from '../src/mail/mail.types';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { RecordsRepository } from '../src/records/records.repository';
 import { RelationsRepository } from '../src/records/relations.repository';
+import { ProposalsStore } from '../src/ai/proposals.store';
+import { AiToolRegistry, type AiToolContext, type AiToolResult } from '../src/ai/tools/registry';
+import { SubscriptionTools } from '../src/ai/tools/subscription-tools';
 import { createPreapprovalRequest, mpNotice, summarizeCharges } from '../src/subscriptions/subscription-gateway';
 import { SubscriptionsService } from '../src/subscriptions/subscriptions.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
@@ -82,6 +99,21 @@ class NullMail implements MailTransport {
     readonly name = 'null';
     send(_m: MailMessage): Promise<void> {
         return Promise.resolve();
+    }
+}
+
+class FakeHookStore implements HookCaptureStore {
+    lpush(): Promise<number> {
+        return Promise.resolve(1);
+    }
+    ltrim(): Promise<unknown> {
+        return Promise.resolve('OK');
+    }
+    expire(): Promise<unknown> {
+        return Promise.resolve(1);
+    }
+    lrange(): Promise<string[]> {
+        return Promise.resolve([]);
     }
 }
 
@@ -163,6 +195,7 @@ describe('Suscripciones de las empresas — Mercado Pago (v0.1.367)', () => {
     let connectors: ConnectorsService;
     let collections: CollectionsService;
     let subs: SubscriptionsService;
+    let chargeLog: SubscriptionChargeLogService;
     let fieldsService: FieldsService;
     let listsService: ListsService;
     let engine: AutomationEngine;
@@ -184,7 +217,46 @@ describe('Suscripciones de las empresas — Mercado Pago (v0.1.367)', () => {
         dispatcher = new CapturingDispatcher();
         const activity = new ActivityService(tenantDb, new ActivityRepository(), listsService);
         collections = new CollectionsService(tenantDb, pg.db, env, connectors, listsService, new RecordsRepository(), activity, rt, dispatcher, audit, fieldsService);
-        subs = new SubscriptionsService(tenantDb, pg.db, env, connectors, listsService, new RecordsRepository(), activity, rt, dispatcher, audit, collections, fieldsService);
+        // v0.1.371 — el registro de cobros escribe con el alta de registros de
+        // siempre y arma la lista con el motor de plantillas (se resuelven por ModuleRef).
+        const recordsSvc = new RecordsService(tenantDb, new RecordsRepository(), listsService, fieldsService, rt, activity, dispatcher, new RelationsRepository());
+        const plansSvc = new PlansService(pg.db);
+        const billing = new BillingService(tenantDb, plansSvc, new EmailQuotaService(pg.db, plansSvc), new TenantSmtpService(pg.db, env));
+        const automationsSvc = new AutomationsService(pg.db, tenantDb, new AutomationsRepository(), listsService, new AutomationScheduler(), new FakeHookStore(), connectors);
+        const blueprints = new BlueprintService(
+            tenantDb,
+            listsService,
+            fieldsService,
+            new ViewsService(tenantDb, new ViewsRepository(), listsService, rt),
+            automationsSvc,
+            new RecordsRepository(),
+            new RelationsRepository(),
+            billing,
+            rt,
+            new DashboardsService(tenantDb, null as never, null as never, null as never),
+        );
+        const moduleRef = {
+            get: (token: unknown) => (token === RecordsService ? recordsSvc : token === BlueprintService ? blueprints : undefined),
+        };
+        chargeLog = new SubscriptionChargeLogService(tenantDb, listsService, new RecordsRepository(), activity, rt, audit, fieldsService, undefined, undefined, moduleRef as never);
+        subs = new SubscriptionsService(
+            tenantDb,
+            pg.db,
+            env,
+            connectors,
+            listsService,
+            new RecordsRepository(),
+            activity,
+            rt,
+            dispatcher,
+            audit,
+            collections,
+            fieldsService,
+            undefined,
+            undefined,
+            undefined,
+            chargeLog,
+        );
         subs.onModuleInit();
         engine = new AutomationEngine(
             tenantDb,
@@ -223,7 +295,9 @@ describe('Suscripciones de las empresas — Mercado Pago (v0.1.367)', () => {
             await tx.delete(subscriptionPlans).where(eq(subscriptionPlans.tenantId, tenantId));
             await tx.delete(automationRuns).where(eq(automationRuns.tenantId, tenantId));
             await tx.delete(automations).where(eq(automations.tenantId, tenantId));
+            await tx.delete(relations).where(eq(relations.tenantId, tenantId));
             await tx.delete(records).where(eq(records.tenantId, tenantId));
+            await tx.delete(dashboards).where(eq(dashboards.tenantId, tenantId));
             await tx.delete(fields).where(eq(fields.tenantId, tenantId));
             await tx.delete(lists).where(eq(lists.tenantId, tenantId));
             await tx.delete(connections).where(eq(connections.tenantId, tenantId));
@@ -619,6 +693,260 @@ describe('Suscripciones de las empresas — Mercado Pago (v0.1.367)', () => {
         expect(p1Hooks).toHaveLength(1);
         expect(p1Hooks[0]!.body).toContain('Falló un cobro');
         expect(p1Hooks[0]!.body).toContain('150000');
+    });
+
+    // ── v0.1.371 — Registro de cobros ──────────────────────────────────
+
+    async function destRecords(listId: number) {
+        return withTenant(pg.db, tenantId, (tx) => tx.select().from(records).where(and(eq(records.tenantId, tenantId), eq(records.listId, listId))));
+    }
+
+    it('registro de cobros: crea la lista con su tablero, carga lo que había SIN automatizaciones y lo nuevo sí las dispara', async () => {
+        const mp = fakeMercadoPago();
+        const connId = await connectMp();
+        const p = await plan(connId);
+        const c = await seedClient();
+        const sub = await subs.createForRecord(tenantId, admin, c.slug, c.recordId, { plan_id: p.id, payer_email: 'pagos@panaderiasol.test' });
+        authorize(mp, 'pre-1', '2026-12-05T12:00:00.000Z');
+        invoice(mp, 'inv-1', 'pre-1', { status: 'processed', paymentId: 9001, paymentStatus: 'approved', debit: '2026-11-05T12:00:00.000Z' });
+        await subs.sync(tenantId, sub.id, new Date('2026-11-06T12:00:00Z'));
+
+        // Sin registro de cobros configurado, nada se escribe en otra lista.
+        let st = await chargeLog.status(tenantId, admin, c.slug);
+        expect(st).toMatchObject({ config: null, charges: 1, logged: 0, can_setup: true });
+
+        dispatcher.events.length = 0;
+        st = await chargeLog.configure(tenantId, admin, c.slug, { mode: 'create', dashboard: true });
+        expect(st.config?.list_name).toBe('Cobros de suscripciones');
+        expect(st.logged).toBe(1);
+        const destId = st.config!.list_id;
+        const f = (role: string) => st.config!.fields[role]!.id;
+        let rows = await destRecords(destId);
+        expect(rows).toHaveLength(1);
+        const first = rows[0]!.data as Record<string, unknown>;
+        expect(first[`f${f('amount')}`]).toBe(150000);
+        expect(first[`f${f('status')}`]).toBe(SUBSCRIPTION_CHARGE_STATUS_OPTIONS.approved.value);
+        expect(first[`f${f('payment_id')}`]).toBe('9001');
+        // El período y la fecha sin hora, en la zona de la empresa (Bogotá).
+        expect(first[`f${f('period')}`]).toBe('2026-11-05');
+        const [titleField] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(fields).where(and(eq(fields.listId, destId), eq(fields.slug, 'cobro'))));
+        expect(first[`f${titleField!.id}`]).toBe('Mantenimiento mensual · noviembre de 2026');
+        // Vinculado al cliente.
+        const links = await withTenant(pg.db, tenantId, (tx) => tx.select().from(relations).where(eq(relations.sourceRecordId, rows[0]!.id)));
+        expect(links.map((l) => l.targetRecordId)).toEqual([c.recordId]);
+        // La carga de lo que ya existía no dispara «Cuando se crea un registro».
+        expect(dispatcher.events.filter((e) => e.trigger === 'record_created' && e.listId === destId)).toHaveLength(0);
+        // El tablero de la lista.
+        const [dash] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(dashboards).where(eq(dashboards.tenantId, tenantId)));
+        expect(st.config!.dashboard_id).toBe(dash!.id);
+        expect(dash!.name).toBe('Suscripciones · Clientes');
+
+        // Una cuota rechazada: un registro NUEVO, con el motivo, y sí dispara.
+        invoice(mp, 'inv-2', 'pre-1', { status: 'recycling', paymentId: 9002, paymentStatus: 'rejected', detail: 'cc_rejected_insufficient_amount', debit: '2026-12-05T12:00:00.000Z', retry: 1 });
+        await subs.sync(tenantId, sub.id, new Date('2026-12-06T12:00:00Z'));
+        rows = await destRecords(destId);
+        expect(rows).toHaveLength(2);
+        const rejected = rows.find((r) => (r.data as Record<string, unknown>)[`f${f('payment_id')}`] === '9002')!.data as Record<string, unknown>;
+        expect(rejected[`f${f('status')}`]).toBe(SUBSCRIPTION_CHARGE_STATUS_OPTIONS.rejected.value);
+        expect(String(rejected[`f${f('reason')}`])).toMatch(/fondos insuficientes/i);
+        expect(dispatcher.events.filter((e) => e.trigger === 'record_created' && e.listId === destId)).toHaveLength(1);
+
+        // Un reembolso actualiza EL MISMO registro (no se duplica) y volver a sincronizar no escribe nada.
+        invoice(mp, 'inv-1', 'pre-1', { status: 'processed', paymentId: 9001, paymentStatus: 'refunded', debit: '2026-11-05T12:00:00.000Z' });
+        await subs.sync(tenantId, sub.id, new Date('2026-12-07T12:00:00Z'));
+        await subs.sync(tenantId, sub.id, new Date('2026-12-07T13:00:00Z'));
+        rows = await destRecords(destId);
+        expect(rows).toHaveLength(2);
+        const refunded = rows.find((r) => (r.data as Record<string, unknown>)[`f${f('payment_id')}`] === '9001')!.data as Record<string, unknown>;
+        expect(refunded[`f${f('status')}`]).toBe(SUBSCRIPTION_CHARGE_STATUS_OPTIONS.refunded.value);
+        expect((await chargeLog.status(tenantId, admin, c.slug)).logged).toBe(2);
+    });
+
+    it('registro de cobros en una lista que ya existe: valida cada columna, crea la que falta, suma opciones, no re-crea lo borrado y se apaga', async () => {
+        const mp = fakeMercadoPago();
+        const connId = await connectMp();
+        const p = await plan(connId);
+        const c = await seedClient();
+        const sub = await subs.createForRecord(tenantId, admin, c.slug, c.recordId, { plan_id: p.id, payer_email: 'pagos@panaderiasol.test' });
+        authorize(mp, 'pre-1', '2026-12-05T12:00:00.000Z');
+        invoice(mp, 'inv-1', 'pre-1', { status: 'processed', paymentId: 7001, paymentStatus: 'approved', debit: '2026-11-05T12:00:00.000Z' });
+        await subs.sync(tenantId, sub.id, new Date('2026-11-06T12:00:00Z'));
+
+        const facturas = await listsService.create(tenantId, { name: 'Facturas', slug: 'facturas' });
+        const otra = await listsService.create(tenantId, { name: 'Proveedores', slug: 'proveedores' });
+        await fieldsService.create(tenantId, 'facturas', { label: 'Concepto', type: 'text' });
+        const cliente = await fieldsService.create(tenantId, 'facturas', { label: 'Cliente', type: 'relation', config: { target_list_id: c.listId } });
+        const proveedor = await fieldsService.create(tenantId, 'facturas', { label: 'Proveedor', type: 'relation', config: { target_list_id: otra.id } });
+        const monto = await fieldsService.create(tenantId, 'facturas', { label: 'Monto', type: 'currency', config: { currency: 'COP', precision: 0 } });
+        const nota = await fieldsService.create(tenantId, 'facturas', { label: 'Nota', type: 'text' });
+        const estado = await fieldsService.create(tenantId, 'facturas', {
+            label: 'Estado',
+            type: 'select',
+            config: { options: [{ value: 'ok', label: 'Pagado', color: '#10B981' }] },
+        });
+
+        await expect(chargeLog.configure(tenantId, admin, c.slug, { mode: 'existing', list_id: c.listId, fields: { amount: monto.id } })).rejects.toThrow(/OTRA lista/);
+        await expect(chargeLog.configure(tenantId, admin, c.slug, { mode: 'existing', list_id: facturas.id, fields: { amount: nota.id } })).rejects.toThrow(/otro tipo/);
+        await expect(chargeLog.configure(tenantId, admin, c.slug, { mode: 'existing', list_id: facturas.id, fields: { record: proveedor.id } })).rejects.toThrow(/no vincula con «Clientes»/);
+        await expect(chargeLog.configure(tenantId, admin, c.slug, { mode: 'existing', list_id: facturas.id, fields: {} })).rejects.toThrow(/al menos una/);
+        // Crear la lista exige poder crear listas.
+        await expect(chargeLog.configure(tenantId, { userId: adminId, role: 'manager' }, c.slug, { mode: 'create' })).rejects.toThrow(/crear listas/);
+
+        const st = await chargeLog.configure(tenantId, admin, c.slug, {
+            mode: 'existing',
+            list_id: facturas.id,
+            fields: { record: cliente.id, amount: monto.id, status: estado.id, reason: 'create' },
+        });
+        expect(st.config).toMatchObject({ list_id: facturas.id, list_name: 'Facturas', dashboard_id: null });
+        expect(st.config!.fields.reason?.label).toBe('Motivo del rechazo');
+        // El estado de la lista ganó las opciones que le faltaban (sin duplicar «Pagado»).
+        const [fresh] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(fields).where(eq(fields.id, estado.id)));
+        const values = ((fresh!.config as { options: Array<{ value: string }> }).options ?? []).map((o) => o.value);
+        expect(values).toEqual(['ok', 'rechazado', 'procesando', 'reembolsado']);
+        let rows = await destRecords(facturas.id);
+        expect(rows).toHaveLength(1);
+        const data = rows[0]!.data as Record<string, unknown>;
+        // «Pagado» va a la opción que la lista YA tenía (por su etiqueta).
+        expect(data[`f${estado.id}`]).toBe('ok');
+        expect(data[`f${monto.id}`]).toBe(150000);
+
+        // Alguien borra el registro del cobro: un cambio del cobro no lo vuelve a crear.
+        await withTenant(pg.db, tenantId, (tx) => tx.delete(records).where(eq(records.id, rows[0]!.id)));
+        invoice(mp, 'inv-1', 'pre-1', { status: 'processed', paymentId: 7001, paymentStatus: 'refunded', debit: '2026-11-05T12:00:00.000Z' });
+        await subs.sync(tenantId, sub.id, new Date('2026-11-20T12:00:00Z'));
+        rows = await destRecords(facturas.id);
+        expect(rows).toHaveLength(0);
+
+        // Apagado: la lista deja de recibir cobros (lo escrito se queda donde está).
+        const off = await chargeLog.configure(tenantId, admin, c.slug, { mode: 'off' });
+        expect(off.config).toBeNull();
+        invoice(mp, 'inv-2', 'pre-1', { status: 'processed', paymentId: 7002, paymentStatus: 'approved', debit: '2026-12-05T12:00:00.000Z' });
+        await subs.sync(tenantId, sub.id, new Date('2026-12-06T12:00:00Z'));
+        expect(await destRecords(facturas.id)).toHaveLength(0);
+    });
+
+    it('asistente/MCP (v0.1.371): arma un plan, elige columnas y el registro de cobros, suscribe, lee el estado, pausa y cancela', async () => {
+        const mp = fakeMercadoPago();
+        await connectMp();
+        const c = await seedClient();
+        // Redis en memoria para las propuestas (sólo SET/GET/DEL con NX).
+        const memory = new Map<string, string>();
+        const redis = {
+            set: (k: string, v: string, ...args: unknown[]) => {
+                if (args.includes('NX') && memory.has(k)) return Promise.resolve(null);
+                memory.set(k, v);
+                return Promise.resolve('OK');
+            },
+            get: (k: string) => Promise.resolve(memory.get(k) ?? null),
+            del: (k: string) => Promise.resolve(memory.delete(k) ? 1 : 0),
+        };
+        const store = new ProposalsStore(redis as never);
+        const tools = new SubscriptionTools(listsService, fieldsService, store, subs, chargeLog, collections, connectors);
+        const registry = new AiToolRegistry();
+        tools.registerInto(registry);
+        const ctx: AiToolContext = { tenantId, userId: adminId, role: 'admin' };
+        const run = (name: string, input: unknown): Promise<AiToolResult> => registry.execute(ctx, name, input);
+        const apply = async (res: AiToolResult) => {
+            expect(res.isError, JSON.stringify(res.content)).toBeFalsy();
+            const stored = await store.get(tenantId, (res.content as { proposal_id: string }).proposal_id);
+            return tools.apply(ctx, stored!);
+        };
+        const errorOf = (res: AiToolResult): string => {
+            expect(res.isError).toBe(true);
+            return String((res.content as { error: string }).error);
+        };
+        type Listed = { total: number; por_estado: Record<string, number>; suscripciones: Array<Record<string, unknown> & { ultimos_cobros: Array<Record<string, unknown>> }> };
+
+        // Un lector ve la lectura pero no las propuestas.
+        const viewerTools = registry.listFor('viewer').map((t) => t.name);
+        expect(viewerTools).toContain('list_subscriptions');
+        expect(viewerTools).not.toContain('propose_configure_subscription_columns');
+        expect(viewerTools).not.toContain('propose_manage_subscription');
+
+        // 1. El plan: se crea con los valores por defecto, no se repite el nombre y se cambia.
+        let res = await run('propose_configure_subscription_plan', { name: 'Hosting mensual', amount: 90000 });
+        expect(res.proposal?.preview.changes.map((x) => x.label)).toEqual(expect.arrayContaining(['Valor', 'Se cobra', 'Días de gracia']));
+        await apply(res);
+        const [plan0] = await subs.listPlans(tenantId, admin);
+        expect(plan0).toMatchObject({ name: 'Hosting mensual', amount: 90000, currency: 'COP', frequency: 1, frequency_type: 'months', grace_days: 10 });
+        expect(errorOf(await run('propose_configure_subscription_plan', { name: 'hosting MENSUAL', amount: 1 }))).toMatch(/Ya existe/);
+        expect(errorOf(await run('propose_configure_subscription_plan', { plan: plan0!.id, frequency: 13 }))).toMatch(/12 meses/);
+        res = await run('propose_configure_subscription_plan', { plan: 'Hosting mensual', amount: 95000, trial_days: 7 });
+        expect(res.proposal?.preview.changes).toContainEqual({ label: 'Valor', from: '90000 COP', to: '95000 COP' });
+        await apply(res);
+        expect((await subs.listPlans(tenantId, admin))[0]).toMatchObject({ amount: 95000, trial_days: 7 });
+
+        // 2. Columnas: una de otro tipo se explica; el registro de cobros nace con su tablero.
+        expect(errorOf(await run('propose_configure_subscription_columns', { list: 'clientes', columns: { status: 'correo' } }))).toMatch(/otro tipo|sirve/);
+        expect(errorOf(await run('propose_configure_subscription_columns', { list: 'clientes', charge_log: { mode: 'existing', list: 'clientes' } }))).toMatch(/OTRA lista/);
+        res = await run('propose_configure_subscription_columns', {
+            list: 'clientes',
+            columns: { status: 'create', paid_until: 'create', link: 'create' },
+            charge_log: { mode: 'create' },
+        });
+        const configured = await apply(res);
+        expect(configured.message).toMatch(/Cobros de suscripciones/);
+        expect(configured.links.some((l) => l.href.startsWith('/dashboards/'))).toBe(true);
+        const mapping = (await subs.getFields(tenantId, 'clientes'))!;
+        expect(mapping.status).not.toBeNull();
+        expect(mapping.link).not.toBeNull();
+        expect(mapping.amount).toBeNull();
+        expect((await chargeLog.status(tenantId, admin, 'clientes')).config?.list_name).toBe('Cobros de suscripciones');
+
+        // 3. Suscribir con el correo del registro: el link vuelve en el mensaje.
+        expect(errorOf(await run('propose_manage_subscription', { list: 'clientes', action: 'subscribe', record_id: c.recordId }))).toMatch(/Indica el plan/);
+        res = await run('propose_manage_subscription', { list: 'clientes', action: 'subscribe', record_id: c.recordId, plan: 'Hosting mensual' });
+        expect(res.proposal?.preview.changes).toContainEqual({ label: 'Correo del cliente', from: null, to: 'Pagos@PanaderiaSol.test' });
+        expect((await apply(res)).message).toContain('preapproval_id=pre-1');
+
+        // 4. Leer: por autorizar con su link; pausar todavía no se puede.
+        let listed = (await run('list_subscriptions', { list: 'clientes' })).content as Listed;
+        expect(listed.total).toBe(1);
+        expect(listed.suscripciones[0]).toMatchObject({ registro: 'Panadería Sol', plan: 'Hosting mensual', valor: 95000, estado: 'Por autorizar', cada: 'cada mes' });
+        expect(String(listed.suscripciones[0]!.link_para_autorizar)).toContain('pre-1');
+        expect(errorOf(await run('propose_manage_subscription', { list: 'clientes', action: 'pause', record_id: c.recordId }))).toMatch(/no hay nada que pausar/);
+
+        // El cliente autoriza y paga.
+        authorize(mp, 'pre-1', new Date(Date.now() + 20 * DAY).toISOString());
+        invoice(mp, 'inv-1', 'pre-1', { status: 'processed', paymentId: 1, paymentStatus: 'approved', debit: new Date(Date.now() - 10 * DAY).toISOString() });
+        const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(subscriptions).where(eq(subscriptions.tenantId, tenantId)));
+        await subs.verify(tenantId, admin, row!.id);
+        listed = (await run('list_subscriptions', { list: 'clientes', status: ['active'] })).content as Listed;
+        expect(listed.por_estado).toEqual({ 'Al día': 1 });
+        expect(listed.suscripciones[0]).toMatchObject({ estado: 'Al día', cobros_pagados: 1 });
+        expect(listed.suscripciones[0]!.link_para_autorizar).toBeUndefined();
+        expect(listed.suscripciones[0]!.ultimos_cobros[0]).toMatchObject({ estado: 'Pagado' });
+        expect(((await run('list_subscriptions', { list: 'clientes', status: ['past_due', 'expired'] })).content as Listed).total).toBe(0);
+        expect(errorOf(await run('list_subscriptions', { list: 'clientes', plan: 'No existe' }))).toMatch(/no existe/);
+        // Con una al día no se crea otra.
+        expect(errorOf(await run('propose_manage_subscription', { list: 'clientes', action: 'subscribe', record_id: c.recordId, plan: plan0!.id }))).toMatch(/ya tiene la suscripción/);
+
+        // 5. Pausar, cambiar el valor y cancelar (cancelar y cambiar el valor piden confirmación reforzada).
+        await apply(await run('propose_manage_subscription', { list: 'clientes', action: 'pause', record_id: c.recordId }));
+        expect(mp.puts.at(-1)).toEqual({ id: 'pre-1', body: { status: 'paused' } });
+        expect(errorOf(await run('propose_manage_subscription', { list: 'clientes', action: 'pause', record_id: c.recordId }))).toMatch(/Ya está pausada/);
+        await apply(await run('propose_manage_subscription', { list: 'clientes', action: 'resume', record_id: c.recordId }));
+        res = await run('propose_manage_subscription', { list: 'clientes', action: 'change_amount', record_id: c.recordId, amount: 99000 });
+        expect(res.proposal?.destructive).toBe(true);
+        expect((await apply(res)).message).toMatch(/99000 COP/);
+        res = await run('propose_manage_subscription', { list: 'clientes', action: 'cancel', record_id: c.recordId, reason: 'Cerró el local' });
+        expect(res.proposal?.destructive).toBe(true);
+        await apply(res);
+        listed = (await run('list_subscriptions', { list: 'clientes' })).content as Listed;
+        expect(listed.suscripciones[0]).toMatchObject({ estado: 'Cancelada', motivo_cancelacion: 'Cerró el local' });
+        expect(errorOf(await run('propose_manage_subscription', { list: 'clientes', action: 'resume', record_id: c.recordId }))).toMatch(/no tiene una suscripción viva/);
+
+        // 6. Un plan con suscripciones no se borra (se desactiva); sin ellas sí.
+        expect(errorOf(await run('propose_configure_subscription_plan', { plan: 'Hosting mensual', delete: true }))).toMatch(/desactívalo/i);
+        await apply(await run('propose_configure_subscription_plan', { name: 'Anual', amount: 900000, frequency: 12 }));
+        res = await run('propose_configure_subscription_plan', { plan: 'Anual', delete: true });
+        expect(res.proposal?.destructive).toBe(true);
+        await apply(res);
+        expect((await subs.listPlans(tenantId, admin)).map((x) => x.name)).toEqual(['Hosting mensual']);
+
+        // 7. Apagar el registro de cobros.
+        expect((await apply(await run('propose_configure_subscription_columns', { list: 'clientes', charge_log: { mode: 'off' } }))).message).toMatch(/apagó/);
+        expect((await chargeLog.status(tenantId, admin, 'clientes')).config).toBeNull();
     });
 
     it('la página de vuelta muestra sólo lo que el cliente ya sabe y una referencia inválida no existe', async () => {

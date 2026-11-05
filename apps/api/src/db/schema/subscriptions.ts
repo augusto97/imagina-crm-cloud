@@ -127,6 +127,10 @@ export const subscriptionCharges = pgTable(
         paidAt: timestamp('paid_at', { withTimezone: true }),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+        /** v0.1.371 — Registro de cobros: la lista y el registro donde quedó, y cuándo. */
+        logListId: bigint('log_list_id', { mode: 'number' }),
+        logRecordId: bigint('log_record_id', { mode: 'number' }),
+        loggedAt: timestamp('logged_at', { withTimezone: true }),
     },
     (t) => [
         uniqueIndex('subscription_charges_payment_ux').on(t.subscriptionId, t.providerPaymentId),

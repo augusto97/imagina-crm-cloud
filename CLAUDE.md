@@ -12375,6 +12375,66 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         propuesta aplicada en la ficha, Escape, celular oscuro sin desborde,
         cero errores de JS).
 
+  - [x] **Registro de cobros de las suscripciones + el asistente y el MCP
+        (v0.1.371, addendum ADR-S96, tercera parte de «hazlo todo como lo veas
+        más recomendable»; PayPal pasa a v0.1.372)**. (a) **Registro de
+        cobros** (`settings.subscription_charges`, `subscriptionChargeLogSchema`
+        en shared): cada cobro de una suscripción (pagado, rechazado,
+        reembolsado) queda como un **registro de OTRA lista** vinculado al
+        cliente, con nueve datos elegibles por columna (suscriptor —relación
+        hacia la lista de suscritos—, valor, estado con colores, fecha,
+        período, plan, medio, motivo del rechazo, id del pago; existente de un
+        tipo que sirva, `'create'` o ninguna). «Crear» arma con el motor de
+        plantillas la lista **«Cobros de suscripciones»** (Todos, Por estado,
+        Rechazados) y, si se pide, el tablero «Suscripciones · <lista>» (plantilla
+        nueva `cobros-recurrentes` también en la galería: KPIs del mes, barras
+        apiladas por mes y estado, dona, por plan, últimos rechazos). **No es
+        lista espejo**: la empresa suma columnas, comenta y borra un cobro mal
+        registrado (no vuelve: la fila recuerda `log_record_id`; migración
+        0104 con `log_list_id`/`log_record_id`/`logged_at`); un reembolso
+        actualiza el MISMO registro; candado en Redis por suscripción; la
+        carga inicial (en línea hasta 300, el resto en segundo plano) NO
+        dispara automatizaciones (`RecordsService.create` gana
+        `noAutomations`) y los cobros nuevos sí; respeta el límite del plan y
+        el solo-lectura y abre un Problema si no puede escribir.
+        `SubscriptionChargeLogService` (resuelve `RecordsService` y
+        `BlueprintService` por ModuleRef para no armar un ciclo), endpoints
+        `GET/PUT /lists/:l/subscriptions/charge-log`, bitácora
+        `subscriptions.charge_log`. Front: sección **«Registro de cobros»** en
+        el diálogo «Columnas y registro de cobros» de la ficha
+        (`SubscriptionChargeLogEditor`: crear con o sin tablero / usar una
+        lista con columnas sugeridas, estado con el enlace a la lista y al
+        tablero, «N de M cobros registrados», cambiar y dejar de registrar).
+        (b) **Asistente y MCP** (`SubscriptionTools`, kinds
+        `configure_subscription_plan`, `configure_subscription_columns`,
+        `manage_subscription`): `list_subscriptions` (con el ACL de quien
+        pregunta: estado, próximo cobro, «pagado hasta», rechazos y últimos
+        cobros; filtros por estado, plan y registro —
+        `SubscriptionsService.listForList`—),
+        `propose_configure_subscription_plan` (crear/cambiar/borrar; sólo quien
+        puede editar la conexión), `propose_configure_subscription_columns`
+        (columnas + `charge_log` create/existing/off) y
+        `propose_manage_subscription` (subscribe con el link en el resultado,
+        pause/resume/cancel/change_amount; cancelar y cambiar el valor son
+        destructivos). `get_list_schema` suma `subscription_plans` y
+        `subscription_charge_log`; regla 22 del prompt; `docs/mcp.md` al día.
+        (c) **Bugs de paso**: migrar una empresa no re-mapeaba los mapas de
+        columnas de cobros (`collections`) ni de suscripciones (llegaban con
+        los ids de campo del origen); y la tabla de un tablero mostraba una
+        relación como «1 vinculado» — ahora el título (una consulta por
+        columna; no en el tablero público, el portal ni la ficha). Ayuda:
+        sección nueva en Aprende → Cobros con la ilustración `cobro-registro`,
+        guía de suscripciones y novedad con carrusel. Tests: shared 756 (6 del
+        registro de cobros), `subscriptions.spec` 12/12 (registro de cobros
+        nuevo y en lista existente, y las cuatro herramientas de punta a punta
+        con el Mercado Pago simulado), remap 22/22, specs del asistente/MCP en
+        verde, front 815 — E2E navegador 26/26 en escritorio y 27/27 en celular
+        oscuro (dos cobros previos registrados sin automatizaciones, vinculados
+        al cliente, tablero con el rechazo y su motivo, el cobro nuevo llega
+        solo, apagar conserva lo registrado) y el MCP real por HTTP (las
+        cuatro herramientas, `list_subscriptions` y proponer → aplicar el
+        registro de cobros).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

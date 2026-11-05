@@ -1567,6 +1567,11 @@ export class TenantTransferService {
                 paidAt: this.date(c.paidAt),
                 createdAt: this.date(c.createdAt) ?? new Date(),
                 updatedAt: this.date(c.updatedAt) ?? new Date(),
+                // v0.1.371 — dónde quedó el cobro en el registro de cobros: si no
+                // se trae, la próxima revisión lo volvería a escribir (duplicado).
+                logListId: mapId(maps.list, c.logListId),
+                logRecordId: mapId(maps.record, c.logRecordId),
+                loggedAt: mapId(maps.record, c.logRecordId) !== null ? this.date(c.loggedAt) : null,
             };
         });
 

@@ -42,6 +42,9 @@ const KIND_LABEL: Record<AiProposal['kind'], string> = {
     configure_booking_page: 'Agenda de citas',
     create_ai_agent: 'Agente de IA',
     configure_payment_columns: 'Columnas de cobro',
+    configure_subscription_plan: 'Plan de suscripción',
+    configure_subscription_columns: 'Columnas de suscripción',
+    manage_subscription: 'Suscripción',
 };
 
 /**

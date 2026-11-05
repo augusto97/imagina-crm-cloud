@@ -8,6 +8,7 @@ import { CollectionHooksController, CollectionsController } from './collections.
 import { CollectionsService } from './collections.service';
 import { PublicSubscriptionsController, SubscriptionsController } from '../subscriptions/subscriptions.controller';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { SubscriptionChargeLogService } from '../subscriptions/subscription-charge-log.service';
 
 /**
  * Cobros de las empresas (v0.1.251, ADR-S31). @Global: el motor de
@@ -20,7 +21,7 @@ import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 @Module({
     imports: [AuthModule, ListsModule, FieldsModule, ActivityModule],
     controllers: [CollectionsController, CollectionHooksController, SubscriptionsController, PublicSubscriptionsController],
-    providers: [CollectionsService, SubscriptionsService, RecordsRepository],
-    exports: [CollectionsService, SubscriptionsService],
+    providers: [CollectionsService, SubscriptionsService, SubscriptionChargeLogService, RecordsRepository],
+    exports: [CollectionsService, SubscriptionsService, SubscriptionChargeLogService],
 })
 export class CollectionsModule {}
