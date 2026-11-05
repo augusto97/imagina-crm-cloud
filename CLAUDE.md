@@ -12793,6 +12793,69 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         los dos colores, «Sin color» vuelve al del diseño) y la recorrida del
         constructor (esquema, ocultar el título con el ojo, ajustes por grupo).
 
+  - [x] **El constructor de la agenda con el mismo patrón (v0.1.378, addendum
+        ADR-S94, segunda entrega del pedido del usuario: "replantéate la UI/UX
+        de estos módulos… los elementos deberían ser clickeables… y que se pueda
+        cambiar el color de todo")**. Sin migración: todo vive en
+        `booking_pages.config`.
+        (a) **Cada parte de la agenda se toca en la vista previa**: el cliente
+        de la página pública (`booking-page.ts`, `pv()`) marca logo, título,
+        descripción, lugar, franja, portada, avance, los cinco pasos
+        (servicios, quién atiende, fecha y hora, tus datos, confirmación),
+        autorización de datos, anti-robots, botón, tarjeta y página, y avisa con
+        `imb-booking-select`. Los pasos siguen funcionando (tocar un servicio,
+        un día o un horario avanza como siempre). El constructor marca lo
+        elegido (`imb-booking-mark`) y, si se elige en la lista, lleva la
+        vista previa a su paso (`imb-booking-goto`, recordado si la vista
+        previa se recarga). La página publicada no lleva marcas.
+        (b) **Tres pestañas**: **Contenido** (`BookingOutline`: Encabezado,
+        Pasos del cliente numerados, En «Tus datos» y Página, con un ojo en lo
+        que se oculta —en «Quién atiende», «se asigna solo»— y un punto rojo
+        donde falta algo para publicar), **Diseño** (plantillas y «Mis temas»
+        a la izquierda, el tema completo a la derecha) y **Ajustes** por
+        grupos (Horario y disponibilidad, Reglas, Aprobación y seguridad,
+        Correos y recordatorios, Dónde se guarda la cita, Medir conversiones,
+        Publicar y compartir). A la derecha, el panel de la parte
+        (`BookingElementInspector`) con **Mostrar**, **Contenido** y
+        **Estilo** (sólo sus colores y su sección del tema). Lo que estaba en
+        «Diseño → Mostrar u ocultar / Distribución» pasó a la parte que
+        cambia (precio y duración en Servicios, foto y cargo en Quién atiende,
+        calendario al lado o arriba, horarios en cuadrícula o lista y el
+        primer día de la semana en Fecha y hora). `bookingElements.ts` (puro,
+        con tests) dice qué es cada parte, en qué paso se ve, si se oculta y
+        dónde lo arregla lo que falta para publicar (`problemTarget`):
+        publicar con algo pendiente lleva ahí.
+        (c) **Textos de cada paso** (`settings.labels`, `bookingLabel`):
+        «Elige el servicio», «¿Con quién?», «Elige el día y la hora», «Tus
+        datos», el botón y la confirmación; vacío = el de siempre, tolerante
+        a 120 caracteres.
+        (d) **Siete colores nuevos** en `theme.elements`, sólo ofrecidos en la
+        agenda: día con horarios (fondo y número), día elegido (fondo y
+        número) y horarios (fondo, texto y borde); los títulos de cada paso
+        siguen «Títulos de sección» y el lugar y la confirmación la
+        «Descripción».
+        (e) La autorización de datos y el anti-robots no se encienden desde su
+        parte si la empresa no los tiene activos: lo dice en vez del
+        interruptor.
+        (f) **Celular**: vista previa primero; tocar una parte abre su panel a
+        pantalla completa y «Volver» regresa a donde se tocó (la vista previa
+        o la lista).
+        (g) El asistente/MCP acepta `labels` en
+        `propose_configure_booking_page` (el texto de cada paso y del botón).
+        Ayuda: guías de la agenda al día (navegación nueva), sección «Toca
+        cualquier parte para editarla» y diseño reescrito en Aprende → Agenda
+        con la ilustración nueva `agenda-click-edit`, capturas del centro de
+        aprendizaje con las pestañas nuevas, anclas `booking-outline` y
+        `booking-settings`, y novedad con carrusel. Tests: 1 de shared
+        (colores del calendario), 7 del front (`bookingElements`) y 2 de API
+        (textos y colores en la página; el asistente con los textos) — shared
+        768, front 828, specs de la agenda, el asistente, el diseño y la caché
+        pública 76/76 — + E2E navegador 24/24 en escritorio y 24/24 en celular
+        oscuro (ocultar el título con el interruptor y volver con el ojo, la
+        lista lleva la vista previa a Fecha y hora, color de los horarios en
+        la vista previa, el texto del botón, grupos de Ajustes, Diseño,
+        guardar, y la página pública con el color y el texto y sin marcas).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

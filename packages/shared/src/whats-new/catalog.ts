@@ -1815,4 +1815,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver cómo se usa', href: '/aprende/formularios/formularios-constructor' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.378-constructor-agenda-claro',
+        version: '0.1.378',
+        date: '2026-11-05',
+        kind: 'improvement',
+        title: 'La agenda de citas, igual de fácil de armar: toca lo que quieres cambiar',
+        summary:
+            'El constructor de la agenda ahora funciona como el de los formularios: tocas el título, los servicios, el calendario o el botón en la vista previa y a la derecha aparece su panel. Cada parte se puede ocultar, cambiar de texto y de color, hasta los horarios y el día elegido.',
+        media: {
+            slides: [
+                {
+                    title: 'Toca cualquier parte',
+                    text: 'En la vista previa, toca los horarios, el botón o el título: a la derecha aparece su panel con «Mostrar», «Contenido» y «Estilo».',
+                    illustration: 'agenda-click-edit',
+                },
+                {
+                    title: 'Los pasos en orden',
+                    text: 'La pestaña «Contenido» tiene el encabezado y los pasos del cliente en el orden en que los recorre. Al tocar un paso, la vista previa va a ese paso.',
+                    illustration: 'citas-hero',
+                },
+                {
+                    title: 'Lo demás, en Ajustes',
+                    text: 'El horario, las reglas, la aprobación, los correos, dónde se guarda la cita y publicar quedan en «Ajustes», cada uno en su grupo.',
+                    illustration: 'agenda-diseno',
+                },
+            ],
+        },
+        body: 'Abre la agenda en **Configurar lista → Agenda → Editar** y toca cualquier parte en la vista previa. El texto de cada paso y del botón se cambia en su **Contenido**; el color de los horarios o del día elegido, en su **Estilo**.',
+        action: { label: 'Ver cómo se usa', href: '/aprende/agenda-citas/agenda-que-es' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

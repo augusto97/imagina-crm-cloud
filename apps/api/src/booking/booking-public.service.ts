@@ -564,6 +564,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             pending_message: s.pending_message,
             theme: publicThemeView(bookingTheme(s)),
             display: s.display,
+            labels: s.labels,
             // v0.1.374 — qué avisarle al sitio al agendar (el evento sale siempre).
             conversion: publicConversion(s.conversion, s.attribution),
             redirect_delay: s.redirect_delay,

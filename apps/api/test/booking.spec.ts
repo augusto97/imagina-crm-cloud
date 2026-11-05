@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
     addDaysYmd,
+    BOOKING_LABEL_DEFAULTS,
+    bookingLabel,
     bookingConfigSchema,
     bookingServiceSchema,
     isColombianHoliday,
@@ -1401,6 +1403,31 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         const manage = await pub.managePage(refOf(r.appointment!.manage_url));
         expect(manage!.look.css).toContain('#7c3aed');
         expect(manage!.meta.booking.theme!.choice_style).toBe('cards');
+    });
+
+    it('v0.1.378 — los textos de cada paso y los colores del calendario y los horarios llegan a la página', async () => {
+        await freshPage();
+        const dto = await booking.get(tenantId, 'citas', pageId);
+        const cfg = structuredClone(dto.config);
+        cfg.settings.labels = { ...cfg.settings.labels, service: '¿Qué necesitas?', submit: '  Reservar mi turno  ', done: '' };
+        cfg.settings.theme = publicThemeSchema.parse({ elements: { slot_bg: '#fde68a', day_selected_bg: '#7c3aed', slot_border: '#b45309' } });
+        const saved = await booking.update(tenantId, 'citas', pageId, { config: cfg });
+        expect(saved.config.settings.labels.service).toBe('¿Qué necesitas?');
+        pub.forgetPage(token, tenantId);
+        const info = (await pub.cachedPage(token))!.info;
+        expect(info.meta.labels).toMatchObject({ service: '¿Qué necesitas?' });
+        // El texto con espacios se recorta al mostrarlo y el vacío usa el de siempre.
+        expect(bookingLabel(info.meta.labels, 'submit')).toBe('Reservar mi turno');
+        expect(bookingLabel(info.meta.labels, 'done')).toBe(BOOKING_LABEL_DEFAULTS.done);
+        // Los colores de esa parte van con sus reglas propias.
+        expect(info.look.css).toMatch(/\.ib-slot\{[^}]*background-color:#fde68a/);
+        expect(info.look.css).toMatch(/\.ib-day\.sel\{[^}]*background-color:#7c3aed/);
+        expect(info.look.css).toMatch(/\.ib-slot\{[^}]*border-color:#b45309/);
+        // Un texto demasiado largo no se guarda: vuelve el de siempre (la lectura es tolerante).
+        const long = structuredClone(saved.config);
+        long.settings.labels = { ...long.settings.labels, submit: 'x'.repeat(200) };
+        const back = await booking.update(tenantId, 'citas', pageId, { config: bookingConfigSchema.parse(long) });
+        expect(bookingLabel(back.config.settings.labels, 'submit')).toBe(BOOKING_LABEL_DEFAULTS.submit);
     });
 
     it('v0.1.354 — diseño: el CSS propio sólo lo agrega un admin y queda limpio; las imágenes son de la empresa; nace con el tema por defecto', async () => {

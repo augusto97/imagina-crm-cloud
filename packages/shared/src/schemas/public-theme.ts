@@ -274,6 +274,14 @@ export const PUBLIC_ELEMENT_COLOR_KEYS = [
     'progress_track',
     'band',
     'link',
+    // v0.1.378 — Los de la agenda: los días del calendario y los horarios.
+    'day_bg',
+    'day_text',
+    'day_selected_bg',
+    'day_selected_text',
+    'slot_bg',
+    'slot_text',
+    'slot_border',
 ] as const;
 export type PublicElementColorKey = (typeof PUBLIC_ELEMENT_COLOR_KEYS)[number];
 
@@ -290,6 +298,9 @@ export const PUBLIC_ELEMENT_TEXT_KEYS: ReadonlySet<PublicElementColorKey> = new 
     'placeholder',
     'choice_text',
     'link',
+    'day_text',
+    'day_selected_text',
+    'slot_text',
 ]);
 
 const elementColor = color.nullable().catch(null).default(null);

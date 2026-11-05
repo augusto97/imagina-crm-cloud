@@ -384,6 +384,41 @@ const CLIENT_JS = String.raw`
   }
   // ── v0.1.354 — La estructura del diseño (ADR-S94): la arman el tema y lo que se muestra ──
   function view() { return meta && meta.theme ? meta.theme : null; }
+  // v0.1.378 — Los textos propios de la página (vacío = el de siempre).
+  function lbl(k, d) { var l = meta && meta.labels; var v = l && typeof l[k] === 'string' ? l[k].trim() : ''; return v || d; }
+  // v0.1.378 — En la vista previa del constructor TODO se puede tocar: cada
+  // parte avisa su id («@title», «@services»…) y se ve su nombre al pasar el
+  // mouse. Con «soft», los botones de adentro siguen funcionando (elegir un
+  // servicio, un día, un horario) y sólo el resto de la parte la elige.
+  var selectedId = null;
+  function pv(node, id, label, soft) {
+    if (!PREVIEW) return node;
+    node.classList.add('ib-pv-item');
+    node.setAttribute('data-pv-id', id);
+    if (label) node.setAttribute('data-pv-label', label);
+    if (id === selectedId) node.classList.add('ib-selected');
+    node.addEventListener('click', function (e) {
+      var t = e.target;
+      if (soft && t && t.closest) {
+        var inner = t.closest('.ib-pv-item');
+        if (inner && inner !== node) return;
+        var hit = t.closest('button,a,input,select,textarea,label');
+        if (hit && hit !== node && node.contains(hit)) return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      parent.postMessage({ type: 'imb-booking-select', id: id }, location.origin);
+    }, true);
+    return node;
+  }
+  function markSelected() {
+    var list = document.querySelectorAll('[data-pv-id]');
+    for (var i = 0; i < list.length; i++) list[i].classList.toggle('ib-selected', list[i].getAttribute('data-pv-id') === selectedId);
+    var card = document.querySelector('.ib-card');
+    if (card) card.classList.toggle('ib-pv-sel', selectedId === '@card');
+    var shell = document.querySelector('.ib-shell');
+    if (shell) shell.classList.toggle('ib-pv-sel-page', selectedId === '@page');
+  }
   function applyBodyClasses() {
     var v = view(), d = (meta && meta.display) || {};
     var cls = ['ib-body'].concat(v && v.classes ? v.classes : []);
@@ -404,8 +439,8 @@ const CLIENT_JS = String.raw`
   function buildShell() {
     var v = view();
     var card = el('div', { cls: 'ib-card' });
-    if (v && v.cover) card.appendChild(el('div', { cls: 'ib-cover', role: 'presentation' }));
-    else if (!v || v.band) card.appendChild(el('div', { cls: 'ib-band' }));
+    if (v && v.cover) card.appendChild(pv(el('div', { cls: 'ib-cover', role: 'presentation' }), '@cover', 'Portada'));
+    else if (!v || v.band) card.appendChild(pv(el('div', { cls: 'ib-band' }), '@band', 'Franja de color'));
     root = el('div', { cls: 'ib-inner bk-root', id: 'root', 'data-testid': 'booking-root' });
     card.appendChild(root);
     var kids = [];
@@ -421,6 +456,7 @@ const CLIENT_JS = String.raw`
     app.textContent = '';
     app.appendChild(el('div', { cls: 'ib-shell' }, kids));
     applyBodyClasses();
+    if (PREVIEW) markSelected();
   }
   // Los campos de los datos del cliente toman el estilo del tema.
   function themeInputs() {
@@ -527,16 +563,16 @@ const CLIENT_JS = String.raw`
 
   function header() {
     var box = el('header', { cls: 'ib-header' });
-    if (meta.logo_url) box.appendChild(el('div', { cls: 'ib-logo' }, [el('img', { src: meta.logo_url, alt: meta.company })]));
-    else if (meta.company) box.appendChild(el('div', { cls: 'ib-logo', text: meta.company }));
+    if (meta.logo_url) box.appendChild(pv(el('div', { cls: 'ib-logo' }, [el('img', { src: meta.logo_url, alt: meta.company })]), '@logo', 'Logo'));
+    else if (meta.company) box.appendChild(pv(el('div', { cls: 'ib-logo', text: meta.company }), '@logo', 'Logo'));
     // En la página de una cita, «Tu cita» se ve aunque el diseño oculte el título.
-    box.appendChild(el('h1', { cls: MODE === 'manage' ? 'ib-title bk-manage-title' : 'ib-title', text: MODE === 'manage' ? 'Tu cita' : meta.title }));
+    box.appendChild(pv(el('h1', { cls: MODE === 'manage' ? 'ib-title bk-manage-title' : 'ib-title', text: MODE === 'manage' ? 'Tu cita' : meta.title }), '@title', 'Título'));
     if (MODE !== 'manage' && meta.description) {
       var d = el('div', { cls: 'ib-desc' });
       meta.description.split(/\n{2,}/).forEach(function (p) { if (p.trim()) d.appendChild(el('p', { text: p })); });
-      box.appendChild(d);
-    }
-    if (meta.location && MODE !== 'manage') box.appendChild(el('p', { cls: 'ib-loc', text: '\u{1F4CD} ' + meta.location }));
+      box.appendChild(pv(d, '@description', 'Descripción'));
+    } else if (PREVIEW) box.appendChild(pv(el('div', { cls: 'ib-desc ib-pv-placeholder', text: 'Agregar una descripción' }), '@description', 'Descripción'));
+    if (meta.location && MODE !== 'manage') box.appendChild(pv(el('p', { cls: 'ib-loc', text: '\u{1F4CD} ' + meta.location }), '@location', 'Dónde es'));
     return box;
   }
 
@@ -544,6 +580,7 @@ const CLIENT_JS = String.raw`
     var s = steps(), i = s.indexOf(st.step === 'code' ? 'details' : st.step);
     var prog = (view() && view().progress) || 'steps';
     var bar = el('div', { cls: 'steps' });
+    pv(bar, '@progress', 'Avance', true);
     var canBack = i > 0 || MODE === 'manage' || st.step === 'code';
     bar.appendChild(canBack ? el('button', { type: 'button', cls: 'back', text: '\u2190 Volver', on: { click: back }, 'data-testid': 'booking-back' }) : el('span'));
     if (i >= 0 && prog !== 'none') bar.appendChild(el('span', { 'data-testid': 'booking-step', text: 'Paso ' + (i + 1) + ' de ' + s.length }));
@@ -582,7 +619,9 @@ const CLIENT_JS = String.raw`
   }
 
   function renderService() {
-    root.appendChild(el('h2', { cls: 'ib-step-title', text: 'Elige el servicio' }));
+    var sec = pv(el('section', { cls: 'bk-step' }), '@services', 'Servicios', true);
+    root.appendChild(sec);
+    sec.appendChild(el('h2', { cls: 'ib-step-title', text: lbl('service', 'Elige el servicio') }));
     var list = el('div', { cls: 'choices' });
     (meta.services || []).forEach(function (s) {
       var info = durationsOf(s).map(durLabel).join(' · ');
@@ -597,12 +636,14 @@ const CLIENT_JS = String.raw`
       } } }, [left, s.price_label ? el('span', { cls: 'r', text: s.price_label }) : null]));
     });
     if (!(meta.services || []).length) list.appendChild(el('div', { cls: 'empty', text: 'Todavía no hay servicios para agendar.' }));
-    root.appendChild(list);
+    sec.appendChild(list);
   }
 
   function renderStaff() {
     root.appendChild(summaryBox(false));
-    root.appendChild(el('h2', { cls: 'ib-step-title', text: '¿Con quién?' }));
+    var sec = pv(el('section', { cls: 'bk-step' }), '@staff', 'Quién atiende', true);
+    root.appendChild(sec);
+    sec.appendChild(el('h2', { cls: 'ib-step-title', text: lbl('staff', '¿Con quién?') }));
     var list = el('div', { cls: 'choices' });
     list.appendChild(el('button', { type: 'button', cls: 'opt ib-choice', 'data-staff': 'any', on: { click: function () { st.staff = 'any'; st.day = null; go('date'); } } },
       [el('div', { cls: 'who' }, [el('span', { cls: 'avatar any', 'aria-hidden': 'true', text: '\u2605' }), el('div', null, [el('div', { cls: 't', text: 'El primero disponible' }), el('div', { cls: 's', text: 'Más horarios para elegir' })])])]));
@@ -615,7 +656,7 @@ const CLIENT_JS = String.raw`
       list.appendChild(el('button', { type: 'button', cls: 'opt ib-choice' + (now ? ' cur' : ''), 'data-staff': s.id, on: { click: function () { st.staff = s.id; st.day = null; go('date'); } } },
         [el('div', { cls: 'who' }, [avatar(s), txt])]));
     });
-    root.appendChild(list);
+    sec.appendChild(list);
   }
 
   function tzControl() {
@@ -644,10 +685,12 @@ const CLIENT_JS = String.raw`
 
   function renderDate() {
     root.appendChild(summaryBox(false));
-    root.appendChild(el('h2', { cls: 'ib-step-title', text: 'Elige el día y la hora' }));
+    var sec = pv(el('section', { cls: 'bk-step' }), '@calendar', 'Fecha y hora', true);
+    root.appendChild(sec);
+    sec.appendChild(el('h2', { cls: 'ib-step-title', text: lbl('date', 'Elige el día y la hora') }));
     var chips = durationChips();
-    if (chips) root.appendChild(chips);
-    root.appendChild(tzControl());
+    if (chips) sec.appendChild(chips);
+    sec.appendChild(tzControl());
     var tz = tzShown();
     var today = todayIn(tz);
     var winFirst = meta.first_day && meta.first_day > today ? meta.first_day : today;
@@ -669,7 +712,7 @@ const CLIENT_JS = String.raw`
     var calBox = el('div', { cls: 'bk-cal' });
     calBox.appendChild(head);
     pick.appendChild(calBox);
-    root.appendChild(pick);
+    sec.appendChild(pick);
     var grid = el('div', { cls: 'grid', role: 'grid', 'aria-label': title, 'data-testid': 'booking-calendar' });
     // v0.1.354 — la semana empieza el lunes (o el domingo, si la agenda lo elige).
     var sunday = !!(meta.display && meta.display.week_start === 'sunday');
@@ -822,7 +865,9 @@ const CLIENT_JS = String.raw`
 
   function renderDetails() {
     root.appendChild(summaryBox(true));
-    root.appendChild(el('h2', { cls: 'ib-step-title', text: 'Tus datos' }));
+    var sec = pv(el('section', { cls: 'bk-step' }), '@details', 'Tus datos', true);
+    root.appendChild(sec);
+    sec.appendChild(el('h2', { cls: 'ib-step-title', text: lbl('details', 'Tus datos') }));
     var form = el('form', { novalidate: true, cls: 'bk-form', 'data-testid': 'booking-form' });
     var name = el('input', { type: 'text', id: 'q_name', autocomplete: 'name', value: st.values.__name || '' });
     name.addEventListener('input', function () { st.values.__name = name.value; });
@@ -849,19 +894,19 @@ const CLIENT_JS = String.raw`
       var cbox = el('div', { cls: 'ib-consent' + (st.errors.__consent ? ' ib-invalid' : '') }, [el('label', { cls: 'chk' }, [consentCb, el('span', { text: dc.label })]), toggle, full]);
       if (dc.policy_url && /^https:\/\//i.test(dc.policy_url)) cbox.appendChild(el('div', { cls: 'small' }, [el('a', { href: dc.policy_url, target: '_blank', rel: 'noopener noreferrer', text: 'Política de tratamiento de datos' })]));
       if (st.errors.__consent) cbox.appendChild(el('div', { cls: 'ib-error', role: 'alert', text: st.errors.__consent }));
-      form.appendChild(cbox);
+      form.appendChild(pv(cbox, '@consent', 'Autorización de datos', true));
     }
     var hp = el('div', { cls: 'ib-hp', 'aria-hidden': 'true' }, [el('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off', id: 'hp' })]);
     form.appendChild(hp);
     var captchaBox = null;
     if (meta.captcha && !PREVIEW) { captchaBox = el('div', { cls: 'captcha' }); form.appendChild(captchaBox); }
-    if (meta.captcha && PREVIEW) form.appendChild(el('div', { cls: 'pv', text: 'Aquí va la verificación anti-robots.' }));
+    if (meta.captcha && PREVIEW) form.appendChild(pv(el('div', { cls: 'pv', text: 'Aquí va la verificación anti-robots.' }), '@captcha', 'Verificación anti-robots'));
     if (meta.verify_email) form.appendChild(el('p', { cls: 'muted small', 'data-testid': 'booking-verify-note', text: 'Para terminar, te enviaremos un código a tu correo.' }));
     if (st.alert) form.appendChild(el('div', { cls: 'ib-alert', role: 'alert', text: st.alert, 'data-testid': 'booking-alert' }));
-    var submit = el('button', { type: 'submit', cls: 'ib-btn ib-btn-primary', text: st.busy ? (meta.verify_email && !hasProof() ? 'Enviando el código…' : 'Agendando…') : 'Confirmar cita', disabled: st.busy, 'data-testid': 'booking-submit' });
-    form.appendChild(el('div', { cls: 'actions' }, [submit]));
+    var submit = el('button', { type: 'submit', cls: 'ib-btn ib-btn-primary', text: st.busy ? (meta.verify_email && !hasProof() ? 'Enviando el código…' : 'Agendando…') : lbl('submit', 'Confirmar cita'), disabled: st.busy, 'data-testid': 'booking-submit' });
+    form.appendChild(el('div', { cls: 'actions' }, [pv(submit, '@submit', 'Botón')]));
     form.addEventListener('submit', function (e) { e.preventDefault(); submitBooking(); });
-    root.appendChild(form);
+    sec.appendChild(form);
     if (captchaBox) mountCaptcha(captchaBox);
   }
 
@@ -1016,7 +1061,8 @@ const CLIENT_JS = String.raw`
     var waiting = a.status === 'pending';
     var box = el('div', { cls: 'done', 'data-testid': 'booking-done', 'data-status': a.status || '' });
     box.appendChild(el('div', { cls: waiting ? 'tick wait' : 'tick', text: waiting ? '\u23F3' : '\u2713', 'aria-hidden': 'true' }));
-    box.appendChild(el('h2', { cls: 'ib-step-title', text: a.preview ? 'Vista previa: así se confirma la cita' : waiting ? 'Recibimos tu solicitud' : '¡Tu cita quedó agendada!' }));
+    pv(box, '@done', 'Confirmación', true);
+    box.appendChild(el('h2', { cls: 'ib-step-title', text: waiting ? 'Recibimos tu solicitud' : lbl('done', '¡Tu cita quedó agendada!') }));
     if (waiting) {
       box.appendChild(el('span', { cls: 'badge-pending', 'data-testid': 'booking-pending', text: 'Por confirmar' }));
       if (meta.pending_message) box.appendChild(el('p', { cls: 'muted', text: meta.pending_message }));
@@ -1160,6 +1206,15 @@ const CLIENT_JS = String.raw`
     else if (st.step === 'code') renderCode();
   }
 
+  // v0.1.378 — El constructor lleva la vista previa al paso de lo que se toca.
+  function gotoStep(step) {
+    var svcs = meta.services || [];
+    if (step !== 'service' && !st.service && svcs.length) { st.service = svcs[0].id; st.duration = svcs[0].duration_min; st.staff = 'any'; }
+    st.alert = '';
+    if (step === 'done') { st.done = { preview: true }; st.step = 'done'; render(); return; }
+    if (steps().indexOf(step) < 0) return;
+    st.done = null; st.step = step; render();
+  }
   function start() {
     st.cache = {};
     if (MODE === 'manage') {
@@ -1196,9 +1251,21 @@ const CLIENT_JS = String.raw`
         // que vería el cliente.
         if (!hadMeta || !meta.services.some(function (s) { return s.id === st.service; }) || steps().join(',') !== prevSteps) { start(); return; }
         st.cache = {}; render();
+      } else if (e.data.type === 'imb-booking-mark') {
+        selectedId = typeof e.data.selected === 'string' ? e.data.selected : null;
+        markSelected();
+      } else if (e.data.type === 'imb-booking-goto' && meta) {
+        gotoStep(String(e.data.step || ''));
       } else if (e.data.type === 'imb-booking-slots' && pvWait[e.data.id]) {
         var r = pvWait[e.data.id]; delete pvWait[e.data.id]; r({ slots: e.data.slots || [] });
       }
+    });
+    // Tocar la tarjeta (fuera de cualquier parte) o el fondo también se edita.
+    document.addEventListener('click', function (e) {
+      if (e.defaultPrevented) return;
+      var t = e.target;
+      if (!t || !t.closest || t.closest('input,select,textarea,button,a,label')) return;
+      parent.postMessage({ type: 'imb-booking-select', id: t.closest('.ib-card') ? '@card' : '@page' }, location.origin);
     });
     parent.postMessage({ type: 'imb-booking-ready' }, location.origin);
     render();

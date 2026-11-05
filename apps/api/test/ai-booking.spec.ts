@@ -251,14 +251,21 @@ describe('Asistente/MCP: agenda de citas', () => {
         const proposed = json(
             await call(
                 'propose_configure_booking_page',
-                spec({ name: 'Agenda diseñada', staff: [{ user_id: adminId, schedule: weekdays }], design: { template: 'cards', accent: '#7c3aed', show_prices: false, calendar_layout: 'stacked' } }),
+                spec({
+                    name: 'Agenda diseñada',
+                    staff: [{ user_id: adminId, schedule: weekdays }],
+                    design: { template: 'cards', accent: '#7c3aed', show_prices: false, calendar_layout: 'stacked' },
+                    labels: { service: '¿Qué necesitas?', submit: ' Reservar mi turno ' },
+                }),
             ),
         );
         expect(proposed.ok).toBe(true);
         await apply(proposed.proposal_id);
         const pages = await withTenant(pg.db, tenantId, (tx) => tx.select().from(bookingPages));
         const page = pages.find((x) => x.name === 'Agenda diseñada')!;
-        const settings = (page.config as { settings: { theme: { preset: string; colors: { accent: string } }; display: Record<string, unknown> } }).settings;
+        const settings = (page.config as { settings: { theme: { preset: string; colors: { accent: string } }; display: Record<string, unknown>; labels: Record<string, string> } }).settings;
+        // v0.1.378 — los textos de cada paso (los que no se piden quedan vacíos = el de siempre).
+        expect(settings.labels).toMatchObject({ service: '¿Qué necesitas?', submit: 'Reservar mi turno', date: '' });
         expect(settings.theme.preset).toBe('cards');
         expect(settings.theme.colors.accent).toBe('#7c3aed');
         expect(settings.display).toMatchObject({ show_prices: false, calendar_layout: 'stacked' });
