@@ -12076,7 +12076,10 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         a las 9 p. m. en Bogotá ya no queda con la fecha de mañana); mapearla a
         una fecha que dispara una renovación la dispara sola. (f) Asistente/MCP:
         `get_list_schema` muestra `collections_fields` y las salidas de la
-        acción (`{{pago.link}}`). Ayuda: guía `payment-links`, Aprende →
+        acción (`{{pago.link}}`), y la herramienta nueva
+        **`propose_configure_payment_columns`** (`manage_fields`) elige las
+        columnas por slug, `"create"` o null, con la misma validación (pedido
+        del usuario: "actualiza esos campos por el MCP"). Ayuda: guía `payment-links`, Aprende →
         Cobros y novedad al día. Tests: 2 de integración en `collections.spec`
         (elegir/validar/opciones/fecha en la zona; `{{respuestas.pago.url}}`,
         log y aviso del botón), 4 de shared y 2 del front + E2E navegador 26/26

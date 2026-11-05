@@ -2509,6 +2509,8 @@ automática no tenía el panel «Cobros» y la acción no dejaba el link en
   «Actualizar un campo» se nombra en el log.
 - El estado de un botón (`press-status`) trae `payment_links` de la corrida y el
   aviso muestra «Link de pago listo» con «Copiar link».
+- Asistente/MCP: `propose_configure_payment_columns` (`manage_fields`) elige las
+  columnas por slug / `"create"` / null y aplica con el mismo `setFields`.
 
 
 ### ADR-S32 — Sin índices físicos por campo (v0.1.257)

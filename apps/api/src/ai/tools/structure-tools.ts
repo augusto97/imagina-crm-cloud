@@ -2,6 +2,9 @@ import { Injectable, Optional } from '@nestjs/common';
 import {
     AUTOMATION_ACTIONS,
     COLLECTION_FIELD_ROLES,
+    COLLECTION_FIELD_LABELS,
+    COLLECTION_FIELD_TYPES,
+    type SetCollectionFieldsInput,
     readCollectionFields,
     FORMULA_RESULT_TYPES,
     formulaToDisplay,
@@ -142,6 +145,7 @@ import { RecordTemplatesService } from '../../record-templates/record-templates.
 import { templateForModel } from './record-template-spec';
 import { DataConsentService } from '../../data-consent/data-consent.service';
 import { TeamsService } from '../../teams/teams.service';
+import { CollectionsService } from '../../collections/collections.service';
 import { ProposalsStore, type AiApplyOutcome, type AiProposalApplier, type StoredProposal } from '../proposals.store';
 import {
     buildCrmCustomConfig,
@@ -650,6 +654,7 @@ type Payload =
     | { kind: 'create_dashboard'; input: CreateDashboardInput }
     | { kind: 'create_automation'; listId: number; listSlug: string; input: CreateAutomationInput }
     | { kind: 'update_list'; listId: number; listSlug: string; patch: UpdateListInput }
+    | { kind: 'configure_payment_columns'; listId: number; listSlug: string; input: SetCollectionFieldsInput }
     // v0.1.195 — configuración de la lista: se mezcla en `settings` AL
     // APLICAR (se relee la lista), así una propuesta vieja no pisa lo
     // que otra persona cambió entre proponer y aplicar.
@@ -719,6 +724,7 @@ const CAPABILITY_BY_KIND: Record<StructureKind, Capability> = {
     create_document_template: 'manage_lists',
     update_document_template: 'manage_lists',
     delete_document_template: 'manage_lists',
+    configure_payment_columns: 'manage_fields',
 };
 
 /** Claves de `settings` que cada propuesta de configuración PISA; el resto se conserva. */
@@ -763,6 +769,8 @@ export class StructureTools implements AiProposalApplier {
         @Optional() private readonly teams?: TeamsService,
         // D5 — páginas de agenda (las lee get_list_schema; el disparador booking_event).
         @Optional() private readonly booking?: BookingService,
+        // v0.1.365 — columnas de cobro (propose_configure_payment_columns).
+        @Optional() private readonly collections?: CollectionsService,
     ) {}
 
     /** E6 — para sumarle a `get_list_schema` lo de otros módulos (agentes de IA). */
@@ -888,6 +896,27 @@ export class StructureTools implements AiProposalApplier {
                 folder: z.string().max(190).nullable().optional().describe('Nombre de una carpeta EXISTENTE del menú; null = sacarla de su carpeta'),
             }),
             run: (ctx, input) => this.proposeUpdateList(ctx, input as UpdateListSpec),
+        });
+        // v0.1.365 — dónde guarda la lista cada dato de los cobros (Mercado Pago / Wompi).
+        const paymentColumn = z
+            .union([fieldSlugSchema, z.literal('create')])
+            .nullable()
+            .optional();
+        registry.register({
+            name: 'propose_configure_payment_columns',
+            label: 'Armando las columnas de cobro',
+            description:
+                'Propone en qué columnas de la lista se guarda cada dato de los links de pago (Mercado Pago o Wompi): link, status (estado del pago), paid_at (fecha de pago), paid_amount (monto pagado) y method (medio de pago). Por cada uno: el slug de una columna que ya existe (link: url o texto; status: selección o texto; paid_at: fecha o fecha y hora; paid_amount: moneda o número; method: texto o selección), "create" para crear una columna nueva, o null para no guardarlo; lo que no se manda queda como está. Vale para «Cobrar» desde la ficha, los botones y las automatizaciones. Una columna de fecha que dispara otra automatización (una renovación) es válida: se dispara sola cuando llega el pago. Para el estado NO uses un campo de estado propio de la lista (se le agregarían las opciones del pago): crea uno ("create"). La configuración actual está en `collections_fields` de get_list_schema.',
+            capability: 'manage_fields',
+            input: z.object({
+                list: z.string().max(63),
+                link: paymentColumn,
+                status: paymentColumn,
+                paid_at: paymentColumn,
+                paid_amount: paymentColumn,
+                method: paymentColumn,
+            }),
+            run: (ctx, input) => this.proposeConfigurePaymentColumns(ctx, input as ConfigurePaymentColumnsSpec),
         });
 
         // ── v0.1.195 — configuración de la lista (portal + ficha) ──────────
@@ -2224,6 +2253,60 @@ export class StructureTools implements AiProposalApplier {
         });
     }
 
+    // ── v0.1.365 — columnas de cobro ───────────────────────────────────
+
+    private async proposeConfigurePaymentColumns(ctx: AiToolContext, input: ConfigurePaymentColumnsSpec): Promise<AiToolResult> {
+        if (!this.collections) throw new AiToolError('Los cobros no están disponibles en este servidor.');
+        const list = await this.resolveList(ctx, input.list);
+        const fieldRows = await this.fields.listByListId(ctx.tenantId, list.id);
+        const bySlug = new Map(fieldRows.map((f) => [f.slug, f]));
+        const byId = new Map(fieldRows.map((f) => [f.id, f]));
+        const current = readCollectionFields(list.settings);
+        const out: SetCollectionFieldsInput = {};
+        const changes: Array<{ label: string; from: string | null; to: string }> = [];
+        const used = new Map<number, string>();
+        for (const role of COLLECTION_FIELD_ROLES) {
+            const choice = input[role];
+            if (choice === undefined) continue;
+            const before = current?.[role] ? (byId.get(current[role]!)?.label ?? null) : null;
+            if (choice === null) {
+                out[role] = null;
+                changes.push({ label: COLLECTION_FIELD_LABELS[role], from: before, to: '(no se guarda)' });
+                continue;
+            }
+            if (choice === 'create') {
+                out[role] = 'create';
+                changes.push({ label: COLLECTION_FIELD_LABELS[role], from: before, to: before ? before : `columna nueva «${COLLECTION_FIELD_LABELS[role]}»` });
+                continue;
+            }
+            const f = bySlug.get(choice);
+            if (!f) throw new AiToolError(`«${choice}» no es un campo de «${list.name}». Campos: ${fieldRows.map((x) => x.slug).join(', ')}.`);
+            if (!COLLECTION_FIELD_TYPES[role].includes(f.type)) {
+                throw new AiToolError(
+                    `«${COLLECTION_FIELD_LABELS[role]}» no se puede guardar en «${f.label}» (${f.type}); sirve un campo de tipo ${COLLECTION_FIELD_TYPES[role].join(' o ')}, o "create".`,
+                );
+            }
+            const other = used.get(f.id);
+            if (other) throw new AiToolError(`«${f.label}» no puede guardar a la vez «${other}» y «${COLLECTION_FIELD_LABELS[role]}».`);
+            used.set(f.id, COLLECTION_FIELD_LABELS[role]);
+            out[role] = f.id;
+            changes.push({ label: COLLECTION_FIELD_LABELS[role], from: before, to: f.label });
+        }
+        if (changes.length === 0) throw new AiToolError('Indica al menos un dato: link, status, paid_at, paid_amount o method.');
+        const warnings: string[] = [];
+        const statusField = typeof out.status === 'number' ? byId.get(out.status) : undefined;
+        if (statusField?.type === 'select') warnings.push(`«${statusField.label}» recibe las opciones del pago que le falten (Pendiente, Pagado, Rechazado…).`);
+        return this.saveProposal(ctx, {
+            kind: 'configure_payment_columns',
+            title: `Columnas de cobro de «${list.name}»`,
+            summary: `Cada link de pago nuevo, y cada pago que confirme el proveedor, se escribe en estas columnas de «${list.name}».${warnings.length ? ' ' + warnings.join(' ') : ''}`,
+            destructive: false,
+            listSlug: list.slug,
+            preview: { lists: [], fields: [], widgets: [], automation: null, changes },
+            payload: { kind: 'configure_payment_columns', listId: list.id, listSlug: list.slug, input: out },
+        });
+    }
+
     // ── v0.1.195 — portal del cliente y ficha del registro ────────────────
 
     private async proposeConfigurePortal(ctx: AiToolContext, input: ConfigurePortalSpec): Promise<AiToolResult> {
@@ -2938,6 +3021,21 @@ export class StructureTools implements AiProposalApplier {
             case 'update_list': {
                 const list = await this.lists.update(ctx.tenantId, String(payload.listId), payload.patch);
                 return { message: `Lista «${list.name}» actualizada.`, links: [{ label: 'Ver la lista', href: `/lists/${list.slug}/records` }], warnings: [] };
+            }
+            case 'configure_payment_columns': {
+                if (!this.collections) throw new Error('Los cobros no están disponibles en este servidor.');
+                const mapping = await this.collections.setFields(
+                    ctx.tenantId,
+                    { userId: ctx.userId, role: ctx.role, teamIds: ctx.teamIds },
+                    String(payload.listId),
+                    payload.input,
+                );
+                const n = COLLECTION_FIELD_ROLES.filter((r) => mapping[r] !== null).length;
+                return {
+                    message: `Columnas de cobro guardadas (${n} de ${COLLECTION_FIELD_ROLES.length} datos se escriben en la lista).`,
+                    links: [{ label: 'Ver la lista', href: `/lists/${payload.listSlug}/records` }],
+                    warnings: [],
+                };
             }
             case 'configure_portal': {
                 const values: Record<string, unknown> = {};
@@ -4370,6 +4468,15 @@ interface UpdateFieldSpec {
     formula?: NonNullable<z.infer<typeof fieldSpec>['formula']>;
     config?: Record<string, unknown>;
     button?: z.infer<typeof buttonSpec>;
+}
+
+interface ConfigurePaymentColumnsSpec {
+    list: string;
+    link?: string | null;
+    status?: string | null;
+    paid_at?: string | null;
+    paid_amount?: string | null;
+    method?: string | null;
 }
 
 interface UpdateListSpec {

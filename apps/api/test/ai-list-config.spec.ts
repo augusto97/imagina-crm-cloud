@@ -13,6 +13,7 @@ import { DataTools } from '../src/ai/tools/data-tools';
 import { AiToolRegistry, type AiToolContext } from '../src/ai/tools/registry';
 import { StructureTools } from '../src/ai/tools/structure-tools';
 import { AuditService } from '../src/audit/audit.service';
+import { CollectionsService } from '../src/collections/collections.service';
 import { CommentsRepository } from '../src/comments/comments.repository';
 import { CommentsService } from '../src/comments/comments.service';
 import { PublicListsService } from '../src/public-lists/public-lists.service';
@@ -110,7 +111,15 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         const comments = new CommentsService(tenantDb, new CommentsRepository(), lists, records, rt);
         publicLists = new PublicListsService(pg.db, tenantDb, lists, null as never);
         connectors = new ConnectorsService(tenantDb, pg.db, loadEnv({ SECRETS_KEY: 'clave-de-test-32-bytes-o-lo-que-sea' }), memoryOAuthStore(), new AuditService(tenantDb), memoryIntegrationApps());
-        const structure = new StructureTools(tenantDb, lists, fields, views, automations, dashboards, blueprint, store, connectors, comments, publicLists);
+        // v0.1.365 — columnas de cobro (propose_configure_payment_columns).
+        const collections = new CollectionsService(
+            tenantDb, pg.db, env, connectors, lists, new RecordsRepository(),
+            new ActivityService(tenantDb, new ActivityRepository(), lists), rt, new AutomationDispatcher(), new AuditService(tenantDb), fields,
+        );
+        const structure = new StructureTools(
+            tenantDb, lists, fields, views, automations, dashboards, blueprint, store, connectors, comments, publicLists,
+            undefined, undefined, undefined, undefined, undefined, undefined, undefined, collections,
+        );
         const data = new DataTools(lists, fields, records, new AggregateService(tenantDb, lists, fields), store);
         const registry = new AiToolRegistry();
         structure.registerInto(registry);
@@ -912,6 +921,34 @@ describe('Asistente/MCP: portal, ficha y brechas de la auditoría (v0.1.195)', (
         const off = json(await call('propose_update_list', { list: 'facturas', scan_field: null }));
         await apply(off.proposal_id);
         expect((await lists.get(tenantId, 'facturas')).settings).not.toHaveProperty('scan_field_id');
+    });
+
+    it('v0.1.365 — propose_configure_payment_columns elige dónde quedan los cobros (columna existente, nueva o ninguna) y valida', async () => {
+        await fields.create(tenantId, 'facturas', { label: 'Link de pago', type: 'url' });
+        await fields.create(tenantId, 'facturas', { label: 'Pagado el', type: 'date' });
+        const cols = async (): Promise<Record<string, string | null> | null> =>
+            json(await call('get_list_schema', { list: 'facturas' })).collections_fields as Record<string, string | null> | null;
+        expect(await cols()).toBeNull();
+        // Tipo que no sirve, campo inexistente y una columna para dos datos: errores corregibles.
+        const wrongType = await call('propose_configure_payment_columns', { list: 'facturas', link: 'monto' });
+        expect(isError(wrongType)).toBe(true);
+        expect(json(wrongType).error).toContain('url o text');
+        expect(isError(await call('propose_configure_payment_columns', { list: 'facturas', link: 'no_existe' }))).toBe(true);
+        expect(isError(await call('propose_configure_payment_columns', { list: 'facturas', link: 'numero', method: 'numero' }))).toBe(true);
+        expect(isError(await call('propose_configure_payment_columns', { list: 'facturas' }))).toBe(true);
+
+        const p = json(await call('propose_configure_payment_columns', { list: 'facturas', link: 'link_de_pago', status: 'create', paid_at: 'pagado_el', method: null }));
+        expect((p.proposal as { kind: string; preview: { changes: Array<{ label: string; to: string }> } }).kind).toBe('configure_payment_columns');
+        expect((p.proposal as { preview: { changes: Array<{ label: string; to: string }> } }).preview.changes.map((c) => `${c.label}: ${c.to}`)).toEqual([
+            'Link de pago: Link de pago',
+            'Estado del pago: columna nueva «Estado del pago»',
+            'Fecha de pago: Pagado el',
+            'Medio de pago: (no se guarda)',
+        ]);
+        await apply(p.proposal_id);
+        expect(await cols()).toEqual({ link: 'link_de_pago', status: 'estado_del_pago', paid_at: 'pagado_el', paid_amount: null, method: null });
+        const estado = (await fields.list(tenantId, 'facturas')).find((f) => f.slug === 'estado_del_pago')!;
+        expect(estado.type).toBe('select');
     });
 
     it('propose_delete_list es destructiva, describe lo que se lleva y al aplicar la lista desaparece', async () => {

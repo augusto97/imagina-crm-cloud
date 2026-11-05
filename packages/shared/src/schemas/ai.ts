@@ -223,6 +223,8 @@ export const AI_PROPOSAL_KINDS = [
     'configure_booking_page',
     // E6 — crear un agente de IA (y, si se pide, cuándo trabaja).
     'create_ai_agent',
+    // v0.1.365 — en qué columnas de la lista se guardan los cobros.
+    'configure_payment_columns',
 ] as const;
 export const aiProposalKindSchema = z.enum(AI_PROPOSAL_KINDS);
 export type AiProposalKind = z.infer<typeof aiProposalKindSchema>;
