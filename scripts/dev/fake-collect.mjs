@@ -6,6 +6,7 @@
 // suscripciones con su página de aprobación, acciones, precio, cobros y ventas.
 // v0.1.376 — Búsqueda de suscripciones y de planes de Mercado Pago (importar):
 // se siembran con `/__set` (`pre`, `mpPlans`, `invoices`, `payments`).
+// v0.1.380 — `/__mp-invoices` hace fallar la búsqueda de cuotas (respuesta 400).
 import http from 'node:http';
 const state = { prefs: [], payments: {}, links: {}, txs: {}, pre: {}, mpPlans: {}, invoices: {}, calls: [], ppOrders: {}, ppCaptures: {}, ppWebhooks: [], ppDecline: false, ppProducts: {}, ppPlans: {}, ppSubs: {}, ppTx: {}, ppSales: {}, ppReq: {} };
 let n = 0;
@@ -257,7 +258,10 @@ http.createServer((req, res) => {
             const all = Object.values(state.mpPlans);
             return json(res, 200, { paging: { offset: 0, limit: 100, total: all.length }, results: all });
         }
+        // v0.1.380 — `POST /__mp-invoices {fail:true}`: la búsqueda de cuotas responde 400 (como en la cuenta real).
+        if (p === '/__mp-invoices' && req.method === 'POST') { state.mpInvoicesFail = Boolean(body?.fail); return json(res, 200, {}); }
         if (p === '/mp/authorized_payments/search') {
+            if (state.mpInvoicesFail) return json(res, 400, { message: 'invalid parameters', error: 'bad_request', status: 400 });
             const pre = u.searchParams.get('preapproval_id');
             return json(res, 200, { results: Object.values(state.invoices).filter((x) => x.preapproval_id === pre) });
         }

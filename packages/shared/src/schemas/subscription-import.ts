@@ -46,6 +46,12 @@ export const subscriptionImportSchema = z
         create_missing: z.boolean().default(true),
         /** Traer también las canceladas (el historial). Por defecto, sólo las vivas. */
         include_cancelled: z.boolean().default(false),
+        /**
+         * v0.1.380 — Traer también las que quedaron «Por autorizar»: alguien
+         * empezó a suscribirse y nunca puso la tarjeta. Por defecto no (eran
+         * filas de ruido). Si después la autoriza, llega sola.
+         */
+        include_pending: z.boolean().default(false),
         /** `create`: el nombre de la lista nueva (vacío = «Suscriptores · Mercado Pago»). */
         list_name: z.string().trim().max(120).nullish(),
         /** Guardar cada cobro como un registro de «Cobros de suscripciones». */
@@ -111,6 +117,8 @@ export const subscriptionImportPreviewSchema = z.object({
     to_import: z.number(),
     /** Canceladas que se dejan afuera (sin «Traer también las canceladas»). */
     skipped_cancelled: z.number(),
+    /** v0.1.380 — «Por autorizar» que se dejan afuera (nunca se completaron). */
+    skipped_pending: z.number().default(0),
     /** Sin correo del pagador (Mercado Pago no siempre lo da): se busca en su último pago. */
     without_email: z.number(),
     plans: z.array(subscriptionImportPlanSchema),
@@ -139,6 +147,8 @@ export const subscriptionImportConfigSchema = z.object({
     email_field_id: idSchema.nullable(),
     create_missing: z.boolean(),
     auto: z.boolean(),
+    /** v0.1.380 — Traer solas también las nuevas «Por autorizar» (por defecto, recién cuando las autorizan). */
+    include_pending: z.boolean().default(false),
     /** Desde cuándo: lo cancelado antes de esto no se trae solo. */
     since: z.string(),
     last_scan_at: z.string().nullable(),
@@ -209,6 +219,28 @@ export const IDLE_SUBSCRIPTION_IMPORT: Omit<SubscriptionImportStatus, 'config' |
 
 export const DEFAULT_IMPORT_LIST_NAME = 'Suscriptores · Mercado Pago';
 
+/**
+ * v0.1.380 — El nombre provisorio que la importación le ponía al suscriptor
+ * cuando Mercado Pago no daba su nombre ni su correo («Cliente de Mercado
+ * Pago #123», «Suscripción ab12…») o su correo: cuando se conoce el nombre,
+ * se reemplaza. Lo que la persona escribió a mano no se toca.
+ */
+export function isProvisionalSubscriberTitle(title: unknown, email?: string | null): boolean {
+    if (typeof title !== 'string') return true;
+    const t = title.trim();
+    if (t === '') return true;
+    if (/^Cliente de Mercado Pago #\d+$/.test(t)) return true;
+    if (/^Suscripción [A-Za-z0-9_-]+$/.test(t)) return true;
+    if (t === 'Suscripción de Mercado Pago') return true;
+    const e = normalizeImportEmail(email ?? null);
+    return e !== null && normalizeImportEmail(t) === e;
+}
+
+/** Cómo se llama al suscriptor: su nombre, su correo o, sin ninguno, su número de cliente. */
+export function subscriberTitle(input: { name: string | null; email: string | null; payerId: string | null; externalId: string }): string {
+    return input.name ?? input.email ?? (input.payerId ? `Cliente de Mercado Pago #${input.payerId}` : `Suscripción ${input.externalId}`);
+}
+
 /** El correo como se compara (sin espacios ni mayúsculas). */
 export function normalizeImportEmail(value: unknown): string | null {
     if (typeof value !== 'string') return null;
@@ -246,6 +278,8 @@ export function decideImport(input: {
     known: boolean;
     status: MpPreapprovalStatus;
     includeCancelled: boolean;
+    /** v0.1.380 — Traer las «Por autorizar» (sin decir = sí, como antes). */
+    includePending?: boolean;
     /** Lo que trae esta app (`ibs_…`): ya debería estar; si no, es de otra instalación o un intento que se deshizo. */
     ours: boolean;
     mode: SubscriptionImportMode;
@@ -256,6 +290,9 @@ export function decideImport(input: {
     if (input.known) return { action: 'known', reason: 'Ya está en la app.' };
     if (input.ours) return { action: 'skip', reason: 'La creó esta app y quedó a medias (nunca se guardó).' };
     if (input.status === 'cancelled' && !input.includeCancelled) return { action: 'skip', reason: 'Está cancelada.' };
+    if (input.status === 'pending' && input.includePending === false) {
+        return { action: 'skip', reason: 'Nunca se autorizó la tarjeta (quedó «Por autorizar»). Si la autorizan, llega sola.' };
+    }
     if (input.mode === 'create') return { action: 'create_record', reason: null };
     if (input.match) {
         if (input.match.hasLive) return { action: 'no_record', reason: 'Ese cliente ya tiene una suscripción en la app: queda sin vincular.' };

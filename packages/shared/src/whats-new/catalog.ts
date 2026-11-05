@@ -1846,4 +1846,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver cómo se usa', href: '/aprende/agenda-citas/agenda-que-es' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.380-suscripciones-importadas-claras',
+        version: '0.1.380',
+        date: '2026-11-05',
+        kind: 'fix',
+        title: 'Las suscripciones traídas de Mercado Pago, con el nombre del cliente y su estado real',
+        summary:
+            'Los suscriptores importados ya no salen como «Cliente de Mercado Pago #número»: llevan el nombre que tienen en Mercado Pago. El estado y «Pagado hasta» salen del resumen de cobros de Mercado Pago, así una suscripción que paga todos los meses ya no aparece «Vencida».',
+        media: {
+            slides: [
+                {
+                    title: 'El nombre del cliente',
+                    text: 'Cada suscriptor lleva su nombre de Mercado Pago. Los que ya habías importado se completan solos; un nombre que escribiste a mano no se toca.',
+                    illustration: 'cobro-importar',
+                },
+                {
+                    title: 'El estado real',
+                    text: 'Cuántos cobros salieron y cuándo fue el último salen del resumen de Mercado Pago: «Al día» y «Pagado hasta» dicen la verdad, y el último cobro llega a «Cobros de suscripciones».',
+                    illustration: 'cobro-suscripcion',
+                },
+                {
+                    title: 'Todo lo de un cliente, junto',
+                    text: 'La vista «Por cliente» agrupa sus suscripciones, y las que quedaron «Por autorizar» sin tarjeta ya no se traen.',
+                    illustration: 'cobro-registro',
+                },
+            ],
+        },
+        body: 'Abre tu lista de suscriptores: en unos minutos se completan los nombres y se corrigen los estados. Las suscripciones «Por autorizar» que nadie terminó ya no se traen al importar; si alguna se autoriza, llega sola.',
+        action: { label: 'Ver cómo funciona', href: '/aprende/cobros/cobros-suscripciones' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

@@ -394,7 +394,11 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.379**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.380**
+(la lista importada de Mercado Pago muestra el nombre de cada cliente, el
+estado real aunque Mercado Pago no entregue las cuotas —sale del resumen de
+cobros— y los cobros en «Cobros de suscripciones»; las «Por autorizar» quedan
+fuera por defecto y hay vista «Por cliente», addendum ADR-S96); antes v0.1.379
 (la «Simular notificación» de Mercado Pago fallaba contra la URL de cobro de
 los planes —el pago 12345 no existe y la app respondía 500—; ahora se contesta
 200 y Plataforma → Cobros muestra el último aviso recibido y si la firma
@@ -1600,6 +1604,45 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-05 · v0.1.380** — **Suscripciones importadas: el nombre del
+  cliente, el estado real y sus cobros** (reporte del usuario tras importar su
+  cuenta real: «la lista que trae no trae el nombre del cliente o agrupa pagos
+  por cliente, solo trae números, quedé perdido»). Lo vimos por el MCP con sus
+  24 suscripciones:
+  - todas decían «Cliente de Mercado Pago #número»: la búsqueda de Mercado
+    Pago no trae el correo, pero sí el nombre (`payer_first_name`/
+    `payer_last_name`), y la app no lo usaba;
+  - ninguna tenía cobros, y una salía «Vencida» aunque Mercado Pago la tenía
+    autorizada: su cuenta responde 400 a la búsqueda de cuotas paginada;
+  - un pagador tenía 10 «Por autorizar» (checkouts abandonados).
+  Le dije que no le cortara el servicio a nadie por lo que decía esa lista.
+  **Arreglos**:
+  - el nombre como título, también en lo ya importado (sólo reemplaza
+    títulos provisorios);
+  - las cuotas se piden también sin paginar, y lo que respondió Mercado Pago
+    queda a la vista en Cobros (aviso ámbar con el motivo);
+  - sin cuotas, el estado sale del resumen de Mercado Pago (cuántos cobros y
+    el último); el último cobro queda registrado «Según el resumen de Mercado
+    Pago» y el cobro real lo reemplaza sin duplicar;
+  - las «Por autorizar» no se importan por defecto;
+  - vista «Por cliente».
+  La migración 0107 hace que todas se relean solas tras actualizar (la revisión
+  corre cada 5 minutos). **Decisión**: una suscripción sigue siendo un
+  registro (agrupar = la vista «Por cliente»), no un registro por cliente con
+  varias suscripciones adentro.
+  **Pendiente con el usuario** (tras actualizar):
+  - ofrecerle por el MCP la vista «Por cliente» en su lista
+    `suscriptores_mercado_pago` (la vista nueva sólo nace en listas nuevas);
+  - ofrecerle quitar las 10 «Por autorizar» abandonadas;
+  - si Mercado Pago sigue rechazando las cuotas, pedirle lo que dice el aviso
+    ámbar de Cobros.
+  Sigue sin respuesta lo de revisar cada hora los pagos y renovaciones de la
+  plataforma. Tests:
+  - API: `subscriptions-import.spec` 7/7, suscripciones/cobros/portal 43/43;
+  - shared 771 y front 828;
+  - E2E navegador 25/25 en escritorio y en celular oscuro contra el Mercado
+    Pago simulado.
 
 - **2026-11-05 · v0.1.379** — **La simulación del webhook de Mercado Pago ya
   no falla** (reporte del usuario con captura: «estoy testeando en mercadopago

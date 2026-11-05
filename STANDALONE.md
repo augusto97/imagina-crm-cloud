@@ -7407,6 +7407,39 @@ controlar las suscripciones y planes ya activos». Decisiones:
    empresa re-mapea `list_id`/`email_field_id` (sin la lista, `auto` se apaga).
    PayPal no tiene un listado de suscripciones en su API: queda fuera.
 
+**Addendum v0.1.380 — lo importado, legible y con su estado real.** Reporte del
+usuario con su cuenta real: la lista importada traía «Cliente de Mercado Pago
+#número», ningún cobro, y una suscripción «Vencida» que Mercado Pago tenía
+autorizada. Tres causas: la búsqueda de `preapproval` NO trae `payer_email`
+(sí `payer_first_name`/`payer_last_name` y el resumen `summarized`); la app
+ignoraba el nombre; y su cuenta responde 400 a
+`/authorized_payments/search?preapproval_id=` paginado, así que sin cuotas
+`deriveSubscriptionStatus` tomaba «pagado hasta» = inicio → vencida.
+1. **Nombre del cliente**: `payerName` sale de la suscripción, o de la
+   relectura, o del último pago (`paymentPayer`). El título del registro se
+   arma con `subscriberTitle` (nombre → correo → id), y `refreshKnown` completa
+   lo ya importado. Sólo reemplaza un título provisorio
+   (`isProvisionalSubscriberTitle`): lo que la persona escribió no se toca.
+2. **Cuotas**: se pide paginado y, si Mercado Pago lo rechaza, sin paginar. La
+   última lectura (ok o el motivo) queda en Redis
+   `subs:mp:invoices:<tenant>:<conn>` (14 días) y Cobros la muestra
+   (`overview.invoice_read`).
+3. **Estado sin cuotas**: con el `summarized` de Mercado Pago (cuántos cobros
+   salieron y cuándo fue el último) se registra el último cobro como uno
+   sintético, `mp-resumen-AAAA-MM-DD`, con medio «Según el resumen de Mercado
+   Pago». `charges_paid` = el mayor entre lo contado y el resumen. Cuando llega
+   el cobro real (por aviso o por la lectura de cuotas) con ±3 días, el
+   sintético se RENOMBRA en su lugar: no hay duplicado y su registro en
+   «Cobros de suscripciones» se actualiza.
+4. **Las que nunca se autorizaron** (`pending`, checkouts abandonados) quedan
+   fuera por defecto (`include_pending`, con su conteo en la vista previa).
+   Si una se autoriza después, llega sola.
+5. La lista nueva trae la vista «Por cliente» (agrupada por el suscriptor).
+   Una suscripción sigue siendo un registro: un cliente con varias queda junto
+   en esa vista.
+6. La migración 0107 limpia `last_checked_at` de las suscripciones de Mercado
+   Pago: la revisión de 5 minutos las relee todas tras actualizar.
+
 
 ### ADR-S97 — Medir conversiones de formularios y agendas insertados (v0.1.374)
 

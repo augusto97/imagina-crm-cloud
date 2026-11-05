@@ -750,6 +750,13 @@
       "when": 1784200001300,
       "tag": "0106_paypal_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1784200001400,
+      "tag": "0107_mp_subscriptions_reread",
+      "breakpoints": true
     }
   ]
 }

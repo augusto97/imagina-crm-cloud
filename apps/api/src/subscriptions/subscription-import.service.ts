@@ -9,12 +9,14 @@ import {
     SUBSCRIPTION_STATUS_OPTIONS,
     addSubscriptionPeriod,
     decideImport,
+    isProvisionalSubscriberTitle,
     jsonbKeyForField,
     normalizeImportEmail,
     readMirrorListMarker,
     readSubscriptionChargeLog,
     readSubscriptionImportConfig,
     resolveTitleFieldId,
+    subscriberTitle,
     type FieldType,
     type ListBlueprint,
     type MpPreapprovalStatus,
@@ -58,7 +60,7 @@ import {
     parsePreapprovalPlans,
     parseImportedPreapproval,
     parsePreapprovalSearch,
-    paymentPayerEmail,
+    paymentPayer,
     preapprovalPlanSearchRequest,
     preapprovalRequest,
     preapprovalSearchRequest,
@@ -336,7 +338,7 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
 
         const byStatus = Object.fromEntries(MP_PREAPPROVAL_STATUSES.map((s) => [s, 0])) as Record<MpPreapprovalStatus, number>;
         const claimed = new Set<number>();
-        const counts = { known: 0, toImport: 0, skippedCancelled: 0, withoutEmail: 0, matched: 0, unmatched: 0, conflicts: 0 };
+        const counts = { known: 0, toImport: 0, skippedCancelled: 0, skippedPending: 0, withoutEmail: 0, matched: 0, unmatched: 0, conflicts: 0 };
         const sample: SubscriptionImportSample[] = [];
         const planNames = new Map(plans.map((p) => [p.externalId, p.name]));
         const currencies = new Set<string>();
@@ -347,6 +349,7 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
                 known: known.has(it.externalId),
                 status: it.mpStatus,
                 includeCancelled: input.include_cancelled,
+                includePending: input.include_pending,
                 ours: (it.externalReference ?? '').startsWith('ibs_'),
                 mode: input.mode,
                 email: it.payerEmail,
@@ -356,9 +359,10 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
             if (decision.action === 'known') counts.known += 1;
             else if (decision.action === 'skip') {
                 if (it.mpStatus === 'cancelled') counts.skippedCancelled += 1;
+                else if (it.mpStatus === 'pending') counts.skippedPending += 1;
             } else {
                 counts.toImport += 1;
-                if (!it.payerEmail) counts.withoutEmail += 1;
+                if (!it.payerEmail && !it.payerName) counts.withoutEmail += 1;
                 if (it.currency) currencies.add(it.currency);
                 if (match) {
                     if (decision.action === 'link') {
@@ -368,7 +372,7 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
                     else counts.unmatched += 1;
                 }
             }
-            if (sample.length < 25 && decision.action !== 'known' && !(decision.action === 'skip' && it.mpStatus === 'cancelled')) {
+            if (sample.length < 25 && decision.action !== 'known' && !(decision.action === 'skip' && (it.mpStatus === 'cancelled' || it.mpStatus === 'pending'))) {
                 sample.push(this.sampleOf(it, decision, hit?.title ?? null, planNames));
             }
         }
@@ -393,6 +397,7 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
             known: counts.known,
             to_import: counts.toImport,
             skipped_cancelled: counts.skippedCancelled,
+            skipped_pending: counts.skippedPending,
             without_email: counts.withoutEmail,
             plans: planRows,
             match: match ? { list_id: match.list.id, list_name: match.list.name, matched: counts.matched, unmatched: counts.unmatched, conflicts: counts.conflicts } : null,
@@ -425,7 +430,7 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
     }
 
     private titleOf(it: ImportedPreapproval): string {
-        return it.payerEmail ?? (it.payerId ? `Cliente de Mercado Pago #${it.payerId}` : `Suscripción ${it.externalId}`);
+        return subscriberTitle({ name: it.payerName, email: it.payerEmail, payerId: it.payerId, externalId: it.externalId });
     }
 
     // ── Estado (lo que muestra la pantalla) ─────────────────────────────
@@ -578,6 +583,7 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
                 email_field_id: dest.emailFieldId,
                 create_missing: input.mode === 'create' ? true : input.create_missing,
                 auto: input.auto,
+                include_pending: input.include_pending,
                 since: new Date().toISOString(),
                 last_scan_at: new Date().toISOString(),
             };
@@ -604,7 +610,7 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
                 targetType: 'connection',
                 targetId: connectionId,
                 targetLabel: conn.name,
-                meta: { mode: input.mode, list_id: dest.list.id, include_cancelled: input.include_cancelled, auto: input.auto, found: scan.items.length },
+                meta: { mode: input.mode, list_id: dest.list.id, include_cancelled: input.include_cancelled, include_pending: input.include_pending, auto: input.auto, found: scan.items.length },
             });
             const run = this.run(tenantId, actor, conn, input, cfg, scan.items, plans, status).finally(() => {
                 this.running.delete(statusKey(tenantId, connectionId));
@@ -645,6 +651,7 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
                     known: known.has(it.externalId),
                     status: it.mpStatus,
                     includeCancelled: input.include_cancelled,
+                    includePending: input.include_pending,
                     ours: (it.externalReference ?? '').startsWith('ibs_'),
                     mode: cfg.mode,
                     email: it.payerEmail,
@@ -688,6 +695,8 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
                 }
             };
             await Promise.all(Array.from({ length: Math.min(CONCURRENCY, Math.max(todo.length, 1)) }, () => worker()));
+            // v0.1.380 — Las que ya estaban (de una importación anterior) toman el nombre y el correo que ahora se conocen.
+            await this.refreshKnown(tenantId, conn.id, cfg, items).catch((err) => this.logger.warn(`No se pudieron completar los suscriptores: ${errorText(err)}`));
             Object.assign(s, counters);
             if (ctx.failures.length > 0) s.warnings = [...s.warnings, ...ctx.failures.map((m) => `No se pudo traer ${m}`)];
             s.state = s.error ? 'failed' : 'done';
@@ -774,10 +783,14 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
         opts: { quiet: boolean; ctx: { emailLookups: number } },
     ): Promise<'created' | 'linked' | 'none' | 'duplicate'> {
         let email = it.payerEmail;
-        if (!email && opts.ctx.emailLookups > 0) {
+        let name = it.payerName;
+        if ((!email || !name) && opts.ctx.emailLookups > 0) {
             opts.ctx.emailLookups -= 1;
-            email = await this.emailFromPayments(conn.creds, it.externalId);
+            const who = await this.payerFromPayments(conn.creds, it.externalId);
+            email = email ?? who.email;
+            name = name ?? who.name;
         }
+        it = { ...it, payerEmail: email, payerName: name };
         const plan = it.planExternalId ? (plans.get(it.planExternalId) ?? null) : null;
         const startAt = it.startAt ?? it.createdAt ?? null;
         const cycles = plan?.cycles ?? (startAt && it.endAt ? cyclesBetween(startAt, it.endAt, it.frequency, it.frequencyType) : null);
@@ -853,22 +866,122 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
         return outcome;
     }
 
-    /** El correo en el último pago de la suscripción (la búsqueda no siempre lo trae). */
-    private async emailFromPayments(creds: IntegrationCreds, preapprovalId: string): Promise<string | null> {
+    /** El correo y el nombre del pagador, de su último pago (cuando la suscripción no los trae). */
+    private async payerFromPayments(creds: IntegrationCreds, preapprovalId: string): Promise<{ email: string | null; name: string | null }> {
+        const none = { email: null, name: null };
         try {
-            const inv = await this.fetch(invoicesSearchRequest(creds, preapprovalId, this.bases));
-            const list = parseInvoices(inv.status, inv.body) ?? [];
-            const paymentId = list.map((i) => i.paymentId).find((id): id is string => Boolean(id));
-            if (!paymentId) return null;
+            let inv = await this.fetch(invoicesSearchRequest(creds, preapprovalId, this.bases));
+            let list = parseInvoices(inv.status, inv.body);
+            if (!list) {
+                inv = await this.fetch(invoicesSearchRequest(creds, preapprovalId, this.bases, false));
+                list = parseInvoices(inv.status, inv.body);
+            }
+            const paymentId = (list ?? [])
+                .sort((a, b) => (b.debitDate?.getTime() ?? 0) - (a.debitDate?.getTime() ?? 0))
+                .map((i) => i.paymentId)
+                .find((id): id is string => Boolean(id));
+            if (!paymentId) return none;
             const pay = await this.fetch({
                 url: `${this.bases.mercadopago.replace(/\/+$/, '')}/v1/payments/${encodeURIComponent(paymentId)}`,
                 method: 'GET',
                 headers: { accept: 'application/json', authorization: `Bearer ${creds.secret}` },
             });
-            return paymentPayerEmail(pay.status, pay.body);
+            return paymentPayer(pay.status, pay.body);
         } catch {
-            return null;
+            return none;
         }
+    }
+
+    /**
+     * v0.1.380 — Las suscripciones que ya estaban en la app toman el nombre y
+     * el correo que ahora da Mercado Pago: el título provisorio del registro
+     * («Cliente de Mercado Pago #123») pasa a ser el nombre y se completa el
+     * correo si estaba vacío. Lo que la persona escribió a mano no se toca.
+     */
+    async refreshKnown(tenantId: number, connectionId: number, cfg: SubscriptionImportConfig, items: ImportedPreapproval[]): Promise<number> {
+        // Todas: el correo puede haber llegado después por un pago (y estar en la fila).
+        const withInfo = items;
+        if (withInfo.length === 0) return 0;
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: subscriptions.id, externalId: subscriptions.externalId, listId: subscriptions.listId, recordId: subscriptions.recordId, payerEmail: subscriptions.payerEmail })
+                .from(subscriptions)
+                .where(
+                    and(
+                        eq(subscriptions.tenantId, tenantId),
+                        eq(subscriptions.connectionId, connectionId),
+                        inArray(
+                            subscriptions.externalId,
+                            withInfo.map((i) => i.externalId),
+                        ),
+                    ),
+                ),
+        );
+        if (rows.length === 0) return 0;
+        const byExt = new Map(withInfo.map((i) => [i.externalId, i]));
+        // Para saber cuál es el título y cuál el correo de cada lista (una vez por lista).
+        const listInfo = new Map<number, { titleId: number | null; emailId: number | null } | null>();
+        const infoFor = async (listId: number): Promise<{ titleId: number | null; emailId: number | null } | null> => {
+            if (listInfo.has(listId)) return listInfo.get(listId)!;
+            let out: { titleId: number | null; emailId: number | null } | null = null;
+            try {
+                const list = await this.lists.get(tenantId, String(listId));
+                if (!readMirrorListMarker(list.settings)) {
+                    const listFields = await this.fields.listByListId(tenantId, list.id);
+                    const titleId = resolveTitleFieldId(listFields.map((x) => ({ id: x.id, type: x.type as FieldType })), list.settings ?? {});
+                    const emailId = cfg.list_id === listId ? cfg.email_field_id : (listFields.find((x) => x.type === 'email')?.id ?? null);
+                    out = { titleId, emailId };
+                }
+            } catch {
+                out = null;
+            }
+            listInfo.set(listId, out);
+            return out;
+        };
+        let changed = 0;
+        for (const r of rows) {
+            const it = r.externalId ? byExt.get(r.externalId) : undefined;
+            if (!it) continue;
+            if (!r.payerEmail && it.payerEmail) {
+                await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx.update(subscriptions).set({ payerEmail: it.payerEmail, updatedAt: new Date() }).where(and(eq(subscriptions.tenantId, tenantId), eq(subscriptions.id, r.id))),
+                );
+            }
+            if (r.listId === null || r.recordId === null) continue;
+            const info = await infoFor(r.listId);
+            if (!info) continue;
+            const current = await this.tenantDb.withTenant(tenantId, async (tx) => {
+                const [rec] = await tx
+                    .select({ data: records.data })
+                    .from(records)
+                    .where(and(eq(records.tenantId, tenantId), eq(records.listId, r.listId!), eq(records.id, r.recordId!), isNull(records.deletedAt)))
+                    .limit(1);
+                return rec ? ((rec.data ?? {}) as Record<string, unknown>) : null;
+            });
+            if (!current) continue;
+            const patch: Record<string, unknown> = {};
+            const email = it.payerEmail ?? r.payerEmail ?? null;
+            if (!it.payerName && !email) continue;
+            if (info.titleId && info.titleId !== info.emailId) {
+                const key = jsonbKeyForField(info.titleId);
+                const next = it.payerName ?? email;
+                if (next && current[key] !== next && isProvisionalSubscriberTitle(current[key], email)) patch[`f${info.titleId}`] = next;
+            }
+            if (info.emailId && email) {
+                const key = jsonbKeyForField(info.emailId);
+                const v = current[key];
+                if (typeof v !== 'string' || v.trim() === '') patch[`f${info.emailId}`] = email;
+            }
+            if (Object.keys(patch).length === 0) continue;
+            try {
+                await this.lazy(RecordsService).update(tenantId, SYSTEM_ACTOR, String(r.listId), r.recordId, { data: patch } as never, { silent: true, noAutomations: true });
+                changed += 1;
+            } catch (err) {
+                this.logger.warn(`Suscripción ${r.id}: no se pudo completar el suscriptor: ${errorText(err)}`);
+            }
+        }
+        if (changed > 0 && cfg.list_id) this.realtime.records(tenantId, cfg.list_id);
+        return changed;
     }
 
     /** El registro del pagador (título, correo y lo que se sabe desde el principio). */
@@ -886,7 +999,7 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
         const titleId = resolveTitleFieldId(listFields.map((x) => ({ id: x.id, type: x.type as FieldType })), list.settings ?? {});
         const data: Record<string, unknown> = {};
         const byId = new Map(listFields.map((x) => [x.id, x]));
-        const title = email ?? this.titleOf(it);
+        const title = it.payerName ?? email ?? this.titleOf(it);
         if (titleId && titleId !== cfg.email_field_id) data[jsonbKeyForField(titleId)] = title;
         if (cfg.email_field_id && email) data[jsonbKeyForField(cfg.email_field_id)] = email;
         // Las claves terminan en `_field_id`: migrar una empresa las re-mapea solas.
@@ -947,7 +1060,7 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
                     'repeat',
                     '#009EE3',
                     [
-                        f('Suscriptor', 'suscriptor', 'text', { description: 'El cliente (su correo, si Mercado Pago no da el nombre). Puedes cambiarlo.' }),
+                        f('Suscriptor', 'suscriptor', 'text', { description: 'El cliente: su nombre en Mercado Pago (o su correo si no lo da). Puedes cambiarlo.' }),
                         f('Correo', 'correo', 'email', { description: 'El correo con el que paga en Mercado Pago.' }),
                         select('Estado de la suscripción', 'estado', statusOpts),
                         f('Plan', 'plan', 'text'),
@@ -964,6 +1077,8 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
                         settings: { title_field_id: ref('suscriptor') },
                         views: [
                             table('Todos', true, { sort: [{ field_id: ref('proximo_cobro'), dir: 'asc' }] }),
+                            // v0.1.380 — Un cliente con varias suscripciones (una cancelada y otra nueva) queda junto.
+                            table('Por cliente', false, { group_by_field_id: ref('suscriptor'), sort: [{ field_id: ref('desde'), dir: 'desc' }] }),
                             kanban('Por estado', 'estado'),
                             table('Para revisar', false, {
                                 filter_tree: attention,
@@ -1051,6 +1166,8 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
             if (known.has(it.externalId)) return false;
             if ((it.externalReference ?? '').startsWith('ibs_')) return false;
             if (it.mpStatus === 'cancelled' && (it.createdAt?.getTime() ?? 0) < since) return false;
+            // v0.1.380 — Una «Por autorizar» llega cuando la autoricen (salvo que se pida traerlas).
+            if (it.mpStatus === 'pending' && !cfg.include_pending) return false;
             return true;
         });
         if (fresh.length === 0) return 0;
@@ -1129,7 +1246,9 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
             const conn = await this.connectors.integrationCredsFor(tenantId, connectionId);
             if (!conn || conn.provider !== 'mercadopago') return 0;
             const { items } = await this.scanPreapprovals(conn.creds).catch(() => ({ items: [] as ImportedPreapproval[] }));
-            return await this.importFresh(tenantId, { id: connectionId, creds: conn.creds }, cfg, items);
+            const n = await this.importFresh(tenantId, { id: connectionId, creds: conn.creds }, cfg, items);
+            await this.refreshKnown(tenantId, connectionId, cfg, items).catch((err) => this.logger.warn(`No se pudieron completar los suscriptores: ${errorText(err)}`));
+            return n;
         } finally {
             await this.releaseLock(connectionId);
         }
