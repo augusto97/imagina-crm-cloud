@@ -16,7 +16,8 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity, FieldTypeSlug } from '@/types/field';
 
-import { StoreFieldNote } from '@/admin/records/StoreColumnBadge';
+import type { ManagedFieldLock } from '@imagina-base/shared';
+import { ManagedFieldNote, StoreFieldNote } from '@/admin/records/StoreColumnBadge';
 
 import { FieldConfigEditor } from './FieldConfigEditor';
 import { FieldTypeSelect } from './FieldTypeSelect';
@@ -51,9 +52,16 @@ interface Props {
      * descripción e índice; ni tipo, ni configuración, ni borrar.
      */
     storeField?: boolean;
+    /**
+     * v0.1.383 — columna que escribe una sincronización (cobros, suscripciones,
+     * registro de cobros, SLA): igual que una de la tienda, sólo nombre y
+     * descripción; se borra sólo si la sincronización no la necesita.
+     */
+    managedLock?: ManagedFieldLock | null;
 }
 
-export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, storeField = false }: Props): JSX.Element {
+export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, storeField: storeFieldProp = false, managedLock = null }: Props): JSX.Element {
+    const storeField = storeFieldProp || managedLock !== null;
     const update = useUpdateField(listId);
     const { data: fieldTypes } = useFieldTypes();
     const listFields = useFields(listId);
@@ -167,7 +175,7 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, store
             </div>
 
             {storeField ? (
-                <StoreFieldNote />
+                managedLock ? <ManagedFieldNote lock={managedLock} /> : <StoreFieldNote />
             ) : (
                 <>
                     <Section title={__('Tipo y nombre interno')}>
@@ -255,7 +263,7 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, store
             )}
 
             <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3">
-                {storeField ? (
+                {storeFieldProp || (managedLock !== null && !managedLock.deletable) ? (
                     <span />
                 ) : (
                     <Button

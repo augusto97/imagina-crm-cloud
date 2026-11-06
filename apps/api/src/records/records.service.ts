@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
     APPROVAL_STATUSES,
+    SUBSCRIPTION_STATUS_OPTIONS,
     applyFieldDefaults,
     checkRequiredIf,
     collectMentionedUserIds,
@@ -16,8 +17,8 @@ import {
     doneRuleFor,
     effectiveEndMs,
     FALLBACK_TIME_ZONE,
-    HELPDESK_MANAGED_REASON,
-    helpdeskManagedFieldIds,
+    managedFieldLockMap,
+    type ManagedFieldLock,
     isSystemField,
     isUserWritableType,
     systemFieldBaseType,
@@ -53,11 +54,11 @@ import {
     type UpdateRecordDescriptionInput,
     type UpdateRecordInput,
 } from '@imagina-base/shared';
-import { and, eq, inArray, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import { ActivityService, computeDiff } from '../activity/activity.service';
 import type { Tx } from '../db/client';
 import { disableJitForTx, groupKeyHasSubquery } from '../db/no-jit';
-import { memberships, mentions, records, teams } from '../db/schema';
+import { memberships, mentions, records, subscriptions, teams } from '../db/schema';
 import { AutomationDispatcher, type AutomationChain } from '../automations/automation-dispatcher.service';
 import {
     andWhere,
@@ -252,6 +253,12 @@ export class RecordsService {
             silent?: boolean;
             /** v0.1.371 — un alta del sistema que NO dispara «Cuando se crea» (la carga inicial de un registro de cobros). */
             noAutomations?: boolean;
+            /**
+             * v0.1.383 — el alta la hace la sincronización dueña de las columnas
+             * protegidas (registro de cobros, importación de Mercado Pago): puede
+             * llenarlas. Cualquier otro alta las deja vacías.
+             */
+            sync?: boolean;
         } = {},
     ): Promise<RecordDto> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
@@ -261,7 +268,7 @@ export class RecordsService {
         // assertRecordRoomInTx): aquí sólo se lee cuál es.
         const planCap = opts.planChecked ? null : ((await this.billing?.recordLimit(tenantId)) ?? null);
         const fields = await this.fields.listByListId(tenantId, listId);
-        const prep = await this.prepareCreate(tenantId, actor, list, fields, input, { lenientRequired: opts.lenientRequired === true });
+        const prep = await this.prepareCreate(tenantId, actor, list, fields, input, { lenientRequired: opts.lenientRequired === true, sync: opts.sync === true });
 
         const { row, enriched, rt } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             if (planCap && this.billing) await this.billing.assertRecordRoomInTx(tx, tenantId, planCap);
@@ -326,21 +333,25 @@ export class RecordsService {
         list: List,
         fields: Field[],
         input: CreateRecordInput,
-        opts: { lenientRequired?: boolean } = {},
+        opts: { lenientRequired?: boolean; sync?: boolean } = {},
     ): Promise<PreparedCreate> {
         // C3 — un invitado no escribe en lo que no ve.
         assertGuestWritable(list.settings, fields, actor, input.data);
+        // D2/E5 + v0.1.383 — las columnas protegidas (SLA, cobros, suscripciones,
+        // registro de cobros) las llena su sincronización, no el alta: ni el
+        // valor que venga, ni un valor por defecto, ni «obligatorio».
+        const locks = opts.sync ? new Map<number, ManagedFieldLock>() : managedFieldLockMap(list.settings);
+        const ruleFields = locks.size > 0 ? fields.filter((f) => !locks.has(f.id)) : fields;
         // Los campos `relation` NO viven en el JSONB: se separan del payload
         // y se sincronizan a la tabla `relations` dentro del mismo tx.
-        // D2/E5 — las columnas del SLA las llena el motor del SLA, no el alta.
-        const rel = splitRelationValues(fields, withoutHelpdeskManaged(list.settings, input.data));
+        const rel = splitRelationValues(fields, withoutManaged(locks, input.data));
         // v0.1.300 — valores por defecto: lo que NO viene en el alta (fijo, hoy en
         // el reloj de la empresa, quien lo crea, una opción).
         const clock = await this.clock(tenantId);
-        const withDefaults = applyFieldDefaults(fields, rel.data, { now: clock.now, timeZone: clock.timeZone, userId: actor.userId });
-        const data = this.validateData(fields, withDefaults, { partial: opts.lenientRequired === true });
+        const withDefaults = applyFieldDefaults(ruleFields, rel.data, { now: clock.now, timeZone: clock.timeZone, userId: actor.userId });
+        const data = this.validateData(ruleFields, withDefaults, { partial: opts.lenientRequired === true });
         // v0.1.300 — "obligatorio si otro campo vale X" mira el registro entero.
-        if (opts.lenientRequired !== true) assertRequiredIf(fields, data);
+        if (opts.lenientRequired !== true) assertRequiredIf(ruleFields, data);
         return { list, fields, data, relValues: rel.values, parentId: input.parent_id ?? null };
     }
 
@@ -1137,10 +1148,10 @@ export class RecordsService {
             if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
             if (opts.expect) await this.assertUnchanged(tx, tenantId, fields, current, opts.expect);
 
-            // D2/E5 — las columnas del SLA no se escriben a mano.
-            assertNotHelpdeskManaged(list.settings, fields, Object.keys(rel.data));
             // Merge parcial: validamos SOLO los campos presentes en el patch.
-            const patch = this.validateData(fields, rel.data, { partial: true });
+            // D2/E5 + v0.1.383 — una columna protegida no se cambia a mano (reenviar
+            // el MISMO valor no es un cambio: se saca del patch).
+            const patch = keepManagedUnchanged(list.settings, fields, current.data, this.validateData(fields, rel.data, { partial: true }), rel.values);
             await this.assertUniqueInTx(tx, tenantId, listId, fields, patch, id);
             const merged = mergeData(current.data, patch);
             // v0.1.300 — obligatorio-si: sólo las reglas que tocan algo que cambió
@@ -1298,8 +1309,7 @@ export class RecordsService {
                 if (Object.keys(patch).length === 0) continue;
                 let merged: Record<string, unknown>;
                 try {
-                    const valid = this.validateData(fields, patch, { partial: true });
-                    assertNotHelpdeskManaged(list.settings, fields, Object.keys(valid));
+                    const valid = keepManagedUnchanged(list.settings, fields, data, this.validateData(fields, patch, { partial: true }), []);
                     merged = mergeData(data, valid);
                     this.assertStoreEdit(list, fields, data, merged, Object.keys(valid).map((k) => Number(k.slice(1))));
                     await this.assertUniqueInTx(tx, tenantId, list.id, fields, valid, cur.id);
@@ -1358,7 +1368,7 @@ export class RecordsService {
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, list.id, id);
             if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
-            const patch = this.validateData(fields, rel.data, { partial: true });
+            const patch = keepManagedUnchanged(list.settings, fields, current.data, this.validateData(fields, rel.data, { partial: true }), rel.values);
             await this.assertUniqueInTx(tx, tenantId, list.id, fields, patch, id);
             const merged = mergeData(current.data, patch);
             if (!opts.lenientRequired) assertRequiredIf(fields, merged, new Set(Object.keys(patch)));
@@ -1788,6 +1798,9 @@ export class RecordsService {
                 const parent = current.parentId ? await this.repo.findById(tx, tenantId, listId, current.parentId) : null;
                 if (!rowIsGone(mirror, current.data, parent?.data ?? null)) throw mirrorStillAliveError(mirror);
             }
+            // v0.1.383 — borrar el registro NO cancela su suscripción con débito
+            // automático: el cliente seguiría pagando y la app ya no lo vería.
+            await assertNoLiveSubscription(tx, tenantId, id);
             const ok = await this.repo.softDelete(tx, tenantId, listId, id, actor.userId);
             if (ok) {
                 // Las subtareas se van con el padre: si no, quedarían vivas
@@ -2392,25 +2405,108 @@ function assertGuestWritable(
     }
 }
 
-/** D2/E5 — saca del alta los valores de las columnas que mantiene el SLA. */
-function withoutHelpdeskManaged(settings: Record<string, unknown>, data: Record<string, unknown>): Record<string, unknown> {
-    const managed = helpdeskManagedFieldIds(settings);
-    if (managed.length === 0) return data;
+/** D2/E5 + v0.1.383 — saca del alta los valores de las columnas protegidas. */
+function withoutManaged(locks: ReadonlyMap<number, ManagedFieldLock>, data: Record<string, unknown>): Record<string, unknown> {
+    if (locks.size === 0) return data;
     const out = { ...data };
-    for (const id of managed) delete out[jsonbKeyForField(id)];
+    for (const id of locks.keys()) delete out[jsonbKeyForField(id)];
     return out;
 }
 
-/** D2/E5 — una edición que toca una columna del SLA se rechaza con el motivo. */
-function assertNotHelpdeskManaged(settings: Record<string, unknown>, fields: Field[], keys: string[]): void {
-    const managed = new Set(helpdeskManagedFieldIds(settings).map(jsonbKeyForField));
-    const hit = keys.find((k) => managed.has(k));
-    if (!hit) return;
-    const label = fields.find((f) => jsonbKeyForField(f.id) === hit)?.label ?? hit;
-    throw new ForbiddenException({
-        code: 'helpdesk_field_locked',
-        message: `«${label}»: ${HELPDESK_MANAGED_REASON}`,
-        data: { status: 403, errors: { [hit]: HELPDESK_MANAGED_REASON } },
+/**
+ * v0.1.383 — Un registro (o una de sus subtareas, que se van con él) con una
+ * suscripción que todavía cobra o puede empezar a cobrar no se borra: hay que
+ * cancelarla primero en la sección «Suscripción». Cancelada o terminada, sí.
+ */
+async function assertNoLiveSubscription(tx: Tx, tenantId: number, recordId: number): Promise<void> {
+    const [live] = await tx
+        .select({ status: subscriptions.status, provider: subscriptions.provider, recordId: subscriptions.recordId })
+        .from(subscriptions)
+        .where(
+            and(
+                eq(subscriptions.tenantId, tenantId),
+                notInArray(subscriptions.status, ['cancelled', 'finished']),
+                or(
+                    eq(subscriptions.recordId, recordId),
+                    inArray(
+                        subscriptions.recordId,
+                        tx
+                            .select({ id: records.id })
+                            .from(records)
+                            .where(and(eq(records.tenantId, tenantId), eq(records.parentId, recordId), isNull(records.deletedAt))),
+                    ),
+                ),
+            ),
+        )
+        .limit(1);
+    if (!live) return;
+    const provider = live.provider === 'paypal' ? 'PayPal' : 'Mercado Pago';
+    const status = SUBSCRIPTION_STATUS_OPTIONS[live.status as keyof typeof SUBSCRIPTION_STATUS_OPTIONS]?.label ?? live.status;
+    const whose = live.recordId === recordId ? 'Este registro tiene' : 'Una subtarea de este registro tiene';
+    throw new ConflictException({
+        code: 'subscription_live',
+        message: `${whose} una suscripción con débito automático en ${provider} (${status}). Borrarlo no la cancela: el cliente seguiría pagando y la app ya no lo vería. Cancélala primero en la sección «Suscripción» de la ficha.`,
+        data: { status: 409 },
+    });
+}
+
+/** JSON con claves ordenadas: JSONB reordena las claves, así que el orden no es un cambio. */
+function canonicalJson(v: unknown): string {
+    return JSON.stringify(v, (_k, val: unknown) =>
+        val && typeof val === 'object' && !Array.isArray(val)
+            ? Object.fromEntries(Object.entries(val as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)))
+            : val,
+    );
+}
+
+/** El mismo valor (vacío = ausente = null = cadena vacía; el resto, por JSON canónico). */
+function sameStoredValue(a: unknown, b: unknown): boolean {
+    const empty = (v: unknown): boolean => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
+    if (empty(a) && empty(b)) return true;
+    return canonicalJson(a) === canonicalJson(b);
+}
+
+/**
+ * D2/E5 + v0.1.383 — Una edición que CAMBIA una columna protegida (la escribe
+ * el SLA, un pago, una suscripción o el registro de cobros) se rechaza con el
+ * motivo. Un formulario que reenvía el MISMO valor no cambia nada: se saca del
+ * patch. Una relación protegida (el suscriptor de un cobro) no se toca.
+ */
+function keepManagedUnchanged(
+    settings: Record<string, unknown>,
+    fields: Field[],
+    currentData: Record<string, unknown>,
+    patch: Record<string, unknown>,
+    relValues: Array<{ field: Field }>,
+): Record<string, unknown> {
+    const locks = managedFieldLockMap(settings);
+    if (locks.size === 0) return patch;
+    const out = { ...patch };
+    for (const [key, value] of Object.entries(patch)) {
+        const id = Number(key.slice(1));
+        const lock = locks.get(id);
+        if (!lock) continue;
+        if (sameStoredValue(currentData[key], value)) {
+            delete out[key];
+            continue;
+        }
+        throw managedLocked(fields, id, lock);
+    }
+    for (const v of relValues) {
+        const lock = locks.get(v.field.id);
+        if (lock) throw managedLocked(fields, v.field.id, lock);
+    }
+    return out;
+}
+
+function managedLocked(fields: Field[], fieldId: number, lock: ManagedFieldLock): ForbiddenException {
+    const field = fields.find((f) => f.id === fieldId);
+    const label = field?.label ?? `f${fieldId}`;
+    return new ForbiddenException({
+        // El SLA conserva su código (D2/E5); el resto es una columna de cobros.
+        code: lock.source === 'helpdesk' ? 'helpdesk_field_locked' : 'managed_field_locked',
+        message: `«${label}»: ${lock.reason}`,
+        data: { status: 403, errors: { [field?.slug ?? `f${fieldId}`]: lock.reason } },
     });
 }
 

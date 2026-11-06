@@ -581,11 +581,13 @@ export function updateSettings(config: FormConfig, patch: Partial<FormSettings>)
 }
 
 /** Campos de la lista que se pueden preguntar y todavía no están en el formulario. */
-export function availableFields<F extends FieldLike>(fields: readonly F[], config: FormConfig): F[] {
+export function availableFields<F extends FieldLike>(fields: readonly F[], config: FormConfig, locked?: { has(id: number): boolean } | null): F[] {
     const asked = usedFieldIds(config);
     // v0.1.374 — las columnas del origen (campaña, clic del anuncio…) se llenan solas: no se preguntan.
     const origin = attributionColumnIds(config);
-    return fields.filter((f) => isFormFieldType(f.type) && !asked.has(f.id) && !origin.has(f.id));
+    // v0.1.383 — tampoco las que escribe una sincronización (cobros, suscripciones, SLA): lo
+    // respondido no se guardaría.
+    return fields.filter((f) => isFormFieldType(f.type) && !asked.has(f.id) && !origin.has(f.id) && !locked?.has(f.id));
 }
 
 /** v0.1.374 — Las columnas donde el formulario guarda de dónde vino cada registro (si está encendido). */

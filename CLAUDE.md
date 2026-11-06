@@ -13012,6 +13012,74 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         simulado (frecuencia que persiste, pago que no llegó por aviso aplicado
         una vez, segunda revisión «al día», error en palabras, celular oscuro).
 
+  - [x] **Las columnas que escribe Mercado Pago no se editan a mano; las
+        propias nunca salen de la app (v0.1.383, addendum ADR-S96, pedido del
+        usuario: "revisa cuáles no se deben tocar y bloquéalas… las columnas
+        adicionales que yo cree aquí en la app sólo queden en la app")**. Cambiar
+        a mano el estado o el valor de una suscripción no cambiaba nada en
+        Mercado Pago y la columna quedaba mintiendo (a veces para siempre: sólo
+        se reescribe cuando el dato cambia); cambiarle el tipo u opciones hacía
+        fallar en silencio cada escritura; y borrar un suscriptor con la
+        suscripción viva dejaba al cliente pagando sin que la app lo viera.
+        (a) **Regla pura** `managedFieldLocks(list.settings)`
+        (`packages/shared/src/schemas/managed-fields.ts`), que generaliza el
+        candado del SLA de la mesa de ayuda: las columnas de
+        `collections.fields` (link, estado, fecha, monto y medio del pago),
+        `subscriptions.fields` (estado, plan, valor, próximo cobro, pagado
+        hasta, fallidos, link), `subscription_import_fields` (id en Mercado
+        Pago y «suscrito desde»: se escriben una vez y SÍ se pueden borrar) y
+        las del **registro de cobros**, que se reconocen por una marca nueva en
+        la lista DESTINO (`settings.subscription_charge_log_of = {list_id,
+        record_field_id, field_ids}`: la mantiene el servicio al configurar o
+        apagar, la migración 0108 la rellena —13 listas en desarrollo—, la
+        papelera la limpia, no viaja en plantillas ni al duplicar y el re-mapeo
+        de migrar empresa la traduce solo por sus claves). Cada candado trae su
+        motivo y dónde se libera la columna.
+        (b) **Servidor, todos los caminos**: editar → 403
+        `managed_field_locked` (el SLA conserva `helpdesk_field_locked`) salvo
+        que el valor sea el mismo (un formulario que reenvía todo no falla);
+        crear → se descarta, con sus valores por defecto y sus obligatorios;
+        edición masiva, importar y actualizar desde archivo (la columna se
+        ignora con aviso), «Actualizar campo», guardar un PDF o el enlace/id de
+        una reunión en esa columna, recurrencias (no se rueda esa fecha) y el
+        **portal del cliente**, que escribía directo sin pasar por los candados:
+        ahora una columna sincronizada nunca es editable para el cliente aunque
+        el diseño la marque. Los escritores de la sincronización usan
+        `updateData` o `RecordsService.create(…, { sync: true })`.
+        (c) **La columna misma** (`assertManagedFieldPatch`): se renombra, pero
+        no cambia de tipo, no pasa a obligatoria ni a «sin repetidos», no pierde
+        valores de opción y no se borra (400 con «quítala en Columnas…»).
+        (d) **Borrar**: un registro (o el padre de uno) o una lista con una
+        suscripción que sigue cobrando → 409 `subscription_live` («Borrarlo no
+        la cancela: el cliente seguiría pagando… Cancélala primero»).
+        (e) **Interfaz** (`apps/web/app/admin/records/managedFields.ts`,
+        contexto que reemplaza al de la mesa de ayuda): candado con el motivo en
+        el encabezado, la celda, la ficha, el kanban (no se arrastra si agrupa
+        por una) y el administrador de campos («Sincronizada», sin «Eliminar»);
+        en una lista de cobros cada columna propia lleva un **lápiz verde**
+        «nunca se envía a Mercado Pago ni a PayPal»; pegar, rellenar y borrar
+        en la tabla avisan antes; los formularios no la ofrecen como pregunta y
+        una vieja lleva candado; el editor de columnas sólo deja cambiar el
+        nombre. **Nada de lo propio viaja**: la única salida hacia Mercado Pago
+        o PayPal son las acciones explícitas (crear un link o una suscripción;
+        pausar, reanudar, cambiar el valor o cancelar desde la ficha).
+        **Atrapado en el E2E**: el API de desarrollo corría el build viejo
+        (`scripts/dev/restart.sh` tras `pnpm build`). Ayuda: sección «Qué
+        columnas se editan y cuáles no» en Aprende → Cobros con la ilustración
+        nueva `cobro-candados`, preguntas frecuentes corregidas (decían que se
+        podía cambiar a mano), guía de suscripciones y novedad con carrusel.
+        Tests: `managed-fields.test.ts` en shared (9), `managed-fields.spec`
+        de la API (7: editar/crear/sincronizar, obligatoria, edición masiva,
+        la columna, borrar con suscripción viva, registro de cobros) y la
+        marca del registro de cobros en `subscriptions.spec` — shared 780,
+        front 830 — + E2E navegador 23/23 en escritorio y 21/21 en celular
+        oscuro contra el Mercado Pago simulado (candados y lápiz con su motivo,
+        menú sin «Eliminar», 403 al cambiar el valor y la columna propia que
+        se guarda, tipo y borrado rechazados, renombrar sí, 409 al borrar el
+        registro y la lista, «Sincronizada» en el administrador, marca y
+        candados en «Cobros de suscripciones», catálogo del formulario sin las
+        columnas sincronizadas).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

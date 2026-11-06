@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { ListFolderCrumb } from '@/admin/lists/ListFolderCrumb';
-import { mirrorGoneFieldId, mirrorSourceName, parseTeamGroupKey, readMirrorListMarker, SCAN_SEARCH_FIELD_TYPES, type BulkStructureAction } from '@imagina-base/shared';
+import { isPaymentSyncList, mirrorGoneFieldId, mirrorSourceName, parseTeamGroupKey, readMirrorListMarker, SCAN_SEARCH_FIELD_TYPES, type BulkStructureAction } from '@imagina-base/shared';
 import {
     ArrowLeft,
     BookmarkPlus,
@@ -121,7 +121,8 @@ import {
     viewConfigToState,
 } from './views/savedViewMapping';
 import { lazyWithReload } from '@/lib/lazyWithReload';
-import { HelpdeskManagedContext, useHelpdeskManagedIds } from '@/admin/helpdesk/managedFields';
+import { ManagedFieldsContext, useManagedFieldLocks } from '@/admin/records/managedFields';
+import { PaymentSyncListContext } from '@/admin/records/StoreColumnBadge';
 
 // v0.1.256 — los diálogos que se abren a pedido viajan en su propio chunk
 // (antes ~250 KB sin minificar iban en la carga inicial de la tabla). Cada
@@ -438,7 +439,8 @@ export function RecordsPage(): JSX.Element {
         [JSON.stringify(mirror), fields.data],
     );
     // E5 — las columnas que mantiene el SLA de la mesa de ayuda (candado en la celda).
-    const helpdeskManaged = useHelpdeskManagedIds(list.data?.settings);
+    const managedLocks = useManagedFieldLocks(list.data?.settings);
+    const paymentSyncList = isPaymentSyncList(list.data?.settings);
     const canImportRecords = useCan(CAP.IMPORT_RECORDS) && !mirror;
     const canExportRecords = useCan(CAP.EXPORT_RECORDS);
     const canBulkEdit = useCan(CAP.BULK_ACTIONS);
@@ -478,7 +480,7 @@ export function RecordsPage(): JSX.Element {
     // «Asignar»: el primer campo de persona que se pueda escribir.
     const assignField =
         canEditAny || canEditOwn
-            ? (fields.data ?? []).find((f) => f.type === 'user' && storeColumnKind(storeRules, f.id) !== 'store_locked') ?? null
+            ? (fields.data ?? []).find((f) => f.type === 'user' && storeColumnKind(storeRules, f.id) !== 'store_locked' && !managedLocks?.has(f.id)) ?? null
             : null;
     const [saveViewOpen, setSaveViewOpen] = useState(false);
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -977,7 +979,8 @@ const applyView = (view: SavedViewEntity | null): void => {
         // explícito del usuario en v0.1.70; el capado tipo ClickUp de
         // v0.1.68 generaba una barra interna que no quería).
         <StoreRulesContext.Provider value={storeRules}>
-        <HelpdeskManagedContext.Provider value={helpdeskManaged}>
+        <ManagedFieldsContext.Provider value={managedLocks}>
+        <PaymentSyncListContext.Provider value={paymentSyncList}>
         <PageStickyTopContext.Provider value={pageStickyTop}>
         <GridHistoryProvider listId={list.data.id}>
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-[0.3rem]">
@@ -1533,7 +1536,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         onOpenChange={setCsvUpdateOpen}
                         listId={list.data.id}
                         storeManaged={!!mirror}
-                        isLocked={(id) => storeColumnKind(storeRules, id) === 'store_locked'}
+                        isLocked={(id) => storeColumnKind(storeRules, id) === 'store_locked' || (managedLocks?.has(id) ?? false)}
                     />
                 </Suspense>
             )}
@@ -1587,7 +1590,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         search={debouncedSearch}
                         matchingCount={matchingCount}
                         canEditMatching={canBulkEdit}
-                        isLocked={(f) => storeColumnKind(storeRules, f.id) === 'store_locked'}
+                        isLocked={(f) => storeColumnKind(storeRules, f.id) === 'store_locked' || (managedLocks?.has(f.id) ?? false)}
                         initialDrafts={bulkEditPreset?.drafts}
                         title={bulkEditPreset?.title}
                         onDone={() => setSelectedIds([])}
@@ -1999,7 +2002,8 @@ const applyView = (view: SavedViewEntity | null): void => {
         </div>
         </GridHistoryProvider>
         </PageStickyTopContext.Provider>
-        </HelpdeskManagedContext.Provider>
+        </PaymentSyncListContext.Provider>
+        </ManagedFieldsContext.Provider>
         </StoreRulesContext.Provider>
     );
 }

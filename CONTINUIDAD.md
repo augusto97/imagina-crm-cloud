@@ -394,8 +394,11 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.382**
-(revisión de respaldo de los cobros de la plataforma: cada cierto tiempo
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.383**
+(las columnas que escriben Mercado Pago, PayPal y Wompi llevan candado y no se
+editan a mano por ningún camino; las columnas propias se editan libres y nunca
+salen de la app; no se borra un suscriptor con la suscripción viva; antes
+v0.1.382: revisión de respaldo de los cobros de la plataforma: cada cierto tiempo
 —configurable en Plataforma → Cobros— la app le pregunta a Mercado Pago y a
 PayPal qué pagos y renovaciones cambiaron y aplica lo que no llegó por aviso,
 con «Revisar ahora», addendum ADR-S30; antes v0.1.381:
@@ -488,6 +491,17 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-05 — **«Las columnas de Mercado Pago que no se deberían poder
+  editar»** — **HECHO en v0.1.383** (el usuario: «revisa cuáles no se deben
+  tocar y bloquéalas… las columnas adicionales que yo cree aquí en la app sólo
+  queden en la app y no viajen hacia Mercado Pago»). Bloqueadas: las de la
+  suscripción (estado, plan, valor, próximo cobro, pagado hasta, fallidos,
+  link), las del link de pago (link, estado, fecha, monto, medio), las del
+  registro de cobros y lo que trae la importación (id en Mercado Pago y
+  «suscrito desde», éstas borrables). Libres: el suscriptor, el correo, las
+  notas y toda columna nueva. Se confirmó en el código que nada propio viaja a
+  Mercado Pago o PayPal. Si el usuario quiere usar una de esas columnas a mano,
+  la quita en «Columnas» de la sección Suscripción o Cobros.
 - 2026-11-05 — **Etiquetas en el enlace directo** — **v0.1.375 HECHA** (el
   usuario: «Sí, haz la v0.1.375»).
 - 2026-11-05 — **«¿Para Mercado Pago no hay que configurar un webhook?»** —
@@ -1619,6 +1633,24 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-05 · v0.1.383** — **Las columnas que escribe Mercado Pago no se
+  editan a mano; las propias nunca salen de la app** (pedido del usuario:
+  «revisa cuáles no se deben tocar y bloquéalas… analiza muy bien este
+  tema»). Una regla pura en shared (`managedFieldLocks`, generaliza el candado
+  del SLA) protege las columnas de cobros, suscripciones, lo importado de
+  Mercado Pago y el registro de cobros (marca nueva en la lista destino,
+  migración 0108). El servidor rechaza en todos los caminos (editar, crear,
+  lote, importar, automatizaciones, recurrencias, PDF/reunión guardados en la
+  columna) y **cierra un hueco del portal**, que escribía directo: una columna
+  sincronizada nunca es editable para el cliente. La columna se renombra pero
+  no cambia de tipo ni se borra; un registro o una lista con una suscripción
+  viva no se borran (409). En la interfaz: candado con el motivo, lápiz verde
+  «nunca se envía a Mercado Pago ni a PayPal» en las columnas propias, pegar y
+  rellenar avisan antes, y los formularios no las ofrecen como pregunta.
+  Ayuda (Aprende → Cobros con la ilustración `cobro-candados`, guía) y novedad.
+  Tests: shared 9, API 7 + marca en `subscriptions.spec`; E2E 23/23 y 21/21 en
+  celular oscuro. OJO en dev: tras `pnpm build` del API, `scripts/dev/
+  restart.sh` (el E2E corrió primero contra el build viejo).
 - **2026-11-05 · v0.1.382** — **Revisión de respaldo de los cobros de la
   plataforma** (pedido del usuario: «Si, hazlo, aunque debería poderse ajustar
   la periodicidad en los ajustes de la plataforma, y también un botón de

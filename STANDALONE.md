@@ -7498,6 +7498,48 @@ ignoraba el nombre; y su cuenta responde 400 a
 6. La migración 0107 limpia `last_checked_at` de las suscripciones de Mercado
    Pago: la revisión de 5 minutos las relee todas tras actualizar.
 
+**Addendum v0.1.383 — Las columnas que escribe una sincronización de cobros no
+se editan a mano.** Pedido del usuario: «revisa cuáles no se deben tocar y
+bloquéalas… las columnas adicionales que yo cree aquí en la app sólo queden en
+la app». Cambiar a mano el estado o el valor de una suscripción no cambia nada
+en Mercado Pago: la columna queda mintiendo, a veces para siempre (sólo se
+reescribe cuando el dato cambia). Cambiarle el tipo u opciones a la columna
+hacía fallar en silencio cada escritura (el valor no valida y se salta).
+1. **Regla única y pura** `managedFieldLocks(list.settings)` (shared,
+   `managed-fields.ts`): SLA de la mesa de ayuda, `settings.collections.fields`,
+   `settings.subscriptions.fields`, `settings.subscription_import_fields` (lo
+   que trae la importación; borrable) y la **marca** de la lista del registro de
+   cobros. Cada candado lleva su motivo y dónde se libera la columna. La usa el
+   servidor (rechaza) y la interfaz (candado en celda, ficha, kanban, encabezado
+   y administrador de campos; lápiz verde en las columnas propias de una lista
+   de cobros: «nunca se envía a Mercado Pago ni a PayPal»).
+2. **La marca del registro de cobros** vive en la lista DESTINO,
+   `settings.subscription_charge_log_of = {list_id, record_field_id, field_ids}`
+   (claves que el re-mapeo de migrar empresa traduce solas), la mantiene
+   `SubscriptionChargeLogService` al configurar o apagar, la migración 0108 la
+   rellena para lo existente, la papelera la limpia al purgar la lista de
+   suscriptores y no viaja en plantillas ni al duplicar.
+3. **Todos los caminos de edición**: editar (403 `managed_field_locked`; el
+   mismo valor pasa, así un formulario que reenvía todo no falla), crear (se
+   descarta, también los valores por defecto y los obligatorios de esas
+   columnas), edición masiva, pegar/rellenar en la tabla, importar y
+   actualizar desde archivo, automatizaciones («Actualizar campo», guardar un
+   PDF o el enlace de una reunión), recurrencias (no se rueda esa fecha), el
+   portal del cliente (nunca editable aunque el diseño lo marque) y los
+   formularios (no se ofrecen como pregunta; una pregunta vieja lleva candado).
+   Los escritores de la sincronización van por `recordsRepo.updateData` o
+   `RecordsService.create(..., { sync: true })` y no pasan por los candados.
+4. **La columna misma**: se renombra, pero no cambia de tipo, no pasa a
+   obligatoria ni a «sin repetidos», no pierde valores de opción y no se borra
+   salvo que sea borrable (`managed_field_locked` con `free_hint`).
+5. **Borrar**: un registro (o su padre) o una lista con una suscripción viva
+   (no cancelada ni terminada) responde 409 `subscription_live`: borrarlo no
+   la cancela y el cliente seguiría pagando sin que la app lo vea.
+6. **Las columnas propias nunca viajan**: no hay escritura de la app hacia
+   Mercado Pago ni PayPal fuera de las acciones explícitas (crear un link o una
+   suscripción con el concepto, el monto y el correo elegidos; pausar,
+   reanudar, cambiar el valor o cancelar desde la ficha).
+
 
 ### ADR-S97 — Medir conversiones de formularios y agendas insertados (v0.1.374)
 

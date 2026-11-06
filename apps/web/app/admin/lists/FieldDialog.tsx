@@ -17,7 +17,8 @@ import type { FieldEntity, FieldTypeSlug } from '@/types/field';
 
 import { FieldTypeSelect } from './FieldTypeSelect';
 import { SlugEditor } from './SlugEditor';
-import { StoreFieldNote } from '@/admin/records/StoreColumnBadge';
+import type { ManagedFieldLock } from '@imagina-base/shared';
+import { ManagedFieldNote, StoreFieldNote } from '@/admin/records/StoreColumnBadge';
 
 /**
  * Dialog unificado de creación + edición de campos. Maneja:
@@ -40,6 +41,8 @@ interface FieldDialogProps {
     onOpenChange: (open: boolean) => void;
     /** v0.1.213 — columna de una tienda sincronizada: sólo cambia el nombre. */
     storeField?: boolean;
+    /** v0.1.383 — columna que escribe una sincronización (cobros, suscripciones, SLA): sólo el nombre. */
+    managedLock?: ManagedFieldLock | null;
 }
 
 export function FieldDialog({
@@ -47,8 +50,10 @@ export function FieldDialog({
     field,
     open,
     onOpenChange,
-    storeField = false,
+    storeField: storeFieldProp = false,
+    managedLock = null,
 }: FieldDialogProps): JSX.Element {
+    const storeField = storeFieldProp || managedLock !== null;
     const create = useCreateField(listId);
     const update = useUpdateField(listId);
     const listFields = useFields(listId);
@@ -265,7 +270,7 @@ export function FieldDialog({
                                 <ColumnTitle>{__('Configuración')}</ColumnTitle>
 
                                 {storeField ? (
-                                    <StoreFieldNote />
+                                    managedLock ? <ManagedFieldNote lock={managedLock} /> : <StoreFieldNote />
                                 ) : (
                                     <>
                                         <FieldConfigEditor

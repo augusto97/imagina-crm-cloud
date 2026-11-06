@@ -4,7 +4,7 @@ import type { FieldEntity } from '@/types/field';
 
 import { emailOf } from './EmailCommentMeta';
 import { dueIn, hoursLabel, parseHours, summarizeHelpdeskTrigger } from './helpdeskUi';
-import { helpdeskLockedReasons } from './managedFields';
+import { managedLockedReasons } from '../records/managedFields';
 
 describe('D2/E5 — mesa de ayuda en la interfaz', () => {
     it('horas del SLA: se leen con coma o punto y se muestran en h/min', () => {
@@ -46,9 +46,10 @@ describe('D2/E5 — mesa de ayuda en la interfaz', () => {
 
     it('las columnas del SLA llevan candado en los formularios', () => {
         const f = (id: number, slug: string) => ({ id, slug }) as FieldEntity;
-        const reasons = helpdeskLockedReasons(new Set([2]), [f(1, 'asunto'), f(2, 'vence')]);
+        const locks = new Map([[2, { field_id: 2, source: 'helpdesk' as const, reason: 'Lo calcula el SLA de la mesa de ayuda: no se edita a mano.', deletable: false, free_hint: null }]]);
+        const reasons = managedLockedReasons(locks, [f(1, 'asunto'), f(2, 'vence')]);
         expect(Object.keys(reasons)).toEqual(['vence']);
         expect(reasons.vence).toMatch(/SLA/);
-        expect(helpdeskLockedReasons(null, [f(2, 'vence')])).toEqual({});
+        expect(managedLockedReasons(null, [f(2, 'vence')])).toEqual({});
     });
 });

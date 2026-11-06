@@ -1,6 +1,6 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { BarChart3, ClipboardList, ExternalLink, Link2, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
-import { readMirrorListMarker } from '@imagina-base/shared';
+import { managedFieldLocks, readMirrorListMarker } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -36,6 +36,12 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
     // El recién creado puede no estar todavía en la lista (llega con el
     // refetch): se abre con lo que devolvió el alta, así no queda cerrado.
     const [created, setCreated] = useState<NonNullable<typeof forms.data>[number] | null>(null);
+    // v0.1.383 — las columnas que escribe una sincronización (cobros, suscripciones, SLA) no se
+    // preguntan: el servidor descarta lo que llegue a ellas.
+    const lockedFields = useMemo(() => {
+        const locks = managedFieldLocks(listSettings);
+        return locks.length > 0 ? new Map(locks.map((l) => [l.field_id, __(l.reason)])) : null;
+    }, [listSettings]);
 
     // Las listas que llenan una tienda no aceptan altas desde la app.
     if (readMirrorListMarker(listSettings)) {
@@ -217,6 +223,7 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
                         listId={listId}
                         form={editing}
                         fields={fields.data ?? []}
+                        lockedFields={lockedFields}
                     />
                 </Suspense>
             )}

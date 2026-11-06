@@ -9,6 +9,7 @@ import {
 import {
     isMirrorField,
     jsonbKeyForField,
+    managedFieldLockMap,
     mirrorSourceName,
     readMirrorListMarker,
     validateFieldValue,
@@ -127,6 +128,11 @@ export class RecurrencesService {
                 throw validationFailed({ date_field_id: `Esa fecha viene de ${source}: usa una columna propia.` });
             }
         }
+
+        // v0.1.383 — una fecha que escribe una sincronización (el próximo cobro de una suscripción,
+        // el vencimiento del SLA…) no se rueda: la próxima escritura la pisaría.
+        const managed = managedFieldLockMap(list.settings).get(dateField.id);
+        if (managed) throw validationFailed({ date_field_id: `${managed.reason} Usa una columna propia.` });
 
         const intervalN = Math.max(1, input.interval_n);
         // monthly_pattern sólo aplica a frequency=monthly (default same_day).

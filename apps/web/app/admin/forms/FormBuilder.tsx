@@ -132,6 +132,8 @@ export interface FormBuilderProps {
     listId: number;
     form: FormDto;
     fields: FieldEntity[];
+    /** v0.1.383 — Columnas que escribe una sincronización (id → motivo): no se preguntan. */
+    lockedFields?: ReadonlyMap<number, string> | null;
 }
 
 export default function FormBuilder(props: FormBuilderProps): JSX.Element {
@@ -153,7 +155,7 @@ export default function FormBuilder(props: FormBuilderProps): JSX.Element {
     );
 }
 
-function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.Element {
+function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuilderProps): JSX.Element {
     const toast = useToast();
     const confirm = useConfirm();
     const update = useUpdateForm(listId);
@@ -611,6 +613,7 @@ function Builder({ onOpenChange, listId, form, fields }: FormBuilderProps): JSX.
             onAddMatrix={addMatrix}
             titleText={config.settings.title || draft.name}
             hasLogo={!!branding.data?.logo_url}
+            locked={lockedFields}
         />
     );
     const settingsIndex = (

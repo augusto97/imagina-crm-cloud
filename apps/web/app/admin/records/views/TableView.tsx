@@ -49,6 +49,7 @@ import { EditableCell } from '@/admin/records/EditableCell';
 import { FieldHeaderMenu } from '@/admin/records/FieldHeaderMenu';
 import { StoreColumnBadge } from '@/admin/records/StoreColumnBadge';
 import { storeAccessFor, useStoreRules } from '@/admin/records/storeRules';
+import { managedReason, useManagedFields } from '@/admin/records/managedFields';
 import { renderCellValue } from '@/admin/records/renderCellValue';
 import type { ActiveSort } from '@/admin/records/recordsState';
 import { FooterAggregateCell, footerIsAggregatable, type AggregateKind } from './FooterAggregateCell';
@@ -211,6 +212,7 @@ export function TableView({
     // v0.1.213 — lista de una tienda: los registros se crean y se borran allá,
     // y cada celda dice si se puede editar (mismas reglas que el backend).
     const storeRules = useStoreRules();
+    const managedLocks = useManagedFields();
     const canCreateRecords = useCan(CAP.CREATE_RECORDS) && storeRules === null;
     // En una lista de la tienda o del sitio, el menú sólo ofrece quitar lo que la fuente ya borró (v0.1.336).
     const canDeleteRecords = useCanAny(CAP.DELETE_RECORDS, CAP.DELETE_OWN_RECORDS);
@@ -529,12 +531,17 @@ export function TableView({
             const v = titleField ? r.fields[titleField.slug] : null;
             return typeof v === 'string' && v.trim() !== '' ? v : `#${r.id}`;
         },
-        locked: storeRules
-            ? (field, record) => {
-                const a = storeAccessFor(storeRules, field, record);
-                return a?.access === 'locked' ? a.reason : null;
-            }
-            : undefined,
+        locked:
+            storeRules || managedLocks
+                ? (field, record) => {
+                      // v0.1.383 — lo que escribe una sincronización de cobros tampoco se pega ni se rellena.
+                      const managed = field ? managedReason(managedLocks, field.id) : null;
+                      if (managed) return managed;
+                      if (!storeRules) return null;
+                      const a = storeAccessFor(storeRules, field, record);
+                      return a?.access === 'locked' ? a.reason : null;
+                  }
+                : undefined,
         relationTitles,
         onOpenRow: onRowClick,
         scrollToIndex: windowed.scrollToIndex,
