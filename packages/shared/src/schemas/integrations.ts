@@ -984,9 +984,9 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
         key: 'google_calendar',
         name: 'Google Calendar',
-        tagline: 'Crea eventos en tu calendario.',
+        tagline: 'Eventos y reuniones de Google Meet en tu calendario.',
         description:
-            'Agenda reuniones, visitas o vencimientos a partir de las fechas de tus registros.',
+            'Agenda reuniones de Google Meet, visitas o vencimientos a partir de las fechas de tus registros: una demo, una llamada de seguimiento, una cita.',
         category: 'calendario',
         color: '#4285F4',
         auth: {
@@ -995,6 +995,24 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
             scopes: 'https://www.googleapis.com/auth/calendar.events',
         },
         actions: [
+            // v0.1.384 — la reunión de Meet como acción propia (igual que «Crear
+            // reunión de Teams»): mismo evento, con el enlace encendido.
+            action({
+                key: 'create_meeting',
+                label: 'Crear reunión de Google Meet',
+                description: 'En el calendario de la cuenta conectada, con el enlace de Meet para unirse. Les llega a los invitados.',
+                params: [
+                    googleCalendarParam,
+                    ...eventParams,
+                    {
+                        key: 'meet',
+                        label: 'Con enlace de Google Meet',
+                        type: 'boolean',
+                        default: 'true',
+                        help: 'Apágalo para crear un evento sin videollamada.',
+                    },
+                ],
+            }),
             action({
                 key: 'create_event',
                 label: 'Crear evento en Google Calendar',
@@ -1793,6 +1811,7 @@ export function integrationScopes(def: IntegrationDef, opts: { purpose?: 'agenda
 export type MeetingActionKind = 'create' | 'update' | 'cancel';
 
 const MEETING_ACTIONS: Record<string, MeetingActionKind> = {
+    'google_calendar.create_meeting': 'create',
     'google_calendar.create_event': 'create',
     'google_calendar.update_event': 'update',
     'google_calendar.cancel_event': 'cancel',

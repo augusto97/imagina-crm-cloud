@@ -87,6 +87,7 @@ export * from './schemas/templates';
 export * from './schemas/connector';
 export * from './schemas/integrations';
 export * from './schemas/ms-admin-consent';
+export * from './schemas/google-workspace';
 export * from './schemas/teams-links';
 export * from './schemas/collections';
 export * from './schemas/subscriptions';

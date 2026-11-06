@@ -2537,7 +2537,9 @@ function ConnectorParamField({
             </div>
 
             {param.type === 'boolean' ? (
-                <Select value={value === '' ? 'false' : value} onChange={(e) => onChange(e.target.value)}>
+                // Vacío vale lo que dice el default (el motor también lo usa así):
+                // antes se mostraba «No» y la reunión de Teams o Meet igual se creaba.
+                <Select value={value === '' ? (param.default === 'true' ? 'true' : 'false') : value} onChange={(e) => onChange(e.target.value)}>
                     <option value="true">{__('Sí')}</option>
                     <option value="false">{__('No')}</option>
                 </Select>

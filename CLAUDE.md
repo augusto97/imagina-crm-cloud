@@ -13080,6 +13080,61 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         candados en «Cobros de suscripciones», catálogo del formulario sin las
         columnas sincronizadas).
 
+  - [x] **Google Calendar y Meet al nivel de Teams y Outlook (v0.1.384,
+        addendum ADR-S22, pregunta del usuario: "ya hicimos toda esta
+        corrección de integración con Outlook y Microsoft Teams… ¿hiciste lo
+        mismo con la conexión de Google, Calendar y Google Meet?" → «Sí,
+        hazlo»)**. (a) **«Crear reunión de Google Meet»**
+        (`google_calendar.create_meeting`, primera acción de Google Calendar,
+        «Con enlace de Google Meet» en Sí): se arma como «Crear evento» con
+        `conferenceData`; si Google deja la sala «pendiente»,
+        `settleGoogleMeet` (`connectors/meeting-settle.ts`, motor y «Probar
+        ahora») relee el evento 2 veces cada 1,5 s, y si no la creó
+        `videoCallNote` lo dice en el historial y en la prueba («sin
+        videollamada de Meet: Google no pudo crearla…») en vez de «creado» con
+        `{{reunion.enlace}}` vacío; lo mismo para Teams sin enlace.
+        (b) **Google Workspace que bloquea la app** (`admin_policy_enforced`):
+        Google no tiene enlace de aprobación como Microsoft, así que el diálogo
+        `GoogleWorkspaceAdminDialog` da los pasos de admin.google.com
+        (Controles de API → Configurar app nueva → buscar por el **ID de
+        cliente** → «De confianza»), el ID para copiar, lo que pide la app y
+        «Copiar mensaje para tu administrador» (`google-workspace.ts` en shared;
+        `GoogleWorkspaceHelpService`, `GET /integrations/:key/google-admin` y
+        `GET /me/agenda-calendar/google-admin`). Se abre desde las tarjetas de
+        las apps de Google («¿Tu empresa usa Google Workspace y bloquea la
+        app?»), desde el aviso al volver con ese error
+        (`isGoogleWorkspaceBlockError`) y desde «Mi calendario».
+        (c) **Permisos destildados**: Google deja conectar sin una casilla y la
+        conexión quedaba «conectada» pero fallaba siempre; ahora al volver se
+        compara lo pedido con lo concedido (`googleGrantMissing`): una
+        conexión nueva no se crea y una reconexión conserva los tokens
+        anteriores, con «deja marcadas todas las casillas».
+        (d) **Errores de Google en palabras** (`googleProblem`): permiso
+        faltante, API sin activar en el proyecto, límite de pedidos, política
+        del administrador, calendario de sólo lectura, Meet apagado y
+        calendario inexistente.
+        (e) **Arreglo de Teams**: «Probar ahora» de «Crear reunión de Teams»
+        leía la respuesta con el tope de 8 KB y nunca encontraba el id para
+        borrar la reunión de prueba (Graph manda el evento entero con el HTML
+        de la invitación); ahora 64 KB, con test de regresión.
+        (f) **Atrapado en el E2E**: el selector Sí/No de una acción mostraba
+        «No» con el valor vacío aunque el motor usa el valor por defecto («Sí»
+        en Teams desde v0.1.366 y en Meet): ahora muestra el default.
+        Ayuda: guía de integraciones y de reuniones («…de Teams o Google
+        Meet…»), sección «Si Google dice «Acceso bloqueado»» en Aprende →
+        Integraciones con la ilustración nueva `google-workspace-admin`, y
+        novedad con carrusel; el asistente/MCP conoce la acción nueva.
+        Tests: `google-workspace.test.ts` (4) en shared (784 en verde),
+        `integration-calls.spec` 37/37 e `integrations.spec` 12/12 (permiso
+        destildado, ayuda con el ID, Meet pendiente → releído y guardado, Meet
+        que falla, 403 de permiso, prueba con el enlace y borrado, y la
+        respuesta grande de Teams), front 830 — E2E navegador 25/25 en
+        escritorio y 26/26 en celular oscuro (diálogo con el ID y los pasos,
+        copiar mensaje e ID, aviso tras `admin_policy_enforced` y no tras una
+        cancelación común, «Mi calendario», «Crear reunión de Google Meet» en
+        el menú con Meet en Sí). **Límite de la verificación**: Google real no
+        alcanza el sandbox; el motor se probó con la red simulada.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

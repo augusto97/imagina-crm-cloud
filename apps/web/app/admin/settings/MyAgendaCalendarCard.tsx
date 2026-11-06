@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CalendarCheck, CalendarDays, Loader2, Lock, PenLine, ShieldCheck } from 'lucide-react';
-import { BOOKING_MAX_BUSY_CALENDARS, isMsConsentError, type AgendaCalendarItem, type MyAgendaCalendarDto, type UpdateMyAgendaCalendarInput } from '@imagina-base/shared';
+import { BOOKING_MAX_BUSY_CALENDARS, isGoogleWorkspaceBlockError, isMsConsentError, type AgendaCalendarItem, type MyAgendaCalendarDto, type UpdateMyAgendaCalendarInput } from '@imagina-base/shared';
 
+import { GoogleWorkspaceAdminDialog } from '@/cloud/components/GoogleWorkspaceAdminDialog';
 import { MsAdminConsentDialog } from '@/cloud/components/MsAdminConsentDialog';
 import { useSession } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
@@ -37,8 +38,10 @@ export function MyAgendaCalendarCard(): JSX.Element {
     const confirm = useConfirm();
     const [params, setParams] = useSearchParams();
     // v0.1.363 — `consent`: Microsoft pidió la aprobación del administrador.
-    const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string; consent?: boolean } | null>(null);
+    // v0.1.384 — `google`: Google Workspace bloqueó la app.
+    const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string; consent?: boolean; google?: boolean } | null>(null);
     const [adminConsent, setAdminConsent] = useState(false);
+    const [googleAdmin, setGoogleAdmin] = useState(false);
 
     const q = useQuery({
         queryKey: KEY(tenantId),
@@ -52,9 +55,16 @@ export function MyAgendaCalendarCard(): JSX.Element {
         if (!oauthResult) return;
         const msg = params.get('msg') ?? '';
         const consent = params.get('app') === 'outlook' && isMsConsentError(msg);
+        const googleBlock = params.get('app') === 'google_calendar' && isGoogleWorkspaceBlockError(msg);
         setNotice(
             oauthResult === 'ok'
                 ? { kind: 'ok', text: __('¡Listo! Tu calendario quedó conectado. Elige abajo en cuáles se mira lo ocupado.') }
+                : googleBlock
+                  ? {
+                        kind: 'err',
+                        google: true,
+                        text: __('Google no dejó terminar la conexión: el administrador de Google Workspace de tu empresa bloquea las apps de terceros que no revisó. Mándale el mensaje para que la marque como de confianza; después vuelve a tocar «Conectar Google Calendar».'),
+                    }
                 : consent
                   ? {
                         kind: 'err',
@@ -145,7 +155,31 @@ export function MyAgendaCalendarCard(): JSX.Element {
                             </Button>
                         </div>
                     )}
+                    {notice.google && (
+                        <div className="imcrm-mt-2">
+                            <Button size="sm" variant="outline" className="imcrm-gap-1.5" onClick={() => setGoogleAdmin(true)} data-testid="my-calendar-google-admin-open">
+                                <ShieldCheck className="imcrm-h-3.5 imcrm-w-3.5" />
+                                {__('Ver el mensaje para mi administrador')}
+                            </Button>
+                        </div>
+                    )}
                 </div>
+            )}
+
+            {googleAdmin && (
+                <GoogleWorkspaceAdminDialog
+                    target={{ kind: 'agenda' }}
+                    open
+                    onClose={() => setGoogleAdmin(false)}
+                    onConnect={
+                        impersonating
+                            ? undefined
+                            : () => {
+                                  setGoogleAdmin(false);
+                                  connect.mutate('google_calendar');
+                              }
+                    }
+                />
             )}
 
             {adminConsent && (
@@ -199,6 +233,17 @@ export function MyAgendaCalendarCard(): JSX.Element {
                             >
                                 <ShieldCheck className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
                                 {__('¿Tu empresa usa Microsoft 365 y pide aprobación del administrador?')}
+                            </button>
+                        )}
+                        {d.providers.some((p) => p.key === 'google_calendar' && p.available) && !impersonating && (
+                            <button
+                                type="button"
+                                onClick={() => setGoogleAdmin(true)}
+                                className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-self-start imcrm-rounded imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground hover:imcrm-underline focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-ring"
+                                data-testid="my-calendar-google-admin"
+                            >
+                                <ShieldCheck className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                {__('¿Tu empresa usa Google Workspace y bloquea la app?')}
                             </button>
                         )}
                         {d.providers.some((p) => !p.available) && (

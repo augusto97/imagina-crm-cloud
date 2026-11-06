@@ -10,8 +10,12 @@ import {
     eventDurationMinutes,
     eventWindow,
     identityLabel,
+    googleErrorReasons,
+    googleProblem,
     meetingResult,
     parseVerify,
+    videoCallNote,
+    wantsVideoCall,
     sheetCell,
     spreadsheetId,
     TEST_MESSAGE,
@@ -624,7 +628,7 @@ describe('reuniones de Teams, Outlook y Google Calendar', () => {
     it('lee el enlace y el id de lo que devuelve el calendario', () => {
         expect(
             meetingResult('teams', JSON.stringify({ id: 'AAMk1', subject: 'Demo', webLink: 'https://outlook.office365.com/x', onlineMeeting: { joinUrl: 'https://teams.microsoft.com/l/meetup-join/abc' } })),
-        ).toEqual({ id: 'AAMk1', enlace: 'https://teams.microsoft.com/l/meetup-join/abc', web: 'https://outlook.office365.com/x', titulo: 'Demo', pending: false });
+        ).toEqual({ id: 'AAMk1', enlace: 'https://teams.microsoft.com/l/meetup-join/abc', web: 'https://outlook.office365.com/x', titulo: 'Demo', pending: false, failed: false });
         expect(meetingResult('outlook', JSON.stringify({ id: 'AAMk2', subject: 'Sin Teams', onlineMeeting: null }))?.enlace).toBe('');
         expect(
             meetingResult('google_calendar', JSON.stringify({ id: 'g1', summary: 'Demo', htmlLink: 'https://www.google.com/calendar/event?eid=1', conferenceData: { createRequest: { status: { statusCode: 'pending' } } } })),
@@ -678,5 +682,86 @@ describe('reuniones de Teams, Outlook y Google Calendar', () => {
                 fetch: async () => ({ status: 404, body: '{"error":{"message":"not found"}}' }),
             }),
         ).rejects.toThrow(/No encontramos ese evento/);
+    });
+});
+
+/** v0.1.384 — Google Calendar y Meet a la par de Teams y Outlook. */
+describe('Google Calendar y Meet (v0.1.384)', () => {
+    const merge = (raw: unknown): string => String(raw ?? '');
+
+    it('«Crear reunión de Google Meet» trae el enlace encendido y pide la sala a Google', () => {
+        const action = actionOf('google_calendar', 'create_meeting');
+        expect(action.label).toBe('Crear reunión de Google Meet');
+        const compiled = compileIntegrationValues(
+            'google_calendar',
+            action,
+            { title: 'Demo', date: '2026-11-10T15:00:00Z', duration: '45', attendees: 'cliente@acme.co' },
+            merge,
+            merge,
+        );
+        expect(compiled.missing).toEqual([]);
+        expect(compiled.values.meet).toBe('true');
+        expect(wantsVideoCall('google_calendar', compiled.values)).toBe(true);
+        const req = buildIntegrationRequest('google_calendar', 'create_meeting', compiled, creds());
+        expect(req.method).toBe('POST');
+        expect(req.url).toBe('https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all&conferenceDataVersion=1');
+        const body = JSON.parse(req.body!);
+        expect(body.conferenceData.createRequest.conferenceSolutionKey).toEqual({ type: 'hangoutsMeet' });
+        expect(body.attendees).toEqual([{ email: 'cliente@acme.co' }]);
+        // Apagado, es un evento común (sin pedir la sala).
+        const off = buildIntegrationRequest('google_calendar', 'create_meeting', vals({ title: 'x', date: '2026-11-10', meet: 'false' }), creds());
+        expect(JSON.parse(off.body!).conferenceData).toBeUndefined();
+        expect(off.url).not.toContain('conferenceDataVersion');
+        // «Crear evento» sigue con Meet apagado por defecto.
+        const ev = compileIntegrationValues('google_calendar', actionOf('google_calendar', 'create_event'), { title: 'x', date: '2026-11-10' }, merge, merge);
+        expect(ev.values.meet).toBe('false');
+    });
+
+    it('distingue el Meet que todavía se crea del que Google no pudo crear', () => {
+        const failed = meetingResult('google_calendar', JSON.stringify({ id: 'g1', conferenceData: { createRequest: { status: { statusCode: 'failure' } } } }));
+        expect(failed).toMatchObject({ enlace: '', pending: false, failed: true });
+        expect(videoCallNote('google_calendar', failed, true)).toMatch(/Meet apagado/);
+        const pending = meetingResult('google_calendar', JSON.stringify({ id: 'g1', conferenceData: { createRequest: { status: { statusCode: 'pending' } } } }));
+        expect(videoCallNote('google_calendar', pending, true)).toMatch(/todavía estaba creando/);
+        const ok = meetingResult('google_calendar', JSON.stringify({ id: 'g1', hangoutLink: 'https://meet.google.com/abc-defg-hij' }));
+        expect(videoCallNote('google_calendar', ok, true)).toBeNull();
+        // Sin pedir videollamada no hay nada que avisar.
+        expect(videoCallNote('google_calendar', failed, false)).toBeNull();
+        // Teams pedido sin enlace.
+        const teams = meetingResult('teams', JSON.stringify({ id: 'AAMk1', onlineMeeting: null }));
+        expect(videoCallNote('teams', teams, true)).toMatch(/sin enlace de Teams/);
+        expect(wantsVideoCall('outlook', { teams_meeting: 'false' })).toBe(false);
+    });
+
+    it('los errores de Google se explican con la salida', () => {
+        const scope = JSON.stringify({ error: { code: 403, message: 'Request had insufficient authentication scopes.', status: 'PERMISSION_DENIED', details: [{ reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' }] } });
+        expect(googleErrorReasons(JSON.parse(scope))).toEqual(['ACCESS_TOKEN_SCOPE_INSUFFICIENT', 'PERMISSION_DENIED']);
+        expect(checkIntegrationResponse('google_calendar', 403, scope, 'create_meeting')).toMatch(/casillas/);
+        expect(checkIntegrationResponse('gmail', 403, scope, 'send_email')).toMatch(/Gmail.*casillas/);
+
+        const disabled = JSON.stringify({ error: { code: 403, message: 'Google Calendar API has not been used in project 123 before or it is disabled.', errors: [{ reason: 'accessNotConfigured' }] } });
+        expect(checkIntegrationResponse('google_calendar', 403, disabled, 'create_event')).toMatch(/no está activada en el proyecto/);
+
+        const rate = JSON.stringify({ error: { code: 403, message: 'Rate Limit Exceeded', errors: [{ reason: 'rateLimitExceeded', domain: 'usageLimits' }] } });
+        expect(checkIntegrationResponse('google_calendar', 403, rate, 'create_event')).toMatch(/frenó los pedidos/);
+        expect(checkIntegrationResponse('google_sheets', 429, '{"error":{"code":429,"message":"Quota exceeded","status":"RESOURCE_EXHAUSTED"}}', 'append_row')).toMatch(/frenó/);
+
+        const policy = JSON.stringify({ error: { code: 403, message: 'Not Authorized to access this resource/api', errors: [{ reason: 'domainPolicy' }] } });
+        expect(checkIntegrationResponse('gmail', 403, policy, 'send_email')).toMatch(/administrador de Google Workspace/);
+
+        const writer = JSON.stringify({ error: { code: 403, message: 'You need to have writer access to this calendar.', errors: [{ reason: 'requiredAccessLevel' }] } });
+        expect(checkIntegrationResponse('google_calendar', 403, writer, 'create_meeting')).toMatch(/no hacer cambios/);
+
+        const conference = JSON.stringify({ error: { code: 400, message: 'Invalid conference type value.', errors: [{ reason: 'invalid' }] } });
+        expect(checkIntegrationResponse('google_calendar', 400, conference, 'create_meeting')).toMatch(/Meet apagado/);
+
+        // 404 al CREAR = el calendario; al reprogramar sigue siendo el evento.
+        const notFound = '{"error":{"code":404,"message":"Not Found"}}';
+        expect(checkIntegrationResponse('google_calendar', 404, notFound, 'create_meeting')).toMatch(/ese calendario/);
+        expect(checkIntegrationResponse('google_calendar', 404, notFound, 'update_event')).toMatch(/ese evento/);
+        // Un 401 sigue siendo «reconecta»; lo desconocido, el mensaje general.
+        expect(googleProblem('google_calendar', 401, null)).toBeNull();
+        expect(googleProblem('slack', 403, null)).toBeNull();
+        expect(checkIntegrationResponse('google_calendar', 400, '{"error":{"code":400,"message":"Bad Request"}}', 'create_event')).toMatch(/Google Calendar rechazó el pedido/);
     });
 });

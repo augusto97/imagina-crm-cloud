@@ -239,6 +239,30 @@ export const articles: LearnArticle[] = [
                     { name: 'Cuánto dura el enlace', what: '14 días. Si vence, crea uno nuevo desde la misma ventana.' },
                 ],
             },
+            { t: 'h', text: 'Si Google dice «Acceso bloqueado»' },
+            {
+                t: 'p',
+                md: 'En **Google Workspace** el administrador puede no dejar que la gente use apps de terceros sin revisarlas. Entonces, al conectar **Gmail**, **Google Calendar**, **Google Sheets** o **Google Drive**, Google muestra **«Acceso bloqueado»** o **«Error 400: admin_policy_enforced»** en su pantalla y no vuelve a la app. Google no tiene un enlace de aprobación como Microsoft: el administrador marca la app como **«De confianza»** en su consola, una sola vez para toda la organización.',
+            },
+            { t: 'anim', key: 'google-workspace-admin', caption: 'Google bloquea la app: copias el mensaje con el ID de cliente, tu administrador la marca de confianza y vuelves a conectar.' },
+            {
+                t: 'steps',
+                items: [
+                    'En **Ajustes → Integraciones**, en la tarjeta de la app de Google, toca **¿Tu empresa usa Google Workspace y bloquea la app?** Para el calendario de la agenda está en **Ajustes → Cuenta → Mi calendario**.',
+                    'Toca **Copiar mensaje para tu administrador**: queda copiado un mensaje listo con los pasos y el **ID de cliente** de la app, para pegarlo en un correo o en un chat.',
+                    'Tu administrador entra a **admin.google.com → Seguridad → Acceso y control de datos → Controles de API**, toca **Configurar app nueva**, busca la app por ese ID de cliente y la marca como **De confianza**.',
+                    'Puede tardar unos minutos. Después vuelve a tocar **Conectar** y entra con tu cuenta, como siempre.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Lo que conviene saber',
+                rows: [
+                    { name: 'Quién puede hacerlo', what: 'Un administrador de Google Workspace de tu empresa (el que entra a admin.google.com). Una cuenta personal de Gmail no tiene administrador: si ves el bloqueo con una de esas, el motivo es otro.' },
+                    { name: 'Si dice «no completó la verificación de Google»', what: 'Eso no lo arregla tu empresa: es la app de la plataforma, que todavía está en revisión con Google. Avísale a quien administra la plataforma.' },
+                    { name: 'Las casillas de permisos', what: 'En la pantalla de Google cada permiso es una casilla. **Déjalas todas marcadas**: si destildas una (por ejemplo, la de los eventos del calendario), la app te avisa al volver y no deja la conexión a medias.' },
+                ],
+            },
             { t: 'h', text: 'Gmail y Outlook: correos desde tu dirección' },
             {
                 t: 'settings',
@@ -278,14 +302,14 @@ export const articles: LearnArticle[] = [
                     { name: 'Invitados', what: 'Correos separados por coma o por punto y coma. Reciben la invitación del calendario.' },
                     { name: 'Invitados opcionales', what: 'Igual que Invitados, pero la invitación les llega como opcional (por ejemplo, gerencia).' },
                     { name: 'Agregar reunión de Teams', what: 'Sólo en Outlook. El evento lleva el enlace para unirse por Teams y les llega a los invitados. Necesita una cuenta de trabajo o estudiantil de Microsoft 365.' },
-                    { name: 'Agregar videollamada de Google Meet', what: 'Sólo en Google Calendar. El evento lleva el enlace de Meet y les llega a los invitados.' },
+                    { name: 'Agregar videollamada de Google Meet', what: 'Sólo en Google Calendar. El evento lleva el enlace de Meet y les llega a los invitados. Para una reunión, usa directamente **Crear reunión de Google Meet**, que ya lo trae encendido.' },
                 ],
             },
             { t: 'h', text: 'Reuniones: crear, guardar el enlace, reprogramar y cancelar' },
             { t: 'anim', key: 'reunion-teams', caption: 'El vendedor pone la fecha de la demo: se crea la reunión de Teams con los invitados, el enlace y el id quedan en el registro y el enlace sale por WhatsApp.' },
             {
                 t: 'p',
-                md: 'Las tres apps de calendario traen el ciclo completo de una reunión: **Microsoft Teams** (**Crear reunión de Teams**), **Outlook** (**Crear evento en Outlook**, con la opción de reunión de Teams) y **Google Calendar** (**Crear evento en Google Calendar**, con Google Meet). Las tres suman **Reprogramar** y **Cancelar** el evento con su id. El evento se crea en el calendario de la cuenta conectada y la invitación les llega a los invitados.',
+                md: 'Las tres apps de calendario traen el ciclo completo de una reunión: **Microsoft Teams** (**Crear reunión de Teams**), **Google Calendar** (**Crear reunión de Google Meet**, o **Crear evento en Google Calendar** si no hace falta videollamada) y **Outlook** (**Crear evento en Outlook**, con la opción de reunión de Teams). Las tres suman **Reprogramar** y **Cancelar** el evento con su id. El evento se crea en el calendario de la cuenta conectada y la invitación les llega a los invitados.\n\nCon **Google Meet**, Google crea la sala un instante después del evento: la app espera a que esté lista, así `{{reunion.enlace}}` llega completo al paso siguiente. Si Google no puede crearla (por ejemplo, porque tu empresa tiene Meet apagado para esa cuenta), el evento se crea igual y el historial de la automatización lo dice.',
             },
             {
                 t: 'steps',
@@ -313,7 +337,7 @@ export const articles: LearnArticle[] = [
                 t: 'callout',
                 tone: 'info',
                 title: '«Probar ahora» no invita a nadie',
-                md: 'Al probar **Crear**, la reunión se crea **sin invitados** y se borra enseguida: ves que funciona sin que a nadie le llegue nada. Al probar **Reprogramar** o **Cancelar**, la prueba sólo muestra lo que se enviaría: no toca reuniones reales.',
+                md: 'Al probar **Crear**, la reunión se crea **sin invitados** y se borra enseguida: ves que funciona (y el enlace de Teams o Meet que se generó) sin que a nadie le llegue nada. Al probar **Reprogramar** o **Cancelar**, la prueba sólo muestra lo que se enviaría: no toca reuniones reales.',
             },
             {
                 t: 'callout',

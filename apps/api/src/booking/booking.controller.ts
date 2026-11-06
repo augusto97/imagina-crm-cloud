@@ -5,6 +5,7 @@ import {
     type AgendaCalendarItem,
     type ConnectMyAgendaCalendarInput,
     type MyAgendaCalendarDto,
+    type GoogleWorkspaceAdminHelp,
     type MsAdminConsentStatus,
     type UpdateMyAgendaCalendarInput,
     bookAppointmentSchema,
@@ -52,6 +53,7 @@ import { BookingPublicService, type CachedBookingPage } from './booking-public.s
 import { BookingService, type BookingEditorOptions } from './booking.service';
 import { BookingMyCalendarService } from './booking-my-calendar.service';
 import { MsAdminConsentService } from '../connectors/ms-admin-consent.service';
+import { GoogleWorkspaceHelpService } from '../connectors/google-workspace-help.service';
 import { ForbiddenException } from '@nestjs/common';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 import { aclOf } from '../tenancy/acl-of';
@@ -504,6 +506,7 @@ export class MyAgendaCalendarController {
     constructor(
         private readonly mine: BookingMyCalendarService,
         private readonly adminConsent: MsAdminConsentService,
+        private readonly googleHelp: GoogleWorkspaceHelpService,
     ) {}
 
     private noImpersonation(req: FastifyRequest): void {
@@ -550,5 +553,15 @@ export class MyAgendaCalendarController {
     adminConsentCreate(@Req() req: FastifyRequest): Promise<MsAdminConsentStatus> {
         this.noImpersonation(req);
         return this.adminConsent.create(req.tenant!.tenantId, req.authUserId!, 'outlook');
+    }
+
+    /**
+     * v0.1.384 — Google Calendar de una empresa con Google Workspace que
+     * bloquea la app: el mensaje para el administrador (con el permiso extra
+     * de la agenda, que es el de ver la lista de calendarios).
+     */
+    @Get('google-admin')
+    googleAdmin(): Promise<GoogleWorkspaceAdminHelp> {
+        return this.googleHelp.help('google_calendar', { purpose: 'agenda' });
     }
 }
