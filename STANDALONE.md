@@ -7739,6 +7739,47 @@ Verificado en un navegador real con scripts falsos de Google y Meta servidos en
 sus dominios que intentan escapar: el `fetch` a la API privada, el marco de la
 app, el service worker y `window.open` quedan bloqueados.
 
+**Addendum v0.1.386 — Origen y etiquetas del formulario.** Pedido de un
+cliente del usuario: «al llenar el formulario debería agregar la url desde
+donde se envió… también que tenga el nombre del formulario o una etiqueta para
+saber de qué formulario llegó, porque una lista puede tener varios
+formularios, y poder crear automatizaciones si la url contiene un slug». La
+página ya existía en el punto 5, pero escondida en «Medir conversiones»,
+detrás de un interruptor, sin la consulta de la dirección y vacía en el enlace
+directo y en un marco sin el script. Ahora:
+
+1. **Sección propia «Origen y etiquetas»** en los Ajustes del formulario
+   (`FormOriginSettings`); la agenda la tiene en «Medir conversiones → De
+   dónde llegó cada cita». El interruptor `attribution.enabled` se deriva de
+   que haya alguna columna elegida.
+2. **La página se guarda limpia y siempre** (`cleanPageUrl`, shared): sin el
+   ancla ni los parámetros de seguimiento (`utm_*`, `gclid`, `fbclid`, `_gl`…),
+   con el resto de la consulta (`?producto=taza`), sólo http(s), 1000
+   caracteres. La página pública la manda en todo envío (salvo el enlace para
+   actualizar un registro): con el script, la del sitio que pasa `embed.js`;
+   sin el script, el `document.referrer` del marco (el código de inserción
+   lleva `referrerpolicy="no-referrer-when-downgrade"`); por el enlace
+   directo, la dirección del formulario.
+3. **`settings.record_values`** (`formRecordValuesSchema`, tolerante):
+   `form_name_field_id` (columna de texto) con el nombre interno o el título
+   (`form_name_source`), y `fixed` (hasta 20 `{field_id, value}` de tipos
+   `FORM_FIXED_VALUE_TYPES`). Se limpia al guardar (`cleanFormRecordValues`):
+   no puede caer en una columna que el formulario pregunta (salvo varias
+   opciones, que se SUMAN) ni en una que escriben los cálculos o el origen
+   (el origen se limpia primero y gana el choque). Al enviar,
+   `applyFormRecordValues` aplica: lo respondido gana, cada valor se revalida
+   con `validateFieldValue` y uno que el campo ya no acepta (opción borrada) se
+   descarta sin fallar.
+4. **El origen viaja a las automatizaciones aunque no se guarde**: el evento
+   `form_submitted` lleva `form.origin` (también tras la confirmación por
+   correo: `form_pending_submissions.origin`, migración 0109). El disparador
+   acepta `page_contains` / `page_excludes` (términos por coma, sin
+   mayúsculas ni tildes, `pageMatchesAny`) y hay variables
+   `{{formulario.nombre|titulo|pagina|llego_desde|utm_*}}`.
+5. Migrar una empresa re-mapea las personas y los equipos de los valores fijos
+   (`remapFormConfig`); el asistente/MCP ve `record_values` en
+   `get_list_schema`.
+
 ---
 
-**Versión del documento:** 1.160.0 (Importar suscripciones de Mercado Pago)
+**Versión del documento:** 1.161.0 (Origen y etiquetas de los formularios)

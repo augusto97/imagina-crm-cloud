@@ -394,8 +394,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.385**
-(«Más usadas» en lugar de «Recientes» en el menú de Listas: las listas y
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.386**
+(formularios con **«Origen y etiquetas»**: cada registro puede guardar la
+página del sitio desde donde se envió —también por el enlace directo y en un
+marco sin el script—, el nombre del formulario y valores fijos como una
+etiqueta, un estado o el responsable; el disparador «Cuando se envía un
+formulario» puede correr sólo si la página contiene algo, con variables
+`{{formulario.pagina}}`, addendum ADR-S97. Sigue **v0.1.387: cobrar al agendar
+en la agenda** —Mercado Pago, Wompi o PayPal—, pedido en el mismo mensaje;
+antes v0.1.385: «Más usadas» en lugar de «Recientes» en el menú de Listas: las listas y
 tableros que la persona usa en días distintos, con un orden que no se mueve
 mientras trabaja, guardado en la cuenta y con interruptor por persona —«…» de la
 sección o Ajustes → Cuenta → Apariencia—, addendum ADR-S90; antes v0.1.384:
@@ -1646,6 +1653,30 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-06 · v0.1.386** — **Formularios: de qué página y de qué formulario
+  llegó cada registro** (pedido de un cliente del usuario: «al llenar el
+  formulario debería tener la opción de agregar la url desde donde se envió…
+  no puedo identificar desde qué url llegó ese registro… que se le ponga una
+  etiqueta o el nombre del formulario, porque una lista puede tener varios
+  formularios… y crear automatizaciones si la url contiene un slug»; en el
+  mismo mensaje: «en los agendamientos no hay opción para cobrar», que pasa a
+  v0.1.387). La página ya existía desde v0.1.374 pero escondida en «Medir
+  conversiones», detrás de un interruptor, sin la consulta y vacía por el
+  enlace directo o un marco sin script. Ahora: sección **Ajustes → Origen y
+  etiquetas** (página limpia —sin `#`, utm ni ids de clic, con el resto de la
+  consulta— por script, por `document.referrer` del marco o por el enlace
+  directo; nombre del formulario —interno o título— en una columna de texto;
+  hasta 20 **valores fijos** por registro con la regla «lo respondido gana y en
+  varias opciones se suman»), el origen viaja al disparador aunque no se guarde
+  (y espera la confirmación por correo: migración 0109), filtro **«Sólo si la
+  página contiene / excepto si contiene»** y variables
+  `{{formulario.nombre|titulo|pagina|llego_desde|utm_*}}`. En la agenda las
+  columnas de origen pasan a «De dónde llegó cada cita». Ayuda: artículo
+  «De dónde llegó cada registro» en Aprende con la ilustración `form-origin`,
+  guía `form-origin`, paso del recorrido y novedad. Tests: shared 9, API 5
+  (`forms-origin.spec`) + re-mapeo, front 1 nuevo; E2E 27/27 en escritorio y
+  28/28 en celular oscuro con un sitio de otro origen (con script, sin script y
+  enlace directo).
 - **2026-11-06 · v0.1.385** — **«Más usadas» en lugar de «Recientes»** (pedido
   del usuario: «lo de recientes no debería ser recientes porque es molesto que
   cambie tanto… debería ser como lo más usado… también se debería poder activar

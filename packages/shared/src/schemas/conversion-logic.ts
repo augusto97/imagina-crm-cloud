@@ -47,7 +47,7 @@ export const ATTRIBUTION_LABELS: Record<AttributionKey, string> = {
     fbclid: 'ID de clic de Meta (fbclid)',
     msclkid: 'ID de clic de Microsoft (msclkid)',
     ttclid: 'ID de clic de TikTok (ttclid)',
-    page_url: 'Página donde se llenó',
+    page_url: 'Página desde donde se envió',
     referrer: 'Llegó desde',
 };
 
@@ -86,7 +86,9 @@ export function cleanAttribution(raw: unknown): AttributionData {
         if (s === '') continue;
         if (ATTRIBUTION_URL_KEYS.has(k)) {
             if (s.length > MAX_URL || !/^https?:\/\/[^\s]+$/i.test(s)) continue;
-            out[k] = s;
+            // v0.1.386 — la página, sin la campaña ni los ids de clic (van en sus columnas).
+            const v = k === 'page_url' ? cleanPageUrl(s) : s;
+            if (v !== '') out[k] = v;
         } else if (ATTRIBUTION_CLICK_KEYS.has(k)) {
             if (CLICK_RE.test(s)) out[k] = s;
         } else {
@@ -111,6 +113,103 @@ export function attributionFromSearch(search: string): AttributionData {
         if (v) out[k] = v;
     }
     return cleanAttribution(out);
+}
+
+// ───────────── La página desde donde se envió (v0.1.386) ─────────────
+
+/**
+ * Parámetros de la dirección que no dicen nada de la PÁGINA: la campaña y los
+ * ids de clic (ya van en sus propias columnas) y los que agregan las
+ * herramientas de medición y de correo. Se quitan para que la página quede
+ * legible y se pueda agrupar o filtrar por ella.
+ */
+export const PAGE_NOISE_PARAMS: ReadonlySet<string> = new Set([
+    'utm_source',
+    'utm_medium',
+    'utm_campaign',
+    'utm_term',
+    'utm_content',
+    'utm_id',
+    'gclid',
+    'gbraid',
+    'wbraid',
+    'gclsrc',
+    'dclid',
+    'fbclid',
+    'msclkid',
+    'ttclid',
+    'twclid',
+    'li_fat_id',
+    'yclid',
+    'igshid',
+    'srsltid',
+    '_gl',
+    '_ga',
+    'mc_cid',
+    'mc_eid',
+    '_hsenc',
+    '_hsmi',
+    'mkt_tok',
+]);
+
+/**
+ * La dirección de una página lista para guardar: sin el ancla (#…) y sin los
+ * parámetros de campaña o de medición; conserva la ruta y el resto de la
+ * consulta (`?producto=taza`). Sólo http(s) y hasta 1000 caracteres; lo raro da ''.
+ */
+export function cleanPageUrl(href: string): string {
+    const raw = (href ?? '').trim();
+    if (!/^https?:\/\/[^\s/?#]+/i.test(raw)) return '';
+    const noHash = raw.split('#')[0]!;
+    const q = noHash.indexOf('?');
+    const base = q === -1 ? noHash : noHash.slice(0, q);
+    const keep = (q === -1 ? '' : noHash.slice(q + 1))
+        .split('&')
+        .filter((pair) => {
+            if (pair === '') return false;
+            const name = pair.split('=')[0]!;
+            let decoded = name;
+            try {
+                decoded = decodeURIComponent(name);
+            } catch {
+                // nada: se compara como venía
+            }
+            return !PAGE_NOISE_PARAMS.has(decoded.toLowerCase());
+        });
+    const out = keep.length ? `${base}?${keep.join('&')}` : base;
+    return out.length > MAX_URL ? '' : out;
+}
+
+/** Sin mayúsculas ni tildes (para comparar «Navidad» con «navidad»). */
+function fold(s: string): string {
+    return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+
+/** Las palabras de un filtro de página: separadas por coma o salto de línea, sin repetir. */
+export function pageTerms(terms: string): string[] {
+    const out: string[] = [];
+    for (const t of (terms ?? '').split(/[,\n]/)) {
+        const v = fold(t.trim());
+        if (v !== '' && !out.includes(v)) out.push(v);
+    }
+    return out.slice(0, 20);
+}
+
+/**
+ * ¿La página contiene ALGUNA de estas palabras? (sin mayúsculas ni tildes).
+ * Sin palabras, vale cualquier página. Una página vacía no contiene nada.
+ */
+export function pageMatchesAny(page: string | null | undefined, terms: string): boolean {
+    const list = pageTerms(terms);
+    if (list.length === 0) return true;
+    let p = page ?? '';
+    try {
+        p = decodeURIComponent(p);
+    } catch {
+        // se compara como vino
+    }
+    const hay = fold(p);
+    return hay !== '' && list.some((t) => hay.includes(t));
 }
 
 // ─────────────────────────── Google Ads ───────────────────────────

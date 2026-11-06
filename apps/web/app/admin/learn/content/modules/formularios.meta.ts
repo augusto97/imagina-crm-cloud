@@ -160,6 +160,15 @@ export const meta: LearnModuleMeta = {
             needs: 'manage_forms',
         },
         {
+            id: 'formularios-origen',
+            title: 'De dónde llegó cada registro: página, formulario y etiquetas',
+            summary: 'Guarda la página de tu sitio desde donde se envió, el nombre del formulario y valores fijos (una etiqueta, un estado, el responsable) en cada registro, y arma automatizaciones según la página.',
+            minutes: 6,
+            level: 'basic',
+            keywords: 'origen pagina url desde donde se envio landing slug nombre del formulario de que formulario llego etiqueta etiquetas tag valor fijo valor por defecto estado responsable equipo varios formularios misma lista automatizacion pagina contiene referrer llego desde',
+            needs: 'manage_forms',
+        },
+        {
             id: 'formularios-automatizar',
             title: 'Qué hacer con cada respuesta: avisos y automatizaciones',
             summary: 'Avisa al equipo, contesta a quien llenó el formulario, asigna un responsable y más, sin mover un dedo.',

@@ -5,6 +5,7 @@ import {
     Clock,
     Code2,
     FileText,
+    Globe,
     Hand,
     Mail,
     MailCheck,
@@ -35,6 +36,7 @@ import type { FieldEntity } from '@/types/field';
 
 import { Check, Field, Section } from '../../automations/email/EmailBlockInspector';
 import { ConversionSettings, ThankYouUrlField } from '../design/ConversionSettings';
+import { FormOriginSettings } from '../design/RecordOriginSettings';
 import { RecallPicker, withToken } from '../design/LogicPanel';
 import { ChargeSettings, EditLinksSettings, LayoutSettings, SaveProgressSettings, WelcomeSettings } from '../design/StartSettings';
 import { emailQuestions, updateItem, updateSettings } from '../formDesignOps';
@@ -58,6 +60,7 @@ const GROUP_ICON: Record<SettingsGroupId, LucideIcon> = {
     record: FileText,
     security: ShieldCheck,
     embed: Code2,
+    origin: Globe,
 };
 
 export interface SettingsContext {
@@ -106,6 +109,15 @@ export function groupSummary(g: SettingsGroupId, config: FormConfig, captcha: Ca
             return formPaymentActive(config) ? __('Cobra al enviar') : formSubscriptionActive(config) ? __('Suscribe al enviar') : __('Apagado');
         case 'record':
             return s.edit_links.enabled ? __('Con enlaces para actualizar') : s.record_template_id !== null ? __('Desde una plantilla') : __('Crea un registro');
+        case 'origin': {
+            const rv = s.record_values;
+            const parts = [
+                s.attribution.enabled && s.attribution.page_url_field_id !== null ? __('Página') : null,
+                rv.form_name_field_id !== null ? __('Nombre del formulario') : null,
+                rv.fixed.length > 0 ? (rv.fixed.length === 1 ? __('1 valor fijo') : __('%d valores fijos').replace('%d', String(rv.fixed.length))) : null,
+            ].filter(Boolean);
+            return parts.length ? parts.join(' · ') : __('Sin guardar');
+        }
         case 'security':
             return [s.captcha && captcha?.provider ? __('Anti-robots') : null, s.data_consent ? __('Autorización de datos') : null].filter(Boolean).join(' · ') || on(false);
         case 'embed':
@@ -211,6 +223,9 @@ export function SettingsGroupPanel({ group, ctx, showHeader = true }: { group: S
             {group === 'save' && <SaveProgressSettings config={ctx.config} onChange={ctx.onChange} />}
             {group === 'charge' && <ChargeSettings config={ctx.config} fields={ctx.fields} onChange={ctx.onChange} />}
             {group === 'record' && <RecordSettings ctx={ctx} />}
+            {group === 'origin' && (
+                <FormOriginSettings config={ctx.config} onChange={ctx.onChange} fields={ctx.fields} listId={ctx.listId} formName={ctx.name} takenFieldIds={takenByForm(ctx.config)} />
+            )}
             {group === 'security' && (
                 <>
                     <CaptchaSettings ctx={ctx} />
@@ -493,7 +508,7 @@ export function DataConsentSettings({ ctx }: { ctx: Pick<SettingsContext, 'confi
 }
 
 function EmbedSettings({ ctx }: { ctx: SettingsContext }): JSX.Element {
-    const { config, fields } = ctx;
+    const { config } = ctx;
     const s = config.settings;
     const set = (patch: Partial<FormConfig['settings']>): void => ctx.onChange(updateSettings(config, patch));
     return (
@@ -526,11 +541,7 @@ function EmbedSettings({ ctx }: { ctx: SettingsContext }): JSX.Element {
             <ConversionSettings
                 kind="form"
                 conversion={s.conversion}
-                attribution={s.attribution}
                 onChange={(patch) => set(patch)}
-                fields={fields}
-                takenFieldIds={takenByForm(config)}
-                listId={ctx.listId}
                 calcs={s.calcs.map((c) => ({ key: c.key, name: c.name }))}
                 canCharge={formPaymentActive(config)}
             />

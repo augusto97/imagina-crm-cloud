@@ -18,6 +18,7 @@ export * from './schemas/list-template';
 export * from './schemas/public-list';
 export * from './schemas/form';
 export * from './schemas/form-logic';
+export * from './schemas/form-record-values';
 export * from './schemas/form-stats';
 export * from './schemas/conversion';
 export * from './schemas/conversion-logic';

@@ -93,7 +93,7 @@ export function embedCode(t: EmbedTarget, mode: EmbedMode, opts: EmbedOptions): 
     }
     const height = t.kind === 'booking' ? 720 : 640;
     return (
-        `<iframe src="${t.url}" title="${title}" data-imagina-form style="width:100%;height:${height}px;border:0" loading="lazy"></iframe>\n` +
+        `<iframe src="${t.url}" title="${title}" data-imagina-form style="width:100%;height:${height}px;border:0" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>\n` +
         `<script src="${script}" async></script>`
     );
 }

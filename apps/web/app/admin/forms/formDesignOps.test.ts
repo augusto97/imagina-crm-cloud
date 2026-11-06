@@ -16,6 +16,7 @@ import {
     usedFieldIds,
     availableFields,
     attributionColumnIds,
+    recordValuesColumnIds,
     conditionCandidates,
     emailQuestions,
     missingRequired,
@@ -98,6 +99,22 @@ describe('constructor de formularios', () => {
         const off: FormConfig = { ...on, settings: { ...on.settings, attribution: { ...on.settings.attribution, enabled: false } } };
         expect(attributionColumnIds(off).size).toBe(0);
         expect(availableFields(fields, off).map((f) => f.id)).toEqual([6]);
+    });
+
+    it('v0.1.386 — el nombre del formulario y los valores fijos no se ofrecen como pregunta (salvo varias opciones)', () => {
+        const c = base();
+        const extra = [...fields, { id: 7, label: 'Formulario', type: 'text', is_required: false }, { id: 8, label: 'Etiquetas', type: 'multi_select', is_required: false }];
+        const cfg: FormConfig = {
+            ...c,
+            settings: {
+                ...c.settings,
+                record_values: { form_name_field_id: 7, form_name_source: 'name', fixed: [{ field_id: 6, value: true }, { field_id: 8, value: ['web'] }] },
+            },
+        };
+        expect(recordValuesColumnIds(cfg)).toEqual(new Set([7, 6, 8]));
+        // El nombre y la casilla fija salen del catálogo; la «varias opciones» se puede preguntar igual (se suman).
+        expect(availableFields(extra, cfg).map((f) => f.id)).toEqual([8]);
+        expect(recordValuesColumnIds(base()).size).toBe(0);
     });
 
     it('avisa de lo que la lista exige y el formulario puede no traer', () => {

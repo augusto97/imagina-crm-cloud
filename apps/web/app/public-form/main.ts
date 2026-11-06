@@ -112,15 +112,26 @@ if (embedded && !BOOT.preview && !DEMO) {
     }
 }
 
-/** Lo que se sabe de dónde vino: lo del sitio (insertado) sobre lo de la propia dirección. */
+/**
+ * Lo que se sabe de dónde vino: lo del sitio (insertado) sobre lo de la propia
+ * dirección. v0.1.386 — y la página desde donde se envió: la del sitio (la
+ * dice el script de inserción); en un iframe pegado sin el script, la que
+ * cargó el marco (`document.referrer`); en el enlace directo, el propio
+ * enlace (con su `?origen=…`). El servidor la limpia.
+ */
 function attributionNow(): AttributionData {
     const own = attributionFromSearch(location.search);
-    if (!embedded && document.referrer) {
-        try {
-            if (new URL(document.referrer).host !== location.host) own.referrer = document.referrer.slice(0, 1000);
-        } catch {
-            // nada
-        }
+    let outsideRef = '';
+    try {
+        if (document.referrer && new URL(document.referrer).host !== location.host) outsideRef = document.referrer.slice(0, 1000);
+    } catch {
+        // nada
+    }
+    if (!embedded) {
+        if (outsideRef) own.referrer = outsideRef;
+        own.page_url = location.href.slice(0, 1000);
+    } else if (outsideRef) {
+        own.page_url = outsideRef;
     }
     return { ...own, ...(hostAttribution ?? {}) };
 }
@@ -2413,7 +2424,9 @@ function submit(hpValue: string): void {
     if (startedAt && !editing()) body.elapsed_ms = Math.min(7 * 86_400_000, Date.now() - startedAt);
     if (draftCode && !editing()) body.draft = draftCode;
     // v0.1.374 — de dónde vino (sólo si el formulario lo guarda).
-    if (m.conversion?.attribution && !editing()) {
+    // v0.1.386 — siempre (aunque no vaya a columnas): las automatizaciones
+    // filtran por la página y la usan como {{formulario.pagina}}.
+    if (!editing()) {
         const a = attributionNow();
         if (Object.keys(a).length) body.attribution = a;
     }

@@ -4,6 +4,7 @@ import {
     emptyMaps,
     mapId,
     remapAutomation,
+    remapFormConfig,
     remapJson,
     remapListSettings,
     remapRecordData,
@@ -459,5 +460,47 @@ describe('remapAutomation', () => {
         expect(list[1]!.config!.else_actions).toEqual([
             { type: 'call_webhook', config: { connection_id: 150 } },
         ]);
+    });
+});
+
+describe('v0.1.386 — origen y etiquetas de un formulario', () => {
+    it('traduce las columnas y las personas o equipos de los valores fijos (y quita lo que no viajó)', () => {
+        const m = maps();
+        m.team.set(5, 105);
+        const types = new Map<number, string>([
+            [10, 'text'],
+            [11, 'user'],
+            [12, 'team'],
+        ]);
+        const out = remapFormConfig(
+            {
+                items: [],
+                settings: {
+                    record_values: {
+                        form_name_field_id: 10,
+                        fixed: [
+                            { field_id: 10, value: 'Landing' },
+                            { field_id: 11, value: 30 },
+                            { field_id: 12, value: [5, 6] },
+                        ],
+                    },
+                },
+            },
+            types,
+            m,
+        ) as { settings: { record_values: unknown } };
+        expect(out.settings.record_values).toEqual({
+            form_name_field_id: 110,
+            fixed: [
+                { field_id: 110, value: 'Landing' },
+                { field_id: 111, value: 130 },
+                { field_id: 112, value: [105] },
+            ],
+        });
+        // Una persona que no viajó: el valor fijo se descarta (no se le asigna a OTRA).
+        const gone = remapFormConfig({ settings: { record_values: { fixed: [{ field_id: 11, value: 99 }] } } }, types, m) as {
+            settings: { record_values: { fixed: unknown[] } };
+        };
+        expect(gone.settings.record_values.fixed).toEqual([]);
     });
 });

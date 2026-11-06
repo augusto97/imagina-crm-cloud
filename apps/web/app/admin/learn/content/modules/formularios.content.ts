@@ -1455,14 +1455,14 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Saber de qué campaña vino cada registro' },
             {
                 t: 'p',
-                md: 'Medir en Google Ads te dice **cuántas** conversiones trajo cada campaña. Guardar el origen te dice **cuáles registros** vinieron de cada una, en tu propia lista: así puedes armar un tablero «clientes por campaña» o saber cuánto vendiste a los que llegaron por Instagram.\n\nActiva **Guardar de dónde vino cada registro** y elige en qué columna va cada dato (o toca **Crear las columnas que faltan**). Esas columnas se llenan solas: no se preguntan en el formulario.',
+                md: 'Medir en Google Ads te dice **cuántas** conversiones trajo cada campaña. Guardar el origen te dice **cuáles registros** vinieron de cada una, en tu propia lista: así puedes armar un tablero «clientes por campaña» o saber cuánto vendiste a los que llegaron por Instagram.\n\nEso se elige en **Ajustes → Origen y etiquetas**: la página desde donde se envió, el sitio de donde llegó la persona y, en **Campaña y anuncio**, los utm y los id de clic. Elige en qué columna va cada dato o toca **Crear las columnas**. Esas columnas se llenan solas: no se preguntan en el formulario. En la agenda están en la misma sección **Medir conversiones**.',
             },
             {
                 t: 'settings',
                 rows: [
                     { name: 'Origen, Medio, Campaña (utm)', what: 'Lo que traen los enlaces de tus anuncios: «utm_source=google», «utm_campaign=navidad».' },
                     { name: 'ID de clic de Google / de Meta', what: 'El gclid o el fbclid que el anuncio le agrega a la dirección. Sirve para subir conversiones a mano o cruzar datos.' },
-                    { name: 'Página donde se llenó', what: 'La dirección exacta de tu sitio donde estaba el formulario.' },
+                    { name: 'Página desde donde se envió', what: 'La dirección exacta de la página de tu sitio donde estaba el formulario, sin la campaña ni el ancla. Si lo abren por el enlace directo, la dirección del formulario.' },
                     { name: 'Llegó desde', what: 'El sitio de donde venía la persona (Google, Instagram, otro sitio).' },
                 ],
             },
@@ -1506,7 +1506,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'example',
                 title: 'Un taller de motos que pauta en Google',
-                md: 'El taller paga anuncios de «mantenimiento de motos en Medellín» que llevan a su sitio. En la página del servicio está insertado el formulario «Pide tu cita». En **Medir conversiones** pega la etiqueta de su acción «Solicitud de cita», pone un valor fijo de **$80.000** y activa **Guardar de dónde vino cada registro**. Cada solicitud cuenta como una conversión en Google Ads con su valor, y en la lista **Solicitudes** cada fila dice de qué campaña vino. A fin de mes arma un tablero agrupado por **Campaña** y ve que «frenos» trae el doble de clientes que «aceite».',
+                md: 'El taller paga anuncios de «mantenimiento de motos en Medellín» que llevan a su sitio. En la página del servicio está insertado el formulario «Pide tu cita». En **Medir conversiones** pega la etiqueta de su acción «Solicitud de cita» y pone un valor fijo de **$80.000**, y en **Origen y etiquetas** crea las columnas de la campaña. Cada solicitud cuenta como una conversión en Google Ads con su valor, y en la lista **Solicitudes** cada fila dice de qué campaña vino. A fin de mes arma un tablero agrupado por **Campaña** y ve que «frenos» trae el doble de clientes que «aceite».',
             },
             {
                 t: 'faq',
@@ -1523,6 +1523,73 @@ export const articles: LearnArticle[] = [
                 items: [
                     { label: 'Ir a mis listas', to: '/lists' },
                     { label: 'Cómo insertarlo en tu sitio', article: 'formularios-publicar' },
+                ],
+            },
+        ],
+    },
+    {
+        id: 'formularios-origen',
+        route: '/lists',
+        related: ['formularios-automatizar', 'formularios-medir-conversiones', 'formularios-publicar'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Una lista puede recibir registros de **varios formularios** y un mismo formulario puede estar **insertado en varias páginas** de tu sitio. Para saber de dónde llegó cada registro, en el constructor del formulario entra a **Ajustes → Origen y etiquetas**. Ahí eliges tres cosas que se guardan solas en cada registro que llega por ese formulario.',
+            },
+            { t: 'anim', key: 'form-origin', caption: 'El mismo formulario en dos páginas: cada registro llega con su página, el nombre del formulario y su etiqueta.' },
+            {
+                t: 'settings',
+                title: 'Lo que puedes guardar en cada registro',
+                rows: [
+                    { name: 'Página desde donde se envió', what: 'La dirección de la página de tu sitio donde estaba el formulario (por ejemplo `tusitio.com/servicios/diseno`). Se guarda limpia: sin el ancla ni los parámetros de campaña, pero con el resto (por ejemplo `?producto=taza`).', tip: 'Funciona con el código de inserción, con un marco sin el script y con el enlace directo (ahí se guarda la dirección del formulario).' },
+                    { name: 'Llegó desde', what: 'El sitio de donde venía la persona antes de llegar a tu página: Google, Instagram u otro sitio.' },
+                    { name: 'Nombre del formulario', what: 'El nombre interno (el que ves en la lista de formularios) o el título que ve la persona, en una columna de texto. Toca **Crear la columna «Formulario»** si no tienes una.' },
+                    { name: 'Valores fijos', what: 'Una etiqueta, un estado, el responsable, el equipo, una casilla, una fecha… lo que quieras que tenga cada registro de este formulario. Por ejemplo **Etiquetas = Landing Navidad** y **Estado = Nuevo**.', tip: 'Si el formulario también pregunta ese campo, gana lo que respondió la persona. En «varias opciones» se suman las dos.' },
+                    { name: 'Campaña y anuncio', what: 'Los utm (origen, medio, campaña…) y los id de clic de Google y Meta, cada uno en su columna. Lo explicamos en «Medir conversiones».' },
+                ],
+            },
+            { t: 'h', text: 'Cómo se configura' },
+            {
+                t: 'steps',
+                items: [
+                    'Abre el formulario en **Configurar lista → Formularios** y ve a la pestaña **Ajustes**.',
+                    'Toca **Origen y etiquetas**.',
+                    'En **Página desde donde se envió**, toca **Crear las columnas** (crea «Página de origen» y «Llegó desde») o elige columnas que ya tengas.',
+                    'En **Nombre del formulario**, toca **Crear la columna «Formulario»** y elige si guardar el nombre interno o el título.',
+                    'En **Valores fijos**, agrega los campos que quieras y elige qué poner en cada uno.',
+                    'Toca **Guardar**. Desde ahora, cada registro nuevo llega con esos datos.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Las columnas se llenan solas',
+                md: 'Las columnas que eliges aquí no se preguntan en el formulario: la persona no las ve. Y una misma columna no puede guardar dos cosas: si la usas para la página, no se ofrece para el nombre del formulario ni como valor fijo.',
+            },
+            { t: 'h', text: 'Una automatización distinta para cada página' },
+            {
+                t: 'p',
+                md: 'En una automatización con el disparador **Cuando se envía un formulario** puedes escribir **Sólo si la página desde donde se envió contiene** una parte de la dirección: `navidad`, `/servicios/diseno` o varias separadas por coma. No importan las mayúsculas ni las tildes. Y en **Excepto si contiene** lo que quieras dejar afuera (por ejemplo `/pruebas`).\n\nEn los correos y mensajes tienes `{{formulario.nombre}}`, `{{formulario.titulo}}`, `{{formulario.pagina}}`, `{{formulario.llego_desde}}` y la campaña (`{{formulario.utm_campaign}}`, `{{formulario.utm_source}}`…). Esas variables funcionan aunque no hayas elegido columnas para guardarlas.',
+            },
+            {
+                t: 'example',
+                title: 'Una tienda de regalos con varias landings',
+                md: 'Detalles Andinos tiene el mismo formulario «Escríbenos» en su página de inicio y en la landing de Navidad, y otro formulario «Cotización empresarial» en la de regalos corporativos; todos llegan a la lista **Contactos**. En **Origen y etiquetas** guarda la página y el nombre del formulario, y el formulario de cotizaciones pone **Etiquetas = Empresas** y **Responsable = Laura**. Una automatización con «la página contiene `navidad`» le manda a ventas un WhatsApp con `{{formulario.pagina}}`. En la tabla agrupa por **Formulario** y ve cuántos contactos trajo cada uno.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Los registros que ya tenía se completan?', a: 'No. Sólo los que llegan desde que guardas. Los anteriores no tienen de dónde sacar la página.' },
+                    { q: 'Inserté el formulario sin el script, sólo el marco. ¿Igual guarda la página?', a: 'Sí, en la mayoría de los navegadores: el marco sabe en qué página está. Con el código de inserción completo, además guarda la campaña aunque la persona haya navegado por tu sitio antes de llegar.' },
+                    { q: '¿Puedo poner una etiqueta distinta según la respuesta?', a: 'Los valores fijos son iguales para todos los registros del formulario. Para que dependan de una respuesta, usa una automatización con una condición, o pregunta ese campo en el formulario.' },
+                    { q: '¿Y en la agenda de citas?', a: 'En el constructor de la agenda, en **Ajustes → Medir conversiones**, eliges las columnas de **De dónde llegó cada cita**.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Automatizar las respuestas', article: 'formularios-automatizar' },
                 ],
             },
         ],
@@ -1545,7 +1612,8 @@ export const articles: LearnArticle[] = [
                     'En **Cuando**, elige **Cuando se envía un formulario**.',
                     'En **Formulario**, deja **Cualquier formulario de esta lista** o elige uno en particular (por ejemplo sólo «Cotizaciones · sitio web»).',
                     'Agrega las acciones: **Enviar email**, **Actualizar un campo**, **Crear un registro**, un mensaje de WhatsApp de una app conectada, **Pedirle a un agente**…',
-                    'Usa las variables de las respuestas, por ejemplo `{{nombre}}` o `{{formulario.nombre}}` (el nombre del formulario que llenaron).',
+                    'Si el mismo formulario está en varias páginas de tu sitio, escribe en **Sólo si la página desde donde se envió contiene** una parte de la dirección (por ejemplo `navidad` o `/servicios/`). Puedes poner varias separadas por coma.',
+                    'Usa las variables de las respuestas, por ejemplo `{{nombre}}`, `{{formulario.nombre}}` (el nombre del formulario que llenaron) o `{{formulario.pagina}}` (la página desde donde se envió).',
                     'Guarda y actívala. Haz una prueba respondiendo tú el formulario.',
                 ],
             },

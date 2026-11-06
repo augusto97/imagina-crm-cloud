@@ -241,6 +241,7 @@ export const SETTINGS_GROUPS = [
     'save',
     'charge',
     'record',
+    'origin',
     'security',
     'embed',
 ] as const;
@@ -255,6 +256,7 @@ export const SETTINGS_GROUP_INFO: Record<SettingsGroupId, { title: string; hint:
     save: { title: 'Guardar el avance', hint: 'Seguir después, en el dispositivo o por correo.' },
     charge: { title: 'Cobrar o suscribir', hint: 'Que paguen o se suscriban al enviar.' },
     record: { title: 'Registros', hint: 'El registro que se crea y el enlace para actualizarlo.' },
+    origin: { title: 'Origen y etiquetas', hint: 'La página desde donde se envió, el nombre del formulario y valores fijos en cada registro.' },
     security: { title: 'Seguridad y datos', hint: 'Anti-robots y autorización de datos personales.' },
-    embed: { title: 'Medir conversiones', hint: 'Google Ads, Meta, de dónde vino cada respuesta y respuestas desde la dirección.' },
+    embed: { title: 'Medir conversiones', hint: 'Google Ads, Meta y respuestas desde la dirección.' },
 };

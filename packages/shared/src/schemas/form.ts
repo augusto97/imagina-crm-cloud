@@ -12,6 +12,7 @@ import {
 } from './conversion';
 import type { PublicDataConsent } from './data-consent';
 import type { FieldType } from './field';
+import { FORM_RECORD_VALUES_DEFAULT, formRecordValuesSchema } from './form-record-values';
 import { publicThemeSchema, readPublicTheme, type PublicChoiceStyle } from './public-theme';
 import type { PublicThemeView } from './public-theme-css';
 import { FORM_CALC_VALUE_PREFIX, FORM_PAYMENT_MAX_AMOUNT, FORM_SCALE_MAX_BUTTONS, formConditionCalcKeys, formRecallSlugs, type FormCalcLike } from './form-logic';
@@ -755,6 +756,8 @@ export const formSettingsSchema = z.object({
     conversion: conversionSettingsSchema.catch(CONVERSION_SETTINGS_DEFAULT).default(CONVERSION_SETTINGS_DEFAULT),
     /** v0.1.374 — Guardar de dónde vino cada registro (campaña, clic del anuncio, página). */
     attribution: attributionSettingsSchema.catch(ATTRIBUTION_SETTINGS_DEFAULT).default(ATTRIBUTION_SETTINGS_DEFAULT),
+    /** v0.1.386 — Origen y etiquetas: el nombre del formulario y valores fijos en cada registro. */
+    record_values: formRecordValuesSchema.catch(FORM_RECORD_VALUES_DEFAULT).default(FORM_RECORD_VALUES_DEFAULT),
 });
 export type FormSettings = z.infer<typeof formSettingsSchema>;
 

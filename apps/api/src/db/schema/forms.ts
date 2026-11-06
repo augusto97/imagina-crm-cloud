@@ -64,6 +64,8 @@ export const formPendingSubmissions = pgTable(
         endingId: varchar('ending_id', { length: 24 }),
         /** v0.1.368 — El plan de suscripción que eligió (se suscribe al confirmar). */
         planId: bigint('plan_id', { mode: 'number' }),
+        /** v0.1.386 — De dónde llegó (página, sitio anterior, campaña): para las automatizaciones al confirmar. */
+        origin: jsonb('origin').$type<Record<string, string> | null>(),
         expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     },

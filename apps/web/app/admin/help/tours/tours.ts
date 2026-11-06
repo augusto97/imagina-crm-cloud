@@ -879,10 +879,17 @@ export const TOURS: TourDef[] = [
                 tip: 'En el portal del cliente, el bloque **Pagos** le muestra su suscripción, el próximo cobro y sus pagos.',
             },
             {
+                id: 'origin',
+                art: 'form-origin',
+                title: 'De dónde llegó cada registro',
+                body: 'En los ajustes, **Origen y etiquetas** guarda en cada registro la página de tu sitio desde donde se envió, el nombre del formulario y valores fijos como una etiqueta o el responsable.',
+                tip: 'En una automatización puedes pedir que corra sólo si la página contiene, por ejemplo, «navidad».',
+            },
+            {
                 id: 'conversions',
                 art: 'form-conversions',
                 title: 'Medir conversiones de tus anuncios',
-                body: 'En los ajustes, **Medir conversiones** hace que cada envío en tu sitio cuente en Tag Manager, Google Ads y Meta, con su valor, y guarda de qué campaña vino cada registro.',
+                body: 'En los ajustes, **Medir conversiones** hace que cada envío en tu sitio cuente en Tag Manager, Google Ads y Meta, con su valor y un id único para no contarlo dos veces.',
                 tip: 'Si el anuncio lleva directo al enlace, activa **Cargar mis etiquetas en el enlace directo** y pega el ID de Google Analytics y el de tu píxel de Meta.',
             },
         ],

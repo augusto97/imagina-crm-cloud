@@ -45,6 +45,20 @@ const TRIGGERS_CACHE_TTL_S = 300;
  * «al crear la factura → avisar»), pero con un tope de profundidad y sin que
  * una automatización se re-dispare a sí misma dentro de su propia cadena.
  */
+/**
+ * v0.1.275 — El formulario público que se acaba de enviar (trigger
+ * `form_submitted`). v0.1.386 — con su título y de dónde llegó (la página
+ * desde donde se envió, el sitio anterior y la campaña), para `{{formulario.x}}`
+ * y el filtro «sólo si la página contiene…».
+ */
+export interface FormEventInfo {
+    id: number;
+    name: string;
+    title?: string;
+    /** Lo que se sabe del origen (`page_url`, `referrer`, `utm_*`), ya limpio. */
+    origin?: Record<string, string>;
+}
+
 export interface AutomationChain {
     /** 1 = el cambio lo hizo una automatización disparada por una persona. */
     depth: number;
@@ -95,7 +109,7 @@ export interface TriggerEvent {
      * v0.1.275 — el formulario público que se acaba de enviar (trigger
      * `form_submitted`): `{{formulario.nombre}}` y el filtro por formulario.
      */
-    form?: { id: number; name: string };
+    form?: FormEventInfo;
     /**
      * Campo «Botón» — el botón que se presionó (trigger `button_pressed`):
      * el filtro por botón y `{{boton.nombre}}`, `{{boton.persona}}`.
