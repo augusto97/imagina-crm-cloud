@@ -75,11 +75,11 @@ export const meta: LearnModuleMeta = {
         },
         {
             id: 'mi-dia-favoritos',
-            title: 'Favoritos y recientes: ten a mano lo que más usas',
-            summary: 'Ancla listas, tableros y vistas, y vuelve en un clic a lo que abriste hace poco.',
+            title: 'Favoritos y más usadas: ten a mano lo que más usas',
+            summary: 'Ancla listas, tableros y vistas, y llega de un clic a lo que más abres.',
             minutes: 4,
             level: 'basic',
-            keywords: 'favoritos anclar pin fijar recientes vistas guardadas atajos',
+            keywords: 'favoritos anclar pin fijar recientes mas usadas frecuentes ocultar vistas guardadas atajos',
         },
     ],
 };

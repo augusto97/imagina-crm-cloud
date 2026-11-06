@@ -1,4 +1,4 @@
-import { lazy, memo, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useLocation, useSearchParams } from 'react-router';
 import {
@@ -7,7 +7,6 @@ import {
     ChevronsLeft,
     ChevronsRight,
     AlarmClock,
-    FileText,
     GraduationCap,
     LayoutGrid,
     ListChecks,
@@ -21,7 +20,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 
 import { useSession } from '@/cloud/session';
-import { DEFAULT_DASHBOARD_ICON, DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
+import { DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
 import { resolveSettingsSection, settingsSectionGroups } from '@/cloud/settingsSections';
 import { useBrandingData } from '@/hooks/useBranding';
 import { useAppIdentity } from '@/hooks/useAppIdentity';
@@ -32,7 +31,6 @@ import { viewTypeIcon } from '@/admin/records/views/viewTypeIcon';
 import { useLists, useReorderLists } from '@/hooks/useLists';
 import { useMyWork } from '@/hooks/useNotifications';
 import { useEventCallback } from '@/hooks/useEventCallback';
-import { useRecents } from '@/lib/recents';
 import { getTenantTimeZone, browserTimeZone, formatDateStr, formatDateTimeStr } from '@/lib/tenantFormat';
 import { DUE_GROUPS, groupChecklistWork, groupWork } from '@/admin/mywork/myWorkGroups';
 import { useListGroups } from '@/hooks/useListGroups';
@@ -59,6 +57,7 @@ import { DashboardPanelItem } from './DashboardPanelItem';
 import { DashboardsPanelList } from './DashboardsPanelList';
 import { ListPanelItem } from './ListPanelItem';
 import { ListsTree } from './ListsTree';
+import { MostUsedPanelSection } from './MostUsedSection';
 import { PeekHoldContext } from './peekHold';
 import { WorkspaceSwitcherTitle } from './WorkspaceSwitcher';
 
@@ -257,8 +256,8 @@ export function Sidebar(): JSX.Element {
         <>
             {sec === 'home' && (
                 <>
-                    {/* v0.1.286 — lo abierto hace poco, arriba del árbol. */}
-                    <RecentsPanelSection />
+                    {/* v0.1.385 — lo que más se usa (antes «Recientes»), arriba del árbol. */}
+                    <MostUsedPanelSection />
                     {/* v0.1.286 — también con CERO listas: la cabecera y
                         "Nueva lista" no pueden depender de que ya haya una
                         (un workspace nuevo quedaba con el panel en blanco). */}
@@ -952,47 +951,6 @@ function MyWorkPanelSummary(): JSX.Element {
         </div>
     );
 }
-
-/**
- * v0.1.286 — «Recientes» arriba del árbol de listas: lo último abierto (listas,
- * registros, tableros), por empresa y por navegador. Máximo 4: es un atajo,
- * no un historial (el completo está en la paleta, Ctrl+K).
- */
-const RecentsPanelSection = memo(function RecentsPanelSection(): JSX.Element | null {
-    const tenantId = useSession((s) => s.activeTenantId);
-    const recents = useRecents(tenantId).slice(0, 4);
-    if (recents.length === 0) return null;
-    return (
-        <PanelSection label={__('Recientes')}>
-            <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5" data-testid="panel-recents">
-                {recents.map((r) => {
-                    const Icon =
-                        r.kind === 'record'
-                            ? FileText
-                            : (listIcon(r.icon) ?? (r.kind === 'dashboard' ? DEFAULT_DASHBOARD_ICON : DEFAULT_LIST_ICON));
-                    const color = r.kind === 'record' ? undefined : listColor(r.color);
-                    return (
-                        <li key={`${r.kind}-${r.id}`}>
-                            <a
-                                href={`#${r.href}`}
-                                title={r.context ? `${r.label} · ${r.context}` : r.label}
-                                className="imcrm-flex imcrm-min-h-10 imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2.5 imcrm-py-1.5 imcrm-text-[14px] imcrm-text-muted-foreground hover:imcrm-bg-muted hover:imcrm-text-foreground lg:imcrm-min-h-0 lg:imcrm-text-[13px]"
-                            >
-                                <Icon className={cn('imcrm-h-4 imcrm-w-4 imcrm-shrink-0', !color && 'imcrm-opacity-60')} style={color ? { color } : undefined} aria-hidden />
-                                <span className="imcrm-min-w-0 imcrm-truncate">{r.label}</span>
-                                {r.context && (
-                                    <span className="imcrm-ml-auto imcrm-max-w-[40%] imcrm-shrink-0 imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">
-                                        {r.context}
-                                    </span>
-                                )}
-                            </a>
-                        </li>
-                    );
-                })}
-            </ul>
-        </PanelSection>
-    );
-});
 
 /** Spinner chico para los árboles que aún cargan. */
 function PanelLoading(): JSX.Element {

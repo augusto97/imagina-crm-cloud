@@ -1,7 +1,10 @@
 import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import {
+    applyMostUsedVisits,
     favoritesSchema,
     mergeGuideProgress,
+    mostUsedState,
+    readMostUsed,
     readMobileNavConfig,
     parseGuideProgress,
     type FavoriteView,
@@ -10,7 +13,10 @@ import {
     type MeUserSummary,
     type MobileNavConfig,
     type MobileNavState,
+    type MostUsedState,
+    type MostUsedVisit,
     type UpdateFavoritesInput,
+    type UpdateMostUsedInput,
     type UpdateGuideProgressInput,
 } from '@imagina-base/shared';
 import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
@@ -266,6 +272,79 @@ export class MeService {
                 .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId))),
         );
         return this.getMobileNav(tenantId, userId);
+    }
+
+    // ── v0.1.385 — «Más usadas» del menú de Listas ──────────────────────
+
+    /**
+     * Las listas y tableros que la persona usa de verdad (frecuencia con
+     * caducidad, ver `most-used.ts` en shared), ya ordenadas. Viven en
+     * `memberships.settings.most_used`, por persona y empresa.
+     */
+    async getMostUsed(tenantId: number, userId: number, now = Date.now()): Promise<MostUsedState> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ settings: memberships.settings })
+                .from(memberships)
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
+                .limit(1),
+        );
+        return mostUsedState(readMostUsed((row?.settings as Record<string, unknown> | null)?.most_used), now);
+    }
+
+    /**
+     * Anota visitas (llegan juntas desde el navegador cada pocos minutos).
+     * Con la fila bloqueada y escribiendo SÓLO la clave `most_used`: lo que
+     * otra pieza guarde a la vez en `settings` no se pisa, y dos dispositivos
+     * que mandan a la vez no se pisan entre sí. Apagada, no se anota nada.
+     */
+    async recordMostUsedVisits(tenantId: number, userId: number, visits: readonly MostUsedVisit[], now = Date.now()): Promise<MostUsedState> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [row] = await tx
+                .select({ settings: memberships.settings })
+                .from(memberships)
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
+                .limit(1)
+                .for('update');
+            if (!row) throw new NotFoundException({ code: 'not_found', message: 'No eres miembro de esta empresa', data: { status: 404 } });
+            const store = readMostUsed((row.settings as Record<string, unknown> | null)?.most_used);
+            if (!store.enabled) return mostUsedState(store, now);
+            const next = applyMostUsedVisits(store, visits, now);
+            await tx
+                .update(memberships)
+                .set({
+                    settings: sql`coalesce(${memberships.settings}, '{}'::jsonb) || jsonb_build_object('most_used', ${JSON.stringify(next)}::jsonb)`,
+                    updatedAt: new Date(),
+                })
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
+            return mostUsedState(next, now);
+        });
+    }
+
+    /** Encender, apagar o empezar de cero. Apagar NO borra lo contado. */
+    async updateMostUsed(tenantId: number, userId: number, patch: UpdateMostUsedInput, now = Date.now()): Promise<MostUsedState> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [row] = await tx
+                .select({ settings: memberships.settings })
+                .from(memberships)
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
+                .limit(1)
+                .for('update');
+            if (!row) throw new NotFoundException({ code: 'not_found', message: 'No eres miembro de esta empresa', data: { status: 404 } });
+            const store = readMostUsed((row.settings as Record<string, unknown> | null)?.most_used);
+            const next = {
+                enabled: patch.enabled ?? store.enabled,
+                items: patch.reset === true ? {} : store.items,
+            };
+            await tx
+                .update(memberships)
+                .set({
+                    settings: sql`coalesce(${memberships.settings}, '{}'::jsonb) || jsonb_build_object('most_used', ${JSON.stringify(next)}::jsonb)`,
+                    updatedAt: new Date(),
+                })
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
+            return mostUsedState(next, now);
+        });
     }
 
     /**

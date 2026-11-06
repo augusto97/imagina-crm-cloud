@@ -17,9 +17,11 @@ import {
 import {
     deleteAccountSchema,
     mobileNavConfigSchema,
+    recordMostUsedVisitsSchema,
     updateEmailSignatureSchema,
     updateFavoritesSchema,
     updateGuideProgressSchema,
+    updateMostUsedSchema,
     type DeleteAccountInput,
     type FavoriteView,
     type Favorites,
@@ -27,9 +29,12 @@ import {
     type MeUserSummary,
     type MobileNavConfig,
     type MobileNavState,
+    type MostUsedState,
+    type RecordMostUsedVisitsInput,
     type UpdateEmailSignatureInput,
     type UpdateFavoritesInput,
     type UpdateGuideProgressInput,
+    type UpdateMostUsedInput,
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
@@ -201,6 +206,44 @@ export class MeController {
     async clearTeamMobileNav(@Req() req: FastifyRequest): Promise<MobileNavState> {
         assertAdmin(req);
         return this.me.setTeamMobileNav(tenantId(req), req.authUserId!, req.impersonatedBy ?? req.authUserId ?? null, null);
+    }
+
+    // ── v0.1.385 — «Más usadas» del menú de Listas ───────────────────────
+
+    @Get('most-used')
+    @AllowReadOnly()
+    @UseGuards(SessionGuard, TenantGuard)
+    getMostUsed(@Req() req: FastifyRequest): Promise<MostUsedState> {
+        return this.me.getMostUsed(tenantId(req), req.authUserId!);
+    }
+
+    /**
+     * Anota las visitas que el navegador juntó. Es una preferencia de la
+     * interfaz: vale también en solo-lectura. Durante una impersonación no se
+     * anota nada (lo que mira el operador no es uso de la persona).
+     */
+    @Post('most-used/visits')
+    @HttpCode(200)
+    @AllowReadOnly()
+    @UseGuards(SessionGuard, TenantGuard)
+    recordMostUsedVisits(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(recordMostUsedVisitsSchema)) body: RecordMostUsedVisitsInput,
+    ): Promise<MostUsedState> {
+        if (req.impersonatedBy !== undefined) return this.me.getMostUsed(tenantId(req), req.authUserId!);
+        return this.me.recordMostUsedVisits(tenantId(req), req.authUserId!, body.visits);
+    }
+
+    /** Mostrar u ocultar la sección, o empezar de cero. */
+    @Patch('most-used')
+    @AllowReadOnly()
+    @UseGuards(SessionGuard, TenantGuard)
+    updateMostUsed(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(updateMostUsedSchema)) patch: UpdateMostUsedInput,
+    ): Promise<MostUsedState> {
+        if (req.impersonatedBy !== undefined) return this.me.getMostUsed(tenantId(req), req.authUserId!);
+        return this.me.updateMostUsed(tenantId(req), req.authUserId!, patch);
     }
 
     // ── Datos personales (v0.1.121, GDPR art. 15 y 17) ──────────────────

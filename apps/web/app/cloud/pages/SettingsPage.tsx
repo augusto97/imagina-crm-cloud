@@ -11,6 +11,7 @@ import {
     type SettingsSectionId,
 } from '@/cloud/settingsSections';
 import { AppearanceCard } from '@/admin/settings/AppearanceCard';
+import { MostUsedCard } from '@/admin/settings/MostUsedCard';
 import { lazyWithReload } from '@/lib/lazyWithReload';
 
 // v0.1.347 — el editor de la barra del celular (chunk propio: sólo en Apariencia).
@@ -242,6 +243,8 @@ export function SettingsPage(): JSX.Element {
                 {active === 'apariencia' && (
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-8">
                         <AppearanceCard />
+                        {/* v0.1.385 — «Más usadas» del menú de Listas (se guarda en la cuenta). */}
+                        {!isGuest && <MostUsedCard />}
                         {/* v0.1.347 — la barra de abajo del celular (se guarda en la cuenta). */}
                         {!isGuest && (
                             <section className="imcrm-flex imcrm-max-w-xl imcrm-flex-col imcrm-gap-3" id="barra-celular">

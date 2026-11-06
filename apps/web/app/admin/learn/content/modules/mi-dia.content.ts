@@ -551,7 +551,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Si todos los días abres las mismas tres listas, un tablero y una vista filtrada, **anclarlas a Favoritos** te ahorra buscarlas. Y lo que abriste hace poco queda en **Recientes**, arriba del panel y en la búsqueda global.',
+                md: 'Si todos los días abres las mismas tres listas, un tablero y una vista filtrada, **anclarlas a Favoritos** te ahorra buscarlas. Y las listas y tableros que más usas aparecen solos en **Más usadas**, arriba del panel de Listas.',
             },
             { t: 'anim', key: 'dia-favoritos', caption: 'Al tocar el pin, la lista se suma a Favoritos.' },
             { t: 'h', text: 'Anclar a favoritos' },
@@ -569,10 +569,25 @@ export const articles: LearnArticle[] = [
                 t: 'p',
                 md: 'Toca **Favoritos** en el riel (o **g** y después **f**). Ves tus anclados como tarjetas, agrupados **Por carpeta** (la carpeta de cada lista, y los tableros al final) o **Por tipo** (Listas, Dashboards, Vistas). Para quitar uno, toca su pin: **Quitar de favoritos**. Los favoritos son **tuyos**: cada persona del equipo tiene los suyos.',
             },
-            { t: 'h', text: 'Recientes' },
+            { t: 'h', text: 'Más usadas' },
             {
                 t: 'p',
-                md: 'La app recuerda lo último que abriste: registros, listas y tableros. Lo ves arriba del panel de Listas, en **Recientes**, y en la búsqueda global (Ctrl K) antes de escribir nada. Es la forma más rápida de volver al cliente que estabas atendiendo hace diez minutos.',
+                md: 'Arriba del panel de **Listas** (y de la pantalla de Listas en el celular) la app te muestra las listas y tableros que **más abres**. No hace falta anclar nada: se arma sola con tu uso, y el orden **no cambia mientras trabajas**.',
+            },
+            { t: 'anim', key: 'mas-usadas', caption: 'Lo que usas en varios días sube a «Más usadas»; un registro abierto un momento no cuenta.' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Qué cuenta', what: 'Entrar a una lista o a un tablero, como mucho una vez cada 30 minutos. Abrir un registro, cambiar de vista, filtrar o entrar a los ajustes **no** cuenta.' },
+                    { name: 'Cuándo aparece', what: 'Cuando usas la lista o el tablero en **dos días distintos**. Una visita suelta no entra.', tip: 'Por eso, recién empezando, la sección puede no verse: aparece sola en uno o dos días.' },
+                    { name: 'El orden', what: 'Lo que usas seguido sube y lo que dejas de usar baja solo en un par de semanas. Se renueva **al día siguiente** o al volver a abrir la app, nunca mientras trabajas.' },
+                    { name: 'Ocultarla', what: 'Toca **…** junto al título **Más usadas** → **Ocultar esta sección**. Para volver a mostrarla o **Empezar de cero**: **Ajustes → Cuenta → Apariencia**.', tip: 'Mientras esté oculta no se cuenta nada.' },
+                ],
+            },
+            { t: 'h', text: 'Recientes en la búsqueda' },
+            {
+                t: 'p',
+                md: 'La búsqueda global (Ctrl K) sigue recordando lo último que abriste, **registros incluidos**: antes de escribir nada ves **Recientes**. Es la forma más rápida de volver al cliente que estabas atendiendo hace diez minutos.',
             },
             { t: 'h', text: 'Ideas según tu trabajo' },
             {
@@ -586,8 +601,8 @@ export const articles: LearnArticle[] = [
             {
                 t: 'callout',
                 tone: 'tip',
-                title: 'Favoritos, recientes o carpetas',
-                md: 'Usa **Favoritos** para lo que abres todos los días, **Recientes** para volver a lo que abriste hace un rato y las **carpetas** del panel para ordenar todas las listas de la empresa. Las tres cosas conviven: anclar una lista no la saca de su carpeta.',
+                title: 'Favoritos, más usadas, recientes o carpetas',
+                md: 'Usa **Favoritos** para lo que quieres siempre en el mismo lugar, **Más usadas** para lo que la app ve que abres seguido, **Recientes** (en la búsqueda) para volver a lo que abriste hace un rato y las **carpetas** del panel para ordenar todas las listas de la empresa. Todo convive: anclar una lista no la saca de su carpeta.',
             },
             {
                 t: 'example',

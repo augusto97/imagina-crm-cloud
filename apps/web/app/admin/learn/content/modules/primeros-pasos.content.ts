@@ -125,7 +125,7 @@ export const articles: LearnArticle[] = [
                 t: 'settings',
                 title: 'Qué hay en cada ícono del riel',
                 rows: [
-                    { name: 'Listas', what: 'Tus listas, ordenadas en carpetas, con lo que abriste hace poco arriba (**Recientes**).', tip: 'Es donde vas a pasar la mayor parte del día.' },
+                    { name: 'Listas', what: 'Tus listas, ordenadas en carpetas, con las que más usas arriba (**Más usadas**).', tip: 'Es donde vas a pasar la mayor parte del día.' },
                     { name: 'Mi trabajo', what: 'Todo lo que tienes asignado en todas las listas, agrupado por vencimiento, más tus recordatorios, aprobaciones y lo que sigues.', tip: 'Ábrelo al empezar el día: es tu lista de pendientes.' },
                     { name: 'Favoritos', what: 'Las listas, tableros y vistas que anclaste con el pin.', tip: 'Ancla lo que abres todos los días.' },
                     { name: 'Tableros', what: 'Los dashboards con gráficos y cifras de tu operación.', tip: 'Aparece si tu rol puede ver tableros.' },
@@ -141,7 +141,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'El panel lateral' },
             {
                 t: 'p',
-                md: 'El panel muestra el contenido de la sección elegida. En **Listas** verás arriba **Recientes** (lo último que abriste) y debajo **Espacio de trabajo**, con tus carpetas y listas. Junto al título hay dos botones: **+** (**Nueva lista**) y el de carpeta (**Nueva carpeta**).',
+                md: 'El panel muestra el contenido de la sección elegida. En **Listas** verás arriba **Más usadas** (las listas y tableros que más abres; aparecen solas con el uso) y debajo **Espacio de trabajo**, con tus carpetas y listas. Junto al título hay dos botones: **+** (**Nueva lista**) y el de carpeta (**Nueva carpeta**).',
             },
             {
                 t: 'steps',
@@ -181,7 +181,7 @@ export const articles: LearnArticle[] = [
                 t: 'settings',
                 title: 'Las pestañas de entrada',
                 rows: [
-                    { name: 'Listas', what: 'Tus listas por carpeta, con **Recientes** y **Favoritos** arriba para llegar de un toque.', tip: 'Si ya estás en Listas, tocarla otra vez te sube al principio.' },
+                    { name: 'Listas', what: 'Tus listas por carpeta, con tus **Más usadas** y **Favoritos** arriba para llegar de un toque.', tip: 'Si ya estás en Listas, tocarla otra vez te sube al principio.' },
                     { name: 'Mi trabajo', what: 'Lo que tienes asignado en todas las listas, por vencimiento, más recordatorios y aprobaciones.' },
                     { name: 'Buscar', what: 'La búsqueda global: listas, registros, tableros y guías. También lee códigos con la cámara.' },
                     { name: 'Avisos', what: 'Tus menciones, asignaciones, recordatorios y aprobaciones, a pantalla completa.', tip: 'El número rojo son los que no leíste.' },
