@@ -6,12 +6,14 @@ import {
     INTEGRATION_CATEGORY_LABEL,
     integrationDef,
     integrationMissingScopes,
+    isGoogleWorkspaceBlockError,
     isMsConsentError,
     isSmsProvider,
     moduleForIntegration,
     readDisabledModules,
     type Connection,
     type IntegrationDef,
+    type IntegrationKey,
     type IntegrationsOverview,
 } from '@imagina-base/shared';
 import { CalendarDays, ChevronDown, ChevronRight, Globe, Lock, HardDrive, MessageCircle, MessageSquareText, RefreshCw, Settings2, ShieldCheck, Wallet } from 'lucide-react';
@@ -19,6 +21,7 @@ import { CalendarDays, ChevronDown, ChevronRight, Globe, Lock, HardDrive, Messag
 import { ConnectorsPanel } from '@/cloud/components/ConnectorsPanel';
 import { IntegrationKeyDialog } from '@/cloud/components/IntegrationKeyDialog';
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
+import { GoogleWorkspaceAdminDialog } from '@/cloud/components/GoogleWorkspaceAdminDialog';
 import { MsAdminConsentDialog } from '@/cloud/components/MsAdminConsentDialog';
 import { WordpressConnectDialog } from '@/cloud/components/WordpressConnectDialog';
 import { api, useSession } from '@/cloud/session';
@@ -50,8 +53,10 @@ export function IntegrationsPanel(): JSX.Element | null {
     const [params, setParams] = useSearchParams();
     // v0.1.363 — `consent`: Microsoft devolvió «Se necesita la aprobación del
     // administrador» para esa app; el aviso ofrece crear el enlace para TI.
-    const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string; consent?: MsApp } | null>(null);
+    // v0.1.384 — `google`: Google Workspace bloqueó la app; el aviso ofrece el mensaje para TI.
+    const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string; consent?: MsApp; google?: IntegrationKey } | null>(null);
     const [adminConsent, setAdminConsent] = useState<MsApp | null>(null);
+    const [googleAdmin, setGoogleAdmin] = useState<IntegrationKey | null>(null);
     const [dialog, setDialog] = useState<{ def: IntegrationDef; connection: Connection | null } | null>(null);
     // v0.1.333 — WordPress se conecta en un clic con su pantalla «Autorizar aplicación».
     const [wpDialog, setWpDialog] = useState<{ connection: Connection | null } | null>(null);
@@ -83,9 +88,16 @@ export function IntegrationsPanel(): JSX.Element | null {
         const msg = params.get('msg') ?? '';
         const app = params.get('app');
         const consent = (app === 'outlook' || app === 'teams') && isMsConsentError(msg) ? app : undefined;
+        const googleApp = app && isGoogleApp(app) && isGoogleWorkspaceBlockError(msg) ? (app as IntegrationKey) : undefined;
         setNotice(
             oauthResult === 'ok'
                 ? { kind: 'ok', text: __('¡Listo! La app quedó conectada y ya la puedes usar en tus automatizaciones.') }
+                : googleApp
+                  ? {
+                        kind: 'err',
+                        google: googleApp,
+                        text: __('Google no dejó terminar la conexión: el administrador de Google Workspace de tu empresa bloquea las apps de terceros que no revisó. Mándale el mensaje para que la marque como de confianza; después vuelve a tocar «Conectar».'),
+                    }
                 : consent
                   ? {
                         kind: 'err',
@@ -202,6 +214,20 @@ export function IntegrationsPanel(): JSX.Element | null {
                             </Button>
                         </span>
                     )}
+                    {notice.google && (
+                        <span className="imcrm-mt-2 imcrm-block">
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="imcrm-gap-1.5"
+                                onClick={() => setGoogleAdmin(notice.google ?? null)}
+                                data-testid="imcrm-integrations-google-admin-open"
+                            >
+                                <ShieldCheck className="imcrm-h-3.5 imcrm-w-3.5" />
+                                {__('Ver el mensaje para mi administrador')}
+                            </Button>
+                        </span>
+                    )}
                 </p>
             )}
 
@@ -244,7 +270,14 @@ export function IntegrationsPanel(): JSX.Element | null {
                             planOff={offModules.includes(moduleForIntegration(def.key))}
                             busy={authorize.isPending && authorize.variables?.def.key === def.key}
                             onConnect={() => start(def, null)}
-                            onAdminConsent={def.key === 'outlook' || def.key === 'teams' ? () => setAdminConsent(def.key as MsApp) : undefined}
+                            onAdminConsent={
+                                def.key === 'outlook' || def.key === 'teams'
+                                    ? () => setAdminConsent(def.key as MsApp)
+                                    : isGoogleApp(def.key)
+                                      ? () => setGoogleAdmin(def.key)
+                                      : undefined
+                            }
+                            adminConsentLabel={isGoogleApp(def.key) ? __('¿Tu empresa usa Google Workspace y bloquea la app?') : undefined}
                         />
                     ))}
                 </div>
@@ -314,6 +347,23 @@ export function IntegrationsPanel(): JSX.Element | null {
                 />
             )}
 
+            {googleAdmin && (
+                <GoogleWorkspaceAdminDialog
+                    target={{ kind: 'integration', key: googleAdmin, name: integrationDef(googleAdmin)?.name ?? 'Google' }}
+                    open
+                    onClose={() => setGoogleAdmin(null)}
+                    onConnect={
+                        canConnect
+                            ? () => {
+                                  const def = integrationDef(googleAdmin);
+                                  setGoogleAdmin(null);
+                                  if (def) start(def, null);
+                              }
+                            : undefined
+                    }
+                />
+            )}
+
             {dialog && (
                 <IntegrationKeyDialog
                     def={dialog.def}
@@ -339,6 +389,7 @@ function AppTile({
     busy,
     onConnect,
     onAdminConsent,
+    adminConsentLabel,
     planOff = false,
 }: {
     def: IntegrationDef;
@@ -347,8 +398,9 @@ function AppTile({
     canConnect: boolean;
     busy: boolean;
     onConnect: () => void;
-    /** v0.1.363 — apps de Microsoft: enlace de aprobación para el administrador de TI. */
+    /** v0.1.363 — apps de Microsoft: enlace de aprobación para el administrador de TI (v0.1.384: y Google Workspace). */
     onAdminConsent?: () => void;
+    adminConsentLabel?: string;
     /** v0.1.338 (ADR-S87) — el plan no incluye esta app. */
     planOff?: boolean;
 }): JSX.Element | null {
@@ -417,7 +469,7 @@ function AppTile({
                     data-testid="imcrm-integration-admin-consent"
                 >
                     <ShieldCheck className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
-                    {__('¿Tu empresa pide aprobación del administrador?')}
+                    {adminConsentLabel ?? __('¿Tu empresa pide aprobación del administrador?')}
                 </button>
             )}
         </div>
@@ -590,6 +642,12 @@ function ConnectedRow({
 
 /** Las apps de Microsoft 365 que pueden necesitar la aprobación del administrador. */
 type MsApp = 'outlook' | 'teams';
+
+/** v0.1.384 — las apps que se conectan con la cuenta de Google. */
+function isGoogleApp(key: string): boolean {
+    const def = integrationDef(key);
+    return def?.auth.kind === 'oauth' && def.auth.provider === 'google';
+}
 
 function errText(err: unknown): string {
     if (err instanceof CloudApiError) return err.message;

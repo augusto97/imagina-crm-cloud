@@ -42,6 +42,8 @@ import {
     type UpdateConnectionInput,
     type VerifyIntegrationInput,
     type VerifyIntegrationResult,
+    googleGrantMissing,
+    googleScopeLabels,
 } from '@imagina-base/shared';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
@@ -1050,6 +1052,13 @@ export class ConnectorsService {
         try {
             const app = await this.oauthAppFor(row, secrets);
             const token = await this.exchangeCode(app, code, pending.verifier);
+            // v0.1.384 — Google deja destildar permisos: sin el que hace falta,
+            // NO se reemplazan los tokens que sí servían.
+            const partial = app.providerKey === 'google' ? googlePartialGrant(app.scopes, token.scope, integrationDef(row.provider)?.name ?? row.name) : null;
+            if (partial) {
+                await this.setOAuthError(pending.tenantId, row.id, partial);
+                return { ok: false, error: partial, ...tag };
+            }
             // v0.1.269 (ADR-S36) — un Google Drive con archivos guardados no
             // se re-autoriza con OTRA cuenta: los archivos quedarían en el
             // Drive anterior, inalcanzables.
@@ -1131,6 +1140,12 @@ export class ConnectorsService {
                 code,
                 pending.verifier,
             );
+            // v0.1.384 — conectó destildando un permiso: la conexión no se crea
+            // (quedaría «conectada» pero sin poder hacer lo que se pidió).
+            if (def.auth.provider === 'google') {
+                const partial = googlePartialGrant(integrationScopes(def, { purpose: pending.purpose ?? null }), token.scope, def.name);
+                if (partial) return { ok: false, error: partial };
+            }
             const label = await this.fetchIdentity(def.auth.provider, token.accessToken);
             const secrets: Record<string, string> = {
                 access_token: encryptSecret(token.accessToken, this.env.SECRETS_KEY),
@@ -2906,4 +2921,16 @@ interface InlineGroup {
     baseUrl: string;
     suggestedName: string;
     automations: Map<number, { id: number; name: string; listSlug: string; actions: number; actionsJson: unknown }>;
+}
+
+/**
+ * v0.1.384 — En la pantalla de Google cada permiso es una casilla y se puede
+ * conectar destildando el que hace falta. Devuelve el motivo, en palabras, o
+ * `null` si Google concedió todo (o no dijo qué concedió).
+ */
+export function googlePartialGrant(requested: string, granted: string | null | undefined, appName: string): string | null {
+    const missing = googleGrantMissing(requested, granted ?? '');
+    if (missing.length === 0) return null;
+    const labels = googleScopeLabels(missing).map((l) => `«${l.toLowerCase()}»`).join(' y ');
+    return `Google conectó la cuenta, pero sin el permiso de ${labels}, y sin eso ${appName} no puede funcionar. Vuelve a tocar «Conectar» y, en la pantalla de Google, deja marcadas todas las casillas.`;
 }

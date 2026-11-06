@@ -394,8 +394,17 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.383**
-(las columnas que escriben Mercado Pago, PayPal y Wompi llevan candado y no se
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.384**
+(Google al mismo nivel que Microsoft: «Crear reunión de Google Meet» como acción
+propia de Google Calendar, que espera el enlace de Meet y avisa si Google no lo
+creó; ayuda con el mensaje para el administrador cuando Google Workspace bloquea
+la app —en las tarjetas de Google, al volver con el error y en «Mi
+calendario»—; una conexión de Google a la que le destildaron un permiso ya no
+queda «conectada» a medias; errores de Google en palabras —API sin activar,
+permiso faltante, límite de pedidos, calendario de sólo lectura, Meet
+apagado—; y la prueba de una reunión de Teams sí borra la reunión de prueba,
+addendum ADR-S22; antes v0.1.383:
+las columnas que escriben Mercado Pago, PayPal y Wompi llevan candado y no se
 editan a mano por ningún camino; las columnas propias se editan libres y nunca
 salen de la app; no se borra un suscriptor con la suscripción viva; antes
 v0.1.382: revisión de respaldo de los cobros de la plataforma: cada cierto tiempo
@@ -1633,6 +1642,33 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-06 · v0.1.384** — **Google Calendar y Meet al nivel de Teams y
+  Outlook** (pregunta del usuario: «¿hiciste lo mismo con la conexión de
+  Google, Calendar y Google Meet?» → «Sí, hazlo»). (a) Acción **«Crear reunión
+  de Google Meet»** (`google_calendar.create_meeting`, con «Con enlace de Google
+  Meet» en Sí); si Google deja la sala «pendiente» se vuelve a leer el evento
+  (`settleGoogleMeet`, 2 intentos) y si no la creó el historial lo dice
+  (`videoCallNote`) en vez de «creado» con `{{reunion.enlace}}` vacío. (b)
+  **Google Workspace que bloquea la app** (`admin_policy_enforced`): Google no
+  tiene enlace de aprobación como Microsoft; la salida es que el administrador
+  marque la app «De confianza» en admin.google.com buscándola por el ID de
+  cliente. Diálogo `GoogleWorkspaceAdminDialog` con los pasos, el ID, lo que
+  pide la app y «Copiar mensaje para tu administrador», desde las tarjetas de
+  Google, el aviso al volver con ese error y «Mi calendario»
+  (`GET /integrations/:key/google-admin`, `GET /me/agenda-calendar/google-admin`).
+  (c) **Permisos destildados**: Google deja conectar sin una casilla; ahora la
+  conexión no se crea (o se conservan los tokens anteriores) y se pide volver a
+  conectar dejando todas marcadas (`googleGrantMissing`). (d) **Errores en
+  palabras** (`googleProblem`). (e) **Arreglo de Teams**: la prueba de «Crear
+  reunión de Teams» leía la respuesta con el tope de 8 KB y nunca encontraba el
+  id para borrar la reunión de prueba (ahora 64 KB, también al esperar el Meet).
+  (f) El selector Sí/No de una acción mostraba «No» con el valor vacío aunque el
+  motor usaba el valor por defecto («Sí» en Teams y Meet); ahora muestra el
+  default. Tests: shared 4, integration-calls 37, integrations.spec 12/12; E2E
+  25/25 y 26/26 en celular oscuro. **Límite**: Google real no alcanza el
+  sandbox; el motor se probó con la red simulada. **Nota**: el release de
+  v0.1.382 falló al crear la publicación con un 500 de GitHub y se re-corrió
+  (`gh run rerun --failed`); quedó publicado.
 - **2026-11-05 · v0.1.383** — **Las columnas que escribe Mercado Pago no se
   editan a mano; las propias nunca salen de la app** (pedido del usuario:
   «revisa cuáles no se deben tocar y bloquéalas… analiza muy bien este

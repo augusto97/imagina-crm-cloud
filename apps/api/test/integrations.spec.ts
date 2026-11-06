@@ -56,6 +56,7 @@ import { AutomationsService, type HookCaptureStore } from '../src/automations/au
 import { loadEnv } from '../src/config/env';
 import { ConnectorsService } from '../src/connectors/connectors.service';
 import { IntegrationAppsService } from '../src/connectors/integration-apps.service';
+import { GoogleWorkspaceHelpService } from '../src/connectors/google-workspace-help.service';
 import { automationRuns, automations, connections, fields, lists, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
@@ -178,7 +179,7 @@ describe('Integraciones de la galería (v0.1.203)', () => {
 
     /** Arranca la autorización y simula la vuelta del proveedor. */
     async function authorizeAndReturn(
-        key: 'slack' | 'outlook' | 'teams',
+        key: 'slack' | 'outlook' | 'teams' | 'google_calendar',
         connectionId?: number,
     ): Promise<{ url: URL; result: { ok: boolean; error: string | null } }> {
         const { authorize_url } = await svc.startIntegrationOAuth(tenantId, adminId, 'admin', key, {
@@ -726,6 +727,9 @@ describe('Integraciones de la galería (v0.1.203)', () => {
                         subject: JSON.parse(call.body!).subject,
                         webLink: 'https://outlook.office365.com/owa/?itemid=AAMkEvento1',
                         onlineMeeting: { joinUrl: 'https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc' },
+                        // v0.1.384 — Graph devuelve el evento ENTERO, con la invitación
+                        // de Teams en HTML: pasa de los 8 KB del probador de antes.
+                        body: { contentType: 'html', content: `<div>${'Únete a la reunión de Microsoft Teams. '.repeat(400)}</div>` },
                     }),
                 };
             }
@@ -865,5 +869,134 @@ describe('Integraciones de la galería (v0.1.203)', () => {
         expect(refreshScope).not.toContain('Calendars.ReadWrite');
         const [listed] = (await svc.list(tenantId, adminId, 'admin')).filter((c) => c.id === conn!.id);
         expect(listed!.oauth_status!.granted_scopes).not.toContain('Calendars');
+    });
+    it('Google Calendar y Meet (v0.1.384): casilla destildada, reunión de Meet que tarda, Meet apagado, errores y la prueba', async () => {
+        await apps.update('google', { client_id: '123-abc.apps.googleusercontent.com', client_secret: 'GOCSPX-secreto-1234' }, new Map());
+        const CAL = 'https://www.googleapis.com/auth/calendar.events';
+        let granted = 'openid https://www.googleapis.com/auth/userinfo.email';
+        let createMode: 'pending' | 'failure' | 'scope' = 'pending';
+        let reads = 0;
+        net.handler = (call) => {
+            if (call.url.startsWith('https://oauth2.googleapis.com/token')) {
+                return { status: 200, body: JSON.stringify({ access_token: 'g-token', refresh_token: 'g-refresh', expires_in: 3600, scope: granted, token_type: 'Bearer' }) };
+            }
+            if (call.url.startsWith('https://openidconnect.googleapis.com/v1/userinfo')) return { status: 200, body: '{"email":"ventas@binapps.co"}' };
+            if (call.url.startsWith('https://www.googleapis.com/calendar/v3/calendars/primary/events?') && call.method === 'POST') {
+                if (createMode === 'scope') {
+                    return {
+                        status: 403,
+                        body: JSON.stringify({ error: { code: 403, message: 'Request had insufficient authentication scopes.', status: 'PERMISSION_DENIED', details: [{ reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT' }] } }),
+                    };
+                }
+                return {
+                    status: 200,
+                    body: JSON.stringify({
+                        id: 'gEvento1',
+                        summary: JSON.parse(call.body!).summary,
+                        htmlLink: 'https://www.google.com/calendar/event?eid=gEvento1',
+                        conferenceData: { createRequest: { status: { statusCode: createMode } } },
+                    }),
+                };
+            }
+            if (call.url.startsWith('https://www.googleapis.com/calendar/v3/calendars/primary/events/gEvento1?fields=')) {
+                reads++;
+                return { status: 200, body: JSON.stringify({ id: 'gEvento1', summary: 'Demo', hangoutLink: 'https://meet.google.com/abc-defg-hij' }) };
+            }
+            if (call.url.startsWith('https://www.googleapis.com/calendar/v3/calendars/primary/events/gEvento1') && call.method === 'DELETE') return { status: 204, body: '' };
+            return { status: 404, body: '{"error":{"code":404,"message":"Not Found"}}' };
+        };
+
+        // 1) Destildó el permiso del calendario en la pantalla de Google: no se crea la conexión.
+        const partial = await authorizeAndReturn('google_calendar');
+        expect(partial.result.ok).toBe(false);
+        expect(partial.result.error).toMatch(/ver y editar los eventos de tus calendarios.*casillas/);
+        expect(await svc.list(tenantId, adminId, 'admin')).toHaveLength(0);
+
+        // 2) Con todo marcado, conecta.
+        granted = `openid https://www.googleapis.com/auth/userinfo.email ${CAL}`;
+        const full = await authorizeAndReturn('google_calendar');
+        expect(full.result.ok, full.result.error ?? '').toBe(true);
+        const [conn] = await svc.list(tenantId, adminId, 'admin');
+        expect(conn!.integration_key).toBe('google_calendar');
+
+        // El mensaje para el administrador de Google Workspace trae el ID de cliente.
+        const help = await new GoogleWorkspaceHelpService(apps).help('google_calendar');
+        expect(help.client_id).toBe('123-abc.apps.googleusercontent.com');
+        expect(help.permissions).toContain('Ver y editar los eventos de tus calendarios');
+        await expect(new GoogleWorkspaceHelpService(apps).help('teams')).rejects.toThrow(/no es de Google/);
+
+        const list = await listsService.create(tenantId, { name: 'Demos Google' });
+        const f: Record<string, Field> = {};
+        for (const d of [
+            { label: 'Cliente', type: 'text', slug: 'cliente' },
+            { label: 'Fecha de la demo', type: 'datetime', slug: 'fecha_demo' },
+            { label: 'Enlace de la reunión', type: 'url', slug: 'enlace_reunion' },
+            { label: 'Id del evento', type: 'text', slug: 'id_evento' },
+        ] as CreateFieldInput[]) {
+            f[d.slug!] = await fieldsService.create(tenantId, list.slug, d);
+        }
+        const rec = await recordsService.create(tenantId, admin(), list.slug, {
+            data: { [`f${f.cliente!.id}`]: 'Acme', [`f${f.fecha_demo!.id}`]: '2026-11-10T15:00:00Z' },
+        });
+        const runMeet = async (): Promise<{ status: string; log: string }> => {
+            await withTenant(pg.db, tenantId, (tx) => tx.delete(automations).where(eq(automations.tenantId, tenantId)));
+            const auto = await automationsService.create(tenantId, list.slug, {
+                name: 'Demo Meet',
+                trigger_type: 'record_created',
+                actions: [
+                    {
+                        type: 'connector_action',
+                        config: {
+                            connection_id: conn!.id,
+                            action_key: 'create_meeting',
+                            values: { title: 'Demo con {{cliente}}', date: '{{fecha_demo}}', duration: '30' },
+                            save_meeting_link: 'enlace_reunion',
+                            save_event_id: 'id_evento',
+                        },
+                    },
+                ],
+            });
+            const current = await recordsService.get(tenantId, admin(), list.slug, rec.id);
+            await engine.process({ tenantId, listId: list.id, recordId: rec.id, trigger: 'record_created', after: current.data });
+            const run = (await automationsService.runsById(tenantId, auto.id, {})).data[0]!;
+            return { status: run.status, log: JSON.stringify(run.actions_log) + (run.error ?? '') };
+        };
+
+        // 3) «Crear reunión de Google Meet»: la sala llega un instante después y se espera.
+        const ok = await runMeet();
+        expect(ok.status, ok.log).toBe('success');
+        const sent = net.calls.find((c) => c.method === 'POST' && c.url.includes('/calendar/v3/'))!;
+        expect(sent.url).toContain('conferenceDataVersion=1');
+        expect(JSON.parse(sent.body!).conferenceData.createRequest.conferenceSolutionKey.type).toBe('hangoutsMeet');
+        expect(reads).toBeGreaterThan(0);
+        let row = await recordsService.get(tenantId, admin(), list.slug, rec.id);
+        expect(row.data[`f${f.enlace_reunion!.id}`]).toBe('https://meet.google.com/abc-defg-hij');
+        expect(row.data[`f${f.id_evento!.id}`]).toBe('gEvento1');
+
+        // 4) Google no pudo crear la sala (Meet apagado): se dice, y no se guarda un enlace vacío.
+        createMode = 'failure';
+        await recordsService.update(tenantId, admin(), list.slug, rec.id, { data: { [`f${f.enlace_reunion!.id}`]: null } });
+        const failed = await runMeet();
+        expect(failed.status).toBe('success');
+        expect(failed.log).toMatch(/sin videollamada de Meet.*Meet apagado/);
+        row = await recordsService.get(tenantId, admin(), list.slug, rec.id);
+        expect(row.data[`f${f.enlace_reunion!.id}`] ?? null).toBeNull();
+
+        // 5) Un 403 por un permiso que falta se explica con la salida.
+        createMode = 'scope';
+        const scope = await runMeet();
+        expect(scope.status).toBe('failed');
+        expect(scope.log).toMatch(/deja marcadas todas las casillas/);
+
+        // 6) «Probar ahora»: espera el Meet, lo muestra y borra el evento de prueba.
+        createMode = 'pending';
+        net.calls.length = 0;
+        const probe = await automationsService.testWebhook(tenantId, list.slug, {
+            config: { connection_id: conn!.id, action_key: 'create_meeting', values: { title: 'Demo', date: '{{fecha_demo}}', attendees: 'cliente@acme.co' } },
+        });
+        expect(probe.error).toBeNull();
+        expect(JSON.parse(probe.request.body!).attendees).toBeUndefined();
+        expect(probe.note).toMatch(/meet\.google\.com\/abc-defg-hij.*borró/);
+        expect(net.calls.some((c) => c.method === 'DELETE' && c.url.includes('/events/gEvento1'))).toBe(true);
     });
 });

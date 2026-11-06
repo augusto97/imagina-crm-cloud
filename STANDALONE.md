@@ -1401,6 +1401,53 @@ después reprogramarla o cancelarla con ese id.
 - **La disponibilidad ya existía**: «Mi calendario» (v0.1.350) lee lo ocupado
   de Outlook o Google para la agenda de citas; no se duplicó.
 
+**Addendum v0.1.384 — Google al nivel de Microsoft: Meet, Workspace y
+permisos destildados.** Pregunta del usuario tras las correcciones de Teams y
+Outlook: «¿hiciste lo mismo con la conexión de Google, Calendar y Google Meet?».
+- **Acción propia `google_calendar.create_meeting`** («Crear reunión de Google
+  Meet», `MEETING_ACTIONS` = `create`), con el parámetro `meet` en Sí por
+  defecto; se arma como `create_event` con `conferenceData`. Google puede
+  devolver la sala en `pending`: `settleGoogleMeet` (motor y «Probar ahora»)
+  relee el evento 2 veces cada 1,5 s con tope de 64 KB. Si quedó `failure` o
+  sin enlace, `videoCallNote` lo dice en el historial y en la prueba (cuenta
+  con Meet apagado, Microsoft sin Teams) en vez de «creado» con
+  `{{reunion.enlace}}` vacío. `wantsVideoCall` decide si se pidió (Google lee
+  `meet`, Microsoft `teams_meeting`).
+- **Google Workspace que bloquea la app.** A diferencia de Microsoft (enlace de
+  consentimiento, v0.1.363), Google muestra «Acceso bloqueado» /
+  `admin_policy_enforced` en SU pantalla y casi nunca vuelve a la app. La
+  salida es que el administrador marque la app «De confianza» en
+  admin.google.com → Seguridad → Acceso y control de datos → Controles de API →
+  Configurar app nueva, buscándola por el **ID de cliente** (que no es
+  secreto: viaja en cada autorización). Shared `google-workspace.ts`
+  (`googleWorkspaceAdminSteps`, `googleWorkspaceAdminMessage`,
+  `isGoogleWorkspaceBlockError`, etiquetas de los permisos);
+  `GoogleWorkspaceHelpService` sirve `{client_id, app_name, permissions}` por
+  `GET /integrations/:key/google-admin` y `GET /me/agenda-calendar/google-admin`
+  (con el permiso extra de la agenda). El diálogo
+  `GoogleWorkspaceAdminDialog` se abre desde las tarjetas de Google, desde el
+  aviso al volver con ese error y desde «Mi calendario».
+- **Permisos destildados.** En la pantalla de Google cada permiso es una
+  casilla: se podía conectar sin el que hace falta y la conexión quedaba
+  «conectada» pero fallaba en cada acción. Al volver se compara lo pedido con
+  el `scope` de la respuesta (`googleGrantMissing`, sin los de identidad; sin
+  `scope` no se trata como rechazo): una conexión nueva NO se crea y una
+  reconexión conserva los tokens anteriores, con «deja marcadas todas las
+  casillas».
+- **Errores de Google en palabras** (`googleProblem`, antes de los mensajes
+  genéricos, nunca para un 401): permiso faltante, API sin activar en el
+  proyecto de Google (`accessNotConfigured`/`SERVICE_DISABLED`), límite de
+  pedidos (429), política del administrador, calendario de sólo lectura, Meet
+  apagado y calendario inexistente.
+- **Arreglo de Teams.** «Probar ahora» de «Crear reunión de Teams» leía la
+  respuesta con el tope de 8 KB del probador; Graph devuelve el evento entero
+  con el HTML de la invitación, así que nunca encontraba el id y la reunión de
+  prueba quedaba en el calendario. Ahora usa `RESPONSE_BODY_MAX_BYTES` (64 KB),
+  con test de regresión.
+- **Selector Sí/No del formulario de la acción**: con el valor vacío mostraba
+  «No» aunque el motor usa el `default` del parámetro («Sí» en Teams y Meet);
+  ahora muestra el default.
+
 ### ADR-S23 — Migrar UNA empresa entre instancias (v0.1.197)
 
 **Contexto.** ADR-S20 mueve el SERVIDOR entero: sirve para cambiar de VPS o

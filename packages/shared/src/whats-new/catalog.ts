@@ -1939,4 +1939,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver cómo funciona', href: '/aprende/cobros/cobros-suscripciones' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.384-google-meet-y-workspace',
+        version: '0.1.384',
+        date: '2026-11-06',
+        kind: 'improvement',
+        title: 'Reuniones de Google Meet y Google, a la par de Microsoft',
+        summary:
+            'Nueva acción «Crear reunión de Google Meet», la app espera el enlace de Meet antes de seguir, los errores de Google se explican con la salida, y si Google Workspace bloquea la app tienes el mensaje listo para tu administrador.',
+        media: {
+            slides: [
+                {
+                    title: 'Crear reunión de Google Meet',
+                    text: 'Igual que la de Teams: el evento sale con el enlace de Meet, se guarda con su id en el registro y se reprograma o cancela después. La app espera a que Google termine de crear la sala, así el enlace llega completo al WhatsApp o al correo.',
+                    illustration: 'reunion-teams',
+                },
+                {
+                    title: 'Si Google dice «Acceso bloqueado»',
+                    text: 'Tu empresa usa Google Workspace y no deja usar apps sin revisarlas: copia el mensaje con el ID de cliente para tu administrador. Lo marca como de confianza una sola vez y vuelves a conectar.',
+                    illustration: 'google-workspace-admin',
+                },
+                {
+                    title: 'Sin conexiones a medias',
+                    text: 'Si al conectar destildas un permiso en la pantalla de Google, la app te lo dice al volver. Y los errores de Google se explican: un permiso que falta, el límite del día, Meet apagado o un calendario que no puedes editar.',
+                    illustration: 'google-workspace-admin',
+                },
+            ],
+        },
+        body: 'La encuentras en el editor de automatizaciones, en **Añadir acción → Apps conectadas → Google Calendar**. «Probar ahora» crea la reunión sin invitados, te muestra el enlace de Meet y la borra enseguida.',
+        action: { label: 'Ver cómo funciona', href: '/aprende/integraciones/integraciones-google-microsoft' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

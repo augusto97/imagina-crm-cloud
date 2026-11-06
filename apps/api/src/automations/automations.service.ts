@@ -28,6 +28,7 @@ import {
     meetingActionKind,
     missingActionScopes,
     parseEmailDesign,
+    RESPONSE_BODY_MAX_BYTES,
     tenantFormatSchema,
     zonedToday,
 } from '@imagina-base/shared';
@@ -56,7 +57,10 @@ import {
     checkIntegrationResponse,
     compileIntegrationValues,
     meetingResult,
+    videoCallNote,
+    wantsVideoCall,
 } from '../connectors/integration-calls';
+import { settleGoogleMeet } from '../connectors/meeting-settle';
 import { buildWebhookRequest } from './webhook-request';
 import { IncidentHub } from '../incidents/incident-hub';
 import { BillingService } from '../billing/billing.service';
@@ -1016,13 +1020,23 @@ export class AutomationsService {
                 headers: req.headers,
                 body: req.body,
                 captureBody: true,
+                // v0.1.384 — Microsoft devuelve el evento ENTERO con la invitación
+                // de Teams en HTML: con el tope de 8 KB la respuesta llegaba
+                // cortada, no se leía el id y la reunión de prueba no se borraba.
+                ...(meetingKind ? { maxCaptureBytes: RESPONSE_BODY_MAX_BYTES } : {}),
             });
             const problem = checkIntegrationResponse(integ.key, res.status, res.body ?? '', action.key);
             let note: string | null = null;
             if (meetingKind === 'create' && !problem) {
                 // Se creó SIN invitados para ver que funciona (y el enlace de
                 // Teams o Meet): se borra en el acto, así no queda en el calendario.
-                const meet = meetingResult(integ.key, res.body ?? '');
+                // v0.1.384 — antes se espera el enlace de Meet, como en la corrida real.
+                const meet = await settleGoogleMeet(meetingResult(integ.key, res.body ?? ''), {
+                    integration: integ.key,
+                    calendar: compiled.values.calendar ?? '',
+                    accessToken: integ.creds.accessToken,
+                });
+                const video = videoCallNote(integ.key, meet, wantsVideoCall(integ.key, compiled.values));
                 let removed = false;
                 if (meet) {
                     try {
@@ -1042,7 +1056,7 @@ export class AutomationsService {
                 }
                 note =
                     'La prueba creó la reunión SIN invitados (a nadie le llegó nada)' +
-                    (meet?.enlace ? `, con su enlace: ${meet.enlace}` : meet ? ', sin enlace de videollamada' : '') +
+                    (meet?.enlace ? `, con su enlace: ${meet.enlace}` : video ? ` — ${video}` : meet ? ', sin videollamada' : '') +
                     (removed ? ', y la borró enseguida de tu calendario.' : '. No pudimos borrarla: bórrala de tu calendario.');
             }
             return {

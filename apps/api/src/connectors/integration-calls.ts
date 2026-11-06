@@ -161,6 +161,72 @@ function googleErrorMessage(json: Record<string, unknown> | null): string {
     return graphErrorMessage(json);
 }
 
+/**
+ * v0.1.384 — Los motivos de un error de Google: `errors[].reason` (APIs
+ * viejas, como Calendar y Gmail), `details[].reason` (las nuevas) y el
+ * `status` («PERMISSION_DENIED»).
+ */
+export function googleErrorReasons(json: Record<string, unknown> | null): string[] {
+    const err = json?.error;
+    if (!err || typeof err !== 'object') return [];
+    const e = err as { errors?: unknown; details?: unknown; status?: unknown };
+    const out: string[] = [];
+    const push = (v: unknown): void => {
+        if (typeof v === 'string' && v !== '' && !out.includes(v)) out.push(v);
+    };
+    for (const list of [e.errors, e.details]) {
+        if (Array.isArray(list)) for (const item of list) push((item as { reason?: unknown })?.reason);
+    }
+    push(e.status);
+    return out;
+}
+
+const GOOGLE_APP_LABEL: Partial<Record<IntegrationKey, string>> = {
+    gmail: 'Gmail',
+    google_calendar: 'Google Calendar',
+    google_sheets: 'Google Sheets',
+};
+
+/**
+ * v0.1.384 — Un error de Google en palabras, con la salida (lo mismo que se
+ * hizo con Microsoft en v0.1.363/v0.1.366). `null` = no es uno de los casos
+ * conocidos (sigue el mensaje general).
+ */
+export function googleProblem(integration: IntegrationKey, status: number, json: Record<string, unknown> | null, actionKey = ''): string | null {
+    const app = GOOGLE_APP_LABEL[integration];
+    if (!app || status < 400 || status === 401) return null;
+    const said = googleErrorMessage(json);
+    const reasons = googleErrorReasons(json).map((r) => r.toLowerCase());
+    const has = (...keys: string[]): boolean => keys.some((k) => reasons.includes(k.toLowerCase()));
+    const quote = said !== '' ? ` Google dijo: «${said.slice(0, 240)}».` : '';
+    const meeting = meetingActionKind(integration, actionKey);
+
+    if (has('insufficientPermissions', 'ACCESS_TOKEN_SCOPE_INSUFFICIENT') || /insufficient (authentication )?scopes/i.test(said)) {
+        return `La conexión de ${app} no tiene el permiso que hace falta: al conectarla quedó sin marcar una casilla en la pantalla de Google. Vuelve a conectarla en Ajustes → Integraciones → ${app} y deja marcadas todas las casillas.`;
+    }
+    if (has('accessNotConfigured', 'SERVICE_DISABLED') || /has not been used in project|it is disabled/i.test(said)) {
+        return `La API de ${app} no está activada en el proyecto de Google de la plataforma. Quien administra la plataforma tiene que activarla en Google Cloud (la guía está en Plataforma → Integraciones → Google).`;
+    }
+    if (status === 429 || has('rateLimitExceeded', 'userRateLimitExceeded', 'quotaExceeded', 'dailyLimitExceeded', 'RATE_LIMIT_EXCEEDED', 'RESOURCE_EXHAUSTED')) {
+        return `Google frenó los pedidos de esta cuenta por un momento (demasiados seguidos o se pasó el límite del día). Vuelve a intentarlo en unos minutos.${quote}`;
+    }
+    if (has('domainPolicy') || (status === 403 && /domain administrator|administrator|admin policy|google workspace/i.test(said))) {
+        return `El administrador de Google Workspace de tu empresa no deja que esta app use ${app}. Pídele que la marque como de confianza: en Ajustes → Integraciones → ${app}, toca «¿Tu empresa bloquea la app?» y mándale el mensaje.${quote}`;
+    }
+    if (integration === 'google_calendar') {
+        if (has('requiredAccessLevel') || /writer access|need to have .*access/i.test(said)) {
+            return 'La cuenta conectada puede ver ese calendario, pero no hacer cambios. Deja el calendario vacío (tu calendario principal), usa otro o pide permiso para editarlo.';
+        }
+        if (status === 400 && /conference/i.test(said)) {
+            return 'Google no dejó crear la videollamada de Meet en ese calendario: puede que tu empresa tenga Google Meet apagado para esta cuenta. Apaga «Con enlace de Google Meet» o conecta otra cuenta.';
+        }
+        if (status === 404 && meeting === 'create') {
+            return 'No encontramos ese calendario: revisa su ID en «Calendario» (vacío = tu calendario principal) y que la cuenta conectada lo tenga.';
+        }
+    }
+    return null;
+}
+
 /** El `error.message` de una respuesta de Microsoft Graph (vacío si no hay). */
 export function graphErrorMessage(json: Record<string, unknown> | null): string {
     const err = json?.error;
@@ -551,6 +617,8 @@ export interface MeetingResult {
     titulo: string;
     /** Google todavía está creando la sala de Meet (hay que volver a leer el evento). */
     pending: boolean;
+    /** v0.1.384 — Google creó el evento pero NO pudo crear la sala de Meet. */
+    failed: boolean;
 }
 
 function httpsOr(value: unknown): string {
@@ -567,12 +635,14 @@ export function meetingResult(integration: IntegrationKey, body: string): Meetin
         };
         const video = (conf.entryPoints ?? []).find((e) => e.entryPointType === 'video')?.uri;
         const enlace = httpsOr(json.hangoutLink) || httpsOr(video);
+        const code = conf.createRequest?.status?.statusCode;
         return {
             id: json.id,
             enlace,
             web: httpsOr(json.htmlLink),
             titulo: typeof json.summary === 'string' ? json.summary : '',
-            pending: enlace === '' && conf.createRequest?.status?.statusCode === 'pending',
+            pending: enlace === '' && code === 'pending',
+            failed: enlace === '' && code === 'failure',
         };
     }
     const online = (json.onlineMeeting ?? {}) as { joinUrl?: unknown };
@@ -582,7 +652,28 @@ export function meetingResult(integration: IntegrationKey, body: string): Meetin
         web: httpsOr(json.webLink),
         titulo: typeof json.subject === 'string' ? json.subject : '',
         pending: false,
+        failed: false,
     };
+}
+
+/** v0.1.384 — ¿La acción pidió videollamada (Meet o Teams)? */
+export function wantsVideoCall(integration: string, values: Record<string, string>): boolean {
+    return integration === 'google_calendar' ? isTrue(values.meet) : isTrue(values.teams_meeting);
+}
+
+/**
+ * v0.1.384 — Qué decir cuando se pidió videollamada y el evento volvió sin
+ * enlace (`null` = salió bien o no se pidió). Sin esto el historial decía
+ * «creado» y el `{{reunion.enlace}}` del WhatsApp siguiente salía vacío.
+ */
+export function videoCallNote(integration: string, meet: MeetingResult | null, wanted: boolean): string | null {
+    if (!wanted || !meet || meet.enlace !== '') return null;
+    if (integration === 'google_calendar') {
+        return meet.pending
+            ? 'Google todavía estaba creando la videollamada de Meet: el enlace aparece en el evento en unos segundos, pero no llegó a tiempo para los pasos siguientes'
+            : 'sin videollamada de Meet: Google no pudo crearla (puede que tu empresa tenga Google Meet apagado para esta cuenta)';
+    }
+    return 'sin enlace de Teams: la cuenta no tiene Teams o Microsoft no creó la reunión';
 }
 
 /** Volver a leer un evento de Google cuya sala de Meet todavía se estaba creando. */
@@ -788,6 +879,8 @@ export function buildIntegrationRequest(
                 body: JSON.stringify({ raw: Buffer.from(raw, 'utf8').toString('base64url') }),
             };
         }
+        // v0.1.384 — «Crear reunión de Google Meet» es el mismo evento con el enlace encendido.
+        case 'google_calendar.create_meeting':
         case 'google_calendar.create_event': {
             const body = eventBodyGoogle(v);
             const q = new URLSearchParams();
@@ -971,6 +1064,9 @@ export function checkIntegrationResponse(
 ): string | null {
     if (integration === 'woocommerce') return checkWooResponse(status, body);
     const json = parseJson(body);
+    // v0.1.384 — Google: los casos conocidos, en palabras y con la salida.
+    const google = googleProblem(integration, status, json, actionKey);
+    if (google) return google;
     const meeting = meetingActionKind(integration, actionKey);
     if (meeting && status >= 400 && status !== 401) {
         const said = integration === 'google_calendar' ? googleErrorMessage(json) : graphErrorMessage(json);

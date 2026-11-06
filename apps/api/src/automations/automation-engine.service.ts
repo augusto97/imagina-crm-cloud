@@ -86,10 +86,12 @@ import {
     cancelAlreadyGone,
     checkIntegrationResponse,
     compileIntegrationValues,
-    googleEventReadRequest,
     meetingResult,
+    videoCallNote,
+    wantsVideoCall,
     type MeetingResult,
 } from '../connectors/integration-calls';
+import { settleGoogleMeet } from '../connectors/meeting-settle';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { buildWebhookRequest, type MergeFn } from './webhook-request';
 import type { Tx } from '../db/client';
@@ -3520,6 +3522,7 @@ export class AutomationEngine {
                             accessToken: integ.creds.accessToken,
                             gone,
                             sim: Boolean(sim),
+                            wantsVideo: wantsVideoCall(integ.key, compiled.values),
                         });
                         return ok('connector_action', `${resolved.name} → ${resolved.action.label}: ${note}`, {
                             status: res.status,
@@ -3771,30 +3774,25 @@ export class AutomationEngine {
             accessToken: string;
             gone: boolean;
             sim: boolean;
+            /** v0.1.384 — la acción pidió videollamada (Meet o Teams). */
+            wantsVideo?: boolean;
         },
     ): Promise<string> {
         let meet: MeetingResult | null = null;
         if (p.kind !== 'cancel') {
             meet = meetingResult(p.integration as Parameters<typeof meetingResult>[0], p.body);
             // Google crea la sala de Meet un instante después: se vuelve a leer.
-            for (let i = 0; i < 2 && meet && meet.pending; i++) {
-                await new Promise((r) => setTimeout(r, 1500));
-                const read = googleEventReadRequest(p.calendar, meet.id, p.accessToken);
-                const again = await safeWebhookFetch(read.url, { method: 'GET', headers: read.headers, captureBody: true, maxCaptureBytes: 64 * 1024, timeoutMs: 8000 }).catch(() => null);
-                const next = again && again.status < 300 ? meetingResult('google_calendar', again.body ?? '') : null;
-                if (next) meet = next;
-            }
+            meet = await settleGoogleMeet(meet, { integration: p.integration, calendar: p.calendar, accessToken: p.accessToken });
             if (meet) ctx.reunion = { id: meet.id, enlace: meet.enlace, web: meet.web, titulo: meet.titulo };
         }
 
         const parts: string[] = [];
         if (p.kind === 'cancel') parts.push(p.gone ? 'el evento ya no estaba en el calendario' : 'cancelado');
-        else if (!meet) parts.push(p.kind === 'create' ? 'creado' : 'actualizado');
         else {
             parts.push(p.kind === 'create' ? 'creado' : 'actualizado');
-            if (p.kind === 'create' && meet.enlace === '' && p.integration !== 'google_calendar') {
-                parts.push('sin enlace de Teams (la cuenta no tiene Teams o se apagó la opción)');
-            }
+            // v0.1.384 — se pidió videollamada y no vino el enlace: se dice.
+            const video = p.kind === 'create' ? videoCallNote(p.integration, meet, p.wantsVideo ?? false) : null;
+            if (video) parts.push(video);
         }
 
         // Qué se guarda (o se vacía) en el registro.

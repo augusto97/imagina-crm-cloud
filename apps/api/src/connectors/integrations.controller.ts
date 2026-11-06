@@ -9,6 +9,7 @@ import {
     type Connection,
     type IntegrationKey,
     type IntegrationsOverview,
+    type GoogleWorkspaceAdminHelp,
     type MsAdminConsentStatus,
     type OAuthStartResult,
     type Role,
@@ -23,6 +24,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { ConnectorsService } from './connectors.service';
 import { MsAdminConsentService } from './ms-admin-consent.service';
+import { GoogleWorkspaceHelpService } from './google-workspace-help.service';
 import { assertReqModule, moduleForIntegration } from '../billing/plan-module-gate';
 
 /**
@@ -40,6 +42,7 @@ export class IntegrationsController {
     constructor(
         private readonly connectors: ConnectorsService,
         private readonly adminConsent: MsAdminConsentService,
+        private readonly googleHelp: GoogleWorkspaceHelpService,
     ) {}
 
     @Get()
@@ -106,6 +109,16 @@ export class IntegrationsController {
     @Get(':key/admin-consent')
     async adminConsentStatus(@Req() req: FastifyRequest, @Param('key') key: string): Promise<{ data: MsAdminConsentStatus }> {
         const data = await this.adminConsent.status(tenantId(req), parseKey(key));
+        return { data };
+    }
+
+    /**
+     * v0.1.384 — Google Workspace que bloquea la app: el ID de cliente y lo
+     * que pide, para el mensaje al administrador de TI.
+     */
+    @Get(':key/google-admin')
+    async googleAdmin(@Param('key') key: string): Promise<{ data: GoogleWorkspaceAdminHelp }> {
+        const data = await this.googleHelp.help(parseKey(key));
         return { data };
     }
 
