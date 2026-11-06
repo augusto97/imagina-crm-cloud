@@ -94,11 +94,13 @@ import {
     type SaveFormDraftResult,
     collectionCurrencyError,
     ATTRIBUTION_KEYS,
+    applyFormRecordValues,
+    cleanFormRecordValues,
     cleanAttribution,
     fillRedirectUrl,
     type ConversionResult,
 } from '@imagina-base/shared';
-import { attributionRecordData, cleanAttributionSettings, conversionResult, publicConversion } from './form-conversion';
+import { attributionColumnIds, attributionRecordData, cleanAttributionSettings, conversionResult, publicConversion } from './form-conversion';
 import { accessOf } from '../billing/tenant-access';
 import { and, asc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
@@ -1443,6 +1445,11 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         // v0.1.374 — de dónde vino (campaña, clic del anuncio, página del
         // sitio): a sus columnas, si el formulario lo guarda.
         Object.assign(data, attributionRecordData(s.attribution, fields, input.attribution));
+        // v0.1.386 — origen y etiquetas: el nombre del formulario y los valores
+        // fijos (lo que respondió la persona gana; las etiquetas se suman).
+        Object.assign(data, applyFormRecordValues(data, s.record_values, { fields, formName: f.row.name, formTitle: s.title }));
+        // De dónde llegó, aunque no se guarde en columnas: las automatizaciones lo usan.
+        const origin = cleanAttribution(input.attribution) as Record<string, string>;
         const conversion = conversionResult(s.conversion, {
             payment: payAmount > 0 ? { amount: payAmount, currency: s.payment.currency } : null,
             calcs,
@@ -1463,9 +1470,9 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
 
         let result: SubmitFormResult;
         if (s.confirm_email && respondentEmail) {
-            result = await this.holdForConfirmation(f, data, attachmentIds, respondentEmail, ip, accepted, endingId, planId);
+            result = await this.holdForConfirmation(f, data, attachmentIds, respondentEmail, ip, accepted, endingId, planId, origin);
         } else {
-            const created = await this.finalize(f, fields, data, attachmentIds, accepted);
+            const created = await this.finalize(f, fields, data, attachmentIds, accepted, origin);
             if (s.send_copy && respondentEmail) this.sendCopyLater(f, fields, data, respondentEmail, ip, created.withdrawRef);
             result = {
                 ok: true,
@@ -1495,6 +1502,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         data: Record<string, unknown>,
         attachmentIds: number[],
         consent: AcceptedConsent | null = null,
+        origin: Record<string, string> = {},
     ): Promise<{ id: number; data: Record<string, unknown>; withdrawRef: string | null }> {
         // Cupo: se RESERVA el lugar antes de crear el registro con un UPDATE
         // condicional (antes se contaba y se sumaba después: dos envíos a la
@@ -1603,7 +1611,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             recordId: created.id,
             trigger: 'form_submitted',
             after: created.data,
-            form: { id: f.row.id, name: f.row.name },
+            form: { id: f.row.id, name: f.row.name, title: f.config.settings.title, origin },
         });
         return { id: created.id, data: created.data, withdrawRef: evidence?.withdrawRef ?? null };
     }
@@ -1700,6 +1708,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         consent: AcceptedConsent | null = null,
         endingId: string | null = null,
         planId: number | null = null,
+        origin: Record<string, string> = {},
     ): Promise<SubmitFormResult> {
         if (!this.mail) {
             throw new HttpException(
@@ -1745,6 +1754,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                     consent: pendingConsent,
                     endingId,
                     planId,
+                    origin: Object.keys(origin).length ? origin : null,
                     expiresAt: new Date(Date.now() + CONFIRM_TTL_MS),
                 })
                 .returning({ id: formPendingSubmissions.id }),
@@ -1875,7 +1885,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         let withdrawRef: string | null = null;
         let createdId = 0;
         try {
-            const created = await this.finalize(f, fields, pending.data, attachmentIds, accepted);
+            const created = await this.finalize(f, fields, pending.data, attachmentIds, accepted, cleanAttribution(pending.origin ?? {}) as Record<string, string>);
             withdrawRef = created.withdrawRef;
             createdId = created.id;
         } catch (err) {
@@ -2967,6 +2977,7 @@ export function sanitizeConfig(
         return true;
     }).map((j) => ({ ...j, when: cleanShowIf(j.when, inForm, calcKeys) }));
 
+    const attribution = cleanAttributionSettings(s.attribution, fields, new Set([...seen, ...savedTo]));
     const settings = {
         ...s,
         respondent_email_field_id: emailId,
@@ -2978,7 +2989,12 @@ export function sanitizeConfig(
         payment: cleanPayment(s.payment, inForm, typeOf, calcKeys),
         subscription: cleanSubscription(s.subscription),
         // v0.1.374 — el origen va a columnas que el formulario NO pregunta (ni guarda un cálculo).
-        attribution: cleanAttributionSettings(s.attribution, fields, new Set([...seen, ...savedTo])),
+        attribution,
+        // v0.1.386 — origen y etiquetas: el nombre del formulario y los valores fijos.
+        record_values: cleanFormRecordValues(s.record_values, fields, {
+            asked: seen,
+            taken: new Set([...savedTo, ...attributionColumnIds(attribution)]),
+        }),
         conversion: {
             ...s.conversion,
             value: s.conversion.value === 'price' || (s.conversion.value === 'calc' && !calcKeys.has(s.conversion.calc_key ?? '')) ? 'none' : s.conversion.value,

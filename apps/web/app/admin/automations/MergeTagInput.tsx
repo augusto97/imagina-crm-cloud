@@ -359,7 +359,15 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
     // envía un formulario»).
     const formTags =
         context === 'automation'
-            ? [{ tag: 'formulario.nombre', label: __('Nombre del formulario'), hint: __('el que llenaron') }].filter(
+            ? [
+                  { tag: 'formulario.nombre', label: __('Nombre del formulario'), hint: __('el que llenaron') },
+                  // v0.1.386 — su título y de dónde llegó.
+                  { tag: 'formulario.titulo', label: __('Título del formulario'), hint: __('el que ve quien responde') },
+                  { tag: 'formulario.pagina', label: __('Página desde donde se envió'), hint: __('la dirección') },
+                  { tag: 'formulario.llego_desde', label: __('Sitio desde donde llegó'), hint: __('el anterior') },
+                  { tag: 'formulario.utm_campaign', label: __('Campaña (utm_campaign)') },
+                  { tag: 'formulario.utm_source', label: __('Origen de la campaña (utm_source)') },
+              ].filter(
                   (t) => matches(t.label) || matches(t.tag) || matches(__('Formulario')),
               )
             : [];

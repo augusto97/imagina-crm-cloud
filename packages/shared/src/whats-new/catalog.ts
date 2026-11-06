@@ -2000,4 +2000,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'Los registros que abriste hace poco siguen en la búsqueda (**Ctrl K**), en **Recientes**. Para dejar algo siempre en el mismo lugar, ánclalo a **Favoritos**.',
         action: { label: 'Ver cómo funciona', href: '/aprende/mi-dia/mi-dia-favoritos' },
     },
+    {
+        key: 'v0.1.386-origen-formularios',
+        version: '0.1.386',
+        date: '2026-11-06',
+        kind: 'feature',
+        title: 'Formularios: de qué página y de qué formulario llegó cada registro',
+        summary:
+            'Cada registro puede guardar la página de tu sitio desde donde se envió, el nombre del formulario y valores fijos como una etiqueta, un estado o el responsable. Y una automatización puede correr sólo para una página.',
+        media: {
+            slides: [
+                {
+                    title: 'La página desde donde se envió',
+                    text: 'Si el mismo formulario está en varias páginas de tu sitio, cada registro guarda la dirección exacta (sin la campaña ni el ancla). Funciona con el código de inserción, con un marco sin el script y con el enlace directo.',
+                    illustration: 'form-origin',
+                },
+                {
+                    title: 'El formulario y sus etiquetas',
+                    text: 'Guarda el nombre del formulario en una columna y agrega valores fijos: «Etiquetas = Landing Navidad», «Estado = Nuevo» o el responsable. Si el formulario también pregunta ese campo, gana lo que respondió la persona.',
+                    illustration: 'form-origin',
+                },
+                {
+                    title: 'Una automatización por página',
+                    text: 'En «Cuando se envía un formulario», escribe en «Sólo si la página contiene» una parte de la dirección, como «navidad». En los mensajes tienes {{formulario.pagina}} y {{formulario.nombre}}.',
+                    illustration: 'form-automation',
+                },
+            ],
+        },
+        body: 'Lo encuentras en el constructor del formulario, en **Ajustes → Origen y etiquetas**. Los registros que ya tenías no se completan: sólo los que llegan desde que guardas.',
+        action: { label: 'Ver cómo funciona', href: '/aprende/formularios/formularios-origen' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

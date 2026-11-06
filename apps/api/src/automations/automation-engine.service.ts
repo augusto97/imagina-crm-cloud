@@ -8,6 +8,7 @@ import {
     type MeetingActionKind,
     bulkOperationSchema,
     checklistTriggerMatches,
+    pageMatchesAny,
     bookingMergeValue,
     bookingTriggerMatches,
     sampleBookingEvent,
@@ -131,6 +132,7 @@ import {
     nextChain,
     type AutomationChain,
     type EventRunRef,
+    type FormEventInfo,
     type TriggerEvent,
 } from './automation-dispatcher.service';
 import { evaluateCondition, explainCondition, type ConditionOptions } from './condition-evaluator';
@@ -210,8 +212,8 @@ interface RunContext {
      * `payment_received`) o el link que creó una acción anterior. `{{pago.x}}`.
      */
     pago?: Record<string, unknown>;
-    /** v0.1.275 — el formulario que se acaba de enviar (`{{formulario.nombre}}`). */
-    form?: { id: number; name: string };
+    /** v0.1.275 — el formulario que se acaba de enviar (`{{formulario.nombre}}`, v0.1.386 `{{formulario.pagina}}`…). */
+    form?: FormEventInfo;
     /** Campo «Botón» — el botón que se presionó (`{{boton.nombre}}`, `{{boton.persona}}`). */
     button?: { field_id: number; label: string; user_id: number; user_name: string; user_email: string };
     /** A9 — el checklist que quedó completo (`{{checklist.nombre}}`). */
@@ -385,7 +387,7 @@ export interface ResumeState {
         before?: Record<string, unknown>;
         payload?: Record<string, unknown>;
         pago?: Record<string, unknown>;
-        form?: { id: number; name: string };
+        form?: FormEventInfo;
         button?: { field_id: number; label: string; user_id: number; user_name: string; user_email: string };
         checklist?: ChecklistCompletedInfo;
         booking?: BookingEventInfo;
@@ -1490,6 +1492,10 @@ export class AutomationEngine {
         if (auto.triggerType === 'form_submitted') {
             const wanted = Number(cfg.form_id);
             if (Number.isInteger(wanted) && wanted > 0 && ctx.form?.id !== wanted) return false;
+            // v0.1.386 — «sólo si la página contiene…» / «…y no contiene…».
+            const page = ctx.form?.origin?.page_url ?? '';
+            if (typeof cfg.page_contains === 'string' && cfg.page_contains.trim() !== '' && !pageMatchesAny(page, cfg.page_contains)) return false;
+            if (typeof cfg.page_excludes === 'string' && cfg.page_excludes.trim() !== '' && page !== '' && pageMatchesAny(page, cfg.page_excludes)) return false;
         }
         // Campo «Botón» — «Al presionar el botón»: sin `button_field_id` vale
         // cualquier botón de la lista; con uno, sólo ese.
@@ -1634,6 +1640,11 @@ export class AutomationEngine {
             if (token.startsWith('reunion.')) return ctx.reunion?.[token.slice('reunion.'.length)] ?? '';
             // v0.1.275 — {{formulario.nombre}} del formulario que se envió.
             if (token === 'formulario.nombre') return ctx.form?.name ?? '';
+            // v0.1.386 — su título y de dónde llegó.
+            if (token.startsWith('formulario.')) {
+                const v = formEventValue(ctx.form, token.slice('formulario.'.length));
+                if (v !== undefined) return v;
+            }
             // C5 — {{aprobacion.resultado}}, {{aprobacion.flujo}}, {{aprobacion.motivo}}…
             if (token.startsWith('aprobacion.')) return approvalValue(ctx.approval, token.slice('aprobacion.'.length));
             // Campo «Botón» — el botón que se presionó y quién lo presionó.
@@ -3918,7 +3929,7 @@ export class AutomationEngine {
             uploads: ctx.docUploads,
             // Las variables del contexto del run: {{before.x}}, {{pago.link}}, {{payload.x}}.
             extra: (token) =>
-                token.startsWith('before.') || token.startsWith('pago.') || token.startsWith('payload.') || token.startsWith('pdf.') || token.startsWith('reunion.') || token === 'formulario.nombre'
+                token.startsWith('before.') || token.startsWith('pago.') || token.startsWith('payload.') || token.startsWith('pdf.') || token.startsWith('reunion.') || (token.startsWith('formulario.') && formEventValue(ctx.form, token.slice('formulario.'.length)) !== undefined) || token === 'formulario.nombre'
                     ? fv(token)
                     : undefined,
         });
@@ -4444,4 +4455,31 @@ function readResumeState(raw: unknown): ResumeState | null {
         had_fail: r.had_fail === true,
         ctx: { ...ctx, data: ctx.data && typeof ctx.data === 'object' ? ctx.data : {} },
     };
+}
+
+/**
+ * v0.1.386 — `{{formulario.x}}` del formulario que se envió: su título y de
+ * dónde llegó. undefined = no es una variable del formulario (sigue la
+ * resolución normal: un campo puede llamarse «formulario»).
+ */
+export function formEventValue(form: FormEventInfo | undefined, key: string): string | undefined {
+    const o = form?.origin ?? {};
+    switch (key) {
+        case 'nombre':
+            return form?.name ?? '';
+        case 'titulo':
+            return form?.title || form?.name || '';
+        case 'pagina':
+            return o.page_url ?? '';
+        case 'llego_desde':
+            return o.referrer ?? '';
+        case 'utm_source':
+        case 'utm_medium':
+        case 'utm_campaign':
+        case 'utm_term':
+        case 'utm_content':
+            return o[key] ?? '';
+        default:
+            return undefined;
+    }
 }

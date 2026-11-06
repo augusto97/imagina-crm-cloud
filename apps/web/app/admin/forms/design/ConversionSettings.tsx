@@ -1,14 +1,7 @@
 import { useState } from 'react';
-import { BarChart3, Check as CheckIcon, Copy, ExternalLink, Link2 } from 'lucide-react';
+import { BarChart3, Check as CheckIcon, Copy, ExternalLink } from 'lucide-react';
 
 import {
-    ATTRIBUTION_DEFAULT_KEYS,
-    ATTRIBUTION_FIELD_TYPES,
-    ATTRIBUTION_KEYS,
-    ATTRIBUTION_LABELS,
-    ATTRIBUTION_URL_KEYS,
-    attributionFieldFor,
-    attributionFieldKey,
     COLLECTION_CURRENCY_OPTIONS,
     CONVERSION_EVENT_BOOKING,
     CONVERSION_EVENT_FORM,
@@ -19,18 +12,12 @@ import {
     REDIRECT_MAX_DELAY_S,
     REDIRECT_URL_RE,
     redirectVariables,
-    type AttributionKey,
-    type AttributionSettings,
     type ConversionSettings,
     type ConversionValueMode,
 } from '@imagina-base/shared';
 
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useCreateField } from '@/hooks/useFields';
 import { __ } from '@/lib/i18n';
-import { useToast } from '@/components/ui/toast';
-import type { FieldEntity } from '@/types/field';
 
 import { Check, Field, Section } from '../../automations/email/EmailBlockInspector';
 
@@ -51,55 +38,33 @@ const CURRENCIES: ReadonlyArray<{ value: string; label: string }> = (() => {
     return out;
 })();
 
-/** Lo que no se ve de entrada (las campañas casi nunca lo usan). */
-const EXTRA_KEYS = ATTRIBUTION_KEYS.filter((k) => !ATTRIBUTION_DEFAULT_KEYS.includes(k));
-
-/** El nombre de la columna que se crea para un dato. */
-function columnLabel(k: AttributionKey): string {
-    return ATTRIBUTION_LABELS[k].replace(/\s*\([^)]*\)\s*$/, '');
-}
-
 /**
  * v0.1.374 (ADR-S97) — «Medir conversiones»: lo que el formulario (o la
- * agenda) le avisa al sitio donde está insertado y dónde se guarda de dónde
- * vino cada registro. El evento para Tag Manager sale siempre; aquí se suma
- * la etiqueta de Google Ads, el píxel de Meta, el valor y el origen.
+ * agenda) le avisa al sitio donde está insertado. El evento para Tag Manager
+ * sale siempre; aquí se suma la etiqueta de Google Ads, el píxel de Meta y el
+ * valor. v0.1.386 — de dónde vino cada registro se elige en `OriginColumns`.
  */
 export function ConversionSettings({
     kind,
     conversion,
-    attribution,
     onChange,
-    fields,
-    takenFieldIds,
-    listId,
     calcs = [],
     canCharge = false,
 }: {
     kind: 'form' | 'booking';
     conversion: ConversionSettings;
-    attribution: AttributionSettings;
-    onChange: (patch: { conversion?: ConversionSettings; attribution?: AttributionSettings }) => void;
-    fields: FieldEntity[];
-    /** Campos que el formulario ya pregunta (o la agenda ya escribe): no sirven para el origen. */
-    takenFieldIds: ReadonlySet<number>;
-    listId: number | string;
+    onChange: (patch: { conversion?: ConversionSettings }) => void;
     calcs?: ReadonlyArray<{ key: string; name: string }>;
     /** El formulario cobra al enviar (el valor puede ser lo que se cobra). */
     canCharge?: boolean;
 }): JSX.Element {
     const setConv = (patch: Partial<ConversionSettings>): void => onChange({ conversion: { ...conversion, ...patch } });
-    const setAttr = (patch: Partial<AttributionSettings>): void => onChange({ attribution: { ...attribution, ...patch } });
     const isBooking = kind === 'booking';
     const eventName = isBooking ? CONVERSION_EVENT_BOOKING : CONVERSION_EVENT_FORM;
     const [adsRaw, setAdsRaw] = useState(conversion.google_ads ?? '');
     const [copied, setCopied] = useState(false);
-    const [showExtra, setShowExtra] = useState(() => EXTRA_KEYS.some((k) => attributionFieldFor(attribution, k) !== null));
-    const [creating, setCreating] = useState(false);
     const [gaRaw, setGaRaw] = useState(conversion.google_tag_id ?? '');
     const [pixelRaw, setPixelRaw] = useState(conversion.meta_pixel_id ?? '');
-    const create = useCreateField(listId);
-    const toast = useToast();
 
     const adsParsed = adsRaw.trim() === '' ? null : parseGoogleAdsSendTo(adsRaw);
     const adsBad = adsRaw.trim() !== '' && adsParsed === null;
@@ -109,12 +74,6 @@ export function ConversionSettings({
     const pixelBad = pixelRaw.trim() !== '' && pixelParsed === null;
     const adsId = googleAdsIdFromSendTo(conversion.google_ads);
     const directEmpty = conversion.direct_tags && !adsId && !conversion.google_tag_id && !conversion.meta_pixel_id;
-    const usable = fields.filter((f) => ATTRIBUTION_FIELD_TYPES.has(f.type) && !takenFieldIds.has(f.id));
-    const used = new Set(ATTRIBUTION_KEYS.flatMap((k) => {
-        const id = attributionFieldFor(attribution, k);
-        return id !== null ? [id] : [];
-    }));
-    const missingDefaults = ATTRIBUTION_DEFAULT_KEYS.filter((k) => attributionFieldFor(attribution, k) === null);
 
     const valueModes: Array<{ value: ConversionValueMode; label: string }> = [
         { value: 'none', label: __('Sin valor') },
@@ -129,25 +88,6 @@ export function ConversionSettings({
             setCopied(true);
             window.setTimeout(() => setCopied(false), 1500);
         });
-    };
-
-    /** Crea las columnas que faltan (texto; enlace para las direcciones) y las elige. */
-    const createColumns = async (): Promise<void> => {
-        setCreating(true);
-        const next: Record<string, unknown> = { ...attribution, enabled: true };
-        try {
-            for (const k of missingDefaults) {
-                const f = await create.mutateAsync({ label: columnLabel(k), type: ATTRIBUTION_URL_KEYS.has(k) ? 'url' : 'text', is_required: false, config: {} } as never);
-                next[attributionFieldKey(k)] = f.id;
-            }
-            onChange({ attribution: next as AttributionSettings });
-            toast.success(__('Columnas listas'), __('Guarda para que empiecen a llenarse con cada respuesta nueva.'));
-        } catch (err) {
-            onChange({ attribution: next as AttributionSettings });
-            toast.error(__('No se pudieron crear todas las columnas'), err instanceof Error ? err.message : undefined);
-        } finally {
-            setCreating(false);
-        }
     };
 
     return (
@@ -384,62 +324,11 @@ export function ConversionSettings({
                     )}
                 </div>
 
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3" data-testid="attribution-settings">
-                    <Check
-                        label={kind === 'booking' ? __('Guardar de dónde vino cada cita') : __('Guardar de dónde vino cada registro')}
-                        checked={attribution.enabled}
-                        onChange={(v) => setAttr({ enabled: v })}
-                        testId="attribution-enabled"
-                    />
-                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                        {__('La campaña (utm), el id del clic del anuncio y la página donde se llenó, en columnas del registro. Así ves en un tablero qué campaña trae clientes.')}
-                    </p>
-                    {attribution.enabled && (
-                        <>
-                            {[...ATTRIBUTION_DEFAULT_KEYS, ...(showExtra ? EXTRA_KEYS : [])].map((k) => {
-                                const current = attributionFieldFor(attribution, k);
-                                return (
-                                    <div key={k} className="imcrm-grid imcrm-grid-cols-[minmax(0,1fr)_minmax(0,1fr)] imcrm-items-center imcrm-gap-2">
-                                        <span className="imcrm-truncate imcrm-text-xs" title={ATTRIBUTION_LABELS[k]}>
-                                            {ATTRIBUTION_LABELS[k]}
-                                        </span>
-                                        <select
-                                            className={selectClass}
-                                            value={current === null ? '' : String(current)}
-                                            onChange={(e) => setAttr({ [attributionFieldKey(k)]: e.target.value === '' ? null : Number(e.target.value) } as Partial<AttributionSettings>)}
-                                            data-testid={`attribution-field-${k}`}
-                                        >
-                                            <option value="">{__('No guardar')}</option>
-                                            {usable
-                                                .filter((f) => f.id === current || !used.has(f.id))
-                                                .map((f) => (
-                                                    <option key={f.id} value={f.id}>
-                                                        {f.label}
-                                                    </option>
-                                                ))}
-                                        </select>
-                                    </div>
-                                );
-                            })}
-                            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
-                                {missingDefaults.length > 0 && (
-                                    <Button size="sm" variant="outline" onClick={() => void createColumns()} disabled={creating} data-testid="attribution-create-columns">
-                                        <Link2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                                        {creating ? __('Creando…') : __('Crear las columnas que faltan')}
-                                    </Button>
-                                )}
-                                {!showExtra && (
-                                    <button type="button" className="imcrm-text-[11px] imcrm-text-primary hover:imcrm-underline" onClick={() => setShowExtra(true)}>
-                                        {__('Más datos (término, contenido, Microsoft, TikTok…)')}
-                                    </button>
-                                )}
-                            </div>
-                            <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                                {__('Para no perder la campaña cuando la persona navega por tu sitio antes de llegar al formulario, pega el script de inserción en todas las páginas (pesa poco y queda guardado en el navegador).')}
-                            </p>
-                        </>
-                    )}
-                </div>
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="conversion-origin-note">
+                    {kind === 'booking'
+                        ? __('De dónde llegó cada cita (la página, el sitio anterior y la campaña) se guarda en las columnas de abajo.')
+                        : __('De dónde llegó cada registro (la página desde donde se envió, el sitio anterior y la campaña) se guarda en Ajustes → Origen y etiquetas.')}
+                </p>
             </div>
         </Section>
     );

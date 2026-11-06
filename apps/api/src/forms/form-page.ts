@@ -344,7 +344,9 @@ export const FORM_EMBED_JS = String.raw`(function () {
     // guardaron las etiquetas del propio sitio (Google y Meta).
     if (!a.gclid) { var g = /^GCL\.\d+\.(.+)$/.exec(cookie('_gcl_aw') || ''); if (g && CLICK_ID.test(g[1])) a.gclid = g[1]; }
     if (!a.fbclid) { var fb = /^fb\.\d+\.\d+\.(.+)$/.exec(cookie('_fbc') || ''); if (fb && CLICK_ID.test(fb[1])) a.fbclid = fb[1]; }
-    a.page_url = (location.origin + location.pathname).slice(0, 1000);
+    // v0.1.386 — la página completa (con su ?producto=…); el servidor le quita
+    // la campaña y los ids de clic, que ya van en sus columnas.
+    a.page_url = String(location.href).split('#')[0].slice(0, 1000);
     return a;
   }
 

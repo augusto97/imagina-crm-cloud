@@ -180,6 +180,9 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
     if (typeof c.webhook_token === 'string' && c.webhook_token !== '') out.webhook_token = c.webhook_token;
     // form_submitted (v0.1.275): sólo un formulario; sin él, cualquiera.
     if (typeof c.form_id === 'number' && c.form_id > 0) out.form_id = c.form_id;
+    // v0.1.386 — «sólo si la página contiene…» / «y no contiene…».
+    if (typeof c.page_contains === 'string' && c.page_contains.trim() !== '') out.page_contains = c.page_contains.trim().slice(0, 500);
+    if (typeof c.page_excludes === 'string' && c.page_excludes.trim() !== '') out.page_excludes = c.page_excludes.trim().slice(0, 500);
     // D5 — booking_event: una página de agenda (sin ella, cualquiera) y qué eventos.
     if (typeof c.booking_page_id === 'number' && c.booking_page_id > 0) out.booking_page_id = c.booking_page_id;
     if (Array.isArray(c.events) && c.events.length > 0) out.events = c.events;
@@ -222,7 +225,7 @@ export function helpForTrigger(triggerType: string): string {
         case 'due_date_reached':
             return __('Se ejecuta cuando llega (o se acerca / pasa) la fecha de un campo del registro. Ejemplo: «20 días después del vencimiento» para recordatorios de pago. Si la fecha se cambia, vuelve a dispararse para la fecha nueva.');
         case 'form_submitted':
-            return __('Se ejecuta cuando alguien envía un formulario público de esta lista: el registro ya está creado con sus respuestas, así que puedes avisarle al equipo, contestarle a quien lo llenó o completar campos. Puedes usar {{formulario.nombre}}.');
+            return __('Se ejecuta cuando alguien envía un formulario público de esta lista: el registro ya está creado con sus respuestas, así que puedes avisarle al equipo, contestarle a quien lo llenó o completar campos. Puedes elegir un formulario y filtrar por la página desde donde se envió. Variables: {{formulario.nombre}}, {{formulario.pagina}} y {{formulario.llego_desde}}.');
         case 'button_pressed':
             return __('Se ejecuta cuando alguien presiona un campo «Botón» de un registro de esta lista (en la tabla, la ficha o el portal, si el botón lo permite). Sirve para tareas que se hacen a pedido: enviar una cotización, avisar al equipo, crear la factura. Puedes usar {{boton.nombre}} y {{boton.persona}}.');
         case 'approval_resolved':
@@ -553,6 +556,37 @@ function FormSubmittedConfig({
                     {__('Esta lista todavía no tiene formularios: créalos en Ajustes de la lista → Formularios.')}
                 </p>
             )}
+            <div className="imcrm-mt-2 imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-testid="trigger-form-page" data-tour="automation-form-page">
+                <Label htmlFor="trigger-form-page-contains">{__('Sólo si la página desde donde se envió contiene')}</Label>
+                <Input
+                    id="trigger-form-page-contains"
+                    value={typeof config.page_contains === 'string' ? config.page_contains : ''}
+                    placeholder={__('Ej.: /navidad, black-friday')}
+                    onChange={(e) => {
+                        const next = { ...config };
+                        if (e.target.value.trim() !== '') next.page_contains = e.target.value;
+                        else delete next.page_contains;
+                        onChange(next);
+                    }}
+                />
+                <Label htmlFor="trigger-form-page-excludes" className="imcrm-mt-1">
+                    {__('…y no contiene')}
+                </Label>
+                <Input
+                    id="trigger-form-page-excludes"
+                    value={typeof config.page_excludes === 'string' ? config.page_excludes : ''}
+                    placeholder={__('Ej.: /pruebas')}
+                    onChange={(e) => {
+                        const next = { ...config };
+                        if (e.target.value.trim() !== '') next.page_excludes = e.target.value;
+                        else delete next.page_excludes;
+                        onChange(next);
+                    }}
+                />
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('Varias palabras separadas por coma: alcanza con que la dirección tenga una (sin importar mayúsculas ni tildes). Vacío = cualquier página. La página es la de tu sitio donde estaba el formulario, o el enlace directo si lo abrieron así. Variables: {{formulario.pagina}} y {{formulario.llego_desde}}.')}
+                </p>
+            </div>
         </div>
     );
 }

@@ -587,7 +587,18 @@ export function availableFields<F extends FieldLike>(fields: readonly F[], confi
     const origin = attributionColumnIds(config);
     // v0.1.383 — tampoco las que escribe una sincronización (cobros, suscripciones, SLA): lo
     // respondido no se guardaría.
-    return fields.filter((f) => isFormFieldType(f.type) && !asked.has(f.id) && !origin.has(f.id) && !locked?.has(f.id));
+    // v0.1.386 — ni la columna del nombre del formulario ni las de valores fijos
+    // (salvo «varias opciones»: las fijas se suman a lo que elige la persona).
+    const stamped = recordValuesColumnIds(config);
+    return fields.filter((f) => isFormFieldType(f.type) && !asked.has(f.id) && !origin.has(f.id) && !locked?.has(f.id) && !(stamped.has(f.id) && f.type !== 'multi_select'));
+}
+
+/** v0.1.386 — Las columnas que llena «Origen y etiquetas» (nombre del formulario y valores fijos). */
+export function recordValuesColumnIds(config: FormConfig): Set<number> {
+    const rv = config.settings.record_values;
+    const out = new Set<number>(rv?.fixed.map((f) => f.field_id) ?? []);
+    if (rv?.form_name_field_id) out.add(rv.form_name_field_id);
+    return out;
 }
 
 /** v0.1.374 — Las columnas donde el formulario guarda de dónde vino cada registro (si está encendido). */

@@ -389,6 +389,40 @@ export function remapListSettings(
 }
 
 /**
+ * v0.1.386 — La configuración de un formulario: lo genérico (`remapJson`) más
+ * los VALORES fijos de «Origen y etiquetas» que son ids de otra cosa: una
+ * persona (campo Persona) o un equipo (campo Equipo). Uno que no viajó se
+ * descarta (dejarlo le asignaría el registro a OTRA persona).
+ */
+export function remapFormConfig(config: Record<string, unknown>, fieldTypeByOldId: Map<number, string>, maps: IdMaps): Record<string, unknown> {
+    const before = (config.settings as Record<string, unknown> | undefined)?.record_values as { fixed?: unknown } | undefined;
+    const typeOfOld = new Map<number, string>();
+    if (before && Array.isArray(before.fixed)) {
+        for (const fv of before.fixed as Array<{ field_id?: unknown }>) {
+            const id = Number(fv?.field_id);
+            if (Number.isFinite(id)) typeOfOld.set(id, fieldTypeByOldId.get(id) ?? '');
+        }
+    }
+    const out = remapJson(config, maps) as Record<string, unknown>;
+    const rv = (out.settings as Record<string, unknown> | undefined)?.record_values as { fixed?: unknown } | undefined;
+    if (!rv || !Array.isArray(rv.fixed) || !before || !Array.isArray(before.fixed)) return out;
+    const oldFixed = before.fixed as Array<{ field_id?: unknown; value?: unknown }>;
+    rv.fixed = (rv.fixed as Array<{ field_id?: unknown; value?: unknown }>).flatMap((fv, i) => {
+        const type = typeOfOld.get(Number(oldFixed[i]?.field_id)) ?? '';
+        if (type !== 'user' && type !== 'team') return [fv];
+        const map = type === 'user' ? maps.user : maps.team;
+        const one = (v: unknown): number | null => mapId(map, v);
+        if (Array.isArray(fv.value)) {
+            const ids = fv.value.map(one).filter((x): x is number => x !== null);
+            return ids.length ? [{ ...fv, value: ids }] : [];
+        }
+        const id = one(fv.value);
+        return id === null ? [] : [{ ...fv, value: id }];
+    });
+    return out;
+}
+
+/**
  * v0.1.297 — Config de una vista guardada. Los ids de campo los cubre `remapJson`
  * por convención (`kanban_value_field_id`, `required_field_ids`…); lo que no
  * sigue ninguna son las CLAVES de columna y carril del kanban cuando el campo

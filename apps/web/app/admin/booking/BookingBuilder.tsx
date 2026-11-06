@@ -90,6 +90,7 @@ import {
 } from './builder/bookingElements';
 import type { InspectorTab } from '../forms/builder/PageElementInspector';
 import { ConversionSettings, ThankYouUrlField } from '../forms/design/ConversionSettings';
+import { OriginColumns } from '../forms/design/RecordOriginSettings';
 import { SmsCounter } from '@/cloud/components/sms/smsUi';
 import { useSmsConnections } from '@/cloud/components/sms/useSmsConnections';
 import { extractFieldOptions } from '../records/fieldOptions';
@@ -1203,15 +1204,10 @@ function MeasureEditor({ config, onChange, fields, listId }: SectionEditorProps)
                 placeholder="https://tusitio.com/cita-agendada"
                 testId="booking-redirect-url"
             />
-            <ConversionSettings
-                kind="booking"
-                conversion={s.conversion}
-                attribution={s.attribution}
-                onChange={(patch) => setS(patch)}
-                fields={fields}
-                takenFieldIds={taken}
-                listId={listId}
-            />
+            <ConversionSettings kind="booking" conversion={s.conversion} onChange={(patch) => setS(patch)} />
+            <Section title={__('De dónde llegó cada cita')}>
+                <OriginColumns kind="booking" attribution={s.attribution} onChange={(attribution) => setS({ attribution })} fields={fields} takenFieldIds={taken} listId={listId} />
+            </Section>
         </div>
     );
 }

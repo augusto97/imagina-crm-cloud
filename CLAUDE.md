@@ -13176,6 +13176,58 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         cuentan, C que entra al final en la sesión y primero al reabrir, ocultar
         con «Deshacer», interruptor y «Empezar de cero», Ctrl K con Recientes).
 
+  - [x] **Formularios: de qué página y de qué formulario llegó cada registro
+        (v0.1.386, addendum ADR-S97, pedido de un cliente del usuario: "al
+        llenar el formulario debería agregar la url desde donde se envió… que
+        tenga una etiqueta o el nombre del formulario, porque una lista puede
+        tener varios formularios… y crear automatizaciones si la url contiene
+        un slug")**. La página ya se podía guardar desde v0.1.374, pero estaba
+        escondida en «Medir conversiones», detrás de un interruptor, sin la
+        consulta de la dirección y vacía por el enlace directo o en un marco sin
+        el script.
+        (a) **Ajustes → «Origen y etiquetas»** (`FormOriginSettings`,
+        `design/RecordOriginSettings.tsx`, grupo `origin` del constructor) con
+        tres partes: **la página desde donde se envió** y **llegó desde**
+        (columnas creadas con un clic; la campaña plegada en «Campaña y
+        anuncio»), el **nombre del formulario** en una columna de texto (el
+        interno o el título) y **valores fijos** por registro (hasta 20:
+        etiquetas, estado, responsable, equipo, casilla, fecha…). En la agenda
+        las columnas de origen pasan a «Medir conversiones → De dónde llegó
+        cada cita» (`OriginColumns`). `attribution.enabled` se deriva de que
+        haya columnas.
+        (b) **La página, limpia y siempre**: `cleanPageUrl` (shared) quita el
+        ancla y los parámetros de seguimiento (utm, gclid, fbclid, _gl…) y
+        conserva el resto de la consulta; la página pública la manda en todo
+        envío salvo el enlace para actualizar un registro: la del sitio por
+        `embed.js`, sin el script el `document.referrer` del marco (el código
+        de inserción suma `referrerpolicy="no-referrer-when-downgrade"`), y por
+        el enlace directo la dirección del formulario.
+        (c) **`settings.record_values`** (`form-record-values.ts` en shared,
+        lectura tolerante): `cleanFormRecordValues` al guardar —ni en una
+        columna que el formulario pregunta (salvo varias opciones, que se
+        suman), ni en una de los cálculos o del origen (el origen se limpia
+        primero y gana el choque)— y `applyFormRecordValues` al enviar —lo
+        respondido gana, cada valor se revalida y una opción borrada se descarta
+        sin fallar—.
+        (d) **Automatizaciones**: el evento lleva `form.origin` aunque no se
+        guarde en una columna (también tras la confirmación por correo:
+        `form_pending_submissions.origin`, migración 0109); el disparador
+        «Cuando se envía un formulario» gana **«Sólo si la página contiene /
+        excepto si contiene»** (`page_contains`/`page_excludes`, términos por
+        coma, sin mayúsculas ni tildes, `pageMatchesAny`) y las variables
+        `{{formulario.nombre|titulo|pagina|llego_desde|utm_*}}`
+        (`formEventValue`). El asistente/MCP ve `record_values`; migrar una
+        empresa re-mapea personas y equipos de los valores fijos
+        (`remapFormConfig`).
+        Ayuda: artículo «De dónde llegó cada registro: página, formulario y
+        etiquetas» en Aprende → Formularios con la ilustración `form-origin`,
+        guía `form-origin`, paso del recorrido de formularios y novedad con
+        carrusel. Tests: `form-record-values.test.ts` (9) en shared,
+        `forms-origin.spec` (5) + re-mapeo en la API, 1 del front; E2E
+        navegador 27/27 en escritorio y 28/28 en celular oscuro con un sitio de
+        otro origen (con el script, sin el script y el enlace directo; la
+        automatización de «navidad» corre sólo para esa página).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -363,8 +363,11 @@ export function summarizeTrigger(
         }
         case 'whatsapp_message_received':
             return __('Cuando llega un mensaje de WhatsApp');
-        case 'form_submitted':
-            return __('Cuando alguien envía un formulario');
+        case 'form_submitted': {
+            // v0.1.386 — con el filtro de página, se dice.
+            const page = typeof config.page_contains === 'string' ? config.page_contains.trim() : '';
+            return page ? sprintf(__('Cuando alguien envía un formulario desde una página con «%s»'), page) : __('Cuando alguien envía un formulario');
+        }
         case 'booking_event': {
             const events = Array.isArray(config.events) ? (config.events as string[]) : [];
             const words: Record<string, string> = { booked: __('se agenda'), rescheduled: __('se reprograma'), cancelled: __('se cancela') };

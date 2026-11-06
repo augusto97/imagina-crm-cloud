@@ -583,7 +583,7 @@ const automationSpec = z.object({
                 'record_created/incoming_webhook: {field_filters?}. ' +
                 'payment_received (un cliente pagó un link de Mercado Pago/Wompi del registro; las acciones usan {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.link}}): {field_filters?}. ' +
                 'subscription_event (cambió una suscripción de Mercado Pago del registro: se activó, se cobró una cuota, se rechazó un cobro, quedó en mora, se venció, se pausó, se reanudó, se canceló o terminó; las acciones usan {{suscripcion.evento}}, {{suscripcion.estado}}, {{suscripcion.plan}}, {{suscripcion.monto}}, {{suscripcion.link}}, {{suscripcion.proximo_cobro}}, {{suscripcion.pagado_hasta}}, {{suscripcion.cobros_fallidos}}, {{suscripcion.motivo}}, {{suscripcion.monto_cobrado}}, {{suscripcion.fecha_cobro}}): {subscription_events?: [activated|charged|charge_failed|past_due|expired|paused|resumed|cancelled|finished] (vacío = todos), plan_ids?: [ids de connectors[].actions[].plan_ids], field_filters?}. ' +
-                'form_submitted (alguien llenó un formulario público de la lista; el registro ya existe; las acciones usan {{formulario.nombre}}): {form_id? (id de uno de los `forms` de get_list_schema; sin él, cualquiera), field_filters?}. ' +
+                'form_submitted (alguien llenó un formulario público de la lista; el registro ya existe; las acciones usan {{formulario.nombre}}, {{formulario.titulo}}, {{formulario.pagina}} (la página desde donde se envió) y {{formulario.llego_desde}}): {form_id? (id de uno de los `forms` de get_list_schema; sin él, cualquiera), page_contains? (palabras separadas por coma: sólo si la página contiene alguna, p. ej. "/navidad, black-friday"), page_excludes? (…y no contiene ninguna), field_filters?}. ' +
                 'button_pressed (alguien presionó un campo Botón del registro cuya acción es «correr una automatización»; las acciones usan {{boton.nombre}}, {{boton.persona}}, {{boton.email}}): {button_field? (slug del campo botón; sin él, cualquier botón de la lista), field_filters?}. ' +
                 'approval_resolved («Cuando se aprueba o se rechaza» una solicitud de aprobación del registro; las acciones usan {{aprobacion.resultado}} (aprobada|rechazada|devuelta|cancelada), {{aprobacion.flujo}}, {{aprobacion.motivo}}, {{aprobacion.decidio}}): {approval_flow? (id o nombre de un flujo de approval_flows; sin él, cualquiera), results?: [approved|rejected|returned|cancelled] (default approved y rejected), field_filters?}. ' +
                 'checklist_completed (se marcó el último ítem de un checklist del registro; las acciones usan {{checklist.nombre}}): {checklist_mode?: any (cualquier checklist, default) | named (sólo el de checklist_name) | all (cuando quedan TODOS los checklists del registro completos), checklist_name?, field_filters?}. ' +
@@ -1447,6 +1447,20 @@ export class StructureTools implements AiProposalApplier {
                         // v0.1.374 — medir conversiones en el sitio donde está insertado y la página de gracias.
                         conversions: conversionSummary(st.conversion, st.attribution, fieldById),
                         thank_you_page: st.redirect_url ? { url: st.redirect_url, delay_seconds: st.redirect_delay } : null,
+                        // v0.1.386 — «Origen y etiquetas»: dónde se guarda el nombre del
+                        // formulario y los valores fijos que lleva cada registro (y la
+                        // página desde donde se envió, en `conversions.attribution`). En
+                        // una automatización «Cuando se envía un formulario»: el filtro
+                        // `page_contains` / `page_excludes` del disparador y las variables
+                        // {{formulario.pagina}}, {{formulario.llego_desde}}, {{formulario.titulo}}.
+                        record_values: {
+                            form_name_column: st.record_values.form_name_field_id !== null ? (fieldById.get(st.record_values.form_name_field_id)?.slug ?? null) : null,
+                            form_name_source: st.record_values.form_name_source === 'title' ? 'título público' : 'nombre interno',
+                            fixed: st.record_values.fixed.flatMap((fv) => {
+                                const fld = fieldById.get(fv.field_id);
+                                return fld ? [{ column: fld.slug, value: fv.value }] : [];
+                            }),
+                        },
                     };
                 }),
                 // D5 — páginas de agenda: lo que se reserva y quién atiende (las
@@ -5102,7 +5116,9 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
         case 'whatsapp_message_received':
             return 'Cuando llega un mensaje de WhatsApp';
         case 'form_submitted':
-            return 'Cuando se envía un formulario';
+            return typeof cfg.page_contains === 'string' && cfg.page_contains.trim() !== ''
+                ? `Cuando se envía un formulario desde una página con «${cfg.page_contains.trim()}»`
+                : 'Cuando se envía un formulario';
         case 'button_pressed': {
             const id = Number(cfg.button_field_id);
             const f = fields.find((x) => x.id === id);

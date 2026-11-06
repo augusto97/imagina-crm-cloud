@@ -391,7 +391,7 @@ describe('v0.1.275 — formularios (Postgres + Redis reales)', () => {
         const [act] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(activity).where(eq(activity.recordId, rec!.id)));
         expect(act!.userId).toBeNull();
         expect(dispatcher.events.map((e) => e.trigger)).toEqual(['record_created', 'form_submitted']);
-        expect(dispatcher.events[1]!.form).toEqual({ id, name: 'Contacto' });
+        expect(dispatcher.events[1]!.form).toMatchObject({ id, name: 'Contacto' });
         const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(forms).where(eq(forms.id, id)));
         expect(row!.submissionsCount).toBe(1);
         expect(row!.lastSubmittedAt).not.toBeNull();

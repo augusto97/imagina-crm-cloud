@@ -51,6 +51,14 @@ export function cleanAttributionSettings(a: AttributionSettings, fields: Readonl
     return out as AttributionSettings;
 }
 
+/** Las columnas que llena el origen (para que nada más las escriba). */
+export function attributionColumnIds(a: AttributionSettings): number[] {
+    return ATTRIBUTION_KEYS.flatMap((k) => {
+        const id = attributionFieldFor(a, k);
+        return id !== null ? [id] : [];
+    });
+}
+
 /** ¿Guarda algo? (encendido y con al menos una columna). */
 export function attributionActive(a: AttributionSettings): boolean {
     return a.enabled && ATTRIBUTION_KEYS.some((k) => attributionFieldFor(a, k) !== null);
