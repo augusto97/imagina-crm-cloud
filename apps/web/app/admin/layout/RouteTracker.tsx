@@ -6,10 +6,13 @@ import { useSession } from '@/cloud/session';
 import { useDashboards } from '@/hooks/useDashboards';
 import { useListGroups } from '@/hooks/useListGroups';
 import { useLists } from '@/hooks/useLists';
+import { useMostUsedState, useMostUsedSync } from '@/hooks/useMostUsed';
 import { settingsSectionGroups, resolveSettingsSection } from '@/cloud/settingsSections';
 import { isPlatformTab, PLATFORM_TABS } from '@/admin/platform/platformTabs';
 import { setTitleSection } from '@/lib/documentTitle';
 import { __, sprintf } from '@/lib/i18n';
+import { useIsGuest } from '@/lib/guest';
+import { noteMostUsedVisit } from '@/lib/mostUsed';
 import { CAP, useCan } from '@/lib/permissions';
 import { pushRecent } from '@/lib/recents';
 import { titleFieldOf } from '@/lib/recordTitle';
@@ -35,6 +38,10 @@ export function RouteTracker(): null {
     const dashboards = useDashboards();
     const groups = useListGroups();
     const params = useMemo(() => new URLSearchParams(search), [search]);
+    const isGuest = useIsGuest();
+    const impersonating = useSession((s) => s.impersonating !== undefined);
+    const mostUsed = useMostUsedState();
+    useMostUsedSync();
 
     // v0.1.347 — cada pantalla nueva arranca ARRIBA. El área de trabajo es un
     // `<main>` con su propio scroll (no la ventana), así que el navegador no
@@ -137,6 +144,23 @@ export function RouteTracker(): null {
             });
         }
     }, [tenantId, list, sub, recordId, recordTitle]);
+
+    // ── v0.1.385 — «Más usadas» ────────────────────────────────────────
+    // Cuenta ENTRAR a la tabla de una lista o a un tablero. No cuentan los
+    // registros (ni su página ni el modal), las vistas, los filtros ni las
+    // pantallas de ajustes o automatizaciones: por eso «Recientes» se movía
+    // con cada clic. Los 30 minutos los controla `noteMostUsedVisit`.
+    const countsVisits = !isGuest && !impersonating && mostUsed.data?.enabled !== false;
+    const listTableId = list && sub === 'records' && !listMatch?.[3] ? list.id : null;
+    useEffect(() => {
+        if (!countsVisits || listTableId === null) return;
+        noteMostUsedVisit(tenantId, { kind: 'list', id: listTableId });
+    }, [countsVisits, tenantId, listTableId]);
+    const dashboardId = dashboard?.id ?? null;
+    useEffect(() => {
+        if (!countsVisits || dashboardId === null) return;
+        noteMostUsedVisit(tenantId, { kind: 'dashboard', id: dashboardId });
+    }, [countsVisits, tenantId, dashboardId]);
 
     useEffect(() => {
         if (!dashboard) return;

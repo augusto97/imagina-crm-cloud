@@ -13135,6 +13135,47 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el menú con Meet en Sí). **Límite de la verificación**: Google real no
         alcanza el sandbox; el motor se probó con la red simulada.
 
+  - [x] **«Más usadas» en lugar de «Recientes» en el menú de Listas
+        (v0.1.385, addendum ADR-S90, reporte del usuario: "lo de recientes es
+        molesto porque cambia tanto… uno va a cualquier ajuste y queda ahí;
+        debería ser lo más usado y poderse desactivar por usuario")**.
+        «Recientes» ordenaba por lo último abierto y cada registro abierto un
+        momento (modal, página, búsqueda) pasaba a encabezarla. Ahora:
+        (a) **qué cuenta**: entrar a la tabla de una lista o a un tablero, como
+        mucho una vez cada 30 minutos; los registros, las vistas, los filtros y
+        los ajustes/automatizaciones no cuentan (`RouteTracker` →
+        `noteMostUsedVisit`). (b) **Frecuencia con caducidad**
+        (`packages/shared/src/schemas/most-used.ts`, puro): cada visita suma 1
+        y pierde la mitad cada 14 días; entra con visitas en 2 días distintos y
+        puntaje reciente ≥ 1,5; se muestran 5. (c) **Orden estable**: se fija al
+        abrir la app por empresa y día (`stableMostUsed`/`stableShown`) y lo
+        nuevo entra al final; se reordena al día siguiente o al volver a abrir.
+        (d) **En la cuenta, por empresa** (`memberships.settings.most_used`, sin
+        migración): las visitas se juntan en una cola del navegador
+        (`lib/mostUsed.ts`, localStorage) y salen cada minuto, al ocultar la
+        pestaña (`keepalive`) o al abrir la app; el servidor las mezcla con la
+        fila bloqueada (`GET /me/most-used`, `POST /me/most-used/visits`,
+        `PATCH /me/most-used` con `enabled`/`reset`; vale en solo-lectura,
+        impersonando no anota). (e) **Interruptor, encendido por defecto**: «…»
+        de la sección → «Ocultar esta sección» con «Deshacer», y Ajustes →
+        Cuenta → Apariencia (mostrar/ocultar, qué se ve ahora, «Empezar de
+        cero»); apagada no se anota nada. Vale en el panel del escritorio y en
+        la pantalla de Listas del celular. La búsqueda (Ctrl K) conserva sus
+        «Recientes» (registros incluidos). **Bug atrapado en el E2E**: el aviso
+        con «Deshacer» no salía porque ocultar la sección desmonta el menú y el
+        callback de la mutación se perdía; ahora el aviso sale al instante y
+        «Deshacer» no depende del menú (`setMostUsedEnabled`). Ayuda: guía
+        `most-used`, Aprende (Mi día → Favoritos y más usadas, Primeros pasos)
+        con la ilustración `mas-usadas`, anclas `panel-most-used` y
+        `settings-most-used`, y novedad. Tests: shared 9, API 5
+        (`most-used.spec`: dos días, sin pisar otras claves ni cuentas, dos
+        dispositivos a la vez, impersonación, apagar/encender/empezar de cero),
+        front 4 (cola por empresa, envío con su empresa, sin red, orden por día)
+        — shared 793, front 834 en verde — + E2E navegador 29/29 en escritorio y
+        27/27 en celular oscuro (visitas reales, registro/ajustes que no
+        cuentan, C que entra al final en la sesión y primero al reabrir, ocultar
+        con «Deshacer», interruptor y «Empezar de cero», Ctrl K con Recientes).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

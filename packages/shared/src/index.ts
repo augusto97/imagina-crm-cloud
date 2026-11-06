@@ -4,6 +4,7 @@ export * from './schemas/membership';
 export * from './schemas/member';
 export * from './schemas/me';
 export * from './schemas/mobile-nav';
+export * from './schemas/most-used';
 export * from './schemas/timezone';
 export * from './schemas/tenant';
 export * from './schemas/auth';

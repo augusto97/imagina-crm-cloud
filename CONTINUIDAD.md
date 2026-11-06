@@ -394,8 +394,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.384**
-(Google al mismo nivel que Microsoft: «Crear reunión de Google Meet» como acción
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.385**
+(«Más usadas» en lugar de «Recientes» en el menú de Listas: las listas y
+tableros que la persona usa en días distintos, con un orden que no se mueve
+mientras trabaja, guardado en la cuenta y con interruptor por persona —«…» de la
+sección o Ajustes → Cuenta → Apariencia—, addendum ADR-S90; antes v0.1.384:
+Google al mismo nivel que Microsoft: «Crear reunión de Google Meet» como acción
 propia de Google Calendar, que espera el enlace de Meet y avisa si Google no lo
 creó; ayuda con el mensaje para el administrador cuando Google Workspace bloquea
 la app —en las tarjetas de Google, al volver con el error y en «Mi
@@ -1642,6 +1646,22 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-06 · v0.1.385** — **«Más usadas» en lugar de «Recientes»** (pedido
+  del usuario: «lo de recientes no debería ser recientes porque es molesto que
+  cambie tanto… debería ser como lo más usado… también se debería poder activar
+  o desactivar por usuario y que por defecto venga activado. Analiza cómo sería
+  mejor hacerlo» → análisis → «Sí, hazlo así»). Diagnóstico: «Recientes»
+  ordenaba por lo último abierto y cada registro abierto un momento la
+  encabezaba. Ahora cuenta sólo entrar a una lista o a un tablero (máx. una vez
+  cada 30 min), por frecuencia con caducidad (vida media 14 días), con 2 días
+  distintos para aparecer, 5 a la vista y un orden fijo durante la sesión (lo
+  nuevo entra al final; se reordena al día siguiente o al reabrir). Se guarda en
+  la cuenta por empresa (`memberships.settings.most_used`, cola del navegador
+  enviada cada minuto) y se apaga desde el «…» de la sección (con «Deshacer») o
+  en Ajustes → Cuenta → Apariencia (también «Empezar de cero»). La búsqueda
+  Ctrl K conserva sus Recientes. Tests: shared 9, API 5, front 4; E2E 29/29 y
+  27/27 en celular oscuro. OJO en dev: el daemon de Docker se había detenido;
+  `sh scripts/dev/up.sh` lo levanta (los tests con Testcontainers lo necesitan).
 - **2026-11-06 · v0.1.384** — **Google Calendar y Meet al nivel de Teams y
   Outlook** (pregunta del usuario: «¿hiciste lo mismo con la conexión de
   Google, Calendar y Google Meet?» → «Sí, hazlo»). (a) Acción **«Crear reunión

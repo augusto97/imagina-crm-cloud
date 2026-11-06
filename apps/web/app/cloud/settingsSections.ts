@@ -82,7 +82,7 @@ const ITEMS: Record<SettingsSectionId, SettingsSectionItem> = {
     calendario: { id: 'calendario', label: 'Mi calendario', icon: CalendarCheck, hint: 'Tu Google Calendar u Outlook para las citas que atiendes' },
     firma: { id: 'firma', label: 'Firma de email', icon: PenLine, hint: 'La firma de tus correos' },
     datos: { id: 'datos', label: 'Tus datos', icon: DatabaseZap, hint: 'Descargar o borrar tu cuenta' },
-    apariencia: { id: 'apariencia', label: 'Apariencia', icon: SunMoon, hint: 'Modo claro u oscuro y la barra de abajo del celular' },
+    apariencia: { id: 'apariencia', label: 'Apariencia', icon: SunMoon, hint: 'Modo claro u oscuro, «Más usadas» y la barra de abajo del celular' },
 };
 
 /**

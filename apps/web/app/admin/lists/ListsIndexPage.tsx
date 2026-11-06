@@ -7,7 +7,6 @@ import {
     ChevronRight,
     Database,
     FileStack,
-    FileText,
     Folder,
     FolderOpen,
     LayoutGrid,
@@ -29,13 +28,13 @@ import { useOnboardingStatus, useUpdateOnboardingPrefs } from '@/hooks/useOnboar
 import { useIsGuest } from '@/lib/guest';
 import { matchesListQuery, sectionsByFolder } from '@/lib/folderSections';
 import { __, sprintf } from '@/lib/i18n';
-import { DEFAULT_DASHBOARD_ICON, DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
+import { DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
 import { CAP, useCan } from '@/lib/permissions';
 import { formatNumber } from '@/lib/tenantFormat';
 import { usePersistedChoice } from '@/lib/usePersistedChoice';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
-import { useRecents } from '@/lib/recents';
-import { useSession } from '@/cloud/session';
+import { useMostUsedItems } from '@/hooks/useMostUsed';
+import { MostUsedMenu, mostUsedIcon } from '@/admin/layout/MostUsedSection';
 import { parseUtcDate } from '@/lib/utcDate';
 import type { ListGroup, ListSummary } from '@/types/list';
 import { ListCreateDialog } from '@/admin/lists/ListCreateDialog';
@@ -411,30 +410,29 @@ function ListsEmpty({
 
 /**
  * v0.1.342 — En el celular (y en tablet, donde no está el panel lateral), lo
- * abierto hace poco y las listas ancladas, ARRIBA del índice: es lo que el
+ * que más se usa y las listas ancladas, ARRIBA del índice: es lo que el
  * panel lateral del escritorio muestra y lo que más se vuelve a abrir. Con un
  * toque se llega, sin buscar entre todas las carpetas.
+ *
+ * v0.1.385 — «Más usadas» en vez de «Recientes» (mismo cálculo y mismo
+ * interruptor que el panel del escritorio: `useMostUsedItems`).
  */
 function QuickAccess({ lists, pinnedIds }: { lists: ListSummary[]; pinnedIds: number[] }): JSX.Element | null {
     const narrow = useMediaQuery('(max-width: 1023px)');
-    const tenantId = useSession((st) => st.activeTenantId);
-    const recents = useRecents(tenantId).slice(0, 4);
+    const { items: mostUsed } = useMostUsedItems();
     if (!narrow) return null;
     const byId = new Map(lists.map((l) => [l.id, l]));
     const pinned = pinnedIds.map((id) => byId.get(id)).filter((l): l is ListSummary => l !== undefined).slice(0, 6);
-    if (recents.length === 0 && pinned.length === 0) return null;
+    if (mostUsed.length === 0 && pinned.length === 0) return null;
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="lists-quick-access">
-            {recents.length > 0 && (
-                <QuickGroup label={__('Recientes')}>
-                    {recents.map((r) => {
-                        const Icon =
-                            r.kind === 'record'
-                                ? FileText
-                                : (listIcon(r.icon) ?? (r.kind === 'dashboard' ? DEFAULT_DASHBOARD_ICON : DEFAULT_LIST_ICON));
-                        const color = r.kind === 'record' ? undefined : listColor(r.color);
+            {mostUsed.length > 0 && (
+                <QuickGroup label={__('Más usadas')} action={<MostUsedMenu />} testId="lists-most-used">
+                    {mostUsed.map((it) => {
+                        const Icon = mostUsedIcon(it);
+                        const color = listColor(it.color);
                         return (
-                            <QuickRow key={`${r.kind}-${r.id}`} to={r.href} label={r.label} sub={r.context ?? null}>
+                            <QuickRow key={it.key} to={it.href} label={it.label} sub={null}>
                                 <Icon className="imcrm-h-[18px] imcrm-w-[18px]" style={color ? { color } : undefined} aria-hidden />
                             </QuickRow>
                         );
@@ -454,10 +452,24 @@ function QuickAccess({ lists, pinnedIds }: { lists: ListSummary[]; pinnedIds: nu
     );
 }
 
-function QuickGroup({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
+function QuickGroup({
+    label,
+    action,
+    testId,
+    children,
+}: {
+    label: string;
+    /** v0.1.385 — un control a la derecha del título (el «…» de «Más usadas»). */
+    action?: React.ReactNode;
+    testId?: string;
+    children: React.ReactNode;
+}): JSX.Element {
     return (
-        <section className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
-            <h2 className="imcrm-px-1 imcrm-text-[12px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">{label}</h2>
+        <section className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-testid={testId}>
+            <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-px-1">
+                <h2 className="imcrm-min-w-0 imcrm-flex-1 imcrm-text-[12px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">{label}</h2>
+                {action}
+            </div>
             <ul className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-overflow-hidden imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card">
                 {children}
             </ul>

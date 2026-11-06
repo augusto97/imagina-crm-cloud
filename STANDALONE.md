@@ -6540,7 +6540,8 @@ la barra del navegador; (6) Ajustes era una lista plana de 15 secciones bajo
    para el rol no se muestra) y Plataforma en **Clientes, La app y Servidor**,
    igual en el panel del escritorio.
 6. **Listas en el teléfono**: filas compactas (< 640 px) en vez de tarjetas, y
-   **Recientes** y **Favoritos** arriba.
+   **Recientes** y **Favoritos** arriba (desde v0.1.385, **Más usadas** en vez
+   de Recientes: ver el addendum).
 7. **Alto real y zonas seguras**: `100dvh` (con `100vh` de respaldo),
    `viewport-fit=cover` y `env(safe-area-inset-*)` en el shell y en la barra; la
    pantalla de arranque dibuja también el esqueleto de la barra.
@@ -6554,6 +6555,37 @@ riel está en Más). El escritorio no cambia salvo por Ajustes y Plataforma
 agrupados por tema. Lo que se agregue al riel tiene que aparecer también en
 «Más» (o en una pestaña): no hay un único componente que dibuje los dos, a
 propósito, porque en el teléfono cada entrada lleva una línea de ayuda.
+
+**Addendum v0.1.385 — «Más usadas» en lugar de «Recientes».** Reporte del
+usuario: la sección «Recientes» del menú de Listas «cambia tanto» que confunde.
+Causa: ordenaba por lo último abierto y cada registro que se abría un momento
+(modal, página, búsqueda) pasaba a encabezarla. Decisión:
+
+1. **El menú muestra lo que se USA, no lo último**: sólo listas (entrar a su
+   tabla) y tableros. No cuentan los registros, las vistas, los filtros ni los
+   ajustes/automatizaciones de la lista. Una misma lista cuenta como mucho una
+   vez cada 30 minutos (cliente y servidor).
+2. **Frecuencia con caducidad** (`packages/shared/src/schemas/most-used.ts`,
+   puro): cada visita suma 1 y pierde la mitad de su peso cada 14 días. Entra
+   con visitas en **2 días distintos** (día del dispositivo) y puntaje reciente
+   ≥ 1,5; se muestran 5.
+3. **Orden estable**: el cliente fija el orden al abrir la app, por empresa y
+   día (`stableMostUsed`); lo nuevo que califica entra al final. Se reordena al
+   día siguiente o al volver a abrir la app.
+4. **Se guarda en la cuenta** (`memberships.settings.most_used`, sin
+   migración): mismo resultado en el computador y el celular. El navegador
+   junta las visitas en una cola (localStorage, por empresa) y las manda cada
+   minuto, al ocultar la pestaña (`keepalive`) y al abrir la app; el servidor
+   las mezcla con la fila bloqueada (dos dispositivos no se pisan), descarta lo
+   del futuro o de hace más de 7 días y guarda hasta 60 entradas.
+   `GET /me/most-used`, `POST /me/most-used/visits`, `PATCH /me/most-used`
+   (`enabled`, `reset`), válidos en solo-lectura; impersonando no se anota.
+5. **Interruptor por persona, encendido por defecto**: «…» de la sección →
+   «Ocultar esta sección» (con «Deshacer»), y Ajustes → Cuenta → Apariencia
+   (mostrar/ocultar y «Empezar de cero»). Apagada no se anota nada; encenderla
+   devuelve lo contado.
+6. La búsqueda global (Ctrl K) conserva sus «Recientes» por orden de apertura,
+   registros incluidos: ahí sí sirve un historial.
 
 ### ADR-S91 — El ícono de la app como ícono de app: fondo de borde a borde y la marca separada del emblema (v0.1.343)
 

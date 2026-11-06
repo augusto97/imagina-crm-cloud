@@ -1970,4 +1970,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver cómo funciona', href: '/aprende/integraciones/integraciones-google-microsoft' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.385-mas-usadas',
+        version: '0.1.385',
+        date: '2026-11-06',
+        kind: 'improvement',
+        title: '«Más usadas» en lugar de «Recientes»',
+        summary:
+            'Arriba del menú de Listas ahora ves las listas y tableros que más usas, con un orden que no se mueve mientras trabajas. Abrir un registro o entrar a los ajustes ya no la cambia, y si no la quieres la ocultas.',
+        media: {
+            slides: [
+                {
+                    title: 'Lo que de verdad usas',
+                    text: 'Cuenta cada vez que entras a una lista o a un tablero. Lo que abres en dos días distintos entra a la sección; una visita suelta no.',
+                    illustration: 'mas-usadas',
+                },
+                {
+                    title: 'Un orden que no salta',
+                    text: 'Abrir un registro un momento, cambiar de vista o entrar a los ajustes no cuenta. El orden se renueva al día siguiente, nunca mientras trabajas.',
+                    illustration: 'mas-usadas',
+                },
+                {
+                    title: 'Igual en el computador y el celular',
+                    text: 'Se guarda en tu cuenta, por empresa. ¿No la quieres? «…» junto al título → «Ocultar esta sección». Se vuelve a mostrar en Ajustes → Cuenta → Apariencia.',
+                    illustration: 'dia-favoritos',
+                },
+            ],
+        },
+        body: 'Los registros que abriste hace poco siguen en la búsqueda (**Ctrl K**), en **Recientes**. Para dejar algo siempre en el mismo lugar, ánclalo a **Favoritos**.',
+        action: { label: 'Ver cómo funciona', href: '/aprende/mi-dia/mi-dia-favoritos' },
+    },
 ];
