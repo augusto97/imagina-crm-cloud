@@ -222,6 +222,12 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         @Optional() private readonly incidents?: IncidentHub,
     ) {}
 
+    /** v0.1.387 — Quien quiera enterarse cuando un link queda pagado (la agenda confirma la cita). */
+    private readonly paidListeners: Array<(e: { tenantId: number; linkId: number; listId: number; recordId: number }) => Promise<void> | void> = [];
+    onLinkPaid(fn: (e: { tenantId: number; linkId: number; listId: number; recordId: number }) => Promise<void> | void): void {
+        this.paidListeners.push(fn);
+    }
+
     onModuleInit(): void {
         // v0.1.372 — al borrar una conexión de PayPal, la dirección de avisos
         // que la app registró en esa cuenta también se borra (si no, PayPal le
@@ -454,6 +460,127 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             },
         });
         return { url: created.link.url, amount: created.link.amount, currency: created.link.currency, reference: created.reference };
+    }
+
+    /**
+     * v0.1.387 — La agenda cobra al agendar: el link de la cita, con una
+     * conexión DEL EQUIPO, el monto que calculó el servidor de la agenda, el
+     * vencimiento (pagar para confirmar: el horario apartado) y adónde vuelve
+     * el cliente. Lanza `CollectionError` con un motivo legible si no se puede.
+     */
+    async createForBooking(
+        tenantId: number,
+        opts: {
+            pageId: number;
+            connectionId: number;
+            listId: number;
+            recordId: number;
+            title: string;
+            amount: number;
+            currency: string;
+            payerEmail: string | null;
+            expiresAt: Date | null;
+            returnUrlFor: (reference: string) => string | null;
+        },
+    ): Promise<{ id: number; url: string; amount: number; currency: string; reference: string; provider: string }> {
+        if (await planModuleOff(this.db, tenantId, 'integrations')) {
+            throw new CollectionError('El plan de la empresa no incluye los cobros por integraciones.');
+        }
+        const team = await this.teamConnections(tenantId);
+        if (!team.some((c) => c.id === opts.connectionId)) {
+            throw new CollectionError('La conexión de cobro de la agenda ya no existe o no es del equipo.');
+        }
+        const created = await this.tenantDb.withTenant(tenantId, (tx) =>
+            this.createLinkInTx(tx, tenantId, {
+                connectionId: opts.connectionId,
+                listId: opts.listId,
+                recordId: opts.recordId,
+                title: opts.title,
+                amount: opts.amount,
+                currency: opts.currency,
+                payerEmail: opts.payerEmail,
+                expiresDays: opts.expiresAt ? null : 7,
+                expiresAt: opts.expiresAt,
+                userId: null,
+                returnUrlFor: opts.returnUrlFor,
+            }),
+        );
+        this.afterWrite(tenantId, created.write);
+        await this.audit.log({
+            tenantId,
+            userId: null,
+            action: 'payment_link.create',
+            targetType: 'record',
+            targetId: opts.recordId,
+            targetLabel: created.link.title,
+            meta: { provider: created.link.provider, amount: created.link.amount, currency: created.link.currency, list_id: opts.listId, via: 'booking', booking_page_id: opts.pageId },
+        });
+        return { id: created.link.id, url: created.link.url, amount: created.link.amount, currency: created.link.currency, reference: created.reference, provider: created.link.provider };
+    }
+
+    /**
+     * v0.1.387 — Cómo está el link de una cita. Con `refresh`, si sigue
+     * pendiente se le pregunta al proveedor (a lo sumo cada 15 s): el aviso a
+     * veces llega después que la persona, o no llega.
+     */
+    async linkState(
+        tenantId: number,
+        linkId: number,
+        opts: { refresh?: boolean } = {},
+    ): Promise<{ id: number; status: PaymentLinkStatus; url: string; amount: number; currency: string; provider: string; expiresAt: Date | null; reference: string | null } | null> {
+        const find = async (): Promise<PaymentLinkRowDb | undefined> =>
+            (await this.tenantDb.withTenant(tenantId, (tx) => tx.select().from(paymentLinks).where(and(eq(paymentLinks.tenantId, tenantId), eq(paymentLinks.id, linkId))).limit(1)))[0];
+        let link = await find();
+        if (!link) return null;
+        const stale = !link.lastCheckedAt || Date.now() - link.lastCheckedAt.getTime() > 15_000;
+        if (opts.refresh && link.status === 'pending' && stale && link.connectionId) {
+            await this.refreshLink(tenantId, link).catch((err: unknown) => {
+                this.logger.warn(`Link ${linkId}: no se pudo consultar el pago de la cita: ${err instanceof Error ? err.message : String(err)}`);
+            });
+            link = (await find()) ?? link;
+        }
+        return {
+            id: link.id,
+            status: link.status as PaymentLinkStatus,
+            url: link.url,
+            amount: link.amount,
+            currency: link.currency,
+            provider: link.provider,
+            expiresAt: link.expiresAt,
+            reference: link.reference,
+        };
+    }
+
+    /**
+     * v0.1.387 — El horario de una cita que esperaba el pago se liberó: su
+     * link pendiente pasa a «Vencido» (en Wompi además se desactiva). Un pago
+     * que llegue igual queda registrado y la agenda lo resuelve.
+     */
+    async expireForBooking(tenantId: number, linkId: number): Promise<void> {
+        const link = await this.tenantDb.withTenant(tenantId, async (tx) => (await tx.select().from(paymentLinks).where(and(eq(paymentLinks.tenantId, tenantId), eq(paymentLinks.id, linkId))).limit(1))[0]);
+        if (!link || link.status !== 'pending') return;
+        if (link.provider === 'wompi' && link.connectionId) {
+            const conn = await this.connectors.integrationCredsFor(tenantId, link.connectionId).catch(() => null);
+            if (conn) {
+                const base = isTestCreds('wompi', conn.creds) ? this.bases.wompiSandbox : this.bases.wompiProduction;
+                await safeWebhookFetch(`${base.replace(/\/+$/, '')}/payment_links/${encodeURIComponent(link.externalId)}`, {
+                    method: 'PATCH',
+                    headers: { 'content-type': 'application/json', authorization: `Bearer ${conn.creds.secret}` },
+                    body: JSON.stringify({ active: false }),
+                    timeoutMs: FETCH_TIMEOUT_MS,
+                }).catch(() => undefined);
+            }
+        }
+        const out = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [updated] = await tx
+                .update(paymentLinks)
+                .set({ status: 'expired', updatedAt: new Date(), note: 'Venció el tiempo para pagar la cita.' })
+                .where(and(eq(paymentLinks.tenantId, tenantId), eq(paymentLinks.id, linkId), eq(paymentLinks.status, 'pending')))
+                .returning();
+            if (!updated) return null;
+            return this.writeRecord(tx, tenantId, updated, { status: 'expired' });
+        });
+        this.afterWrite(tenantId, out);
     }
 
     /** URL a la que el proveedor manda los avisos de una conexión (se crea la primera vez). */
@@ -691,6 +818,8 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
             formId?: number | null;
             /** v0.1.361 — Adónde vuelve la persona al pagar, armado con nuestra referencia. */
             returnUrlFor?: ((reference: string) => string | null) | null;
+            /** v0.1.387 — Vencimiento exacto (la agenda aparta el horario unos minutos). */
+            expiresAt?: Date | null;
         },
     ): Promise<{ link: PaymentLink; write: RecordWrite | null; context: PaymentContext; reference: string; linkField: string | null }> {
         const conn = await this.connectors.integrationCredsInTx(tx, tenantId, opts.connectionId);
@@ -701,7 +830,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         // moneda que el proveedor no acepta se rechaza con el motivo.
         const currency = (provider === 'wompi' ? 'COP' : opts.currency || collectionCurrencyFor(provider, null)).toUpperCase();
         const amount = Math.round(opts.amount * 100) / 100;
-        const expiresAt = opts.expiresDays && opts.expiresDays > 0 ? new Date(Date.now() + opts.expiresDays * DAY) : null;
+        const expiresAt = opts.expiresAt ?? (opts.expiresDays && opts.expiresDays > 0 ? new Date(Date.now() + opts.expiresDays * DAY) : null);
         const reference = `ib_${randomBytes(12).toString('base64url')}`;
         const returnUrl = opts.returnUrlFor ? opts.returnUrlFor(reference) : null;
         const input: LinkInput = {
@@ -1084,6 +1213,16 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         if (!out) return false;
         this.afterWrite(tenantId, out.write);
         this.realtime.records(tenantId, out.link.listId);
+        if (out.becamePaid) {
+            // v0.1.387 — el pago de una cita la confirma (aunque la cuenta esté en
+            // solo lectura: el cliente ya pagó).
+            const e = { tenantId, linkId: out.link.id, listId: out.link.listId, recordId: out.link.recordId };
+            for (const fn of this.paidListeners) {
+                void Promise.resolve()
+                    .then(() => fn(e))
+                    .catch((err: unknown) => this.logger.warn(`Link ${out.link.id}: no se pudo avisar el pago: ${err instanceof Error ? err.message : String(err)}`));
+            }
+        }
         if (out.becamePaid && !out.readOnly) {
             const data = out.write?.after ?? (await this.recordData(tenantId, out.link.listId, out.link.recordId)) ?? {};
             this.dispatcher.dispatch({

@@ -2031,4 +2031,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver cómo funciona', href: '/aprende/formularios/formularios-origen' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.387-cobrar-al-agendar',
+        version: '0.1.387',
+        date: '2026-11-07',
+        kind: 'feature',
+        title: 'La agenda de citas cobra al agendar',
+        summary:
+            'Tus clientes pagan la cita (o un anticipo) al reservar, con Mercado Pago, Wompi o PayPal de tu empresa. La cita se confirma sola cuando llega el pago y, si no paga a tiempo, el horario se libera.',
+        media: {
+            slides: [
+                {
+                    title: 'Pagar para confirmar',
+                    text: 'La cita queda «Esperando el pago» con el horario apartado unos minutos. Paga por PSE, Nequi, tarjeta o PayPal y se confirma sola, con su correo y el evento para el calendario.',
+                    illustration: 'citas-cobro',
+                },
+                {
+                    title: 'Todo el precio o un anticipo',
+                    text: 'Cobra el precio del servicio, un monto fijo o un porcentaje. Un servicio puede quedar «Sin cobro», como la valoración gratis.',
+                    illustration: 'citas-cobro',
+                },
+                {
+                    title: 'Si pagó por otro medio',
+                    text: 'En la ficha de la cita toca «Marcar como pagada»: se confirma y el link deja de servir. Si el pago llega tarde, la cita vuelve a tomar el horario si sigue libre.',
+                    illustration: 'citas-aprobacion',
+                },
+            ],
+        },
+        body: 'Lo encuentras en el constructor de la agenda, en **Ajustes → Cobrar al agendar**. Necesitas una cuenta de cobro del equipo conectada en **Ajustes → Integraciones**.',
+        action: { label: 'Ver cómo funciona', href: '/aprende/agenda-citas/agenda-cobro' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

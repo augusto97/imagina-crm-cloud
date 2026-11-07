@@ -13228,6 +13228,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         otro origen (con el script, sin el script y el enlace directo; la
         automatización de «navidad» corre sólo para esa página).
 
+  - [x] **Agenda: cobrar al agendar con Mercado Pago, Wompi o PayPal
+        (v0.1.387, addendum ADR-S67, segunda mitad del pedido del cliente: "en
+        los agendamientos no hay opción para cobrar con las pasarelas
+        integradas, sólo en los formularios")**. La agenda cobra con la cuenta
+        de cobro DEL EQUIPO (ADR-S31): el dinero va a la cuenta de la empresa.
+        (a) **Ajustes → «Cobrar al agendar»** (`BookingPaymentEditor`,
+        `config.payment`): cuenta, **pagar para confirmar** (la cita queda
+        «Esperando el pago» con el horario apartado 10-240 min y se confirma
+        sola al pagar; si no paga, se libera) o **se confirma y paga después**
+        (botón en la confirmación, el correo y la página de la cita), el
+        **precio del servicio** o un **anticipo** fijo o en % (nunca más que el
+        precio), moneda (Wompi sólo COP, PayPal no COP), concepto y si al
+        agendar lleva directo a pagar o muestra el botón. Por servicio, «Cobro
+        al agendar» (lo de la página / sin cobro) con lo que se cobra
+        (`bookingPaymentAmount`, shared); un servicio activo sin precio no deja
+        publicar. (b) **Reservar**: el link nace en la reserva
+        (`createForBooking`); esperando el pago no hay evento, videollamada,
+        recordatorios ni disparador, y al cliente le llega «Completa el pago…»;
+        si el proveedor falla con «pagar para confirmar», la reserva se deshace
+        y se abre un Problema. (c) **Confirmar al pagar**: el aviso del
+        proveedor (`CollectionsService.onLinkPaid`) confirma la cita —o la deja
+        «por confirmar» si la agenda aprueba citas—; al volver del checkout la
+        página de la cita consulta el pago y, si ya está, la confirma en el acto
+        («¡Pago recibido! Tu cita está confirmada.»). (d) **Vencer**: antes de
+        liberar se le pregunta al proveedor; liberada, «Tu cita no se
+        confirmó»; un pago tardío vuelve a tomar el horario si sigue libre o
+        avisa al equipo para reprogramar o devolver. (e) **Ficha**: panel
+        «Esperando el pago» con hasta cuándo y **«Marcar como pagada»** (pagó
+        por otro medio: confirma, vence el link y guarda quién y cuándo), y el
+        pago recibido en toda cita. Migración 0110 (link, plazo, quién la marcó
+        y el estado `unpaid`). El asistente/MCP configura el cobro
+        (`propose_configure_booking_page` con `payment` y precio por servicio);
+        migrar una empresa lo re-mapea. **Bug atrapado en el E2E**: al volver
+        del pago la página mostraba «Pagado» con la cita todavía «Esperando el
+        pago» (el aviso llega segundos después); ahora la consulta confirma la
+        cita en el acto (idempotente). Ayuda: artículo «Cobrar al agendar» en
+        Aprende → Agenda con la ilustración `citas-cobro`, guía
+        `booking-payment` y novedad. Tests: `booking-payment.spec` (7: pagar
+        para confirmar, vencer y pago tardío, confirmar en la consulta, horario
+        ya tomado, marcar pagada, aprobación después del pago, anticipo con
+        «paga después»), `ai-booking.spec` +1, 5 de shared — API de la agenda y
+        cobros 82, shared 807, front 835 — + E2E navegador 29/29 en escritorio y
+        29/29 en celular oscuro contra el Mercado Pago simulado. **Límite de la
+        verificación**: sin cuentas reales de Mercado Pago, Wompi ni PayPal, y
+        la vuelta automática del checkout sólo existe con `APP_BASE_URL` en
+        https (en desarrollo se abrió la página de la cita a mano).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

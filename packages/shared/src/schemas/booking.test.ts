@@ -7,6 +7,9 @@ import {
     bookingLocationPublic,
     bookingLocationText,
     bookingMergeValue,
+    bookingPayLabel,
+    bookingPaymentAmount,
+    BOOKING_STATUS_LABELS,
     bookingProblems,
     sampleBookingEvent,
     staffVideoProblem,
@@ -462,5 +465,65 @@ describe('v0.1.354 — el diseño de la página de la agenda', () => {
         expect(c.settings.display.calendar_layout).toBe('side');
         // La sección dañada del tema se lee con su valor por defecto; lo demás sigue.
         expect(typeof bookingTheme(c.settings).layout.width).toBe('number');
+    });
+});
+
+describe('v0.1.387 — cobrar al agendar', () => {
+    const on = { enabled: true, connection_id: 7, amount: 'full' as const, deposit_kind: 'percent' as const, deposit_value: null };
+    it('todo el precio, un anticipo fijo (nunca más que el precio) o un %', () => {
+        expect(bookingPaymentAmount(on, { price: 80000, payment: 'inherit' })).toEqual({ amount: 80000, kind: 'full' });
+        expect(bookingPaymentAmount({ ...on, amount: 'deposit', deposit_kind: 'fixed', deposit_value: 20000 }, { price: 80000, payment: 'inherit' })).toEqual({ amount: 20000, kind: 'deposit' });
+        expect(bookingPaymentAmount({ ...on, amount: 'deposit', deposit_kind: 'fixed', deposit_value: 99000 }, { price: 80000, payment: 'inherit' })?.amount).toBe(80000);
+        expect(bookingPaymentAmount({ ...on, amount: 'deposit', deposit_kind: 'percent', deposit_value: 30 }, { price: 99999, payment: 'inherit' })?.amount).toBe(29999.7);
+        // Un anticipo fijo sirve aunque el servicio no tenga precio.
+        expect(bookingPaymentAmount({ ...on, amount: 'deposit', deposit_kind: 'fixed', deposit_value: 15000 }, { price: null, payment: 'inherit' })?.amount).toBe(15000);
+    });
+    it('no cobra si la agenda no cobra, sin conexión, servicio «sin cobro» o sin con qué calcular', () => {
+        expect(bookingPaymentAmount({ ...on, enabled: false }, { price: 80000, payment: 'inherit' })).toBeNull();
+        expect(bookingPaymentAmount({ ...on, connection_id: null }, { price: 80000, payment: 'inherit' })).toBeNull();
+        expect(bookingPaymentAmount(on, { price: 80000, payment: 'none' })).toBeNull();
+        expect(bookingPaymentAmount(on, { price: null, payment: 'inherit' })).toBeNull();
+        expect(bookingPaymentAmount(on, { price: 0, payment: 'inherit' })).toBeNull();
+        expect(bookingPaymentAmount({ ...on, amount: 'deposit', deposit_kind: 'percent', deposit_value: 120 }, { price: 80000, payment: 'inherit' })).toBeNull();
+        expect(bookingPaymentAmount(on, null)).toBeNull();
+    });
+    it('el monto con el formato de la empresa y la moneda', () => {
+        expect(bookingPayLabel(80000, 'COP', 'dot_comma')).toBe('$ 80.000 COP');
+        expect(bookingPayLabel(49.9, 'USD', 'comma_dot')).toContain('USD');
+    });
+    it('una agenda guardada antes no cobra y sus servicios heredan; el estado nuevo tiene nombre', () => {
+        const c = bookingConfigSchema.parse({ services: [{ id: 'svcuno', name: 'Consulta' }] });
+        expect(c.payment).toMatchObject({ enabled: false, mode: 'required', amount: 'full', hold_minutes: 30, after: 'redirect' });
+        expect(c.services[0]?.payment).toBe('inherit');
+        expect(c.mapping.status_unpaid).toBeNull();
+        expect(BOOKING_STATUS_LABELS.unpaid).toBe('Esperando el pago');
+        // Un valor dañado no tira la configuración.
+        const broken = bookingConfigSchema.parse({ payment: { enabled: 'sí', mode: 'cuando quiera', hold_minutes: 5000 } });
+        expect(broken.payment).toMatchObject({ enabled: false, mode: 'required', hold_minutes: 30 });
+    });
+    it('lo que falta para publicar: la cuenta, la moneda, el anticipo y el precio de cada servicio', () => {
+        const fields = [{ id: 1, type: 'datetime' }, { id: 2, type: 'user' }];
+        const base = {
+            services: [
+                { id: 'svc1', name: 'Consulta', price: 80000 },
+                { id: 'svc2', name: 'Valoración' },
+            ],
+            staff: [{ id: 'stf1', kind: 'user', staff_user_id: 9 }],
+            mapping: { start_field_id: 1, person_field_id: 2 },
+        };
+        const noConn = bookingProblems(bookingConfigSchema.parse({ ...base, payment: { enabled: true } }), fields);
+        expect(noConn.some((x) => x.includes('con qué cuenta'))).toBe(true);
+        const cfg = bookingConfigSchema.parse({ ...base, payment: { enabled: true, connection_id: 7 } });
+        const p = bookingProblems(cfg, fields, { paymentConnection: { provider: 'mercadopago' } });
+        expect(p.some((x) => x.includes('«Valoración» no tiene precio'))).toBe(true);
+        expect(p.some((x) => x.includes('Consulta'))).toBe(false);
+        // Marcar la valoración «sin cobro» la deja lista.
+        const free = bookingConfigSchema.parse({ ...base, services: [base.services[0], { ...base.services[1], payment: 'none' }], payment: { enabled: true, connection_id: 7 } });
+        expect(bookingProblems(free, fields, { paymentConnection: { provider: 'mercadopago' } })).toEqual([]);
+        // La conexión que ya no existe, PayPal en pesos y un anticipo sin %.
+        expect(bookingProblems(cfg, fields, { paymentConnection: null }).some((x) => x.includes('con qué cuenta'))).toBe(true);
+        expect(bookingProblems(cfg, fields, { paymentConnection: { provider: 'paypal' } }).some((x) => x.includes('PayPal no cobra en pesos'))).toBe(true);
+        const dep = bookingConfigSchema.parse({ ...base, payment: { enabled: true, connection_id: 7, amount: 'deposit', deposit_kind: 'percent' } });
+        expect(bookingProblems(dep, fields, { paymentConnection: { provider: 'wompi' } }).some((x) => x.includes('% del anticipo'))).toBe(true);
     });
 });

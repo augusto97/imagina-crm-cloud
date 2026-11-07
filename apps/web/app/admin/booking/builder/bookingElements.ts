@@ -196,13 +196,14 @@ export function bookingVisibilityLabel(id: BookingElementId): string {
 
 // ───────────────────────────── Ajustes agrupados ─────────────────────────────
 
-export const BOOKING_SETTINGS_GROUPS = ['availability', 'rules', 'approval', 'emails', 'record', 'measure', 'publish'] as const;
+export const BOOKING_SETTINGS_GROUPS = ['availability', 'rules', 'approval', 'payment', 'emails', 'record', 'measure', 'publish'] as const;
 export type BookingSettingsGroup = (typeof BOOKING_SETTINGS_GROUPS)[number];
 
 export const BOOKING_SETTINGS_GROUP_INFO: Record<BookingSettingsGroup, { title: string; hint: string; section: BookingSection }> = {
     availability: { title: 'Horario y disponibilidad', hint: 'El horario de cada uno, días especiales, festivos y vacaciones.', section: 'disponibilidad' },
     rules: { title: 'Reglas', hint: 'Márgenes entre citas, anticipación, hasta cuándo y topes.', section: 'reglas' },
     approval: { title: 'Aprobación y seguridad', hint: 'Si alguien aprueba cada cita y cómo frenar reservas falsas.', section: 'aprobacion' },
+    payment: { title: 'Cobrar al agendar', hint: 'Que el cliente pague (todo o un anticipo) con la cuenta de cobro de la empresa.', section: 'cobro' },
     emails: { title: 'Correos y recordatorios', hint: 'La confirmación, los recordatorios y los avisos al cliente.', section: 'correos' },
     record: { title: 'Dónde se guarda la cita', hint: 'En qué campo de la lista queda cada dato y los valores del estado.', section: 'campos' },
     measure: { title: 'Medir conversiones', hint: 'Google Ads, Meta, la página de gracias y de dónde vino cada cita.', section: 'medir' },

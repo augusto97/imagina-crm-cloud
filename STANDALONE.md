@@ -4970,6 +4970,63 @@ temas (ADR-S94) va en v0.1.354 (ver el addendum de ADR-S94).
    y de «Por confirmar» en la página pública, y panel «Cita por confirmar» en la
    ficha (modal, página y ficha diseñada) con Aprobar / Rechazar con motivo.
 
+**Addendum v0.1.387 — Cobrar al agendar.** La agenda cobra con la cuenta de
+cobro de la EMPRESA (ADR-S31: Mercado Pago, Wompi o PayPal; el dinero va a su
+cuenta, sin comisión). Hasta acá sólo los formularios cobraban.
+
+1. **Modelo**: `config.payment` (`bookingPaymentSchema`: `enabled`,
+   `connection_id` —sólo una conexión DEL EQUIPO—, `mode` required | optional,
+   `amount` full | deposit con `deposit_kind` fixed | percent y
+   `deposit_value`, `hold_minutes` 10-240, `currency`, `title`, `after`
+   redirect | button, `button_label`) y `services[].payment` inherit | none. El
+   monto lo decide `bookingPaymentAmount` (shared, puro): el precio del
+   servicio o el anticipo (un fijo nunca pasa del precio), redondeado a 2
+   decimales; sin precio no hay cobro. `bookingProblems` no deja publicar sin
+   cuenta, con una moneda que la cuenta no cobra (`collectionCurrencyError`) o
+   con un servicio activo sin precio y sin «sin cobro». Estado nuevo de la
+   cita **`unpaid`** («Esperando el pago», con su valor en el campo de estado:
+   `mapping.status_unpaid`). Migración 0110: `payment_link_id` (FK SET NULL),
+   `payment_until`, `paid_marked_by`/`paid_marked_at` y el CHECK del estado.
+2. **Reservar**: el link se crea DENTRO de la reserva
+   (`CollectionsService.createForBooking`, bitácora `payment_link.create` con
+   `via: 'booking'`). Con `required` la cita nace `unpaid` en el mismo candado
+   de la persona: **el horario queda apartado** `hold_minutes` (nunca pasa del
+   inicio) y no hay evento, videollamada, recordatorios, disparador ni aviso al
+   equipo; al cliente le llega «Completa el pago…» (sin `.ics`). Con
+   `optional` se confirma como siempre y el correo y la página de la cita traen
+   el botón de pagar. Si el proveedor falla al crear el link se abre un
+   Problema (ADR-S44): con `required` la reserva se deshace y el cliente lee
+   «No pudimos preparar el pago…» (nunca queda un horario apartado sin forma de
+   pagarlo); con `optional` la cita se confirma igual, sin link.
+3. **Confirmar al pagar**: los avisos del proveedor (y «Verificar») marcan el
+   link pagado y `CollectionsService.onLinkPaid` avisa a la agenda, que pasa
+   la cita a confirmada (o a «por confirmar» si la agenda aprueba citas: el
+   pago va primero) con un UPDATE condicional `WHERE status = 'unpaid'` —
+   idempotente—. **La vuelta**: con `APP_BASE_URL` en https el proveedor
+   devuelve a la página de la cita (`?pago=1`), que consulta
+   `GET /public/booking/manage/:ref/payment` (sin caché, con freno por IP);
+   si la consulta al proveedor encuentra el pago, la cita se confirma en el
+   acto (`settleIfPaid`), sin esperar al aviso.
+4. **Vencer**: el tick de recordatorios corre `expireUnpaid`: antes de
+   liberar le pregunta al proveedor; si no pagó, vence el link, la cita pasa a
+   cancelada (con `payment_until` como marca de «se liberó por no pagar») y el
+   cliente recibe «Tu cita no se confirmó». **Pago tardío**: si el horario
+   sigue libre se vuelve a tomar dentro del candado y se confirma; si no, el
+   equipo recibe un aviso y el cliente «Recibimos tu pago…» para reprogramar o
+   devolver.
+5. **El equipo**: panel «Esperando el pago» en la ficha (modal, página y
+   diseñada) con hasta cuándo queda apartado y **«Marcar como pagada»**
+   (`decision: 'mark_paid'`, quien aprueba citas; confirma sin pedir
+   aprobación, vence el link y guarda quién y cuándo — bitácora
+   `booking.mark_paid`); el pago recibido se lee en el panel de toda cita.
+6. **Interfaz y asistente**: grupo «Cobrar al agendar» en Ajustes del
+   constructor (cuenta, modo, tiempo para pagar, precio o anticipo, moneda,
+   concepto y qué pasa al agendar), «Cobro al agendar» por servicio con lo que
+   se cobra, y en la página pública el monto en el resumen, «Agendar y pagar»,
+   la pantalla de «Completa el pago» y la página de la cita con el estado del
+   pago. `propose_configure_booking_page` acepta `payment` y el precio por
+   servicio; migrar una empresa re-mapea el link y quién la marcó pagada.
+
 ---
 
 ### ADR-S68 — App instalable, notificaciones push y escáner de códigos (v0.1.314)

@@ -11,6 +11,7 @@ import {
     CalendarDays,
     ChevronRight,
     Code2,
+    CreditCard,
     ExternalLink,
     Link2,
     ListChecks,
@@ -76,6 +77,7 @@ import { useCaptchaAvailability, useDataConsentAvailability } from '../forms/use
 import { useAttachmentUrls } from '../forms/design/useFormThemes';
 import { effectiveTheme, fallbackAccent, patchThemeSection, resolvedAccent } from '../forms/design/themeOps';
 import { BookingDesignLibrary, BookingThemePanel } from './BookingDesignEditor';
+import { BookingPaymentEditor } from './BookingPaymentEditor';
 import { BookingElementInspector } from './builder/BookingElementInspector';
 import { BookingOutline } from './builder/BookingOutline';
 import {
@@ -391,6 +393,8 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
                 // v0.1.350 — la videollamada depende del calendario de cada persona.
                 ...(options.data ? { staffCalendars: staffCalendarsFrom(config, options.data.members, options.data.calendars) } : {}),
                 memberNames: new Map(members.map((m) => [m.id, m.name])),
+                // v0.1.387 — cobrar al agendar exige una conexión de cobro del equipo.
+                ...(options.data ? { paymentConnections: options.data.payment_connections ?? [] } : {}),
             }),
         [config, fields, options.data, members],
     );
@@ -784,7 +788,7 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
 }
 
 /** El orden en que se recorre lo que falta para publicar. */
-const PROBLEM_ORDER: BookingSection[] = ['servicios', 'atienden', 'disponibilidad', 'reglas', 'aprobacion', 'campos', 'correos', 'diseno', 'medir', 'publicar'];
+const PROBLEM_ORDER: BookingSection[] = ['servicios', 'atienden', 'disponibilidad', 'reglas', 'aprobacion', 'cobro', 'campos', 'correos', 'diseno', 'medir', 'publicar'];
 
 /** v0.1.378 — Las pestañas del constructor (también la tira del celular). */
 function BuilderTabs({
@@ -876,6 +880,7 @@ function SettingsIndex({
         availability: CalendarDays,
         rules: AlarmClock,
         approval: ShieldCheck,
+        payment: CreditCard,
         emails: Mail,
         record: ListChecks,
         measure: BarChart3,
@@ -937,6 +942,7 @@ function SettingsGroupPanel({ group, p }: { group: BookingSettingsGroup; p: Sect
                     <ProtectionChecks {...p} />
                 </>
             )}
+            {group === 'payment' && <BookingPaymentEditor config={p.config} onChange={p.onChange} options={p.options} />}
             {group === 'emails' && <EmailsEditor {...p} />}
             {group === 'record' && <RecordFieldsEditor {...p} />}
             {group === 'measure' && <MeasureEditor {...p} />}
@@ -1752,7 +1758,7 @@ function RecordFieldsEditor({ config, onChange, fields }: SectionEditorProps): J
             })}
             {statusField && (
                 <Section title={__('Valores del estado')}>
-                    {(['confirmed', 'rescheduled', 'cancelled', ...(config.approval.mode !== 'none' || config.services.some((x) => x.approval === 'all' || x.approval === 'new_clients') ? (['pending', 'declined'] as const) : [])] as BookingStatus[]).map((st) => {
+                    {(['confirmed', 'rescheduled', 'cancelled', ...(config.approval.mode !== 'none' || config.services.some((x) => x.approval === 'all' || x.approval === 'new_clients') ? (['pending', 'declined'] as const) : []), ...(config.payment.enabled && config.payment.mode === 'required' ? (['unpaid'] as const) : [])] as BookingStatus[]).map((st) => {
                         const k = `status_${st}` as const;
                         return (
                             <Field key={st} label={__(BOOKING_STATUS_LABELS[st])}>

@@ -394,15 +394,20 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.386**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.387**
+(la agenda **cobra al agendar** con la cuenta de cobro de la empresa —Mercado
+Pago, Wompi o PayPal—: el precio del servicio o un anticipo; «pagar para
+confirmar» deja la cita «Esperando el pago» con el horario apartado y se
+confirma sola al pagar —si no, se libera—, o «se confirma y paga después»; la
+ficha muestra el pago y deja «Marcar como pagada»; addendum ADR-S67. Queda por
+probar con cuentas reales de los proveedores; la vuelta automática del checkout
+sólo existe con `APP_BASE_URL` en https. Antes v0.1.386
 (formularios con **«Origen y etiquetas»**: cada registro puede guardar la
 página del sitio desde donde se envió —también por el enlace directo y en un
 marco sin el script—, el nombre del formulario y valores fijos como una
 etiqueta, un estado o el responsable; el disparador «Cuando se envía un
 formulario» puede correr sólo si la página contiene algo, con variables
-`{{formulario.pagina}}`, addendum ADR-S97. Sigue **v0.1.387: cobrar al agendar
-en la agenda** —Mercado Pago, Wompi o PayPal—, pedido en el mismo mensaje;
-antes v0.1.385: «Más usadas» en lugar de «Recientes» en el menú de Listas: las listas y
+`{{formulario.pagina}}`, addendum ADR-S97); antes v0.1.385: «Más usadas» en lugar de «Recientes» en el menú de Listas: las listas y
 tableros que la persona usa en días distintos, con un orden que no se mueve
 mientras trabaja, guardado en la cuenta y con interruptor por persona —«…» de la
 sección o Ajustes → Cuenta → Apariencia—, addendum ADR-S90; antes v0.1.384:
@@ -1653,6 +1658,25 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-07 · v0.1.387** — **Agenda: cobrar al agendar** (segunda mitad del
+  pedido del cliente de v0.1.386: «en los agendamientos no hay opción para
+  cobrar con alguna de las pasarelas integradas, sólo en los formularios»; el
+  usuario respondió «aja y entonces?» y se hizo). Ajustes de la agenda →
+  **«Cobrar al agendar»**: la cuenta de cobro del equipo (Mercado Pago, Wompi o
+  PayPal; el dinero va a la empresa), **pagar para confirmar** (cita «Esperando
+  el pago» con el horario apartado 10-240 min, se confirma sola al pagar o se
+  libera; un pago tardío retoma el horario si sigue libre o avisa al equipo) o
+  **se confirma y paga después**, precio del servicio o **anticipo** fijo o en
+  %, moneda, concepto y si lleva directo a pagar. Por servicio, «sin cobro».
+  Ficha: panel «Esperando el pago» con **«Marcar como pagada»** (pagó por otro
+  medio; guarda quién y cuándo). Asistente/MCP lo configura. Migración 0110.
+  **Bug atrapado en el E2E**: al volver del pago la página decía «Pagado» con la
+  cita todavía «Esperando el pago»; ahora la consulta la confirma en el acto.
+  Ayuda: artículo «Cobrar al agendar» (ilustración `citas-cobro`), guía
+  `booking-payment` y novedad. Tests: `booking-payment.spec` 7, `ai-booking`
+  +1, shared 5; E2E 29/29 en escritorio y 29/29 en celular oscuro contra el
+  Mercado Pago simulado. **Queda**: probar con cuentas reales (sandbox) en el
+  servidor; la vuelta automática del checkout exige `APP_BASE_URL` en https.
 - **2026-11-06 · v0.1.386** — **Formularios: de qué página y de qué formulario
   llegó cada registro** (pedido de un cliente del usuario: «al llenar el
   formulario debería tener la opción de agregar la url desde donde se envió…

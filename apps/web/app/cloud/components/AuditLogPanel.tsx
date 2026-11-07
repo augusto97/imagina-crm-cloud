@@ -58,6 +58,7 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'booking.delete': { text: 'eliminó la agenda de citas', danger: true },
     'booking.approve': { text: 'aprobó la cita' },
     'booking.decline': { text: 'rechazó la cita' },
+    'booking.mark_paid': { text: 'marcó como pagada la cita' },
     'form.captcha_on': { text: 'activó la verificación anti-robots en el formulario' },
     'public_theme.create': { text: 'guardó el tema de diseño' },
     'public_theme.update': { text: 'cambió el tema de diseño' },

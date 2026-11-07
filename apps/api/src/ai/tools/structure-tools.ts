@@ -587,7 +587,7 @@ const automationSpec = z.object({
                 'button_pressed (alguien presionó un campo Botón del registro cuya acción es «correr una automatización»; las acciones usan {{boton.nombre}}, {{boton.persona}}, {{boton.email}}): {button_field? (slug del campo botón; sin él, cualquier botón de la lista), field_filters?}. ' +
                 'approval_resolved («Cuando se aprueba o se rechaza» una solicitud de aprobación del registro; las acciones usan {{aprobacion.resultado}} (aprobada|rechazada|devuelta|cancelada), {{aprobacion.flujo}}, {{aprobacion.motivo}}, {{aprobacion.decidio}}): {approval_flow? (id o nombre de un flujo de approval_flows; sin él, cualquiera), results?: [approved|rejected|returned|cancelled] (default approved y rejected), field_filters?}. ' +
                 'checklist_completed (se marcó el último ítem de un checklist del registro; las acciones usan {{checklist.nombre}}): {checklist_mode?: any (cualquier checklist, default) | named (sólo el de checklist_name) | all (cuando quedan TODOS los checklists del registro completos), checklist_name?, field_filters?}. ' +
-                'booking_event (se agendó, reprogramó o canceló una cita: desde una página de agenda de la lista, el enlace del correo del cliente o la app; el registro es la cita; las acciones usan {{cita.evento}} (agendada|reprogramada|cancelada|solicitada|rechazada), {{cita.servicio}}, {{cita.inicio}}, {{cita.fin}}, {{cita.persona}}, {{cita.cliente}}, {{cita.email}}, {{cita.lugar}}, {{cita.enlace_reunion}} (el enlace de Meet, Teams o el fijo), {{cita.enlace_reprogramar}}, {{cita.enlace_cancelar}}): {booking_page_id? (id de una de las `booking_pages` de get_list_schema; sin él, cualquiera), events?: [booked|rescheduled|cancelled|requested|declined] (sin él: booked, rescheduled y cancelled; requested = la pidieron y queda por confirmar, declined = el equipo la rechazó o venció el plazo; con aprobación, booked sale al aprobarla), field_filters?}. ' +
+                'booking_event (se agendó, reprogramó o canceló una cita: desde una página de agenda de la lista, el enlace del correo del cliente o la app; el registro es la cita; las acciones usan {{cita.evento}} (agendada|reprogramada|cancelada|solicitada|rechazada), {{cita.servicio}}, {{cita.inicio}}, {{cita.fin}}, {{cita.persona}}, {{cita.cliente}}, {{cita.email}}, {{cita.lugar}}, {{cita.enlace_reunion}} (el enlace de Meet, Teams o el fijo), {{cita.enlace_reprogramar}}, {{cita.enlace_cancelar}}): {booking_page_id? (id de una de las `booking_pages` de get_list_schema; sin él, cualquiera), events?: [booked|rescheduled|cancelled|requested|declined] (sin él: booked, rescheduled y cancelled; requested = la pidieron y queda por confirmar, declined = el equipo la rechazó o venció el plazo; con aprobación, booked sale al aprobarla; con cobro «pagar para confirmar», booked sale cuando entra el pago), field_filters?}. ' +
                 'whatsapp_message_received (un contacto escribió por WhatsApp oficial; el registro ya se encontró o creó por teléfono; las acciones usan {{whatsapp.texto}}, {{whatsapp.de}}, {{whatsapp.nombre}}): {connection_id? (de `whatsapp.connections` en get_list_schema; vacío = cualquiera), field_filters?}. ' +
                 'email_received (MESA DE AYUDA: llegó un correo al buzón de soporte de la lista — ver `helpdesk` en get_list_schema; las acciones usan {{correo.de}}, {{correo.nombre}}, {{correo.asunto}}, {{correo.texto}}, {{correo.tipo}} (nuevo|respuesta)): {email_kind?: any (default) | new (sólo tickets nuevos) | reply (sólo respuestas del cliente), field_filters?}. ' +
                 'sla_alert (un SLA de la mesa de ayuda entró en riesgo o se venció; las acciones usan {{sla.alerta}}, {{sla.objetivo}}, {{sla.vence}}, {{sla.prioridad}}, {{sla.estado}}): {sla_alerts?: [at_risk|breached] (vacío = las dos), sla_targets?: [first_response|resolution] (vacío = los dos), field_filters?}.',
@@ -1474,7 +1474,27 @@ export class StructureTools implements AiProposalApplier {
                     upcoming: b.upcoming_count,
                     services: b.config.services
                         .filter((x) => x.active)
-                        .map((x) => ({ id: x.id, name: x.name, duration_min: x.duration_min, location: x.location.kind, ...(x.location.kind === 'video' ? { video: x.location.video } : {}), ...(x.approval !== 'inherit' ? { approval: x.approval } : {}) })),
+                        .map((x) => ({
+                            id: x.id,
+                            name: x.name,
+                            duration_min: x.duration_min,
+                            location: x.location.kind,
+                            ...(x.location.kind === 'video' ? { video: x.location.video } : {}),
+                            ...(x.approval !== 'inherit' ? { approval: x.approval } : {}),
+                            ...(x.price !== null ? { price: x.price } : {}),
+                            ...(x.payment === 'none' ? { payment: 'none' } : {}),
+                        })),
+                    // v0.1.387 — cobrar al agendar (la conexión de cobro del equipo; sin secretos).
+                    payment: b.config.payment.enabled
+                        ? {
+                              connection_id: b.config.payment.connection_id,
+                              mode: b.config.payment.mode,
+                              amount: b.config.payment.amount,
+                              ...(b.config.payment.amount === 'deposit' ? { deposit_kind: b.config.payment.deposit_kind, deposit_value: b.config.payment.deposit_value } : {}),
+                              currency: b.config.payment.currency,
+                              ...(b.config.payment.mode === 'required' ? { hold_minutes: b.config.payment.hold_minutes } : {}),
+                          }
+                        : null,
                     // v0.1.353 — aprobación de las citas y seguridad de la página.
                     approval: b.config.approval,
                     verify_email: b.config.settings.verify_email,

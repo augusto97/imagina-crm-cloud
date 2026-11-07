@@ -4,6 +4,7 @@ import type {
     BookingConfig,
     BookingMemberCalendar,
     BookingPageDto,
+    CollectionProvider,
     CreateBookingPageInput,
     HolidayItem,
     PublicBookingSlots,
@@ -37,6 +38,8 @@ export interface BookingEditorOptions {
     calendars: BookingCalendarOption[];
     time_zone: string;
     time_zone_set: boolean;
+    /** v0.1.387 — Las cuentas de cobro DEL EQUIPO (Mercado Pago, Wompi, PayPal) para «Cobrar al agendar». */
+    payment_connections?: Array<{ id: number; name: string; provider: CollectionProvider; test_mode: boolean; account_label: string | null }>;
 }
 
 export function useBookingPages(listId: number | undefined) {

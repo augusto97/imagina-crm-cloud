@@ -10,8 +10,11 @@ import {
     bookingLocationPublic,
     bookingTheme,
     publicThemeView,
+    bookingPayLabel,
+    bookingPaymentAmount,
     bookingPriceLabel,
     bookingServiceSchema,
+    collectionCurrencyError,
     bookingStaffSchema,
     buildPublicFormItems,
     defaultBookingWeek,
@@ -33,6 +36,7 @@ import {
     type BookingStaff,
     type BookingStaffCalendars,
     type BookingTimeOff,
+    type CollectionProvider,
     type PublicBookingMeta,
     formConditionFieldIds,
 } from '@imagina-base/shared';
@@ -395,6 +399,11 @@ export function buildPreviewMeta(config: BookingConfig, ctx: PreviewContext): Pu
                 seats: x.seats,
                 show_seats_left: x.show_seats_left,
                 location: bookingLocationPublic(x.location, s.location),
+                // v0.1.387 — lo que se cobra al agendar, como lo verá el cliente.
+                pay: ((plan) =>
+                    plan ? { label: bookingPayLabel(plan.amount, config.payment.currency, ctx.numberFormat), kind: plan.kind, required: config.payment.mode === 'required' } : null)(
+                    bookingPaymentAmount(config.payment, x),
+                ),
             })),
         staff: staff.map((x) => ({
             id: x.id,
@@ -428,7 +437,7 @@ export function buildPreviewMeta(config: BookingConfig, ctx: PreviewContext): Pu
 }
 
 /** Lo que falta por sección del constructor (para el punto rojo de cada una). */
-export type BookingSection = 'servicios' | 'atienden' | 'disponibilidad' | 'reglas' | 'aprobacion' | 'diseno' | 'campos' | 'correos' | 'medir' | 'publicar';
+export type BookingSection = 'servicios' | 'atienden' | 'disponibilidad' | 'reglas' | 'aprobacion' | 'cobro' | 'diseno' | 'campos' | 'correos' | 'medir' | 'publicar';
 
 /**
  * v0.1.350 — Qué calendario tiene cada persona que atiende, desde lo que
@@ -452,7 +461,12 @@ export function staffCalendarsFrom(
 export function sectionProblems(
     config: BookingConfig,
     fields: readonly FieldLike[],
-    opts: { staffCalendars?: BookingStaffCalendars; memberNames?: ReadonlyMap<number, string> } = {},
+    opts: {
+        staffCalendars?: BookingStaffCalendars;
+        memberNames?: ReadonlyMap<number, string>;
+        /** v0.1.387 — Las cuentas de cobro del equipo (sin esto no se revisa la cuenta elegida). */
+        paymentConnections?: ReadonlyArray<{ id: number; provider: CollectionProvider }>;
+    } = {},
 ): Partial<Record<BookingSection, string[]>> {
     const staffCalendars = opts.staffCalendars;
     const out: Partial<Record<BookingSection, string[]>> = {};
@@ -500,6 +514,25 @@ export function sectionProblems(
     if (m.start_field_id === null || typeOf.get(m.start_field_id) !== 'datetime') push('campos', 'Elige el campo de fecha y hora del inicio.');
     if (staff.some((s) => s.kind === 'user') && m.person_field_id === null) push('campos', 'Elige el campo Persona de quién atiende.');
     if (staff.some((s) => s.kind === 'resource') && m.resource_field_id === null) push('campos', 'Elige el campo del recurso.');
+    // v0.1.387 — Cobrar al agendar: la cuenta del equipo, la moneda, el anticipo y el precio de cada servicio.
+    const pay = config.payment;
+    if (pay.enabled) {
+        const conn = pay.connection_id !== null ? opts.paymentConnections?.find((c) => c.id === pay.connection_id) : undefined;
+        if (pay.connection_id === null || (opts.paymentConnections && !conn)) push('cobro', 'Elige con qué cuenta se cobra al agendar.');
+        else if (conn) {
+            const why = collectionCurrencyError(conn.provider, pay.currency);
+            if (why) push('cobro', why);
+        }
+        if (pay.amount === 'deposit' && (pay.deposit_value === null || pay.deposit_value <= 0 || (pay.deposit_kind === 'percent' && pay.deposit_value > 100))) {
+            push('cobro', pay.deposit_kind === 'percent' ? 'Escribe el % del anticipo, entre 1 y 100.' : 'Escribe el monto del anticipo.');
+        } else if (pay.connection_id !== null) {
+            for (const svc of config.services) {
+                if (svc.active && svc.payment !== 'none' && bookingPaymentAmount(pay, svc) === null) {
+                    push('cobro', `«${svc.name}» no tiene precio: ponle un precio o márcalo «sin cobro» en Servicios.`);
+                }
+            }
+        }
+    }
     // SMS (ADR-S82): los recordatorios por SMS necesitan conexión, teléfono, momentos y texto.
     const sms = config.notifications.sms_reminders;
     if (sms.enabled) {

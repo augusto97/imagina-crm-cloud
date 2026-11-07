@@ -12,6 +12,7 @@ import {
 } from './conversion';
 import type { PublicDataConsent } from './data-consent';
 import { SMS_BOOKING_REMINDER_DEFAULT } from './sms';
+import { collectionCurrencyError, type CollectionProvider } from './collections';
 import { holidayCountryForTimeZone } from './holidays';
 import { publicThemeSchema, readPublicTheme, type PublicTheme } from './public-theme';
 import type { PublicThemeView } from './public-theme-css';
@@ -82,8 +83,10 @@ export const BOOKING_EVENT_WORDS: Record<BookingEvent, string> = {
  * Estado de una cita (columna `status` de `booking_appointments`). v0.1.353 —
  * `pending`: pedida, esperando que el equipo la apruebe (ya ocupa el lugar);
  * `declined`: rechazada (o venció el plazo para aprobarla).
+ * v0.1.387 — `unpaid`: el cliente tiene que pagar para confirmarla; el horario
+ * queda apartado unos minutos (`payment_until`) y, si no paga, se libera.
  */
-export const BOOKING_STATUSES = ['confirmed', 'rescheduled', 'cancelled', 'pending', 'declined'] as const;
+export const BOOKING_STATUSES = ['confirmed', 'rescheduled', 'cancelled', 'pending', 'declined', 'unpaid'] as const;
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 /** Los estados que ya no ocupan el lugar. */
 export const BOOKING_INACTIVE_STATUSES: readonly BookingStatus[] = ['cancelled', 'declined'];
@@ -94,6 +97,7 @@ export const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
     cancelled: 'Cancelada',
     pending: 'Por confirmar',
     declined: 'Rechazada',
+    unpaid: 'Esperando el pago',
 };
 
 /**
@@ -333,7 +337,10 @@ export const bookingServiceSchema = z.object({
      */
     durations: z.array(durationMin).max(BOOKING_MAX_DURATIONS).default([]),
     description: z.string().max(1000).default(''),
-    /** Sólo informativo (no se cobra): en la moneda de la empresa. */
+    /**
+     * En la moneda de la empresa. Se muestra en la página y, con «Cobrar al
+     * agendar» (v0.1.387), es lo que se cobra (o la base del anticipo en %).
+     */
     price: z.number().min(0).max(1_000_000_000_000).nullable().default(null),
     /** El valor de la opción en el campo «servicio» de la lista (si es una selección). */
     option_value: z.string().max(190).nullable().default(null),
@@ -363,6 +370,8 @@ export const bookingServiceSchema = z.object({
     location: bookingLocationSchema.default({}),
     /** v0.1.353 — Aprobación propia del servicio (`inherit` = la de la página). */
     approval: z.enum(['inherit', ...BOOKING_APPROVAL_MODES]).default('inherit'),
+    /** v0.1.387 — `none` = este servicio no se cobra aunque la agenda cobre. */
+    payment: z.enum(['inherit', 'none']).catch('inherit').default('inherit'),
     active: z.boolean().default(true),
 });
 export type BookingServiceItem = z.infer<typeof bookingServiceSchema>;
@@ -492,6 +501,8 @@ export const bookingMappingSchema = z.object({
     /** v0.1.353 — «Por confirmar» y «Rechazada» (con aprobación). */
     status_pending: z.string().max(190).nullable().default(null),
     status_declined: z.string().max(190).nullable().default(null),
+    /** v0.1.387 — «Esperando el pago» (cobrar al agendar). */
+    status_unpaid: z.string().max(190).nullable().default(null),
 });
 export type BookingMapping = z.infer<typeof bookingMappingSchema>;
 
@@ -708,6 +719,75 @@ export const bookingCalendarSyncSchema = z.object({
 });
 export type BookingCalendarSync = z.infer<typeof bookingCalendarSyncSchema>;
 
+/**
+ * v0.1.387 — Cobrar al agendar con la conexión de cobro de la empresa
+ * (Mercado Pago, Wompi o PayPal, ADR-S31): el dinero va a SU cuenta.
+ * `required` = la cita queda «esperando el pago» con el horario apartado
+ * `hold_minutes` y se confirma sola cuando llega el pago (si no, se libera);
+ * `optional` = la cita se confirma igual y el cliente puede pagar desde la
+ * confirmación, el correo o la página de su cita. Se cobra el precio del
+ * servicio o un anticipo (fijo o un % del precio).
+ */
+export const BOOKING_PAYMENT_MODES = ['required', 'optional'] as const;
+export type BookingPaymentMode = (typeof BOOKING_PAYMENT_MODES)[number];
+export const BOOKING_PAYMENT_MODE_LABELS: Record<BookingPaymentMode, string> = {
+    required: 'Pagar para confirmar la cita',
+    optional: 'La cita se confirma y puede pagar después',
+};
+export const BOOKING_PAYMENT_AMOUNTS = ['full', 'deposit'] as const;
+export type BookingPaymentAmount = (typeof BOOKING_PAYMENT_AMOUNTS)[number];
+export const BOOKING_PAYMENT_HOLD_MIN = 10;
+export const BOOKING_PAYMENT_HOLD_MAX = 240;
+export const bookingPaymentSchema = z.object({
+    enabled: z.boolean().catch(false).default(false),
+    /** La conexión de cobro DEL EQUIPO (una privada no sirve: la cita no es de nadie del equipo). */
+    connection_id: z.number().int().positive().nullable().catch(null).default(null),
+    mode: z.enum(BOOKING_PAYMENT_MODES).catch('required').default('required'),
+    /** Todo el precio del servicio o un anticipo. */
+    amount: z.enum(BOOKING_PAYMENT_AMOUNTS).catch('full').default('full'),
+    deposit_kind: z.enum(['fixed', 'percent']).catch('percent').default('percent'),
+    /** Anticipo: el monto fijo, o el % del precio (1-100). */
+    deposit_value: z.number().min(0).max(1_000_000_000_000).nullable().catch(null).default(null),
+    /** Pagar para confirmar: cuántos minutos queda apartado el horario. */
+    hold_minutes: z.number().int().min(BOOKING_PAYMENT_HOLD_MIN).max(BOOKING_PAYMENT_HOLD_MAX).catch(30).default(30),
+    /** Moneda del cobro (Wompi sólo cobra en COP; PayPal no cobra en COP). */
+    currency: z
+        .string()
+        .regex(/^[A-Z]{3}$/)
+        .catch('COP')
+        .default('COP'),
+    /** El concepto del cobro (vacío = «servicio · fecha»). */
+    title: z.string().max(200).catch('').default(''),
+    /** Al agendar: llevar directo a pagar, o mostrar el botón en la confirmación. */
+    after: z.enum(['redirect', 'button']).catch('redirect').default('redirect'),
+    button_label: z.string().max(60).catch('').default(''),
+});
+export type BookingPayment = z.infer<typeof bookingPaymentSchema>;
+
+/**
+ * v0.1.387 — Cuánto se cobra al agendar este servicio (null = no se cobra:
+ * la agenda no cobra, el servicio está «sin cobro» o no tiene con qué calcular
+ * el monto). Redondeado a 2 decimales; un anticipo fijo nunca pasa del precio.
+ */
+export function bookingPaymentAmount(
+    payment: Pick<BookingPayment, 'enabled' | 'connection_id' | 'amount' | 'deposit_kind' | 'deposit_value'>,
+    service: Pick<BookingServiceItem, 'price' | 'payment'> | null | undefined,
+): { amount: number; kind: BookingPaymentAmount } | null {
+    if (!payment.enabled || payment.connection_id === null || !service || service.payment === 'none') return null;
+    const price = service.price !== null && Number.isFinite(service.price) ? service.price : null;
+    let amount: number | null;
+    if (payment.amount === 'full') amount = price;
+    else if (payment.deposit_kind === 'fixed') {
+        amount = payment.deposit_value;
+        if (amount !== null && price !== null && price > 0) amount = Math.min(amount, price);
+    } else {
+        const pct = payment.deposit_value;
+        amount = price !== null && pct !== null && pct > 0 && pct <= 100 ? (price * pct) / 100 : null;
+    }
+    if (amount === null || !Number.isFinite(amount) || amount <= 0) return null;
+    return { amount: Math.round(amount * 100) / 100, kind: payment.amount };
+}
+
 export const bookingConfigSchema = z.object({
     settings: bookingSettingsSchema.default({}),
     services: z.array(bookingServiceSchema).max(BOOKING_MAX_SERVICES).default([]),
@@ -719,6 +799,8 @@ export const bookingConfigSchema = z.object({
     calendar_sync: bookingCalendarSyncSchema.default({}),
     /** v0.1.353 */
     approval: bookingApprovalSchema.default({}),
+    /** v0.1.387 */
+    payment: bookingPaymentSchema.default({}),
 });
 export type BookingConfig = z.infer<typeof bookingConfigSchema>;
 
@@ -858,6 +940,8 @@ export interface PublicBookingService {
     show_seats_left: boolean;
     /** v0.1.350 — Dónde es (sin enlaces: el de la videollamada llega al reservar). */
     location: BookingLocationPublic;
+    /** v0.1.387 — Lo que se cobra al agendar (null = no se cobra). */
+    pay?: { label: string; kind: BookingPaymentAmount; required: boolean } | null;
 }
 
 export interface BookingLocationPublic {
@@ -993,7 +1077,8 @@ export type VerifyBookingCodeInput = z.infer<typeof verifyBookingCodeSchema>;
 
 /** v0.1.353 — Aprobar o rechazar una cita por confirmar (desde la ficha). */
 export const decideBookingSchema = z.object({
-    decision: z.enum(['approve', 'decline']),
+    /** v0.1.387 — `mark_paid`: esperando el pago, el cliente pagó por otro medio (efectivo, transferencia). */
+    decision: z.enum(['approve', 'decline', 'mark_paid']),
     /** Rechazar: el motivo que le llega al cliente (opcional). */
     reason: z.string().trim().max(500).optional(),
 });
@@ -1019,6 +1104,15 @@ export interface RecordBookingDto {
     decided_by_name: string | null;
     decided_at: string | null;
     decline_reason: string | null;
+    /** v0.1.387 — Esperando el pago: hasta cuándo queda apartado el horario (ISO). */
+    payment_until?: string | null;
+    /** v0.1.387 — El cobro de la cita (null = no se cobra). */
+    payment?: PublicAppointmentPayment | null;
+    /** v0.1.387 — Esperando el pago: quien puede, la confirma a mano (pagó por otro medio). */
+    can_mark_paid?: boolean;
+    /** v0.1.387 — Quién la marcó pagada a mano y cuándo (null = el pago llegó por el proveedor, o no se marcó). */
+    paid_marked_by_name?: string | null;
+    paid_marked_at?: string | null;
 }
 
 /** Resumen de una cita (confirmación, página de gestión). */
@@ -1041,6 +1135,26 @@ export interface PublicAppointmentSummary {
     can_cancel: boolean;
     /** Si no se puede reprogramar o cancelar: por qué (aviso mínimo, ya pasó). */
     locked_reason: string | null;
+    /** v0.1.387 — El cobro de la cita (null = no se cobra). */
+    payment?: PublicAppointmentPayment | null;
+}
+
+/** v0.1.387 — El cobro de una cita, como lo ve el cliente. */
+export interface PublicAppointmentPayment {
+    /** `pending` = falta pagar; `paid` = pagado; `expired` = venció sin pagar; `refunded`; `failed` = rechazado (puede reintentar). */
+    status: 'pending' | 'paid' | 'expired' | 'refunded' | 'failed';
+    amount_label: string;
+    kind: BookingPaymentAmount;
+    /** Pagar para confirmar. */
+    required: boolean;
+    /** La dirección para pagar (sólo mientras falta pagar). */
+    url: string | null;
+    /** Pagar para confirmar: hasta cuándo queda apartado el horario (ISO). */
+    until: string | null;
+    provider: string;
+    button_label: string;
+    /** El equipo la marcó pagada a mano (pagó por otro medio). */
+    manual?: boolean;
 }
 
 export interface BookAppointmentResult {
@@ -1050,6 +1164,8 @@ export interface BookAppointmentResult {
     conversion?: ConversionResult | null;
     /** v0.1.374 — La página de gracias con sus variables ya completas (null = no hay). */
     redirect_url?: string | null;
+    /** v0.1.387 — Al agendar, ir directo a pagar (si la cita espera el pago y la agenda lo pide). */
+    pay_redirect?: boolean;
 }
 
 export const rescheduleAppointmentSchema = z.object({
@@ -1251,6 +1367,14 @@ export function bookingPriceLabel(price: number | null, numberFormat: 'comma_dot
     return `$ ${grouped}${dec ? `${decSep}${dec}` : ''}`;
 }
 
+/**
+ * v0.1.387 — El monto de un cobro al agendar como lo lee el cliente: «$ 50.000
+ * COP» (con los separadores de la empresa y la moneda del cobro).
+ */
+export function bookingPayLabel(amount: number, currency: string, numberFormat: 'comma_dot' | 'dot_comma' | 'space_comma'): string {
+    return `${bookingPriceLabel(amount, numberFormat) ?? ''} ${currency}`.trim();
+}
+
 /** Id corto y estable para un servicio, una persona o un recordatorio nuevo. */
 export function newBookingItemId(prefix = ''): string {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -1350,7 +1474,11 @@ export function bookingProblems(
     config: BookingConfig,
     fields: ReadonlyArray<{ id: number; type: string }>,
     /** v0.1.350 — El calendario de cada persona (sin esto no se revisa la videollamada). */
-    opts: { staffCalendars?: BookingStaffCalendars } = {},
+    opts: {
+        staffCalendars?: BookingStaffCalendars;
+        /** v0.1.387 — La conexión de cobro elegida (undefined = no se revisa; null = ya no existe o no es del equipo). */
+        paymentConnection?: { provider: CollectionProvider } | null;
+    } = {},
 ): string[] {
     const out: string[] = [];
     const typeOf = new Map(fields.map((f) => [f.id, f.type]));
@@ -1412,6 +1540,26 @@ export function bookingProblems(
         if (config.settings.ask_phone === 'hidden') out.push('La página no pide el teléfono: pídelo (opcional u obligatorio) para mandar los recordatorios por SMS.');
         if (config.notifications.reminders.length === 0) out.push('Agrega al menos un recordatorio (por ejemplo, 24 horas antes) para mandarlo por SMS.');
         if (sms.text.trim() === '') out.push('Escribe el texto del recordatorio por SMS.');
+    }
+    // v0.1.387 — Cobrar al agendar.
+    const pay = config.payment;
+    if (pay.enabled) {
+        if (pay.connection_id === null || opts.paymentConnection === null) {
+            out.push('Elige con qué cuenta se cobra al agendar (Ajustes → Cobrar al agendar).');
+        } else if (opts.paymentConnection) {
+            const why = collectionCurrencyError(opts.paymentConnection.provider, pay.currency);
+            if (why) out.push(`${why} (Ajustes → Cobrar al agendar).`);
+        }
+        if (pay.amount === 'deposit' && (pay.deposit_value === null || pay.deposit_value <= 0 || (pay.deposit_kind === 'percent' && pay.deposit_value > 100))) {
+            out.push(pay.deposit_kind === 'percent' ? 'Escribe el % del anticipo, entre 1 y 100 (Ajustes → Cobrar al agendar).' : 'Escribe el monto del anticipo (Ajustes → Cobrar al agendar).');
+        } else if (pay.connection_id !== null) {
+            for (const svc of config.services) {
+                if (!svc.active || svc.payment === 'none') continue;
+                if (bookingPaymentAmount(pay, svc) === null) {
+                    out.push(`«${svc.name}» no tiene precio y la agenda cobra al agendar: ponle un precio o márcalo sin cobro (Servicios).`);
+                }
+            }
+        }
     }
     return out;
 }

@@ -525,6 +525,93 @@ export const articles: LearnArticle[] = [
                 t: 'actions',
                 items: [
                     { label: 'Configurar la agenda', to: '/lists' },
+                    { label: 'Siguiente: cobrar al agendar', article: 'agenda-cobro' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'agenda-cobro',
+        route: '/lists',
+        related: ['agenda-aprobacion', 'agenda-servicios-personas', 'agenda-campos-correos'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Un consultorio que pierde horas por citas a las que nadie llega, un taller que cobra la inscripción por adelantado o un profesional que pide un abono para separar la fecha: en **Ajustes → Cobrar al agendar** decides que el cliente **pague al reservar**, con la cuenta de cobro de tu empresa (Mercado Pago, Wompi o PayPal). El dinero va directo a tu cuenta.',
+            },
+            { t: 'anim', key: 'citas-cobro', caption: 'Laura elige el jueves a las 10:00, su cita queda «Esperando el pago» con el horario apartado, paga el anticipo por PSE y la cita se confirma sola.' },
+            { t: 'h', text: 'Antes de empezar' },
+            {
+                t: 'p',
+                md: 'Necesitas una cuenta de cobro **del equipo** conectada en **Ajustes → Integraciones** (Mercado Pago, Wompi o PayPal). Una conexión privada no sirve: la cita no es de una persona. Cada servicio que se cobra necesita su **precio** (en **Servicios**).',
+            },
+            { t: 'h', text: 'Cómo se cobra' },
+            {
+                t: 'settings',
+                title: 'Ajustes → Cobrar al agendar',
+                rows: [
+                    { name: 'Cobrar al agendar', what: 'Enciende el cobro para toda la agenda.' },
+                    { name: 'Con qué cuenta se cobra', what: 'La cuenta de cobro de la empresa donde llega el dinero.' },
+                    { name: 'Hay que pagar para confirmarla', what: 'La cita queda **Esperando el pago** y el horario queda apartado unos minutos (de 10 minutos a 4 horas). Si paga, se confirma sola; si no, el horario vuelve a quedar libre y al cliente le llega un correo.' },
+                    { name: 'Se confirma y paga después', what: 'La cita queda confirmada al instante y el cliente recibe el botón para pagar (en la pantalla y en el correo).' },
+                    { name: 'Todo el precio o un anticipo', what: 'El precio del servicio, o un anticipo: un monto fijo (nunca más que el precio) o un porcentaje del precio.' },
+                    { name: 'Moneda', what: 'Wompi sólo cobra en pesos colombianos; PayPal no cobra en pesos colombianos (usa dólares u otra moneda de PayPal).' },
+                    { name: 'Al agendar', what: '**Llevar directo a pagar** o **mostrar el botón** en la confirmación, con el texto que elijas.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'En **Servicios**, cada servicio puede quedar **Sin cobro** aunque la agenda cobre: por ejemplo, la valoración gratis se agenda sin pagar y el tratamiento pide el anticipo. Debajo del selector ves cuánto se va a cobrar.',
+            },
+            { t: 'h', text: 'Lo que ve el cliente' },
+            {
+                t: 'steps',
+                items: [
+                    'Elige el servicio, el día y la hora: junto al precio ve cuánto paga al agendar.',
+                    'Al confirmar, va a la página de pago de tu cuenta (o toca **Pagar ahora** en la confirmación). Si la agenda está dentro de tu sitio, el pago se abre en otra pestaña.',
+                    'Paga con PSE, Nequi, tarjeta, efectivo o PayPal, según tu cuenta.',
+                    'Vuelve a la página de su cita, que se actualiza sola: **¡Listo! Tu cita está confirmada**. Le llega el correo de confirmación con el evento para su calendario.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'El monto lo calcula siempre el servidor con el precio del servicio: nadie puede cambiarlo desde la página. Y el pago se confirma preguntándole al proveedor, no por lo que diga el navegador.',
+            },
+            { t: 'h', text: 'Mientras espera el pago' },
+            {
+                t: 'p',
+                md: 'La cita aparece en la lista con el estado **Esperando el pago** y no se crean el evento en el calendario, la videollamada ni los recordatorios; tampoco se avisa al equipo. Todo eso pasa cuando llega el pago. Si la agenda **aprueba citas**, primero se paga y después queda **Por confirmar** hasta que alguien la apruebe.',
+            },
+            {
+                t: 'p',
+                md: 'Si el cliente pagó por otro medio (transferencia, en el local), abre la ficha del registro y toca **Marcar como pagada**: la cita se confirma y el link de pago deja de servir.',
+            },
+            { t: 'h', text: 'Si el pago llega tarde' },
+            {
+                t: 'p',
+                md: 'Si el cliente paga después de que se liberó el horario y ese horario sigue libre, la cita se vuelve a tomar y se confirma sola. Si otra persona ya lo tomó, te llega un aviso en la campana (para reprogramar o devolver el dinero) y al cliente un correo que se lo explica.',
+            },
+            {
+                t: 'example',
+                title: 'Un consultorio odontológico',
+                md: 'Sonrisa, en Cali, perdía dos o tres horas por semana con citas a las que nadie llegaba. Puso **Hay que pagar para confirmarla** con un **anticipo del 50 %** y 30 minutos para pagar. La valoración sigue gratis (**Sin cobro**). Las citas que no se pagan liberan el horario solas y las inasistencias casi desaparecieron.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Dónde veo si pagó?', a: 'En la ficha del registro, en la sección de la cita y en **Cobros**. Si eliges columnas de cobro, también en la tabla para filtrar quién debe.' },
+                    { q: '¿Las automatizaciones se enteran?', a: 'Con «pagar para confirmar», **Cuando se agenda, reprograma o cancela una cita → Se agendó** sale cuando entra el pago. **Cuando se recibe un pago** también funciona.' },
+                    { q: '¿Qué pasa si el cliente cancela?', a: 'Puede cancelar desde el enlace de su correo. Si ya pagó, la devolución la haces tú desde tu cuenta de cobro.' },
+                    { q: '¿Cobra a todos los servicios?', a: 'A los que tienen precio, salvo los que marques **Sin cobro**. Un servicio sin precio no deja publicar la agenda hasta que le pongas uno o lo marques sin cobro (salvo que el anticipo sea un monto fijo).' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Configurar la agenda', to: '/lists' },
+                    { label: 'Conectar una cuenta de cobro', to: '/settings?s=conectores' },
                     { label: 'Siguiente: diseñar la página de la agenda', article: 'agenda-diseno' },
                 ],
             },

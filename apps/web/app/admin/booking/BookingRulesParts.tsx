@@ -7,6 +7,8 @@ import {
     BOOKING_MAX_SEATS,
     BOOKING_SLOT_INTERVALS,
     HOLIDAY_COUNTRIES,
+    bookingPayLabel,
+    bookingPaymentAmount,
     durationLabel,
     holidayBlocksByDefault,
     serviceDurations,
@@ -23,7 +25,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { useAttachment } from '@/hooks/useAttachments';
 import { __, sprintf } from '@/lib/i18n';
-import { formatDateStr } from '@/lib/tenantFormat';
+import { formatDateStr, getTenantFormat } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
 import { Check, Field } from '../automations/email/EmailBlockInspector';
@@ -228,9 +230,15 @@ export function ServiceCard({
                         value={svc.price ?? ''}
                         onChange={(e) => set({ price: e.target.value === '' ? null : Math.max(0, Number(e.target.value)) })}
                         placeholder="80000"
+                        data-testid="service-price"
                     />
                 </Field>
             </div>
+            {config.payment.enabled && svc.payment !== 'none' && config.payment.amount === 'full' && svc.price === null && (
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-destructive" data-testid="service-price-missing">
+                    {__('La agenda cobra el precio del servicio: ponle un precio o márcalo «Sin cobro».')}
+                </p>
+            )}
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                 <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('El cliente también puede elegir')}</span>
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1.5" data-testid="service-durations">
@@ -298,6 +306,24 @@ export function ServiceCard({
                     ))}
                 </Select>
             </Field>
+            {/* v0.1.387 — un servicio puede no cobrarse aunque la agenda cobre (la valoración gratis). */}
+            {config.payment.enabled && (
+                <Field
+                    label={__('Cobro al agendar')}
+                    hint={(() => {
+                        const due = bookingPaymentAmount(config.payment, svc);
+                        if (svc.payment === 'none') return __('Este servicio se agenda sin pagar.');
+                        return due
+                            ? sprintf(__('Se cobran %s al agendar.'), bookingPayLabel(due.amount, config.payment.currency, getTenantFormat().number_format))
+                            : __('Todavía no hay con qué calcular el monto: revisa el precio o «Cobrar al agendar».');
+                    })()}
+                >
+                    <Select value={svc.payment} onChange={(e) => set({ payment: e.target.value as BookingServiceItem['payment'] })} data-testid="service-payment">
+                        <option value="inherit">{__('Lo de la página (se cobra)')}</option>
+                        <option value="none">{__('Sin cobro')}</option>
+                    </Select>
+                </Field>
+            )}
             <Fold title={__('Horario propio del servicio')} summary={svc.hours ? __('Sólo en sus franjas') : __('El de quien atiende')} defaultOpen={svc.hours !== null} testId="service-hours">
                 <Check
                     label={__('Ofrecer este servicio sólo en ciertas franjas')}
