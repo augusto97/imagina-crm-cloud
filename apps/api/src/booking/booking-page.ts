@@ -131,6 +131,13 @@ const BOOKING_CSS = `
 .tick.x{background:var(--ib-soft);color:var(--ib-muted)}
 .tick.wait{background:color-mix(in srgb,#6d28d9 14%,var(--ib-card));color:#6d28d9}
 .badge-pending{display:inline-block;margin:0 0 12px;padding:3px 10px;border-radius:99px;background:color-mix(in srgb,#6d28d9 14%,var(--ib-card));color:color-mix(in srgb,#6d28d9 80%,var(--ib-text));font-size:13px;font-weight:600}
+.badge-unpaid{display:inline-block;margin:0 0 12px;padding:3px 10px;border-radius:99px;background:color-mix(in srgb,#0369a1 14%,var(--ib-card));color:color-mix(in srgb,#0369a1 80%,var(--ib-text));font-size:13px;font-weight:600}
+.badge-paid{display:inline-block;margin:0 0 12px;padding:3px 10px;border-radius:99px;background:color-mix(in srgb,#067647 14%,var(--ib-card));color:color-mix(in srgb,#067647 85%,var(--ib-text));font-size:13px;font-weight:600}
+.tick.pay{background:color-mix(in srgb,#0369a1 14%,var(--ib-card));color:#0369a1}
+.bk-pay{border:1px solid var(--ib-border);background:var(--ib-soft);border-radius:12px;padding:14px;margin:14px 0 4px;text-align:center}
+.bk-pay .amt{font-size:20px;font-weight:700;margin:2px 0 8px;color:var(--ib-text)}
+.bk-pay .actions{justify-content:center;margin-top:10px}
+.choices .s.pay{color:var(--ib-accent)}
 .code-input{font-size:26px!important;letter-spacing:10px;text-align:center;font-variant-numeric:tabular-nums;max-width:240px}
 .done .summary{text-align:left;margin-top:14px}
 .muted{color:var(--ib-muted)}
@@ -311,7 +318,7 @@ const CLIENT_JS = String.raw`
     if (!c || !meta || PREVIEW) return null;
     return {
       kind: 'booking', id: BOOT.token, name: meta.title, submission_id: c.submission_id, value: c.value, currency: c.currency,
-      service: a ? a.service : '', staff: a ? a.staff : '', start: a ? a.start : '', status: a && a.status === 'pending' ? 'pending' : 'confirmed',
+      service: a ? a.service : '', staff: a ? a.staff : '', start: a ? a.start : '', status: a && (a.status === 'pending' || a.status === 'unpaid') ? 'pending' : 'confirmed',
       google_ads: meta.conversion ? meta.conversion.google_ads : null,
       meta_event: meta.conversion && meta.conversion.meta_event ? 'Schedule' : null,
       user_data: c.user_data || null
@@ -616,6 +623,60 @@ const CLIENT_JS = String.raw`
     return u ? el('a', { cls: 'ib-btn ib-btn-primary', href: u, target: '_blank', rel: 'noopener noreferrer', 'data-testid': 'booking-join', text: 'Unirse a la videollamada' }) : null;
   }
 
+  // ── v0.1.387 — Cobrar al agendar ──
+  function payLine(pay) {
+    var what = pay.kind === 'deposit' ? 'anticipo de ' + pay.label : pay.label;
+    return pay.required ? 'Pagas al agendar: ' + what : 'Puedes pagar en línea: ' + what;
+  }
+  function payNow() { var svc = serviceById(st.service); return !!(svc && svc.pay && svc.pay.required); }
+  function safePay(u) { return typeof u === 'string' && /^https?:\/\/[^\s"<>]+$/.test(u) ? u : null; }
+  function payButton(p, primary) {
+    var u = p && safePay(p.url);
+    if (!u) return null;
+    // Insertada en otro sitio, el pago se abre en otra pestaña (los checkouts no se dejan abrir dentro de un marco).
+    return el('a', { cls: primary ? 'ib-btn ib-btn-primary' : 'ib-btn ib-btn-secondary', href: u, target: embedded ? '_blank' : undefined, rel: 'noopener', 'data-testid': 'booking-pay', text: p.button_label || 'Pagar ahora' });
+  }
+  function payBox(a) {
+    var p = a && a.payment;
+    if (!p) return null;
+    var box = el('div', { cls: 'bk-pay', 'data-testid': 'booking-pay-box', 'data-pay-status': p.status });
+    if (p.status === 'paid') {
+      box.appendChild(el('span', { cls: 'badge-paid', 'data-testid': 'booking-paid', text: 'Pagado' }));
+      box.appendChild(el('div', { cls: 'amt', text: p.amount_label }));
+      return box;
+    }
+    if (p.status === 'refunded') { box.appendChild(el('div', { cls: 'muted', text: 'El pago de ' + p.amount_label + ' se devolvió.' })); return box; }
+    if (p.status === 'expired') { box.appendChild(el('div', { cls: 'muted', text: 'El enlace para pagar ' + p.amount_label + ' venció.' })); return box; }
+    box.appendChild(el('div', { cls: 'muted small', text: p.kind === 'deposit' ? 'Anticipo a pagar' : 'Valor a pagar' }));
+    box.appendChild(el('div', { cls: 'amt', 'data-testid': 'booking-pay-amount', text: p.amount_label }));
+    if (p.status === 'failed') box.appendChild(el('p', { cls: 'muted small', text: 'El último intento de pago no pasó. Puedes intentarlo de nuevo con otro medio de pago.' }));
+    if (a.status === 'unpaid' && p.until) box.appendChild(el('p', { cls: 'muted small', 'data-testid': 'booking-pay-until', text: 'Te apartamos el horario hasta las ' + timeLabel(p.until, tzShown()) + '. Si no pagas antes, quedará libre para otra persona.' }));
+    var btn = payButton(p, true);
+    if (btn) box.appendChild(el('div', { cls: 'actions' }, [btn]));
+    if (st.payChecking) box.appendChild(el('p', { cls: 'muted small', 'data-testid': 'booking-pay-checking', text: 'Estamos confirmando tu pago. Esto puede tardar unos segundos.' }));
+    return box;
+  }
+  // Mientras la cita espera el pago (o se volvió de pagar), se pregunta cada pocos segundos cómo va.
+  var payTimer = null, payTries = 0;
+  function payApi(a) { var m = /\/manage\/([^/?#]+)/.exec(String((a && a.manage_url) || '')); return m ? '/api/v1/public/booking/manage/' + m[1] + '/payment' : null; }
+  function watchPayment(a, onUpdate) {
+    if (payTimer || PREVIEW || DEMO) return;
+    var url = payApi(a);
+    if (!url) return;
+    payTimer = setTimeout(function () {
+      fetch(url, { credentials: 'omit', cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          payTimer = null; payTries++;
+          if (!j) return;
+          var still = j.status === 'unpaid' || (st.payChecking && j.payment && j.payment.status === 'pending');
+          if (!still) st.payChecking = false;
+          onUpdate(j);
+          if (still && payTries < 240) watchPayment(j, onUpdate);
+        })
+        .catch(function () { payTimer = null; payTries++; if (payTries < 240) watchPayment(a, onUpdate); });
+    }, payTries < 30 ? 4000 : 15000);
+  }
   function summaryBox(withSlot) {
     var svc = serviceById(st.service);
     var rows = [];
@@ -624,6 +685,7 @@ const CLIENT_JS = String.raw`
     else if (meta.choose_staff) rows.push(['Con', 'El primero disponible']);
     if (withSlot && st.slot) rows.push(['Cuándo', whenLong(st.slot.start, tzShown())]);
     if (svc && locText(svc) && MODE !== 'manage') rows.push(['Dónde', locText(svc)]);
+    if (svc && svc.pay && MODE !== 'manage') rows.push([svc.pay.kind === 'deposit' ? 'Anticipo' : 'A pagar', svc.pay.label]);
     var box = el('div', { cls: 'summary ib-summary', 'data-testid': 'booking-summary' });
     rows.forEach(function (r) { box.appendChild(el('div', { cls: 'row' }, [el('span', { text: r[0] }), el('b', { text: r[1] })])); });
     return box;
@@ -641,6 +703,8 @@ const CLIENT_JS = String.raw`
       var where = locText(s);
       if (where) left.appendChild(el('div', { cls: 's loc2', text: where, 'data-service-location': s.location.kind }));
       if (s.description) left.appendChild(el('div', { cls: 'd', text: s.description }));
+      // v0.1.387 — lo que se cobra al agendar.
+      if (s.pay) left.appendChild(el('div', { cls: 's pay', 'data-testid': 'booking-service-pay', text: payLine(s.pay) }));
       list.appendChild(el('button', { type: 'button', cls: 'opt ib-choice', 'data-service': s.id, on: { click: function () {
         st.service = s.id; st.duration = s.duration_min; st.staff = 'any'; st.day = null; st.slot = null;
         var s2 = steps(); go(s2[s2.indexOf('service') + 1]);
@@ -914,7 +978,9 @@ const CLIENT_JS = String.raw`
     if (meta.captcha && PREVIEW) form.appendChild(pv(el('div', { cls: 'pv', text: 'Aquí va la verificación anti-robots.' }), '@captcha', 'Verificación anti-robots'));
     if (meta.verify_email) form.appendChild(el('p', { cls: 'muted small', 'data-testid': 'booking-verify-note', text: 'Para terminar, te enviaremos un código a tu correo.' }));
     if (st.alert) form.appendChild(el('div', { cls: 'ib-alert', role: 'alert', text: st.alert, 'data-testid': 'booking-alert' }));
-    var submit = el('button', { type: 'submit', cls: 'ib-btn ib-btn-primary', text: st.busy ? (meta.verify_email && !hasProof() ? 'Enviando el código…' : 'Agendando…') : lbl('submit', 'Confirmar cita'), disabled: st.busy, 'data-testid': 'booking-submit' });
+    var svcPay = serviceById(st.service);
+    if (svcPay && svcPay.pay && svcPay.pay.required) form.appendChild(el('p', { cls: 'muted small', 'data-testid': 'booking-pay-note', text: 'Para confirmar la cita, pagas ' + (svcPay.pay.kind === 'deposit' ? 'un anticipo de ' : '') + svcPay.pay.label + '. Te apartamos el horario mientras pagas.' }));
+    var submit = el('button', { type: 'submit', cls: 'ib-btn ib-btn-primary', text: st.busy ? (meta.verify_email && !hasProof() ? 'Enviando el código…' : 'Agendando…') : lbl('submit', payNow() ? 'Agendar y pagar' : 'Confirmar cita'), disabled: st.busy, 'data-testid': 'booking-submit' });
     form.appendChild(el('div', { cls: 'actions' }, [pv(submit, '@submit', 'Botón')]));
     form.addEventListener('submit', function (e) { e.preventDefault(); submitBooking(); });
     sec.appendChild(form);
@@ -976,10 +1042,16 @@ const CLIENT_JS = String.raw`
           st.done = res.body.appointment || { pending: true };
           st.step = 'done';
           st.redirect = typeof res.body.redirect_url === 'string' && /^https:\/\//.test(res.body.redirect_url) ? res.body.redirect_url : null;
+          // v0.1.387 — a pagar: la página de gracias espera al pago (sale en la página de la cita).
+          var payUrl = res.body.pay_redirect && st.done.payment ? safePay(st.done.payment.url) : null;
+          if (payUrl) st.redirect = null;
+          st.paying = !!(payUrl && !embedded);
           render();
           var conv = conversionEvent(res.body);
-          if (st.redirect) goThankYou(st.redirect, conv);
+          if (st.paying) { postConversion(conv, null, 0); firePixels(conv, function () { location.assign(payUrl); }); setTimeout(function () { location.assign(payUrl); }, 1600); }
+          else if (st.redirect) goThankYou(st.redirect, conv);
           else { postConversion(conv, null, 0); firePixels(conv, null); }
+          if (st.done.status === 'unpaid') watchPayment(st.done, function (j) { st.done = j; render(); });
           try { parent.postMessage({ type: 'imb-form-submitted' }, '*'); } catch (e) {}
           return;
         }
@@ -1069,6 +1141,8 @@ const CLIENT_JS = String.raw`
   // ── Confirmación ──
   function renderDone() {
     var a = st.done || {};
+    // v0.1.387 — esperando el pago: el horario apartado y el botón para pagar.
+    if (a.status === 'unpaid' && !a.preview) { renderUnpaid(a); return; }
     var waiting = a.status === 'pending';
     var box = el('div', { cls: 'done', 'data-testid': 'booking-done', 'data-status': a.status || '' });
     box.appendChild(el('div', { cls: waiting ? 'tick wait' : 'tick', text: waiting ? '\u23F3' : '\u2713', 'aria-hidden': 'true' }));
@@ -1090,6 +1164,8 @@ const CLIENT_JS = String.raw`
         if (r[1]) sum.appendChild(el('div', { cls: 'row' }, [el('span', { text: r[0] }), el('b', { text: r[1] })]));
       });
       box.appendChild(sum);
+      var pb = payBox(a);
+      if (pb) box.appendChild(pb);
       var acts = el('div', { cls: 'actions', style: 'justify-content:center' });
       var join = waiting ? null : meetingButton(a);
       if (join) acts.appendChild(join);
@@ -1105,6 +1181,24 @@ const CLIENT_JS = String.raw`
       box.appendChild(el('p', { cls: 'muted', 'data-testid': 'booking-redirecting', text: secs > 0 ? 'Te llevamos en ' + secs + ' segundos…' : 'Te llevamos a la siguiente página…' }));
       box.appendChild(el('a', { cls: 'ib-btn ib-btn-secondary', href: st.redirect, target: '_top', rel: 'noopener', text: 'Ir ahora' }));
     }
+    root.appendChild(box);
+  }
+
+  function renderUnpaid(a) {
+    var box = el('div', { cls: 'done', 'data-testid': 'booking-done', 'data-status': 'unpaid' });
+    box.appendChild(el('div', { cls: 'tick pay', text: '$', 'aria-hidden': 'true' }));
+    box.appendChild(el('h2', { cls: 'ib-step-title', text: st.paying ? 'Te llevamos a pagar…' : 'Falta el pago para confirmar tu cita' }));
+    box.appendChild(el('span', { cls: 'badge-unpaid', 'data-testid': 'booking-unpaid', text: 'Esperando el pago' }));
+    box.appendChild(el('p', { cls: 'muted', text: st.paying ? 'Termina el pago en la página que se abre. Cuando lo recibamos, tu cita queda confirmada y te llega el correo.' : 'Cuando recibamos el pago, tu cita queda confirmada y te llega el correo de confirmación.' }));
+    var sum = el('div', { cls: 'summary ib-summary' });
+    [['Servicio', a.service], ['Con', a.staff], ['Cuándo', whenLong(a.start, tzShown())], ['Dónde', a.location]].forEach(function (r) {
+      if (r[1]) sum.appendChild(el('div', { cls: 'row' }, [el('span', { text: r[0] }), el('b', { text: r[1] })]));
+    });
+    box.appendChild(sum);
+    var pb = payBox(a);
+    if (pb) box.appendChild(pb);
+    else box.appendChild(el('p', { cls: 'muted small', text: 'Te enviamos por correo el enlace para pagar.' }));
+    if (a.can_cancel && a.manage_url) box.appendChild(el('div', { cls: 'actions', style: 'justify-content:center' }, [el('a', { cls: 'ib-btn ib-btn-secondary', href: a.manage_url, target: embedded ? '_blank' : undefined, rel: 'noopener', 'data-testid': 'booking-manage-link', text: 'Ver o cancelar mi cita' })]));
     root.appendChild(box);
   }
 
@@ -1128,13 +1222,21 @@ const CLIENT_JS = String.raw`
       root.appendChild(el('span', { cls: 'badge-pending', 'data-testid': 'booking-pending', text: 'Por confirmar' }));
       root.appendChild(el('p', { cls: 'muted', text: (meta && meta.pending_message) || 'Te avisaremos por correo cuando la confirmen.' }));
     }
+    // v0.1.387 — esperando el pago.
+    if (a.status === 'unpaid') {
+      root.appendChild(el('span', { cls: 'badge-unpaid', 'data-testid': 'booking-unpaid', text: 'Esperando el pago' }));
+      root.appendChild(el('p', { cls: 'muted', text: 'Cuando recibamos el pago, tu cita queda confirmada y te llega el correo de confirmación.' }));
+    }
+    if (st.paidNow) root.appendChild(el('div', { cls: 'note-ok', role: 'status', 'data-testid': 'booking-paid-now', text: a.status === 'pending' ? '¡Pago recibido! Tu cita está por confirmar: te avisaremos por correo.' : '¡Pago recibido! Tu cita está confirmada.' }));
     root.appendChild(apptSummary(a));
+    var mpb = payBox(a);
+    if (mpb) root.appendChild(mpb);
     if (st.alert) root.appendChild(el('div', { cls: st.alertOk ? 'note-ok' : 'alert', role: 'status', text: st.alert, 'data-testid': 'booking-alert' }));
     if (a.locked_reason) root.appendChild(el('p', { cls: 'muted', text: a.locked_reason, 'data-testid': 'booking-locked' }));
     var acts = el('div', { cls: 'actions' });
     var joinM = meetingButton(a);
     if (joinM) acts.appendChild(joinM);
-    if (a.status !== 'pending') acts.appendChild(el('a', { cls: 'ib-btn ib-btn-secondary', href: a.ics_url, text: 'Agregar a mi calendario' }));
+    if (a.status !== 'pending' && a.status !== 'unpaid') acts.appendChild(el('a', { cls: 'ib-btn ib-btn-secondary', href: a.ics_url, text: 'Agregar a mi calendario' }));
     if (a.can_reschedule) acts.appendChild(el('button', { type: 'button', cls: 'ib-btn ib-btn-primary', text: 'Cambiar el horario', 'data-testid': 'booking-reschedule', on: { click: function () {
       st.service = manage.service_id; st.staff = manage.staff_id || 'any'; st.month = null; st.day = null; st.cache = {};
       var s = steps(); go(s.indexOf('staff') >= 0 ? 'staff' : 'date');
@@ -1232,6 +1334,29 @@ const CLIENT_JS = String.raw`
       st.step = 'summary';
       st.service = manage.service_id;
       if (BOOT.action === 'cancel' && manage.appointment.can_cancel) st.cancelOpen = true;
+      // v0.1.387 — volvió de pagar (o la cita espera el pago): se pregunta cómo va.
+      var backFromPay = false;
+      try {
+        var q = new URLSearchParams(location.search);
+        backFromPay = q.get('pago') === '1';
+        if (backFromPay && !embedded) {
+          ['pago', 'collection_id', 'collection_status', 'payment_id', 'status', 'external_reference', 'payment_type', 'merchant_order_id', 'preference_id', 'site_id', 'processing_mode', 'merchant_account_id', 'id', 'env', 'token', 'PayerID'].forEach(function (k) { q.delete(k); });
+          var rest = q.toString();
+          history.replaceState(null, '', location.pathname + (rest ? '?' + rest : ''));
+        }
+      } catch (e) {}
+      var ap = manage.appointment;
+      st.payChecking = backFromPay && !!ap.payment && (ap.payment.status === 'pending' || ap.payment.status === 'failed');
+      // El servidor ya confirmó la cita al abrir la página (el pago estaba): se dice al toque.
+      if (backFromPay && ap.payment && ap.payment.status === 'paid' && !ap.payment.manual && (ap.status === 'confirmed' || ap.status === 'pending')) st.paidNow = true;
+      if (ap.status === 'unpaid' || st.payChecking) {
+        var was = ap.status;
+        watchPayment(ap, function (j) {
+          if (j.status !== was && (j.status === 'confirmed' || j.status === 'pending') || (j.payment && j.payment.status === 'paid' && !(manage.appointment.payment && manage.appointment.payment.status === 'paid'))) st.paidNow = true;
+          manage.appointment = j;
+          if (st.step === 'summary') render();
+        });
+      }
       render();
       return;
     }

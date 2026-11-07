@@ -1473,7 +1473,10 @@ export class TenantTransferService {
             const listId = mapId(maps.list, a.listId);
             const recordId = mapId(maps.record, a.recordId);
             if (pageId === null || listId === null || recordId === null) return null;
-            const status = (BOOKING_STATUSES as readonly string[]).includes(String(a.status)) ? String(a.status) : 'confirmed';
+            const raw = (BOOKING_STATUSES as readonly string[]).includes(String(a.status)) ? String(a.status) : 'confirmed';
+            // v0.1.387 — el link de pago no viaja: una que esperaba el pago llega cancelada
+            // (si no, apartaría el horario para siempre).
+            const status = raw === 'unpaid' ? 'cancelled' : raw;
             return {
                 tenantId,
                 pageId,
@@ -1492,12 +1495,14 @@ export class TenantTransferService {
                 meetingUrl: typeof a.meetingUrl === 'string' ? a.meetingUrl : null,
                 meetingProvider: typeof a.meetingProvider === 'string' ? a.meetingProvider.slice(0, 16) : null,
                 remindersSent: Array.isArray(a.remindersSent) ? a.remindersSent : [],
-                cancelledAt: this.date(a.cancelledAt),
+                cancelledAt: raw === 'unpaid' ? (this.date(a.updatedAt) ?? new Date()) : this.date(a.cancelledAt),
                 // v0.1.353 — aprobación (quién la decidió, si viajó) y la versión del enlace.
                 pendingUntil: this.date(a.pendingUntil),
                 decidedBy: mapId(maps.user, a.decidedBy),
                 decidedAt: this.date(a.decidedAt),
                 declineReason: typeof a.declineReason === 'string' ? a.declineReason.slice(0, 500) : null,
+                paidMarkedBy: raw === 'unpaid' ? null : mapId(maps.user, a.paidMarkedBy),
+                paidMarkedAt: raw === 'unpaid' ? null : this.date(a.paidMarkedAt),
                 manageVersion: Number.isInteger(Number(a.manageVersion)) && Number(a.manageVersion) >= 0 ? Number(a.manageVersion) : 0,
                 createdAt: this.date(a.createdAt) ?? new Date(),
                 updatedAt: this.date(a.updatedAt) ?? new Date(),

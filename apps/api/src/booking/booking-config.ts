@@ -63,7 +63,7 @@ export function sanitizeBookingConfig(config: BookingConfig, fields: ReadonlyArr
     // Los valores de estado tienen que existir en las opciones del campo.
     const statusField = typeof mapping.status_field_id === 'number' ? byId.get(mapping.status_field_id) : undefined;
     const statusOpts = optionValues(statusField);
-    for (const k of ['status_confirmed', 'status_rescheduled', 'status_cancelled', 'status_pending', 'status_declined'] as const) {
+    for (const k of ['status_confirmed', 'status_rescheduled', 'status_cancelled', 'status_pending', 'status_declined', 'status_unpaid'] as const) {
         const v = config.mapping[k];
         if (!statusField || v === null || !statusOpts.has(v)) mapping[k] = null;
     }
@@ -169,6 +169,9 @@ export function statusValueFor(m: BookingMapping, status: BookingStatus): string
             return m.status_pending;
         case 'declined':
             return m.status_declined ?? m.status_cancelled;
+        // v0.1.387 — sin opción propia, «esperando el pago» no escribe nada (como «por confirmar»).
+        case 'unpaid':
+            return m.status_unpaid;
     }
 }
 
@@ -190,6 +193,7 @@ export function statusFromValue(m: BookingMapping, data: Record<string, unknown>
     if (v === m.status_cancelled) return 'cancelled';
     if (v === m.status_declined) return 'declined';
     if (v === m.status_pending) return 'pending';
+    if (v === m.status_unpaid) return 'unpaid';
     if (v === m.status_confirmed) return 'confirmed';
     if (v === m.status_rescheduled) return 'rescheduled';
     return null;

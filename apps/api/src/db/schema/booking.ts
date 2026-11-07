@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
+import { bigint, boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, varchar, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import { paymentLinks } from './collections';
 import { lists } from './lists';
 import { records } from './records';
 import { tenants } from './tenants';
@@ -98,6 +99,13 @@ export const bookingAppointments = pgTable(
         decidedBy: bigint('decided_by', { mode: 'number' }).references(() => users.id, { onDelete: 'set null' }),
         decidedAt: timestamp('decided_at', { withTimezone: true }),
         declineReason: varchar('decline_reason', { length: 500 }),
+        /** v0.1.387 — El link de pago de la cita (cobrar al agendar). */
+        paymentLinkId: bigint('payment_link_id', { mode: 'number' }).references((): AnyPgColumn => paymentLinks.id, { onDelete: 'set null' }),
+        /** v0.1.387 — Esperando el pago: hasta cuándo queda apartado el horario. */
+        paymentUntil: timestamp('payment_until', { withTimezone: true }),
+        /** v0.1.387 — El equipo la marcó pagada a mano (pagó por otro medio). */
+        paidMarkedBy: bigint('paid_marked_by', { mode: 'number' }).references(() => users.id, { onDelete: 'set null' }),
+        paidMarkedAt: timestamp('paid_marked_at', { withTimezone: true }),
         /** v0.1.353 — Va en la firma del enlace de la cita: cada cambio la sube (el enlace viejo deja de servir). */
         manageVersion: integer('manage_version').notNull().default(0),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -112,6 +120,9 @@ export const bookingAppointments = pgTable(
         index('booking_appointments_upcoming_ix').on(t.startAt).where(sql`${t.status} NOT IN ('cancelled', 'declined')`),
         index('booking_appointments_pending_ix').on(t.pendingUntil).where(sql`${t.status} = 'pending'`),
         index('booking_appointments_decided_by_ix').on(t.decidedBy),
+        index('booking_appointments_payment_link_ix').on(t.paymentLinkId).where(sql`${t.paymentLinkId} IS NOT NULL`),
+        index('booking_appointments_unpaid_ix').on(t.paymentUntil).where(sql`${t.status} = 'unpaid'`),
+        index('booking_appointments_paid_marked_by_ix').on(t.paidMarkedBy).where(sql`${t.paidMarkedBy} IS NOT NULL`),
     ],
 );
 export type BookingAppointmentRow = typeof bookingAppointments.$inferSelect;

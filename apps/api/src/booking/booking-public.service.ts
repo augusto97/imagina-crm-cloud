@@ -17,6 +17,8 @@ import {
     bookingLocationPublic,
     bookingLocationText,
     bookingMergeValue,
+    bookingPayLabel,
+    bookingPaymentAmount,
     bookingPriceLabel,
     bookingTheme,
     brandingSchema,
@@ -42,6 +44,7 @@ import {
     zonedDayAndMinute,
     ATTRIBUTION_KEYS,
     cleanAttribution,
+    collectionCurrencyError,
     fillRedirectUrl,
     type ConversionResult,
     type BookAppointmentInput,
@@ -52,12 +55,14 @@ import {
     type BookingServiceItem,
     type BookingSlotsQuery,
     type BookingStaff,
+    type BookingPaymentAmount,
     type BookingStatus,
     type CancelAppointmentInput,
     type DecideBookingInput,
     type RecordBookingDto,
     type RequestBookingCodeInput,
     type VerifyBookingCodeInput,
+    type PublicAppointmentPayment,
     type PublicAppointmentSummary,
     type PublicBookingMeta,
     type PublicBookingSlots,
@@ -103,6 +108,7 @@ import { bookingClientEmail, bookingCodeEmail, bookingMailHasIcs, type BookingMa
 import { buildIcs } from './booking-ics';
 import type { BookingSimulator } from './booking-simulator';
 import { planModuleOff } from '../billing/plan-module-gate';
+import { CollectionError, CollectionsService } from '../collections/collections.service';
 
 /** El sistema crea y mueve el registro: no hay persona del equipo detrás de la reserva. */
 const SYSTEM_ACTOR = { userId: 0, role: 'admin' as const };
@@ -169,6 +175,13 @@ const MANAGE_LIMITS = [
     { scope: 'ip', window: 600, max: 20 },
     { scope: 'page', window: 3600, max: 500 },
 ] as const;
+/** v0.1.387 — Consultar cómo va el pago de una cita (la página pregunta cada pocos segundos). */
+const PAY_POLL_LIMITS = [
+    { scope: 'ip', window: 600, max: 300 },
+    { scope: 'page', window: 3600, max: 20_000 },
+] as const;
+/** v0.1.387 — Un pago que llega tarde vuelve a apartar el horario mientras se confirma. */
+const RETAKE_HOLD_MS = 5 * 60_000;
 /** Correos a una misma dirección por hora (una agenda no es un cañón de correos). */
 const CLIENT_MAIL_LIMIT = { window: 3600, max: 6 };
 
@@ -287,6 +300,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         @Optional() private readonly moduleRef?: ModuleRef,
         // v0.1.352 (ADR-S95) — la página y los horarios se arman una vez y valen unos segundos.
         @Optional() cache?: PublicCacheService,
+        // v0.1.387 — cobrar al agendar con la conexión de cobro de la empresa (ADR-S31).
+        @Optional() private readonly collections?: CollectionsService,
     ) {
         this.pcache = cache ?? NO_PUBLIC_CACHE;
     }
@@ -315,6 +330,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     }
 
     onModuleInit(): void {
+        // v0.1.387 — el pago de una cita la confirma (o la manda a aprobar).
+        this.collections?.onLinkPaid((e) => this.onLinkPaid(e.tenantId, e.linkId));
         // Cambios del EQUIPO sobre una cita (la ficha, la tabla, el calendario):
         // la cita se mantiene al día (recordatorios, calendario, aviso al cliente).
         this.changes?.subscribe((c) => this.onRecordChange(c));
@@ -536,6 +553,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                     seats: x.seats,
                     show_seats_left: x.show_seats_left,
                     location: bookingLocationPublic(x.location, s.location),
+                    // v0.1.387 — lo que se cobra al agendar (el monto lo vuelve a calcular el servidor al reservar).
+                    pay: ((plan) => (plan ? { label: plan.label, kind: plan.kind, required: plan.required } : null))(this.payPlan(p, x)),
                 })),
             staff: staff.map((x) => ({
                 id: x.id,
@@ -671,8 +690,23 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         // v0.1.353 — ¿queda por confirmar? (siempre, o sólo la primera vez de cada correo).
         const approvalMode = serviceApprovalMode(p.config.approval, service);
         const pending = approvalMode === 'all' || (approvalMode === 'new_clients' && !(await this.knownClient(p, clientEmail)));
-        const status: BookingStatus = pending ? 'pending' : 'confirmed';
-        const pendingUntil = pending ? new Date(Math.min(Date.now() + p.config.approval.hours * 3_600_000, start.getTime())) : null;
+        // v0.1.387 — Cobrar al agendar: con «pagar para confirmar», la cita espera
+        // el pago con el horario apartado unos minutos (la aprobación, si la
+        // agenda la pide, viene DESPUÉS del pago).
+        let pay = this.payPlan(p, service);
+        if (pay) {
+            const why = await this.chargeProblem(p);
+            if (why) {
+                this.reportPayment(p, new CollectionError(why));
+                // Pagar para confirmar sin poder cobrar: no se aparta nada (mejor que una cita que nunca se confirma).
+                if (pay.required) throw unavailable('Por ahora no podemos recibir el pago de esta cita. Prueba de nuevo más tarde.');
+                pay = null;
+            }
+        }
+        const payRequired = pay !== null && pay.required;
+        const status: BookingStatus = payRequired ? 'unpaid' : pending ? 'pending' : 'confirmed';
+        const pendingUntil = status === 'pending' ? new Date(Math.min(Date.now() + p.config.approval.hours * 3_600_000, start.getTime())) : null;
+        const paymentUntil = payRequired ? new Date(Math.min(Date.now() + p.config.payment.hold_minutes * 60_000, start.getTime())) : null;
 
         // Ley 1581: la prueba de la autorización se guarda ANTES que la cita.
         let evidence: { id: number; withdrawRef: string | null } | null = null;
@@ -705,10 +739,12 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                 // v0.1.350 — un enlace fijo (del servicio o de la persona) se sabe ya;
                 // el de Meet o Teams lo genera el evento del calendario después.
                 // v0.1.353 — una por confirmar todavía no tiene videollamada (llega al aprobarla).
-                const meeting = pending ? null : await this.immediateMeeting(p, service, staff);
+                // v0.1.387 — una que espera el pago, tampoco (llega al pagarla).
+                const meeting = status !== 'confirmed' ? null : await this.immediateMeeting(p, service, staff);
                 const out = await this.tryBook(p, staff, service, start, end, {
                     status,
                     pendingUntil,
+                    paymentUntil,
                     meeting,
                     data: {
                         ...answers,
@@ -754,7 +790,28 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         }
 
         // Después del commit: tiempo real, automatizaciones, avisos, correo y calendario.
-        const { appt, record, staff } = created;
+        let { appt } = created;
+        const { record, staff } = created;
+        const base = await this.base(p.tenantId);
+        // v0.1.387 — el link de pago de la cita. Pagar para confirmar: si no se
+        // puede armar, la cita no se queda con el horario (se libera y el
+        // visitante lee que pruebe en unos minutos); la empresa se entera.
+        let payment: PublicAppointmentPayment | null = null;
+        if (pay) {
+            const linked = await this.createPaymentLink(p, appt, service, pay.amount, base).catch((err: unknown) => {
+                this.reportPayment(p, err);
+                return null;
+            });
+            if (linked) {
+                appt = linked;
+                payment = await this.paymentFor(p, appt);
+            } else if (payRequired) {
+                await this.releaseUnpaid(p, appt, { notify: false });
+                if (evidence && this.dataConsent) await this.dataConsent.discard(p.tenantId, evidence.id).catch(() => undefined);
+                this.forgetSlots(p.tenantId);
+                throw unavailable('No pudimos preparar el pago de tu cita. Prueba de nuevo en unos minutos.');
+            }
+        }
         this.forgetSlots(p.tenantId);
         this.realtime.records(p.tenantId, p.listId);
         this.dispatcher.dispatch({ tenantId: p.tenantId, listId: p.listId, recordId: record.id, trigger: 'record_created', after: record.data });
@@ -770,7 +827,14 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             origin: 'booking',
             ...(list ? { list, fields: p.fields } : {}),
         });
-        const base = await this.base(p.tenantId);
+        if (appt.status === 'unpaid') {
+            // v0.1.387 — Esperando el pago: nadie del equipo se entera todavía (ni
+            // el calendario ni el disparador): eso llega cuando entra el pago.
+            // El cliente recibe el correo con el botón para pagar.
+            if (p.config.notifications.confirm_email) void this.sendClientMail(p, appt, 'unpaid', { base, names, withdrawRef: evidence?.withdrawRef ?? null });
+            const summary = this.summary(p, appt, base, names, false, payment);
+            return { ok: true, appointment: summary, pay_redirect: p.config.payment.after === 'redirect' && payment?.url != null, ...this.conversionFor(p, service, summary, start, clientEmail, phone, input.attribution) };
+        }
         if (pending) {
             // Por confirmar: aviso a quien aprueba, el disparador «se pidió» y el
             // correo «recibimos tu solicitud». Sin evento en el calendario ni recordatorios.
@@ -780,7 +844,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             if (p.config.notifications.confirm_email) {
                 void this.sendClientMail(p, appt, 'requested', { base, names, withdrawRef: evidence?.withdrawRef ?? null });
             }
-            const summary = this.summary(p, appt, base, names);
+            const summary = this.summary(p, appt, base, names, false, payment);
             return { ok: true, appointment: summary, ...this.conversionFor(p, service, summary, start, clientEmail, phone, input.attribution) };
         }
         const info = this.eventInfo(p, appt, 'booked', 'client', base, names, null);
@@ -794,8 +858,10 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             const ready = await Promise.race([run.calendar, new Promise<null>((ok) => setTimeout(() => ok(null), MEETING_WAIT_MS))]);
             if (ready) shown = ready;
         }
-        const summary = this.summary(p, shown, base, names);
-        return { ok: true, appointment: summary, ...this.conversionFor(p, service, summary, start, clientEmail, phone, input.attribution) };
+        const summary = this.summary(p, shown, base, names, false, payment);
+        // v0.1.387 — «La cita se confirma y puede pagar después»: si la agenda lo pide, igual lleva a pagar.
+        const payRedirect = payment !== null && payment.url !== null && p.config.payment.after === 'redirect';
+        return { ok: true, appointment: summary, ...(payRedirect ? { pay_redirect: true } : {}), ...this.conversionFor(p, service, summary, start, clientEmail, phone, input.attribution) };
     }
 
     /**
@@ -826,7 +892,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             'cita.asesor': summary.staff,
             'cita.fecha': at.ymd,
             'cita.hora': `${String(Math.floor(at.minute / 60)).padStart(2, '0')}:${String(at.minute % 60).padStart(2, '0')}`,
-            'cita.estado': summary.status === 'pending' ? 'por_confirmar' : 'confirmada',
+            'cita.estado': summary.status === 'pending' ? 'por_confirmar' : summary.status === 'unpaid' ? 'esperando_pago' : 'confirmada',
             'agenda.nombre': s.title || p.row.name,
             'envio.id': conversion.submission_id,
             valor: conversion.value,
@@ -834,6 +900,357 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         };
         for (const k of ATTRIBUTION_KEYS) if (k !== 'page_url' && k !== 'referrer') vars[k] = origin[k] ?? null;
         return { conversion, redirect_url: fillRedirectUrl(template, (k) => vars[k] ?? null) };
+    }
+
+    // ─────────────────────────── Cobrar al agendar (v0.1.387) ───────────────────────────
+
+    /**
+     * Lo que se cobra al agendar este servicio (null = no se cobra): el monto
+     * lo decide el SERVIDOR con el precio del servicio y la configuración de
+     * la página, nunca el navegador.
+     */
+    private payPlan(p: ResolvedPage, service: BookingServiceItem): { amount: number; kind: BookingPaymentAmount; required: boolean; label: string } | null {
+        if (!this.collections) return null;
+        const plan = bookingPaymentAmount(p.config.payment, service);
+        if (!plan) return null;
+        return { ...plan, required: p.config.payment.mode === 'required', label: bookingPayLabel(plan.amount, p.config.payment.currency, p.format.number_format) };
+    }
+
+    /** ¿Se puede cobrar ahora? (la conexión sigue siendo del equipo, el plan incluye cobros, la moneda sirve). */
+    private async chargeProblem(p: ResolvedPage): Promise<string | null> {
+        if (!this.collections) return 'Los cobros no están disponibles.';
+        const team = await this.collections.teamConnections(p.tenantId).catch(() => null);
+        if (team === null) return 'No se pudo revisar la cuenta de cobro de la agenda.';
+        const conn = team.find((c) => c.id === p.config.payment.connection_id);
+        if (!conn) return 'La cuenta de cobro de la agenda ya no existe, no es del equipo o el plan no incluye cobros por integraciones.';
+        return collectionCurrencyError(conn.provider, p.config.payment.currency);
+    }
+
+    /** Un cobro que no se pudo armar es de la empresa: Problemas (se cierra solo cuando vuelve a funcionar). */
+    private reportPayment(p: ResolvedPage, err: unknown): void {
+        const reason = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`Agenda ${p.pageId}: no se pudo preparar el pago de una cita: ${reason}`);
+        this.incidents?.report({
+            tenantId: p.tenantId,
+            key: `booking-pay:${p.pageId}`,
+            source: 'booking',
+            sourceId: p.pageId,
+            listId: p.listId,
+            ownerId: p.createdBy,
+            title: `La agenda «${p.row.name}» no puede cobrar`,
+            message: `Alguien intentó agendar y no se pudo preparar el pago: ${reason} Revisa la cuenta de cobro en Ajustes → Cobrar al agendar.`,
+        });
+    }
+
+    /**
+     * Arma el link de pago de una cita recién guardada (con la conexión del
+     * equipo) y lo deja anotado en la cita. Pagar para confirmar: el link vence
+     * con el horario apartado. Si no, sirve hasta que termina la cita. Vuelve
+     * a la página de la cita (`?pago=1`), que muestra cómo quedó el pago.
+     */
+    private async createPaymentLink(p: ResolvedPage, appt: BookingAppointmentRow, service: BookingServiceItem, amount: number, base: string): Promise<BookingAppointmentRow> {
+        const cfg = p.config.payment;
+        if (!this.collections || cfg.connection_id === null) throw new CollectionError('La agenda no tiene cuenta de cobro.');
+        const when = formatBookingWhen(appt.startAt.toISOString(), p.timeZone, p.format.time_format, { year: false });
+        const title = (cfg.title.trim() || `${service.name} · ${when}`).slice(0, 200);
+        const expiresAt = appt.paymentUntil ?? new Date(Math.max(appt.endAt.getTime(), Date.now() + 3_600_000));
+        const back = `${this.apptUrl(base, p, appt)}?pago=1`;
+        const link = await this.collections.createForBooking(p.tenantId, {
+            pageId: p.pageId,
+            connectionId: cfg.connection_id,
+            listId: p.listId,
+            recordId: appt.recordId,
+            title,
+            amount,
+            currency: cfg.currency,
+            payerEmail: appt.clientEmail,
+            expiresAt,
+            returnUrlFor: () => back,
+        });
+        this.incidents?.resolve(p.tenantId, `booking-pay:${p.pageId}`);
+        const [row] = await this.tenantDb.withTenant(p.tenantId, (tx) =>
+            tx
+                .update(bookingAppointments)
+                .set({ paymentLinkId: link.id, updatedAt: new Date() })
+                .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id)))
+                .returning(),
+        );
+        return row ?? { ...appt, paymentLinkId: link.id };
+    }
+
+    /**
+     * El cobro de una cita como lo ve el cliente (null = no se cobra). Con
+     * `refresh`, si sigue pendiente se le pregunta al proveedor (a lo sumo cada
+     * 15 s): el aviso a veces llega después que la persona.
+     */
+    async paymentFor(p: ResolvedPage, appt: BookingAppointmentRow, opts: { refresh?: boolean } = {}): Promise<PublicAppointmentPayment | null> {
+        if (appt.paymentLinkId === null || !this.collections) return null;
+        // Marcada pagada a mano: el link ya no sirve, pero la cita está pagada.
+        const link = await this.collections.linkState(p.tenantId, appt.paymentLinkId, { refresh: opts.refresh === true && appt.paidMarkedAt === null }).catch(() => null);
+        if (!link) return null;
+        if (appt.paidMarkedAt !== null && link.status !== 'approved' && link.status !== 'refunded') {
+            const svc = p.config.services.find((s) => s.id === appt.serviceId);
+            return {
+                status: 'paid',
+                amount_label: bookingPayLabel(link.amount, link.currency, p.format.number_format),
+                kind: bookingPaymentAmount(p.config.payment, svc)?.kind ?? 'full',
+                required: p.config.payment.mode === 'required',
+                url: null,
+                until: null,
+                provider: link.provider,
+                button_label: p.config.payment.button_label.trim() || 'Pagar ahora',
+                manual: true,
+            };
+        }
+        const timedOut = link.expiresAt !== null && link.expiresAt.getTime() <= Date.now();
+        const status: PublicAppointmentPayment['status'] =
+            link.status === 'approved'
+                ? 'paid'
+                : link.status === 'refunded'
+                  ? 'refunded'
+                  : link.status === 'expired' || link.status === 'cancelled' || (link.status === 'pending' && timedOut)
+                    ? 'expired'
+                    : link.status === 'pending'
+                      ? 'pending'
+                      : 'failed';
+        // Se paga mientras la cita sigue viva (una por confirmar todavía no: primero se aprueba).
+        const live = appt.status === 'unpaid' || appt.status === 'confirmed' || appt.status === 'rescheduled';
+        const svc = p.config.services.find((s) => s.id === appt.serviceId);
+        return {
+            status,
+            amount_label: bookingPayLabel(link.amount, link.currency, p.format.number_format),
+            kind: bookingPaymentAmount(p.config.payment, svc)?.kind ?? 'full',
+            required: appt.status === 'unpaid' || p.config.payment.mode === 'required',
+            url: live && (status === 'pending' || status === 'failed') && !timedOut ? link.url : null,
+            until: appt.status === 'unpaid' && appt.paymentUntil ? appt.paymentUntil.toISOString() : null,
+            provider: link.provider,
+            button_label: p.config.payment.button_label.trim() || 'Pagar ahora',
+        };
+    }
+
+    /**
+     * Esperando el pago y no se pudo seguir (no se armó el link, o se venció
+     * el tiempo): la cita se cancela y el horario queda libre. `paymentUntil`
+     * se conserva: así se sabe que se liberó por el pago (un pago que llega
+     * tarde vuelve a intentar tomar el horario). Devuelve la cita liberada
+     * (null = ya no estaba esperando el pago).
+     */
+    private async releaseUnpaid(p: ResolvedPage, appt: BookingAppointmentRow, x: { notify: boolean }): Promise<BookingAppointmentRow | null> {
+        const [row] = await this.tenantDb.withTenant(p.tenantId, (tx) =>
+            tx
+                .update(bookingAppointments)
+                .set({ status: 'cancelled', cancelledAt: new Date(), updatedAt: new Date() })
+                .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id), eq(bookingAppointments.status, 'unpaid')))
+                .returning(),
+        );
+        if (!row) return null;
+        const status = statusValueFor(p.config.mapping, 'cancelled');
+        if (status !== null && p.config.mapping.status_field_id !== null) {
+            await this.records
+                .update(p.tenantId, SYSTEM_ACTOR, String(p.listId), appt.recordId, { data: { [jsonbKeyForField(p.config.mapping.status_field_id)]: status } }, { origin: 'booking' })
+                .catch((err: unknown) => this.logger.warn(`Agenda ${p.pageId}: no se pudo marcar como cancelada la cita sin pagar ${appt.id}: ${String(err)}`));
+        }
+        if (row.paymentLinkId !== null) await this.collections?.expireForBooking(p.tenantId, row.paymentLinkId).catch(() => undefined);
+        this.forgetSlots(p.tenantId);
+        if (x.notify) {
+            const base = await this.base(p.tenantId);
+            const names = await this.staffNames(p.config);
+            // El cliente se entera siempre: si no, se presentaría a una cita que no existe.
+            void this.sendClientMail(p, row, 'unpaid_expired', { base, names });
+        }
+        return row;
+    }
+
+    /**
+     * Las citas que esperaban el pago y se les venció el tiempo: antes de
+     * liberarlas se le pregunta al proveedor (el aviso pudo no llegar); si
+     * pagó, se confirma. El UPDATE condicional hace que cada una se decida una
+     * vez aunque dos nodos barran a la vez.
+     */
+    async expireUnpaid(now = new Date()): Promise<number> {
+        const rows = await this.db
+            .select()
+            .from(bookingAppointments)
+            .where(and(eq(bookingAppointments.status, 'unpaid'), lte(bookingAppointments.paymentUntil, now)))
+            .orderBy(asc(bookingAppointments.paymentUntil))
+            .limit(EXPIRE_BATCH);
+        let done = 0;
+        for (const appt of rows) {
+            try {
+                const p = await this.resolveById(appt.pageId);
+                if (!p) continue;
+                const pay = await this.paymentFor(p, appt, { refresh: true });
+                if (pay?.status === 'paid') {
+                    if (await this.confirmUnpaid(p, appt, { by: null })) done++;
+                    continue;
+                }
+                if (await this.releaseUnpaid(p, appt, { notify: true })) done++;
+            } catch (err) {
+                this.logger.warn(`Agenda: no se pudo vencer la cita sin pagar ${appt.id}: ${String(err)}`);
+            }
+        }
+        return done;
+    }
+
+    /**
+     * Llegó el pago de un link de una cita (el aviso del proveedor, «Verificar»
+     * o la consulta al volver del checkout).
+     *  - Esperando el pago: se confirma (o pasa a «por confirmar» si la agenda aprueba).
+     *  - Liberada por no pagar a tiempo: si el horario sigue libre, se vuelve a tomar.
+     *  - Si no: el equipo se entera para reprogramar o devolver el pago.
+     */
+    async onLinkPaid(tenantId: number, linkId: number): Promise<void> {
+        const [appt] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select()
+                .from(bookingAppointments)
+                .where(and(eq(bookingAppointments.tenantId, tenantId), eq(bookingAppointments.paymentLinkId, linkId)))
+                .limit(1),
+        );
+        if (!appt) return;
+        const p = await this.resolveById(appt.pageId);
+        if (!p) return;
+        if (appt.status === 'unpaid') {
+            await this.confirmUnpaid(p, appt, { by: null });
+            return;
+        }
+        if (appt.status === 'cancelled' && appt.paymentUntil !== null) {
+            const retaken = await this.retakeAfterLatePayment(p, appt);
+            if (retaken) return;
+            this.notifyLatePayment(p, appt, appt.startAt.getTime() <= Date.now() ? 'past' : 'taken');
+            return;
+        }
+        if (appt.status === 'cancelled' || appt.status === 'declined') this.notifyLatePayment(p, appt, 'cancelled');
+        // Confirmada o por confirmar: el pago queda en sus columnas (las escribe el link); nada más que hacer.
+    }
+
+    /**
+     * Esperando el pago → confirmada (o «por confirmar», si la agenda aprueba
+     * citas y el pago lo hizo el cliente). `by` = la persona del equipo que la
+     * marcó pagada a mano (entonces no se pide aprobación: ya la vio alguien).
+     */
+    async confirmUnpaid(p: ResolvedPage, appt: BookingAppointmentRow, x: { by: number | null; recordDone?: boolean }): Promise<BookingAppointmentRow | null> {
+        const service = p.config.services.find((s) => s.id === appt.serviceId);
+        const mode = service ? serviceApprovalMode(p.config.approval, service) : 'none';
+        const needsApproval = x.by === null && (mode === 'all' || (mode === 'new_clients' && !(await this.knownClient(p, appt.clientEmail ?? ''))));
+        if (!needsApproval) return this.approvePending(p, appt, { by: x.by, recordDone: x.recordDone, from: 'unpaid' });
+        const [row] = await this.tenantDb.withTenant(p.tenantId, (tx) =>
+            tx
+                .update(bookingAppointments)
+                .set({
+                    status: 'pending',
+                    paymentUntil: null,
+                    pendingUntil: new Date(Math.min(Date.now() + p.config.approval.hours * 3_600_000, appt.startAt.getTime())),
+                    updatedAt: new Date(),
+                })
+                .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id), eq(bookingAppointments.status, 'unpaid')))
+                .returning(),
+        );
+        if (!row) return null;
+        const status = statusValueFor(p.config.mapping, 'pending');
+        if (status !== null && p.config.mapping.status_field_id !== null) {
+            await this.records
+                .update(p.tenantId, SYSTEM_ACTOR, String(p.listId), appt.recordId, { data: { [jsonbKeyForField(p.config.mapping.status_field_id)]: status } }, { origin: 'booking' })
+                .catch((err: unknown) => this.logger.warn(`Agenda ${p.pageId}: no se pudo marcar como por confirmar la cita ${appt.id}: ${String(err)}`));
+        }
+        this.forgetSlots(p.tenantId);
+        const base = await this.base(p.tenantId);
+        const names = await this.staffNames(p.config);
+        const info = this.eventInfo(p, row, 'requested', 'client', base, names, null);
+        this.notifyApprovers(p, row, info, 'requested');
+        this.dispatchEvent(p, row, info, null);
+        if (p.config.notifications.confirm_email) void this.sendClientMail(p, row, 'requested', { base, names });
+        return row;
+    }
+
+    /**
+     * Un pago que llegó después de liberar el horario: si sigue libre (y la
+     * cita no pasó), se vuelve a tomar — dentro del candado de la persona, como
+     * una reserva — y se confirma. Devuelve si se pudo.
+     */
+    private async retakeAfterLatePayment(p: ResolvedPage, appt: BookingAppointmentRow): Promise<boolean> {
+        const staff = p.config.staff.find((s) => s.id === appt.staffId);
+        const service = p.config.services.find((s) => s.id === appt.serviceId);
+        if (!staff || !service || appt.startAt.getTime() <= Date.now() || p.readOnly) return false;
+        const ymd = zonedDayAndMinute(appt.startAt, p.timeZone).ymd;
+        const outside = await this.availability.outside(p, staff, ymd, ymd);
+        const row = await this.withStaffLock(p.tenantId, staffKey(p.pageId, staff), async (tx) => {
+            const reason = await this.availability.checkInTx(tx, p, staff, service, appt.startAt, outside, { excludeRecordId: appt.recordId, durationMin: appointmentMinutes(appt) });
+            if (reason) return null;
+            const [r] = await tx
+                .update(bookingAppointments)
+                // Vuelve a apartar el horario mientras se confirma (el barrido no lo libera de nuevo).
+                .set({ status: 'unpaid', cancelledAt: null, paymentUntil: new Date(Date.now() + RETAKE_HOLD_MS), updatedAt: new Date() })
+                .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id), eq(bookingAppointments.status, 'cancelled')))
+                .returning();
+            return r ?? null;
+        }).catch((err: unknown) => {
+            this.logger.warn(`Agenda ${p.pageId}: no se pudo volver a tomar el horario de la cita pagada ${appt.id}: ${String(err)}`);
+            return null;
+        });
+        if (!row) return false;
+        return (await this.confirmUnpaid(p, row, { by: null })) !== null;
+    }
+
+    /** El pago llegó y la cita ya no puede confirmarse: al equipo (para reprogramar o devolver) y al cliente. */
+    private notifyLatePayment(p: ResolvedPage, appt: BookingAppointmentRow, why: 'taken' | 'past' | 'cancelled'): void {
+        const when = formatBookingWhen(appt.startAt.toISOString(), p.timeZone, p.format.time_format, { year: false });
+        const client = (appt.clientName ?? '').trim() || 'Un cliente';
+        const staff = p.config.staff.find((s) => s.id === appt.staffId);
+        const ids = new Set(this.approverIds(p, appt));
+        if (staff?.kind === 'user' && staff.staff_user_id !== null) ids.add(staff.staff_user_id);
+        const reason =
+            why === 'cancelled'
+                ? 'la cita ya estaba cancelada'
+                : why === 'past'
+                  ? 'el horario ya pasó'
+                  : 'el horario ya lo tomó otra persona';
+        this.notify?.emit({
+            type: 'booking',
+            tenantId: p.tenantId,
+            listId: p.listId,
+            recordId: appt.recordId,
+            userIds: [...ids],
+            kind: 'update',
+            title: `Llegó el pago de ${client}, pero ${reason}`,
+            body: `En «${p.row.name}» (${when}). Comunícate con el cliente para reprogramar la cita o devolverle el pago.`,
+        });
+        void (async () => {
+            const base = await this.base(p.tenantId);
+            const names = await this.staffNames(p.config);
+            await this.sendClientMail(p, appt, 'paid_late', { base, names });
+        })().catch(() => undefined);
+    }
+
+    /** v0.1.387 — Cómo va el pago de una cita (la página pregunta cada pocos segundos al volver del checkout). */
+    async paymentStatus(ref: string, ip: string): Promise<PublicAppointmentSummary> {
+        const { p, appt, stale } = await this.resolveAppointment(ref);
+        await this.enforce(PAY_POLL_LIMITS, p.pageId, ip, 'consultas');
+        const payment = await this.paymentFor(p, appt, { refresh: true });
+        const row = await this.settleIfPaid(p, appt, payment);
+        const base = await this.base(p.tenantId);
+        const names = await this.staffNames(p.config);
+        return this.summary(p, row, base, names, stale, row.status === appt.status ? payment : await this.paymentFor(p, row));
+    }
+
+    /**
+     * Si la consulta al proveedor encontró el pago y la cita todavía espera el
+     * pago, se confirma EN EL ACTO (el aviso del link corre en segundo plano y
+     * llegaría segundos después: la página mostraría «Pagado» con la cita
+     * todavía «Esperando el pago»). Es idempotente: confirmar es un UPDATE
+     * condicional, así que el aviso que llega después no hace nada.
+     * Sólo la cita que espera el pago: un pago tardío (horario ya liberado) lo
+     * resuelve el aviso, que es el único que avisa al equipo.
+     */
+    private async settleIfPaid(p: ResolvedPage, appt: BookingAppointmentRow, payment: PublicAppointmentPayment | null): Promise<BookingAppointmentRow> {
+        if (payment?.status !== 'paid' || payment.manual || appt.status !== 'unpaid' || appt.paymentLinkId === null) return appt;
+        await this.onLinkPaid(p.tenantId, appt.paymentLinkId).catch((err: unknown) =>
+            this.logger.warn(`Agenda ${p.pageId}: no se pudo confirmar la cita pagada ${appt.id}: ${String(err)}`),
+        );
+        const [fresh] = await this.tenantDb.withTenant(p.tenantId, (tx) =>
+            tx.select().from(bookingAppointments).where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id))).limit(1),
+        );
+        return fresh ?? appt;
     }
 
     /**
@@ -857,6 +1274,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             meeting: MeetingInfo | null;
             status: BookingStatus;
             pendingUntil: Date | null;
+            /** v0.1.387 — Esperando el pago: hasta cuándo queda apartado el horario. */
+            paymentUntil?: Date | null;
         },
     ): Promise<{ appt: BookingAppointmentRow; record: { id: number; data: Record<string, unknown> } } | { reason: string }> {
         const ymd = zonedDayAndMinute(start, p.timeZone).ymd;
@@ -897,6 +1316,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                         endAt: end,
                         status: x.status,
                         pendingUntil: x.pendingUntil,
+                        paymentUntil: x.paymentUntil ?? null,
                         clientName: x.clientName,
                         clientEmail: x.clientEmail,
                         clientTz: x.clientTz,
@@ -1329,7 +1749,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         return null;
     }
 
-    summary(p: ResolvedPage, appt: BookingAppointmentRow, base: string, names: Map<string, string>, stale = false): PublicAppointmentSummary {
+    summary(p: ResolvedPage, appt: BookingAppointmentRow, base: string, names: Map<string, string>, stale = false, payment: PublicAppointmentPayment | null = null): PublicAppointmentSummary {
         const svc = p.config.services.find((s) => s.id === appt.serviceId);
         const locked = this.lockedReason(p, appt, new Date(), stale);
         const url = this.apptUrl(base, p, appt);
@@ -1347,9 +1767,11 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             time_zone: p.timeZone,
             manage_url: url,
             ics_url: `${base}/api/v1/public/booking/manage/${this.manageRef(p.tenantId, appt.id, appt.manageVersion)}/ics`,
-            can_reschedule: locked === null && p.config.rules.allow_reschedule,
+            // v0.1.387 — esperando el pago no se reprograma (se paga o se deja vencer).
+            can_reschedule: locked === null && p.config.rules.allow_reschedule && appt.status !== 'unpaid',
             can_cancel: locked === null && p.config.rules.allow_cancel,
             locked_reason: locked,
+            payment,
         };
     }
 
@@ -1358,7 +1780,15 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const base = await this.base(p.tenantId);
         const names = await this.staffNames(p.config);
         const booking = await this.buildMeta(p);
-        return { appointment: this.summary(p, appt, base, names, stale), booking, service_id: appt.serviceId, staff_id: appt.staffId };
+        // v0.1.387 — el pago (si espera el pago, se le pregunta al proveedor: el cliente pudo volver de pagar).
+        const payment = await this.paymentFor(p, appt, { refresh: appt.status === 'unpaid' });
+        const row = await this.settleIfPaid(p, appt, payment);
+        return {
+            appointment: this.summary(p, row, base, names, stale, row.status === appt.status ? payment : await this.paymentFor(p, row)),
+            booking,
+            service_id: row.serviceId,
+            staff_id: row.staffId,
+        };
     }
 
     /** La página HTML de gestión: null si el enlace no sirve (mismo 404 para todo). */
@@ -1431,13 +1861,22 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const [row] = await this.tenantDb.withTenant(p.tenantId, (tx) =>
             tx
                 .update(bookingAppointments)
-                .set({ status: 'cancelled', cancelledAt: new Date(), updatedAt: new Date() })
+                // v0.1.387 — cancelada por el cliente: `paymentUntil` en null (un pago que llegue tarde no la revive).
+                .set({ status: 'cancelled', cancelledAt: new Date(), paymentUntil: null, updatedAt: new Date() })
                 .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id), notInArray(bookingAppointments.status, [...BOOKING_INACTIVE_STATUSES])))
                 .returning(),
         );
         // Dos pedidos a la vez (o el equipo la canceló un segundo antes): sólo uno cancela.
         if (!row) throw new ForbiddenException({ code: 'booking_locked', message: 'Esta cita ya no se puede cancelar.', data: { status: 403 } });
         this.forgetSlots(p.tenantId);
+        if (appt.status === 'unpaid' && row.paymentLinkId !== null) await this.collections?.expireForBooking(p.tenantId, row.paymentLinkId).catch(() => undefined);
+        if (appt.status === 'unpaid') {
+            // Nadie del equipo supo de ella (todavía no se había pagado): sólo el correo al cliente.
+            const base = await this.base(p.tenantId);
+            const names = await this.staffNames(p.config);
+            void this.sendClientMail(p, row, 'cancelled', { base, names });
+            return this.summary(p, row, base, names);
+        }
         const base = await this.base(p.tenantId);
         const names = await this.staffNames(p.config);
         const staff = p.config.staff.find((s) => s.id === appt.staffId);
@@ -1940,7 +2379,9 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         if (!this.mail || !appt.clientEmail) return false;
         if (!(await this.allowClientMail(appt.clientEmail))) return false;
         const brand = await this.emailBrand(p, x.base);
-        const summary = this.summary(p, appt, x.base, x.names);
+        // v0.1.387 — el cobro de la cita (el botón para pagar va en el correo).
+        const payment = await this.paymentFor(p, appt).catch(() => null);
+        const summary = this.summary(p, appt, x.base, x.names, false, payment);
         const message = bookingClientEmail(brand, {
             kind,
             clientName: appt.clientName ?? '',
@@ -1965,6 +2406,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             byTeam: x.byTeam === true,
             reason: x.reason ?? appt.declineReason,
             pendingUntil: appt.pendingUntil ? appt.pendingUntil.toISOString() : null,
+            payment: payment ? { status: payment.status, amount: payment.amount_label, url: payment.url, until: payment.until, label: payment.button_label } : null,
         });
         const ics = this.icsFor(p, appt, x.base, x.names);
         const key = `booking-mail:${p.pageId}`;
@@ -2155,11 +2597,12 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
 
     private async recordDto(p: ResolvedPage, appt: BookingAppointmentRow, actor: BookingDecider): Promise<RecordBookingDto> {
         const names = await this.staffNames(p.config);
-        let decidedBy: string | null = null;
-        if (appt.decidedBy !== null) {
-            const [u] = await this.db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, appt.decidedBy)).limit(1);
-            decidedBy = u ? u.name.trim() || u.email : null;
-        }
+        const nameOf = async (id: number | null): Promise<string | null> => {
+            if (id === null) return null;
+            const [u] = await this.db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, id)).limit(1);
+            return u ? u.name.trim() || u.email : null;
+        };
+        const decidedBy = await nameOf(appt.decidedBy);
         return {
             appointment_id: appt.id,
             page_id: p.pageId,
@@ -2177,6 +2620,11 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             decided_by_name: decidedBy,
             decided_at: appt.decidedAt ? appt.decidedAt.toISOString() : null,
             decline_reason: appt.declineReason,
+            payment_until: appt.status === 'unpaid' && appt.paymentUntil ? appt.paymentUntil.toISOString() : null,
+            payment: await this.paymentFor(p, appt).catch(() => null),
+            can_mark_paid: appt.status === 'unpaid' && !p.readOnly && this.canDecide(actor, p, appt),
+            paid_marked_by_name: await nameOf(appt.paidMarkedBy),
+            paid_marked_at: appt.paidMarkedAt ? appt.paidMarkedAt.toISOString() : null,
         };
     }
 
@@ -2187,6 +2635,18 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         if (!appt) throw apptNotFound();
         const p = await this.resolveById(appt.pageId);
         if (!p) throw apptNotFound();
+        if (input.decision === 'mark_paid') {
+            // v0.1.387 — esperando el pago, el cliente pagó por otro medio: se confirma a mano.
+            if (appt.status !== 'unpaid') throw new ConflictException({ code: 'booking_not_unpaid', message: 'Esta cita ya no está esperando el pago.', data: { status: 409 } });
+            if (!this.canDecide(actor, p, appt)) {
+                throw new ForbiddenException({ code: 'booking_not_approver', message: 'No eres de quienes aprueban las citas de esta agenda.', data: { status: 403 } });
+            }
+            if (p.readOnly) throw new ForbiddenException({ code: 'read_only', message: 'La cuenta está en solo lectura: no se pueden confirmar citas.', data: { status: 403 } });
+            const row = await this.confirmUnpaid(p, appt, { by: actor.userId });
+            if (!row) throw new ConflictException({ code: 'booking_not_unpaid', message: 'Esta cita ya no está esperando el pago.', data: { status: 409 } });
+            if (row.paymentLinkId !== null) await this.collections?.expireForBooking(p.tenantId, row.paymentLinkId).catch(() => undefined);
+            return this.recordDto(p, row, actor);
+        }
         if (appt.status !== 'pending') throw notPending();
         if (!this.canDecide(actor, p, appt)) {
             throw new ForbiddenException({ code: 'booking_not_approver', message: 'No eres de quienes aprueban las citas de esta agenda.', data: { status: 403 } });
@@ -2210,7 +2670,14 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     async approvePending(
         p: ResolvedPage,
         appt: BookingAppointmentRow,
-        x: { by: number | null; recordDone?: boolean; times?: { start: Date; end: Date }; expired?: boolean },
+        x: {
+            by: number | null;
+            recordDone?: boolean;
+            times?: { start: Date; end: Date };
+            expired?: boolean;
+            /** v0.1.387 — `unpaid`: llegó el pago de una que lo esperaba (o el equipo la marcó pagada). */
+            from?: 'pending' | 'unpaid';
+        },
     ): Promise<BookingAppointmentRow | null> {
         const staff = p.config.staff.find((s) => s.id === appt.staffId) ?? null;
         const service = p.config.services.find((s) => s.id === appt.serviceId);
@@ -2222,15 +2689,20 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                 .set({
                     status: 'confirmed',
                     pendingUntil: null,
-                    decidedBy: x.by && x.by > 0 ? x.by : null,
-                    decidedAt: new Date(),
+                    paymentUntil: null,
+                    // v0.1.387 — al llegar el pago no decide nadie; el equipo que la marca pagada a mano sí queda.
+                    ...(x.from === 'unpaid'
+                        ? x.by && x.by > 0
+                            ? { paidMarkedBy: x.by, paidMarkedAt: new Date() }
+                            : {}
+                        : { decidedBy: x.by && x.by > 0 ? x.by : null, decidedAt: new Date() }),
                     remindersSent: this.passedReminders(p.config, start),
                     meetingUrl: meeting?.url ?? null,
                     meetingProvider: meeting?.provider ?? null,
                     ...(x.times ? { startAt: x.times.start, endAt: x.times.end } : {}),
                     updatedAt: new Date(),
                 })
-                .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id), eq(bookingAppointments.status, 'pending')))
+                .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id), eq(bookingAppointments.status, x.from ?? 'pending')))
                 .returning(),
         );
         if (!row) return null;
@@ -2379,6 +2851,12 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                     : new Date(start!.getTime() + (Number.isFinite(durRaw) && durRaw > 0 ? durRaw : (appt.endAt.getTime() - appt.startAt.getTime()) / 60_000) * 60_000);
             return { start: start!, end };
         };
+        // v0.1.387 — Esperando el pago: el equipo la confirma a mano (pagó por otro medio).
+        if (appt.status === 'unpaid' && !p.readOnly && (said === 'confirmed' || said === 'rescheduled')) {
+            const row = await this.confirmUnpaid(p, appt, { by: c.actorId ?? null, recordDone: true });
+            if (row?.paymentLinkId != null) await this.collections?.expireForBooking(p.tenantId, row.paymentLinkId).catch(() => undefined);
+            return;
+        }
         // Una por confirmar: el equipo la aprueba o la rechaza poniéndole el estado en la ficha.
         if (appt.status === 'pending' && !p.readOnly) {
             if (said === 'confirmed' || said === 'rescheduled') {
@@ -2396,6 +2874,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             event = 'cancelled';
             patch.status = 'cancelled';
             patch.cancelledAt = new Date();
+            // v0.1.387 — la canceló el equipo: un pago que llegue tarde no la revive.
+            patch.paymentUntil = null;
         } else if (wasInactive && (said === 'confirmed' || said === 'rescheduled')) {
             // La reactivaron: vuelve a contar (sin aviso: lo decide el equipo).
             patch.status = 'confirmed';
@@ -2407,8 +2887,8 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             patch.startAt = t.start;
             patch.endAt = t.end;
             patch.remindersSent = this.passedReminders(p.config, t.start);
-            // Una por confirmar sigue por confirmar (sin calendario hasta aprobarla).
-            if (patch.status === undefined) patch.status = appt.status === 'pending' ? 'pending' : 'rescheduled';
+            // Una por confirmar sigue por confirmar (sin calendario hasta aprobarla); una que espera el pago, igual.
+            if (patch.status === undefined) patch.status = appt.status === 'pending' || appt.status === 'unpaid' ? appt.status : 'rescheduled';
             event = event ?? 'rescheduled';
         }
         // Cambió quien atiende (otra persona del equipo en el campo Persona).
@@ -2425,6 +2905,9 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             tx.update(bookingAppointments).set(patch).where(and(eq(bookingAppointments.tenantId, c.tenantId), eq(bookingAppointments.id, appt.id))).returning(),
         );
         if (!row || !event) return;
+        if (appt.status === 'unpaid' && row.status === 'cancelled' && row.paymentLinkId !== null) {
+            await this.collections?.expireForBooking(p.tenantId, row.paymentLinkId).catch(() => undefined);
+        }
         const base = await this.base(p.tenantId);
         const names = await this.staffNames(p.config);
         const info = this.eventInfo(p, row, event, 'team', base, names, event === 'rescheduled' ? { start: appt.startAt, end: appt.endAt } : null);

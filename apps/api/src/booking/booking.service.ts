@@ -43,6 +43,7 @@ import { newBookingToken, readBookingConfig, sanitizeBookingConfig } from './boo
 import { BookingHolidaysService } from './booking-holidays';
 import { bookingCacheKey, slotsNamespace } from './booking-public.service';
 import { PublicCacheService } from '../public-cache/public-cache.service';
+import { CollectionsService } from '../collections/collections.service';
 
 /** Cuentas que nunca atienden citas: el cliente del portal y el invitado externo. */
 const NOT_STAFF_ROLES = new Set(['client', 'guest']);
@@ -71,6 +72,7 @@ const STATUS_COLORS: Record<BookingStatus, string> = {
     cancelled: '#f43f5e',
     pending: '#8b5cf6',
     declined: '#64748b',
+    unpaid: '#0ea5e9',
 };
 /**
  * Cómo reconocer una opción que ya existe. OJO: «Por confirmar» contiene
@@ -82,6 +84,7 @@ const STATUS_MATCH: Record<BookingStatus, RegExp> = {
     cancelled: /cancel/i,
     pending: /por confirmar|pendiente|pending/i,
     declined: /rechaz|declin/i,
+    unpaid: /esperando (el )?pago|sin pagar|por pagar|unpaid/i,
 };
 
 /**
@@ -107,6 +110,8 @@ export interface BookingEditorOptions {
     calendars: BookingCalendarOption[];
     time_zone: string;
     time_zone_set: boolean;
+    /** v0.1.387 — Las conexiones de cobro DEL EQUIPO (para «Cobrar al agendar»). */
+    payment_connections?: Array<{ id: number; name: string; provider: string; test_mode: boolean; account_label: string | null }>;
 }
 
 @Injectable()
@@ -123,6 +128,8 @@ export class BookingService {
         @Optional() private readonly domains?: DomainsService,
         // v0.1.352 (ADR-S95) — al cambiar la agenda, la página guardada deja de valer.
         @Optional() private readonly cache?: PublicCacheService,
+        // v0.1.387 — cobrar al agendar con la conexión de cobro de la empresa.
+        @Optional() private readonly collections?: CollectionsService,
     ) {}
 
     /** La página guardada y los horarios de la empresa dejan de valer (en todos los servidores). */
@@ -205,6 +212,16 @@ export class BookingService {
             const base = new Set(bookingProblems(named, fields));
             const full = bookingProblems(named, fields, { staffCalendars: await this.staffCalendars(tenantId, config) });
             out.push(...full.filter((p) => !base.has(p)));
+        }
+        // v0.1.387 — la cuenta de cobro tiene que seguir siendo del equipo y cobrar en esa moneda.
+        if (config.payment.enabled && config.payment.connection_id !== null) {
+            const team = this.collections ? await this.collections.teamConnections(tenantId).catch(() => null) : null;
+            if (team) {
+                const conn = team.find((c) => c.id === config.payment.connection_id);
+                const base = new Set(bookingProblems(config, fields));
+                const full = bookingProblems(config, fields, { paymentConnection: conn ? { provider: conn.provider } : null });
+                out.push(...full.filter((p) => !base.has(p)));
+            }
         }
         return [...new Set(out)];
     }
@@ -389,7 +406,14 @@ export class BookingService {
         const calendars = await this.calendarOptions(tenantId);
         const tz = await this.tenantTimeZone(tenantId);
         const mine = await this.myCalendar.memberCalendars(tenantId, members.map((m) => m.id));
-        return { members: members.map((m) => ({ ...m, calendar: mine.get(m.id) ?? null })), calendars, time_zone: tz.zone, time_zone_set: tz.set };
+        const pay = this.collections ? await this.collections.teamConnections(tenantId).catch(() => []) : [];
+        return {
+            members: members.map((m) => ({ ...m, calendar: mine.get(m.id) ?? null })),
+            calendars,
+            time_zone: tz.zone,
+            time_zone_set: tz.set,
+            payment_connections: pay.map((c) => ({ id: c.id, name: c.name, provider: c.provider, test_mode: c.test_mode, account_label: c.account_label })),
+        };
     }
 
     /** Los calendarios conectados de la empresa (Google Calendar u Outlook). */
@@ -630,7 +654,14 @@ export class BookingService {
         const mapping = { ...m };
         if (m.status_field_id !== null && byId.get(m.status_field_id)?.type === 'select') {
             // v0.1.353 — «Por confirmar» y «Rechazada» sólo si la agenda aprueba citas.
-            const statuses: BookingStatus[] = ['confirmed', 'rescheduled', 'cancelled', ...(bookingUsesApproval(config) ? (['pending', 'declined'] as const) : [])];
+            const statuses: BookingStatus[] = [
+                'confirmed',
+                'rescheduled',
+                'cancelled',
+                ...(bookingUsesApproval(config) ? (['pending', 'declined'] as const) : []),
+                // v0.1.387 — «Esperando el pago» sólo si la agenda cobra para confirmar.
+                ...(config.payment.enabled && config.payment.mode === 'required' ? (['unpaid'] as const) : []),
+            ];
             for (const status of statuses) {
                 const key = `status_${status}` as const;
                 if (mapping[key] !== null) continue;

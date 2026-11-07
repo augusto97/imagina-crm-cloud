@@ -40,6 +40,7 @@ export type AuditAction =
     // v0.1.353 — aprobar o rechazar una cita por confirmar.
     | 'booking.approve'
     | 'booking.decline'
+    | 'booking.mark_paid'
     // v0.1.289 — verificación anti-robots de un formulario y de la empresa,
     // y la contraseña del portal de clientes.
     | 'form.captcha_on'

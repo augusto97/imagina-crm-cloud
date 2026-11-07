@@ -83,6 +83,7 @@ describe('Asistente/MCP: agenda de citas', () => {
     let viewerId: number;
     let client: Client;
     let readClient: Client;
+    let teamPay: Array<{ id: number; name: string; provider: string }> = [];
 
     beforeAll(async () => {
         [pg, redisC] = await Promise.all([startPostgres(), startRedis()]);
@@ -125,7 +126,9 @@ describe('Asistente/MCP: agenda de citas', () => {
             undefined,
             booking,
         );
-        const bookingTools = new BookingTools(lists, fields, booking, store);
+        // v0.1.387 — las cuentas de cobro del equipo (cobrar al agendar).
+        const payConnections = { teamConnections: () => Promise.resolve(teamPay) } as never;
+        const bookingTools = new BookingTools(lists, fields, booking, store, payConnections);
         const registry = new AiToolRegistry();
         structure.registerInto(registry);
         bookingTools.registerInto(registry);
@@ -272,6 +275,52 @@ describe('Asistente/MCP: agenda de citas', () => {
         const schema = json(await call('get_list_schema', { list: 'citas' }));
         const described = (schema.booking_pages as Array<Record<string, unknown>>).find((x) => x.name === 'Agenda diseñada')!;
         expect(described.design).toMatchObject({ template: 'cards', accent: '#7c3aed', show_prices: false, calendar_layout: 'stacked' });
+    });
+
+    it('v0.1.387 — cobrar al agendar: la cuenta del equipo, la moneda, el anticipo y un servicio sin cobro', async () => {
+        teamPay = [];
+        const none = await call('propose_configure_booking_page', spec({ name: 'Agenda con cobro', payment: { enabled: true } }));
+        expect(isError(none)).toBe(true);
+        expect(json(none).error).toContain('cuenta de cobro');
+
+        teamPay = [{ id: 77, name: 'PayPal', provider: 'paypal' }];
+        const cop = await call('propose_configure_booking_page', spec({ name: 'Agenda con cobro', payment: { enabled: true, currency: 'COP' } }));
+        expect(isError(cop)).toBe(true);
+        expect(json(cop).error).toContain('PayPal no cobra en pesos');
+
+        teamPay = [{ id: 77, name: 'Mercado Pago', provider: 'mercadopago' }];
+        const badDeposit = await call('propose_configure_booking_page', spec({ name: 'Agenda con cobro', payment: { enabled: true, amount: 'deposit', deposit_value: 150 } }));
+        expect(isError(badDeposit)).toBe(true);
+        expect(json(badDeposit).error).toContain('% del anticipo');
+
+        const proposed = json(
+            await call(
+                'propose_configure_booking_page',
+                spec({
+                    name: 'Agenda con cobro',
+                    services: [
+                        { name: 'Consulta', duration_min: 30, price: 80000 },
+                        { name: 'Control', duration_min: 20, payment: 'none' },
+                    ],
+                    staff: [{ user_id: adminId, schedule: weekdays }],
+                    payment: { enabled: true, mode: 'required', amount: 'deposit', deposit_kind: 'percent', deposit_value: 50, hold_minutes: 20 },
+                }),
+            ),
+        );
+        expect(proposed.ok).toBe(true);
+        expect(JSON.stringify(proposed)).toContain('Cobro al agendar');
+        await apply(proposed.proposal_id);
+        const pages = await withTenant(pg.db, tenantId, (tx) => tx.select().from(bookingPages));
+        const page = pages.find((x) => x.name === 'Agenda con cobro')!;
+        const cfg = page.config as { payment: Record<string, unknown>; services: Array<{ name: string; price: number | null; payment: string }> };
+        expect(cfg.payment).toMatchObject({ enabled: true, connection_id: 77, mode: 'required', amount: 'deposit', deposit_kind: 'percent', deposit_value: 50, hold_minutes: 20, currency: 'COP' });
+        expect(cfg.services.map((x) => [x.name, x.price, x.payment])).toEqual([
+            ['Consulta', 80000, 'inherit'],
+            ['Control', null, 'none'],
+        ]);
+        const schema = json(await call('get_list_schema', { list: 'citas' }));
+        const described = (schema.booking_pages as Array<Record<string, unknown>>).find((x) => x.name === 'Agenda con cobro')!;
+        expect(JSON.stringify(described.payment)).toContain('deposit');
     });
 
     it('con el alcance de sólo lectura no se ofrece la herramienta', async () => {

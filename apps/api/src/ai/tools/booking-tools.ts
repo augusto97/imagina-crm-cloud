@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import {
+    collectionCurrencyError,
     BOOKING_LOCATION_LABELS,
     BOOKING_MAPPING_TYPES,
     BOOKING_SLOT_INTERVALS,
@@ -32,6 +33,7 @@ import {
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { BookingService } from '../../booking/booking.service';
+import { CollectionsService } from '../../collections/collections.service';
 import { sanitizeBookingConfig } from '../../booking/booking-config';
 import { FieldsService } from '../../fields/fields.service';
 import { ListsService } from '../../lists/lists.service';
@@ -157,7 +159,8 @@ const pageSpec = z.object({
                 duration_min: z.number().int().min(5).max(720).describe('Duración por defecto'),
                 durations: z.array(z.number().int().min(5).max(720)).max(6).optional().describe('Otras duraciones que el cliente puede elegir (ej. [30, 60])'),
                 description: z.string().max(1000).optional(),
-                price: z.number().min(0).optional().describe('Sólo informativo (no se cobra)'),
+                price: z.number().min(0).optional().describe('Precio en la moneda de la empresa. Con payment.enabled es lo que se cobra al agendar (o la base del anticipo en %)'),
+                payment: z.enum(['inherit', 'none']).optional().describe('none = este servicio no se cobra aunque la agenda cobre'),
                 seats: z.number().int().min(1).max(500).optional().describe('Cupos por horario: 1 = individual (por defecto); más = grupal (una clase, un taller)'),
                 hours: scheduleSpec.optional().describe('Horario propio del servicio («sólo en la mañana»): recorta el de quien atiende'),
                 buffer_before_min: z.number().int().min(0).max(240).optional().describe('Margen antes propio de este servicio'),
@@ -233,6 +236,21 @@ const pageSpec = z.object({
         })
         .optional()
         .describe('Cómo se ve la página pública'),
+    payment: z
+        .object({
+            enabled: z.boolean().describe('Cobrar al agendar con la cuenta de cobro de la empresa (Mercado Pago, Wompi o PayPal): el dinero va a SU cuenta'),
+            connection_id: z.number().int().positive().optional().describe('Id de la conexión de cobro DEL EQUIPO (si hay una sola, se usa esa)'),
+            mode: z.enum(['required', 'optional']).optional().describe('required = la cita queda «Esperando el pago» con el horario apartado hold_minutes y se confirma sola al pagar (si no, se libera); optional = se confirma igual y el cliente paga después'),
+            amount: z.enum(['full', 'deposit']).optional().describe('full = el precio del servicio; deposit = un anticipo'),
+            deposit_kind: z.enum(['fixed', 'percent']).optional(),
+            deposit_value: z.number().min(0).optional().describe('Anticipo: el monto fijo, o el % del precio (1-100)'),
+            hold_minutes: z.number().int().min(10).max(240).optional().describe('Pagar para confirmar: cuántos minutos queda apartado el horario (por defecto 30)'),
+            currency: z.string().regex(/^[A-Z]{3}$/).optional().describe('Moneda (Wompi sólo COP; PayPal no cobra en COP)'),
+            title: z.string().max(200).optional().describe('Concepto del cobro; vacío = «servicio · fecha»'),
+            after: z.enum(['redirect', 'button']).optional().describe('redirect = al agendar lleva directo a pagar; button = muestra el botón en la confirmación'),
+        })
+        .optional()
+        .describe('v0.1.387 — Cobrar al agendar. Los servicios necesitan precio (o marcarlos payment: "none")'),
     verify_email: z.boolean().optional().describe('El cliente confirma su correo con un código de 6 números antes de agendar (recomendado con approval.mode new_clients)'),
     block_disposable_email: z.boolean().optional().describe('No aceptar correos temporales (mailinator, yopmail…)'),
     questions: z.array(z.string().max(63)).max(30).optional().describe('Slugs de los campos que se le preguntan además (motivo, empresa…)'),
@@ -255,6 +273,7 @@ export class BookingTools implements AiProposalApplier {
         private readonly fields: FieldsService,
         private readonly booking: BookingService,
         private readonly store: ProposalsStore,
+        @Optional() private readonly collections?: CollectionsService,
     ) {}
 
     registerInto(registry: AiToolRegistry): void {
@@ -330,6 +349,7 @@ export class BookingTools implements AiProposalApplier {
                     min_notice_min: s.min_notice_min ?? prev?.min_notice_min ?? null,
                     location: s.location ? this.buildLocation(s.location, `services.${s.name}`) : (prev?.location ?? {}),
                     approval: s.approval ?? prev?.approval ?? 'inherit',
+                    payment: s.payment ?? prev?.payment ?? 'inherit',
                     active: true,
                 });
             });
@@ -360,6 +380,7 @@ export class BookingTools implements AiProposalApplier {
             if (pendingMessage !== undefined) config.settings = { ...config.settings, pending_message: pendingMessage };
         }
         if (input.design) this.applyDesign(config, input.design, changes);
+        if (input.payment) await this.applyPayment(ctx, config, input.payment);
         if (input.verify_email !== undefined) config.settings = { ...config.settings, verify_email: input.verify_email };
         if (input.block_disposable_email !== undefined) config.settings = { ...config.settings, block_disposable_email: input.block_disposable_email };
 
@@ -398,7 +419,8 @@ export class BookingTools implements AiProposalApplier {
         const parsed = bookingConfigSchema.safeParse(config);
         if (!parsed.success) throw new AiToolError(`La configuración no es válida: ${parsed.error.issues[0]?.message ?? 'revisa los datos'}.`);
         const clean = sanitizeBookingConfig(parsed.data, fields, memberIds);
-        const problems = bookingProblems(clean, fields);
+        const payConn = clean.payment.enabled && clean.payment.connection_id !== null && this.collections ? (await this.collections.teamConnections(ctx.tenantId)).find((c) => c.id === clean.payment.connection_id) : undefined;
+        const problems = bookingProblems(clean, fields, clean.payment.enabled ? { paymentConnection: payConn ? { provider: payConn.provider } : null } : {});
         if (input.publish === true && problems.length > 0) throw new AiToolError(`Todavía no se puede publicar: ${problems[0]}`);
 
         // Vista previa en lenguaje claro.
@@ -455,6 +477,19 @@ export class BookingTools implements AiProposalApplier {
                           [ap.staff_approves ? 'quien atiende' : null, ...ap.approver_user_ids.map((id) => names.get(id) ?? `#${id}`)].filter(Boolean).join(', ') || 'quien administra la lista',
                       ].join(' · '),
         });
+        // v0.1.387 — cobrar al agendar.
+        const pay = clean.payment;
+        changes.push({
+            label: 'Cobro al agendar',
+            from: null,
+            to: !pay.enabled
+                ? 'no se cobra'
+                : [
+                      payConn ? `con ${payConn.name}` : 'sin cuenta de cobro',
+                      pay.amount === 'full' ? 'el precio del servicio' : pay.deposit_kind === 'percent' ? `anticipo del ${pay.deposit_value ?? '?'} %` : `anticipo de ${pay.deposit_value ?? '?'} ${pay.currency}`,
+                      pay.mode === 'required' ? `pagar para confirmar (horario apartado ${pay.hold_minutes} min)` : 'se confirma y paga después',
+                  ].join(' · '),
+        });
         changes.push({
             label: 'Seguridad',
             from: null,
@@ -499,6 +534,39 @@ export class BookingTools implements AiProposalApplier {
             },
             proposal,
         };
+    }
+
+    /**
+     * v0.1.387 — Cobrar al agendar: la conexión tiene que ser DEL EQUIPO (si
+     * hay una sola, se usa esa) y cobrar en esa moneda.
+     */
+    private async applyPayment(ctx: AiToolContext, config: BookingConfig, p: NonNullable<PageSpec['payment']>): Promise<void> {
+        const next = { ...config.payment };
+        next.enabled = p.enabled;
+        if (p.enabled) {
+            const team = this.collections ? await this.collections.teamConnections(ctx.tenantId) : [];
+            if (team.length === 0) throw new AiToolError('payment: la empresa no tiene una cuenta de cobro del equipo conectada (Mercado Pago, Wompi o PayPal en Integraciones).');
+            const id = p.connection_id ?? next.connection_id ?? (team.length === 1 ? team[0]!.id : null);
+            if (id === null) throw new AiToolError(`payment.connection_id: hay varias cuentas de cobro; elige una: ${team.map((c) => `${c.id} (${c.name})`).join(', ')}.`);
+            const conn = team.find((c) => c.id === id);
+            if (!conn) throw new AiToolError(`payment.connection_id: ${id} no es una cuenta de cobro del equipo. Cuentas: ${team.map((c) => `${c.id} (${c.name})`).join(', ')}.`);
+            next.connection_id = conn.id;
+            const currency = (p.currency ?? (conn.provider === 'wompi' ? 'COP' : conn.provider === 'paypal' && next.currency === 'COP' ? 'USD' : next.currency)).toUpperCase();
+            const why = collectionCurrencyError(conn.provider, currency);
+            if (why) throw new AiToolError(`payment.currency: ${why}`);
+            next.currency = currency;
+        }
+        if (p.mode !== undefined) next.mode = p.mode;
+        if (p.amount !== undefined) next.amount = p.amount;
+        if (p.deposit_kind !== undefined) next.deposit_kind = p.deposit_kind;
+        if (p.deposit_value !== undefined) next.deposit_value = p.deposit_value;
+        if (p.hold_minutes !== undefined) next.hold_minutes = p.hold_minutes;
+        if (p.title !== undefined) next.title = p.title;
+        if (p.after !== undefined) next.after = p.after;
+        if (next.amount === 'deposit' && (next.deposit_value === null || next.deposit_value <= 0 || (next.deposit_kind === 'percent' && next.deposit_value > 100))) {
+            throw new AiToolError(next.deposit_kind === 'percent' ? 'payment.deposit_value: el % del anticipo va de 1 a 100.' : 'payment.deposit_value: escribe el monto del anticipo.');
+        }
+        config.payment = next;
     }
 
     /**

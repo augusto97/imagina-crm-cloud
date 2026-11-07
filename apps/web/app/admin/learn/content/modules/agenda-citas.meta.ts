@@ -15,6 +15,7 @@ export const meta: LearnModuleMeta = {
         'Correo de confirmación con el evento para el calendario, recordatorios y enlaces para cambiar o cancelar',
         'Cada asesor conecta su Google Calendar u Outlook: no se ofrece lo ocupado, la cita llega con su enlace de Meet o Teams y moverla en el calendario la mueve en la app',
         'Citas que alguien del equipo aprueba (todas o sólo la primera de cada cliente), código por correo y freno a los correos temporales',
+        'Cobrar al agendar con Mercado Pago, Wompi o PayPal: todo el precio o un anticipo, y la cita se confirma sola al pagar',
         'Se publica con un enlace o dentro de tu sitio',
     ],
     articles: [
@@ -70,6 +71,15 @@ export const meta: LearnModuleMeta = {
             minutes: 6,
             level: 'intermediate',
             keywords: 'aprobar aprobacion rechazar por confirmar pendiente primera vez cliente nuevo plazo vencer codigo correo verificar temporales mailinator reservas falsas spam seguridad enlace de la cita',
+            needs: 'manage_lists',
+        },
+        {
+            id: 'agenda-cobro',
+            title: 'Cobrar al agendar',
+            summary: 'Que el cliente pague todo el precio o un anticipo con la cuenta de cobro de tu empresa; la cita se confirma sola al pagar y, si no paga, el horario se libera.',
+            minutes: 7,
+            level: 'intermediate',
+            keywords: 'cobrar pagar pago anticipo abono deposito adelanto precio mercado pago wompi paypal pse nequi tarjeta esperando el pago apartar horario liberar no paga marcar como pagada transferencia efectivo sin cobro gratis',
             needs: 'manage_lists',
         },
         {

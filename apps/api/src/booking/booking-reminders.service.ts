@@ -54,6 +54,8 @@ export class BookingRemindersService implements OnModuleInit, OnApplicationShutd
                 async () => {
                     await this.tick();
                     await this.publicSvc.expirePending();
+                    // v0.1.387 — y se liberan las que esperaban el pago y no pagaron a tiempo.
+                    await this.publicSvc.expireUnpaid();
                 },
                 { connection: conn() },
             );

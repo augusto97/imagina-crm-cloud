@@ -230,6 +230,16 @@ export class PublicBookingController {
         return this.svc.reschedule(ref, req.ip, input);
     }
 
+    /**
+     * v0.1.387 — Cómo va el pago de una cita (al volver del checkout, la página
+     * pregunta cada pocos segundos hasta que el pago entra). Nunca en caché.
+     */
+    @Get('manage/:ref/payment')
+    async payment(@Req() req: FastifyRequest, @Param('ref') ref: string, @Res() reply: FastifyReply): Promise<void> {
+        const out = await this.svc.paymentStatus(ref, req.ip);
+        reply.header('Cache-Control', 'no-store').header('Referrer-Policy', 'no-referrer').send(out);
+    }
+
     /** «Agregar a mi calendario»: el .ics de la cita, siempre al día. */
     @Get('manage/:ref/ics')
     async ics(@Param('ref') ref: string, @Res() reply: FastifyReply): Promise<void> {
@@ -485,7 +495,7 @@ export class RecordBookingController {
         await this.audit.log({
             tenantId: req.tenant!.tenantId,
             userId: req.authUserId ?? null,
-            action: input.decision === 'approve' ? 'booking.approve' : 'booking.decline',
+            action: input.decision === 'approve' ? 'booking.approve' : input.decision === 'mark_paid' ? 'booking.mark_paid' : 'booking.decline',
             targetType: 'record',
             targetId: id,
             targetLabel: `${out.service} · ${out.client_name || out.client_email}`.slice(0, 190),
