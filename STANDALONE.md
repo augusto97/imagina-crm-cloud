@@ -5536,6 +5536,22 @@ servidor estático no tiene; ahora `ci.sh` fija `WEB_DIST_DIR`—, y «Crear un
 formulario» buscaba un botón que pasó a ser un selector. Tiempo esperado: ~5
 minutos de pruebas y ~10 de publicación.
 
+**Addendum v0.1.390 — Las capturas se reutilizan.** Grabar las 110 demos en
+cada versión costaba ~10 minutos aunque el cambio no tocara ninguna pantalla
+(pedido del usuario: "no hagas trabajo innecesario… volver a tomar captura de
+todo por un cambio menor"). Ahora el job `gate` baja el paquete de la versión
+anterior y saca sus capturas (`web/help-media`, ~34 MB, ~5 s); `plan.mjs`
+decide qué grabar: los **archivos de escenarios que cambiaron** desde esa
+versión (`git diff` contra su etiqueta) y los que tienen una demo que falta
+(nueva o que falló). Las máquinas son las que hagan falta (1 a 5, unos
+3 minutos de trabajo cada una); sin nada que grabar, el job de capturas no
+corre. `run.mjs` acepta `HC_FILES` y `merge.mjs` junta: cada demo grabada
+reemplaza ENTERA a la anterior, las demás quedan y las que ya no existen en los
+escenarios se quitan. Todo de nuevo: «[capturas]» en el mensaje del commit o el
+input «todas» del workflow (también «ninguna»). Para regrabar UN módulo porque
+su pantalla cambió, se toca su escenario. Si algo falla al grabar, la versión
+sale con las capturas anteriores (antes salía sin esas demos).
+
 ---
 
 ### ADR-S76 — Galería de ideas: casos de uso como datos que se ACTIVAN sobre las listas de la empresa (v0.1.323)

@@ -1242,13 +1242,13 @@ export class ConnectorsService {
     }
 
     /** «Slack · Acme»; si ya existe, «Slack · Acme (2)». El nombre es único por empresa. */
-    private async uniqueName(tx: Tx, tenantId: number, base: string, label: string | null): Promise<string> {
+    private async uniqueName(tx: Tx, tenantId: number, base: string, label: string | null, exceptId?: number): Promise<string> {
         const wanted = label ? `${base} · ${label}` : base;
         const rows = await tx
-            .select({ name: connections.name })
+            .select({ id: connections.id, name: connections.name })
             .from(connections)
             .where(eq(connections.tenantId, tenantId));
-        const taken = new Set(rows.map((r) => r.name.toLowerCase()));
+        const taken = new Set(rows.filter((r) => r.id !== exceptId).map((r) => r.name.toLowerCase()));
         if (!taken.has(wanted.toLowerCase())) return wanted.slice(0, 120);
         for (let n = 2; n < 100; n += 1) {
             const candidate = `${wanted} (${n})`;
@@ -2151,14 +2151,26 @@ export class ConnectorsService {
         if (patch.actions !== undefined) config.actions = patch.actions;
         if (patch.oauth !== undefined) config.oauth = patch.oauth;
 
+        // v0.1.390 — Una app de la galería se puede renombrar («WhatsApp
+        // ventas»): queda marcada para mostrar ese nombre primero. Volver al
+        // automático lo arma de nuevo con la app y la cuenta.
+        const def = integrationDef(current.provider);
+        const resetName = patch.reset_name === true && def !== null;
+        if (resetName) delete config.custom_name;
+        else if (patch.name !== undefined && def) config.custom_name = true;
+
         const changes: Record<string, unknown> = { config, updatedAt: new Date() };
-        if (patch.name !== undefined) changes.name = patch.name;
+        if (patch.name !== undefined && !resetName) changes.name = patch.name;
         if (patch.base_url !== undefined) changes.baseUrl = patch.base_url;
         if (patch.auth_type !== undefined) changes.authType = patch.auth_type;
         if (patch.visibility !== undefined) changes.visibility = patch.visibility;
         changes.secrets = this.encryptAll(current.secrets, patch);
 
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            if (resetName && def) {
+                const label = typeof current.config.account_label === 'string' && current.config.account_label !== '' ? current.config.account_label : null;
+                changes.name = await this.uniqueName(tx, tenantId, def.name, label, id);
+            }
             const [updated] = await tx
                 .update(connections)
                 .set(changes)
@@ -2820,8 +2832,16 @@ export class ConnectorsService {
     }
 
     private mapDuplicate(err: unknown, name: string): unknown {
-        const message = err instanceof Error ? err.message : String(err);
-        if (message.includes('connections_tenant_name_ux')) {
+        // drizzle envuelve el error de Postgres: el nombre del índice viaja en
+        // la cadena de `cause` (v0.1.390: renombrar a un nombre ocupado daba 500).
+        let dup = false;
+        let cur: unknown = err;
+        for (let i = 0; i < 5 && cur && typeof cur === 'object'; i++) {
+            const c = cur as { message?: unknown; constraint?: unknown; cause?: unknown };
+            if (c.constraint === 'connections_tenant_name_ux' || (typeof c.message === 'string' && c.message.includes('connections_tenant_name_ux'))) dup = true;
+            cur = c.cause;
+        }
+        if (dup) {
             return new BadRequestException({
                 code: 'connection_name_taken',
                 message: `Ya existe una conexión llamada «${name}».`,
@@ -2872,6 +2892,7 @@ export class ConnectorsService {
             integration_key: def ? def.key : null,
             account_label: typeof account === 'string' && account !== '' ? account : null,
             name: row.name,
+            custom_name: row.config.custom_name === true,
             base_url: row.baseUrl,
             auth_type: row.authType as ConnectorAuthType,
             auth_key: String(row.config.auth_key ?? ''),

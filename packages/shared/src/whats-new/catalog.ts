@@ -2124,4 +2124,17 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver cómo funciona', href: '/aprende/integraciones/integraciones-mensajeria' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.390-renombrar-integraciones',
+        version: '0.1.390',
+        date: '2026-11-09',
+        kind: 'improvement',
+        title: 'Ponle nombre a cada app conectada',
+        summary:
+            'Con varias cuentas de la misma app («WhatsApp ventas», «WhatsApp soporte») ya sabes cuál es cuál: el nombre se ve en Integraciones y al elegirla en una automatización. Y los formularios ya no muestran la descripción interna de un campo como ayuda.',
+        media: { illustration: 'wab-was-conectar' },
+        body: 'Toca el **lápiz** junto al nombre en **Ajustes → Integraciones**. En un formulario, la ayuda de cada pregunta es sólo la que escribes; si quieres la descripción del campo, **Usar la descripción del campo** la copia.',
+        action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

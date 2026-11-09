@@ -535,7 +535,7 @@ function QuestionField({
                             {options.map((c) => (
                                 <option key={c.id} value={c.id}>
                                     {c.name}
-                                    {c.account_label ? ` · ${c.account_label}` : ''}
+                                    {c.custom_name && c.account_label ? ` · ${c.account_label}` : ''}
                                 </option>
                             ))}
                         </Select>

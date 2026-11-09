@@ -92,7 +92,7 @@ export function SqlSyncPage(): JSX.Element {
             <header className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3">
                 <IntegrationLogo integrationKey="sqlserver" size={44} />
                 <div className="imcrm-min-w-0 imcrm-flex-1">
-                    <h1 className="imcrm-text-xl imcrm-font-semibold">{conn?.account_label ?? __('SQL Server')}</h1>
+                    <h1 className="imcrm-text-xl imcrm-font-semibold">{conn?.custom_name ? conn.name : (conn?.account_label ?? __('SQL Server'))}</h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
                         {__('Trae el resultado de una consulta o de un procedimiento a una lista, cada tanto, sin duplicar.')}
                     </p>

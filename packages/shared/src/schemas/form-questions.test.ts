@@ -207,3 +207,22 @@ describe('ordenar en un campo de texto', () => {
         expect(formatRankingText(['Precio', 'Calidad'], true)).toBe('1. Precio\n2. Calidad');
     });
 });
+
+describe('ayuda de la pregunta (v0.1.390)', () => {
+    it('la descripción interna del campo no se cuela como ayuda: sólo la que se escribió en el formulario', () => {
+        const fields: FormFieldLike[] = [
+            { id: 1, slug: 'nit', label: 'NIT', type: 'text', config: {}, is_required: false, description: 'Sirve para cruzar con el ERP.' },
+            { id: 2, slug: 'nota', label: 'Nota', type: 'text', config: {}, is_required: false, description: 'Interno.' },
+        ];
+        const items = buildPublicFormItems(
+            config([
+                { id: 'qnit1', type: 'field', field_id: 1 },
+                { id: 'qnota1', type: 'field', field_id: 2, help: 'Sin dígito de verificación.' },
+            ]),
+            fields,
+        );
+        const byId = Object.fromEntries(items.map((i) => [i.id, i as PublicFormFieldItem]));
+        expect(byId.qnit1!.help).toBe('');
+        expect(byId.qnota1!.help).toBe('Sin dígito de verificación.');
+    });
+});

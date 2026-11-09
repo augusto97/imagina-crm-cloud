@@ -646,6 +646,7 @@ body.ib-embedded .ib-header-empty{display:none}
 .ib-label{display:block;font-size:var(--ib-q-fs);font-weight:var(--ib-q-fw);line-height:1.35;margin-bottom:6px}
 .ib-req{color:var(--ib-error);margin-left:3px}
 .ib-help{color:var(--ib-muted);font-size:calc(var(--ib-fs) - 2px);margin:-2px 0 8px;white-space:pre-wrap}
+@media (min-width:561px){.ib-field:is(.ib-w-half,.ib-w-third,.ib-w-two_thirds){display:flex;flex-direction:column}.ib-field:is(.ib-w-half,.ib-w-third,.ib-w-two_thirds)>.ib-help{order:2;margin:6px 0 0}.ib-field:is(.ib-w-half,.ib-w-third,.ib-w-two_thirds)>.ib-error{order:3}}
 .ib-sr{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .ib-control{position:relative}
 .ib-input{display:block;width:100%;font:inherit;color:var(--ib-text);background:var(--ib-input-bg);border:var(--ib-input-bw) solid var(--ib-input-border);border-radius:var(--ib-input-radius);padding:0 var(--ib-input-px);min-height:var(--ib-input-h);outline:none;transition:border-color .15s,box-shadow .15s,background-color .15s}
