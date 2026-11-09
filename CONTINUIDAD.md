@@ -106,6 +106,11 @@ reporta. Ya tiene clientes reales (~10 empresas).
   mano, darle los pasos exactos y explicar por qué.
 - Rendimiento: nota cuando algo se siente lento; medir, no suponer (v0.1.224).
 - Seguridad: pidió auditorías integrales; se hicieron 4 tandas (SEC-21…37).
+- **Publicar rápido y sin trabajo de más** (v0.1.390): en un cambio menor NO
+  se rehacen capturas, videos, ilustraciones animadas, artículos de Aprende ni
+  recorridos que siguen sirviendo. Lo mínimo: la novedad del catálogo (con una
+  ilustración que ya existe) y corregir una línea de la ayuda sólo si quedó
+  falsa. Ilustración o artículo nuevo, sólo para una función nueva de verdad.
 
 ---
 
@@ -186,12 +191,20 @@ mano `pnpm --filter @imagina-base/web typecheck lint test` y `build:cloud`
 antes de publicar.
 
 **Release** (`.github/workflows/release.yml`, al fusionar a main): compila una
-vez, graba las capturas del centro de aprendizaje en **5 máquinas** a la vez y
-un último job junta todo y publica (~10 min; antes ~20). Si una parte de las
-capturas falla, la versión sale igual. Si el reparto de las capturas queda
-desparejo (una parte tarda mucho más que las otras), refrescar los tiempos con
-el log de un release: `node scripts/help-captures/timings.mjs <log>`
-(ADR-S75, addendum v0.1.364).
+vez y publica. **Las capturas del centro de aprendizaje se reutilizan**
+(v0.1.390, pedido del usuario: "no hagas trabajo innecesario… como volver a
+tomar captura de todo por un cambio menor"): el job `gate` baja el paquete de
+la versión anterior, saca sus capturas (~34 MB) y `scripts/help-captures/plan.mjs`
+decide qué grabar — sólo los **archivos de escenarios que cambiaron** desde esa
+versión y los que tienen una demo que falta —, con tantas máquinas como haga
+falta (1 a 5). Un cambio que no toca la ayuda publica **sin grabar nada**
+(~4-5 min). Para regrabar UN módulo porque su pantalla cambió, se toca su
+escenario; todo de nuevo: «[capturas]» en el mensaje del commit o el input
+«todas» del workflow. `merge.mjs` junta lo grabado con lo anterior. Si una
+parte falla, la versión sale con las capturas anteriores. Si el reparto queda
+desparejo, refrescar los tiempos con el log de un release:
+`node scripts/help-captures/timings.mjs <log>` (ADR-S75, addenda v0.1.364 y
+v0.1.390).
 
 ---
 
@@ -394,16 +407,25 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.389**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.390**
+(**renombrar las apps conectadas** —lápiz junto al nombre en Integraciones; el
+nombre propio se ve también al elegirla en una automatización—; los
+**formularios ya no muestran la descripción interna de un campo como ayuda**
+—sólo la que se escribe en el formulario, con «Usar la descripción del campo»
+para copiarla— y en preguntas lado a lado la ayuda va debajo del campo, así
+quedan alineados; y la **publicación reutiliza las capturas** de la versión
+anterior y graba sólo lo que cambió). Antes v0.1.389
 (**WhatsApp (WAS)**: integración nueva con la versión nueva de WAS en
 `whats.imagina.cloud` —clave de API, «Buscar mis cuentas» con el estado de cada
 número, mensajes y archivos sin plantillas, avisos registrados solos en WAS
 con firma, estados entregado/leído/fallido en el registro y lo que escriben
 los clientes en la lista con el disparador de WhatsApp—, sobre el mismo motor
 de WhatsApp oficial; la anterior queda como «WhatsApp (WAS anterior)»;
-addendum ADR-S69. **Pendiente**: probarla contra el WAS real del usuario en
-el servidor —crear el aviso y mandar un mensaje a su número pide su visto
-bueno— y que el usuario **revoque la clave de prueba** que pegó en el chat).
+addendum ADR-S69. **Probada contra el WAS real del usuario** (2026-11-09, con
+su visto bueno): el mensaje llegó, los avisos reales «enviado/entregado»
+pasaron la firma y el lector de la app, y el aviso de prueba se borró. Queda
+sin probar en real un mensaje que escribe un cliente, y que el usuario
+**revoque la clave de prueba** que pegó en el chat).
 Antes v0.1.388
 (**una etiqueta de conversión distinta por página**: el mismo formulario —o la
 misma agenda— insertado en varias páginas del sitio dispara la acción de
@@ -1673,6 +1695,30 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-09 · v0.1.390** — **Renombrar integraciones, la ayuda de los
+  formularios y publicar sin regrabar capturas** (el usuario confirmó que le
+  llegó el mensaje de la prueba real de WAS y pidió tres cosas). (a) **Ponerle
+  nombre a una app conectada**: lápiz junto al nombre en Ajustes →
+  Integraciones (Enter guarda, Escape cancela, «Volver al nombre automático»);
+  `config.custom_name` marca el nombre propio (`custom_name` en el DTO,
+  `reset_name` en el PATCH, que rearma «App · cuenta» sin chocar consigo
+  misma); el nombre ya viajaba al menú de acciones del editor y ahora también
+  a los selectores de cobros, ideas y la página SQL. Renombrar a un nombre
+  usado dice el motivo (el mapeo del índice único mira la cadena de `cause` de
+  drizzle). (b) **Formularios**: la ayuda de una pregunta caía a la
+  **descripción interna del campo** cuando estaba vacía («Sirve para cruzar
+  con las cotizaciones… del ERP») y no había forma de quitarla — ahora sólo
+  la escrita en el formulario (también en la agenda), con «Usar la descripción
+  del campo» para copiarla a propósito; y en preguntas lado a lado la ayuda va
+  **debajo del campo**, así los campos quedan alineados. (c) **Publicar más
+  rápido**: el release reutiliza las capturas de la versión anterior y graba
+  sólo los escenarios que cambiaron (`plan.mjs`, `merge.mjs`, `HC_FILES`);
+  esta versión no graba ninguna. **Regla nueva del usuario**: en cambios
+  menores no rehacer capturas, ilustraciones, artículos ni recorridos que
+  siguen sirviendo (§2). Además: **prueba real de WAS hecha** — mensaje
+  entregado, avisos reales con firma válida y leídos bien por la app, aviso de
+  prueba borrado, la clave borrada de la sesión. Queda: que revoque la clave.
 
 - **2026-11-09 · v0.1.389** — **WhatsApp (WAS): la versión nueva de WAS como
   segundo proveedor de WhatsApp** (pedido del usuario: WAS/Zender salió en una

@@ -32,6 +32,10 @@ jobs:
       - name: Instalar dependencias
         run: pnpm install --frozen-lockfile
 
+      # v0.1.390 — el planificador de las capturas del release (qué se graba y qué se reutiliza).
+      - name: Pruebas del planificador de capturas
+        run: node --test scripts/help-captures/plan.test.mjs
+
       - name: Lint + tipos + build (shared y API) + pruebas de shared
         run: >
           pnpm turbo run lint typecheck build

@@ -343,6 +343,12 @@ export const connectionSchema = z.object({
     /** Con qué cuenta quedó conectada («ana@acme.com», «@mi_bot»). */
     account_label: z.string().nullable(),
     name: z.string().min(1).max(120),
+    /**
+     * v0.1.390 — Si la persona le puso el nombre a mano («WhatsApp ventas»).
+     * Una app de la galería sin nombre propio se muestra con el de la app y la
+     * cuenta («Gmail · ana@acme.com»); con nombre propio, ése va primero.
+     */
+    custom_name: z.boolean().optional(),
     /** Base opcional: una acción puede escribir sólo el path (`/send`). */
     base_url: z.string().max(2000),
     auth_type: connectorAuthTypeSchema,
@@ -418,6 +424,11 @@ export type CreateConnectionInput = z.infer<typeof createConnectionSchema>;
 
 export const updateConnectionSchema = z.object({
     name: z.string().trim().min(1).max(120).optional(),
+    /**
+     * v0.1.390 — Vuelve al nombre automático de una app de la galería (el de
+     * la app y la cuenta). Gana sobre `name`.
+     */
+    reset_name: z.boolean().optional(),
     base_url: z.string().trim().max(2000).optional(),
     auth_type: connectorAuthTypeSchema.optional(),
     auth_key: z.string().trim().max(120).optional(),

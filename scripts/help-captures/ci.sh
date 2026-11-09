@@ -18,6 +18,8 @@ LOGS=${HC_LOGS:-/tmp/help-captures}
 mkdir -p "$LOGS"
 
 # HC_ONLY=clave1,clave2: grabar sólo esas demos.
+# HC_FILES=a.mjs,b.mjs: sólo esos archivos de escenarios (v0.1.390: el release
+# graba lo que cambió desde la versión anterior; ver plan.mjs).
 # HC_SHARD=2/5: sólo los escenarios de la máquina 2 de 5 (v0.1.364: el release
 # reparte las capturas en varias máquinas a la vez; ver shard.mjs).
 # HC_DATABASE_URL / HC_REDIS_URL: usar una base y un Redis que ya existen

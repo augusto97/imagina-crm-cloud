@@ -17,6 +17,12 @@ on:
         description: 'Versión del release, ej. v1.2.0'
         required: true
         type: string
+      captures:
+        description: 'Capturas del centro de aprendizaje: sólo lo que cambió, todas de nuevo o ninguna'
+        required: false
+        default: cambios
+        type: choice
+        options: [cambios, todas, ninguna]
 
 permissions:
   contents: write
@@ -28,8 +34,15 @@ jobs:
       go: ${{ steps.d.outputs.go }}
       ref: ${{ steps.d.outputs.ref }}
       version: ${{ steps.d.outputs.version }}
+      record: ${{ steps.plan.outputs.record || 'false' }}
+      files: ${{ steps.plan.outputs.files }}
+      shards: ${{ steps.plan.outputs.shards || '[1]' }}
+      shard_total: ${{ steps.plan.outputs.shard_total || '1' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Para comparar con la versión anterior (qué capturas cambiaron).
+          fetch-depth: 0
       - id: d
         env:
           GH_TOKEN: ${{ github.token }}
@@ -50,6 +63,58 @@ jobs:
           fi
           echo "go=${GO}" >> "$GITHUB_OUTPUT"
           echo "→ release ${REF} · publicar=${GO}"
+
+      # v0.1.390 — Las capturas del centro de aprendizaje se REUTILIZAN: se
+      # parte de las de la versión anterior (vienen dentro de su paquete, ~34 MB)
+      # y se graba sólo el archivo de escenarios que cambió o la demo que falta
+      # (scripts/help-captures/plan.mjs). Un cambio que no toca la ayuda publica
+      # sin grabar nada. Todo de nuevo: el input «todas» o «[capturas]» en el
+      # mensaje del commit. Para regrabar UN módulo, se toca su escenario.
+      - uses: actions/setup-node@v4
+        if: steps.d.outputs.go == 'true'
+        with:
+          node-version: 22
+
+      - id: plan
+        if: steps.d.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ steps.d.outputs.ref }}
+          MODE: ${{ github.event.inputs.captures || 'cambios' }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          set -uo pipefail
+          if [ "$MODE" = "ninguna" ]; then
+            echo "record=false" >> "$GITHUB_OUTPUT"
+            echo "files=" >> "$GITHUB_OUTPUT"
+            echo "shards=[1]" >> "$GITHUB_OUTPUT"
+            echo "shard_total=1" >> "$GITHUB_OUTPUT"
+          fi
+          PREV=$(gh release list -R "$GITHUB_REPOSITORY" -L 20 --exclude-drafts --json tagName -q '.[].tagName' | grep -vx "$REF" | head -1 || true)
+          ALL=""
+          if [ "$MODE" = "todas" ] || printf '%s' "$COMMIT_MSG" | grep -qi '\[capturas\]'; then ALL="--all"; fi
+          CHANGED=""
+          if [ -n "$PREV" ]; then
+            if gh release download "$PREV" -R "$GITHUB_REPOSITORY" -p "imagina-base-${PREV#v}.zip" -D prev-bundle; then
+              unzip -q prev-bundle/*.zip 'web/help-media/*' -d prev-bundle || echo "::warning::El paquete de ${PREV} no trae capturas."
+            else
+              echo "::warning::No se pudo bajar el paquete de ${PREV}: se graban todas."
+            fi
+            CHANGED=$(git diff --name-only "$PREV" "$GITHUB_SHA" -- scripts/help-captures/scenarios/ 2>/dev/null | tr '\n' ',' || true)
+            git rev-parse -q --verify "refs/tags/$PREV" >/dev/null || ALL="--all"
+          fi
+          echo "versión anterior: ${PREV:-(ninguna)} · escenarios cambiados: ${CHANGED:-(ninguno)}"
+          if [ "$MODE" != "ninguna" ]; then
+            node scripts/help-captures/plan.mjs --prev prev-bundle/web/help-media --changed "$CHANGED" $ALL --github-output "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: steps.d.outputs.go == 'true'
+        with:
+          name: prev-help-media
+          retention-days: 1
+          if-no-files-found: ignore
+          path: prev-bundle/web/help-media
 
   # v0.1.364 — La publicación va en tres pasos: compilar una vez, grabar las
   # capturas del centro de aprendizaje en 5 máquinas a la vez (eran ~17 min en
@@ -94,14 +159,15 @@ jobs:
   # igual con lo que grabaron las demás: lo que falte se ve con su ilustración.
   captures:
     needs: [gate, build]
-    if: needs.gate.outputs.go == 'true'
+    if: needs.gate.outputs.go == 'true' && needs.gate.outputs.record == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        # v0.1.390 — tantas máquinas como haga falta para lo que hay que grabar (1 a 5).
+        shard: ${{ fromJSON(needs.gate.outputs.shards) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -118,9 +184,10 @@ jobs:
         with:
           name: build
 
-      - name: Capturas (parte ${{ matrix.shard }} de 5)
+      - name: Capturas (parte ${{ matrix.shard }} de ${{ needs.gate.outputs.shard_total }})
         env:
-          HC_SHARD: ${{ matrix.shard }}/5
+          HC_SHARD: ${{ matrix.shard }}/${{ needs.gate.outputs.shard_total }}
+          HC_FILES: ${{ needs.gate.outputs.files }}
         run: |
           bash scripts/help-captures/ci.sh help-media || {
             echo "::warning::La parte ${{ matrix.shard }} de las capturas falló; el release sale sin ellas (esa ayuda se ve con sus ilustraciones)."
@@ -156,17 +223,26 @@ jobs:
         with:
           name: build
 
-      - name: Juntar las capturas
-        # Si ninguna parte grabó nada, la versión sale igual (sin capturas).
+      # v0.1.390 — Base: las capturas de la versión anterior; encima, lo que se
+      # grabó ahora (cada demo grabada reemplaza entera a la anterior).
+      - name: Capturas de la versión anterior
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: prev-help-media
+          path: apps/web/dist-cloud/help-media
+
+      - name: Capturas grabadas ahora
+        # Si no se grabó nada (o falló), la versión sale con las anteriores.
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           pattern: help-media-*
           merge-multiple: true
-          path: apps/web/dist-cloud/help-media
+          path: fresh-help-media
 
-      - name: Índice de las capturas
-        run: node scripts/help-captures/manifest.mjs apps/web/dist-cloud/help-media
+      - name: Juntar las capturas
+        run: node scripts/help-captures/merge.mjs apps/web/dist-cloud/help-media fresh-help-media
 
       - name: Armar bundle autocontenido
         env:

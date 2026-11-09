@@ -39,6 +39,9 @@ const ONLY = arg('only', '');
 // v0.1.364 — `--shard 2/5` (o HC_SHARD): sólo los archivos de escenarios que
 // le tocan a esta máquina (ver shard.mjs).
 const SHARD = parseShard(arg('shard', process.env.HC_SHARD ?? ''));
+// v0.1.390 — `--files a.mjs,b.mjs` (o HC_FILES): sólo esos archivos de
+// escenarios (el release graba lo que cambió; ver plan.mjs). Vacío = todos.
+const FILES = new Set(arg('files', process.env.HC_FILES ?? '').split(',').map((f) => f.trim()).filter(Boolean));
 const STRICT = process.argv.includes('--strict');
 const DPR = 1.5;
 const QUALITY = 0.8;
@@ -105,7 +108,10 @@ async function main() {
 
     // ── Escenarios ───────────────────────────────────────────────────────
     const dir = path.join(here, 'scenarios');
-    const files = readdirSync(dir).filter((f) => f.endsWith('.mjs')).sort();
+    const files = readdirSync(dir)
+        .filter((f) => f.endsWith('.mjs'))
+        .filter((f) => FILES.size === 0 || FILES.has(f))
+        .sort();
     const modules = [];
     for (const f of files) {
         const mod = await import(pathToFileURL(path.join(dir, f)).href);

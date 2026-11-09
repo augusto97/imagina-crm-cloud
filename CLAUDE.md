@@ -13369,8 +13369,42 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         archivo desde la ficha, leído que no retrocede, automatización con
         indicativo completado, número desconectado → corrida fallida y
         Problema, celular oscuro sin desborde, borrar → aviso borrado en WAS).
-        **Pendiente**: la prueba contra el WAS real del usuario (crear el aviso
-        en su cuenta y mandar un mensaje a su número piden su visto bueno).
+        **Probada contra el WAS real del usuario** (con su visto bueno): el
+        mensaje se entregó, los avisos reales pasaron la firma y el lector de
+        la app, y el aviso de prueba se borró.
+
+  - [x] **Renombrar integraciones, la ayuda de los formularios y publicar sin
+        regrabar capturas (v0.1.390, tres pedidos del usuario)**:
+        (a) **Ponerle nombre a una app conectada**: lápiz junto al nombre en
+        Ajustes → Integraciones (`ConnectionName`; Enter guarda, Escape
+        cancela, «Volver al nombre automático»). `config.custom_name` marca el
+        nombre propio (`custom_name` en el DTO; `reset_name` en el PATCH rearma
+        «App · cuenta» con `uniqueName(…, exceptId)`, sin chocar consigo
+        misma). El nombre ya llegaba al menú de acciones del editor
+        (`connection_name`); ahora también a los selectores de cobros
+        (`toConnection` de collections), ideas y la página SQL. Un nombre usado
+        da `connection_name_taken` (el mapeo mira la cadena de `cause` de
+        drizzle). (b) **Formularios**: `buildPublicFormItems` usaba la
+        **descripción interna del campo** como ayuda cuando la pregunta no
+        tenía una («Sirve para cruzar con las cotizaciones… del ERP»), sin
+        forma de quitarla (también en la agenda) — ahora sólo la ayuda escrita
+        en el formulario, con «Usar la descripción del campo» para copiarla a
+        propósito; y en preguntas lado a lado (mitad, tercio, dos tercios) la
+        ayuda va **debajo del campo** (CSS de `PUBLIC_BASE_CSS`), así los
+        campos quedan alineados aunque sólo uno tenga ayuda. (c) **Publicar
+        más rápido** (addendum ADR-S75): el job `gate` baja el paquete de la
+        versión anterior y saca sus capturas; `scripts/help-captures/plan.mjs`
+        decide qué grabar — sólo los archivos de escenarios que cambiaron y los
+        que tienen una demo que falta —, con 1 a 5 máquinas según el trabajo;
+        `run.mjs` acepta `HC_FILES`; `merge.mjs` reemplaza entera cada demo
+        grabada, conserva las demás y quita las que ya no existen. Un cambio
+        que no toca la ayuda publica sin grabar nada; «[capturas]» en el
+        commit o el input «todas» graba todo. 5 pruebas del planificador
+        (`node --test scripts/help-captures/plan.test.mjs`, también en el CI)
+        + 1 de integración del renombre + 1 de shared (la descripción no se
+        cuela) — shared 813, front 835 — y simulación del paso del workflow
+        con el paquete real de la v0.1.389 (sin cambios → no graba; con
+        «[capturas]» → 110 demos en 5 máquinas).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 
@@ -13408,3 +13442,12 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
    (y su recorrido en `apps/web/app/admin/help/tours/tours.ts`). El test
    `tours/tours.test.ts` falla si un recorrido apunta a un ancla que ya no
    existe: correrlo tras cada merge.
+10. **Sin trabajo de más en cambios menores** (pedido del usuario,
+   2026-11-09: "no hagas trabajo innecesario… volver a tomar captura de
+   imagen, video o motion graphics de todo por un cambio menor"): no rehacer
+   capturas, ilustraciones animadas, artículos de Aprende ni recorridos que
+   siguen sirviendo. Lo mínimo: la novedad del catálogo (con una ilustración
+   que ya existe) y corregir la línea de la ayuda que quedó falsa. El release
+   reutiliza las capturas y graba sólo los escenarios que cambiaron
+   (`scripts/help-captures/plan.mjs`): para regrabar un módulo, tocar su
+   escenario.

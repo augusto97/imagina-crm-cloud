@@ -1941,7 +1941,8 @@ function toConnection(r: { id: number; name: string; provider: string; config: R
         id: r.id,
         name: r.name,
         provider: r.provider as CollectionProvider,
-        account_label: typeof r.config.account_label === 'string' ? r.config.account_label : null,
+        // v0.1.390 — con nombre propio («Mercado Pago tienda») se muestra ése.
+        account_label: r.config.custom_name === true ? r.name : typeof r.config.account_label === 'string' ? r.config.account_label : null,
         test_mode: f.test_mode === 'true',
         shared: r.visibility !== 'private',
     };

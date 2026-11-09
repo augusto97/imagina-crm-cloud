@@ -1461,7 +1461,10 @@ function publicField(
         slug: field.slug,
         field_type: type,
         label: item.label.trim() || field.label,
-        help: item.help.trim() || (field.description ?? ''),
+        // v0.1.390 — Sólo la ayuda que se escribió en el formulario. La
+        // descripción del campo es interna («sirve para cruzar con el ERP») y
+        // se colaba en la página pública sin forma de quitarla.
+        help: item.help.trim(),
         placeholder: item.placeholder,
         required: (item.required || field.is_required) && !item.hidden,
         hidden: item.hidden,

@@ -1169,8 +1169,20 @@ function ItemInspector({
                             onPick={(t) => set({ label: withToken(item.label || field.label, t) })}
                         />
                     </Field>
-                    <Field label={__('Ayuda')} hint={__('Aparece debajo de la pregunta.')}>
-                        <Textarea rows={2} value={item.help} placeholder={field.description ?? ''} onChange={(e) => set({ help: e.target.value })} />
+                    <Field label={__('Ayuda')} hint={__('Opcional. Un texto corto debajo de la pregunta; vacío = sin ayuda.')}>
+                        <Textarea rows={2} value={item.help} onChange={(e) => set({ help: e.target.value })} data-testid="form-item-help" />
+                        {/* v0.1.390 — la descripción del campo es interna: ya no se muestra sola; se copia a propósito. */}
+                        {item.help.trim() === '' && (field.description ?? '').trim() !== '' && (
+                            <button
+                                type="button"
+                                className="imcrm-self-start imcrm-text-[11px] imcrm-text-primary hover:imcrm-underline"
+                                onClick={() => set({ help: (field.description ?? '').trim() })}
+                                title={field.description ?? ''}
+                                data-testid="form-item-help-from-field"
+                            >
+                                {__('Usar la descripción del campo')}
+                            </button>
+                        )}
                         <RecallPicker config={config} fields={fields} exceptFieldId={field.id} onPick={(t) => set({ help: withToken(item.help, t) })} />
                     </Field>
                     {(!['checkbox', 'select', 'multi_select', 'team', 'rating', 'file', 'date', 'datetime'].includes(field.type) || item.display === 'search') &&

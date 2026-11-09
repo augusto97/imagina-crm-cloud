@@ -16,7 +16,7 @@ import {
     type IntegrationKey,
     type IntegrationsOverview,
 } from '@imagina-base/shared';
-import { CalendarDays, ChevronDown, ChevronRight, Globe, Lock, HardDrive, MessageCircle, MessageSquareText, RefreshCw, Settings2, ShieldCheck, Wallet } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, ChevronRight, Globe, Lock, HardDrive, MessageCircle, MessageSquareText, Pencil, RefreshCw, Settings2, ShieldCheck, Wallet, X } from 'lucide-react';
 
 import { ConnectorsPanel } from '@/cloud/components/ConnectorsPanel';
 import { IntegrationKeyDialog } from '@/cloud/components/IntegrationKeyDialog';
@@ -26,8 +26,10 @@ import { MsAdminConsentDialog } from '@/cloud/components/MsAdminConsentDialog';
 import { WordpressConnectDialog } from '@/cloud/components/WordpressConnectDialog';
 import { api, useSession } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
+import { automationsKeys } from '@/hooks/useAutomations';
 import { listsKeys } from '@/hooks/useLists';
 import { CloudApiError } from '@/lib/cloud/client';
 import { __ } from '@/lib/i18n';
@@ -508,16 +510,14 @@ function ConnectedRow({
             className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3 imcrm-px-4 imcrm-py-3"
             data-testid="imcrm-integration-connected"
             data-integration={c.integration_key ?? ''}
+            data-connection-id={c.id}
         >
             <IntegrationLogo integrationKey={c.integration_key} size={32} />
             {/* v0.1.252 — base de 12rem: en el celular los botones bajan a su
                 propia línea en vez de aplastar el texto hasta 4 renglones. */}
             <div className="imcrm-min-w-0 imcrm-flex-1 imcrm-basis-48">
                 <p className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-medium">
-                    {def?.name ?? c.name}
-                    {c.account_label && (
-                        <span className="imcrm-font-normal imcrm-text-muted-foreground">{c.account_label}</span>
-                    )}
+                    <ConnectionName connection={c} appName={def?.name ?? null} />
                     {c.visibility === 'private' && (
                         <Badge variant="outline" className="imcrm-gap-1 imcrm-text-[10px]">
                             <Lock className="imcrm-h-3 imcrm-w-3" />
@@ -637,6 +637,117 @@ function ConnectedRow({
                 </div>
             )}
         </li>
+    );
+}
+
+/**
+ * v0.1.390 — El nombre de una app conectada, que se puede cambiar ahí mismo
+ * («WhatsApp ventas», «Gmail de facturación»): con varias cuentas de la misma
+ * app es lo que dice cuál es cuál, aquí y al elegirla en una automatización.
+ * Sin nombre propio se ve el de la app y la cuenta, como siempre.
+ */
+function ConnectionName({ connection: c, appName }: { connection: Connection; appName: string | null }): JSX.Element {
+    const qc = useQueryClient();
+    const tenantId = useSession((s) => s.activeTenantId);
+    const custom = c.custom_name === true;
+    const [editing, setEditing] = useState(false);
+    const [draft, setDraft] = useState('');
+    const [error, setError] = useState<string | null>(null);
+    const save = useMutation({
+        mutationFn: (input: { name: string } | { reset_name: true }) => api.connectionUpdate(c.id, input),
+        onSuccess: () => {
+            setEditing(false);
+            setError(null);
+            void qc.invalidateQueries({ queryKey: ['connections', tenantId] });
+            void qc.invalidateQueries({ queryKey: automationsKeys.actions });
+        },
+        onError: (err) => setError(errText(err)),
+    });
+    const primary = custom ? c.name : (appName ?? c.name);
+    const secondary = custom ? [appName, c.account_label].filter(Boolean).join(' · ') : c.account_label;
+
+    if (editing) {
+        const submit = (): void => {
+            const name = draft.trim();
+            if (name === '' || name === c.name) {
+                setEditing(false);
+                return;
+            }
+            save.mutate({ name });
+        };
+        return (
+            <span className="imcrm-flex imcrm-w-full imcrm-flex-col imcrm-gap-1 sm:imcrm-w-auto">
+                <span className="imcrm-flex imcrm-items-center imcrm-gap-1">
+                    <Input
+                        autoFocus
+                        value={draft}
+                        maxLength={120}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                submit();
+                            } else if (e.key === 'Escape') {
+                                e.preventDefault();
+                                setEditing(false);
+                                setError(null);
+                            }
+                        }}
+                        aria-label={__('Nombre de la conexión')}
+                        className="imcrm-h-8 imcrm-w-full imcrm-text-sm sm:imcrm-w-64"
+                        data-testid="imcrm-integration-name-input"
+                    />
+                    <Button size="icon" variant="ghost" className="imcrm-h-8 imcrm-w-8" disabled={save.isPending} onClick={submit} aria-label={__('Guardar el nombre')} data-testid="imcrm-integration-name-save">
+                        <Check className="imcrm-h-4 imcrm-w-4" />
+                    </Button>
+                    <Button
+                        size="icon"
+                        variant="ghost"
+                        className="imcrm-h-8 imcrm-w-8"
+                        onClick={() => {
+                            setEditing(false);
+                            setError(null);
+                        }}
+                        aria-label={__('Cancelar')}
+                    >
+                        <X className="imcrm-h-4 imcrm-w-4" />
+                    </Button>
+                </span>
+                {custom && (
+                    <button
+                        type="button"
+                        className="imcrm-self-start imcrm-text-xs imcrm-font-normal imcrm-text-primary hover:imcrm-underline"
+                        disabled={save.isPending}
+                        onClick={() => save.mutate({ reset_name: true })}
+                        data-testid="imcrm-integration-name-reset"
+                    >
+                        {__('Volver al nombre automático')}
+                    </button>
+                )}
+                {error && <span className="imcrm-text-xs imcrm-font-normal imcrm-text-destructive">{error}</span>}
+            </span>
+        );
+    }
+    return (
+        <>
+            <span data-testid="imcrm-integration-name">{primary}</span>
+            {secondary && <span className="imcrm-font-normal imcrm-text-muted-foreground">{secondary}</span>}
+            {c.can_edit && (
+                <button
+                    type="button"
+                    className="imcrm-inline-flex imcrm-h-6 imcrm-w-6 imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-text-muted-foreground hover:imcrm-bg-muted hover:imcrm-text-foreground"
+                    onClick={() => {
+                        setDraft(c.name);
+                        setEditing(true);
+                    }}
+                    title={__('Cambiar el nombre')}
+                    aria-label={__('Cambiar el nombre')}
+                    data-testid="imcrm-integration-rename"
+                >
+                    <Pencil className="imcrm-h-3.5 imcrm-w-3.5" />
+                </button>
+            )}
+        </>
     );
 }
 

@@ -275,6 +275,47 @@ describe('Integraciones de la galería (v0.1.203)', () => {
         expect(await svc.list(tenantId, adminId, 'admin')).toHaveLength(1);
     });
 
+    it('renombrar una app conectada (v0.1.390): nombre propio, repetido rechazado y volver al automático', async () => {
+        const insert = (name: string, label: string | null) =>
+            withTenant(pg.db, tenantId, (tx) =>
+                tx
+                    .insert(connections)
+                    .values({
+                        tenantId,
+                        provider: 'whatsapp',
+                        name,
+                        authType: 'none',
+                        config: { account_label: label },
+                        secrets: { token: encryptSecret('clave-was', KEY) },
+                        visibility: 'workspace',
+                        ownerUserId: adminId,
+                    })
+                    .returning(),
+            );
+        const [[a], [b]] = await Promise.all([insert('WhatsApp (WAS anterior)', null), insert('WhatsApp (WAS anterior) (2)', null)]);
+        const before = await svc.list(tenantId, adminId, 'admin');
+        expect(before.find((c) => c.id === a!.id)?.custom_name).toBe(false);
+
+        const renamed = await svc.update(tenantId, adminId, 'admin', a!.id, { name: 'WhatsApp ventas' });
+        expect(renamed).toMatchObject({ name: 'WhatsApp ventas', custom_name: true });
+        // El catálogo del editor nombra la conexión por su nombre propio.
+        const list = await svc.list(tenantId, adminId, 'admin');
+        expect(list.find((c) => c.id === a!.id)?.name).toBe('WhatsApp ventas');
+
+        // Un nombre que ya usa otra conexión se rechaza con el motivo, no con un 500.
+        await expect(svc.update(tenantId, adminId, 'admin', b!.id, { name: 'whatsapp ventas' })).rejects.toMatchObject({
+            response: { code: 'connection_name_taken' },
+        });
+        // Un agente no renombra las conexiones del equipo.
+        await expect(svc.update(tenantId, adminId, 'agent', a!.id, { name: 'Otro' })).rejects.toMatchObject({ status: 403 });
+
+        // Volver al automático: el de la app (con su número si hiciera falta, sin chocar consigo misma).
+        const reset = await svc.update(tenantId, adminId, 'admin', a!.id, { reset_name: true });
+        expect(reset).toMatchObject({ name: 'WhatsApp (WAS anterior)', custom_name: false });
+        const resetB = await svc.update(tenantId, adminId, 'admin', b!.id, { reset_name: true });
+        expect(resetB.name).toBe('WhatsApp (WAS anterior) (2)');
+    });
+
     it('Outlook: renueva con la app de la PLATAFORMA y repite los scopes (Microsoft los exige)', async () => {
         await apps.update('microsoft', { client_id: 'ms-client', client_secret: 'ms-secreto-5555' }, new Map());
         const [created] = await withTenant(pg.db, tenantId, (tx) =>

@@ -174,7 +174,7 @@ export const articles: LearnArticle[] = [
                 title: 'Opciones de una pregunta',
                 rows: [
                     { name: 'Pregunta', what: 'El texto que ve quien responde. Vacío = el nombre del campo.', tip: 'Escríbela como la dirías en voz alta: «¿A qué correo te respondemos?» en vez de «Email».' },
-                    { name: 'Ayuda', what: 'Una línea más chica que aparece debajo de la pregunta.', tip: 'Úsala para aclarar el formato: «Con indicativo, por ejemplo +57 300 123 4567».' },
+                    { name: 'Ayuda', what: 'Una línea más chica que aparece debajo de la pregunta (en preguntas lado a lado, debajo del campo para que queden alineadas). Vacío = sin ayuda: la descripción interna del campo no se muestra sola; «Usar la descripción del campo» la copia si la quieres.', tip: 'Úsala para aclarar el formato: «Con indicativo, por ejemplo +57 300 123 4567».' },
                     { name: 'Texto de ejemplo', what: 'Lo que se ve dentro de la casilla vacía, en gris, antes de escribir.' },
                     { name: 'Cómo se pregunta', what: 'La forma de la pregunta, según el tipo de campo: en una selección **Botones**, **Tarjetas**, **Lista desplegable** o **Lista con buscador**; en un número una **Escala** o un **Deslizador**; en una casilla **Sí** y **No**; en archivos una **Firma**.', tip: 'Lo explicamos en «Escalas, Sí o No, firma, matriz y más formas de preguntar».' },
                     { name: 'Tipos de archivo', what: 'Sólo en preguntas de archivo: cualquier archivo, imágenes, PDF, imágenes o PDF, o documentos (PDF, Word, Excel, texto).', tip: 'Los programas y las páginas web nunca se aceptan. Cada archivo puede pesar hasta 20 MB.' },
