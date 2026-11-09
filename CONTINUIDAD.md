@@ -394,7 +394,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.387**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.388**
+(**una etiqueta de conversión distinta por página**: el mismo formulario —o la
+misma agenda— insertado en varias páginas del sitio dispara la acción de
+Google Ads y el píxel de Meta de la primera regla cuya página coincide, y en
+las demás páginas la de siempre o ninguna, con «Probar con una página»; y
+**«Duplicar»** en la lista de formularios: una copia sin publicar, con su
+propio enlace; addendum ADR-S97). Antes v0.1.387
 (la agenda **cobra al agendar** con la cuenta de cobro de la empresa —Mercado
 Pago, Wompi o PayPal—: el precio del servicio o un anticipo; «pagar para
 confirmar» deja la cita «Esperando el pago» con el horario apartado y se
@@ -1657,6 +1663,44 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-09 · v0.1.388** — **Una etiqueta de conversión por página y
+  duplicar formularios** (pregunta del usuario: «el código de conversión
+  mediría todos los formularios; si un cliente quiere medir sólo una landing,
+  ¿un formulario para esa landing o redirigir a una página de gracias con la
+  etiqueta?»). Recomendación dada: un solo formulario con la conversión
+  filtrada por página (en Tag Manager por «Page Path», o sin Tag Manager con un
+  script en la landing que escucha `imagina:form-submit`); un formulario aparte
+  sólo si la landing es otro embudo; la página de gracias, no para medir (se
+  cuenta de más con recargas o visitas directas, se pierde si cierran antes y es
+  por formulario). Se ofrecieron dos funciones para hacerlo sin código y el
+  usuario aprobó: «sí, hazlas las dos en la próxima versión». (a) **Reglas por
+  página** en «Medir conversiones» (formularios y agenda): `page_rules` con
+  «Si la página contiene», etiqueta de Google Ads (o ninguna) y el píxel de
+  Meta; gana la primera; arriba queda «en las demás páginas»; el enlace
+  directo usa siempre esa. Lo decide el SERVIDOR con la página del envío
+  (`conversionTargetFor`, shared) y la página pública lo toma del resultado
+  (la caché pública no cambia); el `dataLayer` suma `conversion_rule`.
+  «Probar con una página» usa la misma función. (b) **Duplicar formulario**
+  (`POST /lists/:l/forms/:id/duplicate`, bitácora `form.duplicate`): copia
+  todo, sin publicar, con token nuevo y sin respuestas; «X (copia)» / «(copia
+  2)»; se abre en el constructor. **Bomba de tiempo atrapada**:
+  `booking-payment.spec` elegía «hoy + 5 días hábiles» sin saltar festivos y
+  hoy caía en el lunes festivo 16-nov (Independencia de Cartagena) → «ese
+  horario ya está tomado»; ahora salta los festivos de Colombia, como
+  `booking.spec`. **Trampa del entorno**: contenedor nuevo sin `node_modules` ni
+  imágenes; Docker Hub con 429 → imágenes de `mirror.gcr.io/library/…`
+  re-etiquetadas, y las pruebas con `TESTCONTAINERS_RYUK_DISABLED=true`. Ayuda:
+  guía nueva `conversion-per-page`, `forms` y `measure-conversions` al día,
+  Aprende (sección «Una etiqueta distinta por página» con las ilustraciones
+  nuevas `conversion-page-rules` y `form-duplicate`, fila «Duplicar»), novedad
+  con carrusel y anclas `form-conversion-rules`, `booking-conversion-rules` y
+  `forms-duplicate`. Tests: 5 de shared (reglas, enlace directo, lectura
+  tolerante, nombre de la copia), 2 de integración en `forms-conversion.spec`
+  (regla por página en el envío; duplicar), la regla en la agenda en
+  `booking.spec`; E2E navegador 17/17 en escritorio y 18/18 en celular oscuro
+  con un sitio de OTRO origen (landing → «Navidad01» sin el píxel y
+  `conversion_rule` «Navidad»; contacto → la general con «Lead»).
 
 - **2026-11-07 · v0.1.387** — **Agenda: cobrar al agendar** (segunda mitad del
   pedido del cliente de v0.1.386: «en los agendamientos no hay opción para

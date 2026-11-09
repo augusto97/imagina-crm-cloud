@@ -17,6 +17,8 @@ import {
     brandingSchema,
     buildPublicFormItems,
     defaultFormConfig,
+    duplicateFormName,
+    type DuplicateFormInput,
     formConfigSchema,
     formEndingFor,
     formFlow,
@@ -497,6 +499,61 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                     tenantId,
                     listId: list.id,
                     name: input.name,
+                    token: newToken(),
+                    enabled: false,
+                    config: config as unknown as Record<string, unknown>,
+                    createdBy: userId > 0 ? userId : null,
+                })
+                .returning(),
+        );
+        return this.toDto(row!, await this.publicBase(tenantId));
+    }
+
+    /**
+     * v0.1.388 — Duplicar: la copia trae TODO lo del original (preguntas,
+     * lógica, diseño, ajustes, conversiones, origen y etiquetas) pero nace
+     * sin publicar, con su propia dirección y sin respuestas ni
+     * estadísticas. Se valida igual que guardar (la conexión de cobro, los
+     * planes, la plantilla del registro); el CSS propio del original se
+     * conserva aunque quien duplica no sea administrador.
+     */
+    async duplicate(
+        tenantId: number,
+        userId: number,
+        listIdOrSlug: string,
+        id: number,
+        input: DuplicateFormInput,
+        actor: FormActor = { isAdmin: true },
+    ): Promise<FormDto> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const mirror = readMirrorListMarker(list.settings);
+        if (mirror) {
+            throw badRequest(
+                'store_managed',
+                `Esta lista viene ${mirrorFromPlace(mirror)}: los registros nuevos llegan desde ahí, no desde un formulario.`,
+            );
+        }
+        const source = await this.load(tenantId, list.id, id);
+        const fields = await this.fields.listByListId(tenantId, list.id);
+        const config = sanitizeConfig(readConfig(source.config), fields);
+        await this.assertTemplate(tenantId, list.id, config.settings.record_template_id);
+        await this.assertPayment(tenantId, config);
+        await this.assertSubscription(tenantId, config);
+        await this.assertDesign(tenantId, config, config.settings.theme?.custom_css ?? '', actor);
+        const siblings = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ name: forms.name })
+                .from(forms)
+                .where(and(eq(forms.tenantId, tenantId), eq(forms.listId, list.id))),
+        );
+        const name = input.name ?? duplicateFormName(source.name, siblings.map((r) => r.name));
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .insert(forms)
+                .values({
+                    tenantId,
+                    listId: list.id,
+                    name,
                     token: newToken(),
                     enabled: false,
                     config: config as unknown as Record<string, unknown>,
@@ -1454,6 +1511,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             payment: payAmount > 0 ? { amount: payAmount, currency: s.payment.currency } : null,
             calcs,
             ...this.contactFor(f, fields, data, respondentEmail),
+            page: origin.page_url ?? null,
         });
 
         // La versión que la persona VIO (la página pudo cargarse antes de un

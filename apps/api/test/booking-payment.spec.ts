@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { addDaysYmd, bookingConfigSchema, zonedInstant, zonedToday, type BookingConfig, type BusyInterval, type Field } from '@imagina-base/shared';
+import { addDaysYmd, bookingConfigSchema, isColombianHoliday, ymdToMs, zonedInstant, zonedToday, type BookingConfig, type BusyInterval, type Field } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import IORedis from 'ioredis';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -115,12 +115,17 @@ class FakeCalendar extends BookingCalendarService {
     }
 }
 
-/** Un día hábil (lunes a viernes) a partir de `fromYmd`. */
+/**
+ * Un día hábil (lunes a viernes, y no festivo en Colombia: sin festivos por
+ * país el motor usa las reglas de Colombia) a partir de `fromYmd`. Sin saltar
+ * festivos, la prueba fallaba las semanas en que «hoy + 5» caía en uno.
+ */
 function workday(fromYmd: string): string {
     let ymd = fromYmd;
     for (;;) {
-        const dow = new Date(`${ymd}T12:00:00Z`).getUTCDay();
-        if (dow !== 0 && dow !== 6) return ymd;
+        const [y, m, d] = ymd.split('-').map(Number) as [number, number, number];
+        const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+        if (dow >= 1 && dow <= 5 && !isColombianHoliday(ymdToMs(y, m, d))) return ymd;
         ymd = addDaysYmd(ymd, 1);
     }
 }

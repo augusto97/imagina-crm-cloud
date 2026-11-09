@@ -5291,6 +5291,7 @@ function conversionSummary(
         direct_tags?: boolean;
         google_tag_id?: string | null;
         meta_pixel_id?: string | null;
+        page_rules?: ReadonlyArray<{ name: string; page_contains: string; google_ads: string | null; meta_event: boolean }>;
     },
     a: Record<string, unknown> & { enabled: boolean },
     fieldById: Map<number, { slug: string }>,
@@ -5303,8 +5304,13 @@ function conversionSummary(
     }
     return {
         site_event: 'siempre (imagina_form_submit / imagina_booking en el dataLayer del sitio)',
+        // v0.1.388 — con reglas por página, google_ads/meta_pixel son los de «en las demás páginas».
         google_ads: c.google_ads,
         meta_pixel: c.meta_event,
+        page_rules:
+            c.page_rules && c.page_rules.length > 0
+                ? c.page_rules.map((r) => ({ name: r.name || null, page_contains: r.page_contains, google_ads: r.google_ads, meta_pixel: r.meta_event }))
+                : null,
         value: c.value === 'none' ? null : c.value === 'fixed' ? { fixed: c.amount, currency: c.currency } : c.value === 'calc' ? { calc: c.calc_key } : c.value,
         enhanced_conversions: c.share_contact,
         saves_origin: a.enabled && Object.keys(saved).length > 0 ? saved : null,

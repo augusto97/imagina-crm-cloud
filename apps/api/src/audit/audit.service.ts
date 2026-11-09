@@ -32,6 +32,7 @@ export type AuditAction =
     | 'form.unpublish'
     | 'form.regenerate_link'
     | 'form.delete'
+    | 'form.duplicate'
     // D5 — páginas de agenda públicas (crean citas en la lista sin cuenta).
     | 'booking.publish'
     | 'booking.unpublish'

@@ -1483,7 +1483,16 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
             c.services[0] = { ...c.services[0]!, price: 80000 };
             c.settings.redirect_url = 'https://acme.co/gracias?s={{cita.servicio}}&d={{cita.fecha}}&h={{cita.hora}}&id={{envio.id}}&c={{utm_campaign}}&e={{cita.estado}}';
             c.settings.redirect_delay = 3;
-            c.settings.conversion = { ...c.settings.conversion, google_ads: 'AW-123456789/AbCdEf', meta_event: true, value: 'price', currency: 'COP', share_contact: true };
+            c.settings.conversion = {
+                ...c.settings.conversion,
+                google_ads: 'AW-123456789/AbCdEf',
+                meta_event: true,
+                value: 'price',
+                currency: 'COP',
+                share_contact: true,
+                // v0.1.388 — la página de la agenda tiene su propia etiqueta.
+                page_rules: [{ id: 'agenda', name: 'Agenda', page_contains: '/agenda', google_ads: 'AW-123456789/Agenda001', meta_event: false }],
+            };
             // Una columna que la agenda ya escribe (el nombre del cliente) no sirve para el origen.
             c.settings.attribution = {
                 ...c.settings.attribution,
@@ -1513,6 +1522,8 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
             attribution: { utm_campaign: 'Black Friday', gclid: 'Cj0KCQ-abc_123', page_url: 'https://acme.co/agenda', fbclid: 'con espacios', otra: 'x' },
         });
         expect(res.conversion).toMatchObject({ value: 80000, currency: 'COP', user_data: { email: 'ads@x.co', phone_number: '+573001112233' } });
+        // v0.1.388 — agendada desde /agenda: la etiqueta de esa página, sin el píxel.
+        expect(res.conversion).toMatchObject({ google_ads: 'AW-123456789/Agenda001', meta_event: false, rule: 'Agenda' });
         expect(res.conversion!.submission_id).toMatch(/^[A-Za-z0-9_-]{12}$/);
         const u = new URL(res.redirect_url!);
         expect(u.host).toBe('acme.co');
@@ -1536,7 +1547,7 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         await pageWith(() => undefined);
         const plain = await book({ staff: 'stfana', start: at(D, 10), email: 'plain@x.co' });
         expect(plain.redirect_url).toBeNull();
-        expect(plain.conversion).toMatchObject({ value: null, currency: null });
+        expect(plain.conversion).toMatchObject({ value: null, currency: null, google_ads: null, rule: null });
         expect(plain.conversion!.user_data).toBeUndefined();
     });
 

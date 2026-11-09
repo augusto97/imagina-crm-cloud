@@ -13275,6 +13275,44 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         la vuelta automática del checkout sólo existe con `APP_BASE_URL` en
         https (en desarrollo se abrió la página de la cita a mano).
 
+  - [x] **Una etiqueta de conversión por página + duplicar formularios
+        (v0.1.388, addendum ADR-S97, pregunta del usuario: "el código de
+        conversión mediría todos los formularios; si un cliente quiere medir
+        sólo una landing, ¿un formulario para esa landing o una página de
+        gracias con la etiqueta?" → "sí, hazlas las dos")**. La etiqueta era del
+        FORMULARIO: se disparaba en todas las páginas donde estaba insertado.
+        (a) **Reglas por página** en «Medir conversiones» (formularios y
+        agenda, `conversion.page_rules`, hasta 20, lectura tolerante por
+        regla): «Si la página contiene» (palabras por coma), etiqueta de Google
+        Ads (o ninguna) y el píxel de Meta; gana la primera; la etiqueta de
+        arriba pasa a ser «en las demás páginas» (vacía = no se mide ahí) y es
+        la del enlace directo (`isOwnPublicPage`). Lo decide el servidor con la
+        página que ya llega para el origen (`conversionTargetFor`, shared: el
+        mismo `cleanPageUrl` + `pageMatchesAny` de las automatizaciones):
+        `ConversionResult` gana `google_ads`/`meta_event`/`rule` y la página
+        pública los usa en lugar del `meta` cacheable (una página vieja sigue
+        con el `meta`; la caché pública no cambia). El `dataLayer` suma
+        `conversion_rule`. Editor `ConversionPageRules` con subir/bajar, aviso
+        de otra cuenta de Google Ads y **«Probar con una página»** (la misma
+        función del servidor). (b) **Duplicar formulario**
+        (`POST /lists/:l/forms/:id/duplicate`, `manage_forms`, bitácora
+        `form.duplicate`): copia toda la configuración con las validaciones de
+        guardar, sin publicar, token nuevo, sin respuestas ni estadísticas,
+        nombre por `duplicateFormName` («X (copia)», «(copia 2)»); botón en la
+        lista de formularios que abre la copia en el constructor. **Bomba de
+        tiempo arreglada**: `booking-payment.spec` no saltaba festivos al elegir
+        el día y hoy caía en el festivo del 16-nov. Ayuda: guía nueva
+        `conversion-per-page`, `forms`/`measure-conversions` al día, Aprende
+        con las ilustraciones `conversion-page-rules` y `form-duplicate`,
+        novedad con carrusel y anclas `form-conversion-rules`,
+        `booking-conversion-rules` y `forms-duplicate`. Tests: shared (reglas,
+        enlace directo, lectura tolerante, nombre de la copia), 2 de
+        integración en `forms-conversion.spec`, la regla en `booking.spec` y
+        `forms.spec` al día; E2E navegador 17/17 en escritorio y 18/18 en
+        celular oscuro con un sitio de otro origen (landing → «Navidad01» sin
+        el píxel y `conversion_rule` «Navidad»; contacto → la general con
+        «Lead»).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

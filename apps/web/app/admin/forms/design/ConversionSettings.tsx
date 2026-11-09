@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { __ } from '@/lib/i18n';
 
 import { Check, Field, Section } from '../../automations/email/EmailBlockInspector';
+import { ConversionPageRules } from './ConversionPageRules';
 
 const selectClass =
     'imcrm-h-9 imcrm-w-full imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2 imcrm-text-sm focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-ring';
@@ -73,6 +74,8 @@ export function ConversionSettings({
     const pixelParsed = pixelRaw.trim() === '' ? null : parseMetaPixelId(pixelRaw);
     const pixelBad = pixelRaw.trim() !== '' && pixelParsed === null;
     const adsId = googleAdsIdFromSendTo(conversion.google_ads);
+    // v0.1.388 — con reglas por página, lo de aquí vale para «las demás páginas».
+    const hasRules = conversion.page_rules.length > 0;
     const directEmpty = conversion.direct_tags && !adsId && !conversion.google_tag_id && !conversion.meta_pixel_id;
 
     const valueModes: Array<{ value: ConversionValueMode; label: string }> = [
@@ -118,11 +121,13 @@ export function ConversionSettings({
                 </p>
 
                 <Field
-                    label={__('Etiqueta de conversión de Google Ads')}
+                    label={hasRules ? __('Etiqueta de Google Ads en las demás páginas') : __('Etiqueta de conversión de Google Ads')}
                     hint={
                         adsBad
                             ? __('No reconocemos ese código. Pega el fragmento del evento que te da Google Ads o el «AW-123456789/AbC…».')
-                            : adsParsed
+                            : hasRules
+                              ? __('La que se dispara donde ninguna regla de abajo coincide (y en el enlace directo). Déjala vacía para no medir con Google Ads en esas páginas.')
+                              : adsParsed
                               ? __('Se dispara con la etiqueta de Google que ya tiene tu sitio. Si usas Tag Manager, mejor arma la etiqueta allá con el evento de arriba (con las dos, la misma conversión no se cuenta dos veces).')
                               : __('Opcional. En Google Ads: Objetivos → Conversiones → tu acción → Configurar la etiqueta. Pega el fragmento del evento (el que tiene «send_to»).')
                     }
@@ -151,11 +156,21 @@ export function ConversionSettings({
                 </Field>
 
                 <Check
-                    label={kind === 'booking' ? __('Registrar «Schedule» en el píxel de Meta del sitio') : __('Registrar «Lead» en el píxel de Meta del sitio')}
+                    label={
+                        hasRules
+                            ? kind === 'booking'
+                                ? __('Registrar «Schedule» en el píxel de Meta en las demás páginas')
+                                : __('Registrar «Lead» en el píxel de Meta en las demás páginas')
+                            : kind === 'booking'
+                              ? __('Registrar «Schedule» en el píxel de Meta del sitio')
+                              : __('Registrar «Lead» en el píxel de Meta del sitio')
+                    }
                     checked={conversion.meta_event}
                     onChange={(v) => setConv({ meta_event: v })}
                     testId="conversion-meta"
                 />
+
+                <ConversionPageRules kind={kind} conversion={conversion} onChange={(page_rules) => setConv({ page_rules })} />
 
                 <Field label={__('Valor de la conversión')} hint={__('Google y Meta lo usan para medir cuánto vale cada campaña.')}>
                     <select

@@ -882,11 +882,11 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         attribution: unknown,
     ): { conversion: ConversionResult; redirect_url: string | null } {
         const s = p.config.settings;
-        const conversion = conversionResult(s.conversion, { price: service.price, email, phone });
+        const origin = cleanAttribution(attribution);
+        const conversion = conversionResult(s.conversion, { price: service.price, email, phone, page: origin.page_url ?? null });
         const template = s.redirect_url;
         if (!template) return { conversion, redirect_url: null };
         const at = zonedDayAndMinute(start, p.timeZone);
-        const origin = cleanAttribution(attribution);
         const vars: Record<string, string | number | null> = {
             'cita.servicio': summary.service,
             'cita.asesor': summary.staff,

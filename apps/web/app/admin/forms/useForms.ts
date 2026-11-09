@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CaptchaAvailability, CreateFormInput, FormDataConsentAvailability, FormDto, FormStatsDto, UpdateFormInput } from '@imagina-base/shared';
+import type { CaptchaAvailability, CreateFormInput, DuplicateFormInput, FormDataConsentAvailability, FormDto, FormStatsDto, UpdateFormInput } from '@imagina-base/shared';
 
 import { api } from '@/lib/api';
 
@@ -52,6 +52,22 @@ export function useCreateForm(listId: number) {
     return useMutation({
         mutationFn: async (input: CreateFormInput) => (await api.post<FormDto>(`/lists/${listId}/forms`, input)).data,
         onSuccess: () => void qc.invalidateQueries({ queryKey: formKeys.forList(listId) }),
+    });
+}
+
+/**
+ * v0.1.388 — Duplicar un formulario: la copia nace sin publicar, con su
+ * propia dirección y sin respuestas ni estadísticas.
+ */
+export function useDuplicateForm(listId: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (input: { id: number; body?: DuplicateFormInput }) =>
+            (await api.post<FormDto>(`/lists/${listId}/forms/${input.id}/duplicate`, input.body ?? {})).data,
+        onSuccess: (doc) => {
+            qc.setQueryData<FormDto[]>(formKeys.forList(listId), (prev) => (prev ? [...prev, doc] : prev));
+            void qc.invalidateQueries({ queryKey: formKeys.forList(listId) });
+        },
     });
 }
 

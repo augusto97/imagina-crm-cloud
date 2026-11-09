@@ -10,6 +10,7 @@ import {
     attributionFieldFor,
     attributionFieldKey,
     cleanAttribution,
+    conversionTargetFor,
     conversionValue,
     directTagsNotice,
     googleAdsIdFromSendTo,
@@ -112,7 +113,8 @@ export function directTags(c: ConversionSettings): PublicDirectTags | null {
 /**
  * El resultado de la conversión de un envío: su id, el valor (de donde lo
  * pida la configuración) y, si se pidió, el correo y el teléfono para las
- * conversiones mejoradas (normalizados como los pide Google).
+ * conversiones mejoradas (normalizados como los pide Google). v0.1.388 — y
+ * qué etiqueta disparar según la página desde donde se envió.
  */
 export function conversionResult(
     c: ConversionSettings,
@@ -122,6 +124,8 @@ export function conversionResult(
         price?: number | null;
         email?: string | null;
         phone?: string | null;
+        /** v0.1.388 — La página desde donde se envió (elige la regla por página). */
+        page?: string | null;
     },
 ): ConversionResult {
     let value: number | null = null;
@@ -133,7 +137,15 @@ export function conversionResult(
     } else if (c.value === 'calc' && c.calc_key) value = conversionValue(opts.calcs?.[c.calc_key]);
     else if (c.value === 'price') value = conversionValue(opts.price ?? null);
     if (value !== null && currency === null) currency = c.currency;
-    const out: ConversionResult = { submission_id: newSubmissionId(), value, currency: value === null ? null : currency };
+    const target = conversionTargetFor(c, opts.page ?? null);
+    const out: ConversionResult = {
+        submission_id: newSubmissionId(),
+        value,
+        currency: value === null ? null : currency,
+        google_ads: target.google_ads,
+        meta_event: target.meta_event,
+        rule: target.rule,
+    };
     if (c.share_contact) {
         const email = typeof opts.email === 'string' ? opts.email.trim().toLowerCase() : '';
         const phone = typeof opts.phone === 'string' ? opts.phone.replace(/[^\d+]/g, '') : '';

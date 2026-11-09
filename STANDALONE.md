@@ -7837,6 +7837,48 @@ directo y en un marco sin el script. Ahora:
    (`remapFormConfig`); el asistente/MCP ve `record_values` en
    `get_list_schema`.
 
+**Addendum v0.1.388 — Una etiqueta distinta por página y duplicar
+formularios.** Pregunta del usuario: «se coloca el código de conversión pero
+eso mediría todos los formularios; si un cliente quiere medir sólo una
+landing, ¿un formulario para esa landing o redirigir a una página de gracias
+con la etiqueta?». La etiqueta del punto 3 es del FORMULARIO, así que se
+dispara en todas las páginas donde está insertado. Se recomendó (y el usuario
+aprobó: «hazlas las dos») filtrar por página en vez de duplicar o de medir con
+la página de gracias (se cuenta de más con recargas o visitas directas, se
+pierde si la persona cierra antes, y es por formulario: no distingue
+páginas). Ahora:
+
+1. **Reglas por página** en `conversion.page_rules` (hasta 20,
+   `conversionPageRuleSchema`, lectura tolerante por regla): `{id, name,
+   page_contains, google_ads|null, meta_event}`. Gana la primera cuya lista de
+   palabras aparece en la página ya limpia (`conversionTargetFor`, shared,
+   el mismo `cleanPageUrl` + `pageMatchesAny` de las automatizaciones); una
+   regla sin palabras nunca coincide. Si ninguna coincide, valen `google_ads`
+   y `meta_event` de siempre, que pasan a ser «en las demás páginas» (vacíos =
+   no se mide ahí). En el **enlace directo** (`isOwnPublicPage`:
+   `/api/v1/public/f|b/…`) no hay reglas: vale lo de las demás páginas (y las
+   etiquetas por ID del addendum v0.1.375 siguen cargando esa).
+2. **Lo decide el servidor** al recibir el envío o la reserva, con la página
+   que ya llega para el origen: `ConversionResult` gana `google_ads`,
+   `meta_event` y `rule`, y la página pública (formulario y agenda) usa eso
+   en vez de lo del `meta` cacheable (una página vieja sin esos campos sigue
+   usando el `meta`). Así la caché pública de ADR-S95 no cambia.
+3. El `dataLayer` suma `conversion_rule` (el nombre de la regla, o null) y el
+   evento del navegador `detail.rule`, para quien filtra en Tag Manager.
+4. Editor compartido por formularios y agendas (`ConversionPageRules`): una
+   tarjeta por regla con nombre, «Si la página contiene», la etiqueta (se
+   reconoce aunque se pegue el fragmento), el píxel de Meta, subir/bajar y
+   quitar, aviso si la etiqueta es de otra cuenta de Google Ads, y **«Probar
+   con una página»**, que corre la misma función que el servidor.
+5. **Duplicar un formulario** (`POST /lists/:l/forms/:id/duplicate`,
+   `manage_forms`, bitácora `form.duplicate`): la copia trae toda la
+   configuración (pasa por `sanitizeConfig` y las mismas validaciones de
+   guardar; el CSS propio del original se conserva aunque quien duplica no sea
+   admin), nace sin publicar, con token nuevo y sin respuestas ni
+   estadísticas; el nombre sale de `duplicateFormName` («X (copia)», «(copia
+   2)»…, sin apilar sufijos). Botón en la lista de formularios; la copia se
+   abre en el constructor.
+
 ---
 
-**Versión del documento:** 1.161.0 (Origen y etiquetas de los formularios)
+**Versión del documento:** 1.162.0 (Una etiqueta de conversión por página y duplicar formularios)

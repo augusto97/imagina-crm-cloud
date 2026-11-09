@@ -212,6 +212,54 @@ export function pageMatchesAny(page: string | null | undefined, terms: string): 
     return hay !== '' && list.some((t) => hay.includes(t));
 }
 
+// ─────────── Una etiqueta distinta por página (v0.1.388) ───────────
+
+/** Cuántas reglas por página puede tener un formulario o una agenda. */
+export const CONVERSION_MAX_PAGE_RULES = 20;
+
+/**
+ * ¿Es la página propia del formulario o de la agenda (el enlace directo)?
+ * Ahí no hay sitio de por medio: las reglas por página no aplican.
+ */
+export function isOwnPublicPage(page: string | null | undefined): boolean {
+    const m = /^https?:\/\/[^\s/?#]+(\/[^\s?#]*)?/i.exec((page ?? '').trim());
+    return !!m && /^\/api\/v1\/public\/[fb]\//.test(m[1] ?? '');
+}
+
+/** Lo mínimo de una regla para decidir (el esquema con Zod vive en `conversion.ts`). */
+export interface ConversionPageRuleLike {
+    name: string;
+    page_contains: string;
+    google_ads: string | null;
+    meta_event: boolean;
+}
+
+/** Cómo se llama una regla: su nombre o, si no tiene, sus palabras. */
+export function conversionRuleLabel(r: Pick<ConversionPageRuleLike, 'name' | 'page_contains'>): string {
+    return (r.name.trim() || pageTerms(r.page_contains).join(', ')).slice(0, 80);
+}
+
+/**
+ * v0.1.388 — Qué se dispara en un envío según la página desde donde se
+ * envió: la primera regla cuya lista de palabras aparece en la página (ya
+ * limpia, sin mayúsculas ni tildes) o, si ninguna coincide, lo de «en las
+ * demás páginas». Una regla sin palabras nunca coincide, y en el enlace
+ * directo (sin sitio de por medio) siempre vale lo de «en las demás páginas».
+ */
+export function conversionTargetFor(
+    c: { google_ads: string | null; meta_event: boolean; page_rules?: ReadonlyArray<ConversionPageRuleLike> },
+    page: string | null | undefined,
+): { google_ads: string | null; meta_event: boolean; rule: string | null } {
+    const clean = page ? cleanPageUrl(page) : '';
+    if (clean !== '' && !isOwnPublicPage(clean)) {
+        for (const r of c.page_rules ?? []) {
+            if (pageTerms(r.page_contains).length === 0) continue;
+            if (pageMatchesAny(clean, r.page_contains)) return { google_ads: r.google_ads, meta_event: r.meta_event, rule: conversionRuleLabel(r) };
+        }
+    }
+    return { google_ads: c.google_ads, meta_event: c.meta_event, rule: null };
+}
+
 // ─────────────────────────── Google Ads ───────────────────────────
 
 /** El «send_to» de una acción de conversión de Google Ads: `AW-123456789/AbC-dEf_1`. */
@@ -261,6 +309,8 @@ export interface ImaginaConversionEvent {
     meta_event?: 'Lead' | 'Schedule' | null;
     /** Conversiones mejoradas (sólo si el formulario lo pide). */
     user_data?: { email?: string; phone_number?: string } | null;
+    /** v0.1.388 — La regla por página que coincidió (null = «en las demás páginas»). */
+    rule?: string | null;
 }
 
 /** Redondea un valor de conversión (null si no es un número usable). */

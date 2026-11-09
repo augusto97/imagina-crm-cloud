@@ -235,4 +235,72 @@ describe('v0.1.374 — medir conversiones de un formulario (Postgres + Redis rea
         // El valor no se sale de su segmento de la ruta.
         expect(real.redirect_url).toBe('https://acme.co/gracias/..%2F..%2Fx');
     });
+    it('v0.1.388 — una etiqueta distinta según la página desde donde se envió', async () => {
+        const form = await contactForm({
+            conversion: {
+                google_ads: 'AW-123456789/Demas0001',
+                meta_event: true,
+                page_rules: [
+                    { id: 'navidad', name: 'Navidad', page_contains: 'landing-navidad', google_ads: 'AW-123456789/Navidad01', meta_event: false },
+                    { id: 'promo', name: '', page_contains: 'promo', google_ads: null, meta_event: true },
+                ],
+            },
+        });
+        const send = (page: string | null) =>
+            svc.submit(form.token, IP, {
+                values: { [f.nombre!.id]: 'Ana' },
+                uploads: {},
+                stamp: stamp(form.id),
+                ...(page ? { attribution: { page_url: page, utm_campaign: 'landing-navidad' } } : {}),
+            });
+        expect((await send('https://misitio.com/Landing-Navidad?gclid=Cj0K-abc')).conversion).toMatchObject({
+            google_ads: 'AW-123456789/Navidad01',
+            meta_event: false,
+            rule: 'Navidad',
+        });
+        expect((await send('https://misitio.com/promo-verano')).conversion).toMatchObject({ google_ads: null, meta_event: true, rule: 'promo' });
+        // Ninguna coincide (la campaña no cuenta): lo de «las demás páginas».
+        expect((await send('https://misitio.com/contacto')).conversion).toMatchObject({ google_ads: 'AW-123456789/Demas0001', meta_event: true, rule: null });
+        // Enlace directo o sin página: también.
+        expect((await send(`https://app.test/api/v1/public/f/${form.token}`)).conversion).toMatchObject({ google_ads: 'AW-123456789/Demas0001', rule: null });
+        expect((await send(null)).conversion).toMatchObject({ google_ads: 'AW-123456789/Demas0001', rule: null });
+        // La página pública sigue anunciando la de «las demás páginas» (una página vieja la usa tal cual).
+        expect((await svc.meta(form.token)).conversion).toMatchObject({ google_ads: 'AW-123456789/Demas0001', meta_event: true });
+    });
+
+    it('v0.1.388 — duplicar: todo lo del original, sin publicar, con su propio enlace y sin respuestas', async () => {
+        const form = await contactForm({
+            conversion: {
+                google_ads: 'AW-123456789/Demas0001',
+                page_rules: [{ id: 'navidad', name: 'Navidad', page_contains: 'landing-navidad', google_ads: 'AW-123456789/Navidad01' }],
+            },
+            attribution: { enabled: true, page_url_field_id: f.pagina!.id },
+            redirect_url: 'https://acme.co/gracias',
+        });
+        await svc.submit(form.token, IP, { values: { [f.nombre!.id]: 'Ana' }, uploads: {}, stamp: stamp(form.id) });
+        const original = await svc.get(tenantId, 'clientes', form.id);
+        expect(original.submissions_count).toBe(1);
+
+        const copy = await svc.duplicate(tenantId, 0, 'clientes', form.id, {});
+        expect(copy.name).toBe('Contacto (copia)');
+        expect(copy.enabled).toBe(false);
+        expect(copy.submissions_count).toBe(0);
+        expect(copy.public_path).not.toBe(original.public_path);
+        expect(copy.config.items.map((i) => i.id)).toEqual(original.config.items.map((i) => i.id));
+        expect(copy.config.settings.conversion.page_rules).toEqual(original.config.settings.conversion.page_rules);
+        expect(copy.config.settings.attribution.page_url_field_id).toBe(f.pagina!.id);
+        expect(copy.config.settings.redirect_url).toBe('https://acme.co/gracias');
+        // Sin publicar, su enlace todavía no responde; el original sigue igual.
+        await expect(svc.meta(await tokenOf(copy.id))).rejects.toThrow();
+        expect((await svc.meta(form.token)).title).toBe('Contáctanos');
+
+        // Otra copia no repite el nombre; con nombre propio, se usa ése.
+        expect((await svc.duplicate(tenantId, 0, 'clientes', form.id, {})).name).toBe('Contacto (copia 2)');
+        expect((await svc.duplicate(tenantId, 0, 'clientes', copy.id, { name: 'Landing Navidad' })).name).toBe('Landing Navidad');
+
+        // De otra empresa (o de otra lista) no existe.
+        const [other] = await pg.db.insert(tenants).values({ slug: 'otra-dup', name: 'Otra' }).returning();
+        await lists.create(other!.id, { name: 'Clientes' });
+        await expect(svc.duplicate(other!.id, 0, 'clientes', form.id, {})).rejects.toThrow();
+    });
 });

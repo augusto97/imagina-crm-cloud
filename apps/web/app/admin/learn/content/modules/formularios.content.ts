@@ -80,6 +80,7 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Publicado / Sin publicar', what: 'Si el enlace está recibiendo respuestas o no. Uno sin publicar responde «no disponible».', tip: 'Puedes dejarlo sin publicar mientras lo armas: nadie lo ve.' },
                     { name: 'Preguntas · respuestas', what: 'Cuántas preguntas visibles tiene, cuántas respuestas llegaron en total y cuándo llegó la última.', tip: 'Si la última respuesta es de hace semanas, revisa que el enlace siga en tu sitio.' },
+                    { name: 'Duplicar', what: 'Crea una copia con las mismas preguntas, el diseño y los ajustes. Nace sin publicar, con su propio enlace y sin respuestas, y se abre en el constructor.', tip: 'Sirve para tener una versión para una landing o una campaña (con su propia etiqueta de conversión o su página de gracias) sin armarla de cero.' },
                     { name: 'Editar', what: 'Abre el constructor para cambiar preguntas y ajustes.' },
                     { name: 'Copiar enlace', what: 'Copia la dirección pública del formulario (sólo si está publicado).' },
                     { name: 'Abrir', what: 'Abre el formulario en otra pestaña, tal como lo ve quien responde.' },
@@ -1452,6 +1453,28 @@ export const articles: LearnArticle[] = [
                     { name: 'Conversiones mejoradas', what: 'Además manda el correo y el teléfono de quien respondió a las etiquetas de tu sitio. Google los cifra antes de usarlos y atribuye mejor.', tip: 'Es un dato personal: actívalo sólo si tu política de datos lo contempla y si en Google Ads activaste las conversiones mejoradas.' },
                 ],
             },
+            { t: 'h', text: 'Una etiqueta distinta por página' },
+            {
+                t: 'p',
+                md: 'La etiqueta de conversión se dispara en **todas** las páginas donde está insertado el formulario. Si el mismo formulario está en la página de contacto y en una **landing** de una campaña, y quieres medir esa landing con su propia acción de Google Ads, no hace falta otro formulario: agrega una **regla por página**.\n\nEn **Medir conversiones → Una etiqueta distinta por página**, toca **Agregar una regla por página**, escribe en **Si la página contiene** una parte de la dirección de la landing (por ejemplo `landing-navidad`) y pega su etiqueta. Arriba queda la etiqueta de **las demás páginas**: déjala vacía si sólo quieres medir la landing. Con **Probar con una página** pegas una dirección y ves qué se dispara ahí.',
+            },
+            { t: 'anim', key: 'conversion-page-rules', caption: 'El mismo formulario en dos páginas: desde la landing se registra la conversión «Navidad»; desde Contacto, la de las demás páginas.' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Si la página contiene', what: 'Una parte de la dirección de la página de tu sitio, sin mayúsculas ni tildes. Varias separadas por coma valen como «cualquiera».', tip: 'Los parámetros de campaña (utm, gclid) no cuentan: para separar por campaña, guarda la campaña en su columna.' },
+                    { name: 'Etiqueta de Google Ads', what: 'La acción de conversión de esas páginas. Vacía = en esas páginas no se dispara Google Ads.' },
+                    { name: 'Píxel de Meta', what: 'Si en esas páginas se registra «Lead» (o «Schedule» en la agenda).' },
+                    { name: 'El orden', what: 'Gana la primera regla que coincide; con las flechas cambias cuál se revisa antes.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: '¿Y si la landing necesita otro formulario?',
+                md: 'Si además quieres otras preguntas, otra página de gracias u otras automatizaciones para esa landing, toca **Duplicar** en la lista de formularios: la copia trae todo lo del original, nace sin publicar y tiene su propio enlace. Pégala sólo en la landing y ponle su etiqueta.\n\nNo recomendamos medir **sólo** con una página de gracias: se cuenta de más si alguien la recarga o entra directo, y se pierde si la persona cierra antes de que cargue. Sirve para mostrar algo después de enviar; para medir, mejor la etiqueta.',
+            },
+            { t: 'anim', key: 'form-duplicate', caption: 'Un clic en Duplicar y aparece la copia, sin publicar y con su propio enlace.' },
             { t: 'h', text: 'Saber de qué campaña vino cada registro' },
             {
                 t: 'p',
@@ -1515,6 +1538,7 @@ export const articles: LearnArticle[] = [
                     { q: '¿Funciona si comparto el enlace directo, sin insertarlo en mi sitio?', a: 'Sí. La página de gracias y el origen (los utm del enlace) funcionan siempre, y si activas **Cargar mis etiquetas en el enlace directo**, la página registra la conversión en Google Ads, Google Analytics y Meta por su ID.' },
                     { q: 'Lo pegué en una página para probar HTML y no carga. ¿Qué pasa?', a: 'Esas páginas muestran tu código dentro de un marco protegido que no tiene dirección propia, y ningún navegador deja cargar ahí un formulario de otro sitio. Pruébalo en una página real de tu sitio (un borrador sirve) y revisa que el dominio esté en **Sitios donde se puede insertar**.' },
                     { q: '¿Se cuenta dos veces si la persona recarga la página?', a: 'No. Cada envío tiene un id único que viaja como id de la transacción, y Google y Meta lo usan para no contar dos veces.' },
+                    { q: 'Con Tag Manager, ¿cómo sé qué regla coincidió?', a: 'El evento del `dataLayer` lleva `conversion_rule` con el nombre de la regla (vacío en las demás páginas). También puedes filtrar en Tag Manager por la página con la variable «Page Path».' },
                     { q: '¿Qué pasa si la respuesta espera la confirmación por correo?', a: 'El evento sale al enviar, con la marca de que espera la confirmación, para que puedas decidir en Tag Manager si la cuentas o no.' },
                 ],
             },

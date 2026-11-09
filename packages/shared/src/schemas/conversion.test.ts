@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
     attributionFromSearch,
     cleanAttribution,
+    CONVERSION_MAX_PAGE_RULES,
+    conversionTargetFor,
+    isOwnPublicPage,
     conversionValue,
     directTagsNotice,
     fillRedirectUrl,
@@ -14,7 +17,7 @@ import {
     redirectVariables,
 } from './conversion-logic';
 import { attributionFieldFor, attributionSettingsSchema, conversionSettingsSchema } from './conversion';
-import { formSettingsSchema } from './form';
+import { duplicateFormName, formSettingsSchema } from './form';
 import { bookingSettingsSchema } from './booking';
 
 describe('v0.1.374 — medir conversiones', () => {
@@ -136,5 +139,74 @@ describe('v0.1.375 — etiquetas en el enlace directo', () => {
         expect(directTagsNotice({ google_ads_id: 'AW-1', google_tag_id: null, meta_pixel_id: '1' })).toBe('Esta página usa cookies de Google y Meta para medir las campañas.');
         expect(directTagsNotice({ google_ads_id: null, google_tag_id: null, meta_pixel_id: '1' })).toBe('Esta página usa cookies de Meta para medir las campañas.');
         expect(directTagsNotice({ google_ads_id: null, google_tag_id: null, meta_pixel_id: null })).toBe('');
+    });
+});
+
+describe('v0.1.388 — una etiqueta distinta por página', () => {
+    const base = {
+        google_ads: 'AW-111111111/Default01',
+        meta_event: true,
+        page_rules: [
+            { id: 'r1', name: 'Navidad', page_contains: 'landing-navidad, /navidad', google_ads: 'AW-111111111/Navidad01', meta_event: false },
+            { id: 'r2', name: '', page_contains: 'Promoción', google_ads: null, meta_event: true },
+            { id: 'r3', name: 'Vacía', page_contains: ' , ', google_ads: 'AW-111111111/Nunca0001', meta_event: true },
+        ],
+    };
+
+    it('gana la primera regla cuya página coincide; si ninguna, la de «las demás páginas»', () => {
+        expect(conversionTargetFor(base, 'https://misitio.com/landing-navidad?utm_source=google&gclid=abc123')).toEqual({
+            google_ads: 'AW-111111111/Navidad01',
+            meta_event: false,
+            rule: 'Navidad',
+        });
+        // Sin mayúsculas ni tildes; una regla sin nombre se llama por sus palabras.
+        expect(conversionTargetFor(base, 'https://misitio.com/PROMOCION-verano')).toEqual({ google_ads: null, meta_event: true, rule: 'promocion' });
+        expect(conversionTargetFor(base, 'https://misitio.com/contacto')).toEqual({ google_ads: 'AW-111111111/Default01', meta_event: true, rule: null });
+        // Sin página (o una rara) vale lo de las demás páginas.
+        expect(conversionTargetFor(base, null).rule).toBeNull();
+        expect(conversionTargetFor(base, 'javascript:alert(1)').rule).toBeNull();
+    });
+
+    it('los parámetros de campaña no cuentan y una regla sin palabras nunca coincide', () => {
+        expect(conversionTargetFor(base, 'https://misitio.com/contacto?utm_campaign=landing-navidad').rule).toBeNull();
+        expect(conversionTargetFor(base, 'https://misitio.com/nunca').rule).toBeNull();
+    });
+
+    it('en el enlace directo (la página propia del formulario o la agenda) no hay reglas', () => {
+        expect(isOwnPublicPage('https://app.acme.co/api/v1/public/f/abc123?navidad=1')).toBe(true);
+        expect(isOwnPublicPage('https://app.acme.co/api/v1/public/b/xyz')).toBe(true);
+        expect(isOwnPublicPage('https://misitio.com/landing-navidad')).toBe(false);
+        expect(conversionTargetFor(base, 'https://app.acme.co/api/v1/public/f/landing-navidad').rule).toBeNull();
+    });
+
+    it('las reglas se leen con tolerancia: una rota se descarta sin tirar las demás', () => {
+        const c = conversionSettingsSchema.parse({
+            google_ads: 'AW-111111111/Default01',
+            page_rules: [
+                { id: 'ok1', page_contains: 'navidad', google_ads: 'AW-111111111/Navidad01' },
+                { id: 'mal id!', page_contains: 'x' },
+                { id: 'ok2', page_contains: 'promo', google_ads: 'código raro', meta_event: 'si' },
+                'basura',
+            ],
+        });
+        expect(c.page_rules).toEqual([
+            { id: 'ok1', name: '', page_contains: 'navidad', google_ads: 'AW-111111111/Navidad01', meta_event: false },
+            { id: 'ok2', name: '', page_contains: 'promo', google_ads: null, meta_event: false },
+        ]);
+        expect(conversionSettingsSchema.parse({ page_rules: 'x' }).page_rules).toEqual([]);
+        expect(formSettingsSchema.parse({}).conversion.page_rules).toEqual([]);
+        const many = Array.from({ length: 30 }, (_, i) => ({ id: `r${i}`, page_contains: `p${i}` }));
+        expect(conversionSettingsSchema.parse({ page_rules: many }).page_rules).toHaveLength(CONVERSION_MAX_PAGE_RULES);
+    });
+});
+
+describe('v0.1.388 — duplicar un formulario', () => {
+    it('«(copia)», y si ya existe, «(copia 2)»; copiar una copia no apila sufijos', () => {
+        expect(duplicateFormName('Contacto', ['Contacto'])).toBe('Contacto (copia)');
+        expect(duplicateFormName('Contacto', ['Contacto', 'Contacto (copia)'])).toBe('Contacto (copia 2)');
+        expect(duplicateFormName('Contacto (copia)', ['Contacto', 'contacto (COPIA)', 'Contacto (copia 2)'])).toBe('Contacto (copia 3)');
+        const long = 'x'.repeat(120);
+        expect(duplicateFormName(long, [long]).length).toBeLessThanOrEqual(120);
+        expect(duplicateFormName(long, [long]).endsWith(' (copia)')).toBe(true);
     });
 });
