@@ -874,7 +874,10 @@ export class TenantTransferService {
                 // manda mensajes cobrados a la empresa) NO viaja: se vuelve a pegar.
                 secrets:
                     sameKey && String(c.provider ?? '') !== 'whatsapp_cloud'
-                        ? ((c.secrets as Record<string, string> | null) ?? {})
+                        ? String(c.provider ?? '') === 'whatsapp_web'
+                            ? // v0.1.389 — la clave de WAS viaja; el secreto del aviso del origen no.
+                              Object.fromEntries(Object.entries((c.secrets as Record<string, string> | null) ?? {}).filter(([k]) => k !== 'signing_secret'))
+                            : ((c.secrets as Record<string, string> | null) ?? {})
                         : {},
                 visibility: String(c.visibility ?? 'workspace'),
                 ownerUserId: mapId(maps.user, c.ownerUserId),

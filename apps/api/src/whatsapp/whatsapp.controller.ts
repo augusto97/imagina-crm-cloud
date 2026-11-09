@@ -132,9 +132,11 @@ export class WhatsappController {
 }
 
 /**
- * Avisos de Meta. PÚBLICO: el token de la URL dice de qué conexión es y la
- * firma `X-Hub-Signature-256` (HMAC del cuerpo crudo con la clave secreta de
- * la app) prueba que lo mandó Meta. Contesta enseguida: lo demás va a la cola.
+ * Avisos de Meta y de Imagina WAS. PÚBLICO: el token de la URL dice de qué
+ * conexión es y la firma prueba quién lo mandó — Meta: `X-Hub-Signature-256`
+ * (HMAC del cuerpo crudo con la clave secreta de la app); Imagina WAS:
+ * `X-Webhook-Signature` (HMAC de `<t>.<cuerpo crudo>` con el secreto que dio
+ * al registrar el aviso). Contesta enseguida: lo demás va a la cola.
  */
 @Controller('public/whatsapp')
 export class WhatsappHooksController {
@@ -152,9 +154,13 @@ export class WhatsappHooksController {
         @Param('token') token: string,
         @Req() req: FastifyRequest & { rawBody?: Buffer },
         @Headers('x-hub-signature-256') signature: string | undefined,
+        // v0.1.389 — Imagina WAS firma con estas (t=<unix>,v1=<hex> sobre `<t>.<cuerpo>`).
+        @Headers('x-webhook-signature') webSignature: string | undefined,
+        @Headers('x-webhook-timestamp') webTimestamp: string | undefined,
+        @Headers('x-webhook-event') webEvent: string | undefined,
     ): Promise<{ ok: true }> {
         const raw = req.rawBody ? req.rawBody.toString('utf8') : typeof req.body === 'string' ? req.body : JSON.stringify(req.body ?? {});
-        await this.whatsapp.receive(token, raw, signature);
+        await this.whatsapp.receive(token, raw, { meta: signature, web: webSignature, timestamp: webTimestamp, event: webEvent });
         return { ok: true };
     }
 }

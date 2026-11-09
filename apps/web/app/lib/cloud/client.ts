@@ -57,6 +57,7 @@ import {
     type WhatsappRecordInfo,
     type WhatsappSendInput,
     type WhatsappSendResult,
+    type WhatsappProvider,
     type WhatsappTemplate,
     type WhatsappTestSendInput,
     type CollectionConnectionDetail,
@@ -375,6 +376,15 @@ import { createSseParser } from '@/lib/sse';
  */
 
 /** Error tipado con el shape del contrato: `{ code, message, data:{status,errors} }`. */
+/** v0.1.389 — un número de WhatsApp que la empresa puede usar (oficial o Imagina WAS). */
+export interface WhatsappConnectionSummary {
+    id: number;
+    name: string;
+    provider: WhatsappProvider;
+    display_phone: string | null;
+    templates: WhatsappTemplate[];
+}
+
 export class CloudApiError extends Error {
     constructor(
         message: string,
@@ -1236,10 +1246,10 @@ export class CloudClient {
         return this.request('PUT', `/lists/${list}/subscriptions/charge-log`, { body: input, schema: z.custom<SubscriptionChargeLogStatus>() });
     }
     // ── WhatsApp oficial: Meta WhatsApp Cloud API (D3) ──────────────────
-    async whatsappConnections(): Promise<Array<{ id: number; name: string; display_phone: string | null; templates: WhatsappTemplate[] }>> {
+    async whatsappConnections(): Promise<WhatsappConnectionSummary[]> {
         return (
             await this.request('GET', '/whatsapp/connections', {
-                schema: z.object({ data: z.array(z.custom<{ id: number; name: string; display_phone: string | null; templates: WhatsappTemplate[] }>()) }),
+                schema: z.object({ data: z.array(z.custom<WhatsappConnectionSummary>()) }),
             })
         ).data;
     }

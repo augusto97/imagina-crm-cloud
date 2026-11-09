@@ -49,7 +49,7 @@ const MENSAJERIA: IdeaQuestion = {
     kind: 'connection',
     key: 'conexion',
     label: 'Con qué app',
-    apps: ['whatsapp', 'whatsapp_cloud', 'telegram', 'slack', ...SMS_APPS],
+    apps: ['whatsapp_web', 'whatsapp', 'whatsapp_cloud', 'telegram', 'slack', ...SMS_APPS],
 };
 const SMS_CUENTA: IdeaQuestion = { kind: 'connection', key: 'conexion', label: 'Cuenta de SMS', apps: SMS_APPS };
 const COBROS_APP: IdeaQuestion = { kind: 'connection', key: 'conexion', label: 'Cuenta de cobro', apps: ['mercadopago', 'wompi'] };
@@ -1107,7 +1107,7 @@ export const IDEAS: readonly IdeaDef[] = [
         icon: 'MessageCircle',
         tone: 'mint',
         listHints: ['client', 'pedido', 'contacto', 'cita', 'reserva'],
-        needsApps: ['whatsapp', 'whatsapp_cloud', 'telegram', 'slack'],
+        needsApps: ['whatsapp_web', 'whatsapp', 'whatsapp_cloud', 'telegram', 'slack'],
         keywords: 'whatsapp mensaje confirmacion cliente telegram',
         learn: 'integraciones/integraciones-mensajeria',
         featured: true,

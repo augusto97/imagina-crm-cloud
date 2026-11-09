@@ -39,6 +39,9 @@ export interface StatusUpdate {
     at: Date;
     recipientId: string;
     errors: Array<{ code: number | null; title: string; message: string; details: string | null }>;
+    /** v0.1.389 — Imagina WAS: el motivo ya en palabras y si es de la conexión. */
+    detail?: string | null;
+    systemic?: boolean;
 }
 
 export interface ParsedWebhook {

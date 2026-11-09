@@ -5130,6 +5130,37 @@ conversaciones. Una bandeja de chat, la descarga de medios y la creación de
 plantillas desde la app quedan como evolución futura. La conexión real con
 Meta se prueba en el servidor (el sandbox no llega a graph.facebook.com).
 
+**Addendum v0.1.389 — WAS v1 como segundo proveedor (`whatsapp_web`).** WAS
+(Zender) salió en una versión nueva, instalada aparte (`whats.imagina.cloud`),
+con una API v1 que además de enviar avisa de los estados y de los mensajes
+entrantes por webhooks firmados. Se suma como integración propia
+«WhatsApp (WAS)» sobre el MISMO motor de esta ADR, sin duplicar nada:
+1. **Mismo motor, dos proveedores** (`WHATSAPP_PROVIDERS`): `whatsapp_hooks`,
+   `whatsapp_contacts`, las columnas de `lists.settings.whatsapp`, el
+   disparador, el diálogo de la ficha y los Problemas son los de Meta. WAS no
+   tiene plantillas ni ventana de 24 h: el texto y los archivos (por enlace
+   https) salen siempre. La integración anterior queda como «WhatsApp (WAS
+   anterior)» y sigue funcionando; las automatizaciones se mudan cambiando la
+   conexión (los nombres de los datos son los mismos: `recipient`, `message`,
+   `url`, `caption`).
+2. **Conectar**: clave de API (Bearer) + «Buscar mis cuentas», que lista los
+   números con su estado (`GET /whatsapp/accounts`) — nadie tiene que saber el
+   id. La verificación pide `/me` y exige el permiso de enviar; los
+   recomendados que falten (avisos, leer) se nombran sin bloquear.
+3. **Los avisos se registran solos** (`POST /webhooks`) al conectar y desde la
+   página de la conexión, con el secreto cifrado en `secrets.signing_secret`
+   (WAS lo muestra UNA vez); una revisión con `GET /webhooks/{id}` los recrea si
+   alguien los borró, y borrar la conexión los borra en WAS. Exige que la app
+   esté en https (en desarrollo, `DEV_ALLOW_PRIVATE_EGRESS` acepta http).
+4. **Firma**: `X-Webhook-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret,
+   "<t>.<cuerpo crudo>")>`, en tiempo constante, con 15 min de tolerancia y el
+   `X-Webhook-Timestamp` igual a `t`. Los avisos son de todo el workspace de
+   WAS: cada conexión toma sólo los de SU número (`connection.id`) e ignora los
+   grupos. Un estado `canceled` se trata como fallido.
+5. **White-label**: la palabra «Imagina» no aparece en lo que ve la empresa
+   (el nombre del aviso en WAS lleva el dominio de la app).
+Sin migración: todo vive en `connections.config`.
+
 ---
 
 ### ADR-S70 — Mesa de ayuda por correo (IMAP) + SLA en horas hábiles (v0.1.316)

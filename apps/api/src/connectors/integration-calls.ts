@@ -3,11 +3,14 @@ import {
     meetingActionKind,
     parseTeamsChannelRef,
     parseTeamsChatRef,
+    whatsappCountryOf,
+    whatsappRecipient,
     type ConnectorAction,
     type IntegrationKey,
     type IntegrationProvider,
 } from '@imagina-base/shared';
 import { buildWooRequest, checkWooResponse } from './woocommerce/wc-api';
+import { parseWaWebError, waWebCreds, waWebErrorText, waWebSendRequest } from '../whatsapp/whatsapp-web';
 
 /**
  * Peticiones de las apps de la galería (v0.1.203, ADR-S22 fase 4).
@@ -491,6 +494,29 @@ export function sheetCell(value: string): string {
 
 // --- Construcción por integración ---------------------------------------------
 
+/**
+ * v0.1.389 — un envío de la versión nueva de Imagina WAS. El número se manda
+ * con el `+` (un número local toma el indicativo del número de la empresa);
+ * un archivo tiene que estar en un enlace https público.
+ */
+function buildWaWebRequest(actionKey: string, v: Record<string, string>, creds: IntegrationCreds): IntegrationRequest {
+    const c = waWebCreds(creds);
+    if (c.accountId === null) throw new IntegrationInputError('La conexión no tiene un número elegido: edítala en Integraciones y elige el número.');
+    const dest = whatsappRecipient(v.recipient ?? '', whatsappCountryOf(creds.fields.account_phone));
+    if (!dest.ok) throw new IntegrationInputError((v.recipient ?? '').trim() === '' ? 'Falta el número de destino.' : `El número de destino no sirve: ${dest.error}`);
+    if (actionKey === 'send_text') {
+        const text = (v.message ?? '').trim();
+        if (text === '') throw new IntegrationInputError('El mensaje está vacío.');
+        return waWebSendRequest(c, { kind: 'text', to: dest.digits, text: v.message ?? '' });
+    }
+    if (actionKey === 'send_media') {
+        const url = (v.url ?? '').trim();
+        if (!/^https:\/\//i.test(url)) throw new IntegrationInputError('El enlace del archivo tiene que empezar con https://');
+        return waWebSendRequest(c, { kind: 'media', to: dest.digits, url, caption: v.caption ?? '' });
+    }
+    throw new IntegrationInputError(`La acción «${actionKey}» no existe en WhatsApp.`);
+}
+
 function wasServer(creds: IntegrationCreds): string {
     const raw = (creds.fields.server ?? '').trim() || 'https://was.imagina.cloud';
     return raw.replace(/\/+$/, '');
@@ -801,6 +827,9 @@ export function buildIntegrationRequest(
 ): IntegrationRequest {
     const v = compiled.values;
     if (integration === 'woocommerce') return buildWooRequest(actionKey, compiled, creds);
+    // v0.1.389 — la versión nueva de Imagina WAS (API v1): el mismo armado que
+    // usa el servicio de WhatsApp (el motor pasa por ahí para dejar el estado).
+    if (integration === 'whatsapp_web') return buildWaWebRequest(actionKey, v, creds);
     switch (`${integration}.${actionKey}`) {
         case 'whatsapp.send_text':
             // Exactamente los campos de la petición que ya funciona en
@@ -1108,6 +1137,10 @@ export function checkIntegrationResponse(
         }
         return status >= 400 ? `Telegram respondió ${status}.` : null;
     }
+    if (integration === 'whatsapp_web') {
+        const err = parseWaWebError(status, body);
+        return err ? waWebErrorText(err) : null;
+    }
     if (integration === 'whatsapp') {
         const inner = json ? Number(json.status) : NaN;
         if (status >= 400 || (Number.isFinite(inner) && inner >= 400)) {
@@ -1281,7 +1314,7 @@ export function parseVerify(
 
 // --- Mensaje de prueba ------------------------------------------------------------
 
-export const TEST_MESSAGE = 'Prueba de conexión de Imagina Base: si te llegó este mensaje, la integración quedó lista.';
+export const TEST_MESSAGE = 'Prueba de conexión: si te llegó este mensaje, la integración quedó lista.';
 
 /**
  * Un envío REAL con la misma función que usa el motor: si la prueba pasa, la
@@ -1293,6 +1326,9 @@ export function testSendRequest(
     to: string,
 ): IntegrationRequest | null {
     const target = to.trim();
+    if (integration === 'whatsapp_web') {
+        return buildIntegrationRequest('whatsapp_web', 'send_text', { values: { recipient: target, message: TEST_MESSAGE }, lines: {} }, creds);
+    }
     if (integration === 'whatsapp') {
         return buildIntegrationRequest(
             'whatsapp',

@@ -92,6 +92,7 @@ GLYPHS.teams = {
 
 // WhatsApp Business oficial (D3): el mismo glifo, sobre el verde oscuro de la marca.
 GLYPHS.whatsapp_cloud = GLYPHS.whatsapp!;
+GLYPHS.whatsapp_web = GLYPHS.whatsapp!;
 
 // SMS (v0.1.332, ADR-S82): el globo de texto de Phosphor (MIT) sobre el color
 // de cada proveedor — sus marcas son logotipos de texto que a este tamaño no se leen.

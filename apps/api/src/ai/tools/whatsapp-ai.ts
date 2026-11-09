@@ -62,23 +62,40 @@ export async function whatsappSchema(
     listSettings: Record<string, unknown>,
     fields: Field[],
 ): Promise<Record<string, unknown> | null> {
-    const wa = connections.filter((c) => c.integration_key === 'whatsapp_cloud');
+    // v0.1.389 — también la versión nueva de Imagina WAS (sin plantillas ni ventana de 24 h).
+    const wa = connections.filter((c) => c.integration_key === 'whatsapp_cloud' || c.integration_key === 'whatsapp_web');
     if (wa.length === 0) return null;
-    const templates = await approvedTemplates(tenantDb, tenantId, wa.map((c) => c.id));
+    const templates = await approvedTemplates(
+        tenantDb,
+        tenantId,
+        wa.filter((c) => c.integration_key === 'whatsapp_cloud').map((c) => c.id),
+    );
     const mapping = readWhatsappListFields(listSettings);
     const byId = new Map(fields.map((f) => [f.id, f.slug]));
     const columns: Record<string, string | null> = {};
     for (const role of WHATSAPP_FIELD_ROLES) columns[role] = mapping[role] ? (byId.get(mapping[role]!) ?? null) : null;
     return {
-        connections: wa.map((c) => ({
-            connection_id: c.id,
-            name: c.name,
-            phone: c.account_label,
-            approved_templates: templates.get(c.id) ?? [],
-        })),
+        connections: wa.map((c) =>
+            c.integration_key === 'whatsapp_web'
+                ? {
+                      connection_id: c.id,
+                      kind: 'was',
+                      name: c.name,
+                      phone: c.account_label,
+                      actions: ['send_text {recipient, message}', 'send_media {recipient, url, caption}'],
+                  }
+                : {
+                      connection_id: c.id,
+                      kind: 'oficial',
+                      name: c.name,
+                      phone: c.account_label,
+                      approved_templates: templates.get(c.id) ?? [],
+                  },
+        ),
         list_columns: columns,
         rules:
-            'send_template sirve siempre (plantilla APROBADA de approved_templates, con todas sus variables en values.variables: {"body.1": "{{slug}}"…}). ' +
+            'Conexiones kind "was": send_text {recipient, message} y send_media {recipient, url (https público), caption} salen siempre, sin plantillas ni ventana de 24 h; es un número vinculado, así que sólo a contactos que esperan el mensaje. ' +
+            'Conexiones kind "oficial" (Meta): send_template sirve siempre (plantilla APROBADA de approved_templates, con todas sus variables en values.variables: {"body.1": "{{slug}}"…}). ' +
             'send_text (texto libre) sólo funciona si el contacto escribió en las últimas 24 h — fuera de esa ventana la acción falla: para avisos usa una plantilla. ' +
             'El destinatario es values.to (un campo teléfono: "{{telefono}}"). Las plantillas se crean y aprueban en Meta, nunca desde aquí. ' +
             'Disparador whatsapp_message_received (llegó un mensaje de un contacto; {{whatsapp.texto}}, {{whatsapp.de}}, {{whatsapp.nombre}}): {connection_id?, field_filters?}. ' +

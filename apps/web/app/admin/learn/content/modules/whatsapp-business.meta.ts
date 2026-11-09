@@ -22,7 +22,7 @@ export const meta: LearnModuleMeta = {
             summary: 'Las dos formas de mandar WhatsApp desde la app, en qué se diferencian, cuánto cuesta cada una y cuándo conviene cada cual.',
             minutes: 5,
             level: 'basic',
-            keywords: 'whatsapp business api oficial meta cloud was no oficial diferencias costo plantillas',
+            keywords: 'whatsapp business api oficial meta cloud was imagina no oficial diferencias costo plantillas qr',
         },
         {
             id: 'wab-conectar',

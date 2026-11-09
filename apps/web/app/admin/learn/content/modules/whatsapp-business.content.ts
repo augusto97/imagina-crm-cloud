@@ -9,7 +9,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'La app puede mandar WhatsApp de dos maneras. **WhatsApp (WAS)** usa un número normal a través del servicio WAS: se conecta en dos minutos, pero no es la API oficial. **WhatsApp Business (oficial)** usa la API oficial de Meta (la «Cloud API»): pide un trámite inicial en Meta, y a cambio trae **plantillas aprobadas**, te entera de **lo que te escriben tus clientes** y te dice si cada mensaje se **entregó o se leyó**.',
+                md: 'La app puede mandar WhatsApp de dos maneras. **WhatsApp (WAS)** usa un número normal que vinculas con el código QR: se conecta en dos minutos, manda lo que quieras cuando quieras, te entera de **lo que te escriben** y de si cada mensaje se **entregó o se leyó**, pero no es la API oficial. **WhatsApp Business (oficial)** usa la API oficial de Meta (la «Cloud API»): pide un trámite inicial en Meta y los avisos que tú inicias van con **plantillas aprobadas**, a cambio de ser la vía que Meta permite para enviar a muchos clientes.',
             },
             { t: 'anim', key: 'wab-hero', caption: 'Con la API oficial, el registro muestra el último mensaje (tuyo o del cliente) y si se entregó y se leyó.' },
             { t: 'h', text: 'Las diferencias, una por una' },
@@ -18,10 +18,10 @@ export const articles: LearnArticle[] = [
                 title: 'WhatsApp (WAS) frente a WhatsApp Business (oficial)',
                 rows: [
                     { name: 'Cómo se conecta', what: 'WAS: pegas una clave y eliges el número. Oficial: creas una app en Meta, un usuario del sistema con un token permanente y copias tres datos más.', tip: 'Si nunca entraste a developers.facebook.com, pide ayuda para el oficial la primera vez: después no hay que tocarlo.' },
-                    { name: 'Avisos que inicias tú', what: 'WAS: cualquier texto. Oficial: sólo **plantillas aprobadas por Meta** cuando el cliente no te escribió en las últimas 24 horas.' },
-                    { name: 'Respuestas de tus clientes', what: 'WAS: no llegan a la app. Oficial: cada mensaje que te escriben encuentra (o crea) el registro del contacto y puede disparar una automatización.' },
-                    { name: 'Estado de cada envío', what: 'WAS: sólo te enteras de si el servicio lo aceptó. Oficial: **Enviado, Entregado, Leído o Fallido**, en una columna del registro.' },
-                    { name: 'Costo', what: 'WAS: tu plan del servicio WAS. Oficial: Meta cobra por conversación a **tu** cuenta de Meta, según el país y el tipo de plantilla.' },
+                    { name: 'Avisos que inicias tú', what: 'WAS: cualquier texto o archivo. Oficial: sólo **plantillas aprobadas por Meta** cuando el cliente no te escribió en las últimas 24 horas.' },
+                    { name: 'Respuestas de tus clientes', what: 'En los dos: cada mensaje que te escriben encuentra (o crea) el registro del contacto y puede disparar una automatización. (La versión anterior de WAS no las traía.)' },
+                    { name: 'Estado de cada envío', what: 'En los dos: **Enviado, Entregado, Leído o Fallido**, en una columna del registro, con el motivo cuando falla.' },
+                    { name: 'Costo', what: 'WAS: tu plan de WAS. Oficial: Meta cobra por conversación a **tu** cuenta de Meta, según el país y el tipo de plantilla.' },
                     { name: 'Riesgo de bloqueo', what: 'Con un número no oficial, los envíos masivos pueden hacer que WhatsApp bloquee el número. La API oficial es la vía que Meta permite para empresas.' },
                     { name: 'Cuenta verificada', what: 'Oficial: tu número muestra el nombre de la empresa y puede tener el distintivo verificado.' },
                 ],
@@ -29,13 +29,13 @@ export const articles: LearnArticle[] = [
             {
                 t: 'cards',
                 items: [
-                    { icon: 'Zap', title: 'Elige WAS si…', md: 'Quieres empezar hoy, mandas pocos mensajes y no necesitas leer las respuestas en la app.', tone: 'amber' },
-                    { icon: 'ShieldCheck', title: 'Elige el oficial si…', md: 'Mandas avisos a muchos clientes, quieres ver quién leyó y que lo que te escriben llegue a tus registros.', tone: 'mint' },
+                    { icon: 'Zap', title: 'Elige WAS si…', md: 'Quieres empezar hoy, conversas con clientes que te escriben y mandas archivos o mensajes sin pasar por plantillas.', tone: 'amber' },
+                    { icon: 'ShieldCheck', title: 'Elige el oficial si…', md: 'Mandas avisos a muchos clientes que no te escribieron, quieres el nombre verificado de la empresa y la vía que Meta permite.', tone: 'mint' },
                 ],
             },
             {
                 t: 'p',
-                md: 'Puedes tener **las dos** conectadas a la vez: por ejemplo, WAS para avisos internos al equipo y el oficial para los clientes. En cada automatización eliges cuál usar.',
+                md: 'Puedes tener **las dos** conectadas a la vez: por ejemplo, WAS para atender a quien te escribe y el oficial para los avisos masivos. En cada automatización eliges cuál usar.',
             },
             {
                 t: 'example',

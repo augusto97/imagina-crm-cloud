@@ -31,6 +31,7 @@ import {
     whatsappWindowOpen,
     writeWhatsappListFields,
     validateFieldValue,
+    isWhatsappProvider,
     type Field,
     type FieldType,
     type List,
@@ -46,6 +47,8 @@ import {
     type WhatsappStatus,
     type WhatsappTemplate,
     type WhatsappTestSendInput,
+    type WhatsappProvider,
+    type WhatsappWebState,
     type Role,
 } from '@imagina-base/shared';
 import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -57,7 +60,7 @@ import { can } from '../authz/can';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { applyMergeTags, labelResolverFor, regionalFormatterFor, type LabelFieldLike } from '../automations/merge-tags';
 import { recordLinkFor, recordTokenValue } from '../qr/qr-runtime';
-import { safeWebhookFetch } from '../common/safe-fetch';
+import { devPrivateEgressAllowed, safeWebhookFetch } from '../common/safe-fetch';
 import { ENV, type Env } from '../config/env';
 import { redactValues } from '../connectors/connection-parts';
 import { ConnectionUnusableError, ConnectorsService } from '../connectors/connectors.service';
@@ -94,6 +97,29 @@ import {
     type WhatsappCreds,
 } from './whatsapp-graph';
 import { parseMetaWebhook, verifyMetaSignature, type InboundMessage, type StatusUpdate } from './whatsapp-webhook';
+import {
+    isSystemicWaWebError,
+    isSystemicWaWebFailure,
+    missingWaWebAbilities,
+    parseWaWebAccount,
+    parseWaWebError,
+    parseWaWebHook,
+    parseWaWebHookActive,
+    parseWaWebHookCreated,
+    parseWaWebSend,
+    verifyWaWebSignature,
+    waWebAccountRequest,
+    waWebAccountStatusLabel,
+    waWebCreateHookRequest,
+    waWebCreds,
+    waWebDeleteHookRequest,
+    waWebErrorText,
+    waWebHookRequest,
+    waWebSendRequest,
+    type WaWebCreds,
+    type WaWebPayload,
+} from './whatsapp-web';
+import { encryptSecret } from '../common/secret-box';
 
 /**
  * D3 — WhatsApp oficial (Meta WhatsApp Cloud API).
@@ -149,9 +175,14 @@ interface ConnRow {
 /** Un envío ya armado (lo que se va a mandar), listo para ejecutarse. */
 export interface PreparedSend {
     tenantId: number;
+    /** v0.1.389 — la oficial de Meta o la versión nueva de Imagina WAS. */
+    provider: WhatsappProvider;
     connection: { id: number; name: string; ownerUserId: number | null };
-    creds: WhatsappCreds;
-    kind: 'template' | 'text';
+    /** Meta (null en Imagina WAS). */
+    creds: WhatsappCreds | null;
+    /** Imagina WAS (null en Meta). */
+    web: { creds: WaWebCreds; payload: WaWebPayload } | null;
+    kind: 'template' | 'text' | 'media';
     to: string;
     payload: Record<string, unknown>;
     text: string;
@@ -164,9 +195,40 @@ interface Executed {
     wamid: string | null;
     status: number | null;
     body: string;
-    error: MetaError | null;
-    /** Error de red (no llegó a Meta). */
+    /** El motivo en palabras (si no salió). */
+    errorText: string | null;
+    /** El motivo es de la CONEXIÓN (clave, número desconectado…), no del destinatario. */
+    systemic: boolean;
+    /** Código del error (Meta: número; Imagina WAS: texto), para el historial. */
+    errorCode: string | number | null;
+    /** Error de red (no llegó al servidor). */
     network: string | null;
+}
+
+/** Las cabeceras de un aviso: Meta firma con una, Imagina WAS con otras. */
+export interface WhatsappHookHeaders {
+    meta?: string;
+    web?: string;
+    timestamp?: string;
+    event?: string;
+}
+
+/** Lo que guarda la conexión de Imagina WAS sobre sus avisos (`config.whatsapp_web`). */
+interface WebHookState {
+    hook_id: number | null;
+    hook_url: string | null;
+    error: string | null;
+}
+
+function readWebHookState(config: Record<string, unknown>): WebHookState {
+    const raw = config.whatsapp_web;
+    const r = raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+    const id = Number(r.hook_id);
+    return {
+        hook_id: Number.isInteger(id) && id > 0 ? id : null,
+        hook_url: typeof r.hook_url === 'string' && r.hook_url !== '' ? r.hook_url : null,
+        error: typeof r.error === 'string' && r.error !== '' ? r.error : null,
+    };
 }
 
 /** Lo que un webhook de Meta encola por mensaje o estado. */
@@ -178,6 +240,11 @@ export type WhatsappJob =
 /** Cola de avisos (la arma `WhatsappQueue`; sin ella se procesa en el acto). */
 export interface WhatsappJobSink {
     add(job: WhatsappJob, dedupId: string | null): Promise<void>;
+}
+
+/** «WhatsApp (Ventas)», o el nombre tal cual si ya empieza con «WhatsApp» (no «WhatsApp (WhatsApp…)»). */
+function whatsappConnLabel(name: string): string {
+    return /^whatsapp\b/i.test(name.trim()) ? name.trim() : `WhatsApp (${name})`;
 }
 
 @Injectable()
@@ -201,7 +268,14 @@ export class WhatsappService {
         @Optional() private readonly recordsSvc?: RecordsService,
         @Optional() private readonly incidents?: IncidentHub,
         @Optional() private readonly aiFields?: AiFieldsService,
-    ) {}
+    ) {
+        // v0.1.389 — Imagina WAS: al conectar se registran solos los avisos; al
+        // borrar la conexión se sacan (si no, seguirían llamando a una URL muerta).
+        this.connectors.onAfterKeyConnect(async (tenantId, connectionId, key) => {
+            if (key === 'whatsapp_web') await this.ensureWebHook(tenantId, connectionId, false);
+        });
+        this.connectors.onBeforeRemove((tenantId, connectionId) => this.forgetWebHook(tenantId, connectionId));
+    }
 
     setSink(sink: WhatsappJobSink | null): void {
         this.sink = sink;
@@ -273,11 +347,18 @@ export class WhatsappService {
      * trae se ENCOLA (Meta corta si no se le contesta rápido y reintenta), con
      * un id por mensaje/estado para no procesar dos veces el mismo aviso.
      */
-    async receive(token: string, rawBody: string, signature: string | undefined): Promise<void> {
+    async receive(token: string, rawBody: string, headers: WhatsappHookHeaders | string | undefined): Promise<void> {
+        // Un texto suelto es la firma de Meta (`X-Hub-Signature-256`), como antes de v0.1.389.
+        const sig: WhatsappHookHeaders = typeof headers === 'object' && headers !== null ? headers : { meta: headers };
         const hook = await this.hookByToken(token);
         if (!hook) throw new NotFoundException({ code: 'not_found', message: 'No encontrado', data: { status: 404 } });
-        const appSecret = await this.appSecretOf(hook.tenantId, hook.connectionId);
-        if (appSecret === null || !verifyMetaSignature(appSecret, rawBody, signature)) {
+        const auth = await this.hookAuthOf(hook.tenantId, hook.connectionId);
+        const valid =
+            auth !== null &&
+            (auth.provider === 'whatsapp_cloud'
+                ? verifyMetaSignature(auth.secret, rawBody, sig.meta)
+                : verifyWaWebSignature(auth.secret, rawBody, sig.web, sig.timestamp));
+        if (!valid) {
             throw new UnauthorizedException({ code: 'bad_signature', message: 'Firma inválida', data: { status: 401 } });
         }
         await this.db.update(whatsappHooks).set({ lastHookAt: new Date() }).where(eq(whatsappHooks.token, token));
@@ -285,6 +366,10 @@ export class WhatsappService {
         try {
             body = JSON.parse(rawBody);
         } catch {
+            return;
+        }
+        if (auth.provider === 'whatsapp_web') {
+            await this.receiveWeb(hook, auth.accountId, body, sig.event);
             return;
         }
         const parsed = parseMetaWebhook(body);
@@ -310,13 +395,68 @@ export class WhatsappService {
         }
     }
 
-    /** La clave secreta de la app de la conexión (null si no hay o no se puede leer). */
-    private async appSecretOf(tenantId: number, connectionId: number): Promise<string | null> {
+    /**
+     * v0.1.389 — Imagina WAS: los avisos son de TODO el espacio de trabajo
+     * (todos sus números). Cada conexión registró el suyo y atiende sólo los
+     * de SU número; el de otro número lo atiende la conexión de ese número.
+     */
+    private async receiveWeb(
+        hook: { tenantId: number; connectionId: number },
+        ownAccount: number | null,
+        body: unknown,
+        headerEvent: string | undefined,
+    ): Promise<void> {
+        const parsed = parseWaWebHook(body, headerEvent);
+        if (parsed.accountId !== null && ownAccount !== null && parsed.accountId !== ownAccount) return;
+        const jobs: Array<{ job: WhatsappJob; dedup: string }> = [];
+        if (parsed.message) {
+            const m = parsed.message;
+            jobs.push({
+                job: { kind: 'message', tenantId: hook.tenantId, connectionId: hook.connectionId, message: { ...m, at: m.at.toISOString() } },
+                dedup: `m-${m.id}`,
+            });
+        }
+        if (parsed.status) {
+            const st = parsed.status;
+            // «canceled» se lee como «failed»: para el registro las dos son «no salió».
+            const status = st.status === 'canceled' ? 'failed' : st.status;
+            jobs.push({
+                job: {
+                    kind: 'status',
+                    tenantId: hook.tenantId,
+                    connectionId: hook.connectionId,
+                    status: {
+                        phoneNumberId: st.phoneNumberId,
+                        id: st.id,
+                        status,
+                        recipientId: st.recipientId,
+                        errors: st.errors,
+                        detail: st.errors[0]?.message ?? null,
+                        systemic: isSystemicWaWebFailure(st.failureReason),
+                        at: st.at.toISOString(),
+                    },
+                },
+                dedup: `s-${st.id}-${status}`,
+            });
+        }
+        for (const { job, dedup } of jobs) {
+            if (this.sink) await this.sink.add(job, dedup);
+            else await this.process(job).catch((err: unknown) => this.logger.warn(`Aviso de WhatsApp: ${String(err)}`));
+        }
+    }
+
+    /**
+     * Con qué se verifica un aviso: la clave secreta de la app (Meta) o el
+     * secreto que dio Imagina WAS al registrar el aviso. Null si no hay o no
+     * se puede leer.
+     */
+    private async hookAuthOf(tenantId: number, connectionId: number): Promise<{ provider: WhatsappProvider; secret: string; accountId: number | null } | null> {
         try {
             const out = await this.tenantDb.withTenant(tenantId, (tx) => this.connectors.integrationCredsInTx(tx, tenantId, connectionId));
-            if (!out || out.provider !== 'whatsapp_cloud') return null;
+            if (!out || !isWhatsappProvider(out.provider)) return null;
             const secret = out.creds.signingSecret ?? '';
-            return secret !== '' ? secret : null;
+            if (secret === '') return null;
+            return { provider: out.provider, secret, accountId: out.provider === 'whatsapp_web' ? waWebCreds(out.creds).accountId : null };
         } catch (err) {
             if (err instanceof ConnectionUnusableError) {
                 this.reportConnection(tenantId, connectionId, null, err.message);
@@ -352,7 +492,7 @@ export class WhatsappService {
             .from(connections)
             .where(and(eq(connections.tenantId, tenantId), eq(connections.id, id)))
             .limit(1);
-        return row && row.provider === 'whatsapp_cloud' ? (row as ConnRow) : null;
+        return row && isWhatsappProvider(row.provider) ? (row as ConnRow) : null;
     }
 
     /**
@@ -362,8 +502,11 @@ export class WhatsappService {
      */
     private async resolveConnection(tx: Tx, tenantId: number, hookConnectionId: number, phoneNumberId: string): Promise<ConnRow | null> {
         const own = await this.connRow(tx, tenantId, hookConnectionId);
-        const ownPhone = own ? String((own.config.fields as Record<string, unknown> | undefined)?.phone_number_id ?? '') : '';
-        if (own && (phoneNumberId === '' || ownPhone === phoneNumberId)) return own;
+        // Meta identifica el número por su `phone_number_id`; Imagina WAS, por el id de la cuenta.
+        const idOf = (r: { provider: string; config: unknown }): string =>
+            String(((r.config as Record<string, unknown>).fields as Record<string, unknown> | undefined)?.[r.provider === 'whatsapp_web' ? 'account' : 'phone_number_id'] ?? '');
+        if (own && (phoneNumberId === '' || idOf(own) === phoneNumberId)) return own;
+        const provider = own?.provider ?? 'whatsapp_cloud';
         const rows = await tx
             .select({
                 id: connections.id,
@@ -374,8 +517,8 @@ export class WhatsappService {
                 visibility: connections.visibility,
             })
             .from(connections)
-            .where(and(eq(connections.tenantId, tenantId), eq(connections.provider, 'whatsapp_cloud')));
-        const hit = rows.find((r) => String(((r.config as Record<string, unknown>).fields as Record<string, unknown> | undefined)?.phone_number_id ?? '') === phoneNumberId);
+            .where(and(eq(connections.tenantId, tenantId), eq(connections.provider, provider)));
+        const hit = rows.find((r) => idOf(r) === phoneNumberId);
         return (hit as ConnRow | undefined) ?? null;
     }
 
@@ -416,6 +559,7 @@ export class WhatsappService {
 
     async connectionDetail(tenantId: number, actor: WhatsappActor, connectionId: number): Promise<WhatsappConnectionDetail> {
         const editable = await this.connectors.editableConnection(tenantId, actor.userId, actor.role, connectionId);
+        if (editable.provider === 'whatsapp_web') return this.webConnectionDetail(tenantId, actor, connectionId);
         if (editable.provider !== 'whatsapp_cloud') throw this.notWhatsapp();
         const hook = await this.ensureHook(tenantId, connectionId);
         const visible = (await this.connectors.list(tenantId, actor.userId, actor.role)).find((c) => c.id === connectionId);
@@ -464,6 +608,8 @@ export class WhatsappService {
         }
         const syncedAt = out.templates.reduce<Date | null>((acc, t) => (acc === null || t.syncedAt > acc ? t.syncedAt : acc), null);
         return {
+            provider: 'whatsapp_cloud',
+            web: null,
             connection: {
                 id: out.row.id,
                 name: out.row.name,
@@ -496,7 +642,7 @@ export class WhatsappService {
 
     async updateConfig(tenantId: number, actor: WhatsappActor, connectionId: number, input: UpdateWhatsappConfigInput): Promise<WhatsappConnectionDetail> {
         const editable = await this.connectors.editableConnection(tenantId, actor.userId, actor.role, connectionId);
-        if (editable.provider !== 'whatsapp_cloud') throw this.notWhatsapp();
+        if (!isWhatsappProvider(editable.provider)) throw this.notWhatsapp();
         if (input.inbound_list_id !== null) {
             // La lista tiene que ser de la empresa y estar viva (lanza 404 si no).
             const list = await this.lists.get(tenantId, String(input.inbound_list_id));
@@ -530,6 +676,21 @@ export class WhatsappService {
      */
     async subscribeApp(tenantId: number, actor: WhatsappActor, connectionId: number, override: boolean): Promise<WhatsappConnectionDetail> {
         const editable = await this.connectors.editableConnection(tenantId, actor.userId, actor.role, connectionId);
+        if (editable.provider === 'whatsapp_web') {
+            // v0.1.389 — Imagina WAS: «registrar de nuevo» los avisos.
+            const state = await this.ensureWebHook(tenantId, connectionId, true);
+            if (state.error) throw new BadRequestException({ code: 'whatsapp_subscribe_failed', message: state.error, data: { status: 400 } });
+            await this.audit.log({
+                tenantId,
+                userId: actor.userId,
+                action: 'whatsapp.subscribe',
+                targetType: 'connection',
+                targetId: connectionId,
+                targetLabel: editable.name,
+                meta: { provider: 'whatsapp_web' },
+            });
+            return this.connectionDetail(tenantId, actor, connectionId);
+        }
         if (editable.provider !== 'whatsapp_cloud') throw this.notWhatsapp();
         const creds = await this.credsFor(tenantId, connectionId);
         const hook = await this.ensureHook(tenantId, connectionId);
@@ -553,6 +714,206 @@ export class WhatsappService {
             meta: { override },
         });
         return this.connectionDetail(tenantId, actor, connectionId);
+    }
+
+    // ── Imagina WAS (v0.1.389) ──────────────────────────────────────────
+
+    /** Las credenciales de una conexión de Imagina WAS (lanza si no lo es o no se pueden leer). */
+    private async webCredsFor(tenantId: number, connectionId: number): Promise<WaWebCreds> {
+        const out = await this.tenantDb.withTenant(tenantId, (tx) => this.connectors.integrationCredsInTx(tx, tenantId, connectionId));
+        if (!out || out.provider !== 'whatsapp_web') throw this.notWhatsapp();
+        return waWebCreds(out.creds);
+    }
+
+    private async saveWebHookState(tenantId: number, connectionId: number, state: WebHookState, secret?: string): Promise<void> {
+        await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [row] = await tx
+                .select({ config: connections.config, secrets: connections.secrets })
+                .from(connections)
+                .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
+                .limit(1);
+            if (!row) return;
+            const config = { ...((row.config ?? {}) as Record<string, unknown>), whatsapp_web: { ...state } };
+            const patch: Record<string, unknown> = { config, updatedAt: new Date() };
+            if (secret !== undefined) {
+                // El secreto de los avisos, cifrado como el resto de las credenciales.
+                patch.secrets = { ...((row.secrets ?? {}) as Record<string, string>), signing_secret: encryptSecret(secret, this.env.SECRETS_KEY) };
+            }
+            await tx.update(connections).set(patch).where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)));
+        });
+    }
+
+    /**
+     * Deja registrados en Imagina WAS los avisos de la conexión (estado de cada
+     * envío y mensajes entrantes) hacia la URL de esta app. Idempotente: si el
+     * aviso existe, sigue activo y apunta aquí, no hace nada; si no, lo crea (y
+     * borra el anterior). Imagina WAS da el secreto de la firma UNA vez, al
+     * crearlo: se guarda cifrado. Un fallo no lanza: queda a la vista.
+     */
+    async ensureWebHook(tenantId: number, connectionId: number, force = false): Promise<WebHookState> {
+        const row = await this.tenantDb.withTenant(tenantId, (tx) => this.connRow(tx, tenantId, connectionId));
+        if (!row || row.provider !== 'whatsapp_web') return { hook_id: null, hook_url: null, error: null };
+        let creds: WaWebCreds;
+        try {
+            creds = await this.webCredsFor(tenantId, connectionId);
+        } catch (err) {
+            const error = err instanceof Error ? err.message : String(err);
+            return { ...readWebHookState(row.config), error };
+        }
+        const prev = readWebHookState(row.config);
+        const hook = await this.ensureHook(tenantId, connectionId);
+        const url = this.hookUrl(hook.token);
+        const save = async (state: WebHookState, secret?: string): Promise<WebHookState> => {
+            await this.saveWebHookState(tenantId, connectionId, state, secret).catch(() => undefined);
+            return state;
+        };
+        // Sólo en desarrollo (DEV_ALLOW_PRIVATE_EGRESS) se acepta http, para probar contra un WAS local.
+        if (!/^https:\/\//i.test(url) && !devPrivateEgressAllowed()) {
+            return save({ ...prev, error: 'Los avisos necesitan que esta app esté publicada con https (APP_BASE_URL): sin ellos los mensajes salen igual, pero no sabremos si se entregaron ni recibiremos los de tus clientes.' });
+        }
+        const call = async (req: { url: string; method: string; headers: Record<string, string>; body?: string }) => {
+            const res = await safeWebhookFetch(req.url, { method: req.method, headers: req.headers, body: req.body, captureBody: true, maxCaptureBytes: 64 * 1024, timeoutMs: 12_000 });
+            return { status: res.status, body: res.body ?? '' };
+        };
+        try {
+            const hasSecret = (await this.hookAuthOf(tenantId, connectionId)) !== null;
+            if (prev.hook_id !== null && prev.hook_url === url && hasSecret && !force) {
+                const got = await call(waWebHookRequest(creds, prev.hook_id));
+                const active = parseWaWebHookActive(got.status, got.body);
+                if (active === true) return prev.error ? save({ ...prev, error: null }) : prev;
+                if (active === null) return prev;
+            }
+            if (prev.hook_id !== null) await call(waWebDeleteHookRequest(creds, prev.hook_id)).catch(() => undefined);
+            // El nombre lleva el dominio de esta app (no la marca: puede ser white-label).
+            const created = await call(waWebCreateHookRequest(creds, url, `${new URL(url).host} · ${row.name}`.slice(0, 128)));
+            const err = parseWaWebError(created.status, created.body);
+            if (err) {
+                const text =
+                    err.code === 'missing_ability'
+                        ? 'La clave no tiene el permiso webhooks.manage (avisos): márcalo en tu panel de WhatsApp (API Keys) y vuelve a registrar los avisos. Sin ellos los mensajes salen igual, pero no sabremos si se entregaron ni recibiremos los de tus clientes.'
+                        : `No pudimos registrar los avisos en WAS: ${waWebErrorText(err)}`;
+                return save({ hook_id: null, hook_url: null, error: text });
+            }
+            const parsed = parseWaWebHookCreated(created.body);
+            if (!parsed) return save({ hook_id: null, hook_url: null, error: 'WAS creó el aviso pero no devolvió su secreto: vuelve a registrarlo.' });
+            return save({ hook_id: parsed.id, hook_url: url, error: null }, parsed.secret);
+        } catch (err) {
+            const message = redactValues(err instanceof Error ? err.message : String(err), [creds.key]);
+            return save({ ...prev, error: `No pudimos comunicarnos con el servidor de WhatsApp para registrar los avisos (${message}).` });
+        }
+    }
+
+    /** Al borrar la conexión: se saca el aviso de Imagina WAS (si no, seguiría llamando a una URL muerta). */
+    private async forgetWebHook(tenantId: number, connectionId: number): Promise<void> {
+        const row = await this.tenantDb.withTenant(tenantId, (tx) => this.connRow(tx, tenantId, connectionId));
+        if (!row || row.provider !== 'whatsapp_web') return;
+        const state = readWebHookState(row.config);
+        if (state.hook_id === null) return;
+        const creds = await this.webCredsFor(tenantId, connectionId);
+        const req = waWebDeleteHookRequest(creds, state.hook_id);
+        await safeWebhookFetch(req.url, { method: req.method, headers: req.headers, captureBody: true, timeoutMs: 10_000 });
+    }
+
+    /** Panel de una conexión de Imagina WAS: el número y su estado, la clave, los avisos y la lista de entrada. */
+    private async webConnectionDetail(tenantId: number, actor: WhatsappActor, connectionId: number): Promise<WhatsappConnectionDetail> {
+        // Mantiene los avisos registrados (un GET si ya están; los crea si faltan).
+        const hookState = await this.ensureWebHook(tenantId, connectionId, false);
+        const hook = await this.ensureHook(tenantId, connectionId);
+        const visible = (await this.connectors.list(tenantId, actor.userId, actor.role)).find((c) => c.id === connectionId);
+        const out = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const row = await this.connRow(tx, tenantId, connectionId);
+            if (!row) throw this.notWhatsapp();
+            const cfg = readWhatsappConnectionConfig(row.config);
+            const f = (row.config.fields ?? {}) as Record<string, string>;
+            const allLists = await tx
+                .select({ id: lists.id, name: lists.name })
+                .from(lists)
+                .where(and(eq(lists.tenantId, tenantId), isNull(lists.deletedAt)))
+                .orderBy(asc(lists.name));
+            const [totals] = await tx
+                .select({ contacts: sql<number>`count(*)::int` })
+                .from(whatsappContacts)
+                .where(and(eq(whatsappContacts.tenantId, tenantId), eq(whatsappContacts.connectionId, connectionId)));
+            const [lastErr] = await tx
+                .select({ error: connections.lastCheckError, ok: connections.lastCheckOk })
+                .from(connections)
+                .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
+                .limit(1);
+            return { row, cfg, f, allLists, totals, lastErr };
+        });
+        const inbound = out.cfg.inbound_list_id ? await this.listColumns(tenantId, String(out.cfg.inbound_list_id)).catch(() => null) : null;
+        // El número como está AHORA en Imagina WAS (best-effort).
+        let account: WhatsappWebState['account'] = null;
+        let accountError: string | null = null;
+        let server = '';
+        try {
+            const creds = await this.webCredsFor(tenantId, connectionId);
+            server = creds.server;
+            if (creds.accountId === null) accountError = 'La conexión no tiene un número elegido: actualízala y elige el número.';
+            else {
+                const req = waWebAccountRequest(creds, creds.accountId);
+                const res = await safeWebhookFetch(req.url, { method: req.method, headers: req.headers, captureBody: true, maxCaptureBytes: 64 * 1024, timeoutMs: 8_000 });
+                const err = parseWaWebError(res.status, res.body ?? '');
+                if (err) accountError = waWebErrorText(err);
+                else {
+                    const a = parseWaWebAccount(res.body ?? '');
+                    if (a) {
+                        account = {
+                            id: a.id,
+                            phone: a.phone,
+                            name: a.name,
+                            status: a.status,
+                            status_label: waWebAccountStatusLabel(a),
+                            status_reason: a.statusReason,
+                            banned_until: a.bannedUntil,
+                            enabled: a.enabled,
+                        };
+                    }
+                }
+            }
+        } catch (err) {
+            accountError = err instanceof Error ? err.message : String(err);
+        }
+        const abilities = (out.f.abilities ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+        return {
+            provider: 'whatsapp_web',
+            web: {
+                server,
+                workspace: out.f.workspace || null,
+                account,
+                account_error: accountError,
+                abilities,
+                missing_abilities: abilities.length > 0 ? missingWaWebAbilities(abilities) : [],
+                hook: { registered: hookState.hook_id !== null && hookState.error === null, error: hookState.error },
+            },
+            connection: {
+                id: out.row.id,
+                name: out.row.name,
+                phone_number_id: '',
+                waba_id: '',
+                display_phone: out.f.account_phone || account?.phone || null,
+                verified_name: out.f.account_name || account?.name || null,
+                quality_rating: null,
+                can_edit: true,
+                secret_state: visible?.secret_state ?? 'ok',
+                has_app_secret: hookState.hook_id !== null,
+            },
+            webhook: {
+                url: this.hookUrl(hook.token),
+                verify_token: '',
+                last_hook_at: hook.lastHookAt ? hook.lastHookAt.toISOString() : null,
+                subscribed: hookState.hook_id !== null && hookState.error === null,
+                subscribe_error: hookState.error,
+            },
+            config: out.cfg,
+            inbound_columns: inbound,
+            lists: out.allLists,
+            templates: [],
+            templates_synced_at: null,
+            template_manager_url: '',
+            totals: { contacts: Number(out.totals?.contacts ?? 0), open_windows: 0 },
+            last_error: out.lastErr?.ok === false ? (out.lastErr.error ?? null) : null,
+        };
     }
 
     private async credsFor(tenantId: number, connectionId: number): Promise<WhatsappCreds> {
@@ -674,11 +1035,21 @@ export class WhatsappService {
     }
 
     /** Las plantillas aprobadas de las conexiones que la persona puede usar (editor de automatizaciones). */
-    async usableConnections(tenantId: number, actor: WhatsappActor): Promise<Array<{ id: number; name: string; display_phone: string | null; templates: WhatsappTemplate[] }>> {
-        const conns = (await this.connectors.list(tenantId, actor.userId, actor.role)).filter((c) => c.integration_key === 'whatsapp_cloud');
+    async usableConnections(
+        tenantId: number,
+        actor: WhatsappActor,
+    ): Promise<Array<{ id: number; provider: WhatsappProvider; name: string; display_phone: string | null; templates: WhatsappTemplate[] }>> {
+        const conns = (await this.connectors.list(tenantId, actor.userId, actor.role)).filter((c) => isWhatsappProvider(c.integration_key));
         const out = [];
         for (const c of conns) {
-            out.push({ id: c.id, name: c.name, display_phone: c.account_label, templates: await this.templatesOf(tenantId, c.id, true) });
+            const provider = c.integration_key as WhatsappProvider;
+            out.push({
+                id: c.id,
+                provider,
+                name: c.name,
+                display_phone: c.account_label,
+                templates: provider === 'whatsapp_cloud' ? await this.templatesOf(tenantId, c.id, true) : [],
+            });
         }
         return out;
     }
@@ -983,7 +1354,16 @@ export class WhatsappService {
         const metaErr: MetaError | null = firstError
             ? { status: 200, code: firstError.code, subcode: null, type: null, message: firstError.message || firstError.title, details: firstError.details }
             : null;
-        const detail = incoming === 'fallido' ? (metaErr ? metaErrorText(metaErr) : 'Meta no pudo entregar el mensaje.') : null;
+        // v0.1.389 — Imagina WAS ya trae el motivo en palabras (`detail`).
+        const web = st.detail !== undefined;
+        const detail =
+            incoming === 'fallido'
+                ? web
+                    ? (st.detail ?? 'No se pudo entregar el mensaje.')
+                    : metaErr
+                      ? metaErrorText(metaErr)
+                      : 'Meta no pudo entregar el mensaje.'
+                : null;
         const out = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const conn = await this.resolveConnection(tx, tenantId, hookConnectionId, st.phoneNumberId);
             if (!conn) return null;
@@ -1012,8 +1392,8 @@ export class WhatsappService {
         });
         if (!out) return 'ignored';
         this.afterWrite(tenantId, out.write);
-        if (incoming === 'fallido' && metaErr && isSystemicMetaError(metaErr)) {
-            this.reportConnection(tenantId, out.conn.id, out.conn, detail ?? metaErrorText(metaErr));
+        if (incoming === 'fallido' && (web ? st.systemic === true : metaErr !== null && isSystemicMetaError(metaErr))) {
+            this.reportConnection(tenantId, out.conn.id, out.conn, detail ?? 'No se pudo entregar el mensaje.');
         }
         return 'processed';
     }
@@ -1029,7 +1409,7 @@ export class WhatsappService {
         tenantId: number,
         args: {
             connectionId: number;
-            kind: 'template' | 'text';
+            kind: 'template' | 'text' | 'media';
             to: string;
             template?: string;
             language?: string;
@@ -1038,10 +1418,15 @@ export class WhatsappService {
             headerFilename?: string;
             text?: string;
             previewUrl?: boolean;
+            /** v0.1.389 — Imagina WAS: el archivo (enlace https) y su texto. */
+            mediaUrl?: string;
+            caption?: string;
         },
     ): Promise<PreparedSend> {
         const conn = await this.connRow(tx, tenantId, args.connectionId);
         if (!conn) throw new WhatsappSendError('La conexión de WhatsApp ya no existe: revisa la acción.', 'connection_missing');
+        if (conn.provider === 'whatsapp_web') return this.prepareWebSendInTx(tx, tenantId, conn, args);
+        if (args.kind === 'media') throw new WhatsappSendError('Con la API oficial de Meta los archivos van en el encabezado de una plantilla.', 'media_unsupported');
         let creds: WhatsappCreds;
         try {
             const out = await this.connectors.integrationCredsInTx(tx, tenantId, args.connectionId);
@@ -1059,7 +1444,14 @@ export class WhatsappService {
         if (!dest.ok) {
             throw new WhatsappSendError(args.to.trim() === '' ? 'Falta el número de destino.' : `El número de destino no sirve: ${dest.error}`, 'bad_recipient');
         }
-        const base = { tenantId, connection: { id: conn.id, name: conn.name, ownerUserId: conn.ownerUserId }, creds, to: dest.digits };
+        const base = {
+            tenantId,
+            provider: 'whatsapp_cloud' as const,
+            connection: { id: conn.id, name: conn.name, ownerUserId: conn.ownerUserId },
+            creds,
+            web: null,
+            to: dest.digits,
+        };
         if (args.kind === 'text') {
             const text = (args.text ?? '').trim();
             if (text === '') throw new WhatsappSendError('El mensaje está vacío.', 'empty');
@@ -1106,23 +1498,133 @@ export class WhatsappService {
         };
     }
 
-    /** Manda el envío a Meta (fuera de cualquier transacción si se puede). */
+    /**
+     * v0.1.389 — Imagina WAS: sin plantillas ni ventana de 24 h (es un número
+     * vinculado). Texto o un archivo por enlace https. El número de destino se
+     * completa con el indicativo del número de la empresa si viene sin él.
+     */
+    private prepareWebSendInTx(
+        tx: Tx,
+        tenantId: number,
+        conn: ConnRow,
+        args: Parameters<WhatsappService['prepareSendInTx']>[2],
+    ): Promise<PreparedSend> {
+        return (async () => {
+            let creds: WaWebCreds;
+            try {
+                const out = await this.connectors.integrationCredsInTx(tx, tenantId, conn.id);
+                if (!out) throw new WhatsappSendError('La conexión de WhatsApp ya no existe.', 'connection_missing');
+                creds = waWebCreds(out.creds);
+            } catch (err) {
+                if (err instanceof ConnectionUnusableError) {
+                    this.reportConnection(tenantId, conn.id, conn, err.message);
+                    throw new WhatsappSendError(err.message, 'connection_unusable');
+                }
+                throw err;
+            }
+            if (creds.accountId === null) {
+                throw new WhatsappSendError('La conexión no tiene un número elegido: actualízala en Integraciones y elige el número.', 'connection_unusable');
+            }
+            const fieldsCfg = (conn.config.fields ?? {}) as Record<string, string>;
+            const dest = whatsappRecipient(args.to, whatsappCountryOf(fieldsCfg.account_phone));
+            if (!dest.ok) {
+                throw new WhatsappSendError(args.to.trim() === '' ? 'Falta el número de destino.' : `El número de destino no sirve: ${dest.error}`, 'bad_recipient');
+            }
+            const base = {
+                tenantId,
+                provider: 'whatsapp_web' as const,
+                connection: { id: conn.id, name: conn.name, ownerUserId: conn.ownerUserId },
+                creds: null,
+                to: dest.digits,
+                template: null,
+            };
+            if (args.kind === 'template') {
+                throw new WhatsappSendError('WAS no usa plantillas: elige «Mensaje» o «Archivo».', 'template_unsupported');
+            }
+            if (args.kind === 'media') {
+                const url = (args.mediaUrl ?? '').trim();
+                if (url === '') throw new WhatsappSendError('Falta el enlace del archivo.', 'empty');
+                if (!/^https:\/\//i.test(url)) throw new WhatsappSendError('El enlace del archivo tiene que empezar con https://', 'bad_media');
+                const caption = (args.caption ?? '').trim();
+                const payload: WaWebPayload = { kind: 'media', to: dest.digits, url, caption };
+                const name = decodeURIComponent(url.split(/[?#]/)[0]!.split('/').pop() || 'archivo');
+                return { ...base, kind: 'media', web: { creds, payload }, payload: { ...payload }, text: caption !== '' ? `[Archivo] ${name} · ${caption}` : `[Archivo] ${name}` };
+            }
+            const text = (args.text ?? '').trim();
+            if (text === '') throw new WhatsappSendError('El mensaje está vacío.', 'empty');
+            const payload: WaWebPayload = { kind: 'text', to: dest.digits, text: args.text ?? '' };
+            return { ...base, kind: 'text', web: { creds, payload }, payload: { ...payload }, text };
+        })();
+    }
+
+    /** Manda el envío (fuera de cualquier transacción si se puede). */
     async execute(p: PreparedSend): Promise<Executed> {
-        const req = sendRequest(this.graph, p.creds, p.payload);
+        if (p.web) return this.executeWeb(p, p.web.creds, p.web.payload);
+        const creds = p.creds!;
+        const req = sendRequest(this.graph, creds, p.payload);
         try {
             const res = await safeWebhookFetch(req.url, { method: req.method, headers: req.headers, body: req.body, captureBody: true, timeoutMs: SEND_TIMEOUT_MS });
             const body = res.body ?? '';
             const parsed = parseSendResponse(res.status, body);
-            if (parsed.ok) return { ok: true, wamid: parsed.wamid, status: res.status, body, error: null, network: null };
-            return { ok: false, wamid: null, status: res.status, body, error: parsed.error, network: null };
+            if (parsed.ok) return { ok: true, wamid: parsed.wamid, status: res.status, body, errorText: null, systemic: false, errorCode: null, network: null };
+            return {
+                ok: false,
+                wamid: null,
+                status: res.status,
+                body,
+                errorText: metaErrorText(parsed.error),
+                systemic: isSystemicMetaError(parsed.error),
+                errorCode: parsed.error.code,
+                network: null,
+            };
         } catch (err) {
             return {
                 ok: false,
                 wamid: null,
                 status: null,
                 body: '',
-                error: null,
-                network: `No pudimos comunicarnos con Meta (${redactValues(err instanceof Error ? err.message : String(err), [p.creds.token, p.creds.appSecret])}).`,
+                errorText: null,
+                systemic: false,
+                errorCode: null,
+                network: `No pudimos comunicarnos con Meta (${redactValues(err instanceof Error ? err.message : String(err), [creds.token, creds.appSecret])}).`,
+            };
+        }
+    }
+
+    private async executeWeb(p: PreparedSend, creds: WaWebCreds, payload: WaWebPayload): Promise<Executed> {
+        const req = waWebSendRequest(creds, payload);
+        try {
+            const res = await safeWebhookFetch(req.url, {
+                method: req.method,
+                headers: req.headers,
+                body: req.body,
+                captureBody: true,
+                maxCaptureBytes: 64 * 1024,
+                timeoutMs: SEND_TIMEOUT_MS,
+            });
+            const body = res.body ?? '';
+            const parsed = parseWaWebSend(res.status, body);
+            if (parsed.ok) return { ok: true, wamid: parsed.id, status: res.status, body, errorText: null, systemic: false, errorCode: null, network: null };
+            return {
+                ok: false,
+                wamid: null,
+                status: res.status,
+                body,
+                errorText: waWebErrorText(parsed.error),
+                systemic: isSystemicWaWebError(parsed.error),
+                errorCode: parsed.error.code,
+                network: null,
+            };
+        } catch (err) {
+            return {
+                ok: false,
+                wamid: null,
+                status: null,
+                body: '',
+                errorText: null,
+                systemic: false,
+                errorCode: null,
+                network: `No pudimos comunicarnos con el servidor de WhatsApp (${redactValues(err instanceof Error ? err.message : String(err), [creds.key])}).`,
             };
         }
     }
@@ -1130,9 +1632,8 @@ export class WhatsappService {
     /** El motivo legible de un envío que no salió (y si es de la conexión, abre un problema). */
     failureText(p: PreparedSend, ex: Executed): string {
         if (ex.network) return ex.network;
-        const err = ex.error!;
-        const text = metaErrorText(err);
-        if (isSystemicMetaError(err)) this.reportConnection(p.tenantId, p.connection.id, { name: p.connection.name, ownerUserId: p.connection.ownerUserId }, text);
+        const text = ex.errorText ?? 'No se pudo enviar.';
+        if (ex.systemic) this.reportConnection(p.tenantId, p.connection.id, { name: p.connection.name, ownerUserId: p.connection.ownerUserId }, text);
         return text;
     }
 
@@ -1198,9 +1699,13 @@ export class WhatsappService {
         return write;
     }
 
-    /** Lo que se muestra de la petición (sin el token ni el `appsecret_proof`). */
+    /** Lo que se muestra de la petición (sin el token ni el `appsecret_proof`; la clave de Imagina WAS va en una cabecera que no se muestra). */
     shownRequest(p: PreparedSend): { url: string; body: string } {
-        const req = sendRequest(this.graph, p.creds, p.payload);
+        if (p.web) {
+            const req = waWebSendRequest(p.web.creds, p.web.payload);
+            return { url: req.url, body: req.body ?? '' };
+        }
+        const req = sendRequest(this.graph, p.creds!, p.payload);
         return { url: shownUrl(req.url), body: req.body ?? '' };
     }
 
@@ -1226,7 +1731,7 @@ export class WhatsappService {
         const { list, fields, data } = await this.recordFor(tenantId, actor, listIdOrSlug, recordId, 'view');
         const phoneRaw = visiblePhone(list, fields, data, hiddenFieldsFor(list.settings, actor));
         const recipient = typeof phoneRaw === 'string' && phoneRaw.trim() !== '' ? phoneRaw.trim() : null;
-        const conns = (await this.connectors.list(tenantId, actor.userId, actor.role)).filter((c) => c.integration_key === 'whatsapp_cloud');
+        const conns = (await this.connectors.list(tenantId, actor.userId, actor.role)).filter((c) => isWhatsappProvider(c.integration_key));
         const canEdit = can({ role: actor.role, capabilities: actor.capabilities }, 'edit_records') || can({ role: actor.role, capabilities: actor.capabilities }, 'edit_own_records');
         let canSend = false;
         if (canEdit) {
@@ -1250,18 +1755,22 @@ export class WhatsappService {
                       )
                   )[0]
                 : undefined;
-            const closes = whatsappWindowClosesAt(contact?.lastInboundAt ?? null);
+            const provider = c.integration_key as WhatsappProvider;
+            // v0.1.389 — Imagina WAS no tiene ventana de 24 h: el texto sale siempre.
+            const web = provider === 'whatsapp_web';
+            const closes = web ? null : whatsappWindowClosesAt(contact?.lastInboundAt ?? null);
             out.push({
                 id: c.id,
+                provider,
                 name: c.name,
                 display_phone: c.account_label,
-                window_open: whatsappWindowOpen(contact?.lastInboundAt ?? null),
+                window_open: web ? true : whatsappWindowOpen(contact?.lastInboundAt ?? null),
                 last_inbound_at: contact?.lastInboundAt ? contact.lastInboundAt.toISOString() : null,
                 window_closes_at: closes ? closes.toISOString() : null,
                 last_status: (contact?.lastOutboundStatus as WhatsappStatus | null) ?? null,
                 last_status_detail: contact?.lastOutboundError ?? null,
                 last_outbound_at: contact?.lastOutboundAt ? contact.lastOutboundAt.toISOString() : null,
-                templates: await this.templatesOf(tenantId, c.id, true),
+                templates: web ? [] : await this.templatesOf(tenantId, c.id, true),
             });
         }
         const hasColumns = Object.values(readWhatsappListFields(list.settings)).some((v) => v !== null);
@@ -1299,7 +1808,7 @@ export class WhatsappService {
     async sendFromRecord(tenantId: number, actor: WhatsappActor, listIdOrSlug: string, recordId: number, input: WhatsappSendInput): Promise<WhatsappSendResult> {
         const { list, fields, data } = await this.recordFor(tenantId, actor, listIdOrSlug, recordId, 'edit');
         const visible = (await this.connectors.list(tenantId, actor.userId, actor.role)).some(
-            (c) => c.id === input.connection_id && c.integration_key === 'whatsapp_cloud',
+            (c) => c.id === input.connection_id && isWhatsappProvider(c.integration_key),
         );
         if (!visible) throw this.notWhatsapp();
         const hidden = hiddenFieldsFor(list.settings, actor);
@@ -1318,8 +1827,10 @@ export class WhatsappService {
             variables,
             headerMedia: input.header_media ? merge(input.header_media) : undefined,
             headerFilename: input.header_filename ? merge(input.header_filename) : undefined,
-            text: input.text ? merge(input.text) : undefined,
+            text: input.kind !== 'media' && input.text ? merge(input.text) : undefined,
             previewUrl: input.preview_url,
+            mediaUrl: input.media_url ? merge(input.media_url) : undefined,
+            caption: input.kind === 'media' && input.text ? merge(input.text) : undefined,
             target: { listId: list.id, recordId, userId: actor.userId },
         });
     }
@@ -1331,8 +1842,8 @@ export class WhatsappService {
      */
     async testSend(tenantId: number, actor: WhatsappActor, listIdOrSlug: string, input: WhatsappTestSendInput): Promise<WhatsappSendResult> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        const visible = (await this.connectors.list(tenantId, actor.userId, actor.role)).some(
-            (c) => c.id === input.connection_id && c.integration_key === 'whatsapp_cloud',
+        const visible = (await this.connectors.list(tenantId, actor.userId, actor.role)).find(
+            (c) => c.id === input.connection_id && isWhatsappProvider(c.integration_key),
         );
         if (!visible) throw this.notWhatsapp();
         const fields = await this.fields.listByListId(tenantId, list.id);
@@ -1354,6 +1865,8 @@ export class WhatsappService {
         const hidden = hiddenFieldsFor(list.settings, actor);
         const merge = await this.mergerFor(tenantId, list, fields, data, sample?.id ?? 0, hidden);
         const v = input.values as Record<string, unknown>;
+        // v0.1.389 — Imagina WAS: los datos se llaman como en la versión anterior (message, url, caption).
+        const web = visible.integration_key === 'whatsapp_web';
         const result = await this.sendAndPersist(tenantId, {
             connectionId: input.connection_id,
             kind: input.kind,
@@ -1365,6 +1878,13 @@ export class WhatsappService {
             headerFilename: str(v.header_filename) ? merge(str(v.header_filename)) : undefined,
             text: str(v.text) ? merge(str(v.text)) : undefined,
             previewUrl: ['true', '1', 'si', 'sí'].includes(str(v.preview_url).toLowerCase()),
+            ...(web
+                ? {
+                      text: input.kind === 'text' && str(v.message) ? merge(str(v.message)) : undefined,
+                      mediaUrl: str(v.url) ? merge(str(v.url)) : undefined,
+                      caption: str(v.caption) ? merge(str(v.caption)) : undefined,
+                  }
+                : {}),
             target: { listId: null, recordId: null, userId: actor.userId },
         });
         return { ...result, sample_record_id: sample?.id ?? null };
@@ -1385,7 +1905,7 @@ export class WhatsappService {
         }
         const ex = await this.execute(prepared);
         const shown = this.shownRequest(prepared);
-        const response = ex.status !== null ? { status: ex.status, body: redactValues(ex.body, [prepared.creds.token]).slice(0, 4000) } : null;
+        const response = ex.status !== null ? { status: ex.status, body: redactValues(ex.body, [prepared.creds?.token ?? prepared.web?.creds.key ?? '']).slice(0, 4000) } : null;
         if (!ex.ok || !ex.wamid) {
             return { ok: false, message_id: null, to: `+${prepared.to}`, text: prepared.text, status: null, error: this.failureText(prepared, ex), request: shown, response };
         }
@@ -1424,32 +1944,59 @@ export class WhatsappService {
         write: { listId: number; recordId: number; before: Record<string, unknown>; after: Record<string, unknown> } | null;
     }> {
         const v = args.values;
-        const kind = args.actionKey === 'send_text' ? 'text' : args.actionKey === 'send_template' ? 'template' : null;
+        // v0.1.389 — Imagina WAS: «Enviar mensaje» / «Enviar archivo», con los
+        // datos que ya usaba la versión anterior (recipient, message, url, caption).
+        const conn = await this.connRow(tx, args.tenantId, args.connectionId);
+        const web = conn?.provider === 'whatsapp_web';
+        const kind: 'text' | 'template' | 'media' | null = web
+            ? args.actionKey === 'send_text'
+                ? 'text'
+                : args.actionKey === 'send_media'
+                  ? 'media'
+                  : null
+            : args.actionKey === 'send_text'
+              ? 'text'
+              : args.actionKey === 'send_template'
+                ? 'template'
+                : null;
         if (kind === null) return { status: 'failed', message: `La acción «${args.actionKey}» no existe en WhatsApp.`, details: {}, write: null };
         let prepared: PreparedSend;
         try {
-            prepared = await this.prepareSendInTx(tx, args.tenantId, {
-                connectionId: args.connectionId,
-                kind,
-                to: args.merge(str(v.to)),
-                template: args.merge(str(v.template)),
-                language: args.merge(str(v.language)),
-                variables: mergeVariables(v.variables, args.merge),
-                headerMedia: str(v.header_media) ? args.merge(str(v.header_media)) : undefined,
-                headerFilename: str(v.header_filename) ? args.merge(str(v.header_filename)) : undefined,
-                text: kind === 'text' ? args.merge(str(v.text)) : undefined,
-                previewUrl: ['true', '1', 'si', 'sí'].includes(str(v.preview_url).toLowerCase()),
-            });
+            prepared = await this.prepareSendInTx(
+                tx,
+                args.tenantId,
+                web
+                    ? {
+                          connectionId: args.connectionId,
+                          kind,
+                          to: args.merge(str(v.recipient)),
+                          text: kind === 'text' ? args.merge(str(v.message)) : undefined,
+                          mediaUrl: kind === 'media' ? args.merge(str(v.url)) : undefined,
+                          caption: kind === 'media' ? args.merge(str(v.caption)) : undefined,
+                      }
+                    : {
+                          connectionId: args.connectionId,
+                          kind,
+                          to: args.merge(str(v.to)),
+                          template: args.merge(str(v.template)),
+                          language: args.merge(str(v.language)),
+                          variables: mergeVariables(v.variables, args.merge),
+                          headerMedia: str(v.header_media) ? args.merge(str(v.header_media)) : undefined,
+                          headerFilename: str(v.header_filename) ? args.merge(str(v.header_filename)) : undefined,
+                          text: kind === 'text' ? args.merge(str(v.text)) : undefined,
+                          previewUrl: ['true', '1', 'si', 'sí'].includes(str(v.preview_url).toLowerCase()),
+                      },
+            );
         } catch (err) {
             if (err instanceof WhatsappSendError) return { status: 'failed', message: err.message, details: { code: err.code }, write: null };
             throw err;
         }
-        const label = kind === 'template' ? `plantilla «${prepared.template?.name}»` : 'mensaje de texto';
+        const label = kind === 'template' ? `la plantilla «${prepared.template?.name}»` : kind === 'media' ? 'el archivo' : 'el mensaje de texto';
         const request = this.shownRequest(prepared);
         if (!args.realCall) {
             return {
                 status: 'success',
-                message: `Mandaría la ${label} por WhatsApp a +${prepared.to}.`,
+                message: `Mandaría ${label} por WhatsApp a +${prepared.to}.`,
                 details: { _sim: 'would_run', text: prepared.text, request },
                 write: null,
             };
@@ -1458,8 +2005,8 @@ export class WhatsappService {
         if (!ex.ok || !ex.wamid) {
             return {
                 status: 'failed',
-                message: `WhatsApp (${prepared.connection.name}): ${this.failureText(prepared, ex)}`,
-                details: { status: ex.status, ...(ex.error?.code ? { meta_code: ex.error.code } : {}) },
+                message: `${whatsappConnLabel(prepared.connection.name)}: ${this.failureText(prepared, ex)}`,
+                details: { status: ex.status, ...(ex.errorCode !== null ? { error_code: ex.errorCode } : {}) },
                 write: null,
             };
         }
@@ -1468,7 +2015,7 @@ export class WhatsappService {
         this.connectionWorks(args.tenantId, prepared.connection.id);
         return {
             status: 'success',
-            message: `${prepared.connection.name} → envió la ${label} a +${prepared.to}.`,
+            message: `${prepared.connection.name} → envió ${label} a +${prepared.to}.`,
             details: { message_id: ex.wamid, to: `+${prepared.to}`, ...(prepared.template ? { template: prepared.template.name } : {}) },
             write,
         };

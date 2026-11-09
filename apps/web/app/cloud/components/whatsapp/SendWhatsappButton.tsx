@@ -8,6 +8,7 @@ import {
     type WhatsappSendResult,
 } from '@imagina-base/shared';
 import { AlertTriangle, Clock, MessageCircle, Send, X } from 'lucide-react';
+import type { WhatsappProvider } from '@imagina-base/shared';
 
 import { SendReport } from '@/admin/automations/WhatsappActionConfig';
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
@@ -33,6 +34,9 @@ import { usePlanModuleOff } from '@/components/PlanModuleNotice';
  * muestra el estado del último envío; el diálogo deja elegir una plantilla
  * aprobada (con sus variables y la vista previa) o, si el contacto escribió en
  * las últimas 24 h, mandar un texto.
+ *
+ * v0.1.389 — con Imagina WAS no hay plantillas ni ventana: un mensaje o un
+ * archivo por enlace, siempre.
  */
 function SendWhatsappButtonInner({ listId, recordId, compact = false }: { listId: number; recordId: number; compact?: boolean }): JSX.Element | null {
     const isGuest = useIsGuest();
@@ -63,7 +67,7 @@ function SendWhatsappButtonInner({ listId, recordId, compact = false }: { listId
                     data-testid="record-whatsapp"
                 >
                     <MessageCircle className="imcrm-h-4 imcrm-w-4" />
-                    {first.window_open && (
+                    {first.provider === 'whatsapp_cloud' && first.window_open && (
                         <span className="imcrm-absolute imcrm-right-1.5 imcrm-top-1.5 imcrm-h-2 imcrm-w-2 imcrm-rounded-full imcrm-bg-emerald-500 imcrm-ring-2 imcrm-ring-card" aria-hidden />
                     )}
                 </Button>
@@ -78,6 +82,13 @@ function SendWhatsappButtonInner({ listId, recordId, compact = false }: { listId
     );
 }
 
+/** Al cambiar de número: Imagina WAS no tiene plantillas y la oficial no manda archivos sueltos. */
+function nextKind(provider: WhatsappProvider, windowOpen: boolean, current: 'template' | 'text' | 'media'): 'template' | 'text' | 'media' {
+    if (provider === 'whatsapp_web') return current === 'media' ? 'media' : 'text';
+    if (current === 'media') return windowOpen ? 'text' : 'template';
+    return current;
+}
+
 function errText(err: unknown): string {
     if (err instanceof CloudApiError) return err.message;
     return err instanceof Error ? err.message : String(err);
@@ -88,8 +99,9 @@ function SendWhatsappDialog({ listId, recordId, info, onClose }: { listId: numbe
     const toast = useToast();
     const [connectionId, setConnectionId] = useState(info.connections[0]!.id);
     const conn = info.connections.find((c) => c.id === connectionId) ?? info.connections[0]!;
+    const isWeb = conn.provider === 'whatsapp_web';
     const approved = conn.templates.filter((t) => t.status === 'APPROVED');
-    const [kind, setKind] = useState<'template' | 'text'>(conn.window_open ? 'text' : 'template');
+    const [kind, setKind] = useState<'template' | 'text' | 'media'>(conn.provider === 'whatsapp_web' || conn.window_open ? 'text' : 'template');
     const [to, setTo] = useState(info.recipient ?? '');
     const [tplKey, setTplKey] = useState(approved[0] ? `${approved[0].name}|${approved[0].language}` : '');
     const tpl = approved.find((t) => `${t.name}|${t.language}` === tplKey) ?? null;
@@ -102,7 +114,13 @@ function SendWhatsappDialog({ listId, recordId, info, onClose }: { listId: numbe
     const shape = tpl ? whatsappTemplateShape(tpl.components, tpl.parameter_format) : null;
     const mediaFormat = shape?.header && shape.header.format !== 'TEXT' && shape.header.format !== 'LOCATION' ? shape.header.format : null;
     const missing = vars.filter((v) => (variables[v.key] ?? '').trim() === '').length + (mediaFormat && media.trim() === '' ? 1 : 0);
-    const valid = to.trim() !== '' && (kind === 'text' ? text.trim() !== '' && conn.window_open : tpl !== null && missing === 0);
+    const valid =
+        to.trim() !== '' &&
+        (kind === 'media'
+            ? /^https:\/\//i.test(media.trim())
+            : kind === 'text'
+              ? text.trim() !== '' && (isWeb || conn.window_open)
+              : tpl !== null && missing === 0);
 
     const send = useMutation({
         mutationFn: () =>
@@ -110,9 +128,11 @@ function SendWhatsappDialog({ listId, recordId, info, onClose }: { listId: numbe
                 connection_id: conn.id,
                 to: to.trim() === (info.recipient ?? '') ? undefined : to.trim(),
                 kind,
-                ...(kind === 'template' && tpl
-                    ? { template: tpl.name, language: tpl.language, variables, ...(mediaFormat ? { header_media: media.trim() } : {}) }
-                    : { text, variables: {} }),
+                ...(kind === 'media'
+                    ? { media_url: media.trim(), text, variables: {} }
+                    : kind === 'template' && tpl
+                      ? { template: tpl.name, language: tpl.language, variables, ...(mediaFormat ? { header_media: media.trim() } : {}) }
+                      : { text, variables: {} }),
             }),
         onSuccess: (res) => {
             setResult(res);
@@ -141,7 +161,7 @@ function SendWhatsappDialog({ listId, recordId, info, onClose }: { listId: numbe
                     data-testid="imcrm-whatsapp-dialog"
                 >
                     <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
-                        <IntegrationLogo integrationKey="whatsapp_cloud" size={40} />
+                        <IntegrationLogo integrationKey={conn.provider} size={40} />
                         <div className="imcrm-min-w-0 imcrm-flex-1">
                             <Dialog.Title className="imcrm-text-base imcrm-font-semibold">{__('Enviar WhatsApp')}</Dialog.Title>
                             <Dialog.Description className="imcrm-text-sm imcrm-text-muted-foreground">
@@ -154,7 +174,7 @@ function SendWhatsappDialog({ listId, recordId, info, onClose }: { listId: numbe
                     </div>
 
                     <div className="imcrm-mt-4 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-xs" data-testid="imcrm-whatsapp-dialog-state">
-                        {conn.window_open ? (
+                        {isWeb ? null : conn.window_open ? (
                             <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-full imcrm-bg-emerald-500/10 imcrm-px-2 imcrm-py-0.5 imcrm-font-medium imcrm-text-emerald-700 dark:imcrm-text-emerald-400" data-testid="imcrm-whatsapp-window-open">
                                 <Clock className="imcrm-h-3 imcrm-w-3" />
                                 {sprintf(/* translators: %s: fecha */ __('Ventana abierta hasta %s'), conn.window_closes_at ? formatDateTimeStr(conn.window_closes_at) : '')}
@@ -194,6 +214,7 @@ function SendWhatsappDialog({ listId, recordId, info, onClose }: { listId: numbe
                                         const next = info.connections.find((c) => c.id === Number(e.target.value));
                                         const firstTpl = next?.templates.find((t) => t.status === 'APPROVED');
                                         setConnectionId(Number(e.target.value));
+                                        if (next) setKind(nextKind(next.provider, next.window_open, kind));
                                         setTplKey(firstTpl ? `${firstTpl.name}|${firstTpl.language}` : '');
                                         setVariables({});
                                         setMedia('');
@@ -214,30 +235,71 @@ function SendWhatsappDialog({ listId, recordId, info, onClose }: { listId: numbe
                         </div>
 
                         <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-1 imcrm-rounded-lg imcrm-bg-muted imcrm-p-1 imcrm-text-sm" role="tablist">
-                            <button
-                                type="button"
-                                role="tab"
-                                aria-selected={kind === 'template'}
-                                onClick={() => setKind('template')}
-                                className={cn('imcrm-rounded-md imcrm-py-1.5', kind === 'template' ? 'imcrm-bg-card imcrm-font-medium imcrm-shadow-sm' : 'imcrm-text-muted-foreground')}
-                                data-testid="imcrm-whatsapp-kind-template"
-                            >
-                                {__('Plantilla')}
-                            </button>
-                            <button
-                                type="button"
-                                role="tab"
-                                aria-selected={kind === 'text'}
-                                onClick={() => setKind('text')}
-                                className={cn('imcrm-rounded-md imcrm-py-1.5', kind === 'text' ? 'imcrm-bg-card imcrm-font-medium imcrm-shadow-sm' : 'imcrm-text-muted-foreground')}
-                                data-testid="imcrm-whatsapp-kind-text"
-                            >
-                                {__('Mensaje')}
-                            </button>
+                            {isWeb ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={kind === 'text'}
+                                        onClick={() => setKind('text')}
+                                        className={cn('imcrm-rounded-md imcrm-py-1.5', kind === 'text' ? 'imcrm-bg-card imcrm-font-medium imcrm-shadow-sm' : 'imcrm-text-muted-foreground')}
+                                        data-testid="imcrm-whatsapp-kind-text"
+                                    >
+                                        {__('Mensaje')}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={kind === 'media'}
+                                        onClick={() => setKind('media')}
+                                        className={cn('imcrm-rounded-md imcrm-py-1.5', kind === 'media' ? 'imcrm-bg-card imcrm-font-medium imcrm-shadow-sm' : 'imcrm-text-muted-foreground')}
+                                        data-testid="imcrm-whatsapp-kind-media"
+                                    >
+                                        {__('Archivo')}
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <button
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={kind === 'template'}
+                                        onClick={() => setKind('template')}
+                                        className={cn('imcrm-rounded-md imcrm-py-1.5', kind === 'template' ? 'imcrm-bg-card imcrm-font-medium imcrm-shadow-sm' : 'imcrm-text-muted-foreground')}
+                                        data-testid="imcrm-whatsapp-kind-template"
+                                    >
+                                        {__('Plantilla')}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        role="tab"
+                                        aria-selected={kind === 'text'}
+                                        onClick={() => setKind('text')}
+                                        className={cn('imcrm-rounded-md imcrm-py-1.5', kind === 'text' ? 'imcrm-bg-card imcrm-font-medium imcrm-shadow-sm' : 'imcrm-text-muted-foreground')}
+                                        data-testid="imcrm-whatsapp-kind-text"
+                                    >
+                                        {__('Mensaje')}
+                                    </button>
+                                </>
+                            )}
                         </div>
 
-                        {kind === 'text' ? (
-                            conn.window_open ? (
+                        {kind === 'media' ? (
+                            <>
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                    <Label htmlFor="wa-media">{__('Enlace del archivo (https)')}</Label>
+                                    <Input id="wa-media" value={media} onChange={(e) => setMedia(e.target.value)} placeholder="https://…" data-testid="imcrm-whatsapp-dialog-file" />
+                                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                                        {__('Un enlace público a un PDF, una imagen, un audio o un video. WAS lo descarga al enviar.')}
+                                    </p>
+                                </div>
+                                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                    <Label htmlFor="wa-caption">{__('Texto que lo acompaña (opcional)')}</Label>
+                                    <Textarea id="wa-caption" value={text} onChange={(e) => setText(e.target.value)} rows={2} data-testid="imcrm-whatsapp-dialog-caption" />
+                                </div>
+                            </>
+                        ) : kind === 'text' ? (
+                            isWeb || conn.window_open ? (
                                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                                     <Label htmlFor="wa-text">{__('Mensaje')}</Label>
                                     <Textarea id="wa-text" value={text} onChange={(e) => setText(e.target.value)} rows={4} data-testid="imcrm-whatsapp-dialog-text" />
