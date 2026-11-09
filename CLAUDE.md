@@ -13308,7 +13308,8 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `booking-conversion-rules` y `forms-duplicate`. Tests: shared (reglas,
         enlace directo, lectura tolerante, nombre de la copia), 2 de
         integración en `forms-conversion.spec`, la regla en `booking.spec` y
-        `forms.spec` al día; E2E navegador 17/17 en escritorio y 18/18 en
+        `forms.spec` al día — API 2176 (194 archivos), front 835, shared
+        812 en verde —; E2E navegador 17/17 en escritorio y 18/18 en
         celular oscuro con un sitio de otro origen (landing → «Navidad01» sin
         el píxel y `conversion_rule` «Navidad»; contacto → la general con
         «Lead»).

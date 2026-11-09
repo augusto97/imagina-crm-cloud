@@ -1698,7 +1698,8 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   `forms-duplicate`. Tests: 5 de shared (reglas, enlace directo, lectura
   tolerante, nombre de la copia), 2 de integración en `forms-conversion.spec`
   (regla por página en el envío; duplicar), la regla en la agenda en
-  `booking.spec`; E2E navegador 17/17 en escritorio y 18/18 en celular oscuro
+  `booking.spec` (API 2176, front 835, shared 812 en verde); E2E navegador
+  17/17 en escritorio y 18/18 en celular oscuro
   con un sitio de OTRO origen (landing → «Navidad01» sin el píxel y
   `conversion_rule` «Navidad»; contacto → la general con «Lead»).
 
