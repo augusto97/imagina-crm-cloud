@@ -796,6 +796,28 @@ export const createFormSchema = z.object({
 });
 export type CreateFormInput = z.infer<typeof createFormSchema>;
 
+/** v0.1.388 — Duplicar un formulario (sin nombre: «<nombre> (copia)»). */
+export const duplicateFormSchema = z.object({
+    name: z.string().trim().min(1).max(120).optional(),
+});
+export type DuplicateFormInput = z.infer<typeof duplicateFormSchema>;
+
+/**
+ * v0.1.388 — El nombre de una copia: «Contacto (copia)», y si ya existe,
+ * «Contacto (copia 2)», «(copia 3)»… Copiar una copia no apila sufijos.
+ */
+export function duplicateFormName(name: string, taken: ReadonlyArray<string>): string {
+    const trimmed = name.trim();
+    const base = trimmed.replace(/\s*\(copia(?: \d+)?\)$/i, '').trim() || trimmed || 'Formulario';
+    const used = new Set(taken.map((t) => t.trim().toLowerCase()));
+    for (let n = 1; n < 500; n++) {
+        const suffix = n === 1 ? ' (copia)' : ` (copia ${n})`;
+        const candidate = `${base.slice(0, 120 - suffix.length).trim()}${suffix}`;
+        if (!used.has(candidate.toLowerCase())) return candidate;
+    }
+    return `${base.slice(0, 110).trim()} (copia)`;
+}
+
 export const updateFormSchema = z.object({
     name: z.string().trim().min(1).max(120).optional(),
     enabled: z.boolean().optional(),

@@ -2062,4 +2062,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver cómo funciona', href: '/aprende/agenda-citas/agenda-cobro' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.388-conversion-por-pagina',
+        version: '0.1.388',
+        date: '2026-11-09',
+        kind: 'feature',
+        title: 'Una etiqueta de conversión distinta por página, y duplicar formularios',
+        summary:
+            'Si el mismo formulario está en varias páginas de tu sitio, cada landing puede medir con su propia acción de Google Ads. Y con «Duplicar» haces una copia de un formulario en un clic.',
+        media: {
+            slides: [
+                {
+                    title: 'Mide cada landing por separado',
+                    text: 'En «Medir conversiones», agrega una regla por página: si la página contiene «landing-navidad», se dispara la conversión «Navidad». En las demás páginas, la de siempre o ninguna.',
+                    illustration: 'conversion-page-rules',
+                },
+                {
+                    title: 'Prueba antes de publicar',
+                    text: 'Pega la dirección de una página y la app te dice qué etiqueta se dispara ahí. Sirve igual para la agenda de citas.',
+                    illustration: 'form-conversions',
+                },
+                {
+                    title: 'Duplicar un formulario',
+                    text: 'En la lista de formularios, toca Duplicar: la copia trae las preguntas, el diseño y los ajustes, nace sin publicar y tiene su propio enlace.',
+                    illustration: 'form-duplicate',
+                },
+            ],
+        },
+        body: 'Las reglas están en el constructor del formulario, en **Ajustes → Medir conversiones** (en la agenda, en la sección **Medir conversiones**). El botón **Duplicar** está junto a **Editar** en **Configurar lista → Formularios**.',
+        action: { label: 'Ver cómo funciona', href: '/aprende/formularios/formularios-medir-conversiones' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

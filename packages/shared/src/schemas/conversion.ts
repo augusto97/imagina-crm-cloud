@@ -1,5 +1,14 @@
 import { z } from 'zod';
-import { GOOGLE_ADS_SEND_TO_RE, GOOGLE_TAG_ID_RE, META_PIXEL_ID_RE, REDIRECT_MAX_DELAY_S, REDIRECT_URL_RE, type AttributionKey, type PublicDirectTags } from './conversion-logic';
+import {
+    CONVERSION_MAX_PAGE_RULES,
+    GOOGLE_ADS_SEND_TO_RE,
+    GOOGLE_TAG_ID_RE,
+    META_PIXEL_ID_RE,
+    REDIRECT_MAX_DELAY_S,
+    REDIRECT_URL_RE,
+    type AttributionKey,
+    type PublicDirectTags,
+} from './conversion-logic';
 
 /**
  * v0.1.374 (ADR-S97) — Medir conversiones de un formulario o una agenda
@@ -17,11 +26,49 @@ import { GOOGLE_ADS_SEND_TO_RE, GOOGLE_TAG_ID_RE, META_PIXEL_ID_RE, REDIRECT_MAX
 export const CONVERSION_VALUE_MODES = ['none', 'fixed', 'payment', 'calc', 'price'] as const;
 export type ConversionValueMode = (typeof CONVERSION_VALUE_MODES)[number];
 
+/**
+ * v0.1.388 — Una regla por página: si la página del sitio donde está
+ * insertado contiene alguna de estas palabras, se usa SU etiqueta de Google
+ * Ads (o ninguna) y SU decisión sobre el píxel de Meta, en lugar de las de
+ * «en las demás páginas». Gana la primera que coincide.
+ */
+export const conversionPageRuleSchema = z.object({
+    id: z.string().regex(/^[A-Za-z0-9_-]{1,24}$/),
+    /** Cómo se llama (para reconocerla y para Tag Manager); vacío = sus palabras. */
+    name: z.string().max(80).catch('').default(''),
+    /** Palabras separadas por coma: «navidad, black-friday». */
+    page_contains: z.string().max(500),
+    /** La acción de Google Ads de esas páginas; null = ninguna. */
+    google_ads: z.string().regex(GOOGLE_ADS_SEND_TO_RE).nullable().catch(null).default(null),
+    /** Registrar el evento del píxel de Meta en esas páginas. */
+    meta_event: z.boolean().catch(false).default(false),
+});
+export type ConversionPageRule = z.infer<typeof conversionPageRuleSchema>;
+
 export const conversionSettingsSchema = z.object({
-    /** La acción de conversión de Google Ads (`AW-123456789/AbC`); null = no se dispara. */
+    /**
+     * La acción de conversión de Google Ads (`AW-123456789/AbC`); null = no se
+     * dispara. v0.1.388 — con reglas por página, es la de «en las demás
+     * páginas» (y la del enlace directo).
+     */
     google_ads: z.string().regex(GOOGLE_ADS_SEND_TO_RE).nullable().catch(null).default(null),
     /** Registrar el evento estándar del píxel de Meta del sitio (Lead o Schedule). */
     meta_event: z.boolean().catch(false).default(false),
+    /**
+     * v0.1.388 — Una etiqueta distinta según la página del sitio donde está
+     * insertado (la primera que coincide). Una regla rota se descarta sin
+     * tirar las demás.
+     */
+    page_rules: z
+        .array(z.unknown())
+        .catch([])
+        .default([])
+        .transform((arr) =>
+            arr.slice(0, CONVERSION_MAX_PAGE_RULES).flatMap((x) => {
+                const r = conversionPageRuleSchema.safeParse(x);
+                return r.success ? [r.data] : [];
+            }),
+        ),
     value: z.enum(CONVERSION_VALUE_MODES).catch('none').default('none'),
     /** El valor fijo (value = fixed). */
     amount: z.number().min(0).max(1_000_000_000_000).nullable().catch(null).default(null),
@@ -50,6 +97,7 @@ export type ConversionSettings = z.infer<typeof conversionSettingsSchema>;
 export const CONVERSION_SETTINGS_DEFAULT: ConversionSettings = {
     google_ads: null,
     meta_event: false,
+    page_rules: [],
     value: 'none',
     amount: null,
     currency: 'COP',
@@ -120,4 +168,13 @@ export interface ConversionResult {
     value: number | null;
     currency: string | null;
     user_data?: { email?: string; phone_number?: string } | null;
+    /**
+     * v0.1.388 — Lo que se dispara en ESTE envío según la página desde donde
+     * se envió (una regla por página o «en las demás páginas»). Ausente (un
+     * servidor viejo) = lo de la página pública.
+     */
+    google_ads?: string | null;
+    meta_event?: boolean;
+    /** El nombre de la regla que coincidió (null = «en las demás páginas»). */
+    rule?: string | null;
 }

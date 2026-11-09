@@ -377,7 +377,13 @@ describe('v0.1.275 — formularios (Postgres + Redis reales)', () => {
             uploads: {},
             stamp: oldStamp(id),
         });
-        expect(res).toEqual({ ok: true, redirect_url: null, ending_id: null, conversion: { submission_id: expect.any(String), value: null, currency: null } });
+        expect(res).toEqual({
+            ok: true,
+            redirect_url: null,
+            ending_id: null,
+            // v0.1.388 — y lo que se dispara según la página (sin etiqueta ni reglas: nada).
+            conversion: { submission_id: expect.any(String), value: null, currency: null, google_ads: null, meta_event: false, rule: null },
+        });
         const [rec] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(records).where(eq(records.listId, listId)));
         expect(rec!.data).toEqual({
             [`f${f.nombre!.id}`]: 'Ana Pérez',

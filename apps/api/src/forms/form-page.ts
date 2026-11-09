@@ -364,7 +364,7 @@ export const FORM_EMBED_JS = String.raw`(function () {
     var sub = clean(ev.submission_id) || '';
     var value = typeof ev.value === 'number' && isFinite(ev.value) ? ev.value : null;
     var currency = value !== null && /^[A-Z]{3}$/.test(ev.currency || '') ? ev.currency : null;
-    var detail = { type: booking ? 'booking' : 'form', id: clean(ev.id), name: clean(ev.name), submission_id: sub, value: value, currency: currency };
+    var detail = { type: booking ? 'booking' : 'form', id: clean(ev.id), name: clean(ev.name), submission_id: sub, value: value, currency: currency, rule: clean(ev.rule) };
     if (booking) {
       detail.service = clean(ev.service); detail.staff = clean(ev.staff); detail.start = clean(ev.start); detail.status = ev.status === 'pending' ? 'pending' : 'confirmed';
     } else {
@@ -381,7 +381,8 @@ export const FORM_EMBED_JS = String.raw`(function () {
       imagina: detail,
       value: value,
       currency: currency,
-      transaction_id: sub
+      transaction_id: sub,
+      conversion_rule: detail.rule
     };
     if (booking) {
       push.booking_id = detail.id; push.booking_name = detail.name; push.booking_service = detail.service;

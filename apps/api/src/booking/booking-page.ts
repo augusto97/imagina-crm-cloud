@@ -319,8 +319,10 @@ const CLIENT_JS = String.raw`
     return {
       kind: 'booking', id: BOOT.token, name: meta.title, submission_id: c.submission_id, value: c.value, currency: c.currency,
       service: a ? a.service : '', staff: a ? a.staff : '', start: a ? a.start : '', status: a && (a.status === 'pending' || a.status === 'unpaid') ? 'pending' : 'confirmed',
-      google_ads: meta.conversion ? meta.conversion.google_ads : null,
-      meta_event: meta.conversion && meta.conversion.meta_event ? 'Schedule' : null,
+      // v0.1.388 — lo que corresponde a la página desde donde se agendó (lo elige el servidor).
+      google_ads: c.google_ads !== undefined ? c.google_ads : meta.conversion ? meta.conversion.google_ads : null,
+      meta_event: (c.meta_event !== undefined ? c.meta_event : meta.conversion && meta.conversion.meta_event) ? 'Schedule' : null,
+      rule: c.rule || null,
       user_data: c.user_data || null
     };
   }

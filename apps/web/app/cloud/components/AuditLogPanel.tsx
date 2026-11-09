@@ -52,6 +52,7 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'form.unpublish': { text: 'dejó de publicar el formulario' },
     'form.regenerate_link': { text: 'cambió la dirección del formulario' },
     'form.delete': { text: 'eliminó el formulario', danger: true },
+    'form.duplicate': { text: 'duplicó un formulario como' },
     'booking.publish': { text: 'publicó la agenda de citas', danger: true },
     'booking.unpublish': { text: 'dejó de publicar la agenda de citas' },
     'booking.regenerate_link': { text: 'cambió la dirección de la agenda de citas' },

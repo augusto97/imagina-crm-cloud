@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useState } from 'react';
-import { BarChart3, ClipboardList, ExternalLink, Link2, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { BarChart3, ClipboardList, Copy, ExternalLink, Link2, Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
 import { managedFieldLocks, readMirrorListMarker } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -10,7 +10,7 @@ import { useFields } from '@/hooks/useFields';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { __ } from '@/lib/i18n';
 
-import { formPublicUrl, useDeleteForm, useForms, useUpdateForm } from './useForms';
+import { formPublicUrl, useDeleteForm, useDuplicateForm, useForms, useUpdateForm } from './useForms';
 
 const FormBuilder = lazy(() => import('./FormBuilder'));
 const FormStatsSheet = lazy(() => import('./FormStatsSheet').then((m) => ({ default: m.FormStatsSheet })));
@@ -26,6 +26,7 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
     const fields = useFields(listId);
     const update = useUpdateForm(listId);
     const remove = useDeleteForm(listId);
+    const duplicate = useDuplicateForm(listId);
     const confirm = useConfirm();
     const toast = useToast();
     const [editingId, setEditingId] = useState<number | null>(null);
@@ -63,6 +64,22 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
         setCreating(false);
         setCreated(form);
         setEditingId(form.id);
+    };
+
+    // v0.1.388 — la copia nace sin publicar y se abre en el constructor (para
+    // cambiarle el nombre, la etiqueta de conversión o lo que la haga distinta).
+    const duplicateForm = (id: number): void => {
+        duplicate.mutate(
+            { id },
+            {
+                onSuccess: (copy) => {
+                    toast.success(__('Formulario duplicado'), `«${copy.name}» · ${__('sin publicar, con su propio enlace')}`);
+                    setCreated(copy);
+                    setEditingId(copy.id);
+                },
+                onError: (err) => toast.error(__('No se pudo duplicar'), err instanceof Error ? err.message : String(err)),
+            },
+        );
     };
 
     const copyLink = (url: string): void => {
@@ -134,6 +151,22 @@ export function FormsPanel({ listId, listName, listSettings }: { listId: number;
                                     <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
                                         <Button variant="ghost" size="icon" aria-label={__('Estadísticas')} title={__('Estadísticas')} onClick={() => setStatsId(f.id)} data-form-stats>
                                             <BarChart3 className="imcrm-h-3.5 imcrm-w-3.5" />
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            aria-label={__('Duplicar')}
+                                            title={__('Duplicar: una copia sin publicar, con su propio enlace')}
+                                            disabled={duplicate.isPending}
+                                            onClick={() => duplicateForm(f.id)}
+                                            data-form-duplicate
+                                            data-tour="forms-duplicate"
+                                        >
+                                            {duplicate.isPending && duplicate.variables?.id === f.id ? (
+                                                <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" />
+                                            ) : (
+                                                <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
+                                            )}
                                         </Button>
                                         <Button variant="outline" size="sm" className="imcrm-gap-1.5" onClick={() => setEditingId(f.id)} data-form-edit>
                                             <Pencil className="imcrm-h-3.5 imcrm-w-3.5" />

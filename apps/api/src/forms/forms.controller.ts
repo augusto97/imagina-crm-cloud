@@ -18,12 +18,14 @@ import {
 } from '@nestjs/common';
 import {
     createFormSchema,
+    duplicateFormSchema,
     formStatEventsSchema,
     saveFormDraftSchema,
     submitFormSchema,
     updateFormSchema,
     type CaptchaAvailability,
     type CreateFormInput,
+    type DuplicateFormInput,
     type FormDataConsentAvailability,
     type FormDto,
     type FormStatEventsInput,
@@ -174,6 +176,29 @@ export class FormsController {
         @Body(new ZodValidationPipe(createFormSchema)) input: CreateFormInput,
     ): Promise<FormDto> {
         return this.forms.create(req.tenant!.tenantId, req.authUserId!, list, input, { isAdmin: req.tenant!.role === 'admin' });
+    }
+
+    /** v0.1.388 — Una copia sin publicar, con su propia dirección. */
+    @Post(':id/duplicate')
+    @HttpCode(201)
+    @RequireCapability('manage_forms')
+    async duplicate(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(duplicateFormSchema)) input: DuplicateFormInput,
+    ): Promise<FormDto> {
+        const tenantId = req.tenant!.tenantId;
+        const doc = await this.forms.duplicate(tenantId, req.authUserId!, list, id, input ?? {}, { isAdmin: req.tenant!.role === 'admin' });
+        await this.audit.log({
+            tenantId,
+            userId: req.authUserId ?? null,
+            action: 'form.duplicate',
+            targetType: 'form',
+            targetLabel: doc.name,
+            meta: { list, form_id: doc.id, from_form_id: id },
+        });
+        return doc;
     }
 
     @Patch(':id')

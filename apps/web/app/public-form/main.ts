@@ -17,7 +17,7 @@
  * `meta.theme`. En la vista previa del constructor los dos llegan por
  * postMessage y se reemplazan en vivo.
  */
-import type { PublicFormFieldItem, PublicFormItem, PublicFormMeta, PublicThemeView } from '@imagina-base/shared';
+import type { ConversionResult, PublicFormFieldItem, PublicFormItem, PublicFormMeta, PublicThemeView } from '@imagina-base/shared';
 import { FORM_DRAFT_TTL_DAYS, FORM_EDIT_CODE_RE, formStatSource, type FormStatDevice, type FormStatEvent, type PublicFormEdit } from '@imagina-base/shared/src/schemas/form-stats-logic';
 import {
     FORM_CALC_VALUE_PREFIX,
@@ -2568,7 +2568,7 @@ function consentNode(dc: NonNullable<PublicFormMeta['data_consent']>): HTMLEleme
 
 /** v0.1.374 — La conversión de este envío, como la lee el sitio. */
 function conversionEvent(
-    b: { conversion?: { submission_id: string; value: number | null; currency: string | null; user_data?: { email?: string; phone_number?: string } | null } | null; pending_confirmation?: boolean },
+    b: { conversion?: ConversionResult | null; pending_confirmation?: boolean },
     endingId: string | null,
 ): ImaginaConversionEvent | null {
     const c = b.conversion;
@@ -2583,8 +2583,10 @@ function conversionEvent(
         currency: c.currency,
         ending: ending ? ending.title : null,
         pending_confirmation: b.pending_confirmation === true,
-        google_ads: meta.conversion?.google_ads ?? null,
-        meta_event: meta.conversion?.meta_event ? 'Lead' : null,
+        // v0.1.388 — lo que corresponde a la página desde donde se envió (lo elige el servidor).
+        google_ads: c.google_ads !== undefined ? c.google_ads : (meta.conversion?.google_ads ?? null),
+        meta_event: (c.meta_event !== undefined ? c.meta_event : meta.conversion?.meta_event) ? 'Lead' : null,
+        rule: c.rule ?? null,
         user_data: c.user_data ?? null,
     };
 }
