@@ -248,6 +248,7 @@ export function whatsappText(entry: Pick<ActivityEntity, 'changes'>): string {
     const w = whatsappEventOf(entry);
     if (w.event === 'received') return __('escribió por WhatsApp');
     if (w.template) return sprintf(/* translators: %s: nombre de la plantilla */ __('envió la plantilla «%s» por WhatsApp'), w.template);
+    if (w.kind === 'media') return __('envió un archivo por WhatsApp');
     return __('envió un mensaje por WhatsApp');
 }
 

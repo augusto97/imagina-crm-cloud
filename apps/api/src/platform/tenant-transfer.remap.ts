@@ -608,11 +608,15 @@ export function remapButtonConfig(config: Record<string, unknown>, maps: IdMaps,
  */
 export function remapWhatsappConnectionConfig(provider: string, config: Record<string, unknown>, maps: IdMaps): Record<string, unknown> {
     if (provider === 'mercadopago') return remapSubscriptionImportConfig(config, maps);
-    if (provider !== 'whatsapp_cloud') return config;
-    const wa = config.whatsapp;
-    if (wa === null || typeof wa !== 'object' || Array.isArray(wa)) return config;
+    if (provider !== 'whatsapp_cloud' && provider !== 'whatsapp_web') return config;
+    // v0.1.389 — Imagina WAS: el aviso registrado es del servidor de origen
+    // (su URL y su secreto). Se suelta: el servidor nuevo registra el suyo al
+    // abrir la conexión, sin borrar el del origen (migrar es copiar).
+    const base = provider === 'whatsapp_web' ? Object.fromEntries(Object.entries(config).filter(([k]) => k !== 'whatsapp_web')) : config;
+    const wa = base.whatsapp;
+    if (wa === null || typeof wa !== 'object' || Array.isArray(wa)) return base;
     const w = wa as Record<string, unknown>;
-    return { ...config, whatsapp: { ...w, inbound_list_id: w.inbound_list_id === null || w.inbound_list_id === undefined ? null : mapId(maps.list, w.inbound_list_id) } };
+    return { ...base, whatsapp: { ...w, inbound_list_id: w.inbound_list_id === null || w.inbound_list_id === undefined ? null : mapId(maps.list, w.inbound_list_id) } };
 }
 
 /**

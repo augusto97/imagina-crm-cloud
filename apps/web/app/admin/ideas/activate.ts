@@ -75,6 +75,7 @@ export function fillAnswers(value: unknown, answers: Record<string, unknown>): u
  */
 export const MESSAGE_APPS: Record<string, { action: string; to: string; text: string; label: string }> = {
     whatsapp: { action: 'send_text', to: 'recipient', text: 'message', label: 'WhatsApp' },
+    whatsapp_web: { action: 'send_text', to: 'recipient', text: 'message', label: 'WhatsApp' },
     whatsapp_cloud: { action: 'send_text', to: 'to', text: 'text', label: 'WhatsApp oficial' },
     telegram: { action: 'send_message', to: 'chat_id', text: 'text', label: 'Telegram' },
     slack: { action: 'send_message', to: 'channel', text: 'text', label: 'Slack' },

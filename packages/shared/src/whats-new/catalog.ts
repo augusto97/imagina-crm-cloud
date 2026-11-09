@@ -2093,4 +2093,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver cómo funciona', href: '/aprende/formularios/formularios-medir-conversiones' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.389-whatsapp-was',
+        version: '0.1.389',
+        date: '2026-11-09',
+        kind: 'feature',
+        title: 'WhatsApp con WAS: mensajes, archivos y lo que te escriben',
+        summary:
+            'Conecta tu número de WAS con una clave y elígelo de la lista. Mandas mensajes y archivos sin plantillas, lo que te escriben tus clientes llega a sus registros y ves si cada mensaje se entregó o se leyó.',
+        media: {
+            slides: [
+                {
+                    title: 'Conectar en dos minutos',
+                    text: 'Pega la clave de API de tu panel de WAS y toca «Buscar mis cuentas»: tu número aparece con su estado. Los avisos se registran solos.',
+                    illustration: 'wab-was-conectar',
+                },
+                {
+                    title: 'Lo que te escriben, en el registro',
+                    text: 'Cuando un cliente te escribe, la app lo encuentra por su teléfono (o lo crea) y deja su último mensaje. Puede disparar una automatización.',
+                    illustration: 'wab-inbound',
+                },
+                {
+                    title: 'Mensajes y archivos cuando quieras',
+                    text: 'Desde la ficha con «Enviar WhatsApp» o con las acciones de una automatización: un texto o el PDF de una cuenta de cobro, y su estado (entregado, leído) llega solo.',
+                    illustration: 'automation-whatsapp',
+                },
+            ],
+        },
+        body: 'Conéctalo en **Ajustes → Integraciones → WhatsApp (WAS)**. Si ya usabas **WhatsApp (WAS anterior)**, sigue funcionando: conecta la nueva y cambia la conexión en tus automatizaciones cuando quieras.',
+        action: { label: 'Ver cómo funciona', href: '/aprende/integraciones/integraciones-mensajeria' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

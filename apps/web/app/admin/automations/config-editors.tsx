@@ -243,7 +243,7 @@ export function helpForTrigger(triggerType: string): string {
         case 'payment_received':
             return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones puedes usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
         case 'whatsapp_message_received':
-            return __('Se ejecuta cuando un contacto le escribe a tu número de WhatsApp Business. La app ya lo encontró por su teléfono en la lista (o lo creó, si así está configurado) y dejó el último mensaje en su registro. En las acciones puedes usar {{whatsapp.texto}}, {{whatsapp.nombre}} y {{whatsapp.de}}; durante 24 h puedes contestarle con «Enviar mensaje de texto de WhatsApp».');
+            return __('Se ejecuta cuando un contacto le escribe a tu número de WhatsApp (WAS o la cuenta oficial de Meta). La app ya lo encontró por su teléfono en la lista (o lo creó, si así está configurado) y dejó el último mensaje en su registro. En las acciones puedes usar {{whatsapp.texto}}, {{whatsapp.nombre}} y {{whatsapp.de}}. Con WAS puedes contestarle cuando quieras; con la cuenta oficial, durante 24 h con «Enviar mensaje de texto de WhatsApp».');
         default:
             return '';
     }
@@ -2397,8 +2397,8 @@ function ConnectorActionConfig({
 
     // D3 — WhatsApp oficial tiene su propio editor: la plantilla REAL de Meta,
     // sus variables y la vista previa, y «Probar ahora» manda de verdad.
-    if (connection?.integration_key === 'whatsapp_cloud') {
-        return <WhatsappActionConfig spec={spec} onChange={onChange} fields={fields} />;
+    if (connection?.integration_key === 'whatsapp_cloud' || connection?.integration_key === 'whatsapp_web') {
+        return <WhatsappActionConfig spec={spec} onChange={onChange} fields={fields} provider={connection.integration_key} />;
     }
     // SMS (ADR-S82): contador de SMS, «Quitar tildes», horario de la Ley 2300 y
     // «Probar ahora» que NO manda (la prueba real es «Enviarme una prueba»).

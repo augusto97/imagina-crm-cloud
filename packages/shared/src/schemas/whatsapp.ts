@@ -217,6 +217,64 @@ export function nextWhatsappStatus(current: WhatsappStatus | null, incoming: Wha
     return STATUS_RANK[incoming] > STATUS_RANK[current] ? incoming : null;
 }
 
+// ── Proveedores (v0.1.389) ───────────────────────────────────────────────
+
+/**
+ * Las integraciones que comparten el motor de WhatsApp (avisos, columnas de
+ * la lista, «Cuando llega un mensaje de WhatsApp» y «Enviar WhatsApp» en la
+ * ficha): la oficial de Meta y la versión nueva de Imagina WAS (un número
+ * vinculado como dispositivo, sin plantillas ni ventana de 24 h).
+ */
+export const WHATSAPP_PROVIDERS = ['whatsapp_cloud', 'whatsapp_web'] as const;
+export type WhatsappProvider = (typeof WHATSAPP_PROVIDERS)[number];
+
+export function isWhatsappProvider(value: unknown): value is WhatsappProvider {
+    return typeof value === 'string' && (WHATSAPP_PROVIDERS as readonly string[]).includes(value);
+}
+
+/**
+ * Estado de Imagina WAS (`queued`, `sending`, `sent`, `delivered`, `read`,
+ * `failed`, `canceled`) → el nuestro. «En cola» y «enviando» no cambian nada:
+ * el envío ya figura «Enviado» desde que el servidor lo aceptó.
+ */
+export function whatsappStatusFromWeb(status: unknown): WhatsappStatus | null {
+    switch (String(status ?? '').toLowerCase()) {
+        case 'sent':
+            return 'enviado';
+        case 'delivered':
+            return 'entregado';
+        case 'read':
+            return 'leido';
+        case 'failed':
+        case 'canceled':
+        case 'cancelled':
+            return 'fallido';
+        default:
+            return null;
+    }
+}
+
+/** Los avisos que la app registra en Imagina WAS al conectar. */
+export const WA_WEB_HOOK_EVENTS = [
+    'wa.message.sent',
+    'wa.message.delivered',
+    'wa.message.read',
+    'wa.message.failed',
+    'wa.message.canceled',
+    'wa.message.received',
+] as const;
+
+/** Estado del número vinculado en Imagina WAS, en palabras. */
+export const WA_WEB_ACCOUNT_STATUS_LABEL: Record<string, string> = {
+    connected: 'Conectado',
+    disconnected: 'Desconectado',
+    logged_out: 'Desvinculado: hay que volver a escanear el código QR',
+    banned: 'Bloqueado por WhatsApp',
+    pending_pair: 'Esperando que escanees el código QR',
+    registering: 'Vinculándose',
+    deleted: 'Eliminado',
+};
+
 /** ¿Está abierta la ventana de 24 h? */
 export function whatsappWindowOpen(lastInboundAt: Date | string | null | undefined, now: Date = new Date()): boolean {
     if (!lastInboundAt) return false;
@@ -618,8 +676,35 @@ export interface WhatsappListColumns {
     candidates: Record<WhatsappFieldRole, Array<{ id: number; label: string; type: string }>>;
 }
 
+/** v0.1.389 — lo propio de una conexión de Imagina WAS (versión nueva). */
+export interface WhatsappWebState {
+    server: string;
+    workspace: string | null;
+    /** El número vinculado, como lo informa Imagina WAS ahora (null = no se pudo leer). */
+    account: {
+        id: number;
+        phone: string | null;
+        name: string | null;
+        status: string;
+        status_label: string;
+        status_reason: string | null;
+        banned_until: string | null;
+        enabled: boolean;
+    } | null;
+    account_error: string | null;
+    /** Permisos de la clave y los que le faltan de los recomendados. */
+    abilities: string[];
+    missing_abilities: string[];
+    /** Los avisos (estado de cada envío y mensajes entrantes) registrados en Imagina WAS. */
+    hook: { registered: boolean; error: string | null };
+}
+
 /** Panel de una conexión de WhatsApp (Integraciones → WhatsApp). */
 export interface WhatsappConnectionDetail {
+    /** v0.1.389 — la oficial de Meta o la versión nueva de Imagina WAS. */
+    provider: WhatsappProvider;
+    /** Sólo en Imagina WAS. */
+    web: WhatsappWebState | null;
     connection: {
         id: number;
         name: string;
@@ -654,6 +739,8 @@ export interface WhatsappConnectionDetail {
 export interface WhatsappRecordInfo {
     connections: Array<{
         id: number;
+        /** v0.1.389 — en Imagina WAS no hay plantillas ni ventana: el texto sale siempre. */
+        provider: WhatsappProvider;
         name: string;
         display_phone: string | null;
         /** Ventana de 24 h con el número del registro. */
@@ -678,7 +765,8 @@ export const whatsappSendSchema = z
         connection_id: idSchema,
         /** Vacío = el teléfono del registro. Admite variables del registro. */
         to: z.string().trim().max(200).optional(),
-        kind: z.enum(['template', 'text']),
+        /** v0.1.389 — `media` (un archivo por enlace) sólo en Imagina WAS. */
+        kind: z.enum(['template', 'text', 'media']),
         template: z.string().trim().max(512).optional(),
         language: z.string().trim().max(16).optional(),
         variables: z.record(z.string().max(2000)).default({}),
@@ -686,9 +774,11 @@ export const whatsappSendSchema = z
         header_filename: z.string().trim().max(240).optional(),
         text: z.string().max(4096).optional(),
         preview_url: z.boolean().optional(),
+        media_url: z.string().trim().max(2048).optional(),
     })
-    .refine((v) => v.kind === 'text' || (v.template ?? '') !== '', { message: 'Elige la plantilla.' })
-    .refine((v) => v.kind === 'template' || (v.text ?? '').trim() !== '', { message: 'Escribe el mensaje.' });
+    .refine((v) => v.kind !== 'template' || (v.template ?? '') !== '', { message: 'Elige la plantilla.' })
+    .refine((v) => v.kind !== 'text' || (v.text ?? '').trim() !== '', { message: 'Escribe el mensaje.' })
+    .refine((v) => v.kind !== 'media' || (v.media_url ?? '').trim() !== '', { message: 'Pega el enlace del archivo.' });
 export type WhatsappSendInput = z.infer<typeof whatsappSendSchema>;
 
 /** «Probar ahora» del editor: envía DE VERDAD a un número que se escribe. */
@@ -696,7 +786,7 @@ export const whatsappTestSendSchema = z
     .object({
         connection_id: idSchema,
         to: z.string().trim().min(1).max(200),
-        kind: z.enum(['template', 'text']),
+        kind: z.enum(['template', 'text', 'media']),
         /** Los `values` de la acción tal cual se están editando (con variables). */
         values: z.record(z.unknown()).default({}),
         /** Registro para resolver las variables (default: el último de la lista). */
@@ -706,7 +796,7 @@ export type WhatsappTestSendInput = z.infer<typeof whatsappTestSendSchema>;
 
 export interface WhatsappSendResult {
     ok: boolean;
-    /** Id del mensaje en Meta (`wamid…`). */
+    /** Id del mensaje en Meta (`wamid…`) o en Imagina WAS. */
     message_id: string | null;
     to: string;
     /** El texto que verá el contacto. */

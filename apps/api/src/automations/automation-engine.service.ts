@@ -3431,7 +3431,8 @@ export class AutomationEngine {
                 }
                 // D3 — WhatsApp oficial: la petición la arma el canal (plantilla
                 // aprobada, ventana de 24 h) y el envío queda en el registro.
-                if (resolved.integration && resolved.integration.key === 'whatsapp_cloud') {
+                // v0.1.389 — también la versión nueva de Imagina WAS (mismo motor: estado y registro).
+                if (resolved.integration && (resolved.integration.key === 'whatsapp_cloud' || resolved.integration.key === 'whatsapp_web')) {
                     const wa = this.whatsapp();
                     if (!wa) throw new Error('WhatsApp no está disponible en este servidor.');
                     const out = await wa.runAutomationAction(tx, {
@@ -3445,8 +3446,9 @@ export class AutomationEngine {
                         realCall,
                     });
                     if (out.write) ctx.data = { ...ctx.data, ...out.write.after };
-                    if (out.status === 'failed') return fail('connector_action', out.message, { integration: 'whatsapp_cloud', ...out.details });
-                    return ok('connector_action', out.message, { action: resolved.action.key, integration: 'whatsapp_cloud', ...out.details });
+                    const waKey = resolved.integration.key;
+                    if (out.status === 'failed') return fail('connector_action', out.message, { integration: waKey, ...out.details });
+                    return ok('connector_action', out.message, { action: resolved.action.key, integration: waKey, ...out.details });
                 }
                 // SMS (ADR-S82): la petición la arma el proveedor, el envío queda
                 // en `sms_messages` (estado de entrega) y, con «Respetar el

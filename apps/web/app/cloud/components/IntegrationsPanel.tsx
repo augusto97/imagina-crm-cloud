@@ -602,7 +602,7 @@ function ConnectedRow({
                     </Link>
                 </Button>
             )}
-            {c.integration_key === 'whatsapp_cloud' && c.can_edit && (
+            {(c.integration_key === 'whatsapp_cloud' || c.integration_key === 'whatsapp_web') && c.can_edit && (
                 <Button size="sm" variant="outline" asChild>
                     <Link to={`/settings/whatsapp/${c.id}`} data-testid="imcrm-whatsapp-open">
                         <MessageCircle className="imcrm-h-3.5 imcrm-w-3.5" />

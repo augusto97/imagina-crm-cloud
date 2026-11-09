@@ -108,6 +108,9 @@ export const INTEGRATION_PROVIDER_DEFS: Record<IntegrationProvider, IntegrationP
 
 export const INTEGRATION_KEYS = [
     'whatsapp',
+    // v0.1.389 — la versión nueva de Imagina WAS (API v1, whats.imagina.cloud):
+    // estado de cada envío y mensajes entrantes por avisos firmados.
+    'whatsapp_web',
     // D3 — WhatsApp oficial (Meta WhatsApp Cloud API), al lado del de WAS.
     'whatsapp_cloud',
     'telegram',
@@ -356,6 +359,10 @@ const emailParams: Array<Record<string, unknown>> = [
 ];
 
 const WAS_DEFAULT_SERVER = 'https://was.imagina.cloud';
+/** v0.1.389 — el servidor de la versión nueva de Imagina WAS (API v1). */
+export const WA_WEB_DEFAULT_SERVER = 'https://whats.imagina.cloud';
+/** Los permisos que necesita la clave de la versión nueva (se piden al crearla). */
+export const WA_WEB_KEY_ABILITIES = ['account.view', 'wa.accounts.view', 'wa.send', 'wa.read', 'webhooks.manage'] as const;
 
 /** Estados de pedido de WooCommerce (los del núcleo; un plugin puede sumar otros). */
 export const WOO_ORDER_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
@@ -704,10 +711,10 @@ function subscriptionActions(provider: 'Mercado Pago' | 'PayPal'): ConnectorActi
 export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
         key: 'whatsapp',
-        name: 'WhatsApp (WAS)',
-        tagline: 'Manda mensajes de WhatsApp con tu cuenta de Imagina WAS (no oficial).',
+        name: 'WhatsApp (WAS anterior)',
+        tagline: 'La versión anterior de WAS. Para cuentas nuevas, usa «WhatsApp (WAS)».',
         description:
-            'Usa tu cuenta de Imagina WAS: avisos de vencimiento, confirmaciones, recordatorios de pago. El número de destino lo toma del registro. No es la API oficial de Meta: para plantillas aprobadas y respuestas de tus clientes, conecta «WhatsApp Business (oficial)».',
+            'Para quien todavía usa la versión anterior de WAS (was.imagina.cloud): avisos de vencimiento, confirmaciones, recordatorios de pago. Si tu cuenta ya está en la versión nueva (whats.imagina.cloud), conecta «WhatsApp (WAS)»: además de enviar, te dice si cada mensaje se entregó o se leyó y recibe los mensajes de tus clientes.',
         category: 'mensajeria',
         color: '#25D366',
         auth: {
@@ -790,6 +797,97 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                         ],
                     },
                     { key: 'caption', label: 'Texto que lo acompaña', type: 'long_text' },
+                ],
+            }),
+        ],
+    },
+    {
+        // v0.1.389 — la versión nueva de Imagina WAS (API v1 de Zender). Usa el
+        // MISMO motor que la integración oficial (avisos, columnas de la lista,
+        // «Cuando llega un mensaje de WhatsApp», «Enviar WhatsApp» en la ficha),
+        // sin plantillas ni ventana de 24 h: es un número vinculado como
+        // dispositivo, no la API de Meta. Los datos de las acciones se llaman
+        // igual que en la versión anterior, así pasar una automatización de una
+        // a otra es sólo cambiar la conexión.
+        key: 'whatsapp_web',
+        name: 'WhatsApp (WAS)',
+        tagline: 'Tu número de WAS: mensajes y archivos, si cada uno se entregó o se leyó, y lo que te escriben tus clientes.',
+        description:
+            'Conecta tu número de WAS (whats.imagina.cloud). Manda mensajes y archivos desde un registro o una automatización, mira si cada envío se entregó o se leyó, y entérate cuando un cliente te escribe: el registro se crea o se actualiza solo. No es la API oficial de Meta: es tu propio número vinculado, así que conviene escribir sólo a quien espera tus mensajes.',
+        category: 'mensajeria',
+        color: '#25D366',
+        auth: {
+            kind: 'key',
+            fields: [
+                field({
+                    key: 'api_key',
+                    label: 'Clave de API',
+                    secret: true,
+                    required: true,
+                    placeholder: 'Pega la clave',
+                    help: 'En tu panel de WhatsApp (whats.imagina.cloud): API Keys → crear una clave.',
+                }),
+                field({
+                    key: 'account',
+                    label: 'Número de WhatsApp',
+                    required: true,
+                    lookup: true,
+                    placeholder: 'Elige el número',
+                    help: 'El número conectado desde el que salen los mensajes. Toca «Buscar mis cuentas» para elegirlo de la lista.',
+                }),
+                field({
+                    key: 'server',
+                    label: 'Servidor',
+                    advanced: true,
+                    default: WA_WEB_DEFAULT_SERVER,
+                    placeholder: WA_WEB_DEFAULT_SERVER,
+                    help: 'Sólo si usas otro servidor de WAS.',
+                }),
+                field({ key: 'account_phone', label: 'Número', hidden: true }),
+                field({ key: 'account_name', label: 'Nombre del número', hidden: true }),
+                field({ key: 'workspace', label: 'Espacio de trabajo', hidden: true }),
+                field({ key: 'abilities', label: 'Permisos de la clave', hidden: true }),
+            ],
+            how_to: [
+                'Entra a tu panel de WhatsApp (whats.imagina.cloud) y conecta tu número, si todavía no lo hiciste, escaneando el código QR.',
+                `Ve a API Keys y crea una clave con estos permisos: ${WA_WEB_KEY_ABILITIES.join(', ')}.`,
+                'Pégala aquí y toca «Buscar mis cuentas» para elegir el número.',
+                'Mándate un mensaje de prueba a tu propio número: si llega, quedó conectado. Al conectar registramos solos los avisos que nos dicen si cada mensaje se entregó o se leyó y nos traen los mensajes de tus clientes.',
+            ],
+            test: {
+                label: 'Número para el mensaje de prueba',
+                placeholder: '+573001234567',
+                help: 'Con indicativo de país. Llega un WhatsApp real desde el número elegido.',
+            },
+        },
+        actions: [
+            action({
+                key: 'send_text',
+                label: 'Enviar mensaje de WhatsApp',
+                description: 'Un mensaje de texto a un número. En el registro queda el último mensaje y si se entregó o se leyó.',
+                params: [
+                    {
+                        key: 'recipient',
+                        label: 'Número de destino',
+                        required: true,
+                        help: 'Con indicativo de país, por ejemplo +573001234567. Puedes usar el campo teléfono: {{telefono}}.',
+                    },
+                    { key: 'message', label: 'Mensaje', type: 'long_text', required: true, help: 'Hasta 4.096 caracteres.' },
+                ],
+            }),
+            action({
+                key: 'send_media',
+                label: 'Enviar archivo por WhatsApp',
+                description: 'Una imagen, video, audio o PDF de un enlace público, con un texto opcional.',
+                params: [
+                    { key: 'recipient', label: 'Número de destino', required: true, help: 'Con indicativo de país. Puedes usar {{telefono}}.' },
+                    {
+                        key: 'url',
+                        label: 'Enlace del archivo',
+                        required: true,
+                        help: 'Dirección pública del archivo (https://…): JPG, PNG, GIF, WebP, MP4, MP3, AAC, OGG o PDF, hasta 50 MB. Sirve el enlace de un PDF generado: {{pdf.link}}.',
+                    },
+                    { key: 'caption', label: 'Texto que lo acompaña', type: 'long_text', help: 'Opcional. Los audios no llevan texto.' },
                 ],
             }),
         ],

@@ -394,7 +394,17 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.388**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.389**
+(**WhatsApp (WAS)**: integración nueva con la versión nueva de WAS en
+`whats.imagina.cloud` —clave de API, «Buscar mis cuentas» con el estado de cada
+número, mensajes y archivos sin plantillas, avisos registrados solos en WAS
+con firma, estados entregado/leído/fallido en el registro y lo que escriben
+los clientes en la lista con el disparador de WhatsApp—, sobre el mismo motor
+de WhatsApp oficial; la anterior queda como «WhatsApp (WAS anterior)»;
+addendum ADR-S69. **Pendiente**: probarla contra el WAS real del usuario en
+el servidor —crear el aviso y mandar un mensaje a su número pide su visto
+bueno— y que el usuario **revoque la clave de prueba** que pegó en el chat).
+Antes v0.1.388
 (**una etiqueta de conversión distinta por página**: el mismo formulario —o la
 misma agenda— insertado en varias páginas del sitio dispara la acción de
 Google Ads y el píxel de Meta de la primera regla cuya página coincide, y en
@@ -1663,6 +1673,42 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-09 · v0.1.389** — **WhatsApp (WAS): la versión nueva de WAS como
+  segundo proveedor de WhatsApp** (pedido del usuario: WAS/Zender salió en una
+  versión nueva que instaló aparte en `whats.imagina.cloud`; adjuntó la
+  especificación OpenAPI y preguntó si alcanzaba para la integración → «sí,
+  arranca así»). Se verificó la especificación con consultas de SÓLO LECTURA
+  contra su cuenta (con la clave de prueba que pegó en el chat, guardada sólo
+  en el scratchpad de la sesión, nunca en el repo): los mensajes traen
+  `connection.id`, los adjuntos entrantes vienen con `url: null` y los estados
+  traen su hora. **Crear un aviso de prueba en su cuenta real lo bloqueó el
+  clasificador de permisos** (cambio en una cuenta de terceros): no se
+  insistió; la prueba real queda pendiente con su visto bueno. **Pedirle que
+  revoque la clave de prueba.** «Lo de los números no sé dónde se saca»: lo
+  resuelve «Buscar mis cuentas» (en su cuenta, el número es la cuenta #1).
+  Qué entró: integración `whatsapp_web` «WhatsApp (WAS)» (la anterior pasa a
+  «WhatsApp (WAS anterior)»); verificación con `/me` (permiso de enviar
+  obligatorio, los recomendados se nombran); avisos registrados solos con el
+  secreto cifrado, revisados y recreados, y borrados al quitar la conexión;
+  firma `t=…,v1=…` con 15 min de tolerancia; cada conexión toma sólo los
+  avisos de SU número; mismo motor de WhatsApp oficial (lista de contactos,
+  columnas, disparador, Problemas) sin plantillas ni ventana de 24 h; página
+  de la conexión con el número y su estado, permisos que faltan y «Registrar
+  los avisos de nuevo»; «Enviar WhatsApp» de la ficha con Mensaje y Archivo;
+  editor de las acciones con «Probar ahora»; ideas y asistente/MCP al día.
+  **White-label**: el nombre de la integración no lleva «Imagina» (lo atrapó el
+  test de las novedades), y de paso el mensaje de prueba de las conexiones de
+  mensajería dejó de decir «Prueba de conexión de Imagina Base» y el aviso en
+  WAS lleva el dominio de la app en el nombre. **De paso**: el motivo de una
+  falla de WhatsApp decía «WhatsApp (WhatsApp (WAS) · …)». **Entorno**: el
+  usuario de pruebas había quedado sin empresa ni contraseña válida en la base
+  de desarrollo (se repuso a mano); doble de WAS nuevo `scripts/dev/fake-was.mjs`
+  y, sólo en desarrollo, los avisos se registran con http. Ayuda: guía
+  `whatsapp` reescrita con las dos formas, Aprende (sección «WhatsApp (WAS)»
+  en mensajería con la ilustración nueva `wab-was-conectar`, comparativa al
+  día) y novedad con carrusel. Queda: probar contra el WAS real, y (opcional) un
+  botón para mudar las automatizaciones de la conexión anterior a la nueva.
 
 - **2026-11-09 · v0.1.388** — **Una etiqueta de conversión por página y
   duplicar formularios** (pregunta del usuario: «el código de conversión

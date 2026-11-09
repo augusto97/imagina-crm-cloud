@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+    WA_WEB_DEFAULT_SERVER,
     WHATSAPP_FIELD_ROLES,
     WHATSAPP_FIELD_ROLE_META,
     type WhatsappConnectionDetail,
@@ -13,9 +14,11 @@ import {
     CheckCircle2,
     ExternalLink,
     Inbox,
+    KeyRound,
     ListChecks,
     MessageCircle,
     RefreshCw,
+    Smartphone,
     Sparkles,
     Webhook,
 } from 'lucide-react';
@@ -33,10 +36,10 @@ import { __ } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 
 /**
- * WhatsApp Business oficial (D3): cómo le llegan los mensajes a la app, en
- * qué lista caen, qué columnas se escriben y las plantillas aprobadas en Meta.
- * La app NO es un chat: en cada registro queda el último mensaje y el estado
- * del último envío.
+ * WhatsApp Business oficial (D3) y, desde v0.1.389, Imagina WAS: cómo le
+ * llegan los mensajes a la app, en qué lista caen, qué columnas se escriben y
+ * (sólo en la oficial) las plantillas aprobadas en Meta. La app NO es un
+ * chat: en cada registro queda el último mensaje y el estado del último envío.
  */
 export function WhatsappPage(): JSX.Element {
     const { connectionId } = useParams();
@@ -72,6 +75,7 @@ export function WhatsappPage(): JSX.Element {
         );
     }
     const d = q.data;
+    if (d.provider === 'whatsapp_web' && d.web) return <WebWhatsappPage d={d} web={d.web} back={back} onData={setData} />;
     const approved = d.templates.filter((t) => t.status === 'APPROVED').length;
 
     return (
@@ -148,6 +152,241 @@ function QualityBadge({ rating }: { rating: string }): JSX.Element {
 function errText(err: unknown): string {
     if (err instanceof CloudApiError) return err.message;
     return err instanceof Error ? err.message : String(err);
+}
+
+// ── Imagina WAS (v0.1.389) ──────────────────────────────────────────────
+
+/**
+ * La versión de la página para una conexión de Imagina WAS: el número
+ * vinculado y su estado, los permisos de la clave, los avisos que la app
+ * registró sola en Imagina WAS y la lista donde caen los mensajes. No hay
+ * plantillas ni ventana de 24 h: el texto sale siempre.
+ */
+function WebWhatsappPage({
+    d,
+    web,
+    back,
+    onData,
+}: {
+    d: WhatsappConnectionDetail;
+    web: NonNullable<WhatsappConnectionDetail['web']>;
+    back: JSX.Element;
+    onData: (d: WhatsappConnectionDetail) => void;
+}): JSX.Element {
+    const phone = web.account?.phone ?? d.connection.display_phone;
+    const name = web.account?.name ?? d.connection.verified_name;
+    const ownServer = web.server !== '' && web.server !== WA_WEB_DEFAULT_SERVER;
+    return (
+        <div className="imcrm-mx-auto imcrm-max-w-5xl imcrm-space-y-6 imcrm-p-4 sm:imcrm-p-6" data-testid="imcrm-whatsapp-page" data-provider="whatsapp_web">
+            {back}
+            <header className="imcrm-flex imcrm-items-center imcrm-gap-3">
+                <IntegrationLogo integrationKey="whatsapp_web" size={48} />
+                <div className="imcrm-min-w-0 imcrm-flex-1">
+                    <h1 className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-xl imcrm-font-semibold">
+                        {__('WhatsApp')} · {phone ?? d.connection.name}
+                        {web.account && <AccountStatusBadge account={web.account} />}
+                    </h1>
+                    <p className="imcrm-text-sm imcrm-text-muted-foreground">
+                        {name ? `${name} — ` : ''}
+                        {__('número vinculado a tu cuenta de WAS')}
+                        {web.workspace ? ` (${web.workspace})` : ''}
+                        {ownServer ? ` · ${web.server}` : ''}
+                    </p>
+                </div>
+            </header>
+
+            {d.last_error && (
+                <div className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-destructive/30 imcrm-bg-destructive/5 imcrm-p-3 imcrm-text-sm" data-testid="imcrm-whatsapp-error">
+                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-destructive" />
+                    <div>
+                        <p className="imcrm-font-medium">{__('La conexión está fallando')}</p>
+                        <p className="imcrm-text-muted-foreground">{d.last_error}</p>
+                    </div>
+                </div>
+            )}
+
+            <section className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-3">
+                <Stat label={__('Contactos que escribieron')} value={String(d.totals.contacts)} />
+                <Stat label={__('Número')} value={web.account ? web.account.status_label : __('Sin leer')} />
+                <Stat label={__('Avisos')} value={web.hook.registered ? __('Activos') : __('Sin registrar')} />
+            </section>
+
+            <WebAccountSection d={d} web={web} />
+            <WebHookSection d={d} web={web} onData={onData} />
+            <InboundSection d={d} onData={onData} />
+
+            <section className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4" data-testid="imcrm-whatsapp-recipes">
+                <h2 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-semibold">
+                    <Sparkles className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                    {__('Ideas para usarlo')}
+                </h2>
+                <ul className="imcrm-mt-2 imcrm-list-disc imcrm-space-y-1.5 imcrm-pl-5 imcrm-text-sm imcrm-text-muted-foreground">
+                    <li>{__('Avisos automáticos: en una automatización, acción «Enviar mensaje de WhatsApp» o «Enviar archivo por WhatsApp» (recordatorio de pago, cita confirmada, la factura en PDF). Con WAS no hay plantillas que aprobar: el mensaje sale tal cual.')}</li>
+                    <li>{__('Reaccionar a lo que escriben: disparador «Cuando llega un mensaje de WhatsApp», con {{whatsapp.texto}} y {{whatsapp.nombre}}.')}</li>
+                    <li>
+                        {__('Resumir o clasificar con IA: agrega a la lista un «Campo con IA» que lea la columna «Último mensaje de WhatsApp». Se recalcula solo cada vez que llega un mensaje.')}
+                    </li>
+                    <li>{__('A mano: abre un registro y toca «Enviar WhatsApp» para mandarle un mensaje o un archivo.')}</li>
+                    <li>{__('Cuida el número: no mandes mensajes masivos a quien no te escribió. WhatsApp bloquea los números que reciben muchas denuncias.')}</li>
+                </ul>
+            </section>
+        </div>
+    );
+}
+
+function AccountStatusBadge({ account }: { account: NonNullable<NonNullable<WhatsappConnectionDetail['web']>['account']> }): JSX.Element {
+    const ok = account.enabled && account.status === 'connected';
+    const bad = account.status === 'banned' || account.status === 'logged_out';
+    return (
+        <Badge variant={ok ? 'success' : bad ? 'destructive' : 'warning'} data-testid="imcrm-whatsapp-account-status">
+            {account.status_label}
+        </Badge>
+    );
+}
+
+function abilityText(a: string): string {
+    switch (a) {
+        case 'account.view':
+            return __('ver la cuenta');
+        case 'wa.accounts.view':
+            return __('ver los números');
+        case 'wa.send':
+            return __('enviar');
+        case 'wa.read':
+            return __('leer los mensajes');
+        case 'webhooks.manage':
+            return __('manejar los avisos (webhooks)');
+        default:
+            return a;
+    }
+}
+
+function WebAccountSection({ d, web }: { d: WhatsappConnectionDetail; web: NonNullable<WhatsappConnectionDetail['web']> }): JSX.Element {
+    const a = web.account;
+    const down = a !== null && (!a.enabled || a.status !== 'connected');
+    return (
+        <section className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4" data-testid="imcrm-whatsapp-web-account" data-tour="whatsapp-web-account">
+            <h2 className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-semibold">
+                <Smartphone className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                {__('El número')}
+            </h2>
+            {a ? (
+                <dl className="imcrm-mt-2 imcrm-grid imcrm-gap-x-6 imcrm-gap-y-1 imcrm-text-sm sm:imcrm-grid-cols-[auto_1fr]">
+                    <dt className="imcrm-text-muted-foreground">{__('Teléfono')}</dt>
+                    <dd className="imcrm-font-medium">{a.phone ?? '—'}</dd>
+                    <dt className="imcrm-text-muted-foreground">{__('Nombre')}</dt>
+                    <dd>{a.name ?? '—'}</dd>
+                    <dt className="imcrm-text-muted-foreground">{__('Estado')}</dt>
+                    <dd>
+                        {a.status_label}
+                        {a.status_reason ? ` · ${a.status_reason}` : ''}
+                        {a.banned_until ? ` · ${__('bloqueado hasta')} ${formatDateTimeStr(a.banned_until)}` : ''}
+                    </dd>
+                    <dt className="imcrm-text-muted-foreground">{__('Cuenta en WAS')}</dt>
+                    <dd>#{a.id}</dd>
+                </dl>
+            ) : (
+                <p className="imcrm-mt-2 imcrm-text-sm imcrm-text-destructive" data-testid="imcrm-whatsapp-account-error">
+                    {web.account_error ?? __('No se pudo leer el número en WAS.')}
+                </p>
+            )}
+            {down && (
+                <p className="imcrm-mt-3 imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-sm imcrm-text-amber-700 dark:imcrm-text-amber-400" data-testid="imcrm-whatsapp-account-down">
+                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
+                    {__('Mientras el número no esté conectado, los mensajes no salen. Vuelve a vincularlo en tu panel de WAS escaneando el código QR con el teléfono.')}
+                </p>
+            )}
+            {web.missing_abilities.length > 0 && (
+                <div className="imcrm-mt-3 imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-sm" data-testid="imcrm-whatsapp-missing-abilities">
+                    <KeyRound className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-amber-600" />
+                    <div>
+                        <p>
+                            {__('A la clave le faltan permisos:')} <span className="imcrm-font-medium">{web.missing_abilities.map(abilityText).join(', ')}</span>.
+                        </p>
+                        <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                            {__('Edítala en tu panel de WAS (API Keys), marca los permisos y toca «Actualizar clave» en Integraciones.')}
+                        </p>
+                    </div>
+                </div>
+            )}
+            {d.connection.secret_state === 'unreadable' && (
+                <p className="imcrm-mt-3 imcrm-text-sm imcrm-text-destructive">{__('La clave guardada no se puede leer: vuelve a escribirla en «Actualizar clave».')}</p>
+            )}
+        </section>
+    );
+}
+
+function WebHookSection({
+    d,
+    web,
+    onData,
+}: {
+    d: WhatsappConnectionDetail;
+    web: NonNullable<WhatsappConnectionDetail['web']>;
+    onData: (d: WhatsappConnectionDetail) => void;
+}): JSX.Element {
+    const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+    const register = useMutation({
+        mutationFn: () => api.whatsappSubscribe(d.connection.id, false),
+        onSuccess: (res) => {
+            onData(res);
+            setMsg({ ok: true, text: __('Listo: WAS le avisará a la app de cada mensaje y de cada estado.') });
+        },
+        onError: (err) => setMsg({ ok: false, text: errText(err) }),
+    });
+    const w = d.webhook;
+    return (
+        <section className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4" data-testid="imcrm-whatsapp-webhook" data-tour="whatsapp-web-hook">
+            <h2 className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-semibold">
+                <Webhook className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                {__('Recibir mensajes y estados')}
+                {web.hook.registered ? (
+                    <Badge variant="success" data-testid="imcrm-whatsapp-hook-registered">
+                        {__('Activos')}
+                    </Badge>
+                ) : (
+                    <Badge variant="warning" data-testid="imcrm-whatsapp-hook-missing">
+                        {__('Sin registrar')}
+                    </Badge>
+                )}
+                {w.last_hook_at ? (
+                    <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs imcrm-font-normal imcrm-text-emerald-700 dark:imcrm-text-emerald-400" data-testid="imcrm-whatsapp-last-hook">
+                        <CheckCircle2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Último aviso')} {formatDateTimeStr(w.last_hook_at)}
+                    </span>
+                ) : (
+                    <span className="imcrm-text-xs imcrm-font-normal imcrm-text-muted-foreground">{__('Todavía no llegó ningún aviso.')}</span>
+                )}
+            </h2>
+            <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
+                {__('No tienes que configurar nada: la app registró sola los avisos en tu cuenta de WAS. Así se entera de cada mensaje que te escriben y de si los tuyos se entregaron, se leyeron o fallaron.')}
+            </p>
+            {web.hook.error && (
+                <p className="imcrm-mt-2 imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-sm imcrm-text-destructive" data-testid="imcrm-whatsapp-hook-error">
+                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
+                    {web.hook.error}
+                </p>
+            )}
+            <details className="imcrm-mt-2 imcrm-text-sm">
+                <summary className="imcrm-cursor-pointer imcrm-text-muted-foreground">{__('Ver la dirección de los avisos')}</summary>
+                <CopyRow value={w.url} testId="imcrm-whatsapp-hook-url" />
+                <p className="imcrm-mt-1 imcrm-text-xs imcrm-text-muted-foreground">
+                    {__('En tu panel de WAS aparece en «Webhooks» con la dirección de esta app en el nombre. No la borres: sin ella dejan de llegar los mensajes.')}
+                </p>
+            </details>
+            <div className="imcrm-mt-3 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                <Button size="sm" variant={web.hook.registered ? 'outline' : 'default'} onClick={() => register.mutate()} disabled={register.isPending} data-testid="imcrm-whatsapp-subscribe">
+                    <RefreshCw className={register.isPending ? 'imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin' : 'imcrm-h-3.5 imcrm-w-3.5'} />
+                    {web.hook.registered ? __('Registrar los avisos de nuevo') : __('Registrar los avisos')}
+                </Button>
+                {msg && (
+                    <span className={msg.ok ? 'imcrm-text-sm imcrm-text-emerald-700 dark:imcrm-text-emerald-400' : 'imcrm-text-sm imcrm-text-destructive'} data-testid="imcrm-whatsapp-subscribe-msg">
+                        {msg.text}
+                    </span>
+                )}
+            </div>
+        </section>
+    );
 }
 
 // ── Recibir mensajes ────────────────────────────────────────────────────
@@ -307,7 +546,9 @@ function InboundSection({ d, onData }: { d: WhatsappConnectionDetail; onData: (d
                         }}
                         data-testid="imcrm-whatsapp-inbound-list"
                     >
-                        <option value="">{__('Ninguna (sólo se abre la ventana de 24 h)')}</option>
+                        <option value="">
+                            {d.provider === 'whatsapp_web' ? __('Ninguna (los mensajes sólo pueden disparar automatizaciones)') : __('Ninguna (sólo se abre la ventana de 24 h)')}
+                        </option>
                         {d.lists.map((l) => (
                             <option key={l.id} value={l.id}>
                                 {l.name}

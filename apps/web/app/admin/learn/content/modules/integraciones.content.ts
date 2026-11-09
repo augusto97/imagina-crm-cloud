@@ -105,26 +105,34 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'WhatsApp (WAS)' },
             {
                 t: 'p',
-                md: '**WhatsApp (WAS)** usa tu cuenta del servicio WAS, que manda mensajes desde un número de WhatsApp normal. Es la forma más rápida de empezar: no pide trámites con Meta. No es la API oficial, así que no tiene plantillas aprobadas ni te entera de las respuestas de tus clientes; para eso está [WhatsApp Business oficial](/aprende/whatsapp-business/wab-cual-elegir).',
+                md: '**WhatsApp (WAS)** manda mensajes desde un número de WhatsApp que vinculas con el código QR en tu panel de WAS. Es la forma más rápida de empezar: no pide trámites con Meta ni plantillas aprobadas, y mandas mensajes y archivos cuando quieras. Además, lo que te escriben tus clientes llega a sus registros y ves si cada mensaje se entregó o se leyó. Si mandas avisos a muchos clientes, mira [WhatsApp Business oficial](/aprende/whatsapp-business/wab-cual-elegir).',
             },
+            { t: 'anim', key: 'wab-was-conectar', caption: 'Pegas la clave, eliges tu número de la lista y los avisos quedan registrados solos.' },
             {
                 t: 'steps',
                 items: [
-                    'En tu panel de WAS ve a **Herramientas → Claves de API** y copia la clave.',
+                    'En tu panel de WAS ve a **API Keys** y crea una clave. Marca los permisos de ver la cuenta, ver los números, enviar, leer los mensajes y manejar los avisos (webhooks).',
                     'En **Ajustes → Integraciones**, toca **Conectar** en **WhatsApp (WAS)** y pega la clave en **Clave de API**.',
-                    'Toca **Buscar mis cuentas** y elige el número en **Cuenta de WhatsApp**. Si tu clave no tiene permiso para listar cuentas, escribe a mano el identificador de la cuenta (el mismo que ya usas en tus envíos): no es un error, las claves de WAS pueden tener permiso para enviar y no para listar.',
+                    'Toca **Buscar mis cuentas** y elige tu número en **Número de WhatsApp**: aparecen todos los que tienes vinculados, con su estado. No hace falta copiar el «Account ID» de tu panel.',
                     'En **Número para el mensaje de prueba** escribe tu propio número con indicativo (+57 300…) y toca **Enviar prueba**. Llega un WhatsApp real.',
-                    'Si te llegó, toca **Conectar**.',
+                    'Si te llegó, toca **Conectar**. La app registra sola los avisos en tu cuenta de WAS.',
+                    'Toca **Configurar WhatsApp** en la conexión, elige la lista donde caen los mensajes y toca **Preparar columnas**.',
                 ],
             },
             {
                 t: 'settings',
                 title: 'Las acciones de WhatsApp (WAS)',
                 rows: [
-                    { name: 'Enviar mensaje de WhatsApp', what: '**Número de destino** (con indicativo; usa el campo teléfono del registro, por ejemplo `{{telefono}}`) y **Mensaje**, que acepta variables del registro.', tip: 'El campo Teléfono de la app ya guarda el número con indicativo: úsalo y te ahorras errores de formato.' },
-                    { name: 'Enviar archivo por WhatsApp', what: 'Un archivo con un texto opcional: **Enlace del archivo** (una dirección pública https), **Tipo de archivo** (Imagen, Video, Audio o Documento PDF) y **Texto que lo acompaña**.', tip: 'Combínalo con «Generar un PDF»: el enlace `{{pdf.link}}` manda la cuenta de cobro recién armada.' },
+                    { name: 'Enviar mensaje de WhatsApp', what: '**Para** (con indicativo; usa el campo teléfono del registro, por ejemplo `{{telefono}}`) y **Mensaje**, que acepta variables del registro.', tip: 'Un número sin indicativo se completa con el de tu número de WhatsApp.' },
+                    { name: 'Enviar archivo por WhatsApp', what: 'Un archivo con un texto opcional: **Enlace del archivo** (una dirección pública https a un PDF, una imagen, un audio o un video) y **Texto que lo acompaña**.', tip: 'Combínalo con «Generar un PDF»: el enlace `{{pdf.link}}` manda la cuenta de cobro recién armada.' },
+                    { name: 'Cuando llega un mensaje de WhatsApp', what: 'El disparador corre cuando un contacto te escribe, con `{{whatsapp.texto}}`, `{{whatsapp.nombre}}` y `{{whatsapp.de}}`.' },
                     { name: 'Servidor (opciones avanzadas)', what: 'Sólo si usas un servidor de WAS propio. Casi nadie lo cambia.' },
                 ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: '¿Ya tenías conectado **WhatsApp (WAS anterior)**? Sigue funcionando igual. Para usar la versión nueva, conecta **WhatsApp (WAS)** con una clave de tu cuenta nueva y cambia la conexión en tus automatizaciones.',
             },
             { t: 'h', text: 'Telegram' },
             {

@@ -82,7 +82,7 @@ import {
 import { SQL_RUNNER, sqlConnParams, type SqlRunner } from './sqlserver/sql-runner';
 import { verifyS3 } from './storage-s3';
 import { graphBase } from '../whatsapp/whatsapp-graph';
-import { verifyWhatsappCloud } from '../whatsapp/whatsapp-verify';
+import { verifyWhatsappCloud, verifyWhatsappWeb } from '../whatsapp/whatsapp-verify';
 import {
     buildAuthorizeUrl,
     buildRefreshBody,
@@ -1560,7 +1560,7 @@ export class ConnectorsService {
         creds: IntegrationCreds,
         to: string,
     ): Promise<string | null> {
-        if (key === 'whatsapp' && (creds.fields.account ?? '').trim() === '') {
+        if ((key === 'whatsapp' || key === 'whatsapp_web') && (creds.fields.account ?? '').trim() === '') {
             const label = def.auth.kind === 'key' ? def.auth.fields.find((f) => f.key === 'account')?.label : null;
             return `Elige o escribe «${label ?? 'la cuenta'}» antes de mandar la prueba.`;
         }
@@ -1701,6 +1701,11 @@ export class ConnectorsService {
             return created!.id;
         });
 
+        for (const fn of this.afterKeyConnect) {
+            void fn(tenantId, id, key).catch((err: unknown) =>
+                this.logger.warn(`Después de conectar la conexión #${id}: ${err instanceof Error ? err.message : String(err)}`),
+            );
+        }
         const fresh = await this.row(tenantId, id);
         const usage = await this.usageCounts(tenantId);
         return {
@@ -1863,6 +1868,8 @@ export class ConnectorsService {
         if (key === 'paypal') return this.runPaypalVerify(creds);
         // D3 — WhatsApp oficial: el número, la cuenta, el token y la clave de la app.
         if (key === 'whatsapp_cloud') return verifyWhatsappCloud(creds, graphBase(this.env));
+        // v0.1.389 — la versión nueva de Imagina WAS: la clave, sus permisos y el número.
+        if (key === 'whatsapp_web') return verifyWhatsappWeb(creds);
         // v0.1.332 — SMS: la cuenta (o su saldo) con el proveedor.
         if (isSmsProvider(key)) return this.runSmsVerify(key, creds);
         const req = verifyRequest(key, creds);
@@ -2190,6 +2197,17 @@ export class ConnectorsService {
      * Best-effort: una tienda caída no impide borrar la conexión.
      */
     private readonly beforeRemove: Array<(tenantId: number, connectionId: number) => Promise<void>> = [];
+    private readonly afterKeyConnect: Array<(tenantId: number, connectionId: number, key: IntegrationKey) => Promise<void>> = [];
+
+    /**
+     * v0.1.389 — después de conectar (o actualizar) una app por clave: lo que
+     * la app tiene que dejar armado del otro lado (los avisos de Imagina WAS).
+     * Corre en segundo plano: un fallo no deshace la conexión, queda a la vista
+     * en la pantalla de la conexión.
+     */
+    onAfterKeyConnect(fn: (tenantId: number, connectionId: number, key: IntegrationKey) => Promise<void>): void {
+        this.afterKeyConnect.push(fn);
+    }
 
     onBeforeRemove(fn: (tenantId: number, connectionId: number) => Promise<void>): void {
         this.beforeRemove.push(fn);

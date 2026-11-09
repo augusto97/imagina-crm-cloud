@@ -13314,6 +13314,64 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el píxel y `conversion_rule` «Navidad»; contacto → la general con
         «Lead»).
 
+  - [x] **WhatsApp (WAS): la versión nueva de WAS como segundo proveedor
+        (v0.1.389, addendum ADR-S69, pedido del usuario: "zender (imagina was)
+        se actualizó a una nueva versión… en https://whats.imagina.cloud/ —
+        revisa si con esta especificación alcanza" → «sí, arranca así»)**.
+        Integración nueva `whatsapp_web` «WhatsApp (WAS)» sobre la API v1 de
+        WAS, montada en el MISMO motor de WhatsApp oficial (`WhatsappService`
+        con `WHATSAPP_PROVIDERS`): `whatsapp_hooks`, `whatsapp_contacts`, las
+        columnas de `lists.settings.whatsapp`, el disparador «Cuando llega un
+        mensaje de WhatsApp», el diálogo de la ficha y los Problemas son los de
+        D3. La anterior pasa a «WhatsApp (WAS anterior)» y sigue igual.
+        (a) **Conectar**: clave de API (Bearer) y **«Buscar mis cuentas»**, que
+        lista los números con su estado (Conectado, Desconectado, Bloqueado…)
+        para elegir —nadie tiene que copiar el id—; la verificación lee `/me`,
+        exige el permiso de enviar y nombra los recomendados que faltan (leer,
+        avisos) sin bloquear; elegir un número desconectado avisa.
+        (b) **Avisos registrados solos** en WAS al conectar (`POST /webhooks`,
+        secreto cifrado en `secrets.signing_secret`, `config.whatsapp_web`),
+        revisados al abrir la página (`GET /webhooks/{id}`; si alguien los
+        borró, se recrean), «Registrar los avisos de nuevo», y borrados en WAS
+        al quitar la conexión (`onBeforeRemove`; `onAfterKeyConnect` nuevo en
+        conectores). Firma `X-Webhook-Signature: t=…,v1=HMAC(secret,
+        "<t>.<cuerpo>")` en tiempo constante con 15 min de tolerancia; cada
+        conexión toma sólo los avisos de SU número; los grupos se ignoran; un
+        mensaje entrante encuentra o crea el contacto y deja su último mensaje;
+        los estados (enviado/entregado/leído/fallido con el motivo en palabras)
+        nunca retroceden. (c) **Enviar** sin plantillas ni ventana de 24 h:
+        `send_text {recipient, message}` y `send_media {recipient, url https,
+        caption}` en automatizaciones (editor propio con «Probar ahora») y
+        «Enviar WhatsApp» de la ficha con **Mensaje** y **Archivo**; el
+        indicativo se completa con el del número. Errores de WAS en palabras
+        (`waWebErrorText`: clave, permiso, plan, número desconectado,
+        calentamiento, límites, no tiene WhatsApp); los sistemáticos abren un
+        Problema. (d) **Página de la conexión** (`WebWhatsappPage`): el número
+        y su estado, permisos que faltan, avisos y la lista de contactos.
+        (e) Ideas, asistente/MCP (`kind: "was"`), migración de empresa (sin
+        secretos ni el aviso) al día. **White-label**: el nombre no lleva
+        «Imagina» (lo atrapó el test de novedades); de paso, el mensaje de
+        prueba de las conexiones de mensajería ya no dice «Imagina Base», el
+        aviso en WAS lleva el dominio de la app y el motivo de una falla dejó de
+        decir «WhatsApp (WhatsApp (WAS)…)». Doble de desarrollo
+        `scripts/dev/fake-was.mjs`; en desarrollo los avisos se registran con
+        http (`DEV_ALLOW_PRIVATE_EGRESS`). Ayuda: guía `whatsapp` con las dos
+        formas, Aprende (sección «WhatsApp (WAS)» con la ilustración nueva
+        `wab-was-conectar`, comparativa al día), anclas `whatsapp-web-account`
+        y `whatsapp-web-hook`, y novedad con carrusel. Tests:
+        `whatsapp-web.spec` (7: piezas puras, conectar, sin permiso de avisos,
+        avisos firmados, envío y estados, automatización con número
+        desconectado → Problema, asistente) + specs de WhatsApp, integraciones,
+        conectores, migración y MCP 142/142 — shared 812, front 835 — + E2E
+        navegador 39/39 contra el WAS simulado (galería sin «Imagina», clave
+        mala en palabras, números con estado, prueba real, aviso registrado y
+        cifrado, mensaje entrante → contacto, otro número ignorado, texto y
+        archivo desde la ficha, leído que no retrocede, automatización con
+        indicativo completado, número desconectado → corrida fallida y
+        Problema, celular oscuro sin desborde, borrar → aviso borrado en WAS).
+        **Pendiente**: la prueba contra el WAS real del usuario (crear el aviso
+        en su cuenta y mandar un mensaje a su número piden su visto bueno).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
