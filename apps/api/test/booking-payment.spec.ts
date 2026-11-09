@@ -272,6 +272,23 @@ describe('v0.1.387 — cobrar al agendar (Postgres + Redis reales, Mercado Pago 
         throw new Error(`La cita ${id} no llegó a «${status}»`);
     }
 
+    /**
+     * El aviso del proveedor corre en segundo plano: primero cambia la cita y
+     * después el registro (por `RecordsService.update`, con su validación y
+     * su actividad). Leer el registro justo al cambiar la cita es una carrera
+     * que en la CI, más lenta, a veces se pierde: se espera también el estado
+     * del registro.
+     */
+    async function waitLabel(recordId: number, label: string): Promise<string | null> {
+        let last: string | null = null;
+        for (let i = 0; i < 60; i++) {
+            last = await statusLabel(recordId);
+            if (last === label) return last;
+            await new Promise((r) => setTimeout(r, 50));
+        }
+        return last;
+    }
+
     beforeAll(async () => {
         [pg, rd] = await Promise.all([startPostgres(), startRedis()]);
         redis = new IORedis(rd.url, { maxRetriesPerRequest: 1 });
@@ -415,7 +432,7 @@ describe('v0.1.387 — cobrar al agendar (Postgres + Redis reales, Mercado Pago 
         await waitStatus(appt!.id, 'confirmed');
         const [after] = await appointments();
         expect(after!.paymentUntil).toBeNull();
-        expect(await statusLabel(after!.recordId)).toBe('Confirmada');
+        expect(await waitLabel(after!.recordId, 'Confirmada')).toBe('Confirmada');
         expect(dispatcher.events.some((e) => e.trigger === 'booking_event' && (e as { booking?: { event?: string } }).booking?.event === 'booked')).toBe(true);
         await new Promise((r) => setTimeout(r, 300));
         expect(mailbox.sent.some((m) => /confirmad/i.test(m.subject))).toBe(true);
@@ -449,7 +466,7 @@ describe('v0.1.387 — cobrar al agendar (Postgres + Redis reales, Mercado Pago 
         // El pago llega tarde y el horario sigue libre: se vuelve a tomar y se confirma.
         await pay('5002', 0);
         await waitStatus(gone!.id, 'confirmed');
-        expect(await statusLabel(gone!.recordId)).toBe('Confirmada');
+        expect(await waitLabel(gone!.recordId, 'Confirmada')).toBe('Confirmada');
         const st = await pub.paymentStatus(refOf(res.appointment!.manage_url), nextIp());
         expect(st.status).toBe('confirmed');
     });
@@ -538,7 +555,7 @@ describe('v0.1.387 — cobrar al agendar (Postgres + Redis reales, Mercado Pago 
         expect(notified).toHaveLength(0);
         await pay('5005', 0);
         await waitStatus(appt!.id, 'pending');
-        expect(await statusLabel(appt!.recordId)).toBe('Por confirmar');
+        expect(await waitLabel(appt!.recordId, 'Por confirmar')).toBe('Por confirmar');
         expect(notified.some((n) => n.type === 'booking' && n.userIds.includes(ana))).toBe(true);
         const view = await pub.recordBooking(tenantId, { userId: ana, role: 'admin' }, 'citas', appt!.recordId);
         expect(view).toMatchObject({ status: 'pending', can_decide: true, payment: { status: 'paid' } });

@@ -1688,7 +1688,10 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   `booking-payment.spec` elegía «hoy + 5 días hábiles» sin saltar festivos y
   hoy caía en el lunes festivo 16-nov (Independencia de Cartagena) → «ese
   horario ya está tomado»; ahora salta los festivos de Colombia, como
-  `booking.spec`. **Trampa del entorno**: contenedor nuevo sin `node_modules` ni
+  `booking.spec`. Y en la CI apareció una carrera en la misma prueba: tras el
+  pago, la cita se confirma y DESPUÉS se actualiza el registro (por
+  `RecordsService.update`); la prueba leía el registro en el medio. Ahora espera
+  también el estado del registro (`waitLabel`). **Trampa del entorno**: contenedor nuevo sin `node_modules` ni
   imágenes; Docker Hub con 429 → imágenes de `mirror.gcr.io/library/…`
   re-etiquetadas, y las pruebas con `TESTCONTAINERS_RYUK_DISABLED=true`. Ayuda:
   guía nueva `conversion-per-page`, `forms` y `measure-conversions` al día,
