@@ -322,7 +322,7 @@ export function Sidebar(): JSX.Element {
                 <SettingsPanelNav
                     isAdmin={isAdmin}
                     // La página de una tienda sincronizada vive bajo Integraciones.
-                    requested={pathname.startsWith('/settings/stores/') || pathname.startsWith('/settings/sites/') || pathname.startsWith('/settings/sql/') || pathname.startsWith('/settings/whatsapp/') || pathname.startsWith('/settings/sms/') || pathname.startsWith('/settings/collections/') ? 'conectores' : params.get('s')}
+                    requested={pathname.startsWith('/settings/stores/') || pathname.startsWith('/settings/sites/') || pathname.startsWith('/settings/sql/') || pathname.startsWith('/settings/whatsapp/') || pathname.startsWith('/settings/sms/') || pathname.startsWith('/settings/collections/') ? 'conectores' : pathname.startsWith('/settings/widgets/') ? 'widgets' : params.get('s')}
                 />
             )}
 
@@ -585,12 +585,14 @@ function SettingsPanelNav({
 }): JSX.Element {
     const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS);
     const canManageTeams = useCan(CAP.MANAGE_TEAMS);
+    const canManageForms = useCan(CAP.MANAGE_FORMS);
     // v0.1.196 — Conectores no es admin-only: quien arma automatizaciones
     // necesita ver el inventario de conexiones para elegir una.
     const groups = settingsSectionGroups({
         isAdmin,
         canManageAutomations: canManageAutomations,
         canManageTeams,
+        canManageForms,
     });
     const active = resolveSettingsSection(groups, requested);
     return (

@@ -855,6 +855,7 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
                 onSave={() => void save().then((ok) => ok && toast.success(__('Formulario guardado')))}
                 tab={shareTab}
                 onTab={setShareTab}
+                formId={form.id}
             />
 
             {narrow ? (

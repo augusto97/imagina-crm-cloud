@@ -86,6 +86,7 @@ import {
     documentTemplates,
     forms,
     bookingPages,
+    contactWidgets,
     bookingAppointments,
     subscriptionPlans,
     subscriptions,
@@ -336,6 +337,8 @@ export class TenantTransferService {
             await dump('forms', await this.byTenant(forms, tenantId, liveList(forms.listId)));
             // D5 — páginas de agenda (la configuración apunta a campos y personas por id).
             await dump('booking_pages', await this.byTenant(bookingPages, tenantId, liveList(bookingPages.listId)));
+            // v0.1.394 — widgets de contacto (los botones apuntan a formularios y agendas por id).
+            await dump('contact_widgets', await this.byTenant(contactWidgets, tenantId));
             // v0.1.367 — suscripciones de Mercado Pago: los planes y cada
             // suscripción (siguen cobrándose en Mercado Pago; con la conexión
             // que viaja, el destino las sigue revisando). Los cobros van abajo.
@@ -1512,6 +1515,21 @@ export class TenantTransferService {
             };
         });
 
+        // 7c-bis-2. Widgets de contacto (v0.1.394): el código pegado en el sitio
+        //     es del servidor de origen, cada uno recibe uno nuevo. Un botón que
+        //     apuntaba a un formulario o agenda que no viajó queda sin destino
+        //     (no se muestra hasta elegir otro).
+        counts.contact_widgets = await this.insertPlain(tx, rows('contact_widgets'), contactWidgets, (w) => ({
+            tenantId,
+            name: String(w.name ?? 'Widget de contacto').slice(0, 120),
+            token: randomBytes(18).toString('base64url'),
+            enabled: w.enabled === true,
+            config: remapJson((w.config as Row | null) ?? {}, maps) as Row,
+            createdBy: mapId(maps.user, w.createdBy),
+            createdAt: this.date(w.createdAt) ?? new Date(),
+            updatedAt: this.date(w.updatedAt) ?? new Date(),
+        }));
+
         // 7c-ter. Suscripciones (v0.1.367, ADR-S96), antes que las
         //     automatizaciones: «Crear suscripción» y el disparador nombran el
         //     plan por id. La referencia es NUEVA (la página de vuelta de este
@@ -2184,6 +2202,11 @@ export class TenantTransferService {
         if (publicTokens.size > 0) {
             warnings.push(
                 `${publicTokens.size} lista(s) pública(s) tienen un enlace NUEVO: hay que volver a repartirlo.`,
+            );
+        }
+        if ((counts.contact_widgets ?? 0) > 0) {
+            warnings.push(
+                `${counts.contact_widgets} widget(s) de contacto tienen un código NUEVO: vuelve a pegarlo en tu sitio (Ajustes → Widget de contacto → Publicar).`,
             );
         }
         if (publicDashboardsCount > 0) {

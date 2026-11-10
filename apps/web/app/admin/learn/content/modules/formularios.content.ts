@@ -1412,6 +1412,87 @@ export const articles: LearnArticle[] = [
     },
     // ─────────────────────────────────────────────────────────────────────
     {
+        id: 'formularios-widget-contacto',
+        route: '/settings?s=widgets',
+        related: ['formularios-publicar', 'formularios-automatizar', 'agenda-que-es'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'El **widget de contacto** es un botón redondo que queda fijo en una esquina de tu sitio. Al tocarlo, la persona elige cómo hablarte: **WhatsApp**, uno de tus **formularios** o tu **agenda de citas** (que se abren ahí mismo, en un panel tipo chat, sin salir de tu página), **llamarte**, **escribirte un correo** o abrir un **enlace** (tu catálogo, tu tienda). Lo que llenan queda como un registro en tu lista, igual que cualquier formulario.',
+            },
+            { t: 'anim', key: 'widget-contacto', caption: 'El botón abre el panel; «WhatsApp» pide nombre y celular, guarda el contacto y sigue en WhatsApp con el mensaje armado.' },
+            { t: 'h', text: 'Crear tu widget' },
+            {
+                t: 'steps',
+                items: [
+                    'Ve a **Ajustes → Widget de contacto** y toca **Nuevo widget**. Escribe tu número de WhatsApp y, si quieres, elige un formulario: el widget nace con esos botones.',
+                    'En la pestaña **Botones** agrega lo que quieras ofrecer (hasta 8): WhatsApp, un formulario, tu agenda, llamar, correo o un enlace. Ordénalos con las flechas.',
+                    'En **Apariencia** elige si al tocar el botón se abre un **panel tipo chat** (con un saludo) o los **botones apilados**, el lado de la pantalla, el color y el texto del botón.',
+                    'A la derecha ves el widget de verdad sobre una página de ejemplo, en computador o celular. Puedes tocar los botones: un formulario o la agenda se abren de prueba y no se guarda nada.',
+                    'Toca **Guardar**. En **Publicar** enciende **Publicado** y copia el **código para tu sitio**.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'El código se pega **una sola vez** en el pie de tu sitio (antes de `</body>`) y el botón aparece en todas las páginas. En WordPress, con un plugin para agregar código al pie o en el tema. Si después cambias los botones o los colores, el sitio se actualiza solo: no hay que volver a pegar nada.',
+            },
+            { t: 'h', text: 'WhatsApp con sus datos primero' },
+            {
+                t: 'p',
+                md: 'Un botón de WhatsApp común abre WhatsApp con tu número y un mensaje ya escrito (por ejemplo, «Hola, vengo de {{pagina}}», con el nombre de la página donde estaba la persona). El problema: si después no escribe, no sabes quién era. Con **Pedir sus datos antes de abrir WhatsApp**, primero llena un formulario corto —por ejemplo **nombre y celular**—, el contacto **queda en tu lista** y recién ahí se abre WhatsApp con el mensaje armado con sus respuestas: «Hola, soy {{nombre}} y vengo de {{pagina}}».',
+            },
+            {
+                t: 'steps',
+                items: [
+                    'Arma un formulario corto en la lista donde quieres recibir los contactos (por ejemplo, **Prospectos**) con las preguntas que necesitas, y publícalo.',
+                    'En el botón de WhatsApp del widget, enciende **Pedir sus datos antes de abrir WhatsApp** y elige ese formulario.',
+                    'Escribe el mensaje: toca las variables de abajo para sumar **la página de tu sitio** o cualquiera de las respuestas.',
+                    'Con el contacto en la lista, una **automatización** puede avisarle al equipo, asignarlo o mandarle un mensaje por tu integración de WhatsApp.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Los botones',
+                rows: [
+                    { name: 'WhatsApp', what: 'Abre WhatsApp con tu número y un mensaje ya escrito. Tu número no se ve en el código de tu sitio: el botón pasa por la app y de ahí a WhatsApp.', tip: 'Con «Pedir sus datos antes», queda el registro en tu lista.' },
+                    { name: 'Formulario', what: 'Abre uno de tus formularios publicados dentro del panel, como un chat.', tip: 'Los formularios se arman en los Ajustes de cada lista → Formularios.' },
+                    { name: 'Agendar una cita', what: 'Abre tu agenda: la persona elige el día y la hora sin salir de tu sitio.' },
+                    { name: 'Llamar', what: 'En el celular llama directo a tu número.' },
+                    { name: 'Correo', what: 'Abre el correo de la persona con tu dirección y el asunto que elijas.' },
+                    { name: 'Enlace', what: 'Lleva a cualquier página que empiece con https:// (tu catálogo, tu tienda, tus preguntas frecuentes).' },
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Apariencia',
+                rows: [
+                    { name: 'Panel tipo chat', what: 'Un saludo («¡Hola! ¿En qué te ayudamos?»), el logo de tu empresa y los botones como tarjetas. Un formulario o la agenda se abren dentro del panel.' },
+                    { name: 'Botones apilados', what: 'Los botones salen uno sobre otro, encima del botón redondo, con su nombre al lado. Ocupa menos lugar.' },
+                    { name: 'En el celular, una barra fija abajo', what: 'En vez del botón redondo, los botones van en una barra a lo ancho de la pantalla (con más de tres, los demás en «Más»).', tip: 'En el celular el panel se abre a pantalla completa.' },
+                    { name: 'Separación del borde', what: 'Cuántos píxeles queda del costado y de abajo, por si tu sitio ya tiene otro botón en esa esquina.' },
+                ],
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Se pone lento mi sitio?', a: 'No. El código carga el widget cuando la página termina de cargar y sólo trae un botón chico; los formularios y la agenda se cargan cuando alguien los abre.' },
+                    { q: '¿Puedo tener varios widgets?', a: 'Sí, por ejemplo uno para tu sitio y otro para tu tienda, con botones distintos. Cada uno tiene su propio código.' },
+                    { q: '¿Y si lo despublico?', a: 'El código pegado deja de mostrar el botón (no sale ningún cartel en tu sitio). Lo vuelves a publicar cuando quieras, sin cambiar el código.' },
+                    { q: '¿Puedo limitarlo a mi sitio?', a: 'Sí: en **Publicar → Sólo en estos sitios** escribe tus dominios. Fuera de ellos, el widget no se muestra.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a Widget de contacto', to: '/settings?s=widgets' },
+                    { label: 'Siguiente: publicar e insertar un formulario', article: 'formularios-publicar' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
         id: 'formularios-medir-conversiones',
         route: '/lists',
         related: ['formularios-publicar', 'formularios-estadisticas', 'agenda-publicar', 'formularios-automatizar'],

@@ -407,7 +407,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.393**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.394**
+(**widget de contacto para el sitio**: un botón fijo en la esquina del sitio de
+la empresa con WhatsApp, formularios y la agenda en un panel tipo chat, llamar,
+correo y enlaces; «WhatsApp con datos primero» pide nombre y celular, deja el
+registro y abre WhatsApp con el mensaje armado con las respuestas; el número
+nunca viaja a la página; ADR-S99; primera de tres entregas). Antes v0.1.393
 (**integraciones y tareas periódicas a escala**: los recordatorios de citas
 ya no se pierden con más de 200 citas en la ventana —bug real—; recordatorios
 de avisos, suscripciones y recurrencias que trababan su fila; el resumen
@@ -579,6 +584,24 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-10 — **«Widget de contacto para el sitio» (EN CURSO: v0.1.394 HECHA)**
+  (el usuario: «botones de contacto como los de WhatsApp o contactar ahora, o
+  un formulario que se abre como un chat flotante lateral… pedir nombre y
+  celular, que quede el registro y con eso enviar un mensaje con la
+  integración de WhatsApp… dame ideas» → con la propuesta de tres entregas
+  respondió **«Hazlas todas»**). Es la idea D7 de `docs/ideas.md`.
+  **v0.1.394 HECHA** (ADR-S99): el widget como objeto de la empresa
+  (Ajustes → Widget de contacto), botones WhatsApp/formulario/agenda/llamar/
+  correo/enlace, panel tipo chat o botones apilados, barra en el celular,
+  «WhatsApp con datos primero», editor con vista previa real, un solo script
+  (`embed.js` con `data-imagina-widget`). **Siguen**: **v0.1.395** piel de chat
+  para los formularios (una pregunta por burbuja), varios asesores con turnos y
+  asignación del registro, horario de atención (con festivos) y la receta de
+  respuesta automática por WhatsApp (Meta: plantilla aprobada; WAS: texto
+  libre); **v0.1.396** saludo proactivo por página, reglas de dónde aparece
+  (páginas, dispositivo, demora, scroll) y estadísticas por botón. NO se hace
+  un chat en vivo dentro de la app (la conversación sigue en WhatsApp,
+  ADR-S69).
 - 2026-11-10 — **«Que la app aguante miles de empresas con automatizaciones
   corriendo»** (el usuario: «revisa también los demás procesos así… ClickUp y
   Airtable no se ponen lentos»). **v0.1.392 y v0.1.393 HECHAS** (motor
@@ -1732,6 +1755,27 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-10 · v0.1.394** — **Widget de contacto para el sitio** (pedido
+  del usuario: «botones de contacto como los de WhatsApp o contactar ahora, o un
+  formulario que se abre como un chat flotante lateral… pedir nombre y celular,
+  que quede el registro y con eso enviar un mensaje por WhatsApp»; respondió
+  «Hazlas todas» a las tres entregas propuestas). ADR-S99. Un botón fijo en una
+  esquina del sitio (un solo `<script>`, el `embed.js` de siempre con
+  `data-imagina-widget`) que abre un panel tipo chat o botones apilados con
+  WhatsApp, un formulario o la agenda (dentro del panel), llamar, correo o un
+  enlace; en el celular pantalla completa o una barra fija abajo. **«WhatsApp con
+  datos primero»**: el formulario corto va en el panel, el registro queda en la
+  lista y WhatsApp abre con el mensaje armado con las respuestas y la página.
+  El número de WhatsApp nunca viaja a la página (redirección 302 desde la app).
+  Ajustes → Widget de contacto con vista previa real (computador/celular,
+  abierto/cerrado), y «Crear un widget con este formulario» desde Compartir de
+  un formulario. Migrar empresa los lleva con código nuevo; borrarla los borra.
+  **Encontrado en el E2E**: el interruptor de publicar no se movía (la lección
+  de v0.1.207 otra vez) y la sombra del panel se cortaba en el borde del marco
+  (más aire alrededor y sombras más suaves); el panel ahora mide su contenido
+  en el inicio. Siguen v0.1.395 (piel de chat, asesores, horario, receta) y
+  v0.1.396 (saludo, reglas por página, estadísticas).
 
 - **2026-11-10 · v0.1.393** — **Integraciones y tareas periódicas a escala**
   (segunda mitad del pedido «que la app aguante miles de empresas con

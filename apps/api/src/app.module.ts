@@ -51,6 +51,7 @@ import { CollectionsModule } from './collections/collections.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { SmsModule } from './sms/sms.module';
 import { FormsModule } from './forms/forms.module';
+import { ContactWidgetsModule } from './contact-widgets/contact-widgets.module';
 import { BookingModule } from './booking/booking.module';
 import { DataConsentModule } from './data-consent/data-consent.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -119,6 +120,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         SmsModule,
         DocumentsModule,
         FormsModule,
+        ContactWidgetsModule,
         // D5 — agenda de citas pública.
         BookingModule,
         DataConsentModule,

@@ -10,6 +10,7 @@ import {
     type ConversionResult,
     type PublicConversion,
 } from './conversion';
+import { widgetSubmitContextSchema } from './contact-widget';
 import type { PublicDataConsent } from './data-consent';
 import type { FieldType } from './field';
 import { FORM_RECORD_VALUES_DEFAULT, formRecordValuesSchema } from './form-record-values';
@@ -1128,6 +1129,8 @@ export const submitFormSchema = z.object({
     plan_id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
     /** v0.1.374 — De dónde vino (la dirección del sitio o del enlace): campaña, clic del anuncio, página. */
     attribution: attributionInputSchema,
+    /** v0.1.394 (ADR-S99) — Abierto desde un widget de contacto (qué widget y qué botón). */
+    widget: widgetSubmitContextSchema,
 });
 export type SubmitFormInput = z.infer<typeof submitFormSchema>;
 
@@ -1171,6 +1174,12 @@ export interface SubmitFormResult {
     subscription_error?: string;
     /** v0.1.374 — Para el evento del sitio (valor, id único del envío). */
     conversion?: ConversionResult | null;
+    /**
+     * v0.1.394 (ADR-S99) — «WhatsApp con datos primero» de un widget de
+     * contacto: la respuesta YA quedó guardada y esto abre WhatsApp con el
+     * mensaje armado con lo que respondió.
+     */
+    whatsapp?: { url: string; label: string } | null;
 }
 
 export interface FormUploadResult {

@@ -188,6 +188,8 @@ export function helpScreensFor(pathname: string, search = ''): string[] {
         out.push('settings');
         if (params.s) out.push(`settings:${params.s}`);
         if (/^\/settings\/(stores|sql|whatsapp|collections)\//.test(path)) out.push('settings:conectores');
+        // v0.1.394 — el editor de un widget de contacto.
+        if (/^\/settings\/widgets\//.test(path)) out.push('settings:widgets');
     }
     return out;
 }

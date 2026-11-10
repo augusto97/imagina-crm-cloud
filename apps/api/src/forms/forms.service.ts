@@ -15,6 +15,9 @@ import {
 } from '@nestjs/common';
 import {
     brandingSchema,
+    whatsappLink,
+    widgetPageVar,
+    widgetText,
     buildPublicFormItems,
     defaultFormConfig,
     duplicateFormName,
@@ -134,6 +137,7 @@ import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-ca
 import { PublicCacheService } from '../public-cache/public-cache.service';
 import { CollectionError, CollectionsService } from '../collections/collections.service';
 import { SubscriptionError, SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { ContactWidgetsService } from '../contact-widgets/contact-widgets.service';
 
 /** v0.1.352 — Cuánto vale la página guardada de un formulario (y la de uno que no existe). */
 const PAGE_CACHE_TTL_MS = 30_000;
@@ -369,6 +373,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         @Optional() private readonly collections?: CollectionsService,
         // v0.1.368 — suscribir al enviar (débito automático de Mercado Pago o PayPal).
         @Optional() private readonly subscriptionsSvc?: SubscriptionsService,
+        // v0.1.394 (ADR-S99) — «WhatsApp con datos primero» de un widget de contacto.
+        @Optional() private readonly widgets?: ContactWidgetsService,
     ) {
         this.pcache = cache ?? NO_PUBLIC_CACHE;
     }
@@ -1543,6 +1549,18 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         }
         // v0.1.374 — para el evento del sitio (también con la respuesta por confirmar).
         result.conversion = conversion;
+        // v0.1.394 (ADR-S99) — abierto desde el botón de WhatsApp de un widget:
+        // la respuesta ya quedó guardada; ahora se abre WhatsApp con el mensaje
+        // armado con lo que respondió (sólo si ESE widget de ESTA empresa pide
+        // ESTE formulario en ESE botón).
+        if (input.widget && this.widgets) {
+            const target = await this.widgets.captureTarget(f.row.tenantId, f.row.id, input.widget).catch(() => null);
+            if (target) {
+                const text = this.widgetMessage(f, fields, data, target.message, { url: origin.page_url ?? null, title: input.widget.page_title?.trim() || null });
+                const url = whatsappLink(target.phone, text);
+                if (url) result.whatsapp = { url, label: 'Continuar en WhatsApp' };
+            }
+        }
         // v0.1.358 — cuenta para las estadísticas (y el avance guardado ya no hace falta).
         void this.stats?.recordSubmit(statsTarget(f), input.elapsed_ms);
         if (input.draft) void this.dropDraft(f, input.draft);
@@ -2694,6 +2712,36 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             const t = typeBySlug.get(key);
             if (t === 'email' || t === 'phone') return null;
             return formAnswerText(pub, recall[key]!, values, (n) => formatFormNumber(n, nf));
+        });
+    }
+
+    /**
+     * v0.1.394 (ADR-S99) — El mensaje de WhatsApp de «datos primero»:
+     * `{{pagina}}`/`{{url}}` (de dónde vino) y cualquier respuesta por su nombre
+     * (`{{nombre}}`, `{{celular}}`), como se lee. A diferencia de la página de
+     * gracias, aquí SÍ van el correo y el teléfono: es la propia persona
+     * escribiéndole a la empresa.
+     */
+    private widgetMessage(
+        f: ResolvedForm,
+        fields: Field[],
+        data: Record<string, unknown>,
+        template: string,
+        page: { url: string | null; title: string | null },
+    ): string {
+        if (!template.includes('{{')) return template;
+        const recall = this.answerKeyMap(f, fields);
+        const answers: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(data)) if (/^f\d+$/.test(k)) answers[k.slice(1)] = v;
+        const values = withFormCalcValues(answers, formCalcValues(formCalcsForLogic(f.config), answers, (key) => key in answers));
+        const pub = buildPublicFormItems(f.config, fields);
+        const nf = this.numberFormatOf(f);
+        return widgetText(template, (key) => {
+            const pv = widgetPageVar(key, page);
+            if (pv !== null) return pv;
+            if (key === 'formulario.nombre') return f.config.settings.title || f.row.name;
+            if (!recall[key]) return null;
+            return formAnswerText(pub, recall[key]!, values, (n) => formatFormNumber(n, nf)) || null;
         });
     }
 

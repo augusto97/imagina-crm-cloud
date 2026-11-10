@@ -20,6 +20,7 @@ export const meta: LearnModuleMeta = {
         'Plantillas de diseño, colores, fuentes, tamaños, bordes, fondo y portada, con tus propios temas',
         'Cierre por fecha o por cupo, confirmación por correo, anti-robots y autorización de datos',
         'Comparte el enlace o un código QR, o insértalo en tu sitio en una ventana, un panel lateral o a pantalla completa',
+        'Un widget de contacto en tu sitio con tu WhatsApp, tus formularios y tu agenda en un solo botón',
         'Mide las conversiones de Google Ads y Meta en tu sitio y guarda de qué campaña vino cada registro',
         'Deja que una automatización conteste sola',
     ],
@@ -148,6 +149,15 @@ export const meta: LearnModuleMeta = {
             minutes: 6,
             level: 'basic',
             keywords: 'publicar enlace link compartir insertar iframe pagina web sitio dominios qr codigo qr imprimir volante redes sociales panel lateral pantalla completa ventana emergente popup sin marco sin fondo sin espacio padding margen transparente formulario de contacto',
+            needs: 'manage_forms',
+        },
+        {
+            id: 'formularios-widget-contacto',
+            title: 'Widget de contacto: WhatsApp, formularios y tu agenda en un botón',
+            summary: 'Un botón fijo en tu sitio que abre un panel tipo chat con tu WhatsApp, tus formularios y tu agenda. Puede pedir nombre y celular antes de abrir WhatsApp para que el contacto quede en tu lista.',
+            minutes: 7,
+            level: 'basic',
+            keywords: 'widget de contacto boton flotante whatsapp chat burbuja contactanos llamar correo agenda formulario lateral sitio web pagina pedir datos antes nombre celular lead prospecto barra celular boton de whatsapp',
             needs: 'manage_forms',
         },
         {

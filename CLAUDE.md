@@ -13548,6 +13548,60 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         (los de recordatorios de citas, suscripciones y SMS verificados contra
         la versión anterior: fallan) — 22 specs afectados 390/390, front
         835/835.
+  - [x] **Widget de contacto para el sitio (v0.1.394, ADR-S99, pedido del
+        usuario: "botones de contacto como los de WhatsApp o contactar ahora, o
+        un formulario que se abre como un chat flotante lateral… que pida nombre
+        y celular, quede el registro y con eso enviar un mensaje por WhatsApp" →
+        «Hazlas todas»; primera de tres entregas)**: un botón fijo en una
+        esquina del sitio de la empresa con varias formas de contacto.
+        (a) **Objeto de la empresa** (`contact_widgets`, migración 0113, RLS;
+        `contactWidgetConfigSchema` en shared, leído con tolerancia): hasta 8
+        botones —WhatsApp, formulario, agenda, llamar, correo, enlace— con
+        nombre, línea debajo, ícono y color; **panel tipo chat** (saludo, logo,
+        tarjetas; un formulario o la agenda se abren dentro) o **botones
+        apilados**; lado, separación del borde, color, ícono y texto del botón;
+        en el celular pantalla completa o **una barra fija abajo** (con más de
+        tres, «Más»). Lo arma quien arma formularios (`manage_forms`, módulo
+        `forms`).
+        (b) **Un solo `<script>`**: el `embed.js` de ADR-S95 reconoce
+        `data-imagina-widget`, crea después del `load` del sitio UN marco fijo
+        que mide lo justo (`imb-w-size`; la separación elegida se respeta exacta
+        y el marco deja aire para la sombra), le pasa el ancho, la página y la
+        campaña (`imb-context`) y cierra con Escape; funciona con una CSP
+        estricta del sitio. La página del widget (`/public/w/:token`) es
+        cacheable como la de un formulario (precomprimida, CSP por hash del
+        cliente en línea, `frame-ancestors` por los sitios elegidos); el
+        cliente es un IIFE de 5,5 KB gz (`vite.widget.config.ts`).
+        (c) **El número de WhatsApp nunca viaja a la página**: el botón pasa por
+        `/public/w/:token/go/:button?u=&t=` (302 a `wa.me`, `no-store`,
+        `no-referrer`) con el mensaje armado (`{{pagina}}`, `{{url}}`).
+        (d) **«WhatsApp con datos primero»**: el botón abre un formulario corto
+        en el panel; el envío lleva `widget {token, button, page_title}` y, si es
+        de la misma empresa y ese botón apunta a ese formulario, la respuesta
+        trae `whatsapp {url}` con el mensaje armado con las respuestas; la
+        pantalla final muestra «Continuar en WhatsApp» (y lo intenta abrir una
+        vez). Si el formulario se despublica, el botón vuelve a WhatsApp
+        directo. Publicar exige no tener problemas (`widget_not_ready`) y la
+        página sólo muestra botones sanos; empresa pausada/archivada o sin el
+        módulo → página vacía transparente.
+        (e) **Ajustes → Widget de contacto** (lista + editor en
+        `/settings/widgets/:id`): pestañas Botones · Apariencia · Publicar,
+        variables del mensaje a un clic, la **vista previa real** al lado
+        (`/public/w/preview` por `postMessage`, computador/celular,
+        abierto/cerrado) con la MISMA función que arma la página pública,
+        publicar optimista, código para copiar, sitios permitidos, cambiar el
+        código y eliminar; «Crear un widget con este formulario» en
+        Compartir → Insertar en tu sitio. Migrar una empresa los lleva con
+        código nuevo y formularios/agendas re-apuntados (`capture_form_id` en el
+        re-mapeo); borrarla los borra. Bitácora `widget.*`.
+        Ayuda: guía `contact-widget`, artículo de Aprende con la ilustración
+        nueva `widget-contacto`, anclas `widgets-new`/`widget-*` y novedad con
+        carrusel. Tests: `contact-widgets.spec` (4), shared (7), front (6) + E2E
+        navegador 29/29 con un sitio de otro origen y CSP estricta (escritorio,
+        oscuro y celular), 7/7 del modo apilado y la barra, y 31/31 contra el
+        build de producción (cero violaciones de CSP). Siguen v0.1.395 (piel de
+        chat, asesores, horario, receta de respuesta) y v0.1.396 (saludo, reglas
+        por página, estadísticas).
 
 ## 6. Cómo trabajar con Claude Code en este repo
 

@@ -122,6 +122,7 @@ import {
     formPendingSubmissions,
     formDrafts,
     formStats,
+    contactWidgets,
     dataConsents,
     dataConsentVersions,
     portalCredentials,
@@ -486,6 +487,8 @@ export class PlatformService {
             // v0.1.358 — sus estadísticas y los avances guardados.
             await tx.delete(formDrafts).where(eq(formDrafts.tenantId, id));
             await tx.delete(formStats).where(eq(formStats.tenantId, id));
+            // v0.1.394 — los widgets de contacto (apuntan a formularios y agendas por id).
+            await tx.delete(contactWidgets).where(eq(contactWidgets.tenantId, id));
             await tx.delete(forms).where(eq(forms.tenantId, id));
             // D5 — agenda de citas: las citas (atadas a registros) y sus páginas.
             await tx.delete(bookingAppointments).where(eq(bookingAppointments.tenantId, id));
