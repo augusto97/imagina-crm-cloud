@@ -2299,4 +2299,17 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'En el constructor de un formulario o de una agenda, toca **Compartir**.',
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.398-widget-escribir',
+        version: '0.1.398',
+        date: '2026-11-10',
+        kind: 'fix',
+        title: 'Editar el widget de contacto sin perder lo que escribes',
+        summary:
+            'Al escribir el número de WhatsApp, el mensaje o el nombre de un botón del widget, el cursor se salía del campo con cada tecla. Ya no: escribes de corrido y la vista previa se actualiza igual.',
+        media: { illustration: 'widget-contacto' },
+        body: 'En **Ajustes → Widget de contacto** abre tu widget y completa sus botones.',
+        action: { label: 'Editar mi widget', href: '/settings?s=widgets' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

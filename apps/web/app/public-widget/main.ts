@@ -631,7 +631,14 @@ function onLauncher(e: Event): void {
     setOpen(!open);
 }
 
-function setOpen(next: boolean): void {
+/**
+ * Abre o cierra el panel. `moveFocus` lleva el foco adentro (al abrir) o al
+ * botón redondo (al cerrar), para quien navega con el teclado. v0.1.398 — la
+ * vista previa del editor abre el panel por mensaje mientras la persona escribe
+ * en el editor: ahí NO se mueve el foco, o el campo que está escribiendo lo
+ * perdería con cada tecla.
+ */
+function setOpen(next: boolean, moveFocus = true): void {
     if (next && !open) {
         stat({ kind: 'open' });
         if (greetText !== null || meta?.greeting) dismissGreeting();
@@ -639,6 +646,7 @@ function setOpen(next: boolean): void {
     open = next;
     if (!next) current = null;
     paint();
+    if (!moveFocus) return;
     if (next) {
         const first = (current ? viewBack : panel?.querySelector<HTMLElement>('.w-opt')) ?? null;
         window.setTimeout(() => first?.focus(), 30);
@@ -850,7 +858,8 @@ window.addEventListener('message', (e: MessageEvent) => {
             forcedOpen = typeof d.hours_open === 'boolean' ? d.hours_open : null;
             const wasOpen = d.open === true;
             build();
-            if (wasOpen) setOpen(true);
+            // Sin mover el foco: quien edita sigue escribiendo en el editor.
+            if (wasOpen) setOpen(true, false);
         }
         return;
     }
