@@ -16,6 +16,8 @@ import { AutomationsController } from './automations.controller';
 import { AutomationsQueueBootstrap } from './automations-queue';
 import { AutomationsRepository } from './automations.repository';
 import { AutomationsService } from './automations.service';
+import { ConnectionSwapController } from './connection-swap.controller';
+import { ConnectionSwapService } from './connection-swap.service';
 
 /**
  * @Global para que RecordsService pueda inyectar el AutomationDispatcher sin
@@ -27,9 +29,11 @@ import { AutomationsService } from './automations.service';
     // recurrencias (job 'recurrences-tick'). Sin ciclo: recurrences NO importa
     // automations (el dispatcher le llega porque este módulo es @Global).
     imports: [AuthModule, ListsModule, RecurrencesModule],
-    controllers: [AutomationsController, AutomationsCatalogController, AutomationHooksController],
+    controllers: [AutomationsController, AutomationsCatalogController, AutomationHooksController, ConnectionSwapController],
     providers: [
         AutomationsService,
+        // v0.1.400 — «Reemplazar en automatizaciones» (otra conexión o las llamadas directas a WAS).
+        ConnectionSwapService,
         AutomationsRepository,
         AutomationDispatcher,
         AutomationScheduler,

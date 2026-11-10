@@ -217,7 +217,7 @@ Sin token o con uno inválido/vencido/revocado → `401` con
 
 `get_list_schema` incluye `connectors`: las conexiones de la empresa con sus
 **acciones con nombre** (clave, etiqueta, qué parámetros pide cada una y su
-ayuda). Cada conexión trae `app`: la app de la galería (`whatsapp`, `slack`,
+ayuda). Cada conexión trae `app`: la app de la galería (`whatsapp_web`, `whatsapp`, `slack`,
 `gmail`, `google_calendar`, `google_sheets`, `outlook`, `telegram`) o `null`
 si es una API personalizada — en las de la galería las acciones ya vienen
 armadas («Enviar mensaje a Slack», «Agregar fila en Google Sheets»). Nunca
@@ -232,6 +232,15 @@ automatización, la acción es:
 
 El catálogo de acciones se define en la app (Ajustes → Conectores): desde el
 MCP se usan, no se crean.
+
+**WhatsApp** (v0.1.400): `whatsapp_web` es **WhatsApp (Whats)**, la versión
+nueva (`whats.imagina.cloud`), y `whatsapp` es **WhatsApp (WAS)**, la anterior,
+que sigue funcionando. En `get_list_schema` las conexiones de WhatsApp vienen
+con `kind: "whats"` (Whats: `send_text`/`send_media` sin plantillas) u
+`"oficial"` (Meta: plantillas aprobadas). Pasar las acciones de una conexión a
+otra (por ejemplo de WAS a Whats) no se hace desde el MCP: es el botón
+«Reemplazar en automatizaciones» de Integraciones, que guarda una versión de
+cada automatización.
 
 **Reuniones (v0.1.366).** `teams.create_meeting`, `outlook.create_event` y
 `google_calendar.create_event` devuelven la reunión: en el schema cada una trae

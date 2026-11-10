@@ -2098,14 +2098,14 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         version: '0.1.389',
         date: '2026-11-09',
         kind: 'feature',
-        title: 'WhatsApp con WAS: mensajes, archivos y lo que te escriben',
+        title: 'WhatsApp con Whats: mensajes, archivos y lo que te escriben',
         summary:
-            'Conecta tu número de WAS con una clave y elígelo de la lista. Mandas mensajes y archivos sin plantillas, lo que te escriben tus clientes llega a sus registros y ves si cada mensaje se entregó o se leyó.',
+            'Conecta tu número de Whats con una clave y elígelo de la lista. Mandas mensajes y archivos sin plantillas, lo que te escriben tus clientes llega a sus registros y ves si cada mensaje se entregó o se leyó.',
         media: {
             slides: [
                 {
                     title: 'Conectar en dos minutos',
-                    text: 'Pega la clave de API de tu panel de WAS y toca «Buscar mis cuentas»: tu número aparece con su estado. Los avisos se registran solos.',
+                    text: 'Pega la clave de API de tu panel de Whats y toca «Buscar mis cuentas»: tu número aparece con su estado. Los avisos se registran solos.',
                     illustration: 'wab-was-conectar',
                 },
                 {
@@ -2120,7 +2120,7 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
                 },
             ],
         },
-        body: 'Conéctalo en **Ajustes → Integraciones → WhatsApp (WAS)**. Si ya usabas **WhatsApp (WAS anterior)**, sigue funcionando: conecta la nueva y cambia la conexión en tus automatizaciones cuando quieras.',
+        body: 'Conéctalo en **Ajustes → Integraciones → WhatsApp (Whats)**. Si ya usabas **WhatsApp (WAS)**, la versión anterior, sigue funcionando: conecta la nueva y cambia la conexión en tus automatizaciones cuando quieras.',
         action: { label: 'Ver cómo funciona', href: '/aprende/integraciones/integraciones-mensajeria' },
         audience: { roles: ['admin', 'manager'] },
     },
@@ -2341,6 +2341,37 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         },
         body: 'En una automatización con el disparador **Webhook entrante**, elige **Qué hacer con el registro**. Las condiciones del «Si / sino» también pueden leer los datos que llegan.',
         action: { label: 'Ver mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
+    {
+        key: 'v0.1.400-whats-reemplazar',
+        version: '0.1.400',
+        date: '2026-11-10',
+        kind: 'feature',
+        title: 'Pasa tus automatizaciones a WhatsApp (Whats) en un clic',
+        summary:
+            'La integración nueva se llama **WhatsApp (Whats)**; la anterior, **WhatsApp (WAS)**, sigue funcionando. Con **Reemplazar en automatizaciones** pasas de una vez todas las acciones a la conexión nueva, también las llamadas directas a la API de WAS.',
+        media: {
+            slides: [
+                {
+                    title: 'Whats es la nueva, WAS la anterior',
+                    text: 'Los nombres quedaron claros en Integraciones, en el editor y en la ayuda. Tus conexiones de WAS siguen enviando como siempre.',
+                    illustration: 'wab-was-conectar',
+                },
+                {
+                    title: 'Todas a la vez, sin abrir cada una',
+                    text: 'En la fila de la conexión nueva toca «Reemplazar en automatizaciones», marca qué pasar y listo: cada acción conserva su número, su mensaje y su condición, también dentro de los «Si / sino».',
+                    illustration: 'integ-connect-once',
+                },
+                {
+                    title: 'Cambiar una sola acción también es fácil',
+                    text: 'En el editor, al elegir otra acción en «Tipo de acción», el número y el mensaje se quedan donde estaban. Y cada automatización guarda la versión anterior en su historial.',
+                    illustration: 'automation-whatsapp',
+                },
+            ],
+        },
+        body: 'En **Ajustes → Integraciones**, en la fila de **WhatsApp (Whats)**, toca **Reemplazar en automatizaciones**.',
+        action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
         audience: { roles: ['admin', 'manager'] },
     },
 ];

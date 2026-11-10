@@ -292,7 +292,7 @@ describe('Integraciones de la galería (v0.1.203)', () => {
                     })
                     .returning(),
             );
-        const [[a], [b]] = await Promise.all([insert('WhatsApp (WAS anterior)', null), insert('WhatsApp (WAS anterior) (2)', null)]);
+        const [[a], [b]] = await Promise.all([insert('WhatsApp (WAS)', null), insert('WhatsApp (WAS) (2)', null)]);
         const before = await svc.list(tenantId, adminId, 'admin');
         expect(before.find((c) => c.id === a!.id)?.custom_name).toBe(false);
 
@@ -311,9 +311,9 @@ describe('Integraciones de la galería (v0.1.203)', () => {
 
         // Volver al automático: el de la app (con su número si hiciera falta, sin chocar consigo misma).
         const reset = await svc.update(tenantId, adminId, 'admin', a!.id, { reset_name: true });
-        expect(reset).toMatchObject({ name: 'WhatsApp (WAS anterior)', custom_name: false });
+        expect(reset).toMatchObject({ name: 'WhatsApp (WAS)', custom_name: false });
         const resetB = await svc.update(tenantId, adminId, 'admin', b!.id, { reset_name: true });
-        expect(resetB.name).toBe('WhatsApp (WAS anterior) (2)');
+        expect(resetB.name).toBe('WhatsApp (WAS) (2)');
     });
 
     it('Outlook: renueva con la app de la PLATAFORMA y repite los scopes (Microsoft los exige)', async () => {

@@ -62,7 +62,7 @@ export async function whatsappSchema(
     listSettings: Record<string, unknown>,
     fields: Field[],
 ): Promise<Record<string, unknown> | null> {
-    // v0.1.389 — también la versión nueva de Imagina WAS (sin plantillas ni ventana de 24 h).
+    // v0.1.389 — también Whats, la versión nueva de WAS (sin plantillas ni ventana de 24 h).
     const wa = connections.filter((c) => c.integration_key === 'whatsapp_cloud' || c.integration_key === 'whatsapp_web');
     if (wa.length === 0) return null;
     const templates = await approvedTemplates(
@@ -79,7 +79,7 @@ export async function whatsappSchema(
             c.integration_key === 'whatsapp_web'
                 ? {
                       connection_id: c.id,
-                      kind: 'was',
+                      kind: 'whats',
                       name: c.name,
                       phone: c.account_label,
                       actions: ['send_text {recipient, message}', 'send_media {recipient, url, caption}'],
@@ -94,7 +94,7 @@ export async function whatsappSchema(
         ),
         list_columns: columns,
         rules:
-            'Conexiones kind "was": send_text {recipient, message} y send_media {recipient, url (https público), caption} salen siempre, sin plantillas ni ventana de 24 h; es un número vinculado, así que sólo a contactos que esperan el mensaje. ' +
+            'Conexiones kind "whats" (Whats, la versión nueva de WAS): send_text {recipient, message} y send_media {recipient, url (https público), caption} salen siempre, sin plantillas ni ventana de 24 h; es un número vinculado, así que sólo a contactos que esperan el mensaje. ' +
             'Conexiones kind "oficial" (Meta): send_template sirve siempre (plantilla APROBADA de approved_templates, con todas sus variables en values.variables: {"body.1": "{{slug}}"…}). ' +
             'send_text (texto libre) sólo funciona si el contacto escribió en las últimas 24 h — fuera de esa ventana la acción falla: para avisos usa una plantilla. ' +
             'El destinatario es values.to (un campo teléfono: "{{telefono}}"). Las plantillas se crean y aprueban en Meta, nunca desde aquí. ' +

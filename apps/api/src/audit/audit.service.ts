@@ -109,6 +109,8 @@ export type AuditAction =
     | 'connection.update'
     | 'connection.delete'
     | 'connection.convert'
+    // v0.1.400 — pasó las acciones de otras conexiones (o las llamadas directas a WAS) a una.
+    | 'connection.swap'
     // OAuth2 como cliente (v0.1.199): quién autorizó una app externa en nombre
     // de la empresa y quién le cortó el acceso.
     | 'connection.oauth_connect'

@@ -58,7 +58,7 @@ export default function IntegConnectOnce(): JSX.Element {
                     <IntegrationLogo integrationKey="whatsapp" size={34} />
                     <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                         <T size={11} weight={700}>
-                            WhatsApp (WAS)
+                            WhatsApp (Whats)
                         </T>
                         <T size={8.5} color={C.mutedFg}>
                             +57 300 555 0101

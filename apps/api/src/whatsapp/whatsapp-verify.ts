@@ -100,8 +100,8 @@ export async function verifyWhatsappWeb(creds: IntegrationCreds): Promise<Verify
         const meErr = parseWaWebError(meRes.status, meRes.body);
         if (meErr) return fail(waWebErrorText(meErr));
         const me = parseWaWebMe(meRes.body);
-        if (me.features.api === false) return fail('Tu plan de WhatsApp no incluye el acceso por API: pide que lo activen en tu cuenta de WAS.');
-        if (me.features.wa === false) return fail('Tu plan de WhatsApp no incluye WhatsApp: pide que lo activen en tu cuenta de WAS.');
+        if (me.features.api === false) return fail('Tu plan de WhatsApp no incluye el acceso por API: pide que lo activen en tu cuenta de Whats.');
+        if (me.features.wa === false) return fail('Tu plan de WhatsApp no incluye WhatsApp: pide que lo activen en tu cuenta de Whats.');
         if (!me.abilities.includes('wa.send')) {
             return fail(`La clave no tiene permiso para enviar (${waWebAbilityLabel('wa.send')}): edítala en tu panel de WhatsApp (API Keys) y márcalo.`);
         }

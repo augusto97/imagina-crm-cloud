@@ -83,6 +83,8 @@ import {
     type SqlPreviewInput,
     type SqlPreviewResult,
     type SqlSync,
+    type ConnectionSwapPreview,
+    type ConnectionSwapResult,
     type SqlSyncDryRun,
     type UpdateSqlSyncInput,
     type SetupStoreSyncInput,
@@ -949,6 +951,15 @@ export class CloudClient {
     }
     async connectionUsage(id: number): Promise<ConnectionUsage[]> {
         return (await this.request('GET', `/connections/${id}/usage`, { schema: dataArray(connectionUsageSchema) })).data;
+    }
+    /** v0.1.400 — qué se puede pasar a esta conexión («Reemplazar en automatizaciones»). */
+    async connectionSwapPreview(id: number): Promise<ConnectionSwapPreview> {
+        return (await this.request('GET', `/connections/${id}/swap`, { schema: z.object({ data: z.custom<ConnectionSwapPreview>() }) })).data;
+    }
+    async connectionSwap(id: number, sources: string[]): Promise<ConnectionSwapResult> {
+        return (
+            await this.request('POST', `/connections/${id}/swap`, { body: { sources }, schema: z.object({ data: z.custom<ConnectionSwapResult>() }) })
+        ).data;
     }
     async connectionTest(input: ConnectionDraftTestInput): Promise<ConnectionTestResult> {
         return (

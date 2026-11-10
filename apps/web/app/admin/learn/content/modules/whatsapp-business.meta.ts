@@ -18,7 +18,7 @@ export const meta: LearnModuleMeta = {
     articles: [
         {
             id: 'wab-cual-elegir',
-            title: 'WhatsApp oficial o WAS: cuál te conviene',
+            title: 'WhatsApp oficial o Whats: cuál te conviene',
             summary: 'Las dos formas de mandar WhatsApp desde la app, en qué se diferencian, cuánto cuesta cada una y cuándo conviene cada cual.',
             minutes: 5,
             level: 'basic',

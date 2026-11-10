@@ -659,8 +659,8 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
         const conns = await connectors.list(tenantId, adminId, 'admin');
         const schema = await whatsappSchema(new TenantDb(pg.db), tenantId, conns, {}, []);
         expect(schema?.connections).toEqual([
-            { connection_id: id, kind: 'was', name: expect.any(String), phone: '+573178339119 · Augusto', actions: ['send_text {recipient, message}', 'send_media {recipient, url, caption}'] },
+            { connection_id: id, kind: 'whats', name: expect.any(String), phone: '+573178339119 · Augusto', actions: ['send_text {recipient, message}', 'send_media {recipient, url, caption}'] },
         ]);
-        expect(String(schema?.rules)).toMatch(/kind "was"/);
+        expect(String(schema?.rules)).toMatch(/kind "whats"/);
     });
 });

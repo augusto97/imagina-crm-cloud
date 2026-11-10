@@ -9,19 +9,19 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'La app puede mandar WhatsApp de dos maneras. **WhatsApp (WAS)** usa un número normal que vinculas con el código QR: se conecta en dos minutos, manda lo que quieras cuando quieras, te entera de **lo que te escriben** y de si cada mensaje se **entregó o se leyó**, pero no es la API oficial. **WhatsApp Business (oficial)** usa la API oficial de Meta (la «Cloud API»): pide un trámite inicial en Meta y los avisos que tú inicias van con **plantillas aprobadas**, a cambio de ser la vía que Meta permite para enviar a muchos clientes.',
+                md: 'La app puede mandar WhatsApp de dos maneras. **WhatsApp (Whats)** usa un número normal que vinculas con el código QR: se conecta en dos minutos, manda lo que quieras cuando quieras, te entera de **lo que te escriben** y de si cada mensaje se **entregó o se leyó**, pero no es la API oficial. **WhatsApp Business (oficial)** usa la API oficial de Meta (la «Cloud API»): pide un trámite inicial en Meta y los avisos que tú inicias van con **plantillas aprobadas**, a cambio de ser la vía que Meta permite para enviar a muchos clientes.',
             },
             { t: 'anim', key: 'wab-hero', caption: 'Con la API oficial, el registro muestra el último mensaje (tuyo o del cliente) y si se entregó y se leyó.' },
             { t: 'h', text: 'Las diferencias, una por una' },
             {
                 t: 'settings',
-                title: 'WhatsApp (WAS) frente a WhatsApp Business (oficial)',
+                title: 'WhatsApp (Whats) frente a WhatsApp Business (oficial)',
                 rows: [
-                    { name: 'Cómo se conecta', what: 'WAS: pegas una clave y eliges el número. Oficial: creas una app en Meta, un usuario del sistema con un token permanente y copias tres datos más.', tip: 'Si nunca entraste a developers.facebook.com, pide ayuda para el oficial la primera vez: después no hay que tocarlo.' },
-                    { name: 'Avisos que inicias tú', what: 'WAS: cualquier texto o archivo. Oficial: sólo **plantillas aprobadas por Meta** cuando el cliente no te escribió en las últimas 24 horas.' },
-                    { name: 'Respuestas de tus clientes', what: 'En los dos, si eliges la lista donde caen: cada mensaje que te escriben encuentra (o crea) el registro del contacto y puede disparar una automatización. Sin lista, la app no los procesa. (La versión anterior de WAS no las traía.)' },
+                    { name: 'Cómo se conecta', what: 'Whats: pegas una clave y eliges el número. Oficial: creas una app en Meta, un usuario del sistema con un token permanente y copias tres datos más.', tip: 'Si nunca entraste a developers.facebook.com, pide ayuda para el oficial la primera vez: después no hay que tocarlo.' },
+                    { name: 'Avisos que inicias tú', what: 'Whats: cualquier texto o archivo. Oficial: sólo **plantillas aprobadas por Meta** cuando el cliente no te escribió en las últimas 24 horas.' },
+                    { name: 'Respuestas de tus clientes', what: 'En los dos, si eliges la lista donde caen: cada mensaje que te escriben encuentra (o crea) el registro del contacto y puede disparar una automatización. Sin lista, la app no los procesa. (WAS, la versión anterior de Whats, no las traía.)' },
                     { name: 'Estado de cada envío', what: 'En los dos: **Enviado, Entregado, Leído o Fallido**, en una columna del registro, con el motivo cuando falla.' },
-                    { name: 'Costo', what: 'WAS: tu plan de WAS. Oficial: Meta cobra por conversación a **tu** cuenta de Meta, según el país y el tipo de plantilla.' },
+                    { name: 'Costo', what: 'Whats: tu plan de Whats. Oficial: Meta cobra por conversación a **tu** cuenta de Meta, según el país y el tipo de plantilla.' },
                     { name: 'Riesgo de bloqueo', what: 'Con un número no oficial, los envíos masivos pueden hacer que WhatsApp bloquee el número. La API oficial es la vía que Meta permite para empresas.' },
                     { name: 'Cuenta verificada', what: 'Oficial: tu número muestra el nombre de la empresa y puede tener el distintivo verificado.' },
                 ],
@@ -29,18 +29,18 @@ export const articles: LearnArticle[] = [
             {
                 t: 'cards',
                 items: [
-                    { icon: 'Zap', title: 'Elige WAS si…', md: 'Quieres empezar hoy, conversas con clientes que te escriben y mandas archivos o mensajes sin pasar por plantillas.', tone: 'amber' },
+                    { icon: 'Zap', title: 'Elige Whats si…', md: 'Quieres empezar hoy, conversas con clientes que te escriben y mandas archivos o mensajes sin pasar por plantillas.', tone: 'amber' },
                     { icon: 'ShieldCheck', title: 'Elige el oficial si…', md: 'Mandas avisos a muchos clientes que no te escribieron, quieres el nombre verificado de la empresa y la vía que Meta permite.', tone: 'mint' },
                 ],
             },
             {
                 t: 'p',
-                md: 'Puedes tener **las dos** conectadas a la vez: por ejemplo, WAS para atender a quien te escribe y el oficial para los avisos masivos. En cada automatización eliges cuál usar.',
+                md: 'Puedes tener **las dos** conectadas a la vez: por ejemplo, Whats para atender a quien te escribe y el oficial para los avisos masivos. En cada automatización eliges cuál usar.',
             },
             {
                 t: 'example',
                 title: 'Un gimnasio con 1.200 socios',
-                md: 'Empezaron con WAS para recordar la renovación de membresías. Cuando pasaron de 50 a 400 avisos por semana, migraron al oficial: la plantilla «renovacion_membresia» tiene un botón para pagar, la columna **Estado del último envío** les muestra quién la leyó y quién no, y cuando un socio contesta «¿puedo congelar mi plan?», su ficha se actualiza y la recepción lo ve en la vista «Escribieron hoy».',
+                md: 'Empezaron con Whats para recordar la renovación de membresías. Cuando pasaron de 50 a 400 avisos por semana, migraron al oficial: la plantilla «renovacion_membresia» tiene un botón para pagar, la columna **Estado del último envío** les muestra quién la leyó y quién no, y cuando un socio contesta «¿puedo congelar mi plan?», su ficha se actualiza y la recepción lo ve en la vista «Escribieron hoy».',
             },
             {
                 t: 'faq',
@@ -54,7 +54,7 @@ export const articles: LearnArticle[] = [
                 t: 'actions',
                 items: [
                     { label: 'Conectar WhatsApp oficial', article: 'wab-conectar' },
-                    { label: 'Conectar WhatsApp (WAS)', article: 'integraciones-mensajeria' },
+                    { label: 'Conectar WhatsApp (Whats)', article: 'integraciones-mensajeria' },
                     { label: 'Ir a Integraciones', to: '/settings?s=conectores' },
                 ],
             },

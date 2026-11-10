@@ -189,7 +189,7 @@ function WebWhatsappPage({
                     </h1>
                     <p className="imcrm-text-sm imcrm-text-muted-foreground">
                         {name ? `${name} — ` : ''}
-                        {__('número vinculado a tu cuenta de WAS')}
+                        {__('número vinculado a tu cuenta de Whats')}
                         {web.workspace ? ` (${web.workspace})` : ''}
                         {ownServer ? ` · ${web.server}` : ''}
                     </p>
@@ -222,7 +222,7 @@ function WebWhatsappPage({
                     {__('Ideas para usarlo')}
                 </h2>
                 <ul className="imcrm-mt-2 imcrm-list-disc imcrm-space-y-1.5 imcrm-pl-5 imcrm-text-sm imcrm-text-muted-foreground">
-                    <li>{__('Avisos automáticos: en una automatización, acción «Enviar mensaje de WhatsApp» o «Enviar archivo por WhatsApp» (recordatorio de pago, cita confirmada, la factura en PDF). Con WAS no hay plantillas que aprobar: el mensaje sale tal cual.')}</li>
+                    <li>{__('Avisos automáticos: en una automatización, acción «Enviar mensaje de WhatsApp» o «Enviar archivo por WhatsApp» (recordatorio de pago, cita confirmada, la factura en PDF). Con Whats no hay plantillas que aprobar: el mensaje sale tal cual.')}</li>
                     <li>{__('Reaccionar a lo que escriben: disparador «Cuando llega un mensaje de WhatsApp», con {{whatsapp.texto}} y {{whatsapp.nombre}} (en la lista elegida en «Dónde caen los mensajes»).')}</li>
                     <li>
                         {__('Resumir o clasificar con IA: agrega a la lista un «Campo con IA» que lea la columna «Último mensaje de WhatsApp». Se recalcula solo cada vez que llega un mensaje.')}
@@ -283,18 +283,18 @@ function WebAccountSection({ d, web }: { d: WhatsappConnectionDetail; web: NonNu
                         {a.status_reason ? ` · ${a.status_reason}` : ''}
                         {a.banned_until ? ` · ${__('bloqueado hasta')} ${formatDateTimeStr(a.banned_until)}` : ''}
                     </dd>
-                    <dt className="imcrm-text-muted-foreground">{__('Cuenta en WAS')}</dt>
+                    <dt className="imcrm-text-muted-foreground">{__('Cuenta en Whats')}</dt>
                     <dd>#{a.id}</dd>
                 </dl>
             ) : (
                 <p className="imcrm-mt-2 imcrm-text-sm imcrm-text-destructive" data-testid="imcrm-whatsapp-account-error">
-                    {web.account_error ?? __('No se pudo leer el número en WAS.')}
+                    {web.account_error ?? __('No se pudo leer el número en Whats.')}
                 </p>
             )}
             {down && (
                 <p className="imcrm-mt-3 imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-sm imcrm-text-amber-700 dark:imcrm-text-amber-400" data-testid="imcrm-whatsapp-account-down">
                     <AlertTriangle className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
-                    {__('Mientras el número no esté conectado, los mensajes no salen. Vuelve a vincularlo en tu panel de WAS escaneando el código QR con el teléfono.')}
+                    {__('Mientras el número no esté conectado, los mensajes no salen. Vuelve a vincularlo en tu panel de Whats escaneando el código QR con el teléfono.')}
                 </p>
             )}
             {web.missing_abilities.length > 0 && (
@@ -305,7 +305,7 @@ function WebAccountSection({ d, web }: { d: WhatsappConnectionDetail; web: NonNu
                             {__('A la clave le faltan permisos:')} <span className="imcrm-font-medium">{web.missing_abilities.map(abilityText).join(', ')}</span>.
                         </p>
                         <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Edítala en tu panel de WAS (API Keys), marca los permisos y toca «Actualizar clave» en Integraciones.')}
+                            {__('Edítala en tu panel de Whats (API Keys), marca los permisos y toca «Actualizar clave» en Integraciones.')}
                         </p>
                     </div>
                 </div>
@@ -331,7 +331,7 @@ function WebHookSection({
         mutationFn: () => api.whatsappSubscribe(d.connection.id, false),
         onSuccess: (res) => {
             onData(res);
-            setMsg({ ok: true, text: __('Listo: los avisos quedaron registrados en WAS.') });
+            setMsg({ ok: true, text: __('Listo: los avisos quedaron registrados en Whats.') });
         },
         onError: (err) => setMsg({ ok: false, text: errText(err) }),
     });
@@ -360,7 +360,7 @@ function WebHookSection({
                 )}
             </h2>
             <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
-                {__('No tienes que configurar nada: la app registró sola los avisos en tu cuenta de WAS, y sólo pide los que usas.')}
+                {__('No tienes que configurar nada: la app registró sola los avisos en tu cuenta de Whats, y sólo pide los que usas.')}
             </p>
             <ListeningInfo d={d} />
             {web.hook.error && (
@@ -373,7 +373,7 @@ function WebHookSection({
                 <summary className="imcrm-cursor-pointer imcrm-text-muted-foreground">{__('Ver la dirección de los avisos')}</summary>
                 <CopyRow value={w.url} testId="imcrm-whatsapp-hook-url" />
                 <p className="imcrm-mt-1 imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('En tu panel de WAS aparece en «Webhooks» con la dirección de esta app en el nombre. No la borres: sin ella dejan de llegar los mensajes.')}
+                    {__('En tu panel de Whats aparece en «Webhooks» con la dirección de esta app en el nombre. No la borres: sin ella dejan de llegar los mensajes.')}
                 </p>
             </details>
             <div className="imcrm-mt-3 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
@@ -437,7 +437,7 @@ function ListeningInfo({ d }: { d: WhatsappConnectionDetail }): JSX.Element {
             </ul>
             <p className="imcrm-mt-2 imcrm-text-xs imcrm-text-muted-foreground">
                 {web
-                    ? __('WAS manda sólo estos avisos: así la app no procesa lo que no usas. Se ajusta solo cuando eliges una lista o preparas columnas.')
+                    ? __('Whats manda sólo estos avisos: así la app no procesa lo que no usas. Se ajusta solo cuando eliges una lista o preparas columnas.')
                     : __('Meta manda todos los avisos; la app descarta al instante los que nada usa.')}
             </p>
         </div>

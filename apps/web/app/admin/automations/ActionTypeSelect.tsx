@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import type { ActionMeta, ActionSpec } from '@/types/automation';
 
 import { ActionTypeMenu } from './ActionTypeMenu';
-import { actionOptionValue, actionTypeOptions, specForOption } from './actionTypeOptions';
+import { actionOptionValue, actionTypeOptions, carryOverSpec, specForOption } from './actionTypeOptions';
 import { actionMetaFor } from './automationMeta';
 
 /**
@@ -60,7 +60,7 @@ export function ActionTypeSelect({
             align="start"
             contentClassName="imcrm-max-h-[min(70vh,var(--radix-dropdown-menu-content-available-height))] imcrm-w-[var(--radix-dropdown-menu-trigger-width)] imcrm-min-w-[280px] imcrm-overflow-y-auto"
             onPick={(type, config) =>
-                onChange(type === 'connector_action' && config ? { type, config } : specForOption(type))
+                onChange(carryOverSpec(spec, type === 'connector_action' && config ? { type, config } : specForOption(type), actionsCatalog))
             }
         >
             <button

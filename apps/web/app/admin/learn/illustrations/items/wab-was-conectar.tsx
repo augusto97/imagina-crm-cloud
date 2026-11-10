@@ -12,7 +12,7 @@ import { At, C, Keyframes, Stage, T, primary, tone } from '../kit';
  */
 
 const STEPS = [
-    { icon: <KeyRound size={12} />, title: 'Pega la clave de API', where: 'Tu panel de WAS → API Keys' },
+    { icon: <KeyRound size={12} />, title: 'Pega la clave de API', where: 'Tu panel de Whats → API Keys' },
     { icon: <Search size={12} />, title: 'Buscar mis cuentas', where: 'Eliges el número de la lista' },
     { icon: <Webhook size={12} />, title: 'Avisos registrados solos', where: 'Mensajes y estados, sin configurar' },
 ];
@@ -36,7 +36,7 @@ ${STEPS.map(
 export default function WabWasConectar(): JSX.Element {
     return (
         <Stage
-            label="Conectar WhatsApp con WAS: pegas la clave de API, tocas «Buscar mis cuentas» y eliges tu número de la lista, y los avisos de mensajes y estados quedan registrados solos."
+            label="Conectar WhatsApp con Whats: pegas la clave de API, tocas «Buscar mis cuentas» y eliges tu número de la lista, y los avisos de mensajes y estados quedan registrados solos."
             tint="mint"
         >
             <Keyframes css={CSS} />
@@ -111,7 +111,7 @@ export default function WabWasConectar(): JSX.Element {
                 <IntegrationLogo integrationKey="whatsapp_web" size={36} />
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <T size={10.5} weight={700}>
-                        WhatsApp (WAS)
+                        WhatsApp (Whats)
                     </T>
                     <T size={9} color={C.mutedFg}>
                         +57 317 833 9119 · Café Aurora

@@ -415,7 +415,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.399**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.400**
+(**WhatsApp (Whats) y WhatsApp (WAS) con sus nombres** —Whats es la nueva,
+WAS la anterior, que sigue funcionando— y **«Reemplazar en
+automatizaciones»**: pasa de una vez las acciones de una conexión a otra,
+también las llamadas directas a la API de WAS; cambiar «Tipo de acción» en el
+editor conserva el número y el mensaje; addendum ADR-S69). Antes v0.1.399
 (**el webhook entrante crea o actualiza un registro**: busca por el id o un
 campo «Sin repetidos», las acciones corren sobre ese registro y encadenan con
 «Cuando cambia un campo»; secreto opcional; condiciones sobre el dato del JSON;
@@ -1797,6 +1802,23 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-10 · v0.1.400** — **WhatsApp (Whats) y WhatsApp (WAS) con sus
+  nombres + «Reemplazar en automatizaciones»**. Pedidos del usuario: «estás
+  confundiendo a los usuarios: la nueva app es Whats, no WAS; WAS es la versión
+  anterior (que por el momento debe seguir funcional)» y «¿cómo reemplazo un
+  nodo o conector? en algunas debo cambiar el conector de un número que conecté
+  con WAS o por API directamente y quiero reemplazarlo por el de Whats».
+  **Decisión**: `whatsapp_web` = «WhatsApp (Whats)», `whatsapp` = «WhatsApp
+  (WAS)» (la anterior, sin cambios de funcionamiento); migración 0116 renombra
+  las conexiones con nombre automático. Botón «Reemplazar en automatizaciones»
+  (en la fila de la conexión nueva) / «Pasar a otra conexión» (en la vieja):
+  agrupa por origen —conexiones compatibles y llamadas directas a la API de WAS
+  por cuenta—, la persona elige, cada automatización guarda una versión.
+  Cambiar «Tipo de acción» en el editor conserva los datos. Bug de paso: el uso
+  de una conexión no contaba los bucles «Repetir por cada vinculado».
+  **Pendiente del usuario**: tras actualizar, conectar WhatsApp (Whats) y pasar
+  sus automatizaciones con el botón (no se tocó su workspace: sólo se leyó por
+  el MCP para ver la forma de sus llamadas directas). Queda: nada abierto.
 - **2026-11-10 · v0.1.399** — **El webhook entrante crea o actualiza un
   registro** (reporte del usuario con datos de producción del cliente Binapps:
   la automatización 131 de «oportunidades» terminaba siempre en «success» con

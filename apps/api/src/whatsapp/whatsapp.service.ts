@@ -1003,11 +1003,11 @@ export class WhatsappService {
                 const text =
                     err.code === 'missing_ability'
                         ? 'La clave no tiene el permiso webhooks.manage (avisos): márcalo en tu panel de WhatsApp (API Keys) y vuelve a registrar los avisos. Sin ellos los mensajes salen igual, pero no sabremos si se entregaron ni recibiremos los de tus clientes.'
-                        : `No pudimos registrar los avisos en WAS: ${waWebErrorText(err)}`;
+                        : `No pudimos registrar los avisos en Whats: ${waWebErrorText(err)}`;
                 return save({ hook_id: null, hook_url: null, error: text, events: null });
             }
             const parsed = parseWaWebHookCreated(created.body);
-            if (!parsed) return save({ hook_id: null, hook_url: null, error: 'WAS creó el aviso pero no devolvió su secreto: vuelve a registrarlo.', events: null });
+            if (!parsed) return save({ hook_id: null, hook_url: null, error: 'Whats creó el aviso pero no devolvió su secreto: vuelve a registrarlo.', events: null });
             const state = await save({ hook_id: parsed.id, hook_url: url, error: null, events: desired }, parsed.secret);
             // Secreto nuevo: lo que estaba en memoria se vuelve a leer.
             this.changed(tenantId);
@@ -1889,7 +1889,7 @@ export class WhatsappService {
                 template: null,
             };
             if (args.kind === 'template') {
-                throw new WhatsappSendError('WAS no usa plantillas: elige «Mensaje» o «Archivo».', 'template_unsupported');
+                throw new WhatsappSendError('Whats no usa plantillas: elige «Mensaje» o «Archivo».', 'template_unsupported');
             }
             if (args.kind === 'media') {
                 const url = (args.mediaUrl ?? '').trim();
