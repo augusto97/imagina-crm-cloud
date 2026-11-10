@@ -256,7 +256,7 @@ interface RunContext {
      * que adjunta la misma plantilla no la vuelve a dibujar.
      */
     pdf?: Record<string, unknown>;
-    pdfs?: Map<number, { filename: string; buffer: Buffer; number: string | null }>;
+    pdfs?: Map<number, { filename: string; buffer: Buffer; number: string | null; issued: boolean }>;
     /**
      * v0.1.366 — la última reunión o evento que creó o cambió una acción de
      * calendario (`{{reunion.enlace}}`, `{{reunion.id}}`…): para mandar el
@@ -3860,10 +3860,8 @@ export class AutomationEngine {
                         },
                     });
                 }
-                const attachments = await this.emailAttachments(tx, ctx, cfg);
-                // v0.1.392 — el envío (SMTP, Gmail, Outlook) espera fuera de la
-                // transacción: lo que armó (firma, PDF numerados) ya quedó confirmado.
-                return afterCommit(async () => {
+                const { attachments, issuedNow } = await this.emailAttachments(tx, ctx, cfg);
+                const send = async (): Promise<ActionLogEntry> => {
                     await this.mail.sendNow({
                         tenantId: ctx.tenantId,
                         to,
@@ -3888,7 +3886,14 @@ export class AutomationEngine {
                     return ok('send_email', `Enviado a ${to}: "${subject}". ${composed.signatureNote}`, { to, subject });
                 }
                 return ok('send_email', `Enviado a ${to}: "${subject}"`, { to, subject });
-                });
+                };
+                // v0.1.392 — el envío (SMTP, Gmail, Outlook) espera fuera de la
+                // transacción. Salvo que el correo EMITA un número de documento
+                // en este paso (un PDF numerado que el registro todavía no
+                // tenía): ahí se manda adentro, como antes, para que si el correo
+                // no sale el número y el PDF congelado se deshagan (v0.1.290).
+                if (issuedNow) return send();
+                return afterCommit(send);
             }
             default:
                 return skip(spec.type, 'Acción no reconocida.');
@@ -4045,7 +4050,7 @@ export class AutomationEngine {
         ctx: RunContext,
         templateId: number,
         filename = '',
-    ): Promise<{ filename: string; buffer: Buffer; number: string | null }> {
+    ): Promise<{ filename: string; buffer: Buffer; number: string | null; issued: boolean }> {
         if (!this.documents) throw new Error('Los documentos PDF no están disponibles en este servidor.');
         if (ctx.recordId === null) throw new Error('Un PDF necesita un registro.');
         ctx.pdfs ??= new Map();
@@ -4069,15 +4074,15 @@ export class AutomationEngine {
         // v0.1.267 — el número emitido ya quedó escrito en su campo (mismo tx):
         // se refleja en la copia del run para que otra acción no lo pise.
         if (doc.numberField) ctx.data = { ...ctx.data, [doc.numberField.key]: doc.numberField.value };
-        const out = { filename: doc.filename, buffer: doc.buffer, number: doc.number };
+        const out = { filename: doc.filename, buffer: doc.buffer, number: doc.number, issued: doc.numberIssued };
         ctx.pdfs.set(templateId, out);
         return out;
     }
 
     /** Los PDF que `send_email` adjunta (`pdf_templates`: ids de plantillas). */
-    private async emailAttachments(tx: Tx, ctx: RunContext, cfg: Record<string, unknown>): Promise<MailAttachment[]> {
+    private async emailAttachments(tx: Tx, ctx: RunContext, cfg: Record<string, unknown>): Promise<{ attachments: MailAttachment[]; issuedNow: boolean }> {
         const ids = pdfTemplateIds(cfg);
-        if (ids.length === 0) return [];
+        if (ids.length === 0) return { attachments: [], issuedNow: false };
         // v0.1.338 (ADR-S87) — los PDF adjuntos son parte de «Documentos PDF»:
         // sin el módulo el envío FALLA (mandar el correo sin el documento que
         // promete sería peor, mismo criterio que un PDF que no se puede armar).
@@ -4086,7 +4091,10 @@ export class AutomationEngine {
         if (ctx.recordId === null) throw new Error('Los PDF adjuntos necesitan un registro.');
         const out: MailAttachment[] = [];
         let total = 0;
+        let issuedNow = false;
         for (const id of ids) {
+            // Uno armado por una acción ANTERIOR ya quedó confirmado en la suya.
+            const fresh = !(ctx.pdfs?.has(id) ?? false);
             const doc = await this.pdfFor(tx, ctx, id).catch((err: unknown) => {
                 throw new Error(`No se pudo armar el PDF adjunto: ${err instanceof Error ? err.message : String(err)}`);
             });
@@ -4094,9 +4102,10 @@ export class AutomationEngine {
             if (total > MAIL_MAX_ATTACHMENT_BYTES) {
                 throw new Error(`Los PDF adjuntos superan ${MAIL_MAX_ATTACHMENT_BYTES / 1024 / 1024} MB: achícalos o manda menos.`);
             }
+            if (fresh && doc.issued) issuedNow = true;
             out.push({ filename: doc.filename, contentType: 'application/pdf', contentBase64: doc.buffer.toString('base64') });
         }
-        return out;
+        return { attachments: out, issuedNow };
     }
 }
 
