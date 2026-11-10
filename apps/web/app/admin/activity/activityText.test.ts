@@ -178,6 +178,9 @@ describe('D3 — WhatsApp en la actividad', () => {
         const received = wa({ user_id: null, user_name: null, changes: { whatsapp: { event: 'received', kind: 'text', connection: 'Ventas' } } });
         expect(actorOf(received)).toBe('El contacto');
         expect(actionText(received, 0)).toBe('escribió por WhatsApp');
+        // v0.1.391 — varios mensajes seguidos quedan en una línea.
+        const many = wa({ user_id: null, user_name: null, changes: { whatsapp: { event: 'received', kind: 'text', connection: 'Ventas', count: 5 } } });
+        expect(actionText(many, 0)).toBe('escribió 5 mensajes por WhatsApp');
         const sent = wa({ user_id: 2, user_name: 'Ana', changes: { whatsapp: { event: 'sent', kind: 'template', template: 'recordatorio_pago', language: 'es' } } });
         expect(actorOf(sent)).toBe('Ana');
         expect(actionText(sent, 0)).toBe('envió la plantilla «recordatorio_pago» por WhatsApp');

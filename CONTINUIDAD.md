@@ -407,7 +407,16 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.390**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.391**
+(**WhatsApp recibe sólo lo que se usa**: los mensajes que te escriben llegan
+sólo si la conexión tiene lista de entrada, «entregado/leído» sólo si una
+lista muestra el estado del envío, las fallas siempre; WAS se suscribe sólo a
+eso por `PATCH /webhooks/{id}` y una revisión cada hora lo corrige; Meta, que
+no deja elegir, se descarta al recibir; el aviso se recibe con una caché de
+60 s y el mensaje entrante va en una transacción —de 10 a 1—; un candado por
+contacto evita registros duplicados cuando un número nuevo manda varios
+mensajes seguidos; la actividad agrupa los mensajes seguidos; tarjeta «Qué
+recibe la app» en Configurar WhatsApp; addendum ADR-S69). Antes v0.1.390
 (**renombrar las apps conectadas** —lápiz junto al nombre en Integraciones; el
 nombre propio se ve también al elegirla en una automatización—; los
 **formularios ya no muestran la descripción interna de un campo como ayuda**
@@ -1695,6 +1704,44 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-10 · v0.1.391** — **WhatsApp recibe sólo lo que se usa** (pregunta
+  del usuario con captura de la página de la conexión: «no sé qué tan útil sea
+  siempre leer los mensajes entrantes y guardar el último, la app no es de
+  chat; ¿aumenta el consumo con 100 o 1000 empresas? la app tiene que aguantar
+  miles de usuarios sin ponerse lenta» → «continúa»). **Medido antes de tocar
+  nada** (benchmark de 400 avisos firmados contra la API local, `pg_stat` y
+  `/proc`): un mensaje SIN lista costaba 5 transacciones y ~5 ms de CPU para
+  nada (sin lista no disparaba ni una automatización: van atadas a una lista);
+  un «entregado» sin columna de estado, 4; un mensaje con lista, ~10 y ~8,7 ms,
+  y una fila de actividad por mensaje. Qué entró: (a) **necesidades por
+  conexión** (`needsInTx`): mensajes si hay lista viva, estados si alguna lista
+  muestra el estado, fallas siempre; (b) **WAS se suscribe sólo a eso**
+  (`waWebHookEventsFor`, `PATCH /webhooks/{id}` que conserva el secreto) y se
+  ajusta solo al cambiar la lista o las columnas, más una revisión cada hora
+  (`hooks-reconcile`) que no llama a WAS si ya está bien y que también ajusta
+  los avisos registrados por v0.1.389; (c) Meta no deja elegir: se descarta al
+  recibir; (d) **recibir barato**: caché de 60 s del token (conexión, secreto,
+  necesidades) con versión por empresa, `last_hook_at` como mucho cada minuto,
+  el mensaje en UNA transacción, avisos a las pantallas como mucho uno por
+  segundo, Redis recuerda los mensajes 2 días (no 7) y los estados nada;
+  (e) **bug real encontrado en el E2E**: un número nuevo que manda 3 mensajes
+  seguidos creaba 3 registros (se procesaban en paralelo) — candado por
+  contacto en Redis, con prueba que falla sin él; (f) la **actividad agrupa**
+  los mensajes seguidos (30 min) en una línea («El contacto escribió 3
+  mensajes por WhatsApp»); (g) tarjeta **«Qué recibe la app»** en Configurar
+  WhatsApp (WAS y Meta), la opción «Ninguna» dice la verdad («no se reciben
+  los mensajes que te escriben») y «Guardar» espera a «Preparar columnas»
+  (si no, pisaba el mapeo). **Después**: mensaje sin lista y estado sin
+  columna → WAS ya no los manda (y si llegan, 0 transacciones); mensaje de un
+  contacto existente 10 → 1 transacción, CPU ~8,4 → ~5,6 ms; 800 mensajes de
+  50 contactos: 850 filas de actividad → 100. Respuesta al usuario: el costo
+  crece con los MENSAJES, no con las empresas (WhatsApp no consulta nada:
+  WAS/Meta avisan), y una empresa que sólo envía avisos ya no recibe casi
+  nada. Queda (propuesto, no hecho): revisar con el mismo método los trabajos
+  en segundo plano que crecen con la cantidad de empresas (lectura de buzones
+  IMAP cada minuto, sincronizaciones SQL/tienda/sitio, revisión de calendarios
+  cada 3 min, suscripciones cada 5 min).
 
 - **2026-11-09 · v0.1.390** — **Renombrar integraciones, la ayuda de los
   formularios y publicar sin regrabar capturas** (el usuario confirmó que le

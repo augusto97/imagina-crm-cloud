@@ -5161,6 +5161,41 @@ entrantes por webhooks firmados. Se suma como integración propia
    (el nombre del aviso en WAS lleva el dominio de la app).
 Sin migración: todo vive en `connections.config`.
 
+**Addendum v0.1.391 — Recibir sólo lo que se usa (escala).** Pregunta del
+usuario: ¿sirve leer cada mensaje entrante si la app no es un chat, y cuánto
+cuesta con cientos o miles de empresas? Medido: un aviso costaba 4-10
+transacciones a la base y ~5-9 ms de CPU, también los que nada usaba. Reglas:
+
+1. **Qué se necesita** (`needsInTx`): los mensajes que te escriben, sólo si
+   la conexión tiene una lista de entrada viva (sin lista no disparan nada:
+   las automatizaciones van atadas a una lista); «enviado / entregado /
+   leído», sólo si alguna lista de la empresa muestra el estado del último
+   envío; las fallas, siempre (`waWebHookEventsFor`, shared).
+2. **WAS manda sólo eso**: el aviso se registra con esos eventos y, cuando
+   cambia lo que se usa (elegir o quitar la lista, preparar o quitar la columna
+   de estado), se ajusta con `PATCH /webhooks/{id}` (el secreto no cambia);
+   una revisión cada hora (`hooks-reconcile` en la cola `whatsapp`, y una al
+   arrancar) corrige lo que cambió por otro lado sin llamar a WAS si ya está
+   bien. Meta no deja elegir: lo que nada usa se descarta al recibirlo.
+3. **Recibir barato**: token → conexión, secreto y necesidades en una caché en
+   memoria de 60 s (`PublicCacheService`, versión por empresa que se sube al
+   cambiar algo, en todos los servidores); una firma que no coincide relee una
+   vez (secreto nuevo), como mucho cada 5 s. `last_hook_at` se escribe como
+   mucho una vez por minuto. El mensaje entrante va en UNA transacción
+   (conexión, ventana, lista, contacto, columnas, actividad).
+4. **Un contacto a la vez**: candado en Redis por conexión + número (varios
+   mensajes seguidos de un número nuevo creaban un registro cada uno).
+5. **La actividad agrupa** los mensajes seguidos del mismo contacto (30 min)
+   en una línea con `count` («escribió 5 mensajes»), y las pantallas abiertas
+   se avisan como mucho una vez por segundo por lista.
+6. **Redis**: los mensajes se recuerdan 2 días (antes 7) y los estados no se
+   recuerdan (aplicarlos dos veces no cambia nada).
+
+Resultado medido (400 avisos por escenario): mensaje sin lista 5 → 0
+transacciones (y WAS ya no lo manda); estado sin columna 4 → 0; mensaje de un
+contacto existente 10 → 1 transacción y ~8,4 → ~5,6 ms de CPU; 800 mensajes
+de 50 contactos dejaban 850 filas de actividad (50 altas + 800), ahora 100.
+
 ---
 
 ### ADR-S70 — Mesa de ayuda por correo (IMAP) + SLA en horas hábiles (v0.1.316)

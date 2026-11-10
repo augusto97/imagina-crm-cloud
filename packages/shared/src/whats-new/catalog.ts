@@ -2137,4 +2137,17 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.391-whatsapp-solo-lo-que-usas',
+        version: '0.1.391',
+        date: '2026-11-10',
+        kind: 'improvement',
+        title: 'WhatsApp recibe sólo lo que usas',
+        summary:
+            'La app ya no procesa avisos de WhatsApp que nada usa: los mensajes que te escriben llegan sólo si eliges la lista donde caen, y «entregado» y «leído», sólo si una lista muestra el estado del envío. Varios mensajes seguidos de un cliente quedan en una sola línea de la actividad.',
+        media: { illustration: 'wab-inbound' },
+        body: 'En **Configurar WhatsApp**, la tarjeta **Qué recibe la app** dice qué se está recibiendo y por qué. Se ajusta solo cuando eliges una lista o preparas columnas.',
+        action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

@@ -96,13 +96,19 @@ export function waWebSendRequest(c: WaWebCreds, p: WaWebPayload, opts: { referen
     };
 }
 
-export function waWebCreateHookRequest(c: WaWebCreds, url: string, name: string): IntegrationRequest {
+/** v0.1.391 — `events`: sólo los avisos que algo usa (sin ellos, todos, como antes). */
+export function waWebCreateHookRequest(c: WaWebCreds, url: string, name: string, events: readonly string[] = WA_WEB_HOOK_EVENTS): IntegrationRequest {
     return {
         url: api(c, '/webhooks'),
         method: 'POST',
         headers: headers(c, true),
-        body: JSON.stringify({ name: name.slice(0, 128), url, events: [...WA_WEB_HOOK_EVENTS], is_active: true }),
+        body: JSON.stringify({ name: name.slice(0, 128), url, events: [...events], is_active: true }),
     };
+}
+
+/** v0.1.391 — Cambia los avisos de un aviso registrado (el secreto no cambia). */
+export function waWebUpdateHookEventsRequest(c: WaWebCreds, hookId: number, events: readonly string[]): IntegrationRequest {
+    return { url: api(c, `/webhooks/${hookId}`), method: 'PATCH', headers: headers(c, true), body: JSON.stringify({ events: [...events] }) };
 }
 
 export function waWebHookRequest(c: WaWebCreds, hookId: number): IntegrationRequest {
@@ -354,6 +360,14 @@ export function parseWaWebHookActive(status: number, body: string): boolean | nu
     if (typeof data.is_active === 'boolean') return data.is_active;
     if (typeof data.active === 'boolean') return data.active;
     return true;
+}
+
+/** v0.1.391 — Los avisos a los que está suscrito (null = no vino la lista). */
+export function parseWaWebHookEvents(status: number, body: string): string[] | null {
+    if (status < 200 || status >= 300) return null;
+    const root = rec(parseJson(body));
+    const data = Object.keys(rec(root.data)).length > 0 ? rec(root.data) : root;
+    return Array.isArray(data.events) ? data.events.filter((e): e is string => typeof e === 'string') : null;
 }
 
 // ── Avisos ──────────────────────────────────────────────────────────────

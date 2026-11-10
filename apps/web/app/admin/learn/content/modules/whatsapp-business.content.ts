@@ -19,7 +19,7 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Cómo se conecta', what: 'WAS: pegas una clave y eliges el número. Oficial: creas una app en Meta, un usuario del sistema con un token permanente y copias tres datos más.', tip: 'Si nunca entraste a developers.facebook.com, pide ayuda para el oficial la primera vez: después no hay que tocarlo.' },
                     { name: 'Avisos que inicias tú', what: 'WAS: cualquier texto o archivo. Oficial: sólo **plantillas aprobadas por Meta** cuando el cliente no te escribió en las últimas 24 horas.' },
-                    { name: 'Respuestas de tus clientes', what: 'En los dos: cada mensaje que te escriben encuentra (o crea) el registro del contacto y puede disparar una automatización. (La versión anterior de WAS no las traía.)' },
+                    { name: 'Respuestas de tus clientes', what: 'En los dos, si eliges la lista donde caen: cada mensaje que te escriben encuentra (o crea) el registro del contacto y puede disparar una automatización. Sin lista, la app no los procesa. (La versión anterior de WAS no las traía.)' },
                     { name: 'Estado de cada envío', what: 'En los dos: **Enviado, Entregado, Leído o Fallido**, en una columna del registro, con el motivo cuando falla.' },
                     { name: 'Costo', what: 'WAS: tu plan de WAS. Oficial: Meta cobra por conversación a **tu** cuenta de Meta, según el país y el tipo de plantilla.' },
                     { name: 'Riesgo de bloqueo', what: 'Con un número no oficial, los envíos masivos pueden hacer que WhatsApp bloquee el número. La API oficial es la vía que Meta permite para empresas.' },
@@ -413,7 +413,7 @@ export const articles: LearnArticle[] = [
                 t: 'callout',
                 tone: 'info',
                 title: 'Lo que no se guarda',
-                md: '- **La conversación no se guarda**: en el registro queda sólo el último mensaje. El historial completo sigue en WhatsApp.\n- **Los archivos que te mandan no se descargan**: una foto o un audio quedan en WhatsApp; el registro dice el tipo de mensaje.\n- **La actividad del registro anota el hecho** («llegó un mensaje de WhatsApp», «se envió la plantilla…») **sin el texto**: quienes siguen el registro no reciben el contenido del mensaje.',
+                md: '- **La conversación no se guarda**: en el registro queda sólo el último mensaje. El historial completo sigue en WhatsApp.\n- **Los archivos que te mandan no se descargan**: una foto o un audio quedan en WhatsApp; el registro dice el tipo de mensaje.\n- **La actividad del registro anota el hecho** («llegó un mensaje de WhatsApp», «se envió la plantilla…») **sin el texto**: quienes siguen el registro no reciben el contenido del mensaje. Varios mensajes seguidos del mismo contacto quedan en una sola línea («escribió 5 mensajes»).\n- **Sólo se reciben los avisos que usas**: los mensajes que te escriben, si eliges la lista donde caen; **Entregado** y **Leído**, si alguna lista muestra el **Estado del último envío**. Las fallas, siempre. En **Qué recibe la app** (Configurar WhatsApp) ves qué se está recibiendo y por qué.',
             },
             { t: 'h', text: 'Cuando la conexión falla' },
             {

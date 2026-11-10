@@ -16,6 +16,9 @@ const QUEUE = 'whatsapp';
  * entra con un id propio (el job no se duplica mientras viva) y el servicio
  * además lo recuerda una semana en Redis: un aviso repetido no se procesa dos
  * veces. Las plantillas se refrescan solas cada 6 horas.
+ *
+ * v0.1.391 — Y cada hora se revisa que cada conexión de Imagina WAS esté
+ * suscrita sólo a los avisos que algo usa.
  */
 @Injectable()
 export class WhatsappQueue implements OnModuleInit, OnApplicationShutdown {
@@ -46,6 +49,11 @@ export class WhatsappQueue implements OnModuleInit, OnApplicationShutdown {
                         await this.whatsapp.syncAllTemplates();
                         return;
                     }
+                    if (job.name === 'hooks-reconcile') {
+                        const n = await this.whatsapp.reconcileWebHooks();
+                        if (n > 0) this.logger.log(`Avisos de WhatsApp ajustados a lo que se usa: ${n}`);
+                        return;
+                    }
                     await this.whatsapp.process(job.data as WhatsappJob);
                 },
                 { connection: conn(), concurrency: 4 },
@@ -53,6 +61,10 @@ export class WhatsappQueue implements OnModuleInit, OnApplicationShutdown {
             this.worker.on('failed', (job, err) => this.logger.warn(`Aviso de WhatsApp (${job?.name ?? '?'}) falló: ${err.message}`));
             this.worker.on('error', (err) => this.logger.warn(`Worker de WhatsApp con error: ${err.message}`));
             await this.queue.upsertJobScheduler('templates-refresh', { pattern: '17 */6 * * *' }, { name: 'templates-refresh', data: {} });
+            // v0.1.391 — Cada hora, los avisos de Imagina WAS quedan sólo en lo que se usa (y
+            // un rato después de arrancar: así una actualización ajusta los ya registrados).
+            await this.queue.upsertJobScheduler('hooks-reconcile', { pattern: '43 * * * *' }, { name: 'hooks-reconcile', data: {} });
+            await this.queue.add('hooks-reconcile', {}, { delay: 90_000, removeOnComplete: true, removeOnFail: true });
             const queue = this.queue;
             this.whatsapp.setSink({
                 add: async (job, dedup) => {

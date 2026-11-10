@@ -1309,7 +1309,7 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
             '**Con WAS:**',
             '1. En tu panel de WAS, en **API Keys**, crea una clave con los permisos de ver la cuenta, ver los números, enviar, leer y manejar los avisos (webhooks).',
             '2. Ve a **Ajustes → Integraciones**, conecta **WhatsApp (WAS)**, pega la clave y toca **Buscar mis cuentas** para elegir el número.',
-            '3. Toca **Configurar WhatsApp**: los avisos ya quedan registrados solos. Elige la lista que recibe los mensajes y toca **Preparar columnas**.',
+            '3. Toca **Configurar WhatsApp**: los avisos ya quedan registrados solos. Elige la lista que recibe los mensajes y toca **Preparar columnas**. La app sólo recibe lo que usas (los mensajes, si hay lista; entregado y leído, si una lista muestra el estado): lo ves en **Qué recibe la app**.',
             '**Con la cuenta oficial:** conecta **WhatsApp Business (oficial)** con los datos de tu cuenta de Meta (los pasos están en pantalla), elige la lista, toca **Preparar columnas** y **Actualizar plantillas**.',
             'Después envías desde la ficha con **Enviar WhatsApp** o con las acciones de WhatsApp de una automatización.',
         ].join('\n'),

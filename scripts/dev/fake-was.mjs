@@ -13,7 +13,7 @@
 // Un destino que termina en 0000 se rechaza («no tiene WhatsApp»).
 //
 // Para las pruebas:
-//   GET  /__state                              → mensajes, avisos registrados y entregas
+//   GET  /__state                              → mensajes, avisos registrados (con sus eventos) y entregas
 //   POST /__status {status, id?, failure_reason?}
 //        manda el aviso firmado del último mensaje (o el de `id`):
 //        sent | delivered | read | failed | canceled
@@ -44,7 +44,8 @@ function fresh() {
     };
 }
 let state = fresh();
-let nextMsg = 1001;
+// Ids que no se repiten entre arranques (la app recuerda los mensajes ya procesados).
+let nextMsg = Date.now() % 1_000_000_000;
 let nextHook = 1;
 
 function send(res, status, body) {
@@ -194,6 +195,16 @@ const server = http.createServer(async (req, res) => {
             return send(res, 204);
         }
         const h = state.hooks[i];
+        if (req.method === 'PATCH') {
+            const patch = await readBody(req);
+            if (Array.isArray(patch.events)) {
+                if (patch.events.length === 0) return error(res, 422, 'validation_failed', 'The given data was invalid.', { fields: { events: ['At least one event.'] } });
+                h.events = patch.events.map(String);
+            }
+            if (typeof patch.name === 'string') h.name = patch.name;
+            if (typeof patch.url === 'string') h.url = patch.url;
+            h.patches = (h.patches ?? 0) + 1;
+        }
         return send(res, 200, { data: { id: h.id, name: h.name, url: h.url, events: h.events, is_active: h.is_active } });
     }
     if (p === '/messages/whatsapp' && req.method === 'POST') {

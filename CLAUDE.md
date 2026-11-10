@@ -13406,6 +13406,49 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         con el paquete real de la v0.1.389 (sin cambios → no graba; con
         «[capturas]» → 110 demos en 5 máquinas).
 
+  - [x] **WhatsApp recibe sólo lo que se usa (v0.1.391, addendum ADR-S69,
+        pregunta del usuario: "no sé qué tan útil sea leer siempre los mensajes
+        entrantes… ¿aumenta el consumo con 100 o 1000 empresas? la app tiene que
+        aguantar miles de usuarios")**. Medido antes (400 avisos firmados por
+        escenario): un mensaje sin lista de entrada costaba 5 transacciones y
+        ~5 ms de CPU sin servir para nada (sin lista no disparaba
+        automatizaciones), un «entregado» sin columna de estado 4, y un mensaje
+        con lista ~10 transacciones y una fila de actividad por mensaje.
+        (a) **Necesidades por conexión** (`needsInTx`): mensajes que te
+        escriben sólo si hay lista viva; enviado/entregado/leído sólo si alguna
+        lista muestra el estado del último envío; fallas siempre
+        (`waWebHookEventsFor`, `whatsappStatusWanted` en shared).
+        (b) **WAS manda sólo eso**: el aviso se crea con esos eventos y se
+        ajusta con `PATCH /webhooks/{id}` (el secreto no cambia) al elegir o
+        quitar la lista o la columna de estado; revisión cada hora
+        (`hooks-reconcile`, y una al arrancar) que no llama a WAS si ya está
+        bien; un candado en memoria por conexión evita registrar dos avisos.
+        Meta no deja elegir: lo que nada usa se descarta al recibir.
+        (c) **Recibir barato**: token → conexión, secreto y necesidades en
+        `PublicCacheService` 60 s con versión por empresa (`changed()` la sube
+        en todos los servidores); firma que no coincide relee una vez (como
+        mucho cada 5 s); `last_hook_at` como mucho cada minuto; el mensaje
+        entrante en UNA transacción (`recordInboundInTx`, `writeChannelInTx`
+        con lo ya leído); pantallas avisadas como mucho una vez por segundo por
+        lista; Redis recuerda los mensajes 2 días (antes 7) y los estados no se
+        recuerdan. (d) **Bug encontrado en el E2E**: un número nuevo que manda
+        varios mensajes seguidos creaba un registro por mensaje — candado por
+        conexión + número en Redis (la prueba falla sin él). (e) La actividad
+        agrupa los mensajes seguidos del contacto (30 min) en una línea con
+        `count` («escribió 3 mensajes por WhatsApp»). (f) Tarjeta **«Qué recibe
+        la app»** en Configurar WhatsApp (`listening` en el detalle de la
+        conexión), «Ninguna (no se reciben los mensajes que te escriben)» y
+        «Guardar» deshabilitado mientras se preparan las columnas (pisaba el
+        mapeo). El WAS simulado acepta `PATCH` y usa ids que no se repiten entre
+        arranques. Después: mensaje sin lista y estado sin columna → 0
+        transacciones (y WAS ya no los manda); mensaje de un contacto existente
+        10 → 1 transacción y ~8,4 → ~5,6 ms de CPU; 800 mensajes de 50 contactos
+        dejaban 850 filas de actividad, ahora 100. Tests: 2 nuevos en
+        `whatsapp-web.spec` (suscripción por necesidades con revisión y aviso
+        viejo ajustado; tres mensajes seguidos → un registro y una línea) con la
+        caché real, el de Meta actualizado, shared y front — + E2E navegador
+        17/17 en escritorio y celular oscuro contra el WAS simulado.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
