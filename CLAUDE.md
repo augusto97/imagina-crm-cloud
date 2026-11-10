@@ -13752,6 +13752,72 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         arreglo 8/8 en escritorio y 7/7 en celular oscuro, y los E2E del
         widget de v0.1.395 (32/32) y v0.1.396 (24/24) en verde.
 
+  - [x] **El webhook entrante crea o actualiza un registro (v0.1.399,
+        addendum ADR-S47, reporte del usuario con datos de producción: la
+        automatización del cliente Binapps terminaba siempre en «success» con
+        «Sin registro en contexto» y no cambiaba nada)**. El caso: el sistema de
+        WhatsApp hace `POST {"record_id": 5134, "respuesta": "2"}`, la
+        automatización pone `estado_demo` = cancelada en ESA oportunidad, y
+        «Cuando cambia un campo» cancela la reunión en Teams.
+        (a) **«Qué hacer con el registro»** (`trigger_config.record_mode`,
+        `packages/shared/src/schemas/webhook-record.ts`, lectura tolerante):
+        Nada (lo de siempre), Crear uno nuevo, Actualizar uno existente
+        (no encontrarlo → corrida **Cancelada** con el motivo, nada creado) o
+        Actualizar o crear. **Buscar por** el id del registro (único en la app;
+        uno de otra lista o empresa cuenta como «no existe») o un campo **Sin
+        repetidos** / ID automático —decisión con el usuario: nunca adivinar
+        cuál de varios; si hay repetidos de antes, la corrida FALLA con los
+        ids—; el teléfono se compara con y sin indicativo. **Clave en el JSON**
+        con ruta (`cliente.telefono`) y «Escribir también los datos del JSON en
+        los campos con el mismo nombre». Se valida al guardar (400 con el
+        motivo). `lookupWebhookRecord` (`webhook-record-lookup.ts`) es la MISMA
+        búsqueda para la corrida, «Probar» y la vista previa.
+        (b) **Motor** (`runWebhook`): las acciones corren sobre el registro, la
+        corrida guarda `record_id`, y el cambio va por `RecordsService` con la
+        cadena → «Cuando cambia un campo» corre sobre el mismo registro (la
+        misma automatización nunca se re-dispara en la cadena;
+        `AUTOMATIONS_MAX_CHAIN_DEPTH` 1-10, default 3, y un corte queda anotado
+        en el log).
+        (c) **Secreto opcional** (migración 0115, `automation_hooks.secret_hash`
+        + hint): «Pedir un secreto» genera uno (o se usa uno propio) que se ve
+        UNA vez; sin la cabecera `X-Webhook-Secret` (o `Authorization: Bearer`)
+        responde 401 antes de capturar o encolar; sobrevive a regenerar la URL;
+        bitácora `automation.webhook_secret`.
+        (d) **Editor** (`IncomingWebhookConfig.tsx`): URL, secreto, modo,
+        búsqueda (los campos que se repiten aparecen deshabilitados con
+        «márcalo «Sin repetidos»»), **JSON de ejemplo armado solo** con la
+        configuración, curl plegado, y «Escuchar datos de prueba» dice qué
+        registro encontraría (o crearía) con el último dato. Las condiciones
+        (filtro y «Si / sino») suman **«Un dato del JSON del webhook…»**
+        (`payload.x` con es / no es / contiene / es alguno de / vacío / mayor /
+        menor, y las rutas sugeridas de la última captura). La ayuda del cuerpo
+        de «Llamar webhook externo» explica `{{record.id}}`.
+        (e) Asistente/MCP: la descripción del disparador explica los modos, la
+        búsqueda y las condiciones sobre `payload.*`, y la propuesta se valida
+        con la misma función del guardado.
+        **Bugs encontrados en el camino**: (1) **«Probar» de las
+        automatizaciones no funcionaba en producción desde v0.1.371** — un
+        ciclo de imports (motor → suscripciones → registro de cobros →
+        plantillas → `AutomationsService`) dejaba al motor `undefined` al
+        decorar y Nest lo inyectaba así por ser `@Optional()` («El motor de
+        automatizaciones no está disponible»); ahora `forwardRef`, y el CI
+        corre `apps/api/scripts/check-di.cjs` sobre el build (falla con el
+        código anterior). (2) El editor perdía la configuración del registro al
+        guardar (`cleanTriggerConfig` no la conservaba; con test).
+        Ayuda: Aprende → Automatizaciones (tabla de modos, búsqueda, clave y
+        secreto) y novedad con carrusel. Tests: `webhook-record.spec` (9:
+        actualizar por id con «Si / sino» sobre `payload.respuesta` y
+        `{{record.id}}`, no encontrado / otra lista / sin clave → cancelada,
+        teléfono en cualquier formato y rechazos al guardar, repetidos →
+        fallida, crear con cadena, actualizar o crear por ruta anidada, cadena
+        a «Cuando cambia un campo» con el tope, secreto, vista previa y
+        «Probar»), `webhook-record.test.ts` en shared (6),
+        `cleanTriggerConfig.test.ts` (2) y specs relacionados 102/102 — shared
+        839, front 849 — + E2E navegador 22/22 en escritorio y 22/22 en celular
+        oscuro (el POST real cambia el estado y la otra automatización corre en
+        cadena, 401 sin el secreto, no encontrado → cancelada) y 6/6 de
+        «Probar» y guardar desde la pantalla.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

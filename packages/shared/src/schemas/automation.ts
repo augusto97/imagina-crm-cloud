@@ -245,6 +245,18 @@ export type ActionMeta = z.infer<typeof actionMetaSchema>;
 export const hookCaptureSchema = z.object({
     payload: z.record(z.unknown()),
     received_at: z.string(),
+    /**
+     * v0.1.399 — qué haría el disparador con el registro si este dato llegara
+     * ahora (lo arma el servidor con la MISMA búsqueda que el motor).
+     */
+    match: z
+        .object({
+            kind: z.enum(['none', 'found', 'create', 'not_found', 'error']),
+            message: z.string(),
+            record_id: z.number().int().positive().nullable().optional(),
+            title: z.string().nullable().optional(),
+        })
+        .optional(),
 });
 export type HookCapture = z.infer<typeof hookCaptureSchema>;
 

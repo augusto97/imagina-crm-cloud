@@ -273,9 +273,25 @@ export const articles: LearnArticle[] = [
                 ],
             },
             {
+                t: 'settings',
+                rows: [
+                    { name: 'Qué hacer con el registro: Nada', what: 'Como siempre: los datos llegan como variables y las acciones no tienen registro. Sirve para avisar o llamar a otro sistema.' },
+                    { name: 'Crear uno nuevo', what: 'Crea un registro con los datos que llegan cuyo nombre coincide con el nombre interno de un campo, y las acciones corren sobre él.' },
+                    { name: 'Actualizar uno existente', what: 'Busca UN registro de la lista y las acciones corren sobre él (por ejemplo, «Actualizar un campo» del estado). Si no lo encuentra, la corrida queda **Cancelada** con el motivo y no se crea nada.', tip: 'El caso típico: tu sistema de WhatsApp responde con el id del registro y la respuesta del cliente.' },
+                    { name: 'Actualizar o crear', what: 'Si lo encuentra lo actualiza; si no, crea uno nuevo.' },
+                    { name: 'Buscar por', what: '**El id del registro** (único en toda la app) o un campo marcado **Sin repetidos** (o un ID automático): un teléfono se compara con o sin indicativo y sin espacios. Así nunca hay que adivinar cuál de varios registros actualizar.' },
+                    { name: 'Clave', what: 'Dónde viene, en lo que envía el otro sistema, el dato para buscar: record_id, o una ruta con puntos como cliente.telefono.' },
+                    { name: 'Pedir un secreto', what: 'Opcional: el otro sistema tiene que mandar la cabecera X-Webhook-Secret (o Authorization: Bearer) con el secreto; sin él responde 401 y no corre nada. Se ve una sola vez al crearlo.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'Para que el otro sistema te devuelva el registro, mándale su id con **Llamar webhook externo**: la variable {{record.id}} es el id. Y si el cambio pone a correr otras automatizaciones (por ejemplo «Cuando cambia un campo»), corren en cadena sobre el mismo registro.',
+            },
+            {
                 t: 'callout',
                 tone: 'warn',
-                md: 'La URL es la llave: quien la tenga puede disparar la automatización. No la publiques en lugares abiertos. Si se filtró, toca **Regenerar URL**: la anterior deja de funcionar al guardar. Para crear registros desde un formulario de tu página, los **formularios** de la app son más seguros (traen protección contra robots).',
+                md: 'La URL es la llave: quien la tenga puede disparar la automatización. No la publiques en lugares abiertos; si actualiza registros, pide además un **secreto**. Si se filtró, toca **Regenerar URL**: la anterior deja de funcionar al guardar. Para crear registros desde un formulario de tu página, los **formularios** de la app son más seguros (traen protección contra robots).',
             },
             { t: 'h', text: 'Desde otras partes de la app' },
             {

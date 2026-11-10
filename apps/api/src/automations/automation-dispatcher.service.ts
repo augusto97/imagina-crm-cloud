@@ -91,8 +91,17 @@ export interface AutomationChain {
     automation_ids: number[];
 }
 
-/** Profundidad máxima de una cadena de automatizaciones (A → B → C). */
-export const MAX_AUTOMATION_CHAIN_DEPTH = 3;
+/**
+ * Profundidad máxima de una cadena de automatizaciones (A → B → C). v0.1.399 —
+ * configurable por el operador con `AUTOMATIONS_MAX_CHAIN_DEPTH` (1 a 10; por
+ * defecto 3). Además de la profundidad, una automatización nunca corre dos
+ * veces en la misma cadena (en ningún registro), así un A → B → A no existe.
+ */
+export function chainDepthFromEnv(raw: string | undefined): number {
+    const n = Number(raw);
+    return raw !== undefined && raw.trim() !== '' && Number.isInteger(n) && n >= 1 && n <= 10 ? n : 3;
+}
+export const MAX_AUTOMATION_CHAIN_DEPTH = chainDepthFromEnv(process.env.AUTOMATIONS_MAX_CHAIN_DEPTH);
 
 /** La cadena del cambio que hace `automationId` corriendo dentro de `parent`. */
 export function nextChain(parent: AutomationChain | undefined, automationId: number): AutomationChain {

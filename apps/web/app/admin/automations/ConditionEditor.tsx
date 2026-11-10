@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useContext, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { useHookCaptures } from '@/hooks/useAutomations';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -13,6 +15,49 @@ import { type DateRangePresetId } from '@/admin/records/dateRangePresets';
 import { FilterValueInput } from '@/admin/records/FilterValueInput';
 import { valueForOperator } from '@/admin/records/filterValue';
 import { isNullaryOperator, operatorsForType } from '@/admin/records/operators';
+
+import { AutomationEditorAutomationContext, useAutomationFlow } from './flowContext';
+import { payloadPaths } from './webhookPayload';
+
+/**
+ * v0.1.399 — Una condición sobre un DATO DEL JSON que llegó al webhook
+ * (`payload.respuesta`), no sobre un campo: el motor la evalúa igual que las
+ * demás (la ruta se lee con puntos). Operadores de texto/número sin tipo.
+ */
+const PAYLOAD_PREFIX = 'payload.';
+const PAYLOAD_OPTION = '__payload__';
+const PAYLOAD_OPS: ReadonlyArray<{ op: FilterOperator; label: string }> = [
+    { op: 'eq', label: __('es') },
+    { op: 'neq', label: __('no es') },
+    { op: 'contains', label: __('contiene') },
+    { op: 'not_contains', label: __('no contiene') },
+    { op: 'in', label: __('es alguno de') },
+    { op: 'nin', label: __('no es ninguno de') },
+    { op: 'is_null', label: __('está vacío') },
+    { op: 'is_not_null', label: __('tiene valor') },
+    { op: 'gt', label: __('es mayor que') },
+    { op: 'lt', label: __('es menor que') },
+];
+
+function isPayloadRule(slug: string): boolean {
+    return slug.startsWith(PAYLOAD_PREFIX);
+}
+
+/** En «es alguno de» el valor es una lista: se escribe separado por comas. */
+function payloadValueText(value: unknown): string {
+    if (Array.isArray(value)) return value.map((v) => String(v)).join(', ');
+    return value === null || value === undefined ? '' : String(value);
+}
+
+function payloadValueFrom(op: FilterOperator, text: string): unknown {
+    if (op === 'in' || op === 'nin') {
+        return text
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s !== '');
+    }
+    return text;
+}
 
 /**
  * Una condición individual con operador. Reemplaza al viejo shape
@@ -92,12 +137,21 @@ export function ConditionEditor({
     helperText,
 }: ConditionEditorProps): JSX.Element {
     const [rows, setRows] = useState<ConditionRule[]>(() => rulesFromValue(value));
+    // v0.1.399 — en un webhook entrante, las condiciones también miran el JSON
+    // que llegó (con las rutas de la última captura como sugerencias).
+    const flow = useAutomationFlow();
+    const isWebhook = flow?.triggerType === 'incoming_webhook';
+    const automationId = useContext(AutomationEditorAutomationContext);
+    const captures = useHookCaptures(isWebhook ? automationId : undefined, false);
+    const suggestions = isWebhook ? payloadPaths(captures.data?.[0]?.payload ?? {}) : [];
+    const datalistId = `imcrm-payload-paths-${automationId ?? 'new'}`;
 
     const commit = (next: ConditionRule[]): void => {
         setRows(next);
         // Solo persistimos las filas con slug válido (descarta las
-        // recién añadidas-en-progreso del buffer local).
-        onChange(next.filter((r) => r.slug !== ''));
+        // recién añadidas-en-progreso del buffer local, y un dato del JSON
+        // sin ruta todavía).
+        onChange(next.filter((r) => r.slug !== '' && r.slug !== PAYLOAD_PREFIX));
     };
 
     const updateRow = (idx: number, patch: Partial<ConditionRule>): void => {
@@ -134,7 +188,26 @@ export function ConditionEditor({
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">{helperText}</p>
             )}
 
+            {isWebhook && suggestions.length > 0 && (
+                <datalist id={datalistId}>
+                    {suggestions.map((p) => (
+                        <option key={p} value={p} />
+                    ))}
+                </datalist>
+            )}
             {rows.map((rule, i) => {
+                if (isPayloadRule(rule.slug) || (isWebhook && rule.slug === PAYLOAD_PREFIX)) {
+                    return (
+                        <PayloadRuleRow
+                            key={i}
+                            rule={rule}
+                            fields={fields}
+                            datalistId={suggestions.length > 0 ? datalistId : undefined}
+                            onChange={(patch) => updateRow(i, patch)}
+                            onRemove={() => removeRow(i)}
+                        />
+                    );
+                }
                 const field = fields.find((f) => f.slug === rule.slug);
                 const operators = field ? operatorsForType(field.type, field) : [];
                 const isNullary = isNullaryOperator(rule.op);
@@ -152,6 +225,10 @@ export function ConditionEditor({
                                 value={rule.slug}
                                 onChange={(e) => {
                                     const newSlug = e.target.value;
+                                    if (newSlug === PAYLOAD_OPTION) {
+                                        updateRow(i, { slug: PAYLOAD_PREFIX, op: 'eq', value: '' });
+                                        return;
+                                    }
                                     const newField = fields.find((f) => f.slug === newSlug);
                                     const newOps = newField ? operatorsForType(newField.type, newField) : [];
                                     const validOp = newOps.some((o) => o.op === rule.op)
@@ -174,6 +251,7 @@ export function ConditionEditor({
                                             {f.label}
                                         </option>
                                     ))}
+                                {isWebhook && <option value={PAYLOAD_OPTION}>{__('Un dato del JSON del webhook…')}</option>}
                             </Select>
 
                             {field && (
@@ -237,6 +315,100 @@ export function ConditionEditor({
             >
                 <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
                 {addLabel ?? __('Añadir condición')}
+            </Button>
+        </div>
+    );
+}
+
+/** v0.1.399 — fila de una condición sobre un dato del JSON del webhook. */
+function PayloadRuleRow({
+    rule,
+    fields,
+    datalistId,
+    onChange,
+    onRemove,
+}: {
+    rule: ConditionRule;
+    fields: FieldEntity[];
+    datalistId?: string;
+    onChange: (patch: Partial<ConditionRule>) => void;
+    onRemove: () => void;
+}): JSX.Element {
+    const path = rule.slug.slice(PAYLOAD_PREFIX.length);
+    // Texto local: «2, cancelar» se escribe con comas y la lista se arma al vuelo
+    // (si el input mostrara la lista ya armada, la coma recién tipeada se perdería).
+    const [text, setText] = useState(() => payloadValueText(rule.value));
+    const ops = PAYLOAD_OPS.some((o) => o.op === rule.op) ? PAYLOAD_OPS : [...PAYLOAD_OPS, { op: rule.op, label: rule.op }];
+    return (
+        <div
+            className={cn(
+                'imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2',
+                'imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card/50 imcrm-px-2 imcrm-py-2',
+            )}
+            data-testid="condition-payload-row"
+        >
+            <Select
+                value={PAYLOAD_OPTION}
+                onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === PAYLOAD_OPTION) return;
+                    onChange({ slug: v, op: 'eq', value: '' });
+                }}
+                aria-label={__('Campo')}
+                className="imcrm-h-8 imcrm-w-auto imcrm-min-w-[150px]"
+            >
+                <option value={PAYLOAD_OPTION}>{__('Dato del JSON')}</option>
+                {fields
+                    .filter((f) => f.type !== 'relation' && f.type !== 'button')
+                    .map((f) => (
+                        <option key={f.id} value={f.slug}>
+                            {f.label}
+                        </option>
+                    ))}
+            </Select>
+            <div className="imcrm-flex imcrm-min-w-[140px] imcrm-flex-1 imcrm-items-center imcrm-rounded-lg imcrm-border imcrm-border-input imcrm-bg-card imcrm-pl-2">
+                <span className="imcrm-font-mono imcrm-text-xs imcrm-text-muted-foreground">payload.</span>
+                <Input
+                    value={path}
+                    list={datalistId}
+                    placeholder="respuesta"
+                    onChange={(e) => onChange({ slug: `${PAYLOAD_PREFIX}${e.target.value.trim()}` })}
+                    aria-label={__('Ruta del dato en el JSON')}
+                    className="imcrm-h-8 imcrm-border-0 imcrm-pl-0.5 imcrm-font-mono imcrm-text-xs imcrm-shadow-none focus-visible:imcrm-ring-0"
+                    data-testid="condition-payload-path"
+                />
+            </div>
+            <Select
+                value={rule.op}
+                onChange={(e) => {
+                    const op = e.target.value as FilterOperator;
+                    onChange({ op, value: payloadValueFrom(op, text) });
+                }}
+                aria-label={__('Operador')}
+                className="imcrm-h-8 imcrm-w-auto imcrm-min-w-[120px]"
+                data-testid="condition-payload-op"
+            >
+                {ops.map((o) => (
+                    <option key={o.op} value={o.op}>
+                        {o.label}
+                    </option>
+                ))}
+            </Select>
+            {!isNullaryOperator(rule.op) && (
+                <Input
+                    value={text}
+                    placeholder={rule.op === 'in' || rule.op === 'nin' ? __('2, cancelar') : __('Valor')}
+                    onChange={(e) => {
+                        setText(e.target.value);
+                        onChange({ value: payloadValueFrom(rule.op, e.target.value) });
+                    }}
+                    aria-label={__('Valor')}
+                    className="imcrm-h-8 imcrm-min-w-[140px] imcrm-flex-1 imcrm-text-sm"
+                    data-testid="condition-payload-value"
+                />
+            )}
+            <Button type="button" variant="ghost" size="icon" onClick={onRemove} aria-label={__('Eliminar condición')} className="imcrm-shrink-0">
+                <Trash2 className="imcrm-h-4 imcrm-w-4" />
             </Button>
         </div>
     );

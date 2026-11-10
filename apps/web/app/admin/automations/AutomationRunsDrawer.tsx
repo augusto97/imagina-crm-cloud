@@ -206,6 +206,7 @@ const ACTION_LABELS: Record<string, string> = {
     call_webhook: __('Llamar webhook'),
     connector_action: __('Acción de una app conectada'),
     update_field: __('Actualizar campo'),
+    webhook_record: __('Webhook entrante'),
     create_record: __('Crear registro'),
     generate_pdf: __('Generar PDF'),
     create_subtasks_from_template: __('Crear subtareas desde una plantilla'),

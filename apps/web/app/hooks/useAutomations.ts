@@ -116,6 +116,16 @@ export function useActionCatalog() {
 export interface HookCaptureEntity {
     payload: Record<string, unknown>;
     received_at: string;
+    /** v0.1.399 — qué haría el disparador con el registro si este dato llegara ahora. */
+    match?: { kind: 'none' | 'found' | 'create' | 'not_found' | 'error'; message: string; record_id?: number | null; title?: string | null };
+}
+
+/** v0.1.399 — la búsqueda que se está editando (sin guardar), para la vista previa de las capturas. */
+export interface HookMatchPreview {
+    record_mode: string;
+    match_by: 'record_id' | 'field';
+    match_field?: string;
+    match_key?: string;
 }
 
 /**
@@ -123,12 +133,17 @@ export interface HookCaptureEntity {
  * pública). Con `listening` activo, el panel "Probar" del editor sondea cada
  * 3.5 s para mostrar el payload apenas llega (estilo Zapier).
  */
-export function useHookCaptures(automationId: number | undefined, listening: boolean) {
+export function useHookCaptures(automationId: number | undefined, listening: boolean, preview?: HookMatchPreview) {
+    const qs = preview
+        ? `?${new URLSearchParams(
+              Object.entries(preview).filter((e): e is [string, string] => typeof e[1] === 'string' && e[1] !== ''),
+          ).toString()}`
+        : '';
     return useQuery({
-        queryKey: [...automationsKeys.all, 'hook-captures', String(automationId ?? 0)] as const,
+        queryKey: [...automationsKeys.all, 'hook-captures', String(automationId ?? 0), qs] as const,
         queryFn: async () => {
             const res = await api.get<HookCaptureEntity[]>(
-                `/automations/${automationId}/hook-captures`,
+                `/automations/${automationId}/hook-captures${qs}`,
             );
             return res.data;
         },
@@ -209,6 +224,39 @@ export function useAutomationTestRun(listId: string | number) {
         mutationFn: async (input: AutomationTestRunInput) => {
             const res = await api.post<AutomationTestRunResult>(`/lists/${listId}/automations/test-run`, input);
             return res.data;
+        },
+    });
+}
+
+/** v0.1.399 — el secreto opcional del webhook entrante (sólo se ve completo al crearlo). */
+export function useHookSecret(automationId: number | undefined) {
+    return useQuery({
+        queryKey: [...automationsKeys.all, 'hook-secret', String(automationId ?? 0)] as const,
+        queryFn: async () => (await api.get<{ enabled: boolean; hint: string | null }>(`/automations/${automationId}/hook-secret`)).data,
+        enabled: automationId !== undefined && automationId > 0,
+        retry: false,
+    });
+}
+
+export function useSetHookSecret(automationId: number | undefined) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (secret?: string) =>
+            (await api.post<{ secret: string; hint: string }>(`/automations/${automationId}/hook-secret`, secret ? { secret } : {})).data,
+        onSuccess: (data) => {
+            qc.setQueryData([...automationsKeys.all, 'hook-secret', String(automationId ?? 0)], { enabled: true, hint: data.hint });
+        },
+    });
+}
+
+export function useClearHookSecret(automationId: number | undefined) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async () => {
+            await api.delete(`/automations/${automationId}/hook-secret`);
+        },
+        onSuccess: () => {
+            qc.setQueryData([...automationsKeys.all, 'hook-secret', String(automationId ?? 0)], { enabled: false, hint: null });
         },
     });
 }

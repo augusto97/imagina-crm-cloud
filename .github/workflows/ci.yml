@@ -43,6 +43,11 @@ jobs:
           --filter=@imagina-base/api
           && pnpm turbo run test --filter=@imagina-base/shared
 
+      # v0.1.399 — un ciclo de imports deja a Nest inyectando `undefined` en
+      # silencio cuando el parámetro es @Optional(): se revisa sobre el build.
+      - name: Inyección de dependencias de la API
+        run: node apps/api/scripts/check-di.cjs
+
   api-tests:
     name: pruebas de la API (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest

@@ -23,7 +23,7 @@ import { ConditionEditor, type ConditionRule } from './ConditionEditor';
 import { FilterOptionPicker } from '../records/FilterOptionPicker';
 import { extractFieldOptions } from '../records/fieldOptions';
 import { useFields } from '@/hooks/useFields';
-import { useHookCaptures } from '@/hooks/useAutomations';
+import { IncomingWebhookConfig } from './IncomingWebhookConfig';
 import { useLists } from '@/hooks/useLists';
 import { api } from '@/lib/api';
 import { __, sprintf } from '@/lib/i18n';
@@ -60,7 +60,7 @@ import type {
     TriggerConfig,
 } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
-import { meetingActionKind, teamIdsOf, type WebhookTestResult } from '@imagina-base/shared';
+import { meetingActionKind, readWebhookRecordConfig, teamIdsOf, writeWebhookRecordConfig, type WebhookTestResult } from '@imagina-base/shared';
 import { MeetingSaveFields, MeetingScopeNotice } from './MeetingActionExtras';
 import { TeamPicker } from '@/components/fields/TeamPicker';
 import { ActionTypeSelect } from './ActionTypeSelect';
@@ -103,12 +103,9 @@ export function useAutomationListId(): number | undefined {
     return useContext(AutomationEditorListContext);
 }
 
-/**
- * v0.1.111 — id de la automatización que se está editando (undefined en un
- * alta sin guardar). Lo setea `AutomationEditorPage`; lo consume el panel
- * "Probar el webhook" para leer las capturas de prueba del backend.
- */
-export const AutomationEditorAutomationContext = createContext<number | undefined>(undefined);
+// v0.1.111 — id de la automatización que se está editando (vive en
+// `flowContext.tsx` desde v0.1.399: también lo usan las condiciones).
+export { AutomationEditorAutomationContext } from './flowContext';
 
 export interface AutomationFormState {
     name: string;
@@ -178,6 +175,9 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
     // backend rota la URL y los sistemas externos quedan apuntando a un 404.
     // (Regenerar = mandar el config SIN token a propósito.)
     if (typeof c.webhook_token === 'string' && c.webhook_token !== '') out.webhook_token = c.webhook_token;
+    // v0.1.399 — qué hace el webhook con el registro (modo, búsqueda, clave).
+    // Sin esto, guardar desde el editor lo dejaba en «Nada».
+    if (typeof c.record_mode === 'string' && c.record_mode !== '') Object.assign(out, writeWebhookRecordConfig(readWebhookRecordConfig(c)));
     // form_submitted (v0.1.275): sólo un formulario; sin él, cualquiera.
     if (typeof c.form_id === 'number' && c.form_id > 0) out.form_id = c.form_id;
     // v0.1.386 — «sólo si la página contiene…» / «y no contiene…».
@@ -587,201 +587,6 @@ function FormSubmittedConfig({
                     {__('Varias palabras separadas por coma: alcanza con que la dirección tenga una (sin importar mayúsculas ni tildes). Vacío = cualquier página. La página es la de tu sitio donde estaba el formulario, o el enlace directo si lo abrieron así. Variables: {{formulario.pagina}} y {{formulario.llego_desde}}.')}
                 </p>
             </div>
-        </div>
-    );
-}
-
-/**
- * v0.1.110 — Webhook ENTRANTE: muestra la URL pública única (token opaco
- * generado por el backend al guardar) + copiar + regenerar, y explica cómo
- * viaja el payload a condiciones y merge tags.
- */
-function IncomingWebhookConfig({
-    config,
-    onChange,
-    fields,
-}: {
-    config: TriggerConfig;
-    onChange: (next: TriggerConfig) => void;
-    fields: FieldEntity[];
-}): JSX.Element {
-    const token = typeof config.webhook_token === 'string' ? config.webhook_token : '';
-    const url = token !== '' ? `${window.location.origin}/api/v1/public/hooks/${token}` : '';
-    const [copied, setCopied] = useState(false);
-    const slugs = fields.slice(0, 4).map((f) => `"${f.slug}"`).join(', ');
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3">
-            <Label>{__('URL pública del webhook')}</Label>
-            {url !== '' ? (
-                <>
-                    <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                        <Input readOnly value={url} className="imcrm-flex-1 imcrm-font-mono imcrm-text-xs" aria-label={__('URL del webhook')} />
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                                void navigator.clipboard?.writeText(url).then(() => {
-                                    setCopied(true);
-                                    window.setTimeout(() => setCopied(false), 1500);
-                                });
-                            }}
-                        >
-                            {copied ? __('¡Copiada!') : __('Copiar')}
-                        </Button>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={() => onChange({ ...config, webhook_token: '' })}
-                        className="imcrm-self-start imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-destructive"
-                    >
-                        {__('Regenerar URL (la actual deja de funcionar al guardar)')}
-                    </button>
-                </>
-            ) : (
-                <p className="imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-bg-muted/30 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Guarda la automatización para generar la URL pública única.')}
-                </p>
-            )}
-            <p className="imcrm-text-xs imcrm-leading-relaxed imcrm-text-muted-foreground">
-                {__('Envía los datos (en formato JSON, por POST) a esa URL desde un formulario u otra plataforma. Los datos cuyo nombre coincida con el nombre interno de un campo de esta lista')}
-                {slugs !== '' ? ` (${slugs}…)` : ''}
-                {__(' se usan en las condiciones y como variables {{campo}}; el resto queda disponible como {{payload.nombre}}.')}
-            </p>
-            {token !== '' && <WebhookTestPanel fields={fields} />}
-        </div>
-    );
-}
-
-/** Fila aplanada de un payload capturado: path con puntos + preview del valor. */
-interface FlatEntry {
-    path: string;
-    value: string;
-}
-
-function flattenPayload(value: unknown, prefix: string, out: FlatEntry[]): void {
-    if (out.length >= 40) return;
-    if (value !== null && typeof value === 'object') {
-        const entries = Array.isArray(value)
-            ? value.map((v, i) => [String(i), v] as const)
-            : Object.entries(value as Record<string, unknown>);
-        if (entries.length === 0) {
-            out.push({ path: prefix, value: Array.isArray(value) ? '[]' : '{}' });
-            return;
-        }
-        for (const [k, v] of entries) {
-            flattenPayload(v, prefix === '' ? k : `${prefix}.${k}`, out);
-        }
-        return;
-    }
-    const s = value === null ? 'null' : String(value);
-    out.push({ path: prefix, value: s.length > 60 ? `${s.slice(0, 60)}…` : s });
-}
-
-function relativeTime(iso: string): string {
-    const diffS = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
-    if (diffS < 60) return __('hace segundos');
-    if (diffS < 3600) return `${__('hace')} ${Math.round(diffS / 60)} min`;
-    return `${__('hace')} ${Math.round(diffS / 3600)} h`;
-}
-
-/**
- * v0.1.111 — "Probar el webhook": muestra el ÚLTIMO payload recibido en la
- * URL pública (capturas de 24h en el backend) aplanado clave por clave, con
- * el merge tag copiable de cada una y el match contra los campos de la lista
- * (estilo "test trigger" de Zapier). "Escuchar" sondea cada 3.5 s para que el
- * dato aparezca apenas el sistema externo hace el POST de prueba.
- */
-function WebhookTestPanel({ fields }: { fields: FieldEntity[] }): JSX.Element | null {
-    const automationId = useContext(AutomationEditorAutomationContext);
-    const [listening, setListening] = useState(false);
-    const [copiedTag, setCopiedTag] = useState('');
-    const captures = useHookCaptures(automationId, listening);
-
-    if (automationId === undefined) return null;
-
-    const latest = captures.data?.[0];
-    const rows: FlatEntry[] = [];
-    if (latest) flattenPayload(latest.payload, '', rows);
-    const bySlug = new Map(fields.map((f) => [f.slug, f]));
-
-    const copyTag = (tag: string): void => {
-        void navigator.clipboard?.writeText(tag).then(() => {
-            setCopiedTag(tag);
-            window.setTimeout(() => setCopiedTag(''), 1500);
-        });
-    };
-
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/20 imcrm-p-3" data-testid="webhook-test-panel">
-            <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
-                <span className="imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                    {__('Probar el webhook')}
-                </span>
-                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
-                    {listening && (
-                        <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-text-muted-foreground">
-                            <span className="imcrm-h-2 imcrm-w-2 imcrm-animate-pulse imcrm-rounded-full imcrm-bg-primary" />
-                            {__('Escuchando…')}
-                        </span>
-                    )}
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                            if (!listening) void captures.refetch();
-                            setListening((v) => !v);
-                        }}
-                    >
-                        {listening ? __('Detener') : __('Escuchar datos de prueba')}
-                    </Button>
-                </div>
-            </div>
-            {latest === undefined ? (
-                <p className="imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Todavía no llegó ningún dato. Toca "Escuchar datos de prueba" y envia un POST a la URL de arriba desde tu formulario u otra plataforma — el payload va a aparecer aquí para que veas qué llega y cómo mapearlo.')}
-                </p>
-            ) : (
-                <>
-                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {__('Último dato recibido')} {relativeTime(latest.received_at)}
-                        {(captures.data?.length ?? 0) > 1 ? ` · ${captures.data!.length} ${__('capturas en 24 h')}` : ''}
-                        {' — '}
-                        {__('toca un tag para copiarlo y usarlo en las acciones.')}
-                    </p>
-                    <div className="imcrm-flex imcrm-flex-col imcrm-divide-y imcrm-divide-border imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card">
-                        {rows.map((row) => {
-                            const field = row.path.includes('.') ? undefined : bySlug.get(row.path);
-                            const tag = field !== undefined ? `{{${row.path}}}` : `{{payload.${row.path}}}`;
-                            return (
-                                <div key={row.path} className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-px-2.5 imcrm-py-1.5">
-                                    <div className="imcrm-min-w-0 imcrm-flex-1">
-                                        <span className="imcrm-block imcrm-truncate imcrm-font-mono imcrm-text-xs imcrm-text-foreground">{row.path}</span>
-                                        <span className="imcrm-block imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">{row.value}</span>
-                                    </div>
-                                    {field !== undefined && (
-                                        <Badge variant="secondary" className="imcrm-shrink-0 imcrm-text-[10px]">
-                                            {__('campo')} «{field.label}»
-                                        </Badge>
-                                    )}
-                                    <button
-                                        type="button"
-                                        onClick={() => copyTag(tag)}
-                                        title={__('Copiar variable')}
-                                        className="imcrm-shrink-0 imcrm-rounded imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-1.5 imcrm-py-0.5 imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-foreground"
-                                    >
-                                        {copiedTag === tag ? __('¡Copiado!') : tag}
-                                    </button>
-                                </div>
-                            );
-                        })}
-                        {rows.length === 0 && (
-                            <p className="imcrm-px-2.5 imcrm-py-1.5 imcrm-text-xs imcrm-text-muted-foreground">{__('El payload llegó vacío.')}</p>
-                        )}
-                    </div>
-                </>
-            )}
         </div>
     );
 }
@@ -2793,7 +2598,7 @@ function CallWebhookConfig({
             {hasBody && !showRaw && !rawOnly && (
                 <KeyValueEditor
                     label={__('Cuerpo — datos que pide la API')}
-                    hint={__('Una fila por dato. El valor acepta variables del registro.')}
+                    hint={__('Una fila por dato. El valor acepta variables del registro; {{record.id}} es su id (mándalo para que el otro sistema te lo devuelva y un «Webhook entrante» encuentre este registro).')}
                     rows={bodyRows}
                     onChange={(next) => set({ body_params: next })}
                     fields={fields}
