@@ -63,7 +63,9 @@ try {
     embedded = true;
 }
 /** v0.1.369 — Abierto en la ventana o el panel de embed.js: ahí «Sin marco» no aplica. */
-const inPopup = embedded && window.name === 'imagina-popup';
+/** v0.1.394 (ADR-S99) — Abierto en el panel de un widget de contacto (como una ventana: sin «Sin marco»). */
+const inWidget = embedded && window.name === 'imagina-widget';
+const inPopup = embedded && (window.name === 'imagina-popup' || inWidget);
 /**
  * v0.1.381 — La demostración de «Compartir» (dentro de la app): el formulario
  * se ve y se usa como de verdad, pero nada se envía, no cuenta en las
@@ -88,6 +90,10 @@ let meta: PublicFormMeta | null = BOOT.meta;
 // enviar, convierte el aviso en un evento DEL SITIO (Tag Manager, Google Ads,
 // Meta). Sin ese script (un iframe pegado solo), se sigue como antes.
 let hostAttribution: AttributionData | null = null;
+/** v0.1.394 — De qué widget y de qué botón viene (lo dice el widget que lo abrió). */
+let widgetCtx: { token: string; button: string; page_title?: string } | null = null;
+/** v0.1.394 — «WhatsApp con datos primero»: el enlace que devolvió el servidor al enviar. */
+let finalWhatsapp: { url: string; label: string } | null = null;
 /** El origen del sitio que insertó el formulario (lo dice su primer mensaje). */
 let hostOrigin: string | null = null;
 const conversionAcks = new Set<string>();
@@ -95,10 +101,11 @@ const contextWaiters: Array<() => void> = [];
 if (embedded && !BOOT.preview && !DEMO) {
     window.addEventListener('message', (e: MessageEvent) => {
         if (e.source !== parent) return;
-        const d = e.data as { type?: string; attribution?: unknown; ref?: string } | null;
+        const d = e.data as { type?: string; attribution?: unknown; ref?: string; widget?: unknown } | null;
         if (!d || typeof d !== 'object') return;
         if (d.type === 'imb-context') {
             hostAttribution = cleanAttribution(d.attribution);
+            widgetCtx = cleanWidgetCtx(d.widget);
             hostOrigin = typeof e.origin === 'string' && /^https?:\/\//.test(e.origin) ? e.origin : null;
             contextWaiters.splice(0).forEach((fn) => fn());
         } else if (d.type === 'imb-conversion-ack' && typeof d.ref === 'string') {
@@ -110,6 +117,17 @@ if (embedded && !BOOT.preview && !DEMO) {
     } catch {
         // nada
     }
+}
+
+/** v0.1.394 — Sólo la forma esperada (el servidor igual lo valida contra el widget de verdad). */
+function cleanWidgetCtx(raw: unknown): { token: string; button: string; page_title?: string } | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const w = raw as { token?: unknown; button?: unknown; page_title?: unknown };
+    if (typeof w.token !== 'string' || !/^[A-Za-z0-9_-]{16,64}$/.test(w.token)) return null;
+    if (typeof w.button !== 'string' || !/^[a-z0-9]{1,16}$/.test(w.button)) return null;
+    const out: { token: string; button: string; page_title?: string } = { token: w.token, button: w.button };
+    if (typeof w.page_title === 'string' && w.page_title.trim()) out.page_title = w.page_title.slice(0, 300);
+    return out;
 }
 
 /**
@@ -2104,6 +2122,7 @@ function applyBodyClasses(): void {
     // Insertado de verdad, o la vista previa «En tu sitio» del constructor.
     const asEmbed = (embedded && !BOOT.preview) || (BOOT.preview && previewEmbed);
     if (asEmbed) cls.push('ib-embedded');
+    if (asEmbed && inWidget) cls.push('ib-in-widget');
     const bare = DEMO_STYLE === 'bare' ? true : DEMO_STYLE === 'card' ? false : !!v?.embed_bare;
     if (asEmbed && bare && !inPopup) cls.push('ib-embed-bare');
     else if (asEmbed && v?.embed_background) cls.push('ib-embed-bg');
@@ -2429,6 +2448,8 @@ function submit(hpValue: string): void {
     if (!editing()) {
         const a = attributionNow();
         if (Object.keys(a).length) body.attribution = a;
+        // v0.1.394 — abierto desde un widget de contacto.
+        if (widgetCtx) body.widget = widgetCtx;
     }
     readyStamp()
         .then((stamp) => {
@@ -2455,6 +2476,7 @@ function submit(hpValue: string): void {
                 payment_error?: string;
                 subscription?: SubResult | null;
                 subscription_error?: string;
+                whatsapp?: { url: string; label: string } | null;
                 code?: string;
                 data?: { errors?: Record<string, string> };
             };
@@ -2474,7 +2496,9 @@ function submit(hpValue: string): void {
                 const conv = conversionEvent(b, b.ending_id ?? null);
                 // v0.1.375 — en el enlace directo, las etiquetas de la empresa.
                 pixelsSettled = firePixels(conv);
-                if (b.redirect_url && !b.pending_confirmation && !b.payment && !b.subscription) return goTo(b.redirect_url, conv, b.ending_id ?? null);
+                // v0.1.394 — «WhatsApp con datos primero»: la pantalla final lleva a WhatsApp (gana a la página de gracias).
+                if (b.whatsapp && /^https:\/\/wa\.me\//.test(b.whatsapp.url)) finalWhatsapp = { url: b.whatsapp.url, label: b.whatsapp.label || 'Continuar en WhatsApp' };
+                if (b.redirect_url && !b.pending_confirmation && !b.payment && !b.subscription && !finalWhatsapp) return goTo(b.redirect_url, conv, b.ending_id ?? null);
                 postConversion(conv, null, 0);
                 if (b.pending_confirmation) return checkEmail(b.email_hint);
                 // v0.1.361 — cobrar al enviar: a pagar (o el botón en la pantalla de gracias).
@@ -2669,13 +2693,33 @@ function focusFirstError(): void {
 function finalScreen(kids: HTMLElement[], testid?: string): void {
     const r = root!;
     r.textContent = '';
+    if (finalWhatsapp) kids.push(...whatsappNodes(finalWhatsapp));
     r.appendChild(el('div', { cls: 'ib-done', 'data-testid': testid }, kids));
+    if (finalWhatsapp) openWhatsappOnce(finalWhatsapp.url);
     try {
         parent.postMessage({ type: 'imb-form-submitted' }, '*');
     } catch {
         // nada
     }
     reportHeight();
+}
+
+/** v0.1.394 — El botón para seguir en WhatsApp (por si el navegador no abrió la pestaña solo). */
+function whatsappNodes(w: { url: string; label: string }): HTMLElement[] {
+    const a = el('a', { cls: 'ib-btn ib-btn-primary ib-btn-whatsapp', href: w.url, target: '_blank', rel: 'noopener', 'data-testid': 'form-whatsapp', text: w.label });
+    return [el('p', { cls: 'ib-wa-note', text: 'Sigue la conversación con nosotros por WhatsApp.' }), a];
+}
+
+let whatsappOpened = false;
+/** Lo intenta UNA vez (el clic de «Enviar» todavía cuenta como gesto); si el navegador lo frena, queda el botón. */
+function openWhatsappOnce(url: string): void {
+    if (whatsappOpened || DEMO || BOOT.preview) return;
+    whatsappOpened = true;
+    try {
+        window.open(url, '_blank', 'noopener');
+    } catch {
+        // queda el botón
+    }
 }
 
 /** v0.1.356 — Lo que muestra una pantalla final (la que corresponde, o el «¡Gracias!» de siempre). */

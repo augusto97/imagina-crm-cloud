@@ -259,7 +259,9 @@ const CLIENT_JS = String.raw`
   var embedded = false;
   try { embedded = window.self !== window.top; } catch (e) { embedded = true; }
   // v0.1.369 — en la ventana o el panel de embed.js, «Sin marco» no aplica.
-  var inPopup = embedded && window.name === 'imagina-popup';
+  // v0.1.394 — el panel de un widget de contacto cuenta como ventana.
+  var inWidget = embedded && window.name === 'imagina-widget';
+  var inPopup = embedded && (window.name === 'imagina-popup' || inWidget);
   var PREVIEW = MODE === 'preview';
   // v0.1.381 — La demostración de «Compartir» (dentro de la app): la agenda se
   // ve y se usa como de verdad, pero no se agenda nada ni se manda el código por
@@ -441,6 +443,7 @@ const CLIENT_JS = String.raw`
     var v = view(), d = (meta && meta.display) || {};
     var cls = ['ib-body'].concat(v && v.classes ? v.classes : []);
     if (embedded && !PREVIEW) cls.push('ib-embedded');
+    if (embedded && !PREVIEW && inWidget) cls.push('ib-in-widget');
     var bare = DEMO_STYLE === 'bare' ? true : DEMO_STYLE === 'card' ? false : !!(v && v.embed_bare);
     if (embedded && !PREVIEW && !inPopup && bare) cls.push('ib-embed-bare');
     else if (embedded && !PREVIEW && v && v.embed_background) cls.push('ib-embed-bg');

@@ -419,15 +419,20 @@ export const FORM_EMBED_JS = String.raw`(function () {
   window.addEventListener('message', function (e) {
     var d = e.data;
     if (!d || typeof d !== 'object' || typeof d.type !== 'string') return;
-    var frames = document.querySelectorAll('iframe[data-imagina-form]');
+    var frames = document.querySelectorAll('iframe[data-imagina-form],iframe[data-imagina-widget-frame]');
     for (var i = 0; i < frames.length; i++) {
       var f = frames[i];
       if (f.contentWindow !== e.source) continue;
       var origin;
       try { origin = new URL(f.src, location.href).origin; } catch (x) { return; }
       if (e.origin !== origin) return;
+      var isWidget = f.getAttribute('data-imagina-widget-frame') !== null;
       if (d.type === 'imb-hello') {
-        try { f.contentWindow.postMessage({ type: 'imb-context', attribution: context() }, origin); } catch (x) {}
+        var hello = { type: 'imb-context', attribution: context() };
+        if (isWidget) hello.host = hostInfo();
+        try { f.contentWindow.postMessage(hello, origin); } catch (x) {}
+      } else if (isWidget && d.type === 'imb-w-size') {
+        placeWidget(f, d);
       } else if (d.type === 'imb-conversion' && d.event && typeof d.event === 'object') {
         var sid = String(d.event.submission_id || '');
         var redirect = typeof d.redirect === 'string' && /^https:\/\//i.test(d.redirect) ? d.redirect : null;
@@ -644,8 +649,102 @@ export const FORM_EMBED_JS = String.raw`(function () {
     b.setAttribute('aria-haspopup', 'dialog');
     document.body.appendChild(b);
   }
+  // ───────────── Widget de contacto (v0.1.394, ADR-S99) ─────────────
+  // UN marco en la esquina con la página del widget (el botón, el menú y el
+  // panel viven ahí, con su propia CSP: los estilos del sitio no lo rompen).
+  // El widget dice qué tamaño necesita y esto acomoda el marco; abierto en el
+  // celular, ocupa la pantalla. Se crea cuando la página terminó de cargar,
+  // para no competir con lo que el sitio muestra primero.
+  var widgetFrames = [];
+  function safeWidgetUrl(raw) {
+    if (!raw) return null;
+    try {
+      var u = new URL(raw, location.href);
+      if (u.protocol !== 'https:' && u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') return null;
+      if (!origins[u.origin]) return null;
+      if (!/^\/api\/v1\/public\/w\/[A-Za-z0-9_-]{16,64}$/.test(u.pathname)) return null;
+      return u.origin + u.pathname;
+    } catch (e) { return null; }
+  }
+  function hostInfo() {
+    var vv = window.visualViewport;
+    return {
+      url: String(location.href).split('#')[0].slice(0, 1000),
+      title: String(document.title || '').slice(0, 200),
+      width: Math.round(vv ? vv.width : window.innerWidth),
+      height: Math.round(vv ? vv.height : window.innerHeight)
+    };
+  }
+  var lockedOverflow = null;
+  function placeWidget(f, d) {
+    var full = d.full === true, bar = d.bar === true;
+    var w = typeof d.w === 'number' && d.w >= 0 ? Math.min(Math.ceil(d.w), 4000) : 0;
+    var h = typeof d.h === 'number' && d.h >= 0 ? Math.min(Math.ceil(d.h), 4000) : 0;
+    var pad = typeof d.pad === 'number' && d.pad >= 0 && d.pad < 100 ? d.pad : 0;
+    var ox = typeof d.ox === 'number' && d.ox >= 0 && d.ox < 400 ? d.ox : 20;
+    var oy = typeof d.oy === 'number' && d.oy >= 0 && d.oy < 400 ? d.oy : 20;
+    var left = d.side === 'left';
+    if (full) {
+      css(f, { top: '0', left: '0', right: '0', bottom: '0', width: '100%', height: '100%' });
+    } else if (bar) {
+      css(f, { top: 'auto', left: '0', right: '0', bottom: '0', width: '100%', height: h + 'px' });
+    } else {
+      css(f, { top: 'auto', bottom: Math.max(0, oy - pad) + 'px', width: w + 'px', height: h + 'px' });
+      f.style[left ? 'left' : 'right'] = Math.max(0, ox - pad) + 'px';
+      f.style[left ? 'right' : 'left'] = 'auto';
+    }
+    f.setAttribute('data-imagina-open', d.open === true ? '1' : '0');
+    // A pantalla completa (celular) la página de atrás no se mueve.
+    if (full && lockedOverflow === null) { lockedOverflow = document.documentElement.style.overflow; document.documentElement.style.overflow = 'hidden'; }
+    if (!full && lockedOverflow !== null) { document.documentElement.style.overflow = lockedOverflow; lockedOverflow = null; }
+  }
+  var hostTimer = null;
+  function sendHost() {
+    hostTimer = null;
+    for (var i = 0; i < widgetFrames.length; i++) {
+      var w = widgetFrames[i];
+      try { w.frame.contentWindow.postMessage({ type: 'imb-w-host', host: hostInfo() }, w.origin); } catch (e) {}
+    }
+  }
+  function onHostResize() { if (!hostTimer) hostTimer = setTimeout(sendHost, 150); }
+  function widget(me) {
+    var url = safeWidgetUrl(me && me.getAttribute('data-imagina-widget'));
+    if (!url) return;
+    for (var i = 0; i < widgetFrames.length; i++) if (widgetFrames[i].url === url) return;
+    var f = document.createElement('iframe');
+    f.src = url;
+    f.title = me.getAttribute('data-imagina-title') || 'Contacto';
+    f.setAttribute('data-imagina-widget-frame', '');
+    f.setAttribute('allow', 'payment; clipboard-write');
+    f.setAttribute('allowtransparency', 'true');
+    css(f, {
+      position: 'fixed', bottom: '0', right: '0', width: '0', height: '0', border: '0', margin: '0', padding: '0',
+      zIndex: '2147482998', background: 'transparent', colorScheme: 'normal', display: 'block',
+      maxWidth: '100vw', maxHeight: '100vh', overflow: 'hidden'
+    });
+    widgetFrames.push({ frame: f, url: url, origin: new URL(url).origin });
+    document.body.appendChild(f);
+    if (widgetFrames.length === 1) {
+      window.addEventListener('resize', onHostResize);
+      if (window.visualViewport) window.visualViewport.addEventListener('resize', onHostResize);
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        for (var j = 0; j < widgetFrames.length; j++) {
+          var w = widgetFrames[j];
+          if (w.frame.getAttribute('data-imagina-open') !== '1') continue;
+          try { w.frame.contentWindow.postMessage({ type: 'imb-w-close' }, w.origin); } catch (x) {}
+        }
+      });
+    }
+  }
+  function whenLoaded(fn) {
+    if (document.readyState === 'complete') setTimeout(fn, 0);
+    else window.addEventListener('load', function () { setTimeout(fn, 0); });
+  }
+
   function add(script) {
     try { if (script && script.src) origins[new URL(script.src, location.href).origin] = true; } catch (e) {}
+    if (script && script.getAttribute('data-imagina-widget')) { whenLoaded(function () { widget(script); }); return; }
     if (document.body) floating(script);
     else document.addEventListener('DOMContentLoaded', function () { floating(script); });
   }

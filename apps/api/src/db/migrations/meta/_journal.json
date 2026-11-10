@@ -792,6 +792,13 @@
       "when": 1784200001900,
       "tag": "0112_periodic_scale",
       "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1784200002000,
+      "tag": "0113_contact_widgets",
+      "breakpoints": true
     }
   ]
 }

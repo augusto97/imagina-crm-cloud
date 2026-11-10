@@ -38,6 +38,12 @@ export type AuditAction =
     | 'booking.unpublish'
     | 'booking.regenerate_link'
     | 'booking.delete'
+    // v0.1.394 (ADR-S99) — widgets de contacto (el sitio de la empresa los muestra).
+    | 'widget.create'
+    | 'widget.publish'
+    | 'widget.unpublish'
+    | 'widget.regenerate_link'
+    | 'widget.delete'
     // v0.1.353 — aprobar o rechazar una cita por confirmar.
     | 'booking.approve'
     | 'booking.decline'

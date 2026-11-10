@@ -1,0 +1,299 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { contactWidgetConfigSchema, formConfigSchema, type ContactWidgetConfig, type Field } from '@imagina-base/shared';
+import { eq } from 'drizzle-orm';
+import IORedis from 'ioredis';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { ActivityRepository } from '../src/activity/activity.repository';
+import { ActivityService } from '../src/activity/activity.service';
+import { AutomationDispatcher, type TriggerEvent } from '../src/automations/automation-dispatcher.service';
+import { loadEnv } from '../src/config/env';
+import { ContactWidgetsService } from '../src/contact-widgets/contact-widgets.service';
+import { renderWidgetPage, widgetPageCsp } from '../src/contact-widgets/widget-page';
+import { bookingPages, contactWidgets, forms, records, tenants } from '../src/db/schema';
+import { withTenant } from '../src/db/tenant-tx';
+import { FieldsRepository } from '../src/fields/fields.repository';
+import { FieldsService } from '../src/fields/fields.service';
+import { LocalFileStorage } from '../src/files/file-storage';
+import { FilesService } from '../src/files/files.service';
+import { FORM_EMBED_JS } from '../src/forms/form-page';
+import { FormsService } from '../src/forms/forms.service';
+import { ListsRepository } from '../src/lists/lists.repository';
+import { ListsService } from '../src/lists/lists.service';
+import { RealtimeService } from '../src/realtime/realtime.service';
+import { RecordsRepository } from '../src/records/records.repository';
+import { RecordsService } from '../src/records/records.service';
+import { RelationsRepository } from '../src/records/relations.repository';
+import { TenantDb } from '../src/tenancy/tenant-db.service';
+import { startPostgres, startRedis, type TestPg, type TestRedis } from './helpers/containers';
+
+/**
+ * v0.1.394 (ADR-S99) — Widget de contacto: publicar sólo lo que funciona,
+ * lo público sin números de WhatsApp, la redirección a WhatsApp con la página
+ * de donde vino, y «WhatsApp con datos primero» (el registro queda y el envío
+ * devuelve el enlace con el mensaje armado con las respuestas).
+ */
+
+class NoopDispatcher extends AutomationDispatcher {
+    readonly events: TriggerEvent[] = [];
+    override dispatch(event: TriggerEvent): void {
+        this.events.push(event);
+    }
+}
+
+const IP = '203.0.113.90';
+
+describe('v0.1.394 — widget de contacto (Postgres + Redis reales)', () => {
+    let pg: TestPg;
+    let rd: TestRedis;
+    let redis: IORedis;
+    let tenantDb: TenantDb;
+    let lists: ListsService;
+    let fieldsSvc: FieldsService;
+    let files: FilesService;
+    let widgets: ContactWidgetsService;
+    let formsSvc: FormsService;
+    let tenantId: number;
+    let otherTenantId: number;
+    let listId: number;
+    const f: Record<string, Field> = {};
+
+    const stamp = (formId: number): string => {
+        const ts = Date.now() - 10_000;
+        return `${ts}.${files.signParts('formstamp', formId, ts)}`;
+    };
+    const formToken = async (id: number): Promise<string> => {
+        const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(forms).where(eq(forms.id, id)));
+        return row!.token;
+    };
+    const widgetToken = async (tid: number, id: number): Promise<string> => {
+        const [row] = await withTenant(pg.db, tid, (tx) => tx.select().from(contactWidgets).where(eq(contactWidgets.id, id)));
+        return row!.token;
+    };
+    const cfg = (partial: Record<string, unknown>): ContactWidgetConfig => contactWidgetConfigSchema.parse(partial);
+
+    async function leadForm(enabled = true): Promise<{ id: number; token: string }> {
+        const items = [
+            { id: 'qnombre1', type: 'field', field_id: f.nombre!.id, required: true },
+            { id: 'qcelu001', type: 'field', field_id: f.celular!.id, required: true },
+            { id: 'qplan001', type: 'field', field_id: f.plan!.id },
+        ];
+        const dto = await formsSvc.create(tenantId, 0, 'prospectos', { name: 'Datos para WhatsApp', config: formConfigSchema.parse({ items, settings: { title: 'Déjanos tus datos' } }) });
+        if (enabled) await formsSvc.update(tenantId, 'prospectos', dto.id, { enabled: true });
+        return { id: dto.id, token: await formToken(dto.id) };
+    }
+
+    beforeAll(async () => {
+        [pg, rd] = await Promise.all([startPostgres(), startRedis()]);
+        redis = new IORedis(rd.url, { maxRetriesPerRequest: 1 });
+        tenantDb = new TenantDb(pg.db);
+        const rt = new RealtimeService();
+        lists = new ListsService(tenantDb, new ListsRepository(), rt);
+        fieldsSvc = new FieldsService(tenantDb, new FieldsRepository(), lists, rt);
+        const dispatcher = new NoopDispatcher();
+        const recs = new RecordsService(
+            tenantDb,
+            new RecordsRepository(),
+            lists,
+            fieldsSvc,
+            rt,
+            new ActivityService(tenantDb, new ActivityRepository(), lists),
+            dispatcher,
+            new RelationsRepository(),
+        );
+        const env = loadEnv({ FILES_SIGNING_SECRET: 'widget-secret', APP_BASE_URL: 'https://app.test' });
+        files = new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imb-widget-'))), env);
+        widgets = new ContactWidgetsService(pg.db, tenantDb, files);
+        // FormsService con el widget (el último @Optional).
+        const none = undefined;
+        formsSvc = new FormsService(pg.db, tenantDb, lists, fieldsSvc, recs, files, redis as never, dispatcher, env, none, none, none, none, none, none, none, none, none, none, none, none, widgets);
+        formsSvc.onModuleInit();
+
+        const [t] = await pg.db.insert(tenants).values({ slug: 'acme-w', name: 'Acme', settings: { branding: { primary_color: '#7c3aed', app_name: 'Acme Store' } } }).returning();
+        tenantId = t!.id;
+        const [o] = await pg.db.insert(tenants).values({ slug: 'otra-w', name: 'Otra' }).returning();
+        otherTenantId = o!.id;
+        listId = (await lists.create(tenantId, { name: 'Prospectos' })).id;
+        const mk = async (slug: string, label: string, type: string, config?: Record<string, unknown>): Promise<void> => {
+            f[slug] = await fieldsSvc.create(tenantId, 'prospectos', { label, type, slug, ...(config ? { config } : {}) } as never);
+        };
+        await mk('nombre', 'Nombre', 'text');
+        await mk('celular', 'Celular', 'phone');
+        await mk('plan', 'Plan', 'select', { options: [{ value: 'basico', label: 'Básico' }, { value: 'pro', label: 'Pro' }] });
+    });
+
+    afterAll(async () => {
+        formsSvc?.onModuleDestroy();
+        redis?.disconnect();
+        await Promise.all([pg?.stop(), rd?.stop()]);
+    });
+
+    beforeEach(async () => {
+        await redis.flushall();
+        await withTenant(pg.db, tenantId, async (tx) => {
+            await tx.delete(contactWidgets).where(eq(contactWidgets.tenantId, tenantId));
+            await tx.delete(forms).where(eq(forms.tenantId, tenantId));
+            await tx.delete(records).where(eq(records.listId, listId));
+        });
+    });
+
+    it('se crea con WhatsApp, no se publica con problemas y descarta formularios ajenos', async () => {
+        const w = await widgets.create(tenantId, 0, { name: 'Sitio web' });
+        expect(w.enabled).toBe(false);
+        expect(w.config.buttons).toHaveLength(1);
+        expect(w.config.buttons[0]!.type).toBe('whatsapp');
+        expect(w.problems.map((p) => p.message).join(' ')).toMatch(/número de WhatsApp/);
+        await expect(widgets.update(tenantId, w.id, { enabled: true })).rejects.toMatchObject({ response: { code: 'widget_not_ready' } });
+
+        const draft = await leadForm(false);
+        const config = cfg({
+            buttons: [
+                { id: 'wa', type: 'whatsapp', phone: '+57 300 111 2233', message: 'Hola, vengo de {{pagina}}' },
+                { id: 'fm', type: 'form', form_id: draft.id },
+                // Un formulario que no es de esta empresa se descarta al guardar.
+                { id: 'ajeno', type: 'form', form_id: 999_999 },
+            ],
+        });
+        const saved = (await widgets.update(tenantId, w.id, { config })).dto;
+        expect(saved.config.buttons.find((b) => b.id === 'ajeno')!.form_id).toBeNull();
+        expect(saved.problems.some((p) => p.button_id === 'fm' && /no está publicado/.test(p.message))).toBe(true);
+        await expect(widgets.update(tenantId, w.id, { enabled: true })).rejects.toMatchObject({ response: { code: 'widget_not_ready' } });
+
+        await formsSvc.update(tenantId, 'prospectos', draft.id, { enabled: true });
+        const okConfig = cfg({ buttons: config.buttons.filter((b) => b.id !== 'ajeno') });
+        const published = (await widgets.update(tenantId, w.id, { config: okConfig, enabled: true })).dto;
+        expect(published.enabled).toBe(true);
+        expect(published.problems).toEqual([]);
+
+        // Otra empresa no lo ve ni lo toca (RLS + empresa en cada consulta).
+        expect(await widgets.list(otherTenantId)).toEqual([]);
+        await expect(widgets.get(otherTenantId, w.id)).rejects.toMatchObject({ response: { code: 'widget_not_found' } });
+    });
+
+    it('lo público: sólo botones que funcionan, sin el número de WhatsApp, y la redirección con la página', async () => {
+        const lead = await leadForm(true);
+        const [bp] = await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(bookingPages).values({ tenantId, listId, name: 'Citas', token: 'agenda-token-1234567890', enabled: true, config: {} }).returning(),
+        );
+        const w = await widgets.create(tenantId, 0, { name: 'Sitio' });
+        await widgets.update(tenantId, w.id, {
+            enabled: true,
+            config: cfg({
+                title: 'Hola',
+                buttons: [
+                    { id: 'wa', type: 'whatsapp', phone: '+573001112233', message: 'Hola, vengo de {{pagina}} ({{url}})' },
+                    { id: 'fm', type: 'form', form_id: lead.id, description: 'Te llamamos' },
+                    { id: 'ag', type: 'booking', booking_page_id: bp!.id },
+                    { id: 'tel', type: 'call', phone: '+57 (300) 444-5566' },
+                    { id: 'mail', type: 'email', email: 'hola@acme.co', subject: 'Una pregunta' },
+                    { id: 'web', type: 'link', url: 'https://acme.co/catalogo', new_tab: true },
+                ],
+            }),
+        });
+        const token = await widgetToken(tenantId, w.id);
+        const info = await widgets.cachedPageInfo(token);
+        expect(info).not.toBeNull();
+        const meta = info!.meta;
+        expect(meta.accent).toBe('#7c3aed');
+        expect(meta.company).toBe('Acme Store');
+        expect(meta.buttons.map((b) => b.id)).toEqual(['wa', 'fm', 'ag', 'tel', 'mail', 'web']);
+        const by = Object.fromEntries(meta.buttons.map((b) => [b.id, b]));
+        expect(by.wa!.href).toBe(`/api/v1/public/w/${token}/go/wa`);
+        expect(by.wa!.color).toBe('#25D366');
+        expect(by.fm!.frame).toBe(`/api/v1/public/f/${lead.token}`);
+        expect(by.ag!.frame).toBe('/api/v1/public/b/agenda-token-1234567890');
+        expect(by.tel!.href).toBe('tel:+573004445566');
+        expect(by.mail!.href).toBe('mailto:hola@acme.co?subject=Una%20pregunta');
+        expect(by.web).toMatchObject({ href: 'https://acme.co/catalogo', target: '_blank' });
+        // El número de WhatsApp nunca viaja a la página.
+        expect(JSON.stringify(meta)).not.toContain('3001112233');
+
+        const url = await widgets.whatsappUrl(token, 'wa', { url: 'https://acme.co/planes', title: 'Planes y precios' });
+        expect(url).toBe(`https://wa.me/573001112233?text=${encodeURIComponent('Hola, vengo de Planes y precios (https://acme.co/planes)')}`);
+        expect(await widgets.whatsappUrl(token, 'tel', { url: null, title: null })).toBeNull();
+        expect(await widgets.whatsappUrl('noexiste-noexiste-noexiste', 'wa', { url: null, title: null })).toBeNull();
+
+        // Un formulario que se despublica deja de verse en el sitio.
+        await formsSvc.update(tenantId, 'prospectos', lead.id, { enabled: false });
+        await redis.flushall();
+        const again = await new ContactWidgetsService(pg.db, tenantDb, files).cachedPageInfo(token);
+        expect(again!.meta.buttons.map((b) => b.id)).not.toContain('fm');
+
+        // Despublicado, archivada la empresa: no existe.
+        await widgets.update(tenantId, w.id, { enabled: false });
+        expect(await new ContactWidgetsService(pg.db, tenantDb, files).cachedPageInfo(token)).toBeNull();
+    });
+
+    it('WhatsApp con datos primero: el registro queda y el envío devuelve WhatsApp con las respuestas', async () => {
+        const lead = await leadForm(true);
+        const w = await widgets.create(tenantId, 0, { name: 'Con datos' });
+        await widgets.update(tenantId, w.id, {
+            enabled: true,
+            config: cfg({
+                buttons: [
+                    { id: 'wa', type: 'whatsapp', phone: '+573001112233', capture_form_id: lead.id, message: 'Hola, soy {{nombre}} ({{celular}}), me interesa el plan {{plan}}. Vengo de {{pagina}}.' },
+                    { id: 'wa2', type: 'whatsapp', phone: '+573009998877', message: 'Directo' },
+                ],
+            }),
+        });
+        const token = await widgetToken(tenantId, w.id);
+        const info = await widgets.cachedPageInfo(token);
+        const wa = info!.meta.buttons.find((b) => b.id === 'wa')!;
+        expect(wa).toMatchObject({ capture: true, href: null, frame: `/api/v1/public/f/${lead.token}` });
+
+        const out = await formsSvc.submit(lead.token, IP, {
+            values: { [f.nombre!.id]: 'Ana', [f.celular!.id]: '+57 310 555 1234', [f.plan!.id]: 'pro' },
+            uploads: {},
+            stamp: stamp(lead.id),
+            attribution: { page_url: 'https://acme.co/planes?ref=x' },
+            widget: { token, button: 'wa', page_title: 'Planes' },
+        });
+        expect(out.whatsapp).toBeTruthy();
+        const u = new URL(out.whatsapp!.url);
+        expect(u.origin + u.pathname).toBe('https://wa.me/573001112233');
+        expect(u.searchParams.get('text')).toBe('Hola, soy Ana (+573105551234), me interesa el plan Pro. Vengo de Planes.');
+        const rows = await withTenant(pg.db, tenantId, (tx) => tx.select({ data: records.data }).from(records).where(eq(records.listId, listId)));
+        expect(rows).toHaveLength(1);
+        expect((rows[0]!.data as Record<string, unknown>)[`f${f.nombre!.id}`]).toBe('Ana');
+
+        // Otro botón (que no pide ESTE formulario) o un widget de otra empresa: no hay WhatsApp.
+        const other = await formsSvc.submit(lead.token, IP, {
+            values: { [f.nombre!.id]: 'Beto', [f.celular!.id]: '+573105551235' },
+            uploads: {},
+            stamp: stamp(lead.id),
+            widget: { token, button: 'wa2' },
+        });
+        expect(other.whatsapp).toBeUndefined();
+        const foreign = await widgets.create(otherTenantId, 0, { name: 'Ajeno', whatsapp_phone: '+573001112233' });
+        await widgets.update(otherTenantId, foreign.id, { enabled: true });
+        const foreignToken = await widgetToken(otherTenantId, foreign.id);
+        const spoof = await formsSvc.submit(lead.token, IP, {
+            values: { [f.nombre!.id]: 'Caro', [f.celular!.id]: '+573105551236' },
+            uploads: {},
+            stamp: stamp(lead.id),
+            widget: { token: foreignToken, button: foreign.config.buttons[0]!.id },
+        });
+        expect(spoof.whatsapp).toBeUndefined();
+
+        // Si el formulario se despublica, el botón sigue abriendo WhatsApp directo.
+        await formsSvc.update(tenantId, 'prospectos', lead.id, { enabled: false });
+        await redis.flushall();
+        const fallback = await new ContactWidgetsService(pg.db, tenantDb, files).cachedPageInfo(token);
+        expect(fallback!.meta.buttons.find((b) => b.id === 'wa')).toMatchObject({ capture: false, href: `/api/v1/public/w/${token}/go/wa` });
+    });
+
+    it('la página: CSP con los sitios elegidos, sin nada de afuera, y embed.js con el modo widget', () => {
+        const csp = widgetPageCsp("'sha256-abc'", ['acme.co', 'https://www.acme.co', 'javascript:alert(1)']);
+        expect(csp).toContain("script-src 'sha256-abc'");
+        expect(csp).toContain("frame-src 'self'");
+        expect(csp).toContain("frame-ancestors 'self' acme.co https://www.acme.co");
+        expect(csp).not.toContain('javascript');
+        expect(widgetPageCsp('', [])).toContain('frame-ancestors *');
+        const html = renderWidgetPage({ title: '<x>', meta: null, client: 'console.log("</script><b>")' });
+        expect(html).toContain('<title>&lt;x&gt;</title>');
+        expect(html).not.toContain('</script><b>');
+        expect(FORM_EMBED_JS).toContain('data-imagina-widget');
+        expect(FORM_EMBED_JS).toContain('imb-w-size');
+    });
+});

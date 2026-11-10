@@ -930,4 +930,14 @@ body.ib-embedded.ib-embed-bare .ib-inner{padding:0}
 body.ib-embedded.ib-embed-bare .ib-input:focus{box-shadow:inset 0 0 0 1px var(--ib-accent)}
 body.ib-embedded.ib-embed-bare.ib-input-underline .ib-input:focus{box-shadow:inset 0 -1px 0 0 var(--ib-accent)}
 body.ib-embedded.ib-embed-bare .ib-done{padding-left:0;padding-right:0}
+/* v0.1.394 (ADR-S99) — Dentro del panel del widget de contacto: el panel ya trae la marca y el título. */
+body.ib-in-widget{background:var(--ib-card,#fff)}
+body.ib-in-widget .ib-bg,body.ib-in-widget .ib-band,body.ib-in-widget .ib-cover,body.ib-in-widget .ib-split-media,body.ib-in-widget .ib-logo{display:none}
+body.ib-in-widget .ib-wrap{padding:14px 16px 22px;align-items:stretch}
+body.ib-in-widget .ib-card{max-width:none;border:0;border-radius:0;box-shadow:none;overflow:visible}
+body.ib-in-widget .ib-inner{padding:0}
+body.ib-in-widget .ib-header-empty{display:none}
+.ib-btn.ib-btn-whatsapp{background:#25D366;color:#fff;border-color:#25D366;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.ib-btn.ib-btn-whatsapp:hover{background:#1ebe5b;border-color:#1ebe5b}
+.ib-wa-note{margin:14px 0 10px;color:var(--ib-muted)}
 `;
