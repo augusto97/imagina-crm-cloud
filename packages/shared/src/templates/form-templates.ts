@@ -109,7 +109,7 @@ export interface FormTemplate {
         submit_label?: string;
         success_title?: string;
         success_message?: string;
-        layout?: 'classic' | 'conversational';
+        layout?: 'classic' | 'conversational' | 'chat';
         welcome?: { title?: string; message: string; button_label?: string };
         /** Plantilla de diseño (`publicThemePresets`). */
         theme?: string;

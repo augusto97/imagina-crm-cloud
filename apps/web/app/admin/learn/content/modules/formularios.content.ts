@@ -589,6 +589,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Títulos y textos', what: 'Aparecen junto a la pregunta que sigue; el título de una página, en su primera pregunta.' },
                     { name: 'La lógica sigue igual', what: 'Las condiciones, los saltos, el puntaje y las pantallas finales funcionan igual: las preguntas que no le corresponden ni aparecen.' },
                     { name: 'En el celular', what: 'Es la forma más cómoda de responder en una pantalla chica.' },
+                    { name: 'Como un chat', what: 'La tercera opción de **Cómo se responde**: también de a una pregunta, pero como una conversación. La pregunta va en una burbuja, la respuesta en otra y lo ya respondido queda arriba; tocar una respuesta vuelve a esa pregunta.', tip: 'Abierto desde el widget de contacto, el formulario se ve así aunque elijas otra forma.' },
                 ],
             },
             { t: 'h', text: 'La bienvenida' },
@@ -1473,6 +1474,47 @@ export const articles: LearnArticle[] = [
                     { name: 'Separación del borde', what: 'Cuántos píxeles queda del costado y de abajo, por si tu sitio ya tiene otro botón en esa esquina.' },
                 ],
             },
+            { t: 'h', text: 'Los formularios, como un chat' },
+            {
+                t: 'p',
+                md: 'Dentro del widget, un formulario (y el de «Pedir sus datos antes») se abre **como un chat**: cada pregunta en una burbuja, la respuesta de la persona en otra y lo ya respondido arriba. Si se equivocó, toca su respuesta y vuelve a esa pregunta. Lo que se guarda es lo mismo de siempre. Si prefieres que se vea como lo armaste, apaga **Abrirlo como un chat** en el botón.',
+            },
+            { t: 'h', text: 'Varias personas atienden el WhatsApp' },
+            {
+                t: 'p',
+                md: 'Si en tu equipo varias personas atienden WhatsApp, el botón puede **repartir** las conversaciones: cada persona que toca WhatsApp le llega a una de ellas, **por turnos** (una y una) o **al azar**. Sus números no aparecen en tu sitio: el reparto lo hace la app.',
+            },
+            {
+                t: 'steps',
+                items: [
+                    'En el botón de WhatsApp, enciende **Varias personas atienden**. Tu número pasa a ser la primera persona.',
+                    'Agrega a cada una con su **nombre** y su **número de WhatsApp** (hasta 10). Si es del equipo, elígela en la lista de abajo.',
+                    'Elige el **Reparto**: por turnos o al azar.',
+                    'Con **Pedir sus datos antes**, puedes elegir el campo **Persona** de la lista donde queda **quién atiende** cada contacto: el registro nace asignado a esa persona.',
+                    'En el mensaje, la variable **Quién atiende** escribe su nombre: «Hola {{asesor}}, soy {{nombre}}».',
+                ],
+            },
+            { t: 'h', text: 'Horario de atención' },
+            { t: 'anim', key: 'widget-horario', caption: 'En horario se ve «En línea» y el WhatsApp; fuera de horario, el aviso con cuándo vuelven a atender y el formulario.' },
+            {
+                t: 'p',
+                md: 'En la pestaña **Horario** enciende **Usar un horario de atención** y marca los días y horas en que se atiende. El panel dice **En línea** o **Fuera de horario** y, fuera de horario, tu mensaje con **cuándo vuelven a atender** («Abrimos mañana a las 8:00 a. m.»), en la hora de la persona que visita tu sitio.',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Días y horas', what: 'Uno o varios tramos por día (por ejemplo, de 8 a 12 y de 2 a 6).' },
+                    { name: 'Zona horaria', what: 'La de tu empresa, salvo que elijas otra.' },
+                    { name: 'Festivos', what: 'Los festivos de un país se ven como fuera de horario. Salen del calendario oficial y se actualizan solos.' },
+                    { name: 'Cuándo se ve cada botón', what: 'En la pestaña **Botones**, cada uno elige: **Siempre**, **Sólo en horario** (WhatsApp, llamar) o **Sólo fuera de horario** (un formulario para que te dejen un mensaje).', tip: 'En la vista previa, toca «En horario» o «Fuera de horario» para ver cada caso.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Escríbele tú primero',
+                md: 'Con una automatización «Cuando se envía un formulario», a quien deja sus datos le llega tu WhatsApp en segundos, aunque no haya escrito. En **Ideas para tu negocio** está lista: «Escríbele por WhatsApp a quien te deja sus datos en tu sitio». Funciona con tu WhatsApp por código QR (que manda texto libre); con WhatsApp oficial de Meta hace falta una plantilla aprobada.',
+            },
             {
                 t: 'faq',
                 items: [
@@ -1480,6 +1522,7 @@ export const articles: LearnArticle[] = [
                     { q: '¿Puedo tener varios widgets?', a: 'Sí, por ejemplo uno para tu sitio y otro para tu tienda, con botones distintos. Cada uno tiene su propio código.' },
                     { q: '¿Y si lo despublico?', a: 'El código pegado deja de mostrar el botón (no sale ningún cartel en tu sitio). Lo vuelves a publicar cuando quieras, sin cambiar el código.' },
                     { q: '¿Puedo limitarlo a mi sitio?', a: 'Sí: en **Publicar → Sólo en estos sitios** escribe tus dominios. Fuera de ellos, el widget no se muestra.' },
+                    { q: '¿Qué pasa si una persona sale del equipo?', a: 'Su número sigue atendiendo hasta que la quites del botón, pero los registros dejan de asignársele.' },
                 ],
             },
             {

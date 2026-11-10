@@ -1,4 +1,4 @@
-import { Copy, Eye, LayoutList, MessageSquare, RotateCcw } from 'lucide-react';
+import { Copy, Eye, LayoutList, MessageSquare, MessagesSquare, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 
 import { formEstimateMinutes, type FormConfig, type FormLayout } from '@imagina-base/shared';
@@ -21,6 +21,7 @@ import { RecallPicker, withToken } from './LogicPanel';
 const LAYOUTS: Array<{ value: FormLayout; title: string; hint: string; icon: typeof LayoutList }> = [
     { value: 'classic', title: 'Todo a la vista', hint: 'Las preguntas una debajo de otra (por páginas si las divides).', icon: LayoutList },
     { value: 'conversational', title: 'Una pregunta por pantalla', hint: 'Como una conversación: cada respuesta lleva a la siguiente.', icon: MessageSquare },
+    { value: 'chat', title: 'Como un chat', hint: 'Cada pregunta en una burbuja y lo respondido arriba, como en WhatsApp.', icon: MessagesSquare },
 ];
 
 /**
@@ -35,7 +36,7 @@ export function LayoutSettings({ config, onChange }: { config: FormConfig; onCha
     const s = config.settings;
     return (
         <Section title={__('Cómo se responde')}>
-            <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2" role="radiogroup" aria-label={__('Cómo se responde')} data-testid="form-layout" data-tour="form-layout">
+            <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2 sm:imcrm-grid-cols-3" role="radiogroup" aria-label={__('Cómo se responde')} data-testid="form-layout" data-tour="form-layout">
                 {LAYOUTS.map((l) => {
                     const on = s.layout === l.value;
                     const Icon = l.icon;
@@ -62,6 +63,11 @@ export function LayoutSettings({ config, onChange }: { config: FormConfig; onCha
             {s.layout === 'conversational' && (
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                     {__('Al elegir una opción, una escala o Sí/No pasa sola a la siguiente; en lo demás, con «Siguiente» o Enter. Los títulos y textos aparecen junto a la pregunta que sigue, y los saltos de página siguen funcionando.')}
+                </p>
+            )}
+            {s.layout === 'chat' && (
+                <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="form-layout-chat-hint">
+                    {__('Igual que «una pregunta por pantalla», pero como una conversación: la pregunta en una burbuja, la respuesta en otra y lo ya respondido queda arriba (tocarlo vuelve a esa pregunta). Los títulos y textos también aparecen como mensajes. En el widget de contacto, los formularios se abren así aunque elijas otra forma.')}
                 </p>
             )}
         </Section>

@@ -19,6 +19,9 @@ export type PreviewDevice = 'desktop' | 'mobile';
 export function WidgetPreview({ meta }: { meta: PublicWidgetMeta }): JSX.Element {
     const [device, setDevice] = useState<PreviewDevice>('desktop');
     const [open, setOpen] = useState(true);
+    /** v0.1.395 — con horario: ver cómo queda ahora, en horario o fuera de horario. */
+    const [hoursView, setHoursView] = useState<'now' | 'open' | 'closed'>('now');
+    const hoursOpen = !meta.hours || hoursView === 'now' ? null : hoursView === 'open';
     const frame = useRef<HTMLIFrameElement | null>(null);
     const box = useRef<HTMLDivElement | null>(null);
     const [ready, setReady] = useState(false);
@@ -49,12 +52,12 @@ export function WidgetPreview({ meta }: { meta: PublicWidgetMeta }): JSX.Element
         if (!ready || size.width === 0) return;
         const t = window.setTimeout(() => {
             frame.current?.contentWindow?.postMessage(
-                { type: 'imb-w-preview', meta, open, host: { ...PREVIEW_HOST, width: size.width, height: size.height } },
+                { type: 'imb-w-preview', meta, open, hours_open: hoursOpen, host: { ...PREVIEW_HOST, width: size.width, height: size.height } },
                 window.location.origin,
             );
         }, 180);
         return () => window.clearTimeout(t);
-    }, [ready, meta, open, size.width, size.height]);
+    }, [ready, meta, open, hoursOpen, size.width, size.height]);
 
     const mobile = device === 'mobile';
     return (
@@ -82,6 +85,20 @@ export function WidgetPreview({ meta }: { meta: PublicWidgetMeta }): JSX.Element
                         ]}
                     />
                 </div>
+                {meta.hours && (
+                    <div className="imcrm-w-full sm:imcrm-w-80" data-testid="widget-preview-hours">
+                        <Segmented<'now' | 'open' | 'closed'>
+                            ariaLabel={__('Horario')}
+                            value={hoursView}
+                            onChange={setHoursView}
+                            options={[
+                                { value: 'now', label: __('Ahora') },
+                                { value: 'open', label: __('En horario') },
+                                { value: 'closed', label: __('Fuera de horario') },
+                            ]}
+                        />
+                    </div>
+                )}
             </div>
             <div className={cn('imcrm-mx-auto imcrm-w-full', mobile && 'imcrm-max-w-[375px]')}>
                 <div

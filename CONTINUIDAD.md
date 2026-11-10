@@ -407,8 +407,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.394**
-(**widget de contacto para el sitio**: un botón fijo en la esquina del sitio de
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.395**
+(**widget de contacto: varias personas, horario y formularios como un chat**:
+el WhatsApp del widget reparte los contactos entre varias personas por turnos
+o al azar y asigna el registro a quien le tocó; horario de atención con
+festivos, «En línea» / «Fuera de horario» con cuándo se vuelve a atender y
+botones que se ven sólo en horario o fuera de él; los formularios del widget
+—y cualquier formulario con «Como un chat»— se responden una pregunta a la vez
+como una conversación; addendum ADR-S99; segunda de tres entregas). Antes
+v0.1.394 (**widget de contacto para el sitio**: un botón fijo en la esquina del sitio de
 la empresa con WhatsApp, formularios y la agenda en un panel tipo chat, llamar,
 correo y enlaces; «WhatsApp con datos primero» pide nombre y celular, deja el
 registro y abre WhatsApp con el mensaje armado con las respuestas; el número
@@ -584,7 +591,7 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
-- 2026-11-10 — **«Widget de contacto para el sitio» (EN CURSO: v0.1.394 HECHA)**
+- 2026-11-10 — **«Widget de contacto para el sitio» (EN CURSO: v0.1.394 y v0.1.395 HECHAS)**
   (el usuario: «botones de contacto como los de WhatsApp o contactar ahora, o
   un formulario que se abre como un chat flotante lateral… pedir nombre y
   celular, que quede el registro y con eso enviar un mensaje con la
@@ -594,12 +601,15 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   (Ajustes → Widget de contacto), botones WhatsApp/formulario/agenda/llamar/
   correo/enlace, panel tipo chat o botones apilados, barra en el celular,
   «WhatsApp con datos primero», editor con vista previa real, un solo script
-  (`embed.js` con `data-imagina-widget`). **Siguen**: **v0.1.395** piel de chat
-  para los formularios (una pregunta por burbuja), varios asesores con turnos y
-  asignación del registro, horario de atención (con festivos) y la receta de
-  respuesta automática por WhatsApp (Meta: plantilla aprobada; WAS: texto
-  libre); **v0.1.396** saludo proactivo por página, reglas de dónde aparece
-  (páginas, dispositivo, demora, scroll) y estadísticas por botón. NO se hace
+  (`embed.js` con `data-imagina-widget`). **v0.1.395 HECHA** (addendum
+  ADR-S99): varias personas atienden el WhatsApp (por turnos o al azar, con el
+  registro asignado a quien le tocó), horario de atención con festivos y
+  «cuándo se ve» por botón, formularios «Como un chat» (layout `chat` y
+  `?imb_chat=1` desde el widget) y la idea «Responde por WhatsApp a quien te
+  escribió desde el widget». **Sigue v0.1.396**: saludo proactivo por página,
+  reglas de dónde aparece (páginas, dispositivo, demora, scroll) y
+  estadísticas por botón (vistas, aperturas, clics, registros); al terminar,
+  sacar D7 de `docs/ideas.md`. NO se hace
   un chat en vivo dentro de la app (la conversación sigue en WhatsApp,
   ADR-S69).
 - 2026-11-10 — **«Que la app aguante miles de empresas con automatizaciones
@@ -1755,6 +1765,31 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-10 · v0.1.395** — **Widget de contacto: varias personas, horario
+  y formularios como un chat** (segunda de las tres entregas de «Hazlas
+  todas»). Addendum ADR-S99. (1) **Varias personas atienden**: en el botón de
+  WhatsApp, cada persona con su número (y su usuario del equipo, opcional);
+  los contactos se reparten **por turnos** (contador en Redis por widget y
+  botón) o **al azar**, `{{asesor}}` va al mensaje y **«Asignar el registro a
+  quien atiende»** pone a esa persona en un campo Persona del formulario de
+  captura. Ningún número viaja a la página; quien se fue del equipo deja de
+  recibir registros asignados. (2) **Horario de atención** (pestaña Horario):
+  días y tramos, zona horaria, festivos del país, «En línea» y el mensaje de
+  fuera de horario; la página decide sola con su reloj (la caché no se
+  invalida cada minuto) y cada botón elige si se ve siempre, sólo en horario o
+  sólo fuera; la vista previa muestra «Ahora / En horario / Fuera de horario».
+  (3) **Formularios como un chat**: `layout: 'chat'` (y `?imb_chat=1` desde
+  el widget, «Abrirlo como un chat» por botón): pregunta como mensaje,
+  respuestas como burbujas que llevan de vuelta, «escribiendo…». (4) Idea
+  nueva «Responde por WhatsApp a quien te escribió desde el widget». Ayuda:
+  guía del widget, Aprende (secciones nuevas con la ilustración
+  `widget-horario`), novedad con carrusel. Tests: shared 826, front 843,
+  `contact-widgets.spec` 6/6 + E2E navegador 32/32 en escritorio claro y
+  celular oscuro (turnos 1→2→3, asignación, chat con burbujas, cerrado con
+  «Abrimos…» y sólo el formulario). **Encontrado en el E2E**: el navegador
+  guarda la página del widget 30 s (`max-age=30`), así que verificar un cambio
+  de horario exige otro contexto. Sigue v0.1.396.
 
 - **2026-11-10 · v0.1.394** — **Widget de contacto para el sitio** (pedido
   del usuario: «botones de contacto como los de WhatsApp o contactar ahora, o un

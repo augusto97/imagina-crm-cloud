@@ -124,6 +124,7 @@ import {
     remapSyncSettings,
     remapFormConfig,
     remapViewConfig,
+    remapWidgetConfig,
     remapTenantSettingsFiles,
     remapWhatsappConnectionConfig,
 } from './tenant-transfer.remap';
@@ -1524,7 +1525,7 @@ export class TenantTransferService {
             name: String(w.name ?? 'Widget de contacto').slice(0, 120),
             token: randomBytes(18).toString('base64url'),
             enabled: w.enabled === true,
-            config: remapJson((w.config as Row | null) ?? {}, maps) as Row,
+            config: remapWidgetConfig((w.config as Row | null) ?? {}, maps) as Row,
             createdBy: mapId(maps.user, w.createdBy),
             createdAt: this.date(w.createdAt) ?? new Date(),
             updatedAt: this.date(w.updatedAt) ?? new Date(),

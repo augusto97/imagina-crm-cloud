@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { contactWidgetConfigSchema, type ContactWidgetOptions } from '@imagina-base/shared';
 
-import { addButton, canAddButton, editorProblems, moveButton, newButton, parseDomains, previewMeta, removeButton, sameConfig, updateButton, whatsappVars } from './widgetEditor';
+import { addAdvisor, addButton, canAddButton, editorProblems, moveButton, newButton, parseDomains, previewMeta, removeButton, sameConfig, startAdvisors, stopAdvisors, updateAdvisor, updateButton, whatsappVars } from './widgetEditor';
 
 const options: ContactWidgetOptions = {
     forms: [
@@ -62,7 +62,7 @@ describe('editor del widget (v0.1.394)', () => {
         const meta = previewMeta(cfg, options);
         expect(meta.accent).toBe('#7c3aed');
         expect(meta.buttons.map((b) => [b.id, b.frame])).toEqual([
-            ['f1', '/api/v1/public/f/f5'],
+            ['f1', '/api/v1/public/f/f5?imb_chat=1'],
             ['f2', null],
             ['wa', null],
         ]);
@@ -80,5 +80,27 @@ describe('editor del widget (v0.1.394)', () => {
         const a = contactWidgetConfigSchema.parse({ title: 'Hola' });
         expect(sameConfig(a, JSON.parse(JSON.stringify(a)))).toBe(true);
         expect(sameConfig(a, { ...a, title: 'Chao' })).toBe(false);
+    });
+
+    it('v0.1.395 — varias personas: el número del botón pasa a la primera y vuelve al apagar', () => {
+        const wa = contactWidgetConfigSchema.parse({ buttons: [{ id: 'wa', type: 'whatsapp', phone: '+57300' }] }).buttons[0]!;
+        const start = startAdvisors(wa);
+        expect(start).toHaveLength(1);
+        expect(start[0]!.phone).toBe('+57300');
+        const two = updateAdvisor(addAdvisor(start), start[0]!.id, { name: 'Ana' });
+        expect(two.map((a) => a.name)).toEqual(['Ana', '']);
+        expect(new Set(two.map((a) => a.id)).size).toBe(2);
+        const back = stopAdvisors({ ...wa, phone: '', advisors: two, assign_field_id: 9 });
+        expect(back).toEqual({ advisors: [], phone: '+57300', assign_field_id: null });
+        expect(whatsappVars({ ...wa, advisors: two }, options).map((v) => v.key)).toContain('asesor');
+        expect(whatsappVars(wa, options).map((v) => v.key)).not.toContain('asesor');
+    });
+
+    it('v0.1.395 — la vista previa trae el horario (sin festivos: los resuelve el servidor)', () => {
+        const cfg = contactWidgetConfigSchema.parse({ hours: { enabled: true, timezone: 'America/Bogota' }, buttons: [{ id: 'wa', type: 'whatsapp', phone: '+573001112233', when: 'open' }] });
+        const meta = previewMeta(cfg, options);
+        expect(meta.hours).toMatchObject({ tz: 'America/Bogota', closed_dates: [] });
+        expect(meta.buttons[0]!.when).toBe('open');
+        expect(previewMeta({ ...cfg, hours: { ...cfg.hours, enabled: false } }, options).hours).toBeNull();
     });
 });

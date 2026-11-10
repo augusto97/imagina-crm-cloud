@@ -1127,6 +1127,42 @@ export const IDEAS: readonly IdeaDef[] = [
         },
     },
     {
+        id: 'widget-respuesta-whatsapp',
+        category: 'conectar',
+        title: 'Escríbele por WhatsApp a quien te deja sus datos en tu sitio',
+        summary: 'Alguien llena el formulario del widget de tu sitio y en segundos recibe tu WhatsApp, aunque no haya escrito.',
+        problem: 'Quien deja sus datos en tu página se enfría si nadie le escribe pronto.',
+        steps: [
+            'Pones el widget de contacto en tu sitio con «Pedir sus datos antes de abrir WhatsApp».',
+            'Apenas llega el formulario, sale un WhatsApp al celular que dejó, con su nombre.',
+            'Funciona con tu WhatsApp por código QR (WAS), que manda texto libre. Con WhatsApp oficial de Meta hace falta una plantilla aprobada: usa «Enviar plantilla de WhatsApp» en la automatización.',
+        ],
+        illustration: 'widget-contacto',
+        icon: 'MessageCircle',
+        tone: 'mint',
+        listHints: ['lead', 'prospect', 'contacto', 'client', 'solicitud'],
+        needsApps: ['whatsapp_web', 'whatsapp'],
+        keywords: 'widget sitio web whatsapp respuesta automatica lead formulario contacto',
+        learn: 'formularios/formularios-widget-contacto',
+        plan: {
+            kind: 'automations',
+            roles: [TELEFONO, NOMBRE],
+            questions: [
+                { kind: 'connection', key: 'conexion', label: 'Con qué WhatsApp', apps: ['whatsapp_web', 'whatsapp'] },
+                { kind: 'text', key: 'mensaje', label: 'Mensaje', multiline: true, default: 'Hola {{nombre}}, gracias por escribirnos desde nuestra página. Ya vimos tus datos: ¿en qué te podemos ayudar?' },
+            ],
+            automations: [
+                {
+                    name: 'WhatsApp a quien deja sus datos',
+                    description: 'Le escribe por WhatsApp apenas llega el formulario.',
+                    trigger_type: 'form_submitted',
+                    trigger_config: {},
+                    actions: [{ type: '$message', config: { connection: q('conexion'), to: '{{telefono}}', text: q('mensaje') } }],
+                },
+            ],
+        },
+    },
+    {
         id: 'recordatorio-cita-sms',
         category: 'agenda',
         title: 'Recuérdale la cita por SMS',

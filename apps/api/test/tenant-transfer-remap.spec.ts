@@ -10,6 +10,7 @@ import {
     remapRecordData,
     remapRichDoc,
     remapViewConfig,
+    remapWidgetConfig,
     type IdMaps,
 } from '../src/platform/tenant-transfer.remap';
 
@@ -502,5 +503,36 @@ describe('v0.1.386 — origen y etiquetas de un formulario', () => {
             settings: { record_values: { fixed: unknown[] } };
         };
         expect(gone.settings.record_values.fixed).toEqual([]);
+    });
+});
+
+describe('remapWidgetConfig (v0.1.395)', () => {
+    it('re-mapea el formulario, el campo de asignación y el usuario de cada persona que atiende', () => {
+        const m = maps();
+        m.form.set(70, 170);
+        const out = remapWidgetConfig(
+            {
+                buttons: [
+                    {
+                        id: 'b1',
+                        type: 'whatsapp',
+                        capture_form_id: 70,
+                        assign_field_id: 10,
+                        advisors: [
+                            { id: 'a1', name: 'Ana', phone: '+573001112233', user_id: 30 },
+                            { id: 'a2', name: 'Luis', phone: '+573004445566', user_id: 99 },
+                            { id: 'a3', name: 'Sin usuario', phone: '+573007778899', user_id: null },
+                        ],
+                    },
+                    { id: 'b2', type: 'call', phone: '+573001112233' },
+                ],
+            },
+            m,
+        ) as { buttons: Array<{ capture_form_id?: number; assign_field_id?: number; advisors?: Array<{ user_id: number | null }> }> };
+        expect(out.buttons[0]!.capture_form_id).toBe(170);
+        expect(out.buttons[0]!.assign_field_id).toBe(110);
+        // La que no viajó queda sin usuario (no se le asigna a OTRA persona).
+        expect(out.buttons[0]!.advisors!.map((a) => a.user_id)).toEqual([130, null, null]);
+        expect(out.buttons[1]).toEqual({ id: 'b2', type: 'call', phone: '+573001112233' });
     });
 });

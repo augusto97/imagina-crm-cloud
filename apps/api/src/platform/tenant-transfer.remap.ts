@@ -425,6 +425,32 @@ export function remapFormConfig(config: Record<string, unknown>, fieldTypeByOldI
 }
 
 /**
+ * v0.1.395 — Config de un widget de contacto. `remapJson` cubre el formulario
+ * de captura, el campo donde se asigna el registro y los formularios/agendas
+ * de cada botón; lo que no sigue ninguna convención es el usuario del equipo
+ * de cada persona que atiende el WhatsApp (`advisors[].user_id`). Una que no
+ * viajó queda sin usuario (su número sigue): dejar el id viejo le asignaría
+ * los registros a OTRA persona.
+ */
+export function remapWidgetConfig(config: Record<string, unknown>, maps: IdMaps): Record<string, unknown> {
+    const out = remapJson(config, maps) as Record<string, unknown>;
+    if (!Array.isArray(out.buttons)) return out;
+    out.buttons = (out.buttons as unknown[]).map((b) => {
+        if (!b || typeof b !== 'object' || !Array.isArray((b as { advisors?: unknown }).advisors)) return b;
+        const btn = b as { advisors: unknown[] };
+        return {
+            ...btn,
+            advisors: btn.advisors.map((a) => {
+                if (!a || typeof a !== 'object') return a;
+                const adv = a as { user_id?: unknown };
+                return adv.user_id === null || adv.user_id === undefined ? adv : { ...adv, user_id: mapId(maps.user, adv.user_id) };
+            }),
+        };
+    });
+    return out;
+}
+
+/**
  * v0.1.297 — Config de una vista guardada. Los ids de campo los cubre `remapJson`
  * por convención (`kanban_value_field_id`, `required_field_ids`…); lo que no
  * sigue ninguna son las CLAVES de columna y carril del kanban cuando el campo

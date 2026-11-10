@@ -8186,3 +8186,38 @@ caché pública vence en 30 s). El tráfico del sitio no toca la base: el armado
 se comparte (single-flight) y el resto es caché. Quedan para las entregas
 siguientes la piel de chat del formulario, asesores con turnos, horario de
 atención, saludo proactivo, reglas por página y estadísticas por botón.
+
+**Addendum v0.1.395 — varias personas, horario de atención y formularios
+como un chat.**
+
+1. **Varias personas atienden** (`button.advisors`, hasta 10, cada una con
+   nombre, teléfono y, opcional, su usuario del equipo): el número de cada
+   una NUNCA viaja a la página; el `go` y la captura eligen a quien le toca.
+   **Por turnos** con un `INCR` en Redis por widget y botón
+   (`widget:rr:{widget}:{botón}`, 90 días; sin Redis cae al azar) o **al
+   azar**, con `pickWidgetAdvisor` (shared). `{{asesor}}` va al mensaje.
+   Con **«Asignar el registro a quien atiende»** (`assign_field_id`, campo
+   Persona de la lista del formulario de captura) el envío pone a esa persona
+   si la respuesta no trae otra. Al guardar sólo se aceptan miembros del
+   equipo (ni clientes ni invitados ni cuentas desactivadas) y, al servir, el
+   usuario de quien se fue del equipo se descarta (su número sigue).
+2. **Horario de atención** (`config.hours`: semana con hasta 6 tramos por
+   día, zona horaria o la de la empresa, festivos del país de ADR-S67,
+   estado «En línea» y el mensaje de fuera de horario). La página decide sola
+   si está abierto con su reloj (`widget-hours.ts`, sin zod): el servidor le
+   manda la semana, los festivos de los próximos 21 días y el formato de hora
+   de la empresa, así la caché pública no se invalida cada minuto. Cada botón
+   elige **cuándo se ve** (siempre, sólo en horario, sólo fuera de horario);
+   fuera de horario el panel dice «Abrimos mañana a las 8:00 a. m.» en la hora
+   del visitante. `widgetProblems` avisa si un horario dejaría al widget sin
+   botones.
+3. **Formularios como un chat**: `layout: 'chat'` en el formulario (y
+   `?imb_chat=1` cuando lo abre el widget, `as_chat` por botón, encendido por
+   defecto): una pregunta a la vez como un mensaje, las respuestas anteriores
+   como burbujas que llevan de vuelta a esa pregunta, y «escribiendo…» entre
+   preguntas (salvo con movimiento reducido). Es el modo «una pregunta por
+   pantalla» de v0.1.357 con otra piel: misma validación, lógica y envío.
+4. **Respuesta por WhatsApp**: la idea «Responde por WhatsApp a quien te
+   escribió desde el widget» arma la automatización «Cuando se envía un
+   formulario» → mensaje de WhatsApp (en WAS sale texto libre; con Meta hace
+   falta una plantilla aprobada).

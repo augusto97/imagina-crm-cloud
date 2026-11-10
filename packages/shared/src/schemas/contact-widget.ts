@@ -136,7 +136,7 @@ export type WidgetButton = z.infer<typeof widgetButtonSchema>;
 // ─────────────────────── Horario de atención (v0.1.395) ───────────────────────
 
 const HHMM_RE = /^(([01]\d|2[0-3]):[0-5]\d|24:00)$/;
-export const WIDGET_MAX_INTERVALS_PER_DAY = 4;
+export const WIDGET_MAX_INTERVALS_PER_DAY = 6;
 
 export interface WidgetInterval {
     start: string;

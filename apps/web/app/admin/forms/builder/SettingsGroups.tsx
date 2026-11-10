@@ -88,7 +88,7 @@ export function groupSummary(g: SettingsGroupId, config: FormConfig, captcha: Ca
     const on = (b: boolean): string => (b ? __('Encendido') : __('Apagado'));
     switch (g) {
         case 'general':
-            return s.layout === 'conversational' ? __('Una pregunta por pantalla') : __('Todo a la vista');
+            return s.layout === 'conversational' ? __('Una pregunta por pantalla') : s.layout === 'chat' ? __('Como un chat') : __('Todo a la vista');
         case 'welcome':
             return s.welcome.enabled ? __('Encendida') : __('Apagada');
         case 'after':
