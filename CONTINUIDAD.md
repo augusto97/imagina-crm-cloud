@@ -579,6 +579,26 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-10 — **«Widget de contacto para el sitio» (ESPERANDO RESPUESTA)**
+  (el usuario: «otra opción de integración como estos botones de contacto de
+  WhatsApp o contactar ahora, o un formulario que se abre como un chat
+  flotante lateral… pedir nombre y celular, que quede el registro y con eso
+  enviar un mensaje con la integración de WhatsApp… o un formulario
+  multipasos; dame ideas»). Es la idea D7 de `docs/ideas.md`. Propuesta
+  enviada: objeto de la EMPRESA (no de una lista) «Widget de contacto», un
+  solo script, con botones (WhatsApp directo con texto armado, abrir un
+  formulario en panel tipo chat, agendar, llamar, correo, enlace), formatos
+  (menú desplegable, burbuja con panel lateral, barra fija en celular),
+  «WhatsApp con datos primero» (pide nombre y celular → registro → abre
+  WhatsApp), piel de chat para el modo una-pregunta-por-pantalla, respuesta
+  automática por WhatsApp con la automatización existente (con Meta oficial
+  sólo con plantilla aprobada; con WAS texto libre), rotación de asesores,
+  horario de atención, reglas de dónde aparece, saludo proactivo y
+  estadísticas por botón. NO se recomendó un chat en vivo dentro de la app
+  (la conversación sigue en WhatsApp, ADR-S69). Entregas propuestas:
+  1) widget + botones + formulario en el panel + datos primero; 2) piel de
+  chat, asesores, horario y receta de respuesta; 3) saludo proactivo, reglas
+  por página y estadísticas. Falta que elija por dónde arrancar.
 - 2026-11-10 — **«Que la app aguante miles de empresas con automatizaciones
   corriendo»** (el usuario: «revisa también los demás procesos así… ClickUp y
   Airtable no se ponen lentos»). **v0.1.392 y v0.1.393 HECHAS** (motor
