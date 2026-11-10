@@ -13698,6 +13698,46 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         página, contacto contado, estadísticas sin datos de la persona,
         dispositivo).
 
+  - [x] **Compartir rediseñado (v0.1.397, addendum ADR-S95, pedido del
+        usuario: "rediseña la interfaz de compartir los formularios y agendas:
+        se ve muy feo, no es eficiente y se desperdicia mucho espacio")**. La
+        ventana medía 1140 × 880 tanto para un enlace como para la
+        demostración, y el QR era una pestaña casi vacía. (a) **Dos pestañas**
+        en un control segmentado: **Enlace y QR** e **Insertar en tu sitio**
+        (`ShareTab` conserva `qr`: abre la del enlace con la tarjeta del QR
+        marcada y a la vista, como pide «El código QR» de Ajustes → Publicar de
+        la agenda). (b) **La ventana mide lo que muestra**: 560 px y alto según
+        el contenido para el enlace, 1200 × 860 para insertar (transición de
+        ancho); en el celular, pantalla completa. (c) **Enlace y QR**: el enlace
+        con «Copiar», atajos a **WhatsApp**, **correo**, **abrir** y la hoja de
+        compartir del sistema (`navigator.share`, donde exista), la tarjeta del
+        **QR** (PNG / SVG para imprenta) y, en la agenda, «Cambiar la
+        dirección» al pie. (d) **Insertar en tres pasos** —cómo va en tu sitio
+        (filas con dibujo y radio), ajústalo (control segmentado; texto y color
+        del botón; lado o esquina), copia el código— con su propio scroll a la
+        izquierda; el código se ve **completo y coloreado**
+        (`highlightEmbedCode` en `forms/shareHelpers.ts`, puro, dibujado con
+        React), «¿Prefieres usar un botón o enlace que ya tienes?» plegado, los
+        **sitios permitidos plegados y como etiquetas** (`cleanEmbedDomain`:
+        quita la ruta y la barra final, rechaza lo que no es un sitio; Enter,
+        coma o espacio agregan, Retroceso quita el último) y la sugerencia del
+        widget compacta. (e) **Vista previa** a todo el alto a la derecha, en
+        **Computador** o **Celular** (un teléfono de 360 px donde la ventana y
+        el panel ocupan toda la pantalla, igual que `embed.js` bajo 600 px);
+        el aviso de cambios sin guardar flota sobre ella. En pantallas
+        angostas: elegir → ver cómo queda → copiar. **Bug de paso**: la
+        librería del QR le pone su ancho en línea al `<canvas>`, así que el
+        tamaño de las clases nunca se aplicó (salía de 168 px). Ayuda: guía de
+        insertar y Aprende de formularios y agenda al día, novedad con
+        carrusel, y se regraban las capturas de publicar en formularios y
+        agenda. Tests: `shareHelpers.test.ts` (4) — front 847, shared 833 en
+        verde — + E2E navegador 27/27 en escritorio claro y 25/25 en celular
+        oscuro (copiar enlace y código, WhatsApp y correo con el texto, QR de
+        104 px y su descarga, «Sin marco» que pide guardar, botón con panel,
+        atributo propio, panel a todo el ancho en el celular, sitios limpios,
+        inválidos avisados y guardados, publicar desde la ventana, sin scroll
+        lateral) y el acceso «El código QR» desde la agenda.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

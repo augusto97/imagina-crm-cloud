@@ -714,7 +714,7 @@ export const articles: LearnArticle[] = [
                     'Entra a **Ajustes → Publicar**. Arriba ves las **citas próximas** y las **reservas en total**.',
                     'Si algo falta, aparece **Para publicarla falta:** con la lista (por ejemplo, un servicio sin nadie que lo atienda). Lo que tiene un problema se marca con un punto rojo, y al tocar **Publicar** te lleva a donde se arregla.',
                     'Toca **Publicar la agenda** (o enciende el interruptor **Sin publicar** de arriba).',
-                    'Al publicarla se abre sola la ventana **Compartir la agenda**: copia el **Enlace**, el código para **Insertar en tu sitio** (con la demostración de cómo queda) o descarga el **Código QR**.',
+                    'Al publicarla se abre sola la ventana **Compartir la agenda**: en **Enlace y QR** copias el enlace o descargas el código QR, y en **Insertar en tu sitio** copias el código (con la vista previa de cómo queda en un computador o un celular).',
                 ],
             },
             { t: 'demo', key: 'citas-publicar', caption: 'Publicar la agenda y copiar su enlace.', fallback: 'citas-embed' },
@@ -740,13 +740,13 @@ export const articles: LearnArticle[] = [
             { t: 'anim', key: 'embed-popup', caption: 'El botón flotante «Agenda tu cita»: la agenda se abre en una ventana al tocarlo.' },
             {
                 t: 'p',
-                md: 'Debajo del código, en **Sitios que pueden insertarlo** (uno por renglón), escribe los dominios donde se puede insertar la agenda (por ejemplo `miempresa.com` o `*.miempresa.com` para todos sus subdominios). Vacío = cualquier sitio. El enlace directo funciona siempre, desde cualquier lugar.',
+                md: 'Debajo del código, en **Sitios que pueden insertarlo** (tócalo para desplegarlo), escribe cada dominio donde se puede insertar la agenda y pulsa Enter (por ejemplo `miempresa.com` o `*.miempresa.com` para todos sus subdominios). Vacío = cualquier sitio. El enlace directo funciona siempre, desde cualquier lugar.',
             },
             {
                 t: 'callout',
                 tone: 'warn',
                 title: 'Cambiar la dirección',
-                md: '**Cambiar la dirección** (en **Compartir → Enlace**) genera un enlace nuevo: el actual deja de funcionar al instante, también donde lo hayas insertado. Las citas ya agendadas y sus enlaces para cambiar o cancelar no se ven afectados. Úsalo sólo si el enlace se filtró donde no debía.',
+                md: '**Cambiar la dirección** (en **Compartir → Enlace y QR**, al final) genera un enlace nuevo: el actual deja de funcionar al instante, también donde lo hayas insertado. Las citas ya agendadas y sus enlaces para cambiar o cancelar no se ven afectados. Úsalo sólo si el enlace se filtró donde no debía.',
             },
             {
                 t: 'cards',
