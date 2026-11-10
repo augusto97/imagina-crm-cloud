@@ -407,12 +407,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.396**
-(**widget de contacto: dónde aparece, saludo y estadísticas**: en qué páginas
-y dispositivos se ve, si aparece a los segundos o al bajar, un saludo junto
-al botón con un texto distinto por página, y cuántas veces aparece, se abre,
-qué botón tocan y cuántos dejan sus datos por cada botón; addendum ADR-S99;
-cierra las tres entregas y la idea D7). Antes v0.1.395
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.397**
+(**la ventana Compartir de formularios y agendas rediseñada**: dos pestañas,
+el enlace con los atajos y el QR en una ventana chica, insertar en tres pasos
+con la vista previa en computador o celular, y los sitios permitidos
+plegados; addendum ADR-S95). Antes v0.1.396 (**widget de contacto: dónde
+aparece, saludo y estadísticas**; addendum ADR-S99; cierra las tres entregas
+y la idea D7). Antes v0.1.395
 (**widget de contacto: varias personas, horario y formularios como un chat**:
 el WhatsApp del widget reparte los contactos entre varias personas por turnos
 o al azar y asigna el registro a quien le tocó; horario de atención con
@@ -596,6 +597,11 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-10 — **«Rediseña la interfaz de compartir los formularios y
+  agendas: se ve muy feo, no es eficiente y se desperdicia mucho espacio»**
+  (pedido del usuario mientras salía v0.1.396). **v0.1.397 HECHA**: ver la
+  bitácora. Si después pide más canales para mandar el enlace (Facebook, X,
+  LinkedIn), se suman como atajos en «Mándalo por».
 - 2026-11-10 — **«Widget de contacto para el sitio» (HECHO: v0.1.394, v0.1.395 y v0.1.396)**
   (el usuario: «botones de contacto como los de WhatsApp o contactar ahora, o
   un formulario que se abre como un chat flotante lateral… pedir nombre y
@@ -1769,6 +1775,25 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-10 · v0.1.397** — **Compartir rediseñado** (pedido del usuario:
+  «se ve muy feo, no es eficiente y se desperdicia mucho espacio»). Addendum
+  ADR-S95. La ventana de Compartir de formularios y agendas pasa a **dos
+  pestañas** en un control segmentado: **Enlace y QR** (el enlace con
+  «Copiar», atajos a WhatsApp, correo, abrir y la hoja de compartir del
+  sistema, la tarjeta del QR y, en la agenda, «Cambiar la dirección» al pie)
+  en una ventana de 560 px que mide lo que tiene; e **Insertar en tu sitio**
+  (1200 px) en tres pasos —cómo va, ajústalo, copia el código— con el código
+  completo y coloreado, «¿Prefieres usar un botón que ya tienes?» plegado, los
+  **sitios permitidos plegados y como etiquetas** (se limpian solos: sin la
+  ruta ni la barra final) y la vista previa a todo el alto, en **computador o
+  celular**. «El código QR» de Ajustes de la agenda abre la pestaña del enlace
+  con el QR marcado. **Encontrado en el camino**: la librería del QR le ponía
+  168 px en línea al dibujo, así que el tamaño de las clases nunca se aplicaba.
+  Ayuda al día (guía de insertar, Aprende de formularios y agenda), novedad, y
+  se regraban las capturas de publicar en formularios y agenda. Tests: 4
+  nuevos del front (847 en verde), shared 833 + E2E navegador 27/27 en
+  escritorio claro, 25/25 en celular oscuro y el acceso al QR desde la agenda.
 
 - **2026-11-10 · v0.1.396** — **Widget de contacto: dónde aparece, saludo y
   estadísticas** (tercera y última entrega de «Hazlas todas»; cierra la idea

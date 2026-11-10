@@ -7375,6 +7375,27 @@ para compartir.
    empresa como sustituto (agenda: `show_logo` en `PublicBookingMeta`;
    confirmación del formulario: `hideLogo` en la marca del aviso).
 
+**Addendum v0.1.397 — Compartir rediseñado.** Pedido del usuario: «se ve muy
+feo, no es eficiente y se desperdicia mucho espacio». La ventana tenía el mismo
+tamaño (1140 × 880) para un enlace que para la demostración, y el QR era una
+pestaña casi vacía.
+1. **Dos pestañas** (control segmentado): **Enlace y QR** e **Insertar en tu
+   sitio**. `ShareTab` conserva `qr` para quien abre la ventana desde «El
+   código QR»: abre la del enlace con la tarjeta del QR marcada.
+2. **La ventana se ajusta a lo que muestra**: 560 px de ancho y alto según el
+   contenido para el enlace; 1200 × 860 para insertar (en el celular, pantalla
+   completa en las dos).
+3. **Insertar en tres pasos** (cómo va, ajústalo, copia el código) con su propio
+   scroll a la izquierda y la demostración a todo el alto a la derecha, que se
+   ve en un **computador** o en un **celular** (ahí la ventana y el panel ocupan
+   toda la pantalla, igual que `embed.js` bajo 600 px). El código se muestra
+   completo y coloreado (`highlightEmbedCode`, puro: se dibuja con React).
+4. **Sitios que pueden insertarlo** plegados, como etiquetas: `cleanEmbedDomain`
+   (puro) quita la ruta y la barra final y descarta lo que no es un sitio. Lo
+   que se guarda sigue siendo la misma lista de siempre.
+5. Atajos para mandar el enlace (WhatsApp, correo, abrir y, donde el navegador
+   lo tenga, la hoja de compartir del sistema con `navigator.share`).
+
 ### ADR-S96 — Suscripciones con débito automático de Mercado Pago y PayPal (v0.1.367, v0.1.373)
 
 **Contexto.** Pregunta del usuario: «¿cómo se manejan las suscripciones o

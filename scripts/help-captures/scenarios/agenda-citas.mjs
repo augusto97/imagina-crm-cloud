@@ -55,7 +55,7 @@ export default [
             { wait: 600 },
             { click: '[data-testid="booking-publish-button"]', then: '[data-testid="booking-share-panel"]', caption: 'Toca el botón para publicar: si falta algo, la sección te dice qué.' },
             { wait: 1200 },
-            { shot: '[data-testid="booking-share-panel"]', caption: 'Se abre «Compartir»: copia el enlace para tu Instagram o WhatsApp.' },
+            { shot: '[data-testid="booking-share-panel"]', caption: 'Se abre «Compartir»: copia el enlace para tu Instagram o WhatsApp, o descarga su código QR.' },
             { click: '[data-testid="booking-share-tab-embed"]', then: '[data-testid="booking-embed-demo"]', caption: 'En «Insertar en tu sitio» eliges cómo va y al lado ves cómo queda, funcionando de verdad.' },
             { wait: 1800 },
             { shot: '[data-testid="booking-share-panel"]', caption: 'Copia el código y pégalo en tu sitio web.' },

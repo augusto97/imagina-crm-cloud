@@ -2269,4 +2269,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Editar mi widget', href: '/settings?s=widgets' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.397-compartir-rediseno',
+        version: '0.1.397',
+        date: '2026-11-10',
+        kind: 'improvement',
+        title: 'Compartir un formulario o una agenda, más claro y más rápido',
+        summary:
+            'La ventana Compartir ahora va al grano: el enlace, los atajos para mandarlo y el código QR en una sola vista, e Insertar en tu sitio en tres pasos con la vista previa en un computador o en un celular.',
+        media: {
+            slides: [
+                {
+                    title: 'Enlace y QR juntos',
+                    text: 'Copia el enlace, mándalo por WhatsApp o correo y descarga el código QR sin cambiar de pestaña.',
+                    illustration: 'form-embed',
+                },
+                {
+                    title: 'Insertar en tres pasos',
+                    text: 'Elige cómo va en tu sitio, ajusta el botón y copia el código, que ahora se lee completo.',
+                    illustration: 'embed-popup',
+                },
+                {
+                    title: 'Mira cómo queda en un celular',
+                    text: 'La vista previa funciona de verdad y la ves en un computador o en un celular, con la ventana y el panel como se abren en un teléfono.',
+                    illustration: 'form-embed-side',
+                },
+            ],
+        },
+        body: 'En el constructor de un formulario o de una agenda, toca **Compartir**.',
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

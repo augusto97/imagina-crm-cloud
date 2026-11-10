@@ -3,6 +3,7 @@ import { Download, QrCode } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { __ } from '@/lib/i18n';
+import { cn } from '@/lib/utils';
 
 import { qrTargetUrl } from './embedCode';
 
@@ -12,11 +13,19 @@ import { qrTargetUrl } from './embedCode';
  * ya es pública) y la librería se pide sólo al abrir esta tarjeta. Lleva
  * `utm_source=qr`: las estadísticas del formulario cuentan aparte a quien
  * llega por el QR.
+ *
+ * v0.1.397 — Una tarjeta compacta dentro de la pestaña del enlace (antes era
+ * una pestaña propia, casi vacía).
  */
 const QR_ANCHOR = { form: 'form-qr', booking: 'booking-qr' } as const;
 
-export function PublicQrCard({ url, name, kind }: { url: string; name: string; kind: 'form' | 'booking' }): JSX.Element {
+export function PublicQrCard({ url, name, kind, highlight }: { url: string; name: string; kind: 'form' | 'booking'; highlight?: boolean }): JSX.Element {
     const canvas = useRef<HTMLCanvasElement>(null);
+    const box = useRef<HTMLElement>(null);
+    // v0.1.397 — Abierto desde «El código QR»: se trae a la vista y se marca.
+    useEffect(() => {
+        if (highlight) box.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, [highlight]);
     const [ready, setReady] = useState(false);
     const target = qrTargetUrl(url);
     const fileBase = (name.trim() || (kind === 'booking' ? 'agenda' : 'formulario'))
@@ -32,6 +41,11 @@ export function PublicQrCard({ url, name, kind }: { url: string; name: string; k
         void import('qrcode').then((mod) => {
             if (!alive || !canvas.current) return;
             void mod.default.toCanvas(canvas.current, target, { width: 168, margin: 1, errorCorrectionLevel: 'M' }).then(() => {
+                // La librería le pone 168 px en línea: el tamaño lo dan las clases.
+                if (canvas.current) {
+                    canvas.current.style.width = '';
+                    canvas.current.style.height = '';
+                }
                 if (alive) setReady(true);
             });
         });
@@ -66,53 +80,63 @@ export function PublicQrCard({ url, name, kind }: { url: string; name: string; k
     };
 
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid={`${kind}-qr`} data-tour={QR_ANCHOR[kind]}>
-            <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-[11px] imcrm-font-medium imcrm-text-muted-foreground">
-                <QrCode className="imcrm-h-3.5 imcrm-w-3.5" />
-                {__('Código QR')}
-            </span>
-            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3">
-                <canvas
-                    ref={canvas}
-                    width={168}
-                    height={168}
-                    aria-label={__('Código QR del enlace')}
-                    role="img"
-                    className="imcrm-h-[120px] imcrm-w-[120px] imcrm-shrink-0 imcrm-rounded-md imcrm-bg-white imcrm-p-1.5 imcrm-ring-1 imcrm-ring-border"
-                    data-testid={`${kind}-qr-canvas`}
-                />
-                <div className="imcrm-flex imcrm-min-w-[180px] imcrm-flex-1 imcrm-flex-col imcrm-gap-2">
-                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {kind === 'form'
-                            ? __('Imprímelo en un volante, un cartel o el mostrador: al escanearlo se abre el formulario. Quienes lleguen por aquí aparecen como «Código QR» en las estadísticas.')
-                            : __('Imprímelo en un volante, un cartel o el mostrador: al escanearlo se abre la agenda para reservar.')}
+        <section
+            ref={box}
+            className={cn(
+                'imcrm-flex imcrm-items-center imcrm-gap-4 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-p-3.5 imcrm-transition-shadow',
+                highlight && 'imcrm-ring-2 imcrm-ring-primary/50',
+            )}
+            data-testid={`${kind}-qr`}
+            data-tour={QR_ANCHOR[kind]}
+            data-highlight={highlight ? '' : undefined}
+        >
+            <canvas
+                ref={canvas}
+                width={168}
+                height={168}
+                aria-label={__('Código QR del enlace')}
+                role="img"
+                className="imcrm-h-[104px] imcrm-w-[104px] imcrm-shrink-0 imcrm-rounded-lg imcrm-bg-white imcrm-p-1.5 imcrm-ring-1 imcrm-ring-border"
+                data-testid={`${kind}-qr-canvas`}
+            />
+            <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-2">
+                <div>
+                    <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-sm imcrm-font-medium">
+                        <QrCode className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
+                        {__('Código QR')}
                     </p>
-                    <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1.5">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="imcrm-gap-1 imcrm-text-xs"
-                            disabled={!ready}
-                            onClick={() => void download('png')}
-                            data-testid={`${kind}-qr-png`}
-                        >
-                            <Download className="imcrm-h-3.5 imcrm-w-3.5" />
-                            {__('Imagen (PNG)')}
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            className="imcrm-gap-1 imcrm-text-xs"
-                            disabled={!ready}
-                            onClick={() => void download('svg')}
-                            data-testid={`${kind}-qr-svg`}
-                        >
-                            <Download className="imcrm-h-3.5 imcrm-w-3.5" />
-                            {__('Para imprenta (SVG)')}
-                        </Button>
-                    </div>
+                    <p className="imcrm-mt-0.5 imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">
+                        {kind === 'form'
+                            ? __('Para un volante, un cartel o el mostrador: al escanearlo se abre el formulario. En las estadísticas aparece como «Código QR».')
+                            : __('Para un volante, un cartel o el mostrador: al escanearlo se abre la agenda para reservar.')}
+                    </p>
+                </div>
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1.5">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="imcrm-h-8 imcrm-gap-1 imcrm-text-xs"
+                        disabled={!ready}
+                        onClick={() => void download('png')}
+                        data-testid={`${kind}-qr-png`}
+                    >
+                        <Download className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('PNG')}
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="imcrm-h-8 imcrm-gap-1 imcrm-text-xs"
+                        disabled={!ready}
+                        onClick={() => void download('svg')}
+                        title={__('Un archivo que se agranda sin perder calidad, para imprenta.')}
+                        data-testid={`${kind}-qr-svg`}
+                    >
+                        <Download className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('SVG para imprenta')}
+                    </Button>
                 </div>
             </div>
-        </div>
+        </section>
     );
 }

@@ -1272,8 +1272,8 @@ export const articles: LearnArticle[] = [
                 t: 'steps',
                 items: [
                     'En el constructor, toca el interruptor **Sin publicar** de la barra de arriba. Se guarda y pasa a **Publicado**.',
-                    'Se abre sola la ventana **Compartir el formulario**, con tres pestañas: **Enlace** (para copiarlo o mandarlo por WhatsApp o correo), **Insertar en tu sitio** y **Código QR**.',
-                    'Toca **Abrir en otra pestaña** y llénalo tú una vez para ver llegar la respuesta a la lista.',
+                    'Se abre sola la ventana **Compartir el formulario**, con dos pestañas: **Enlace y QR** (para copiarlo, mandarlo por WhatsApp o correo, o descargar su código QR) e **Insertar en tu sitio**.',
+                    'Toca **Abrir** y llénalo tú una vez para ver llegar la respuesta a la lista.',
                     'Para dejar de recibir respuestas, toca **Publicado**: el enlace pasa a responder «no disponible» y lo que ya llegó se conserva.',
                 ],
             },
@@ -1365,7 +1365,7 @@ export const articles: LearnArticle[] = [
                 t: 'settings',
                 title: 'Más opciones',
                 rows: [
-                    { name: 'Sitios que pueden insertarlo', what: 'En **Compartir → Insertar en tu sitio**, debajo del código. Uno por renglón (ej.: tusitio.com). Vacío = cualquier sitio.', tip: 'Ponle tu dominio para que nadie copie tu formulario en otra página.' },
+                    { name: 'Sitios que pueden insertarlo', what: 'En **Compartir → Insertar en tu sitio**, debajo del código (tócalo para desplegarlo). Escribe cada sitio y pulsa Enter (ej.: tusitio.com). Vacío = cualquier sitio.', tip: 'Ponle tu dominio para que nadie copie tu formulario en otra página.' },
                     { name: 'Completar respuestas desde la dirección', what: 'En **Ajustes → Medir conversiones**. Permite que el enlace traiga respuestas ya escritas (`?nombre=Ana&origen=instagram`).', tip: 'Necesario para las preguntas ocultas que marcan de dónde vino cada respuesta.' },
                 ],
             },
@@ -1379,8 +1379,8 @@ export const articles: LearnArticle[] = [
                 t: 'steps',
                 items: [
                     'En el constructor, toca **Compartir** (o publícalo: la ventana se abre sola).',
-                    'Entra a la pestaña **Código QR**: ya está dibujado con el enlace del formulario.',
-                    'Toca **Imagen (PNG)** para usarlo en una publicación o un documento, o **Para imprenta (SVG)** para que la imprenta lo haga del tamaño que quiera sin que se pixele.',
+                    'En la pestaña **Enlace y QR**, debajo del enlace, ya está dibujado con el enlace del formulario.',
+                    'Toca **PNG** para usarlo en una publicación o un documento, o **SVG para imprenta** para que la imprenta lo haga del tamaño que quiera sin que se pixele.',
                 ],
             },
             {
