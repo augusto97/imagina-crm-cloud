@@ -13472,8 +13472,10 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         después del commit; lo que se escribe con la respuesta va en una
         transacción nueva. Webhooks, conectores, acciones con nombre,
         `send_email`, suscripciones, WhatsApp y SMS (`deferSend`) y reuniones
-        (`afterMeetingCall` con `withTx`). `AUTOMATIONS_CONCURRENCY` (default
-        10; antes 5 fijas).
+        (`afterMeetingCall` con `withTx`); un correo que adjunta un PDF que
+        EMITE un número en ese paso se manda adentro, como antes (si no sale,
+        el número se deshace — lo atrapó `documents-freeze.spec`).
+        `AUTOMATIONS_CONCURRENCY` (default 10; antes 5 fijas).
         (c) **Menos trabajo por cambio**: lista y campos en una transacción
         (`RecordsService.listAndFields`; `update` dentro de la suya), drizzle
         sin `{ schema }` (~5 % de CPU por pedido), el caché de disparadores

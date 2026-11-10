@@ -8009,7 +8009,9 @@ CPU con el inspector de Node):
    reunión, el registro del envío) va en una transacción NUEVA y corta. Aplica
    a webhooks, conectores, acciones con nombre, `send_email`, suscripciones,
    WhatsApp, SMS y reuniones. Un error de red queda como paso fallido con su
-   motivo. `AUTOMATIONS_CONCURRENCY` (default 10, antes fijo en 5) dice cuántas
+   motivo. Única excepción: un correo que adjunta un PDF que EMITE un número de
+   documento en ese paso se manda dentro de la transacción, como antes, para
+   que si no sale el número y el PDF congelado se deshagan (v0.1.290). `AUTOMATIONS_CONCURRENCY` (default 10, antes fijo en 5) dice cuántas
    corren a la vez; cada una toma como mucho una conexión mientras escribe.
 3. **Menos trabajo por cambio**: lista y campos en una transacción
    (`RecordsService.listAndFields`; `update` los resuelve dentro de la suya);
