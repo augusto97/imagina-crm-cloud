@@ -6,6 +6,7 @@ import {
     Logger,
     NotFoundException,
     Optional,
+    ServiceUnavailableException,
     UnauthorizedException,
 } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
@@ -25,6 +26,9 @@ import {
     whatsappIdVariants,
     whatsappRecipient,
     whatsappStatusFromMeta,
+    whatsappStatusWanted,
+    waWebHookEventsFor,
+    sameWaWebEvents,
     nextWhatsappStatus,
     whatsappTemplateManagerUrl,
     whatsappWindowClosesAt,
@@ -66,7 +70,9 @@ import { redactValues } from '../connectors/connection-parts';
 import { ConnectionUnusableError, ConnectorsService } from '../connectors/connectors.service';
 import { planModuleOff } from '../billing/plan-module-gate';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { connections, lists, records, whatsappContacts, whatsappHooks, whatsappTemplates, type WhatsappTemplateRowDb } from '../db/schema';
+import { activity, connections, lists, records, whatsappContacts, whatsappHooks, whatsappTemplates, type WhatsappTemplateRowDb } from '../db/schema';
+import { PublicBusyError } from '../public-cache/public-cache';
+import { PublicCacheService } from '../public-cache/public-cache.service';
 import { FieldsService } from '../fields/fields.service';
 import { IncidentHub } from '../incidents/incident-hub';
 import { andWhere, hiddenFieldsFor, listRowInScope, listScopeWhere, type AclExtras } from '../lists/list-acl';
@@ -106,6 +112,7 @@ import {
     parseWaWebHook,
     parseWaWebHookActive,
     parseWaWebHookCreated,
+    parseWaWebHookEvents,
     parseWaWebSend,
     verifyWaWebSignature,
     waWebAccountRequest,
@@ -116,6 +123,7 @@ import {
     waWebErrorText,
     waWebHookRequest,
     waWebSendRequest,
+    waWebUpdateHookEventsRequest,
     type WaWebCreds,
     type WaWebPayload,
 } from './whatsapp-web';
@@ -158,8 +166,17 @@ export const WHATSAPP_WINDOW_CLOSED = 'La ventana de 24 h está cerrada: usa una
 
 const SYSTEM_ACTOR = { userId: 0, role: 'admin' as const };
 const SEND_TIMEOUT_MS = 15_000;
-/** Meta reintenta un aviso durante días: un mensaje ya procesado se recuerda una semana. */
-const DEDUP_TTL_S = 7 * 24 * 3600;
+/**
+ * Un mensaje ya procesado se recuerda 2 días: los reintentos de Meta y de WAS
+ * llegan en minutos u horas (sólo si no se les contestó). v0.1.391 — antes era
+ * una semana: con muchas empresas, millones de claves en Redis para nada. Los
+ * estados no necesitan recordarse: aplicarlos dos veces no cambia nada.
+ */
+const DEDUP_TTL_S = 2 * 24 * 3600;
+/** v0.1.391 — Cuánto vale lo que se sabe de una URL de avisos (la conexión, el secreto, qué necesita). */
+const HOOK_CTX_TTL_MS = 60_000;
+/** Varios mensajes del mismo contacto en este rato quedan en UNA línea de la actividad. */
+const ACTIVITY_GROUP_MS = 30 * 60_000;
 
 const seenKey = (tenantId: number, id: string): string => `wa:seen:${tenantId}:${id}`;
 
@@ -218,6 +235,39 @@ interface WebHookState {
     hook_id: number | null;
     hook_url: string | null;
     error: string | null;
+    /** v0.1.391 — los avisos suscritos (null = los de antes: todos). */
+    events?: string[] | null;
+}
+
+/** Lo que se escribió en un registro (para las pantallas abiertas y los campos con IA). */
+interface ChannelWrite {
+    listId: number;
+    recordId: number;
+    before: Record<string, unknown>;
+    after: Record<string, unknown>;
+}
+
+/** v0.1.391 — Qué necesita escuchar una conexión (ver `WhatsappListening`). */
+interface HookNeeds {
+    inbound: boolean;
+    statuses: boolean;
+    statusLists: string[];
+}
+
+/** v0.1.391 — Lo que se sabe de una URL de avisos (en memoria un rato). */
+interface HookContext {
+    token: string;
+    tenantId: number;
+    connectionId: number;
+    verifyToken: string;
+    provider: WhatsappProvider;
+    /** Con qué se verifica la firma ('' = no hay). */
+    secret: string;
+    accountId: number | null;
+    needs: HookNeeds;
+    /** Versión de la empresa al leerlo: si cambió algo, se vuelve a leer. */
+    ver: number;
+    loadedAt: number;
 }
 
 function readWebHookState(config: Record<string, unknown>): WebHookState {
@@ -228,6 +278,7 @@ function readWebHookState(config: Record<string, unknown>): WebHookState {
         hook_id: Number.isInteger(id) && id > 0 ? id : null,
         hook_url: typeof r.hook_url === 'string' && r.hook_url !== '' ? r.hook_url : null,
         error: typeof r.error === 'string' && r.error !== '' ? r.error : null,
+        events: Array.isArray(r.events) ? r.events.filter((e): e is string => typeof e === 'string') : null,
     };
 }
 
@@ -268,6 +319,7 @@ export class WhatsappService {
         @Optional() private readonly recordsSvc?: RecordsService,
         @Optional() private readonly incidents?: IncidentHub,
         @Optional() private readonly aiFields?: AiFieldsService,
+        @Optional() private readonly cache?: PublicCacheService,
     ) {
         // v0.1.389 — Imagina WAS: al conectar se registran solos los avisos; al
         // borrar la conexión se sacan (si no, seguirían llamando a una URL muerta).
@@ -318,7 +370,7 @@ export class WhatsappService {
      * URL desconocido → 404 opaco.
      */
     async verifyChallenge(token: string, query: Record<string, unknown>): Promise<string> {
-        const hook = await this.hookByToken(token);
+        const hook = await this.hookContext(token);
         if (!hook) throw new NotFoundException({ code: 'not_found', message: 'No encontrado', data: { status: 404 } });
         const mode = String(query['hub.mode'] ?? '');
         const given = String(query['hub.verify_token'] ?? '');
@@ -329,66 +381,183 @@ export class WhatsappService {
         return challenge.slice(0, 200);
     }
 
-    private async hookByToken(token: string): Promise<{ token: string; tenantId: number; connectionId: number; verifyToken: string } | null> {
-        if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return null;
+    // ── Qué escucha cada conexión (v0.1.391) ────────────────────────────
+
+    private ns(tenantId: number): string {
+        return `wa:${tenantId}`;
+    }
+
+    /**
+     * Cambió algo de lo que escucha la empresa (la lista de entrada, las
+     * columnas de estado, una conexión): lo que está en memoria se vuelve a
+     * leer, también en los otros servidores.
+     */
+    private changed(tenantId: number): void {
+        this.cache?.bump(this.ns(tenantId));
+    }
+
+    /**
+     * Qué necesita escuchar la conexión. Los mensajes que te escriben, sólo si
+     * caen en una lista viva (sin lista no disparan nada); entregado/leído,
+     * sólo si alguna lista muestra el estado del último envío.
+     */
+    private async needsInTx(tx: Tx, tenantId: number, config: Record<string, unknown>): Promise<HookNeeds> {
+        const cfg = readWhatsappConnectionConfig(config);
+        const inboundId = cfg.inbound_list_id ?? 0;
+        const rows = await tx
+            .select({ id: lists.id, name: lists.name, settings: lists.settings })
+            .from(lists)
+            .where(and(eq(lists.tenantId, tenantId), isNull(lists.deletedAt), sql`(${lists.settings} ? 'whatsapp' OR ${lists.id} = ${inboundId})`));
+        const statusLists = rows
+            .filter((r) => {
+                const f = readWhatsappListFields(r.settings);
+                return f.status !== null || f.status_detail !== null;
+            })
+            .map((r) => r.name);
+        return { inbound: inboundId > 0 && rows.some((r) => r.id === inboundId), statuses: statusLists.length > 0, statusLists };
+    }
+
+    /** Lo que se sabe de una URL de avisos: la conexión, con qué se firma y qué necesita. */
+    private async loadHookContext(token: string): Promise<HookContext | null> {
         const [row] = await this.db
             .select({ token: whatsappHooks.token, tenantId: whatsappHooks.tenantId, connectionId: whatsappHooks.connectionId, verifyToken: whatsappHooks.verifyToken })
             .from(whatsappHooks)
             .where(eq(whatsappHooks.token, token))
             .limit(1);
+        if (!row) return null;
         // v0.1.338 (ADR-S87) — plan sin «Integraciones»: la URL responde como
         // una desconocida (nada se borra; vuelve al cambiar de plan).
-        if (row && (await planModuleOff(this.db, row.tenantId, 'integrations'))) return null;
-        return row ?? null;
+        if (await planModuleOff(this.db, row.tenantId, 'integrations')) return null;
+        const ver = this.cache?.version(this.ns(row.tenantId)) ?? 0;
+        const out = await this.tenantDb.withTenant(row.tenantId, async (tx) => {
+            const conn = await this.connRow(tx, row.tenantId, row.connectionId);
+            if (!conn) return null;
+            const needs = await this.needsInTx(tx, row.tenantId, conn.config);
+            let secret = '';
+            let accountId: number | null = null;
+            try {
+                const creds = await this.connectors.integrationCredsInTx(tx, row.tenantId, row.connectionId);
+                if (creds && isWhatsappProvider(creds.provider)) {
+                    secret = creds.creds.signingSecret ?? '';
+                    accountId = creds.provider === 'whatsapp_web' ? waWebCreds(creds.creds).accountId : null;
+                }
+            } catch (err) {
+                if (!(err instanceof ConnectionUnusableError)) throw err;
+                this.reportConnection(row.tenantId, row.connectionId, conn, err.message);
+            }
+            return { provider: conn.provider as WhatsappProvider, needs, secret, accountId };
+        });
+        if (!out) return null;
+        return { ...row, ...out, ver, loadedAt: Date.now() };
     }
 
     /**
-     * POST de Meta. Firma mala → 401; token desconocido → 404 opaco. Lo que
-     * trae se ENCOLA (Meta corta si no se le contesta rápido y reintenta), con
-     * un id por mensaje/estado para no procesar dos veces el mismo aviso.
+     * v0.1.391 — Cada aviso que llega necesita esto. Antes eran 3-4 consultas
+     * a la base por aviso; ahora se lee una vez por minuto (o cuando algo
+     * cambia) y se reusa.
+     */
+    private async hookContext(token: string, fresh = false): Promise<HookContext | null> {
+        if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return null;
+        const cache = this.cache;
+        if (!cache) return this.loadHookContext(token);
+        const key = `wa-hook:${token}`;
+        const read = async (): Promise<HookContext | null> => {
+            try {
+                return await cache.get(key, HOOK_CTX_TTL_MS, () => this.loadHookContext(token), 15_000);
+            } catch (err) {
+                if (err instanceof PublicBusyError) {
+                    throw new ServiceUnavailableException({ code: 'busy', message: 'Ocupado, reintenta en unos segundos.', data: { status: 503 } });
+                }
+                throw err;
+            }
+        };
+        if (fresh) cache.invalidate(key);
+        let ctx = await read();
+        if (ctx && ctx.ver !== cache.version(this.ns(ctx.tenantId))) {
+            cache.invalidate(key);
+            ctx = await read();
+        }
+        return ctx;
+    }
+
+    /** `lastHookAt` se guarda como mucho una vez por minuto (antes, en cada aviso). */
+    private readonly hookTouched = new Map<string, number>();
+
+    private touchHook(token: string): void {
+        const now = Date.now();
+        if ((this.hookTouched.get(token) ?? 0) > now - 60_000) return;
+        if (this.hookTouched.size > 20_000) this.hookTouched.clear();
+        this.hookTouched.set(token, now);
+        void this.db
+            .update(whatsappHooks)
+            .set({ lastHookAt: new Date(now) })
+            .where(eq(whatsappHooks.token, token))
+            .catch(() => undefined);
+    }
+
+    private verifyHook(ctx: HookContext, rawBody: string, sig: WhatsappHookHeaders): boolean {
+        if (ctx.secret === '') return false;
+        return ctx.provider === 'whatsapp_cloud' ? verifyMetaSignature(ctx.secret, rawBody, sig.meta) : verifyWaWebSignature(ctx.secret, rawBody, sig.web, sig.timestamp);
+    }
+
+    /**
+     * POST de Meta o de Imagina WAS. Firma mala → 401; token desconocido → 404
+     * opaco. Lo que trae se ENCOLA (Meta corta si no se le contesta rápido y
+     * reintenta), con un id por mensaje/estado para no procesar dos veces el
+     * mismo aviso. v0.1.391 — Lo que nada usa se descarta aquí mismo, sin
+     * cola ni base.
      */
     async receive(token: string, rawBody: string, headers: WhatsappHookHeaders | string | undefined): Promise<void> {
         // Un texto suelto es la firma de Meta (`X-Hub-Signature-256`), como antes de v0.1.389.
         const sig: WhatsappHookHeaders = typeof headers === 'object' && headers !== null ? headers : { meta: headers };
-        const hook = await this.hookByToken(token);
-        if (!hook) throw new NotFoundException({ code: 'not_found', message: 'No encontrado', data: { status: 404 } });
-        const auth = await this.hookAuthOf(hook.tenantId, hook.connectionId);
-        const valid =
-            auth !== null &&
-            (auth.provider === 'whatsapp_cloud'
-                ? verifyMetaSignature(auth.secret, rawBody, sig.meta)
-                : verifyWaWebSignature(auth.secret, rawBody, sig.web, sig.timestamp));
-        if (!valid) {
+        let ctx = await this.hookContext(token);
+        if (!ctx) throw new NotFoundException({ code: 'not_found', message: 'No encontrado', data: { status: 404 } });
+        // Firma que no coincide: puede ser un secreto nuevo (se registró el aviso de nuevo). Se
+        // vuelve a leer UNA vez, y como mucho cada 5 s por URL (una firma falsa no carga la base).
+        if (!this.verifyHook(ctx, rawBody, sig) && ctx.loadedAt < Date.now() - 5_000) {
+            ctx = await this.hookContext(token, true);
+            if (!ctx) throw new NotFoundException({ code: 'not_found', message: 'No encontrado', data: { status: 404 } });
+        }
+        if (!this.verifyHook(ctx, rawBody, sig)) {
             throw new UnauthorizedException({ code: 'bad_signature', message: 'Firma inválida', data: { status: 401 } });
         }
-        await this.db.update(whatsappHooks).set({ lastHookAt: new Date() }).where(eq(whatsappHooks.token, token));
+        this.touchHook(token);
         let body: unknown;
         try {
             body = JSON.parse(rawBody);
         } catch {
             return;
         }
-        if (auth.provider === 'whatsapp_web') {
-            await this.receiveWeb(hook, auth.accountId, body, sig.event);
+        const hook = { tenantId: ctx.tenantId, connectionId: ctx.connectionId };
+        if (ctx.provider === 'whatsapp_web') {
+            await this.receiveWeb(hook, ctx.accountId, ctx.needs, body, sig.event);
             return;
         }
         const parsed = parseMetaWebhook(body);
         const jobs: Array<{ job: WhatsappJob; dedup: string | null }> = [];
+        // Meta: los mensajes se procesan siempre (abren la ventana de 24 h para el texto libre).
         for (const m of parsed.messages) {
             jobs.push({
                 job: { kind: 'message', tenantId: hook.tenantId, connectionId: hook.connectionId, message: { ...m, at: m.at.toISOString() } },
                 dedup: `m-${m.id}`,
             });
         }
-        for (const s of parsed.statuses) {
+        for (const st of parsed.statuses) {
+            const status = whatsappStatusFromMeta(st.status);
+            // Meta manda todos los estados (no se pueden elegir): los que nada muestra, fuera.
+            if (!status || !whatsappStatusWanted(status, ctx.needs.statuses)) continue;
             jobs.push({
-                job: { kind: 'status', tenantId: hook.tenantId, connectionId: hook.connectionId, status: { ...s, at: s.at.toISOString() } },
-                dedup: `s-${s.id}-${s.status}`,
+                job: { kind: 'status', tenantId: hook.tenantId, connectionId: hook.connectionId, status: { ...st, at: st.at.toISOString() } },
+                dedup: `s-${st.id}-${st.status}`,
             });
         }
         if (parsed.templateChanges > 0) {
             jobs.push({ job: { kind: 'templates', tenantId: hook.tenantId, connectionId: hook.connectionId }, dedup: null });
         }
+        await this.enqueue(jobs);
+    }
+
+    private async enqueue(jobs: Array<{ job: WhatsappJob; dedup: string | null }>): Promise<void> {
         for (const { job, dedup } of jobs) {
             if (this.sink) await this.sink.add(job, dedup);
             else await this.process(job).catch((err: unknown) => this.logger.warn(`Aviso de WhatsApp: ${String(err)}`));
@@ -403,13 +572,16 @@ export class WhatsappService {
     private async receiveWeb(
         hook: { tenantId: number; connectionId: number },
         ownAccount: number | null,
+        needs: HookNeeds,
         body: unknown,
         headerEvent: string | undefined,
     ): Promise<void> {
         const parsed = parseWaWebHook(body, headerEvent);
         if (parsed.accountId !== null && ownAccount !== null && parsed.accountId !== ownAccount) return;
         const jobs: Array<{ job: WhatsappJob; dedup: string }> = [];
-        if (parsed.message) {
+        // v0.1.391 — Si nada usa los mensajes que te escriben, ni se encolan (WAS ya
+        // no debería mandarlos: esto cubre el rato hasta que se actualiza el aviso).
+        if (parsed.message && needs.inbound) {
             const m = parsed.message;
             jobs.push({
                 job: { kind: 'message', tenantId: hook.tenantId, connectionId: hook.connectionId, message: { ...m, at: m.at.toISOString() } },
@@ -420,29 +592,29 @@ export class WhatsappService {
             const st = parsed.status;
             // «canceled» se lee como «failed»: para el registro las dos son «no salió».
             const status = st.status === 'canceled' ? 'failed' : st.status;
-            jobs.push({
-                job: {
-                    kind: 'status',
-                    tenantId: hook.tenantId,
-                    connectionId: hook.connectionId,
-                    status: {
-                        phoneNumberId: st.phoneNumberId,
-                        id: st.id,
-                        status,
-                        recipientId: st.recipientId,
-                        errors: st.errors,
-                        detail: st.errors[0]?.message ?? null,
-                        systemic: isSystemicWaWebFailure(st.failureReason),
-                        at: st.at.toISOString(),
+            const mapped = whatsappStatusFromMeta(status);
+            if (mapped && whatsappStatusWanted(mapped, needs.statuses)) {
+                jobs.push({
+                    job: {
+                        kind: 'status',
+                        tenantId: hook.tenantId,
+                        connectionId: hook.connectionId,
+                        status: {
+                            phoneNumberId: st.phoneNumberId,
+                            id: st.id,
+                            status,
+                            recipientId: st.recipientId,
+                            errors: st.errors,
+                            detail: st.errors[0]?.message ?? null,
+                            systemic: isSystemicWaWebFailure(st.failureReason),
+                            at: st.at.toISOString(),
+                        },
                     },
-                },
-                dedup: `s-${st.id}-${status}`,
-            });
+                    dedup: `s-${st.id}-${status}`,
+                });
+            }
         }
-        for (const { job, dedup } of jobs) {
-            if (this.sink) await this.sink.add(job, dedup);
-            else await this.process(job).catch((err: unknown) => this.logger.warn(`Aviso de WhatsApp: ${String(err)}`));
-        }
+        await this.enqueue(jobs);
     }
 
     /**
@@ -590,7 +762,8 @@ export class WhatsappService {
                 .from(connections)
                 .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
                 .limit(1);
-            return { row, cfg, f, templates, allLists, totals, lastErr };
+            const needs = await this.needsInTx(tx, tenantId, row.config);
+            return { row, cfg, f, templates, allLists, totals, lastErr, needs };
         });
         const inbound = out.cfg.inbound_list_id ? await this.listColumns(tenantId, String(out.cfg.inbound_list_id)).catch(() => null) : null;
         // ¿La app está suscrita a la cuenta? (best-effort: si Meta no contesta, no se sabe).
@@ -637,6 +810,7 @@ export class WhatsappService {
             template_manager_url: whatsappTemplateManagerUrl(out.f.waba_id ?? ''),
             totals: { contacts: Number(out.totals?.contacts ?? 0), open_windows: Number(out.totals?.open ?? 0) },
             last_error: out.lastErr?.ok === false ? (out.lastErr.error ?? null) : null,
+            listening: { inbound: out.needs.inbound, statuses: out.needs.statuses, status_lists: out.needs.statusLists, events: null },
         };
     }
 
@@ -666,6 +840,8 @@ export class WhatsappService {
                 meta: { inbound_list_id: input.inbound_list_id, create_contacts: input.create_contacts },
             });
         });
+        // v0.1.391 — Cambió qué mensajes se usan: el panel (abajo) ajusta los avisos de WAS.
+        this.changed(tenantId);
         return this.connectionDetail(tenantId, actor, connectionId);
     }
 
@@ -751,6 +927,21 @@ export class WhatsappService {
      * crearlo: se guarda cifrado. Un fallo no lanza: queda a la vista.
      */
     async ensureWebHook(tenantId: number, connectionId: number, force = false): Promise<WebHookState> {
+        // Uno a la vez por conexión: dos ajustes a la vez podrían registrar dos avisos.
+        const prev = this.hookLocks.get(connectionId) ?? Promise.resolve();
+        const run = prev.catch(() => undefined).then(() => this.ensureWebHookNow(tenantId, connectionId, force));
+        const tail = run.catch(() => undefined);
+        this.hookLocks.set(connectionId, tail);
+        try {
+            return await run;
+        } finally {
+            if (this.hookLocks.get(connectionId) === tail) this.hookLocks.delete(connectionId);
+        }
+    }
+
+    private readonly hookLocks = new Map<number, Promise<unknown>>();
+
+    private async ensureWebHookNow(tenantId: number, connectionId: number, force: boolean): Promise<WebHookState> {
         const row = await this.tenantDb.withTenant(tenantId, (tx) => this.connRow(tx, tenantId, connectionId));
         if (!row || row.provider !== 'whatsapp_web') return { hook_id: null, hook_url: null, error: null };
         let creds: WaWebCreds;
@@ -775,36 +966,101 @@ export class WhatsappService {
             const res = await safeWebhookFetch(req.url, { method: req.method, headers: req.headers, body: req.body, captureBody: true, maxCaptureBytes: 64 * 1024, timeoutMs: 12_000 });
             return { status: res.status, body: res.body ?? '' };
         };
+        // v0.1.391 — Sólo los avisos que algo usa (ver `needsInTx`).
+        const needs = await this.tenantDb.withTenant(tenantId, (tx) => this.needsInTx(tx, tenantId, row.config));
+        const desired = waWebHookEventsFor(needs);
         try {
             const hasSecret = (await this.hookAuthOf(tenantId, connectionId)) !== null;
             if (prev.hook_id !== null && prev.hook_url === url && hasSecret && !force) {
                 const got = await call(waWebHookRequest(creds, prev.hook_id));
                 const active = parseWaWebHookActive(got.status, got.body);
-                if (active === true) return prev.error ? save({ ...prev, error: null }) : prev;
+                if (active === true) {
+                    const current = parseWaWebHookEvents(got.status, got.body) ?? prev.events ?? null;
+                    if (current !== null && sameWaWebEvents(current, desired)) {
+                        const stale = prev.error !== null || !prev.events || !sameWaWebEvents(prev.events, desired);
+                        return stale ? save({ ...prev, error: null, events: desired }) : prev;
+                    }
+                    // Cambió lo que se usa: se ajustan los avisos (el secreto no cambia).
+                    const upd = await call(waWebUpdateHookEventsRequest(creds, prev.hook_id, desired));
+                    if (upd.status >= 200 && upd.status < 300) return save({ ...prev, error: null, events: desired });
+                    // Si no se pudo cambiar, se registra de nuevo (abajo).
+                }
                 if (active === null) return prev;
             }
             if (prev.hook_id !== null) await call(waWebDeleteHookRequest(creds, prev.hook_id)).catch(() => undefined);
             // El nombre lleva el dominio de esta app (no la marca: puede ser white-label).
-            const created = await call(waWebCreateHookRequest(creds, url, `${new URL(url).host} · ${row.name}`.slice(0, 128)));
+            const created = await call(waWebCreateHookRequest(creds, url, `${new URL(url).host} · ${row.name}`.slice(0, 128), desired));
             const err = parseWaWebError(created.status, created.body);
             if (err) {
                 const text =
                     err.code === 'missing_ability'
                         ? 'La clave no tiene el permiso webhooks.manage (avisos): márcalo en tu panel de WhatsApp (API Keys) y vuelve a registrar los avisos. Sin ellos los mensajes salen igual, pero no sabremos si se entregaron ni recibiremos los de tus clientes.'
                         : `No pudimos registrar los avisos en WAS: ${waWebErrorText(err)}`;
-                return save({ hook_id: null, hook_url: null, error: text });
+                return save({ hook_id: null, hook_url: null, error: text, events: null });
             }
             const parsed = parseWaWebHookCreated(created.body);
-            if (!parsed) return save({ hook_id: null, hook_url: null, error: 'WAS creó el aviso pero no devolvió su secreto: vuelve a registrarlo.' });
-            return save({ hook_id: parsed.id, hook_url: url, error: null }, parsed.secret);
+            if (!parsed) return save({ hook_id: null, hook_url: null, error: 'WAS creó el aviso pero no devolvió su secreto: vuelve a registrarlo.', events: null });
+            const state = await save({ hook_id: parsed.id, hook_url: url, error: null, events: desired }, parsed.secret);
+            // Secreto nuevo: lo que estaba en memoria se vuelve a leer.
+            this.changed(tenantId);
+            return state;
         } catch (err) {
             const message = redactValues(err instanceof Error ? err.message : String(err), [creds.key]);
             return save({ ...prev, error: `No pudimos comunicarnos con el servidor de WhatsApp para registrar los avisos (${message}).` });
         }
     }
 
+    /**
+     * v0.1.391 — Deja los avisos de una conexión de Imagina WAS en lo que se
+     * usa. Sin llamar a WAS si ya están así (lo guardado coincide). Devuelve si
+     * hubo que ajustarlos.
+     */
+    async syncWebHookEvents(tenantId: number, connectionId: number): Promise<boolean> {
+        const row = await this.tenantDb.withTenant(tenantId, (tx) => this.connRow(tx, tenantId, connectionId));
+        if (!row || row.provider !== 'whatsapp_web') return false;
+        const prev = readWebHookState(row.config);
+        const needs = await this.tenantDb.withTenant(tenantId, (tx) => this.needsInTx(tx, tenantId, row.config));
+        const desired = waWebHookEventsFor(needs);
+        if (prev.hook_id !== null && prev.error === null && prev.events && sameWaWebEvents(prev.events, desired)) return false;
+        await this.ensureWebHook(tenantId, connectionId, false);
+        return true;
+    }
+
+    /**
+     * Todas las conexiones de Imagina WAS de una empresa (cambió algo que
+     * afecta a todas). En segundo plano: quien guardó no espera a WAS.
+     */
+    private resyncTenantWebHooks(tenantId: number): Promise<void> {
+        this.changed(tenantId);
+        return (async () => {
+            const rows = await this.db
+                .select({ id: connections.id })
+                .from(connections)
+                .where(and(eq(connections.tenantId, tenantId), eq(connections.provider, 'whatsapp_web')));
+            for (const r of rows) await this.syncWebHookEvents(tenantId, r.id).catch(() => undefined);
+        })().catch((err: unknown) => this.logger.warn(`Avisos de WhatsApp: ${String(err)}`));
+    }
+
+    /**
+     * v0.1.391 — La revisión de cada hora: cada conexión de Imagina WAS queda
+     * suscrita sólo a lo que usa (una lista que se borró, una columna de
+     * estado que se sacó…). Sin cambios no se llama a WAS.
+     */
+    async reconcileWebHooks(): Promise<number> {
+        const rows = await this.db
+            .select({ id: connections.id, tenantId: connections.tenantId })
+            .from(connections)
+            .where(eq(connections.provider, 'whatsapp_web'));
+        let n = 0;
+        for (const r of rows) {
+            if (await this.syncWebHookEvents(r.tenantId, r.id).catch(() => false)) n++;
+        }
+        return n;
+    }
+
     /** Al borrar la conexión: se saca el aviso de Imagina WAS (si no, seguiría llamando a una URL muerta). */
     private async forgetWebHook(tenantId: number, connectionId: number): Promise<void> {
+        this.changed(tenantId);
         const row = await this.tenantDb.withTenant(tenantId, (tx) => this.connRow(tx, tenantId, connectionId));
         if (!row || row.provider !== 'whatsapp_web') return;
         const state = readWebHookState(row.config);
@@ -839,7 +1095,8 @@ export class WhatsappService {
                 .from(connections)
                 .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
                 .limit(1);
-            return { row, cfg, f, allLists, totals, lastErr };
+            const needs = await this.needsInTx(tx, tenantId, row.config);
+            return { row, cfg, f, allLists, totals, lastErr, needs };
         });
         const inbound = out.cfg.inbound_list_id ? await this.listColumns(tenantId, String(out.cfg.inbound_list_id)).catch(() => null) : null;
         // El número como está AHORA en Imagina WAS (best-effort).
@@ -913,6 +1170,12 @@ export class WhatsappService {
             template_manager_url: '',
             totals: { contacts: Number(out.totals?.contacts ?? 0), open_windows: 0 },
             last_error: out.lastErr?.ok === false ? (out.lastErr.error ?? null) : null,
+            listening: {
+                inbound: out.needs.inbound,
+                statuses: out.needs.statuses,
+                status_lists: out.needs.statusLists,
+                events: hookState.hook_id !== null ? (hookState.events ?? null) : null,
+            },
         };
     }
 
@@ -1114,6 +1377,9 @@ export class WhatsappService {
             });
         });
         this.realtime.lists(tenantId);
+        // v0.1.391 — Mostrar (o dejar de mostrar) el estado del envío cambia qué avisos se usan.
+        const resync = this.resyncTenantWebHooks(tenantId);
+        if (this.env.NODE_ENV === 'test') await resync;
     }
 
     /** «Preparar columnas»: crea en la lista las que falten y guarda el mapeo. */
@@ -1161,17 +1427,23 @@ export class WhatsappService {
         listId: number,
         recordId: number,
         values: Partial<Record<WhatsappFieldRole, unknown>>,
-    ): Promise<{ listId: number; recordId: number; before: Record<string, unknown>; after: Record<string, unknown> } | null> {
-        const [list] = await tx
-            .select({ settings: lists.settings })
-            .from(lists)
-            .where(and(eq(lists.tenantId, tenantId), eq(lists.id, listId), isNull(lists.deletedAt)))
-            .limit(1);
-        if (!list) return null;
-        const mapping = readWhatsappListFields(list.settings);
+        /** v0.1.391 — lo que quien llama ya leyó en esta transacción (no se vuelve a leer). */
+        pre?: { settings: unknown; fields: Field[] },
+    ): Promise<ChannelWrite | null> {
+        let settings: unknown = pre?.settings;
+        if (!pre) {
+            const [list] = await tx
+                .select({ settings: lists.settings })
+                .from(lists)
+                .where(and(eq(lists.tenantId, tenantId), eq(lists.id, listId), isNull(lists.deletedAt)))
+                .limit(1);
+            if (!list) return null;
+            settings = list.settings;
+        }
+        const mapping = readWhatsappListFields(settings);
         const ids = WHATSAPP_FIELD_ROLES.filter((r) => r in values).map((r) => mapping[r]).filter((id): id is number => id !== null);
         if (ids.length === 0) return null;
-        const fieldRows = await this.fields.listByListIdWithinTx(tx, tenantId, listId);
+        const fieldRows = pre?.fields ?? (await this.fields.listByListIdWithinTx(tx, tenantId, listId));
         const record = await this.recordsRepo.findByIdForUpdate(tx, tenantId, listId, recordId);
         if (!record) return null;
         const before = record.data as Record<string, unknown>;
@@ -1197,12 +1469,34 @@ export class WhatsappService {
     }
 
     /** Después de escribir: pantallas abiertas y campos con IA (sin disparar automatizaciones). */
-    private afterWrite(tenantId: number, write: { listId: number; recordId: number; before: Record<string, unknown>; after: Record<string, unknown> } | null): void {
+    private afterWrite(tenantId: number, write: ChannelWrite | null): void {
         if (!write) return;
-        this.realtime.records(tenantId, write.listId);
+        this.emitRecords(tenantId, write.listId);
         void this.aiFields
             ?.onChange({ tenantId, listId: write.listId, recordId: write.recordId, before: write.before, after: write.after, kind: 'updated', actorId: 0 })
             .catch(() => undefined);
+    }
+
+    private readonly pendingEmits = new Map<string, ReturnType<typeof setTimeout>>();
+
+    /**
+     * v0.1.391 — Una ráfaga de mensajes (o de estados tras un envío masivo)
+     * avisa a las pantallas abiertas UNA vez por segundo: antes, cada pestaña
+     * con la lista abierta la recargaba por cada mensaje.
+     */
+    private emitRecords(tenantId: number, listId: number): void {
+        if (this.env.NODE_ENV === 'test') {
+            this.realtime.records(tenantId, listId);
+            return;
+        }
+        const key = `${tenantId}:${listId}`;
+        if (this.pendingEmits.has(key)) return;
+        const timer = setTimeout(() => {
+            this.pendingEmits.delete(key);
+            this.realtime.records(tenantId, listId);
+        }, 1_000);
+        timer.unref?.();
+        this.pendingEmits.set(key, timer);
     }
 
     // ── Mensajes entrantes ──────────────────────────────────────────────
@@ -1216,15 +1510,30 @@ export class WhatsappService {
     async handleInbound(tenantId: number, hookConnectionId: number, msg: InboundMessage): Promise<'duplicate' | 'ignored' | 'processed'> {
         const first = await this.redis.set(seenKey(tenantId, `m:${msg.id}`), '1', 'EX', DEDUP_TTL_S, 'NX');
         if (first === null) return 'duplicate';
+        // v0.1.391 — Un cliente que manda 3 mensajes seguidos: se procesan de a uno.
+        // En paralelo, ninguno encontraba el registro y cada uno creaba el suyo.
+        const lockKey = `wa:lock:${tenantId}:${hookConnectionId}:${msg.waId}`;
+        let locked = false;
+        for (let i = 0; i < 100 && !locked; i++) {
+            locked = (await this.redis.set(lockKey, '1', 'PX', 15_000, 'NX')) !== null;
+            if (!locked) await new Promise((r) => setTimeout(r, 50));
+        }
         try {
             return await this.handleInboundOnce(tenantId, hookConnectionId, msg);
         } catch (err) {
             // Que el reintento de la cola lo vuelva a intentar.
             await this.redis.del(seenKey(tenantId, `m:${msg.id}`)).catch(() => undefined);
             throw err;
+        } finally {
+            if (locked) await this.redis.del(lockKey).catch(() => undefined);
         }
     }
 
+    /**
+     * v0.1.391 — Antes, 6-8 transacciones por mensaje; ahora, con el contacto
+     * ya en la lista, UNA: la conexión, la ventana, la lista, el contacto, sus
+     * columnas y la actividad. Crear un contacto nuevo suma la del alta.
+     */
     private async handleInboundOnce(tenantId: number, hookConnectionId: number, msg: InboundMessage): Promise<'ignored' | 'processed'> {
         const prep = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const conn = await this.resolveConnection(tx, tenantId, hookConnectionId, msg.phoneNumberId);
@@ -1241,31 +1550,38 @@ export class WhatsappService {
                         updatedAt: new Date(),
                     },
                 });
-            return conn;
+            const cfg = readWhatsappConnectionConfig(conn.config);
+            if (!cfg.inbound_list_id) return { conn, cfg, list: null };
+            const [list] = await tx
+                .select({ id: lists.id, name: lists.name, settings: lists.settings })
+                .from(lists)
+                .where(and(eq(lists.tenantId, tenantId), eq(lists.id, cfg.inbound_list_id), isNull(lists.deletedAt)))
+                .limit(1);
+            if (!list) return { conn, cfg, list: null };
+            const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
+            const mapping = effectiveMapping(list.settings, fields);
+            if (!mapping.phone) return { conn, cfg, list, fields, mapping, recordId: null, done: null };
+            const recordId = await findByPhone(tx, tenantId, list.id, mapping.phone, msg.waId);
+            const done = recordId !== null ? await this.recordInboundInTx(tx, tenantId, conn, list, recordId, msg, fields) : null;
+            return { conn, cfg, list, fields, mapping, recordId, done };
         });
         if (!prep) return 'ignored';
-        const conn = prep;
-        const cfg = readWhatsappConnectionConfig(conn.config);
-        if (!cfg.inbound_list_id) return 'processed';
-        let list: List;
-        try {
-            list = await this.lists.get(tenantId, String(cfg.inbound_list_id));
-        } catch {
-            return 'processed';
-        }
-        const fields = await this.fields.listByListId(tenantId, list.id);
-        const mapping = effectiveMapping(list, fields);
-        if (!mapping.phone) {
+        const { conn, cfg, list } = prep;
+        if (!list || !prep.mapping || !prep.fields) return 'processed';
+        if (!prep.mapping.phone) {
             this.logger.warn(`WhatsApp: la lista ${list.id} no tiene campo de teléfono para encontrar al contacto.`);
             return 'processed';
         }
         const phone = `+${msg.waId}`;
-        let recordId = await this.tenantDb.withTenant(tenantId, (tx) => findByPhone(tx, tenantId, list.id, mapping.phone!, msg.waId));
-        if (recordId === null && cfg.create_contacts && this.recordsSvc) {
-            const data: Record<string, unknown> = { [jsonbKeyForField(mapping.phone)]: phone };
+        let recordId = prep.recordId;
+        let done = prep.done;
+        if (recordId === null) {
+            if (!cfg.create_contacts || !this.recordsSvc) return 'processed';
+            const fields = prep.fields;
+            const data: Record<string, unknown> = { [jsonbKeyForField(prep.mapping.phone)]: phone };
             const titleId = resolveTitleFieldId(fields, list.settings);
             const titleField = titleId ? fields.find((f) => f.id === titleId) : undefined;
-            if (titleField && titleField.id !== mapping.phone && (titleField.type === 'text' || titleField.type === 'long_text')) {
+            if (titleField && titleField.id !== prep.mapping.phone && (titleField.type === 'text' || titleField.type === 'long_text')) {
                 data[jsonbKeyForField(titleField.id)] = msg.profileName ?? phone;
             }
             try {
@@ -1285,33 +1601,12 @@ export class WhatsappService {
                 });
                 return 'processed';
             }
+            const rid = recordId;
+            done = await this.tenantDb.withTenant(tenantId, (tx) => this.recordInboundInTx(tx, tenantId, conn, list, rid, msg, fields));
         }
-        if (recordId === null) return 'processed';
-        const rid = recordId;
-        const write = await this.tenantDb.withTenant(tenantId, async (tx) => {
-            const w = await this.writeChannelInTx(tx, tenantId, list.id, rid, {
-                message: msg.text,
-                message_at: msg.at,
-                direction: 'in',
-                ...(msg.profileName ? { profile: msg.profileName } : {}),
-            });
-            await this.activity.logInTx(tx, {
-                tenantId,
-                listId: list.id,
-                recordId: rid,
-                userId: null,
-                action: 'whatsapp',
-                diff: { whatsapp: { event: 'received', kind: msg.type, connection: conn.name } },
-            });
-            return w;
-        });
-        this.afterWrite(tenantId, write);
-        this.realtime.records(tenantId, list.id);
+        if (recordId === null || !done) return 'processed';
+        this.afterWrite(tenantId, done.write);
         this.incidents?.resolve(tenantId, `connection:${conn.id}:inbound`);
-        const after =
-            write?.after ??
-            ((await this.tenantDb.withTenant(tenantId, (tx) => this.recordsRepo.findById(tx, tenantId, list.id, rid)))?.data as Record<string, unknown> | undefined) ??
-            {};
         const info: WhatsappEventInfo = {
             texto: msg.text,
             de: phone,
@@ -1325,13 +1620,65 @@ export class WhatsappService {
         this.dispatcher.dispatch({
             tenantId,
             listId: list.id,
-            recordId: rid,
+            recordId,
             trigger: 'whatsapp_message_received',
-            after,
-            ...(write ? { before: write.before } : {}),
+            after: done.after,
+            ...(done.write ? { before: done.write.before } : {}),
             whatsapp: info,
         });
         return 'processed';
+    }
+
+    /**
+     * El mensaje en el registro: sus columnas y UNA línea de la actividad. Varios
+     * mensajes seguidos del mismo contacto (30 min) suman en la misma línea
+     * («escribió 5 mensajes»): con un cliente que conversa, una fila por mensaje
+     * llenaba la actividad y la base sin decir nada nuevo.
+     */
+    private async recordInboundInTx(
+        tx: Tx,
+        tenantId: number,
+        conn: Pick<ConnRow, 'id' | 'name'>,
+        list: { id: number; settings: unknown },
+        recordId: number,
+        msg: InboundMessage,
+        fields: Field[],
+    ): Promise<{ write: ChannelWrite | null; after: Record<string, unknown> } | null> {
+        const write = await this.writeChannelInTx(
+            tx,
+            tenantId,
+            list.id,
+            recordId,
+            { message: msg.text, message_at: msg.at, direction: 'in', ...(msg.profileName ? { profile: msg.profileName } : {}) },
+            { settings: list.settings, fields },
+        );
+        const [last] = await tx
+            .select({ id: activity.id, action: activity.action, diff: activity.diff, createdAt: activity.createdAt })
+            .from(activity)
+            .where(and(eq(activity.tenantId, tenantId), eq(activity.recordId, recordId)))
+            .orderBy(desc(activity.id))
+            .limit(1);
+        const lastWa = last && last.action === 'whatsapp' ? ((last.diff as Record<string, unknown>).whatsapp as Record<string, unknown> | undefined) : undefined;
+        if (last && lastWa && lastWa.event === 'received' && lastWa.connection === conn.name && last.createdAt.getTime() > Date.now() - ACTIVITY_GROUP_MS) {
+            const count = Math.max(1, Number(lastWa.count) || 1) + 1;
+            await tx
+                .update(activity)
+                .set({ diff: { whatsapp: { ...lastWa, count, kind: msg.type, last_at: msg.at.toISOString() } } })
+                .where(and(eq(activity.tenantId, tenantId), eq(activity.id, last.id)));
+        } else {
+            await this.activity.logInTx(tx, {
+                tenantId,
+                listId: list.id,
+                recordId,
+                userId: null,
+                action: 'whatsapp',
+                diff: { whatsapp: { event: 'received', kind: msg.type, connection: conn.name } },
+            });
+        }
+        if (write) return { write, after: write.after };
+        const row = await this.recordsRepo.findById(tx, tenantId, list.id, recordId);
+        if (!row) return null;
+        return { write: null, after: row.data as Record<string, unknown> };
     }
 
     // ── Estados de lo enviado ───────────────────────────────────────────
@@ -1339,14 +1686,9 @@ export class WhatsappService {
     async handleStatus(tenantId: number, hookConnectionId: number, st: StatusUpdate): Promise<'duplicate' | 'ignored' | 'processed'> {
         const incoming = whatsappStatusFromMeta(st.status);
         if (!incoming) return 'ignored';
-        const first = await this.redis.set(seenKey(tenantId, `s:${st.id}:${incoming}`), '1', 'EX', DEDUP_TTL_S, 'NX');
-        if (first === null) return 'duplicate';
-        try {
-            return await this.handleStatusOnce(tenantId, hookConnectionId, st, incoming);
-        } catch (err) {
-            await this.redis.del(seenKey(tenantId, `s:${st.id}:${incoming}`)).catch(() => undefined);
-            throw err;
-        }
+        // v0.1.391 — Sin recordarlo en Redis: aplicar dos veces el mismo estado no
+        // cambia nada (nunca retrocede) y cada clave ocupaba memoria 7 días.
+        return this.handleStatusOnce(tenantId, hookConnectionId, st, incoming);
     }
 
     private async handleStatusOnce(tenantId: number, hookConnectionId: number, st: StatusUpdate, incoming: WhatsappStatus): Promise<'ignored' | 'processed'> {
@@ -2076,8 +2418,8 @@ function toTemplateDto(r: WhatsappTemplateRowDb): WhatsappTemplate {
 }
 
 /** Las columnas guardadas de la lista, con el teléfono sugerido si no se eligió. */
-function effectiveMapping(list: List, fields: Field[]): WhatsappListFields {
-    const saved = readWhatsappListFields(list.settings);
+function effectiveMapping(settings: unknown, fields: Field[]): WhatsappListFields {
+    const saved = readWhatsappListFields(settings);
     const alive = new Set(fields.map((f) => f.id));
     const out = {} as WhatsappListFields;
     for (const role of WHATSAPP_FIELD_ROLES) out[role] = saved[role] && alive.has(saved[role]) ? saved[role] : null;
@@ -2147,7 +2489,7 @@ async function findByPhone(tx: Tx, tenantId: number, listId: number, phoneFieldI
 
 /** El teléfono del registro, salvo que el campo esté oculto para quien pide. */
 function visiblePhone(list: List, fields: Field[], data: Record<string, unknown>, hidden: Set<string>): unknown {
-    const mapping = effectiveMapping(list, fields);
+    const mapping = effectiveMapping(list.settings, fields);
     if (!mapping.phone) return null;
     const field = fields.find((f) => f.id === mapping.phone);
     if (!field || hidden.has(field.slug)) return null;

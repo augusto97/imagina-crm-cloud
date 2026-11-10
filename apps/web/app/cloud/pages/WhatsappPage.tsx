@@ -12,6 +12,7 @@ import {
     AlertTriangle,
     ArrowLeft,
     CheckCircle2,
+    CircleSlash,
     ExternalLink,
     Inbox,
     KeyRound,
@@ -123,7 +124,7 @@ export function WhatsappPage(): JSX.Element {
                 <ul className="imcrm-mt-2 imcrm-list-disc imcrm-space-y-1.5 imcrm-pl-5 imcrm-text-sm imcrm-text-muted-foreground">
                     <li>{__('Avisos automáticos: en una automatización, acción «Enviar plantilla de WhatsApp» (recordatorio de pago, cita confirmada, pedido enviado). Las plantillas se pueden mandar siempre.')}</li>
                     <li>{__('Responder: acción «Enviar mensaje de texto de WhatsApp». Sólo sale si el contacto escribió en las últimas 24 h; fuera de esa ventana, usa una plantilla.')}</li>
-                    <li>{__('Reaccionar a lo que escriben: disparador «Cuando llega un mensaje de WhatsApp», con {{whatsapp.texto}} y {{whatsapp.nombre}}.')}</li>
+                    <li>{__('Reaccionar a lo que escriben: disparador «Cuando llega un mensaje de WhatsApp», con {{whatsapp.texto}} y {{whatsapp.nombre}} (en la lista elegida en «Dónde caen los mensajes»).')}</li>
                     <li>
                         {__('Resumir o clasificar con IA: agrega a la lista un «Campo con IA» que lea la columna «Último mensaje de WhatsApp» (resumir, o clasificar en tus opciones: consulta, reclamo, pedido…). Se recalcula solo cada vez que llega un mensaje.')}
                     </li>
@@ -222,7 +223,7 @@ function WebWhatsappPage({
                 </h2>
                 <ul className="imcrm-mt-2 imcrm-list-disc imcrm-space-y-1.5 imcrm-pl-5 imcrm-text-sm imcrm-text-muted-foreground">
                     <li>{__('Avisos automáticos: en una automatización, acción «Enviar mensaje de WhatsApp» o «Enviar archivo por WhatsApp» (recordatorio de pago, cita confirmada, la factura en PDF). Con WAS no hay plantillas que aprobar: el mensaje sale tal cual.')}</li>
-                    <li>{__('Reaccionar a lo que escriben: disparador «Cuando llega un mensaje de WhatsApp», con {{whatsapp.texto}} y {{whatsapp.nombre}}.')}</li>
+                    <li>{__('Reaccionar a lo que escriben: disparador «Cuando llega un mensaje de WhatsApp», con {{whatsapp.texto}} y {{whatsapp.nombre}} (en la lista elegida en «Dónde caen los mensajes»).')}</li>
                     <li>
                         {__('Resumir o clasificar con IA: agrega a la lista un «Campo con IA» que lea la columna «Último mensaje de WhatsApp». Se recalcula solo cada vez que llega un mensaje.')}
                     </li>
@@ -330,7 +331,7 @@ function WebHookSection({
         mutationFn: () => api.whatsappSubscribe(d.connection.id, false),
         onSuccess: (res) => {
             onData(res);
-            setMsg({ ok: true, text: __('Listo: WAS le avisará a la app de cada mensaje y de cada estado.') });
+            setMsg({ ok: true, text: __('Listo: los avisos quedaron registrados en WAS.') });
         },
         onError: (err) => setMsg({ ok: false, text: errText(err) }),
     });
@@ -359,8 +360,9 @@ function WebHookSection({
                 )}
             </h2>
             <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
-                {__('No tienes que configurar nada: la app registró sola los avisos en tu cuenta de WAS. Así se entera de cada mensaje que te escriben y de si los tuyos se entregaron, se leyeron o fallaron.')}
+                {__('No tienes que configurar nada: la app registró sola los avisos en tu cuenta de WAS, y sólo pide los que usas.')}
             </p>
+            <ListeningInfo d={d} />
             {web.hook.error && (
                 <p className="imcrm-mt-2 imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-sm imcrm-text-destructive" data-testid="imcrm-whatsapp-hook-error">
                     <AlertTriangle className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
@@ -386,6 +388,59 @@ function WebHookSection({
                 )}
             </div>
         </section>
+    );
+}
+
+/**
+ * v0.1.391 — Qué avisos usa la app y por qué. Cada aviso cuesta (una petición,
+ * la cola, la base): se reciben sólo los que algo usa, y aquí se dice cuáles.
+ */
+function ListeningInfo({ d }: { d: WhatsappConnectionDetail }): JSX.Element {
+    const l = d.listening;
+    const web = d.provider === 'whatsapp_web';
+    const row = (on: boolean, title: string, text: string, testId: string): JSX.Element => (
+        <li className="imcrm-flex imcrm-items-start imcrm-gap-2" data-testid={testId} data-on={on ? '1' : '0'}>
+            {on ? (
+                <CheckCircle2 className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-emerald-600 dark:imcrm-text-emerald-400" />
+            ) : (
+                <CircleSlash className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" />
+            )}
+            <span>
+                <span className="imcrm-font-medium">{title}</span> <span className="imcrm-text-muted-foreground">{text}</span>
+            </span>
+        </li>
+    );
+    const lists = l.status_lists.map((n) => `«${n}»`).join(', ');
+    return (
+        <div className="imcrm-mt-3 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-p-3" data-testid="imcrm-whatsapp-listening">
+            <p className="imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">{__('Qué recibe la app')}</p>
+            <ul className="imcrm-mt-2 imcrm-space-y-1.5 imcrm-text-sm">
+                {row(
+                    l.inbound,
+                    __('Mensajes que te escriben:'),
+                    l.inbound
+                        ? __('sí, porque caen en la lista de abajo.')
+                        : web
+                          ? __('no. Nada los usa: elige abajo la lista donde caen y se activan solos.')
+                          : __('sólo se anota que el contacto escribió (abre la ventana de 24 h). Para guardarlos, elige abajo la lista donde caen.'),
+                    'imcrm-whatsapp-listen-inbound',
+                )}
+                {row(
+                    l.statuses,
+                    __('Entregado y leído:'),
+                    l.statuses
+                        ? `${__('sí, porque se muestran en')} ${lists}.`
+                        : __('no, sólo las fallas. Ninguna lista muestra el estado del último envío (toca «Preparar columnas» en una lista para verlo).'),
+                    'imcrm-whatsapp-listen-statuses',
+                )}
+                {row(true, __('Fallas:'), __('siempre: un mensaje que no salió se marca y, si es de la conexión, aparece en Problemas.'), 'imcrm-whatsapp-listen-failures')}
+            </ul>
+            <p className="imcrm-mt-2 imcrm-text-xs imcrm-text-muted-foreground">
+                {web
+                    ? __('WAS manda sólo estos avisos: así la app no procesa lo que no usas. Se ajusta solo cuando eliges una lista o preparas columnas.')
+                    : __('Meta manda todos los avisos; la app descarta al instante los que nada usa.')}
+            </p>
+        </div>
     );
 }
 
@@ -419,6 +474,7 @@ function WebhookSection({ d, onData }: { d: WhatsappConnectionDetail; onData: (d
             <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
                 {__('Meta avisa a la app cada vez que un contacto escribe y cuando un mensaje se entrega, se lee o falla. Configúralo una sola vez en tu app de Meta:')}
             </p>
+            <ListeningInfo d={d} />
             <ol className="imcrm-mt-3 imcrm-list-decimal imcrm-space-y-2 imcrm-pl-5 imcrm-text-sm">
                 <li>
                     {__('En developers.facebook.com abre tu app → WhatsApp → Configuración → Webhook → «Editar».')}
@@ -547,7 +603,7 @@ function InboundSection({ d, onData }: { d: WhatsappConnectionDetail; onData: (d
                         data-testid="imcrm-whatsapp-inbound-list"
                     >
                         <option value="">
-                            {d.provider === 'whatsapp_web' ? __('Ninguna (los mensajes sólo pueden disparar automatizaciones)') : __('Ninguna (sólo se abre la ventana de 24 h)')}
+                            {d.provider === 'whatsapp_web' ? __('Ninguna (no se reciben los mensajes que te escriben)') : __('Ninguna (sólo se abre la ventana de 24 h)')}
                         </option>
                         {d.lists.map((l) => (
                             <option key={l.id} value={l.id}>
@@ -625,7 +681,7 @@ function InboundSection({ d, onData }: { d: WhatsappConnectionDetail; onData: (d
             )}
 
             <div className="imcrm-mt-4 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3">
-                <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending} data-testid="imcrm-whatsapp-inbound-save">
+                <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || setup.isPending} data-testid="imcrm-whatsapp-inbound-save">
                     {__('Guardar')}
                 </Button>
                 {msg && (

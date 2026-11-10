@@ -5,11 +5,14 @@ import {
     nextWhatsappStatus,
     readWhatsappListFields,
     renderWhatsappTemplate,
+    sameWaWebEvents,
     suggestWhatsappFields,
+    waWebHookEventsFor,
     whatsappCountryOf,
     whatsappIdVariants,
     whatsappRecipient,
     whatsappStatusFromMeta,
+    whatsappStatusWanted,
     whatsappTemplateVariables,
     whatsappWindowClosesAt,
     whatsappWindowOpen,
@@ -151,5 +154,19 @@ describe('WhatsApp oficial — piezas puras', () => {
         expect(s.message).toBe(2);
         // Un campo con el nombre esperado pero de otro tipo no se sugiere.
         expect(s.status).toBeNull();
+    });
+
+    it('v0.1.391 — sólo los avisos que algo usa (las fallas, siempre)', () => {
+        expect(waWebHookEventsFor({ inbound: false, statuses: false })).toEqual(['wa.message.failed', 'wa.message.canceled']);
+        expect(waWebHookEventsFor({ inbound: true, statuses: false })).toContain('wa.message.received');
+        expect(waWebHookEventsFor({ inbound: false, statuses: true })).toEqual(
+            expect.arrayContaining(['wa.message.sent', 'wa.message.delivered', 'wa.message.read', 'wa.message.failed']),
+        );
+        expect(waWebHookEventsFor({ inbound: false, statuses: true })).not.toContain('wa.message.received');
+        expect(sameWaWebEvents(['a', 'b'], ['b', 'a'])).toBe(true);
+        expect(sameWaWebEvents(['a', 'b'], ['a'])).toBe(false);
+        expect(whatsappStatusWanted('fallido', false)).toBe(true);
+        expect(whatsappStatusWanted('entregado', false)).toBe(false);
+        expect(whatsappStatusWanted('leido', true)).toBe(true);
     });
 });

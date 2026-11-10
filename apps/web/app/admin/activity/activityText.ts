@@ -233,20 +233,31 @@ export function approvalText(entry: Pick<ActivityEntity, 'changes'>): string {
  * connection}. Nunca trae el TEXTO del mensaje: la actividad la ven todos los
  * que ven el registro y una conversación no tiene por qué quedar ahí.
  */
-export function whatsappEventOf(entry: Pick<ActivityEntity, 'changes'>): { event: string; kind: string; template: string | null; connection: string | null } {
+export function whatsappEventOf(entry: Pick<ActivityEntity, 'changes'>): {
+    event: string;
+    kind: string;
+    template: string | null;
+    connection: string | null;
+    /** v0.1.391 — varios mensajes seguidos del contacto quedan en una sola línea. */
+    count: number;
+} {
     const raw = (entry.changes as Record<string, unknown> | null | undefined)?.whatsapp;
     const w = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+    const count = Number(w.count);
     return {
         event: typeof w.event === 'string' ? w.event : '',
         kind: typeof w.kind === 'string' ? w.kind : '',
         template: typeof w.template === 'string' && w.template !== '' ? w.template : null,
         connection: typeof w.connection === 'string' && w.connection !== '' ? w.connection : null,
+        count: Number.isInteger(count) && count > 1 ? count : 1,
     };
 }
 
 export function whatsappText(entry: Pick<ActivityEntity, 'changes'>): string {
     const w = whatsappEventOf(entry);
-    if (w.event === 'received') return __('escribió por WhatsApp');
+    if (w.event === 'received') {
+        return w.count > 1 ? sprintf(/* translators: %d: cantidad de mensajes */ __('escribió %d mensajes por WhatsApp'), w.count) : __('escribió por WhatsApp');
+    }
     if (w.template) return sprintf(/* translators: %s: nombre de la plantilla */ __('envió la plantilla «%s» por WhatsApp'), w.template);
     if (w.kind === 'media') return __('envió un archivo por WhatsApp');
     return __('envió un mensaje por WhatsApp');

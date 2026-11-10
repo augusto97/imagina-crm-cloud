@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
+import { PublicCache } from '../src/public-cache/public-cache';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { WA_WEB_HOOK_EVENTS, whatsappStatusFromWeb } from '@imagina-base/shared';
+import { WA_WEB_HOOK_EVENTS, readWhatsappListFields, whatsappStatusFromWeb } from '@imagina-base/shared';
 
 /**
  * v0.1.389 — La versión nueva de Imagina WAS (API v1 de Zender) de punta a
@@ -142,6 +143,8 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
     let keyOk: string;
     let hooksCreated: number;
     let hooksDeleted: number[];
+    let hooksPatched: number;
+    let hookEvents: string[];
     let account1: Record<string, unknown>;
     let sendError: { status: number; body: string } | null;
 
@@ -176,6 +179,9 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
             audit,
             recordsSvc,
             hub,
+            undefined,
+            // v0.1.391 — con la caché en memoria, como en producción (cambiar la lista se ve al instante).
+            new PublicCache({ maxEntries: 100, concurrency: 4, maxQueue: 50, queueTimeoutMs: 2_000 }) as never,
         );
         engine = new AutomationEngine(
             tenantDb,
@@ -205,6 +211,8 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
         abilities = [...ALL];
         keyOk = API_KEY;
         hooksCreated = 0;
+        hooksPatched = 0;
+        hookEvents = [];
         hooksDeleted = [];
         sendError = null;
         account1 = { id: 1, phone: '+573178339119', display_name: 'Augusto', label: null, status: 'connected', is_enabled: true, status_reason: null, banned_until: null };
@@ -259,10 +267,16 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
                 if (denied) return denied;
                 hooksCreated++;
                 const body = JSON.parse(call.body ?? '{}') as Record<string, unknown>;
+                hookEvents = (body.events as string[]) ?? [];
                 // 201 con `WebhookCreated` SIN envoltorio `data` (así lo documenta la API).
                 return json(201, { id: 55, secret: HOOK_SECRET, events: body.events, url: body.url });
             }
-            if (path === '/webhooks/55' && call.method === 'GET') return json(200, { data: { id: 55, is_active: true } });
+            if (path === '/webhooks/55' && call.method === 'GET') return json(200, { data: { id: 55, is_active: true, events: hookEvents } });
+            if (path === '/webhooks/55' && call.method === 'PATCH') {
+                hooksPatched++;
+                hookEvents = (JSON.parse(call.body ?? '{}') as { events: string[] }).events;
+                return json(200, { data: { id: 55, is_active: true, events: hookEvents } });
+            }
             if (path.startsWith('/webhooks/') && call.method === 'DELETE') {
                 hooksDeleted.push(Number(path.split('/').pop()));
                 return { status: 204, body: '' };
@@ -421,7 +435,9 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
         expect(JSON.stringify(row!.secrets)).not.toContain(HOOK_SECRET);
         expect(hooksCreated).toBe(1);
         const create = net.calls.find((c) => c.url === `${WAS}/webhooks` && c.method === 'POST')!;
-        expect(JSON.parse(create.body!)).toMatchObject({ events: [...WA_WEB_HOOK_EVENTS], is_active: true });
+        // v0.1.391 — Sin lista de entrada ni columna de estado: sólo las fallas (nada más se usa).
+        expect(JSON.parse(create.body!)).toMatchObject({ events: ['wa.message.failed', 'wa.message.canceled'], is_active: true });
+        expect(WA_WEB_HOOK_EVENTS).toContain('wa.message.received');
 
         // Abrir la pantalla no lo vuelve a crear (sigue activo); el número se ve como está AHORA.
         const detail = await svc.connectionDetail(tenantId, admin(), id);
@@ -483,6 +499,68 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
     });
 
     // ── Enviar ──────────────────────────────────────────────────────────
+
+    it('v0.1.391 — WAS manda sólo los avisos que algo usa; lo que llega de más se descarta sin tocar nada', async () => {
+        const id = await connect();
+        expect(hookEvents.sort()).toEqual(['wa.message.canceled', 'wa.message.failed']);
+        // Lista de entrada con la columna de estado: se suman los estados y los mensajes que te escriben.
+        const { listId, fieldsBy } = await seedContacts(id);
+        expect(hooksCreated).toBe(1);
+        expect(hooksPatched).toBeGreaterThan(0);
+        expect(hookEvents.sort()).toEqual(['wa.message.canceled', 'wa.message.delivered', 'wa.message.failed', 'wa.message.read', 'wa.message.received', 'wa.message.sent']);
+        const detail = await svc.connectionDetail(tenantId, admin(), id);
+        expect(detail.listening).toMatchObject({ inbound: true, statuses: true, status_lists: ['Clientes'] });
+        expect(detail.listening.events?.sort()).toEqual([...hookEvents].sort());
+
+        // Sin lista de entrada: WAS deja de mandar los mensajes que te escriben…
+        await svc.updateConfig(tenantId, admin(), id, { inbound_list_id: null, create_contacts: true });
+        expect(hookEvents).not.toContain('wa.message.received');
+        // …y si alguno llega igual (el rato hasta que WAS se entera), no crea ni encola nada.
+        await post(id, 'wa.message.received', waMessage({ id: 801, direction: 'in', from: '+573001119999', body: 'hola', status: 'received' }));
+        expect(await listRecords(listId)).toHaveLength(0);
+        const contacts = await withTenant(pg.db, tenantId, (tx) => tx.select().from(whatsappContacts).where(eq(whatsappContacts.tenantId, tenantId)));
+        expect(contacts).toHaveLength(0);
+
+        // Sin columna de estado: sólo las fallas. Un «entregado» que llega se descarta; una falla, no.
+        const noStatus = { ...readWhatsappListFields({}), phone: fieldsBy.telefono!, message: fieldsBy.whatsapp_ultimo_mensaje! };
+        await svc.updateListColumns(tenantId, admin(), String(listId), noStatus);
+        expect(hookEvents.sort()).toEqual(['wa.message.canceled', 'wa.message.failed']);
+        expect((await svc.connectionDetail(tenantId, admin(), id)).listening).toMatchObject({ inbound: false, statuses: false, status_lists: [] });
+
+        // La revisión de cada hora no llama a WAS si ya está como debe.
+        const before = net.calls.length;
+        expect(await svc.reconcileWebHooks()).toBe(0);
+        expect(net.calls.length).toBe(before);
+        // Un aviso registrado por una versión anterior (todos los eventos, sin la lista guardada) se ajusta.
+        await withTenant(pg.db, tenantId, async (tx) => {
+            const [row] = await tx.select({ config: connections.config }).from(connections).where(eq(connections.id, id));
+            const cfg = row!.config as Record<string, unknown>;
+            const web = { ...(cfg.whatsapp_web as Record<string, unknown>) };
+            delete web.events;
+            await tx.update(connections).set({ config: { ...cfg, whatsapp_web: web } }).where(eq(connections.id, id));
+        });
+        hookEvents = [...WA_WEB_HOOK_EVENTS];
+        const patches = hooksPatched;
+        expect(await svc.reconcileWebHooks()).toBe(1);
+        expect(hooksPatched).toBe(patches + 1);
+        expect(hookEvents.sort()).toEqual(['wa.message.canceled', 'wa.message.failed']);
+        expect(hooksCreated).toBe(1);
+    });
+
+    it('v0.1.391 — tres mensajes seguidos de un número nuevo: UN registro y una línea de actividad («escribió 3 mensajes»)', async () => {
+        const id = await connect();
+        const { listId } = await seedContacts(id);
+        await Promise.all(
+            [901, 902, 903].map((n) => post(id, 'wa.message.received', waMessage({ id: n, direction: 'in', from: '+573005550909', body: `mensaje ${n}`, status: 'received' }))),
+        );
+        const rows = await listRecords(listId);
+        expect(rows).toHaveLength(1);
+        const act = await withTenant(pg.db, tenantId, (tx) => tx.select().from(activity).where(and(eq(activity.recordId, rows[0]!.id), eq(activity.action, 'whatsapp'))));
+        expect(act).toHaveLength(1);
+        expect(act[0]!.diff).toMatchObject({ whatsapp: { event: 'received', count: 3 } });
+        // El texto nunca queda en la actividad.
+        expect(JSON.stringify(act[0]!.diff)).not.toContain('mensaje 90');
+    });
 
     it('envía texto y archivo desde la ficha (el cuerpo EXACTO) y los estados llegan por los avisos', async () => {
         const id = await connect();

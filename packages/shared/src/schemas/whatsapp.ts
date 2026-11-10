@@ -264,6 +264,45 @@ export const WA_WEB_HOOK_EVENTS = [
     'wa.message.received',
 ] as const;
 
+/**
+ * v0.1.391 — Qué necesita escuchar una conexión de WhatsApp. Cada aviso que
+ * llega cuesta (una petición, la firma, la cola, la base): se reciben sólo los
+ * que algo usa.
+ *  - Los mensajes que te escriben, sólo si caen en una lista (sin lista no
+ *    disparan nada: las automatizaciones van atadas a una lista).
+ *  - «Enviado / entregado / leído», sólo si alguna lista muestra el estado del
+ *    último envío. Las fallas se reciben siempre: son pocas y dicen algo.
+ */
+export interface WhatsappListening {
+    inbound: boolean;
+    statuses: boolean;
+    /** Las listas que muestran el estado del último envío (para explicarlo). */
+    status_lists: string[];
+    /** Imagina WAS: los avisos suscritos ahora mismo (null = Meta, o no se sabe). */
+    events: string[] | null;
+}
+
+/** Los avisos de Imagina WAS para lo que se necesita (siempre las fallas). */
+export function waWebHookEventsFor(need: { inbound: boolean; statuses: boolean }): string[] {
+    const out: string[] = [];
+    if (need.statuses) out.push('wa.message.sent', 'wa.message.delivered', 'wa.message.read');
+    out.push('wa.message.failed', 'wa.message.canceled');
+    if (need.inbound) out.push('wa.message.received');
+    return out;
+}
+
+/** Mismos avisos, en cualquier orden. */
+export function sameWaWebEvents(a: readonly string[], b: readonly string[]): boolean {
+    const x = new Set(a);
+    const y = new Set(b);
+    return x.size === y.size && [...x].every((e) => y.has(e));
+}
+
+/** ¿Vale la pena procesar este estado? Una falla, siempre; el resto, si alguna lista lo muestra. */
+export function whatsappStatusWanted(status: WhatsappStatus, statuses: boolean): boolean {
+    return status === 'fallido' || statuses;
+}
+
 /** Estado del número vinculado en Imagina WAS, en palabras. */
 export const WA_WEB_ACCOUNT_STATUS_LABEL: Record<string, string> = {
     connected: 'Conectado',
@@ -733,6 +772,8 @@ export interface WhatsappConnectionDetail {
     template_manager_url: string;
     totals: { contacts: number; open_windows: number };
     last_error: string | null;
+    /** v0.1.391 — Qué avisos recibe la app de esta conexión y por qué. */
+    listening: WhatsappListening;
 }
 
 /** Lo que muestra la ficha de un registro para «Enviar WhatsApp». */

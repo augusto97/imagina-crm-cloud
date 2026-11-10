@@ -535,10 +535,11 @@ describe('WhatsApp oficial — Meta Cloud API (D3)', () => {
 
         // La actividad anota que llegó un mensaje, SIN el texto.
         const act = await withTenant(pg.db, tenantId, (tx) => tx.select().from(activity).where(and(eq(activity.recordId, rec.id), eq(activity.action, 'whatsapp'))));
-        expect(act).toHaveLength(2);
+        // v0.1.391 — Los dos mensajes seguidos quedan en UNA línea («escribió 2 mensajes»).
+        expect(act).toHaveLength(1);
         expect(JSON.stringify(act.map((a) => a.diff))).not.toContain('turno');
         expect(JSON.stringify(act.map((a) => a.diff))).not.toContain('gracias');
-        expect(act[0]!.diff).toMatchObject({ whatsapp: { event: 'received' } });
+        expect(act[0]!.diff).toMatchObject({ whatsapp: { event: 'received', count: 2, kind: 'image' } });
 
         // Un número registrado sin el «1» de México se encuentra igual.
         await withTenant(pg.db, tenantId, (tx) =>
