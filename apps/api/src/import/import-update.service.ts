@@ -28,6 +28,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { parseCsv } from './csv-parser';
 import { ImportService, coerceCellValue } from './import.service';
 import { can } from '../authz/can';
+import { keyExpr, normalizeKey } from '../records/record-key';
 
 const SAMPLE_SIZE = 20;
 const ERROR_LIST = 100;
@@ -383,26 +384,9 @@ export class ImportUpdateService {
     }
 }
 
-/** La clave en una forma comparable: sin espacios ni mayúsculas; el teléfono, sólo dígitos. */
-export function normalizeKey(field: Field | null, raw: string): string {
-    const s = raw.trim();
-    if (s === '') return '';
-    if (!field) return /^\d+$/.test(s) ? String(Number(s)) : '';
-    if (field.type === 'phone') return s.replace(/\D/g, '');
-    if (field.type === 'number') {
-        const n = Number(s.replace(',', '.'));
-        return Number.isFinite(n) ? String(n) : s.toLowerCase();
-    }
-    return s.toLocaleLowerCase('es');
-}
-
-/** La misma normalización, en SQL (sobre la columna JSONB del campo). */
-export function keyExpr(field: Field) {
-    const col = sql`(${records.data} ->> ${`f${field.id}`})`;
-    if (field.type === 'phone') return sql`regexp_replace(${col}, '[^0-9]', '', 'g')`;
-    if (field.type === 'number') return sql`(CASE WHEN ${col} ~ '^-?[0-9.]+$' THEN ((${col})::numeric)::float8::text ELSE lower(${col}) END)`;
-    return sql`lower(btrim(${col}))`;
-}
+// v0.1.399 — la normalización de la clave vive en `records/record-key.ts`
+// (la usa también el webhook entrante para buscar el registro).
+export { keyExpr, normalizeKey } from '../records/record-key';
 
 function stringify(v: unknown): string {
     if (v === null || v === undefined) return '';

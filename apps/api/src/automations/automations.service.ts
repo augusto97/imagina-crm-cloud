@@ -1,8 +1,8 @@
 import { assertApprovalFlowRefs } from '../approvals/approval-refs';
 import { mapLimit } from '../common/map-limit';
 import { assertAgentRefs } from '../ai-agents/agent-refs';
-import { randomBytes } from 'node:crypto';
-import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { createHash, randomBytes } from 'node:crypto';
+import { BadRequestException, Inject, Injectable, Logger, forwardRef, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type {
     Automation,
     AutomationRun,
@@ -29,6 +29,7 @@ import {
     meetingActionKind,
     missingActionScopes,
     parseEmailDesign,
+    readWebhookRecordConfig,
     RESPONSE_BODY_MAX_BYTES,
     tenantFormatSchema,
     zonedToday,
@@ -66,6 +67,8 @@ import { buildWebhookRequest } from './webhook-request';
 import { IncidentHub } from '../incidents/incident-hub';
 import { BillingService } from '../billing/billing.service';
 import { AutomationEngine } from './automation-engine.service';
+import { AuditService } from '../audit/audit.service';
+import { normalizeWebhookRecordConfig } from './webhook-record-lookup';
 import { redactAutomationSecrets, restoreRedactedSecrets } from './automation-secrets';
 import { cancelWaitingRuns, trashRow } from '../trash/trash-ops';
 import {
@@ -115,7 +118,13 @@ export class AutomationsService {
         // Límite de automatizaciones activas del plan (`max_automations`).
         @Optional() private readonly billing?: BillingService,
         // v0.1.288 — «Probar» paso a paso (simulación con el mismo motor).
-        @Optional() private readonly engine?: AutomationEngine,
+        // v0.1.399 — con forwardRef: el motor importa suscripciones → registro de
+        // cobros → plantillas → este servicio, y en ese orden de carga la clase
+        // todavía no existía al decorar: Nest inyectaba `undefined` y «Probar»
+        // respondía «El motor de automatizaciones no está disponible» (v0.1.371+).
+        @Optional() @Inject(forwardRef(() => AutomationEngine)) private readonly engine?: AutomationEngine,
+        // v0.1.399 — la bitácora registra quién pone o quita el secreto del webhook.
+        @Optional() private readonly audit?: AuditService,
     ) {}
 
     /**
@@ -141,6 +150,12 @@ export class AutomationsService {
             );
             if (updated) row = updated;
         }
+        // v0.1.399 — el secreto (si tenía) sigue valiendo con la URL nueva.
+        const [prev] = await this.db
+            .select({ secretHash: automationHooks.secretHash, secretHint: automationHooks.secretHint })
+            .from(automationHooks)
+            .where(eq(automationHooks.automationId, row.id))
+            .limit(1);
         // Primero revocar tokens viejos: el índice único por automation_id
         // haría que el insert del token NUEVO se descartara en silencio.
         await this.db
@@ -148,9 +163,82 @@ export class AutomationsService {
             .where(and(eq(automationHooks.automationId, row.id), ne(automationHooks.token, token)));
         await this.db
             .insert(automationHooks)
-            .values({ token, tenantId, automationId: row.id })
+            .values({ token, tenantId, automationId: row.id, secretHash: prev?.secretHash ?? null, secretHint: prev?.secretHint ?? null })
             .onConflictDoNothing();
         return row;
+    }
+
+    /** v0.1.399 — los campos de la lista, para validar la búsqueda del webhook. */
+    private async listFieldsForWebhook(tx: Tx, tenantId: number, listId: number) {
+        return tx
+            .select({ slug: fields.slug, type: fields.type, label: fields.label, isUnique: fields.isUnique })
+            .from(fields)
+            .where(and(eq(fields.tenantId, tenantId), eq(fields.listId, listId), isNull(fields.deletedAt)));
+    }
+
+    /**
+     * v0.1.399 — Secreto opcional del webhook entrante. Se guarda sólo su huella
+     * (SHA-256) y los últimos 4 caracteres; el secreto se muestra UNA vez, al
+     * crearlo. Sin hook todavía (la automatización no se guardó con el disparador
+     * de webhook), no hay dónde guardarlo.
+     */
+    async hookSecretStatus(tenantId: number, automationId: number): Promise<{ enabled: boolean; hint: string | null }> {
+        const hook = await this.hookRowFor(tenantId, automationId);
+        return { enabled: !!hook.secretHash, hint: hook.secretHint ?? null };
+    }
+
+    async setHookSecret(tenantId: number, automationId: number, secret: string | undefined, actorId: number | null = null): Promise<{ secret: string; hint: string }> {
+        const hook = await this.hookRowFor(tenantId, automationId);
+        const value = (secret ?? '').trim() || randomBytes(24).toString('base64url');
+        if (value.length < 16 || value.length > 200 || /\s/.test(value)) {
+            throw new BadRequestException({
+                code: 'invalid_webhook_secret',
+                message: 'El secreto tiene que tener entre 16 y 200 caracteres, sin espacios.',
+                data: { status: 400 },
+            });
+        }
+        const hint = value.slice(-4);
+        await this.db
+            .update(automationHooks)
+            .set({ secretHash: hashHookSecret(value), secretHint: hint })
+            .where(and(eq(automationHooks.automationId, automationId), eq(automationHooks.tenantId, tenantId)));
+        await this.audit?.log({
+            tenantId,
+            userId: actorId,
+            action: 'automation.webhook_secret',
+            targetType: 'automation',
+            targetId: automationId,
+            targetLabel: hook.name,
+            meta: { enabled: true, own: (secret ?? '').trim() !== '' },
+        });
+        return { secret: value, hint };
+    }
+
+    async clearHookSecret(tenantId: number, automationId: number, actorId: number | null = null): Promise<void> {
+        const hook = await this.hookRowFor(tenantId, automationId);
+        await this.db
+            .update(automationHooks)
+            .set({ secretHash: null, secretHint: null })
+            .where(and(eq(automationHooks.automationId, automationId), eq(automationHooks.tenantId, tenantId)));
+        await this.audit?.log({ tenantId, userId: actorId, action: 'automation.webhook_secret', targetType: 'automation', targetId: automationId, targetLabel: hook.name, meta: { enabled: false } });
+    }
+
+    private async hookRowFor(tenantId: number, automationId: number): Promise<{ secretHash: string | null; secretHint: string | null; name: string }> {
+        const auto = await this.tenantDb.withTenant(tenantId, (tx) => this.repo.findById(tx, tenantId, automationId));
+        if (!auto) throw notFound(automationId);
+        const [hook] = await this.db
+            .select({ secretHash: automationHooks.secretHash, secretHint: automationHooks.secretHint })
+            .from(automationHooks)
+            .where(and(eq(automationHooks.automationId, automationId), eq(automationHooks.tenantId, tenantId)))
+            .limit(1);
+        if (auto.triggerType !== 'incoming_webhook' || !hook) {
+            throw new BadRequestException({
+                code: 'webhook_not_ready',
+                message: 'Guarda primero la automatización con el disparador «Webhook entrante»: así tiene su URL.',
+                data: { status: 400 },
+            });
+        }
+        return { ...hook, name: auto.name };
     }
 
     async list(tenantId: number, listIdOrSlug: string): Promise<Automation[]> {
@@ -328,13 +416,15 @@ export class AutomationsService {
             await assertApprovalFlowRefs(tx, tenantId, list.id, { trigger_type: input.trigger_type, trigger_config: input.trigger_config ?? {}, actions: input.actions });
             // E6 — los agentes de IA que nombra tienen que trabajar en esta lista.
             await assertAgentRefs(tx, tenantId, list.id, input.actions);
+            // v0.1.399 — webhook entrante con registro: la búsqueda tiene que poder correr.
+            const triggerConfig = normalizeWebhookRecordConfig(input.trigger_type, input.trigger_config ?? {}, await this.listFieldsForWebhook(tx, tenantId, list.id));
             const inserted = await this.repo.insert(tx, {
                 tenantId,
                 listId: list.id,
                 name: input.name,
                 description: input.description ?? null,
                 triggerType: input.trigger_type,
-                triggerConfig: input.trigger_config ?? {},
+                triggerConfig: triggerConfig as AutomationRow['triggerConfig'],
                 actions: input.actions,
                 isActive: input.is_active ?? true,
             });
@@ -574,6 +664,14 @@ export class AutomationsService {
             }
             // E6 — sólo si cambian las acciones (pausar una con un agente borrado se puede).
             if (patch.actions !== undefined) await assertAgentRefs(tx, tenantId, list.id, patch.actions);
+            // v0.1.399 — webhook entrante con registro: la búsqueda tiene que poder correr.
+            if (patch.trigger_config !== undefined || patch.trigger_type !== undefined) {
+                const type = patch.trigger_type ?? current.triggerType;
+                const cfg = (patch.trigger_config ?? current.triggerConfig ?? {}) as Record<string, unknown>;
+                if (type === 'incoming_webhook') {
+                    patch = { ...patch, trigger_config: normalizeWebhookRecordConfig(type, cfg, await this.listFieldsForWebhook(tx, tenantId, list.id)) };
+                }
+            }
             const changes: Partial<typeof import('../db/schema').automations.$inferInsert> = {};
             if (patch.name !== undefined) changes.name = patch.name;
             if (patch.description !== undefined) changes.description = patch.description ?? null;
@@ -1119,12 +1217,13 @@ export class AutomationsService {
      */
     async resolveHookToken(
         token: string,
-    ): Promise<{ tenantId: number; automationId: number; readOnly: boolean } | null> {
+    ): Promise<{ tenantId: number; automationId: number; readOnly: boolean; secretHash: string | null } | null> {
         if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return null;
         const [row] = await this.db
             .select({
                 tenantId: automationHooks.tenantId,
                 automationId: automationHooks.automationId,
+                secretHash: automationHooks.secretHash,
                 status: tenants.status,
                 archivedAt: tenants.archivedAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
@@ -1150,6 +1249,7 @@ export class AutomationsService {
             automationId: row.automationId,
             // v0.1.338 — pausada también cuenta (no tiene acceso completo).
             readOnly: accessOf(row).state !== 'full',
+            secretHash: row.secretHash ?? null,
         };
     }
 
@@ -1175,11 +1275,26 @@ export class AutomationsService {
      * v0.1.111 — capturas de prueba del webhook de una automatización
      * (más reciente primero). 404 si la automatización no es del tenant.
      */
-    async hookCaptures(tenantId: number, automationId: number): Promise<HookCapture[]> {
+    async hookCaptures(tenantId: number, automationId: number, preview?: Record<string, unknown>): Promise<HookCapture[]> {
         const auto = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.findById(tx, tenantId, automationId),
         );
         if (!auto) throw notFound(automationId);
+        const out = await this.readHookCaptures(tenantId, automationId);
+        // v0.1.399 — qué haría el disparador con cada dato (con la config que se
+        // está editando, si viene; si no, la guardada).
+        if (preview && this.engine && out.length > 0) {
+            const rc = readWebhookRecordConfig({ ...(auto.triggerConfig ?? {}), ...preview });
+            const matches = await this.engine.previewWebhookRecords(tenantId, auto.listId, rc, out.map((c) => c.payload)).catch((err: unknown) => {
+                this.logger.warn(`Vista previa del webhook ${automationId}: ${err instanceof Error ? err.message : String(err)}`);
+                return null;
+            });
+            if (matches) out.forEach((c, i) => (c.match = matches[i]));
+        }
+        return out;
+    }
+
+    private async readHookCaptures(tenantId: number, automationId: number): Promise<HookCapture[]> {
         const raw = await this.captures.lrange(
             hookCapturesKey(tenantId, automationId),
             0,
@@ -1279,6 +1394,11 @@ function assertRunnable(input: Parameters<typeof automationConfigIssues>[0]): vo
         message: issues.length === 1 ? issues[0]!.message : 'A la automatización le falta configurar algunas cosas.',
         data: { status: 400, errors: Object.fromEntries(issues.map((i) => [i.path, i.message])) },
     });
+}
+
+/** v0.1.399 — huella del secreto del webhook entrante (lo que se guarda y se compara). */
+export function hashHookSecret(secret: string): string {
+    return createHash('sha256').update(secret, 'utf8').digest('hex');
 }
 
 function notFound(id: number): NotFoundException {

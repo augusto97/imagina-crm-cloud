@@ -103,6 +103,8 @@ export type AuditAction =
     // v0.1.196 (ADR-S22) — conectores: credenciales de servicios externos.
     // `connection.convert` es la mudanza de un secreto que estaba escrito
     // dentro de una automatización a una conexión cifrada.
+    // v0.1.399 — secreto del webhook entrante de una automatización.
+    | 'automation.webhook_secret'
     | 'connection.create'
     | 'connection.update'
     | 'connection.delete'

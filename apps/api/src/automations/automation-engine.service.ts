@@ -49,6 +49,8 @@ import {
     readWaitApprovalConfig,
     readWaitConfig,
     resolveTitleFieldId,
+    readWebhookRecordConfig,
+    type WebhookRecordConfig,
     mirrorCellAccess,
     mirrorFieldMap,
     mirrorValueError,
@@ -150,6 +152,7 @@ import {
     type LabelFieldLike,
 } from './merge-tags';
 import { recordLinkPrefix, recordTokenValue } from '../qr/qr-runtime';
+import { lookupWebhookRecord, type WebhookLookup } from './webhook-record-lookup';
 
 const SYSTEM_USER = 0;
 /** Lo que escribe una automatización lo escribe el sistema, con permisos de admin. */
@@ -464,6 +467,7 @@ const ACTION_NAMES: Record<string, string> = {
     call_webhook: 'Llamar webhook',
     connector_action: 'Acción de una app conectada',
     update_field: 'Actualizar campo',
+    webhook_record: 'Webhook entrante',
     create_record: 'Crear registro',
     generate_pdf: 'Generar PDF',
     bulk_edit: 'Editar en lote',
@@ -850,6 +854,12 @@ export class AutomationEngine {
      * de la lista se mapean a `data` (así `{{slug}}`, las condiciones del
      * trigger y las de las acciones funcionan igual que siempre); el objeto
      * completo queda accesible como `{{payload.clave}}` (con paths anidados).
+     *
+     * v0.1.399 — con `record_mode` el disparador trae un REGISTRO: lo busca
+     * (por su id o por un campo «Sin repetidos»), lo crea, o las dos cosas
+     * (ver `lookupWebhookRecord`). Con registro, las acciones corren sobre él
+     * como con cualquier otro disparador y lo que cambian dispara las demás
+     * automatizaciones de la lista (en cadena, con el tope de siempre).
      */
     async runWebhook(
         tenantId: number,
@@ -861,20 +871,120 @@ export class AutomationEngine {
             if ((await tenantIsReadOnly(tx, tenantId)) || (await planModuleOff(tx, tenantId, 'automations'))) return null;
             const auto = await this.automations.findById(tx, tenantId, automationId);
             if (!auto || !auto.isActive || auto.triggerType !== 'incoming_webhook') return null;
-            return { auto, maps: await this.fieldMaps(tx, tenantId, auto.listId) };
+            const maps = await this.fieldMaps(tx, tenantId, auto.listId);
+            const rc = readWebhookRecordConfig(auto.triggerConfig);
+            const lookup = rc.mode === 'none' ? null : await this.lookupWebhook(tx, tenantId, auto.listId, rc, payload);
+            return { auto, maps, rc, lookup };
         });
         if (!prep) return;
-        const { auto, maps } = prep;
-        const data: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(payload)) {
-            const key = maps.slugToKey.get(k);
-            if (key !== undefined) data[key] = v;
+        const { auto, maps, rc, lookup } = prep;
+        const mapped = payloadToData(payload, maps.slugToKey);
+        const ctx: RunContext = { tenantId, listId: auto.listId, recordId: null, data: mapped, ...maps, payload };
+        if (lookup?.kind === 'found') {
+            // Las condiciones del disparador miran el registro tal como QUEDARÍA.
+            ctx.recordId = lookup.record.id;
+            ctx.data = rc.applyPayloadFields ? { ...lookup.record.data, ...mapped } : { ...lookup.record.data };
         }
-        const ctx: RunContext = { tenantId, listId: auto.listId, recordId: null, data, ...maps, payload };
         if (!evaluateCondition(auto.triggerConfig.field_filters as ConditionData | undefined, this.accessor(ctx), this.condOpts(ctx))) {
             return;
         }
-        await this.runOne(ctx, auto);
+        if (!lookup) {
+            await this.runOne(ctx, auto);
+            return;
+        }
+        ctx.automation = { id: auto.id, name: auto.name, trigger: auto.triggerType };
+        const step = (status: ActionLogEntry['status'], message: string, details: Record<string, unknown> = {}): ActionLogEntry => ({
+            action: 'webhook_record',
+            status,
+            message,
+            details,
+        });
+        if (lookup.kind === 'not_found') {
+            await this.runOne(ctx, auto, { stop: { status: 'cancelled', log: [step('skipped', lookup.message)] } });
+            return;
+        }
+        if (lookup.kind === 'error') {
+            await this.runOne(ctx, auto, { stop: { status: 'failed', log: [step('failed', lookup.message)] } });
+            return;
+        }
+        const preLog: ActionLogEntry[] = [];
+        try {
+            if (lookup.kind === 'found') {
+                ctx.data = { ...lookup.record.data };
+                preLog.push(step('success', lookup.message, { record_id: lookup.record.id }));
+                if (rc.applyPayloadFields) {
+                    const values = webhookPayloadValues(payload, maps.slugToKey, rc, 'update');
+                    if (Object.keys(values).length > 0) {
+                        const entry = await this.updateField(ctx, { values });
+                        preLog.push({ ...entry, message: `Datos del JSON: ${entry.message}` });
+                    }
+                }
+            } else {
+                const entry = await this.createRecord(ctx, { target_list: auto.listId, values: webhookPayloadValues(payload, maps.slugToKey, rc, 'create') });
+                const newId = Number(entry.details?.record_id);
+                if (entry.status !== 'success' || !Number.isInteger(newId) || newId <= 0) {
+                    await this.runOne(ctx, auto, { stop: { status: 'failed', log: [step('success', lookup.message), entry.status === 'success' ? fail('create_record', 'No se pudo crear el registro.') : entry] } });
+                    return;
+                }
+                const created = await this.tenantDb.withTenant(tenantId, (tx) => this.recordsRepo.findById(tx, tenantId, auto.listId, newId));
+                ctx.recordId = newId;
+                ctx.data = { ...(created?.data ?? {}) };
+                preLog.push(step('success', lookup.message, { record_id: newId }), entry);
+            }
+        } catch (err) {
+            await this.runOne(ctx, auto, { stop: { status: 'failed', log: [...preLog, step('failed', explainError(err) || errorText(err, 500))] } });
+            return;
+        }
+        await this.runOne(ctx, auto, { preLog });
+    }
+
+    /** v0.1.399 — busca el registro del webhook (ver `lookupWebhookRecord`). */
+    private async lookupWebhook(tx: Tx, tenantId: number, listId: number, rc: WebhookRecordConfig, payload: Record<string, unknown>): Promise<WebhookLookup> {
+        const fieldRows = await this.fields.listByList(tx, tenantId, listId);
+        const [list] = await tx
+            .select({ name: lists.name })
+            .from(lists)
+            .where(and(eq(lists.tenantId, tenantId), eq(lists.id, listId)))
+            .limit(1);
+        return lookupWebhookRecord(tx, { tenantId, listId, listName: list?.name ?? 'la lista', rc, payload, fields: fieldRows });
+    }
+
+    /**
+     * v0.1.399 — Qué haría el webhook con cada dato recibido (para «Escuchar
+     * datos de prueba»): la MISMA búsqueda que la corrida, sin escribir nada.
+     */
+    async previewWebhookRecords(
+        tenantId: number,
+        listId: number,
+        rc: WebhookRecordConfig,
+        payloads: ReadonlyArray<Record<string, unknown>>,
+    ): Promise<WebhookMatchPreview[]> {
+        if (rc.mode === 'none') {
+            return payloads.map(() => ({ kind: 'none' as const, message: 'Sólo usa los datos: no busca ni crea registros.' }));
+        }
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const fieldRows = await this.fields.listByList(tx, tenantId, listId);
+            const [list] = await tx
+                .select({ name: lists.name, settings: lists.settings })
+                .from(lists)
+                .where(and(eq(lists.tenantId, tenantId), eq(lists.id, listId)))
+                .limit(1);
+            const titleId = resolveTitleFieldId(fieldRows.map((f) => ({ id: f.id, type: f.type as never })), (list?.settings ?? {}) as Record<string, unknown>);
+            const out: WebhookMatchPreview[] = [];
+            for (const payload of payloads) {
+                const res = await lookupWebhookRecord(tx, { tenantId, listId, listName: list?.name ?? 'la lista', rc, payload, fields: fieldRows });
+                if (res.kind === 'found') {
+                    const raw = titleId !== null ? res.record.data[jsonbKeyForField(titleId)] : null;
+                    const title = typeof raw === 'string' && raw.trim() !== '' ? raw.trim() : `Registro #${res.record.id}`;
+                    out.push({ kind: 'found', message: `Encontraría «${title}» (#${res.record.id}).`, record_id: res.record.id, title });
+                } else if (res.kind === 'create') {
+                    out.push({ kind: 'create', message: res.message.replace(/crea (un registro nuevo|uno nuevo)/, 'crearía $1').replace(/^Crea un registro nuevo/, 'Crearía un registro nuevo') });
+                } else {
+                    out.push({ kind: res.kind, message: res.message });
+                }
+            }
+            return out;
+        });
     }
 
     /**
@@ -1218,10 +1328,17 @@ export class AutomationEngine {
         });
         // Sin registro: un horario «normal» y un webhook entrante corren así de verdad.
         const usesRecord = !(auto.triggerType === 'incoming_webhook' || (auto.triggerType === 'scheduled' && auto.triggerConfig.for_each_record !== true));
-        const rec = usesRecord ? prep.rec : null;
-        const data: Record<string, unknown> = rec ? { ...rec.data } : {};
         const payload = auto.triggerType === 'incoming_webhook' ? (input.payload ?? {}) : undefined;
-        if (payload) {
+        // v0.1.399 — un webhook con registro lo busca con el último dato que llegó
+        // (la MISMA búsqueda que la corrida real).
+        const hookRc = payload ? readWebhookRecordConfig(auto.triggerConfig) : null;
+        const hookLookup =
+            payload && hookRc && hookRc.mode !== 'none'
+                ? await this.tenantDb.withTenant(tenantId, (tx) => this.lookupWebhook(tx, tenantId, auto.listId, hookRc, payload))
+                : null;
+        const rec = usesRecord ? prep.rec : hookLookup?.kind === 'found' ? { id: hookLookup.record.id, data: hookLookup.record.data } : null;
+        const data: Record<string, unknown> = rec ? { ...rec.data } : {};
+        if (payload && (!hookLookup || hookLookup.kind !== 'found' || hookRc?.applyPayloadFields)) {
             for (const [k, v] of Object.entries(payload)) {
                 const key = prep.maps.slugToKey.get(k);
                 if (key !== undefined) data[key] = v;
@@ -1244,11 +1361,32 @@ export class AutomationEngine {
             sim,
         };
         const trigger = await this.explainTrigger(auto, ctx, { hasRecord: rec !== null, usesRecord, hasPayload: Object.keys(payload ?? {}).length > 0 });
+        const preLog: ActionLogEntry[] = [];
+        if (hookLookup && hookRc && payload) {
+            if (Object.keys(payload).length > 0) trigger.notes.unshift(hookLookup.message);
+            if (hookLookup.kind === 'not_found' || hookLookup.kind === 'error') {
+                trigger.matches = false;
+                trigger.message = Object.keys(payload).length > 0 ? hookLookup.message : 'Todavía no llegó ningún dato al webhook: no hay con qué buscar el registro.';
+            } else {
+                ctx.automation = { id: auto.id, name: auto.name, trigger: auto.triggerType };
+                try {
+                    if (hookLookup.kind === 'create') {
+                        preLog.push(await this.createRecord(ctx, { target_list: auto.listId, values: webhookPayloadValues(payload, prep.maps.slugToKey, hookRc, 'create') }));
+                    } else if (hookRc.applyPayloadFields) {
+                        const values = webhookPayloadValues(payload, prep.maps.slugToKey, hookRc, 'update');
+                        ctx.data = { ...hookLookup.record.data };
+                        if (Object.keys(values).length > 0) preLog.push(await this.updateField(ctx, { values }));
+                    }
+                } catch (err) {
+                    preLog.push({ action: 'webhook_record', status: 'failed', message: explainError(err) || errorText(err, 500), details: {} });
+                }
+            }
+        }
         let log: ActionLogEntry[];
         try {
-            log = (await this.runSteps(ctx, auto.actions, [], 0, 0)).log;
+            log = [...preLog, ...(await this.runSteps(ctx, auto.actions, [], 0, 0)).log];
         } catch (err) {
-            log = [{ action: 'engine', status: 'failed', message: errorText(err, 2000), details: {} }];
+            log = [...preLog, { action: 'engine', status: 'failed', message: errorText(err, 2000), details: {} }];
         }
         if (sim.unknownTokens.size > 0) {
             trigger.notes.push(
@@ -1898,7 +2036,18 @@ export class AutomationEngine {
         for (const r of rows) ctx.teamNames.set(r.id, r.name);
     }
 
-    private async runOne(ctx: RunContext, auto: RunnableAutomation): Promise<number | null> {
+    private async runOne(
+        ctx: RunContext,
+        auto: RunnableAutomation,
+        /**
+         * v0.1.399 — `preLog`: pasos que ya pasaron antes de las acciones (el
+         * webhook entrante encontró o creó el registro) y encabezan el
+         * historial. `stop`: la corrida no sigue (no encontró el registro, o la
+         * búsqueda está mal configurada): queda registrada con ese estado y el
+         * motivo, sin correr ninguna acción.
+         */
+        opts: { preLog?: ActionLogEntry[]; stop?: { status: 'cancelled' | 'failed'; log: ActionLogEntry[] } } = {},
+    ): Promise<number | null> {
         ctx.automation = { id: auto.id, name: auto.name, trigger: auto.triggerType };
         // v0.1.300 — las columnas de sistema para las variables (`{{creado_por}}`).
         // v0.1.322 — y las búsquedas, resúmenes, calculados y fórmulas (`{{email_cliente}}`).
@@ -1918,6 +2067,22 @@ export class AutomationEngine {
         }
         if (runId === null) return null;
 
+        if (opts.stop) {
+            const { status, log } = opts.stop;
+            const reason = log.find((l) => l.status !== 'success')?.message ?? log[0]?.message ?? null;
+            try {
+                await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+                    this.automations.finishRun(tx, ctx.tenantId, runId!, { status, actionsLog: capLog(log), error: reason, finishedAt: new Date() }),
+                );
+            } catch (err) {
+                this.logger.error(`No se pudo cerrar la corrida ${runId} de la automatización ${auto.id}: ${errorText(err)}`);
+            }
+            // «No encontré el registro» no es una falla de la automatización; una
+            // búsqueda mal configurada sí (se avisa en Problemas).
+            if (status === 'failed') this.reportRun(ctx, auto, log);
+            return runId;
+        }
+
         let flow: Flow;
         try {
             flow = await this.runSteps(ctx, auto.actions, [], 0, 0);
@@ -1925,7 +2090,8 @@ export class AutomationEngine {
             flow = { log: [{ action: 'engine', status: 'failed', message: errorText(err, 2000), details: {} }] };
             this.logger.error(`Automatización ${auto.id} falló: ${String(err)}`);
         }
-        await this.finalize(ctx, auto, runId, flow.log, flow.pause ?? null, flow.log.some((l) => l.status === 'failed'));
+        const log = opts.preLog && opts.preLog.length > 0 ? [...opts.preLog, ...flow.log] : flow.log;
+        await this.finalize(ctx, auto, runId, log, flow.pause ?? null, log.some((l) => l.status === 'failed'));
         return runId;
     }
 
@@ -2826,7 +2992,7 @@ export class AutomationEngine {
         const after = await this.writeUpdate(ctx, target, patch, current.data);
         if (onItem) ctx.item!.data = after;
         else ctx.data = after; // acciones posteriores ven el valor actualizado.
-        return ok('update_field', `Actualizó ${count} campo(s)${where}.${note}`, {
+        return ok('update_field', `Actualizó ${count} campo(s)${where}.${note}${chainCutNote(ctx)}`, {
             values: applied,
             ...(onItem ? { record_id: target.recordId } : {}),
             ...(notes.length > 0 ? { warnings: notes } : {}),
@@ -2979,7 +3145,7 @@ export class AutomationEngine {
             });
         }
         const created = await this.writeCreate(ctx, targetList, data, relations.filter((r) => r.ids.length > 0));
-        return ok('create_record', `Creó registro #${created.id} en lista ${targetList}.${note}`, {
+        return ok('create_record', `Creó registro #${created.id} en lista ${targetList}.${note}${chainCutNote(ctx)}`, {
             record_id: created.id,
             ...(skipped.length > 0 ? { warnings: skipped } : {}),
         });
@@ -4124,6 +4290,64 @@ function limitRecipients(raw: string): string {
         if (seen.size >= MAX_EMAIL_RECIPIENTS) break;
     }
     return [...seen].join(', ');
+}
+
+/** v0.1.399 — qué haría el webhook con un dato recibido (panel «Escuchar datos de prueba»). */
+export interface WebhookMatchPreview {
+    kind: 'none' | 'found' | 'create' | 'not_found' | 'error';
+    message: string;
+    record_id?: number | null;
+    title?: string | null;
+}
+
+/**
+ * v0.1.399 — Cuando una cadena llega al tope, el cambio se guarda igual pero no
+ * dispara otras automatizaciones: el historial lo dice (antes sólo quedaba en
+ * el log del servidor).
+ */
+function chainCutNote(ctx: RunContext): string {
+    if (ctx.sim) return '';
+    return nextChain(ctx.chain, ctx.automation?.id ?? 0).depth > MAX_AUTOMATION_CHAIN_DEPTH
+        ? ` No disparó otras automatizaciones: ya van ${MAX_AUTOMATION_CHAIN_DEPTH} encadenadas (el tope).`
+        : '';
+}
+
+/** Las claves del JSON que se llaman como un campo de la lista, por su clave `f{id}`. */
+function payloadToData(payload: Record<string, unknown>, slugToKey: Map<string, string>): Record<string, unknown> {
+    const data: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(payload)) {
+        const key = slugToKey.get(k);
+        if (key !== undefined) data[key] = v;
+    }
+    return data;
+}
+
+/**
+ * v0.1.399 — Los valores que el webhook escribe en el registro, como variables
+ * `{{payload.clave}}`: así pasan por el MISMO camino que «Crear un registro» y
+ * «Actualizar un campo» (cada valor con el validador de su campo) y el texto
+ * que llega nunca se interpreta como plantilla. Al actualizar no se reescribe
+ * el campo por el que se buscó; al crear, ese campo nace con el valor buscado.
+ */
+function webhookPayloadValues(
+    payload: Record<string, unknown>,
+    slugToKey: Map<string, string>,
+    rc: WebhookRecordConfig,
+    purpose: 'create' | 'update',
+): Record<string, string> {
+    const out: Record<string, string> = {};
+    const searches = rc.mode === 'update' || rc.mode === 'upsert';
+    const matchField = searches && rc.match.by === 'field' ? rc.match.field : null;
+    for (const k of Object.keys(payload)) {
+        if (!slugToKey.has(k) || !/^[a-zA-Z0-9_]+$/.test(k)) continue;
+        if (searches && rc.match.by === 'record_id' && k === rc.matchKey) continue;
+        if (purpose === 'update' && k === matchField) continue;
+        out[k] = `{{payload.${k}}}`;
+    }
+    if (purpose === 'create' && matchField && slugToKey.has(matchField) && !(matchField in out)) {
+        out[matchField] = `{{payload.${rc.matchKey}}}`;
+    }
+    return out;
 }
 
 function ok(action: string, message: string, details: Record<string, unknown> = {}): ActionLogEntry {

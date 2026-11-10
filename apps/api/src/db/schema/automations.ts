@@ -97,6 +97,10 @@ export const automationHooks = pgTable(
             .notNull()
             .references(() => automations.id, { onDelete: 'cascade' }),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+        /** v0.1.399 — huella SHA-256 del secreto opcional (nunca el secreto en claro). */
+        secretHash: varchar('secret_hash', { length: 64 }),
+        /** Los últimos 4 caracteres del secreto, para reconocerlo en el editor. */
+        secretHint: varchar('secret_hint', { length: 8 }),
     },
     (t) => [uniqueIndex('automation_hooks_automation_ux').on(t.automationId)],
 );

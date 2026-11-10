@@ -415,10 +415,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.398**
-(**corrección: el editor del widget de contacto ya no saca el cursor del
-campo con cada tecla**: la vista previa abría su panel y le robaba el foco).
-Antes v0.1.397 (**la ventana Compartir de formularios y agendas rediseñada**: dos pestañas,
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.399**
+(**el webhook entrante crea o actualiza un registro**: busca por el id o un
+campo «Sin repetidos», las acciones corren sobre ese registro y encadenan con
+«Cuando cambia un campo»; secreto opcional; condiciones sobre el dato del JSON;
+y de paso «Probar» de las automatizaciones vuelve a funcionar —estaba roto en
+producción desde v0.1.371 por un ciclo de imports—; addendum ADR-S47). Antes
+v0.1.398 (**corrección: el editor del widget de contacto ya no saca el cursor
+del campo con cada tecla**: la vista previa abría su panel y le robaba el
+foco). Antes v0.1.397 (**la ventana Compartir de formularios y agendas rediseñada**: dos pestañas,
 el enlace con los atajos y el QR en una ventana chica, insertar en tres pasos
 con la vista previa en computador o celular, y los sitios permitidos
 plegados; addendum ADR-S95). Antes v0.1.396 (**widget de contacto: dónde
@@ -1792,6 +1797,29 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-10 · v0.1.399** — **El webhook entrante crea o actualiza un
+  registro** (reporte del usuario con datos de producción del cliente Binapps:
+  la automatización 131 de «oportunidades» terminaba siempre en «success» con
+  «Sin registro en contexto» y la 16 no creaba la oportunidad). Caso: el
+  sistema de WhatsApp manda `POST {"record_id": 5134, "respuesta": "2"}`, la
+  automatización pone `estado_demo` = cancelada en ESA oportunidad y la 24
+  («Cuando cambia un campo») cancela la reunión en Teams. **Decisión con el
+  usuario**: se busca por el id del registro (único en toda la app; uno de otra
+  lista cuenta como «no existe») o por un campo «Sin repetidos» / ID
+  automático; nunca «el más reciente» — si hay repetidos de antes, la corrida
+  falla con los ids; no encontrado en «Actualizar» → corrida Cancelada con el
+  motivo («sí, déjalo así y arranca»). Modos Nada / Crear / Actualizar /
+  Actualizar o crear, clave con ruta, escribir los datos del JSON, cadena con
+  tope configurable (`AUTOMATIONS_MAX_CHAIN_DEPTH`, default 3), secreto
+  opcional (`X-Webhook-Secret`, migración 0115), JSON de ejemplo armado solo,
+  «Escuchar datos de prueba» con el registro que encontraría y condiciones
+  sobre `payload.x` en el «Si / sino». **Bugs encontrados**: «Probar» estaba
+  roto en producción desde v0.1.371 (ciclo de imports → el motor quedaba
+  `undefined`; `forwardRef` + `apps/api/scripts/check-di.cjs` en el CI), y el
+  editor perdía la configuración nueva al guardar (`cleanTriggerConfig`).
+  **Pendiente del usuario**: en Binapps, configurar la automatización 131 con
+  «Actualizar uno existente» por `record_id` (no se tocó producción sin su
+  permiso). Queda: nada abierto de este pedido.
 - **2026-11-10 · v0.1.398** — **El editor del widget ya no saca el cursor
   del campo** (reporte del usuario con captura: «cada vez que tecleo una tecla
   me saca del campo»). Causa: con el panel de la vista previa en «Abierto»,

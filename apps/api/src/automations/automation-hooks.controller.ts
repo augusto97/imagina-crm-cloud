@@ -3,6 +3,7 @@ import {
     Body,
     Controller,
     ForbiddenException,
+    Headers,
     HttpCode,
     HttpException,
     HttpStatus,
@@ -10,11 +11,13 @@ import {
     NotFoundException,
     Param,
     Post,
+    UnauthorizedException,
 } from '@nestjs/common';
+import { timingSafeEqual } from 'node:crypto';
 import type Redis from 'ioredis';
 import { REDIS } from '../redis/redis.module';
 import { AutomationDispatcher } from './automation-dispatcher.service';
-import { AutomationsService } from './automations.service';
+import { AutomationsService, hashHookSecret } from './automations.service';
 
 /** Cap del payload aceptado (serializado). Un form/webhook razonable entra de sobra. */
 const MAX_PAYLOAD_BYTES = 64 * 1024;
@@ -51,6 +54,7 @@ export class AutomationHooksController {
     async receive(
         @Param('token') token: string,
         @Body() body: unknown,
+        @Headers() headers: Record<string, string | string[] | undefined>,
     ): Promise<{ ok: true }> {
         const hook = await this.automations.resolveHookToken(token);
         if (!hook) {
@@ -61,6 +65,15 @@ export class AutomationHooksController {
                 code: 'workspace_read_only',
                 message: 'El workspace está en solo-lectura por el estado de facturación',
                 data: { status: 403 },
+            });
+        }
+        // v0.1.399 — secreto opcional: sin él (o con otro) no se captura ni se
+        // encola nada.
+        if (hook.secretHash && !secretMatches(readSecretHeader(headers), hook.secretHash)) {
+            throw new UnauthorizedException({
+                code: 'invalid_secret',
+                message: 'Falta el secreto del webhook o no coincide (cabecera X-Webhook-Secret).',
+                data: { status: 401 },
             });
         }
         await this.enforceLimit(token);
@@ -103,6 +116,24 @@ export class AutomationHooksController {
             }
         }
     }
+}
+
+/** v0.1.399 — el secreto llega en `X-Webhook-Secret` o como `Authorization: Bearer …`. */
+function readSecretHeader(headers: Record<string, string | string[] | undefined>): string | null {
+    const first = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v);
+    const direct = first(headers['x-webhook-secret'])?.trim();
+    if (direct) return direct;
+    const auth = first(headers['authorization'])?.trim() ?? '';
+    const m = /^Bearer\s+(.+)$/i.exec(auth);
+    return m ? m[1]!.trim() : null;
+}
+
+/** Compara huellas en tiempo constante (las dos miden 64 caracteres hex). */
+function secretMatches(provided: string | null, expectedHash: string): boolean {
+    if (!provided || provided.length > 500) return false;
+    const a = Buffer.from(hashHookSecret(provided), 'utf8');
+    const b = Buffer.from(expectedHash, 'utf8');
+    return a.length === b.length && timingSafeEqual(a, b);
 }
 
 /** El payload debe ser un objeto JSON razonable (los arrays se envuelven). */

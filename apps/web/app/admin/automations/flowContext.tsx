@@ -27,6 +27,14 @@ export interface AutomationFlowValue {
 
 export const AutomationFlowContext = createContext<AutomationFlowValue | null>(null);
 
+/**
+ * v0.1.111 — id de la automatización que se está editando (undefined en un
+ * alta sin guardar). Lo setea `AutomationEditorPage`; lo consumen el panel
+ * «Probar el webhook» (las capturas de prueba) y, desde v0.1.399, las
+ * condiciones (sugieren los datos del JSON que llegaron).
+ */
+export const AutomationEditorAutomationContext = createContext<number | undefined>(undefined);
+
 export const StepPathContext = createContext<NodePath | null>(null);
 
 export const LoopItemContext = createContext<LoopItemInfo | null>(null);

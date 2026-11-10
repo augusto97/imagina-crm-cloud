@@ -1,6 +1,8 @@
 import { Injectable, Optional } from '@nestjs/common';
 import {
     meetingActionKind,
+    describeWebhookRecord,
+    readWebhookRecordConfig,
     AUTOMATION_ACTIONS,
     COLLECTION_FIELD_ROLES,
     COLLECTION_FIELD_LABELS,
@@ -137,6 +139,7 @@ import { smsSchema } from './sms-ai';
 import { CommentsService } from '../../comments/comments.service';
 import { PublicListsService } from '../../public-lists/public-lists.service';
 import { AutomationsService } from '../../automations/automations.service';
+import { normalizeWebhookRecordConfig } from '../../automations/webhook-record-lookup';
 import { DashboardsService } from '../../dashboards/dashboards.service';
 import { connections, fields as fieldsTable, listGroups, records, tenants } from '../../db/schema';
 import { FieldsService } from '../../fields/fields.service';
@@ -580,7 +583,8 @@ const automationSpec = z.object({
                 'due_date_reached: {due_field: slug, offset_minutes: n (negativo = antes; 1440 = 1 día), field_filters}. ' +
                 'scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour 0-23, minute, weekday 0-6 (domingo=0), day 1-28} (o {cron: "0 9 * * 1"}); la hora es la de la ZONA de la empresa — sólo pon tz (IANA, ej. "America/Bogota") si la persona pide otra. ' +
                 'Con for_each_record: true + records_filters: [{field, op, value}] corre las acciones UNA VEZ POR CADA registro que cumpla (con sus {{slug}}; hasta 1.000 por disparo; fechas relativas en la zona de la empresa) — ej. «cada lunes, a cada cliente con saldo pendiente, un correo». ' +
-                'record_created/incoming_webhook: {field_filters?}. ' +
+                'record_created: {field_filters?}. ' +
+                'incoming_webhook (llega un POST a la URL pública de la automatización; el JSON queda en {{payload.x}}, con rutas: {{payload.data.id}}): {record_mode?: none (default: sin registro, sólo los datos) | create (crea un registro con las claves del JSON que se llaman como un campo) | update (BUSCA un registro existente y las acciones corren sobre él; si no existe, la corrida se cancela sin crear nada) | upsert (lo actualiza si existe; si no, lo crea), match?: {by: "record_id"} (default: el id del registro, único en toda la app) | {by: "field", field: slug} (SÓLO un campo marcado «Sin repetidos» de texto, correo, teléfono, número o enlace, o un ID automático; el teléfono se compara sin importar el formato), match_key?: ruta del dato en el JSON (default "record_id" o el slug del campo; ej. "data.id"), apply_payload_fields?: true (al actualizar, escribe también las claves del JSON que se llaman como un campo), field_filters?}. Con registro, las acciones usan {{campo}} y {{record.id}} de ESE registro y lo que cambian dispara las demás automatizaciones de la lista (p. ej. «Cuando cambia un campo»). Una condición (if_else o la de una acción) puede mirar el JSON: {field: "payload.respuesta", op: "eq"|"neq"|"contains"|"in"|"is_null"…, value}. Para mandarle el id del registro a otro sistema (y que lo devuelva): {{record.id}} en el cuerpo de «Llamar webhook externo». ' +
                 'payment_received (un cliente pagó un link de Mercado Pago/Wompi del registro; las acciones usan {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.link}}): {field_filters?}. ' +
                 'subscription_event (cambió una suscripción de Mercado Pago del registro: se activó, se cobró una cuota, se rechazó un cobro, quedó en mora, se venció, se pausó, se reanudó, se canceló o terminó; las acciones usan {{suscripcion.evento}}, {{suscripcion.estado}}, {{suscripcion.plan}}, {{suscripcion.monto}}, {{suscripcion.link}}, {{suscripcion.proximo_cobro}}, {{suscripcion.pagado_hasta}}, {{suscripcion.cobros_fallidos}}, {{suscripcion.motivo}}, {{suscripcion.monto_cobrado}}, {{suscripcion.fecha_cobro}}): {subscription_events?: [activated|charged|charge_failed|past_due|expired|paused|resumed|cancelled|finished] (vacío = todos), plan_ids?: [ids de connectors[].actions[].plan_ids], field_filters?}. ' +
                 'form_submitted (alguien llenó un formulario público de la lista; el registro ya existe; las acciones usan {{formulario.nombre}}, {{formulario.titulo}}, {{formulario.pagina}} (la página desde donde se envió) y {{formulario.llego_desde}}): {form_id? (id de uno de los `forms` de get_list_schema; sin él, cualquiera), page_contains? (palabras separadas por coma: sólo si la página contiene alguna, p. ej. "/navidad, black-friday"), page_excludes? (…y no contiene ninguna), field_filters?}. ' +
@@ -2294,6 +2298,8 @@ export class StructureTools implements AiProposalApplier {
         parsed.data.trigger_config ??= {};
         translateScheduledEach(parsed.data.trigger_type, parsed.data.trigger_config, fields, list.name);
         translateButtonTrigger(parsed.data.trigger_type, parsed.data.trigger_config, buttonFieldResolver(fields));
+        // v0.1.399 — webhook entrante con registro: la búsqueda tiene que poder correr.
+        parsed.data.trigger_config = webhookConfigForModel(parsed.data.trigger_type, parsed.data.trigger_config, fields);
         // C5 — flujos de aprobación por id o nombre → `approval_flow_id`.
         await this.translateApprovalRefs(ctx, list, parsed.data.trigger_type, parsed.data.trigger_config, parsed.data.actions as unknown[]);
         assertFlowIssues({ trigger_type: parsed.data.trigger_type, trigger_config: parsed.data.trigger_config, actions: parsed.data.actions });
@@ -2831,6 +2837,7 @@ export class StructureTools implements AiProposalApplier {
             merged.data.trigger_config ??= {};
             translateScheduledEach(merged.data.trigger_type, merged.data.trigger_config, fields, list.name);
             translateButtonTrigger(merged.data.trigger_type, merged.data.trigger_config, buttonFieldResolver(fields));
+            merged.data.trigger_config = webhookConfigForModel(merged.data.trigger_type, merged.data.trigger_config, fields);
             if (input.actions !== undefined || input.trigger_config !== undefined || input.trigger_type !== undefined) {
                 await this.translateApprovalRefs(ctx, list, merged.data.trigger_type, merged.data.trigger_config, merged.data.actions as unknown[]);
             }
@@ -5124,8 +5131,10 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
         }
         case 'scheduled':
             return `Programada (${String(cfg.cron ?? cfg.frequency ?? '')})${cfg.for_each_record === true ? ', para cada registro que cumpla el filtro' : ''}`;
-        case 'incoming_webhook':
-            return 'Al recibir un webhook';
+        case 'incoming_webhook': {
+            const what = describeWebhookRecord(readWebhookRecordConfig(cfg), label);
+            return `Al recibir un webhook${what ? ` · ${what}` : ''}`;
+        }
         case 'payment_received':
             return 'Cuando se recibe un pago';
         case 'subscription_event': {
@@ -5317,4 +5326,28 @@ function conversionSummary(
         // v0.1.375 — en el enlace directo (sin sitio), las etiquetas por ID.
         direct_link_tags: c.direct_tags ? { google_ads: c.google_ads ? 'la acción de arriba' : null, google_analytics: c.google_tag_id ?? null, meta_pixel: c.meta_pixel_id ?? null } : null,
     };
+}
+
+/**
+ * v0.1.399 — La parte «registro» del webhook entrante, validada como al guardar
+ * (el modo, la clave en el JSON y que el campo de búsqueda no se repita); el
+ * motivo vuelve al modelo como error corregible.
+ */
+function webhookConfigForModel(
+    triggerType: string,
+    triggerConfig: Record<string, unknown> | undefined,
+    fields: ReadonlyArray<{ slug: string; type: string; label: string; is_unique?: boolean }>,
+): Record<string, unknown> {
+    const cfg = triggerConfig ?? {};
+    if (triggerType !== 'incoming_webhook') return cfg;
+    try {
+        return normalizeWebhookRecordConfig(
+            triggerType,
+            cfg,
+            fields.map((f) => ({ slug: f.slug, type: f.type, label: f.label, isUnique: f.is_unique === true })),
+        );
+    } catch (err) {
+        const message = (err as { response?: { message?: unknown } })?.response?.message;
+        throw new AiToolError(typeof message === 'string' ? message : 'La configuración del webhook entrante no es válida.');
+    }
 }

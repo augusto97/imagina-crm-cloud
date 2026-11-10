@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { ActionMeta, AutomationRun, HookCapture, TriggerMeta } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
@@ -150,8 +150,44 @@ export class AutomationsCatalogController {
     hookCaptures(
         @Req() req: FastifyRequest,
         @Param('id', ParseIntPipe) id: number,
+        @Query() query: Record<string, string | undefined>,
     ): Promise<{ data: HookCapture[] }> {
-        return this.automations.hookCaptures(req.tenant!.tenantId, id).then((data) => ({ data }));
+        // v0.1.399 — con `record_mode` (y la búsqueda que se está editando),
+        // cada captura dice qué registro encontraría o si crearía uno.
+        const preview =
+            typeof query.record_mode === 'string'
+                ? {
+                      record_mode: query.record_mode,
+                      match: query.match_by === 'field' ? { by: 'field', field: query.match_field ?? '' } : { by: 'record_id' },
+                      ...(query.match_key ? { match_key: query.match_key } : {}),
+                  }
+                : undefined;
+        return this.automations.hookCaptures(req.tenant!.tenantId, id, preview).then((data) => ({ data }));
+    }
+
+    /** v0.1.399 — secreto opcional del webhook entrante (sólo se ve al crearlo). */
+    @Get('automations/:id/hook-secret')
+    @RequireCapability('manage_automations')
+    hookSecret(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<{ data: { enabled: boolean; hint: string | null } }> {
+        return this.automations.hookSecretStatus(req.tenant!.tenantId, id).then((data) => ({ data }));
+    }
+
+    @Post('automations/:id/hook-secret')
+    @HttpCode(200)
+    @RequireCapability('manage_automations')
+    setHookSecret(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Body() body: { secret?: unknown } | undefined,
+    ): Promise<{ data: { secret: string; hint: string } }> {
+        const secret = typeof body?.secret === 'string' ? body.secret : undefined;
+        return this.automations.setHookSecret(req.tenant!.tenantId, id, secret, (req.authUserId as number | undefined) ?? null).then((data) => ({ data }));
+    }
+
+    @Delete('automations/:id/hook-secret')
+    @RequireCapability('manage_automations')
+    clearHookSecret(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<{ data: { enabled: false } }> {
+        return this.automations.clearHookSecret(req.tenant!.tenantId, id, (req.authUserId as number | undefined) ?? null).then(() => ({ data: { enabled: false as const } }));
     }
 }
 

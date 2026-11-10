@@ -2312,4 +2312,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Editar mi widget', href: '/settings?s=widgets' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.399-webhook-registro',
+        version: '0.1.399',
+        date: '2026-11-10',
+        kind: 'feature',
+        title: 'El webhook entrante ahora crea o actualiza un registro',
+        summary:
+            'Cuando otro sistema le envía datos a una automatización, ahora puede crear un registro o encontrar uno que ya existe (por su id o por un campo sin repetidos, como el teléfono) y correr las acciones sobre él. Si cambia un campo, las demás automatizaciones corren en cadena.',
+        media: {
+            slides: [
+                {
+                    title: 'Qué hacer con el registro',
+                    text: 'Nada, crear uno nuevo, actualizar uno existente o actualizar o crear. Si no lo encuentra, la corrida queda cancelada con el motivo y no se crea nada.',
+                    illustration: 'auto-webhook-entrante',
+                },
+                {
+                    title: 'Busca por el id o un campo sin repetidos',
+                    text: 'Por el id del registro (único en toda la app) o por un teléfono, un correo o un código marcado «Sin repetidos». El teléfono se reconoce con o sin indicativo.',
+                    illustration: 'auto-webhook-entrante',
+                },
+                {
+                    title: 'Pruébalo antes de usarlo',
+                    text: '«Escuchar datos de prueba» te dice qué registro encontraría con el último dato que llegó, y puedes pedir un secreto para que nadie más lo use.',
+                    illustration: 'auto-webhook-entrante',
+                },
+            ],
+        },
+        body: 'En una automatización con el disparador **Webhook entrante**, elige **Qué hacer con el registro**. Las condiciones del «Si / sino» también pueden leer los datos que llegan.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

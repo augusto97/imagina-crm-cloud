@@ -4061,6 +4061,40 @@ empresa, las corridas en espera llegan canceladas con el motivo. Fuera de
 alcance: plantillas del sistema que usen esperas o bucles (la infraestructura
 ya lo soporta).
 
+**Addendum v0.1.399 — el webhook entrante con registro en contexto.** Hasta
+acá «Webhook entrante» corría SIN registro: los datos quedaban como variables
+y «Actualizar un campo» decía «Sin registro en contexto». Ahora el disparador
+decide qué hacer con el registro (`trigger_config.record_mode`):
+
+1. `none` (lo de siempre), `create` (crea uno con los datos cuyo nombre es el
+   nombre interno de un campo), `update` (busca UNO y las acciones corren sobre
+   él) y `upsert`. En `update`, no encontrarlo deja la corrida **cancelada** con
+   el motivo y no crea nada.
+2. **Nunca hay que adivinar cuál**: se busca por el id del registro (único en
+   toda la app; uno de OTRA lista o empresa cuenta como «no existe») o por un
+   campo «Sin repetidos» / ID automático (`match {by:'field'}`, validado al
+   guardar). Si datos de antes de marcarlo traen repetidos, la corrida FALLA con
+   los ids. El teléfono se compara por dígitos con y sin el indicativo del
+   campo. `match_key` es la ruta en el JSON (`cliente.telefono`).
+   `apply_payload_fields` escribe además los datos del JSON en sus campos.
+3. **Encadena**: el cambio va por `RecordsService` con la cadena de la corrida
+   (como «Actualizar un campo»), así «Cuando cambia un campo» corre sobre el
+   mismo registro; nunca re-dispara la misma automatización en la cadena, y el
+   tope (`AUTOMATIONS_MAX_CHAIN_DEPTH`, 1-10, default 3) se anota en el log.
+4. **Secreto opcional** (`automation_hooks.secret_hash` SHA-256 + hint,
+   migración 0115): con él, `X-Webhook-Secret` o `Authorization: Bearer` es
+   obligatorio (401 antes de capturar o encolar); se ve una sola vez y
+   sobrevive a regenerar la URL.
+5. La búsqueda es UNA función (`lookupWebhookRecord`) para la corrida, «Probar»
+   y la vista previa de «Escuchar datos de prueba».
+6. **Bug encontrado**: desde v0.1.371 el motor importa suscripciones → registro
+   de cobros → plantillas → `AutomationsService`, y en ese orden la clase del
+   motor aún no existía al decorar: Nest inyectaba `undefined` (era
+   `@Optional()`) y «Probar» respondía «El motor de automatizaciones no está
+   disponible». Ahora `@Inject(forwardRef(...))`, y el CI corre
+   `apps/api/scripts/check-di.cjs` sobre el build: falla si algún constructor
+   quedó con un parámetro sin resolver.
+
 
 ### ADR-S48 — Portal con contraseña por empresa, pagos del cliente y formularios verificados (v0.1.289)
 

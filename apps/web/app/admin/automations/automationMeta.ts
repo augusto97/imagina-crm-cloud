@@ -30,7 +30,7 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 
-import { APPROVAL_STATUS_LABELS, SUBSCRIPTION_EVENT_LABELS, type SubscriptionEvent, describeWait, describeWaitApproval, readApprovalTriggerResults, scheduleParts } from '@imagina-base/shared';
+import { APPROVAL_STATUS_LABELS, SUBSCRIPTION_EVENT_LABELS, type SubscriptionEvent, describeWait, describeWaitApproval, describeWebhookRecord, readApprovalTriggerResults, readWebhookRecordConfig, scheduleParts } from '@imagina-base/shared';
 
 import { __, _n, sprintf } from '@/lib/i18n';
 import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
@@ -146,6 +146,12 @@ export const TRIGGER_META: Record<string, StepMeta> = {
 };
 
 export const ACTION_META: Record<string, StepMeta> = {
+    // v0.1.399 — el paso que encuentra o crea el registro del webhook entrante (sólo en el historial y en «Probar»).
+    webhook_record: {
+        icon: Webhook,
+        title: 'Webhook entrante',
+        description: 'Encontró o creó el registro con los datos que llegaron.',
+    },
     update_field: {
         icon: PenLine,
         title: 'Actualizar campos',
@@ -349,8 +355,11 @@ export function summarizeTrigger(
                 offsetHuman(offset),
             );
         }
-        case 'incoming_webhook':
-            return __('Cuando llega un webhook entrante');
+        case 'incoming_webhook': {
+            // v0.1.399 — y qué hace con el registro (crea, actualiza…).
+            const what = describeWebhookRecord(readWebhookRecordConfig(config), (slug) => fieldLabel(fields, slug));
+            return what ? `${__('Cuando llega un webhook entrante')} · ${what}` : __('Cuando llega un webhook entrante');
+        }
         case 'payment_received':
             return __('Cuando un cliente paga un link de cobro');
         case 'subscription_event': {

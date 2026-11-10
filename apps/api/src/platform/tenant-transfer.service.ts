@@ -151,7 +151,7 @@ const PAGE = 1000;
 /** Lo que NO viaja, y por qué. Se copia tal cual al manifest. */
 const EXCLUDED = [
     'Tokens de acceso personal y conexiones MCP/OAuth: se guardan sólo hasheados, hay que volver a emitirlos.',
-    'El enlace público de cada lista y la URL del webhook entrante: son credenciales de la instancia de origen; el import emite unos nuevos.',
+    'El enlace público de cada lista y la URL del webhook entrante (y su secreto, si tenía): son credenciales de la instancia de origen; el import emite unos nuevos.',
     'El dominio propio: es único global y apunta al servidor anterior.',
     'Sesiones abiertas: cada persona vuelve a iniciar sesión en la instancia nueva.',
     'Los dispositivos con notificaciones push: el navegador se suscribió con las llaves del servidor de origen; cada persona las vuelve a activar en Ajustes → Cuenta → Avisos.',
@@ -2241,7 +2241,7 @@ export class TenantTransferService {
         const hooks = autoRows.filter((a) => String(a.triggerType) === 'incoming_webhook').length;
         if (hooks > 0) {
             warnings.push(
-                `${hooks} automatización(es) con webhook entrante tienen una URL nueva: actualiza el sistema que las llama.`,
+                `${hooks} automatización(es) con webhook entrante tienen una URL nueva: actualiza el sistema que las llama (si pedían un secreto, genera uno nuevo).`,
             );
         }
         if (tenantRow.customDomain) {
