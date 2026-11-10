@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ContactWidgetDto, ContactWidgetOptions, CreateContactWidgetInput, UpdateContactWidgetInput } from '@imagina-base/shared';
+import type { ContactWidgetDto, ContactWidgetOptions, CreateContactWidgetInput, UpdateContactWidgetInput, WidgetStatsDto } from '@imagina-base/shared';
 
 import { api } from '@/lib/api';
 
@@ -28,6 +28,18 @@ export function useContactWidget(id: number) {
         queryFn: async () => (await api.get<ContactWidgetDto>(`/contact-widgets/${id}`)).data,
         enabled: Number.isInteger(id) && id > 0,
         retry: false,
+    });
+}
+
+/** v0.1.396 — Estadísticas del widget (apariciones, aperturas, toques y contactos por botón). */
+export function useWidgetStats(id: number, days: number, enabled = true) {
+    return useQuery({
+        queryKey: [...widgetKeys.one(id), 'stats', days] as const,
+        queryFn: async () => (await api.get<WidgetStatsDto>(`/contact-widgets/${id}/stats?days=${days}`)).data,
+        enabled: enabled && Number.isInteger(id) && id > 0,
+        // Se piden al abrir la pestaña (y cada minuto mientras está abierta): son números que cambian solos.
+        staleTime: 0,
+        refetchInterval: 60_000,
     });
 }
 

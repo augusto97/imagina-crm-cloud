@@ -151,7 +151,7 @@ function StatsBody({ data, form, fields }: { data: FormStatsDto; form: FormDto; 
     );
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }): JSX.Element {
+export function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }): JSX.Element {
     return (
         <section className="imcrm-flex imcrm-flex-col imcrm-gap-2">
             <div>
@@ -163,7 +163,7 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
     );
 }
 
-interface BarRow {
+export interface BarRow {
     key: string;
     label: string;
     value: number;
@@ -172,12 +172,12 @@ interface BarRow {
     share: number;
 }
 
-function withShares(rows: Array<Omit<BarRow, 'share'>>): BarRow[] {
+export function withShares(rows: Array<Omit<BarRow, 'share'>>): BarRow[] {
     const max = Math.max(1, ...rows.map((r) => r.value));
     return rows.map((r) => ({ ...r, share: r.value / max }));
 }
 
-function BarList({ rows, testId }: { rows: BarRow[]; testId: string }): JSX.Element {
+export function BarList({ rows, testId }: { rows: BarRow[]; testId: string }): JSX.Element {
     return (
         <ul className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid={testId}>
             {rows.map((r) => (

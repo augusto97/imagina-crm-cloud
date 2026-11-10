@@ -119,11 +119,19 @@ a{color:inherit}
 .w-bar .w-bar-ic{display:inline-flex;color:var(--b-color)}
 .w-bar svg{width:22px;height:22px}
 .w-bar span{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.w-greet{position:relative;display:flex;align-items:flex-start;gap:6px;width:max-content;max-width:280px;animation:w-pop .2s ease both}
+.w-greet-msg{flex:1;min-width:0;padding:12px 14px;background:#fff;color:#1d2330;border:0;border-radius:16px 16px 4px 16px;box-shadow:0 8px 22px rgba(15,23,42,.18),0 2px 6px rgba(15,23,42,.08);font:inherit;font-size:14.5px;line-height:1.4;text-align:left;cursor:pointer}
+.w-left .w-greet{flex-direction:row-reverse}
+.w-left .w-greet-msg{border-radius:16px 16px 16px 4px}
+.w-greet-msg:hover{box-shadow:0 10px 26px rgba(15,23,42,.22),0 2px 6px rgba(15,23,42,.08)}
+.w-greet-msg:focus-visible,.w-greet-x:focus-visible{outline:3px solid color-mix(in srgb,var(--w-accent) 45%,#fff);outline-offset:2px}
+.w-greet-x{flex:none;width:26px;height:26px;margin-top:-4px;border:0;border-radius:999px;background:#fff;color:#667085;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 8px rgba(15,23,42,.16)}
+.w-greet-x svg{width:14px;height:14px}
 .w-preview-note{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#101828;color:#fff;font-size:13px;padding:9px 14px;border-radius:10px;max-width:min(360px,90vw);box-shadow:0 10px 30px rgba(15,23,42,.3);animation:w-pop .18s ease both}
 @keyframes w-pop{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:none}}
 @keyframes w-rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes w-rot{to{transform:rotate(360deg)}}
-@media (prefers-reduced-motion:reduce){.w-mi,.w-panel,.w-preview-note{animation:none}.w-launcher,.w-opt,.w-mi-btn{transition:none}}
+@media (prefers-reduced-motion:reduce){.w-mi,.w-panel,.w-preview-note,.w-greet{animation:none}.w-launcher,.w-opt,.w-mi-btn{transition:none}}
 `;
 
 interface WidgetPageOpts {

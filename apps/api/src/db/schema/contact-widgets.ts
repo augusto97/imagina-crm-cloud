@@ -1,4 +1,4 @@
-import { bigint, boolean, index, jsonb, pgTable, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
+import { bigint, boolean, date, index, jsonb, pgTable, primaryKey, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
 import { tenants } from './tenants';
 
 /**
@@ -26,3 +26,24 @@ export const contactWidgets = pgTable(
     (t) => [index('contact_widgets_tenant_ix').on(t.tenantId), uniqueIndex('contact_widgets_token_ux').on(t.token)],
 );
 export type ContactWidgetRow = typeof contactWidgets.$inferSelect;
+
+/**
+ * v0.1.396 — Estadísticas por widget y por día: apariciones, aperturas,
+ * toques de cada botón, saludo y registros por botón. Sumas, nunca datos de
+ * una persona (se suman en Redis y se vuelcan aquí).
+ */
+export const widgetStats = pgTable(
+    'widget_stats',
+    {
+        tenantId: bigint('tenant_id', { mode: 'number' })
+            .notNull()
+            .references(() => tenants.id, { onDelete: 'cascade' }),
+        widgetId: bigint('widget_id', { mode: 'number' })
+            .notNull()
+            .references(() => contactWidgets.id, { onDelete: 'cascade' }),
+        day: date('day', { mode: 'string' }).notNull(),
+        counts: jsonb('counts').$type<Record<string, number>>().notNull().default({}),
+        updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (t) => [primaryKey({ columns: [t.widgetId, t.day] }), index('widget_stats_tenant_ix').on(t.tenantId, t.widgetId, t.day)],
+);

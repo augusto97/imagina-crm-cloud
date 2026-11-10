@@ -215,3 +215,21 @@ describe('widget de contacto: asesores, horario y chat (v0.1.395)', () => {
         expect(buildPublicWidgetHours({ ...cfg.hours, enabled: false }, { tz: 'UTC', closedDates: [], timeFormat: 'h24' })).toBeNull();
     });
 });
+
+describe('widget de contacto — dónde aparece y saludo (v0.1.396)', () => {
+    it('lo guardado roto toma su valor por defecto; el saludo apagado o vacío no viaja', () => {
+        const cfg = readContactWidgetConfig({ display: { pages: 'raro', delay_s: 9999, scroll_pct: 50 }, greeting: 'x' });
+        expect(cfg.display).toEqual({ pages: 'all', page_terms: '', devices: 'all', delay_s: 0, scroll_pct: 50 });
+        expect(cfg.greeting.enabled).toBe(false);
+        const brand = { accent: '#2563eb', company: 'Acme', logoUrl: null };
+        expect(buildPublicWidgetMeta('t'.repeat(20), cfg, brand, []).greeting).toBeNull();
+        const on = readContactWidgetConfig({
+            greeting: { enabled: true, text: '', rules: [{ contains: 'planes', text: '¿Dudas?' }, { contains: '', text: 'sin palabras' }, 'roto'] },
+        });
+        expect(on.greeting.rules).toHaveLength(2);
+        const pub = buildPublicWidgetMeta('t'.repeat(20), on, brand, []).greeting;
+        // Las reglas sin palabras o sin texto no viajan.
+        expect(pub).toEqual({ text: '', rules: [{ contains: 'planes', text: '¿Dudas?' }], delay_s: 5, mobile: false });
+        expect(buildPublicWidgetMeta('t'.repeat(20), readContactWidgetConfig({ greeting: { enabled: true, text: ' ' } }), brand, []).greeting).toBeNull();
+    });
+});

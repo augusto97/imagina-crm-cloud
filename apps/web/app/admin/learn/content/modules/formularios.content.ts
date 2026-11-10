@@ -1509,6 +1509,30 @@ export const articles: LearnArticle[] = [
                     { name: 'Cuándo se ve cada botón', what: 'En la pestaña **Botones**, cada uno elige: **Siempre**, **Sólo en horario** (WhatsApp, llamar) o **Sólo fuera de horario** (un formulario para que te dejen un mensaje).', tip: 'En la vista previa, toca «En horario» o «Fuera de horario» para ver cada caso.' },
                 ],
             },
+            { t: 'h', text: 'Dónde aparece y el saludo' },
+            {
+                t: 'p',
+                md: 'Pega el código **una sola vez** en todo tu sitio y elige en la pestaña **Dónde aparece** en qué páginas se ve: en todas, **sólo en las que contienen** ciertas palabras en la dirección (por ejemplo, «planes, cotizacion») o **en todas menos** algunas (como el pago). También puedes mostrarlo sólo en el celular o sólo en el computador, y hacer que aparezca a los segundos o cuando la persona baja por la página: así no tapa nada apenas entra.',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Páginas', what: 'Todas, sólo las que contienen las palabras o todas menos esas. Sin importar mayúsculas ni tildes.' },
+                    { name: 'Dispositivos', what: 'Todos, sólo computador o sólo celular.' },
+                    { name: 'Aparece a los (segundos)', what: 'Cuánto tiempo en la página antes de mostrarse. 0 = enseguida.' },
+                    { name: 'Aparece al bajar (%)', what: 'Cuánto tiene que bajar la persona por la página. 0 = no hace falta.' },
+                    {
+                        name: 'Saludar antes de que abran el widget',
+                        what: 'Un mensaje junto al botón («¿Dudas con los planes?») a los segundos que elijas, con un texto distinto por página si quieres. Tocarlo abre el widget; si lo cierran, no vuelve en esa visita.',
+                        tip: 'Con el saludo encendido, la vista previa se muestra cerrada para que lo veas.',
+                    },
+                ],
+            },
+            { t: 'h', text: 'Estadísticas' },
+            {
+                t: 'p',
+                md: 'La pestaña **Estadísticas** muestra, por día y en los últimos 7, 30 o 90 días, cuántas veces **apareció** el widget, cuántas lo **abrieron**, los **toques** de cada botón y los **contactos**: quienes dejaron sus datos en el formulario o agendaron desde ese botón. También cuántas veces se vio y se tocó el saludo, y si vienen del celular o del computador. Son conteos: no se guarda nada de cada persona.',
+            },
             {
                 t: 'callout',
                 tone: 'tip',
@@ -1522,6 +1546,7 @@ export const articles: LearnArticle[] = [
                     { q: '¿Puedo tener varios widgets?', a: 'Sí, por ejemplo uno para tu sitio y otro para tu tienda, con botones distintos. Cada uno tiene su propio código.' },
                     { q: '¿Y si lo despublico?', a: 'El código pegado deja de mostrar el botón (no sale ningún cartel en tu sitio). Lo vuelves a publicar cuando quieras, sin cambiar el código.' },
                     { q: '¿Puedo limitarlo a mi sitio?', a: 'Sí: en **Publicar → Sólo en estos sitios** escribe tus dominios. Fuera de ellos, el widget no se muestra.' },
+                    { q: '¿Cuenta un contacto de WhatsApp directo?', a: 'Se cuenta el toque en el botón; la conversación sigue en WhatsApp. Si quieres que quede como contacto, enciende **Pedir sus datos antes de abrir WhatsApp**.' },
                     { q: '¿Qué pasa si una persona sale del equipo?', a: 'Su número sigue atendiendo hasta que la quites del botón, pero los registros dejan de asignársele.' },
                 ],
             },

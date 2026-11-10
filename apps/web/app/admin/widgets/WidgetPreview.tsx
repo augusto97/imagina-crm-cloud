@@ -16,9 +16,13 @@ export type PreviewDevice = 'desktop' | 'mobile';
  * El diseño le llega por mensaje (`imb-w-preview`), así se ve al instante lo
  * que se edita, sin guardar.
  */
-export function WidgetPreview({ meta }: { meta: PublicWidgetMeta }): JSX.Element {
+export function WidgetPreview({ meta, showClosed = false }: { meta: PublicWidgetMeta; showClosed?: boolean }): JSX.Element {
     const [device, setDevice] = useState<PreviewDevice>('desktop');
     const [open, setOpen] = useState(true);
+    // v0.1.396 — el saludo sólo se ve con el widget cerrado: al editarlo, se muestra cerrado.
+    useEffect(() => {
+        if (showClosed) setOpen(false);
+    }, [showClosed]);
     /** v0.1.395 — con horario: ver cómo queda ahora, en horario o fuera de horario. */
     const [hoursView, setHoursView] = useState<'now' | 'open' | 'closed'>('now');
     const hoursOpen = !meta.hours || hoursView === 'now' ? null : hoursView === 'open';

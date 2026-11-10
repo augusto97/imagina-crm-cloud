@@ -2207,7 +2207,7 @@ export class TenantTransferService {
         }
         if ((counts.contact_widgets ?? 0) > 0) {
             warnings.push(
-                `${counts.contact_widgets} widget(s) de contacto tienen un código NUEVO: vuelve a pegarlo en tu sitio (Ajustes → Widget de contacto → Publicar).`,
+                `${counts.contact_widgets} widget(s) de contacto tienen un código NUEVO: vuelve a pegarlo en tu sitio (Ajustes → Widget de contacto → Publicar). Sus estadísticas no viajan.`,
             );
         }
         if (publicDashboardsCount > 0) {

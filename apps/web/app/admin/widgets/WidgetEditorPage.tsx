@@ -25,9 +25,11 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 import { ColorChoice, IconSelect, WidgetButtonEditor } from './WidgetButtonEditor';
+import { WidgetDisplayEditor } from './WidgetDisplayEditor';
 import { WidgetHoursEditor } from './WidgetHoursEditor';
 import { WidgetIconView } from './WidgetIconView';
 import { WidgetPreview } from './WidgetPreview';
+import { WidgetStatsPanel } from './WidgetStatsPanel';
 import {
     addButton,
     canAddButton,
@@ -48,12 +50,14 @@ import {
     useWidgetOptions,
 } from './useContactWidgets';
 
-type Tab = 'buttons' | 'look' | 'hours' | 'publish';
+type Tab = 'buttons' | 'look' | 'hours' | 'show' | 'publish' | 'stats';
 const TABS: Array<{ id: Tab; label: string }> = [
     { id: 'buttons', label: 'Botones' },
     { id: 'look', label: 'Apariencia' },
     { id: 'hours', label: 'Horario' },
+    { id: 'show', label: 'Dónde aparece' },
     { id: 'publish', label: 'Publicar' },
+    { id: 'stats', label: 'Estadísticas' },
 ];
 
 /**
@@ -96,6 +100,17 @@ function Editor({ widget, options, back }: { widget: ContactWidgetDto; options: 
         next.set('t', t);
         setParams(next, { replace: true });
     };
+
+    // Con muchas pestañas la tira se desliza: la elegida siempre a la vista (sólo en horizontal).
+    const tabsRef = useRef<HTMLDivElement | null>(null);
+    useEffect(() => {
+        const list = tabsRef.current;
+        const active = list?.querySelector<HTMLElement>('[data-active="1"]');
+        if (!list || !active) return;
+        const left = active.offsetLeft - list.offsetLeft;
+        if (left < list.scrollLeft) list.scrollLeft = left;
+        else if (left + active.offsetWidth > list.scrollLeft + list.clientWidth) list.scrollLeft = left + active.offsetWidth - list.clientWidth;
+    }, [tab]);
 
     const [name, setName] = useState(widget.name);
     const [config, setConfig] = useState<ContactWidgetConfig>(() => readContactWidgetConfig(widget.config));
@@ -182,7 +197,7 @@ function Editor({ widget, options, back }: { widget: ContactWidgetDto; options: 
 
             <div className="imcrm-grid imcrm-gap-6 lg:imcrm-grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
                 <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-4">
-                    <div className="imcrm-flex imcrm-gap-1 imcrm-border-b imcrm-border-border" role="tablist">
+                    <div ref={tabsRef} className="imcrm-flex imcrm-gap-1 imcrm-overflow-x-auto imcrm-border-b imcrm-border-border" role="tablist">
                         {TABS.map((t) => (
                             <button
                                 key={t.id}
@@ -191,10 +206,11 @@ function Editor({ widget, options, back }: { widget: ContactWidgetDto; options: 
                                 aria-selected={tab === t.id}
                                 onClick={() => setTab(t.id)}
                                 className={cn(
-                                    '-imcrm-mb-px imcrm-border-b-2 imcrm-px-3 imcrm-py-2 imcrm-text-sm',
+                                    '-imcrm-mb-px imcrm-shrink-0 imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-3 imcrm-py-2 imcrm-text-sm',
                                     tab === t.id ? 'imcrm-border-primary imcrm-font-semibold imcrm-text-foreground' : 'imcrm-border-transparent imcrm-text-muted-foreground hover:imcrm-text-foreground',
                                 )}
                                 data-testid={`widget-tab-${t.id}`}
+                                data-active={tab === t.id ? '1' : undefined}
                             >
                                 {__(t.label)}
                                 {t.id === 'publish' && problems.length > 0 && <span className="imcrm-ml-1.5 imcrm-inline-block imcrm-h-1.5 imcrm-w-1.5 imcrm-rounded-full imcrm-bg-warning imcrm-align-middle" />}
@@ -332,6 +348,10 @@ function Editor({ widget, options, back }: { widget: ContactWidgetDto; options: 
 
                     {tab === 'hours' && <WidgetHoursEditor config={config} options={options} onChange={(hours) => patchConfig({ hours })} />}
 
+                    {tab === 'show' && <WidgetDisplayEditor config={config} onDisplay={(display) => patchConfig({ display })} onGreeting={(greeting) => patchConfig({ greeting })} />}
+
+                    {tab === 'stats' && <WidgetStatsPanel widgetId={widget.id} config={config} />}
+
                     {tab === 'publish' && (
                         <section className="imcrm-flex imcrm-flex-col imcrm-gap-5" data-tour="widget-publish">
                             {problems.length > 0 && (
@@ -451,7 +471,7 @@ function Editor({ widget, options, back }: { widget: ContactWidgetDto; options: 
                 </div>
 
                 <div className="imcrm-min-w-0 lg:imcrm-sticky lg:imcrm-top-2 lg:imcrm-self-start">
-                    <WidgetPreview meta={meta} />
+                    <WidgetPreview meta={meta} showClosed={tab === 'show' && config.greeting.enabled} />
                 </div>
             </div>
         </div>

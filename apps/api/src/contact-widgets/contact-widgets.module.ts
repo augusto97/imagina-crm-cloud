@@ -4,6 +4,7 @@ import { BookingModule } from '../booking/booking.module';
 import { FilesModule } from '../files/files.module';
 import { ContactWidgetsController, PublicWidgetController } from './contact-widgets.controller';
 import { ContactWidgetsService } from './contact-widgets.service';
+import { WidgetStatsService } from './widget-stats.service';
 
 /**
  * v0.1.394 (ADR-S99) — Widgets de contacto. @Global: el envío de un
@@ -14,7 +15,7 @@ import { ContactWidgetsService } from './contact-widgets.service';
 @Module({
     imports: [AuthModule, FilesModule, BookingModule],
     controllers: [ContactWidgetsController, PublicWidgetController],
-    providers: [ContactWidgetsService],
-    exports: [ContactWidgetsService],
+    providers: [ContactWidgetsService, WidgetStatsService],
+    exports: [ContactWidgetsService, WidgetStatsService],
 })
 export class ContactWidgetsModule {}
