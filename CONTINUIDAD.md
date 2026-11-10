@@ -80,6 +80,12 @@ reporta. Ya tiene clientes reales (~10 empresas).
 - Al terminar: qué se hizo, **qué tiene que probar él** y los **límites
   honestos** (qué no se pudo verificar y por qué). Nunca decir "listo" sin
   haberlo verificado; si algo falló, decirlo.
+- **Detallar CADA versión publicada desde el último reporte** (pedido
+  explícito del usuario, 2026-11-10: "si se encolan versiones no estás
+  mostrando el detalle… no me dijiste nada de la v0.1.394, v0.1.395 y
+  v0.1.396, solo de la v0.1.397"). Si en una tanda salieron varias versiones,
+  el mensaje final lleva una sección por versión (número + qué trae para quien
+  usa la app + qué probar), no sólo la última.
 - Cuando pregunta "¿se puede…?" o "analizá qué podemos hacer": analizar
   opciones (mirando cómo lo hacen ClickUp/Airtable/Zapier/n8n), recomendar UNA
   y esperar su OK. Cuando dice **"hacelo todo" / "has todas las fases" / "has
@@ -180,6 +186,8 @@ Pasos (en este orden):
     `git fetch origin main && git checkout -B <rama> origin/main && git push --force-with-lease origin <rama>`
     (un PR mergeado no se reutiliza; la próxima versión arranca limpia).
 12. Si `ci` falla: diagnosticar, arreglar, push, esperar de nuevo.
+13. **Avisar al usuario**: una sección por CADA versión publicada desde el
+    último mensaje en que se le reportó algo (ver §2), no sólo la última.
 
 **CI** (`.github/workflows/ci.yml`): en cada PR corre `lint typecheck build`
 de `shared` + `api` y las pruebas de `shared` en un job, y las pruebas de la

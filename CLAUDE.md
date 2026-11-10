@@ -13783,3 +13783,8 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
    reutiliza las capturas y graba sólo los escenarios que cambiaron
    (`scripts/help-captures/plan.mjs`): para regrabar un módulo, tocar su
    escenario.
+11. **Reportar TODAS las versiones publicadas** (pedido del usuario,
+   2026-11-10: "si se encolan versiones no estás mostrando el detalle de lo
+   que se hizo"): al terminar una tanda, el mensaje al usuario lleva una
+   sección por cada versión que salió desde el último reporte (qué trae y qué
+   probar), no sólo la última.
