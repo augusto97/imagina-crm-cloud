@@ -13738,6 +13738,20 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         inválidos avisados y guardados, publicar desde la ventana, sin scroll
         lateral) y el acceso «El código QR» desde la agenda.
 
+  - [x] **El editor del widget de contacto no saca el cursor del campo
+        (v0.1.398, reporte del usuario con captura: "cada vez que tecleo una
+        tecla me saca del campo del formulario")**. Con el panel de la vista
+        previa en «Abierto», cada cambio rearmaba el widget del iframe
+        (`imb-w-preview`, 180 ms después de la última tecla) y `setOpen(true)`
+        le daba el foco a su primer botón: el iframe le quitaba el foco al
+        número de WhatsApp, al mensaje y al nombre de cada botón. Ahora
+        `setOpen(next, moveFocus = true)` y la vista previa abre sin mover el
+        foco; dentro del widget el teclado sigue igual. El formulario y la
+        agenda no tenían el problema (sus vistas previas no mueven el foco).
+        E2E nuevo: con el código viejo 16 de 16 teclas perdían el foco; con el
+        arreglo 8/8 en escritorio y 7/7 en celular oscuro, y los E2E del
+        widget de v0.1.395 (32/32) y v0.1.396 (24/24) en verde.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
@@ -13783,3 +13797,8 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
    reutiliza las capturas y graba sólo los escenarios que cambiaron
    (`scripts/help-captures/plan.mjs`): para regrabar un módulo, tocar su
    escenario.
+11. **Reportar TODAS las versiones publicadas** (pedido del usuario,
+   2026-11-10: "si se encolan versiones no estás mostrando el detalle de lo
+   que se hizo"): al terminar una tanda, el mensaje al usuario lleva una
+   sección por cada versión que salió desde el último reporte (qué trae y qué
+   probar), no sólo la última.

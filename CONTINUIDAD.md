@@ -80,6 +80,12 @@ reporta. Ya tiene clientes reales (~10 empresas).
 - Al terminar: qué se hizo, **qué tiene que probar él** y los **límites
   honestos** (qué no se pudo verificar y por qué). Nunca decir "listo" sin
   haberlo verificado; si algo falló, decirlo.
+- **Detallar CADA versión publicada desde el último reporte** (pedido
+  explícito del usuario, 2026-11-10: "si se encolan versiones no estás
+  mostrando el detalle… no me dijiste nada de la v0.1.394, v0.1.395 y
+  v0.1.396, solo de la v0.1.397"). Si en una tanda salieron varias versiones,
+  el mensaje final lleva una sección por versión (número + qué trae para quien
+  usa la app + qué probar), no sólo la última.
 - Cuando pregunta "¿se puede…?" o "analizá qué podemos hacer": analizar
   opciones (mirando cómo lo hacen ClickUp/Airtable/Zapier/n8n), recomendar UNA
   y esperar su OK. Cuando dice **"hacelo todo" / "has todas las fases" / "has
@@ -180,6 +186,8 @@ Pasos (en este orden):
     `git fetch origin main && git checkout -B <rama> origin/main && git push --force-with-lease origin <rama>`
     (un PR mergeado no se reutiliza; la próxima versión arranca limpia).
 12. Si `ci` falla: diagnosticar, arreglar, push, esperar de nuevo.
+13. **Avisar al usuario**: una sección por CADA versión publicada desde el
+    último mensaje en que se le reportó algo (ver §2), no sólo la última.
 
 **CI** (`.github/workflows/ci.yml`): en cada PR corre `lint typecheck build`
 de `shared` + `api` y las pruebas de `shared` en un job, y las pruebas de la
@@ -407,8 +415,10 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.397**
-(**la ventana Compartir de formularios y agendas rediseñada**: dos pestañas,
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.398**
+(**corrección: el editor del widget de contacto ya no saca el cursor del
+campo con cada tecla**: la vista previa abría su panel y le robaba el foco).
+Antes v0.1.397 (**la ventana Compartir de formularios y agendas rediseñada**: dos pestañas,
 el enlace con los atajos y el QR en una ventana chica, insertar en tres pasos
 con la vista previa en computador o celular, y los sitios permitidos
 plegados; addendum ADR-S95). Antes v0.1.396 (**widget de contacto: dónde
@@ -597,6 +607,12 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-10 — **«Cada vez que tecleo una tecla me saca del campo del
+  formulario»** (reporte del usuario con captura: el número de WhatsApp de un
+  botón del widget). **v0.1.398 HECHA**: ver la bitácora.
+- 2026-11-10 — **Regla nueva: reportar CADA versión publicada desde el último
+  reporte** (el usuario: «no me dijiste nada de la v0.1.394, v0.1.395 y
+  v0.1.396»). Escrita en §2, §4 paso 13 y CLAUDE.md §6 regla 11.
 - 2026-11-10 — **«Rediseña la interfaz de compartir los formularios y
   agendas: se ve muy feo, no es eficiente y se desperdicia mucho espacio»**
   (pedido del usuario mientras salía v0.1.396). **v0.1.397 HECHA**: ver la
@@ -1776,6 +1792,23 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-10 · v0.1.398** — **El editor del widget ya no saca el cursor
+  del campo** (reporte del usuario con captura: «cada vez que tecleo una tecla
+  me saca del campo»). Causa: con el panel de la vista previa en «Abierto»,
+  cada cambio (180 ms después de la última tecla) rearmaba el widget del
+  iframe y `setOpen(true)` le daba el foco a su primer botón a los 30 ms — el
+  iframe le quitaba el foco al campo del editor. Pasaba con todo lo que cambia
+  la vista previa (número, mensaje, nombre del botón, saludo…), no con el
+  nombre del widget. Arreglo en `apps/web/app/public-widget/main.ts`:
+  `setOpen(next, moveFocus = true)` y el mensaje `imb-w-preview` abre con
+  `moveFocus = false`; tocar o usar el teclado dentro del widget sigue
+  llevando el foco como antes. Revisados el formulario y la agenda: sus vistas
+  previas no mueven el foco al re-dibujarse. E2E nuevo `e2e-widget-typing`
+  (número tecleado despacio, mensaje, nombre del botón y del widget): con el
+  código viejo pierde el foco en 16 de 16 teclas; con el arreglo 8/8 en
+  escritorio y 7/7 en celular oscuro; los de v0.1.395 (32/32) y v0.1.396
+  (24/24) siguen en verde. Novedad «Editar el widget de contacto sin perder lo
+  que escribes». Viaja también la regla nueva de reportar cada versión.
 - **2026-11-10 · v0.1.397** — **Compartir rediseñado** (pedido del usuario:
   «se ve muy feo, no es eficiente y se desperdicia mucho espacio»). Addendum
   ADR-S95. La ventana de Compartir de formularios y agendas pasa a **dos
