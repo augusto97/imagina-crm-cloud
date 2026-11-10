@@ -2150,4 +2150,17 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.392-automatizaciones-a-escala',
+        version: '0.1.392',
+        date: '2026-11-10',
+        kind: 'improvement',
+        title: 'Automatizaciones más rápidas, también en horas de mucho trabajo',
+        summary:
+            'Tus automatizaciones ya no esperan detrás del trabajo de otros: aunque alguien edite miles de registros de golpe, las tuyas corren en segundos. Y un webhook, correo o mensaje lento ya no frena al resto.',
+        media: { illustration: 'auto-historial' },
+        body: 'No tienes que cambiar nada. En **Historial** de cada automatización ves cuándo corrió y qué hizo cada paso.',
+        action: { label: 'Ver cómo funcionan', href: '/aprende/automatizaciones' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

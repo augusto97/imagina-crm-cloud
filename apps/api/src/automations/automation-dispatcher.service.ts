@@ -1,12 +1,12 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { BookingEventInfo, ChecklistCompletedInfo, EmailEventInfo, SlaEventInfo, SubscriptionEventInfo, WhatsappEventInfo } from '@imagina-base/shared';
 import { randomUUID } from 'node:crypto';
-import type { Queue } from 'bullmq';
+import type { JobsOptions, Queue } from 'bullmq';
 import { and, eq, isNull } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import type { ApprovalEventInfo } from '../approvals/approval-hub';
 import { DRIZZLE, type Db } from '../db/client';
-import { automations } from '../db/schema';
+import { automations, fields as fieldsTable } from '../db/schema';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
 import { REDIS } from '../redis/redis.module';
 
@@ -38,6 +38,31 @@ const TRIGGER_TYPES_FOR_EVENT: Record<string, readonly string[]> = {
 
 /** Cuánto vive en Redis la lista de disparadores activos de una lista (se invalida al guardar). */
 const TRIGGERS_CACHE_TTL_S = 300;
+
+/**
+ * v0.1.392 — Turnos justos entre empresas en la cola de automatizaciones.
+ *
+ * Antes la cola era UNA fila para todos: si una empresa encolaba 50.000
+ * tareas (una edición masiva, un import que actualiza, una tienda que
+ * sincroniza), las automatizaciones de todas las demás esperaban detrás. Ahora
+ * cada tarea de una empresa entra con prioridad = cuántas tareas de ESA
+ * empresa hay pendientes (1 para la primera, 2 para la segunda…). BullMQ
+ * atiende primero la prioridad más baja y, dentro de la misma, por orden de
+ * llegada: la primera tarea de cada empresa sale antes que la segunda de
+ * cualquiera, o sea, por turnos. El contador sube al encolar y baja al
+ * terminar (`release`); vence solo a la hora sin movimiento, así un proceso
+ * que se cayó a mitad no deja a nadie castigado para siempre.
+ *
+ * Los relojes (esperas, recurrencias) y los horarios de cada automatización
+ * van sin prioridad: BullMQ los atiende antes que cualquier tarea con
+ * prioridad, y son pocos y cortos.
+ */
+const FAIR_TTL_S = 3600;
+const MAX_PRIORITY = 2_097_152;
+const fairKey = (tenantId: number): string => `autoq:n:${tenantId}`;
+/** Baja el contador y lo borra al llegar a cero (nunca queda negativo). */
+const RELEASE_LUA = `local v = redis.call('DECR', KEYS[1]) if v <= 0 then redis.call('DEL', KEYS[1]) end return v`;
+const BASE_JOB = { removeOnComplete: 1000, removeOnFail: 1000 } as const;
 
 /**
  * Cadena de automatizaciones: un registro que escribe una automatización
@@ -208,30 +233,64 @@ export class AutomationDispatcher {
      * una automatización — el que calculó el caché con una versión vieja no lo
      * deja vigente. Ante cualquier duda (sin Redis, sin base, un error), true.
      */
-    async listensTo(tenantId: number, listId: number, trigger: string): Promise<boolean> {
+    async listensTo(tenantId: number, listId: number, trigger: string, change?: { before?: Record<string, unknown>; after?: Record<string, unknown> }): Promise<boolean> {
         const wanted = TRIGGER_TYPES_FOR_EVENT[trigger];
         if (!wanted || !this.db || !this.redis) return true;
         try {
             const [version, cached] = await this.redis.mget(versionKey(tenantId, listId), cacheKey(tenantId, listId));
             const ver = version ?? '0';
-            let types: string[] | null = null;
+            let entry: TriggerCache | null = null;
             if (cached) {
-                const parsed = JSON.parse(cached) as { v: string; types: string[] };
-                if (parsed.v === ver) types = parsed.types;
+                const parsed = JSON.parse(cached) as Partial<TriggerCache> & { v?: string };
+                // `watch` llegó en v0.1.392: un caché de antes se recalcula.
+                if (parsed.v === ver && Array.isArray(parsed.types) && parsed.watch !== undefined) entry = parsed as TriggerCache;
             }
-            if (types === null) {
-                const rows = await this.db
-                    .select({ type: automations.triggerType })
-                    .from(automations)
-                    .where(and(eq(automations.tenantId, tenantId), eq(automations.listId, listId), eq(automations.isActive, true), isNull(automations.deletedAt)));
-                types = [...new Set(rows.map((r) => r.type))];
-                await this.redis.set(cacheKey(tenantId, listId), JSON.stringify({ v: ver, types }), 'EX', TRIGGERS_CACHE_TTL_S);
+            if (entry === null) {
+                entry = await this.computeTriggers(tenantId, listId, ver);
+                await this.redis.set(cacheKey(tenantId, listId), JSON.stringify(entry), 'EX', TRIGGERS_CACHE_TTL_S);
             }
-            return types.some((t) => wanted.includes(t));
+            if (!entry.types.some((t) => wanted.includes(t))) return false;
+            // v0.1.392 — una edición que no toca NINGÚN campo que las
+            // automatizaciones «al actualizar» esperan no encola nada (antes
+            // encolaba siempre y el worker descubría que no coincidía).
+            if (trigger === 'record_updated' && entry.watch !== null && change?.before && change.after) {
+                return changedKeys(change.before, change.after).some((k) => entry!.watch!.includes(k));
+            }
+            return true;
         } catch (err) {
             this.logger.warn(`No se pudo consultar los disparadores de la lista ${listId}: ${String(err)}`);
             return true;
         }
+    }
+
+    /**
+     * Los disparadores activos de la lista y, para «al actualizar», qué campos
+     * esperan (`watch`, por clave `f{id}`). `watch = null` = alguna reacciona a
+     * cualquier cambio, o un campo que espera no existe hoy (por las dudas, se
+     * encola siempre: el motor decide).
+     */
+    private async computeTriggers(tenantId: number, listId: number, v: string): Promise<TriggerCache> {
+        const db = this.db!;
+        const rows = await db
+            .select({ type: automations.triggerType, config: automations.triggerConfig })
+            .from(automations)
+            .where(and(eq(automations.tenantId, tenantId), eq(automations.listId, listId), eq(automations.isActive, true), isNull(automations.deletedAt)));
+        const types = [...new Set(rows.map((r) => r.type))];
+        const onUpdate = rows.filter((r) => UPDATE_TRIGGER_TYPES.includes(r.type));
+        let watch: string[] | null = null;
+        if (onUpdate.length > 0) {
+            const wantedSlugs = onUpdate.map((r) => watchedSlugs((r.config ?? {}) as Record<string, unknown>));
+            if (wantedSlugs.every((w) => w.length > 0)) {
+                const fieldRows = await db
+                    .select({ id: fieldsTable.id, slug: fieldsTable.slug })
+                    .from(fieldsTable)
+                    .where(and(eq(fieldsTable.tenantId, tenantId), eq(fieldsTable.listId, listId), isNull(fieldsTable.deletedAt)));
+                const keyOf = new Map(fieldRows.map((f) => [f.slug, `f${f.id}`]));
+                const slugs = [...new Set(wantedSlugs.flat())];
+                if (slugs.every((sl) => keyOf.has(sl))) watch = slugs.map((sl) => keyOf.get(sl)!);
+            }
+        }
+        return { v, types, watch };
     }
 
     /** Las automatizaciones de la lista cambiaron (alta, edición, pausa, baja). */
@@ -259,10 +318,41 @@ export class AutomationDispatcher {
         this.queue = queue;
     }
 
+    /** v0.1.392 — encola con el turno de la empresa (ver `FAIR_TTL_S`). */
+    private async addFair(name: string, data: { tenantId: number }, opts: JobsOptions = {}): Promise<void> {
+        const queue = this.queue;
+        if (!queue) return;
+        const priority = await this.takeTurn(data.tenantId);
+        try {
+            await queue.add(name, data, { ...BASE_JOB, ...opts, ...(priority ? { priority } : {}) });
+        } catch (err) {
+            if (priority) await this.release(data.tenantId);
+            throw err;
+        }
+    }
+
+    /** El turno de la próxima tarea de la empresa (null sin Redis: sin prioridad). */
+    private async takeTurn(tenantId: number): Promise<number | null> {
+        if (!this.redis) return null;
+        try {
+            const res = await this.redis.multi().incr(fairKey(tenantId)).expire(fairKey(tenantId), FAIR_TTL_S).exec();
+            const n = Number(res?.[0]?.[1]);
+            return Number.isFinite(n) && n > 0 ? Math.min(MAX_PRIORITY, n) : null;
+        } catch {
+            return null;
+        }
+    }
+
+    /** Una tarea de la empresa terminó (bien o mal): su turno se libera. */
+    async release(tenantId: number): Promise<void> {
+        if (!this.redis) return;
+        await this.redis.eval(RELEASE_LUA, 1, fairKey(tenantId)).catch(() => undefined);
+    }
+
     /** v0.1.110 — encola un disparo de webhook entrante (job 'webhook'). */
     dispatchWebhook(data: { tenantId: number; automationId: number; payload: Record<string, unknown> }): void {
         if (!this.queue) return;
-        this.queue.add('webhook', data, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
+        this.addFair('webhook', data).catch((err) => {
             this.lost(data.tenantId, null, data.automationId, 'el webhook entrante', err);
         });
     }
@@ -276,7 +366,7 @@ export class AutomationDispatcher {
      */
     dispatchBulkEdit(data: BulkEditJob): boolean {
         if (!this.queue) return false;
-        this.queue.add('bulk-edit', data, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
+        this.addFair('bulk-edit', data).catch((err) => {
             this.lost(data.tenantId, data.listId, data.automationId, 'la edición en lote', err);
         });
         return true;
@@ -288,7 +378,7 @@ export class AutomationDispatcher {
      */
     dispatchScheduledBatch(data: { tenantId: number; automationId: number; recordIds: number[] }): boolean {
         if (!this.queue) return false;
-        this.queue.add('scheduled-batch', data, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
+        this.addFair('scheduled-batch', data).catch((err) => {
             this.lost(data.tenantId, null, data.automationId, 'una tanda del horario «para cada registro»', err);
         });
         return true;
@@ -301,7 +391,7 @@ export class AutomationDispatcher {
      */
     async dispatchResume(data: { tenantId: number; runId: number }): Promise<boolean> {
         if (!this.queue) return false;
-        await this.queue.add('resume', data, { removeOnComplete: 1000, removeOnFail: 1000 });
+        await this.addFair('resume', data);
         return true;
     }
 
@@ -315,7 +405,7 @@ export class AutomationDispatcher {
         if (!this.queue) return null;
         const jobId = `btn-${event.tenantId}-${randomUUID()}`;
         try {
-            await this.queue.add('event', event, { jobId, removeOnComplete: 1000, removeOnFail: 1000 });
+            await this.addFair('event', event, { jobId });
             return jobId;
         } catch (err) {
             this.lost(event.tenantId, event.listId, null, 'la automatización del botón', err);
@@ -343,13 +433,36 @@ export class AutomationDispatcher {
         const queue = this.queue;
         if (!queue) return;
         const enqueue = (): void => {
-            queue.add('event', event, { removeOnComplete: 1000, removeOnFail: 1000 }).catch((err) => {
+            this.addFair('event', event).catch((err) => {
                 this.lost(event.tenantId, event.listId, null, 'la automatización', err);
             });
         };
         if (!this.db || !this.redis) return enqueue();
-        void this.listensTo(event.tenantId, event.listId, event.trigger).then((yes) => yes && enqueue());
+        void this.listensTo(event.tenantId, event.listId, event.trigger, { before: event.before, after: event.after }).then((yes) => yes && enqueue());
     }
+}
+
+interface TriggerCache {
+    v: string;
+    types: string[];
+    watch: string[] | null;
+}
+
+/** Los disparadores que reaccionan a un `record_updated`. */
+const UPDATE_TRIGGER_TYPES: readonly string[] = TRIGGER_TYPES_FOR_EVENT.record_updated ?? [];
+
+/** Los campos (slugs) que espera una automatización «al actualizar» (vacío = cualquier cambio). Igual que el motor. */
+export function watchedSlugs(cfg: Record<string, unknown>): string[] {
+    const cf = cfg.changed_fields;
+    if (Array.isArray(cf)) return cf.map((x) => String(x)).filter(Boolean);
+    if (typeof cfg.field === 'string' && cfg.field !== '') return [cfg.field];
+    return [];
+}
+
+/** Las claves `f{id}` cuyo valor cambió. */
+export function changedKeys(before: Record<string, unknown>, after: Record<string, unknown>): string[] {
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+    return [...keys].filter((k) => JSON.stringify(before[k] ?? null) !== JSON.stringify(after[k] ?? null));
 }
 
 const versionKey = (tenantId: number, listId: number): string => `autotrig:v:${tenantId}:${listId}`;

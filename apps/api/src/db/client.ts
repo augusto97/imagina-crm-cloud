@@ -102,8 +102,16 @@ export function createPool(connectionString: string, timeouts: PoolTimeouts = {}
     return pool;
 }
 
+/**
+ * v0.1.392 — SIN `{ schema }`. Con el schema, drizzle arma un
+ * `RelationalQueryBuilder` por cada tabla (≈95) en CADA `db.transaction` (la
+ * transacción es otra `PgDatabase`): era el ~5 % de la CPU de cada pedido, y
+ * la app nunca usa la API relacional (`db.query.<tabla>.findMany`) — todo va
+ * por `select()/insert()/update()` sobre las tablas importadas. El tipo se
+ * conserva para no tocar a los llamadores; `db.query` queda vacío.
+ */
 export function createDb(pool: Pool): Db {
-    return drizzle(pool, { schema });
+    return drizzle(pool) as unknown as Db;
 }
 
 /**

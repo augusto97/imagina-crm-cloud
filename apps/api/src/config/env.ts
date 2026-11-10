@@ -152,6 +152,15 @@ const envSchema = z.object({
      * defecto) y frenar la app del equipo; lo que no entra espera en fila.
      */
     PUBLIC_DB_CONCURRENCY: z.coerce.number().int().min(1).max(200).default(8),
+    /**
+     * v0.1.392 — Cuántas tareas de automatizaciones corre A LA VEZ cada
+     * servidor. Los pasos que esperan a otro servicio (webhook, correo,
+     * WhatsApp, SMS, apps conectadas) ya no tienen una conexión a la base
+     * abierta mientras esperan, así que se pueden correr bastantes más que las
+     * 5 de antes. Cada tarea usa a lo sumo una o dos conexiones a la vez: con
+     * `DB_POOL_MAX` 20, no conviene pasar de ~10.
+     */
+    AUTOMATIONS_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(10),
     // Token opcional para GET /metrics (SEC-17). Vacío = abierto (dev). Seteado
     // = requiere `Authorization: Bearer <token>` (compatible con scrapers).
     METRICS_TOKEN: z.string().default(''),

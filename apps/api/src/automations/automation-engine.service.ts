@@ -1,4 +1,6 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import type Redis from 'ioredis';
+import { REDIS } from '../redis/redis.module';
 import { ModuleRef } from '@nestjs/core';
 import {
     MEETING_SAVE_FIELD_TYPES,
@@ -77,7 +79,7 @@ import {
     type TenantFormat,
     type WhatsappEventInfo,
 } from '@imagina-base/shared';
-import { and, asc, eq, gt, inArray, isNull, lte, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { safeWebhookFetch, type SafeFetchResult } from '../common/safe-fetch';
 import type { ApprovalEventInfo } from '../approvals/approval-hub';
 import { ApprovalsService } from '../approvals/approvals.service';
@@ -108,8 +110,8 @@ import { FieldsRepository } from '../fields/fields.repository';
 import { DocumentsService } from '../documents/documents.service';
 import { RecordTemplatesService } from '../record-templates/record-templates.service';
 import { BOOKING_SIMULATOR, type BookingSimulator } from '../booking/booking-simulator';
-import { WhatsappService } from '../whatsapp/whatsapp.service';
-import { SmsService } from '../sms/sms.service';
+import { WhatsappService, type WhatsappAutomationResult } from '../whatsapp/whatsapp.service';
+import { SmsService, type SmsAutomationResult } from '../sms/sms.service';
 import { HelpdeskReplyService } from '../helpdesk/helpdesk-reply.service';
 import type { StoredFileRef } from '../files/files.service';
 import { MAIL_MAX_ATTACHMENT_BYTES, type MailAttachment } from '../mail/mail.types';
@@ -134,6 +136,7 @@ import {
     type EventRunRef,
     type FormEventInfo,
     type TriggerEvent,
+    watchedSlugs,
 } from './automation-dispatcher.service';
 import { evaluateCondition, explainCondition, type ConditionOptions } from './condition-evaluator';
 import { EmailComposer } from './email-composer';
@@ -253,7 +256,7 @@ interface RunContext {
      * que adjunta la misma plantilla no la vuelve a dibujar.
      */
     pdf?: Record<string, unknown>;
-    pdfs?: Map<number, { filename: string; buffer: Buffer; number: string | null }>;
+    pdfs?: Map<number, { filename: string; buffer: Buffer; number: string | null; issued: boolean }>;
     /**
      * v0.1.366 — la última reunión o evento que creó o cambió una acción de
      * calendario (`{{reunion.enlace}}`, `{{reunion.id}}`…): para mandar el
@@ -360,6 +363,20 @@ export interface ApprovalWaitState {
  */
 export const APPROVAL_WAIT_CHECK_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * v0.1.392 — El resto de una acción que espera a OTRO servicio (un webhook, un
+ * correo, WhatsApp, SMS, una app conectada). La acción lee lo que necesita de
+ * la base en su transacción, la CONFIRMA, suelta la conexión y recién entonces
+ * espera la respuesta. Antes esperaba con la transacción abierta: el servidor
+ * tiene ~20 conexiones para todo, y unos pocos webhooks lentos (8–20 s cada
+ * uno) dejaban a la app entera esperando una conexión libre.
+ */
+interface AfterCommit {
+    readonly afterCommit: () => Promise<ActionLogEntry>;
+}
+const afterCommit = (fn: () => Promise<ActionLogEntry>): AfterCommit => ({ afterCommit: fn });
+const isAfterCommit = (v: ActionLogEntry | AfterCommit): v is AfterCommit => typeof (v as AfterCommit).afterCommit === 'function';
+
 /** v0.1.288 — lo que devuelve recorrer pasos: el log y, si hubo, una pausa o un corte. */
 interface Flow {
     log: ActionLogEntry[];
@@ -434,6 +451,13 @@ export type RunnableAutomation = Pick<
 /** v0.1.285 — intentos por registro de una automatización por vencimiento que falla. */
 export const DUE_DATE_MAX_ATTEMPTS = 3;
 
+/** v0.1.392 — cada cuánto el escaneo de vencimientos vuelve a mirar la lista entera. */
+export const DUE_FULL_SCAN_MS = 6 * 60 * 60 * 1000;
+/** Margen de la ventana del escaneo (relojes distintos, lo escrito durante la vuelta). */
+const DUE_WINDOW_MARGIN_MS = 5 * 60 * 1000;
+/** Cuánto se recuerda hasta dónde llegó (sin recuerdo, la vuelta es completa). */
+const DUE_SCAN_STATE_TTL_S = 2 * 24 * 60 * 60;
+
 /** v0.1.285 — nombre legible de cada paso, para el aviso de falla. */
 const ACTION_NAMES: Record<string, string> = {
     send_email: 'Enviar email',
@@ -497,6 +521,8 @@ export class AutomationEngine {
         @Optional() private readonly moduleRef?: ModuleRef,
         // E6 — «Pedirle a un agente»: el módulo de agentes atiende por este hub.
         @Optional() private readonly agents?: AgentHub,
+        // v0.1.392 — hasta dónde llegó el último escaneo de cada vencimiento.
+        @Optional() @Inject(REDIS) private readonly redis?: Redis,
     ) {}
 
     /**
@@ -911,6 +937,51 @@ export class AutomationEngine {
                   and ar.record_id = ${records.id} and ar.status = 'failed'
                   and ar.created_at >= ${fireAt}) >= ${DUE_DATE_MAX_ATTEMPTS})`;
 
+        // v0.1.392 — Escaneo por VENTANA. Antes cada vuelta (cada 5 minutos)
+        // recorría TODOS los registros de la lista y, para cada vencido —con
+        // los meses, casi todos—, consultaba sus corridas: miles de
+        // automatizaciones × miles de registros, cada 5 minutos, aunque no
+        // hubiera vencido nada nuevo. Ahora sólo son candidatos los que
+        // vencieron desde la vuelta anterior, los que CAMBIARON desde entonces
+        // (una fecha corrida, un estado que ahora cumple el filtro) y los que
+        // tienen una corrida fallida reciente (sus reintentos). Cada 6 horas,
+        // o si cambió la automatización o la zona de la empresa, una vuelta
+        // completa como antes cubre lo que la ventana no ve (un filtro sobre
+        // un campo calculado que cambió por otro registro).
+        const scanKey = `due:scan:${auto.id}`;
+        const version = `${auto.updatedAt.getTime()}:${tz}`;
+        const scanStart = Date.now();
+        let prev: { at: number; v: string; full: number } | null = null;
+        try {
+            const raw = this.redis ? await this.redis.get(scanKey) : null;
+            const parsed = raw ? (JSON.parse(raw) as { at?: unknown; v?: unknown; full?: unknown }) : null;
+            if (parsed && typeof parsed.at === 'number' && typeof parsed.full === 'number' && parsed.v === version) {
+                prev = { at: parsed.at, v: version, full: parsed.full };
+            }
+        } catch {
+            prev = null;
+        }
+        const full = prev === null || scanStart - prev.full >= DUE_FULL_SCAN_MS;
+        let windowCond: SQL | undefined;
+        if (!full && prev) {
+            // 5 minutos de margen: relojes de servidores distintos y lo que se
+            // escribió mientras corría la vuelta anterior.
+            const since = new Date(prev.at - DUE_WINDOW_MARGIN_MS);
+            const retry = await this.tenantDb.withTenant(tenantId, (tx) =>
+                tx
+                    .selectDistinct({ id: automationRuns.recordId })
+                    .from(automationRuns)
+                    .where(and(eq(automationRuns.automationId, auto.id), eq(automationRuns.status, 'failed'), gt(automationRuns.createdAt, since)))
+                    .limit(5000),
+            );
+            const retryIds = retry.map((r) => r.id).filter((id): id is number => typeof id === 'number');
+            windowCond = or(
+                sql`${fireAt} > ${since.toISOString()}::timestamptz`,
+                gt(records.updatedAt, since),
+                ...(retryIds.length > 0 ? [inArray(records.id, retryIds)] : []),
+            );
+        }
+
         // v0.1.252 — keyset por id en tandas de 500. Antes era UN `limit 500`
         // sin orden: los vencidos que no pasan los field_filters no
         // registran run (a propósito: si vuelven a cumplir, disparan), así
@@ -919,6 +990,7 @@ export class AutomationEngine {
         const BATCH = 500;
         const MAX_BATCHES = 50;
         let afterId = 0;
+        let complete = false;
         for (let batch = 0; batch < MAX_BATCHES; batch++) {
             const due = await this.tenantDb.withTenant(tenantId, (tx) =>
                 tx
@@ -932,6 +1004,7 @@ export class AutomationEngine {
                             gt(records.id, afterId),
                             lte(fireAt, sql`now()`),
                             floor,
+                            windowCond,
                             sql`not ${alreadyRan}`,
                         ),
                     )
@@ -951,8 +1024,17 @@ export class AutomationEngine {
                 // Cada registro se confirma por su cuenta (ver la nota de la clase).
                 await this.runOne(ctx, auto);
             }
-            if (due.length < BATCH) break;
+            if (due.length < BATCH) {
+                complete = true;
+                break;
+            }
             afterId = due[due.length - 1]!.id;
+        }
+        // Sólo una vuelta que llegó al final mueve la ventana: si quedó corta
+        // (más de 25.000 candidatos), la próxima vuelve a mirar lo mismo.
+        if (complete && this.redis) {
+            const state = { at: scanStart, v: version, full: full ? scanStart : prev!.full };
+            await this.redis.set(scanKey, JSON.stringify(state), 'EX', DUE_SCAN_STATE_TTL_S).catch(() => undefined);
         }
     }
 
@@ -2068,14 +2150,16 @@ export class AutomationEngine {
         // v0.1.285 — cada acción en su propia transacción: un error de base de
         // datos en una acción no arrastra a las demás ni a la corrida.
         let out: ActionLogEntry | null = null;
+        const step: { later?: AfterCommit } = {};
         const pdfsBefore = new Set(ctx.pdfs?.keys() ?? []);
         ctx.docUploads = [];
         try {
             await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
-                out = await this.execAction(tx, ctx, spec, pathKey);
+                const r = await this.execAction(tx, ctx, spec, pathKey);
+                if (isAfterCommit(r)) step.later = r;
+                else out = r;
             });
             ctx.docUploads = undefined;
-            return { log: tag([out!]) };
         } catch (err) {
             // v0.1.290 — La transacción revirtió: lo que esta acción numeró o
             // congeló no existe. Fuera sus bytes y sus PDF del cache del run.
@@ -2088,6 +2172,15 @@ export class AutomationEngine {
             const message = done ? `Se deshizo por un error de la base de datos: ${errorText(err)}` : errorText(err, 2000);
             return { log: tag([{ action: spec.type, status: 'failed', message, details: {} }]) };
         }
+        // v0.1.392 — la parte que espera a otro servicio, ya sin transacción.
+        if (step.later) {
+            try {
+                out = await step.later.afterCommit();
+            } catch (err) {
+                return { log: tag([{ action: spec.type, status: 'failed', message: errorText(err, 2000), details: {} }]) };
+            }
+        }
+        return { log: tag([out!]) };
     }
 
     private async executeIfElse(ctx: RunContext, config: Record<string, unknown>, path: FlowPath, depth: number): Promise<Flow> {
@@ -3078,7 +3171,7 @@ export class AutomationEngine {
         return limitRecipients(merge(withPeople));
     }
 
-    private async execAction(tx: Tx, ctx: RunContext, spec: ActionSpec, pathKey = ''): Promise<ActionLogEntry> {
+    private async execAction(tx: Tx, ctx: RunContext, spec: ActionSpec, pathKey = ''): Promise<ActionLogEntry | AfterCommit> {
         const fv = this.accessor(ctx);
         const { merge, mergeHtml } = this.mergers(ctx, fv);
         const cfg = spec.config ?? {};
@@ -3196,24 +3289,26 @@ export class AutomationEngine {
                 // {{webhook.body.x}}. Antes se guardaban 2 KB, sólo para el
                 // mensaje de error; más de 64 KB inflaría el contexto que viaja
                 // en una espera.
-                const res = await safeWebhookFetch(req.url, {
-                    method: req.method,
-                    headers: req.headers,
-                    body: req.body,
-                    captureBody: true,
-                    maxCaptureBytes: RESPONSE_BODY_MAX_BYTES,
-                });
-                this.rememberResponse(ctx, cfg, res, pathKey, hide);
-                const shownResponse = sim ? { status: res.status, body: redactValues(res.body ?? '', hide).slice(0, 4000) } : undefined;
-                // Un 4xx/5xx NO es éxito: antes quedaba «→ 500» como corrida
-                // exitosa y nadie se enteraba de que el destino rechazaba todo.
-                if (res.status < 200 || res.status >= 300) {
-                    const failed = httpFail('call_webhook', `${req.method} ${shownUrl}`, res.status, redactValues(res.body ?? '', hide));
-                    return sim ? { ...failed, details: { ...failed.details, request: shownRequest, response: shownResponse } } : failed;
-                }
-                return ok('call_webhook', `${req.method} ${shownUrl} → ${res.status}`, {
-                    status: res.status,
-                    ...(sim ? { _sim: 'ran', request: shownRequest, response: shownResponse } : {}),
+                return afterCommit(async () => {
+                    const res = await safeWebhookFetch(req.url, {
+                        method: req.method,
+                        headers: req.headers,
+                        body: req.body,
+                        captureBody: true,
+                        maxCaptureBytes: RESPONSE_BODY_MAX_BYTES,
+                    });
+                    this.rememberResponse(ctx, cfg, res, pathKey, hide);
+                    const shownResponse = sim ? { status: res.status, body: redactValues(res.body ?? '', hide).slice(0, 4000) } : undefined;
+                    // Un 4xx/5xx NO es éxito: antes quedaba «→ 500» como corrida
+                    // exitosa y nadie se enteraba de que el destino rechazaba todo.
+                    if (res.status < 200 || res.status >= 300) {
+                        const failed = httpFail('call_webhook', `${req.method} ${shownUrl}`, res.status, redactValues(res.body ?? '', hide));
+                        return sim ? { ...failed, details: { ...failed.details, request: shownRequest, response: shownResponse } } : failed;
+                    }
+                    return ok('call_webhook', `${req.method} ${shownUrl} → ${res.status}`, {
+                        status: res.status,
+                        ...(sim ? { _sim: 'ran', request: shownRequest, response: shownResponse } : {}),
+                    });
                 });
             }
             case 'connector_action': {
@@ -3417,16 +3512,23 @@ export class AutomationEngine {
                         operation === 'amount'
                             ? ({ kind: 'amount', amount: newAmount!, currency: sub.currency } as const)
                             : ({ kind: 'status', status: operation === 'pause' ? 'paused' : operation === 'resume' ? 'authorized' : 'cancelled' } as const);
-                    await subsSvc.patchInMp(ctx.tenantId, sub, patch, operation === 'cancel' ? ((v.reason ?? '').trim() || 'La canceló una automatización.') : null).catch((err: unknown) => {
-                        throw new Error(`${resolved.action!.label}: ${err instanceof Error ? err.message : String(err)}`);
-                    });
-                    // El estado nuevo lo trae la sincronización (fuera de esta transacción).
-                    subsSvc.syncSoon(ctx.tenantId, sub.id);
-                    const done = { pause: 'pausó', resume: 'reanudó', cancel: 'canceló', amount: 'cambió el valor de' }[operation]!;
-                    return ok('connector_action', `${resolved.name} → se ${done} la suscripción «${sub.title}»${newAmount !== null ? ` (ahora ${newAmount} ${sub.currency})` : ''}.`, {
-                        action: resolved.action.key,
-                        integration: resolved.integration.key,
-                        subscription_id: sub.id,
+                    const subLabel = resolved.action.label;
+                    const subAction = resolved.action.key;
+                    const subIntegration = resolved.integration.key;
+                    const subName = resolved.name;
+                    // v0.1.392 — el pedido al proveedor espera fuera de la transacción.
+                    return afterCommit(async () => {
+                        await subsSvc.patchInMp(ctx.tenantId, sub, patch, operation === 'cancel' ? ((v.reason ?? '').trim() || 'La canceló una automatización.') : null).catch((err: unknown) => {
+                            throw new Error(`${subLabel}: ${err instanceof Error ? err.message : String(err)}`);
+                        });
+                        // El estado nuevo lo trae la sincronización.
+                        subsSvc.syncSoon(ctx.tenantId, sub.id);
+                        const done = { pause: 'pausó', resume: 'reanudó', cancel: 'canceló', amount: 'cambió el valor de' }[operation]!;
+                        return ok('connector_action', `${subName} → se ${done} la suscripción «${sub.title}»${newAmount !== null ? ` (ahora ${newAmount} ${sub.currency})` : ''}.`, {
+                            action: subAction,
+                            integration: subIntegration,
+                            subscription_id: sub.id,
+                        });
                     });
                 }
                 // D3 — WhatsApp oficial: la petición la arma el canal (plantilla
@@ -3435,20 +3537,27 @@ export class AutomationEngine {
                 if (resolved.integration && (resolved.integration.key === 'whatsapp_cloud' || resolved.integration.key === 'whatsapp_web')) {
                     const wa = this.whatsapp();
                     if (!wa) throw new Error('WhatsApp no está disponible en este servidor.');
-                    const out = await wa.runAutomationAction(tx, {
+                    const waKey = resolved.integration.key;
+                    const waAction = resolved.action.key;
+                    const outcome = await wa.runAutomationAction(tx, {
                         tenantId: ctx.tenantId,
                         listId: ctx.listId,
                         recordId: ctx.recordId,
                         connectionId: connId,
-                        actionKey: resolved.action.key,
+                        actionKey: waAction,
                         values,
                         merge: (raw) => merge(raw),
                         realCall,
+                        deferSend: true,
                     });
-                    if (out.write) ctx.data = { ...ctx.data, ...out.write.after };
-                    const waKey = resolved.integration.key;
-                    if (out.status === 'failed') return fail('connector_action', out.message, { integration: waKey, ...out.details });
-                    return ok('connector_action', out.message, { action: resolved.action.key, integration: waKey, ...out.details });
+                    const finishWa = (out: WhatsappAutomationResult): ActionLogEntry => {
+                        if (out.write) ctx.data = { ...ctx.data, ...out.write.after };
+                        if (out.status === 'failed') return fail('connector_action', out.message, { integration: waKey, ...out.details });
+                        return ok('connector_action', out.message, { action: waAction, integration: waKey, ...out.details });
+                    };
+                    // v0.1.392 — el envío espera a WhatsApp fuera de la transacción.
+                    if ('later' in outcome) return afterCommit(async () => finishWa(await outcome.later()));
+                    return finishWa(outcome);
                 }
                 // SMS (ADR-S82): la petición la arma el proveedor, el envío queda
                 // en `sms_messages` (estado de entrega) y, con «Respetar el
@@ -3456,7 +3565,9 @@ export class AutomationEngine {
                 if (resolved.integration && isSmsProvider(resolved.integration.key)) {
                     const sms = this.sms();
                     if (!sms) throw new Error('El envío de SMS no está disponible en este servidor.');
-                    const out = await sms.runAutomationAction(tx, {
+                    const integKey = resolved.integration.key;
+                    const smsAction = resolved.action.key;
+                    const outcome = await sms.runAutomationAction(tx, {
                         tenantId: ctx.tenantId,
                         listId: ctx.listId,
                         recordId: ctx.recordId,
@@ -3465,12 +3576,17 @@ export class AutomationEngine {
                         values,
                         merge: (raw) => merge(raw),
                         realCall,
+                        deferSend: true,
                     });
-                    const integKey = resolved.integration.key;
-                    if (out.write) ctx.data = { ...ctx.data, ...out.write.after };
-                    if (out.status === 'failed') return fail('connector_action', out.message, { integration: integKey, ...out.details });
-                    if (out.status === 'skipped') return skip('connector_action', out.message);
-                    return ok('connector_action', out.message, { action: resolved.action.key, integration: integKey, ...out.details });
+                    const finishSms = (out: SmsAutomationResult): ActionLogEntry => {
+                        if (out.write) ctx.data = { ...ctx.data, ...out.write.after };
+                        if (out.status === 'failed') return fail('connector_action', out.message, { integration: integKey, ...out.details });
+                        if (out.status === 'skipped') return skip('connector_action', out.message);
+                        return ok('connector_action', out.message, { action: smsAction, integration: integKey, ...out.details });
+                    };
+                    // v0.1.392 — el envío espera al proveedor fuera de la transacción.
+                    if ('later' in outcome) return afterCommit(async () => finishSms(await outcome.later()));
+                    return finishSms(outcome);
                 }
                 if (resolved.integration) {
                     const integ = resolved.integration;
@@ -3490,17 +3606,18 @@ export class AutomationEngine {
                         return skip('connector_action', `Falta completar: ${compiled.missing.join(', ')}.`);
                     }
                     const meetingKind = meetingActionKind(integ.key, resolved.action.key);
-                    // v0.1.348 — algunas acciones necesitan pasos antes (el chat uno a
-                    // uno de Teams); en la simulación no se ejecutan.
-                    const req = await this.connectors.prepareIntegrationCall(integ.key, resolved.action.key, compiled, integ.creds, realCall);
                     const hide = [integ.creds.secret, integ.creds.accessToken].filter((x) => typeof x === 'string' && x.length >= 4);
-                    const shownRequest = {
+                    const showRequest = (req: { method: string; url: string; headers: Record<string, string>; body?: string }) => ({
                         method: req.method,
                         url: redactValues(req.url, hide),
                         headers: maskHeaders(req.headers),
                         body: req.body !== undefined ? redactValues(req.body, hide) : null,
-                    };
+                    });
                     if (!realCall) {
+                        // v0.1.348 — algunas acciones necesitan pasos antes (el chat uno a
+                        // uno de Teams); en la simulación no se ejecutan.
+                        const req = await this.connectors.prepareIntegrationCall(integ.key, resolved.action.key, compiled, integ.creds, false);
+                        const shownRequest = showRequest(req);
                         this.rememberResponse(ctx, cfg, null, pathKey);
                         if (meetingKind && meetingKind !== 'cancel') {
                             ctx.reunion = { id: '(se crea al correr)', enlace: '(se crea al correr)', web: '', titulo: compiled.values.title ?? '' };
@@ -3513,21 +3630,26 @@ export class AutomationEngine {
                             request: shownRequest,
                         });
                     }
-                    const res = await safeWebhookFetch(req.url, {
-                        method: req.method,
-                        headers: req.headers,
-                        body: req.body,
-                        captureBody: true,
-                        maxCaptureBytes: RESPONSE_BODY_MAX_BYTES,
+                    const act = resolved.action;
+                    return afterCommit(async () => {
+                        // Los pasos previos (el chat uno a uno de Teams) también son de red.
+                        const req = await this.connectors.prepareIntegrationCall(integ.key, act.key, compiled, integ.creds, true);
+                        const shownRequest = showRequest(req);
+                        const res = await safeWebhookFetch(req.url, {
+                            method: req.method,
+                            headers: req.headers,
+                            body: req.body,
+                            captureBody: true,
+                            maxCaptureBytes: RESPONSE_BODY_MAX_BYTES,
                     });
                     this.rememberResponse(ctx, cfg, res, pathKey, hide);
                     // v0.1.366 — cancelar algo que ya no está en el calendario no
                     // es un error: lo borraron a mano, que era justo lo que se quería.
                     const gone = meetingKind === 'cancel' && cancelAlreadyGone(res.status);
-                    const problem = gone ? null : checkIntegrationResponse(integ.key, res.status, res.body ?? '', resolved.action.key);
-                    if (problem) throw new Error(`${resolved.action.label}: ${problem}`);
+                    const problem = gone ? null : checkIntegrationResponse(integ.key, res.status, res.body ?? '', act.key);
+                    if (problem) throw new Error(`${act.label}: ${problem}`);
                     if (meetingKind) {
-                        const note = await this.afterMeetingCall(tx, ctx, cfg, {
+                        const note = await this.afterMeetingCall((fn) => this.tenantDb.withTenant(ctx.tenantId, fn), ctx, cfg, {
                             kind: meetingKind,
                             integration: integ.key,
                             body: res.body ?? '',
@@ -3537,9 +3659,9 @@ export class AutomationEngine {
                             sim: Boolean(sim),
                             wantsVideo: wantsVideoCall(integ.key, compiled.values),
                         });
-                        return ok('connector_action', `${resolved.name} → ${resolved.action.label}: ${note}`, {
+                        return ok('connector_action', `${resolved.name} → ${act.label}: ${note}`, {
                             status: res.status,
-                            action: resolved.action.key,
+                            action: act.key,
                             integration: integ.key,
                             ...(ctx.reunion?.id ? { event_id: ctx.reunion.id } : {}),
                             ...(sim ? { _sim: 'ran', request: shownRequest, response: { status: res.status, body: redactValues(res.body ?? '', hide).slice(0, 4000) } } : {}),
@@ -3547,14 +3669,15 @@ export class AutomationEngine {
                     }
                     return ok(
                         'connector_action',
-                        `${resolved.name} → ${resolved.action.label}: ${res.status}`,
+                        `${resolved.name} → ${act.label}: ${res.status}`,
                         {
                             status: res.status,
-                            action: resolved.action.key,
+                            action: act.key,
                             integration: integ.key,
                             ...(sim ? { _sim: 'ran', request: shownRequest, response: { status: res.status, body: redactValues(res.body ?? '', hide).slice(0, 4000) } } : {}),
                         },
                     );
+                    });
                 }
                 const call = compileConnectorCall(resolved.action, values, merge);
                 if (call.missing.length > 0) {
@@ -3590,30 +3713,29 @@ export class AutomationEngine {
                         request: shownRequest,
                     });
                 }
-                const res = await safeWebhookFetch(req.url, {
-                    method: req.method,
-                    headers: req.headers,
-                    body: req.body,
-                    captureBody: true,
-                    maxCaptureBytes: RESPONSE_BODY_MAX_BYTES,
+                const actionLabel = `${resolved.name} → ${resolved.action.label}`;
+                const actionKey = resolved.action.key;
+                return afterCommit(async () => {
+                    const res = await safeWebhookFetch(req.url, {
+                        method: req.method,
+                        headers: req.headers,
+                        body: req.body,
+                        captureBody: true,
+                        maxCaptureBytes: RESPONSE_BODY_MAX_BYTES,
+                    });
+                    this.rememberResponse(ctx, cfg, res, pathKey, hide);
+                    const shownResponse = sim ? { status: res.status, body: redactValues(res.body ?? '', hide).slice(0, 4000) } : undefined;
+                    // Un 4xx/5xx es una falla (abre el problema de la automatización).
+                    if (res.status < 200 || res.status >= 300) {
+                        const failed = httpFail('connector_action', actionLabel, res.status, redactValues(res.body ?? '', hide));
+                        return sim ? { ...failed, details: { ...failed.details, request: shownRequest, response: shownResponse } } : failed;
+                    }
+                    return ok('connector_action', `${actionLabel}: ${res.status}`, {
+                        status: res.status,
+                        action: actionKey,
+                        ...(sim ? { _sim: 'ran', request: shownRequest, response: shownResponse } : {}),
+                    });
                 });
-                this.rememberResponse(ctx, cfg, res, pathKey, hide);
-                const shownResponse = sim ? { status: res.status, body: redactValues(res.body ?? '', hide).slice(0, 4000) } : undefined;
-                // Un 4xx/5xx es una falla (abre el problema de la automatización).
-                if (res.status < 200 || res.status >= 300) {
-                    const failed = httpFail(
-                        'connector_action',
-                        `${resolved.name} → ${resolved.action.label}`,
-                        res.status,
-                        redactValues(res.body ?? '', hide),
-                    );
-                    return sim ? { ...failed, details: { ...failed.details, request: shownRequest, response: shownResponse } } : failed;
-                }
-                return ok(
-                    'connector_action',
-                    `${resolved.name} → ${resolved.action.label}: ${res.status}`,
-                    { status: res.status, action: resolved.action.key, ...(sim ? { _sim: 'ran', request: shownRequest, response: shownResponse } : {}) },
-                );
             }
             case 'generate_pdf': {
                 // v0.1.266 (ADR-S35) — arma el PDF de una plantilla de la lista
@@ -3738,18 +3860,19 @@ export class AutomationEngine {
                         },
                     });
                 }
-                const attachments = await this.emailAttachments(tx, ctx, cfg);
-                await this.mail.sendNow({
-                    tenantId: ctx.tenantId,
-                    to,
-                    subject,
-                    ...(composed.html !== undefined ? { html: composed.html } : {}),
-                    ...(composed.text !== undefined ? { text: composed.text } : {}),
-                    cc: cc || undefined,
-                    bcc: bcc || undefined,
-                    from: cfg.from_email ? merge(cfg.from_email) : undefined,
-                    fromName: cfg.from_name ? merge(cfg.from_name) : undefined,
-                    ...(attachments.length > 0 ? { attachments } : {}),
+                const { attachments, issuedNow } = await this.emailAttachments(tx, ctx, cfg);
+                const send = async (): Promise<ActionLogEntry> => {
+                    await this.mail.sendNow({
+                        tenantId: ctx.tenantId,
+                        to,
+                        subject,
+                        ...(composed.html !== undefined ? { html: composed.html } : {}),
+                        ...(composed.text !== undefined ? { text: composed.text } : {}),
+                        cc: cc || undefined,
+                        bcc: bcc || undefined,
+                        from: cfg.from_email ? merge(cfg.from_email) : undefined,
+                        fromName: cfg.from_name ? merge(cfg.from_name) : undefined,
+                        ...(attachments.length > 0 ? { attachments } : {}),
                 });
                 const files = attachments.length > 0 ? ` con ${attachments.map((a) => `«${a.filename}»`).join(', ')}` : '';
                 if (files) {
@@ -3763,6 +3886,14 @@ export class AutomationEngine {
                     return ok('send_email', `Enviado a ${to}: "${subject}". ${composed.signatureNote}`, { to, subject });
                 }
                 return ok('send_email', `Enviado a ${to}: "${subject}"`, { to, subject });
+                };
+                // v0.1.392 — el envío (SMTP, Gmail, Outlook) espera fuera de la
+                // transacción. Salvo que el correo EMITA un número de documento
+                // en este paso (un PDF numerado que el registro todavía no
+                // tenía): ahí se manda adentro, como antes, para que si el correo
+                // no sale el número y el PDF congelado se deshagan (v0.1.290).
+                if (issuedNow) return send();
+                return afterCommit(send);
             }
             default:
                 return skip(spec.type, 'Acción no reconocida.');
@@ -3776,7 +3907,8 @@ export class AutomationEngine {
      * palabras, para el historial.
      */
     private async afterMeetingCall(
-        tx: Tx,
+        /** v0.1.392 — abre la transacción recién para escribir (lo de red va antes). */
+        withTx: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T>,
         ctx: RunContext,
         cfg: Record<string, unknown>,
         p: {
@@ -3841,9 +3973,13 @@ export class AutomationEngine {
             if (p.sim) {
                 parts.push(`en la prueba no se guarda en el registro (guardaría: ${saved.join(', ')})`);
             } else {
-                const current = await this.recordsRepo.findById(tx, ctx.tenantId, ctx.listId, ctx.recordId);
-                const merged = (await patchRecordData(tx, ctx.tenantId, ctx.listId, ctx.recordId, writes)) ?? { ...ctx.data, ...writes };
-                this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId: ctx.recordId, before: current?.data ?? ctx.data, after: merged, actorId: 0 });
+                const recordId = ctx.recordId;
+                const { current, merged } = await withTx(async (tx) => {
+                    const current = await this.recordsRepo.findById(tx, ctx.tenantId, ctx.listId, recordId);
+                    const merged = (await patchRecordData(tx, ctx.tenantId, ctx.listId, recordId, writes)) ?? { ...ctx.data, ...writes };
+                    return { current, merged };
+                });
+                this.changes?.emit({ tenantId: ctx.tenantId, listId: ctx.listId, recordId, before: current?.data ?? ctx.data, after: merged, actorId: 0 });
                 ctx.data = merged;
                 parts.push(saved.join(', '));
             }
@@ -3914,7 +4050,7 @@ export class AutomationEngine {
         ctx: RunContext,
         templateId: number,
         filename = '',
-    ): Promise<{ filename: string; buffer: Buffer; number: string | null }> {
+    ): Promise<{ filename: string; buffer: Buffer; number: string | null; issued: boolean }> {
         if (!this.documents) throw new Error('Los documentos PDF no están disponibles en este servidor.');
         if (ctx.recordId === null) throw new Error('Un PDF necesita un registro.');
         ctx.pdfs ??= new Map();
@@ -3938,15 +4074,15 @@ export class AutomationEngine {
         // v0.1.267 — el número emitido ya quedó escrito en su campo (mismo tx):
         // se refleja en la copia del run para que otra acción no lo pise.
         if (doc.numberField) ctx.data = { ...ctx.data, [doc.numberField.key]: doc.numberField.value };
-        const out = { filename: doc.filename, buffer: doc.buffer, number: doc.number };
+        const out = { filename: doc.filename, buffer: doc.buffer, number: doc.number, issued: doc.numberIssued };
         ctx.pdfs.set(templateId, out);
         return out;
     }
 
     /** Los PDF que `send_email` adjunta (`pdf_templates`: ids de plantillas). */
-    private async emailAttachments(tx: Tx, ctx: RunContext, cfg: Record<string, unknown>): Promise<MailAttachment[]> {
+    private async emailAttachments(tx: Tx, ctx: RunContext, cfg: Record<string, unknown>): Promise<{ attachments: MailAttachment[]; issuedNow: boolean }> {
         const ids = pdfTemplateIds(cfg);
-        if (ids.length === 0) return [];
+        if (ids.length === 0) return { attachments: [], issuedNow: false };
         // v0.1.338 (ADR-S87) — los PDF adjuntos son parte de «Documentos PDF»:
         // sin el módulo el envío FALLA (mandar el correo sin el documento que
         // promete sería peor, mismo criterio que un PDF que no se puede armar).
@@ -3955,7 +4091,10 @@ export class AutomationEngine {
         if (ctx.recordId === null) throw new Error('Los PDF adjuntos necesitan un registro.');
         const out: MailAttachment[] = [];
         let total = 0;
+        let issuedNow = false;
         for (const id of ids) {
+            // Uno armado por una acción ANTERIOR ya quedó confirmado en la suya.
+            const fresh = !(ctx.pdfs?.has(id) ?? false);
             const doc = await this.pdfFor(tx, ctx, id).catch((err: unknown) => {
                 throw new Error(`No se pudo armar el PDF adjunto: ${err instanceof Error ? err.message : String(err)}`);
             });
@@ -3963,9 +4102,10 @@ export class AutomationEngine {
             if (total > MAIL_MAX_ATTACHMENT_BYTES) {
                 throw new Error(`Los PDF adjuntos superan ${MAIL_MAX_ATTACHMENT_BYTES / 1024 / 1024} MB: achícalos o manda menos.`);
             }
+            if (fresh && doc.issued) issuedNow = true;
             out.push({ filename: doc.filename, contentType: 'application/pdf', contentBase64: doc.buffer.toString('base64') });
         }
-        return out;
+        return { attachments: out, issuedNow };
     }
 }
 
@@ -4025,13 +4165,12 @@ function explainError(err: unknown): string {
     return errorText(err, 2000);
 }
 
-/** changed_fields puede venir como array de slugs o (field_changed) como `field`. */
-function normalizeChangedFields(cfg: Record<string, unknown>): string[] {
-    const cf = cfg.changed_fields;
-    if (Array.isArray(cf)) return cf.map((x) => String(x)).filter(Boolean);
-    if (typeof cfg.field === 'string' && cfg.field !== '') return [cfg.field];
-    return [];
-}
+/**
+ * changed_fields puede venir como array de slugs o (field_changed) como `field`.
+ * v0.1.392 — la MISMA función que usa el dispatcher para no encolar lo que no
+ * coincide (si divergieran, se perderían corridas).
+ */
+const normalizeChangedFields = watchedSlugs;
 
 const fold = (s: string): string =>
     s

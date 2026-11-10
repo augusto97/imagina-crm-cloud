@@ -1,4 +1,4 @@
-import { Logger, type OnApplicationShutdown } from '@nestjs/common';
+import { Inject, Logger, Optional, type OnApplicationShutdown } from '@nestjs/common';
 import {
     OnGatewayConnection,
     OnGatewayInit,
@@ -7,10 +7,11 @@ import {
     WebSocketServer,
 } from '@nestjs/websockets';
 import { RT_EVENT_JOIN, rtJoinSchema } from '@imagina-base/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { Server, Socket } from 'socket.io';
 import { SESSION_COOKIE } from '../auth/session.guard';
 import { SessionService } from '../auth/session.service';
+import { DRIZZLE, type Db } from '../db/client';
 import { memberships, users } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { RealtimeService, tenantRoom, userRoom } from './realtime.service';
@@ -30,6 +31,13 @@ import { RealtimeService, tenantRoom, userRoom } from './realtime.service';
  * workspace hasta que cerraba la pestaña.
  */
 const REVALIDATE_MS = 60_000;
+/**
+ * v0.1.392 — de a cuántos sockets se re-validan juntos. Antes era UNA
+ * transacción por socket por minuto: con 10.000 pestañas abiertas, ~170
+ * transacciones por segundo sólo para esto. Ahora, por tanda: las sesiones de
+ * Redis en paralelo y DOS consultas (cuentas y membresías).
+ */
+const REVALIDATE_BATCH = 500;
 
 const wsAllowedOrigins = (process.env.WS_ALLOWED_ORIGINS ?? '')
     .split(',')
@@ -58,6 +66,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnAp
         private readonly realtime: RealtimeService,
         private readonly sessions: SessionService,
         private readonly tenantDb: TenantDb,
+        // v0.1.392 — la re-validación en lote lee cuentas y membresías de una vez.
+        @Optional() @Inject(DRIZZLE) private readonly db?: Db,
     ) {}
 
     afterInit(server: Server): void {
@@ -83,19 +93,70 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnAp
     /** Sockets de ESTE nodo (cada nodo revisa los suyos). */
     async revalidateAll(server: Server): Promise<void> {
         const sockets = [...server.sockets.sockets.values()];
-        for (const client of sockets) {
-            const ok = await this.stillAllowed(client).catch(() => true); // Redis/DB caídos: no se corta a ciegas
-            if (!ok) client.disconnect(true);
+        for (let i = 0; i < sockets.length; i += REVALIDATE_BATCH) {
+            const chunk = sockets.slice(i, i + REVALIDATE_BATCH);
+            // Redis/DB caídos: no se corta a ciegas.
+            const allowed = await this.allowedOf(chunk).catch(() => null);
+            if (!allowed) continue;
+            for (const client of chunk) if (!allowed.has(client)) client.disconnect(true);
         }
     }
 
     /** ¿La sesión sigue viva, la cuenta activa y (si se unió) sigue siendo miembro? */
     async stillAllowed(client: Socket): Promise<boolean> {
-        const token = client.data.token as string | undefined;
-        const userId = client.data.userId as number | undefined;
-        if (!token || !userId) return false;
-        const session = await this.sessions.peek(token);
-        if (!session || session.userId !== userId || session.portalTenantId !== undefined) return false;
+        return (await this.allowedOf([client])).has(client);
+    }
+
+    /**
+     * v0.1.392 — Los sockets de la tanda que siguen habilitados: sesión viva
+     * (sin deslizar su TTL), cuenta activa y, si se unió a una empresa, sigue
+     * siendo miembro (no cliente del portal).
+     */
+    async allowedOf(clients: readonly Socket[]): Promise<Set<Socket>> {
+        const out = new Set<Socket>();
+        const tokens = [...new Set(clients.map((c) => c.data.token as string | undefined).filter((t): t is string => typeof t === 'string' && t !== ''))];
+        const sessions = new Map(await Promise.all(tokens.map(async (t) => [t, await this.sessions.peek(t)] as const)));
+        const live = clients.filter((c) => {
+            const token = c.data.token as string | undefined;
+            const userId = c.data.userId as number | undefined;
+            if (!token || !userId) return false;
+            const session = sessions.get(token);
+            return !!session && session.userId === userId && session.portalTenantId === undefined;
+        });
+        if (live.length === 0) return out;
+        if (!this.db) {
+            for (const c of live) if (await this.memberStill(c)) out.add(c);
+            return out;
+        }
+        const userIds = [...new Set(live.map((c) => c.data.userId as number))];
+        const accounts = await this.db.select({ id: users.id, disabledAt: users.disabledAt }).from(users).where(inArray(users.id, userIds));
+        const active = new Set(accounts.filter((u) => !u.disabledAt).map((u) => u.id));
+        const joinedUsers = [...new Set(live.filter((c) => c.data.tenantId !== undefined).map((c) => c.data.userId as number))].filter((u) => active.has(u));
+        const roles = new Map<string, string>();
+        if (joinedUsers.length > 0) {
+            const rows = await this.db
+                .select({ userId: memberships.userId, tenantId: memberships.tenantId, role: memberships.role })
+                .from(memberships)
+                .where(inArray(memberships.userId, joinedUsers));
+            for (const r of rows) roles.set(`${r.userId}:${r.tenantId}`, r.role);
+        }
+        for (const c of live) {
+            const userId = c.data.userId as number;
+            if (!active.has(userId)) continue;
+            const tenantId = c.data.tenantId as number | undefined;
+            if (tenantId === undefined) {
+                out.add(c);
+                continue;
+            }
+            const role = roles.get(`${userId}:${tenantId}`);
+            if (role !== undefined && role !== 'client') out.add(c);
+        }
+        return out;
+    }
+
+    /** Sin la base cruda (specs que arman el gateway a mano): de a uno, como antes. */
+    private async memberStill(client: Socket): Promise<boolean> {
+        const userId = client.data.userId as number;
         const tenantId = client.data.tenantId as number | undefined;
         return this.tenantDb.withUser(userId, async (tx) => {
             const [u] = await tx.select({ disabledAt: users.disabledAt }).from(users).where(eq(users.id, userId)).limit(1);

@@ -98,9 +98,18 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                     }
                     return undefined;
                 },
-                { connection: conn(), concurrency: 5 },
+                // v0.1.392 — antes 5 fijas. Los pasos de red ya no retienen una
+                // conexión a la base mientras esperan (ver `runPlainAction`).
+                { connection: conn(), concurrency: this.env.AUTOMATIONS_CONCURRENCY },
             );
+            // v0.1.392 — la tarea terminó: se libera el turno de su empresa.
+            const releaseTurn = (job: { opts?: { priority?: number }; data?: unknown } | undefined): void => {
+                const tenantId = (job?.data as { tenantId?: unknown } | undefined)?.tenantId;
+                if (job?.opts?.priority && typeof tenantId === 'number') void this.dispatcher.release(tenantId);
+            };
+            this.worker.on('completed', (job) => releaseTurn(job));
             this.worker.on('failed', (job, err) => {
+                releaseTurn(job);
                 this.logger.error(`Job ${job?.id} falló: ${err.message}`);
                 // v0.1.285 (ADR-S44) — el trabajo se cayó ANTES de poder
                 // registrar la corrida: sin esto, sólo quedaba en el log.

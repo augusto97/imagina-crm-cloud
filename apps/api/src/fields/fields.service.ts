@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import {
     APPROVAL_FIELD_OPTIONS,
     analyzeUserPattern,
@@ -78,7 +79,16 @@ export class FieldsService {
         private readonly repo: FieldsRepository,
         private readonly lists: ListsService,
         private readonly realtime: RealtimeService,
+        // v0.1.392 — el dispatcher recuerda qué campos esperan las automatizaciones
+        // de la lista: un campo nuevo o borrado lo recalcula.
+        @Optional() private readonly automationTriggers?: AutomationDispatcher,
     ) {}
+
+    /** Los campos de la lista cambiaron: las pestañas y el caché de disparadores. */
+    private fieldsChanged(tenantId: number, listId: number): void {
+        this.realtime.fields(tenantId, listId);
+        void this.automationTriggers?.invalidate(tenantId, listId);
+    }
 
     /** Campo por id en cualquier lista del tenant (para resolver relaciones cruzadas). */
     async findAnyByIdWithinTx(tx: Tx, tenantId: number, fieldId: number): Promise<Field | null> {
@@ -565,7 +575,7 @@ export class FieldsService {
                     return inserted;
                 });
         });
-        this.realtime.fields(tenantId, listId);
+        this.fieldsChanged(tenantId, listId);
         // v0.1.170 — un campo DERIVADO nuevo (computed/lookup/rollup) cambia
         // cómo se leen los records: sin esto la tabla mostraba "—" en la
         // columna nueva hasta recargar. v0.1.300 — y el ID automático numera los
@@ -668,7 +678,7 @@ export class FieldsService {
         });
         // Un cambio de schema (config/slug/required) afecta cómo se leen los
         // records → invalidamos fields Y records de la lista.
-        this.realtime.fields(tenantId, listId);
+        this.fieldsChanged(tenantId, listId);
         this.realtime.records(tenantId, listId);
         return toField(row);
     }
@@ -711,7 +721,7 @@ export class FieldsService {
             else await trashRow(tx, 'fields', tenantId, current.id, opts.userId ?? null);
             return current;
         });
-        this.realtime.fields(tenantId, listId);
+        this.fieldsChanged(tenantId, listId);
         this.realtime.records(tenantId, listId);
         return { id: current.id, label: current.label };
     }
@@ -730,7 +740,7 @@ export class FieldsService {
             await this.repo.applyOrder(tx, tenantId, listId, fieldIds);
             return this.repo.listByList(tx, tenantId, listId);
         });
-        this.realtime.fields(tenantId, listId);
+        this.fieldsChanged(tenantId, listId);
         return rows.map(toField);
     }
 
