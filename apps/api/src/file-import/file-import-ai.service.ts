@@ -1,4 +1,5 @@
 import { ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { incrWithTtl } from '../redis/redis.util';
 import type { ContentBlockParam, Message, MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import { resolveFileImportPlan, type FileImportAiInfo, type FileImportAiJob, type FileImportAiStage, type FileImportPlan } from '@imagina-base/shared';
 import type Redis from 'ioredis';
@@ -121,8 +122,7 @@ export class FileImportAiService {
         if (access.source === 'platform') {
             const limit = await this.settings.importAiMonthly();
             const key = quotaKey(ctx.tenantId);
-            const n = await this.redis.incr(key);
-            await this.redis.expire(key, 40 * 24 * 3600);
+            const n = await incrWithTtl(this.redis, key, 40 * 24 * 3600);
             if (n > limit) {
                 await this.redis.decr(key);
                 const info = await this.availability(ctx);

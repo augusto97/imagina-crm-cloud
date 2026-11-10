@@ -407,7 +407,14 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.392**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.393**
+(**integraciones y tareas periódicas a escala**: los recordatorios de citas
+ya no se pierden con más de 200 citas en la ventana —bug real—; recordatorios
+de avisos, suscripciones y recurrencias que trababan su fila; el resumen
+diario en una consulta; buzones callados se leen cada 2-3 min; SMS por turnos
+entre empresas; Redis sin `KEYS`/`SCAN` y frenos atómicos; retención de las
+tablas que crecían sin tope; avisos de tienda y sitio en su propia cola;
+addendum ADR-S98). Antes v0.1.392
 (**automatizaciones a escala**: turnos por empresa en la cola —una empresa
 que edita miles de registros ya no hace esperar a las demás: 16,5 s → 0,1 s—;
 webhooks, correos, WhatsApp, SMS y reuniones se esperan FUERA de la
@@ -574,10 +581,11 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 **Hilos abiertos (lo último que se habló)**
 - 2026-11-10 — **«Que la app aguante miles de empresas con automatizaciones
   corriendo»** (el usuario: «revisa también los demás procesos así… ClickUp y
-  Airtable no se ponen lentos»). **v0.1.392 HECHA** (motor de
-  automatizaciones y costo por cambio, ADR-S98). **Sigue v0.1.393**: lo mismo
-  para las integraciones y tareas periódicas — lista completa de hallazgos en
-  la bitácora de v0.1.392. Método que se usó y conviene repetir: medir antes
+  Airtable no se ponen lentos»). **v0.1.392 y v0.1.393 HECHAS** (motor
+  de automatizaciones y costo por cambio; integraciones y tareas periódicas;
+  ADR-S98 y su addendum). Queda, no urgente: que el usuario revise si quiere
+  retención también para la actividad de los registros (hoy NO se borra: es la
+  historia de sus datos) y medir en su servidor con carga real. Método que se usó y conviene repetir: medir antes
   con carga simulada (`pg_stat_database` para transacciones, `/proc/<pid>/stat`
   para CPU, perfil con `SIGUSR1` + inspector), arreglar, y medir lo mismo
   después; los scripts quedaron en el scratchpad de la sesión (no en el repo).
@@ -1724,6 +1732,30 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-10 · v0.1.393** — **Integraciones y tareas periódicas a escala**
+  (segunda mitad del pedido «que la app aguante miles de empresas con
+  automatizaciones e integraciones corriendo»). Se revisó cada barrido
+  periódico; tres eran bugs que la carga real iba a mostrar y la prueba nueva
+  de cada uno falla con la versión anterior: (1) **recordatorios de citas** —
+  con más de 200 citas en las próximas dos semanas de TODAS las empresas, las
+  primeras 200 por fecha (ya avisadas) tapaban al resto y el «24 horas antes»
+  no salía; (2) **suscripciones** de planes sin el módulo tapaban la fila de la
+  revisión (se salteaban sin marcarse); (3) la **cola de SMS** por orden de
+  llegada: un envío masivo de una empresa dejaba a las demás detrás. Además:
+  recordatorios de avisos trabados por empresas archivadas; el resumen diario
+  en una consulta (antes una transacción por empresa por hora); recurrencias
+  con «repetir hasta» cumplido que se tomaban cada 5 min para siempre
+  (`stopped_value`, migración 0112); buzones IMAP callados a cada 2-3 min y
+  `HELPDESK_POLL_CONCURRENCY`; calendarios 6 a la vez; tope de 20 s a los
+  proveedores de cobro de la plataforma; Redis sin `KEYS`/`SCAN` y
+  `incrWithTtl` atómico en todos los frenos; **retención** hora a hora de
+  avisos, recordatorios, Problemas resueltos, corridas de agentes, SMS e
+  historial de ediciones masivas (la actividad y la bitácora NO); avisos de
+  tienda y sitio en su propia cola; horarios re-registrados en paralelo al
+  arrancar. De paso (en v0.1.392): la suite completa atrapó que el correo que
+  adjunta un PDF que emite un número tenía que seguir dentro de la
+  transacción (si no sale, el número se deshace) — corregido antes de fusionar.
 
 - **2026-11-10 · v0.1.392** — **Automatizaciones a escala** (pedido del
   usuario: «revisa también los demás procesos así; muchas empresas tendrán

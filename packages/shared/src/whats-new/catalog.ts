@@ -2163,4 +2163,17 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver cómo funcionan', href: '/aprende/automatizaciones' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.393-recordatorios-a-tiempo',
+        version: '0.1.393',
+        date: '2026-11-10',
+        kind: 'fix',
+        title: 'Los recordatorios de citas salen a tiempo, aunque haya muchas',
+        summary:
+            'Con muchas citas agendadas, el aviso de «mañana tienes una cita» podía salir tarde. Ahora sale a su hora siempre. Y los buzones de soporte, los SMS masivos y las suscripciones se revisan sin que el trabajo de otros los demore.',
+        media: { illustration: 'citas-email' },
+        body: 'No tienes que cambiar nada. Un buzón de soporte que no recibe correos en un rato se revisa cada 2 o 3 minutos; **Revisar ahora** lo lee al instante.',
+        action: { label: 'Ver la agenda de citas', href: '/aprende/agenda-citas' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

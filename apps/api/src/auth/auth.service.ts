@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { incrWithTtl } from '../redis/redis.util';
 import {
     BadRequestException,
     ConflictException,
@@ -208,8 +209,7 @@ export class AuthService implements OnModuleInit {
 
     /** Cupo de correos de cuenta por clave en una ventana (Redis, entre nodos). */
     private async withinMailBudget(key: string, max: number, windowSeconds: number): Promise<boolean> {
-        const n = await this.redis.incr(key);
-        if (n === 1) await this.redis.expire(key, windowSeconds);
+        const n = await incrWithTtl(this.redis, key, windowSeconds);
         if (n > max) {
             this.logger.warn(`Correos de cuenta frenados (${key})`);
             return false;
@@ -938,8 +938,7 @@ export class AuthService implements OnModuleInit {
         const valid = await argon2.verify(hash, input.password).catch(() => false);
         if (!user || !valid) {
             // Se cuenta el fallo (ventana deslizante de 15 min).
-            const n = await this.redis.incr(failKey);
-            if (n === 1) await this.redis.expire(failKey, LOGIN_FAIL_WINDOW_SECONDS);
+            await incrWithTtl(this.redis, failKey, LOGIN_FAIL_WINDOW_SECONDS);
             throw new UnauthorizedException('Credenciales inválidas');
         }
 
@@ -996,8 +995,7 @@ export class AuthService implements OnModuleInit {
             });
         }
         const parsed = JSON.parse(raw) as { userId: number; userAgent?: string; ip?: string };
-        const tries = await this.redis.incr(mfaTriesKey(input.challenge));
-        if (tries === 1) await this.redis.expire(mfaTriesKey(input.challenge), MFA_CHALLENGE_TTL_SECONDS);
+        const tries = await incrWithTtl(this.redis, mfaTriesKey(input.challenge), MFA_CHALLENGE_TTL_SECONDS);
         if (tries > MFA_MAX_TRIES) {
             await this.redis.del(mfaKey(input.challenge));
             throw new UnauthorizedException({
@@ -1036,8 +1034,7 @@ export class AuthService implements OnModuleInit {
         }
         if (!ok) ok = await this.consumeBackupCode(user.id, user.totpBackupCodes ?? [], input.code);
         if (!ok) {
-            const fails = await this.redis.incr(failKey);
-            if (fails === 1) await this.redis.expire(failKey, MFA_USER_LOCK_SECONDS);
+            await incrWithTtl(this.redis, failKey, MFA_USER_LOCK_SECONDS);
             throw new UnauthorizedException('Código inválido');
         }
         await this.redis.del(failKey);

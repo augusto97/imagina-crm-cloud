@@ -1,4 +1,5 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
+import { incrWithTtl } from '../redis/redis.util';
 import * as argon2 from 'argon2';
 import type Redis from 'ioredis';
 
@@ -37,8 +38,7 @@ export async function verifyAccountPassword(
         if (valid) {
             await redis.del(failKey(userId)).catch(() => undefined);
         } else {
-            const n = await redis.incr(failKey(userId)).catch(() => 0);
-            if (n === 1) await redis.expire(failKey(userId), WINDOW_SECONDS).catch(() => undefined);
+            await incrWithTtl(redis, failKey(userId), WINDOW_SECONDS).catch(() => 0);
         }
     }
     return valid;

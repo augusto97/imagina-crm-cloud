@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { mapLimit } from '../common/map-limit';
 import {
     effectiveCapabilities,
     formatEmailFieldValue,
@@ -390,7 +391,8 @@ export class DashboardSubscriptionsService {
     async resyncSchedules(): Promise<number> {
         // Conexión base (sin RLS): sólo ids y horario, para registrar los jobs.
         const rows = await this.db.select().from(dashboardSubscriptions).where(eq(dashboardSubscriptions.enabled, true));
-        for (const r of rows) await this.scheduler.sync(r.tenantId, r);
+        // v0.1.393 — varios a la vez, y uno que falla no corta a los demás.
+        await mapLimit(rows, 16, (r) => this.scheduler.sync(r.tenantId, r).catch(() => undefined));
         return rows.length;
     }
 

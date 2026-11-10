@@ -13,6 +13,8 @@ import type { SiteSyncHookJob } from './site-realtime.service';
  */
 
 export const SITE_SYNC_QUEUE = 'site-sync';
+/** v0.1.393 — avisos y envíos aparte de las corridas largas (ver `STORE_SYNC_LIVE_QUEUE`). */
+export const SITE_SYNC_LIVE_QUEUE = 'site-sync-live';
 const TICK_JOB = 'tick';
 const RUN_JOB = 'run';
 const PUSH_JOB = 'push';
@@ -37,9 +39,11 @@ export interface SiteSyncPushJob {
 export class SiteSyncQueue {
     private readonly logger = new Logger(SiteSyncQueue.name);
     private queue: Queue | null = null;
+    private live: Queue | null = null;
 
-    setQueue(queue: Queue): void {
+    setQueue(queue: Queue, live?: Queue): void {
         this.queue = queue;
+        this.live = live ?? null;
     }
 
     /** El `jobId` deduplica: el tick de cada minuto y un «Sincronizar ahora» no se apilan. */
@@ -63,8 +67,9 @@ export class SiteSyncQueue {
      * (juntarlos haría mandar campos que nadie tocó).
      */
     enqueuePush(job: SiteSyncPushJob): boolean {
-        if (!this.queue) return false;
-        this.queue
+        const queue = this.live ?? this.queue;
+        if (!queue) return false;
+        queue
             .add(PUSH_JOB, job, { delay: 1_500, removeOnComplete: true, removeOnFail: 100 })
             .catch((err) => this.logger.error(`No se pudo encolar el envío al sitio: ${String(err)}`));
         return true;
@@ -76,8 +81,9 @@ export class SiteSyncQueue {
      * caído un momento) con espera creciente.
      */
     enqueueHook(job: SiteSyncHookJob): boolean {
-        if (!this.queue) return false;
-        this.queue
+        const queue = this.live ?? this.queue;
+        if (!queue) return false;
+        queue
             .add(HOOK_JOB, job, { attempts: 4, backoff: { type: 'exponential', delay: 5_000 }, removeOnComplete: true, removeOnFail: 100 })
             .catch((err) => this.logger.error(`No se pudo encolar un aviso del sitio: ${String(err)}`));
         return true;
@@ -96,6 +102,8 @@ export class SiteSyncQueueBootstrap implements OnModuleInit, OnApplicationShutdo
     private readonly logger = new Logger(SiteSyncQueueBootstrap.name);
     private queue: Queue | null = null;
     private worker: Worker | null = null;
+    private liveQueue: Queue | null = null;
+    private liveWorker: Worker | null = null;
     private connections: IORedis[] = [];
     private handlers: SiteSyncHandlers | null = null;
 
@@ -117,32 +125,34 @@ export class SiteSyncQueueBootstrap implements OnModuleInit, OnApplicationShutdo
             };
             this.queue = new Queue(SITE_SYNC_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de sitios con error: ${err.message}`));
-            this.worker = new Worker(
-                SITE_SYNC_QUEUE,
-                async (job) => {
-                    if (!this.handlers) return;
-                    if (job.name === TICK_JOB) {
-                        await this.handlers.tick();
-                        return;
-                    }
-                    if (job.name === PUSH_JOB) {
-                        await this.handlers.pushJob(job.data as SiteSyncPushJob);
-                        return;
-                    }
-                    if (job.name === HOOK_JOB) {
-                        await this.handlers.hookJob(job.data as SiteSyncHookJob);
-                        return;
-                    }
-                    const data = job.data as SiteSyncRunJob;
-                    const ran = await this.handlers.runJob(data);
-                    // Otra corrida la tenía tomada: se reintenta en un rato.
-                    if (!ran) this.dispatcher.enqueueRun(data.tenantId, data.syncId, { full: data.full, only: data.only }, 30_000);
-                },
-                { connection: conn(), concurrency: 2, lockDuration: 120_000 },
-            );
+            const process = async (job: { name: string; data: unknown }): Promise<void> => {
+                if (!this.handlers) return;
+                if (job.name === TICK_JOB) {
+                    await this.handlers.tick();
+                    return;
+                }
+                if (job.name === PUSH_JOB) {
+                    await this.handlers.pushJob(job.data as SiteSyncPushJob);
+                    return;
+                }
+                if (job.name === HOOK_JOB) {
+                    await this.handlers.hookJob(job.data as SiteSyncHookJob);
+                    return;
+                }
+                const data = job.data as SiteSyncRunJob;
+                const ran = await this.handlers.runJob(data);
+                // Otra corrida la tenía tomada: se reintenta en un rato.
+                if (!ran) this.dispatcher.enqueueRun(data.tenantId, data.syncId, { full: data.full, only: data.only }, 30_000);
+            };
+            this.worker = new Worker(SITE_SYNC_QUEUE, process, { connection: conn(), concurrency: 2, lockDuration: 120_000 });
             this.worker.on('failed', (job, err) => this.logger.error(`Sincronización de sitio ${job?.id} falló: ${err.message}`));
             this.worker.on('error', (err) => this.logger.warn(`Worker de sitios con error: ${err.message}`));
-            this.dispatcher.setQueue(this.queue);
+            this.liveQueue = new Queue(SITE_SYNC_LIVE_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
+            this.liveQueue.on('error', (err) => this.logger.warn(`Cola de avisos de sitios con error: ${err.message}`));
+            this.liveWorker = new Worker(SITE_SYNC_LIVE_QUEUE, process, { connection: conn(), concurrency: 4, lockDuration: 120_000 });
+            this.liveWorker.on('failed', (job, err) => this.logger.error(`Aviso de sitio ${job?.id} falló: ${err.message}`));
+            this.liveWorker.on('error', (err) => this.logger.warn(`Worker de avisos de sitios con error: ${err.message}`));
+            this.dispatcher.setQueue(this.queue, this.liveQueue);
             await this.queue.upsertJobScheduler(TICK_JOB, { every: 60_000 }, { name: TICK_JOB, data: {} });
             this.logger.log('Cola de sincronización con sitios lista');
         } catch (err) {
@@ -152,7 +162,9 @@ export class SiteSyncQueueBootstrap implements OnModuleInit, OnApplicationShutdo
 
     async onApplicationShutdown(): Promise<void> {
         await this.worker?.close();
+        await this.liveWorker?.close();
         await this.queue?.close();
+        await this.liveQueue?.close();
         await Promise.all(this.connections.map((c) => c.quit().catch(() => undefined)));
     }
 }

@@ -12,6 +12,9 @@ import type { BookingExternalEvent } from '../db/schema';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 
+/** v0.1.393 — versión del caché de lo ocupado de una conexión (se sube para «olvidar»). */
+const busyVersionKey = (tenantId: number, connectionId: number): string => `bookbusy:v:${tenantId}:${connectionId}`;
+
 /**
  * D5 — El calendario de quien atiende (Google Calendar u Outlook).
  *
@@ -462,11 +465,16 @@ export class BookingCalendarService {
         const calendars: Array<string | null> = r.busyCalendars.length > 0 ? r.busyCalendars : [null];
         const all: BusyInterval[] = [];
         let token: string | null = null;
+        let busyVer: string | null | undefined;
         for (const cal of calendars) {
             const fromIso = from.toISOString();
             const toIso = to.toISOString();
             const calKey = cal === null ? 'main' : createHash('sha1').update(cal).digest('hex').slice(0, 12);
-            const cacheKey = `bookbusy:${tenantId}:${r.connectionId}:${calKey}:${fromIso.slice(0, 13)}:${toIso.slice(0, 13)}`;
+            // v0.1.393 — la clave lleva la versión de la conexión: «olvidar» es
+            // subir la versión (antes, `KEYS bookbusy:…`, que recorre TODAS las
+            // claves de Redis y lo bloquea mientras tanto).
+            busyVer ??= await this.redis.get(busyVersionKey(tenantId, r.connectionId)).catch(() => null);
+            const cacheKey = `bookbusy:${tenantId}:${r.connectionId}:${busyVer ?? '0'}:${calKey}:${fromIso.slice(0, 13)}:${toIso.slice(0, 13)}`;
             try {
                 const hit = await this.redis.get(cacheKey);
                 if (hit) {
@@ -509,8 +517,8 @@ export class BookingCalendarService {
     /** Olvida lo ocupado guardado de esa conexión (después de crear o mover un evento). */
     async forget(tenantId: number, connectionId: number): Promise<void> {
         try {
-            const keys = await this.redis.keys(`bookbusy:${tenantId}:${connectionId}:*`);
-            if (keys.length > 0) await this.redis.del(...keys);
+            // Las claves con la versión vieja vencen solas (BUSY_CACHE_S).
+            await this.redis.multi().incr(busyVersionKey(tenantId, connectionId)).expire(busyVersionKey(tenantId, connectionId), 7 * 86_400).exec();
         } catch {
             /* vence sola en segundos */
         }

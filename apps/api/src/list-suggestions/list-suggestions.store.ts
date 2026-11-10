@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { incrWithTtl } from '../redis/redis.util';
 import type { AiProposalKind, AiProposalPreview, ListProfile, ListSuggestionCategory } from '@imagina-base/shared';
 import type Redis from 'ioredis';
 import { REDIS } from '../redis/redis.module';
@@ -68,23 +69,29 @@ export class ListSuggestionsStore {
         return `listsugg:${kind}:${tenantId}:${listId}${extra !== undefined ? `:${extra}` : ''}`;
     }
 
+    /**
+     * v0.1.393 — el perfil de cada persona lleva la VERSIÓN de la lista en la
+     * clave: «recalcular para todos» es subir la versión (antes, un `SCAN` por
+     * patrón, que recorre todas las claves de Redis de la plataforma).
+     */
+    private async profileKey(tenantId: number, listId: number, userId: number): Promise<string> {
+        const v = (await this.redis.get(this.k('pv', tenantId, listId)).catch(() => null)) ?? '0';
+        return `${this.k('prof', tenantId, listId, userId)}:${v}`;
+    }
+
     async getProfile(tenantId: number, listId: number, userId: number): Promise<ListProfile | null> {
-        return this.readJson<ListProfile>(this.k('prof', tenantId, listId, userId));
+        return this.readJson<ListProfile>(await this.profileKey(tenantId, listId, userId));
     }
 
     async setProfile(tenantId: number, listId: number, userId: number, profile: ListProfile): Promise<void> {
-        await this.redis.set(this.k('prof', tenantId, listId, userId), JSON.stringify(profile), 'EX', PROFILE_TTL);
+        await this.redis.set(await this.profileKey(tenantId, listId, userId), JSON.stringify(profile), 'EX', PROFILE_TTL);
     }
 
     /** Algo cambió (se aplicó una sugerencia): el perfil se recalcula para todos. */
     async dropProfiles(tenantId: number, listId: number): Promise<void> {
-        const pattern = `${this.k('prof', tenantId, listId)}:*`;
-        let cursor = '0';
-        do {
-            const [next, keys] = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 200);
-            cursor = next;
-            if (keys.length > 0) await this.redis.del(...keys);
-        } while (cursor !== '0');
+        // Los perfiles con la versión vieja vencen solos (PROFILE_TTL).
+        const key = this.k('pv', tenantId, listId);
+        await this.redis.multi().incr(key).expire(key, PROFILE_TTL * 2).exec();
     }
 
     getAi(tenantId: number, listId: number): Promise<StoredAiResult | null> {
@@ -149,8 +156,7 @@ export class ListSuggestionsStore {
     /** Cupo del mes (UTC) de la empresa: incrementa y devuelve el contador. */
     async takeQuota(tenantId: number, limit: number, now: Date = new Date()): Promise<string | null> {
         const key = quotaKey(tenantId, now);
-        const n = await this.redis.incr(key);
-        await this.redis.expire(key, 40 * 24 * 3600);
+        const n = await incrWithTtl(this.redis, key, 40 * 24 * 3600);
         if (n > limit) {
             await this.redis.decr(key);
             return null;

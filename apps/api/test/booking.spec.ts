@@ -18,7 +18,7 @@ import {
     type BusyInterval,
     type Field,
 } from '@imagina-base/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import IORedis from 'ioredis';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
@@ -854,6 +854,31 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         expect(mailbox.sent.filter((m) => m.subject.startsWith('Recordatorio')).length).toBe(2);
         const [appt] = await appointments();
         expect(appt!.remindersSent).toEqual(['rem24h', 'rem1h']);
+    });
+
+    it('recordatorios con más de 200 citas en la ventana: el que toca sale igual (v0.1.393)', async () => {
+        await freshPage();
+        await book({ staff: 'stfana', start: at(D, 10) });
+        await vi.waitFor(() => expect(mailbox.sent.length).toBe(1));
+        const start = Date.parse(at(D, 10));
+        const now = new Date(start - 23 * 3600_000);
+        // 250 citas que empiezan ANTES y ya tienen sus dos recordatorios: antes,
+        // las primeras 200 por fecha tapaban a la que sí tenía uno pendiente.
+        const soon = new Date(now.getTime() + 30 * 60_000);
+        const soonEnd = new Date(now.getTime() + 60 * 60_000);
+        await pg.db.execute(sql`
+            WITH r AS (
+                INSERT INTO records (tenant_id, list_id, data, created_by)
+                SELECT ${tenantId}, ${listId}, '{}'::jsonb, 0 FROM generate_series(1, 250)
+                RETURNING id
+            )
+            INSERT INTO booking_appointments (tenant_id, page_id, list_id, record_id, staff_id, service_id, start_at, end_at, status, client_email, reminders_sent)
+            SELECT ${tenantId}, ${pageId}, ${listId}, r.id, 'stfana', 'svcconsulta', ${soon}, ${soonEnd}, 'confirmed', 'otro@cliente.co', '["rem24h","rem1h"]'::jsonb FROM r
+        `);
+        expect(await reminders.tick(now)).toBe(1);
+        expect(mailbox.sent.at(-1)!.subject).toContain('Recordatorio de tu cita');
+        expect(await reminders.tick(now)).toBe(0);
+        await pg.db.execute(sql`DELETE FROM booking_appointments WHERE page_id = ${pageId} AND client_email = 'otro@cliente.co'`);
     });
 
     it('recordatorios por SMS (ADR-S82): salen al teléfono del registro con {{cita.*}}, junto al correo; a medio configurar no se publica', async () => {

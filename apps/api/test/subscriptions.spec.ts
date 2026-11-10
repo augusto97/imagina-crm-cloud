@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readChargeLogMarker, SUBSCRIPTION_CHARGE_STATUS_OPTIONS, SUBSCRIPTION_STATUS_OPTIONS } from '@imagina-base/shared';
 
@@ -586,6 +586,32 @@ describe('Suscripciones de las empresas — Mercado Pago (v0.1.367)', () => {
         const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(subscriptions).where(eq(subscriptions.id, sub.id)));
         expect(row!.status).toBe('active');
         expect(row!.chargesPaid).toBe(1);
+    });
+
+    it('la revisión no se traba con las de una empresa cuyo plan no incluye el módulo (v0.1.393)', async () => {
+        const mp = fakeMercadoPago();
+        const connId = await connectMp();
+        const p = await plan(connId);
+        const c = await seedClient();
+        const sub = await subs.createForRecord(tenantId, admin, c.slug, c.recordId, { plan_id: p.id, payer_email: 'pagos@panaderiasol.test' });
+        authorize(mp, 'pre-1', new Date(Date.now() + 30 * DAY).toISOString());
+        // 450 suscripciones de otra empresa con un plan SIN integraciones, que
+        // nunca se revisaron: antes ocupaban las primeras 100 de la fila y se
+        // salteaban sin marcarse, así que la de esta empresa no se revisaba.
+        await pg.db.execute(sql`INSERT INTO plans (slug, name, disabled_modules) VALUES ('sin-integraciones', 'Sin integraciones', '["integrations"]'::jsonb) ON CONFLICT (slug) DO NOTHING`);
+        const other = await pg.db.execute<{ id: number }>(sql`INSERT INTO tenants (slug, name, plan) VALUES ('sin-modulo-subs', 'Sin módulo', 'sin-integraciones') RETURNING id`);
+        const otherId = Number(((other as unknown as { rows: Array<{ id: number }> }).rows)[0]!.id);
+        await pg.db.execute(sql`
+            INSERT INTO subscriptions (tenant_id, connection_id, provider, reference, title, amount, currency, status, external_id)
+            SELECT ${otherId}, ${connId}, 'mercadopago', 'ibs_other_' || g, 'Otro', 1000, 'COP', 'active', 'ext-' || g FROM generate_series(1, 450) g
+        `);
+        try {
+            expect(await subs.tick(new Date(Date.now() + 15 * 60 * 1000))).toBe(1);
+            const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(subscriptions).where(eq(subscriptions.id, sub.id)));
+            expect(row!.status).toBe('active');
+        } finally {
+            await pg.db.execute(sql`DELETE FROM tenants WHERE id = ${otherId}`);
+        }
     });
 
     it('automatización: «Crear suscripción» con el correo del registro deja {{suscripcion.link}} y «Pausar» la pausa', async () => {

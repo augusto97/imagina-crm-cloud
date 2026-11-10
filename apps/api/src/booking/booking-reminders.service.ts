@@ -1,10 +1,10 @@
 import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
-import { and, eq, gt, isNull, lte, inArray, sql } from 'drizzle-orm';
+import { and, eq, gt, lte, inArray, sql } from 'drizzle-orm';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { bookingAppointments, bookingPages, records } from '../db/schema';
+import { bookingAppointments, bookingPages } from '../db/schema';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import { readBookingConfig } from './booking-config';
 import { BookingPublicService } from './booking-public.service';
@@ -13,6 +13,15 @@ const QUEUE = 'booking-reminders';
 /** Recordatorios hasta dos semanas antes (el máximo que deja configurar la página). */
 const LOOKAHEAD_MS = 14 * 24 * 3600 * 1000 + 3600 * 1000;
 const BATCH = 200;
+/** Tandas por barrido: hasta 2.000 recordatorios por minuto (lo que quede, al minuto siguiente). */
+const MAX_ROUNDS = 10;
+
+interface ReminderSpec {
+    pageId: number;
+    id: string;
+    minutes: number;
+    needsEmail: boolean;
+}
 /** v0.1.353 — Sólo las citas confirmadas reciben recordatorios (una por confirmar, todavía no). */
 const LIVE_STATUSES = ['confirmed', 'rescheduled'];
 
@@ -73,23 +82,93 @@ export class BookingRemindersService implements OnModuleInit, OnApplicationShutd
         await Promise.all(this.connections.map((c) => c.quit().catch(() => undefined)));
     }
 
-    /** Un barrido: devuelve cuántos recordatorios salieron. */
+    /**
+     * Un barrido: devuelve cuántos recordatorios salieron.
+     *
+     * v0.1.393 — Antes se traían las primeras 200 citas vivas de las próximas
+     * dos semanas (de TODAS las empresas, por fecha) y recién después se
+     * descartaban las que ya tenían su recordatorio. Con más de 200 citas en la
+     * ventana, las primeras 200 —casi siempre ya avisadas— tapaban a las demás:
+     * el «24 horas antes» de una cita de mañana podía salir tarde o no salir.
+     * Ahora el filtro va en la consulta: sólo vuelven las citas con un
+     * recordatorio VENCIDO y no enviado (según la configuración de su página),
+     * y se repiten tandas hasta vaciar lo pendiente (tope por barrido).
+     */
     async tick(now = new Date()): Promise<number> {
-        const rows = await this.db
-            .select({ appt: bookingAppointments, config: bookingPages.config })
+        const specs = await this.reminderSpecs(now);
+        if (specs.length === 0) return 0;
+        let sent = 0;
+        for (let round = 0; round < MAX_ROUNDS; round++) {
+            const ids = await this.dueAppointmentIds(specs, now);
+            if (ids.length === 0) break;
+            const r = await this.sendRound(ids, now);
+            sent += r.sent;
+            // Nada se pudo reclamar (cambió la cita o su página entre medio):
+            // volver a pedir traería lo mismo.
+            if (r.claimed === 0 || ids.length < BATCH) break;
+        }
+        return sent;
+    }
+
+    /**
+     * Los recordatorios de cada página que tiene citas vivas en la ventana
+     * (pocas filas: una por agenda en uso, no por cita).
+     */
+    private async reminderSpecs(now: Date): Promise<ReminderSpec[]> {
+        const live = this.db
+            .selectDistinct({ id: bookingAppointments.pageId })
             .from(bookingAppointments)
-            .innerJoin(bookingPages, eq(bookingPages.id, bookingAppointments.pageId))
-            .innerJoin(records, and(eq(records.id, bookingAppointments.recordId), isNull(records.deletedAt)))
             .where(
                 and(
                     inArray(bookingAppointments.status, LIVE_STATUSES),
                     gt(bookingAppointments.startAt, now),
                     lte(bookingAppointments.startAt, new Date(now.getTime() + LOOKAHEAD_MS)),
                 ),
-            )
-            .orderBy(bookingAppointments.startAt)
-            .limit(BATCH);
+            );
+        const pages = await this.db.select({ id: bookingPages.id, config: bookingPages.config }).from(bookingPages).where(inArray(bookingPages.id, live));
+        const out: ReminderSpec[] = [];
+        for (const p of pages) {
+            const cfg = readBookingConfig(p.config);
+            // Sin SMS, una cita sin correo no tiene a quién avisar: ni se trae.
+            const needsEmail = !this.publicSvc.smsRemindersOn(cfg);
+            for (const r of cfg.notifications.reminders) out.push({ pageId: p.id, id: r.id, minutes: r.minutes_before, needsEmail });
+        }
+        return out;
+    }
+
+    /** Las citas con al menos un recordatorio vencido y sin enviar, las más próximas primero. */
+    private async dueAppointmentIds(specs: ReminderSpec[], now: Date): Promise<number[]> {
+        const values = sql.join(
+            specs.map((r) => sql`(${r.pageId}::bigint, ${r.id}::text, ${r.minutes}::int, ${r.needsEmail}::boolean)`),
+            sql`, `,
+        );
+        const res = await this.db.execute<{ id: number }>(sql`
+            SELECT a.id, MIN(a.start_at) AS start_at
+            FROM booking_appointments a
+            JOIN (VALUES ${values}) AS v(page_id, rem_id, minutes, needs_email) ON v.page_id = a.page_id
+            WHERE a.status IN (${sql.join(LIVE_STATUSES.map((st) => sql`${st}`), sql`, `)})
+              AND a.start_at > ${now}
+              AND a.start_at <= ${now}::timestamptz + make_interval(mins => v.minutes)
+              AND NOT (coalesce(a.reminders_sent, '[]'::jsonb) ? v.rem_id)
+              AND (NOT v.needs_email OR coalesce(a.client_email, '') <> '')
+              AND EXISTS (SELECT 1 FROM records r WHERE r.id = a.record_id AND r.deleted_at IS NULL)
+            GROUP BY a.id
+            ORDER BY MIN(a.start_at), a.id
+            LIMIT ${BATCH}
+        `);
+        const rows = (res as unknown as { rows?: Array<{ id: number }> }).rows ?? (res as unknown as Array<{ id: number }>);
+        return rows.map((r) => Number(r.id));
+    }
+
+    private async sendRound(ids: number[], now: Date): Promise<{ sent: number; claimed: number }> {
+        const rows = await this.db
+            .select({ appt: bookingAppointments, config: bookingPages.config })
+            .from(bookingAppointments)
+            .innerJoin(bookingPages, eq(bookingPages.id, bookingAppointments.pageId))
+            .where(inArray(bookingAppointments.id, ids))
+            .orderBy(bookingAppointments.startAt);
         let sent = 0;
+        let claimedCount = 0;
         for (const { appt, config } of rows) {
             const cfg = readBookingConfig(config);
             // SMS (ADR-S82): sin correo igual sale el SMS (el cliente pudo dejar sólo el teléfono).
@@ -115,6 +194,7 @@ export class BookingRemindersService implements OnModuleInit, OnApplicationShutd
                 )
                 .returning({ id: bookingAppointments.id });
             if (claimed.length === 0) continue;
+            claimedCount++;
             const closest = due.reduce((a, b) => (b.minutes_before < a.minutes_before ? b : a));
             if (appt.clientEmail) {
                 try {
@@ -131,6 +211,6 @@ export class BookingRemindersService implements OnModuleInit, OnApplicationShutd
                 }
             }
         }
-        return sent;
+        return { sent, claimed: claimedCount };
     }
 }

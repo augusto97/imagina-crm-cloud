@@ -588,6 +588,22 @@ describe('SMS — Twilio, BulkGate, Infobip, LabsMobile y Onurix (ADR-S82)', () 
         expect(agentPreview.missing.every((m) => m.reason === 'No puedes editar este registro.')).toBe(true);
     });
 
+    it('la cola va por turnos: un envío masivo grande no deja esperando a otra conexión (v0.1.393)', async () => {
+        const lm = await connect('sms_labsmobile', { username: LM_USER, api_token: LM_TOKEN, rate: '50' });
+        const tw = await connectTwilio();
+        const { listId, fieldsBy } = await seedClients();
+        const many: number[] = [];
+        for (let i = 0; i < 45; i++) many.push(await addClient(listId, fieldsBy, `Cliente ${i}`, `+5730010${String(10000 + i)}`));
+        const urgente = await addClient(listId, fieldsBy, 'Urgente', '+573009998877');
+        const base = { message: 'Hola {{nombre}}', strip_accents: false, respect_hours: false };
+        await svc.bulkSend(tenantId, admin(), 'clientes', { ...base, connection_id: lm, record_ids: many });
+        await svc.bulkSend(tenantId, admin(), 'clientes', { ...base, connection_id: tw, record_ids: [urgente] });
+        sent.length = 0;
+        expect(await svc.drain()).toBe(46);
+        // Antes: las primeras 40 de la cola eran todas del envío grande.
+        expect(sent.findIndex((m) => m.text === 'Hola Urgente')).toBeLessThan(10);
+    });
+
     // ── Ley 2300: horario ───────────────────────────────────────────────
 
     it('Ley 2300: fuera de la franja queda PROGRAMADO para el siguiente momento permitido (festivo incluido) y sale solo', async () => {

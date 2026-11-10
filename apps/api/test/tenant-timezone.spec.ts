@@ -264,7 +264,7 @@ describe('Zona horaria de la empresa (v0.1.263)', () => {
             action_type: 'update',
         });
         const due = async (now: string) =>
-            (await repo.dueScheduled(pg.db, now)).filter((r) => r.tenantId === tenantId).map((r) => r.recordId);
+            (await repo.dueScheduled(pg.db, now, { limit: 1000 })).filter((r) => r.tenantId === tenantId).map((r) => r.recordId);
 
         // 03:00 UTC del 7 = 22:00 del 6 en Bogotá: todavía no.
         await setTz('America/Bogota');

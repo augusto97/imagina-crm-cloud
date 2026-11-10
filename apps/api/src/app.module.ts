@@ -59,6 +59,7 @@ import { AiFieldsModule } from './ai-fields/ai-fields.module';
 import { NotifyHubModule } from './notifications/notify-hub';
 import { IncidentHubModule } from './incidents/incident-hub';
 import { IncidentsModule } from './incidents/incidents.module';
+import { RetentionModule } from './retention/retention.module';
 import { DocumentsModule } from './documents/documents.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordChangeHubModule } from './records/record-change-hub';
@@ -124,6 +125,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         NotificationsModule,
         PwaModule,
         IncidentsModule,
+        RetentionModule,
         AiFieldsModule,
         TimeTrackingModule,
         AuthModule,

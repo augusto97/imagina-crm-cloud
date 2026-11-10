@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { incrWithTtl } from '../redis/redis.util';
 import {
     BadRequestException,
     ConflictException,
@@ -552,8 +553,7 @@ export class PortalService implements OnModuleInit {
         // Freno de abuso por email (compartido entre nodos): 3 pedidos cada
         // 15 min. El rate limit por IP de `main.ts` es la otra mitad.
         const rlKey = `portalreq:${email}`;
-        const attempts = await this.redis.incr(rlKey);
-        if (attempts === 1) await this.redis.expire(rlKey, 900);
+        const attempts = await incrWithTtl(this.redis, rlKey, 900);
         if (attempts > 3) {
             this.logger.warn(`Pedidos de acceso al portal frenados para ${email}`);
             return;
@@ -915,8 +915,7 @@ export class PortalService implements OnModuleInit {
             .limit(1);
         if (!user) throw new NotFoundException({ code: 'portal_not_linked', message: 'Sesión inválida', data: { status: 404 } });
         const rlKey = `portalacct:${actor.userId}`;
-        const attempts = await this.redis.incr(rlKey);
-        if (attempts === 1) await this.redis.expire(rlKey, 900);
+        const attempts = await incrWithTtl(this.redis, rlKey, 900);
         if (attempts > 3) {
             throw new HttpException(
                 {
@@ -2236,8 +2235,7 @@ export class PortalService implements OnModuleInit {
         }
         // Freno por cliente: cada «Pagar» sin link vigente llama al proveedor.
         const rl = `portalpay:${link.tenantId}:${actor.userId}`;
-        const n = await this.redis.incr(rl);
-        if (n === 1) await this.redis.expire(rl, 600);
+        const n = await incrWithTtl(this.redis, rl, 600);
         if (n > 10) {
             throw new HttpException(
                 { code: 'too_many_attempts', message: 'Demasiados intentos de pago seguidos. Prueba en unos minutos.', data: { status: 429 } },

@@ -6,6 +6,7 @@ import { and, asc, eq, gt, isNotNull, isNull, lte, notInArray } from 'drizzle-or
 import { BOOKING_INACTIVE_STATUSES } from '@imagina-base/shared';
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
+import { mapLimit } from '../common/map-limit';
 import { DRIZZLE, type Db } from '../db/client';
 import { bookingAppointments, connections, records, type BookingAppointmentRow } from '../db/schema';
 import { IncidentHub } from '../incidents/incident-hub';
@@ -21,6 +22,8 @@ const EVERY_MS = 3 * 60_000;
 const MAX_APPOINTMENTS = 3000;
 /** Outlook se pregunta por id: hasta tantas citas por conexión y vuelta (de a 20 por pedido). */
 const GRAPH_PER_CONNECTION = 100;
+/** v0.1.393 — calendarios que se revisan a la vez. */
+const GROUP_CONCURRENCY = 6;
 /** Un cambio de menos de esto no es un cambio (redondeos de cada proveedor). */
 const TOLERANCE_MS = 60_000;
 /** Primera vuelta de una conexión (sin cursor): los cambios de los últimos minutos. */
@@ -130,12 +133,15 @@ export class BookingCalendarSyncService implements OnModuleInit, OnApplicationSh
             g.appts.push(appt);
         }
         const out: CalendarSyncResult = { checked: 0, moved: 0, cancelled: 0 };
-        for (const g of groups.values()) {
+        // v0.1.393 — varios calendarios a la vez (cada uno es esperar a Google
+        // o a Microsoft con la cuenta de SU empresa); antes, de a uno: con
+        // cientos de calendarios conectados, la vuelta pasaba de los 3 minutos.
+        await mapLimit([...groups.values()], GROUP_CONCURRENCY, async (g) => {
             const r = await this.syncGroup(g, now);
             out.checked += r.checked;
             out.moved += r.moved;
             out.cancelled += r.cancelled;
-        }
+        });
         return out;
     }
 

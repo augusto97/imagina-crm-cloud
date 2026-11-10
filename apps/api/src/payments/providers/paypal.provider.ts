@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { BillingPaymentStatus } from '@imagina-base/shared';
 import type { Env } from '../../config/env';
+import { timedFetch } from '../../common/timed-fetch';
 import {
     decodeReference,
     emptyReconcileBatch,
@@ -37,7 +38,7 @@ export class PayPalGateway implements PaymentGateway {
 
     constructor(
         private readonly env: Env,
-        private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init),
+        private readonly fetchImpl: typeof fetch = timedFetch,
     ) {}
 
     private get enabled(): boolean {

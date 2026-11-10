@@ -13508,6 +13508,47 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         IMAP, recordatorios de citas y avisos, resumen diario, recurrencias,
         suscripciones y calendarios, SMS por turnos y retención.
 
+  - [x] **Integraciones y tareas periódicas a escala (v0.1.393, addendum
+        ADR-S98, segunda mitad del pedido de v0.1.392)**: se revisó cada
+        barrido periódico que crece con la cantidad de empresas; cada bug
+        tiene su prueba y la versión anterior la falla.
+        (a) **Recordatorios de citas — bug real**: con más de 200 citas en
+        las próximas dos semanas (de todas las empresas), las primeras 200 por
+        fecha —ya avisadas— tapaban a las demás y el «24 horas antes» salía
+        tarde o no salía. El filtro pasa a la consulta (`VALUES` con los
+        recordatorios de cada página + `JOIN`), por tandas.
+        (b) **Recordatorios de avisos**: los de empresas archivadas tapaban la
+        fila (el filtro iba fuera del `LIMIT … SKIP LOCKED`).
+        (c) **Resumen diario**: una consulta en vez de una transacción por
+        empresa cada hora.
+        (d) **Suscripciones**: las de planes sin el módulo tapaban la fila
+        (se salteaban después del `LIMIT` sin marcarse); 400 por revisión, 8
+        a la vez, con tope de tiempo.
+        (e) **Recurrencias**: la que llegó a su «repetir hasta» se tomaba cada
+        5 minutos para siempre; `recurrences.stopped_value` (migración 0112),
+        tandas con keyset, tope de tiempo y un barrido a la vez.
+        (f) **Buzones IMAP**: un buzón callado pasa a cada 2 y 3 minutos
+        (`pollDelayMs`), el primer correo lo vuelve a cada minuto;
+        `HELPDESK_POLL_CONCURRENCY` (default 8, antes 3).
+        (g) **SMS por turnos** (como mucho 5 por empresa y conexión por tanda).
+        (h) Calendarios 6 a la vez; `timedFetch` (20 s) en Mercado Pago y PayPal
+        de la plataforma.
+        (i) **Redis**: sin `KEYS` ni `SCAN` (claves con versión) y
+        `incrWithTtl` atómico en Lua en todos los frenos y cupos.
+        (j) **Retención** (`RetentionService`, cada hora): avisos,
+        recordatorios, Problemas resueltos, corridas de agentes, SMS y el
+        historial de ediciones masivas, con índices BRIN; la actividad y la
+        bitácora NO se borran.
+        (k) Tienda y sitio: avisos y cambios desde la app en su propia cola
+        (`store-sync-live`, `site-sync-live`).
+        (l) Arranque: horarios re-registrados 16 a la vez sin cortarse por
+        uno que falla.
+        Tests: `retention.spec` (nuevo) y casos nuevos en `booking`,
+        `notifications`, `helpdesk`, `recurrences`, `subscriptions` y `sms`
+        (los de recordatorios de citas, suscripciones y SMS verificados contra
+        la versión anterior: fallan) — 22 specs afectados 390/390, front
+        835/835.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
