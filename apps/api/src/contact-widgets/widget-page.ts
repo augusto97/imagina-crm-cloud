@@ -80,6 +80,13 @@ a{color:inherit}
 .w-company{font-weight:600;font-size:13px;opacity:.9}
 .w-title{margin:0;font-size:20px;line-height:1.25;font-weight:700;letter-spacing:-.01em}
 .w-sub{margin:6px 0 0;font-size:14px;opacity:.88}
+.w-status{display:inline-flex;align-items:center;gap:7px;margin-top:10px;font-size:12.5px;font-weight:600;opacity:.92}
+.w-dot{width:8px;height:8px;border-radius:999px;background:#98a2b3;box-shadow:0 0 0 2px rgba(255,255,255,.35)}
+.w-dot.w-on{background:#22c55e}
+.w-closed{position:relative;z-index:2;margin:0 0 9px;padding:11px 13px;background:#fff8e6;border:1px solid #f6e3b4;border-radius:12px;color:#5b4512;font-size:13.5px;line-height:1.4}
+.w-closed p{margin:0}
+.w-closed .w-closed-when{margin-top:4px;font-weight:650}
+[hidden]{display:none!important}
 .w-x{position:absolute;top:12px;right:12px;width:34px;height:34px;border:0;border-radius:999px;background:rgba(255,255,255,.18);color:inherit;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;z-index:1}
 .w-x:hover{background:rgba(255,255,255,.28)}
 .w-x svg{width:18px;height:18px}

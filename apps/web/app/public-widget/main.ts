@@ -13,11 +13,17 @@
  * de qué botón viene (se lo dice este script) y, al enviarlo, el servidor
  * devuelve el enlace de WhatsApp con el mensaje armado.
  *
+ * v0.1.395 — Horario de atención: la página decide con SU reloj si ahora
+ * está abierto (el horario y los festivos llegan resueltos del servidor, así
+ * la caché no se invalida cada minuto). Los botones «sólo en horario» o
+ * «sólo fuera de horario» se muestran u ocultan solos cuando llega la hora.
+ *
  * Todo se arma con `createElement`/`textContent`: ningún texto de la empresa
- * llega como HTML. Sin imports de código: se compila a un archivo que el
- * servidor sirve EN LÍNEA (con su CSP por hash).
+ * llega como HTML. Se compila a un archivo que el servidor sirve EN LÍNEA
+ * (con su CSP por hash); de shared sólo importa la lógica pura del horario.
  */
 import type { PublicWidgetButton, PublicWidgetMeta, WidgetIcon } from '@imagina-base/shared';
+import { widgetButtonShown, widgetClosesAt, widgetIsOpen, widgetNextOpening, widgetNextOpeningText } from '@imagina-base/shared/src/schemas/widget-hours';
 
 interface Boot {
     preview: boolean;
@@ -56,6 +62,23 @@ let contextReady = false;
 let open = false;
 /** El botón cuyo formulario/agenda está abierto en el panel (null = el inicio). */
 let current: PublicWidgetButton | null = null;
+/**
+ * v0.1.395 — ¿Abierto ahora? (null = sin horario). En la vista previa del
+ * editor se puede forzar para ver cómo queda en horario y fuera de horario.
+ */
+let forcedOpen: boolean | null = null;
+let openNow: boolean | null = null;
+
+function computeOpen(): boolean | null {
+    if (!meta?.hours) return null;
+    if (PREVIEW && forcedOpen !== null) return forcedOpen;
+    return widgetIsOpen(meta.hours, new Date());
+}
+
+/** Los botones que se ven ahora (según el horario). */
+function shownButtons(): PublicWidgetButton[] {
+    return meta ? meta.buttons.filter((b) => widgetButtonShown(b.when, openNow)) : [];
+}
 
 // ─────────────────────────── Íconos ───────────────────────────
 
@@ -135,7 +158,7 @@ function isMobile(): boolean {
 }
 
 function showsBar(): boolean {
-    return !!meta && meta.mobile_bar && isMobile() && meta.buttons.length > 0;
+    return !!meta && meta.mobile_bar && isMobile() && shownButtons().length > 0;
 }
 
 /** El panel ocupa la pantalla: celular, abierto, y no es el menú de botones. */
@@ -177,6 +200,10 @@ let viewBack: HTMLButtonElement | null = null;
 let frameWrap: HTMLElement | null = null;
 let menu: HTMLUListElement | null = null;
 let bar: HTMLElement | null = null;
+let statusEl: HTMLElement | null = null;
+let closedEl: HTMLElement | null = null;
+/** Lo que se pintó de la barra (se rearma sólo si cambian los botones a la vista). */
+let barKey = '';
 /** Un marco por botón, armado UNA vez: moverlo o recrearlo lo recargaría (y se perdería lo escrito). */
 const frames = new Map<string, HTMLIFrameElement>();
 
@@ -219,6 +246,7 @@ function optionNode(b: PublicWidgetButton): HTMLElement {
     node.style.setProperty('--b-color', b.color);
     node.style.setProperty('--b-ink', inkOf(b.color));
     node.setAttribute('data-testid', `widget-option-${b.id}`);
+    node.setAttribute('data-btn', b.id);
     const ic = el('span', 'w-opt-ic');
     ic.appendChild(icon(b.icon));
     const txt = el('span', 'w-opt-txt');
@@ -233,6 +261,7 @@ function optionNode(b: PublicWidgetButton): HTMLElement {
 
 function menuItem(b: PublicWidgetButton): HTMLLIElement {
     const li = el('li', 'w-mi');
+    li.setAttribute('data-btn', b.id);
     li.appendChild(el('span', 'w-mi-label', b.label));
     const btn = b.frame ? el('button', 'w-mi-btn') : el('a', 'w-mi-btn');
     if (btn instanceof HTMLButtonElement) btn.type = 'button';
@@ -299,8 +328,22 @@ function build(): void {
     }
     head.appendChild(el('h2', 'w-title', meta.title));
     if (meta.subtitle) head.appendChild(el('p', 'w-sub', meta.subtitle));
+    // v0.1.395 — «● En línea» / «Fuera de horario».
+    statusEl = null;
+    closedEl = null;
+    if (meta.hours?.show_status) {
+        statusEl = el('div', 'w-status');
+        statusEl.setAttribute('data-testid', 'widget-status');
+        statusEl.setAttribute('role', 'status');
+        head.appendChild(statusEl);
+    }
     head.appendChild(closeButton('Cerrar'));
     const body = el('div', 'w-body');
+    if (meta.hours) {
+        closedEl = el('div', 'w-closed');
+        closedEl.setAttribute('data-testid', 'widget-closed');
+        body.appendChild(closedEl);
+    }
     const opts = el('div', 'w-opts');
     for (const b of meta.buttons) opts.appendChild(optionNode(b));
     body.appendChild(opts);
@@ -345,12 +388,26 @@ function build(): void {
     root.append(panel, menu, launcher);
     app.appendChild(root);
 
-    // Barra fija del celular.
+    // Barra fija del celular (sus botones se arman en `paintBar`, según el horario).
     bar = el('nav', 'w-bar w-hidden');
     bar.setAttribute('aria-label', 'Contacto');
     bar.setAttribute('data-testid', 'widget-bar');
-    const many = meta.buttons.length > 3;
-    const shown = many ? meta.buttons.slice(0, 2) : meta.buttons;
+    barKey = '';
+    app.appendChild(bar);
+    openNow = computeOpen();
+    paint();
+    scheduleHoursTick();
+}
+
+function paintBar(): void {
+    if (!bar || !meta) return;
+    const visible = shownButtons();
+    const key = visible.map((b) => b.id).join(',');
+    if (key === barKey) return;
+    barKey = key;
+    bar.textContent = '';
+    const many = visible.length > 3;
+    const shown = many ? visible.slice(0, 2) : visible;
     for (const b of shown) {
         const n = b.frame ? el('button') : el('a');
         if (n instanceof HTMLButtonElement) n.type = 'button';
@@ -374,8 +431,36 @@ function build(): void {
         more.addEventListener('click', () => setOpen(true));
         bar.appendChild(more);
     }
-    app.appendChild(bar);
-    paint();
+}
+
+/** v0.1.395 — El estado del horario en el panel: «● En línea» o «Fuera de horario» y cuándo abre. */
+function paintHours(): void {
+    if (!meta) return;
+    const h = meta.hours;
+    if (statusEl && h) {
+        statusEl.textContent = '';
+        const dot = el('span', `w-dot${openNow ? ' w-on' : ''}`);
+        statusEl.append(dot, document.createTextNode(openNow ? h.online_label : 'Fuera de horario'));
+    }
+    if (closedEl && h) {
+        closedEl.hidden = openNow !== false;
+        closedEl.textContent = '';
+        if (openNow === false) {
+            if (h.closed_message) closedEl.appendChild(el('p', '', h.closed_message));
+            const when = PREVIEW && forcedOpen === false ? null : widgetNextOpeningText(h, new Date(), viewerTz());
+            if (when) closedEl.appendChild(el('p', 'w-closed-when', `${when}.`));
+        }
+    }
+}
+
+/** La zona de quien mira (el navegador): lee la hora de apertura en su reloj. */
+function viewerTz(): string {
+    const fallback = meta?.hours?.tz ?? 'UTC';
+    try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || fallback;
+    } catch {
+        return fallback;
+    }
 }
 
 // ─────────────────────────── Abrir y cerrar ───────────────────────────
@@ -383,7 +468,9 @@ function build(): void {
 function onLauncher(e: Event): void {
     if (!meta) return;
     // Un solo botón: el botón redondo ES ese botón (no hay nada que elegir).
-    const only = meta.buttons.length === 1 ? meta.buttons[0]! : null;
+    // Fuera de horario se abre el panel aunque haya uno: dice cuándo abrimos.
+    const visible = shownButtons();
+    const only = visible.length === 1 && !(openNow === false && meta.layout === 'card') ? visible[0]! : null;
     if (!open && only && !only.frame) {
         if (PREVIEW) return onPick(only, e);
         window.open(hrefOf(only), only.target === '_top' ? '_top' : '_blank', only.target === '_blank' ? 'noopener' : undefined);
@@ -432,9 +519,15 @@ function openView(b: PublicWidgetButton): void {
     window.setTimeout(() => viewBack?.focus(), 30);
 }
 
+/** ¿Hay un «inicio» al que volver? (no en el menú de botones ni con un solo botón). */
+function hasHome(): boolean {
+    if (!meta || meta.layout === 'menu') return false;
+    return shownButtons().length > 1 || openNow === false;
+}
+
 function showHome(): void {
     // En el menú de botones (o con un solo botón) no hay «inicio»: volver cierra.
-    if (!meta || meta.layout === 'menu' || meta.buttons.length === 1) {
+    if (!hasHome()) {
         setOpen(false);
         return;
     }
@@ -465,8 +558,16 @@ function paint(): void {
     home.style.display = current ? 'none' : 'contents';
     viewBox.style.display = current ? 'flex' : 'none';
     if (current && viewTitle) viewTitle.textContent = current.label;
-    if (viewBack) viewBack.style.visibility = meta.layout === 'menu' || meta.buttons.length === 1 ? 'hidden' : 'visible';
+    if (viewBack) viewBack.style.visibility = hasHome() ? 'visible' : 'hidden';
     for (const [id, f] of frames) f.style.display = current?.id === id ? 'block' : 'none';
+
+    // v0.1.395 — los botones según el horario (el formulario abierto no se cierra si cambia la hora).
+    const visible = new Set(shownButtons().map((b) => b.id));
+    app.querySelectorAll<HTMLElement>('[data-btn]').forEach((n) => {
+        n.hidden = !visible.has(n.getAttribute('data-btn') ?? '');
+    });
+    paintBar();
+    paintHours();
 
     // WhatsApp directo: la página de donde viene va en el enlace.
     app.querySelectorAll<HTMLAnchorElement>('a[data-href-for]').forEach((a) => {
@@ -562,7 +663,7 @@ window.addEventListener('message', (e: MessageEvent) => {
             host = d.host as HostInfo;
             paint();
         } else if (d.type === 'imb-w-close') {
-            if (current && meta?.layout === 'card' && meta.buttons.length > 1) showHome();
+            if (current && hasHome()) showHome();
             else setOpen(false);
         } else if (d.type === 'imb-conversion-ack') {
             // El sitio recibió la conversión: se lo decimos al formulario.
@@ -570,6 +671,7 @@ window.addEventListener('message', (e: MessageEvent) => {
         } else if (d.type === 'imb-w-preview' && PREVIEW && e.origin === location.origin) {
             meta = (d.meta as PublicWidgetMeta | null) ?? null;
             if (d.host && typeof d.host === 'object') host = d.host as HostInfo;
+            forcedOpen = typeof d.hours_open === 'boolean' ? d.hours_open : null;
             const wasOpen = d.open === true;
             build();
             if (wasOpen) setOpen(true);
@@ -599,9 +701,28 @@ window.addEventListener('message', (e: MessageEvent) => {
 document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || !open) return;
     e.preventDefault();
-    if (current && meta?.layout === 'card' && meta.buttons.length > 1) showHome();
+    if (current && hasHome()) showHome();
     else setOpen(false);
 });
+
+// ─────────────────────────── El reloj del horario ───────────────────────────
+
+let hoursTimer = 0;
+/** Revisa el horario justo cuando cambia (y, por las dudas, cada minuto). */
+function scheduleHoursTick(): void {
+    window.clearTimeout(hoursTimer);
+    if (!meta?.hours) return;
+    const now = new Date();
+    const next = openNow ? widgetClosesAt(meta.hours, now) : widgetNextOpening(meta.hours, now);
+    const wait = next ? Math.min(60_000, Math.max(1_000, next.getTime() - now.getTime() + 500)) : 60_000;
+    hoursTimer = window.setTimeout(() => {
+        const was = openNow;
+        openNow = computeOpen();
+        if (was !== openNow) paint();
+        else paintHours();
+        scheduleHoursTick();
+    }, wait);
+}
 
 // ─────────────────────────── Arranque ───────────────────────────
 

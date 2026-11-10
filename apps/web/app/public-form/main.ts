@@ -75,6 +75,12 @@ const inPopup = embedded && (window.name === 'imagina-popup' || inWidget);
 const DEMO_PARAMS = new URLSearchParams(location.search);
 const DEMO = DEMO_PARAMS.get('imb_demo') === '1';
 const DEMO_STYLE = DEMO ? DEMO_PARAMS.get('imb_style') : null;
+/**
+ * v0.1.395 — Abierto como chat (lo pide el widget de contacto con
+ * `?imb_chat=1`): una pregunta por burbuja, aunque el formulario esté armado
+ * «todo a la vista». Sólo cambia cómo se ve; lo que se guarda es lo mismo.
+ */
+const CHAT_PARAM = DEMO_PARAMS.get('imb_chat') === '1';
 
 const CONSENT = '__consent';
 /** v0.1.368 — el error de «elige un plan» (no es una pregunta). */
@@ -723,9 +729,13 @@ function fmtNum(n: number): string {
 function paged(): boolean {
     return pages.length > 1;
 }
-/** v0.1.357 — ¿Una pregunta por pantalla? */
+/** v0.1.357 — ¿Una pregunta por pantalla? (también como chat). */
 function conversational(): boolean {
-    return meta?.layout === 'conversational';
+    return meta?.layout === 'conversational' || chatMode();
+}
+/** v0.1.395 — ¿Como un chat? (lo elige el formulario o lo pide el widget que lo abre). */
+function chatMode(): boolean {
+    return meta?.layout === 'chat' || (CHAT_PARAM && !BOOT.preview);
 }
 function isQuestion(i: Item): boolean {
     return (i.type === 'field' && !i.hidden) || i.type === 'matrix';
@@ -1887,7 +1897,8 @@ function previewable(node: HTMLElement, id: string, label?: string): void {
 }
 
 function fieldNode(i: FieldItem, controls: Record<string, Control>): HTMLElement {
-    const float = view()?.label_position === 'floating' && FLOAT_TYPES.has(i.field_type) && !i.hide_label;
+    // En el chat la pregunta va en su burbuja (nunca dentro del campo).
+    const float = view()?.label_position === 'floating' && FLOAT_TYPES.has(i.field_type) && !i.hide_label && !chatMode();
     const c = control(i, float);
     controls[i.id] = c;
     const node = el('div', { cls: `ib-item ib-field ib-type-${i.field_type} ib-show-${i.display} ib-w-${i.width ?? 'full'}${float ? ' ib-float' : ''}` });
@@ -2034,8 +2045,10 @@ function paintPages(): void {
         dotsEl.textContent = '';
         for (let k = 1; k <= total; k++) dotsEl.appendChild(el('span', { cls: k <= pos ? 'ib-on' : '' }));
     }
+    paintChatLog(vis);
     const last = isLastPage();
-    if (prevBtn) prevBtn.hidden = pos <= 1;
+    // En el chat se vuelve tocando una respuesta de arriba.
+    if (prevBtn) prevBtn.hidden = pos <= 1 || chatMode();
     if (nextBtn) nextBtn.hidden = last;
     if (submitBtn) submitBtn.hidden = !last;
     if (captchaBox) captchaBox.hidden = !last;
@@ -2045,11 +2058,17 @@ function paintPages(): void {
 }
 
 function goToPage(idx: number, focus = true): void {
+    const forward = idx > current;
     current = idx;
     paintPages();
     if (startedAt) trackStep();
     persistLocal();
     if (alertBox) alertBox.hidden = true;
+    if (chatMode()) {
+        chatReveal(forward && focus);
+        reportHeight();
+        return;
+    }
     if (focus) {
         const target = stepsLabel?.parentElement?.parentElement ?? root;
         try {
@@ -2060,6 +2079,91 @@ function goToPage(idx: number, focus = true): void {
         focusCurrent();
     }
     reportHeight();
+}
+
+// ───────────────────────────── Chat (v0.1.395) ─────────────────────────────
+
+let chatLog: HTMLElement | null = null;
+let chatTimer = 0;
+
+/** La respuesta de una pregunta como la lee la persona (en su burbuja). */
+function chatAnswer(i: Item): string {
+    if (!meta) return '';
+    if (i.type === 'matrix') {
+        return i.rows
+            .map((r) => {
+                const t = formAnswerText(meta!.items as never, r.key, values, fmtNum);
+                return t ? `${r.label}: ${t}` : '';
+            })
+            .filter(Boolean)
+            .join('\n');
+    }
+    if (i.type !== 'field') return '';
+    if (i.field_type === 'file') return (uploads[i.key] ?? []).map((u) => u.name).join(', ');
+    if (i.display === 'signature') return empty(values[i.key]) ? '' : 'Firmado ✓';
+    let text = formAnswerText(meta.items as never, i.key, values, fmtNum);
+    if (i.other && choseOther(i)) {
+        const o = values[i.other.key];
+        if (typeof o === 'string' && o.trim()) text = `${text}: ${o.trim()}`;
+    }
+    return text;
+}
+
+function chatBubble(text: string, cls = 'ib-chat-bot'): HTMLElement {
+    return el('div', { cls, text });
+}
+
+/**
+ * Lo ya respondido, arriba: cada pregunta en una burbuja y su respuesta en
+ * otra. Tocar una respuesta vuelve a esa pregunta (como «Anterior»).
+ */
+function paintChatLog(vis: number[]): void {
+    if (!chatLog || !meta) return;
+    chatLog.textContent = '';
+    const before = vis.filter((i) => i < current);
+    for (const vi of before) {
+        for (const it of pages[vi]!.items) {
+            if (!BOOT.preview && !visible(it)) continue;
+            if (it.type === 'heading' || it.type === 'text') {
+                const t = recall(it.text).trim();
+                if (t) chatLog.appendChild(chatBubble(t));
+                continue;
+            }
+            if (it.type !== 'field' && it.type !== 'matrix') continue;
+            if (it.type === 'field' && it.hidden) continue;
+            chatLog.appendChild(chatBubble(recall(it.label)));
+            const answer = chatAnswer(it);
+            const me = el('button', { type: 'button', cls: answer ? 'ib-chat-me' : 'ib-chat-me ib-chat-empty', text: answer || 'Sin responder' });
+            me.setAttribute('aria-label', `Cambiar tu respuesta a «${recall(it.label)}»: ${answer || 'sin responder'}`);
+            me.setAttribute('data-testid', 'form-chat-answer');
+            me.addEventListener('click', () => {
+                if (!BOOT.preview) goToPage(vi);
+            });
+            chatLog.appendChild(me);
+        }
+    }
+    chatLog.hidden = chatLog.childElementCount === 0;
+}
+
+/** La pregunta nueva aparece después de «escribiendo…» (salvo con «reducir movimiento»). */
+function chatReveal(typing: boolean): void {
+    const box = pageEls[current];
+    window.clearTimeout(chatTimer);
+    pageEls.forEach((n) => n.classList.remove('ib-chat-typing'));
+    const finish = (): void => {
+        box?.classList.remove('ib-chat-typing');
+        try {
+            window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+        } catch {
+            window.scrollTo(0, document.documentElement.scrollHeight);
+        }
+        focusCurrent();
+        reportHeight();
+    };
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!typing || reduced || BOOT.preview || !box) return finish();
+    box.classList.add('ib-chat-typing');
+    chatTimer = window.setTimeout(finish, 520);
 }
 
 /**
@@ -2118,7 +2222,8 @@ function shell(): HTMLElement {
 function applyBodyClasses(): void {
     const v = view();
     const cls = ['ib-body', ...(v?.classes ?? [])];
-    if (meta?.layout === 'conversational') cls.push('ib-layout-conv');
+    if (conversational()) cls.push('ib-layout-conv');
+    if (chatMode()) cls.push('ib-layout-chat');
     // Insertado de verdad, o la vista previa «En tu sitio» del constructor.
     const asEmbed = (embedded && !BOOT.preview) || (BOOT.preview && previewEmbed);
     if (asEmbed) cls.push('ib-embedded');
@@ -2204,6 +2309,7 @@ function render(keepPage: boolean): void {
     consentCb = null;
     consentBox = null;
     planBox = null;
+    chatLog = null;
     captchaMounted = false;
     captchaWidget = null;
     captchaToken = null;
@@ -2250,7 +2356,11 @@ function render(keepPage: boolean): void {
     const form = el('form', { cls: 'ib-form', novalidate: true });
     const controls: Record<string, Control> = {};
     const progress = view()?.progress ?? 'bar';
-    if (paged() && progress !== 'none') {
+    // v0.1.395 — en el chat el avance ya se ve (lo respondido queda arriba).
+    if (chatMode()) {
+        chatLog = el('div', { cls: 'ib-chat-log', 'aria-live': 'polite', hidden: true });
+        form.appendChild(chatLog);
+    } else if (paged() && progress !== 'none') {
         stepsLabel = el('strong', { tabindex: '-1' });
         const top = el('div', { cls: 'ib-steps-top' }, [stepsLabel]);
         if (progress === 'steps' && !(conversational() && pages.length > 12)) {

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { PublicWidgetHours } from './widget-hours';
 
 // El navegador y node lo tienen; shared no carga las librerías del DOM.
 declare const URL: { new (input: string): { protocol: string; href: string } };
@@ -41,6 +42,51 @@ export const WIDGET_PHONE_RE = /^\+[1-9]\d{6,14}$/;
 const hex = z.string().regex(HEX_RE);
 const refId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 
+/** v0.1.395 — Cuántas personas pueden atender un mismo botón de WhatsApp. */
+export const WIDGET_MAX_ADVISORS = 10;
+
+/**
+ * v0.1.395 — Una persona que atiende el WhatsApp de un botón. Con varias, el
+ * servidor reparte las conversaciones (por turnos o al azar) y nadie ve la
+ * lista de números en el sitio. `user_id` (opcional) es la persona del
+ * equipo: con «datos primero», el registro queda asignado a ella.
+ */
+export const widgetAdvisorSchema = z.object({
+    id: z.string().regex(WIDGET_BUTTON_ID_RE),
+    name: z.string().trim().max(60).catch('').default(''),
+    phone: z.string().trim().max(40).catch('').default(''),
+    user_id: refId.nullable().catch(null).default(null),
+});
+export type WidgetAdvisor = z.infer<typeof widgetAdvisorSchema>;
+
+export const WIDGET_ROTATIONS = ['round_robin', 'random'] as const;
+export type WidgetRotation = (typeof WIDGET_ROTATIONS)[number];
+
+/** v0.1.395 — Cuándo se ve un botón, con el horario de atención activo. */
+export const WIDGET_WHEN = ['always', 'open', 'closed'] as const;
+export type WidgetWhen = (typeof WIDGET_WHEN)[number];
+
+/** Una lista que tolera lo roto: lo que no se entiende se descarta y el resto queda. */
+function tolerantList<T extends z.ZodTypeAny>(item: T, max: number) {
+    return z.preprocess((raw) => {
+        if (!Array.isArray(raw)) return [];
+        const out: unknown[] = [];
+        const seen = new Set<string>();
+        for (const x of raw) {
+            const p = item.safeParse(x);
+            if (!p.success) continue;
+            const id = (p.data as { id?: unknown }).id;
+            if (typeof id === 'string') {
+                if (seen.has(id)) continue;
+                seen.add(id);
+            }
+            out.push(p.data);
+            if (out.length >= max) break;
+        }
+        return out;
+    }, z.array(item).max(max));
+}
+
 export const widgetButtonSchema = z.object({
     id: z.string().regex(WIDGET_BUTTON_ID_RE),
     type: z.enum(WIDGET_BUTTON_TYPES),
@@ -69,8 +115,109 @@ export const widgetButtonSchema = z.object({
     url: z.string().trim().max(1000).catch('').default(''),
     /** Enlace: en otra pestaña (si no, en la misma). */
     new_tab: z.boolean().catch(true).default(true),
+    /**
+     * v0.1.395 — WhatsApp: varias personas atienden (vacío = el número del
+     * botón). El servidor elige a quién le llega cada conversación.
+     */
+    advisors: tolerantList(widgetAdvisorSchema, WIDGET_MAX_ADVISORS).catch([]).default([]),
+    rotation: z.enum(WIDGET_ROTATIONS).catch('round_robin').default('round_robin'),
+    /**
+     * v0.1.395 — Con «datos primero» y varias personas: el campo «Persona» de
+     * la lista del formulario donde queda quién atiende (null = no se asigna).
+     */
+    assign_field_id: refId.nullable().catch(null).default(null),
+    /** v0.1.395 — El formulario (o el de «datos primero») se abre como un chat: una pregunta por burbuja. */
+    as_chat: z.boolean().catch(true).default(true),
+    /** v0.1.395 — Con horario: siempre, sólo en horario o sólo fuera de horario. */
+    when: z.enum(WIDGET_WHEN).catch('always').default('always'),
 });
 export type WidgetButton = z.infer<typeof widgetButtonSchema>;
+
+// ─────────────────────── Horario de atención (v0.1.395) ───────────────────────
+
+const HHMM_RE = /^(([01]\d|2[0-3]):[0-5]\d|24:00)$/;
+export const WIDGET_MAX_INTERVALS_PER_DAY = 6;
+
+export interface WidgetInterval {
+    start: string;
+    end: string;
+}
+
+function hhmmMinutes(v: string): number {
+    const [h, m] = v.split(':').map(Number) as [number, number];
+    return h * 60 + m;
+}
+
+/** Lunes a viernes de 8 a 18 y el sábado de 9 a 13: el punto de partida. */
+export function defaultWidgetWeek(): WidgetInterval[][] {
+    const weekday = (): WidgetInterval[] => [{ start: '08:00', end: '18:00' }];
+    return [[], weekday(), weekday(), weekday(), weekday(), weekday(), [{ start: '09:00', end: '13:00' }]];
+}
+
+/** 7 días (0 = domingo) con sus tramos válidos, ordenados y sin solaparse. */
+function cleanWeek(raw: unknown): WidgetInterval[][] {
+    if (!Array.isArray(raw) || raw.length !== 7) return defaultWidgetWeek();
+    return raw.map((day) => {
+        if (!Array.isArray(day)) return [];
+        const list = day
+            .filter((i): i is WidgetInterval => !!i && typeof i === 'object' && HHMM_RE.test(String((i as WidgetInterval).start)) && HHMM_RE.test(String((i as WidgetInterval).end)))
+            .map((i) => ({ start: String(i.start), end: String(i.end) }))
+            .filter((i) => hhmmMinutes(i.end) > hhmmMinutes(i.start))
+            .sort((a, b) => hhmmMinutes(a.start) - hhmmMinutes(b.start));
+        const out: WidgetInterval[] = [];
+        for (const i of list) {
+            const last = out[out.length - 1];
+            if (last && hhmmMinutes(i.start) < hhmmMinutes(last.end)) continue;
+            out.push(i);
+            if (out.length >= WIDGET_MAX_INTERVALS_PER_DAY) break;
+        }
+        return out;
+    });
+}
+
+export const WIDGET_DEFAULT_CLOSED_MESSAGE = 'Ahora estamos fuera de horario. Déjanos tus datos y te escribimos apenas abramos.';
+export const WIDGET_DEFAULT_ONLINE_LABEL = 'En línea';
+
+export const widgetHoursSchema = z.object({
+    enabled: z.boolean().catch(false).default(false),
+    /** null = la zona de la empresa (ADR-S33). */
+    timezone: z.string().trim().max(64).nullable().catch(null).default(null),
+    week: z.preprocess(cleanWeek, z.array(z.array(z.object({ start: z.string(), end: z.string() })).max(WIDGET_MAX_INTERVALS_PER_DAY)).length(7)),
+    /** Festivos de un país cierran el día (null = no). Mismo catálogo que la agenda. */
+    holiday_country: z.string().regex(/^[A-Z]{2}$/).nullable().catch(null).default(null),
+    /** «● En línea» / «Fuera de horario» en el saludo del panel. */
+    show_status: z.boolean().catch(true).default(true),
+    online_label: z.string().trim().max(40).catch(WIDGET_DEFAULT_ONLINE_LABEL).default(WIDGET_DEFAULT_ONLINE_LABEL),
+    /** Lo que dice el panel fuera de horario. */
+    closed_message: z.string().trim().max(200).catch(WIDGET_DEFAULT_CLOSED_MESSAGE).default(WIDGET_DEFAULT_CLOSED_MESSAGE),
+});
+export type WidgetHours = z.infer<typeof widgetHoursSchema>;
+
+export function defaultWidgetHours(): WidgetHours {
+    return widgetHoursSchema.parse({});
+}
+
+/** ¿El horario tiene al menos un tramo? */
+export function widgetHoursHasDays(h: Pick<WidgetHours, 'week'>): boolean {
+    return h.week.some((d) => d.length > 0);
+}
+
+/**
+ * Lo público del horario. Los días cerrados (festivos de los próximos días)
+ * los resuelve el servidor: la página no carga el calendario de festivos.
+ */
+export function buildPublicWidgetHours(h: WidgetHours, ctx: { tz: string; closedDates: string[]; timeFormat: 'h12' | 'h24' }): PublicWidgetHours | null {
+    if (!h.enabled || !widgetHoursHasDays(h)) return null;
+    return {
+        tz: ctx.tz,
+        week: h.week.map((d) => d.map((i): [number, number] => [hhmmMinutes(i.start), hhmmMinutes(i.end)])),
+        closed_dates: [...ctx.closedDates].sort(),
+        show_status: h.show_status,
+        online_label: h.online_label || WIDGET_DEFAULT_ONLINE_LABEL,
+        closed_message: h.closed_message,
+        time_format: ctx.timeFormat,
+    };
+}
 
 export const WIDGET_DEFAULT_TITLE = '¡Hola! ¿En qué te ayudamos?';
 export const WIDGET_DEFAULT_SUBTITLE = 'Elige cómo prefieres hablar con nosotros.';
@@ -103,6 +250,8 @@ export const contactWidgetConfigSchema = z.object({
     buttons: z.array(widgetButtonSchema).max(WIDGET_MAX_BUTTONS).default([]),
     /** Los sitios que pueden mostrarlo (vacío = cualquiera). */
     allowed_domains: z.array(z.string().trim().max(200)).max(20).catch([]).default([]),
+    /** v0.1.395 — Horario de atención: qué botones se ven y el aviso fuera de horario. */
+    hours: widgetHoursSchema.catch(defaultWidgetHours).default(defaultWidgetHours),
 });
 export type ContactWidgetConfig = z.infer<typeof contactWidgetConfigSchema>;
 
@@ -192,6 +341,8 @@ export function widgetText(template: string, resolve: (key: string) => string | 
 
 /** Las variables que entiende el mensaje de WhatsApp SIN formulario. */
 export const WIDGET_PAGE_VARS = ['pagina', 'url'] as const;
+/** v0.1.395 — Con varias personas atendiendo: `{{asesor}}` = el nombre de quien atiende. */
+export const WIDGET_ADVISOR_VAR = 'asesor';
 
 /** `{{pagina}}` = el título de la página (o su dirección); `{{url}}` = la dirección. */
 export function widgetPageVar(key: string, page: { url: string | null; title: string | null }): string | null {
@@ -259,6 +410,17 @@ export function widgetProblems(
 ): WidgetProblem[] {
     const out: WidgetProblem[] = [];
     if (config.buttons.length === 0) out.push({ button_id: null, message: 'Agrega al menos un botón.' });
+    // v0.1.395 — con el horario activo, siempre tiene que quedar algo a la vista.
+    if (config.hours.enabled) {
+        if (!widgetHoursHasDays(config.hours)) out.push({ button_id: null, message: 'Horario de atención: marca al menos un día con horario.' });
+        else if (config.buttons.length > 0) {
+            if (config.buttons.every((b) => b.when === 'open')) {
+                out.push({ button_id: null, message: 'Fuera de horario no quedaría ningún botón: deja alguno «Siempre» o «Sólo fuera de horario».' });
+            } else if (config.buttons.every((b) => b.when === 'closed')) {
+                out.push({ button_id: null, message: 'En horario no quedaría ningún botón: deja alguno «Siempre» o «Sólo en horario».' });
+            }
+        }
+    }
     for (const b of config.buttons) {
         const name = `«${widgetButtonLabel(b)}»`;
         const p = (message: string): void => {
@@ -266,7 +428,15 @@ export function widgetProblems(
         };
         switch (b.type) {
             case 'whatsapp':
-                if (!widgetWhatsappDigits(b.phone)) p(`${name}: escribe el número de WhatsApp con el indicativo del país.`);
+                if (b.advisors.length === 0) {
+                    if (!widgetWhatsappDigits(b.phone)) p(`${name}: escribe el número de WhatsApp con el indicativo del país.`);
+                } else {
+                    // v0.1.395 — con varias personas, cada una con su número.
+                    b.advisors.forEach((a, i) => {
+                        const who = a.name.trim() ? `«${a.name.trim()}»` : `la persona ${i + 1}`;
+                        if (!widgetWhatsappDigits(a.phone)) p(`${name}: escribe el número de WhatsApp de ${who} con el indicativo del país.`);
+                    });
+                }
                 if (b.capture_form_id !== null) formProblem(b.capture_form_id, refs.forms, name, p);
                 break;
             case 'form':
@@ -341,6 +511,8 @@ export interface WidgetFormOption extends WidgetTargetRef {
     public_path: string;
     /** Los nombres de sus preguntas (`{{nombre}}`) para el mensaje de WhatsApp. */
     answer_slugs: Array<{ slug: string; label: string }>;
+    /** v0.1.395 — Los campos «Persona» de su lista (donde puede quedar quién atiende). */
+    person_fields?: Array<{ id: number; label: string }>;
 }
 
 export interface WidgetBookingOption extends WidgetTargetRef {
@@ -356,6 +528,10 @@ export interface ContactWidgetOptions {
     brand_color: string;
     company: string;
     logo_url: string | null;
+    /** v0.1.395 — Las personas del equipo (para «quién atiende»). */
+    members?: Array<{ id: number; name: string }>;
+    /** v0.1.395 — La zona horaria de la empresa (null = todavía no eligió). */
+    timezone?: string | null;
 }
 
 /** Lo que el envío de un formulario abierto desde el widget le cuenta al servidor. */
@@ -389,6 +565,8 @@ export interface PublicWidgetButton {
     frame: string | null;
     /** WhatsApp con datos primero: el panel muestra el formulario y después WhatsApp. */
     capture: boolean;
+    /** v0.1.395 — Con horario: cuándo se ve. */
+    when: WidgetWhen;
 }
 
 export interface PublicWidgetMeta {
@@ -407,6 +585,8 @@ export interface PublicWidgetMeta {
     logo_url: string | null;
     mobile_bar: boolean;
     buttons: PublicWidgetButton[];
+    /** v0.1.395 — El horario de atención (null = siempre «abierto»). */
+    hours: PublicWidgetHours | null;
 }
 
 /**
@@ -439,18 +619,19 @@ export function buildPublicWidgetButton(
         target: null,
         frame: null,
         capture: false,
+        when: b.when,
     };
     const empty = ctx.lenient ? base : null;
     switch (b.type) {
         case 'whatsapp': {
-            if (!widgetWhatsappDigits(b.phone)) return empty;
+            if (!widgetWhatsappReady(b)) return empty;
             const capture = b.capture_form_id !== null ? ctx.formPath(b.capture_form_id) : null;
-            if (capture) return { ...base, frame: capture, capture: true };
+            if (capture) return { ...base, frame: b.as_chat ? widgetChatPath(capture) : capture, capture: true };
             return { ...base, href: ctx.goPath(b.id), target: '_blank' };
         }
         case 'form': {
             const path = b.form_id !== null ? ctx.formPath(b.form_id) : null;
-            return path ? { ...base, frame: path } : empty;
+            return path ? { ...base, frame: b.as_chat ? widgetChatPath(path) : path } : empty;
         }
         case 'booking': {
             const path = b.booking_page_id !== null ? ctx.bookingPath(b.booking_page_id) : null;
@@ -471,12 +652,36 @@ export function buildPublicWidgetButton(
     }
 }
 
+/** v0.1.395 — ¿El botón de WhatsApp tiene a quién escribirle? (su número o, con varias personas, todas con número). */
+export function widgetWhatsappReady(b: Pick<WidgetButton, 'phone' | 'advisors'>): boolean {
+    if (b.advisors.length === 0) return widgetWhatsappDigits(b.phone) !== null;
+    return b.advisors.every((a) => widgetWhatsappDigits(a.phone) !== null);
+}
+
+/** v0.1.395 — La página de un formulario abierta como chat (la página lo lee de la dirección). */
+export function widgetChatPath(path: string): string {
+    return `${path}${path.includes('?') ? '&' : '?'}imb_chat=1`;
+}
+
+/**
+ * v0.1.395 — A quién le llega una conversación: por turnos (el contador que
+ * lleva el servidor) o al azar. Sin personas, null (se usa el número del botón).
+ */
+export function pickWidgetAdvisor(b: Pick<WidgetButton, 'advisors' | 'rotation'>, turn: number, random: () => number = Math.random): WidgetAdvisor | null {
+    const list = b.advisors;
+    if (list.length === 0) return null;
+    if (b.rotation === 'random') return list[Math.min(list.length - 1, Math.floor(random() * list.length))]!;
+    const n = Math.abs(Math.trunc(turn));
+    return list[n % list.length]!;
+}
+
 /** Lo público del widget (sin los botones, que arma `buildPublicWidgetButton`). */
 export function buildPublicWidgetMeta(
     token: string,
     config: ContactWidgetConfig,
     brand: { accent: string; company: string; logoUrl: string | null },
     buttons: PublicWidgetButton[],
+    hours: PublicWidgetHours | null = null,
 ): PublicWidgetMeta {
     const accent = config.color ?? brand.accent;
     return {
@@ -495,6 +700,7 @@ export function buildPublicWidgetMeta(
         logo_url: config.show_logo ? brand.logoUrl : null,
         mobile_bar: config.mobile_bar,
         buttons,
+        hours,
     };
 }
 

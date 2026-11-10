@@ -13603,6 +13603,59 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         chat, asesores, horario, receta de respuesta) y v0.1.396 (saludo, reglas
         por página, estadísticas).
 
+  - [x] **Widget de contacto: varias personas, horario de atención y
+        formularios como un chat (v0.1.395, addendum ADR-S99, segunda de las
+        tres entregas de «Hazlas todas»)**. Sin migración: todo vive en
+        `contact_widgets.config` y `forms.config`.
+        (a) **Varias personas atienden** (`button.advisors`, hasta 10:
+        nombre, teléfono y usuario del equipo opcional; `rotation`
+        `round_robin` | `random`): los números nunca viajan a la página; el
+        `go` y la captura eligen con `pickWidgetAdvisor` (shared) y un `INCR`
+        en Redis por widget y botón (`widget:rr:{widget}:{botón}`, 90 días, con
+        `incrWithTtl`; sin Redis, al azar). `{{asesor}}` en el mensaje.
+        **«Asignar el registro a quien atiende»** (`assign_field_id`, campo
+        Persona de la lista del formulario de captura): el envío del widget
+        (`FormsService.submit` → `captureTarget`) pone a esa persona si la
+        respuesta no trae otra. Al guardar (`cleanConfig`, ahora con la
+        transacción) sólo se aceptan miembros del equipo (`staffRoleSql`, sin
+        cuentas desactivadas) y un campo Persona de esa lista; al servir,
+        `pageInfo` descarta el usuario de quien se fue del equipo.
+        (b) **Horario de atención** (`config.hours`: semana con hasta 6 tramos
+        por día —`WeekHoursEditor` de la agenda—, zona horaria o la de la
+        empresa, festivos del país con `BookingHolidaysService`, «En línea»,
+        mensaje de fuera de horario): la página decide con su reloj
+        (`schemas/widget-hours.ts`, sin zod: `widgetIsOpen`,
+        `widgetNextOpening`, `widgetNextOpeningText` en la hora del visitante)
+        con la semana, los festivos de los próximos 21 días y el formato de hora
+        de la empresa en el meta — la caché pública no se invalida cada minuto y
+        un reloj interno repinta al cambiar de estado. Cada botón elige
+        **cuándo se ve** (`when`: siempre / en horario / fuera de horario);
+        `widgetProblems` avisa si el horario deja al widget sin botones.
+        Pestaña **Horario** del editor (`WidgetHoursEditor`) y vista previa con
+        «Ahora / En horario / Fuera de horario».
+        (c) **Formularios como un chat** (`layout: 'chat'` en
+        `FORM_LAYOUTS`; «Como un chat» en Cómo se responde, la galería y el
+        resumen; `?imb_chat=1` desde el widget con `as_chat` por botón,
+        encendido por defecto, `widgetChatPath`): el modo «una pregunta por
+        pantalla» con piel de conversación en `public-form/main.ts` — la
+        pregunta como mensaje, las respuestas anteriores como burbujas
+        (`.ib-chat-me`, tocarlas vuelve a esa pregunta), «escribiendo…» 520 ms
+        (no con movimiento reducido), sin etiquetas flotantes ni «Anterior»;
+        estilos en `public-theme-css.ts`.
+        (d) **Idea** «Responde por WhatsApp a quien te escribió desde el
+        widget» (`widget-respuesta-whatsapp`): «Cuando se envía un formulario»
+        → mensaje de WhatsApp (WAS texto libre; Meta, plantilla aprobada).
+        (e) El asistente/MCP describe el layout `chat`; migrar una empresa
+        re-mapea el usuario de cada persona que atiende (`remapWidgetConfig`:
+        una que no viajó queda sin usuario, nunca con el de OTRA persona).
+        Ayuda: guía `contact-widget`, Aprende → Formularios (chat, varias
+        personas, horario) con la ilustración nueva `widget-horario`, y
+        novedad con carrusel. Tests: shared 826 (5 nuevos del widget), front
+        843, `contact-widgets.spec` 6/6 (turnos, asignación, rol cliente
+        descartado, horario en el meta con festivos), re-mapeo 24/24 + E2E navegador 32/32 en
+        escritorio claro y celular oscuro. Sigue v0.1.396 (saludo proactivo,
+        reglas por página, estadísticas por botón).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

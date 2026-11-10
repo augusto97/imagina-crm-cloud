@@ -53,10 +53,10 @@ export function Row({ label, hint, children }: { label: string; hint?: string; c
     );
 }
 
-export function Toggle({ label, checked, onChange, hint }: { label: string; checked: boolean; onChange: (v: boolean) => void; hint?: string }): JSX.Element {
+export function Toggle({ label, checked, onChange, hint, testId }: { label: string; checked: boolean; onChange: (v: boolean) => void; hint?: string; testId?: string }): JSX.Element {
     return (
         <label className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-sm">
-            <input type="checkbox" className="imcrm-mt-0.5" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+            <input type="checkbox" className="imcrm-mt-0.5" checked={checked} onChange={(e) => onChange(e.target.checked)} data-testid={testId} />
             <span className="imcrm-flex imcrm-flex-col">
                 <span className="imcrm-text-xs imcrm-font-medium">{label}</span>
                 {hint && <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{hint}</span>}

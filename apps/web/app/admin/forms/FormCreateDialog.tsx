@@ -363,6 +363,7 @@ function TemplateHighlights({ t }: { t: FormTemplate }): JSX.Element {
     const pages = t.items.filter((i) => 'page' in i).length;
     if (pages > 1) chips.push(sprintf(__('%d pasos'), pages));
     if (t.settings.layout === 'conversational') chips.push(__('Una pregunta por pantalla'));
+    if (t.settings.layout === 'chat') chips.push(__('Como un chat'));
     if (t.settings.welcome) chips.push(__('Bienvenida'));
     if (t.items.some((i) => 'q' in i && i.show_if)) chips.push(__('Preguntas que aparecen solas'));
     if (t.calcs?.length) chips.push(__('Puntaje'));

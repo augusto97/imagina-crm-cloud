@@ -1,8 +1,12 @@
 import {
+    WIDGET_ADVISOR_VAR,
+    WIDGET_MAX_ADVISORS,
     WIDGET_MAX_BUTTONS,
     WIDGET_TYPE_INFO,
     buildPublicWidgetButton,
+    buildPublicWidgetHours,
     buildPublicWidgetMeta,
+    resolveTimeZone,
     newWidgetButtonId,
     widgetButtonSchema,
     widgetProblems,
@@ -10,6 +14,7 @@ import {
     type ContactWidgetOptions,
     type PublicWidgetButton,
     type PublicWidgetMeta,
+    type WidgetAdvisor,
     type WidgetButton,
     type WidgetButtonType,
     type WidgetProblem,
@@ -68,7 +73,41 @@ export function previewMeta(config: ContactWidgetConfig, options: ContactWidgetO
             }),
         )
         .filter((b): b is PublicWidgetButton => b !== null);
-    return buildPublicWidgetMeta(PREVIEW_TOKEN, config, { accent, company: options.company, logoUrl: options.logo_url }, buttons);
+    // v0.1.395 — el horario sin festivos (los resuelve el servidor al publicar).
+    const tz = resolveTimeZone(config.hours.timezone, options.timezone, browserTimeZone());
+    const hours = buildPublicWidgetHours(config.hours, { tz, closedDates: [], timeFormat: 'h12' });
+    return buildPublicWidgetMeta(PREVIEW_TOKEN, config, { accent, company: options.company, logoUrl: options.logo_url }, buttons, hours);
+}
+
+/** La zona del navegador (para proponer el horario cuando la empresa no eligió una). */
+export function browserTimeZone(): string | null {
+    try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * v0.1.395 — «Varias personas atienden»: al encenderlo, el número del botón
+ * pasa a ser la primera persona (no se pierde lo escrito).
+ */
+export function startAdvisors(button: WidgetButton): WidgetAdvisor[] {
+    return [{ id: newWidgetButtonId(), name: '', phone: button.phone, user_id: null }];
+}
+
+export function addAdvisor(list: WidgetAdvisor[]): WidgetAdvisor[] {
+    if (list.length >= WIDGET_MAX_ADVISORS) return list;
+    return [...list, { id: newWidgetButtonId(list.map((a) => a.id)), name: '', phone: '', user_id: null }];
+}
+
+export function updateAdvisor(list: WidgetAdvisor[], id: string, patch: Partial<WidgetAdvisor>): WidgetAdvisor[] {
+    return list.map((a) => (a.id === id ? { ...a, ...patch, id: a.id } : a));
+}
+
+/** Al apagarlo, el botón vuelve a un número: el de la primera persona. */
+export function stopAdvisors(button: WidgetButton): Partial<WidgetButton> {
+    return { advisors: [], phone: button.phone || button.advisors[0]?.phone || '', assign_field_id: null };
 }
 
 /** Un botón nuevo, con lo que mejor le sirve a cada tipo ya puesto. */
@@ -123,6 +162,7 @@ export function whatsappVars(button: WidgetButton, options: ContactWidgetOptions
         { key: 'pagina', label: 'La página de tu sitio' },
         { key: 'url', label: 'La dirección de la página' },
     ];
+    if (button.advisors.length > 0) out.push({ key: WIDGET_ADVISOR_VAR, label: 'Quién atiende' });
     if (button.capture_form_id !== null) {
         const f = options.forms.find((x) => x.id === button.capture_form_id);
         if (f) {

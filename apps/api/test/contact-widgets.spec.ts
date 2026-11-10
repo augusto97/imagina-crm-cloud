@@ -11,7 +11,7 @@ import { AutomationDispatcher, type TriggerEvent } from '../src/automations/auto
 import { loadEnv } from '../src/config/env';
 import { ContactWidgetsService } from '../src/contact-widgets/contact-widgets.service';
 import { renderWidgetPage, widgetPageCsp } from '../src/contact-widgets/widget-page';
-import { bookingPages, contactWidgets, forms, records, tenants } from '../src/db/schema';
+import { bookingPages, contactWidgets, forms, memberships, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -54,6 +54,8 @@ describe('v0.1.394 — widget de contacto (Postgres + Redis reales)', () => {
     let files: FilesService;
     let widgets: ContactWidgetsService;
     let formsSvc: FormsService;
+    let recsSvc: RecordsService;
+    let envSvc: ReturnType<typeof loadEnv>;
     let tenantId: number;
     let otherTenantId: number;
     let listId: number;
@@ -92,7 +94,7 @@ describe('v0.1.394 — widget de contacto (Postgres + Redis reales)', () => {
         lists = new ListsService(tenantDb, new ListsRepository(), rt);
         fieldsSvc = new FieldsService(tenantDb, new FieldsRepository(), lists, rt);
         const dispatcher = new NoopDispatcher();
-        const recs = new RecordsService(
+        const recs = (recsSvc = new RecordsService(
             tenantDb,
             new RecordsRepository(),
             lists,
@@ -101,8 +103,8 @@ describe('v0.1.394 — widget de contacto (Postgres + Redis reales)', () => {
             new ActivityService(tenantDb, new ActivityRepository(), lists),
             dispatcher,
             new RelationsRepository(),
-        );
-        const env = loadEnv({ FILES_SIGNING_SECRET: 'widget-secret', APP_BASE_URL: 'https://app.test' });
+        ));
+        const env = (envSvc = loadEnv({ FILES_SIGNING_SECRET: 'widget-secret', APP_BASE_URL: 'https://app.test' }));
         files = new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imb-widget-'))), env);
         widgets = new ContactWidgetsService(pg.db, tenantDb, files);
         // FormsService con el widget (el último @Optional).
@@ -201,7 +203,7 @@ describe('v0.1.394 — widget de contacto (Postgres + Redis reales)', () => {
         const by = Object.fromEntries(meta.buttons.map((b) => [b.id, b]));
         expect(by.wa!.href).toBe(`/api/v1/public/w/${token}/go/wa`);
         expect(by.wa!.color).toBe('#25D366');
-        expect(by.fm!.frame).toBe(`/api/v1/public/f/${lead.token}`);
+        expect(by.fm!.frame).toBe(`/api/v1/public/f/${lead.token}?imb_chat=1`);
         expect(by.ag!.frame).toBe('/api/v1/public/b/agenda-token-1234567890');
         expect(by.tel!.href).toBe('tel:+573004445566');
         expect(by.mail!.href).toBe('mailto:hola@acme.co?subject=Una%20pregunta');
@@ -240,7 +242,7 @@ describe('v0.1.394 — widget de contacto (Postgres + Redis reales)', () => {
         const token = await widgetToken(tenantId, w.id);
         const info = await widgets.cachedPageInfo(token);
         const wa = info!.meta.buttons.find((b) => b.id === 'wa')!;
-        expect(wa).toMatchObject({ capture: true, href: null, frame: `/api/v1/public/f/${lead.token}` });
+        expect(wa).toMatchObject({ capture: true, href: null, frame: `/api/v1/public/f/${lead.token}?imb_chat=1` });
 
         const out = await formsSvc.submit(lead.token, IP, {
             values: { [f.nombre!.id]: 'Ana', [f.celular!.id]: '+57 310 555 1234', [f.plan!.id]: 'pro' },
@@ -281,6 +283,115 @@ describe('v0.1.394 — widget de contacto (Postgres + Redis reales)', () => {
         await redis.flushall();
         const fallback = await new ContactWidgetsService(pg.db, tenantDb, files).cachedPageInfo(token);
         expect(fallback!.meta.buttons.find((b) => b.id === 'wa')).toMatchObject({ capture: false, href: `/api/v1/public/w/${token}/go/wa` });
+    });
+
+    it('v0.1.395 — varias personas: por turnos, el registro queda asignado y {{asesor}} en el mensaje', async () => {
+        const mkUser = async (email: string, name: string, role: string): Promise<number> => {
+            const [u] = await pg.db.insert(users).values({ email, name, passwordHash: 'x' }).returning();
+            await withTenant(pg.db, tenantId, (tx) => tx.insert(memberships).values({ tenantId, userId: u!.id, role: role as never }));
+            return u!.id;
+        };
+        const ana = await mkUser(`ana-${Date.now()}@acme.co`, 'Ana', 'agent');
+        const luis = await mkUser(`luis-${Date.now()}@acme.co`, 'Luis', 'agent');
+        const cliente = await mkUser(`cli-${Date.now()}@acme.co`, 'Cliente', 'client');
+        const asignado = await fieldsSvc.create(tenantId, 'prospectos', { label: 'Asesor', type: 'user', slug: `asesor_${Date.now() % 100000}` } as never);
+        const lead = await leadForm(true);
+        const rr = new ContactWidgetsService(pg.db, tenantDb, files, undefined, redis as never);
+        const w = await rr.create(tenantId, 0, { name: 'Equipo' });
+        const saved = (
+            await rr.update(tenantId, w.id, {
+                enabled: true,
+                config: cfg({
+                    buttons: [
+                        {
+                            id: 'wa',
+                            type: 'whatsapp',
+                            capture_form_id: lead.id,
+                            assign_field_id: asignado.id,
+                            message: 'Hola {{asesor}}, soy {{nombre}}.',
+                            advisors: [
+                                { id: 'a1', name: 'Ana', phone: '+573001110001', user_id: ana },
+                                { id: 'a2', name: 'Luis', phone: '+573001110002', user_id: luis },
+                                // Un cliente del portal no puede "atender": su usuario se descarta (el número queda).
+                                { id: 'a3', name: 'Externo', phone: '+573001110003', user_id: cliente },
+                            ],
+                        },
+                        { id: 'wd', type: 'whatsapp', message: 'Directo con {{asesor}}', advisors: [{ id: 'b1', name: 'Ana', phone: '+573001110001' }, { id: 'b2', name: 'Luis', phone: '+573001110002' }] },
+                    ],
+                }),
+            })
+        ).dto;
+        expect(saved.problems).toEqual([]);
+        expect(saved.config.buttons[0]!.advisors.map((a) => a.user_id)).toEqual([ana, luis, null]);
+        expect(saved.config.buttons[0]!.assign_field_id).toBe(asignado.id);
+        const token = await widgetToken(tenantId, w.id);
+        // Lo público no lleva a nadie.
+        const meta = (await rr.cachedPageInfo(token))!.meta;
+        expect(JSON.stringify(meta)).not.toContain('300111000');
+
+        // Directo: por turnos, cada clic a la siguiente persona.
+        const direct = [] as string[];
+        for (let i = 0; i < 3; i++) direct.push((await rr.whatsappUrl(token, 'wd', { url: null, title: null }))!);
+        expect(direct.map((u) => new URL(u).pathname)).toEqual(['/573001110001', '/573001110002', '/573001110001']);
+        expect(new URL(direct[1]!).searchParams.get('text')).toBe('Directo con Luis');
+
+        // Con datos primero: el registro queda asignado a quien le tocó.
+        const u = undefined;
+        const forms2 = new FormsService(pg.db, tenantDb, lists, fieldsSvc, recsSvc, files, redis as never, new NoopDispatcher(), envSvc, u, u, u, u, u, u, u, u, u, u, u, u, rr);
+        forms2.onModuleInit();
+        const sent: string[] = [];
+        for (const nombre of ['Caro', 'Dani', 'Eva']) {
+            const out = await forms2.submit(lead.token, IP, { values: { [f.nombre!.id]: nombre, [f.celular!.id]: '+573105550000' }, uploads: {}, stamp: stamp(lead.id), widget: { token, button: 'wa' } });
+            sent.push(out.whatsapp!.url);
+        }
+        forms2.onModuleDestroy();
+        expect(sent.map((u) => new URL(u).pathname)).toEqual(['/573001110001', '/573001110002', '/573001110003']);
+        expect(new URL(sent[0]!).searchParams.get('text')).toBe('Hola Ana, soy Caro.');
+        const rows = await withTenant(pg.db, tenantId, (tx) => tx.select({ data: records.data }).from(records).where(eq(records.listId, listId)).orderBy(records.id));
+        expect(rows.map((r) => (r.data as Record<string, unknown>)[`f${asignado.id}`] ?? null)).toEqual([ana, luis, null]);
+
+        // Una persona sin número no deja publicar.
+        await expect(
+            rr.update(tenantId, w.id, { config: cfg({ buttons: [{ id: 'wa', type: 'whatsapp', advisors: [{ id: 'a1', name: 'Sin número', phone: '' }] }] }) }),
+        ).rejects.toMatchObject({ response: { code: 'widget_not_ready' } });
+        await fieldsSvc.remove(tenantId, 'prospectos', String(asignado.id)).catch(() => undefined);
+    });
+
+    it('v0.1.395 — horario: va a la página con los festivos de los próximos días resueltos', async () => {
+        const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+        const plus = (n: number): string => new Date(Date.parse(`${today}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+        const fakeHolidays = {
+            items: async (code: string) =>
+                code === 'CO'
+                    ? [
+                          { date: plus(-3), name: 'Pasado', kind: 'national' },
+                          { date: plus(2), name: 'Nacional', kind: 'national' },
+                          { date: plus(4), name: 'Regional', kind: 'regional' },
+                          { date: plus(60), name: 'Lejos', kind: 'national' },
+                      ]
+                    : null,
+        };
+        await pg.db.update(tenants).set({ settings: { branding: { primary_color: '#7c3aed' }, format: { timezone: 'America/Bogota', time_format: 'h12' } } }).where(eq(tenants.id, tenantId));
+        const hw = new ContactWidgetsService(pg.db, tenantDb, files, undefined, redis as never, fakeHolidays as never);
+        const w = await hw.create(tenantId, 0, { name: 'Horario', whatsapp_phone: '+573001112233' });
+        const config = cfg({
+            hours: { enabled: true, holiday_country: 'CO', timezone: 'Marte/Olimpo' },
+            buttons: [
+                { id: 'wa', type: 'whatsapp', phone: '+573001112233', when: 'open' },
+                { id: 'fm', type: 'call', phone: '+573001112233', when: 'closed' },
+            ],
+        });
+        const saved = (await hw.update(tenantId, w.id, { enabled: true, config })).dto;
+        // Una zona que no existe vuelve a la de la empresa.
+        expect(saved.config.hours.timezone).toBeNull();
+        const meta = (await hw.cachedPageInfo(await widgetToken(tenantId, w.id)))!.meta;
+        expect(meta.hours).toMatchObject({ tz: 'America/Bogota', time_format: 'h12', closed_dates: [plus(2)], online_label: 'En línea' });
+        expect(meta.hours!.week[1]).toEqual([[480, 1080]]);
+        expect(meta.buttons.map((b) => [b.id, b.when])).toEqual([
+            ['wa', 'open'],
+            ['fm', 'closed'],
+        ]);
+        await pg.db.update(tenants).set({ settings: { branding: { primary_color: '#7c3aed', app_name: 'Acme Store' } } }).where(eq(tenants.id, tenantId));
     });
 
     it('la página: CSP con los sitios elegidos, sin nada de afuera, y embed.js con el modo widget', () => {

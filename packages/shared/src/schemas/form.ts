@@ -506,8 +506,13 @@ export const formWelcomeSchema = z.object({
 export type FormWelcome = z.infer<typeof formWelcomeSchema>;
 const FORM_WELCOME_DEFAULT: FormWelcome = { enabled: false, title: '', message: '', button_label: 'Empezar', file_id: null, show_time: true };
 
-/** v0.1.357 — Cómo se responde: todo a la vista (por páginas) o una pregunta por pantalla. */
-export const FORM_LAYOUTS = ['classic', 'conversational'] as const;
+/**
+ * v0.1.357 — Cómo se responde: todo a la vista (por páginas) o una pregunta
+ * por pantalla. v0.1.395 — `chat`: también de a una, pero como una
+ * conversación (la pregunta en una burbuja, la respuesta en otra y lo ya
+ * respondido arriba; tocar una respuesta vuelve a ella).
+ */
+export const FORM_LAYOUTS = ['classic', 'conversational', 'chat'] as const;
 export type FormLayout = (typeof FORM_LAYOUTS)[number];
 
 /** v0.1.356 — Una pantalla final con su condición (null = sólo si un salto lleva a ella). */

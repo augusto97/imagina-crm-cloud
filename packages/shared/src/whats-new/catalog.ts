@@ -2207,4 +2207,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Crear mi widget', href: '/settings?s=widgets' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.395-widget-asesores-horario-chat',
+        version: '0.1.395',
+        date: '2026-11-10',
+        kind: 'feature',
+        title: 'Widget de contacto: varias personas, horario de atención y formularios como un chat',
+        summary:
+            'El WhatsApp del widget puede repartir los contactos entre varias personas por turnos y asignarle el registro a quien le tocó. Fuera de tu horario el widget dice cuándo vuelves a atender, y los formularios que abre se responden como un chat.',
+        media: {
+            slides: [
+                {
+                    title: 'Varias personas atienden',
+                    text: 'Agrega a cada persona con su número: los contactos se reparten por turnos o al azar, y el registro queda asignado a quien le tocó.',
+                    illustration: 'widget-contacto',
+                },
+                {
+                    title: 'Tu horario de atención',
+                    text: 'En horario se ve «En línea»; fuera de horario, cuándo vuelves a atender y sólo los botones que elijas, como el formulario. Respeta los festivos de tu país.',
+                    illustration: 'widget-horario',
+                },
+                {
+                    title: 'Formularios como un chat',
+                    text: 'Los formularios del widget se responden una pregunta a la vez, como una conversación. También puedes elegir «Como un chat» en cualquier formulario.',
+                    illustration: 'form-conversational',
+                },
+            ],
+        },
+        body: 'En **Ajustes → Widget de contacto** edita tu widget: **Varias personas atienden** está en el botón de WhatsApp y el horario en la pestaña **Horario**.',
+        action: { label: 'Editar mi widget', href: '/settings?s=widgets' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

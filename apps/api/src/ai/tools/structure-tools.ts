@@ -1410,7 +1410,7 @@ export class StructureTools implements AiProposalApplier {
                             questions: c.parts.flatMap((p) => fieldById.get(p.field_id)?.slug ?? []),
                             saved_in: c.save_field_id !== null ? (fieldById.get(c.save_field_id)?.slug ?? null) : null,
                         })),
-                        layout: st.layout === 'conversational' ? 'una pregunta por pantalla' : 'todo a la vista',
+                        layout: st.layout === 'conversational' ? 'una pregunta por pantalla' : st.layout === 'chat' ? 'como un chat' : 'todo a la vista',
                         welcome_screen: st.welcome.enabled,
                         captcha: st.captcha,
                         respondent_email_field: emailField?.slug ?? null,

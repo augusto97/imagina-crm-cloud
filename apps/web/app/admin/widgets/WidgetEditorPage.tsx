@@ -25,6 +25,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 import { ColorChoice, IconSelect, WidgetButtonEditor } from './WidgetButtonEditor';
+import { WidgetHoursEditor } from './WidgetHoursEditor';
 import { WidgetIconView } from './WidgetIconView';
 import { WidgetPreview } from './WidgetPreview';
 import {
@@ -47,10 +48,11 @@ import {
     useWidgetOptions,
 } from './useContactWidgets';
 
-type Tab = 'buttons' | 'look' | 'publish';
+type Tab = 'buttons' | 'look' | 'hours' | 'publish';
 const TABS: Array<{ id: Tab; label: string }> = [
     { id: 'buttons', label: 'Botones' },
     { id: 'look', label: 'Apariencia' },
+    { id: 'hours', label: 'Horario' },
     { id: 'publish', label: 'Publicar' },
 ];
 
@@ -220,6 +222,7 @@ function Editor({ widget, options, back }: { widget: ContactWidgetDto; options: 
                                     onChange={(patch) => setConfig((c) => updateButton(c, b.id, patch))}
                                     onMove={(delta) => setConfig((c) => moveButton(c, b.id, delta))}
                                     onRemove={() => setConfig((c) => removeButton(c, b.id))}
+                                    hoursEnabled={config.hours.enabled}
                                 />
                             ))}
                             <DropdownMenu>
@@ -326,6 +329,8 @@ function Editor({ widget, options, back }: { widget: ContactWidgetDto; options: 
                             </div>
                         </section>
                     )}
+
+                    {tab === 'hours' && <WidgetHoursEditor config={config} options={options} onChange={(hours) => patchConfig({ hours })} />}
 
                     {tab === 'publish' && (
                         <section className="imcrm-flex imcrm-flex-col imcrm-gap-5" data-tour="widget-publish">
