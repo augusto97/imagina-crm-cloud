@@ -441,7 +441,7 @@ function whenOf(...values: unknown[]): Date {
 const STATUS_DETAIL: Record<string, string> = {
     canceled: 'Se canceló antes de salir.',
     expired: 'Venció antes de poder enviarse.',
-    unsubscribed: 'El contacto se dio de baja de tus mensajes en WAS.',
+    unsubscribed: 'El contacto se dio de baja de tus mensajes en Whats.',
     insufficient_credits: 'No había créditos suficientes en tu cuenta de WhatsApp.',
     no_whatsapp: 'Ese número no tiene WhatsApp.',
     invalid_number: 'El número no es válido.',

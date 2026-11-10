@@ -711,10 +711,12 @@ function subscriptionActions(provider: 'Mercado Pago' | 'PayPal'): ConnectorActi
 export const INTEGRATIONS: readonly IntegrationDef[] = [
     {
         key: 'whatsapp',
-        name: 'WhatsApp (WAS anterior)',
-        tagline: 'La versión anterior de WAS. Para cuentas nuevas, usa «WhatsApp (WAS)».',
+        // v0.1.400 — es la versión ANTERIOR (was.imagina.cloud) y sigue
+        // funcionando; la nueva se llama Whats (whats.imagina.cloud).
+        name: 'WhatsApp (WAS)',
+        tagline: 'La versión anterior: tu cuenta de WAS. Para cuentas nuevas, usa «WhatsApp (Whats)».',
         description:
-            'Para quien todavía usa la versión anterior de WAS (was.imagina.cloud): avisos de vencimiento, confirmaciones, recordatorios de pago. Si tu cuenta ya está en la versión nueva (whats.imagina.cloud), conecta «WhatsApp (WAS)»: además de enviar, te dice si cada mensaje se entregó o se leyó y recibe los mensajes de tus clientes.',
+            'Para quien todavía usa WAS, la versión anterior (was.imagina.cloud): avisos de vencimiento, confirmaciones, recordatorios de pago. Si tu cuenta ya está en Whats, la versión nueva (whats.imagina.cloud), conecta «WhatsApp (Whats)»: además de enviar, te dice si cada mensaje se entregó o se leyó y recibe los mensajes de tus clientes.',
         category: 'mensajeria',
         color: '#25D366',
         auth: {
@@ -802,7 +804,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
         ],
     },
     {
-        // v0.1.389 — la versión nueva de Imagina WAS (API v1 de Zender). Usa el
+        // v0.1.389 — Whats, la versión nueva de WAS (API v1 de Zender). Usa el
         // MISMO motor que la integración oficial (avisos, columnas de la lista,
         // «Cuando llega un mensaje de WhatsApp», «Enviar WhatsApp» en la ficha),
         // sin plantillas ni ventana de 24 h: es un número vinculado como
@@ -810,10 +812,10 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
         // igual que en la versión anterior, así pasar una automatización de una
         // a otra es sólo cambiar la conexión.
         key: 'whatsapp_web',
-        name: 'WhatsApp (WAS)',
-        tagline: 'Tu número de WAS: mensajes y archivos, si cada uno se entregó o se leyó, y lo que te escriben tus clientes.',
+        name: 'WhatsApp (Whats)',
+        tagline: 'Tu número de Whats: mensajes y archivos, si cada uno se entregó o se leyó, y lo que te escriben tus clientes.',
         description:
-            'Conecta tu número de WAS (whats.imagina.cloud). Manda mensajes y archivos desde un registro o una automatización, mira si cada envío se entregó o se leyó, y entérate cuando un cliente te escribe: el registro se crea o se actualiza solo. No es la API oficial de Meta: es tu propio número vinculado, así que conviene escribir sólo a quien espera tus mensajes.',
+            'Conecta tu número de Whats (whats.imagina.cloud). Manda mensajes y archivos desde un registro o una automatización, mira si cada envío se entregó o se leyó, y entérate cuando un cliente te escribe: el registro se crea o se actualiza solo. No es la API oficial de Meta: es tu propio número vinculado, así que conviene escribir sólo a quien espera tus mensajes.',
         category: 'mensajeria',
         color: '#25D366',
         auth: {
@@ -841,7 +843,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     advanced: true,
                     default: WA_WEB_DEFAULT_SERVER,
                     placeholder: WA_WEB_DEFAULT_SERVER,
-                    help: 'Sólo si usas otro servidor de WAS.',
+                    help: 'Sólo si usas otro servidor de Whats.',
                 }),
                 field({ key: 'account_phone', label: 'Número', hidden: true }),
                 field({ key: 'account_name', label: 'Nombre del número', hidden: true }),

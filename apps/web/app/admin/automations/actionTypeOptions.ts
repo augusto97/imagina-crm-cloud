@@ -1,3 +1,4 @@
+import { acceptsWasApiCalls, convertWasApiCall, integrationDef, readWasApiCall } from '@imagina-base/shared';
 import type { ActionMeta, ActionSpec } from '@/types/automation';
 
 /**
@@ -87,4 +88,46 @@ export function actionTitle(spec: ActionSpec, catalog: ActionMeta[], fallback: s
         return hit ? hit.label : fallback;
     }
     return catalog.find((a) => !a.connector && a.slug === spec.type)?.label ?? fallback;
+}
+
+/** La app de la galería de una acción de conector, según el catálogo. */
+function connectorApp(spec: ActionSpec, catalog: ActionMeta[]): string | null {
+    if (spec.type !== 'connector_action') return null;
+    const id = Number(spec.config.connection_id);
+    return catalog.find((a) => a.connector?.connection_id === id)?.connector?.integration_key ?? null;
+}
+
+/**
+ * v0.1.400 — La acción que queda al elegir otra en «Tipo de acción», sin
+ * perder lo que ya estaba escrito.
+ *
+ * Antes la acción arrancaba VACÍA: pasar «Enviar mensaje de WhatsApp» de la
+ * cuenta de WAS a la de Whats obligaba a volver a escribir el número y el
+ * mensaje (y se perdía la condición de la acción). Ahora:
+ *  - la condición de la acción se conserva siempre;
+ *  - entre acciones de conector se conservan los datos que la acción nueva
+ *    entiende (mismo nombre de dato: número, mensaje, para, asunto…);
+ *  - una «Llamar webhook externo» que manda a la API de WAS se convierte a
+ *    «Enviar mensaje / archivo por WhatsApp» con su número y su mensaje.
+ */
+export function carryOverSpec(prev: ActionSpec | null, next: ActionSpec, catalog: ActionMeta[]): ActionSpec {
+    if (!prev) return next;
+    const out: ActionSpec = prev.condition !== undefined ? { ...next, condition: prev.condition } : { ...next };
+    if (next.type !== 'connector_action') return out;
+    const nextApp = connectorApp(next, catalog);
+    const nextKey = String(next.config.action_key ?? '');
+    const params = integrationDef(nextApp)?.actions.find((a) => a.key === nextKey)?.params.map((p) => p.key) ?? null;
+    let carried: Record<string, unknown> = {};
+    if (prev.type === 'connector_action') {
+        const prevValues = (prev.config.values ?? {}) as Record<string, unknown>;
+        if (params) carried = Object.fromEntries(Object.entries(prevValues).filter(([k]) => params.includes(k)));
+        else if (Number(prev.config.connection_id) === Number(next.config.connection_id)) carried = { ...prevValues };
+    } else if (prev.type === 'call_webhook' && acceptsWasApiCalls(nextApp)) {
+        const call = readWasApiCall(prev.config);
+        const converted = call ? convertWasApiCall(call, prev.config, nextApp!) : null;
+        if (converted?.ok) carried = Object.fromEntries(Object.entries(converted.values).filter(([k]) => !params || params.includes(k)));
+    }
+    const values: Record<string, string> = {};
+    for (const [k, v] of Object.entries(carried)) if (v !== undefined && v !== null && String(v) !== '') values[k] = String(v);
+    return { ...out, config: { ...next.config, values: { ...values, ...((next.config.values ?? {}) as Record<string, string>) } } };
 }

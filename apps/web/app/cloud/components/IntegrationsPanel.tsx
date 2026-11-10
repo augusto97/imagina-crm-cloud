@@ -16,9 +16,10 @@ import {
     type IntegrationKey,
     type IntegrationsOverview,
 } from '@imagina-base/shared';
-import { CalendarDays, Check, ChevronDown, ChevronRight, Globe, Lock, HardDrive, MessageCircle, MessageSquareText, Pencil, RefreshCw, Settings2, ShieldCheck, Wallet, X } from 'lucide-react';
+import { ArrowRightLeft, CalendarDays, Check, ChevronDown, ChevronRight, Globe, Lock, HardDrive, MessageCircle, MessageSquareText, Pencil, RefreshCw, Settings2, ShieldCheck, Wallet, X } from 'lucide-react';
 
 import { ConnectorsPanel } from '@/cloud/components/ConnectorsPanel';
+import { ConnectionSwapDialog, swapTargetsFor } from '@/cloud/components/ConnectionSwapDialog';
 import { IntegrationKeyDialog } from '@/cloud/components/IntegrationKeyDialog';
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import { GoogleWorkspaceAdminDialog } from '@/cloud/components/GoogleWorkspaceAdminDialog';
@@ -60,6 +61,8 @@ export function IntegrationsPanel(): JSX.Element | null {
     const [adminConsent, setAdminConsent] = useState<MsApp | null>(null);
     const [googleAdmin, setGoogleAdmin] = useState<IntegrationKey | null>(null);
     const [dialog, setDialog] = useState<{ def: IntegrationDef; connection: Connection | null } | null>(null);
+    // v0.1.400 — «Reemplazar en automatizaciones» / «Pasar a otra conexión».
+    const [swap, setSwap] = useState<{ target: Connection | null; from: Connection | null } | null>(null);
     // v0.1.333 — WordPress se conecta en un clic con su pantalla «Autorizar aplicación».
     const [wpDialog, setWpDialog] = useState<{ connection: Connection | null } | null>(null);
     const [advanced, setAdvanced] = useState(false);
@@ -247,6 +250,8 @@ export function IntegrationsPanel(): JSX.Element | null {
                             <ConnectedRow
                                 key={c.id}
                                 connection={c}
+                                swapMode={swapModeFor(c, connected)}
+                                onSwap={(mode) => setSwap(mode === 'into' ? { target: c, from: null } : { target: null, from: c })}
                                 onReconnect={() => {
                                     const def = integrationDef(c.integration_key);
                                     if (def) start(def, c);
@@ -257,6 +262,16 @@ export function IntegrationsPanel(): JSX.Element | null {
                         ))}
                     </ul>
                 </section>
+            )}
+
+            {swap && (
+                <ConnectionSwapDialog
+                    open
+                    onClose={() => setSwap(null)}
+                    connections={connected}
+                    target={swap.target}
+                    from={swap.from}
+                />
             )}
 
             <section className="imcrm-space-y-2">
@@ -478,13 +493,32 @@ function AppTile({
     );
 }
 
+/**
+ * v0.1.400 — Qué botón de reemplazo lleva una conexión: «Reemplazar en
+ * automatizaciones» (traer acciones de otras conexiones o las llamadas
+ * directas a la API de WAS) o «Pasar a otra conexión» (llevar las suyas a
+ * otra). Whats es siempre destino: es a donde se pasa lo de WAS.
+ */
+function swapModeFor(c: Connection, all: Connection[]): 'into' | 'from' | null {
+    if (c.purpose === 'agenda' || !c.integration_key) return null;
+    const targets = swapTargetsFor(c, all);
+    if (c.integration_key === 'whatsapp_web') return 'into';
+    if (c.usage_count > 0 && targets.length > 0) return 'from';
+    if (c.integration_key === 'whatsapp' || targets.length > 0) return 'into';
+    return null;
+}
+
 function ConnectedRow({
     connection: c,
+    swapMode,
+    onSwap,
     onReconnect,
     onDisconnect,
     busy,
 }: {
     connection: Connection;
+    swapMode: 'into' | 'from' | null;
+    onSwap: (mode: 'into' | 'from') => void;
     onReconnect: () => void;
     onDisconnect: () => void;
     busy: boolean;
@@ -624,6 +658,18 @@ function ConnectedRow({
                         <RefreshCw className="imcrm-h-3.5 imcrm-w-3.5" />
                         {__('Sincronizaciones')}
                     </Link>
+                </Button>
+            )}
+            {swapMode && (
+                <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onSwap(swapMode)}
+                    data-testid={swapMode === 'into' ? 'imcrm-integration-swap-into' : 'imcrm-integration-swap-from'}
+                    data-tour="integrations-swap"
+                >
+                    <ArrowRightLeft className="imcrm-h-3.5 imcrm-w-3.5" />
+                    {swapMode === 'into' ? __('Reemplazar en automatizaciones') : __('Pasar a otra conexión')}
                 </Button>
             )}
             {c.can_edit && (

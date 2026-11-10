@@ -15,7 +15,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Conectar una vez, usar en todos lados' },
             {
                 t: 'p',
-                md: 'La conexión es un objeto aparte de las automatizaciones: guarda la clave **cifrada** y le pone nombre («WhatsApp (WAS) · +57 300…»). Las automatizaciones sólo dicen «usa esta conexión». Eso tiene tres ventajas:\n- **Nadie copia claves** dentro de cada automatización (y nadie las ve: después de guardarla, la clave nunca vuelve a mostrarse).\n- **Si cambias la clave**, la cambias en un solo lugar con **Actualizar clave** y todas las automatizaciones siguen funcionando.\n- **Ves quién la usa**: cada conexión dice cuántas acciones de automatización dependen de ella.',
+                md: 'La conexión es un objeto aparte de las automatizaciones: guarda la clave **cifrada** y le pone nombre («WhatsApp (Whats) · +57 300…»). Las automatizaciones sólo dicen «usa esta conexión». Eso tiene tres ventajas:\n- **Nadie copia claves** dentro de cada automatización (y nadie las ve: después de guardarla, la clave nunca vuelve a mostrarse).\n- **Si cambias la clave**, la cambias en un solo lugar con **Actualizar clave** y todas las automatizaciones siguen funcionando.\n- **Ves quién la usa**: cada conexión dice cuántas acciones de automatización dependen de ella.',
             },
             { t: 'anim', key: 'integ-connect-once', caption: 'Una conexión de WhatsApp, tres automatizaciones que la usan.' },
             { t: 'h', text: 'Cómo se conecta una app' },
@@ -29,7 +29,7 @@ export const articles: LearnArticle[] = [
                     'La app aparece en **Conectadas** con la cuenta con la que quedó (por ejemplo, el correo de Gmail o el número de WhatsApp) y la etiqueta **Conectada**.',
                 ],
             },
-            { t: 'demo', key: 'integ-galeria', caption: 'Conectar WhatsApp (WAS) desde la galería: la clave y el mensaje de prueba.', fallback: 'integ-key-test' },
+            { t: 'demo', key: 'integ-galeria', caption: 'Conectar WhatsApp (Whats) desde la galería: la clave y el mensaje de prueba.', fallback: 'integ-key-test' },
             { t: 'h', text: 'Lo que ves en cada app conectada' },
             {
                 t: 'settings',
@@ -59,7 +59,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'cards',
                 items: [
-                    { icon: 'MessageCircle', title: 'Mensajería', md: 'WhatsApp (WAS), WhatsApp Business oficial, Telegram, Slack y Microsoft Teams.', tone: 'mint' },
+                    { icon: 'MessageCircle', title: 'Mensajería', md: 'WhatsApp (Whats), WhatsApp Business oficial, Telegram, Slack y Microsoft Teams.', tone: 'mint' },
                     { icon: 'Mail', title: 'Correo y calendario', md: 'Gmail, Outlook (correo y calendario, con reunión de Teams) y Google Calendar (con Meet).', tone: 'blue' },
                     { icon: 'FileSpreadsheet', title: 'Hojas de cálculo', md: 'Google Sheets: una fila nueva por cada cosa que pase.', tone: 'mint' },
                     { icon: 'Store', title: 'Tienda y cobros', md: 'WooCommerce, Mercado Pago y Wompi, con pantallas propias.', tone: 'violet' },
@@ -103,37 +103,37 @@ export const articles: LearnArticle[] = [
                 md: 'Los mensajes son lo que más se automatiza: el recordatorio de pago que sale solo, el aviso al equipo cuando entra un pedido grande, la confirmación de una cita. La galería trae tres apps de mensajería que se conectan con una clave o una autorización, y una cuarta, **WhatsApp Business (oficial)**, que tiene su propio módulo.',
             },
             { t: 'anim', key: 'integ-key-test', caption: 'Pegas la clave, eliges la cuenta, te mandas una prueba y, si llega, conectas.' },
-            { t: 'h', text: 'WhatsApp (WAS)' },
+            { t: 'h', text: 'WhatsApp (Whats)' },
             {
                 t: 'p',
-                md: '**WhatsApp (WAS)** manda mensajes desde un número de WhatsApp que vinculas con el código QR en tu panel de WAS. Es la forma más rápida de empezar: no pide trámites con Meta ni plantillas aprobadas, y mandas mensajes y archivos cuando quieras. Además, lo que te escriben tus clientes llega a sus registros y ves si cada mensaje se entregó o se leyó. Si mandas avisos a muchos clientes, mira [WhatsApp Business oficial](/aprende/whatsapp-business/wab-cual-elegir).',
+                md: '**WhatsApp (Whats)** manda mensajes desde un número de WhatsApp que vinculas con el código QR en tu panel de Whats. Es la forma más rápida de empezar: no pide trámites con Meta ni plantillas aprobadas, y mandas mensajes y archivos cuando quieras. Además, lo que te escriben tus clientes llega a sus registros y ves si cada mensaje se entregó o se leyó. Si mandas avisos a muchos clientes, mira [WhatsApp Business oficial](/aprende/whatsapp-business/wab-cual-elegir).',
             },
             { t: 'anim', key: 'wab-was-conectar', caption: 'Pegas la clave, eliges tu número de la lista y los avisos quedan registrados solos.' },
             {
                 t: 'steps',
                 items: [
-                    'En tu panel de WAS ve a **API Keys** y crea una clave. Marca los permisos de ver la cuenta, ver los números, enviar, leer los mensajes y manejar los avisos (webhooks).',
-                    'En **Ajustes → Integraciones**, toca **Conectar** en **WhatsApp (WAS)** y pega la clave en **Clave de API**.',
+                    'En tu panel de Whats ve a **API Keys** y crea una clave. Marca los permisos de ver la cuenta, ver los números, enviar, leer los mensajes y manejar los avisos (webhooks).',
+                    'En **Ajustes → Integraciones**, toca **Conectar** en **WhatsApp (Whats)** y pega la clave en **Clave de API**.',
                     'Toca **Buscar mis cuentas** y elige tu número en **Número de WhatsApp**: aparecen todos los que tienes vinculados, con su estado. No hace falta copiar el «Account ID» de tu panel.',
                     'En **Número para el mensaje de prueba** escribe tu propio número con indicativo (+57 300…) y toca **Enviar prueba**. Llega un WhatsApp real.',
-                    'Si te llegó, toca **Conectar**. La app registra sola los avisos en tu cuenta de WAS.',
+                    'Si te llegó, toca **Conectar**. La app registra sola los avisos en tu cuenta de Whats.',
                     'Toca **Configurar WhatsApp** en la conexión, elige la lista donde caen los mensajes y toca **Preparar columnas**.',
                 ],
             },
             {
                 t: 'settings',
-                title: 'Las acciones de WhatsApp (WAS)',
+                title: 'Las acciones de WhatsApp (Whats)',
                 rows: [
                     { name: 'Enviar mensaje de WhatsApp', what: '**Para** (con indicativo; usa el campo teléfono del registro, por ejemplo `{{telefono}}`) y **Mensaje**, que acepta variables del registro.', tip: 'Un número sin indicativo se completa con el de tu número de WhatsApp.' },
                     { name: 'Enviar archivo por WhatsApp', what: 'Un archivo con un texto opcional: **Enlace del archivo** (una dirección pública https a un PDF, una imagen, un audio o un video) y **Texto que lo acompaña**.', tip: 'Combínalo con «Generar un PDF»: el enlace `{{pdf.link}}` manda la cuenta de cobro recién armada.' },
                     { name: 'Cuando llega un mensaje de WhatsApp', what: 'El disparador corre cuando un contacto te escribe, con `{{whatsapp.texto}}`, `{{whatsapp.nombre}}` y `{{whatsapp.de}}`.' },
-                    { name: 'Servidor (opciones avanzadas)', what: 'Sólo si usas un servidor de WAS propio. Casi nadie lo cambia.' },
+                    { name: 'Servidor (opciones avanzadas)', what: 'Sólo si usas un servidor de Whats propio. Casi nadie lo cambia.' },
                 ],
             },
             {
                 t: 'callout',
                 tone: 'info',
-                md: '¿Ya tenías conectado **WhatsApp (WAS anterior)**? Sigue funcionando igual. Para usar la versión nueva, conecta **WhatsApp (WAS)** con una clave de tu cuenta nueva y cambia la conexión en tus automatizaciones.',
+                md: '¿Ya tenías conectado **WhatsApp (WAS)**, la versión anterior? Sigue funcionando igual. Para usar la versión nueva, conecta **WhatsApp (Whats)** con una clave de tu cuenta de Whats y pasa tus automatizaciones a la nueva con **Reemplazar en automatizaciones**: está explicado en [Las apps dentro de tus automatizaciones](/aprende/integraciones/integraciones-en-automatizaciones).',
             },
             { t: 'h', text: 'Telegram' },
             {
@@ -175,21 +175,21 @@ export const articles: LearnArticle[] = [
             {
                 t: 'example',
                 title: 'Una distribuidora de alimentos',
-                md: '- **WhatsApp (WAS)** para los clientes: cuando una factura vence y sigue pendiente, sale el recordatorio con el link de pago.\n- **Slack** para el equipo comercial: cuando entra una oportunidad de más de $ 20.000.000, se avisa en `#ventas-grandes` con el nombre del cliente y el vendedor.\n- **Telegram** para el dueño: un mensaje **sin sonido** cada mañana con el total vendido ayer.',
+                md: '- **WhatsApp (Whats)** para los clientes: cuando una factura vence y sigue pendiente, sale el recordatorio con el link de pago.\n- **Slack** para el equipo comercial: cuando entra una oportunidad de más de $ 20.000.000, se avisa en `#ventas-grandes` con el nombre del cliente y el vendedor.\n- **Telegram** para el dueño: un mensaje **sin sonido** cada mañana con el total vendido ayer.',
             },
             {
                 t: 'faq',
                 items: [
-                    { q: 'El mensaje de prueba de WAS no llegó, ¿qué reviso?', a: 'Que el número de prueba tenga indicativo de país, que la cuenta elegida esté conectada en tu panel de WAS y que la clave tenga permiso para enviar. Si WAS responde con un error, el cuadro lo muestra tal cual.' },
+                    { q: 'El mensaje de prueba de Whats no llegó, ¿qué reviso?', a: 'Que el número de prueba tenga indicativo de país, que la cuenta elegida esté conectada en tu panel de Whats y que la clave tenga permiso para enviar. Si Whats responde con un error, el cuadro lo muestra tal cual.' },
                     { q: '¿Puedo mandar a un grupo de WhatsApp?', a: 'La acción manda a un número. Para avisos internos a un grupo, Telegram o Slack son más cómodos.' },
-                    { q: '¿Cuántos mensajes puedo mandar?', a: 'La app no pone un tope propio a los mensajes: el límite lo pone cada servicio (tu plan de WAS, las reglas de Telegram o de Slack).' },
+                    { q: '¿Cuántos mensajes puedo mandar?', a: 'La app no pone un tope propio a los mensajes: el límite lo pone cada servicio (tu plan de Whats, las reglas de Telegram o de Slack).' },
                 ],
             },
             {
                 t: 'actions',
                 items: [
                     { label: 'Ir a Integraciones', to: '/settings?s=conectores' },
-                    { label: 'WhatsApp oficial vs. WAS', article: 'wab-cual-elegir' },
+                    { label: 'WhatsApp oficial vs. Whats', article: 'wab-cual-elegir' },
                     { label: 'Usar las apps en automatizaciones', article: 'integraciones-en-automatizaciones' },
                 ],
             },
@@ -577,6 +577,38 @@ export const articles: LearnArticle[] = [
                     { name: '{{fecha|larga}}, {{total|pesos}}', what: 'Una fecha en palabras («8 de octubre de 2026») o un monto en letras («un millón doscientos mil pesos»).' },
                 ],
             },
+            { t: 'h', text: 'Cambiar de conexión en tus automatizaciones' },
+            {
+                t: 'p',
+                md: 'Si cambias de número de WhatsApp, pasas de **WhatsApp (WAS)** a **WhatsApp (Whats)** o conectaste otra cuenta de la misma app, no hace falta abrir cada automatización: la app las cambia todas de una vez, con su número y su mensaje.',
+            },
+            {
+                t: 'steps',
+                items: [
+                    'Conecta primero la app nueva en **Ajustes → Integraciones**.',
+                    'En su fila toca **Reemplazar en automatizaciones**. (En la fila de la conexión vieja el botón dice **Pasar a otra conexión** y te deja elegir a cuál).',
+                    'Aparece lo que se puede pasar, agrupado: cada conexión que usan tus automatizaciones y, si mandabas WhatsApp con una llamada directa a la API de WAS, **Llamadas directas a la API de WAS**, separadas por cuenta.',
+                    'Marca lo que quieres pasar. **Ver en qué automatizaciones** muestra cuáles son, con un enlace para abrir cada una.',
+                    'Toca **Reemplazar N acciones**. Las acciones quedan apuntando a la conexión nueva, con los mismos datos.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Lo que conviene saber',
+                rows: [
+                    { name: 'Dónde busca', what: 'En todas las automatizaciones de la empresa, también dentro de las ramas «Si / Si no» y de «Repetir por cada vinculado».' },
+                    { name: 'Qué conserva', what: 'Para quién es, el mensaje, el archivo y la condición de cada acción. La automatización sigue activa o pausada como estaba.' },
+                    { name: 'Las que no se pueden pasar solas', what: 'Una llamada directa cuyo resultado lee un paso siguiente, o con el cuerpo escrito a mano, aparece en la lista con el motivo: cámbiala desde el editor.' },
+                    { name: 'Volver atrás', what: 'Cada automatización guarda la versión anterior en su **Historial de versiones**.' },
+                    { name: 'Las que están esperando', what: 'Una corrida en un paso «Esperar» sigue igual: cuando retome, usa la conexión nueva.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'Cambiar una sola acción',
+                md: 'Si sólo quieres cambiar una, ábrela en el editor y elige la otra acción en **Tipo de acción**: el número, el mensaje y la condición se quedan donde estaban.',
+            },
             { t: 'h', text: 'Cuando una conexión falla' },
             {
                 t: 'p',
@@ -586,7 +618,7 @@ export const articles: LearnArticle[] = [
                 t: 'callout',
                 tone: 'warn',
                 title: 'Algunos servicios responden «bien» con un error adentro',
-                md: 'Slack, Telegram y WAS a veces contestan «OK» pero con un error en el mensaje. La app revisa la respuesta: si dice error, la corrida queda **fallida** con ese motivo, no como «enviada».',
+                md: 'Slack, Telegram y WhatsApp a veces contestan «OK» pero con un error en el mensaje. La app revisa la respuesta: si dice error, la corrida queda **fallida** con ese motivo, no como «enviada».',
             },
             {
                 t: 'example',
@@ -598,6 +630,7 @@ export const articles: LearnArticle[] = [
                 items: [
                     { q: '¿«Probar ahora» manda de verdad el mensaje?', a: 'Sí: la prueba es real, con los datos del último registro de la lista que puedes ver. Usa tu propio número o un canal de pruebas mientras armas la automatización.' },
                     { q: '¿Puedo usar dos apps en la misma automatización?', a: 'Sí, todas las que quieras, una acción detrás de otra, incluso con condiciones por acción o ramas «Si / Si no».' },
+                    { q: '¿Puedo pasar mis automatizaciones de WhatsApp (WAS) a WhatsApp (Whats)?', a: 'Sí: conecta WhatsApp (Whats) y toca **Reemplazar en automatizaciones** en su fila. Pasa también las que mandaban el mensaje con una llamada directa a la API de WAS.' },
                     { q: '¿Quién recibe el aviso de que algo falló?', a: 'Los administradores y la persona que creó la automatización, en la campana y por correo (una vez; si sigue fallando, a lo sumo un recordatorio por día).' },
                 ],
             },

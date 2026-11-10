@@ -13818,6 +13818,56 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         cadena, 401 sin el secreto, no encontrado → cancelada) y 6/6 de
         «Probar» y guardar desde la pantalla.
 
+  - [x] **WhatsApp (Whats) y WhatsApp (WAS) con sus nombres + «Reemplazar en
+        automatizaciones» (v0.1.400, addendum ADR-S69, reporte del usuario:
+        "estás confundiendo a los usuarios: la nueva app es Whats, no WAS; WAS
+        es la versión anterior (que debe seguir funcional)" y "¿cómo reemplazo
+        un conector en las automatizaciones?… quiero pasarlas al de Whats")**.
+        (a) **Nombres**: `whatsapp_web` (whats.imagina.cloud) pasa a
+        **WhatsApp (Whats)** y `whatsapp` (was.imagina.cloud) a **WhatsApp
+        (WAS)**, «la versión anterior», que sigue funcionando igual. Catálogo
+        de integraciones, textos del servidor (avisos, permisos, planes), el
+        editor, la ficha, la página de la conexión, ideas, ayuda, Aprende,
+        ilustraciones y la novedad de v0.1.389; el asistente/MCP describe
+        `kind: "whats"`. Migración 0116: las conexiones guardadas con el
+        nombre automático se renombran (nunca un nombre propio ni uno que
+        chocaría con otra conexión).
+        (b) **«Reemplazar en automatizaciones»** en la fila de la conexión
+        nueva (o «Pasar a otra conexión» en la vieja, que deja elegir a cuál):
+        una ventana agrupa lo que se puede pasar por ORIGEN —cada conexión de
+        la misma app o del par WAS↔Whats y las **llamadas directas a la API de
+        WAS** (`call_webhook` a `/api/send/whatsapp`, agrupadas por cuenta,
+        así cada cuenta vieja va a su número)—, con en qué automatizaciones
+        está cada una («Abrir»), las notas y lo que no se puede pasar solo con
+        el motivo (una llamada cuya respuesta lee un paso siguiente o con el
+        cuerpo escrito a mano). Reescritura pura en
+        `packages/shared/src/schemas/connection-swap.ts` (recorre «Si / sino»
+        y «Repetir por cada vinculado», conserva la condición; texto, archivo
+        y documento) y `ConnectionSwapService` (`GET/POST
+        /connections/:id/swap`, `manage_automations`): cada automatización se
+        guarda por `AutomationsService.update` con una versión en su
+        historial («Cambió la conexión de N acciones a «X»») y bitácora
+        `connection.swap`. Las esperas en curso no se cancelan. Un destino
+        privado de otra persona, una conexión de la agenda o una API
+        personalizada dan 404.
+        (c) **En el editor**, cambiar «Tipo de acción» entre acciones de
+        conector compatibles conserva la condición, el número y el mensaje
+        (`carryOverSpec`), y una llamada directa a WAS se convierte en la
+        acción de Whats (antes quedaba vacía).
+        (d) **Bug de paso**: el uso de una conexión no contaba las acciones
+        dentro de «Repetir por cada vinculado» (`walkActions`), así que una
+        conexión usada sólo ahí figuraba «sin uso» y se podía borrar.
+        Ayuda: sección «Cambiar de conexión en tus automatizaciones» en Aprende
+        → Integraciones, guías de integraciones y WhatsApp, `docs/mcp.md` y
+        novedad con carrusel. Tests: `connection-swap.test.ts` (11) en shared,
+        `connection-swap.spec` (4) en la API y 4 del editor — shared 850,
+        front 853, specs de conectores, integraciones, WhatsApp y
+        automatizaciones 187/187 — + E2E navegador 21/21 en escritorio y
+        19/19 en celular oscuro (conexión de WAS + llamadas directas de dos
+        cuentas → se pasan sólo las elegidas, dentro de ramas y bucles, la
+        que lee la respuesta queda con su motivo, versión en el historial y
+        conteo de uso al día).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

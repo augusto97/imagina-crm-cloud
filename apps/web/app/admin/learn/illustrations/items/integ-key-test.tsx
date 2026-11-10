@@ -49,7 +49,7 @@ function Field({ label, children, y }: { label: string; children: JSX.Element; y
 
 export default function IntegKeyTest(): JSX.Element {
     return (
-        <Stage label="Conectar WhatsApp (WAS): pegas la clave de API, eliges tu cuenta, te mandas un mensaje de prueba y, cuando te llega al teléfono, tocas Conectar." tint="mint">
+        <Stage label="Conectar WhatsApp (Whats): pegas la clave de API, eliges tu cuenta, te mandas un mensaje de prueba y, cuando te llega al teléfono, tocas Conectar." tint="mint">
             <Keyframes css={CSS} />
 
             {/* El diálogo de conexión */}
@@ -69,7 +69,7 @@ export default function IntegKeyTest(): JSX.Element {
                 <At x={16} y={14} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                     <IntegrationLogo integrationKey="whatsapp" size={30} />
                     <T size={12} weight={700}>
-                        Conectar WhatsApp (WAS)
+                        Conectar WhatsApp (Whats)
                     </T>
                 </At>
                 <Field label="Clave de API" y={56}>

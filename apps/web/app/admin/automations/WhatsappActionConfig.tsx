@@ -181,7 +181,7 @@ function WebWhatsappActionConfig({ spec, onChange, fields }: { spec: ActionSpec;
                         <MergeTagInput value={str(values.url)} onChange={(next) => setValues({ url: next })} fields={fields} placeholder="https://… o {{pdf.link}}" data-testid="imcrm-whatsapp-action-media" />
                         {badUrl && <p className="imcrm-text-xs imcrm-text-destructive">{__('El enlace tiene que empezar con https://')}</p>}
                         <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                            {__('Un enlace público a un PDF, una imagen, un audio o un video: WAS lo descarga al enviar. Puedes usar el PDF generado en una acción anterior ({{pdf.link}}).')}
+                            {__('Un enlace público a un PDF, una imagen, un audio o un video: Whats lo descarga al enviar. Puedes usar el PDF generado en una acción anterior ({{pdf.link}}).')}
                         </p>
                     </div>
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
@@ -476,13 +476,13 @@ export function WhatsappTriggerConfig({ config, onChange }: { config: TriggerCon
                 <option value="">{__('Cualquiera de la empresa')}</option>
                 {conns.map((c) => (
                     <option key={c.id} value={c.id}>
-                        {(c.display_phone ? `${c.display_phone} · ${c.name}` : c.name) + (c.provider === 'whatsapp_web' ? ' (WAS)' : ' (oficial)')}
+                        {(c.display_phone ? `${c.display_phone} · ${c.name}` : c.name) + (c.provider === 'whatsapp_web' ? ' (Whats)' : ' (oficial)')}
                     </option>
                 ))}
             </Select>
             {!q.isLoading && conns.length === 0 && (
                 <p className="imcrm-text-xs imcrm-text-amber-700 dark:imcrm-text-amber-400">
-                    {__('Todavía no hay un número de WhatsApp conectado: conéctalo en Ajustes → Integraciones (WAS o la cuenta oficial de Meta).')}
+                    {__('Todavía no hay un número de WhatsApp conectado: conéctalo en Ajustes → Integraciones (Whats o la cuenta oficial de Meta).')}
                 </p>
             )}
             <p className="imcrm-text-xs imcrm-text-muted-foreground">

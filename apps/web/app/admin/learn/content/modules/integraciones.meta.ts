@@ -29,7 +29,7 @@ export const meta: LearnModuleMeta = {
         {
             id: 'integraciones-mensajeria',
             title: 'WhatsApp, Telegram, Slack y Teams: avisos a clientes y al equipo',
-            summary: 'Conecta WhatsApp (WAS), un bot de Telegram, tu Slack o Microsoft Teams, mándate un mensaje de prueba y usa sus acciones para avisar a clientes y al equipo.',
+            summary: 'Conecta WhatsApp (Whats), un bot de Telegram, tu Slack o Microsoft Teams, mándate un mensaje de prueba y usa sus acciones para avisar a clientes y al equipo.',
             minutes: 9,
             level: 'basic',
             keywords: 'whatsapp was telegram bot slack teams microsoft canal chat mensaje directo prueba numero indicativo',

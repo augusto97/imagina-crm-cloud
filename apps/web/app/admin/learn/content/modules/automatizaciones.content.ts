@@ -533,7 +533,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'settings',
                 rows: [
-                    { name: 'WhatsApp (WAS)', what: '**Enviar mensaje de WhatsApp** y **Enviar archivo por WhatsApp** (imagen, video, audio o PDF por enlace).' },
+                    { name: 'WhatsApp (Whats)', what: '**Enviar mensaje de WhatsApp** y **Enviar archivo por WhatsApp** (imagen, video, audio o PDF por enlace).' },
                     { name: 'WhatsApp Business (oficial)', what: '**Enviar plantilla de WhatsApp** (aprobada en Meta, con sus variables y encabezado) y **Enviar mensaje de texto de WhatsApp** (sólo dentro de las 24 h desde que el contacto escribió).', tip: 'Para avisos que inicias tú, usa una plantilla.' },
                     { name: 'Telegram', what: '**Enviar mensaje de Telegram** a un chat, grupo o canal.' },
                     { name: 'Slack', what: '**Enviar mensaje a Slack** en un canal.' },

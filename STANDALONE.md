@@ -5230,6 +5230,41 @@ transacciones (y WAS ya no lo manda); estado sin columna 4 → 0; mensaje de un
 contacto existente 10 → 1 transacción y ~8,4 → ~5,6 ms de CPU; 800 mensajes
 de 50 contactos dejaban 850 filas de actividad (50 altas + 800), ahora 100.
 
+**Addendum v0.1.400 — Nombres claros y cambiar de conexión en las
+automatizaciones.** Reporte del usuario: «estás confundiendo a los usuarios: la
+nueva app es Whats, no WAS; WAS es la versión anterior (que debe seguir
+funcional)» y, en el mismo hilo, «¿cómo reemplazo un conector en las
+automatizaciones?… unas usan WAS o la API directamente y quiero pasarlas a
+Whats». Decisiones:
+
+1. **Nombres**: `whatsapp_web` (whats.imagina.cloud) es **WhatsApp (Whats)**
+   y `whatsapp` (was.imagina.cloud) es **WhatsApp (WAS)**, «la versión
+   anterior», que sigue igual. La migración 0116 renombra las conexiones
+   guardadas con el nombre automático (nunca un nombre propio ni uno que
+   chocaría); el asistente/MCP las describe como `kind: "whats"`.
+2. **Reemplazar en automatizaciones** (`connection-swap.ts` en shared, puro;
+   `ConnectionSwapService` + `GET/POST /connections/:id/swap`,
+   `manage_automations`, módulo `automations`): la ruta cuelga de la conexión
+   DESTINO; la vista previa agrupa por ORIGEN — cada conexión de una app
+   compatible (la misma app, o el par WAS↔Whats) y las llamadas directas a la
+   API de WAS (`call_webhook` a `/api/send/whatsapp`, agrupadas por host +
+   cuenta para que cada cuenta vieja vaya a su número) — y la persona elige
+   cuáles pasar. Recorre `then_actions`, `else_actions` y el bucle
+   `for_each_linked`; conserva la condición y el resto de la acción.
+3. **Qué no se pasa solo** (aparece con el motivo): una llamada directa cuya
+   respuesta lee un paso siguiente (`response_name`), un cuerpo escrito a mano
+   que no se puede leer, o sin destinatario/mensaje. La cuenta escrita en la
+   llamada se descarta con una nota: sale del número de la conexión elegida.
+4. **Cada automatización** se guarda por `AutomationsService.update` (valida,
+   re-sincroniza horarios/hooks y guarda una versión con la nota «Cambió la
+   conexión de N acciones a «X»»); bitácora `connection.swap`. Las esperas en
+   curso no se cancelan: sólo comparan el tipo del nodo de espera.
+5. **En el editor**, cambiar «Tipo de acción» entre acciones compatibles
+   (`carryOverSpec`) conserva la condición y los datos que la acción nueva
+   entiende (y convierte una llamada directa a WAS en su acción de Whats).
+6. De paso, el conteo de uso de una conexión no miraba dentro de «Repetir por
+   cada vinculado»: una conexión usada sólo ahí figuraba «sin uso».
+
 ---
 
 ### ADR-S70 — Mesa de ayuda por correo (IMAP) + SLA en horas hábiles (v0.1.316)

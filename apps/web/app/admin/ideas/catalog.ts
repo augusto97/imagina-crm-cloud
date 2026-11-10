@@ -1135,7 +1135,7 @@ export const IDEAS: readonly IdeaDef[] = [
         steps: [
             'Pones el widget de contacto en tu sitio con «Pedir sus datos antes de abrir WhatsApp».',
             'Apenas llega el formulario, sale un WhatsApp al celular que dejó, con su nombre.',
-            'Funciona con tu WhatsApp por código QR (WAS), que manda texto libre. Con WhatsApp oficial de Meta hace falta una plantilla aprobada: usa «Enviar plantilla de WhatsApp» en la automatización.',
+            'Funciona con tu WhatsApp por código QR (Whats o WAS), que manda texto libre. Con WhatsApp oficial de Meta hace falta una plantilla aprobada: usa «Enviar plantilla de WhatsApp» en la automatización.',
         ],
         illustration: 'widget-contacto',
         icon: 'MessageCircle',

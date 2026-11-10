@@ -224,7 +224,12 @@ export function rewriteActionConfig(
     return next;
 }
 
-/** Recorre las acciones incluyendo las ramas de `if_else` (then/else). */
+/**
+ * Recorre las acciones incluyendo las ramas de `if_else` (then/else) y las de
+ * «Repetir por cada vinculado» (v0.1.400: antes no entraba ahí, así que una
+ * conexión usada sólo dentro de un bucle figuraba «sin uso» y se podía borrar
+ * sin aviso).
+ */
 export function walkActions(
     actions: unknown,
     visit: (action: Record<string, unknown>) => void,
@@ -239,6 +244,7 @@ export function walkActions(
             const c = cfg as Record<string, unknown>;
             walkActions(c.then_actions, visit);
             walkActions(c.else_actions, visit);
+            if (action.type === 'for_each_linked') walkActions(c.actions, visit);
         }
     }
 }

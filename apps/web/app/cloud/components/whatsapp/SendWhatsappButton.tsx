@@ -290,7 +290,7 @@ function SendWhatsappDialog({ listId, recordId, info, onClose }: { listId: numbe
                                     <Label htmlFor="wa-media">{__('Enlace del archivo (https)')}</Label>
                                     <Input id="wa-media" value={media} onChange={(e) => setMedia(e.target.value)} placeholder="https://…" data-testid="imcrm-whatsapp-dialog-file" />
                                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                        {__('Un enlace público a un PDF, una imagen, un audio o un video. WAS lo descarga al enviar.')}
+                                        {__('Un enlace público a un PDF, una imagen, un audio o un video. Whats lo descarga al enviar.')}
                                     </p>
                                 </div>
                                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">

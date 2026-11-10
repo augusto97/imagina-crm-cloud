@@ -91,6 +91,7 @@ export * from './field-types/conditions';
 export * from './field-types/text-coercion';
 export * from './schemas/templates';
 export * from './schemas/connector';
+export * from './schemas/connection-swap';
 export * from './schemas/integrations';
 export * from './schemas/ms-admin-consent';
 export * from './schemas/google-workspace';
