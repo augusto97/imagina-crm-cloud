@@ -166,6 +166,9 @@ export class AutomationWaitsService implements OnModuleInit {
      */
     async onRecordChange(change: RecordChange): Promise<void> {
         if (change.kind === 'created') return;
+        // v0.1.392 — sólo una FECHA que cambió puede mover una espera: antes
+        // cada edición de cada registro consultaba sus corridas en espera.
+        if (!changedDateLike(change)) return;
         const waiting = await this.tenantDb.withTenant(change.tenantId, (tx) =>
             tx
                 .select({ id: automationRuns.id, state: automationRuns.resumeState })
@@ -193,4 +196,22 @@ export class AutomationWaitsService implements OnModuleInit {
             );
         }
     }
+}
+
+/**
+ * v0.1.392 — ¿Cambió algún valor que pueda ser la fecha de una espera? Con los
+ * campos de la lista a mano, sólo cuentan los de tipo fecha (las esperas
+ * «hasta la fecha de un campo» sólo apuntan a esos); sin ellos, cualquier
+ * cambio cuenta (como antes).
+ */
+export function changedDateLike(change: Pick<RecordChange, 'before' | 'after' | 'fields'>): boolean {
+    const keys = new Set([...Object.keys(change.before ?? {}), ...Object.keys(change.after ?? {})]);
+    const types = change.fields ? new Map(change.fields.map((f) => [`f${f.id}`, f.type])) : null;
+    for (const k of keys) {
+        if (JSON.stringify(change.before?.[k] ?? null) === JSON.stringify(change.after?.[k] ?? null)) continue;
+        if (!types) return true;
+        const t = types.get(k);
+        if (t === undefined || t === 'date' || t === 'datetime') return true;
+    }
+    return false;
 }

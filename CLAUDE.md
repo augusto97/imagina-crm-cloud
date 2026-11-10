@@ -13449,6 +13449,63 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         caché real, el de Meta actualizado, shared y front — + E2E navegador
         17/17 en escritorio y celular oscuro contra el WAS simulado.
 
+  - [x] **Automatizaciones a escala: turnos por empresa, la red fuera de la
+        transacción y menos trabajo por cambio (v0.1.392, ADR-S98, pedido del
+        usuario: "quiero que la app procese con alto rendimiento miles de
+        usuarios corriendo automatizaciones en varias listas… ClickUp y
+        Airtable no se ponen lentos")**. Medido antes con carga simulada
+        (`pg_stat_database`, `/proc`, perfil de CPU): una empresa que editaba
+        2.000 registros dejaba a otra esperando 16,5 s por UNA corrida;
+        webhooks, correos, WhatsApp, SMS y reuniones se esperaban con la
+        transacción abierta (conexión «ociosa en transacción»); cada cambio de
+        un registro costaba 8 transacciones aunque la lista no tuviera
+        automatizaciones; los vencimientos recorrían la lista entera cada
+        5 minutos, todos en el mismo minuto.
+        (a) **Turnos por empresa en la cola** (`AutomationDispatcher.addFair`):
+        prioridad = tareas pendientes de ESA empresa (`autoq:n:{tenant}`,
+        INCR+EXPIRE en MULTI, liberado por el worker al terminar o fallar con
+        un Lua que nunca deja negativo; vence a la hora). BullMQ atiende la
+        prioridad más baja y por llegada: por turnos. Relojes y horarios sin
+        prioridad.
+        (b) **La red fuera de la transacción** (`AfterCommit` en el motor):
+        la acción prepara dentro de su transacción y la llamada externa corre
+        después del commit; lo que se escribe con la respuesta va en una
+        transacción nueva. Webhooks, conectores, acciones con nombre,
+        `send_email`, suscripciones, WhatsApp y SMS (`deferSend`) y reuniones
+        (`afterMeetingCall` con `withTx`). `AUTOMATIONS_CONCURRENCY` (default
+        10; antes 5 fijas).
+        (c) **Menos trabajo por cambio**: lista y campos en una transacción
+        (`RecordsService.listAndFields`; `update` dentro de la suya), drizzle
+        sin `{ schema }` (~5 % de CPU por pedido), el caché de disparadores
+        sabe qué campos esperan las automatizaciones «al actualizar» (`watch`)
+        y no encola si no se tocó ninguno (invalidado por FieldsService), las
+        recurrencias recuerdan si la empresa tiene alguna «al cambiar el
+        estado» (bandera versionada en Redis), las esperas «hasta una fecha»
+        sólo miran cambios en campos de fecha (`changedDateLike`) y los avisos
+        calculan el nombre de quien cambió sólo si hay a quién avisar.
+        (d) **Vencimientos por ventana**: cada corrida mira sólo lo que pudo
+        cambiar desde la última que terminó (fecha que cruzó, registro editado
+        o corrida fallida), revisión completa cada 6 h o al cambiar la
+        automatización o la zona horaria (`due:scan:{id}` en Redis); cada
+        automatización con su minuto (`dueScanPattern`); índices nuevos en
+        `automation_runs` (migración 0111).
+        (e) **Realtime**: avisos de registros por lista como mucho uno por
+        segundo (el primero al instante, uno al final con el resto);
+        revalidación de sockets en tandas de 500 con dos consultas por tanda.
+        **Después**: cambio sin automatizaciones 8,1 → 3,1 transacciones
+        (128 → 174/s); con una que no coincide 9,2 → 3,2 (105 → 184/s); con una
+        que corre 23,2 → 13,2 (47 → 71 corridas/s); con diez 59,3 → 49,2
+        (225 → 285/s); la empresa B detrás de 2.000 ediciones de A 16,5 s →
+        0,1 s (y A termina antes: 30,7 → 22,3 s); un webhook o correo de 1,2 s
+        ya no deja conexiones ociosas (la versión anterior falla esas pruebas).
+        Tests: `automations-scale.spec` (7: webhook y correo lentos sin
+        conexión tomada, webhook que falla, ventana de vencimientos en 5 pasos,
+        minuto por id, fechas, realtime), `automation-dispatcher.spec` (+2:
+        campos que se esperan, turnos por empresa) y
+        `realtime-revalidate.spec` (+1, tandas). Queda para v0.1.393: buzones
+        IMAP, recordatorios de citas y avisos, resumen diario, recurrencias,
+        suscripciones y calendarios, SMS por turnos y retención.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

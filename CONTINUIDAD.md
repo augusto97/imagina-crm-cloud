@@ -407,7 +407,16 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.391**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.392**
+(**automatizaciones a escala**: turnos por empresa en la cola —una empresa
+que edita miles de registros ya no hace esperar a las demás: 16,5 s → 0,1 s—;
+webhooks, correos, WhatsApp, SMS y reuniones se esperan FUERA de la
+transacción, así una integración lenta no agota la base; un cambio de un
+registro que no le importa a ninguna automatización pasa de 8 a 3
+transacciones y no se encola; los vencimientos miran sólo lo que pudo cambiar,
+cada automatización en su minuto; realtime y sockets en tandas;
+`AUTOMATIONS_CONCURRENCY`; ADR-S98. **Sigue v0.1.393** con lo mismo para las
+integraciones y tareas periódicas —ver «Hilos abiertos»—). Antes v0.1.391
 (**WhatsApp recibe sólo lo que se usa**: los mensajes que te escriben llegan
 sólo si la conexión tiene lista de entrada, «entregado/leído» sólo si una
 lista muestra el estado del envío, las fallas siempre; WAS se suscribe sólo a
@@ -563,6 +572,17 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-10 — **«Que la app aguante miles de empresas con automatizaciones
+  corriendo»** (el usuario: «revisa también los demás procesos así… ClickUp y
+  Airtable no se ponen lentos»). **v0.1.392 HECHA** (motor de
+  automatizaciones y costo por cambio, ADR-S98). **Sigue v0.1.393**: lo mismo
+  para las integraciones y tareas periódicas — lista completa de hallazgos en
+  la bitácora de v0.1.392. Método que se usó y conviene repetir: medir antes
+  con carga simulada (`pg_stat_database` para transacciones, `/proc/<pid>/stat`
+  para CPU, perfil con `SIGUSR1` + inspector), arreglar, y medir lo mismo
+  después; los scripts quedaron en el scratchpad de la sesión (no en el repo).
+- 2026-11-10 — **Recordatorio pendiente al usuario**: revocar la clave de
+  prueba de WAS que pegó en el chat (v0.1.389).
 - 2026-11-05 — **«Las columnas de Mercado Pago que no se deberían poder
   editar»** — **HECHO en v0.1.383** (el usuario: «revisa cuáles no se deben
   tocar y bloquéalas… las columnas adicionales que yo cree aquí en la app sólo
@@ -1704,6 +1724,53 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-10 · v0.1.392** — **Automatizaciones a escala** (pedido del
+  usuario: «revisa también los demás procesos así; muchas empresas tendrán
+  conectados sus WhatsApp, correos u otras integraciones y quiero que la app
+  procese con alto rendimiento miles de usuarios corriendo automatizaciones en
+  varias listas, casi siempre habrá automatizaciones corriendo; ClickUp y
+  Airtable soportan millones y no se ponen lentos»). Se auditó TODO lo que
+  corre en segundo plano y se partió en dos versiones: ésta el motor de
+  automatizaciones y el costo por cambio; **v0.1.393** las integraciones y las
+  tareas periódicas. **Medido antes** con carga simulada contra la API local
+  (`pg_stat_database`, `/proc`, perfil de CPU): (1) una sola fila para todos —
+  2.000 ediciones de la empresa A dejaban a B esperando **16,5 s** por una
+  corrida—; (2) webhooks, correos, WhatsApp, SMS y reuniones se esperaban con
+  la transacción abierta (diez lentos vaciaban el pool de 20); (3) cada cambio
+  de un registro costaba 8 transacciones aunque la lista no tuviera
+  automatizaciones, y ~5 % de la CPU era drizzle armando consultas
+  relacionales que nadie usa; (4) los vencimientos recorrían la lista entera
+  cada 5 min, todos el mismo minuto; (5) un evento realtime por registro y 2
+  consultas por socket por minuto. Qué entró (ADR-S98): **turnos por empresa**
+  en la cola (prioridad = pendientes de esa empresa, contador en Redis que el
+  worker libera); **la red después del commit** (`AfterCommit`: lo que se
+  escribe con la respuesta va en una transacción nueva y corta);
+  `AUTOMATIONS_CONCURRENCY` (default 10, antes 5 fijas); lista y campos en una
+  transacción; drizzle sin `{ schema }`; el caché de disparadores sabe qué
+  campos esperan «al actualizar» y no encola si no se tocó ninguno;
+  recurrencias, esperas y avisos no consultan si no hay nada que hacer;
+  **vencimientos por ventana** con revisión completa cada 6 h y un minuto por
+  automatización; índices en `automation_runs` (migración 0111); realtime como
+  mucho un aviso por lista y segundo, sockets en tandas de 500. **Después**:
+  sin automatizaciones 8,1 → 3,1 transacciones por cambio (128 → 174/s); con
+  una que no coincide 9,2 → 3,2; con una que corre 23,2 → 13,2 (47 → 71
+  corridas/s); con diez 59,3 → 49,2 (225 → 285/s); B detrás de A 16,5 s →
+  0,1 s y A termina antes (30,7 → 22,3 s); webhook o correo de 1,2 s sin
+  conexión «ociosa en transacción» (la versión anterior falla esas pruebas).
+  Queda (v0.1.393, hallazgos de la auditoría): buzones IMAP con una conexión
+  nueva por minuto y buzón; recordatorios de citas que aplican el LIMIT antes
+  de descartar los ya enviados (bug de corrección); recordatorios de avisos
+  trabados por empresas archivadas; el resumen diario recorre todas las
+  empresas cada hora; el tick de recurrencias sin LIMIT; la revisión de
+  suscripciones con 100 cada 5 min y filas que bloquean la cabeza; la vuelta
+  de calendarios en serie; la cola de SMS por orden de id (no por turnos);
+  `fetch` sin tope de tiempo en la revisión de Mercado Pago de la plataforma;
+  `redis.keys`/`SCAN` sobre todo el espacio de claves; tablas sin retención
+  (avisos, recordatorios, incidentes, corridas de agentes, SMS, actividad);
+  INCR+EXPIRE no atómico en ~15 lugares; las sincronizaciones de tienda y
+  sitio comparten worker con sus avisos; los horarios se re-registran en serie
+  al arrancar.
 
 - **2026-11-10 · v0.1.391** — **WhatsApp recibe sólo lo que se usa** (pregunta
   del usuario con captura de la página de la conexión: «no sé qué tan útil sea

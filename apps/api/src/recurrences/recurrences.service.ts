@@ -21,10 +21,12 @@ import {
     type Role,
 } from '@imagina-base/shared';
 import { and, eq, inArray } from 'drizzle-orm';
+import type Redis from 'ioredis';
+import { REDIS } from '../redis/redis.module';
 import { ActivityService, computeDiff } from '../activity/activity.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { records } from '../db/schema';
+import { records, recurrences } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -84,7 +86,43 @@ export class RecurrencesService {
         @Optional() private readonly timeZones?: TenantTimeZones,
         // v0.1.285 (ADR-S44) — una recurrencia que no puede repetir avisa.
         @Optional() private readonly incidents?: IncidentHub,
+        // v0.1.392 — si la empresa tiene recurrencias «al cambiar el estado».
+        @Optional() @Inject(REDIS) private readonly redis?: Redis,
     ) {}
+
+    /**
+     * v0.1.392 — ¿La empresa tiene alguna recurrencia «al cambiar el estado»?
+     * Antes CADA edición de CADA registro abría una transacción para buscar las
+     * recurrencias de ese registro, aunque la empresa no usara ninguna. Se
+     * recuerda en Redis por empresa con un número de versión que sube al poner
+     * o quitar una recurrencia (quien calculó con una versión vieja no la deja
+     * vigente). Ante cualquier duda, true.
+     */
+    private async mayHaveStatusTriggers(tenantId: number): Promise<boolean> {
+        if (!this.redis || !this.db) return true;
+        try {
+            const [version, cached] = await this.redis.mget(recStatusVersionKey(tenantId), recStatusKey(tenantId));
+            const ver = version ?? '0';
+            if (cached) {
+                const [v, flag] = cached.split(':');
+                if (v === ver) return flag === '1';
+            }
+            const [row] = await this.db
+                .select({ id: recurrences.id })
+                .from(recurrences)
+                .where(and(eq(recurrences.tenantId, tenantId), eq(recurrences.triggerType, 'status_change')))
+                .limit(1);
+            await this.redis.set(recStatusKey(tenantId), `${ver}:${row ? 1 : 0}`, 'EX', 300);
+            return row !== undefined;
+        } catch {
+            return true;
+        }
+    }
+
+    /** Las recurrencias de la empresa cambiaron (se puso o se quitó una). */
+    private async bumpStatusTriggers(tenantId: number): Promise<void> {
+        await this.redis?.incr(recStatusVersionKey(tenantId)).catch(() => undefined);
+    }
 
     /**
      * Upsert por (record, campo de fecha) — validaciones exactas del plugin
@@ -194,6 +232,7 @@ export class RecurrencesService {
                 repeatUntil,
             });
         });
+        await this.bumpStatusTriggers(tenantId);
         return toDto(row);
     }
 
@@ -259,6 +298,7 @@ export class RecurrencesService {
         const deleted = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.delete(tx, tenantId, recordId, id),
         );
+        if (deleted) await this.bumpStatusTriggers(tenantId);
         if (!deleted) {
             throw new NotFoundException({
                 code: 'recurrence_not_found',
@@ -466,6 +506,7 @@ export class RecurrencesService {
         before: Record<string, unknown>,
         after: Record<string, unknown>,
     ): Promise<void> {
+        if (!(await this.mayHaveStatusTriggers(tenantId))) return;
         const recs = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.listForRecord(tx, tenantId, recordId),
         );
@@ -567,3 +608,5 @@ export interface RecurrenceActor {
     teamIds?: readonly number[];
 }
 
+const recStatusKey = (tenantId: number): string => `recst:${tenantId}`;
+const recStatusVersionKey = (tenantId: number): string => `recst:v:${tenantId}`;

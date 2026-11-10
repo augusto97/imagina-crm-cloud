@@ -7961,6 +7961,103 @@ páginas). Ahora:
    2)»…, sin apilar sufijos). Botón en la lista de formularios; la copia se
    abre en el constructor.
 
+
+### ADR-S98 — Automatizaciones a escala: turnos por empresa, la red fuera de la transacción y menos trabajo por cambio (v0.1.392)
+
+**Contexto.** Pedido del usuario: «muchas empresas tendrán conectados sus
+WhatsApp, correos u otras integraciones; quiero que la app procese con alto
+rendimiento miles de usuarios corriendo automatizaciones en varias listas,
+teniendo presente que casi siempre habrá automatizaciones corriendo».
+Se midió antes de tocar nada (API local, `pg_stat_database`, `/proc`, perfil de
+CPU con el inspector de Node):
+
+- **Una sola fila para todos**: la cola de BullMQ atendía por orden de llegada.
+  Una empresa que edita 2.000 registros de golpe dejaba a otra esperando
+  **16,5 s** para que corriera UNA automatización.
+- **La red dentro de la transacción**: webhooks, correos, WhatsApp, SMS,
+  conectores y reuniones se esperaban con la transacción abierta y una
+  conexión de la base tomada (`idle in transaction`). Diez webhooks lentos
+  vaciaban el pool de 20 que comparten la API y los workers.
+- **Costo por cambio de un registro**: 8 transacciones aunque la lista no
+  tuviera ni una automatización (lista y campos se resolvían en dos
+  transacciones por separado, y avisos, recurrencias y esperas consultaban
+  aunque no hubiera nada que hacer); el ~5 % de la CPU de cada pedido era
+  drizzle armando ~95 constructores de consultas relacionales por transacción
+  que la app nunca usa.
+- **Vencimientos**: cada automatización «por fecha» recorría TODOS los registros
+  de su lista cada 5 minutos, y todas a la vez (el mismo minuto del cron).
+- **Realtime**: un evento por registro escrito (una edición masiva de 2.000
+  mandaba 2.000 a cada pestaña) y la revalidación de los sockets hacía 2
+  consultas por socket cada minuto.
+
+**Decisión.**
+
+1. **Turnos por empresa en la cola** (`AutomationDispatcher.addFair`): cada
+   tarea de una empresa entra con prioridad = cuántas tareas de ESA empresa
+   hay pendientes (contador `autoq:n:{tenant}` en Redis, INCR + EXPIRE en
+   MULTI). BullMQ atiende la prioridad más baja primero y, dentro de la misma,
+   por llegada: la primera tarea de cada empresa sale antes que la segunda de
+   cualquiera. El worker libera el turno al terminar o fallar (Lua que nunca
+   deja el contador negativo); vence solo a la hora sin movimiento. Relojes y
+   horarios van sin prioridad (BullMQ los atiende antes). Sin Redis, sin
+   prioridad (igual que antes).
+2. **La red se espera fuera de la transacción** (`AfterCommit` en el motor):
+   la acción prepara todo dentro de su transacción (resolver variables,
+   armar el correo y los adjuntos, decidir a quién) y devuelve una función
+   que hace la llamada externa después del commit; lo que hay que escribir
+   con la respuesta (estado del WhatsApp o del SMS, el enlace y el id de la
+   reunión, el registro del envío) va en una transacción NUEVA y corta. Aplica
+   a webhooks, conectores, acciones con nombre, `send_email`, suscripciones,
+   WhatsApp, SMS y reuniones. Un error de red queda como paso fallido con su
+   motivo. `AUTOMATIONS_CONCURRENCY` (default 10, antes fijo en 5) dice cuántas
+   corren a la vez; cada una toma como mucho una conexión mientras escribe.
+3. **Menos trabajo por cambio**: lista y campos en una transacción
+   (`RecordsService.listAndFields`; `update` los resuelve dentro de la suya);
+   drizzle sin `{ schema }` (`db.query` queda vacío: nadie lo usa); el caché de
+   disparadores guarda qué campos esperan las automatizaciones «al actualizar»
+   (`watch`, por clave `f{id}`) y una edición que no toca ninguno no se encola
+   (si alguna reacciona a cualquier cambio o espera un campo que no existe,
+   se encola siempre: el motor decide); las recurrencias recuerdan en Redis si
+   la empresa tiene alguna «al cambiar el estado» (bandera versionada que se
+   sube al guardar o borrar una); las esperas «hasta una fecha» sólo miran el
+   cambio si tocó un campo de fecha; los avisos calculan el nombre de quien
+   hizo el cambio sólo si hay a quién avisar. Los campos invalidan el caché de
+   disparadores al crearse, renombrarse o borrarse.
+4. **Vencimientos por ventana**: cada corrida mira sólo los registros que
+   pueden haber cambiado de estado desde la última corrida que terminó bien
+   (fecha que cruzó el umbral, registro editado o una corrida fallida para
+   reintentar), con una revisión completa cada 6 horas o cuando cambian la
+   automatización o la zona horaria de la empresa. El punto de partida vive en
+   Redis (`due:scan:{id}`, 2 días) y sólo avanza si la corrida terminó. Cada
+   automatización tiene su minuto (`dueScanPattern`: `{id % 5}-59/5`), así no
+   arrancan todas juntas. Índices nuevos en `automation_runs` (BRIN por fecha,
+   parcial de fallidas y de las que siguen corriendo; migración 0111).
+5. **Realtime**: los avisos de registros por lista salen como mucho uno por
+   segundo (el primero al instante y uno al final que junta el resto); la
+   revalidación de sockets va en tandas de 500 con dos consultas por tanda.
+
+**Medido después** (mismas pruebas):
+
+| Por cada cambio de un registro | Antes | Después |
+| --- | --- | --- |
+| Lista sin automatizaciones | 8,1 tx · 128/s | 3,1 tx · 174/s |
+| Con una automatización que no coincide | 9,2 tx · 105/s | 3,2 tx · 184/s |
+| Con una que corre | 23,2 tx · 47 corridas/s | 13,2 tx · 71/s |
+| Con diez que corren | 59,3 tx · 225 corridas/s | 49,2 tx · 285/s |
+
+Empresa B con una automatización detrás de 2.000 ediciones de A: **16,5 s →
+0,1 s**, y A además termina antes (30,7 → 22,3 s). Un webhook o un correo que
+tarda 1,2 s ya no deja ninguna conexión «ociosa en transacción» (la versión
+anterior falla esas pruebas).
+
+**Consecuencias.** Una empresa grande ya no frena a las demás y una
+integración lenta ya no agota la base. El orden entre las tareas de UNA misma
+empresa sigue siendo el de llegada. Queda para v0.1.393 lo que crece con la
+cantidad de empresas fuera del motor: la lectura de buzones, los recordatorios
+de citas y de avisos, el resumen diario, las recurrencias, la revisión de
+suscripciones y calendarios, el envío de SMS y la retención de tablas que
+crecen sin tope.
+
 ---
 
-**Versión del documento:** 1.162.0 (Una etiqueta de conversión por página y duplicar formularios)
+**Versión del documento:** 1.163.0 (Automatizaciones a escala)

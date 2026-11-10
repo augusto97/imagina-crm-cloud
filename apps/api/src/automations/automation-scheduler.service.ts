@@ -4,8 +4,17 @@ import type { Queue } from 'bullmq';
 import type { AutomationRow } from './automations.repository';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 
-/** Cada N minutos se re-escanean los records vencidos (due_date_reached). */
-const DUE_SCAN_PATTERN = '*/5 * * * *';
+/**
+ * Cada 5 minutos se re-escanean los records vencidos (due_date_reached).
+ * v0.1.392 — repartidos: antes TODAS las automatizaciones por vencimiento de
+ * la plataforma arrancaban en el mismo minuto (`*\/5`) y competían a la vez
+ * por la cola y la base. Ahora cada una cae en uno de los 5 minutos según su
+ * id (la 7 en los minutos 2, 7, 12…): la misma frecuencia, un quinto del pico.
+ */
+export function dueScanPattern(automationId: number): string {
+    const minute = Math.abs(Math.trunc(automationId)) % 5;
+    return `${minute}-59/5 * * * *`;
+}
 
 const schedId = (id: number) => `sched:${id}`;
 const dueId = (id: number) => `due:${id}`;
@@ -55,7 +64,7 @@ export class AutomationScheduler {
             } else if (auto.triggerType === 'due_date_reached') {
                 await this.queue.upsertJobScheduler(
                     dueId(auto.id),
-                    { pattern: DUE_SCAN_PATTERN },
+                    { pattern: dueScanPattern(auto.id) },
                     { name: 'due', data: { tenantId, automationId: auto.id } },
                 );
             }

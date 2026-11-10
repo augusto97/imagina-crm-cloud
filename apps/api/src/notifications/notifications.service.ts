@@ -292,7 +292,14 @@ export class NotificationsService implements OnModuleInit {
         if (!ctx) return;
         const userFieldIds = ctx.fields.filter((f) => f.type === 'user').map((f) => f.id);
         const assigned = newlyAssigned(userFieldIds, c.before, c.after).filter((u) => u !== actorId);
-        const actorName = c.viaPortal ? clientLabel(actorId > 0 ? await this.userName(actorId) : null) : actorId > 0 ? await this.userName(actorId) : null;
+        // v0.1.392 — el nombre de quien lo hizo se busca sólo si hay a quién
+        // avisar (antes, una consulta en cada edición de cada registro).
+        let actorNameP: Promise<string | null> | null = null;
+        const actorNameOf = (): Promise<string | null> =>
+            (actorNameP ??= (async () => {
+                const name = actorId > 0 ? await this.userName(actorId) : null;
+                return c.viaPortal ? clientLabel(name) : name;
+            })());
 
         if (c.kind === 'created' && actorId > 0 && !c.viaPortal) await this.follow(c.tenantId, c.listId, c.recordId, [actorId]);
         if (assigned.length > 0) {
@@ -301,7 +308,7 @@ export class NotificationsService implements OnModuleInit {
                 listId: c.listId,
                 recordId: c.recordId,
                 actorId: actorId > 0 ? actorId : null,
-                title: notificationTitle('assigned', { actorName, recordTitle: ctx.title }),
+                title: notificationTitle('assigned', { actorName: await actorNameOf(), recordTitle: ctx.title }),
                 body: `En «${ctx.list.name}»`,
             });
         }
@@ -324,7 +331,7 @@ export class NotificationsService implements OnModuleInit {
                     listId: c.listId,
                     recordId: c.recordId,
                     actorId: actorId > 0 ? actorId : null,
-                    title: teamAssignedTitle(actorName, ctx.title, info.name),
+                    title: teamAssignedTitle(await actorNameOf(), ctx.title, info.name),
                     body: `En «${ctx.list.name}»`,
                 });
             }
@@ -334,12 +341,13 @@ export class NotificationsService implements OnModuleInit {
         const names = await this.userNames(this.userValues(ctx.fields, c.before, c.after));
         const summary = changeSummary(ctx.fields, c.before, c.after, names);
         if (summary.fieldIds.length === 0) return;
-        const followers = (await this.followerIds(c.tenantId, c.recordId)).filter((u) => !assigned.includes(u));
+        const followers = (await this.followerIds(c.tenantId, c.recordId)).filter((u) => !assigned.includes(u) && u !== actorId);
+        if (followers.length === 0) return;
         await this.deliver(c.tenantId, 'update', followers, {
             listId: c.listId,
             recordId: c.recordId,
             actorId: actorId > 0 ? actorId : null,
-            title: notificationTitle('update', { actorName, recordTitle: ctx.title }),
+            title: notificationTitle('update', { actorName: await actorNameOf(), recordTitle: ctx.title }),
             body: summary.text,
             coalesce: true,
         });

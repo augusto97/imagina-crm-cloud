@@ -261,13 +261,12 @@ export class RecordsService {
             sync?: boolean;
         } = {},
     ): Promise<RecordDto> {
-        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const { list, fields } = await this.listAndFields(tenantId, listIdOrSlug);
         const listId = list.id;
         this.assertCanCreate(list, actor);
         // El tope del plan se verifica DENTRO de la transacción del alta (ver
         // assertRecordRoomInTx): aquí sólo se lee cuál es.
         const planCap = opts.planChecked ? null : ((await this.billing?.recordLimit(tenantId)) ?? null);
-        const fields = await this.fields.listByListId(tenantId, listId);
         const prep = await this.prepareCreate(tenantId, actor, list, fields, input, { lenientRequired: opts.lenientRequired === true, sync: opts.sync === true });
 
         const { row, enriched, rt } = await this.tenantDb.withTenant(tenantId, async (tx) => {
@@ -1096,6 +1095,15 @@ export class RecordsService {
         return this.deps.openBlockerCounts(tx, tenantId, ids, rule && !hiddenIds.has(rule.fieldId) ? rule : null);
     }
 
+    /** v0.1.392 — la lista y sus campos en UNA transacción (antes, una por paso). */
+    private async listAndFields(tenantId: number, listIdOrSlug: string): Promise<{ list: List; fields: Field[] }> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const list = await this.lists.getWithinTx(tx, tenantId, listIdOrSlug);
+            const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
+            return { list, fields };
+        });
+    }
+
     async update(
         tenantId: number,
         actor: Actor,
@@ -1133,16 +1141,18 @@ export class RecordsService {
             origin?: 'booking';
         } = {},
     ): Promise<RecordDto> {
-        const list = opts.prepared?.list ?? (await this.lists.get(tenantId, listIdOrSlug));
-        const listId = list.id;
-        const fields = opts.prepared?.fields ?? (await this.fields.listByListId(tenantId, listId));
-
-        // C3 — un invitado no escribe en lo que no ve.
-        assertGuestWritable(list.settings, fields, actor, input.data);
-        // Los campos `relation` presentes en el patch se sincronizan aparte
-        // (semántica parcial: los ausentes no se tocan).
-        const rel = splitRelationValues(fields, input.data);
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            // v0.1.392 — lista y campos en ESTA transacción: antes eran dos más
+            // (una por paso) en cada edición de cada registro.
+            const list = opts.prepared?.list ?? (await this.lists.getWithinTx(tx, tenantId, listIdOrSlug));
+            const listId = list.id;
+            const fields = opts.prepared?.fields ?? (await this.fields.listByListIdWithinTx(tx, tenantId, listId));
+
+            // C3 — un invitado no escribe en lo que no ve.
+            assertGuestWritable(list.settings, fields, actor, input.data);
+            // Los campos `relation` presentes en el patch se sincronizan aparte
+            // (semántica parcial: los ausentes no se tocan).
+            const rel = splitRelationValues(fields, input.data);
             // Con lock: dos ediciones simultáneas se encolan en vez de pisarse.
             const current = await this.repo.findByIdForUpdate(tx, tenantId, listId, id);
             if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
@@ -1199,8 +1209,10 @@ export class RecordsService {
             const approvalPending = internal ? (await pendingApprovalCounts(tx, [id])).get(id) ?? 0 : 0;
             const checklist = internal ? (await this.checklists.progressOf(tx, tenantId, [id])).get(id) : undefined;
             const rt = updated ? await this.formulaRuntime(tx, tenantId, listId, fields) : undefined;
-            return { updated, enriched, before: current.data, rels, subtasks, rescheduled, blockedOpen, approvalPending, checklist, rt };
+            return { updated, enriched, before: current.data, rels, subtasks, rescheduled, blockedOpen, approvalPending, checklist, rt, list, fields };
         });
+        const { list, fields } = result;
+        const listId = list.id;
         if (!result.updated) throw recordNotFound(id);
         const row = result.updated;
         if (!opts.silent) this.realtime.records(tenantId, listId);
@@ -1361,8 +1373,7 @@ export class RecordsService {
         data: Record<string, unknown>,
         opts: { lenientRequired?: boolean } = {},
     ): Promise<{ patch: Record<string, unknown>; before: Record<string, unknown>; list: List; fields: Field[] }> {
-        const list = await this.lists.get(tenantId, listIdOrSlug);
-        const fields = await this.fields.listByListId(tenantId, list.id);
+        const { list, fields } = await this.listAndFields(tenantId, listIdOrSlug);
         assertGuestWritable(list.settings, fields, actor, data);
         const rel = splitRelationValues(fields, data);
         return this.tenantDb.withTenant(tenantId, async (tx) => {
@@ -1392,9 +1403,8 @@ export class RecordsService {
         input: CreateRecordInput,
         opts: { lenientRequired?: boolean } = {},
     ): Promise<{ data: Record<string, unknown>; list: List; fields: Field[] }> {
-        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const { list, fields } = await this.listAndFields(tenantId, listIdOrSlug);
         this.assertCanCreate(list, actor);
-        const fields = await this.fields.listByListId(tenantId, list.id);
         const prep = await this.prepareCreate(tenantId, actor, list, fields, input, { lenientRequired: opts.lenientRequired === true });
         await this.tenantDb.withTenant(tenantId, (tx) => this.assertUniqueInTx(tx, tenantId, list.id, fields, prep.data, null));
         return { data: prep.data, list, fields };
@@ -1740,8 +1750,7 @@ export class RecordsService {
         snapshot: { children: number[]; relations: Record<string, number[]> },
         opts: { silent?: boolean } = {},
     ): Promise<void> {
-        const list = await this.lists.get(tenantId, listIdOrSlug);
-        const fields = await this.fields.listByListId(tenantId, list.id);
+        const { list, fields } = await this.listAndFields(tenantId, listIdOrSlug);
         const rel = splitRelationValues(fields, snapshot.relations);
         await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [row] = await tx
@@ -1891,8 +1900,7 @@ export class RecordsService {
         listIdOrSlug: string,
         items: Array<{ id: number; data: Record<string, unknown>; expect?: Record<string, unknown> }>,
     ): Promise<BatchUpdateRecordsResult> {
-        const list = await this.lists.get(tenantId, listIdOrSlug);
-        const fields = await this.fields.listByListId(tenantId, list.id);
+        const { list, fields } = await this.listAndFields(tenantId, listIdOrSlug);
         const keyBySlug = new Map(fields.map((f) => [f.slug, jsonbKeyForField(f.id)]));
         const slugByKey = new Map(fields.map((f) => [jsonbKeyForField(f.id), f.slug]));
         const updated: RecordDto[] = [];
@@ -1999,9 +2007,8 @@ export class RecordsService {
         listIdOrSlug: string,
         items: Array<{ id: number; expect?: Record<string, unknown> }>,
     ): Promise<BatchDeleteRecordsResult> {
-        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const { list, fields } = await this.listAndFields(tenantId, listIdOrSlug);
         assertNotStoreManaged(list, 'delete');
-        const fields = await this.fields.listByListId(tenantId, list.id);
         const deleted: number[] = [];
         const failed: BatchDeleteRecordsResult['failed'] = [];
         for (const item of items) {

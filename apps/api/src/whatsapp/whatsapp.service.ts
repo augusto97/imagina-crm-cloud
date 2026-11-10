@@ -298,6 +298,14 @@ function whatsappConnLabel(name: string): string {
     return /^whatsapp\b/i.test(name.trim()) ? name.trim() : `WhatsApp (${name})`;
 }
 
+/** Lo que devuelve una acción de WhatsApp de una automatización. */
+export interface WhatsappAutomationResult {
+    status: 'success' | 'failed' | 'skipped';
+    message: string;
+    details: Record<string, unknown>;
+    write: { listId: number; recordId: number; before: Record<string, unknown>; after: Record<string, unknown> } | null;
+}
+
 @Injectable()
 export class WhatsappService {
     private readonly logger = new Logger(WhatsappService.name);
@@ -2278,13 +2286,14 @@ export class WhatsappService {
             values: Record<string, unknown>;
             merge: (s: string) => string;
             realCall: boolean;
+            /**
+             * v0.1.392 — el motor confirma su transacción ANTES de esperar a
+             * WhatsApp: la parte de red vuelve como `later` y lo enviado se
+             * guarda en una transacción nueva.
+             */
+            deferSend?: boolean;
         },
-    ): Promise<{
-        status: 'success' | 'failed' | 'skipped';
-        message: string;
-        details: Record<string, unknown>;
-        write: { listId: number; recordId: number; before: Record<string, unknown>; after: Record<string, unknown> } | null;
-    }> {
+    ): Promise<WhatsappAutomationResult | { later: () => Promise<WhatsappAutomationResult> }> {
         const v = args.values;
         // v0.1.389 — Imagina WAS: «Enviar mensaje» / «Enviar archivo», con los
         // datos que ya usaba la versión anterior (recipient, message, url, caption).
@@ -2343,24 +2352,32 @@ export class WhatsappService {
                 write: null,
             };
         }
-        const ex = await this.execute(prepared);
-        if (!ex.ok || !ex.wamid) {
+        const ready = prepared;
+        const send = async (): Promise<WhatsappAutomationResult> => {
+            const ex = await this.execute(ready);
+            if (!ex.ok || !ex.wamid) {
+                return {
+                    status: 'failed',
+                    message: `${whatsappConnLabel(ready.connection.name)}: ${this.failureText(ready, ex)}`,
+                    details: { status: ex.status, ...(ex.errorCode !== null ? { error_code: ex.errorCode } : {}) },
+                    write: null,
+                };
+            }
+            const wamid = ex.wamid;
+            const target = { listId: args.recordId !== null ? args.listId : null, recordId: args.recordId, userId: null };
+            const write = args.deferSend
+                ? await this.tenantDb.withTenant(args.tenantId, (t) => this.persistSentInTx(t, ready, wamid, target))
+                : await this.persistSentInTx(tx, ready, wamid, target);
+            this.afterWrite(args.tenantId, write);
+            this.connectionWorks(args.tenantId, ready.connection.id);
             return {
-                status: 'failed',
-                message: `${whatsappConnLabel(prepared.connection.name)}: ${this.failureText(prepared, ex)}`,
-                details: { status: ex.status, ...(ex.errorCode !== null ? { error_code: ex.errorCode } : {}) },
-                write: null,
+                status: 'success',
+                message: `${ready.connection.name} → envió ${label} a +${ready.to}.`,
+                details: { message_id: wamid, to: `+${ready.to}`, ...(ready.template ? { template: ready.template.name } : {}) },
+                write,
             };
-        }
-        const write = await this.persistSentInTx(tx, prepared, ex.wamid, { listId: args.recordId !== null ? args.listId : null, recordId: args.recordId, userId: null });
-        this.afterWrite(args.tenantId, write);
-        this.connectionWorks(args.tenantId, prepared.connection.id);
-        return {
-            status: 'success',
-            message: `${prepared.connection.name} → envió ${label} a +${prepared.to}.`,
-            details: { message_id: ex.wamid, to: `+${prepared.to}`, ...(prepared.template ? { template: prepared.template.name } : {}) },
-            write,
         };
+        return args.deferSend ? { later: send } : send();
     }
 }
 

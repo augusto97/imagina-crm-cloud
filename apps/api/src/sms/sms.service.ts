@@ -164,6 +164,14 @@ export function formatScheduled(at: Date, timeZone: string): string {
     return `el ${day} a las ${h}:${m}`;
 }
 
+/** Lo que devuelve una acción «Enviar SMS» de una automatización. */
+export interface SmsAutomationResult {
+    status: 'success' | 'failed' | 'skipped';
+    message: string;
+    details: Record<string, unknown>;
+    write: WriteResult | null;
+}
+
 @Injectable()
 export class SmsService {
     private readonly logger = new Logger(SmsService.name);
@@ -1347,8 +1355,16 @@ export class SmsService {
             values: Record<string, unknown>;
             merge: (s: string) => string;
             realCall: boolean;
+            /**
+             * v0.1.392 — el motor confirma su transacción ANTES de esperar al
+             * proveedor: con esto, la parte de red vuelve como `later` y el
+             * resultado se escribe en una transacción nueva (el SMS queda
+             * «enviando» confirmado mientras tanto: si el proceso se corta,
+             * `recoverStuck` lo marca fallido en vez de mandarlo dos veces).
+             */
+            deferSend?: boolean;
         },
-    ): Promise<{ status: 'success' | 'failed' | 'skipped'; message: string; details: Record<string, unknown>; write: WriteResult | null }> {
+    ): Promise<SmsAutomationResult | { later: () => Promise<SmsAutomationResult> }> {
         const v = args.values;
         let p: Prepared;
         try {
@@ -1408,24 +1424,32 @@ export class SmsService {
             userId: null,
             automationId: args.automationId,
         });
-        const ex = await this.execute(p, ref, await this.callbackFor(args.tenantId, p.conn));
-        const status = await this.applyOutcomeInTx(tx, args.tenantId, id, p, ex);
-        let write: WriteResult | null = null;
-        if (target.listId !== null && target.recordId !== null) {
-            write = await this.writeRecordInTx(tx, args.tenantId, target.listId, target.recordId, { status, ...(ex.outcome.ok ? { at: new Date() } : {}) });
-            await this.logInTx(tx, args.tenantId, { listId: target.listId, recordId: target.recordId, userId: null }, p, ex.outcome.ok ? 'sent' : 'failed', ex.outcome.ok ? {} : { error: ex.outcome.error });
-        }
-        this.afterWrite(args.tenantId, write);
-        this.afterOutcome(args.tenantId, p, ex);
-        if (!ex.outcome.ok) {
-            return { status: 'failed', message: `SMS (${p.conn.name}): ${ex.outcome.error}`, details: { code: ex.outcome.code, message_id: id }, write };
-        }
-        return {
-            status: 'success',
-            message: `${p.conn.name} → envió ${label}.`,
-            details: { message_id: id, provider_message_id: ex.outcome.providerId, segments: ex.outcome.segments ?? p.seg.segments },
-            write,
+        const prepared = p;
+        const withTx = args.deferSend
+            ? <T>(fn: (t: Tx) => Promise<T>): Promise<T> => this.tenantDb.withTenant(args.tenantId, fn)
+            : <T>(fn: (t: Tx) => Promise<T>): Promise<T> => fn(tx);
+        const send = async (): Promise<SmsAutomationResult> => {
+            const ex = await this.execute(prepared, ref, await this.callbackFor(args.tenantId, prepared.conn));
+            const write = await withTx(async (t) => {
+                const status = await this.applyOutcomeInTx(t, args.tenantId, id, prepared, ex);
+                if (target.listId === null || target.recordId === null) return null;
+                const w = await this.writeRecordInTx(t, args.tenantId, target.listId, target.recordId, { status, ...(ex.outcome.ok ? { at: new Date() } : {}) });
+                await this.logInTx(t, args.tenantId, { listId: target.listId, recordId: target.recordId, userId: null }, prepared, ex.outcome.ok ? 'sent' : 'failed', ex.outcome.ok ? {} : { error: ex.outcome.error });
+                return w;
+            });
+            this.afterWrite(args.tenantId, write);
+            this.afterOutcome(args.tenantId, prepared, ex);
+            if (!ex.outcome.ok) {
+                return { status: 'failed', message: `SMS (${prepared.conn.name}): ${ex.outcome.error}`, details: { code: ex.outcome.code, message_id: id }, write };
+            }
+            return {
+                status: 'success',
+                message: `${prepared.conn.name} → envió ${label}.`,
+                details: { message_id: id, provider_message_id: ex.outcome.providerId, segments: ex.outcome.segments ?? prepared.seg.segments },
+                write,
+            };
         };
+        return args.deferSend ? { later: send } : send();
     }
 
     // ── Columnas de la lista ────────────────────────────────────────────
