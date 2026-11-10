@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
+import { WidgetFromFormCard } from '@/admin/widgets/WidgetFromFormCard';
 import { EmbedCodePicker } from './EmbedCodePicker';
 import { PublicQrCard } from './PublicQrCard';
 
@@ -41,6 +42,7 @@ export function ShareDialog({
     onRegenerate,
     tab,
     onTab,
+    formId,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -65,6 +67,8 @@ export function ShareDialog({
     onRegenerate?: () => void;
     tab: ShareTab;
     onTab: (t: ShareTab) => void;
+    /** v0.1.394 — el formulario (para armar un widget de contacto con él). */
+    formId?: number;
 }): JSX.Element {
     const isForm = kind === 'form';
     const prefix = isForm ? 'form' : 'booking';
@@ -173,6 +177,7 @@ export function ShareDialog({
                                 extra={<DomainsSection kind={kind} domains={domains} testId={`${prefix}-domains`} />}
                             />
                         )}
+                        {tab === 'embed' && isForm && formId !== undefined && <WidgetFromFormCard formId={formId} name={name} />}
                         {tab === 'qr' && (
                             <div className="imcrm-mx-auto imcrm-max-w-2xl">
                                 <PublicQrCard url={url} name={name} kind={kind} />

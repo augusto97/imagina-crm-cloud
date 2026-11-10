@@ -100,6 +100,8 @@ const EXPLICIT: Record<string, keyof IdMaps> = {
     file_id: 'attachment',
     // v0.1.275 — el formulario que filtra un disparador `form_submitted`.
     form_id: 'form',
+    // v0.1.394 — el formulario de «WhatsApp con datos primero» de un widget de contacto.
+    capture_form_id: 'form',
     // C5 — el flujo de aprobación de un campo «Aprobación», del disparador
     // «Cuando se aprueba o se rechaza» y de «Pedir / Esperar aprobación».
     approval_flow_id: 'approval_flow',

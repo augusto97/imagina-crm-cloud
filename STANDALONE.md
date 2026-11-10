@@ -8128,3 +8128,61 @@ la versión anterior falla la de cada bug):
 ---
 
 **Versión del documento:** 1.164.0 (Integraciones y tareas periódicas a escala)
+
+### ADR-S99 — Widget de contacto para el sitio de la empresa (v0.1.394)
+
+**Contexto.** Pedido del usuario: «botones de contacto como los de WhatsApp o
+contactar ahora, o un formulario que se abre como un chat flotante lateral…
+que se le pidan datos (nombre y celular), quede el registro en la lista y con
+eso enviar un mensaje con la integración de WhatsApp». Hasta acá un formulario
+o la agenda se insertaban de a uno (ADR-S95: en la página, ventana, panel o
+botón flotante); no había un botón con VARIAS formas de contacto ni forma de
+pedir los datos antes de abrir WhatsApp. Se aprobó en tres entregas (v0.1.394
+el widget; v0.1.395 piel de chat, asesores, horario y receta de respuesta;
+v0.1.396 saludo, reglas por página y estadísticas). No se hace un chat en vivo
+dentro de la app: la conversación vive en WhatsApp (ADR-S69).
+
+**Decisión.**
+
+1. **Objeto de la EMPRESA** (no de una lista): tabla `contact_widgets`
+   (migración 0113, RLS) con nombre, token opaco, publicado y `config` jsonb
+   (`contactWidgetConfigSchema` en shared, leído con tolerancia: un botón roto
+   se descarta). Hasta 8 botones: WhatsApp, formulario, agenda, llamar, correo,
+   enlace. Lo arma quien arma formularios (`manage_forms`, módulo `forms` del
+   plan), en **Ajustes → Widget de contacto**, con la vista previa REAL al lado
+   (la página del widget en `/public/w/preview` recibe el diseño por
+   `postMessage`; la MISMA función `buildPublicWidgetButton` arma la vista
+   previa y la página pública).
+2. **Un solo `<script>`**: el mismo `embed.js` de ADR-S95 reconoce
+   `data-imagina-widget` y crea, después del `load` del sitio, UN marco fijo en
+   la esquina que mide lo justo (`imb-w-size`: cerrado, el botón; abierto, el
+   panel; en el celular pantalla completa o una barra a lo ancho). El sitio no
+   recibe estilos ni scripts ajenos (todo en el marco) y funciona con una CSP
+   estricta. La página del widget es cacheable como la de un formulario
+   (ADR-S95: `PublicCache`, precomprimida, CSP por hash del cliente en línea,
+   `frame-ancestors` por los sitios elegidos).
+3. **El número de WhatsApp nunca viaja a la página**: el botón apunta a
+   `/public/w/:token/go/:button?u=&t=`, que redirige (302, `no-store`,
+   `Referrer-Policy: no-referrer`) a `wa.me` con el mensaje armado
+   (`{{pagina}}`, `{{url}}`).
+4. **«WhatsApp con datos primero»**: el botón abre un formulario en el panel
+   (`capture_form_id`); el envío lleva `widget {token, button, page_title}` y,
+   si el widget es de la MISMA empresa, está publicado y ese botón apunta a ese
+   formulario, la respuesta devuelve `whatsapp {url}` con el mensaje armado con
+   las respuestas (por slug; correo y teléfono incluidos aquí: los escribió la
+   persona para esto). El registro se crea como cualquier envío (automatizaciones
+   incluidas). Si el formulario se despublica, el botón vuelve a WhatsApp
+   directo (nunca un botón muerto).
+5. **Lo que no funciona no se ve**: publicar exige que no haya problemas
+   (`widgetProblems`, 400 `widget_not_ready`); la página pública muestra sólo
+   los botones sanos; empresa pausada, archivada o sin el módulo → página vacía
+   transparente (404), nunca un cartel en el sitio de la empresa.
+6. **Migrar una empresa** lleva los widgets con código nuevo (aviso) y los
+   formularios/agendas re-apuntados (`capture_form_id` sumado al re-mapeo);
+   borrar la empresa los borra.
+
+**Consecuencias.** El código se pega una vez y los cambios llegan solos (la
+caché pública vence en 30 s). El tráfico del sitio no toca la base: el armado
+se comparte (single-flight) y el resto es caché. Quedan para las entregas
+siguientes la piel de chat del formulario, asesores con turnos, horario de
+atención, saludo proactivo, reglas por página y estadísticas por botón.

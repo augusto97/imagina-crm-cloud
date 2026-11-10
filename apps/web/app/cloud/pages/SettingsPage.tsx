@@ -40,6 +40,7 @@ import { CaptchaKeysCard } from '@/cloud/components/CaptchaKeysCard';
 import { PortalAuthCard } from '@/cloud/components/PortalAuthCard';
 import { DataConsentPanel } from '@/cloud/components/DataConsentPanel';
 import { TenantStoragePanel } from '@/cloud/components/TenantStoragePanel';
+import { ContactWidgetsPanel } from '@/cloud/components/ContactWidgetsPanel';
 import { Badge } from '@/components/ui/badge';
 import { BackToIndex, SectionIndex } from '@/components/nav/SectionIndex';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
@@ -85,8 +86,9 @@ export function SettingsPage(): JSX.Element {
 
     const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS);
     const canManageTeams = useCan(CAP.MANAGE_TEAMS);
+    const canManageForms = useCan(CAP.MANAGE_FORMS);
     const isGuest = useIsGuest();
-    const groups = settingsSectionGroups({ isAdmin, canManageAutomations, canManageTeams, isGuest });
+    const groups = settingsSectionGroups({ isAdmin, canManageAutomations, canManageTeams, canManageForms, isGuest });
     const visible = groups.flatMap((g) => g.items);
     // Fallback a "plan" (admin) o "seguridad" si el param no existe o apunta a
     // una sección que este rol no ve.
@@ -202,6 +204,13 @@ export function SettingsPage(): JSX.Element {
                         </PlanModuleGate>
                         <CaptchaKeysCard scope="tenant" />
                     </div>
+                )}
+
+                {/* v0.1.394 (ADR-S99) — el widget de contacto para el sitio. */}
+                {active === 'widgets' && (isAdmin || canManageForms) && (
+                    <PlanModuleGate module="forms">
+                        <ContactWidgetsPanel />
+                    </PlanModuleGate>
                 )}
 
                 {/* Ley 1581 — autorización de tratamiento de datos personales. */}

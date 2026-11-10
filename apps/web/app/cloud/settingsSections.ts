@@ -8,6 +8,7 @@ import {
     KeyRound,
     HardDrive,
     Mail,
+    MessageCircle,
     History,
     Palette,
     ShieldCheck,
@@ -42,6 +43,7 @@ export type SettingsSectionId =
     | 'formato'
     | 'correo'
     | 'portal'
+    | 'widgets'
     | 'privacidad'
     | 'almacenamiento'
     | 'conectores'
@@ -73,6 +75,7 @@ const ITEMS: Record<SettingsSectionId, SettingsSectionItem> = {
     almacenamiento: { id: 'almacenamiento', label: 'Almacenamiento', icon: HardDrive, hint: 'Dónde se guardan los archivos' },
     asistente: { id: 'asistente', label: 'Asistente IA', icon: Sparkles, hint: 'Activar el asistente y usar tu propia clave' },
     portal: { id: 'portal', label: 'Portal y formularios', icon: DoorOpen, hint: 'Cómo entran tus clientes y el captcha' },
+    widgets: { id: 'widgets', label: 'Widget de contacto', icon: MessageCircle, hint: 'Un botón en tu sitio con tu WhatsApp, tus formularios y tu agenda' },
     privacidad: { id: 'privacidad', label: 'Datos personales', icon: Scale, hint: 'Autorización de tratamiento de datos' },
     problemas: { id: 'problemas', label: 'Problemas', icon: TriangleAlert, hint: 'Lo que corre solo y dejó de funcionar' },
     auditoria: { id: 'auditoria', label: 'Registro de actividad', icon: History, hint: 'Quién cambió qué en la empresa' },
@@ -95,6 +98,7 @@ export function settingsSectionGroups({
     isAdmin,
     canManageAutomations = false,
     canManageTeams = false,
+    canManageForms = false,
     isGuest = false,
 }: {
     isAdmin: boolean;
@@ -102,6 +106,8 @@ export function settingsSectionGroups({
     canManageAutomations?: boolean;
     /** C1 — Equipos: el admin o quien tiene «Gestionar equipos». */
     canManageTeams?: boolean;
+    /** v0.1.394 — Widget de contacto: quien arma formularios. */
+    canManageForms?: boolean;
     /** C3 — un invitado de afuera sólo ve SU cuenta. */
     isGuest?: boolean;
 }): SettingsSectionGroup[] {
@@ -126,7 +132,7 @@ export function settingsSectionGroups({
             // El id `conectores` se conserva: es la ruta del callback OAuth.
             items: pick((isAdmin || canManageAutomations) && 'conectores', isAdmin && 'correo', isAdmin && 'almacenamiento', isAdmin && 'asistente'),
         },
-        { label: 'Clientes', items: pick(isAdmin && 'portal', isAdmin && 'privacidad') },
+        { label: 'Clientes', items: pick(isAdmin && 'portal', (isAdmin || canManageForms) && 'widgets', isAdmin && 'privacidad') },
         {
             label: 'Mantenimiento',
             // Papelera: TODO miembro la abre (lo que borró y lo de las listas que ve).

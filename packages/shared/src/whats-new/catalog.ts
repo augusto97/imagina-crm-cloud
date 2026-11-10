@@ -2176,4 +2176,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver la agenda de citas', href: '/aprende/agenda-citas' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.394-widget-de-contacto',
+        version: '0.1.394',
+        date: '2026-11-10',
+        kind: 'feature',
+        title: 'Widget de contacto: WhatsApp, formularios y tu agenda en un botón',
+        summary:
+            'Pon en tu sitio un botón fijo que abre un panel tipo chat con tu WhatsApp, tus formularios y tu agenda. Puede pedir nombre y celular antes de abrir WhatsApp: el contacto queda en tu lista y el mensaje sale armado con sus datos.',
+        media: {
+            slides: [
+                {
+                    title: 'Un botón con todo',
+                    text: 'WhatsApp, un formulario, tu agenda, llamar, correo o un enlace. Los formularios y la agenda se abren ahí mismo, sin salir de tu sitio.',
+                    illustration: 'widget-contacto',
+                },
+                {
+                    title: 'Sus datos antes de WhatsApp',
+                    text: 'Con «Pedir sus datos antes de abrir WhatsApp», la persona deja su nombre y celular, queda como registro y WhatsApp se abre con el mensaje ya escrito.',
+                    illustration: 'form-automation',
+                },
+                {
+                    title: 'Pegas el código una vez',
+                    text: 'Lo diseñas con la vista previa al lado, lo publicas y pegas el código en el pie de tu sitio. Si cambias algo, el sitio se actualiza solo.',
+                    illustration: 'embed-popup',
+                },
+            ],
+        },
+        body: 'Arma el tuyo en **Ajustes → Widget de contacto**. También puedes empezar desde **Compartir → Insertar en tu sitio** de un formulario.',
+        action: { label: 'Crear mi widget', href: '/settings?s=widgets' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

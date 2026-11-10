@@ -36,7 +36,8 @@ const PREVIEW = BOOT.preview;
 let meta: PublicWidgetMeta | null = BOOT.meta;
 
 /** Margen dentro del marco para que la sombra no se corte. */
-const PAD = 16;
+/** El aire alrededor del widget dentro del marco: deja ver su sombra entera. */
+const PAD = 28;
 const MOBILE_MAX = 640;
 const LAUNCHER = 58;
 
@@ -133,7 +134,7 @@ function isMobile(): boolean {
     return w < MOBILE_MAX;
 }
 
-function useBar(): boolean {
+function showsBar(): boolean {
     return !!meta && meta.mobile_bar && isMobile() && meta.buttons.length > 0;
 }
 
@@ -141,7 +142,7 @@ function useBar(): boolean {
 function fullScreen(): boolean {
     if (!open || !meta) return false;
     if (!isMobile()) return false;
-    return meta.layout === 'card' || current !== null || useBar();
+    return meta.layout === 'card' || current !== null || showsBar();
 }
 
 function panelHeight(): number {
@@ -202,7 +203,11 @@ function onPick(b: PublicWidgetButton, ev: Event): void {
                   ? 'En tu sitio, esto llama a tu número.'
                   : b.type === 'email'
                     ? 'En tu sitio, esto abre el correo de la persona con tu dirección.'
-                    : 'En tu sitio, esto abre el enlace.',
+                    : b.type === 'form'
+                      ? 'Elige un formulario publicado para verlo aquí.'
+                      : b.type === 'booking'
+                        ? 'Elige una agenda publicada para verla aquí.'
+                        : 'En tu sitio, esto abre el enlace.',
         );
     }
 }
@@ -265,6 +270,11 @@ function build(): void {
         // Sin `embed.js` (la vista previa o la página abierta sola), el borde lo pone el widget.
         root.style.bottom = `${meta.offset_y}px`;
         root.style[meta.position === 'left' ? 'left' : 'right'] = `${meta.offset_x}px`;
+    } else {
+        // Insertado, el marco se corre `offset − PAD` del borde (nunca menos de 0): lo que
+        // falta para llegar a la separación elegida lo pone el widget adentro del marco.
+        root.style.bottom = `${edgeInset(meta.offset_y)}px`;
+        root.style[meta.position === 'left' ? 'left' : 'right'] = `${edgeInset(meta.offset_x)}px`;
     }
 
     // Panel: el inicio (saludo + botones) y la vista de un formulario/agenda.
@@ -394,7 +404,7 @@ function setOpen(next: boolean): void {
         const first = (current ? viewBack : panel?.querySelector<HTMLElement>('.w-opt')) ?? null;
         window.setTimeout(() => first?.focus(), 30);
     } else {
-        window.setTimeout(() => (useBar() ? null : launcher?.focus()), 30);
+        window.setTimeout(() => (showsBar() ? null : launcher?.focus()), 30);
     }
 }
 
@@ -436,7 +446,7 @@ function showHome(): void {
 
 function paint(): void {
     if (!meta || !root || !panel || !menu || !launcher || !bar || !home || !viewBox) return;
-    const barMode = useBar();
+    const barMode = showsBar();
     const full = fullScreen();
     document.body.classList.toggle('w-full', full);
     root.classList.toggle('w-open', open);
@@ -450,6 +460,8 @@ function paint(): void {
     menu.classList.toggle('w-hidden', !(open && !showPanel));
     if (!full) panel.style.setProperty('--w-ph', `${panelHeight()}px`);
 
+    // El inicio mide lo que tiene; un formulario o la agenda, el alto completo.
+    panel.classList.toggle('w-viewing', current !== null);
     home.style.display = current ? 'none' : 'contents';
     viewBox.style.display = current ? 'flex' : 'none';
     if (current && viewTitle) viewTitle.textContent = current.label;
@@ -464,6 +476,11 @@ function paint(): void {
     requestAnimationFrame(report);
 }
 
+/** Del lado del borde, el aire dentro del marco: la separación elegida, hasta PAD. */
+function edgeInset(offset: number): number {
+    return Math.min(Math.max(0, offset), PAD);
+}
+
 let lastSize = '';
 /** Le dice a `embed.js` cuánto marco hace falta (lo justo: el resto del sitio sigue tocándose). */
 function report(): void {
@@ -472,15 +489,15 @@ function report(): void {
     let msg: Record<string, unknown>;
     if (fullScreen()) {
         msg = { type: 'imb-w-size', full: true, open: true };
-    } else if (useBar() && !open) {
+    } else if (showsBar() && !open) {
         const h = bar ? Math.ceil(bar.getBoundingClientRect().height) : 60;
         msg = { type: 'imb-w-size', bar: true, h, open: false };
     } else {
         const r = root.getBoundingClientRect();
         msg = {
             type: 'imb-w-size',
-            w: Math.ceil(r.width) + 2 * PAD,
-            h: Math.ceil(r.height) + 2 * PAD,
+            w: Math.ceil(r.width) + PAD + edgeInset(meta.offset_x),
+            h: Math.ceil(r.height) + PAD + edgeInset(meta.offset_y),
             pad: PAD,
             ox: meta.offset_x,
             oy: meta.offset_y,

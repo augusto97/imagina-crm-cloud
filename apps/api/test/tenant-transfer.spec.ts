@@ -51,6 +51,7 @@ import {
     timeEntries,
     users,
     bookingPages,
+    contactWidgets,
     bookingAppointments,
     whatsappContacts,
     whatsappHooks,
@@ -550,6 +551,15 @@ describe('Migración de empresa (v0.1.197)', () => {
             })
             .returning();
         agendaId = agenda!.id;
+        // v0.1.394 — un widget de contacto con la agenda y un botón de WhatsApp.
+        await pg.db.insert(contactWidgets).values({
+            tenantId: tenantA,
+            name: 'Sitio',
+            token: 'widget-token-del-origen-123',
+            enabled: true,
+            config: { buttons: [{ id: 'ag', type: 'booking', booking_page_id: agenda!.id }, { id: 'wa', type: 'whatsapp', phone: '+573001112233', capture_form_id: 999999 }] },
+            createdBy: anaId,
+        });
         await pg.db.insert(bookingAppointments).values({
             tenantId: tenantA,
             pageId: agenda!.id,
@@ -950,6 +960,14 @@ describe('Migración de empresa (v0.1.197)', () => {
         const citas = newAutos.find((a) => a.name === 'Citas')!;
         expect((citas.triggerConfig as { booking_page_id?: number }).booking_page_id).toBe(newAgenda!.id);
         expect(res.warnings.some((w) => w.includes('página(s) de agenda'))).toBe(true);
+        // v0.1.394 — el widget: código nuevo, la agenda re-apuntada y un formulario
+        // que no viajó queda sin destino (nunca apunta a uno de otra empresa).
+        const [newWidget] = await pg.db.select().from(contactWidgets).where(eq(contactWidgets.tenantId, tenantB));
+        expect(newWidget!.token).not.toBe('widget-token-del-origen-123');
+        const wcfg = newWidget!.config as { buttons: Array<{ booking_page_id?: number | null; capture_form_id?: number | null }> };
+        expect(wcfg.buttons[0]!.booking_page_id).toBe(newAgenda!.id);
+        expect(wcfg.buttons[1]!.capture_form_id ?? null).toBeNull();
+        expect(res.warnings.some((w) => w.includes('widget(s) de contacto'))).toBe(true);
         const facturar = newAutos.find((a) => a.name === 'Facturar')!;
         const acciones = facturar.actions as unknown as Array<{ type: string; config: Record<string, unknown> }>;
         expect(acciones[0]!.config.target_list_id).toBe(newFacturas.id);

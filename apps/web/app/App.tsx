@@ -53,6 +53,8 @@ const InboxPage = lazyWithReload(() => import('@/admin/layout/NotificationInbox'
 const MenuPage = lazyWithReload(() => import('@/admin/menu/MenuPage').then(m => ({ default: m.MenuPage })));
 // v0.1.347 — el editor de la barra de abajo del celular.
 const MobileNavPage = lazyWithReload(() => import('@/admin/menu/MobileNavPage').then(m => ({ default: m.MobileNavPage })));
+// v0.1.394 (ADR-S99) — el editor del widget de contacto.
+const WidgetEditorPage = lazyWithReload(() => import('@/admin/widgets/WidgetEditorPage').then(m => ({ default: m.WidgetEditorPage })));
 const CloudSettingsPage = lazyWithReload(() => import('@/cloud/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const ListBuilderPage = lazyWithReload(() => import('@/admin/lists/ListBuilderPage').then(m => ({ default: m.ListBuilderPage })));
 const RecordLayoutEditorPage = lazyWithReload(() => import('@/admin/records/layout/editor/RecordLayoutEditorPage').then(m => ({ default: m.RecordLayoutEditorPage })));
@@ -232,6 +234,9 @@ export function App(): JSX.Element {
                 } />
                 <Route path="settings/whatsapp/:connectionId" element={
                     <RouteModuleGate module="integrations"><Suspense fallback={<RouteFallback />}><WhatsappPage /></Suspense></RouteModuleGate>
+                } />
+                <Route path="settings/widgets/:widgetId" element={
+                    <RouteModuleGate module="forms"><Suspense fallback={<RouteFallback />}><WidgetEditorPage /></Suspense></RouteModuleGate>
                 } />
                 <Route path="settings/sms/:connectionId" element={
                     <RouteModuleGate module="integrations"><Suspense fallback={<RouteFallback />}><SmsPage /></Suspense></RouteModuleGate>

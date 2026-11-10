@@ -2746,7 +2746,8 @@ function done(
     if (pay) kids.push(...payNodes(pay));
     if (sub) kids.push(...subNodes(sub));
     if (payError) kids.push(el('p', { cls: 'ib-pay-error', role: 'alert', 'data-testid': 'form-pay-error', text: payError }));
-    if (m.allow_another && !pay && !sub) {
+    // Con WhatsApp después del envío, ése es el paso siguiente: «Enviar otra respuesta» sobra.
+    if (m.allow_another && !pay && !sub && !finalWhatsapp) {
         const again = el('button', { type: 'button', cls: 'ib-btn ib-btn-secondary', text: 'Enviar otra respuesta' });
         again.addEventListener('click', () => location.reload());
         kids.push(again);
