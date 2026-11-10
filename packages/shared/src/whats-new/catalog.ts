@@ -2238,4 +2238,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Editar mi widget', href: '/settings?s=widgets' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.396-widget-saludo-estadisticas',
+        version: '0.1.396',
+        date: '2026-11-10',
+        kind: 'feature',
+        title: 'Widget de contacto: un saludo por página, dónde aparece y sus estadísticas',
+        summary:
+            'Elige en qué páginas y dispositivos aparece tu widget, si aparece a los segundos o cuando la persona baja, y un saludo junto al botón distinto por página. Y mira cuántas veces se abre, qué botón tocan y cuántos te dejan sus datos.',
+        media: {
+            slides: [
+                {
+                    title: 'Un saludo que se adelanta',
+                    text: '«¿Dudas con los planes?» junto al botón, a los segundos que elijas y con un texto distinto en cada página. Tocarlo abre el widget.',
+                    illustration: 'widget-contacto',
+                },
+                {
+                    title: 'Sólo donde hace falta',
+                    text: 'Todas las páginas, sólo las que contienen ciertas palabras o todas menos algunas; en celular, en computador o en los dos; enseguida, a los segundos o al bajar.',
+                    illustration: 'widget-horario',
+                },
+                {
+                    title: 'Sus números',
+                    text: 'Cuántas veces apareció, cuántas lo abrieron, los toques de cada botón y los contactos que llegaron por cada uno. Sin guardar nada de cada persona.',
+                    illustration: 'form-stats',
+                },
+            ],
+        },
+        body: 'En **Ajustes → Widget de contacto** edita tu widget: **Dónde aparece** tiene las páginas y el saludo, y **Estadísticas** los números.',
+        action: { label: 'Editar mi widget', href: '/settings?s=widgets' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

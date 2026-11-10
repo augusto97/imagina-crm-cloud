@@ -114,7 +114,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 |---|---|---|
 | D1 · El correo de cada registro (Gmail/Outlook de cada persona en la ficha) | alto (CRM) · L | Opt-in por persona; sólo hilos con contactos de la lista. |
 | D4 · SMS (Twilio, Infobip o proveedor local) | medio · S | |
-| D7 · Chat para el sitio web que crea el lead | medio · M-L | Guardando sólo lo necesario, como D3. |
 | D8 · Encuesta NPS / satisfacción de un clic | medio · S-M | **En parte hecho en v0.1.355**: los formularios tienen la escala NPS (0 a 10) y la matriz para calificar varios aspectos. Queda responder con un clic desde el correo (cada número es un enlace). |
 | D9 · Seguimientos 1 a 1 desde una vista | medio · M | Choca con ADR-S18: sólo con correo propio y con límites. |
 
@@ -213,6 +212,9 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
   la interfaz (la API está lista); recalcular por desfase al reprogramar; ruta
   crítica.
 - **Campo Botón (v0.1.303)**: botones en el kanban y en las tarjetas.
+- **Widget de contacto (v0.1.394-v0.1.396, D7 hecha)**: atender por equipo
+  (repartir entre las personas de un equipo, no una lista fija); botones del
+  widget en el portal; estadísticas que viajen al migrar una empresa.
 - **App instalable y push (v0.1.314)**: modo offline (H2); push e
   instalación para el portal del cliente (junto con su dominio); el logo de la
   empresa como ícono de la app; re-vincular la suscripción con la app cerrada

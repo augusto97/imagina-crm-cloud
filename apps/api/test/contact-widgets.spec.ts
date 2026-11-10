@@ -11,7 +11,8 @@ import { AutomationDispatcher, type TriggerEvent } from '../src/automations/auto
 import { loadEnv } from '../src/config/env';
 import { ContactWidgetsService } from '../src/contact-widgets/contact-widgets.service';
 import { renderWidgetPage, widgetPageCsp } from '../src/contact-widgets/widget-page';
-import { bookingPages, contactWidgets, forms, memberships, records, tenants, users } from '../src/db/schema';
+import { WidgetStatsService } from '../src/contact-widgets/widget-stats.service';
+import { bookingPages, contactWidgets, forms, memberships, records, tenants, users, widgetStats } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -394,6 +395,54 @@ describe('v0.1.394 — widget de contacto (Postgres + Redis reales)', () => {
         await pg.db.update(tenants).set({ settings: { branding: { primary_color: '#7c3aed', app_name: 'Acme Store' } } }).where(eq(tenants.id, tenantId));
     });
 
+    it('v0.1.396 — dónde aparece y saludo van a la página; las estadísticas se suman y se vuelcan sin pisarse', async () => {
+        const lead = await leadForm();
+        const w = await widgets.create(tenantId, 0, { name: 'Con estadísticas' });
+        const config = cfg({
+            buttons: [
+                { id: 'wa', type: 'whatsapp', phone: '+573001112233' },
+                { id: 'fm', type: 'form', form_id: lead.id },
+            ],
+            display: { pages: 'only', page_terms: 'planes, cotizacion', devices: 'mobile', delay_s: 8, scroll_pct: 30 },
+            greeting: { enabled: true, text: '¿Te ayudamos?', rules: [{ contains: 'planes', text: '¿Dudas con los planes?' }, { contains: '', text: 'sin palabras' }] },
+        });
+        await widgets.update(tenantId, w.id, { enabled: true, config });
+        const token = await widgetToken(tenantId, w.id);
+        const info = (await widgets.cachedPageInfo(token))!;
+        expect(info.meta.display).toEqual({ pages: 'only', page_terms: 'planes, cotizacion', devices: 'mobile', delay_s: 8, scroll_pct: 30 });
+        // La regla sin palabras no viaja.
+        expect(info.meta.greeting).toEqual({ text: '¿Te ayudamos?', rules: [{ contains: 'planes', text: '¿Dudas con los planes?' }], delay_s: 5, mobile: false });
+        expect(info.buttonIds).toEqual(['wa', 'fm']);
+        expect(info.timeZone).toBeTruthy();
+
+        const stats = new WidgetStatsService(tenantDb, redis);
+        const target = { tenantId, widgetId: w.id, timeZone: info.timeZone };
+        const ids = new Set(info.buttonIds);
+        await stats.record(target, IP, [{ kind: 'view', dev: 'mobile' }, { kind: 'open' }, { kind: 'click', button: 'wa' }, { kind: 'click', button: 'otro' }], ids);
+        await stats.record(target, IP, [{ kind: 'view' }, { kind: 'click', button: 'fm' }, { kind: 'lead', button: 'fm' }, { kind: 'lead', button: 'otro' }], ids);
+        // Antes de volcar se ve lo que está en Redis.
+        let sum = await stats.summary(target, 7);
+        expect(sum).toMatchObject({ views: 2, opens: 1, clicks: 2, leads: 1, mobile: 1, desktop: 1 });
+        expect(await stats.flush()).toBe(1);
+        await stats.record(target, IP, [{ kind: 'view' }, { kind: 'greet' }, { kind: 'greet_click' }], ids);
+        await stats.flush();
+        sum = await stats.summary(target, 7);
+        expect(sum).toMatchObject({ views: 3, opens: 1, clicks: 2, leads: 1, greetings: 1, greeting_clicks: 1 });
+        expect(sum.buttons).toEqual([
+            { id: 'fm', clicks: 1, leads: 1 },
+            { id: 'wa', clicks: 1, leads: 0 },
+        ]);
+        // RLS: la otra empresa no ve las filas.
+        const otherRows = await withTenant(pg.db, otherTenantId, (tx) => tx.select().from(widgetStats));
+        expect(otherRows).toHaveLength(0);
+        // El widget borrado se lleva sus números y lo que quedaba en Redis no rompe el volcado.
+        await stats.record(target, IP, [{ kind: 'view' }], ids);
+        await widgets.remove(tenantId, w.id);
+        expect(await stats.flush()).toBe(0);
+        const left = await withTenant(pg.db, tenantId, (tx) => tx.select().from(widgetStats).where(eq(widgetStats.widgetId, w.id)));
+        expect(left).toHaveLength(0);
+    });
+
     it('la página: CSP con los sitios elegidos, sin nada de afuera, y embed.js con el modo widget', () => {
         const csp = widgetPageCsp("'sha256-abc'", ['acme.co', 'https://www.acme.co', 'javascript:alert(1)']);
         expect(csp).toContain("script-src 'sha256-abc'");
@@ -406,5 +455,8 @@ describe('v0.1.394 — widget de contacto (Postgres + Redis reales)', () => {
         expect(html).not.toContain('</script><b>');
         expect(FORM_EMBED_JS).toContain('data-imagina-widget');
         expect(FORM_EMBED_JS).toContain('imb-w-size');
+        // v0.1.396 — cuenta el tiempo en la página y cuánto bajó, y lo avisa al bajar.
+        expect(FORM_EMBED_JS).toContain('watch_scroll');
+        expect(FORM_EMBED_JS).toContain('scroll: scrollPct()');
     });
 });

@@ -407,7 +407,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.395**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.396**
+(**widget de contacto: dónde aparece, saludo y estadísticas**: en qué páginas
+y dispositivos se ve, si aparece a los segundos o al bajar, un saludo junto
+al botón con un texto distinto por página, y cuántas veces aparece, se abre,
+qué botón tocan y cuántos dejan sus datos por cada botón; addendum ADR-S99;
+cierra las tres entregas y la idea D7). Antes v0.1.395
 (**widget de contacto: varias personas, horario y formularios como un chat**:
 el WhatsApp del widget reparte los contactos entre varias personas por turnos
 o al azar y asigna el registro a quien le tocó; horario de atención con
@@ -591,7 +596,7 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
-- 2026-11-10 — **«Widget de contacto para el sitio» (EN CURSO: v0.1.394 y v0.1.395 HECHAS)**
+- 2026-11-10 — **«Widget de contacto para el sitio» (HECHO: v0.1.394, v0.1.395 y v0.1.396)**
   (el usuario: «botones de contacto como los de WhatsApp o contactar ahora, o
   un formulario que se abre como un chat flotante lateral… pedir nombre y
   celular, que quede el registro y con eso enviar un mensaje con la
@@ -606,10 +611,9 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   registro asignado a quien le tocó), horario de atención con festivos y
   «cuándo se ve» por botón, formularios «Como un chat» (layout `chat` y
   `?imb_chat=1` desde el widget) y la idea «Responde por WhatsApp a quien te
-  escribió desde el widget». **Sigue v0.1.396**: saludo proactivo por página,
-  reglas de dónde aparece (páginas, dispositivo, demora, scroll) y
-  estadísticas por botón (vistas, aperturas, clics, registros); al terminar,
-  sacar D7 de `docs/ideas.md`. NO se hace
+  escribió desde el widget». **v0.1.396 HECHA**: dónde aparece (páginas,
+  dispositivo, demora, scroll), saludo por página y estadísticas por botón;
+  D7 salió de `docs/ideas.md` (lo que quedó afuera está en su §5). NO se hace
   un chat en vivo dentro de la app (la conversación sigue en WhatsApp,
   ADR-S69).
 - 2026-11-10 — **«Que la app aguante miles de empresas con automatizaciones
@@ -1765,6 +1769,26 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-10 · v0.1.396** — **Widget de contacto: dónde aparece, saludo y
+  estadísticas** (tercera y última entrega de «Hazlas todas»; cierra la idea
+  D7). Addendum ADR-S99. (1) **Dónde aparece**: páginas (todas / sólo las que
+  contienen / todas menos, por palabras de la dirección), dispositivo,
+  aparece a los N segundos o al bajar el N %; lo decide la página del widget
+  con lo que cuenta `embed.js` (ahora manda el tiempo en la página y cuánto
+  bajó, y avisa al bajar sólo si se lo piden) y, mientras no toca, el marco
+  mide cero. (2) **Saludo** junto al botón, con un texto distinto por página
+  y su demora; tocarlo abre el widget; cerrarlo o abrir el widget lo guarda
+  en la visita. (3) **Estadísticas** por widget y día (`widget_stats`,
+  migración 0114, Redis → Postgres como las de formularios): apariciones,
+  aperturas, toques y contactos por botón, saludo visto/tocado, celular o
+  computador; pestaña Estadísticas en el editor. **Encontrado en el E2E**: la
+  vista previa arrancaba «Abierta» y el saludo no se veía (ahora se muestra
+  cerrada al editarlo); el globo del saludo salía angosto porque el marco
+  todavía medía sólo el botón (ancho natural hasta 280 px); y un `embed.js`
+  viejo en caché no manda el scroll, así que esa regla no se espera. Tests:
+  shared 833, front 843, `contact-widgets.spec` 7/7 + E2E navegador 24/24 en
+  escritorio claro y celular oscuro con un sitio de otro origen.
 
 - **2026-11-10 · v0.1.395** — **Widget de contacto: varias personas, horario
   y formularios como un chat** (segunda de las tres entregas de «Hazlas

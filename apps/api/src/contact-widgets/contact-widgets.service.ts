@@ -97,6 +97,10 @@ const ROTATION_TTL_S = 90 * 86_400;
 export interface WidgetPageInfo {
     tenantId: number;
     widgetId: number;
+    /** v0.1.396 — La zona de la empresa (el día de las estadísticas). */
+    timeZone: string;
+    /** v0.1.396 — Los botones que hoy se ven en el sitio (un clic en otro no suma). */
+    buttonIds: string[];
     title: string;
     meta: PublicWidgetMeta;
     allowedDomains: string[];
@@ -135,6 +139,15 @@ export class ContactWidgetsService {
             const rows = await tx.select().from(contactWidgets).where(eq(contactWidgets.tenantId, tenantId)).orderBy(asc(contactWidgets.id));
             const refs = await this.refs(tx, tenantId);
             return rows.map((r) => this.toDto(r, refs));
+        });
+    }
+
+    /** v0.1.396 — El widget de la empresa (404 si no es suyo) con la zona del día de las estadísticas. */
+    async statsTarget(tenantId: number, id: number): Promise<{ tenantId: number; widgetId: number; timeZone: string }> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            await this.load(tx, tenantId, id);
+            const f = await this.format(tx, tenantId);
+            return { tenantId, widgetId: id, timeZone: resolveTimeZone(null, f.timezone) };
         });
     }
 
@@ -382,7 +395,16 @@ export class ContactWidgetsService {
             const format = tenantFormatSchema.safeParse((hit.tenantSettings as Record<string, unknown> | null)?.format ?? {});
             const hours = await this.publicHours(config, format.success ? format.data.timezone : null, format.success ? format.data.time_format : 'h24');
             const meta: PublicWidgetMeta = buildPublicWidgetMeta(token, config, brand, buttons, hours);
-            return { tenantId, widgetId: hit.widget.id, title: config.title || brand.company || 'Contacto', meta, allowedDomains: config.allowed_domains, whatsapp };
+            return {
+                tenantId,
+                widgetId: hit.widget.id,
+                timeZone: resolveTimeZone(null, format.success ? format.data.timezone : null),
+                buttonIds: buttons.map((b) => b.id),
+                title: config.title || brand.company || 'Contacto',
+                meta,
+                allowedDomains: config.allowed_domains,
+                whatsapp,
+            };
         });
     }
 

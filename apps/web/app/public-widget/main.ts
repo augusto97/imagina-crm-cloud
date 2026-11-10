@@ -18,12 +18,19 @@
  * la caché no se invalida cada minuto). Los botones «sólo en horario» o
  * «sólo fuera de horario» se muestran u ocultan solos cuando llega la hora.
  *
+ * v0.1.396 — «Dónde aparece» (páginas, dispositivo, demora, scroll) y el
+ * saludo que se adelanta los decide esta página con lo que cuenta `embed.js`
+ * del sitio; mientras no le toca aparecer, el marco mide cero. Y cuenta lo
+ * que pasa (apareció, lo abrieron, tocaron un botón, dejaron sus datos) para
+ * las estadísticas: contadores, nunca datos de la persona.
+ *
  * Todo se arma con `createElement`/`textContent`: ningún texto de la empresa
  * llega como HTML. Se compila a un archivo que el servidor sirve EN LÍNEA
  * (con su CSP por hash); de shared sólo importa la lógica pura del horario.
  */
 import type { PublicWidgetButton, PublicWidgetMeta, WidgetIcon } from '@imagina-base/shared';
 import { widgetButtonShown, widgetClosesAt, widgetIsOpen, widgetNextOpening, widgetNextOpeningText } from '@imagina-base/shared/src/schemas/widget-hours';
+import { widgetGreetingFor, widgetRevealState, type WidgetHostView, type WidgetStatEvent } from '@imagina-base/shared/src/schemas/widget-display';
 
 interface Boot {
     preview: boolean;
@@ -34,6 +41,9 @@ interface HostInfo {
     title: string;
     width: number;
     height: number;
+    /** v0.1.396 — milisegundos en la página del sitio y cuánto bajó (%). */
+    since?: number;
+    scroll?: number;
 }
 
 const bootEl = document.getElementById('boot');
@@ -58,6 +68,13 @@ let host: HostInfo | null = null;
 let hostAttribution: Record<string, string> | null = null;
 let hostOrigin: string | null = null;
 let contextReady = false;
+/** v0.1.396 — ¿Ya le toca aparecer en esta página? (en la vista previa o abierta sola, siempre). */
+let revealed = PREVIEW || !embedded;
+let watchScroll = false;
+let revealTimer = 0;
+/** Cuándo llegó el último `host` (para sumar lo que pasó desde entonces). */
+let hostAt = 0;
+const bootAt = performance.now();
 
 let open = false;
 /** El botón cuyo formulario/agenda está abierto en el panel (null = el inicio). */
@@ -216,6 +233,7 @@ function linkAttrs(a: HTMLAnchorElement, b: PublicWidgetButton): void {
 
 /** Lo que hace un botón al tocarlo: un enlace se sigue solo; un formulario o la agenda se abren en el panel. */
 function onPick(b: PublicWidgetButton, ev: Event): void {
+    stat({ kind: 'click', button: b.id });
     if (b.frame) {
         ev.preventDefault();
         openView(b);
@@ -385,7 +403,26 @@ function build(): void {
     else launcher.classList.add('w-icon-only');
     launcher.addEventListener('click', onLauncher);
 
-    root.append(panel, menu, launcher);
+    // v0.1.396 — el saludo que se adelanta, junto al botón.
+    greetEl = el('div', 'w-greet');
+    greetEl.hidden = true;
+    greetEl.setAttribute('data-testid', 'widget-greeting');
+    greetMsg = el('button', 'w-greet-msg');
+    greetMsg.type = 'button';
+    greetMsg.setAttribute('data-testid', 'widget-greeting-msg');
+    greetMsg.addEventListener('click', onGreetClick);
+    const gx = el('button', 'w-greet-x');
+    gx.type = 'button';
+    gx.setAttribute('aria-label', 'Cerrar el mensaje');
+    gx.setAttribute('data-testid', 'widget-greeting-close');
+    gx.appendChild(icon('close'));
+    gx.addEventListener('click', () => {
+        dismissGreeting();
+        paint();
+    });
+    greetEl.append(greetMsg, gx);
+
+    root.append(panel, menu, greetEl, launcher);
     app.appendChild(root);
 
     // Barra fija del celular (sus botones se arman en `paintBar`, según el horario).
@@ -463,6 +500,115 @@ function viewerTz(): string {
     }
 }
 
+// ─────────────────────── Dónde aparece y saludo (v0.1.396) ───────────────────────
+
+/** Lo que se sabe del sitio, con el tiempo en la página al día. */
+function hostView(): WidgetHostView {
+    const base = typeof host?.since === 'number' ? host.since : 0;
+    const since = base + (performance.now() - (host ? hostAt : bootAt));
+    return { url: host?.url ?? null, width: host?.width ?? window.innerWidth, since, scroll: host?.scroll };
+}
+
+/** ¿Ya puede aparecer? Si no, espera la demora o avisa que hace falta saber cuánto baja la persona. */
+function checkReveal(): void {
+    window.clearTimeout(revealTimer);
+    if (revealed || !meta || !contextReady) return;
+    const st = widgetRevealState(meta.display, hostView());
+    watchScroll = st.needsScroll;
+    if (st.shown) {
+        revealed = true;
+        watchScroll = false;
+        stat({ kind: 'view', dev: isMobile() ? 'mobile' : 'desktop' });
+        scheduleGreeting();
+    } else if (st.wait !== null) {
+        revealTimer = window.setTimeout(checkReveal, Math.min(st.wait + 50, 130_000));
+    }
+    paint();
+}
+
+let greetEl: HTMLElement | null = null;
+let greetMsg: HTMLButtonElement | null = null;
+let greetText: string | null = null;
+let greetTimer = 0;
+
+function greetKey(): string {
+    return `imb-greet:${meta?.token ?? ''}`;
+}
+function greetDismissed(): boolean {
+    try {
+        return sessionStorage.getItem(greetKey()) === '1';
+    } catch {
+        return false;
+    }
+}
+/** El saludo no vuelve en esta visita (lo cerró o ya abrió el widget). */
+function dismissGreeting(): void {
+    window.clearTimeout(greetTimer);
+    try {
+        sessionStorage.setItem(greetKey(), '1');
+    } catch {
+        // sin almacenamiento: se va hasta recargar
+    }
+    greetText = null;
+}
+
+function scheduleGreeting(): void {
+    window.clearTimeout(greetTimer);
+    if (!meta?.greeting || PREVIEW || greetDismissed()) return;
+    const view = hostView();
+    const text = widgetGreetingFor(meta.greeting, view.url, view.width);
+    if (!text) return;
+    const wait = Math.max(0, meta.greeting.delay_s * 1000 - (view.since ?? 0));
+    greetTimer = window.setTimeout(() => {
+        if (open || greetDismissed() || showsBar()) return;
+        greetText = text;
+        stat({ kind: 'greet' });
+        paint();
+    }, wait);
+}
+
+function onGreetClick(e: Event): void {
+    stat({ kind: 'greet_click' });
+    dismissGreeting();
+    onLauncher(e);
+}
+
+// ─────────────────────────── Estadísticas (v0.1.396) ───────────────────────────
+
+const statQueue: WidgetStatEvent[] = [];
+let statTimer: number | null = null;
+const leadSeen = new Set<string>();
+
+function flushStats(beacon = false): void {
+    if (statTimer !== null) {
+        window.clearTimeout(statTimer);
+        statTimer = null;
+    }
+    const url = `${location.pathname.replace(/\/+$/, '')}/events`;
+    while (statQueue.length) {
+        const body = JSON.stringify({ events: statQueue.splice(0, 12) });
+        try {
+            if (beacon && typeof navigator.sendBeacon === 'function' && navigator.sendBeacon(url, new Blob([body], { type: 'application/json' }))) continue;
+        } catch {
+            // cae al fetch
+        }
+        void fetch(url, { method: 'POST', credentials: 'omit', keepalive: true, headers: { 'Content-Type': 'application/json' }, body }).catch(() => undefined);
+    }
+}
+
+/** Cuenta algo para las estadísticas (en la vista previa o abierta sola, no). */
+function stat(e: WidgetStatEvent): void {
+    if (PREVIEW || !embedded || !meta) return;
+    statQueue.push(e);
+    if (statQueue.length >= 12) flushStats();
+    else if (statTimer === null) statTimer = window.setTimeout(() => flushStats(), 1500);
+}
+
+window.addEventListener('pagehide', () => flushStats(true));
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushStats(true);
+});
+
 // ─────────────────────────── Abrir y cerrar ───────────────────────────
 
 function onLauncher(e: Event): void {
@@ -473,10 +619,12 @@ function onLauncher(e: Event): void {
     const only = visible.length === 1 && !(openNow === false && meta.layout === 'card') ? visible[0]! : null;
     if (!open && only && !only.frame) {
         if (PREVIEW) return onPick(only, e);
+        stat({ kind: 'click', button: only.id });
         window.open(hrefOf(only), only.target === '_top' ? '_top' : '_blank', only.target === '_blank' ? 'noopener' : undefined);
         return;
     }
     if (!open && only && only.frame) {
+        stat({ kind: 'click', button: only.id });
         openView(only);
         return;
     }
@@ -484,6 +632,10 @@ function onLauncher(e: Event): void {
 }
 
 function setOpen(next: boolean): void {
+    if (next && !open) {
+        stat({ kind: 'open' });
+        if (greetText !== null || meta?.greeting) dismissGreeting();
+    }
     open = next;
     if (!next) current = null;
     paint();
@@ -512,6 +664,10 @@ function frameFor(b: PublicWidgetButton): HTMLIFrameElement {
 }
 
 function openView(b: PublicWidgetButton): void {
+    if (!open) {
+        stat({ kind: 'open' });
+        if (greetText !== null || meta?.greeting) dismissGreeting();
+    }
     current = b;
     open = true;
     frameFor(b);
@@ -568,6 +724,7 @@ function paint(): void {
     });
     paintBar();
     paintHours();
+    paintGreeting(barMode);
 
     // WhatsApp directo: la página de donde viene va en el enlace.
     app.querySelectorAll<HTMLAnchorElement>('a[data-href-for]').forEach((a) => {
@@ -575,6 +732,16 @@ function paint(): void {
         if (b) a.href = hrefOf(b);
     });
     requestAnimationFrame(report);
+}
+
+/** v0.1.396 — El saludo: sólo con el widget cerrado (y en la vista previa, para verlo al diseñar). */
+function paintGreeting(barMode: boolean): void {
+    if (!greetEl || !greetMsg || !meta) return;
+    let text = greetText;
+    if (PREVIEW) text = meta.greeting ? widgetGreetingFor({ ...meta.greeting, mobile: true }, host?.url ?? null, host?.width ?? 0) : null;
+    const show = !!text && !open && !barMode;
+    greetEl.hidden = !show;
+    if (show && greetMsg.textContent !== text) greetMsg.textContent = text;
 }
 
 /** Del lado del borde, el aire dentro del marco: la separación elegida, hasta PAD. */
@@ -588,7 +755,10 @@ function report(): void {
     // Hasta saber cómo es el sitio (su ancho), el marco queda en cero: sin parpadeos.
     if (!embedded || PREVIEW || !meta || !root || !contextReady) return;
     let msg: Record<string, unknown>;
-    if (fullScreen()) {
+    if (!revealed) {
+        // v0.1.396 — todavía no le toca (página, dispositivo, demora o scroll): el marco no ocupa nada.
+        msg = { type: 'imb-w-size', w: 0, h: 0, open: false, watch_scroll: watchScroll };
+    } else if (fullScreen()) {
         msg = { type: 'imb-w-size', full: true, open: true };
     } else if (showsBar() && !open) {
         const h = bar ? Math.ceil(bar.getBoundingClientRect().height) : 60;
@@ -655,12 +825,18 @@ window.addEventListener('message', (e: MessageEvent) => {
         if (d.type === 'imb-context') {
             hostOrigin = typeof e.origin === 'string' && /^https?:\/\//.test(e.origin) ? e.origin : hostOrigin;
             hostAttribution = d.attribution && typeof d.attribution === 'object' ? (d.attribution as Record<string, string>) : {};
-            if (d.host && typeof d.host === 'object') host = d.host as HostInfo;
+            if (d.host && typeof d.host === 'object') {
+                host = d.host as HostInfo;
+                hostAt = performance.now();
+            }
             contextReady = true;
             for (const p of pendingHello.splice(0)) p.win.postMessage(contextFor(p.b), location.origin);
+            checkReveal();
             paint();
         } else if (d.type === 'imb-w-host' && d.host && typeof d.host === 'object') {
             host = d.host as HostInfo;
+            hostAt = performance.now();
+            checkReveal();
             paint();
         } else if (d.type === 'imb-w-close') {
             if (current && hasHome()) showHome();
@@ -687,6 +863,15 @@ window.addEventListener('message', (e: MessageEvent) => {
         if (contextReady || PREVIEW || !embedded) child.win.postMessage(contextFor(child.b), location.origin);
         else pendingHello.push(child);
     } else if (d.type === 'imb-conversion' || d.type === 'imb-form-redirect') {
+        // v0.1.396 — dejó sus datos (o agendó) desde este botón: un contacto para las estadísticas.
+        if (d.type === 'imb-conversion' && child.b) {
+            const ev = d.event as { submission_id?: unknown } | undefined;
+            const sid = typeof ev?.submission_id === 'string' ? ev.submission_id : '';
+            if (!sid || !leadSeen.has(sid)) {
+                if (sid) leadSeen.add(sid);
+                stat({ kind: 'lead', button: child.b.id });
+            }
+        }
         // La conversión y la página de gracias son del SITIO: se las pasamos a embed.js.
         if (embedded && !PREVIEW) {
             try {
@@ -745,6 +930,7 @@ if (PREVIEW) {
             if (contextReady) return;
             contextReady = true;
             for (const p of pendingHello.splice(0)) p.win.postMessage(contextFor(p.b), location.origin);
+            checkReveal();
             paint();
         }, 1500);
     }

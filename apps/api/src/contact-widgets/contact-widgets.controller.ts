@@ -1,11 +1,16 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import {
+    WIDGET_STATS_RANGES,
     createContactWidgetSchema,
     updateContactWidgetSchema,
+    widgetStatEventsSchema,
     type ContactWidgetDto,
     type ContactWidgetOptions,
     type CreateContactWidgetInput,
     type UpdateContactWidgetInput,
+    type WidgetStatEventsInput,
+    type WidgetStatsDto,
+    type WidgetStatsRange,
 } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuditService } from '../audit/audit.service';
@@ -22,6 +27,7 @@ import { PlanModule } from '../tenancy/plan-module.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { ContactWidgetsService, type WidgetPageInfo } from './contact-widgets.service';
 import { loadWidgetClient, renderWidgetPage, widgetMissingPage, widgetPageCsp } from './widget-page';
+import { WidgetStatsService } from './widget-stats.service';
 
 /**
  * v0.1.394 (ADR-S99) — Widgets de contacto de la empresa. Los arma quien
@@ -35,6 +41,7 @@ export class ContactWidgetsController {
     constructor(
         private readonly widgets: ContactWidgetsService,
         private readonly audit: AuditService,
+        private readonly stats: WidgetStatsService,
     ) {}
 
     @Get()
@@ -48,6 +55,17 @@ export class ContactWidgetsController {
     @RequireCapability('manage_forms')
     options(@Req() req: FastifyRequest): Promise<ContactWidgetOptions> {
         return this.widgets.options(req.tenant!.tenantId);
+    }
+
+    /** v0.1.396 — Estadísticas: apariciones, aperturas, toques y contactos por botón (7, 30 o 90 días). */
+    @Get(':id/stats')
+    @RequireCapability('manage_forms')
+    async statsFor(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number, @Query('days') days?: string): Promise<WidgetStatsDto> {
+        const tenantId = req.tenant!.tenantId;
+        const n = Number(days);
+        const range: WidgetStatsRange = (WIDGET_STATS_RANGES as readonly number[]).includes(n) ? (n as WidgetStatsRange) : 30;
+        const target = await this.widgets.statsTarget(tenantId, id);
+        return this.stats.summary(target, range);
     }
 
     @Get(':id')
@@ -123,8 +141,27 @@ export class PublicWidgetController {
 
     constructor(
         private readonly widgets: ContactWidgetsService,
+        private readonly stats: WidgetStatsService,
         @Inject(ENV) private readonly env: Env,
     ) {}
+
+    /**
+     * v0.1.396 — Lo que cuenta la página del widget (apareció, lo abrieron,
+     * tocaron un botón, dejaron sus datos). Siempre 204: a quien prueba no se
+     * le dice nada, y un evento que no se pudo contar no le cuesta nada a nadie.
+     */
+    @Post(':token/events')
+    @HttpCode(204)
+    async events(@Req() req: FastifyRequest, @Param('token') token: string, @Body(new ZodValidationPipe(widgetStatEventsSchema)) input: WidgetStatEventsInput): Promise<void> {
+        let info: WidgetPageInfo | null = null;
+        try {
+            info = await this.widgets.cachedPageInfo(token);
+        } catch {
+            return;
+        }
+        if (!info) return;
+        await this.stats.record({ tenantId: info.tenantId, widgetId: info.widgetId, timeZone: info.timeZone }, req.ip, input.events, new Set(info.buttonIds));
+    }
 
     /** La vista previa del editor: arranca vacía y el diseño llega por postMessage. */
     @Get('preview')

@@ -666,13 +666,25 @@ export const FORM_EMBED_JS = String.raw`(function () {
       return u.origin + u.pathname;
     } catch (e) { return null; }
   }
+  // v0.1.396 — cuánto lleva la persona en la página y cuánto bajó (para
+  // «aparecer a los N segundos» o «al bajar el N %»).
+  function scrollPct() {
+    var se = document.scrollingElement || document.documentElement;
+    var max = (se.scrollHeight || 0) - (window.innerHeight || 0);
+    if (!(max > 0)) return 100;
+    return Math.max(0, Math.min(100, Math.round(((window.pageYOffset || se.scrollTop || 0) / max) * 100)));
+  }
   function hostInfo() {
     var vv = window.visualViewport;
+    var since = 0;
+    try { since = Math.round(performance.now()); } catch (e) {}
     return {
       url: String(location.href).split('#')[0].slice(0, 1000),
       title: String(document.title || '').slice(0, 200),
       width: Math.round(vv ? vv.width : window.innerWidth),
-      height: Math.round(vv ? vv.height : window.innerHeight)
+      height: Math.round(vv ? vv.height : window.innerHeight),
+      since: since,
+      scroll: scrollPct()
     };
   }
   var lockedOverflow = null;
@@ -694,19 +706,31 @@ export const FORM_EMBED_JS = String.raw`(function () {
       f.style[left ? 'right' : 'left'] = 'auto';
     }
     f.setAttribute('data-imagina-open', d.open === true ? '1' : '0');
+    // v0.1.396 — escondido hasta que la persona baje: se le avisa cuánto bajó.
+    var w0 = null;
+    for (var i = 0; i < widgetFrames.length; i++) if (widgetFrames[i].frame === f) w0 = widgetFrames[i];
+    if (w0) {
+      w0.watchScroll = d.watch_scroll === true;
+      if (w0.watchScroll && !scrollBound) { scrollBound = true; window.addEventListener('scroll', onHostScroll, { passive: true }); }
+    }
     // A pantalla completa (celular) la página de atrás no se mueve.
     if (full && lockedOverflow === null) { lockedOverflow = document.documentElement.style.overflow; document.documentElement.style.overflow = 'hidden'; }
     if (!full && lockedOverflow !== null) { document.documentElement.style.overflow = lockedOverflow; lockedOverflow = null; }
   }
-  var hostTimer = null;
-  function sendHost() {
+  var hostTimer = null, scrollTimer = null, scrollBound = false;
+  function sendHost(onlyScroll) {
     hostTimer = null;
     for (var i = 0; i < widgetFrames.length; i++) {
       var w = widgetFrames[i];
+      if (onlyScroll === true && !w.watchScroll) continue;
       try { w.frame.contentWindow.postMessage({ type: 'imb-w-host', host: hostInfo() }, w.origin); } catch (e) {}
     }
   }
   function onHostResize() { if (!hostTimer) hostTimer = setTimeout(sendHost, 150); }
+  function onHostScroll() {
+    if (scrollTimer) return;
+    scrollTimer = setTimeout(function () { scrollTimer = null; sendHost(true); }, 250);
+  }
   function widget(me) {
     var url = safeWidgetUrl(me && me.getAttribute('data-imagina-widget'));
     if (!url) return;

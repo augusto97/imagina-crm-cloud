@@ -8221,3 +8221,30 @@ como un chat.**
    escribió desde el widget» arma la automatización «Cuando se envía un
    formulario» → mensaje de WhatsApp (en WAS sale texto libre; con Meta hace
    falta una plantilla aprobada).
+
+**Addendum v0.1.396 — dónde aparece, saludo y estadísticas (cierra las tres
+entregas y la idea D7).**
+
+1. **Dónde aparece** (`config.display`: páginas todas / sólo las que
+   contienen / todas menos, dispositivo, demora en segundos, % de scroll) y
+   **saludo** (`config.greeting`: texto, un texto por página por palabras de la
+   dirección, demora, también en el celular). Lo decide la PÁGINA del widget
+   (`widget-display.ts`, sin zod) con lo que cuenta `embed.js` del sitio, que
+   ahora suma el tiempo en la página (`since`) y cuánto bajó (`scroll`), y
+   avisa al bajar sólo si el widget lo pidió (`watch_scroll`). Mientras no le
+   toca aparecer, el marco mide cero. La página sigue siendo la misma para
+   todos (la caché pública no cambia). Un `embed.js` viejo en la caché del
+   sitio no manda el scroll: entonces la regla de scroll no se espera (nunca un
+   widget que no aparece). El saludo se ve con el widget cerrado; cerrarlo o
+   abrir el widget lo guarda en la sesión de la pestaña.
+2. **Estadísticas** (`widget_stats`, migración 0114, RLS; mismo patrón que
+   las de formularios, ADR-S95: hash de Redis por widget y día, volcado cada
+   2 min con UPSERT que suma). La página manda lotes (`POST
+   /public/w/:token/events`, 204 siempre, freno por IP): `view`, `open`,
+   `click`, `greet`, `greet_click` y `lead`. El contacto (`lead`) lo cuenta la
+   página del widget cuando el formulario o la agenda de adentro le pasa la
+   conversión (uno por envío); un botón que el widget ya no tiene no suma.
+   Contadores puros, nunca datos de la persona; no viajan al migrar una
+   empresa (se avisa) y se borran con ella. Pestaña **Estadísticas** del
+   editor (`GET /contact-widgets/:id/stats?days=7|30|90`).
+

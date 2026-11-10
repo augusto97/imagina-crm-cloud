@@ -13656,6 +13656,48 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         escritorio claro y celular oscuro. Sigue v0.1.396 (saludo proactivo,
         reglas por página, estadísticas por botón).
 
+  - [x] **Widget de contacto: dónde aparece, saludo y estadísticas
+        (v0.1.396, addendum ADR-S99, tercera y última entrega de «Hazlas
+        todas»; cierra la idea D7)**.
+        (a) **Dónde aparece** (`config.display`, `widgetDisplaySchema`):
+        páginas todas / sólo las que contienen / todas menos (palabras de la
+        dirección con `pageMatchesAny`), dispositivo (celular < 640 px),
+        demora en segundos y % de scroll. Lo decide la página del widget
+        (`schemas/widget-display.ts`, sin zod: `widgetRevealState`) con lo que
+        cuenta `embed.js`, que ahora suma `since` (ms en la página) y `scroll`
+        (%) a `hostInfo` y avisa al bajar sólo si el widget manda
+        `watch_scroll`. Mientras no le toca, `imb-w-size` va en 0×0. Un
+        `embed.js` viejo en caché no manda el scroll: la regla no se espera.
+        (b) **Saludo** (`config.greeting`): texto, reglas por página (gana la
+        primera que coincide; las vacías no viajan), demora, también en el
+        celular; globo `.w-greet` junto al botón con ancho natural (hasta
+        280 px), tocarlo abre el widget, cerrarlo o abrir el widget lo guarda
+        en `sessionStorage`. La vista previa del editor se muestra cerrada al
+        editarlo (`showClosed`).
+        (c) **Estadísticas** (`widget_stats`, migración 0114, RLS;
+        `WidgetStatsService` igual que `FormStatsService`: hash de Redis por
+        widget y día con tope de 60 contadores, volcado cada 2 min con UPSERT
+        que suma, FK rota = descartado): `POST /public/w/:token/events` (204,
+        freno de 60 lotes por IP y minuto) con `view`/`open`/`click`/`greet`/
+        `greet_click`/`lead`; un botón que el widget ya no tiene no suma
+        (`buttonIds` en `WidgetPageInfo`). El contacto lo cuenta la página del
+        widget al pasarle al sitio la conversión del formulario o la agenda de
+        adentro (uno por envío). `GET /contact-widgets/:id/stats?days=7|30|90`
+        (`summarizeWidgetStats`) y pestaña **Estadísticas** del editor
+        (`WidgetStatsPanel`, que reusa `Section`/`BarList` de las de
+        formularios). Pestañas nuevas «Dónde aparece» y «Estadísticas»; la
+        tira se desliza y la elegida queda a la vista. Borrar la empresa las
+        borra; migrarla no las lleva (se avisa).
+        Ayuda: guía `contact-widget`, secciones nuevas en Aprende →
+        Formularios → Widget de contacto, y novedad con carrusel. D7 salió de
+        `docs/ideas.md`. Tests: `widget-display.test.ts` (6) y casos nuevos en
+        `contact-widget.test.ts` (shared 833), `contact-widgets.spec` 7/7 (meta
+        con reglas y saludo, eventos, volcado, RLS, widget borrado), front 843
+        + E2E navegador 24/24 en escritorio claro y celular oscuro con un sitio
+        de otro origen (otra página sin widget, demora y scroll, saludo de la
+        página, contacto contado, estadísticas sin datos de la persona,
+        dispositivo).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

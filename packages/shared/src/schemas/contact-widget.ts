@@ -1,5 +1,16 @@
 import { z } from 'zod';
 import type { PublicWidgetHours } from './widget-hours';
+import {
+    WIDGET_DEVICES,
+    WIDGET_GREETING_MAX,
+    WIDGET_MAX_DELAY_S,
+    WIDGET_MAX_GREETING_RULES,
+    WIDGET_MAX_SCROLL_PCT,
+    WIDGET_PAGE_MODES,
+    WIDGET_STAT_BUTTON_RE,
+    type PublicWidgetDisplay,
+    type PublicWidgetGreeting,
+} from './widget-display';
 
 // El navegador y node lo tienen; shared no carga las librerías del DOM.
 declare const URL: { new (input: string): { protocol: string; href: string } };
@@ -219,6 +230,76 @@ export function buildPublicWidgetHours(h: WidgetHours, ctx: { tz: string; closed
     };
 }
 
+// ─────────────────────────── Dónde aparece y saludo (v0.1.396) ───────────────────────────
+
+/** En qué páginas y dispositivos se ve, y cuándo aparece. */
+export const widgetDisplaySchema = z.object({
+    pages: z.enum(WIDGET_PAGE_MODES).catch('all').default('all'),
+    /** Palabras de la dirección, separadas por coma («planes, cotizacion»). */
+    page_terms: z.string().trim().max(500).catch('').default(''),
+    devices: z.enum(WIDGET_DEVICES).catch('all').default('all'),
+    delay_s: z.number().int().min(0).max(WIDGET_MAX_DELAY_S).catch(0).default(0),
+    scroll_pct: z.number().int().min(0).max(WIDGET_MAX_SCROLL_PCT).catch(0).default(0),
+});
+export type WidgetDisplay = z.infer<typeof widgetDisplaySchema>;
+
+export function defaultWidgetDisplay(): WidgetDisplay {
+    return widgetDisplaySchema.parse({});
+}
+
+const greetingRuleSchema = z.object({
+    contains: z.string().trim().max(200),
+    text: z.string().trim().max(WIDGET_GREETING_MAX),
+});
+
+/** El mensaje que se adelanta junto al botón («¿Te ayudamos con tu cotización?»). */
+export const widgetGreetingSchema = z.object({
+    enabled: z.boolean().catch(false).default(false),
+    text: z.string().trim().max(WIDGET_GREETING_MAX).catch('').default(''),
+    /** Un saludo distinto por página: gana el primero cuya dirección contiene las palabras. */
+    rules: z
+        .preprocess(
+            (v) => (Array.isArray(v) ? v.filter((r) => greetingRuleSchema.safeParse(r).success).slice(0, WIDGET_MAX_GREETING_RULES) : []),
+            z.array(greetingRuleSchema),
+        )
+        .catch([])
+        .default([]),
+    delay_s: z.number().int().min(0).max(WIDGET_MAX_DELAY_S).catch(5).default(5),
+    mobile: z.boolean().catch(false).default(false),
+});
+export type WidgetGreeting = z.infer<typeof widgetGreetingSchema>;
+
+export function defaultWidgetGreeting(): WidgetGreeting {
+    return widgetGreetingSchema.parse({});
+}
+
+/** Lo que viaja a la página (sin el saludo apagado ni reglas vacías). */
+export function buildPublicWidgetDisplay(d: WidgetDisplay): PublicWidgetDisplay {
+    return { pages: d.pages, page_terms: d.page_terms, devices: d.devices, delay_s: d.delay_s, scroll_pct: d.scroll_pct };
+}
+
+export function buildPublicWidgetGreeting(g: WidgetGreeting): PublicWidgetGreeting | null {
+    if (!g.enabled) return null;
+    const rules = g.rules.filter((r) => r.contains.trim() && r.text.trim());
+    if (!g.text.trim() && rules.length === 0) return null;
+    return { text: g.text, rules, delay_s: g.delay_s, mobile: g.mobile };
+}
+
+/** v0.1.396 — Lo que manda la página del widget para las estadísticas. */
+export const widgetStatEventsSchema = z.object({
+    events: z
+        .array(
+            z.object({
+                kind: z.enum(['view', 'open', 'click', 'greet', 'greet_click', 'lead']),
+                button: z.string().regex(WIDGET_STAT_BUTTON_RE).optional(),
+                dev: z.enum(['mobile', 'desktop']).optional(),
+            }),
+        )
+        .min(1)
+        .max(12),
+});
+export type WidgetStatEventsInput = z.infer<typeof widgetStatEventsSchema>;
+
 export const WIDGET_DEFAULT_TITLE = '¡Hola! ¿En qué te ayudamos?';
 export const WIDGET_DEFAULT_SUBTITLE = 'Elige cómo prefieres hablar con nosotros.';
 
@@ -252,6 +333,10 @@ export const contactWidgetConfigSchema = z.object({
     allowed_domains: z.array(z.string().trim().max(200)).max(20).catch([]).default([]),
     /** v0.1.395 — Horario de atención: qué botones se ven y el aviso fuera de horario. */
     hours: widgetHoursSchema.catch(defaultWidgetHours).default(defaultWidgetHours),
+    /** v0.1.396 — En qué páginas y dispositivos aparece, y cuándo. */
+    display: widgetDisplaySchema.catch(defaultWidgetDisplay).default(defaultWidgetDisplay),
+    /** v0.1.396 — El saludo que se adelanta junto al botón. */
+    greeting: widgetGreetingSchema.catch(defaultWidgetGreeting).default(defaultWidgetGreeting),
 });
 export type ContactWidgetConfig = z.infer<typeof contactWidgetConfigSchema>;
 
@@ -587,6 +672,10 @@ export interface PublicWidgetMeta {
     buttons: PublicWidgetButton[];
     /** v0.1.395 — El horario de atención (null = siempre «abierto»). */
     hours: PublicWidgetHours | null;
+    /** v0.1.396 — En qué páginas y dispositivos aparece, y cuándo. */
+    display: PublicWidgetDisplay;
+    /** v0.1.396 — El saludo que se adelanta (null = no saluda). */
+    greeting: PublicWidgetGreeting | null;
 }
 
 /**
@@ -701,6 +790,8 @@ export function buildPublicWidgetMeta(
         mobile_bar: config.mobile_bar,
         buttons,
         hours,
+        display: buildPublicWidgetDisplay(config.display),
+        greeting: buildPublicWidgetGreeting(config.greeting),
     };
 }
 
