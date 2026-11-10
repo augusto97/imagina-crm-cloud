@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { BookingModule } from '../booking/booking.module';
 import { FilesModule } from '../files/files.module';
 import { ContactWidgetsController, PublicWidgetController } from './contact-widgets.controller';
 import { ContactWidgetsService } from './contact-widgets.service';
@@ -11,7 +12,7 @@ import { ContactWidgetsService } from './contact-widgets.service';
  */
 @Global()
 @Module({
-    imports: [AuthModule, FilesModule],
+    imports: [AuthModule, FilesModule, BookingModule],
     controllers: [ContactWidgetsController, PublicWidgetController],
     providers: [ContactWidgetsService],
     exports: [ContactWidgetsService],

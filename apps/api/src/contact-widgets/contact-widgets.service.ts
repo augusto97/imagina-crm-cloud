@@ -1,15 +1,23 @@
 import { randomBytes } from 'node:crypto';
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import {
+    WIDGET_ADVISOR_VAR,
     WIDGET_BUTTON_ID_RE,
+    WIDGET_HOURS_LOOKAHEAD_DAYS,
     WIDGET_TOKEN_RE,
+    addDaysYmd,
     brandingSchema,
     buildPublicWidgetButton,
+    buildPublicWidgetHours,
     buildPublicWidgetMeta,
     contactWidgetConfigSchema,
     defaultContactWidgetConfig,
     newWidgetButtonId,
+    holidayBlocksByDefault,
+    pickWidgetAdvisor,
     readContactWidgetConfig,
+    resolveTimeZone,
+    tenantFormatSchema,
     widgetButtonLabel,
     widgetPageVar,
     widgetProblems,
@@ -23,16 +31,23 @@ import {
     type PublicWidgetButton,
     type PublicWidgetMeta,
     type UpdateContactWidgetInput,
+    type WidgetAdvisor,
     type WidgetButton,
     type WidgetFormOption,
+    type WidgetRotation,
     type WidgetTargetRef,
 } from '@imagina-base/shared';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import type Redis from 'ioredis';
 import { accessColumns, accessOf } from '../billing/tenant-access';
 import { planModuleOff } from '../billing/plan-module-gate';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { bookingPages, contactWidgets, fields, forms, lists, tenants, type ContactWidgetRow } from '../db/schema';
+import { BookingHolidaysService } from '../booking/booking-holidays';
+import { bookingPages, contactWidgets, fields, forms, lists, memberships, tenants, users, type ContactWidgetRow } from '../db/schema';
 import { FilesService } from '../files/files.service';
+import { staffRoleSql } from '../helpdesk/staff-roles';
+import { REDIS } from '../redis/redis.module';
+import { incrWithTtl } from '../redis/redis.util';
 import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-cache';
 import { PublicCacheService } from '../public-cache/public-cache.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -60,7 +75,24 @@ interface WhatsappTarget {
     label: string;
     /** Con datos primero: el formulario que se llena antes. */
     captureFormId: number | null;
+    /** v0.1.395 — Las personas que atienden (vacío = `phone`). */
+    advisors: WidgetAdvisor[];
+    rotation: WidgetRotation;
+    /** v0.1.395 — El campo «Persona» de la lista del formulario donde queda quién atiende. */
+    assignFieldId: number | null;
 }
+
+/** v0.1.395 — A quién le llega ESTA conversación (ya elegido). */
+export interface WidgetWhatsappPick {
+    phone: string;
+    message: string;
+    label: string;
+    advisor: WidgetAdvisor | null;
+    assignFieldId: number | null;
+}
+
+/** El contador de turnos de un botón vive un tiempo largo sin uso (se reinicia solo). */
+const ROTATION_TTL_S = 90 * 86_400;
 
 export interface WidgetPageInfo {
     tenantId: number;
@@ -90,6 +122,8 @@ export class ContactWidgetsService {
         private readonly tenantDb: TenantDb,
         private readonly files: FilesService,
         @Optional() cache?: PublicCacheService,
+        @Optional() @Inject(REDIS) private readonly redis?: Redis,
+        @Optional() private readonly holidays?: BookingHolidaysService,
     ) {
         this.pcache = cache ?? NO_PUBLIC_CACHE;
     }
@@ -142,7 +176,7 @@ export class ContactWidgetsService {
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const row = await this.load(tx, tenantId, id, true);
             const refs = await this.refs(tx, tenantId);
-            const config = input.config !== undefined ? this.cleanConfig(input.config, refs) : readContactWidgetConfig(row.config);
+            const config = input.config !== undefined ? await this.cleanConfig(tx, tenantId, input.config, refs) : readContactWidgetConfig(row.config);
             const enabled = input.enabled ?? row.enabled;
             if (enabled) {
                 const problems = widgetProblems(config, refs);
@@ -210,7 +244,18 @@ export class ContactWidgetsService {
                 list_name: b.list_name,
                 public_path: `/api/v1/public/b/${b.token}`,
             }));
-            return { forms: formsOut, bookings: bookingsOut, brand_color: brand.accent, company: brand.company, logo_url: brand.logoUrl };
+            const people = await this.staff(tx, tenantId);
+            const personFields = await this.personFields(tx, tenantId, [...new Set(formsOut.map((f) => f.list_id))]);
+            const format = await this.format(tx, tenantId);
+            return {
+                forms: formsOut.map((f) => ({ ...f, person_fields: personFields.get(f.list_id) ?? [] })),
+                bookings: bookingsOut,
+                brand_color: brand.accent,
+                company: brand.company,
+                logo_url: brand.logoUrl,
+                members: people,
+                timezone: format.timezone,
+            };
         });
     }
 
@@ -230,8 +275,26 @@ export class ContactWidgetsService {
         if (!WIDGET_BUTTON_ID_RE.test(buttonId)) return null;
         const info = await this.cachedPageInfo(token);
         const target = info?.whatsapp[buttonId];
-        if (!target) return null;
-        return whatsappLink(target.phone, widgetText(target.message, (k) => widgetPageVar(k, page)));
+        if (!info || !target) return null;
+        const pick = await this.pick(info.widgetId, buttonId, target);
+        return whatsappLink(pick.phone, widgetText(pick.message, (k) => (k === WIDGET_ADVISOR_VAR ? (pick.advisor?.name.trim() ?? '') : widgetPageVar(k, page))));
+    }
+
+    /**
+     * v0.1.395 — Elige a quién le llega la conversación: por turnos (un
+     * contador por botón en Redis, compartido entre servidores) o al azar.
+     * Sin Redis, al azar (nunca falla un clic por eso).
+     */
+    private async pick(widgetId: number, buttonId: string, target: WhatsappTarget): Promise<WidgetWhatsappPick> {
+        let turn = 0;
+        if (target.advisors.length > 1 && target.rotation === 'round_robin') {
+            if (this.redis) {
+                turn = await incrWithTtl(this.redis, `widget:rr:${widgetId}:${buttonId}`, ROTATION_TTL_S).catch(() => Math.floor(Math.random() * 1000));
+                turn -= 1;
+            } else turn = Math.floor(Math.random() * 1000);
+        }
+        const advisor = pickWidgetAdvisor({ advisors: target.advisors, rotation: target.rotation }, turn);
+        return { phone: advisor?.phone ?? target.phone, message: target.message, label: target.label, advisor, assignFieldId: target.assignFieldId };
     }
 
     /**
@@ -241,12 +304,12 @@ export class ContactWidgetsService {
      * el widget es de la MISMA empresa, está publicado y ESE botón pide ESE
      * formulario. Cualquier otra cosa: null (el envío sigue como siempre).
      */
-    async captureTarget(tenantId: number, formId: number, ctx: { token: string; button: string }): Promise<WhatsappTarget | null> {
+    async captureTarget(tenantId: number, formId: number, ctx: { token: string; button: string }): Promise<WidgetWhatsappPick | null> {
         const info = await this.cachedPageInfo(ctx.token).catch(() => null);
         if (!info || info.tenantId !== tenantId) return null;
         const target = info.whatsapp[ctx.button];
         if (!target || target.captureFormId !== formId) return null;
-        return target;
+        return this.pick(info.widgetId, ctx.button, target);
     }
 
     private async pageInfo(token: string): Promise<WidgetPageInfo | null> {
@@ -299,12 +362,49 @@ export class ContactWidgetsService {
                 if (!pub) continue;
                 buttons.push(pub);
                 if (b.type === 'whatsapp') {
-                    whatsapp[b.id] = { phone: b.phone, message: b.message, label: widgetButtonLabel(b), captureFormId: b.capture_form_id };
+                    whatsapp[b.id] = {
+                        phone: b.phone,
+                        message: b.message,
+                        label: widgetButtonLabel(b),
+                        captureFormId: b.capture_form_id,
+                        advisors: b.advisors,
+                        rotation: b.rotation,
+                        assignFieldId: b.capture_form_id !== null ? b.assign_field_id : null,
+                    };
                 }
             }
-            const meta: PublicWidgetMeta = buildPublicWidgetMeta(token, config, brand, buttons);
+            // v0.1.395 — quien dejó el equipo ya no recibe registros asignados (su número sigue atendiendo).
+            const advisorUsers = [...new Set(Object.values(whatsapp).flatMap((w) => w.advisors.map((a) => a.user_id).filter((x): x is number => x !== null)))];
+            if (advisorUsers.length > 0) {
+                const alive = new Set((await this.staff(tx, tenantId, advisorUsers)).map((m) => m.id));
+                for (const w of Object.values(whatsapp)) w.advisors = w.advisors.map((a) => (a.user_id !== null && !alive.has(a.user_id) ? { ...a, user_id: null } : a));
+            }
+            const format = tenantFormatSchema.safeParse((hit.tenantSettings as Record<string, unknown> | null)?.format ?? {});
+            const hours = await this.publicHours(config, format.success ? format.data.timezone : null, format.success ? format.data.time_format : 'h24');
+            const meta: PublicWidgetMeta = buildPublicWidgetMeta(token, config, brand, buttons, hours);
             return { tenantId, widgetId: hit.widget.id, title: config.title || brand.company || 'Contacto', meta, allowedDomains: config.allowed_domains, whatsapp };
         });
+    }
+
+    /**
+     * v0.1.395 — El horario para la página: los festivos de los próximos días
+     * ya resueltos (la página no carga el calendario). Si no se sabe cuáles
+     * son (Google no responde y no hay nada guardado), ningún día se cierra
+     * por festivo: mejor mostrar el botón que esconderlo por error.
+     */
+    private async publicHours(config: ContactWidgetConfig, companyTz: string | null, timeFormat: 'h12' | 'h24'): Promise<ReturnType<typeof buildPublicWidgetHours>> {
+        if (!config.hours.enabled) return null;
+        const tz = resolveTimeZone(config.hours.timezone, companyTz);
+        const closed: string[] = [];
+        if (config.hours.holiday_country && this.holidays) {
+            const items = await this.holidays.items(config.hours.holiday_country).catch(() => null);
+            if (items) {
+                const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+                const until = addDaysYmd(today, WIDGET_HOURS_LOOKAHEAD_DAYS);
+                for (const h of items) if (h.date >= today && h.date <= until && holidayBlocksByDefault(h.kind)) closed.push(h.date);
+            }
+        }
+        return buildPublicWidgetHours(config.hours, { tz, closedDates: [...new Set(closed)], timeFormat });
     }
 
     // ─────────────────────────── Interno ───────────────────────────
@@ -325,7 +425,7 @@ export class ContactWidgetsService {
      * Lo que llega del editor, limpio: la forma del widget y sólo referencias a
      * formularios y agendas de ESTA empresa (un id ajeno se descarta).
      */
-    private cleanConfig(raw: unknown, refs: Refs): ContactWidgetConfig {
+    private async cleanConfig(tx: Tx, tenantId: number, raw: unknown, refs: Refs): Promise<ContactWidgetConfig> {
         const parsed = contactWidgetConfigSchema.safeParse(raw);
         if (!parsed.success) {
             throw new BadRequestException({ code: 'invalid_widget', message: 'El widget tiene datos que no se entienden.', data: { status: 400, issues: parsed.error.issues.slice(0, 5) } });
@@ -339,7 +439,60 @@ export class ContactWidgetsService {
                 form_id: b.form_id !== null && refs.forms.has(b.form_id) ? b.form_id : null,
                 booking_page_id: b.booking_page_id !== null && refs.bookings.has(b.booking_page_id) ? b.booking_page_id : null,
             }));
-        return { ...parsed.data, buttons };
+        // v0.1.395 — las personas que atienden son del equipo (un id ajeno o
+        // de un cliente se descarta) y el campo donde queda quién atiende es un
+        // campo «Persona» de la lista del formulario de «datos primero».
+        const userIds = [...new Set(buttons.flatMap((b) => b.advisors.map((a) => a.user_id).filter((x): x is number => x !== null)))];
+        const staff = userIds.length ? new Set((await this.staff(tx, tenantId, userIds)).map((m) => m.id)) : new Set<number>();
+        const lists_ = [...new Set(buttons.map((b) => (b.capture_form_id !== null ? refs.forms.get(b.capture_form_id)?.list_id : undefined)).filter((x): x is number => x !== undefined))];
+        const personFields = await this.personFields(tx, tenantId, lists_);
+        const cleaned = buttons.map((b) => {
+            if (b.type !== 'whatsapp') return { ...b, advisors: [], assign_field_id: null };
+            const advisors = b.advisors.map((a) => (a.user_id !== null && !staff.has(a.user_id) ? { ...a, user_id: null } : a));
+            const listId = b.capture_form_id !== null ? refs.forms.get(b.capture_form_id)?.list_id : undefined;
+            const okField = listId !== undefined && b.assign_field_id !== null && (personFields.get(listId) ?? []).some((f) => f.id === b.assign_field_id);
+            return { ...b, advisors, assign_field_id: okField ? b.assign_field_id : null };
+        });
+        const tz = parsed.data.hours.timezone;
+        const hours = { ...parsed.data.hours, timezone: tz && resolveTimeZone(tz) === tz ? tz : null };
+        return { ...parsed.data, buttons: cleaned, hours };
+    }
+
+    /** v0.1.395 — Las personas del equipo (ni clientes del portal ni invitados), activas. */
+    private async staff(tx: Tx, tenantId: number, only?: number[]): Promise<Array<{ id: number; name: string }>> {
+        const where = [eq(memberships.tenantId, tenantId), staffRoleSql(), isNull(users.disabledAt)];
+        if (only) where.push(inArray(memberships.userId, only));
+        const rows = await tx
+            .select({ id: users.id, name: users.name, email: users.email })
+            .from(memberships)
+            .innerJoin(users, eq(users.id, memberships.userId))
+            .where(and(...where))
+            .orderBy(asc(users.name))
+            .limit(500);
+        return rows.map((r) => ({ id: r.id, name: (r.name ?? '').trim() || r.email }));
+    }
+
+    /** v0.1.395 — Los campos «Persona» de cada lista (donde puede quedar quién atiende). */
+    private async personFields(tx: Tx, tenantId: number, listIds: number[]): Promise<Map<number, Array<{ id: number; label: string }>>> {
+        const out = new Map<number, Array<{ id: number; label: string }>>();
+        if (listIds.length === 0) return out;
+        const rows = await tx
+            .select({ id: fields.id, label: fields.label, listId: fields.listId })
+            .from(fields)
+            .where(and(eq(fields.tenantId, tenantId), inArray(fields.listId, listIds), eq(fields.type, 'user'), isNull(fields.deletedAt)))
+            .orderBy(asc(fields.position));
+        for (const r of rows) {
+            const list = out.get(r.listId) ?? [];
+            list.push({ id: r.id, label: r.label });
+            out.set(r.listId, list);
+        }
+        return out;
+    }
+
+    private async format(tx: Tx, tenantId: number): Promise<{ timezone: string | null; time_format: 'h12' | 'h24' }> {
+        const [t] = await tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+        const f = tenantFormatSchema.safeParse((t?.settings as Record<string, unknown> | null)?.format ?? {});
+        return f.success ? { timezone: f.data.timezone, time_format: f.data.time_format } : { timezone: null, time_format: 'h24' };
     }
 
     /** Formularios y agendas de la empresa (sin los de listas en la papelera). */

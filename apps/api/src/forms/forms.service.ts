@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import {
     brandingSchema,
+    WIDGET_ADVISOR_VAR,
     whatsappLink,
     widgetPageVar,
     widgetText,
@@ -1532,6 +1533,18 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                   }
                 : null;
 
+        // v0.1.394 (ADR-S99) — abierto desde el botón de WhatsApp de un widget
+        // (sólo si ESE widget de ESTA empresa pide ESTE formulario en ESE
+        // botón). v0.1.395 — con varias personas atendiendo, acá se elige a
+        // quién le llega y, si el botón lo pide, el registro queda asignado a
+        // ella (salvo que el formulario ya lo haya respondido).
+        const widgetPick = input.widget && this.widgets ? await this.widgets.captureTarget(f.row.tenantId, f.row.id, input.widget).catch(() => null) : null;
+        if (widgetPick?.assignFieldId && widgetPick.advisor?.user_id) {
+            const field = byId.get(widgetPick.assignFieldId);
+            const key = jsonbKeyForField(widgetPick.assignFieldId);
+            if (field && field.type === 'user' && (data[key] === undefined || data[key] === null || data[key] === '')) data[key] = widgetPick.advisor.user_id;
+        }
+
         let result: SubmitFormResult;
         if (s.confirm_email && respondentEmail) {
             result = await this.holdForConfirmation(f, data, attachmentIds, respondentEmail, ip, accepted, endingId, planId, origin);
@@ -1553,13 +1566,10 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         // la respuesta ya quedó guardada; ahora se abre WhatsApp con el mensaje
         // armado con lo que respondió (sólo si ESE widget de ESTA empresa pide
         // ESTE formulario en ESE botón).
-        if (input.widget && this.widgets) {
-            const target = await this.widgets.captureTarget(f.row.tenantId, f.row.id, input.widget).catch(() => null);
-            if (target) {
-                const text = this.widgetMessage(f, fields, data, target.message, { url: origin.page_url ?? null, title: input.widget.page_title?.trim() || null });
-                const url = whatsappLink(target.phone, text);
-                if (url) result.whatsapp = { url, label: 'Continuar en WhatsApp' };
-            }
+        if (widgetPick && input.widget) {
+            const text = this.widgetMessage(f, fields, data, widgetPick.message, { url: origin.page_url ?? null, title: input.widget.page_title?.trim() || null }, widgetPick.advisor?.name ?? null);
+            const url = whatsappLink(widgetPick.phone, text);
+            if (url) result.whatsapp = { url, label: 'Continuar en WhatsApp' };
         }
         // v0.1.358 — cuenta para las estadísticas (y el avance guardado ya no hace falta).
         void this.stats?.recordSubmit(statsTarget(f), input.elapsed_ms);
@@ -2728,6 +2738,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         data: Record<string, unknown>,
         template: string,
         page: { url: string | null; title: string | null },
+        advisorName: string | null = null,
     ): string {
         if (!template.includes('{{')) return template;
         const recall = this.answerKeyMap(f, fields);
@@ -2740,6 +2751,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             const pv = widgetPageVar(key, page);
             if (pv !== null) return pv;
             if (key === 'formulario.nombre') return f.config.settings.title || f.row.name;
+            if (key === WIDGET_ADVISOR_VAR && !recall[key]) return advisorName?.trim() || null;
             if (!recall[key]) return null;
             return formAnswerText(pub, recall[key]!, values, (n) => formatFormNumber(n, nf)) || null;
         });

@@ -18,6 +18,7 @@ export * from './schemas/list-template';
 export * from './schemas/public-list';
 export * from './schemas/form';
 export * from './schemas/contact-widget';
+export * from './schemas/widget-hours';
 export * from './schemas/form-logic';
 export * from './schemas/form-record-values';
 export * from './schemas/form-stats';
