@@ -403,11 +403,16 @@ export class RecurrencesService {
             monthlyPattern: rec.monthlyPattern,
         });
 
-        // Si pasó repeat_until, no disparar más.
+        // Si pasó repeat_until, no disparar más. v0.1.393 — y se anota con qué
+        // fecha se detuvo, así el barrido no la vuelve a tomar cada 5 minutos.
         if (
             rec.repeatUntil !== null &&
             comparableDate(nextDate) > comparableDate(rec.repeatUntil)
         ) {
+            await tx
+                .update(recurrences)
+                .set({ stoppedValue: currentValue.trim() })
+                .where(and(eq(recurrences.tenantId, tenantId), eq(recurrences.id, rec.id)));
             return null;
         }
 
@@ -539,10 +544,37 @@ export class RecurrencesService {
      */
     async tick(): Promise<void> {
         if (!this.db) return;
+        // v0.1.393 — un barrido a la vez: si uno tarda más de 5 minutos (un
+        // día de facturación con miles de recurrencias), el siguiente no
+        // repite el trabajo en paralelo.
+        const lock = this.redis ? await this.redis.set(TICK_LOCK_KEY, '1', 'EX', TICK_LOCK_TTL_S, 'NX').catch(() => 'OK') : 'OK';
+        if (lock !== 'OK') return;
+        try {
+            await this.tickLocked();
+        } finally {
+            await this.redis?.del(TICK_LOCK_KEY).catch(() => undefined);
+        }
+    }
+
+    private async tickLocked(): Promise<void> {
         // v0.1.257 — la base devuelve sólo las vencidas (ver `dueScheduled`);
         // `fire` vuelve a leer todo dentro del tenant y conserva la
         // idempotencia por last_fired_at y el corte por repeat_until.
-        const due = await this.repo.dueScheduled(this.db, comparableDate(nowUtc()));
+        // v0.1.393 — por tandas (keyset) con tope de tiempo: lo que quede, al
+        // próximo barrido.
+        const startedAt = Date.now();
+        let after: { tenantId: number; id: number } | undefined;
+        while (Date.now() - startedAt < TICK_BUDGET_MS) {
+            const due = await this.repo.dueScheduled(this.db!, comparableDate(nowUtc()), { limit: TICK_BATCH, ...(after ? { after } : {}) });
+            if (due.length === 0) return;
+            await this.fireAll(due);
+            const last = due[due.length - 1]!;
+            after = { tenantId: last.tenantId, id: last.id };
+            if (due.length < TICK_BATCH) return;
+        }
+    }
+
+    private async fireAll(due: RecurrenceRow[]): Promise<void> {
         for (const rec of due) {
             try {
                 await this.fire(rec);
@@ -608,5 +640,10 @@ export interface RecurrenceActor {
     teamIds?: readonly number[];
 }
 
+/** v0.1.393 — barrido de recurrencias: tanda, tope de tiempo y candado. */
+const TICK_BATCH = 500;
+const TICK_BUDGET_MS = 4 * 60_000;
+const TICK_LOCK_KEY = 'recurrences:tick:lock';
+const TICK_LOCK_TTL_S = 10 * 60;
 const recStatusKey = (tenantId: number): string => `recst:${tenantId}`;
 const recStatusVersionKey = (tenantId: number): string => `recst:v:${tenantId}`;

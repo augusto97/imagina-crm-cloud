@@ -41,6 +41,7 @@ import { HelpdeskReplyService } from '../src/helpdesk/helpdesk-reply.service';
 import { HelpdeskSlaService } from '../src/helpdesk/helpdesk-sla.service';
 import { HelpdeskQueue } from '../src/helpdesk/helpdesk.queue';
 import { ImapFlowReader } from '../src/helpdesk/imap-reader';
+import { pollDelayMs } from '../src/helpdesk/helpdesk-ingest.service';
 import { IncidentHub, type IncidentReport } from '../src/incidents/incident-hub';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
@@ -678,6 +679,27 @@ describe('Mesa de ayuda (Postgres + Redis + IMAP reales)', () => {
             // 16:00Z es 11:00 en Bogotá (formato regional por defecto de la empresa).
             expect(mail.sent[0]!.text).toMatch(/^Se venció la resolución \(2026-11-03 11:00\), prioridad Alta\.$/);
         });
+    });
+
+    it('un buzón callado se lee menos seguido y el primer correo lo vuelve a cada minuto (v0.1.393)', async () => {
+        const mb = async () => (await withTenant(pg.db, tenantId, (tx) => tx.select().from(helpdeskMailboxes).where(eq(helpdeskMailboxes.id, mailboxId))))[0]!;
+        const inMin = (d: Date | null) => Math.round(((d?.getTime() ?? 0) - Date.now()) / 60_000);
+        expect(pollDelayMs(0)).toBe(60_000);
+        expect(pollDelayMs(10)).toBe(120_000);
+        expect(pollDelayMs(30)).toBe(180_000);
+        // Nueve lecturas sin nada: la décima ya espera 2 minutos.
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.update(helpdeskMailboxes).set({ state: sql`${helpdeskMailboxes.state} || '{"quiet_runs": 9}'::jsonb` }).where(eq(helpdeskMailboxes.id, mailboxId)),
+        );
+        await run();
+        let row = await mb();
+        expect((row.state as Record<string, unknown>).quiet_runs).toBe(10);
+        expect(inMin(row.nextCheckAt)).toBe(2);
+        imap.append(buildMime({ from: 'Ana Pérez <ana@cliente.test>', to: SUPPORT, subject: 'Otra consulta', text: 'Hola', messageId: 'quiet1@cliente.test' }));
+        await run();
+        row = await mb();
+        expect((row.state as Record<string, unknown>).quiet_runs).toBe(0);
+        expect(inMin(row.nextCheckAt)).toBe(1);
     });
 
     it('RLS: los buzones, correos y tickets de una empresa no los ve otra', async () => {

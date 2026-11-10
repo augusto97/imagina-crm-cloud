@@ -16,7 +16,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'El cliente escribe a tu dirección de soporte. Cada minuto la app revisa el buzón y el correo nuevo se vuelve un **ticket** en la lista.',
+                    'El cliente escribe a tu dirección de soporte. La app revisa el buzón seguido (cada minuto mientras llegan correos) y el correo nuevo se vuelve un **ticket** en la lista.',
                     'Alguien del equipo lo toma (o una automatización lo asigna) y le pone la **prioridad**.',
                     'Desde la ficha del ticket toca **Responder por correo**: el cliente recibe la respuesta en su bandeja, con el número del ticket en el asunto.',
                     'Si el cliente contesta, su respuesta llega como comentario al **mismo ticket**, y si estaba cerrado, se reabre.',
@@ -85,7 +85,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'El buzón se conecta **por lista**, en los ajustes de la lista que recibirá los tickets, pestaña **Correo entrante**. La app entra al buzón con los mismos datos que usaría un programa de correo y lo revisa **cada minuto**. Sólo lee: no borra, no mueve y, salvo que lo pidas, ni siquiera marca los correos como leídos.',
+                md: 'El buzón se conecta **por lista**, en los ajustes de la lista que recibirá los tickets, pestaña **Correo entrante**. La app entra al buzón con los mismos datos que usaría un programa de correo y lo revisa **cada minuto** mientras llegan correos; si pasa un rato sin recibir nada, cada 2 o 3 minutos, y vuelve a cada minuto apenas llega uno (**Revisar ahora** lo lee al instante). Sólo lee: no borra, no mueve y, salvo que lo pidas, ni siquiera marca los correos como leídos.',
             },
             { t: 'demo', key: 'mesa-buzon', caption: 'Conectar el buzón de soporte en los ajustes de la lista.', fallback: 'mesa-hero' },
             { t: 'h', text: 'Antes de empezar: la contraseña de aplicación' },

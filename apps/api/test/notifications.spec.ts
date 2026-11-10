@@ -7,7 +7,7 @@ import {
     readNotificationPrefs,
     type Field,
 } from '@imagina-base/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import IORedis from 'ioredis';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
@@ -441,6 +441,23 @@ describe('v0.1.276 — avisos (Postgres + Redis reales)', () => {
         } finally {
             await withTenant(pg.db, tenantId, (tx) => tx.update(listsTable).set({ settings: before }).where(eq(listsTable.id, listId)));
         }
+    });
+
+    it('recordatorios: los de una empresa archivada no tapan a los demás (v0.1.393)', async () => {
+        // 250 recordatorios vencidos de una empresa archivada: nunca se disparan,
+        // y antes ocupaban las primeras 200 filas del barrido para siempre.
+        const archived = await pg.db.execute<{ id: number }>(sql`
+            INSERT INTO tenants (slug, name, archived_at) VALUES ('archivada-rem', 'Archivada', now()) RETURNING id
+        `);
+        const archivedId = Number(((archived as unknown as { rows?: Array<{ id: number }> }).rows ?? (archived as unknown as Array<{ id: number }>))[0]!.id);
+        await pg.db.execute(sql`
+            INSERT INTO reminders (tenant_id, user_id, remind_at, note)
+            SELECT ${archivedId}, ${ana}, now() - interval '2 hours', 'viejo' FROM generate_series(1, 250)
+        `);
+        await svc.createReminder(tenantId, admin(), { remind_at: new Date(Date.now() - 1000).toISOString(), note: 'El que toca' });
+        expect(await svc.reminderTick()).toBe(1);
+        expect((await inbox(ana)).some((n) => n.title === 'Recordatorio: El que toca')).toBe(true);
+        await pg.db.execute(sql`DELETE FROM tenants WHERE id = ${archivedId}`);
     });
 
     it('resumen diario: a su hora, una vez por día, y nada si no hay nada', async () => {

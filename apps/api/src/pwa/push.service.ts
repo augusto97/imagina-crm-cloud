@@ -31,7 +31,7 @@ import { devPrivateEgressAllowed, safeWebhookFetch } from '../common/safe-fetch'
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { lists, pushSubscriptions, tenants, type PushSubscriptionRow } from '../db/schema';
-import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
+import { QUEUE_JOB_RETENTION, guardRedis, incrWithTtl } from '../redis/redis.util';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { PushKeysService } from './push-keys.service';
@@ -437,8 +437,7 @@ export class PushService implements OnModuleInit, OnApplicationShutdown {
     private async underCap(tenantId: number, userId: number): Promise<boolean> {
         const key = `notifpush:${tenantId}:${userId}:${Math.floor(Date.now() / 3_600_000)}`;
         try {
-            const n = await this.redis.incr(key);
-            if (n === 1) await this.redis.expire(key, 3700);
+            const n = await incrWithTtl(this.redis, key, 3700);
             return n <= PUSH_PER_HOUR;
         } catch {
             return true;

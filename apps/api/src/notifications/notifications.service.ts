@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional, type OnModuleInit } from '@nestjs/common';
+import { incrWithTtl } from '../redis/redis.util';
 import {
     FALLBACK_TIME_ZONE,
     addDaysYmd,
@@ -88,6 +89,9 @@ const MAX_RECIPIENTS = 100;
 /** «Mi trabajo»: listas que se recorren y registros por grupo. */
 const MAX_WORK_LISTS = 200;
 const MAX_ITEMS = 200;
+/** v0.1.393 — recordatorios por tanda y tandas por minuto (el resto, al siguiente). */
+const REMINDER_BATCH = 200;
+const REMINDER_MAX_ROUNDS = 10;
 
 interface RecordCtx {
     list: List;
@@ -513,8 +517,7 @@ export class NotificationsService implements OnModuleInit {
     private async underMailCap(tenantId: number, userId: number): Promise<boolean> {
         const key = `notifmail:${tenantId}:${userId}:${Math.floor(Date.now() / 3_600_000)}`;
         try {
-            const n = await this.redis.incr(key);
-            if (n === 1) await this.redis.expire(key, 3700);
+            const n = await incrWithTtl(this.redis, key, 3700);
             return n <= MAIL_PER_HOUR;
         } catch {
             return true;
@@ -865,18 +868,34 @@ export class NotificationsService implements OnModuleInit {
      * cada recordatorio suene una sola vez.
      */
     async reminderTick(now: Date = new Date()): Promise<number> {
+        let n = 0;
+        // v0.1.393 — tandas hasta vaciar lo vencido (tope por minuto).
+        for (let round = 0; round < REMINDER_MAX_ROUNDS; round++) {
+            const r = await this.reminderRound(now);
+            n += r.sent;
+            if (r.taken < REMINDER_BATCH) break;
+        }
+        return n;
+    }
+
+    /**
+     * v0.1.393 — El filtro de empresas archivadas va DENTRO de la subconsulta:
+     * antes iba afuera, así que los recordatorios vencidos de una empresa
+     * archivada (que nunca se marcan) ocupaban las primeras 200 filas para
+     * siempre y tapaban a los de las demás.
+     */
+    private async reminderRound(now: Date): Promise<{ taken: number; sent: number }> {
         const due = await this.db.execute<{ id: number; tenant_id: number; user_id: number; list_id: number | null; record_id: number | null; note: string }>(sql`
             UPDATE reminders r SET fired_at = ${now}
-            FROM tenants t
             WHERE r.id IN (
-                SELECT id FROM reminders
-                WHERE fired_at IS NULL AND done_at IS NULL AND remind_at <= ${now}
-                ORDER BY remind_at
-                LIMIT 200
-                FOR UPDATE SKIP LOCKED
+                SELECT x.id FROM reminders x
+                WHERE x.fired_at IS NULL AND x.done_at IS NULL AND x.remind_at <= ${now}
+                  AND EXISTS (SELECT 1 FROM tenants t WHERE t.id = x.tenant_id AND t.archived_at IS NULL)
+                ORDER BY x.remind_at
+                LIMIT ${REMINDER_BATCH}
+                FOR UPDATE OF x SKIP LOCKED
             )
             AND r.fired_at IS NULL
-            AND t.id = r.tenant_id AND t.archived_at IS NULL
             RETURNING r.id, r.tenant_id, r.user_id, r.list_id, r.record_id, r.note
         `);
         const rows = (due as unknown as { rows?: unknown[] }).rows ?? (due as unknown as unknown[]);
@@ -898,7 +917,7 @@ export class NotificationsService implements OnModuleInit {
                 return 0;
             });
         }
-        return n;
+        return { taken: rows.length, sent: n };
     }
 
     // ─────────────────────────── Mi trabajo ───────────────────────────
@@ -1175,47 +1194,56 @@ export class NotificationsService implements OnModuleInit {
      * mismo día (dos nodos, o un reinicio a mitad de la hora).
      */
     async digestTick(now: Date = new Date()): Promise<number> {
-        const tenantRows = await this.db
-            .select({ id: tenants.id, name: tenants.name })
-            .from(tenants)
-            .where(isNull(tenants.archivedAt));
+        // v0.1.393 — antes se abría una transacción por CADA empresa no
+        // archivada cada hora (con 10.000 empresas, 10.000 transacciones para
+        // encontrar a las pocas personas con el resumen encendido). Ahora UNA
+        // consulta trae sólo a esas personas, de todas las empresas.
+        const rows = await this.db
+            .select({
+                tenantId: memberships.tenantId,
+                tenantName: tenants.name,
+                userId: memberships.userId,
+                role: memberships.role,
+                customRoleId: memberships.customRoleId,
+                settings: memberships.settings,
+                email: users.email,
+                disabledAt: users.disabledAt,
+            })
+            .from(memberships)
+            .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+            .innerJoin(users, eq(users.id, memberships.userId))
+            .where(and(isNull(tenants.archivedAt), sql`${memberships.settings}->'notifications'->>'digest' = 'daily'`));
+        const byTenant = new Map<number, { name: string; members: typeof rows }>();
+        for (const r of rows) {
+            if (r.role === 'client' || r.disabledAt) continue;
+            const t = byTenant.get(r.tenantId) ?? { name: r.tenantName, members: [] };
+            t.members.push(r);
+            byTenant.set(r.tenantId, t);
+        }
         let sent = 0;
-        for (const t of tenantRows) {
-            const tz = (await this.timeZones?.orUtc(t.id).catch(() => FALLBACK_TIME_ZONE)) ?? FALLBACK_TIME_ZONE;
+        for (const [tenantId, t] of byTenant) {
+            const tz = (await this.timeZones?.orUtc(tenantId).catch(() => FALLBACK_TIME_ZONE)) ?? FALLBACK_TIME_ZONE;
             const local = zonedNowNaive(tz, now);
             const hour = Number(local.slice(11, 13));
             const ymd = local.slice(0, 10);
             const weekday = new Date(`${ymd}T00:00:00Z`).getUTCDay();
-            const members = await this.tenantDb.withTenant(t.id, (tx) =>
-                tx
-                    .select({
-                        userId: memberships.userId,
-                        role: memberships.role,
-                        customRoleId: memberships.customRoleId,
-                        settings: memberships.settings,
-                        email: users.email,
-                        name: users.name,
-                        disabledAt: users.disabledAt,
-                    })
-                    .from(memberships)
-                    .innerJoin(users, eq(users.id, memberships.userId))
-                    .where(and(eq(memberships.tenantId, t.id), sql`${memberships.settings}->'notifications'->>'digest' = 'daily'`)),
-            );
-            const teamsOf = this.teams && members.length > 0
-                ? await this.tenantDb.withTenant(t.id, (tx) => this.teams!.teamIdsByUser(tx, t.id, members.map((m) => m.userId)))
-                : new Map<number, number[]>();
-            for (const m of members) {
-                if (m.role === 'client' || m.disabledAt) continue;
+            const dueNow = t.members.filter((m) => {
                 const prefs = readNotificationPrefs((m.settings as Record<string, unknown> | null)?.notifications);
-                if (prefs.digest !== 'daily' || prefs.digest_hour !== hour || !prefs.digest_days.includes(weekday)) continue;
-                const fresh = await this.redis.set(`digest:${t.id}:${m.userId}:${ymd}`, '1', 'EX', 2 * 86_400, 'NX').catch(() => 'OK');
+                return prefs.digest === 'daily' && prefs.digest_hour === hour && prefs.digest_days.includes(weekday);
+            });
+            if (dueNow.length === 0) continue;
+            const teamsOf = this.teams
+                ? await this.tenantDb.withTenant(tenantId, (tx) => this.teams!.teamIdsByUser(tx, tenantId, dueNow.map((m) => m.userId)))
+                : new Map<number, number[]>();
+            for (const m of dueNow) {
+                const fresh = await this.redis.set(`digest:${tenantId}:${m.userId}:${ymd}`, '1', 'EX', 2 * 86_400, 'NX').catch(() => 'OK');
                 if (fresh !== 'OK') continue;
                 try {
                     const who = { userId: m.userId, role: m.role as Role, email: m.email, teamIds: teamsOf.get(m.userId) ?? [], customRoleId: m.customRoleId ?? null };
-                    if (await this.sendDigest(t.id, t.name, who, tz, now)) sent++;
+                    if (await this.sendDigest(tenantId, t.name, who, tz, now)) sent++;
                 } catch (err) {
                     // Una persona con un problema no deja sin resumen al resto.
-                    this.logger.error(`Resumen diario de ${m.userId} (empresa ${t.id}): ${String(err)}`);
+                    this.logger.error(`Resumen diario de ${m.userId} (empresa ${tenantId}): ${String(err)}`);
                 }
             }
         }

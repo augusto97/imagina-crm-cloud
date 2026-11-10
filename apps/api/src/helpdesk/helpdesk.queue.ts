@@ -116,7 +116,7 @@ export class HelpdeskQueueBootstrap implements OnModuleInit, OnApplicationShutdo
                     // Otro nodo lo estaba leyendo: se reintenta en un rato.
                     if (!ran) this.dispatcher.enqueuePoll(data.tenantId, data.mailboxId, 30_000);
                 },
-                { connection: conn(), concurrency: 3, lockDuration: 5 * 60_000 },
+                { connection: conn(), concurrency: this.env.HELPDESK_POLL_CONCURRENCY, lockDuration: 5 * 60_000 },
             );
             this.worker.on('failed', (job, err) => this.logger.error(`Mesa de ayuda: ${job?.name} ${job?.id} falló: ${err.message}`));
             this.worker.on('error', (err) => this.logger.warn(`Worker de la mesa de ayuda con error: ${err.message}`));

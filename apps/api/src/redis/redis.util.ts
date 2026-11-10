@@ -34,3 +34,29 @@ export function guardRedis(client: Redis, logger: Logger, label = 'redis'): Redi
  * propias opciones las sigue pisando.
  */
 export const QUEUE_JOB_RETENTION = { removeOnComplete: 100, removeOnFail: 500 } as const;
+
+/**
+ * v0.1.393 — Contador con vencimiento en UN paso (Lua). El patrón de antes,
+ * `INCR` y después `EXPIRE` si es el primero, dejaba el contador SIN
+ * vencimiento si el proceso se cortaba entre las dos órdenes: un freno de
+ * intentos (login, correos, enlaces del portal) quedaba trabado para siempre.
+ * Además repara un contador que ya hubiera quedado sin vencimiento.
+ * Ventana fija: el vencimiento se pone al primer incremento.
+ */
+const INCR_TTL_LUA = `local n = redis.call('INCR', KEYS[1])
+if n == 1 or redis.call('TTL', KEYS[1]) < 0 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+return n`;
+
+export interface IncrRedis {
+    incr(key: string): Promise<number>;
+    expire(key: string, seconds: number): Promise<unknown>;
+    eval?: (script: string, numKeys: number, ...args: Array<string | number>) => Promise<unknown>;
+}
+
+export async function incrWithTtl(redis: IncrRedis, key: string, ttlSeconds: number): Promise<number> {
+    if (typeof redis.eval === 'function') return Number(await redis.eval(INCR_TTL_LUA, 1, key, String(ttlSeconds)));
+    // Clientes en memoria de los tests (sin Lua).
+    const n = await redis.incr(key);
+    if (n === 1) await redis.expire(key, ttlSeconds);
+    return n;
+}

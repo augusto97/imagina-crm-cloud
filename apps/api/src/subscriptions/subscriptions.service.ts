@@ -60,7 +60,8 @@ import { ActivityService, computeDiff } from '../activity/activity.service';
 import { AuditService } from '../audit/audit.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { can } from '../authz/can';
-import { planModuleOff } from '../billing/plan-module-gate';
+import { planIncludesSql } from '../billing/plan-module-gate';
+import { mapLimit } from '../common/map-limit';
 import { CollectionsService, type CollectionActor } from '../collections/collections.service';
 import { providerError } from '../collections/collection-gateways';
 import { gatewayBases } from '../collections/gateway-bases';
@@ -141,6 +142,10 @@ const FETCH_TIMEOUT_MS = 15_000;
 const DAY = 24 * 60 * 60 * 1000;
 const TICK_MS = 5 * 60 * 1000;
 const TICK_LOCK = 'subscriptions:tick';
+/** v0.1.393 — por revisión: hasta 400 suscripciones, 8 a la vez, en menos de 3 minutos. */
+const TICK_BATCH = 400;
+const TICK_CONCURRENCY = 8;
+const TICK_BUDGET_MS = 180_000;
 /** Cuántos cobros por suscripción se muestran en la ficha. */
 const CHARGES_IN_PANEL = 24;
 
@@ -1413,7 +1418,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
      * cobrarse o reintentándose, y una vez por día el resto de las vivas. Sin
      * los avisos de Mercado Pago configurados, esto alcanza.
      */
-    async tick(now = new Date(), limit = 100): Promise<number> {
+    async tick(now = new Date(), limit = TICK_BATCH): Promise<number> {
         if (this.redis) {
             const got = await this.redis.set(TICK_LOCK, String(process.pid), 'EX', 240, 'NX').catch(() => 'OK');
             if (got !== 'OK') return 0;
@@ -1433,23 +1438,27 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
                         or (next_charge_at is not null and next_charge_at < ${new Date(now.getTime() + 2 * 60 * 60 * 1000)} and last_checked_at < ${new Date(now.getTime() - 30 * 60 * 1000)})))
                     or (status in ('expired', 'paused') and (last_checked_at is null or last_checked_at < ${new Date(now.getTime() - DAY)}))
                 )
+                -- v0.1.393 — sin el módulo en el plan no se revisan, y se filtran ACÁ:
+                -- antes se salteaban después del LIMIT sin tocar last_checked_at, así
+                -- que quedaban primeras en la fila para siempre y tapaban al resto.
+                and ${planIncludesSql(subscriptions.tenantId, 'integrations')}
                 order by last_checked_at asc nulls first
                 limit ${limit}
             `);
             const rows = (due as unknown as { rows: Array<{ id: number | string; tenantId: number | string }> }).rows;
-            const moduleOff = new Map<number, boolean>();
+            // v0.1.393 — varias a la vez (cada una es esperar a Mercado Pago o
+            // PayPal) y con tope de tiempo: el candado dura 4 minutos.
+            const startedAt = Date.now();
             let done = 0;
-            for (const r of rows) {
-                const tenantId = Number(r.tenantId);
-                if (!moduleOff.has(tenantId)) moduleOff.set(tenantId, await planModuleOff(this.db, tenantId, 'integrations'));
-                if (moduleOff.get(tenantId)) continue;
+            await mapLimit(rows, TICK_CONCURRENCY, async (r) => {
+                if (Date.now() - startedAt > TICK_BUDGET_MS) return;
                 try {
-                    await this.sync(tenantId, Number(r.id), now);
+                    await this.sync(Number(r.tenantId), Number(r.id), now);
                     done += 1;
                 } catch (err) {
                     this.logger.warn(`Suscripción ${r.id}: no se pudo revisar: ${err instanceof Error ? err.message : String(err)}`);
                 }
-            }
+            });
             return done;
         } finally {
             if (this.redis) await this.redis.del(TICK_LOCK).catch(() => undefined);

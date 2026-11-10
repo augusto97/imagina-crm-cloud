@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import type { AutoRenewStatus, BillingPaymentStatus } from '@imagina-base/shared';
 import type { MercadoPagoCreds } from '../platform-payments.service';
+import { timedFetch } from '../../common/timed-fetch';
 import {
     decodeReference,
     emptyReconcileBatch,
@@ -67,7 +68,7 @@ export class MercadoPagoGateway implements PaymentGateway {
 
     constructor(
         private readonly source: MercadoPagoCredsSource,
-        private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init),
+        private readonly fetchImpl: typeof fetch = timedFetch,
         private readonly apiBase: string = MP_API,
     ) {}
 

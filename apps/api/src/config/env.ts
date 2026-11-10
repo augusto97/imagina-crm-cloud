@@ -161,6 +161,12 @@ const envSchema = z.object({
      * `DB_POOL_MAX` 20, no conviene pasar de ~10.
      */
     AUTOMATIONS_CONCURRENCY: z.coerce.number().int().min(1).max(100).default(10),
+    /**
+     * v0.1.393 — Buzones de la mesa de ayuda que se leen A LA VEZ por servidor
+     * (antes 3 fijos). Leer un buzón es casi todo red (conectar por IMAP y
+     * bajar los correos): con 3, unos 90 buzones por minuto como mucho.
+     */
+    HELPDESK_POLL_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(8),
     // Token opcional para GET /metrics (SEC-17). Vacío = abierto (dev). Seteado
     // = requiere `Authorization: Bearer <token>` (compatible con scrapers).
     METRICS_TOKEN: z.string().default(''),

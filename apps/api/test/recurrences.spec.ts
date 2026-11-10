@@ -234,7 +234,7 @@ describe('RecurrencesService (Postgres real + RLS)', () => {
         }
         await recordsService.remove(tenantA, admin, 'tareas', deleted);
 
-        const listed = await repo.dueScheduled(pg.db, '2026-10-06 12:00:00');
+        const listed = await repo.dueScheduled(pg.db, '2026-10-06 12:00:00', { limit: 1000 });
         const ids = listed.filter((r) => r.tenantId === tenantA).map((r) => r.recordId);
         expect(ids).toEqual([due]);
 
@@ -437,6 +437,26 @@ describe('RecurrencesService (Postgres real + RLS)', () => {
 
         expect(await dateValue(recordId)).toBe('2030-01-31'); // sin cambios
         expect((await recRow(dto.id)).lastFiredAt).toBeNull(); // no marcó fired
+        // v0.1.393 — y el barrido ya no la vuelve a tomar con esa fecha.
+        expect((await recRow(dto.id)).stoppedValue).toBe('2030-01-31');
+        const later = async () => (await repo.dueScheduled(pg.db, '2030-06-01 00:00:00', { limit: 1000 })).map((r) => r.id);
+        expect(await later()).not.toContain(dto.id);
+        // Si alguien cambia la fecha, vuelve a contar.
+        await recordsService.update(tenantA, admin, 'tareas', recordId, { data: { [key('vence')]: '2030-01-10' } });
+        expect(await later()).toContain(dto.id);
+        // Y volver a configurarla también la habilita.
+        await recordsService.update(tenantA, admin, 'tareas', recordId, { data: { [key('vence')]: '2030-01-31' } });
+        expect(await later()).not.toContain(dto.id);
+        await service.upsert(tenantA, 'tareas', recordId, {
+            date_field_id: f.vence!.id,
+            frequency: 'monthly',
+            interval_n: 1,
+            trigger_type: 'schedule',
+            action_type: 'update',
+            repeat_until: '2030-12-31',
+        });
+        expect((await recRow(dto.id)).stoppedValue).toBeNull();
+        expect(await later()).toContain(dto.id);
     });
 
     it('RLS: la recurrencia de otro tenant no aparece', async () => {

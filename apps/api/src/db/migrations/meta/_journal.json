@@ -785,6 +785,13 @@
       "when": 1784200001800,
       "tag": "0111_automation_scale",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1784200001900,
+      "tag": "0112_periodic_scale",
+      "breakpoints": true
     }
   ]
 }

@@ -6,6 +6,13 @@ import { ENV, type Env } from '../config/env';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 
 export const STORE_SYNC_QUEUE = 'store-sync';
+/**
+ * v0.1.393 — Cola aparte para lo que tiene que ir rápido: los avisos de la
+ * tienda y los cambios que viajan desde la app. Antes compartían los 2 lugares
+ * del worker con las corridas largas (la primera carga de una tienda grande
+ * tarda minutos): con dos corridas en curso, un pedido nuevo esperaba detrás.
+ */
+export const STORE_SYNC_LIVE_QUEUE = 'store-sync-live';
 const TICK_JOB = 'tick';
 const RUN_JOB = 'run';
 const HOOK_JOB = 'hook';
@@ -52,9 +59,11 @@ export interface StoreSyncPushJob {
 export class StoreSyncQueue {
     private readonly logger = new Logger(StoreSyncQueue.name);
     private queue: Queue | null = null;
+    private live: Queue | null = null;
 
-    setQueue(queue: Queue): void {
+    setQueue(queue: Queue, live?: Queue): void {
         this.queue = queue;
+        this.live = live ?? null;
     }
 
     enqueueRun(tenantId: number, syncId: number, opts: { full?: boolean; only?: StoreSyncResource[] }, delayMs = 0): void {
@@ -75,8 +84,9 @@ export class StoreSyncQueue {
 
     /** Un aviso de la tienda: se procesa enseguida y fuera de la request (la tienda espera 5 s). */
     enqueueHook(job: StoreSyncHookJob): boolean {
-        if (!this.queue) return false;
-        this.queue
+        const queue = this.live ?? this.queue;
+        if (!queue) return false;
+        queue
             .add(HOOK_JOB, job, { removeOnComplete: true, removeOnFail: 100, attempts: 3, backoff: { type: 'exponential', delay: 5_000 } })
             .catch((err) => this.logger.error(`No se pudo encolar el aviso de la tienda: ${String(err)}`));
         return true;
@@ -88,8 +98,9 @@ export class StoreSyncQueue {
      * envío (juntarlos haría mandar campos que nadie tocó).
      */
     enqueuePush(job: StoreSyncPushJob): void {
-        if (!this.queue) return;
-        this.queue
+        const queue = this.live ?? this.queue;
+        if (!queue) return;
+        queue
             .add(PUSH_JOB, job, { delay: 1_500, removeOnComplete: true, removeOnFail: 100 })
             .catch((err) => this.logger.error(`No se pudo encolar el envío a la tienda: ${String(err)}`));
     }
@@ -108,6 +119,8 @@ export class StoreSyncQueueBootstrap implements OnModuleInit, OnApplicationShutd
     private readonly logger = new Logger(StoreSyncQueueBootstrap.name);
     private queue: Queue | null = null;
     private worker: Worker | null = null;
+    private liveQueue: Queue | null = null;
+    private liveWorker: Worker | null = null;
     private connections: IORedis[] = [];
     private handlers: StoreSyncHandlers | null = null;
 
@@ -129,37 +142,40 @@ export class StoreSyncQueueBootstrap implements OnModuleInit, OnApplicationShutd
             };
             this.queue = new Queue(STORE_SYNC_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de sincronización con error: ${err.message}`));
-            this.worker = new Worker(
-                STORE_SYNC_QUEUE,
-                async (job) => {
-                    if (!this.handlers) return;
-                    if (job.name === TICK_JOB) {
-                        await this.handlers.tick();
-                        return;
-                    }
-                    if (job.name === HOOK_JOB) {
-                        await this.handlers.hookJob(job.data as StoreSyncHookJob);
-                        return;
-                    }
-                    if (job.name === PUSH_JOB) {
-                        await this.handlers.pushJob(job.data as StoreSyncPushJob);
-                        return;
-                    }
-                    if (job.name === LEGACY_PURCHASE_JOB) return;
-                    const data = job.data as StoreSyncRunJob;
-                    const ran = await this.handlers.runJob(data);
-                    // Otra corrida la tenía tomada: se reintenta en un rato
-                    // (sin perder el pedido, p. ej. un «Sincronizar ahora»).
-                    if (!ran) {
-                        this.dispatcher.enqueueRun(data.tenantId, data.syncId, { full: data.full, only: data.only }, 30_000);
-                    }
-                },
-                // Dos a la vez: una tienda enorme no frena la de otra empresa.
-                { connection: conn(), concurrency: 2, lockDuration: 120_000 },
-            );
+            const process = async (job: { name: string; data: unknown }): Promise<void> => {
+                if (!this.handlers) return;
+                if (job.name === TICK_JOB) {
+                    await this.handlers.tick();
+                    return;
+                }
+                if (job.name === HOOK_JOB) {
+                    await this.handlers.hookJob(job.data as StoreSyncHookJob);
+                    return;
+                }
+                if (job.name === PUSH_JOB) {
+                    await this.handlers.pushJob(job.data as StoreSyncPushJob);
+                    return;
+                }
+                if (job.name === LEGACY_PURCHASE_JOB) return;
+                const data = job.data as StoreSyncRunJob;
+                const ran = await this.handlers.runJob(data);
+                // Otra corrida la tenía tomada: se reintenta en un rato
+                // (sin perder el pedido, p. ej. un «Sincronizar ahora»).
+                if (!ran) {
+                    this.dispatcher.enqueueRun(data.tenantId, data.syncId, { full: data.full, only: data.only }, 30_000);
+                }
+            };
+            // Dos a la vez: una tienda enorme no frena la de otra empresa.
+            this.worker = new Worker(STORE_SYNC_QUEUE, process, { connection: conn(), concurrency: 2, lockDuration: 120_000 });
             this.worker.on('failed', (job, err) => this.logger.error(`Sincronización ${job?.id} falló: ${err.message}`));
             this.worker.on('error', (err) => this.logger.warn(`Worker de sincronización con error: ${err.message}`));
-            this.dispatcher.setQueue(this.queue);
+            // v0.1.393 — avisos y envíos en su propia cola (ver STORE_SYNC_LIVE_QUEUE).
+            this.liveQueue = new Queue(STORE_SYNC_LIVE_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
+            this.liveQueue.on('error', (err) => this.logger.warn(`Cola de avisos de tiendas con error: ${err.message}`));
+            this.liveWorker = new Worker(STORE_SYNC_LIVE_QUEUE, process, { connection: conn(), concurrency: 4, lockDuration: 120_000 });
+            this.liveWorker.on('failed', (job, err) => this.logger.error(`Aviso de tienda ${job?.id} falló: ${err.message}`));
+            this.liveWorker.on('error', (err) => this.logger.warn(`Worker de avisos de tiendas con error: ${err.message}`));
+            this.dispatcher.setQueue(this.queue, this.liveQueue);
             await this.queue.upsertJobScheduler(TICK_JOB, { every: 60_000 }, { name: TICK_JOB, data: {} });
             this.logger.log('Cola de sincronización con tiendas lista');
         } catch (err) {
@@ -169,7 +185,9 @@ export class StoreSyncQueueBootstrap implements OnModuleInit, OnApplicationShutd
 
     async onApplicationShutdown(): Promise<void> {
         await this.worker?.close();
+        await this.liveWorker?.close();
         await this.queue?.close();
+        await this.liveQueue?.close();
         await Promise.all(this.connections.map((c) => c.quit().catch(() => undefined)));
     }
 }

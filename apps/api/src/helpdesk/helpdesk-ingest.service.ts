@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { incrWithTtl } from '../redis/redis.util';
 import { Readable } from 'node:stream';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
@@ -47,6 +48,22 @@ export const HELPDESK_MAX_PER_RUN = 50;
 const LOCK_TTL_MS = 10 * 60_000;
 /** Cada cuánto se lee un buzón que anda bien. */
 const POLL_EVERY_MS = 60_000;
+
+/**
+ * v0.1.393 — Un buzón callado se lee menos seguido. Cada lectura abre una
+ * conexión IMAP nueva (TLS + login: el costo grande, para nosotros y para el
+ * proveedor); con miles de buzones, leer cada minuto los que no reciben nada
+ * es casi todo el trabajo. Sin correos en 10 lecturas seguidas pasa a cada
+ * 2 minutos y en 30 a cada 3; el primer correo que llega lo vuelve a cada
+ * minuto, y «Revisar ahora» lee al instante igual.
+ */
+export function pollDelayMs(quietRuns: number): number {
+    if (quietRuns < 10) return POLL_EVERY_MS;
+    if (quietRuns < 30) return 2 * POLL_EVERY_MS;
+    return 3 * POLL_EVERY_MS;
+}
+/** Buzones que se toman por minuto (el resto, al siguiente: los más atrasados primero). */
+const TICK_BATCH = 500;
 const MAX_ATTACHMENTS = 10;
 const COMMENT_MAX = 10_000;
 
@@ -134,15 +151,15 @@ export class HelpdeskIngestService {
                 ),
             )
             .orderBy(asc(helpdeskMailboxes.nextCheckAt))
-            .limit(200);
-        for (const d of due) {
-            // Provisorio: no se re-encola mientras espera; la lectura pone la próxima de verdad.
-            await this.db
-                .update(helpdeskMailboxes)
-                .set({ nextCheckAt: new Date(now.getTime() + 5 * 60_000) })
-                .where(eq(helpdeskMailboxes.id, d.id));
-            this.queue.enqueuePoll(d.tenantId, d.id);
-        }
+            .limit(TICK_BATCH);
+        if (due.length === 0) return 0;
+        // Provisorio: no se re-encola mientras espera; la lectura pone la próxima
+        // de verdad. v0.1.393 — en UNA sentencia (antes, una por buzón).
+        await this.db
+            .update(helpdeskMailboxes)
+            .set({ nextCheckAt: new Date(now.getTime() + 5 * 60_000) })
+            .where(inArray(helpdeskMailboxes.id, due.map((d) => d.id)));
+        for (const d of due) this.queue.enqueuePoll(d.tenantId, d.id);
         return due.length;
     }
 
@@ -209,6 +226,7 @@ export class HelpdeskIngestService {
 
         let pendingReason: string | null = null;
         let more = false;
+        let found = 0;
         try {
             const box = await session.open(mailbox.folder, { writable: mailbox.markSeen });
             const knownValidity = typeof state.uidvalidity === 'number' ? state.uidvalidity : null;
@@ -231,6 +249,7 @@ export class HelpdeskIngestService {
                 };
                 const maxBytes = ctx.settings.max_size_mb * 1024 * 1024;
                 const fetched = await session.fetchAfter(lastUid, HELPDESK_MAX_PER_RUN, maxBytes);
+                found = fetched.length;
                 const seen: number[] = [];
                 for (const m of fetched) {
                     const outcome = await this.processOne(ctx, m);
@@ -253,11 +272,20 @@ export class HelpdeskIngestService {
         }
         await session.close().catch(() => undefined);
 
+        const quietRuns = found > 0 ? 0 : (typeof state.quiet_runs === 'number' ? state.quiet_runs : 0) + 1;
         await this.saveState(
             tenantId,
             mailbox.id,
-            { last_check_at: startedAt.toISOString(), last_ok_at: new Date().toISOString(), last_error: null, errors_in_row: 0, pending_reason: pendingReason, counts },
-            new Date(Date.now() + (pendingReason ? 15 * 60_000 : POLL_EVERY_MS)),
+            {
+                last_check_at: startedAt.toISOString(),
+                last_ok_at: new Date().toISOString(),
+                last_error: null,
+                errors_in_row: 0,
+                pending_reason: pendingReason,
+                counts,
+                quiet_runs: quietRuns,
+            },
+            new Date(Date.now() + (pendingReason ? 15 * 60_000 : pollDelayMs(quietRuns))),
         );
         this.incidents?.resolve(tenantId, key);
         if (pendingReason) this.reportPending(tenantId, mailbox, list, pendingKey, pendingReason);
@@ -342,8 +370,7 @@ export class HelpdeskIngestService {
         // Freno por remitente: un robot (o un bucle con otro autorespondedor) no llena la lista.
         const hour = Math.floor(Date.now() / 3_600_000);
         const rateKey = `helpdesk:rate:${ctx.mailbox.id}:${customer.email}:${hour}`;
-        const n = await this.redis.incr(rateKey).catch(() => 0);
-        if (n === 1) await this.redis.expire(rateKey, 3700).catch(() => undefined);
+        const n = await incrWithTtl(this.redis, rateKey, 3700).catch(() => 0);
         if (n > ctx.settings.max_per_sender_hour) {
             return ignore(`${customer.email} ya abrió ${ctx.settings.max_per_sender_hour} tickets en la última hora.`);
         }

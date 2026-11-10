@@ -134,6 +134,8 @@ interface WriteResult {
 }
 
 const SEND_TIMEOUT_MS = 15_000;
+/** v0.1.393 — SMS por empresa y conexión en cada tanda de la cola (turnos). */
+const PER_CONNECTION_PER_ROUND = 5;
 /** Un SMS «enviando» más de esto se dio por cortado (el proceso se cayó en el medio). */
 const STUCK_MS = 10 * 60_000;
 /** Onurix: se pregunta el estado durante 3 días. */
@@ -1075,10 +1077,21 @@ export class SmsService {
             const claimed = await this.db.execute<{ id: number; tenant_id: number; connection_id: number | null }>(sql`
                 UPDATE ${smsMessages} SET status = 'enviando', claimed_at = now(), attempts = attempts + 1, updated_at = now()
                 WHERE id IN (
+                    -- v0.1.393 — por turnos: como mucho unos pocos por empresa y conexión
+                    -- en cada tanda. Antes era por orden de llegada, y un envío masivo
+                    -- de 500 de una empresa (al ritmo de su proveedor) dejaba a las
+                    -- demás esperando detrás.
                     SELECT id FROM ${smsMessages}
-                    WHERE status = 'en_cola' OR (status = 'programado' AND send_after <= ${(opts.now ?? new Date()).toISOString()}::timestamptz)
-                    ORDER BY id
-                    LIMIT 40
+                    WHERE id IN (
+                        SELECT q.id FROM (
+                            SELECT id, row_number() OVER (PARTITION BY tenant_id, connection_id ORDER BY id) AS rn
+                            FROM ${smsMessages}
+                            WHERE status = 'en_cola' OR (status = 'programado' AND send_after <= ${(opts.now ?? new Date()).toISOString()}::timestamptz)
+                        ) q
+                        WHERE q.rn <= ${PER_CONNECTION_PER_ROUND}
+                        ORDER BY q.rn, q.id
+                        LIMIT 40
+                    )
                     FOR UPDATE SKIP LOCKED
                 )
                 RETURNING id, tenant_id, connection_id

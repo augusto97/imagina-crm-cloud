@@ -43,6 +43,8 @@ export const recurrences = pgTable(
         updateStatusValue: text('update_status_value'),
         repeatUntil: text('repeat_until'),
         lastFiredAt: text('last_fired_at'),
+        /** v0.1.393 — La fecha con la que llegó a su «repetir hasta»: el barrido la saltea mientras no cambie. */
+        stoppedValue: text('stopped_value'),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     },

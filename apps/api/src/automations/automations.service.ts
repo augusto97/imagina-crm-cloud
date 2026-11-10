@@ -1,7 +1,8 @@
 import { assertApprovalFlowRefs } from '../approvals/approval-refs';
+import { mapLimit } from '../common/map-limit';
 import { assertAgentRefs } from '../ai-agents/agent-refs';
 import { randomBytes } from 'node:crypto';
-import { BadRequestException, Inject, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type {
     Automation,
     AutomationRun,
@@ -73,6 +74,9 @@ import {
     type AutomationRunRow,
 } from './automations.repository';
 
+/** v0.1.393 — horarios que se re-registran a la vez al arrancar. */
+const RESYNC_CONCURRENCY = 16;
+
 /**
  * Subconjunto de ioredis que usan las capturas de webhook — tipado angosto
  * para poder pasar un fake en memoria en los tests sin levantar Redis.
@@ -90,6 +94,7 @@ const HOOK_CAPTURES_TTL_S = 24 * 60 * 60;
 
 @Injectable()
 export class AutomationsService {
+    private readonly logger = new Logger('AutomationsService');
     constructor(
         @Inject(DRIZZLE) private readonly db: Db,
         private readonly tenantDb: TenantDb,
@@ -213,7 +218,12 @@ export class AutomationsService {
             .from(automations)
             // Conexión base (sin RLS): lo que está en la papelera se filtra a mano.
             .where(and(eq(automations.isActive, true), isNull(automations.deletedAt), inArray(automations.triggerType, ['scheduled', 'due_date_reached'])));
-        for (const row of rows) await this.scheduler.sync(row.tenantId, row);
+        // v0.1.393 — varios a la vez (cada uno es esperar a Redis) y uno que
+        // falla no corta a los demás (antes, en fila y el primero que fallaba
+        // dejaba sin registrar a todos los que venían después).
+        await mapLimit(rows, RESYNC_CONCURRENCY, (row) =>
+            this.scheduler.sync(row.tenantId, row).catch((err: unknown) => this.logger.warn(`Horario de la automatización ${row.id}: ${String(err)}`)),
+        );
         return rows.length;
     }
 
@@ -226,7 +236,9 @@ export class AutomationsService {
             .select()
             .from(automations)
             .where(and(eq(automations.tenantId, tenantId), eq(automations.isActive, true), isNull(automations.deletedAt), eq(automations.triggerType, 'scheduled')));
-        for (const row of rows) await this.scheduler.sync(row.tenantId, row);
+        await mapLimit(rows, RESYNC_CONCURRENCY, (row) =>
+            this.scheduler.sync(row.tenantId, row).catch((err: unknown) => this.logger.warn(`Horario de la automatización ${row.id}: ${String(err)}`)),
+        );
         return rows.length;
     }
 

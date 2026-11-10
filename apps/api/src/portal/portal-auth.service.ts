@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { incrWithTtl } from '../redis/redis.util';
 import {
     ForbiddenException,
     HttpException,
@@ -129,8 +130,7 @@ export class PortalAuthService {
         // Freno por IP (cualquier cuenta): un barrido de correos desde un solo
         // lugar se corta sin tocar la base.
         if (meta.ip) {
-            const n = await this.redis.incr(ipKey(meta.ip));
-            if (n === 1) await this.redis.expire(ipKey(meta.ip), FAIL_WINDOW_S);
+            const n = await incrWithTtl(this.redis, ipKey(meta.ip), FAIL_WINDOW_S);
             if (n > IP_MAX) throw tooMany('Demasiados intentos desde esta conexión. Espera unos minutos.');
         }
         const boot = await this.domains.resolvePortalTenant(meta.host, input.empresa);
@@ -177,8 +177,7 @@ export class PortalAuthService {
         // SEC-24: la cuenta de un superadmin jamás entra a un portal.
         const superadmin = user ? this.env.PLATFORM_SUPERADMINS.includes(user.email.toLowerCase()) : false;
         if (!user || !cred || !valid || superadmin) {
-            const n = await this.redis.incr(fk);
-            if (n === 1) await this.redis.expire(fk, FAIL_WINDOW_S);
+            await incrWithTtl(this.redis, fk, FAIL_WINDOW_S);
             throw new UnauthorizedException({ code: 'invalid_credentials', message: BAD_CREDENTIALS, data: { status: 401 } });
         }
         await this.redis.del(fk);
@@ -245,8 +244,7 @@ export class PortalAuthService {
             });
         }
         const rl = `portalpwset:${tenantId}:${actor.userId}`;
-        const n = await this.redis.incr(rl);
-        if (n === 1) await this.redis.expire(rl, 3600);
+        const n = await incrWithTtl(this.redis, rl, 3600);
         if (n > SET_MAX) throw tooMany('Cambiaste la contraseña muchas veces seguidas. Prueba en un rato.');
 
         const hash = await argon2.hash(password);

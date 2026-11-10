@@ -48,6 +48,8 @@ export class RecurrencesRepository {
                     updateStatusFieldId: values.updateStatusFieldId,
                     updateStatusValue: values.updateStatusValue,
                     repeatUntil: values.repeatUntil,
+                    // Se volvió a configurar: cuenta de nuevo.
+                    stoppedValue: null,
                     updatedAt: sql`now()`,
                 },
             })
@@ -142,7 +144,7 @@ export class RecurrencesRepository {
      * plataforma no tiene tenant: sólo enumera; lo que sigue va SIEMPRE dentro
      * de `withTenant(rec.tenantId)`.
      */
-    async dueScheduled(db: Db, now: string): Promise<RecurrenceRow[]> {
+    async dueScheduled(db: Db, now: string, opts: { limit: number; after?: { tenantId: number; id: number } }): Promise<RecurrenceRow[]> {
         const value = sql<string>`(${records.data} ->> ('f' || ${recurrences.dateFieldId}))`;
         const rawTz = sql<string>`(${tenants.settings} -> 'format' ->> 'timezone')`;
         const tenantTz = sql<string>`(CASE WHEN ${rawTz} = ANY (ARRAY(SELECT name FROM pg_timezone_names)) THEN ${rawTz} ELSE 'UTC' END)`;
@@ -167,6 +169,12 @@ export class RecurrencesRepository {
                     sql`EXISTS (SELECT 1 FROM fields f WHERE f.id = ${recurrences.dateFieldId} AND f.deleted_at IS NULL)`,
                     sql`jsonb_typeof(${records.data} -> ('f' || ${recurrences.dateFieldId})) = 'string'`,
                     sql`${value} <> ''`,
+                    // v0.1.393 — la que llegó a su «repetir hasta» con ESTA fecha no
+                    // vuelve a tomarse (antes, cada 5 minutos para siempre).
+                    sql`(${recurrences.stoppedValue} IS NULL OR ${recurrences.stoppedValue} <> trim(${value}))`,
+                    ...(opts.after
+                        ? [sql`(${recurrences.tenantId}, ${recurrences.id}) > (${opts.after.tenantId}, ${opts.after.id})`]
+                        : []),
                     // v0.1.263 — una fecha SIN hora vence cuando empieza ese día en
                     // el reloj de la EMPRESA (no a la medianoche UTC: en Colombia
                     // eso es el día anterior a las 7 pm). Con hora es un instante
@@ -181,7 +189,8 @@ export class RecurrencesRepository {
                     END)`,
                 ),
             )
-            .orderBy(asc(recurrences.tenantId), asc(recurrences.id));
+            .orderBy(asc(recurrences.tenantId), asc(recurrences.id))
+            .limit(opts.limit);
         return rows.map((r) => r.rec);
     }
 }

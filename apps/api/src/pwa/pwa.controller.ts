@@ -24,6 +24,7 @@ import {
     type PushUnsubscribeInput,
 } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { incrWithTtl } from '../redis/redis.util';
 import type Redis from 'ioredis';
 import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -130,8 +131,7 @@ export class PushController {
         // La prueba no tiene el tope por hora de los avisos: un freno propio
         // (5 cada 10 minutos) para que no sirva para inundar un dispositivo.
         const key = `pushtest:${req.tenant!.tenantId}:${req.authUserId!}`;
-        const n = await this.redis.incr(key).catch(() => 1);
-        if (n === 1) await this.redis.expire(key, 600).catch(() => undefined);
+        const n = await incrWithTtl(this.redis, key, 600).catch(() => 1);
         if (n > 5) {
             throw new HttpException(
                 { code: 'push_test_limit', message: 'Ya enviaste varias pruebas: espera unos minutos', data: { status: 429 } },

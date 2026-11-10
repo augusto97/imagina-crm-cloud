@@ -8060,6 +8060,71 @@ de citas y de avisos, el resumen diario, las recurrencias, la revisión de
 suscripciones y calendarios, el envío de SMS y la retención de tablas que
 crecen sin tope.
 
+
+**Addendum v0.1.393 — Integraciones y tareas periódicas a escala.** La segunda
+mitad del pedido: lo que corre solo cada pocos minutos y crece con la cantidad
+de empresas. Se revisó cada barrido periódico; lo que entró, con su prueba (y
+la versión anterior falla la de cada bug):
+
+1. **Recordatorios de citas — bug real**: el barrido traía las primeras 200
+   citas vivas de las próximas dos semanas de TODAS las empresas y recién
+   después descartaba las ya avisadas. Con más de 200 citas en la ventana, las
+   primeras (ya avisadas) tapaban a las demás y el «24 horas antes» salía
+   tarde o no salía. Ahora el filtro va en la consulta (una fila por
+   recordatorio de cada página con citas en la ventana, `VALUES` + `JOIN`):
+   sólo vuelven citas con un recordatorio vencido y no enviado, por tandas de
+   200 y hasta 10 por minuto.
+2. **Recordatorios de avisos**: el filtro de empresas archivadas iba FUERA del
+   `LIMIT 200 … FOR UPDATE SKIP LOCKED`; sus recordatorios vencidos nunca se
+   marcaban y ocupaban la cabeza de la fila para siempre. Ahora va adentro, y
+   también por tandas.
+3. **Resumen diario**: abría una transacción por cada empresa no archivada
+   cada hora para encontrar a las pocas personas con el resumen encendido;
+   ahora es UNA consulta sobre todas las empresas.
+4. **Suscripciones**: las de empresas cuyo plan no incluye el módulo se
+   salteaban DESPUÉS del `LIMIT` sin tocar `last_checked_at` y tapaban al
+   resto; ahora se filtran en la consulta (`planIncludesSql`). Además 400 por
+   revisión, 8 a la vez, con tope de 3 minutos (antes 100 en fila).
+5. **Recurrencias**: una que llegó a su «repetir hasta» se volvía a tomar cada
+   5 minutos para siempre (con candado sobre el registro); ahora se anota con
+   qué fecha se detuvo (`recurrences.stopped_value`, migración 0112) y el
+   barrido la saltea mientras la fecha no cambie (cambiar la fecha o volver a
+   configurarla la habilita). Por tandas con keyset, tope de 4 minutos y un
+   barrido a la vez (candado en Redis).
+6. **Buzones de la mesa de ayuda**: cada lectura abre una conexión IMAP nueva;
+   un buzón sin correos en 10 lecturas pasa a cada 2 minutos y en 30 a cada 3
+   (`pollDelayMs`, `state.quiet_runs`), el primer correo lo vuelve a cada
+   minuto. Concurrencia `HELPDESK_POLL_CONCURRENCY` (default 8, antes 3
+   fijos) y el tick marca los buzones en una sentencia.
+7. **SMS por turnos**: la cola tomaba 40 por orden de llegada; un envío masivo
+   de una empresa (al ritmo de su proveedor) hacía esperar a todas. Ahora cada
+   tanda toma como mucho 5 por empresa y conexión (`row_number()`).
+8. **Calendarios**: la vuelta de Google/Outlook iba de a un calendario; ahora
+   6 a la vez.
+9. **Proveedores de cobro de la plataforma**: `fetch` sin tope de tiempo;
+   ahora `timedFetch` (20 s).
+10. **Redis**: `KEYS` (caché de lo ocupado de la agenda) y `SCAN` por patrón
+    (perfiles de sugerencias) recorrían TODAS las claves de la plataforma; ahora
+    claves con versión que se sube para «olvidar». Los contadores con
+    vencimiento (frenos de intentos, cupos) pasan a un `INCR`+`EXPIRE` atómico
+    en Lua (`incrWithTtl`): antes, un corte entre las dos órdenes dejaba un
+    freno trabado para siempre.
+11. **Retención** (`RetentionService`, cada hora, un nodo, por tandas, con
+    índices BRIN): avisos leídos de más de 90 días y cualquiera de más de 180,
+    recordatorios disparados o hechos de más de 180, Problemas resueltos hace
+    más de 90, corridas de agentes terminadas de más de 90, SMS terminados de
+    más de 180 y el historial de ediciones masivas pasado su plazo. **No** se
+    borran la actividad de los registros (es la historia de los datos del
+    cliente) ni la bitácora (seguridad).
+12. **Sincronizaciones de tienda y sitio**: los avisos en tiempo real y los
+    cambios que viajan desde la app compartían los 2 lugares del worker con las
+    corridas largas; ahora tienen su propia cola (`store-sync-live`,
+    `site-sync-live`, 4 a la vez). Las escrituras siguen serializadas por el
+    `pg_advisory_xact_lock` de cada sincronización.
+13. **Arranque**: los horarios de automatizaciones y de envíos de tableros se
+    re-registran 16 a la vez, y uno que falla ya no deja sin registrar a los
+    que venían después.
+
 ---
 
-**Versión del documento:** 1.163.0 (Automatizaciones a escala)
+**Versión del documento:** 1.164.0 (Integraciones y tareas periódicas a escala)
