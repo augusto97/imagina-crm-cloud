@@ -135,7 +135,7 @@ export const articles: LearnArticle[] = [
                 t: 'cards',
                 items: [
                     { icon: 'Users', title: 'Una persona, varios registros', md: 'Si el correo ya tiene acceso a otro registro, la app te avisa **Ya tiene acceso al portal** y te ofrece **Dar acceso también a este**. Suma, no reemplaza: desde su portal elige cuál mirar.', tone: 'blue' },
-                    { icon: 'UserCheck', title: 'Alguien de tu equipo', md: 'El portal es para clientes. Si el correo es de alguien de tu empresa, la app no lo deja: para que vea la lista, compártesela desde **Compartir → Con tu equipo**.', tone: 'amber' },
+                    { icon: 'UserCheck', title: 'Alguien de tu equipo', md: 'El portal es para clientes. Si el correo es de alguien de tu empresa, la app no lo deja: para que vea la lista, compártesela desde **Compartir → Personas**.', tone: 'amber' },
                     { icon: 'Building2', title: 'Cliente de otras empresas', md: 'Si esa persona ya tenía cuenta por su lado, el enlace sólo viaja por correo (la app no te lo muestra) y su acceso queda limitado al portal de tu empresa.', tone: 'violet' },
                     { icon: 'Mail', title: 'El correo no salió', md: 'Si ves **El enlace se generó, pero el correo no salió**, revisa el correo de la empresa en **Ajustes → Correo** y vuelve a enviarlo.', tone: 'rose' },
                 ],

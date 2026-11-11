@@ -439,13 +439,13 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Compartir una vista' },
             {
                 t: 'p',
-                md: 'Hay varias formas de hacer que otra persona vea lo mismo que tú:\n\n- **Copiar vínculo a la vista** (en el menú de la pestaña) o **Copiar enlace de la vista** (en el panel): el enlace abre la lista en esa vista. Sirve para quien ya tiene acceso a la lista.\n- **Marcar como favorito**: la vista queda en tu menú de **Favoritos** con su ícono.\n- **Compartir** (arriba a la derecha de la lista) → **Con tu equipo**: copia el enlace de la lista; **Con cualquiera**: publica la lista o **una vista** en una página de sólo lectura que se puede abrir sin cuenta, con fecha de vencimiento y los campos que elijas.\n- **Exportar vista**: un archivo Excel o CSV con los registros de la vista.',
+                md: 'Hay varias formas de hacer que otra persona vea lo mismo que tú:\n\n- **Copiar vínculo a la vista** (en el menú de la pestaña) o **Copiar enlace de la vista** (en el panel): el enlace abre la lista en esa vista. Sirve para quien ya tiene acceso a la lista.\n- **Marcar como favorito**: la vista queda en tu menú de **Favoritos** con su ícono.\n- **Compartir** (arriba a la derecha de la lista) → **Personas**: dale acceso a alguien o copia el enlace de la lista; **Enlace público**: publica la lista o **una vista** en una página de sólo lectura que se puede abrir sin cuenta, con fecha de vencimiento y los campos que elijas.\n- **Exportar vista**: un archivo Excel o CSV con los registros de la vista.',
             },
             {
                 t: 'callout',
                 tone: 'warn',
                 title: 'Un enlace no da permiso',
-                md: 'El vínculo de una vista sólo lo abre quien ya tiene acceso a la lista. Para que alguien de afuera vea los datos tienes que publicarlos desde **Compartir → Con cualquiera**, o compartir la lista con un invitado.',
+                md: 'El vínculo de una vista sólo lo abre quien ya tiene acceso a la lista. Para que alguien de afuera vea los datos tienes que publicarlos desde **Compartir → Enlace público**, o compartir la lista con un invitado.',
             },
             { t: 'h', text: 'Exportar lo que ves' },
             {

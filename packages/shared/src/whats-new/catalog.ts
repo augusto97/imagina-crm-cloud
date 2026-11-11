@@ -2598,4 +2598,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver mis widgets', href: '/settings?s=widgets' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.410-compartir-lista',
+        version: '0.1.410',
+        date: '2026-11-11',
+        kind: 'improvement',
+        title: 'Compartir una lista, más claro',
+        summary:
+            'La ventana «Compartir» de cada lista tiene dos pestañas: Personas, con un solo buscador para sumar a alguien de tu empresa, a un equipo o a alguien de afuera por su correo, y Enlace público, para publicarla con un interruptor.',
+        media: {
+            slides: [
+                {
+                    title: 'Un buscador para todo',
+                    text: 'Escribe un nombre, un equipo o un correo y tócalo. A la derecha eliges con qué nivel entra. Si escribes el correo de alguien de afuera, lo invitas en el mismo paso.',
+                    illustration: 'comp-guest',
+                },
+                {
+                    title: 'Quién tiene acceso, de un vistazo',
+                    text: 'En una sola lista ves a todos los de la empresa (según su rol), los equipos, las personas y los de afuera, cada uno con su nivel para cambiarlo o quitarlo.',
+                    illustration: 'equipo-precedence',
+                },
+                {
+                    title: 'El enlace público en su pestaña',
+                    text: 'Enciende la página pública, copia o abre el enlace, elige qué columnas se ven y hasta cuándo funciona.',
+                    illustration: 'comp-public-list',
+                },
+            ],
+        },
+        body: 'Abre una lista y toca **Compartir**, arriba a la derecha.',
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

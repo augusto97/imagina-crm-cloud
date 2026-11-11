@@ -14374,6 +14374,46 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         **Pendiente del operador**: configurar la dirección y avisar a las
         empresas que copien el código de nuevo.
 
+  - [x] **«Compartir» de la lista rediseñado (v0.1.410, pedido del usuario con
+        captura: "esta pantalla también deberíamos mejorarla visualmente")**: la
+        ventana era una columna larga con cinco bloques apilados —enlace del
+        equipo, personas, equipos, personas de afuera y página pública—, cada uno
+        con su buscador y su nivel. (a) **Dos pestañas** en un control segmentado,
+        como el «Compartir» de formularios y agenda: **Personas** (con el número
+        de accesos propios) y **Enlace público** (punto verde si está publicada);
+        600 px al centro con el ícono y color de la lista, pantalla completa en el
+        celular. (b) **Personas** (`admin/lists/ListAccessPanel.tsx`): UN buscador
+        para sumar a una persona de la empresa, a un equipo o a alguien de afuera
+        por su correo, con el nivel a la derecha; resultados agrupados (Personas
+        de la empresa · Equipos · Personas de afuera · Invitar por correo), con
+        flechas y Enter, quien ya tiene acceso en gris, y Escape que limpia la
+        búsqueda sin cerrar la ventana (la ventana escucha Escape antes:
+        `data-escape-clears` + `onEscapeKeyDown`). Lo que ofrece es puro y probado
+        (`shareAccess.ts`: el correo se ofrece sólo si no es de nadie, y el
+        invitado entra con «Puede ver», o «Puede editar» si se eligió Colaborar o
+        Control total). **Quién tiene acceso** en UNA lista: Todos en la empresa
+        (según su rol, con el atajo «Permisos por rol» a Configuración →
+        Permisos), equipos, personas y personas de afuera (insignia «De afuera» /
+        «Invitación pendiente»), cada uno con su nivel en línea y ×; abajo
+        «Copiar enlace». (c) **Enlace público**: tarjeta con interruptor que
+        publica al instante, enlace con copiar y abrir, «Qué se ve» (registros de
+        la lista o de una vista, vence con quitar fecha y aviso si ya venció,
+        columnas como pastillas con «N de M»), «Insertar en tu sitio web» plegado
+        con el código y los sitios como etiquetas (`DomainChips`, extraído a su
+        archivo), y pie con «Tienes cambios sin guardar» / «Descartar» /
+        «Guardar». (d) **Bug de paso**: abierto desde el menú lateral, «Copiar
+        enlace» copiaba la dirección de la pantalla de atrás, no la de la lista.
+        Se fueron `ListPeopleAccess` y `ListGuestAccess` (`ListTeamAccess` sigue
+        en Configuración → Permisos). Sin cambios de servidor. Ayuda: Aprende
+        (compartir, equipo y permisos, vistas, portal), guías y los escenarios de
+        capturas de compartir e invitados al día, y novedad con carrusel. Tests:
+        `shareAccess.test.ts` (6) — front 902, shared 885 en verde, presupuesto
+        del bundle ok — + E2E navegador 38/38 (persona con Enter, equipo, correo
+        de afuera con «Puede ver», nivel guardado, quitar, Escape, copiar el
+        enlace de la LISTA desde la lista y desde el menú lateral, publicar,
+        columnas, vencido, sitio limpio, guardar y la página pública en 200,
+        «Permisos por rol», celular a pantalla completa y oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

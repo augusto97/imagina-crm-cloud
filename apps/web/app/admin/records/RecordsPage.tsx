@@ -1409,6 +1409,9 @@ const applyView = (view: SavedViewEntity | null): void => {
                         onOpenChange={setShareOpen}
                         listId={list.data.id}
                         listName={list.data.name}
+                        listSlug={list.data.slug}
+                        listIcon={list.data.icon}
+                        listColor={list.data.color}
                         canPublish={canManageList}
                     />
                 </Suspense>

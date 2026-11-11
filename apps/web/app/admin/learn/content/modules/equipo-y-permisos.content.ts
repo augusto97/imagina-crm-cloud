@@ -398,7 +398,7 @@ export const articles: LearnArticle[] = [
                     {
                         icon: 'Lock',
                         title: 'Acceso a listas',
-                        md: 'En **Compartir → Con tu equipo** de una lista, **Equipos con acceso** le da a todo el equipo un nivel (Solo mirar, Colaborar…) sólo en esa lista.',
+                        md: 'En **Compartir → Personas** de una lista, busca el equipo y súmalo: todo el equipo recibe un nivel (Solo mirar, Colaborar…) sólo en esa lista.',
                         tone: 'blue',
                     },
                     {
@@ -595,7 +595,7 @@ export const articles: LearnArticle[] = [
                     },
                     {
                         q: 'Le quité el acceso a un rol y alguien todavía la ve.',
-                        a: 'Revisa **Compartir → Con tu equipo**: si a esa persona o a uno de sus equipos le diste acceso puntual, ese acceso manda sobre el del rol.',
+                        a: 'Revisa **Compartir → Personas**, en **Quién tiene acceso**: si a esa persona o a uno de sus equipos le diste acceso puntual, ese acceso manda sobre el del rol.',
                     },
                     {
                         q: '¿Los permisos aplican también a los tableros?',
@@ -632,7 +632,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'A veces el permiso por rol no alcanza: Luis es **Agente** como todos los vendedores, pero también lleva la lista de **Garantías** y necesita control total ahí. Cambiarle el rol le daría más poder en **toda** la app. La solución es darle acceso **sólo en esa lista**, a él en persona o a su equipo.\n\nEsto se hace desde el botón **Compartir** de la lista, en la sección **Con tu equipo**, con dos bloques: **Personas con acceso** y **Equipos con acceso**.',
+                md: 'A veces el permiso por rol no alcanza: Luis es **Agente** como todos los vendedores, pero también lleva la lista de **Garantías** y necesita control total ahí. Cambiarle el rol le daría más poder en **toda** la app. La solución es darle acceso **sólo en esa lista**, a él en persona o a su equipo.\n\nEsto se hace desde el botón **Compartir** de la lista, en la pestaña **Personas**: un buscador para sumar a alguien o a un equipo, y la lista **Quién tiene acceso**.',
             },
             {
                 t: 'anim',
@@ -644,22 +644,22 @@ export const articles: LearnArticle[] = [
                 t: 'steps',
                 items: [
                     'Abre la lista y toca **Compartir** (arriba a la derecha).',
-                    'En **Con tu equipo** verás primero el enlace de la lista: sólo lo abre quien tenga cuenta y permiso. Debajo está **Personas con acceso**.',
-                    'Busca a la persona por nombre o correo («Buscar una persona por nombre o correo…»). Sólo aparecen miembros de esta empresa.',
-                    'En el selector de al lado elige el nivel (Sin acceso, Solo mirar, Solo lo suyo, Colaborar o Control total) y toca a la persona en los resultados para sumarla. El cambio se guarda al instante y aparece el aviso «Compartida con…».',
-                    'Para cambiar el nivel después, usa el selector de su fila; con la X le quitas el acceso puntual y vuelve a valer el de su rol.',
+                    'En la pestaña **Personas** verás arriba el buscador («Agrega personas, equipos o un correo…») y debajo **Quién tiene acceso**. Abajo de la ventana, **Copiar enlace** copia el enlace de la lista, que sólo abre quien tiene acceso.',
+                    'Escribe el nombre o el correo de la persona. En **Personas de la empresa** sólo aparecen miembros de esta empresa; quien ya tiene acceso sale en gris.',
+                    'A la derecha del buscador elige el nivel (Solo mirar, Solo lo suyo, Colaborar o Control total) y toca a la persona en los resultados, o muévete con las flechas y presiona Enter. El cambio se guarda al instante y aparece el aviso «Compartida con…».',
+                    'Para cambiar el nivel después, usa el selector de su fila (ahí también está **Sin acceso**, para restringir); con la × le quitas el acceso puntual y vuelve a valer el de su rol.',
                 ],
             },
             {
                 t: 'demo',
                 key: 'equipo-compartir',
-                caption: 'Compartir → Con tu equipo: personas y equipos con acceso a la lista.',
+                caption: 'Compartir → Personas: el buscador y quién tiene acceso a la lista.',
                 fallback: 'equipo-precedence',
             },
             { t: 'h', text: 'Dar acceso a un equipo' },
             {
                 t: 'p',
-                md: 'En **Equipos con acceso** elige un equipo («Elige un equipo…»), su nivel, y toca **Compartir**. Todas las personas del equipo reciben ese nivel en esta lista, y quien entre al equipo después lo recibe solo. Si todavía no hay equipos, el panel te lo dice y te manda a **Ajustes → Equipos**.',
+                md: 'Escribe el nombre del equipo en el mismo buscador: aparece en **Equipos** con cuántas personas tiene. Elige el nivel a la derecha y tócalo. Todas las personas del equipo reciben ese nivel en esta lista, y quien entre al equipo después lo recibe solo. Los equipos se crean en **Ajustes → Equipos**.',
             },
             { t: 'h', text: 'Qué acceso manda cuando hay varios' },
             {
@@ -701,11 +701,11 @@ export const articles: LearnArticle[] = [
                 items: [
                     {
                         q: '¿Puedo compartir la lista con alguien que no es de la empresa?',
-                        a: 'Sí, en el mismo diálogo, más abajo, está **Personas de afuera** (invitados). Lee el artículo de invitados.',
+                        a: 'Sí: escribe su correo completo en el mismo buscador y toca **Invitar a…**. Entra como persona de afuera (invitado). Lee el artículo de invitados.',
                     },
                     {
                         q: '¿Quién puede dar estos accesos?',
-                        a: 'Quien administra la lista (capacidad **Gestionar listas**). Los demás ven el enlace del equipo pero no los bloques de acceso.',
+                        a: 'Quien administra la lista (capacidad **Gestionar listas**). Los demás pueden copiar el enlace de la lista, pero no ven el buscador ni la lista de accesos.',
                     },
                     {
                         q: '¿Dónde veo de un vistazo quién tiene acceso a qué?',
@@ -879,8 +879,8 @@ export const articles: LearnArticle[] = [
                 t: 'steps',
                 items: [
                     'Abre la lista y toca **Compartir**.',
-                    'Baja hasta **Personas de afuera**: «Un proveedor, un freelancer o el contador: ven sólo esta lista (nada más de la empresa) y no ocupan un usuario de tu plan».',
-                    'Escribe su correo (**correo@deafuera.com**), elige el nivel y toca **Invitar**.',
+                    'En la pestaña **Personas**, escribe su correo completo en el buscador (**correo@deafuera.com**).',
+                    'Toca **Invitar a correo@deafuera.com**: ve sólo esta lista (nada más de la empresa) y no ocupa un usuario de tu plan. Entra con **Puede ver**; cámbialo en su fila a **Puede comentar** o **Puede editar**.',
                     'Si no tenía cuenta, le llega una invitación para entrar; si ya tenía, le avisamos por correo y ya puede entrar.',
                 ],
             },
@@ -1000,7 +1000,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Una lista confidencial dentro de la empresa' },
             {
                 t: 'p',
-                md: 'Para **Nómina** o **Evaluaciones**: todos los roles en **Sin acceso**, y en **Compartir → Con tu equipo** da acceso personal **Control total** a la persona de gestión humana. Ni los Managers la ven; los Admin sí (siempre tienen acceso total), así que revisa bien quién es Admin.',
+                md: 'Para **Nómina** o **Evaluaciones**: todos los roles en **Sin acceso**, y en **Compartir → Personas** da acceso personal **Control total** a la persona de gestión humana. Ni los Managers la ven; los Admin sí (siempre tienen acceso total), así que revisa bien quién es Admin.',
             },
             { t: 'h', text: 'Sucursales que ven sólo lo suyo' },
             {

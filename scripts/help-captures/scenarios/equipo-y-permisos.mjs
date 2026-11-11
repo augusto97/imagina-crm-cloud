@@ -157,18 +157,18 @@ export default [
             },
             {
                 click: '[data-tour="records-share"]',
-                then: 'text=Personas con acceso',
-                caption: 'Toca «Compartir».',
+                then: '[data-testid="share-add-input"]',
+                caption: 'Toca «Compartir»: se abre en «Personas».',
             },
             {
-                fill: '[role="dialog"] input[aria-label="Buscar una persona"]',
+                fill: '[data-testid="share-add-input"]',
                 text: 'Mateo',
-                caption: 'En «Personas con acceso» busca a alguien de tu equipo.',
+                caption: 'En el buscador escribe el nombre de alguien de tu equipo (o de un equipo entero).',
             },
             { wait: 1200 },
             {
                 shot: '[role="dialog"]',
-                caption: 'Eliges su nivel sólo para esta lista. Más abajo están «Equipos con acceso» y las «Personas de afuera».',
+                caption: 'A la derecha eliges su nivel, sólo para esta lista, y lo tocas. Abajo, «Quién tiene acceso» muestra a todos con su nivel.',
             },
         ],
     },
