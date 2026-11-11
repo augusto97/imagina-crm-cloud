@@ -1238,6 +1238,47 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         }
     });
 
+    it('los horarios no ocupan el tope de armados mientras esperan al calendario; los rangos fuera de la ventana comparten entrada', async () => {
+        await freshPage();
+        // Tope de UN armado a la vez: si la espera de red lo ocupara, nada más pasaría.
+        const cache = new PublicCache({ maxEntries: 200, concurrency: 1, maxQueue: 100, queueTimeoutMs: 5000 });
+        const cached = new BookingPublicService(
+            pg.db, tenantDb, lists, fieldsSvc, recs, files, redis as never, dispatcher, env, availability, calendar, rt, hub,
+            new NotifyHub(), undefined, undefined, undefined, new MailService(env, mailbox), undefined, undefined, cache as never,
+        );
+        cached.onModuleInit();
+        await cached.pageInfo(token);
+        let release!: () => void;
+        const network = new Promise<void>((r) => (release = r));
+        const realOutside = availability.outside.bind(availability);
+        const outside = vi.spyOn(availability, 'outside').mockImplementation(async (...args) => {
+            await network; // el calendario de quien atiende, lento
+            return realOutside(...args);
+        });
+        const slotsSpy = vi.spyOn(availability, 'slots');
+        try {
+            const pending = cached.slots(token, nextIp(), { service: 'svcconsulta', staff: 'any', from: D, to: D });
+            await vi.waitFor(() => expect(outside).toHaveBeenCalled());
+            // Mientras tanto el tope está libre: otra página pública se arma sin esperar.
+            expect(cache.stats().active).toBe(0);
+            expect(await cache.get('otra-empresa', 1000, async () => 'ok')).toBe('ok');
+            release();
+            expect((await pending).slots.length).toBeGreaterThan(0);
+
+            // Rangos distintos que el visitante elige FUERA de lo reservable: una sola entrada.
+            slotsSpy.mockClear();
+            const a = await cached.slots(token, nextIp(), { service: 'svcconsulta', staff: 'any', from: '2000-01-01', to: D });
+            const b = await cached.slots(token, nextIp(), { service: 'svcconsulta', staff: 'any', from: '2001-05-05', to: D });
+            const c = await cached.slots(token, nextIp(), { service: 'svcconsulta', staff: 'any', from: '1999-12-31', to: D });
+            expect(slotsSpy).toHaveBeenCalledTimes(1);
+            expect(b).toEqual(a);
+            expect(c).toEqual(a);
+        } finally {
+            outside.mockRestore();
+            slotsSpy.mockRestore();
+        }
+    });
+
     // ─────────────────────────── v0.1.353 ───────────────────────────
 
     const pageNow = () => booking.get(tenantId, 'citas', pageId);
