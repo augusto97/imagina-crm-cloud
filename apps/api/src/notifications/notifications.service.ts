@@ -34,6 +34,7 @@ import {
     type UpdateReminderInput,
 } from '@imagina-base/shared';
 import { and, asc, desc, eq, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { memberNames } from '../tenancy/member-names';
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
@@ -342,7 +343,10 @@ export class NotificationsService implements OnModuleInit {
         }
         if (c.kind === 'created') return;
 
-        const names = await this.userNames(this.userValues(ctx.fields, c.before, c.after));
+        // SEC — los ids salen de los datos del registro: sólo personas de ESTA empresa.
+        const names = new Map(
+            [...(await memberNames(this.db, c.tenantId, this.userValues(ctx.fields, c.before, c.after)))].map(([id, u]) => [id, u.name.trim() || u.email]),
+        );
         const summary = changeSummary(ctx.fields, c.before, c.after, names);
         if (summary.fieldIds.length === 0) return;
         const followers = (await this.followerIds(c.tenantId, c.recordId)).filter((u) => !assigned.includes(u) && u !== actorId);

@@ -84,8 +84,10 @@ export interface FileActor extends AclExtras {
 /**
  * SEC-25 (v0.1.226) — qué adjuntos puede ver alguien. Los ids son
  * secuenciales: sin esto, un agente que sólo ve SUS registros bajaba todos
- * los archivos de la empresa probando `/files/1`, `/files/2`… Quien ve todos
- * los registros (`view_records`) ve todos los archivos.
+ * los archivos de la empresa probando `/files/1`, `/files/2`… El admin ve
+ * todos los archivos; quien «ve todos los registros» (`view_records`) también,
+ * salvo lo que cuelga de una lista o de un campo que su acceso recorta (ver
+ * `deniedRefs`).
  *
  * v0.1.253 — el resto (el agente) sigue el ACL de CADA LISTA, no su rol
  * global: antes sólo veía lo que subió y lo de registros que CREÓ, así que si
@@ -100,37 +102,78 @@ async function readableBy(
     tenantId: number,
     actor: FileActor | undefined,
 ): Promise<SQL | undefined> {
-    if (!actor || can(actor, 'view_records')) return undefined;
-    const vars = sql`jsonb_build_object('x', ${attachments.id})`;
+    // Sin actor = uso interno. El admin ve todo (el ACL por lista no lo recorta).
+    if (!actor || actor.role === 'admin') return undefined;
+    const acl = await loadFileAcl(tx, tenantId);
+    if (can(actor, 'view_records')) {
+        // SEC (auditoría 2026-11) — «ve todos los registros» es la capacidad
+        // GLOBAL; el ACL de cada lista (ver: nada / los suyos / los asignados,
+        // campos de archivo ocultos, accesos por persona o equipo, rol propio)
+        // puede recortarla. Antes este atajo servía TODOS los archivos de la
+        // empresa por id. Ahora: sin ninguna lista recortada para esta persona
+        // (lo normal) no hay filtro; con alguna, no ve lo que cuelga de un
+        // registro (o de un campo) que no alcanza — salvo que lo haya subido o
+        // que también cuelgue de algo que sí ve. Lo que no es de ningún
+        // registro (imágenes de formularios, tableros, diseños) sigue igual.
+        const denied = deniedRefs(tenantId, acl, actor, 'view');
+        if (!denied) return undefined;
+        return or(sql`${attachments.createdBy} = ${actor.userId}`, sql`NOT ${denied}`, ...visibleRefs(tenantId, acl, actor));
+    }
+    return or(sql`${attachments.createdBy} = ${actor.userId}`, ...visibleRefs(tenantId, acl, actor));
+}
+
+interface FileAcl {
+    /** Sólo `settings.permissions`: es lo único que lee el ACL (los diseños pesan). */
+    lists: Array<{ id: number; settings: Record<string, unknown> }>;
+    fileFields: Array<{ id: number; listId: number; slug: string }>;
+}
+
+async function loadFileAcl(tx: Tx, tenantId: number): Promise<FileAcl> {
     const listRows = await tx
-        .select({ id: lists.id, settings: lists.settings })
+        .select({ id: lists.id, permissions: sql<unknown>`${lists.settings} -> 'permissions'` })
         .from(lists)
         .where(eq(lists.tenantId, tenantId));
     const fileFields = await tx
         .select({ id: fields.id, listId: fields.listId, slug: fields.slug })
         .from(fields)
         .where(and(eq(fields.tenantId, tenantId), eq(fields.type, 'file')));
+    return {
+        lists: listRows.map((l) => ({ id: l.id, settings: l.permissions ? { permissions: l.permissions } : {} })),
+        fileFields,
+    };
+}
 
+/** `$x` = el id del adjunto de la fila de `attachments` que se evalúa. */
+const attachmentVar = (): SQL => sql`jsonb_build_object('x', ${attachments.id})`;
+const fieldRef = (fieldId: number): SQL =>
+    sql`jsonb_path_exists(${records.data} -> ${`f${fieldId}`}, 'lax $[*] ? (@ == $x)', ${attachmentVar()}, true)`;
+const descriptionRef = (): SQL =>
+    sql`jsonb_path_exists(coalesce(${records.description}, 'null'::jsonb), 'lax $.**.fileId ? (@ == $x)', ${attachmentVar()}, true)`;
+
+/**
+ * Referencias que la persona VE: un registro que alcanza (campo de archivo no
+ * oculto para ella, o un bloque de la descripción), las imágenes del diseño
+ * de las listas que ve y las de los tableros que puede abrir.
+ */
+function visibleRefs(tenantId: number, acl: FileAcl, actor: FileActor): SQL[] {
+    const vars = attachmentVar();
     const perList: SQL[] = [];
     const visibleLists: number[] = [];
-    for (const l of listRows) {
-        const settings = (l.settings ?? {}) as Record<string, unknown>;
-        const perms = effectivePermissions(settings, actor);
+    for (const l of acl.lists) {
+        const perms = effectivePermissions(l.settings, actor);
         // C3 — un invitado con registros sueltos compartidos en esta lista
         // ve los archivos de ESOS registros (el alcance los suma por id).
         const sharedHere = [...(actor.shares?.values() ?? [])].some((x) => x.listId === l.id);
         if (perms.view === 'none' && !sharedHere) continue;
         if (perms.view !== 'none') visibleLists.push(l.id);
         const hidden = new Set(perms.fields_hidden);
-        const refs: SQL[] = fileFields
-            .filter((f) => f.listId === l.id && !hidden.has(f.slug))
-            .map((f) => sql`jsonb_path_exists(${records.data} -> ${`f${f.id}`}, 'lax $[*] ? (@ == $x)', ${vars}, true)`);
-        refs.push(sql`jsonb_path_exists(coalesce(${records.description}, 'null'::jsonb), 'lax $.**.fileId ? (@ == $x)', ${vars}, true)`);
-        const scope = scopeWhere(perms.view, actor, assignmentKeys(settings));
+        const refs: SQL[] = acl.fileFields.filter((f) => f.listId === l.id && !hidden.has(f.slug)).map((f) => fieldRef(f.id));
+        refs.push(descriptionRef());
+        const scope = scopeWhere(perms.view, actor, assignmentKeys(l.settings));
         perList.push(and(eq(records.listId, l.id), scope, or(...refs))!);
     }
 
-    const conds: SQL[] = [sql`${attachments.createdBy} = ${actor.userId}`];
+    const conds: SQL[] = [];
     if (perList.length > 0) {
         conds.push(sql`EXISTS (
             SELECT 1 FROM ${records}
@@ -159,7 +202,115 @@ async function readableBy(
           AND (jsonb_path_exists(${dashboards.widgets}, 'lax $.**.file_id ? (@ == $x)', ${vars}, true)
             OR jsonb_path_exists(${dashboards.widgets}, 'lax $.**.image_file_id ? (@ == $x)', ${vars}, true))
     )`);
-    return or(...conds);
+    return conds;
+}
+
+/**
+ * ¿El adjunto cuelga de un registro (o de un campo) que la persona NO alcanza
+ * para la acción? Sólo mira las listas donde su acceso está recortado (alcance
+ * distinto de «todos» o algún campo de archivo oculto); sin ninguna, `undefined`
+ * (nada que negar — el caso normal no paga ninguna consulta de más).
+ */
+function deniedRefs(tenantId: number, acl: FileAcl, actor: FileActor, action: 'view' | 'edit'): SQL | undefined {
+    const perList: SQL[] = [];
+    for (const l of acl.lists) {
+        const perms = effectivePermissions(l.settings, actor);
+        const hidden = new Set(perms.fields_hidden);
+        const mine = acl.fileFields.filter((f) => f.listId === l.id);
+        const hiddenRefs = mine.filter((f) => hidden.has(f.slug)).map((f) => fieldRef(f.id));
+        const scope = scopeWhere(perms[action], actor, assignmentKeys(l.settings), action);
+        if (!scope && hiddenRefs.length === 0) continue;
+        const parts: SQL[] = [...hiddenRefs];
+        // `IS NOT TRUE`: un alcance que da NULL (sin responsable) tampoco alcanza.
+        if (scope) parts.push(and(sql`(${scope}) IS NOT TRUE`, or(...mine.map((f) => fieldRef(f.id)), descriptionRef()))!);
+        perList.push(and(eq(records.listId, l.id), or(...parts))!);
+    }
+    if (perList.length === 0) return undefined;
+    return sql`EXISTS (
+        SELECT 1 FROM ${records}
+        WHERE ${records.tenantId} = ${tenantId} AND ${records.deletedAt} IS NULL AND (${or(...perList)})
+    )`;
+}
+
+/**
+ * SEC (auditoría 2026-11) — Qué adjuntos puede REFERENCIAR alguien al escribir
+ * (un campo de archivo, un bloque de la descripción, la imagen de un tablero).
+ * Sin esto, escribir el id de un archivo ajeno en un registro propio lo volvía
+ * legible para quien lo escribió (`readableBy` lo da por visible al colgar de
+ * un registro que alcanza): los ids son secuenciales.
+ *
+ *  - sistema (sin actor) y admin: que exista en la empresa;
+ *  - invitado y cliente del portal: sólo lo que subieron;
+ *  - el resto del equipo: lo que subió o lo que ya puede ver.
+ */
+export async function attachableIds(
+    tx: Tx,
+    tenantId: number,
+    actor: FileActor | undefined,
+    ids: readonly number[],
+): Promise<Set<number>> {
+    const unique = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))];
+    if (unique.length === 0) return new Set();
+    const cond =
+        !actor || actor.role === 'admin'
+            ? undefined
+            : actor.role === 'guest' || actor.role === 'client'
+              ? sql`${attachments.createdBy} = ${actor.userId}`
+              : await readableBy(tx, tenantId, actor);
+    const rows = await tx
+        .select({ id: attachments.id })
+        .from(attachments)
+        .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, unique), cond));
+    return new Set(rows.map((r) => r.id));
+}
+
+/** 400 `file_not_attachable` si alguno de los ids no se puede referenciar (mismo error si no existe). */
+export async function assertAttachable(
+    tx: Tx,
+    tenantId: number,
+    actor: FileActor | undefined,
+    ids: readonly number[],
+): Promise<void> {
+    const wanted = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))];
+    if (wanted.length === 0) return;
+    const ok = await attachableIds(tx, tenantId, actor, wanted);
+    const bad = wanted.filter((id) => !ok.has(id));
+    if (bad.length === 0) return;
+    throw new BadRequestException({
+        code: 'file_not_attachable',
+        message: 'Sólo puedes adjuntar archivos que subiste tú o que ya puedes ver.',
+        data: { status: 400, file_ids: bad },
+    });
+}
+
+/** Ids de adjuntos (enteros positivos) dentro del valor de un campo de archivo. */
+export function fileIdsIn(value: unknown): number[] {
+    const list = Array.isArray(value) ? value : value === null || value === undefined ? [] : [value];
+    const out: number[] = [];
+    for (const v of list) {
+        // Un id escrito como texto («17») también es un id: quien lo lee lo convierte.
+        const n = typeof v === 'number' ? v : typeof v === 'string' && /^\d{1,15}$/.test(v.trim()) ? Number(v.trim()) : NaN;
+        if (Number.isInteger(n) && n > 0) out.push(n);
+    }
+    return out;
+}
+
+/** Ids de adjuntos a cualquier profundidad de un JSON, bajo alguna de estas claves. */
+export function fileIdsUnder(value: unknown, keys: readonly string[]): number[] {
+    const out: number[] = [];
+    const walk = (v: unknown, depth: number): void => {
+        if (depth > 40 || v === null || typeof v !== 'object') return;
+        if (Array.isArray(v)) {
+            for (const x of v) walk(x, depth + 1);
+            return;
+        }
+        for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+            if (keys.includes(k) && typeof x === 'number' && Number.isInteger(x) && x > 0) out.push(x);
+            else walk(x, depth + 1);
+        }
+    };
+    walk(value, 0);
+    return out;
 }
 
 /**
@@ -529,12 +680,20 @@ export class FilesService {
             // borra quien lo subió o quien puede editar TODOS los registros —
             // antes un agente con "sólo lo suyo" borraba adjuntos ajenos y el
             // logo de la empresa recorriendo ids.
-            if (actor && found.createdBy !== actor.userId && !can(actor, 'edit_records')) {
-                throw new ForbiddenException({
-                    code: 'file_not_yours',
-                    message: 'Sólo quien subió el archivo (o quien edita todos los registros) puede borrarlo',
-                    data: { status: 403 },
-                });
+            if (actor && actor.role !== 'admin' && found.createdBy !== actor.userId) {
+                // Además de la capacidad global: no lo borra quien no puede
+                // EDITAR el registro (o no ve el campo) del que cuelga.
+                const denied = can(actor, 'edit_records') ? deniedRefs(tenantId, await loadFileAcl(tx, tenantId), actor, 'edit') : undefined;
+                const blocked = denied
+                    ? (await tx.select({ id: attachments.id }).from(attachments).where(and(eq(attachments.id, found.id), denied)).limit(1)).length > 0
+                    : false;
+                if (!can(actor, 'edit_records') || blocked) {
+                    throw new ForbiddenException({
+                        code: 'file_not_yours',
+                        message: 'Sólo quien subió el archivo (o quien edita todos los registros) puede borrarlo',
+                        data: { status: 403 },
+                    });
+                }
             }
             // v0.1.290 — El PDF congelado de un documento emitido es su copia
             // fiel: no se borra suelto (para rehacerlo: «Anular y emitir de nuevo»).

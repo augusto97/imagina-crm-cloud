@@ -126,7 +126,7 @@ export class DashboardsController {
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(createDashboardSchema)) input: CreateDashboardInput,
     ): Promise<Dashboard> {
-        return this.dashboards.create(tenantId(req), req.authUserId!, input);
+        return this.dashboards.create(tenantId(req), req.authUserId!, input, viewer(req));
     }
 
     @Patch(':id')

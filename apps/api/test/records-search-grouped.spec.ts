@@ -4,7 +4,7 @@ import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AggregateService, groupKeyExpr } from '../src/aggregate/aggregate.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
-import { fields, lists, records, tenants, users } from '../src/db/schema';
+import { fields, lists, memberships, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -70,6 +70,8 @@ describe('Búsqueda, orden y vista agrupada (v0.1.286)', () => {
         const [u2] = await pg.db.insert(users).values({ email: 'ana@t.local', name: 'Ana', passwordHash: 'x' }).returning();
         zoe = u1!.id;
         ana = u2!.id;
+        // Son del equipo: un campo Persona sólo acepta gente de la empresa.
+        await pg.db.insert(memberships).values([zoe, ana].map((userId) => ({ tenantId, userId, role: 'agent' as const })));
     });
 
     afterAll(async () => {

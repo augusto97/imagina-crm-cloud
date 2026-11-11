@@ -6,7 +6,7 @@ import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AggregateService } from '../src/aggregate/aggregate.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
-import { fields, lists, records, tenants, users } from '../src/db/schema';
+import { fields, lists, memberships, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -71,6 +71,8 @@ describe('Kanban para ventas — bundle del tablero (B5)', () => {
         admin = { userId: await mkUser('admin@t.local', 'Admin'), role: 'admin' };
         ana = { userId: await mkUser('ana@t.local', 'Ana'), role: 'agent' };
         beto = { userId: await mkUser('beto@t.local', 'Beto'), role: 'agent' };
+        // Son del equipo: un campo Persona sólo acepta gente de la empresa.
+        await pg.db.insert(memberships).values([admin, ana, beto].map((u) => ({ tenantId, userId: u.userId, role: u.role })));
     });
 
     afterAll(async () => {

@@ -2,7 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { CreateFieldInput, Field } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { activity, fields, lists, records, tenants, users } from '../src/db/schema';
+import { activity, attachments, fields, lists, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -256,7 +256,14 @@ describe('RecordsService + QueryBuilder (Postgres real + RLS)', () => {
     it('filtro: file → tiene archivos / sin archivos (presencia del array)', async () => {
         const adj = await fieldsService.create(tenantA, 'clientes', { label: 'Adjuntos', type: 'file', slug: 'adjuntos' });
         const k = `f${adj.id}`;
-        await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'ConArchivo', [k]: [1, 2] } });
+        // Los adjuntos tienen que existir en la empresa (SEC: no se referencia un id cualquiera).
+        const atts = await withTenant(pg.db, tenantA, (tx) =>
+            tx
+                .insert(attachments)
+                .values([1, 2].map((i) => ({ tenantId: tenantA, filename: `a${i}.pdf`, mime: 'application/pdf', sizeBytes: 1, storageKey: `t${tenantA}/a${i}.pdf` })))
+                .returning(),
+        );
+        await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'ConArchivo', [k]: atts.map((a) => a.id) } });
         await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'Vacio', [k]: [] } });
         await service.create(tenantA, admin, 'clientes', { data: { [key('nombre')]: 'SinClave' } });
         const names = async (op: string, value?: unknown) =>

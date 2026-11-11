@@ -28,6 +28,7 @@ import {
     layoutBlocks,
     migratePortalTemplateToV3,
     portalEditableFieldIds,
+    PORTAL_EDITABLE_TYPES,
     managedFieldIds,
     readPortalConfig,
     readPortalLayoutV3,
@@ -103,7 +104,12 @@ import { filterActivityDiff, portalConversation, portalRecordFieldIds } from './
 
 const MAGIC_TTL_SECONDS = 60 * 60 * 24; // 24h
 /** Tipos que el cliente nunca completa al crear un registro desde el portal. */
-const PORTAL_CREATE_EXCLUDED_TYPES = new Set<string>(['relation', 'user', 'file']);
+/** Tipos que el cliente puede editar en su portal (`PORTAL_EDITABLE_TYPES`). */
+function isPortalEditableType(type: string): boolean {
+    return (PORTAL_EDITABLE_TYPES as readonly string[]).includes(type);
+}
+
+const PORTAL_CREATE_EXCLUDED_TYPES = new Set<string>(['relation', 'user', 'file', 'team']);
 /** v0.1.241 — el enlace que acuña "cambiar a otra empresa" se usa al instante. */
 const SWITCH_TTL_SECONDS = 120;
 const magicKey = (token: string) => `magic:${token}`;
@@ -1230,8 +1236,11 @@ export class PortalService implements OnModuleInit {
                 ? portalEditableFieldIds(resolved.layout, fieldsLite)
                 : resolved.origin === 'legacy'
                   ? (() => {
+                        // SEC — el mismo whitelist de tipos del diseño guardado: la
+                        // plantilla anterior dejaba marcar editable un campo de
+                        // archivo, persona, equipo o relación.
                         const slugs = editableSlugsFromTemplate(settings.portal_template);
-                        return listFields.filter((f) => slugs.has(f.slug)).map((f) => f.id);
+                        return listFields.filter((f) => slugs.has(f.slug) && isPortalEditableType(f.type)).map((f) => f.id);
                     })()
                   : [],
         );
@@ -1292,7 +1301,10 @@ export class PortalService implements OnModuleInit {
             const errors: Record<string, string> = {};
             for (const [slug, value] of Object.entries(input.fields)) {
                 const field = bySlug.get(slug);
-                if (!field || !ctx.editableIds.has(field.id)) {
+                // El tipo se vuelve a mirar AQUÍ, venga de donde venga la lista de
+                // editables: el cliente nunca escribe archivos, personas, equipos
+                // ni relaciones (ids de cosas de la empresa que no son suyas).
+                if (!field || !ctx.editableIds.has(field.id) || !isPortalEditableType(field.type)) {
                     throw new ForbiddenException({
                         code: 'portal_field_forbidden',
                         message: `No tienes permiso para editar el campo "${slug}"`,

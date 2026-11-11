@@ -74,7 +74,8 @@ import {
     type TenantFormat,
 } from '@imagina-base/shared';
 import { accessOf } from '../billing/tenant-access';
-import { and, asc, desc, eq, inArray, isNull, lte, ne, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, lte, ne, notInArray, sql } from 'drizzle-orm';
+import { memberNames } from '../tenancy/member-names';
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { can } from '../authz/can';
 import type Redis from 'ioredis';
@@ -513,13 +514,11 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     }
 
     /** Nombre visible de cada persona o recurso (la persona: su nombre en la app). */
-    async staffNames(config: BookingConfig): Promise<Map<string, string>> {
+    async staffNames(config: BookingConfig, tenantId: number): Promise<Map<string, string>> {
         const ids = config.staff.filter((s) => s.kind === 'user' && s.staff_user_id !== null).map((s) => s.staff_user_id!);
         const names = new Map<number, string>();
-        if (ids.length > 0) {
-            const rows = await this.db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ids));
-            for (const r of rows) names.set(r.id, r.name);
-        }
+        // SEC — sólo personas de ESTA empresa (la página es pública y el id sale de la configuración).
+        for (const [id, u] of await memberNames(this.db, tenantId, ids)) names.set(id, u.name);
         return new Map(
             config.staff.map((s) => [
                 s.id,
@@ -531,7 +530,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     private async buildMeta(p: ResolvedPage): Promise<PublicBookingMeta> {
         const s = p.config.settings;
         const b = this.brand(p);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const keys = s.captcha && this.captcha ? await this.captcha.resolve(p.tenantId, p.tenantSettings) : null;
         const consent = this.dataConsent && s.data_consent ? await this.dataConsent.active(p.tenantId, p.tenantSettings) : null;
         const staff = p.config.staff.filter((x) => x.active && (x.kind === 'resource' || x.staff_user_id !== null));
@@ -737,7 +736,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                 });
         }
 
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         let created: { appt: BookingAppointmentRow; record: { id: number; data: Record<string, unknown> }; staff: BookingStaff } | null = null;
         let lastReason = 'taken';
         try {
@@ -1060,7 +1059,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         this.forgetSlots(p.tenantId);
         if (x.notify) {
             const base = await this.base(p.tenantId);
-            const names = await this.staffNames(p.config);
+            const names = await this.staffNames(p.config, p.tenantId);
             // El cliente se entera siempre: si no, se presentaría a una cita que no existe.
             void this.sendClientMail(p, row, 'unpaid_expired', { base, names });
         }
@@ -1161,7 +1160,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         }
         this.forgetSlots(p.tenantId);
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const info = this.eventInfo(p, row, 'requested', 'client', base, names, null);
         this.notifyApprovers(p, row, info, 'requested');
         this.dispatchEvent(p, row, info, null);
@@ -1223,7 +1222,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         });
         void (async () => {
             const base = await this.base(p.tenantId);
-            const names = await this.staffNames(p.config);
+            const names = await this.staffNames(p.config, p.tenantId);
             await this.sendClientMail(p, appt, 'paid_late', { base, names });
         })().catch(() => undefined);
     }
@@ -1235,7 +1234,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const payment = await this.paymentFor(p, appt, { refresh: true });
         const row = await this.settleIfPaid(p, appt, payment);
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         return this.summary(p, row, base, names, stale, row.status === appt.status ? payment : await this.paymentFor(p, row));
     }
 
@@ -1784,7 +1783,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     async manageMeta(ref: string): Promise<PublicManageMeta> {
         const { p, appt, stale } = await this.resolveAppointment(ref);
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const booking = await this.buildMeta(p);
         // v0.1.387 — el pago (si espera el pago, se le pregunta al proveedor: el cliente pudo volver de pagar).
         const payment = await this.paymentFor(p, appt, { refresh: appt.status === 'unpaid' });
@@ -1821,7 +1820,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     async ics(ref: string): Promise<{ filename: string; body: string }> {
         const { p, appt } = await this.resolveAppointment(ref);
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         return { filename: 'cita.ics', body: this.icsFor(p, appt, base, names) };
     }
 
@@ -1882,12 +1881,12 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         if (appt.status === 'unpaid') {
             // Nadie del equipo supo de ella (todavía no se había pagado): sólo el correo al cliente.
             const base = await this.base(p.tenantId);
-            const names = await this.staffNames(p.config);
+            const names = await this.staffNames(p.config, p.tenantId);
             void this.sendClientMail(p, row, 'cancelled', { base, names });
             return this.summary(p, row, base, names);
         }
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const staff = p.config.staff.find((s) => s.id === appt.staffId);
         const info = this.eventInfo(p, row!, 'cancelled', 'client', base, names, null);
         this.dispatchEvent(p, row!, info, null);
@@ -1925,7 +1924,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         // Quien atendía primero (si sigue libre, no se cambia de persona sin necesidad).
         candidates.sort((a, b) => Number(b.id === appt.staffId) - Number(a.id === appt.staffId));
         if (candidates.length === 0) throw badRequest('booking_invalid', 'No hay quién atienda ese servicio en este momento.');
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const fieldsById = new Map(p.fields.map((f) => [f.id, f]));
         // v0.1.353 — una por confirmar sigue por confirmar en el horario nuevo.
         const wasPending = appt.status === 'pending';
@@ -2343,7 +2342,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             const row = await setAppt({ status: 'cancelled', cancelledAt: new Date(), externalEvent: null });
             if (!row) return 'ignored';
             const base = await this.base(p.tenantId);
-            const names = await this.staffNames(p.config);
+            const names = await this.staffNames(p.config, p.tenantId);
             const staff = p.config.staff.find((s) => s.id === row.staffId) ?? null;
             await this.afterChange(p, row, staff, 'cancelled', { base, names, byTeam: true, fromCalendar: true, dispatch: { data: null, by: 'calendar', previous: null } }).done;
             return 'cancelled';
@@ -2375,7 +2374,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const row = await setAppt({ startAt: start, endAt: end, status: 'rescheduled', remindersSent: this.passedReminders(p.config, start), externalEvent: moved });
         if (!row) return 'ignored';
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         await this.afterChange(p, row, staff, 'rescheduled', {
             base,
             names,
@@ -2487,7 +2486,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const p = await this.resolveById(appt.pageId);
         if (!p || p.readOnly) return false;
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const hours = Math.round(minutesBefore / 60);
         const lead =
             minutesBefore >= 20 * 60 && minutesBefore <= 28 * 60
@@ -2529,7 +2528,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const phone = rec ? (rec.data as Record<string, unknown>)[jsonbKeyForField(phoneId)] : null;
         if (typeof phone !== 'string' || phone.trim() === '') return false;
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const info = { ...this.eventInfo(p, appt, 'booked', 'client', base, names, null), time_zone: appt.clientTz ?? p.timeZone };
         const text = cfg.text.replace(/\{\{\s*cita\.([a-z_]+)\s*\}\}/g, (_m, key: string) => bookingMergeValue(info, key, p.format.time_format));
         const res = await sms.sendNow(p.tenantId, {
@@ -2623,7 +2622,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     }
 
     private async recordDto(p: ResolvedPage, appt: BookingAppointmentRow, actor: BookingDecider): Promise<RecordBookingDto> {
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const nameOf = async (id: number | null): Promise<string | null> => {
             if (id === null) return null;
             const [u] = await this.db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, id)).limit(1);
@@ -2743,7 +2742,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         }
         this.forgetSlots(p.tenantId);
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const info = this.eventInfo(p, row, 'booked', 'team', base, names, null);
         // A quien atiende, si no fue quien la aprobó.
         if (staff && !(staff.kind === 'user' && staff.staff_user_id === x.by)) this.notifyStaff(p, row, staff, 'booked', info);
@@ -2784,7 +2783,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         }
         this.forgetSlots(p.tenantId);
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const info = this.eventInfo(p, row, 'declined', x.by ? 'team' : 'client', base, names, null);
         this.dispatchEvent(p, row, info, null);
         if (x.expired) this.notifyApprovers(p, row, info, 'expired');
@@ -2994,7 +2993,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             await this.collections?.expireForBooking(p.tenantId, row.paymentLinkId).catch(() => undefined);
         }
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const info = this.eventInfo(p, row, event, 'team', base, names, event === 'rescheduled' ? { start: appt.startAt, end: appt.endAt } : null);
         this.dispatcher.dispatch({ tenantId: p.tenantId, listId: p.listId, recordId: row.recordId, trigger: 'booking_event', after, booking: info });
         const staff = p.config.staff.find((s) => s.id === row.staffId) ?? null;
@@ -3016,7 +3015,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const p = await this.resolveById(appt.pageId);
         if (!p) return null;
         const base = await this.base(tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         return this.eventInfo(p, appt, event, 'client', base, names, event === 'rescheduled' ? { start: new Date(appt.startAt.getTime() - 86_400_000), end: new Date(appt.endAt.getTime() - 86_400_000) } : null);
     }
 }

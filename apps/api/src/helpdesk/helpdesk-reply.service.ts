@@ -174,7 +174,7 @@ export class HelpdeskReplyService {
         let warning: string | undefined;
         if (input.set_status && ctx.settings.status_field_id !== null) {
             try {
-                await this.records.update(tenantId, actor, String(list.id), recordId, { data: { [jsonbKeyForField(ctx.settings.status_field_id)]: input.set_status } });
+                await this.records.update(tenantId, actor, String(list.id), recordId, { data: { [jsonbKeyForField(ctx.settings.status_field_id)]: input.set_status } }, { serverDecided: true });
             } catch (err) {
                 warning = `El correo salió, pero no se pudo cambiar el estado: ${errorText(err, 200)}`;
             }
