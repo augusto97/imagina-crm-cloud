@@ -35,6 +35,7 @@ import { DomainsService } from '../domains/domains.service';
 import { FieldsService } from '../fields/fields.service';
 import { effectivePermissions } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
+import { assertNewAttachable, type FileActor } from '../files/files.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { BookingAvailabilityService, type PageContext } from './booking-availability.service';
 import { BookingCalendarService, CalendarListScopeError, isCalendarProvider } from './booking-calendar';
@@ -59,6 +60,8 @@ const notFound = () => new NotFoundException({ code: 'not_found', message: 'Esta
 /** v0.1.354 — Quién guarda la agenda (el CSS propio sólo lo agrega un admin). */
 export interface BookingActor {
     isAdmin: boolean;
+    /** Quién guarda, para revisar que las imágenes NUEVAS sean archivos que puede usar. */
+    file?: FileActor;
 }
 
 function badRequest(code: string, message: string): BadRequestException {
@@ -327,6 +330,7 @@ export class BookingService {
         const def = await this.defaultTheme(tenantId);
         if (!config.settings.theme && def) config.settings.theme = def;
         await this.assertDesign(tenantId, config, def?.custom_css ?? '', actor);
+        await this.assertOwnFiles(tenantId, actor, config, null);
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .insert(bookingPages)
@@ -356,6 +360,7 @@ export class BookingService {
             const previousCss = readBookingConfig(current.config).settings.theme?.custom_css ?? '';
             config = await this.cleanPhotos(tenantId, await this.cleanCalendars(tenantId, sanitizeBookingConfig(input.config, fields, members)));
             await this.assertDesign(tenantId, config, previousCss, actor);
+            await this.assertOwnFiles(tenantId, actor, config, readBookingConfig(current.config));
             patch.config = config as unknown as Record<string, unknown>;
         }
         const willBeEnabled = input.enabled ?? current.enabled;
@@ -518,6 +523,25 @@ export class BookingService {
         const ok = new Set(rows.filter((r) => /^image\/(png|jpe?g|webp|gif|avif)$/i.test(r.mime)).map((r) => r.id));
         const bad = ids.filter((id) => !ok.has(id));
         if (bad.length > 0) throw badRequest('invalid_image', 'Una de las imágenes no se puede usar: sube una imagen PNG, JPG, GIF o WebP.');
+    }
+
+    /**
+     * Las fotos y las imágenes del diseño que se SUMAN en este guardado tienen
+     * que ser archivos que quien guarda subió o ya puede ver (la página pública
+     * las sirve a cualquiera). Las que la agenda ya tenía y las de un tema
+     * guardado de la empresa no se revisan.
+     */
+    private async assertOwnFiles(tenantId: number, actor: BookingActor, config: BookingConfig, previous: BookingConfig | null): Promise<void> {
+        const file = actor.file;
+        if (!file || actor.isAdmin) return;
+        const idsOf = (c: BookingConfig): number[] => [
+            ...c.staff.flatMap((s) => (s.photo_file_id !== null ? [s.photo_file_id] : [])),
+            ...(c.settings.theme ? publicThemeFileIds(c.settings.theme) : []),
+        ];
+        const wanted = idsOf(config);
+        if (wanted.length === 0) return;
+        const saved = (await this.savedThemes(tenantId)).flatMap((t) => publicThemeFileIds(t.theme));
+        await this.tenantDb.withTenant(tenantId, (tx) => assertNewAttachable(tx, tenantId, file, wanted, [...(previous ? idsOf(previous) : []), ...saved]));
     }
 
     private async tenantSettings(tenantId: number): Promise<Record<string, unknown>> {

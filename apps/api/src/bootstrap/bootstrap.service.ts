@@ -11,6 +11,8 @@ import { eq } from 'drizzle-orm';
 import { tenants, users } from '../db/schema';
 import { FieldsRepository } from '../fields/fields.repository';
 import { ListsRepository } from '../lists/lists.repository';
+import { can } from '../authz/can';
+import { guestSafeListSettings, memberListSettings } from '../lists/list-acl';
 import type { TenantContext } from '../tenancy/tenant.guard';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { ViewsRepository } from '../views/views.repository';
@@ -64,6 +66,7 @@ export class BootstrapService {
                 if (titleId !== null) titleFieldIds.add(titleId);
             }
 
+            const who = { userId, role: ctx.role, teamIds: ctx.teamIds, customRoleId: ctx.customRoleId, capabilities: ctx.capabilities, shares: ctx.shares };
             return {
                 user: {
                     id: user.id,
@@ -93,7 +96,11 @@ export class BootstrapService {
                     name: l.name,
                     icon: l.icon,
                     color: l.color,
-                    settings: l.settings,
+                    // Recortados para quien no administra las listas (ver `memberListSettings`).
+                    settings:
+                        ctx.role === 'guest'
+                            ? guestSafeListSettings((l.settings ?? {}) as Record<string, unknown>)
+                            : memberListSettings((l.settings ?? {}) as Record<string, unknown>, who, can(who, 'manage_lists')),
                     position: l.position,
                     group_id: l.groupId ?? null,
                     created_at: l.createdAt.toISOString(),

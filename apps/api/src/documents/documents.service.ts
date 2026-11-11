@@ -24,6 +24,7 @@ import {
     describeDocItemExpr,
     docAllBlocks,
     docDesignFileIds,
+    docDesignSchema,
     docFreezes,
     formatDocNumber,
     isComputedItemColumn,
@@ -71,7 +72,7 @@ import type { Tx } from '../db/client';
 import { attachments, automations, customRoles, documentNumbers, documentTemplates, fields as fieldsTable, memberships, records as recordsTable, tenants, users } from '../db/schema';
 import type { DocumentTemplateRow } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
-import { FilesService, type StoredFileRef } from '../files/files.service';
+import { FilesService, assertNewAttachable, type FileActor, type StoredFileRef } from '../files/files.service';
 import { ListsService } from '../lists/lists.service';
 import type { ThroughPlan } from '../records/through-fields';
 import { RecordsService, type Actor } from '../records/records.service';
@@ -244,10 +245,17 @@ export class DocumentsService {
         return toDto(row);
     }
 
-    async create(tenantId: number, userId: number, listIdOrSlug: string, input: CreateDocumentTemplateInput): Promise<DocumentTemplate> {
+    /**
+     * `actor` (SEC): quien guarda desde la app — las imágenes que SUMA al
+     * diseño (logo, imagen, firma) tienen que ser archivos que subió o ya puede
+     * ver: el PDF lo arma después cualquiera (una automatización, el portal) y
+     * saldrían con el acceso de ESE otro. Sin actor = uso interno.
+     */
+    async create(tenantId: number, userId: number, listIdOrSlug: string, input: CreateDocumentTemplateInput, actor?: FileActor): Promise<DocumentTemplate> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const design = this.validDesign(input.design);
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            await assertNewAttachable(tx, tenantId, actor, docDesignFileIds(design));
             const existing = await tx
                 .select({ id: documentTemplates.id })
                 .from(documentTemplates)
@@ -291,15 +299,26 @@ export class DocumentsService {
         listIdOrSlug: string,
         id: number,
         input: UpdateDocumentTemplateInput,
+        actor?: FileActor,
     ): Promise<DocumentTemplate> {
         this.linkCache.clear();
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const patch: Partial<typeof documentTemplates.$inferInsert> = { updatedAt: new Date() };
         if (input.name !== undefined) patch.name = input.name.trim();
         if (input.filename !== undefined) patch.filename = input.filename.trim();
-        if (input.design !== undefined) patch.design = this.validDesign(input.design) as never;
+        const nextDesign = input.design !== undefined ? this.validDesign(input.design) : null;
+        if (nextDesign) patch.design = nextDesign as never;
         if (input.portal_visible !== undefined) patch.portalVisible = input.portal_visible;
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            if (nextDesign && actor) {
+                const [prev] = await tx
+                    .select({ design: documentTemplates.design })
+                    .from(documentTemplates)
+                    .where(and(eq(documentTemplates.tenantId, tenantId), eq(documentTemplates.listId, list.id), eq(documentTemplates.id, id)))
+                    .limit(1);
+                const had = docDesignSchema.safeParse(prev?.design ?? {});
+                await assertNewAttachable(tx, tenantId, actor, docDesignFileIds(nextDesign), had.success ? docDesignFileIds(had.data) : []);
+            }
             const [upd] = await tx
                 .update(documentTemplates)
                 .set(patch)

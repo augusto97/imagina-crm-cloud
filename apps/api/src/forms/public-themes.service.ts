@@ -106,7 +106,7 @@ export class PublicThemesService {
                 data: { status: 403 },
             });
         }
-        await this.forms.assertImages(tenantId, publicThemeFileIds(theme));
+        await this.forms.assertImages(tenantId, publicThemeFileIds(theme), { actor });
     }
 
     private async settings(tenantId: number): Promise<Record<string, unknown>> {

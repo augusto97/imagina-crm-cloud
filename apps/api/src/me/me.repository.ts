@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, ilike, inArray, isNull, ne, or } from 'drizzle-orm';
+import { memberDisplayName } from '../tenancy/member-names';
 import type { Db, Tx } from '../db/client';
 import { memberships, users } from '../db/schema';
 
@@ -33,7 +34,7 @@ export class MeRepository {
     searchMembers(tx: Tx, tenantId: number, q: string, limit: number): Promise<MeUserRow[]> {
         const pattern = `%${escapeLike(q)}%`;
         return tx
-            .select({ id: users.id, name: users.name, email: users.email, role: memberships.role })
+            .select({ id: users.id, name: memberDisplayName, email: users.email, role: memberships.role })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
             .where(
@@ -41,17 +42,17 @@ export class MeRepository {
                     eq(memberships.tenantId, tenantId),
                     ne(memberships.role, 'client'),
                     isNull(users.disabledAt),
-                    or(ilike(users.name, pattern), ilike(users.email, pattern)),
+                    or(ilike(memberDisplayName, pattern), ilike(users.email, pattern)),
                 ),
             )
-            .orderBy(asc(users.name), asc(users.id))
+            .orderBy(asc(memberDisplayName), asc(users.id))
             .limit(limit);
     }
 
     /** Miembro del tenant por user id — null si no hay membership. */
     async findMember(tx: Tx, tenantId: number, userId: number): Promise<MeUserRow | null> {
         const [row] = await tx
-            .select({ id: users.id, name: users.name, email: users.email, role: memberships.role })
+            .select({ id: users.id, name: memberDisplayName, email: users.email, role: memberships.role })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
             .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)))
@@ -63,7 +64,7 @@ export class MeRepository {
     async findMembers(tx: Tx, tenantId: number, userIds: number[]): Promise<MeUserRow[]> {
         if (userIds.length === 0) return [];
         return tx
-            .select({ id: users.id, name: users.name, email: users.email, role: memberships.role })
+            .select({ id: users.id, name: memberDisplayName, email: users.email, role: memberships.role })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
             .where(and(eq(memberships.tenantId, tenantId), inArray(memberships.userId, userIds)));

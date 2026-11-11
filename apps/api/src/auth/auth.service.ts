@@ -746,6 +746,7 @@ export class AuthService implements OnModuleInit {
             // Cuenta registrada por su cuenta y sin correo confirmado: el acceso
             // lo recibe quien abra el enlace de la casilla (ver `turnIntoInvitation`).
             let reclaim = false;
+            let unjoined = false;
             const [existing] = await tx
                 .select({
                     id: users.id,
@@ -789,7 +790,7 @@ export class AuthService implements OnModuleInit {
             }
             // C3 — compartir con alguien que YA es invitado: se reusa su membresía.
             if (membership?.role === 'guest' && input.role === 'guest') {
-                return { user, invited, alreadyGuest: true, reclaimed: false };
+                return { user, invited, alreadyGuest: true, reclaimed: false, unjoined: false };
             }
             // C3 — alguien del equipo no se invita como persona de afuera: ya
             // ve lo que su rol le deja ver (se le comparte desde los permisos).
@@ -821,11 +822,18 @@ export class AuthService implements OnModuleInit {
             if ((invited || reclaim || user.invitedAt !== null) && !opts.skipMailBudget) {
                 if (!(await this.inviteMailAllowed(tenantId, email))) throw this.inviteBudgetExceeded();
             }
+            // Una cuenta que YA existía y que suma el admin de una empresa (no
+            // el operador): nadie le pidió permiso a esa persona. Queda sumada,
+            // pero hasta que ENTRE a la empresa (`joined_at`) no se muestra su
+            // nombre ni se usa su firma de correo: sumar un correo ajeno no
+            // sirve para leer los datos de esa cuenta.
+            unjoined = !invited && !reclaim && user.invitedAt === null && !opts.skipMailBudget && !opts.allowReserved;
             await tx.insert(memberships).values({
                 userId: user.id,
                 tenantId,
                 role: input.role,
                 customRoleId: input.role === 'guest' || input.role === 'admin' ? null : input.customRoleId ?? null,
+                ...(unjoined ? { joinedAt: null } : {}),
             });
             if (reclaim) {
                 // `users` se escribe con la conexión base, no con el rol de la app.
@@ -834,7 +842,7 @@ export class AuthService implements OnModuleInit {
                 user = { ...user, invitedAt: new Date() };
                 invited = true;
             }
-            return { user, invited, alreadyGuest: false, reclaimed: reclaim };
+            return { user, invited, alreadyGuest: false, reclaimed: reclaim, unjoined };
         });
 
         const { user, invited, alreadyGuest, reclaimed } = result;
@@ -867,7 +875,9 @@ export class AuthService implements OnModuleInit {
         // el aviso es una cortesía, `notified` lo dice.)
         this.logger.log(`Usuario ${user.id} sumado a la empresa ${tenantId} (${reclaimed ? 'cuenta sin confirmar → invitación' : invited ? 'invitado' : 'cuenta existente'})`);
         return {
-            user: { id: user.id, name: user.name, email: user.email },
+            // El nombre real de una cuenta ajena no vuelve a quien la sumó por
+            // su correo: hasta que la persona entra, sólo lo que ya se sabía.
+            user: { id: user.id, name: result.unjoined ? (user.email.split('@')[0] ?? user.email) : user.name, email: user.email },
             role: input.role,
             invited,
             pending: invited || user.invitedAt !== null,

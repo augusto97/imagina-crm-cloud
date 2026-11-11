@@ -35,7 +35,7 @@ import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { activity, automations, records } from '../db/schema';
 import { FilesService } from '../files/files.service';
-import { assignmentKeys, listRowInScope, effectivePermissions, scopeWhere } from '../lists/list-acl';
+import { assignmentKeys, listRowInScope, effectivePermissions, renameHiddenFieldSlug, scopeWhere } from '../lists/list-acl';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { enterTrashMode, exitTrashMode } from './trash-ops';
@@ -487,6 +487,21 @@ export class TrashService {
                 WHERE tenant_id = ${tenantId} AND id = ${id}
             `);
             await exitTrashMode(tx);
+            // El ACL oculta campos por slug: si volvió con otro nombre interno,
+            // sigue oculto para quien lo tenía oculto.
+            if (slug !== String(row.slug)) {
+                const [l] = (
+                    await tx.execute<{ settings: Record<string, unknown> | null }>(
+                        sql`SELECT settings FROM lists WHERE tenant_id = ${tenantId} AND id = ${list.id} FOR UPDATE`,
+                    )
+                ).rows;
+                const next = renameHiddenFieldSlug((l?.settings ?? {}) as Record<string, unknown>, String(row.slug), slug, { keepOld: true });
+                if (next) {
+                    await tx.execute(
+                        sql`UPDATE lists SET settings = ${JSON.stringify(next)}::jsonb WHERE tenant_id = ${tenantId} AND id = ${list.id}`,
+                    );
+                }
+            }
             // v0.1.300 — Un ID automático en la papelera no numera (el trigger
             // sólo mira campos vivos): lo que se creó mientras tanto recibe su
             // número ahora, en orden de creación, del mismo contador.

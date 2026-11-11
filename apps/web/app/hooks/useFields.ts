@@ -125,6 +125,9 @@ export function useUpdateField(listId: string | number) {
         onSuccess: () => {
             // 0.57.41 — scope a id+slug de la lista actual.
             invalidateForList(qc, fieldsKeys.all, listId);
+            // Cambiar el nombre interno de un campo reescribe los «campos
+            // ocultos» del ACL de la lista en el servidor: se vuelven a pedir.
+            void qc.invalidateQueries({ queryKey: ['permissions'] });
         },
     });
 }

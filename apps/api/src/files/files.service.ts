@@ -283,6 +283,27 @@ export async function assertAttachable(
     });
 }
 
+/**
+ * Lo mismo para una CONFIGURACIÓN (formulario, agenda, widget, tema, diseño de
+ * la ficha, correo, documento, marca): sólo se revisan los ids que se SUMAN en
+ * este guardado — los que la configuración ya tenía (`known`: lo guardado
+ * antes, un tema de la empresa, lo copiado de otra configuración) no. Sin
+ * `actor` (uso interno, plantillas, el asistente sin persona) no se revisa.
+ * Una configuración publicada vuelve público su archivo: sin esto, quien arma
+ * formularios publicaba cualquier adjunto de la empresa con sólo su id.
+ */
+export async function assertNewAttachable(
+    tx: Tx,
+    tenantId: number,
+    actor: FileActor | undefined,
+    ids: Iterable<number>,
+    known: Iterable<number> = [],
+): Promise<void> {
+    if (!actor) return;
+    const had = new Set(known);
+    await assertAttachable(tx, tenantId, actor, [...new Set(ids)].filter((id) => !had.has(id)));
+}
+
 /** Ids de adjuntos (enteros positivos) dentro del valor de un campo de archivo. */
 export function fileIdsIn(value: unknown): number[] {
     const list = Array.isArray(value) ? value : value === null || value === undefined ? [] : [value];

@@ -115,7 +115,7 @@ export class DocumentsController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(createDocumentTemplateSchema)) input: CreateDocumentTemplateInput,
     ): Promise<DocumentTemplate> {
-        return this.documents.create(req.tenant!.tenantId, req.authUserId!, list, input);
+        return this.documents.create(req.tenant!.tenantId, req.authUserId!, list, input, actor(req));
     }
 
     @Patch(':id')
@@ -126,7 +126,7 @@ export class DocumentsController {
         @Param('id', ParseIntPipe) id: number,
         @Body(new ZodValidationPipe(updateDocumentTemplateSchema)) input: UpdateDocumentTemplateInput,
     ): Promise<DocumentTemplate> {
-        return this.documents.update(req.tenant!.tenantId, req.authUserId!, list, id, input);
+        return this.documents.update(req.tenant!.tenantId, req.authUserId!, list, id, input, actor(req));
     }
 
     @Delete(':id')
@@ -224,3 +224,4 @@ export class PublicDocumentsController {
 function actor(req: FastifyRequest): Actor {
     return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }
+
