@@ -269,7 +269,10 @@ const CLIENT_JS = String.raw`
   var DEMO = false, DEMO_STYLE = null;
   try {
     var dq = new URLSearchParams(location.search);
-    DEMO = MODE === 'book' && dq.get('imb_demo') === '1';
+    // Sólo dentro de un marco de la propia app (mismo origen): con el parámetro
+    // suelto en el enlace o en un sitio ajeno la reserva es real. Leer el origen
+    // de un padre de otro sitio lanza: queda en false.
+    DEMO = MODE === 'book' && dq.get('imb_demo') === '1' && window.parent !== window && window.parent.location.origin === location.origin;
     DEMO_STYLE = DEMO ? dq.get('imb_style') : null;
   } catch (e) {}
   var API = MODE === 'manage'

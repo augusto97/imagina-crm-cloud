@@ -16,6 +16,8 @@ import {
     bookableWindow,
     bookingLocationPublic,
     bookingLocationText,
+    effectiveCapabilities,
+    type Role,
     bookingMergeValue,
     bookingPayLabel,
     bookingPaymentAmount,
@@ -80,7 +82,7 @@ import { AutomationDispatcher } from '../automations/automation-dispatcher.servi
 import { ENV, type Env } from '../config/env';
 import { DataConsentService } from '../data-consent/data-consent.service';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { bookingAppointments, bookingPages, lists, records, tenants, users, type BookingAppointmentRow, type BookingPageRow } from '../db/schema';
+import { bookingAppointments, bookingPages, customRoles, lists, memberships, records, tenants, users, type BookingAppointmentRow, type BookingPageRow } from '../db/schema';
 import { DomainsService } from '../domains/domains.service';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
@@ -112,6 +114,10 @@ import { CollectionError, CollectionsService } from '../collections/collections.
 
 /** El sistema crea y mueve el registro: no hay persona del equipo detrás de la reserva. */
 const SYSTEM_ACTOR = { userId: 0, role: 'admin' as const };
+
+/** Estados en los que el cliente puede reprogramar su cita desde el enlace. */
+const RESCHEDULABLE_STATUSES: readonly string[] = ['confirmed', 'rescheduled', 'pending'];
+const isReschedulable = (status: string): boolean => RESCHEDULABLE_STATUSES.includes(status);
 
 /** Menos de esto entre cargar la página y reservar es un robot (elegir un horario lleva más). */
 const MIN_FILL_MS = 2500;
@@ -1768,7 +1774,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             manage_url: url,
             ics_url: `${base}/api/v1/public/booking/manage/${this.manageRef(p.tenantId, appt.id, appt.manageVersion)}/ics`,
             // v0.1.387 — esperando el pago no se reprograma (se paga o se deja vencer).
-            can_reschedule: locked === null && p.config.rules.allow_reschedule && appt.status !== 'unpaid',
+            can_reschedule: locked === null && p.config.rules.allow_reschedule && isReschedulable(appt.status),
             can_cancel: locked === null && p.config.rules.allow_cancel,
             locked_reason: locked,
             payment,
@@ -1805,7 +1811,10 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     async manageSlots(ref: string, ip: string, q: BookingSlotsQuery): Promise<PublicBookingSlots> {
         const { p, appt, stale } = await this.resolveAppointment(ref);
         await this.enforce(SLOTS_LIMITS, p.pageId, ip, 'horarios');
-        if (this.lockedReason(p, appt, new Date(), stale) || !p.config.rules.allow_reschedule) return { slots: [], first_day: q.from, last_day: q.to };
+        // Sólo una cita activa se reprograma: una que espera el pago, no (se confirma pagando).
+        if (this.lockedReason(p, appt, new Date(), stale) || !p.config.rules.allow_reschedule || !isReschedulable(appt.status)) {
+            return { slots: [], first_day: q.from, last_day: q.to };
+        }
         return this.availability.slots(p, appt.serviceId, this.staffSelection(p, q.staff), q.from, q.to, { excludeRecordId: appt.recordId, durationMin: appointmentMinutes(appt) });
     }
 
@@ -1894,6 +1903,16 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         if (locked || !p.config.rules.allow_reschedule) {
             throw new ForbiddenException({ code: 'booking_locked', message: locked ?? 'Esta agenda no permite reprogramar en línea. Comunícate con la empresa.', data: { status: 403 } });
         }
+        // Una cita que espera el pago no se reprograma: pasaría a «Reprogramada»
+        // (activa, con evento y videollamada) sin haber pagado, y la revisión de
+        // pagos vencidos ya no la soltaría. Sólo las activas o por confirmar.
+        if (!isReschedulable(appt.status)) {
+            throw new ForbiddenException({
+                code: 'booking_locked',
+                message: appt.status === 'unpaid' ? 'Esta cita está esperando el pago: complétalo para poder cambiarla.' : 'Esta cita no se puede reprogramar.',
+                data: { status: 403 },
+            });
+        }
         const service = this.availability.service(p.config, appt.serviceId);
         const start = new Date(input.start);
         if (Number.isNaN(start.getTime())) throw badRequest('booking_invalid', 'Elige un horario.');
@@ -1954,7 +1973,15 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                         updatedAt: new Date(),
                         ...(input.time_zone && isValidTimeZone(input.time_zone) ? { clientTz: input.time_zone } : {}),
                     })
-                    .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id), eq(bookingAppointments.manageVersion, appt.manageVersion)))
+                    .where(
+                        and(
+                            eq(bookingAppointments.tenantId, p.tenantId),
+                            eq(bookingAppointments.id, appt.id),
+                            eq(bookingAppointments.manageVersion, appt.manageVersion),
+                            // El estado no cambió mientras tanto (ni pasó a esperar el pago, cancelada…).
+                            eq(bookingAppointments.status, appt.status),
+                        ),
+                    )
                     .returning();
                 // Otro cambio entró un segundo antes con el mismo enlace: éste ya no vale.
                 if (!row) throw new ForbiddenException({ code: 'booking_locked', message: 'La cita cambió mientras elegías. Recarga la página.', data: { status: 403 } });
@@ -2815,6 +2842,42 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         this.listsWithPages.delete(tenantId);
     }
 
+    /** El acceso VIGENTE de una persona del equipo (rol, rol propio, equipos); null si no es del equipo. */
+    private async deciderOf(tenantId: number, userId: number): Promise<BookingDecider | null> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({
+                    role: memberships.role,
+                    teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${memberships.userId} AND tm.tenant_id = ${memberships.tenantId})`,
+                    customRoleId: memberships.customRoleId,
+                    customCaps: customRoles.capabilities,
+                })
+                .from(memberships)
+                .innerJoin(users, eq(users.id, memberships.userId))
+                .leftJoin(customRoles, and(eq(customRoles.id, memberships.customRoleId), eq(customRoles.tenantId, memberships.tenantId)))
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId), isNull(users.disabledAt)))
+                .limit(1),
+        );
+        if (!row || row.role === 'client' || row.role === 'guest') return null;
+        const custom = row.customCaps ? (row.customCaps as string[]) : null;
+        return {
+            userId,
+            role: row.role as Role,
+            teamIds: (row.teamIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0),
+            customRoleId: custom ? row.customRoleId : null,
+            capabilities: effectiveCapabilities(row.role as Role, custom),
+        };
+    }
+
+    /** El estado del registro vuelve a decir el estado REAL de la cita (alguien que no decide lo cambió). */
+    private async restoreStatusField(p: ResolvedPage, appt: BookingAppointmentRow): Promise<void> {
+        const status = statusValueFor(p.config.mapping, appt.status as BookingStatus);
+        if (p.config.mapping.status_field_id === null || !status) return;
+        await this.records
+            .update(p.tenantId, SYSTEM_ACTOR, String(p.listId), appt.recordId, { data: { [jsonbKeyForField(p.config.mapping.status_field_id)]: status } }, { origin: 'booking' })
+            .catch((err: unknown) => this.logger.warn(`no se pudo devolver el estado de la cita ${appt.id}: ${err instanceof Error ? err.message : String(err)}`));
+    }
+
     /**
      * El equipo movió o canceló una cita desde la app (es un registro común):
      * la cita se mantiene al día — recordatorios, evento del calendario, aviso
@@ -2851,6 +2914,28 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                     : new Date(start!.getTime() + (Number.isFinite(durRaw) && durRaw > 0 ? durRaw : (appt.endAt.getTime() - appt.startAt.getTime()) / 60_000) * 60_000);
             return { start: start!, end };
         };
+        // Poner el estado en la ficha DECIDE la cita (aprobar, rechazar, darla por
+        // pagada, revivir una rechazada): vale lo mismo que el botón de la ficha,
+        // así que exige lo mismo — ser de quienes aprueban (`canDecide`). Quien
+        // sólo puede editar el registro (un agente, un invitado con «editar», el
+        // cliente desde el portal) no decide: el estado vuelve al real.
+        // Una automatización o el sistema (sin persona) aprueba o rechaza una
+        // «por confirmar» (la configuró quien administra), pero NUNCA da por
+        // pagada una que espera el pago: eso es el pago o «Marcar como pagada».
+        const saidActive = said === 'confirmed' || said === 'rescheduled';
+        const decides =
+            (appt.status === 'unpaid' && saidActive) ||
+            (appt.status === 'pending' && (saidActive || said === 'declined')) ||
+            (appt.status === 'declined' && saidActive);
+        if (decides) {
+            const person = typeof c.actorId === 'number' && c.actorId > 0 && !c.viaPortal ? await this.deciderOf(c.tenantId, c.actorId) : null;
+            const bySystem = !c.viaPortal && !(typeof c.actorId === 'number' && c.actorId > 0);
+            const allowed = !p.readOnly && (bySystem ? appt.status !== 'unpaid' : person !== null && this.canDecide(person, p, appt));
+            if (!allowed) {
+                await this.restoreStatusField(p, appt);
+                return;
+            }
+        }
         // v0.1.387 — Esperando el pago: el equipo la confirma a mano (pagó por otro medio).
         if (appt.status === 'unpaid' && !p.readOnly && (said === 'confirmed' || said === 'rescheduled')) {
             const row = await this.confirmUnpaid(p, appt, { by: c.actorId ?? null, recordDone: true });

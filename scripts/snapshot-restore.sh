@@ -95,35 +95,37 @@ PARTS="$(find "$WORK" -mindepth 1 -maxdepth 1 -type d -name 'imagina-snapshot-*'
 [[ -n "$PARTS" && -f "$PARTS/manifest.json" ]] || { echo "✗ el archivo no es un snapshot de Imagina Base (falta manifest.json)" >&2; exit 1; }
 ( cd "$PARTS" && sha256sum --quiet -c checksums.sha256 ) || { echo "✗ checksums NO coinciden: snapshot corrupto o alterado" >&2; exit 1; }
 
-# SEC-37 (v0.1.239): el .env del snapshot NUNCA trae variables que cambian
-# cómo arranca el proceso. Lo carga systemd para el API y este mismo script
-# para conectarse: un `NODE_OPTIONS=--require /tmp/x.js`, un `LD_PRELOAD` o un
-# `HTTPS_PROXY` metido en un snapshot ajeno (el que te pasa un proveedor al
-# migrar) ejecutaría código o desviaría todo el tráfico saliente. La app no
-# usa ninguna de éstas; se descartan avisando cuáles.
-ENV_DENY_RE='^(NODE_OPTIONS|NODE_PATH|NODE_EXTRA_CA_CERTS|NODE_TLS_REJECT_UNAUTHORIZED|NODE_REPL_EXTERNAL_MODULE|LD_[A-Z_]+|DYLD_[A-Z_]+|PATH|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|IFS|GCONV_PATH|PERL5OPT|PERL5LIB|PYTHONPATH|PYTHONSTARTUP|RUBYOPT|npm_config_[A-Za-z_]+|NPM_CONFIG_[A-Z_]+|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY|http_proxy|https_proxy|all_proxy|no_proxy|SSL_CERT_FILE|SSL_CERT_DIR|OPENSSL_CONF|SYSTEMD_[A-Z_]+)$'
+# SEC-37 (v0.1.239, reforzado): el .env del snapshot sólo trae CONFIGURACIÓN
+# DE LA APP. Lo carga systemd para el API y este mismo script para conectarse:
+# en un snapshot ajeno (el que te pasa un proveedor al migrar) un
+# `NODE_OPTIONS=--require /tmp/x.js`, un `MIGRATE_CMD=…` (este script lo
+# ejecuta) o un `BACKUPS_SCRIPTS_DIR=…` correrían código en este servidor. El
+# filtro es una lista de PERMITIDAS, compartida con bootstrap-server.sh y
+# recover-from-snapshot.sh (deploy/snapshot-env-filter.sh); lo demás se
+# descarta avisando qué.
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILTER="$SELF_DIR/snapshot-env-filter.sh"
+[[ -f "$ENV_FILTER" ]] || ENV_FILTER="$SELF_DIR/../deploy/snapshot-env-filter.sh"
+[[ -f "$ENV_FILTER" ]] || { echo "✗ falta snapshot-env-filter.sh junto a este script: no se restaura sin el filtro del .env" >&2; exit 1; }
+# shellcheck source=../deploy/snapshot-env-filter.sh
+source "$ENV_FILTER"
 if [[ -f "$PARTS/env.production" ]]; then
-    dropped=""
-    clean="$PARTS/env.production.clean"
-    : > "$clean"
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        if [[ "${line%$'\r'}" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*= ]]; then
-            envkey="${BASH_REMATCH[2]}"
-            if [[ "$envkey" =~ $ENV_DENY_RE ]]; then
-                dropped="$dropped $envkey"
-                continue
-            fi
-        fi
-        printf '%s\n' "$line" >> "$clean"
-    done < "$PARTS/env.production"
-    mv "$clean" "$PARTS/env.production"
-    if [[ -n "$dropped" ]]; then
-        echo "  ⚠ env del snapshot: se descartaron variables que no son de la app:$dropped" >&2
+    filter_snapshot_env "$PARTS/env.production" "$PARTS/env.production"
+    if [[ -n "$SNAPSHOT_ENV_DROPPED" ]]; then
+        echo "  ⚠ env del snapshot: se descartaron variables que no son de la app:$SNAPSHOT_ENV_DROPPED" >&2
+    fi
+    if [[ -n "$SNAPSHOT_ENV_WARNED" ]]; then
+        echo "  ⚠ env del snapshot: revisa estas variables, permiten conexiones a la red interna:$SNAPSHOT_ENV_WARNED" >&2
     fi
 fi
 
 manifest() { node -e 'const m=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const v=process.argv[2].split(".").reduce((o,k)=>o?.[k],m);process.stdout.write(v===undefined||v===null?"":String(v))' "$PARTS/manifest.json" "$1"; }
 SNAP_VERSION="$(manifest app_version)"
+# La versión va a comparaciones y mensajes (y, en bootstrap, a una URL y una
+# ruta): sólo x.y.z o "dev".
+if [[ "$SNAP_VERSION" != "dev" ]] && ! is_snapshot_version "$SNAP_VERSION"; then
+    echo "✗ el snapshot trae una versión inválida en su manifest: no se restaura" >&2; exit 1
+fi
 SNAP_DATE="$(manifest created_at)"
 SNAP_MIGR="$(manifest migrations_applied)"
 HAS_UPLOADS="$(manifest includes.uploads)"
@@ -144,6 +146,10 @@ load_env_file() {
         line="${line%$'\r'}"
         [[ "$line" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*)$ ]] || continue
         key="${BASH_REMATCH[2]}"; val="${BASH_REMATCH[3]}"
+        # Lo que este script ejecuta (STOP_CMD / START_CMD / MIGRATE_CMD) y lo
+        # que cambia cómo arranca un proceso nunca sale de un archivo .env:
+        # sólo del entorno de quien llama.
+        [[ "$key" =~ $SNAPSHOT_ENV_NEVER_LOAD_RE ]] && continue
         val="${val#"${val%%[![:space:]]*}"}"
         if [[ "$val" =~ ^\"(.*)\"[[:space:]]*$ ]]; then val="${BASH_REMATCH[1]}"
         elif [[ "$val" =~ ^\'(.*)\'[[:space:]]*$ ]]; then val="${BASH_REMATCH[1]}"
@@ -279,6 +285,11 @@ if [[ "$HAS_UPLOADS" == "true" && $SKIP_UPLOADS -eq 0 && -n "$UPLOADS_DIR" && -f
         mv "$UPLOADS_DIR" "$UPLOADS_DIR.pre-restore-$STAMP"
         echo "  · los uploads actuales quedaron en $UPLOADS_DIR.pre-restore-$STAMP"
     fi
+    # Los uploads son archivos y carpetas: un enlace o un archivo especial
+    # dentro del tar no es de la app (podría escribir fuera de la carpeta).
+    if tar -tvzf "$PARTS/uploads.tar.gz" | grep -qE '^[^d-]'; then
+        echo "✗ uploads.tar.gz trae enlaces o archivos especiales: no se extrae" >&2; exit 1
+    fi
     mkdir -p "$UPLOADS_DIR"
     tar -C "$UPLOADS_DIR" -xzf "$PARTS/uploads.tar.gz"
     echo "  ✓ uploads restaurados ($(find "$UPLOADS_DIR" -type f | wc -l) archivos)"
@@ -301,10 +312,15 @@ if [[ "$HAS_ENV" == "true" && $SKIP_ENV -eq 0 && -n "$ENV_FILE" && -f "$PARTS/en
         echo "→ env: instalando $ENV_FILE (servidor nuevo)"
         mkdir -p "$(dirname "$ENV_FILE")"
         cp "$PARTS/env.production" "$ENV_FILE"; chmod 600 "$ENV_FILE"
+        # El layout es de ESTE servidor (no viaja en el snapshot).
+        if [[ -n "$BASE_PATH" ]]; then printf '\n# — de este servidor —\nUPDATER_BASE_PATH=%s\n' "$BASE_PATH" >> "$ENV_FILE"; fi
     elif [[ $APPLY_ENV -eq 1 ]]; then
         echo "→ env: reemplazando $ENV_FILE (el anterior queda en $ENV_FILE.pre-restore-$STAMP)"
         cp "$ENV_FILE" "$ENV_FILE.pre-restore-$STAMP"
         cp "$PARTS/env.production" "$ENV_FILE"; chmod 600 "$ENV_FILE"
+        # Lo que es de ESTE servidor (rutas, contenedor, de dónde se actualiza)
+        # no viaja en el snapshot: se conserva del env anterior.
+        append_local_env "$ENV_FILE.pre-restore-$STAMP" "$ENV_FILE"
     else
         differs=0
         for k in SECRETS_KEY FILES_SIGNING_SECRET; do

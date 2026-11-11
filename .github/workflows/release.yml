@@ -293,7 +293,7 @@ jobs:
           cp deploy/docker-compose.prod.yml deploy/.env.production.example \
              deploy/nginx.conf deploy/imagina-api.service "$OUT/deploy/"
           # v0.1.283 — servidor nuevo en un comando + recuperación desde el Drive (ADR-S43)
-          cp deploy/install.sh deploy/recover-from-snapshot.sh deploy/Caddyfile "$OUT/deploy/"
+          cp deploy/install.sh deploy/recover-from-snapshot.sh deploy/snapshot-env-filter.sh deploy/Caddyfile "$OUT/deploy/"
           chmod +x "$OUT"/deploy/*.sh
           # install.sh también va suelto en el release: es lo que se baja con
           #   curl -fsSL https://github.com/<repo>/releases/latest/download/install.sh | sudo bash

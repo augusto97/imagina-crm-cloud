@@ -258,6 +258,8 @@ export default defineConfig({
             '/socket.io': {
                 target: process.env.API_URL ?? 'http://localhost:3001',
                 changeOrigin: true,
+                // El API compara el Origin del handshake con el host público.
+                xfwd: true,
                 ws: true,
             },
         },

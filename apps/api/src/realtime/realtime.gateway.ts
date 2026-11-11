@@ -12,6 +12,8 @@ import type { Server, Socket } from 'socket.io';
 import { SESSION_COOKIE } from '../auth/session.guard';
 import { SessionService } from '../auth/session.service';
 import { DRIZZLE, type Db } from '../db/client';
+import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
+import { isAllowedSocketOrigin, ownOriginOf } from '../common/cross-site';
 import { memberships, users } from '../db/schema';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { RealtimeService, tenantRoom, userRoom } from './realtime.service';
@@ -50,11 +52,28 @@ const wsAllowedOrigins = (process.env.WS_ALLOWED_ORIGINS ?? '')
  * si el usuario tiene membership — así un socket jamás recibe eventos de un
  * workspace ajeno (defensa análoga a la RLS del lado HTTP).
  */
-@WebSocketGateway(
-    wsAllowedOrigins.length > 0
-        ? { cors: { origin: wsAllowedOrigins, credentials: true } }
-        : {},
-)
+/**
+ * El handshake de un navegador trae `Origin`: tiene que ser el del propio
+ * pedido (el Host que pasa el proxy), el de `APP_BASE_URL` o uno declarado.
+ * CORS no alcanza para un WebSocket (el navegador no lo aplica al upgrade) y
+ * la cookie `SameSite=Lax` viaja desde un subdominio hermano: sin esto, otra
+ * app del mismo dominio podía abrir un socket con la sesión de la persona.
+ */
+const wsAppOrigin = ownOriginOf(process.env.APP_BASE_URL ?? 'http://localhost:5174');
+const firstHeader = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v)?.split(',')[0]?.trim() || undefined;
+export function socketHandshakeAllowed(headers: IncomingHttpHeaders, opts: { allowedOrigins?: readonly string[]; appOrigin?: string } = {}): boolean {
+    const origin = firstHeader(headers.origin);
+    const hosts = [firstHeader(headers.host), firstHeader(headers['x-forwarded-host'])].filter((h): h is string => !!h);
+    if (hosts.length === 0) hosts.push('');
+    return hosts.some((host) => isAllowedSocketOrigin({ host, origin, allowedOrigins: opts.allowedOrigins, appOrigin: opts.appOrigin }));
+}
+
+@WebSocketGateway({
+    ...(wsAllowedOrigins.length > 0 ? { cors: { origin: wsAllowedOrigins, credentials: true } } : {}),
+    allowRequest: (req: IncomingMessage, callback: (err: string | null | undefined, success: boolean) => void) => {
+        callback(null, socketHandshakeAllowed(req.headers, { allowedOrigins: wsAllowedOrigins, appOrigin: wsAppOrigin }));
+    },
+})
 export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnApplicationShutdown {
     private readonly logger = new Logger(RealtimeGateway.name);
     private sweeper: NodeJS.Timeout | null = null;

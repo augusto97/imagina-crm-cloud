@@ -6,6 +6,7 @@
  * CSS + un cliente mínimo que consume los endpoints JSON públicos y renderiza
  * la tabla con búsqueda, orden por columna y paginación.
  */
+import { formFrameAncestors } from '../forms/form-page';
 
 function escapeHtml(input: string): string {
     return input
@@ -16,24 +17,18 @@ function escapeHtml(input: string): string {
         .replace(/'/g, '&#39;');
 }
 
-/** Construye la directiva CSP `frame-ancestors` desde los dominios permitidos. */
+/**
+ * Construye la directiva CSP `frame-ancestors` desde los dominios permitidos.
+ * Usa el MISMO saneo que formularios y agenda (`formFrameAncestors`): sólo
+ * hosts u orígenes bien formados; un valor guardado que no lo sea (texto con
+ * espacios, `;`, otra directiva) se descarta en vez de viajar a la cabecera.
+ */
 export function frameAncestors(domains: string[]): string {
-    const sources = domains
-        .map((d) => d.trim())
-        .filter(Boolean)
-        .map((d) => {
-            if (d.includes('://')) {
-                try {
-                    return new URL(d).origin;
-                } catch {
-                    return null;
-                }
-            }
-            return d; // host-source: `example.com` o `*.example.com`
-        })
-        .filter((s): s is string => !!s);
+    const asked = (Array.isArray(domains) ? domains : []).filter((d): d is string => typeof d === 'string' && d.trim() !== '');
     // Sin dominios → cualquiera puede embeber. Con dominios → solo esos + self.
-    return sources.length === 0 ? 'frame-ancestors *' : `frame-ancestors 'self' ${sources.join(' ')}`;
+    const sources = formFrameAncestors(asked);
+    // Había dominios pero ninguno válido: NO se abre a cualquiera (sólo la propia app).
+    return `frame-ancestors ${asked.length > 0 && sources === '*' ? "'self'" : sources}`;
 }
 
 /**

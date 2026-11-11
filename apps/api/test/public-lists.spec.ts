@@ -20,6 +20,7 @@ import { ActivityService } from '../src/activity/activity.service';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
 import { PublicListsService, isExpired } from '../src/public-lists/public-lists.service';
+import { updatePublicListSchema } from '@imagina-base/shared';
 import { frameAncestors, publicListPageCsp, publicListUnavailablePage, renderPublicListPage } from '../src/public-lists/public-page';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
@@ -422,5 +423,20 @@ describe('Listas públicas embebibles', () => {
         expect(frameAncestors(['example.com', 'https://foo.com/path'])).toBe(
             "frame-ancestors 'self' example.com https://foo.com",
         );
+    });
+
+    it('seguridad: un dominio guardado que no es un dominio no llega a la cabecera CSP, y al guardar se rechaza', () => {
+        // Lo ya guardado (antes no se validaba): se descarta lo que no es un host u origen.
+        const csp = publicListPageCsp('n0nce', ["acme.com; script-src-elem 'unsafe-inline' *", 'ok.com', 'x\r\nSet-Cookie: a=b', '*.acme.com']);
+        expect(csp).toContain("frame-ancestors 'self' ok.com *.acme.com");
+        expect(csp).not.toContain('script-src-elem');
+        expect(csp).not.toContain('Set-Cookie');
+        expect(csp).not.toMatch(/[\r\n]/);
+        // Si NINGUNO sirve, no se abre a cualquiera.
+        expect(frameAncestors(['no es un dominio; x'])).toBe("frame-ancestors 'self'");
+        // Al guardar, el esquema del PATCH lo rechaza; los válidos pasan.
+        expect(updatePublicListSchema.safeParse({ allowed_domains: ["acme.com; script-src *"] }).success).toBe(false);
+        expect(updatePublicListSchema.safeParse({ allowed_domains: ['acme.com', '*.acme.com', 'https://www.acme.com'] }).success).toBe(true);
+        expect(updatePublicListSchema.safeParse({ enabled: true }).success).toBe(true);
     });
 });
