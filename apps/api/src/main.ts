@@ -147,7 +147,7 @@ async function bootstrap(): Promise<void> {
             return;
         }
         // Las consolas del operador sólo reciben JSON (o un archivo): un cuerpo de `<form>` no es de la app.
-        if (isFormBodyOnOperatorRoute({ method: req.method, path: pathOf(req.url), contentType: header('content-type') })) {
+        if (isFormBodyOnOperatorRoute({ method: req.method, path: routePath(req), contentType: header('content-type') })) {
             void reply.code(415).send({
                 code: 'unsupported_body',
                 message: 'Este pedido sólo se acepta como JSON.',
