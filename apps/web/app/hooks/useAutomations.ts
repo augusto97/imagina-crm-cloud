@@ -1,6 +1,13 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import type { AutomationTestRunInput, AutomationTestRunResult, AutomationVersion } from '@imagina-base/shared';
+import { folderKey } from '@imagina-base/shared';
+import type {
+    AutomationFolderOp,
+    AutomationFolders,
+    AutomationTestRunInput,
+    AutomationTestRunResult,
+    AutomationVersion,
+} from '@imagina-base/shared';
 
 import { api } from '@/lib/api';
 import { invalidateForList } from '@/hooks/useRecords';
@@ -258,5 +265,76 @@ export function useClearHookSecret(automationId: number | undefined) {
         onSuccess: () => {
             qc.setQueryData([...automationsKeys.all, 'hook-secret', String(automationId ?? 0)], { enabled: false, hint: null });
         },
+    });
+}
+
+/**
+ * v0.1.411 — Carpetas del índice de automatizaciones de una lista (en su
+ * orden). La clave cuelga de `forList` → `invalidateForList` también las
+ * refresca.
+ */
+export function useAutomationFolders(listId: string | number | undefined) {
+    return useQuery({
+        queryKey: [...automationsKeys.forList(listId ?? ''), 'folders'] as const,
+        queryFn: async () => {
+            const res = await api.get<AutomationFolders>(`/lists/${listId}/automations/folders`);
+            return res.data.folders;
+        },
+        enabled: listId !== undefined && listId !== '',
+        staleTime: 60_000,
+    });
+}
+
+/** Crear, renombrar, borrar u ordenar carpetas. */
+export function useAutomationFolderOp(listId: string | number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (op: AutomationFolderOp) => {
+            const res = await api.post<AutomationFolders>(`/lists/${listId}/automations/folders`, op);
+            return res.data.folders;
+        },
+        onMutate: (op) => {
+            // El orden se ve al instante; el resto espera la respuesta (puede fallar por un nombre repetido).
+            if (op.op !== 'reorder') return;
+            qc.setQueryData<string[]>([...automationsKeys.forList(listId), 'folders'], (old) => {
+                if (!old) return old;
+                const map = new Map(old.map((f) => [folderKey(f), f]));
+                const out = op.order.map((n) => map.get(folderKey(n))).filter((f): f is string => f !== undefined);
+                return [...out, ...old.filter((f) => !out.includes(f))];
+            });
+        },
+        onSuccess: (folders) => {
+            qc.setQueryData([...automationsKeys.forList(listId), 'folders'], folders);
+            invalidateForList(qc, automationsKeys.all, listId);
+        },
+        onError: () => invalidateForList(qc, automationsKeys.all, listId),
+    });
+}
+
+/** Mover una o varias a una carpeta (null = sin carpeta). Optimista. */
+export function useMoveAutomations(listId: string | number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (input: { ids: number[]; folder: string | null }) => {
+            const res = await api.post<AutomationFolders & { moved: number }>(`/lists/${listId}/automations/move`, input);
+            return res.data;
+        },
+        onMutate: async (input) => {
+            const key = automationsKeys.forList(listId);
+            await qc.cancelQueries({ queryKey: key, exact: true });
+            const prev = qc.getQueryData<AutomationEntity[]>(key);
+            const folders = qc.getQueryData<string[]>([...key, 'folders']) ?? [];
+            const name = input.folder === null ? null : (folders.find((f) => folderKey(f) === folderKey(input.folder!)) ?? input.folder.trim());
+            const ids = new Set(input.ids);
+            qc.setQueryData<AutomationEntity[]>(key, (old) => old?.map((a) => (ids.has(a.id) ? { ...a, folder: name } : a)));
+            return { prev };
+        },
+        onError: (_err, _input, ctx) => {
+            if (ctx?.prev) qc.setQueryData(automationsKeys.forList(listId), ctx.prev);
+        },
+        onSuccess: (data) => {
+            qc.setQueryData([...automationsKeys.forList(listId), 'folders'], data.folders);
+        },
+        onSettled: () => invalidateForList(qc, automationsKeys.all, listId),
     });
 }

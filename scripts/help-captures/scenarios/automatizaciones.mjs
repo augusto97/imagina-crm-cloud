@@ -68,9 +68,25 @@ export default [
         steps: [
             { go: '/lists/{list:Facturas}/records', wait: '[data-tour="records-table"]', caption: 'Las automatizaciones viven dentro de cada lista. Abre la lista, por ejemplo «Facturas».' },
             { click: '[data-tour="records-automations"]', then: '[data-tour="automations-new"]', caption: 'Arriba, junto al nombre de la lista, toca «Automatizaciones».' },
-            { shot: '[data-tour="automations-new"]', caption: 'Aquí ves todas las de esta lista con su interruptor de activa o pausada. Para crear una: «Desde plantilla» o «En blanco».' },
-            { click: '[role="button"]:has-text("Marcar vencida")', then: '[data-tour="automation-trigger"]', caption: 'Toca una tarjeta para abrirla en el editor.' },
+            { shot: '[data-testid="automations-index"]', caption: 'Aquí ves todas las de esta lista, una por fila: su interruptor, qué la dispara y qué hace, y cuándo corrió por última vez. Para crear una: «Desde plantilla» o «En blanco».' },
+            { click: '[role="button"]:has-text("Marcar vencida")', then: '[data-tour="automation-trigger"]', caption: 'Toca una automatización para abrirla en el editor.' },
             { shot: '[data-tour="automation-trigger"]', caption: 'Cada automatización se lee de arriba abajo: «Cuando» pasa algo y después sus pasos.' },
+        ],
+    },
+    {
+        key: 'auto-carpetas',
+        title: 'Ordenar las automatizaciones en carpetas',
+        steps: [
+            { go: '/lists/{list:Facturas}/automations', wait: '[data-testid="automations-index"]', caption: 'Con muchas automatizaciones en una lista, ordénalas en carpetas.' },
+            { click: '[data-testid="automations-new-folder"]', then: '[data-testid="automation-folder-dialog"]', caption: 'Toca «Nueva carpeta».' },
+            { fill: '[data-testid="automation-folder-name"]', text: 'Cobros', caption: 'Ponle un nombre: «Cobros», «Avisos al equipo», «WhatsApp»…' },
+            { click: '[data-testid="automation-folder-save"]', then: '[data-testid="automation-section-header"]', caption: 'Toca «Crear carpeta».' },
+            {
+                drag: ['[data-testid="automation-row"]', '[data-key="folder:cobros"] [data-testid="automation-section-header"]'],
+                caption: 'Arrástrala hasta la carpeta. También puedes usar su menú «…» → «Mover a carpeta», o marcar varias y moverlas juntas.',
+            },
+            { wait: '[data-key="folder:cobros"] [data-testid="automation-row"]' },
+            { shot: '[data-testid="automations-sections"]', caption: 'Cada carpeta muestra cuántas tiene, cuántas están activas y si alguna falló. Tócala para plegarla.' },
         ],
     },
     {

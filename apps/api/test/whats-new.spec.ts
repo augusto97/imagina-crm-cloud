@@ -135,6 +135,20 @@ describe('Novedades (Postgres real)', () => {
     let pg: TestPg;
     let sync: WhatsNewSyncService;
     let svc: WhatsNewService;
+    /**
+     * El feed completo, recorriendo sus páginas: el catálogo crece con cada
+     * versión y una sola página de 100 deja afuera a las más viejas.
+     */
+    const fullFeed = async (v: Parameters<WhatsNewService['feed']>[0], q: Partial<Parameters<WhatsNewService['feed']>[1]> = {}) => {
+        const first = await svc.feed(v, { limit: 100, ...q } as Parameters<WhatsNewService['feed']>[1]);
+        const items = [...first.items];
+        let page = first;
+        while (page.has_more && page.next_before) {
+            page = await svc.feed(v, { limit: 100, ...q, before: page.next_before } as Parameters<WhatsNewService['feed']>[1]);
+            items.push(...page.items);
+        }
+        return { ...first, items };
+    };
     let admin: WhatsNewAdminService;
     let uploads: string;
     let tenantId: number;
@@ -187,14 +201,14 @@ describe('Novedades (Postgres real)', () => {
     });
 
     it('quien ya tenía cuenta ve como nuevo lo que llegó; quien llegó después, no; cada rol ve lo suyo', async () => {
-        const adminFeed = await svc.feed(viewer(oldAdmin, 'admin'), { limit: 100 });
+        const adminFeed = await fullFeed(viewer(oldAdmin, 'admin'));
         expect(adminFeed.items).toHaveLength(WHATS_NEW_CATALOG.length);
         expect(adminFeed.unseen_count).toBe(FIRST_ARRIVAL_NEW);
         expect(adminFeed.items.filter((i) => i.is_new)).toHaveLength(FIRST_ARRIVAL_NEW);
         // La destacada: la más reciente de las anunciadas que el rol puede ver.
         expect(adminFeed.featured?.key ?? null).toBe(firstArrivalFeaturedFor('admin'));
 
-        const agentFeed = await svc.feed(viewer(oldAgent, 'agent'), { limit: 100 });
+        const agentFeed = await fullFeed(viewer(oldAgent, 'agent'));
         // Un agente no ve lo que sólo configura un admin.
         expect(agentFeed.items.some((i) => i.key === 'v0.1.317-agentes-ia')).toBe(false);
         expect(agentFeed.items.every((i) => i.key !== 'v0.1.304-formulas-y-botones')).toBe(true);
@@ -202,14 +216,14 @@ describe('Novedades (Postgres real)', () => {
         expect(agentFeed.featured?.key ?? null).toBe(firstArrivalFeaturedFor('agent'));
 
         // Un invitado no ve funciones nuevas (sólo avisos).
-        const guestFeed = await svc.feed(viewer(guest, 'guest'), { limit: 100 });
+        const guestFeed = await fullFeed(viewer(guest, 'guest'));
         expect(guestFeed).toMatchObject({ items: [], unseen_count: 0, featured: null });
 
         // Alguien que se da de alta después: todo es historial.
         const [u] = await pg.db.insert(users).values({ email: 'nueva@nov.test', passwordHash: 'x', name: 'Nueva', createdAt: daysAgo(8) }).returning();
         lateUser = u!.id;
         await pg.db.insert(memberships).values({ userId: lateUser, tenantId, role: 'admin' });
-        const lateFeed = await svc.feed(viewer(lateUser, 'admin'), { limit: 100 });
+        const lateFeed = await fullFeed(viewer(lateUser, 'admin'));
         expect(lateFeed.items).toHaveLength(WHATS_NEW_CATALOG.length);
         expect(lateFeed.unseen_count).toBe(0);
         expect(lateFeed.featured).toBeNull();
@@ -221,7 +235,7 @@ describe('Novedades (Postgres real)', () => {
         expect(res).toMatchObject({ inserted: 1, announced: ['v9.0.0-prueba'] });
         const feed = await svc.feed(viewer(lateUser, 'admin'), { limit: 5 });
         // La fecha que se muestra es la de la versión; «nueva» cuenta desde que llegó.
-        const item = feed.items.find((i) => i.key === 'v9.0.0-prueba') ?? (await svc.feed(viewer(lateUser, 'admin'), { limit: 100 })).items.find((i) => i.key === 'v9.0.0-prueba');
+        const item = feed.items.find((i) => i.key === 'v9.0.0-prueba') ?? (await fullFeed(viewer(lateUser, 'admin'))).items.find((i) => i.key === 'v9.0.0-prueba');
         expect(item?.is_new).toBe(true);
         expect(item?.published_at.startsWith('2026-01-15')).toBe(true);
         expect(feed.unseen_count).toBe(1);
@@ -233,22 +247,22 @@ describe('Novedades (Postgres real)', () => {
         expect(p1.has_more).toBe(true);
         const p2 = await svc.feed(viewer(oldAdmin, 'admin'), { limit: 5, before: p1.next_before! });
         expect(p2.items.map((i) => i.id).some((id) => p1.items.some((x) => x.id === id))).toBe(false);
-        const fixes = await svc.feed(viewer(oldAdmin, 'admin'), { limit: 100, kind: 'improvement' });
+        const fixes = await fullFeed(viewer(oldAdmin, 'admin'), { kind: 'improvement' });
         expect(fixes.items.every((i) => i.kind === 'improvement')).toBe(true);
     });
 
     it('marcar como visto: sólo lo suyo, y no mientras el operador mira como la persona', async () => {
-        const before = await svc.feed(viewer(oldAdmin, 'admin'), { limit: 100 });
+        const before = await fullFeed(viewer(oldAdmin, 'admin'));
         const first = before.items.find((i) => i.is_new)!;
         // Impersonando: no se escribe nada.
         await svc.markSeen(viewer(oldAdmin, 'admin', tenantId, true), { ids: [first.id] });
         await svc.event(viewer(oldAdmin, 'admin', tenantId, true), first.id, 'clicked');
-        expect((await svc.feed(viewer(oldAdmin, 'admin'), { limit: 100 })).unseen_count).toBe(before.unseen_count);
+        expect((await fullFeed(viewer(oldAdmin, 'admin'))).unseen_count).toBe(before.unseen_count);
 
         const r = await svc.markSeen(viewer(oldAdmin, 'admin'), { ids: [first.id] });
         expect(r.unseen_count).toBe(before.unseen_count - 1);
         // Otra persona no cambia (las suyas de la primera llegada + la de la actualización).
-        expect((await svc.feed(viewer(oldAgent, 'agent'), { limit: 100 })).unseen_count).toBe(firstArrivalUnseenFor('agent') + 1);
+        expect((await fullFeed(viewer(oldAgent, 'agent'))).unseen_count).toBe(firstArrivalUnseenFor('agent') + 1);
 
         // RLS: dentro del scope de otra persona no se ven ni se escriben sus filas.
         const visibleToAgent = await withUser(pg.db, oldAgent, (tx) => tx.select().from(whatsNewViews));
@@ -311,9 +325,9 @@ describe('Novedades (Postgres real)', () => {
         // Un aviso nunca es destacado (va en la franja).
         expect(notice.featured).toBe(false);
         // Lo que publica el operador no es «nuevo» para él mismo.
-        const own = await svc.feed(viewer(operator, 'admin'), { limit: 100 });
+        const own = await fullFeed(viewer(operator, 'admin'));
         expect(own.items.find((i) => i.id === notice.id)?.is_new).toBe(false);
-        expect((await svc.feed(viewer(oldAdmin, 'admin'), { limit: 100 })).items.find((i) => i.id === notice.id)?.is_new).toBe(true);
+        expect((await fullFeed(viewer(oldAdmin, 'admin'))).items.find((i) => i.id === notice.id)?.is_new).toBe(true);
         const g = await svc.feed(viewer(guest, 'guest'), { limit: 10 });
         expect(g.notices.map((n) => n.id)).toEqual([notice.id]);
         expect(g.items.map((n) => n.id)).toEqual([notice.id]);
@@ -324,7 +338,7 @@ describe('Novedades (Postgres real)', () => {
 
         // Vencido: desaparece de la franja y del panel.
         await pg.db.update(whatsNewEntries).set({ expiresAt: daysAgo(1), publishedAt: daysAgo(2) }).where(eq(whatsNewEntries.id, notice.id));
-        const expired = await svc.feed(viewer(oldAdmin, 'admin'), { limit: 100 });
+        const expired = await fullFeed(viewer(oldAdmin, 'admin'));
         expect(expired.notices).toHaveLength(0);
         expect(expired.items.some((i) => i.id === notice.id)).toBe(false);
 
@@ -349,8 +363,8 @@ describe('Novedades (Postgres real)', () => {
             operator,
         );
         expect((await svc.feed(viewer(oldAdmin, 'admin'), { limit: 3 })).items[0]?.id).toBe(pro.id);
-        expect((await svc.feed(viewer(oldAgent, 'agent'), { limit: 100 })).items.some((i) => i.id === pro.id)).toBe(false);
-        expect((await svc.feed(viewer(oldAdmin, 'admin', trialTenant), { limit: 100 })).items.some((i) => i.id === pro.id)).toBe(false);
+        expect((await fullFeed(viewer(oldAgent, 'agent'))).items.some((i) => i.id === pro.id)).toBe(false);
+        expect((await fullFeed(viewer(oldAdmin, 'admin', trialTenant))).items.some((i) => i.id === pro.id)).toBe(false);
     });
 
     it('programar: no se ve antes de su fecha; borrador nunca', async () => {
@@ -371,14 +385,14 @@ describe('Novedades (Postgres real)', () => {
         const later = await admin.create({ ...base, status: 'published', publish_at: new Date(Date.now() + DAY).toISOString() }, operator);
         const draft = await admin.create({ ...base, title: 'Borrador', status: 'draft', publish_at: null }, operator);
         expect(draft.published_at).toBeNull();
-        let feed = await svc.feed(viewer(oldAgent, 'agent'), { limit: 100 });
+        let feed = await fullFeed(viewer(oldAgent, 'agent'));
         expect(feed.items.some((i) => i.id === later.id || i.id === draft.id)).toBe(false);
         // Se adelanta la fecha: aparece y es nueva para quien ya tenía cuenta.
         await admin.update(later.id, { publish_at: daysAgo(0.01).toISOString() }, operator);
         // Publicar el borrador: toma la fecha de ahora.
         const published = await admin.update(draft.id, { status: 'published' }, operator);
         expect(published.published_at).not.toBeNull();
-        feed = await svc.feed(viewer(oldAgent, 'agent'), { limit: 100 });
+        feed = await fullFeed(viewer(oldAgent, 'agent'));
         const both = feed.items.filter((i) => i.id === later.id || i.id === draft.id);
         expect(both).toHaveLength(2);
         expect(both.every((i) => i.is_new)).toBe(true);
@@ -408,14 +422,14 @@ describe('Novedades (Postgres real)', () => {
         const hidden = await admin.update(row!.id, { status: 'hidden' }, operator);
         expect(hidden).toMatchObject({ status: 'hidden', edited: false });
         await sync.sync(WHATS_NEW_CATALOG, daysAgo(1));
-        expect((await svc.feed(viewer(oldAdmin, 'admin'), { limit: 100 })).items.some((i) => i.id === row!.id)).toBe(false);
+        expect((await fullFeed(viewer(oldAdmin, 'admin'))).items.some((i) => i.id === row!.id)).toBe(false);
         // Una de versión no se borra ni vuelve a borrador.
         await expect(admin.remove(row!.id, operator)).rejects.toThrow();
         await expect(admin.update(row!.id, { status: 'draft' }, operator)).rejects.toThrow();
     });
 
     it('lo visual: viaja en el feed, llega a una editada que nunca lo eligió y respeta lo que quitó el operador', async () => {
-        const feed = await svc.feed(viewer(oldAdmin, 'admin'), { limit: 100 });
+        const feed = await fullFeed(viewer(oldAdmin, 'admin'));
         const kanban = feed.items.find((i) => i.key === 'v0.1.297-kanban-ventas')!;
         expect(kanban.media.slides.length).toBeGreaterThanOrEqual(2);
         const trash = feed.items.find((i) => i.key === 'v0.1.296-papelera');

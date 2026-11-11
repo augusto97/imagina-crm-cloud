@@ -2629,4 +2629,26 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.411-automatizaciones-carpetas',
+        version: '0.1.411',
+        date: '2026-11-11',
+        kind: 'feature',
+        title: 'Tus automatizaciones, ordenadas en carpetas',
+        summary:
+            'La pantalla de automatizaciones de cada lista se rediseñó: una fila por automatización con lo que hace en una línea y cuándo corrió, un buscador, filtros por estado y carpetas para ordenarlas.',
+        media: {
+            illustration: 'auto-flujo',
+            demo: 'auto-carpetas',
+        },
+        body: [
+            'Abre una lista y toca **Automatizaciones**.',
+            '',
+            '- **Nueva carpeta** para crear «Cobros», «Avisos al equipo», «WhatsApp»…',
+            '- Muévelas arrastrándolas, con su menú **«…» → Mover a carpeta**, o marca varias y muévelas juntas.',
+            '- Busca por nombre o por lo que hacen, filtra las **Pausadas** o las **Con fallas** y agrupa por disparador si prefieres.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

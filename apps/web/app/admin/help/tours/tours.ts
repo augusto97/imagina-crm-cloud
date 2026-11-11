@@ -686,6 +686,14 @@ export const TOURS: TourDef[] = [
                 body: 'Cada lista tiene las suyas. Empieza **Desde plantilla** (recetas listas para usar) o **En blanco**.',
             },
             {
+                id: 'folders',
+                target: 'automations-toolbar',
+                art: 'auto-flujo',
+                title: 'Encuéntralas y ordénalas',
+                body: 'Busca por nombre o por lo que hacen, filtra las **Pausadas** o las **Con fallas** y crea **carpetas** para ordenarlas cuando la lista tenga muchas.',
+                mobile: 'skip',
+            },
+            {
                 id: 'ideas',
                 target: 'automations-ideas',
                 art: 'lote-recetas',

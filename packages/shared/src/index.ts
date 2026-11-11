@@ -54,6 +54,7 @@ export * from './schemas/activity';
 export * from './schemas/aggregate';
 export * from './schemas/automation';
 export * from './schemas/automation-flow';
+export * from './schemas/automation-folders';
 export * from './schemas/webhook-record';
 export * from './schemas/dashboard';
 export * from './schemas/dashboard-sharing';

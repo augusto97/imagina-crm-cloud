@@ -415,12 +415,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.410**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.411**
+(**el índice de automatizaciones de una lista rediseñado, con carpetas** — una
+fila compacta por automatización, buscador por nombre o por lo que hace,
+filtros Activas/Pausadas/Con fallas, agrupar por carpeta o disparador, ordenar,
+carpetas que se crean/renombran/ordenan/eliminan, mover arrastrando, por el menú
+o varias juntas, y activar/pausar en lote). Antes **v0.1.410**
 (**«Compartir» de la lista rediseñado** — pestañas Personas / Enlace público,
 un buscador para personas, equipos y correos de afuera, «Quién tiene acceso» en
-una sola lista, la página pública con interruptor; **sigue v0.1.411: el índice
-de automatizaciones de una lista con carpetas y orden**, pedido del usuario
-mientras se hacía esta). Antes **v0.1.409**
+una sola lista, la página pública con interruptor). Antes **v0.1.409**
 (**el widget de contacto más liviano + «dirección rápida» por Cloudflare** —
 estadística por visita, logo al abrir con dirección fija, página guardada 5
 minutos, `embed.js` minificado, y Plataforma → Dominios → «Dirección rápida
@@ -1874,6 +1877,31 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-11 · v0.1.411** — **Automatizaciones en carpetas: el índice de
+  cada lista rediseñado** (pedido del usuario mientras salía v0.1.410: "la vista
+  donde se ven todas las automatizaciones… ordenar por carpetas… una lista con 20
+  automatizaciones se hace difícil de entender cuál es cuál"). **Carpetas por
+  lista**: `automations.folder` (migración 0120 + índice parcial) y el orden en
+  `lists.settings.automation_folders` (así existen vacías); reglas puras en
+  `automation-folders.ts` (shared: nombre ≤60, igualdad sin tildes ni
+  mayúsculas, tope 100, mezcla con las que se usan); `GET/POST
+  /lists/:l/automations/folders` (crear/renombrar/eliminar/ordenar) y `POST
+  …/move` (mover a un nombre nuevo crea la carpeta), con `manage_automations`.
+  Renombrar arrastra a sus automatizaciones, eliminar las deja sin carpeta, y
+  **mover no edita** (ni `updated_at` ni versión). Duplicar conserva la carpeta,
+  migrar una empresa la lleva, `get_list_schema` la muestra. **Índice nuevo**
+  (`AutomationsPage` + `AutomationRow` + `automationIndex.ts` puro): fila
+  compacta (interruptor optimista, qué hace en una línea, «Corrió / Falló
+  hace…», motivo de la falla, menú con «Mover a carpeta ›»), buscador (nombre,
+  carpeta y lo que hace, sin tildes), filtros Todas/Activas/Pausadas/Con fallas,
+  Agrupar (carpeta/disparador/nada) y Ordenar recordados en el dispositivo,
+  secciones plegables con su menú (renombrar en el lugar, subir/bajar,
+  eliminar), selección con Mayús y barra para mover/activar/pausar varias, y
+  arrastrar hasta una carpeta. Ayuda: sección nueva en Aprende con la captura
+  `auto-carpetas` (grabada en local 6/6), guía `automation-folders`, paso del
+  recorrido y novedad. Tests de shared, front y API + E2E 36/36 en escritorio y
+  36/36 en celular oscuro.
 
 - **2026-11-11 · v0.1.410** — **«Compartir» de la lista rediseñado** (pedido
   del usuario con captura: "esta pantalla también deberíamos mejorarla

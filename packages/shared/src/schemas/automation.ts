@@ -142,8 +142,35 @@ export const automationSchema = z.object({
         .optional(),
     /** v0.1.288 — cuántas corridas están en pausa en un «Esperar» (sólo en el listado). */
     waiting_runs: z.number().int().nonnegative().optional(),
+    /** v0.1.411 — la carpeta dentro de su lista; null = sin carpeta. */
+    folder: z.string().nullable().optional(),
 });
 export type Automation = z.infer<typeof automationSchema>;
+
+// --- Carpetas (v0.1.411) ---
+export const AUTOMATION_FOLDER_MAX_LENGTH = 60;
+export const AUTOMATION_FOLDERS_MAX = 100;
+export const automationFolderNameSchema = z.string().trim().min(1).max(AUTOMATION_FOLDER_MAX_LENGTH);
+
+/** Mover una o varias automatizaciones a una carpeta (null = sacarlas). */
+export const moveAutomationsSchema = z.object({
+    ids: z.array(idSchema).min(1).max(500),
+    folder: automationFolderNameSchema.nullable(),
+});
+export type MoveAutomationsInput = z.infer<typeof moveAutomationsSchema>;
+
+/** Crear, renombrar, borrar (las automatizaciones quedan sin carpeta) u ordenar. */
+export const automationFolderOpSchema = z.discriminatedUnion('op', [
+    z.object({ op: z.literal('create'), name: automationFolderNameSchema }),
+    z.object({ op: z.literal('rename'), name: automationFolderNameSchema, to: automationFolderNameSchema }),
+    z.object({ op: z.literal('delete'), name: automationFolderNameSchema }),
+    z.object({ op: z.literal('reorder'), order: z.array(automationFolderNameSchema).max(AUTOMATION_FOLDERS_MAX) }),
+]);
+export type AutomationFolderOp = z.infer<typeof automationFolderOpSchema>;
+
+export interface AutomationFolders {
+    folders: string[];
+}
 
 export const createAutomationSchema = z.object({
     name: z.string().trim().min(1).max(190),

@@ -1712,6 +1712,7 @@ export class TenantTransferService {
                     triggerConfig: triggerConfig as never,
                     actions: actions as never,
                     isActive: Boolean(a.isActive),
+                    folder: typeof a.folder === 'string' ? a.folder : null,
                 })
                 .returning({ id: automations.id });
             autoMap.set(Number(a.id), ins!.id);

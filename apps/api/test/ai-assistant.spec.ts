@@ -574,7 +574,7 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         });
         // Un lector (sin «automatizaciones»): ve que existe, no cómo está armada.
         const viewer = (await registry.execute({ ...ctx, role: 'viewer' }, 'get_list_schema', { list: list.slug })).content as { automations: Array<Record<string, unknown>> };
-        expect(viewer.automations).toEqual([{ id: expect.any(Number), name: 'Aviso al gateway', description: null, is_active: true, trigger_type: 'record_created' }]);
+        expect(viewer.automations).toEqual([{ id: expect.any(Number), name: 'Aviso al gateway', description: null, is_active: true, folder: null, trigger_type: 'record_created' }]);
         expect(JSON.stringify(viewer)).not.toMatch(/S3CRET|x\.test/);
         // Quien las administra: la config completa, con lo secreto tapado.
         const full = JSON.stringify((await registry.execute(ctx, 'get_list_schema', { list: list.slug })).content);

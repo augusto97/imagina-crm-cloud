@@ -2,9 +2,12 @@ import { assertApprovalFlowRefs } from '../approvals/approval-refs';
 import { mapLimit } from '../common/map-limit';
 import { assertAgentRefs } from '../ai-agents/agent-refs';
 import { createHash, randomBytes } from 'node:crypto';
-import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, forwardRef, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, forwardRef, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type {
     Automation,
+    AutomationFolderOp,
+    AutomationFolders,
+    MoveAutomationsInput,
     AutomationRun,
     AutomationRunStatus,
     AutomationTestRunInput,
@@ -21,8 +24,14 @@ import type {
     EmailTestResult,
 } from '@imagina-base/shared';
 import {
+    AUTOMATION_FOLDERS_MAX,
     AUTOMATION_VERSIONS_KEPT,
     automationConfigIssues,
+    cleanFolderName,
+    folderKey,
+    matchFolder,
+    mergeAutomationFolders,
+    readSavedFolders,
     emailDesignSchema,
     FALLBACK_TIME_ZONE,
     formatEmailFieldValue,
@@ -42,7 +51,7 @@ import { maskHeaders, redactValues, type ConnectionParts } from '../connectors/c
 import { ConnectorsService, type ResolvedAction } from '../connectors/connectors.service';
 import type { Actor } from '../records/records.service';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { automationHooks, automationRuns, automations, automationVersions, fields, records, tenants, users } from '../db/schema';
+import { automationHooks, automationRuns, automations, automationVersions, fields, lists as listsTable, records, tenants, users } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
 import { effectivePermissions, hiddenFieldsFor, listRowInScope, listScopeWhere, type AclSubject } from '../lists/list-acl';
 import { walkActions } from '../connectors/inline-scan';
@@ -295,6 +304,102 @@ export class AutomationsService {
         return toAutomation(row);
     }
 
+    // ── Carpetas (v0.1.411) ─────────────────────────────────────────────
+    // Una carpeta es un NOMBRE: cada automatización guarda el de la suya y la
+    // lista guarda el orden (y las vacías) en `settings.automation_folders`.
+    // Mover u organizar NO es editar la automatización: no deja versión en el
+    // historial ni cambia su «última modificación».
+
+    /** Las carpetas de la lista, en orden. */
+    async folders(tenantId: number, listIdOrSlug: string): Promise<AutomationFolders> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        return this.tenantDb.withTenant(tenantId, async (tx) => ({ folders: await this.readFolders(tx, tenantId, list.id) }));
+    }
+
+    private async readFolders(tx: Tx, tenantId: number, listId: number, lock = false): Promise<string[]> {
+        const [row] = await tx.execute<{ saved: unknown }>(sql`
+            select settings -> 'automation_folders' as saved from lists
+            where id = ${listId} and tenant_id = ${tenantId} ${lock ? sql`for update` : sql``}`).then((r) => r.rows);
+        const used = await tx
+            .selectDistinct({ folder: automations.folder })
+            .from(automations)
+            .where(and(eq(automations.tenantId, tenantId), eq(automations.listId, listId), sql`${automations.folder} is not null`));
+        return mergeAutomationFolders(readSavedFolders(row?.saved), used.map((u) => u.folder));
+    }
+
+    private async writeFolders(tx: Tx, tenantId: number, listId: number, folders: string[]): Promise<void> {
+        await tx
+            .update(listsTable)
+            .set({ settings: sql`jsonb_set(coalesce(${listsTable.settings}, '{}'::jsonb), '{automation_folders}', ${JSON.stringify(folders)}::jsonb)` as never })
+            .where(and(eq(listsTable.id, listId), eq(listsTable.tenantId, tenantId)));
+    }
+
+    /** Mover una o varias automatizaciones de la lista a una carpeta (null = sin carpeta). */
+    async moveToFolder(tenantId: number, listIdOrSlug: string, input: MoveAutomationsInput): Promise<AutomationFolders & { moved: number }> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const current = await this.readFolders(tx, tenantId, list.id, true);
+            let target: string | null = null;
+            let folders = current;
+            if (input.folder !== null) {
+                const clean = cleanFolderName(input.folder);
+                target = matchFolder(current, clean) ?? clean;
+                if (!matchFolder(current, target)) {
+                    if (current.length >= AUTOMATION_FOLDERS_MAX) throw tooManyFolders();
+                    folders = [...current, target];
+                    await this.writeFolders(tx, tenantId, list.id, folders);
+                }
+            }
+            const moved = await tx
+                .update(automations)
+                .set({ folder: target })
+                .where(and(eq(automations.tenantId, tenantId), eq(automations.listId, list.id), inArray(automations.id, input.ids)))
+                .returning({ id: automations.id });
+            return { folders, moved: moved.length };
+        });
+    }
+
+    /** Crear, renombrar, borrar (las automatizaciones quedan sin carpeta) u ordenar las carpetas. */
+    async folderOp(tenantId: number, listIdOrSlug: string, op: AutomationFolderOp): Promise<AutomationFolders> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const current = await this.readFolders(tx, tenantId, list.id, true);
+            const inList = and(eq(automations.tenantId, tenantId), eq(automations.listId, list.id));
+            /** Las automatizaciones de esa carpeta (sin importar mayúsculas ni tildes). */
+            const inFolder = (name: string) =>
+                and(inList, sql`lower(trim(${automations.folder})) = lower(trim(${name}))`);
+            let next = current;
+            if (op.op === 'create') {
+                const name = cleanFolderName(op.name);
+                if (matchFolder(current, name)) throw folderExists(name);
+                if (current.length >= AUTOMATION_FOLDERS_MAX) throw tooManyFolders();
+                next = [...current, name];
+            } else if (op.op === 'rename') {
+                const from = matchFolder(current, op.name);
+                if (!from) throw folderNotFound(op.name);
+                const to = cleanFolderName(op.to);
+                const clash = matchFolder(current, to);
+                if (clash && folderKey(clash) !== folderKey(from)) throw folderExists(clash);
+                next = current.map((f) => (f === from ? to : f));
+                await tx.update(automations).set({ folder: to }).where(inFolder(from));
+            } else if (op.op === 'delete') {
+                const name = matchFolder(current, op.name);
+                if (!name) throw folderNotFound(op.name);
+                next = current.filter((f) => f !== name);
+                await tx.update(automations).set({ folder: null }).where(inFolder(name));
+            } else {
+                const ordered: string[] = [];
+                for (const n of op.order) {
+                    const m = matchFolder(current, n);
+                    if (m && !ordered.includes(m)) ordered.push(m);
+                }
+                next = [...ordered, ...current.filter((f) => !ordered.includes(f))];
+            }
+            await this.writeFolders(tx, tenantId, list.id, next);
+            return { folders: next };
+        });
+    }
+
     /**
      * v0.1.221 — Re-registra al arrancar los horarios de TODAS las
      * automatizaciones temporales activas (cross-tenant, por la conexión
@@ -465,6 +570,8 @@ export class AutomationsService {
                 triggerConfig: triggerConfig as AutomationRow['triggerConfig'],
                 actions: JSON.parse(JSON.stringify(src.actions)) as AutomationRow['actions'],
                 isActive: false,
+                // v0.1.411 — la copia queda en la misma carpeta.
+                folder: src.folder ?? null,
             });
             await this.recordVersion(tx, tenantId, inserted, actorId, `Duplicada de «${src.name}»`.slice(0, 300));
             return inserted;
@@ -1470,6 +1577,22 @@ export class AutomationsService {
     }
 }
 
+function folderExists(name: string): ConflictException {
+    return new ConflictException({ code: 'folder_exists', message: `Ya hay una carpeta «${name}».`, data: { status: 409 } });
+}
+
+function folderNotFound(name: string): NotFoundException {
+    return new NotFoundException({ code: 'folder_not_found', message: `No hay una carpeta «${name}» en esta lista.`, data: { status: 404 } });
+}
+
+function tooManyFolders(): BadRequestException {
+    return new BadRequestException({
+        code: 'too_many_folders',
+        message: `Una lista puede tener hasta ${AUTOMATION_FOLDERS_MAX} carpetas de automatizaciones.`,
+        data: { status: 400 },
+    });
+}
+
 function toAutomation(row: AutomationRow): Automation {
     return {
         id: row.id,
@@ -1480,6 +1603,7 @@ function toAutomation(row: AutomationRow): Automation {
         trigger_config: row.triggerConfig ?? {},
         actions: row.actions,
         is_active: row.isActive,
+        folder: row.folder ?? null,
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),
     };

@@ -62,6 +62,8 @@ export interface AutomationEntity {
     trigger_config: TriggerConfig;
     actions: ActionSpec[];
     is_active: boolean;
+    /** v0.1.411 — carpeta del índice (sólo para ordenar; null = sin carpeta). */
+    folder?: string | null;
     created_by: number;
     created_at: string;
     updated_at: string;

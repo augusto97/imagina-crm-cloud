@@ -1071,4 +1071,64 @@ describe('AutomationEngine (Postgres real) — modelo flexible', () => {
         const list = await automationsService.list(tenantId, 'deals');
         return list[0]!.id;
     }
+
+    it('carpetas (v0.1.411): mover, crear vacías, renombrar, ordenar y borrar sin tocar la automatización', async () => {
+        const mk = (name: string) =>
+            automationsService.create(tenantId, 'deals', {
+                name,
+                trigger_type: 'record_created',
+                actions: [{ type: 'update_field', config: { values: { estado: 'vip' } } }],
+            });
+        const a = await mk('Avisar al vendedor');
+        const b = await mk('Marcar VIP');
+        const c = await mk('Bienvenida');
+        const before = (await automationsService.get(tenantId, 'deals', a.id)).updated_at;
+        const versionsBefore = (await automationsService.versions(tenantId, 'deals', a.id)).length;
+
+        let res = await automationsService.moveToFolder(tenantId, 'deals', { ids: [a.id, b.id], folder: '  Ventas ' });
+        expect(res).toEqual({ folders: ['Ventas'], moved: 2 });
+        res = { ...(await automationsService.folderOp(tenantId, 'deals', { op: 'create', name: 'Cobros' })), moved: 0 };
+        expect(res.folders).toEqual(['Ventas', 'Cobros']);
+        await expect(automationsService.folderOp(tenantId, 'deals', { op: 'create', name: 'cobros' })).rejects.toMatchObject({ response: { code: 'folder_exists' } });
+
+        // Mover a «cobros» usa la carpeta que ya existe (con su escritura).
+        await automationsService.moveToFolder(tenantId, 'deals', { ids: [c.id], folder: 'cobros' });
+        const listed = await automationsService.list(tenantId, 'deals');
+        expect(Object.fromEntries(listed.map((x) => [x.name, x.folder]))).toEqual({
+            'Avisar al vendedor': 'Ventas',
+            'Marcar VIP': 'Ventas',
+            Bienvenida: 'Cobros',
+        });
+        // Organizar no es editar: ni «última modificación» ni versión nueva.
+        expect((await automationsService.get(tenantId, 'deals', a.id)).updated_at).toBe(before);
+        expect((await automationsService.versions(tenantId, 'deals', a.id)).length).toBe(versionsBefore);
+
+        // Renombrar (sin importar mayúsculas) arrastra a sus automatizaciones; no puede chocar con otra.
+        expect((await automationsService.folderOp(tenantId, 'deals', { op: 'rename', name: 'ventas', to: 'Comercial' })).folders).toEqual(['Comercial', 'Cobros']);
+        expect((await automationsService.get(tenantId, 'deals', b.id)).folder).toBe('Comercial');
+        await expect(
+            automationsService.folderOp(tenantId, 'deals', { op: 'rename', name: 'Comercial', to: 'COBROS' }),
+        ).rejects.toMatchObject({ response: { code: 'folder_exists' } });
+
+        expect((await automationsService.folderOp(tenantId, 'deals', { op: 'reorder', order: ['cobros', 'nada'] })).folders).toEqual(['Cobros', 'Comercial']);
+
+        // La copia queda en la misma carpeta.
+        const copy = await automationsService.duplicate(tenantId, 'deals', b.id, null);
+        expect(copy.folder).toBe('Comercial');
+
+        // Borrar la carpeta deja sus automatizaciones sin carpeta (no las borra).
+        expect((await automationsService.folderOp(tenantId, 'deals', { op: 'delete', name: 'Comercial' })).folders).toEqual(['Cobros']);
+        const after = await automationsService.list(tenantId, 'deals');
+        expect(after.length).toBe(4);
+        expect(after.filter((x) => x.folder === null).map((x) => x.name).sort()).toEqual(['Avisar al vendedor', 'Marcar VIP', 'Marcar VIP (copia)']);
+        await expect(automationsService.folderOp(tenantId, 'deals', { op: 'delete', name: 'Comercial' })).rejects.toMatchObject({ response: { code: 'folder_not_found' } });
+
+        // Otra lista no puede mover las de ésta.
+        await listsService.create(tenantId, { name: 'Otra' });
+        expect((await automationsService.moveToFolder(tenantId, 'otra', { ids: [a.id], folder: 'X' })).moved).toBe(0);
+        expect((await automationsService.get(tenantId, 'deals', a.id)).folder).toBeNull();
+        // La configuración de la lista conserva sus otras claves.
+        const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(lists).where(eq(lists.id, listId)));
+        expect((row!.settings as Record<string, unknown>).automation_folders).toEqual(['Cobros']);
+    });
 });
