@@ -1,3 +1,4 @@
+import { rateKeyForIp } from '../common/client-ip';
 import { randomBytes } from 'node:crypto';
 import { incrWithTtl } from '../redis/redis.util';
 import {
@@ -39,7 +40,7 @@ const IP_MAX = 40;
 const SET_MAX = 6;
 
 const failKey = (tenantId: number, email: string): string => `portalpwfail:${tenantId}:${email.toLowerCase()}`;
-const ipKey = (ip: string): string => `portalpwip:${ip}`;
+const ipKey = (ip: string): string => `portalpwip:${rateKeyForIp(ip)}`;
 
 const BAD_CREDENTIALS = 'Correo o contraseña incorrectos.';
 

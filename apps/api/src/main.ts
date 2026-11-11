@@ -12,6 +12,7 @@ import { ApiExceptionFilter } from './common/http-exception.filter';
 import { registerRequestInputHooks } from './common/request-input';
 import { isHealthProbe, rateLimitMaxFor } from './common/rate-limit-policy';
 import { routePath } from './common/route-path';
+import { rateKeyForIp } from './common/client-ip';
 import { FILE_IMPORT_CONTENT_TYPE } from '@imagina-base/shared';
 import { loadEnv } from './config/env';
 import { recordServerError } from './observability/diagnostics';
@@ -54,6 +55,8 @@ async function bootstrap(): Promise<void> {
         global: true,
         max: (req) => rateLimitMaxFor(req, env),
         timeWindow: '1 minute',
+        // Una red IPv6 (/64) cuenta como un solo visitante: rotar direcciones dentro del bloque no esquiva el límite.
+        keyGenerator: (req) => rateKeyForIp(req.ip),
         // No limitar los health probes (evita 429/503 espurios del monitoreo).
         allowList: (req) => isHealthProbe(req),
     });

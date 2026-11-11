@@ -1,3 +1,4 @@
+import { rateKeyForIp } from '../common/client-ip';
 import {
     BadRequestException,
     ConflictException,
@@ -1554,7 +1555,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     ): Promise<void> {
         const now = Math.floor(Date.now() / 1000);
         for (const { scope, window, max } of limits) {
-            const who = scope === 'ip' ? `ip:${ip}:${pageId}` : `page:${pageId}`;
+            const who = scope === 'ip' ? `ip:${rateKeyForIp(ip)}:${pageId}` : `page:${pageId}`;
             const key = `bookrl:${what}:${window}:${Math.floor(now / window)}:${who}`;
             let count: number;
             try {
