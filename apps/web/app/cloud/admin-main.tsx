@@ -9,6 +9,7 @@ import { getResetToken, ResetPasswordPage } from '@/cloud/pages/ResetPasswordPag
 import { getVerifyToken, VerifyEmailPage } from '@/cloud/pages/VerifyEmailPage';
 import { isRecoveryPath, RecoveryPage } from '@/cloud/pages/RecoveryPage';
 import { FilePreviewHost } from '@/components/files/FilePreviewHost';
+import { AppErrorBoundary } from '@/components/ErrorBoundary';
 import { BootSplashDone } from '@/components/BootSplashDone';
 import { hideBootSplash } from '@/lib/bootSplash';
 import { ConfirmProvider } from '@/components/ui/confirm-dialog';
@@ -87,6 +88,9 @@ if (container && !framedByOther) {
     const oauthRequestId = getOauthRequestId();
     createRoot(container).render(
         <StrictMode>
+            {/* Un error al dibujar no deja la ventana en blanco (ni la pantalla
+                de arranque puesta para siempre). */}
+            <AppErrorBoundary onShown={hideBootSplash}>
             <QueryClientProvider client={queryClient}>
                 <ToastProvider>
                     <ConfirmProvider>
@@ -118,6 +122,7 @@ if (container && !framedByOther) {
                     </ConfirmProvider>
                 </ToastProvider>
             </QueryClientProvider>
+            </AppErrorBoundary>
         </StrictMode>,
     );
 }

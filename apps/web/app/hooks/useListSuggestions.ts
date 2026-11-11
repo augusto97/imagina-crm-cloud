@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { invalidateWorkspaceData } from '@/lib/workspaceInvalidate';
 import type {
     ApplyListSuggestionResult,
     ListSuggestionsResponse,
@@ -57,7 +58,7 @@ export function useApplyListSuggestion(listId: number) {
         // Una sugerencia puede crear una vista, un tablero, una automatización o
         // convertir un campo: es más barato refrescar todo que adivinar.
         onSuccess: async () => {
-            await qc.invalidateQueries();
+            await invalidateWorkspaceData(qc);
         },
     });
 }

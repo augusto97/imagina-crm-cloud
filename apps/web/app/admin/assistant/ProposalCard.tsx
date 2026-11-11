@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { invalidateWorkspaceData } from '@/lib/workspaceInvalidate';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AiProposal } from '@imagina-base/shared';
 import { AlertTriangle, ArrowRight, Check, ExternalLink, Loader2, Sparkles } from 'lucide-react';
@@ -68,7 +69,7 @@ export function ProposalCard({
         mutationFn: () => api.aiApply(proposal.id),
         onSuccess: async (res) => {
             onApplied(res.proposal);
-            await qc.invalidateQueries();
+            await invalidateWorkspaceData(qc);
         },
     });
     const p = proposal;

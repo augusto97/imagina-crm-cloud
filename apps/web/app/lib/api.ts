@@ -247,7 +247,13 @@ export function buildFieldMap(fields: unknown): FieldKeyMap {
  */
 export function primeFieldMap(listKeys: Array<string | number>, fields: unknown): FieldKeyMap {
     const map = buildFieldMap(fields);
-    for (const k of listKeys) fieldMaps.set(String(k), map);
+    // La MISMA clave que leen `ensureFieldMap` y `rememberFieldKey` (con la
+    // empresa): sin el prefijo el mapa quedaba guardado donde nadie lo busca
+    // —el listado volvía a pedir `/fields`— y sin separar por empresa.
+    for (const k of listKeys) {
+        fieldMaps.set(fieldMapKey(String(k)), map);
+        if (typeof k === 'number') mapListIds.set(map, k);
+    }
     return map;
 }
 

@@ -29,6 +29,7 @@ import type { SavedViewConfig, SavedViewEntity } from '@/types/view';
 
 import { ColorRulesEditor } from '../ColorRulesEditor';
 import { ganttToViewConfig, viewConfigToGantt } from '../savedViewMapping';
+import { GANTT_ZOOM_LABEL } from '../viewSettingsLabels';
 
 interface GanttSettingsDialogProps {
     listId: number;
@@ -40,13 +41,6 @@ interface GanttSettingsDialogProps {
     /** La reprogramación en cadena es de la LISTA: sólo quien la administra la ve. */
     canManageList?: boolean;
 }
-
-export const GANTT_ZOOM_LABEL: Record<GanttZoom, string> = {
-    day: __('Día'),
-    week: __('Semana'),
-    month: __('Mes'),
-    quarter: __('Trimestre'),
-};
 
 type SortChoice = { fieldId: number; dir: 'asc' | 'desc' } | null;
 

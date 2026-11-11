@@ -69,7 +69,10 @@ import {
     type DropTarget,
 } from './calendar/calendarModel';
 import { CalendarMoveDialog } from './calendar/CalendarMoveDialog';
-import { CALENDAR_MODE_LABEL, CalendarSettingsDialog } from './calendar/CalendarSettingsDialog';
+import { lazyDialog } from '@/lib/lazyDialog';
+import { CALENDAR_MODE_LABEL } from './viewSettingsLabels';
+
+const CalendarSettingsDialog = lazyDialog(() => import('./calendar/CalendarSettingsDialog').then((m) => ({ default: m.CalendarSettingsDialog })));
 import { MonthView } from './calendar/MonthView';
 import { TimeGridView } from './calendar/TimeGridView';
 import { viewConfigToCalendar, calendarToViewConfig } from './savedViewMapping';

@@ -40,7 +40,10 @@ import { storeAccessFor, useStoreRules } from '../../storeRules';
 import { viewConfigToWorkload, workloadToViewConfig } from '../savedViewMapping';
 import { WorkloadCapacityDialog } from './WorkloadCapacityDialog';
 import { WorkloadPanel } from './WorkloadPanel';
-import { WorkloadSettingsDialog, WORKLOAD_METRIC_LABEL, WORKLOAD_ZOOM_LABEL } from './WorkloadSettingsDialog';
+import { lazyDialog } from '@/lib/lazyDialog';
+import { WORKLOAD_METRIC_LABEL, WORKLOAD_ZOOM_LABEL } from '../viewSettingsLabels';
+
+const WorkloadSettingsDialog = lazyDialog(() => import('./WorkloadSettingsDialog').then((m) => ({ default: m.WorkloadSettingsDialog })));
 import {
     bucketHas,
     bucketLabel,

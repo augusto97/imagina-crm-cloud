@@ -37,7 +37,7 @@ import { useMostUsedItems } from '@/hooks/useMostUsed';
 import { MostUsedMenu, mostUsedIcon } from '@/admin/layout/MostUsedSection';
 import { parseUtcDate } from '@/lib/utcDate';
 import type { ListGroup, ListSummary } from '@/types/list';
-import { ListCreateDialog } from '@/admin/lists/ListCreateDialog';
+import { ListCreateDialog } from '@/admin/lists/ListCreateDialogLazy';
 import { useFinishWelcome } from '@/admin/onboarding/useFinishWelcome';
 
 import { FolderSquare, IconSquare } from './FolderBadge';

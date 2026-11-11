@@ -1,4 +1,5 @@
 import { createContext, forwardRef, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { editableCellPropsEqual } from './cellMemo';
 import { createPortal } from 'react-dom';
 import { RefreshCw } from 'lucide-react';
 import { formatDuration, parseDuration, parseNumberText, teamIdsOf, validateFieldValue, type DurationFormat } from '@imagina-base/shared';
@@ -778,19 +779,7 @@ function EditableCellWithUpdater(props: EditableCellProps): JSX.Element {
     );
 }
 
-export const EditableCell = memo(EditableCellWithUpdater, (prev, next) => {
-    return (
-        prev.recordId === next.recordId
-        && prev.listId === next.listId
-        && prev.field.id === next.field.id
-        && prev.value === next.value
-        && prev.canEdit === next.canEdit
-        && prev.lockedReason === next.lockedReason
-        // Campo «Botón»: no tiene valor propio; su «deshabilitado si…» mira la
-        // FILA y su aspecto la config — sin esto quedaba con el estado viejo.
-        && (next.field.type !== 'button' || (prev.record === next.record && prev.field === next.field))
-    );
-});
+export const EditableCell = memo(EditableCellWithUpdater, editableCellPropsEqual);
 
 
 interface CellEditorProps {

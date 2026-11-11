@@ -18,7 +18,7 @@ jobs:
   checks:
     name: lint, tipos, build y shared
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -42,6 +42,18 @@ jobs:
           --filter=@imagina-base/shared
           --filter=@imagina-base/api
           && pnpm turbo run test --filter=@imagina-base/shared
+
+      # El front: lint, tipos + build de producción (`build` corre `tsc -b`
+      # antes de vite) y sus pruebas (entre ellas la que exige que cada ancla
+      # de cada recorrido exista) y el presupuesto del JavaScript inicial. Va
+      # después del build de shared: el front lo importa compilado en las
+      # pruebas y en los tipos.
+      - name: Front — lint, tipos, build y pruebas
+        run: >
+          pnpm --filter @imagina-base/web lint
+          && pnpm --filter @imagina-base/web build
+          && node apps/web/scripts/check-bundle-size.mjs
+          && pnpm --filter @imagina-base/web test
 
       # v0.1.399 — un ciclo de imports deja a Nest inyectando `undefined` en
       # silencio cuando el parámetro es @Optional(): se revisa sobre el build.
