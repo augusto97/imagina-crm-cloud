@@ -49,6 +49,12 @@ describe('ACL por lista (permisos por rol)', () => {
         );
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME' }).returning();
         tenantId = t!.id;
+        // Son del equipo: un campo Persona sólo acepta gente de la empresa.
+        for (const a of [admin, agent, viewer]) {
+            const [u] = await pg.db.insert(users).values({ email: `u${a.userId}@acme.test`, name: `U${a.userId}`, passwordHash: 'x' }).returning();
+            expect(u!.id).toBe(a.userId);
+            await pg.db.insert(memberships).values({ tenantId, userId: u!.id, role: a.role });
+        }
     });
 
     afterAll(async () => {

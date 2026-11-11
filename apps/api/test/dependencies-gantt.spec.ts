@@ -6,7 +6,7 @@ import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AuditService } from '../src/audit/audit.service';
 import { AutomationDispatcher, type TriggerEvent } from '../src/automations/automation-dispatcher.service';
-import { activity, fields, ganttBaselineItems, ganttBaselines, lists, recordDependencies, records, savedViews, tenants, users } from '../src/db/schema';
+import { activity, fields, ganttBaselineItems, ganttBaselines, lists, memberships, recordDependencies, records, savedViews, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -92,6 +92,8 @@ describe('Dependencias entre registros + Gantt (Postgres real + RLS)', () => {
         admin = { userId: await mkUser('admin@t.local', 'Admin'), role: 'admin' };
         ana = { userId: await mkUser('ana@t.local', 'Ana'), role: 'agent' };
         manager = { userId: await mkUser('mara@t.local', 'Mara'), role: 'manager' };
+        // Son del equipo: un campo Persona sólo acepta gente de la empresa.
+        await pg.db.insert(memberships).values([admin, ana, manager].flatMap((u) => [tenantA, tenantB].map((tenantId) => ({ tenantId, userId: u.userId, role: u.role }))));
     });
 
     afterAll(async () => {
