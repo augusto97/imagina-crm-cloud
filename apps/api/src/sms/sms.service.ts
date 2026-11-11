@@ -59,7 +59,7 @@ import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { connections, lists, records, smsHooks, smsMessages, type SmsMessageRowDb } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { IncidentHub } from '../incidents/incident-hub';
-import { andWhere, hiddenFieldsFor, listRowInScope, listScopeWhere, type AclExtras } from '../lists/list-acl';
+import { andWhere, listRowInScope, listScopeWhere, type AclExtras } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RecordsRepository } from '../records/records.repository';
@@ -688,7 +688,7 @@ export class SmsService {
 
     async recordInfo(tenantId: number, actor: SmsActor, listIdOrSlug: string, recordId: number): Promise<SmsRecordInfo> {
         const { list, fields, data } = await this.recordFor(tenantId, actor, listIdOrSlug, recordId, 'view');
-        const hidden = hiddenFieldsFor(list.settings, actor);
+        const hidden = await this.fields.hiddenSlugsFor(tenantId, list, fields, actor);
         const phoneRaw = visiblePhone(list, fields, data, hidden);
         const recipient = typeof phoneRaw === 'string' && phoneRaw.trim() !== '' ? phoneRaw.trim() : null;
         const conns = await this.usableConnections(tenantId, actor);
@@ -752,7 +752,7 @@ export class SmsService {
     async sendFromRecord(tenantId: number, actor: SmsActor, listIdOrSlug: string, recordId: number, input: SmsSendInput): Promise<SmsSendResult> {
         const { list, fields, data } = await this.recordFor(tenantId, actor, listIdOrSlug, recordId, 'edit');
         await this.assertUsable(tenantId, actor, input.connection_id);
-        const hidden = hiddenFieldsFor(list.settings, actor);
+        const hidden = await this.fields.hiddenSlugsFor(tenantId, list, fields, actor);
         const merge = await this.mergerFor(tenantId, list.slug, fields, data, recordId, hidden);
         const phoneRaw = visiblePhone(list, fields, data, hidden);
         const to = (input.to ?? '').trim() !== '' ? merge(input.to!) : typeof phoneRaw === 'string' ? phoneRaw : '';
@@ -776,7 +776,7 @@ export class SmsService {
     async previewFromRecord(tenantId: number, actor: SmsActor, listIdOrSlug: string, recordId: number, input: SmsSendInput): Promise<SmsSendResult> {
         const { list, fields, data } = await this.recordFor(tenantId, actor, listIdOrSlug, recordId, 'view');
         await this.assertUsable(tenantId, actor, input.connection_id);
-        const hidden = hiddenFieldsFor(list.settings, actor);
+        const hidden = await this.fields.hiddenSlugsFor(tenantId, list, fields, actor);
         const merge = await this.mergerFor(tenantId, list.slug, fields, data, recordId, hidden);
         const phoneRaw = visiblePhone(list, fields, data, hidden);
         const to = (input.to ?? '').trim() !== '' ? merge(input.to!) : typeof phoneRaw === 'string' ? phoneRaw : '';
@@ -824,7 +824,7 @@ export class SmsService {
             return row ?? null;
         });
         const data = (sample?.data ?? {}) as Record<string, unknown>;
-        const hidden = hiddenFieldsFor(list.settings, actor);
+        const hidden = await this.fields.hiddenSlugsFor(tenantId, list, fields, actor);
         const merge = await this.mergerFor(tenantId, list.slug, fields, data, sample?.id ?? 0, hidden);
         const v = input.values as Record<string, unknown>;
         const message = merge(str(v.message));
@@ -896,7 +896,7 @@ export class SmsService {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         await this.assertUsable(tenantId, actor, input.connection_id);
         const fields = await this.fields.listByListId(tenantId, list.id);
-        const hidden = hiddenFieldsFor(list.settings, actor);
+        const hidden = await this.fields.hiddenSlugsFor(tenantId, list, fields, actor);
         const titleId = resolveTitleFieldId(fields, list.settings);
         const titleKey = titleId ? jsonbKeyForField(titleId) : null;
         const ids = [...new Set(input.record_ids)];

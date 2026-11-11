@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, count, eq, notInArray } from 'drizzle-orm';
+import { memberDisplayName } from '../tenancy/member-names';
 import type { Tx } from '../db/client';
 import { customRoles, memberships, users } from '../db/schema';
 
@@ -27,7 +28,7 @@ export class MembersRepository {
         return tx
             .select({
                 userId: memberships.userId,
-                name: users.name,
+                name: memberDisplayName,
                 email: users.email,
                 role: memberships.role,
                 invitedAt: users.invitedAt,
@@ -53,7 +54,7 @@ export class MembersRepository {
         const [row] = await tx
             .select({
                 userId: memberships.userId,
-                name: users.name,
+                name: memberDisplayName,
                 email: users.email,
                 role: memberships.role,
                 invitedAt: users.invitedAt,

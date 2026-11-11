@@ -33,7 +33,8 @@ import { AllowLocked } from '../tenancy/allow-locked.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { aclOf } from '../tenancy/acl-of';
 import { AllowGuest } from '../tenancy/allow-guest.decorator';
-import { guestCanOpenList, guestSafeListSettings } from './list-acl';
+import { can } from '../authz/can';
+import { guestCanOpenList, guestSafeListSettings, memberListSettings } from './list-acl';
 import { ListsService } from './lists.service';
 
 /**
@@ -65,7 +66,13 @@ export class ListsController {
                     .map((l) => ({ ...l, group_id: null, settings: guestSafeListSettings(l.settings as Record<string, unknown>) })),
             };
         }
-        return { data };
+        return { data: data.map((l) => this.forMember(req, l)) };
+    }
+
+    /** Los ajustes de la lista recortados para quien no administra las listas. */
+    private forMember(req: FastifyRequest, list: List): List {
+        const who = { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
+        return { ...list, settings: memberListSettings(list.settings as Record<string, unknown>, who, can(who, 'manage_lists')) };
     }
 
     /** v0.1.107 — reordenar el menú de listas (orden compartido del workspace).
@@ -91,7 +98,7 @@ export class ListsController {
             }
             return { ...list, group_id: null, settings: guestSafeListSettings(list.settings as Record<string, unknown>) };
         }
-        return list;
+        return this.forMember(req, list);
     }
 
     /** ACL por lista (permisos por rol). Solo admin (manage_lists). */
@@ -151,7 +158,9 @@ export class ListsController {
         @Param('idOrSlug') idOrSlug: string,
         @Body(new ZodValidationPipe(updateListSchema)) patch: UpdateListInput,
     ): Promise<List> {
-        return this.lists.update(tenantId(req), idOrSlug, patch);
+        return this.lists.update(tenantId(req), idOrSlug, patch, {
+            actor: { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) },
+        });
     }
 
     @Delete(':idOrSlug')

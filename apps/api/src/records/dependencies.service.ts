@@ -21,7 +21,6 @@ import { ActivityService } from '../activity/activity.service';
 import { AuditService } from '../audit/audit.service';
 import type { Tx } from '../db/client';
 import { FieldsService } from '../fields/fields.service';
-import { hiddenFieldsFor } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -77,7 +76,7 @@ export class DependenciesService {
     /** Lo mismo dentro de una transacción ya abierta (bundle de la ficha). */
     async linksInTx(tx: Tx, tenantId: number, actor: Actor, prep: Prepared, recordId: number): Promise<RecordDependencies> {
         const { blockedBy, blocks } = await this.repo.linksOf(tx, tenantId, recordId);
-        const view = this.linkView(prep, actor);
+        const view = this.linkView(prep, actor, await this.fields.hiddenSlugsFor(tenantId, prep.list as { id: number; settings: Record<string, unknown> }, prep.fields, actor));
         return {
             blocked_by: blockedBy.filter((l) => l.other !== null).map(view),
             blocks: blocks.filter((l) => l.other !== null).map(view),
@@ -274,11 +273,10 @@ export class DependenciesService {
 
     // ─────────────────────────── Internos ───────────────────────────
 
-    private linkView(prep: Prepared, actor: Actor): (l: DependencyLinkRow) => DependencyLink {
+    private linkView(prep: Prepared, actor: Actor, hidden: ReadonlySet<string>): (l: DependencyLinkRow) => DependencyLink {
         const titleId = resolveTitleFieldId(prep.fields, prep.list.settings as Record<string, unknown>);
         const titleKey = titleId !== null ? jsonbKeyForField(titleId) : null;
         const rule = doneRuleFor(prep.fields);
-        const hidden = hiddenFieldsFor(prep.list.settings as Record<string, unknown>, actor.role, actor.userId);
         const statusField = rule ? prep.fields.find((f) => f.id === rule.fieldId) ?? null : null;
         const statusVisible = statusField !== null && !hidden.has(statusField.slug);
         const titleVisible = titleId !== null && !hidden.has(prep.fields.find((f) => f.id === titleId)?.slug ?? '');

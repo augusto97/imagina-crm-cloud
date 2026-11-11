@@ -12,7 +12,7 @@ import {
     renderEmailText,
     tenantFormatSchema,
 } from '@imagina-base/shared';
-import { and, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
 
 import { memberships, tenants, users } from '../db/schema';
 import type { Tx } from '../db/client';
@@ -117,11 +117,15 @@ export class EmailComposer {
                     eq(users.id, userId),
                     eq(memberships.tenantId, tenantId),
                     ne(memberships.role, 'client'),
+                    // La firma es un dato de la CUENTA (global): sólo se usa
+                    // la de quien ya entró a esta empresa. Sumar una cuenta
+                    // ajena por su correo no alcanza para leerle la firma.
+                    isNotNull(memberships.joinedAt),
                     isNull(users.disabledAt),
                 ),
             )
             .limit(1);
-        if (!row) return { html: null, note: 'La persona de la firma ya no es del equipo: el correo salió sin firma.' };
+        if (!row) return { html: null, note: 'La persona de la firma ya no es del equipo (o todavía no entró a esta empresa): el correo salió sin firma.' };
         const html = (row.signature ?? '').trim();
         if (!html) return { html: null, note: 'Esa persona todavía no cargó su firma: el correo salió sin firma.' };
         return { html };

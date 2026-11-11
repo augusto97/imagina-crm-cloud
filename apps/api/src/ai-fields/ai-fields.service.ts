@@ -13,7 +13,7 @@ import {
     type OnModuleInit,
 } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
-import { AI_INPUT_TYPES, aiFieldConfigSchema, type Field, type Role } from '@imagina-base/shared';
+import { AI_INPUT_TYPES, aiFieldConfigSchema, type Field } from '@imagina-base/shared';
 import { Queue, Worker } from 'bullmq';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { memberNames } from '../tenancy/member-names';
@@ -34,7 +34,7 @@ import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { IncidentHub } from '../incidents/incident-hub';
 import { RecordChangeHub, type RecordChange } from '../records/record-change-hub';
-import { RecordsService } from '../records/records.service';
+import { RecordsService, type Actor } from '../records/records.service';
 import { REDIS } from '../redis/redis.module';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -359,9 +359,16 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
     // ─────────────────────────── Endpoints ───────────────────────────
 
     /** «Recalcular» desde la ficha: espera la respuesta (con el ACL de quien lo pide). */
-    async runNow(tenantId: number, actor: { userId: number; role: Role }, listIdOrSlug: string, recordId: number, fieldId: number): Promise<{ value: string | null }> {
+    async runNow(tenantId: number, actor: Actor, listIdOrSlug: string, recordId: number, fieldId: number): Promise<{ value: string | null }> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        await this.records.get(tenantId, actor, String(list.id), recordId);
+        // Recalcular ESCRIBE en el registro (y gasta un pedido de IA): hace
+        // falta poder editarlo, no sólo verlo; y el campo no puede ser uno que
+        // la persona tiene oculto (también por depender de una entrada oculta).
+        const { fields } = await this.records.checkUpdate(tenantId, actor, String(list.id), recordId, {});
+        const target = fields.find((f) => f.id === fieldId);
+        if (target && (await this.fields.hiddenSlugsFor(tenantId, list, fields, actor)).has(target.slug)) {
+            throw new NotFoundException({ code: 'field_not_found', message: 'Campo con IA no encontrado' });
+        }
         try {
             return { value: await this.compute(tenantId, list.id, recordId, fieldId) };
         } catch (err) {

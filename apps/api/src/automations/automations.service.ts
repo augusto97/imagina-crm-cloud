@@ -1418,6 +1418,35 @@ export class AutomationsService {
         }
     }
 
+    /**
+     * Una automatización corre como SISTEMA: lee y escribe cualquier registro
+     * y cualquier campo de la lista. Por eso armarla, cambiarla, encenderla o
+     * leer su configuración (y el resultado de su última corrida) exige ver la
+     * lista ENTERA, además de la capacidad «automatizaciones»: si no, un rol
+     * con la lista recortada (sólo lo suyo, o con campos ocultos) se mandaba
+     * por correo o por webhook justo lo que no puede ver.
+     */
+    async assertWholeList(tenantId: number, listIdOrSlug: string, viewer?: AclSubject): Promise<void> {
+        if (!viewer || viewer.role === 'admin') return;
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const perms = effectivePermissions(list.settings, viewer);
+        if (perms.view !== 'all' || perms.fields_hidden.length > 0) {
+            throw new ForbiddenException({
+                code: 'automation_list_forbidden',
+                message: 'Las automatizaciones trabajan con todos los registros y campos de la lista, y tu acceso a esta lista es parcial. Pídele a un administrador que la arme o la revise.',
+                data: { status: 403 },
+            });
+        }
+    }
+
+    /** Lo mismo sin lanzar (para quien sólo quiere saber si mostrarlas). */
+    async seesWholeList(tenantId: number, listIdOrSlug: string, viewer?: AclSubject): Promise<boolean> {
+        return this.assertWholeList(tenantId, listIdOrSlug, viewer).then(
+            () => true,
+            () => false,
+        );
+    }
+
     /** Runs de una automatización por id (sin contexto de lista — la ruta del fork). */
     async runsById(
         tenantId: number,

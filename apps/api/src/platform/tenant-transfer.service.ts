@@ -92,6 +92,7 @@ import {
     subscriptions,
     subscriptionCharges,
     templates,
+    plans,
     tenants,
     timeEntries,
     users,
@@ -110,6 +111,7 @@ import {
     approvalRequests,
     approvalDecisions,
 } from '../db/schema';
+import { newTrialEndsAt } from '../billing/tenant-access';
 import { FILE_STORAGE, TENANT_STORAGE, type FileStorage, type TenantStorageResolver } from '../files/file-storage';
 import {
     emptyMaps,
@@ -631,21 +633,48 @@ export class TenantTransferService {
         }
         const slug = await this.freeSlug(tx, input.slug ?? String(tenantRow.slug));
         const name = input.name ?? String(tenantRow.name);
+        // El plan, el estado y el período pagado NO los decide el archivo: un
+        // plan que aquí no existe valía como «sin límites, con todo incluido y
+        // sin vencimiento», y un `paidUntil` escrito a mano regalaba años. Sólo
+        // se conservan si el operador marcó que el archivo viene de un servidor
+        // suyo Y el plan existe aquí; si no, la empresa llega en prueba con la
+        // política de este servidor y el operador le pone el plan en la consola.
+        const archivePlan = String(tenantRow.plan ?? 'trial');
+        const [knownPlan] = await tx.select({ slug: plans.slug }).from(plans).where(eq(plans.slug, archivePlan)).limit(1);
+        const keepBilling = input.trust_credentials === true && knownPlan !== undefined;
+        const billing = keepBilling
+            ? {
+                  plan: archivePlan,
+                  status: ['trialing', 'active', 'past_due', 'canceled'].includes(String(tenantRow.status)) ? String(tenantRow.status) : 'trialing',
+                  subscriptionEndsAt: this.date(tenantRow.subscriptionEndsAt),
+                  paidUntil: this.date(tenantRow.paidUntil),
+                  trialEndsAt: archivePlan === 'trial' ? (this.date(tenantRow.trialEndsAt) ?? newTrialEndsAt()) : null,
+              }
+            : { plan: 'trial', status: 'trialing', subscriptionEndsAt: null, paidUntil: null, trialEndsAt: newTrialEndsAt() };
+        if (!keepBilling && (archivePlan !== 'trial' || tenantRow.paidUntil || tenantRow.subscriptionEndsAt)) {
+            warnings.push(
+                knownPlan === undefined
+                    ? `El plan del archivo («${archivePlan.slice(0, 60)}») no existe en este servidor: la empresa llegó en el plan de prueba. Elige su plan en Plataforma → Empresas.`
+                    : `La empresa llegó en el plan de prueba (el archivo decía «${archivePlan.slice(0, 60)}»): el plan y el período pagado no se toman del archivo. Elige su plan en Plataforma → Empresas.`,
+            );
+        }
         const [createdTenant] = await tx
             .insert(tenants)
             .values({
                 slug,
                 name,
-                plan: String(tenantRow.plan ?? 'trial'),
-                status: String(tenantRow.status ?? 'trialing'),
+                plan: billing.plan,
+                status: billing.status,
+                trialEndsAt: billing.trialEndsAt,
                 settings: this.cleanTenantSettings(tenantRow.settings as Row | null, sameKey),
                 // El dominio propio es único GLOBAL y sigue apuntando al
                 // servidor viejo: se reconfigura después de migrar.
                 customDomain: null,
-                subscriptionEndsAt: this.date(tenantRow.subscriptionEndsAt),
-                // v0.1.250 — el período pagado viaja (el historial de pagos no:
-                // sus ids son de la cuenta de cobro del servidor de origen).
-                paidUntil: this.date(tenantRow.paidUntil),
+                subscriptionEndsAt: billing.subscriptionEndsAt,
+                // v0.1.250 — el período pagado viaja sólo de un servidor de
+                // confianza (el historial de pagos no: sus ids son de la
+                // cuenta de cobro del servidor de origen).
+                paidUntil: billing.paidUntil,
             })
             .returning({ id: tenants.id });
         const tenantId = createdTenant!.id;
@@ -2301,6 +2330,7 @@ export class TenantTransferService {
             tenant_id: tenantId,
             slug,
             name,
+            plan: billing.plan,
             counts,
             users_created: usersCreated,
             users_linked: usersLinked,

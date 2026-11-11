@@ -1169,6 +1169,40 @@ describe('Migración de empresa (v0.1.197)', () => {
         expect(res.warnings.some((w) => w.includes('SIN contraseña'))).toBe(false);
     }, 120_000);
 
+    it('el plan, el estado y el período pagado no los decide el archivo', async () => {
+        // El archivo dice un plan que aquí no existe, activo y pagado hasta 2099.
+        await pg.db
+            .update(tenants)
+            .set({ plan: 'plan-fantasma', status: 'active', paidUntil: new Date('2099-01-01T00:00:00Z') })
+            .where(eq(tenants.id, tenantA));
+        const out = await svc.exportTenant(tenantA, { include_runs: false, include_files: false });
+
+        const res = await svc.importTenant({ file: out.file, slug: 'acme-plan' });
+        const [imported] = await pg.db.select().from(tenants).where(eq(tenants.id, res.tenant_id));
+        expect(res.plan).toBe('trial');
+        expect(imported).toMatchObject({ plan: 'trial', status: 'trialing', paidUntil: null, subscriptionEndsAt: null });
+        expect(imported!.trialEndsAt).not.toBeNull();
+        expect(res.warnings.some((w) => w.includes('plan-fantasma') && w.includes('no existe'))).toBe(true);
+
+        // Ni marcándolo de confianza vale un plan que este servidor no tiene.
+        const trusted = await svc.importTenant({ file: out.file, slug: 'acme-plan-2', trust_credentials: true });
+        expect(trusted.plan).toBe('trial');
+
+        // Un plan que SÍ existe: sin la marca de confianza llega en prueba; con ella se conserva.
+        await pg.db.update(tenants).set({ plan: 'pro' }).where(eq(tenants.id, tenantA));
+        const pro = await svc.exportTenant(tenantA, { include_runs: false, include_files: false });
+        const untrusted = await svc.importTenant({ file: pro.file, slug: 'acme-plan-3' });
+        expect(untrusted.plan).toBe('trial');
+        const [u] = await pg.db.select().from(tenants).where(eq(tenants.id, untrusted.tenant_id));
+        expect(u!.paidUntil).toBeNull();
+        const kept = await svc.importTenant({ file: pro.file, slug: 'acme-plan-4', trust_credentials: true });
+        expect(kept.plan).toBe('pro');
+        const [k] = await pg.db.select().from(tenants).where(eq(tenants.id, kept.tenant_id));
+        expect(k).toMatchObject({ plan: 'pro', status: 'active' });
+        expect(k!.paidUntil?.toISOString()).toBe('2099-01-01T00:00:00.000Z');
+        await pg.db.update(tenants).set({ plan: 'trial', status: 'trialing', paidUntil: null }).where(eq(tenants.id, tenantA));
+    }, 240_000);
+
     it('rechaza un archivo con symlinks (no lee archivos del servidor)', async () => {
         const craft = mkdtempSync(path.join(tmpdir(), 'craft-'));
         try {

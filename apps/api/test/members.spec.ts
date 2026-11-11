@@ -1,8 +1,9 @@
 import { ConflictException, ForbiddenException, HttpException, NotFoundException } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import Redis from 'ioredis';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AuthService } from '../src/auth/auth.service';
+import { EmailComposer } from '../src/automations/email-composer';
 import { SessionService } from '../src/auth/session.service';
 import { BillingService } from '../src/billing/billing.service';
 import { PlansService } from '../src/billing/plans.service';
@@ -122,6 +123,51 @@ describe('MembersService (Postgres real, RLS)', () => {
         expect(await members.list(tenantId)).toHaveLength(2);
         const mail = await mailTo(bob.email, /Te sumaron a «ACME»/);
         expect(mail.html).toContain('admin te sumó');
+    });
+
+    it('add: una cuenta ajena sumada por su correo no entrega su nombre ni su firma hasta que la persona ENTRA', async () => {
+        // La víctima tiene cuenta (en otra empresa), nombre real y firma de correo.
+        const [victim] = await pg.db
+            .insert(users)
+            .values({ email: 'victima@otra.test', passwordHash: 'x', name: 'Victoria Real', emailVerifiedAt: new Date(), emailSignature: '<p>Victoria · Tel 555-0101</p>' })
+            .returning();
+        const added = await members.add(tenantId, { email: 'victima@otra.test', role: 'viewer' }, { invitedById: adminId });
+        // La respuesta no trae el nombre de la cuenta: sólo lo que ya se sabía (el correo).
+        expect(added.name).toBe('victima');
+        expect(JSON.stringify(added)).not.toContain('Victoria');
+        // Tampoco la lista de miembros ni la firma en un correo de automatización.
+        expect(JSON.stringify(await members.list(tenantId))).not.toContain('Victoria');
+        const composer = new EmailComposer();
+        const compose = () =>
+            withTenant(pg.db, tenantId, (tx) =>
+                composer.compose(tx, {
+                    tenantId,
+                    cfg: { subject: 'Hola', body: 'Texto', include_signature: true, signature_user_id: victim!.id },
+                    merge: (v) => String(v ?? ''),
+                    mergeHtml: (v) => String(v ?? ''),
+                    fieldsBySlug: new Map(),
+                    fieldValue: () => null,
+                }),
+            );
+        const before = await compose();
+        expect(`${before.text ?? ''}${before.html ?? ''}`).not.toContain('555-0101');
+        expect(before.signatureNote).toBeTruthy();
+
+        // La persona entra a la empresa (lo marca el TenantGuard en su primer pedido).
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.update(memberships).set({ joinedAt: new Date() }).where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, victim!.id))),
+        );
+        const after = await compose();
+        expect(`${after.text ?? ''}${after.html ?? ''}`).toContain('555-0101');
+        expect(JSON.stringify(await members.list(tenantId))).toContain('Victoria Real');
+
+        // La consola de plataforma (el operador) suma sin esa espera.
+        const [otra] = await pg.db
+            .insert(users)
+            .values({ email: 'operada@otra.test', passwordHash: 'x', name: 'Olga Operada', emailVerifiedAt: new Date() })
+            .returning();
+        const byOperator = await members.add(tenantId, { email: otra!.email, role: 'viewer' }, { enforcePlan: false });
+        expect(byOperator.name).toBe('Olga Operada');
     });
 
     it('add: sin cuenta, la crea por INVITACIÓN; definir la contraseña cierra la invitación y verifica el email', async () => {

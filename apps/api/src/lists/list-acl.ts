@@ -224,6 +224,42 @@ export function guestSafeListSettings(settings: Record<string, unknown>): Record
 }
 
 /**
+ * Los ajustes de una lista como los recibe alguien del EQUIPO en `GET /lists`
+ * y en el bootstrap. Quien administra las listas (`manage_lists`) los recibe
+ * enteros. El resto, sin lo que no le corresponde:
+ *  - `permissions`: el acceso de los otros roles, personas y equipos;
+ *  - `public`: el enlace público de la lista (su token) y sus dominios;
+ *  - el portal: sólo si está encendido (ni su diseño ni las listas del cliente);
+ *  - cobros y suscripciones: sólo las COLUMNAS (la tabla dibuja sus candados),
+ *    no la conexión con la que se cobra.
+ * Y una lista que la persona no puede ver (ver: nada) llega sin ajustes: el
+ * menú la sigue nombrando, pero nada de su configuración viaja.
+ * La interfaz de quien no administra sólo lee de aquí la marca de la tienda /
+ * del sitio, las columnas con candado, el diseño de la ficha y el título.
+ */
+export function memberListSettings(
+    settings: Record<string, unknown> | null | undefined,
+    who: AclSubject,
+    canManageLists: boolean,
+): Record<string, unknown> {
+    const src = settings ?? {};
+    if (canManageLists || who.role === 'admin') return src;
+    if (effectivePermissions(src, who).view === 'none') return {};
+    const out: Record<string, unknown> = { ...src };
+    for (const key of ['permissions', 'public', 'portal_template', 'portal_layout_v3'] as const) delete out[key];
+    if (isRecord(src.portal)) out.portal = { enabled: src.portal.enabled === true };
+    for (const key of ['collections', 'subscriptions'] as const) {
+        const v = src[key];
+        if (isRecord(v)) out[key] = 'fields' in v ? { fields: v.fields } : {};
+    }
+    return out;
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+    return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
  * v0.1.253 — Quien puede CREAR registros en una lista ve, como mínimo, los
  * que creó. El ajuste fino permitía guardar "Ver: nada" con "Crear: sí": la
  * persona creaba un registro y desaparecía al instante de su vista (reporte
@@ -410,7 +446,9 @@ export function withDependentComputed(
     while (changed) {
         changed = false;
         for (const f of fields) {
-            if ((f.type !== 'computed' && f.type !== 'formula') || out.has(f.id)) continue;
+            // Campo con IA: su valor se calcula leyendo sus entradas (también
+            // los archivos de un campo Archivo): resume/extrae lo que tienen.
+            if ((f.type !== 'computed' && f.type !== 'formula' && f.type !== 'ai') || out.has(f.id)) continue;
             // Fórmulas (A1): sus entradas son los campos que nombra la fórmula.
             const inputs = f.type === 'formula' ? formulaDependencies(f.config ?? {}) : ((f.config?.inputs ?? []) as unknown[]);
             if (inputs.some((id) => out.has(Number(id)))) {
@@ -420,4 +458,53 @@ export function withDependentComputed(
         }
     }
     return out;
+}
+
+/**
+ * El ACL guarda los campos ocultos por SLUG, y el slug es una etiqueta que se
+ * puede cambiar: sin esto, renombrar el nombre interno de un campo (o
+ * restaurarlo de la papelera con un sufijo) lo dejaba a la vista de todos los
+ * roles, personas y equipos a los que se les había ocultado. Devuelve los
+ * `settings` con `oldSlug` reemplazado por `newSlug` en CADA `fields_hidden`
+ * (roles —también los propios—, personas y equipos), o `null` si no cambió
+ * nada. `keepOld`: además conserva el viejo (restaurar con sufijo: el slug
+ * viejo ya lo usa otro campo vivo, que no debe quedar a la vista por esto).
+ * Se trabaja sobre el JSON crudo para no perder nada que el schema no conozca.
+ */
+export function renameHiddenFieldSlug(
+    settings: Record<string, unknown>,
+    oldSlug: string,
+    newSlug: string,
+    opts: { keepOld?: boolean } = {},
+): Record<string, unknown> | null {
+    const doc = settings.permissions;
+    if (!isPlainObject(doc) || oldSlug === newSlug) return null;
+    let changed = false;
+    const mapRows = (rows: unknown): unknown => {
+        if (!isPlainObject(rows)) return rows;
+        const out: Record<string, unknown> = {};
+        for (const [key, row] of Object.entries(rows)) {
+            if (isPlainObject(row) && Array.isArray(row.fields_hidden) && row.fields_hidden.includes(oldSlug)) {
+                const next = new Set<unknown>();
+                for (const slug of row.fields_hidden) {
+                    if (slug !== oldSlug) next.add(slug);
+                    else {
+                        if (opts.keepOld) next.add(oldSlug);
+                        next.add(newSlug);
+                    }
+                }
+                out[key] = { ...row, fields_hidden: [...next] };
+                changed = true;
+            } else out[key] = row;
+        }
+        return out;
+    };
+    const next = { ...doc, permissions: mapRows(doc.permissions), users: mapRows(doc.users), teams: mapRows(doc.teams) };
+    if (doc.users === undefined) delete (next as Record<string, unknown>).users;
+    if (doc.teams === undefined) delete (next as Record<string, unknown>).teams;
+    return changed ? { ...settings, permissions: next } : null;
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+    return typeof v === 'object' && v !== null && !Array.isArray(v);
 }

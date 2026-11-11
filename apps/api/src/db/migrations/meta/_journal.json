@@ -827,6 +827,13 @@
       "when": 1784200002400,
       "tag": "0117_connection_base_url_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1784200002500,
+      "tag": "0118_membership_joined_at",
+      "breakpoints": true
     }
   ]
 }

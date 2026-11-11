@@ -122,7 +122,7 @@ import { AutomationDispatcher } from '../automations/automation-dispatcher.servi
 import { IncidentHub } from '../incidents/incident-hub';
 import { BillingService } from '../billing/billing.service';
 import { FieldsService } from '../fields/fields.service';
-import { FilesService } from '../files/files.service';
+import { FilesService, assertNewAttachable, type FileActor } from '../files/files.service';
 import { ListsService } from '../lists/lists.service';
 import { MailService } from '../mail/mail.service';
 import { senderName, type PortalEmailBrand } from '../portal/portal-email';
@@ -327,6 +327,8 @@ export function pastCloseDate(closesAt: string | null, timeZone: string, now = n
 /** v0.1.351 — Quién guarda (para el CSS propio, que es sólo de administradores). */
 export interface FormActor {
     isAdmin: boolean;
+    /** Quién guarda, para revisar que las imágenes NUEVAS sean archivos que puede usar. */
+    file?: FileActor;
 }
 
 interface ResolvedForm {
@@ -498,7 +500,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         // v0.1.351 — un formulario nuevo nace con el tema por defecto de la empresa (si eligió uno).
         const def = await this.defaultTheme(tenantId);
         if (!config.settings.theme && def) config.settings.theme = def;
-        await this.assertDesign(tenantId, config, def?.custom_css ?? '', actor);
+        await this.assertDesign(tenantId, config, def?.custom_css ?? '', actor, []);
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .insert(forms)
@@ -546,7 +548,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         await this.assertTemplate(tenantId, list.id, config.settings.record_template_id);
         await this.assertPayment(tenantId, config);
         await this.assertSubscription(tenantId, config);
-        await this.assertDesign(tenantId, config, config.settings.theme?.custom_css ?? '', actor);
+        // La copia lleva las imágenes del formulario de origen (ya revisadas al guardarlo).
+        await this.assertDesign(tenantId, config, config.settings.theme?.custom_css ?? '', { ...actor, file: undefined }, []);
         const siblings = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .select({ name: forms.name })
@@ -590,7 +593,11 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             await this.assertPayment(tenantId, clean);
             await this.assertSubscription(tenantId, clean);
             const prev = readPublicTheme(((current.config as Record<string, unknown>)?.settings as Record<string, unknown> | undefined)?.theme ?? {});
-            await this.assertDesign(tenantId, clean, prev.custom_css, actor);
+            const had = readConfig(current.config);
+            await this.assertDesign(tenantId, clean, prev.custom_css, actor, [
+                ...formConfigFileIds(had),
+                ...(had.settings.theme ? publicThemeFileIds(had.settings.theme) : []),
+            ]);
             patch.config = clean as unknown as Record<string, unknown>;
         }
         if (input.regenerate_token) patch.token = newToken();
@@ -643,7 +650,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
      * fondo, panel, ítems y opciones) tiene que ser un archivo de ESTA empresa
      * y una imagen que se muestra sin ejecutar nada (nada de SVG).
      */
-    private async assertDesign(tenantId: number, config: FormConfig, previousCss: string, actor: FormActor): Promise<void> {
+    private async assertDesign(tenantId: number, config: FormConfig, previousCss: string, actor: FormActor, knownFiles: number[]): Promise<void> {
         const theme = config.settings.theme;
         if (theme) {
             const css = sanitizePublicCss(theme.custom_css).css;
@@ -660,12 +667,20 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             theme.custom_css = css;
         }
         const ids = [...new Set([...(theme ? publicThemeFileIds(theme) : []), ...formConfigFileIds(config)])];
-        await this.assertImages(tenantId, ids);
+        await this.assertImages(tenantId, ids, { actor, known: knownFiles });
     }
 
     /** Las imágenes tienen que ser archivos de la empresa y de un tipo que se muestra sin riesgo. */
-    async assertImages(tenantId: number, ids: number[]): Promise<void> {
+    async assertImages(tenantId: number, ids: number[], who: { actor?: FormActor; known?: number[] } = {}): Promise<void> {
         if (ids.length === 0) return;
+        // Las imágenes que se SUMAN tienen que ser archivos que quien guarda
+        // subió o ya puede ver (las de antes y las de un tema de la empresa no
+        // se revisan): la página pública las sirve a cualquiera.
+        if (who.actor?.file && !who.actor.isAdmin) {
+            const saved = (await this.savedThemes(tenantId)).flatMap((t) => publicThemeFileIds(t.theme));
+            const file = who.actor.file;
+            await this.tenantDb.withTenant(tenantId, (tx) => assertNewAttachable(tx, tenantId, file, ids, [...(who.known ?? []), ...saved]));
+        }
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .select({ id: attachments.id, mime: attachments.mime })

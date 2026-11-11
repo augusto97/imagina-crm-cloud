@@ -1228,7 +1228,9 @@ export class StructureTools implements AiProposalApplier {
         const [fields, views, autos, count, connections] = await Promise.all([
             this.fields.listByListId(ctx.tenantId, list.id),
             this.views.list(ctx.tenantId, String(list.id), { userId: ctx.userId, role: ctx.role }),
-            this.automations.list(ctx.tenantId, String(list.id)),
+            // La configuración de las automatizaciones (y su última corrida)
+            // sólo la lee quien ve la lista entera.
+            this.automations.seesWholeList(ctx.tenantId, String(list.id), ctx).then((ok) => (ok ? this.automations.list(ctx.tenantId, String(list.id)) : [])),
             this.countRecords(ctx.tenantId, list.id),
             // Las conexiones son del WORKSPACE, no de la lista, pero el
             // asistente lee este esquema antes de proponer una automatización.
@@ -2296,6 +2298,9 @@ export class StructureTools implements AiProposalApplier {
 
     private async proposeCreateAutomation(ctx: AiToolContext, input: AutomationSpec): Promise<AiToolResult> {
         const list = await this.resolveList(ctx, input.list);
+        await this.automations.assertWholeList(ctx.tenantId, String(list.id), ctx).catch((err: Error) => {
+            throw new AiToolError(err.message);
+        });
         const fields = await this.fields.listByListId(ctx.tenantId, list.id);
         const lists = await this.lists.list(ctx.tenantId);
         const bySlug = new Map(lists.map((l) => [l.slug, l]));
@@ -2808,6 +2813,9 @@ export class StructureTools implements AiProposalApplier {
     // ── v0.1.195 — editar y borrar automatizaciones, vistas y listas ─────
 
     private async resolveAutomation(ctx: AiToolContext, list: List, ref: number | string): Promise<{ id: number; name: string; description: string | null; is_active: boolean; trigger_type: string; trigger_config: Record<string, unknown>; actions: unknown[] }> {
+        await this.automations.assertWholeList(ctx.tenantId, String(list.id), ctx).catch((err: Error) => {
+            throw new AiToolError(err.message);
+        });
         const autos = await this.automations.list(ctx.tenantId, String(list.id));
         const hit =
             typeof ref === 'number' ? autos.find((a) => a.id === ref) : autos.find((a) => a.name.trim().toLowerCase() === ref.trim().toLowerCase());
@@ -3183,6 +3191,7 @@ export class StructureTools implements AiProposalApplier {
                 };
             }
             case 'create_automation': {
+                await this.automations.assertWholeList(ctx.tenantId, String(payload.listId), ctx);
                 const auto = await this.automations.create(ctx.tenantId, String(payload.listId), payload.input, { actorId: ctx.userId, note: 'Creada desde el asistente' });
                 return {
                     message: `Automatización «${auto.name}» creada${auto.is_active ? ' y activa' : ' (pausada)'}.`,
@@ -3249,6 +3258,7 @@ export class StructureTools implements AiProposalApplier {
                 };
             }
             case 'update_automation': {
+                await this.automations.assertWholeList(ctx.tenantId, String(payload.listId), ctx);
                 const auto = await this.automations.update(ctx.tenantId, String(payload.listId), payload.automationId, payload.patch, { actorId: ctx.userId, note: 'Cambio desde el asistente' });
                 return {
                     message: `Automatización «${auto.name}» actualizada${payload.patch.is_active !== undefined ? (auto.is_active ? ' y activa' : ' (pausada)') : ''}.`,
@@ -3257,6 +3267,7 @@ export class StructureTools implements AiProposalApplier {
                 };
             }
             case 'delete_automation': {
+                await this.automations.assertWholeList(ctx.tenantId, String(payload.listId), ctx);
                 await this.automations.remove(ctx.tenantId, String(payload.listId), payload.automationId, ctx.userId);
                 return { message: 'Automatización eliminada.', links: [{ label: 'Ver las automatizaciones', href: `/lists/${payload.listSlug}/automations` }], warnings: [] };
             }
@@ -3310,7 +3321,7 @@ export class StructureTools implements AiProposalApplier {
                 };
             }
             case 'create_document_template': {
-                const tpl = await this.docsService().create(ctx.tenantId, ctx.userId, String(payload.listId), payload.input);
+                const tpl = await this.docsService().create(ctx.tenantId, ctx.userId, String(payload.listId), payload.input, ctx);
                 return {
                     message: `Plantilla «${tpl.name}» creada.`,
                     links: [{ label: 'Abrir en el editor de documentos', href: `/lists/${payload.listSlug}/edit?s=documentos&doc=${tpl.id}` }],
@@ -3318,7 +3329,7 @@ export class StructureTools implements AiProposalApplier {
                 };
             }
             case 'update_document_template': {
-                const tpl = await this.docsService().update(ctx.tenantId, ctx.userId, String(payload.listId), payload.templateId, payload.patch);
+                const tpl = await this.docsService().update(ctx.tenantId, ctx.userId, String(payload.listId), payload.templateId, payload.patch, ctx);
                 return {
                     message: `Plantilla «${tpl.name}» actualizada.`,
                     links: [{ label: 'Abrir en el editor de documentos', href: `/lists/${payload.listSlug}/edit?s=documentos&doc=${tpl.id}` }],
@@ -3348,7 +3359,11 @@ export class StructureTools implements AiProposalApplier {
      * compartir una lista con una persona puntual.
      */
     private async listMembers(ctx: AiToolContext): Promise<AiToolResult> {
-        const rows = await this.lists.workspaceMembers(ctx.tenantId);
+        // Los CLIENTES del portal (su nombre es su correo) no son del equipo:
+        // no se les asigna ni se les comparte una lista, y sólo los ve quien
+        // administra las listas (que es quien maneja los accesos al portal).
+        const seeClients = can(ctx, 'manage_lists');
+        const rows = (await this.lists.workspaceMembers(ctx.tenantId)).filter((m) => m.role !== 'client' || seeClients);
         // C1 — los equipos de cada persona (una consulta para todos).
         const teams = this.teams ? await this.teams.list(ctx.tenantId) : [];
         const teamsOf = new Map<number, string[]>();

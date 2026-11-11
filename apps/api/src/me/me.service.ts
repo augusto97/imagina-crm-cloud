@@ -7,6 +7,7 @@ import {
     readMostUsed,
     readMobileNavConfig,
     parseGuideProgress,
+    type Capability,
     type FavoriteView,
     type Favorites,
     type GuideProgress,
@@ -23,6 +24,7 @@ import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/client';
 import { lists, memberships, mentions, savedViews, tenants } from '../db/schema';
 import { AuditService } from '../audit/audit.service';
+import { can } from '../authz/can';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { MeRepository, type MeUserRow } from './me.repository';
 
@@ -62,28 +64,30 @@ export class MeService {
      * agrupados por un campo persona mostraban el id («1») en vez del
      * nombre. Los ids que no son miembros simplemente no vuelven.
      */
-    async getUsers(tenantId: number, ids: number[], viewerRole?: string): Promise<MeUserSummary[]> {
+    async getUsers(tenantId: number, ids: number[], viewer?: DirectoryViewer | string): Promise<MeUserSummary[]> {
         const clean = [...new Set(ids.filter((n) => Number.isInteger(n) && n > 0))].slice(0, 100);
         if (clean.length === 0) return [];
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.findMembers(tx, tenantId, clean),
         );
-        return rows.map((r) => toSummary(r, viewerRole));
+        const who = directoryViewer(viewer);
+        return rows.filter((r) => directoryVisible(r, who)).map((r) => toSummary(r, who.role));
     }
 
     /** Lookup de un miembro del tenant activo por id — 404 si no es miembro. */
-    async getUser(tenantId: number, userId: number, viewerRole?: string): Promise<MeUserSummary> {
+    async getUser(tenantId: number, userId: number, viewer?: DirectoryViewer | string): Promise<MeUserSummary> {
         const row = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.findMember(tx, tenantId, userId),
         );
-        if (!row) {
+        const who = directoryViewer(viewer);
+        if (!row || !directoryVisible(row, who)) {
             throw new NotFoundException({
                 code: 'user_not_found',
                 message: `El usuario ${userId} no es miembro de este workspace`,
                 data: { status: 404 },
             });
         }
-        return toSummary(row, viewerRole);
+        return toSummary(row, who.role);
     }
 
     getEmailSignature(userId: number): Promise<string> {
@@ -378,6 +382,33 @@ export class MeService {
 function parseFavorites(settings: Record<string, unknown> | undefined | null): Favorites {
     const parsed = favoritesSchema.safeParse((settings as Record<string, unknown> | undefined)?.favorites ?? {});
     return parsed.success ? parsed.data : favoritesSchema.parse({});
+}
+
+/** Quién consulta el directorio de personas de la empresa. */
+export interface DirectoryViewer {
+    role?: string;
+    userId?: number;
+    capabilities?: readonly Capability[];
+}
+
+function directoryViewer(v: DirectoryViewer | string | undefined): DirectoryViewer {
+    return typeof v === 'string' ? { role: v } : (v ?? {});
+}
+
+/**
+ * ¿Esta fila del directorio es para quien pregunta? Los CLIENTES del portal
+ * (rol `client`, cuyo nombre es su correo) no son del equipo: sólo los ve
+ * quien administra las listas (y con eso los accesos al portal), que es donde
+ * la interfaz muestra a quién pertenece un registro. Un invitado ve a las
+ * personas del equipo (sin correo) y a sí mismo, nunca a otros invitados ni a
+ * los clientes. Sin quién (llamada interna sin contexto): sólo el equipo.
+ */
+function directoryVisible(row: MeUserRow, who: DirectoryViewer): boolean {
+    if (row.role === 'client') {
+        return who.role !== undefined && who.role !== 'guest' && can({ role: who.role, capabilities: who.capabilities }, 'manage_lists');
+    }
+    if (who.role === 'guest' && row.role === 'guest') return who.userId !== undefined && row.id === who.userId;
+    return true;
 }
 
 /** login = email y display_name = name (shape del picker heredado del plugin). */
