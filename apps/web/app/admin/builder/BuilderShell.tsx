@@ -533,6 +533,8 @@ export interface SettingsNavItem<T extends string = string> {
     problem?: boolean;
     /** Un grupo del menú (se muestra como título arriba de sus filas). */
     group?: string;
+    /** Algo al costado (un contador, un punto de estado). */
+    badge?: ReactNode;
 }
 
 /** El menú de grupos de «Ajustes» (computadora). */
@@ -543,6 +545,7 @@ export function SettingsNav<T extends string>({
     label,
     testId,
     tour,
+    dense = false,
 }: {
     items: ReadonlyArray<SettingsNavItem<T>>;
     active: T;
@@ -550,10 +553,12 @@ export function SettingsNav<T extends string>({
     label: string;
     testId?: string;
     tour?: string;
+    /** Filas más bajas (un menú con muchas secciones). */
+    dense?: boolean;
 }): JSX.Element {
     const groups = groupItems(items);
     return (
-        <nav aria-label={label} className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-3" data-testid={testId} data-tour={tour}>
+        <nav aria-label={label} className={cn('imcrm-flex imcrm-flex-col imcrm-p-3', dense ? 'imcrm-gap-3' : 'imcrm-gap-4')} data-testid={testId} data-tour={tour}>
             {groups.map(([g, list]) => (
                 <div key={g ?? '_'} className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
                     {g && <p className="imcrm-px-2.5 imcrm-pb-1 imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-[0.06em] imcrm-text-muted-foreground">{g}</p>}
@@ -568,13 +573,15 @@ export function SettingsNav<T extends string>({
                                 aria-current={on ? 'page' : undefined}
                                 data-settings-group={it.id}
                                 className={cn(
-                                    'imcrm-group imcrm-flex imcrm-items-center imcrm-gap-2.5 imcrm-rounded-lg imcrm-px-2.5 imcrm-py-2 imcrm-text-left imcrm-transition-colors',
+                                    'imcrm-group imcrm-flex imcrm-items-center imcrm-gap-2.5 imcrm-rounded-lg imcrm-px-2.5 imcrm-text-left imcrm-transition-colors',
+                                    dense ? 'imcrm-py-1.5' : 'imcrm-py-2',
                                     on ? 'imcrm-bg-primary/10' : 'hover:imcrm-bg-muted/70',
                                 )}
                             >
                                 <span
                                     className={cn(
-                                        'imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-transition-colors',
+                                        'imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-transition-colors',
+                                        dense ? 'imcrm-h-6 imcrm-w-6' : 'imcrm-h-7 imcrm-w-7',
                                         on ? 'imcrm-bg-primary imcrm-text-primary-foreground' : 'imcrm-bg-muted imcrm-text-muted-foreground group-hover:imcrm-text-foreground',
                                     )}
                                 >
@@ -584,6 +591,7 @@ export function SettingsNav<T extends string>({
                                     <span className={cn('imcrm-truncate imcrm-text-[13px]', on ? 'imcrm-font-semibold imcrm-text-foreground' : 'imcrm-font-medium')}>{it.label}</span>
                                     {it.summary && <span className="imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">{it.summary}</span>}
                                 </span>
+                                {it.badge}
                                 {it.problem && <span className="imcrm-h-2 imcrm-w-2 imcrm-shrink-0 imcrm-rounded-full imcrm-bg-destructive" aria-label={__('Falta algo')} />}
                             </button>
                         );
