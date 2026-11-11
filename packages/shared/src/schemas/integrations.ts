@@ -364,6 +364,178 @@ export const WA_WEB_DEFAULT_SERVER = 'https://whats.imagina.cloud';
 /** Los permisos que necesita la clave de la versión nueva (se piden al crearla). */
 export const WA_WEB_KEY_ABILITIES = ['account.view', 'wa.accounts.view', 'wa.send', 'wa.read', 'webhooks.manage'] as const;
 
+/**
+ * v0.1.401 — El conector completo de Whats: además de enviar mensajes y
+ * archivos, ubicación y tarjeta de contacto, el contacto (crear o actualizar,
+ * etiquetas, grupos, notas, consentimiento, baja), los flujos y goteos de
+ * Whats, y la bandeja (responder, resolver). Las reglas (permisos, listas de la
+ * cuenta, lo que deja cada una) están en `whats-actions.ts`. El teléfono se
+ * llama `recipient` en todas, como en «Enviar mensaje».
+ */
+const WHATS_RECIPIENT = {
+    key: 'recipient',
+    label: 'Teléfono del contacto',
+    required: true,
+    help: 'Con indicativo de país, por ejemplo +573001234567. Puedes usar el campo teléfono: {{telefono}}.',
+};
+const WHATS_CREATE_NAME = {
+    key: 'name',
+    label: 'Nombre si hay que crearlo',
+    help: 'Si el contacto todavía no está en Whats, se crea con este nombre. Vacío = el título del registro.',
+};
+
+const WHATS_EXTRA_ACTIONS: ConnectorAction[] = [
+    action({
+        key: 'send_location',
+        label: 'Enviar ubicación por WhatsApp',
+        description: 'Un punto en el mapa (por ejemplo, la dirección de tu local o de una cita).',
+        params: [
+            { ...WHATS_RECIPIENT, label: 'Número de destino' },
+            { key: 'latitude', label: 'Latitud', required: true, help: 'Por ejemplo 4.6097 (entre -90 y 90). Puedes usar un campo: {{latitud}}.' },
+            { key: 'longitude', label: 'Longitud', required: true, help: 'Por ejemplo -74.0817 (entre -180 y 180).' },
+            { key: 'place_name', label: 'Nombre del lugar', help: 'Opcional. Por ejemplo «Oficina principal».' },
+            { key: 'address', label: 'Dirección', help: 'Opcional.' },
+        ],
+    }),
+    action({
+        key: 'send_contact',
+        label: 'Enviar tarjeta de contacto por WhatsApp',
+        description: 'Una tarjeta con un nombre y sus teléfonos, que el cliente guarda con un toque.',
+        params: [
+            { ...WHATS_RECIPIENT, label: 'Número de destino' },
+            { key: 'contact_name', label: 'Nombre en la tarjeta', required: true, help: 'Por ejemplo el de tu asesor: {{responsable.nombre}}.' },
+            { key: 'contact_phones', label: 'Teléfonos de la tarjeta', type: 'long_text', required: true, help: 'Uno por línea, hasta 10, con indicativo de país.' },
+        ],
+    }),
+    action({
+        key: 'upsert_contact',
+        label: 'Crear o actualizar contacto en Whats',
+        description: 'Busca el contacto por su teléfono: si no está, lo crea; si está, le cambia sólo los datos que completes.',
+        params: [
+            WHATS_RECIPIENT,
+            { key: 'name', label: 'Nombre', help: 'Vacío = no se cambia (y al crearlo, el título del registro).' },
+            { key: 'email', label: 'Correo', help: 'Opcional.' },
+            { key: 'language', label: 'Idioma', help: 'Opcional. El código del idioma de los mensajes automáticos de Whats, por ejemplo es. Vacío = el de tu cuenta.' },
+            { key: 'fields', label: 'Campos personalizados de Whats', type: 'long_text', help: 'Los campos que creaste en Whats, cada uno con su valor.' },
+        ],
+    }),
+    action({
+        key: 'add_tags',
+        label: 'Poner etiquetas en Whats',
+        description: 'Le suma etiquetas al contacto sin quitarle las que ya tiene.',
+        params: [
+            WHATS_RECIPIENT,
+            { key: 'tags', label: 'Etiquetas', required: true, help: 'Elígelas de tu cuenta o escribe los nombres separados por coma. Puedes usar variables, como {{ciudad}}.' },
+            { key: 'create_missing', label: 'Crear las etiquetas que no existan', type: 'boolean', default: 'true' },
+            WHATS_CREATE_NAME,
+        ],
+    }),
+    action({
+        key: 'remove_tags',
+        label: 'Quitar etiquetas en Whats',
+        description: 'Le quita esas etiquetas al contacto. Whats detiene los goteos que dependían de ellas.',
+        params: [WHATS_RECIPIENT, { key: 'tags', label: 'Etiquetas', required: true, help: 'Elígelas de tu cuenta o escribe los nombres separados por coma.' }],
+    }),
+    action({
+        key: 'add_to_group',
+        label: 'Agregar a un grupo de contactos de Whats',
+        description: 'Suma el contacto a un grupo de tu cuenta (los grupos sirven, por ejemplo, para campañas y goteos).',
+        params: [
+            WHATS_RECIPIENT,
+            { key: 'group', label: 'Grupo', required: true, help: 'Elígelo de tu cuenta o escribe su nombre. Puedes usar una variable.' },
+            { key: 'create_missing', label: 'Crear el grupo si no existe', type: 'boolean', default: 'true' },
+            WHATS_CREATE_NAME,
+        ],
+    }),
+    action({
+        key: 'remove_from_group',
+        label: 'Quitar de un grupo de contactos de Whats',
+        description: 'Saca el contacto del grupo. Whats detiene los goteos que dependían de él.',
+        params: [WHATS_RECIPIENT, { key: 'group', label: 'Grupo', required: true, help: 'Elígelo de tu cuenta o escribe su nombre.' }],
+    }),
+    action({
+        key: 'add_note',
+        label: 'Agregar una nota al contacto en Whats',
+        description: 'Una nota que tu equipo ve en la ficha del contacto en Whats.',
+        params: [WHATS_RECIPIENT, { key: 'note', label: 'Nota', type: 'long_text', required: true, help: 'Hasta 10.000 caracteres. Puedes usar variables.' }, WHATS_CREATE_NAME],
+    }),
+    action({
+        key: 'record_consent',
+        label: 'Registrar consentimiento en Whats',
+        description: 'Deja la prueba de que el contacto aceptó recibir tus mensajes por WhatsApp: qué texto aceptó, dónde y cuándo.',
+        params: [
+            WHATS_RECIPIENT,
+            { key: 'consent_text', label: 'Texto que aceptó', type: 'long_text', required: true, help: 'El texto exacto que vio, por ejemplo «Acepto recibir novedades por WhatsApp».' },
+            { key: 'source', label: 'Dónde lo aceptó', required: true, help: 'Por ejemplo «formulario de la web» o «mostrador».' },
+            { key: 'granted_at', label: 'Cuándo', help: 'Vacío = ahora. Acepta una fecha con hora, como {{fecha_registro}}.' },
+            WHATS_CREATE_NAME,
+        ],
+    }),
+    action({
+        key: 'unsubscribe',
+        label: 'Dar de baja en Whats',
+        description: 'Whats deja de mandarle mensajes y campañas a ese número.',
+        params: [WHATS_RECIPIENT, { key: 'reason', label: 'Motivo', help: 'Opcional. Por ejemplo «Lo pidió por teléfono».' }],
+    }),
+    action({
+        key: 'trigger_flow',
+        label: 'Activar un flujo de Whats',
+        description: 'Arranca para este contacto un flujo publicado y activo de Whats, con las variables que le pases.',
+        params: [
+            WHATS_RECIPIENT,
+            { key: 'flow', label: 'Flujo', type: 'select', required: true, help: 'Los flujos publicados de tu cuenta.' },
+            { key: 'variables', label: 'Variables del flujo', type: 'long_text', help: 'Datos que el flujo puede usar, cada uno con su nombre. Hasta 100.' },
+            WHATS_CREATE_NAME,
+        ],
+    }),
+    action({
+        key: 'resume_flow',
+        label: 'Reanudar un flujo de Whats en espera',
+        description: 'Le devuelve el control a un flujo de Whats que se pausó esperando a tu sistema (normalmente, después de llamar a un webhook entrante).',
+        params: [
+            { key: 'run_id', label: 'Ejecución', required: true, help: 'El número de la ejecución que quedó esperando. Si el flujo lo mandó al webhook entrante: {{payload.run_id}}.' },
+            { key: 'resume_token', label: 'Token para reanudar', required: true, help: 'El que dio el flujo al pausarse, por ejemplo {{payload.resume_token}}.' },
+            { key: 'variables', label: 'Variables para el flujo', type: 'long_text', help: 'Datos que se suman a las variables del flujo.' },
+        ],
+    }),
+    action({
+        key: 'enroll_drip',
+        label: 'Inscribir en un goteo de Whats',
+        description: 'Suma el contacto a una secuencia de mensajes de Whats. El goteo tiene que estar activo.',
+        params: [WHATS_RECIPIENT, { key: 'drip', label: 'Goteo', type: 'select', required: true, help: 'Los goteos activos de tu cuenta.' }, WHATS_CREATE_NAME],
+    }),
+    action({
+        key: 'reply_conversation',
+        label: 'Responder en la conversación de Whats',
+        description: 'Responde en la bandeja de Whats como lo haría tu equipo: el mensaje queda en la conversación del contacto.',
+        params: [
+            WHATS_RECIPIENT,
+            { key: 'message', label: 'Mensaje', type: 'long_text', required: true, help: 'Hasta 4.096 caracteres.' },
+            { key: 'conversation', label: 'Conversación', help: 'Opcional. Vacío = la conversación de WhatsApp más reciente de ese teléfono.' },
+        ],
+    }),
+    action({
+        key: 'conversation_status',
+        label: 'Resolver o reabrir la conversación en Whats',
+        description: 'Marca como resuelta (o vuelve a abrir) la conversación del contacto en la bandeja de Whats.',
+        params: [
+            WHATS_RECIPIENT,
+            {
+                key: 'operation',
+                label: 'Qué hacer',
+                type: 'select',
+                required: true,
+                default: 'resolve',
+                options: [
+                    { value: 'resolve', label: 'Resolverla' },
+                    { value: 'reopen', label: 'Reabrirla' },
+                ],
+            },
+            { key: 'conversation', label: 'Conversación', help: 'Opcional. Vacío = la conversación de WhatsApp más reciente de ese teléfono.' },
+        ],
+    }),
+];
+
 /** Estados de pedido de WooCommerce (los del núcleo; un plugin puede sumar otros). */
 export const WOO_ORDER_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
     { value: 'pending', label: 'Pendiente de pago' },
@@ -892,6 +1064,7 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
                     { key: 'caption', label: 'Texto que lo acompaña', type: 'long_text', help: 'Opcional. Los audios no llevan texto.' },
                 ],
             }),
+            ...WHATS_EXTRA_ACTIONS,
         ],
     },
     {

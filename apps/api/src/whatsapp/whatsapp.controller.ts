@@ -4,7 +4,14 @@ import {
     updateWhatsappListFieldsSchema,
     whatsappSendSchema,
     whatsappTestSendSchema,
+    whatsActionTestSchema,
+    WHATS_LOOKUP_KINDS,
     type UpdateWhatsappConfigInput,
+    type WhatsAbilitiesResult,
+    type WhatsActionTestInput,
+    type WhatsActionTestResult,
+    type WhatsLookupKind,
+    type WhatsLookupResult,
     type UpdateWhatsappListFieldsInput,
     type WhatsappConnectionDetail,
     type WhatsappListColumns,
@@ -26,6 +33,7 @@ import { WhatsappService, type WhatsappActor } from './whatsapp.service';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 
 const subscribeSchema = z.object({ override: z.boolean().default(false) });
+const whatsKindSchema = z.enum(WHATS_LOOKUP_KINDS);
 
 /**
  * D3 — WhatsApp oficial. Configurar la conexión es de quien puede EDITARLA
@@ -116,6 +124,32 @@ export class WhatsappController {
         @Body(new ZodValidationPipe(whatsappSendSchema)) input: WhatsappSendInput,
     ): Promise<WhatsappSendResult> {
         return this.whatsapp.sendFromRecord(tenantId(req), actorOf(req), list, recordId, input);
+    }
+
+    /** v0.1.401 — etiquetas, grupos, flujos, goteos o campos de la cuenta de Whats. */
+    @Get('whatsapp/connections/:id/whats/options/:kind')
+    @RequireCapability('manage_automations')
+    whatsOptions(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number, @Param('kind', new ZodValidationPipe(whatsKindSchema)) kind: WhatsLookupKind): Promise<WhatsLookupResult> {
+        return this.whatsapp.whatsOptions(tenantId(req), actorOf(req), id, kind);
+    }
+
+    /** v0.1.401 — qué permisos tiene la clave y qué le falta a cada acción. */
+    @Get('whatsapp/connections/:id/whats/abilities')
+    @RequireCapability('manage_automations')
+    whatsAbilities(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<WhatsAbilitiesResult> {
+        return this.whatsapp.whatsAbilities(tenantId(req), actorOf(req), id);
+    }
+
+    /** v0.1.401 — «Probar ahora» de las acciones de Whats que no mandan un mensaje. */
+    @Post('lists/:list/automations/whats-action-test')
+    @HttpCode(200)
+    @RequireCapability('manage_automations')
+    whatsActionTest(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(whatsActionTestSchema)) input: WhatsActionTestInput,
+    ): Promise<WhatsActionTestResult> {
+        return this.whatsapp.whatsActionTest(tenantId(req), actorOf(req), list, input);
     }
 
     /** «Probar ahora» de las acciones de WhatsApp: envía DE VERDAD al número escrito. */

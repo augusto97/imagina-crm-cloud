@@ -23,6 +23,7 @@ import type { FieldEntity } from '@/types/field';
 
 import { AutomationEditorListContext } from './config-editors';
 import { MergeTagInput } from './MergeTagInput';
+import { WhatsAbilitiesNotice, WhatsActionFields, WhatsActionTest, whatsActionDescription } from './WhatsActionFields';
 import { labelMergeTags, readVariables, selectedTemplate } from '@/cloud/components/whatsapp/whatsappHelpers';
 
 /**
@@ -124,12 +125,21 @@ function CloudWhatsappActionConfig({ spec, onChange, fields }: { spec: ActionSpe
     );
 }
 
-/** v0.1.389 — las acciones de Imagina WAS: un mensaje o un archivo, sin plantillas. */
+/**
+ * v0.1.389 — las acciones de Whats: un mensaje o un archivo, sin plantillas.
+ * v0.1.401 — y el resto del conector (ubicación, tarjeta de contacto,
+ * contactos, etiquetas, grupos, flujos, goteos y la bandeja), con los datos
+ * que salen del catálogo.
+ */
 function WebWhatsappActionConfig({ spec, onChange, fields }: { spec: ActionSpec; onChange: (next: ActionSpec) => void; fields: FieldEntity[] }): JSX.Element {
     const connectionId = Number(spec.config.connection_id) > 0 ? Number(spec.config.connection_id) : null;
     const actionKey = str(spec.config.action_key);
     const values = (spec.config.values ?? {}) as Values;
     const media = actionKey === 'send_media';
+    const sendKind: 'text' | 'media' | 'location' | 'contact' | null =
+        actionKey === 'send_text' ? 'text' : media ? 'media' : actionKey === 'send_location' ? 'location' : actionKey === 'send_contact' ? 'contact' : null;
+    const hasRecipient = actionKey !== 'resume_flow';
+    const description = sendKind === 'text' || sendKind === 'media' ? '' : whatsActionDescription(actionKey);
     const setValues = (patch: Values): void => {
         onChange({ ...spec, config: { ...spec.config, values: { ...values, ...patch } } });
     };
@@ -139,39 +149,45 @@ function WebWhatsappActionConfig({ spec, onChange, fields }: { spec: ActionSpec;
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-whatsapp-action-config" data-action={actionKey} data-provider="whatsapp_web">
-            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                <Label className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {__('Para (teléfono del contacto)')}
-                    <span className="imcrm-text-destructive"> *</span>
-                </Label>
-                <MergeTagInput
-                    value={str(values.recipient)}
-                    onChange={(next) => setValues({ recipient: next })}
-                    fields={fields}
-                    placeholder={phoneFields[0] ? `{{${phoneFields[0].slug}}}` : '+57 300 111 2233'}
-                    data-testid="imcrm-whatsapp-action-to"
-                />
-                {str(values.recipient).trim() === '' && phoneFields.length > 0 && (
-                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1 imcrm-text-[11px] imcrm-text-muted-foreground">
-                        {__('Usar:')}
-                        {phoneFields.map((f) => (
-                            <button
-                                key={f.id}
-                                type="button"
-                                className="imcrm-rounded imcrm-border imcrm-border-border imcrm-px-1.5 imcrm-py-0.5 hover:imcrm-bg-accent"
-                                onClick={() => setValues({ recipient: `{{${f.slug}}}` })}
-                            >
-                                {f.label}
-                            </button>
-                        ))}
-                    </div>
-                )}
-                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                    {__('Un número sin el indicativo del país se completa con el de tu número de WhatsApp.')}
-                </p>
-            </div>
+            {description !== '' && <p className="imcrm-text-xs imcrm-text-muted-foreground">{__(description)}</p>}
+            <WhatsAbilitiesNotice connectionId={connectionId} actionKey={actionKey} />
+            {hasRecipient && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                    <Label className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {sendKind ? __('Para (teléfono del contacto)') : __('Teléfono del contacto')}
+                        <span className="imcrm-text-destructive"> *</span>
+                    </Label>
+                    <MergeTagInput
+                        value={str(values.recipient)}
+                        onChange={(next) => setValues({ recipient: next })}
+                        fields={fields}
+                        placeholder={phoneFields[0] ? `{{${phoneFields[0].slug}}}` : '+57 300 111 2233'}
+                        data-testid="imcrm-whatsapp-action-to"
+                    />
+                    {str(values.recipient).trim() === '' && phoneFields.length > 0 && (
+                        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1 imcrm-text-[11px] imcrm-text-muted-foreground">
+                            {__('Usar:')}
+                            {phoneFields.map((f) => (
+                                <button
+                                    key={f.id}
+                                    type="button"
+                                    className="imcrm-rounded imcrm-border imcrm-border-border imcrm-px-1.5 imcrm-py-0.5 hover:imcrm-bg-accent"
+                                    onClick={() => setValues({ recipient: `{{${f.slug}}}` })}
+                                >
+                                    {f.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                        {__('Un número sin el indicativo del país se completa con el de tu número de WhatsApp.')}
+                    </p>
+                </div>
+            )}
 
-            {media ? (
+            {sendKind !== 'text' && sendKind !== 'media' ? (
+                <WhatsActionFields connectionId={connectionId} actionKey={actionKey} values={values} setValues={setValues} fields={fields} />
+            ) : media ? (
                 <>
                     <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                         <Label className="imcrm-text-xs imcrm-text-muted-foreground">
@@ -202,12 +218,15 @@ function WebWhatsappActionConfig({ spec, onChange, fields }: { spec: ActionSpec;
                 </div>
             )}
 
-            <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-rounded-md imcrm-bg-muted/60 imcrm-p-2 imcrm-text-xs imcrm-text-muted-foreground">
-                <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
-                {__('Cuida tu número: no lo uses para mensajes masivos a quien no te escribió. Si el número se desconecta, la acción falla con el motivo y aparece en Problemas.')}
-            </p>
+            {sendKind && (
+                <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-rounded-md imcrm-bg-muted/60 imcrm-p-2 imcrm-text-xs imcrm-text-muted-foreground">
+                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                    {__('Cuida tu número: no lo uses para mensajes masivos a quien no te escribió. Si el número se desconecta, la acción falla con el motivo y aparece en Problemas.')}
+                </p>
+            )}
 
-            {connectionId !== null && <TestSend connectionId={connectionId} kind={media ? 'media' : 'text'} values={values} />}
+            {connectionId !== null && sendKind && <TestSend connectionId={connectionId} kind={sendKind} values={values} />}
+            {connectionId !== null && !sendKind && <WhatsActionTest connectionId={connectionId} actionKey={actionKey} values={values} />}
         </div>
     );
 }
@@ -370,7 +389,7 @@ function TemplateFields({
     );
 }
 
-function TestSend({ connectionId, kind, values }: { connectionId: number; kind: 'template' | 'text' | 'media'; values: Values }): JSX.Element {
+function TestSend({ connectionId, kind, values }: { connectionId: number; kind: 'template' | 'text' | 'media' | 'location' | 'contact'; values: Values }): JSX.Element {
     const listId = useContext(AutomationEditorListContext);
     const [to, setTo] = useState('');
     const [result, setResult] = useState<WhatsappSendResult | null>(null);

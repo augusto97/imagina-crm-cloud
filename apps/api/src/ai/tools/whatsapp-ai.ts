@@ -1,4 +1,6 @@
 import {
+    INTEGRATIONS,
+    WHATS_ACTION_OUTPUTS,
     WHATSAPP_FIELD_ROLES,
     readWhatsappListFields,
     renderWhatsappTemplate,
@@ -54,6 +56,20 @@ async function approvedTemplates(tenantDb: TenantDb, tenantId: number, connectio
     return out;
 }
 
+/**
+ * v0.1.401 — Las acciones de Whats como `clave {dato, dato?}` (el `?` marca lo
+ * opcional) y lo que deja para los pasos siguientes ({{whats.x}}). Sale del
+ * catálogo: una acción nueva aparece sola.
+ */
+function whatsActionShapes(): string[] {
+    const def = INTEGRATIONS.find((i) => i.key === 'whatsapp_web');
+    return (def?.actions ?? []).map((a) => {
+        const params = a.params.map((p) => (p.required ? p.key : `${p.key}?`)).join(', ');
+        const outs = WHATS_ACTION_OUTPUTS[a.key as keyof typeof WHATS_ACTION_OUTPUTS] ?? [];
+        return `${a.key} {${params}}${outs.length ? ` → ${outs.map((o) => `{{whats.${o}}}`).join(' ')}` : ''}`;
+    });
+}
+
 /** El bloque `whatsapp` de get_list_schema (null si la empresa no conectó WhatsApp oficial). */
 export async function whatsappSchema(
     tenantDb: TenantDb,
@@ -82,7 +98,7 @@ export async function whatsappSchema(
                       kind: 'whats',
                       name: c.name,
                       phone: c.account_label,
-                      actions: ['send_text {recipient, message}', 'send_media {recipient, url, caption}'],
+                      actions: whatsActionShapes(),
                   }
                 : {
                       connection_id: c.id,
@@ -94,7 +110,11 @@ export async function whatsappSchema(
         ),
         list_columns: columns,
         rules:
-            'Conexiones kind "whats" (Whats, la versión nueva de WAS): send_text {recipient, message} y send_media {recipient, url (https público), caption} salen siempre, sin plantillas ni ventana de 24 h; es un número vinculado, así que sólo a contactos que esperan el mensaje. ' +
+            'Conexiones kind "whats" (Whats, la versión nueva de WAS): cada acción es connector_action {connection_id, action_key, values} con las claves de actions. ' +
+            'Los mensajes (send_text, send_media con url https pública, send_location, send_contact) salen siempre, sin plantillas ni ventana de 24 h; es un número vinculado, así que sólo a contactos que esperan el mensaje. ' +
+            'Las demás trabajan sobre el contacto de Whats con ese teléfono (recipient: "{{telefono}}"): si no existe se crea con values.name (o el título del registro), salvo remove_tags, remove_from_group, unsubscribe, reply_conversation y conversation_status, que lo necesitan existente. ' +
+            'tags y group van por NOMBRE (create_missing "true" crea los que falten); flow y drip por id (el editor los elige de la cuenta); variables y fields son un JSON {"clave": "{{slug}}"}. ' +
+            'Lo que deja cada acción ({{whats.contacto_id}}, {{whats.mensaje_id}}…) sirve en los pasos siguientes. Nunca se envía a grupos de WhatsApp. ' +
             'Conexiones kind "oficial" (Meta): send_template sirve siempre (plantilla APROBADA de approved_templates, con todas sus variables en values.variables: {"body.1": "{{slug}}"…}). ' +
             'send_text (texto libre) sólo funciona si el contacto escribió en las últimas 24 h — fuera de esa ventana la acción falla: para avisos usa una plantilla. ' +
             'El destinatario es values.to (un campo teléfono: "{{telefono}}"). Las plantillas se crean y aprueban en Meta, nunca desde aquí. ' +

@@ -126,6 +126,12 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Enviar mensaje de WhatsApp', what: '**Para** (con indicativo; usa el campo teléfono del registro, por ejemplo `{{telefono}}`) y **Mensaje**, que acepta variables del registro.', tip: 'Un número sin indicativo se completa con el de tu número de WhatsApp.' },
                     { name: 'Enviar archivo por WhatsApp', what: 'Un archivo con un texto opcional: **Enlace del archivo** (una dirección pública https a un PDF, una imagen, un audio o un video) y **Texto que lo acompaña**.', tip: 'Combínalo con «Generar un PDF»: el enlace `{{pdf.link}}` manda la cuenta de cobro recién armada.' },
+                    { name: 'Enviar ubicación o tarjeta de contacto', what: 'Un punto en el mapa (latitud, longitud, nombre y dirección) o una tarjeta con un nombre y sus teléfonos, que el cliente guarda con un toque.' },
+                    { name: 'Crear o actualizar contacto en Whats', what: 'Busca el contacto por su **teléfono**: si no está lo crea; si está, le cambia sólo lo que completes (nombre, correo, idioma y los campos que creaste en Whats).' },
+                    { name: 'Etiquetas, grupos y notas', what: '**Poner** o **quitar etiquetas** y **agregar** o **quitar de un grupo**: las eliges de tu cuenta o las escribes (también con variables, como `{{ciudad}}`); las que no existen se crean. **Agregar una nota** deja un texto en la ficha del contacto en Whats.' },
+                    { name: 'Consentimiento y baja', what: '**Registrar consentimiento** guarda qué texto aceptó, dónde y cuándo. **Dar de baja** hace que Whats deje de mandarle mensajes y campañas.' },
+                    { name: 'Flujos y goteos', what: '**Activar un flujo** (los publicados de tu cuenta) con variables del registro, **reanudar** uno que quedó esperando a tu sistema e **inscribir en un goteo**.', tip: 'Lo que deja cada acción sirve en las siguientes: `{{whats.contacto_id}}`, `{{whats.ejecucion_id}}`, `{{whats.mensaje_id}}`.' },
+                    { name: 'Responder o resolver la conversación', what: 'Responde en la bandeja de Whats como lo haría tu equipo, o la marca como resuelta (o la reabre). Si el contacto no tiene conversación, la acción se salta.' },
                     { name: 'Cuando llega un mensaje de WhatsApp', what: 'El disparador corre cuando un contacto te escribe, con `{{whatsapp.texto}}`, `{{whatsapp.nombre}}` y `{{whatsapp.de}}`.' },
                     { name: 'Servidor (opciones avanzadas)', what: 'Sólo si usas un servidor de Whats propio. Casi nadie lo cambia.' },
                 ],
@@ -133,6 +139,10 @@ export const articles: LearnArticle[] = [
             {
                 t: 'callout',
                 tone: 'info',
+                md: 'Las acciones que trabajan sobre el contacto buscan en Whats el **teléfono del registro** y, si todavía no está, lo crean con el título del registro (salvo las que quitan algo). **Probar ahora → Ver qué haría** te muestra lo que va a pasar con un registro real sin tocar Whats. Para usarlas, la clave necesita además permisos de contactos, etiquetas, grupos, flujos o bandeja: la página **Configurar WhatsApp** te dice cuántas acciones puedes usar y qué permisos faltan.',
+            },
+            {
+                t: 'p',
                 md: '¿Ya tenías conectado **WhatsApp (WAS)**, la versión anterior? Sigue funcionando igual. Para usar la versión nueva, conecta **WhatsApp (Whats)** con una clave de tu cuenta de Whats y pasa tus automatizaciones a la nueva con **Reemplazar en automatizaciones**: está explicado en [Las apps dentro de tus automatizaciones](/aprende/integraciones/integraciones-en-automatizaciones).',
             },
             { t: 'h', text: 'Telegram' },

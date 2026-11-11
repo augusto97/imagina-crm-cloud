@@ -4491,6 +4491,8 @@ export class StructureTools implements AiProposalApplier {
                 }
                 const values = (cfg.values && typeof cfg.values === 'object' ? cfg.values : {}) as Record<string, unknown>;
                 const keys = new Set(act.params.map((p) => p.key));
+                // v0.1.401 — junto al flujo o goteo de Whats, el editor guarda su nombre (para los mensajes).
+                if (conn.integration_key === 'whatsapp_web') for (const k of ['flow_label', 'drip_label']) keys.add(k);
                 const unknownKeys = Object.keys(values).filter((k) => !keys.has(k));
                 if (unknownKeys.length > 0) {
                     throw new AiToolError(

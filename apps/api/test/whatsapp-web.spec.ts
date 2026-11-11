@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { PublicCache } from '../src/public-cache/public-cache';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { WA_WEB_HOOK_EVENTS, readWhatsappListFields, whatsappStatusFromWeb } from '@imagina-base/shared';
+import { WA_WEB_EXTRA_ABILITIES, WA_WEB_HOOK_EVENTS, readWhatsappListFields, whatsappStatusFromWeb } from '@imagina-base/shared';
 
 /**
  * v0.1.389 — La versión nueva de Imagina WAS (API v1 de Zender) de punta a
@@ -72,6 +72,7 @@ import {
     waWebSendRequest,
 } from '../src/whatsapp/whatsapp-web';
 import { WhatsappService } from '../src/whatsapp/whatsapp.service';
+import { describeWhatsPlan, pickConversation, planWhatsAction } from '../src/whatsapp/whats-actions';
 import { startPostgres, type TestPg } from './helpers/containers';
 import { memoryOAuthStore } from './helpers/oauth-store';
 
@@ -147,6 +148,14 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
     let hookEvents: string[];
     let account1: Record<string, unknown>;
     let sendError: { status: number; body: string } | null;
+    // v0.1.401 — lo que el Whats simulado guarda del resto de la API.
+    let waContacts: Array<{ id: number; phone: string; name: string | null; email: string | null }>;
+    let waTags: Array<{ id: number; name: string }>;
+    let waGroups: Array<{ id: number; name: string }>;
+    let waFlows: Array<{ id: number; name: string; status: string }>;
+    let waConvs: Array<{ id: number; contact_id: number; channel: string; status: string; last_message_at: string }>;
+    let dripRefuse: boolean;
+    let ops: Array<{ method: string; path: string; body: unknown }>;
 
     beforeAll(async () => {
         pg = await startPostgres();
@@ -215,6 +224,16 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
         hookEvents = [];
         hooksDeleted = [];
         sendError = null;
+        waContacts = [];
+        waTags = [{ id: 1, name: 'Cliente' }];
+        waGroups = [{ id: 7, name: 'Clientes 2026' }];
+        waFlows = [
+            { id: 31, name: 'Bienvenida', status: 'active' },
+            { id: 32, name: 'Encuesta', status: 'draft' },
+        ];
+        waConvs = [];
+        dripRefuse = false;
+        ops = [];
         account1 = { id: 1, phone: '+573178339119', display_name: 'Augusto', label: null, status: 'connected', is_enabled: true, status_reason: null, banned_until: null };
         fakeWas();
         await withTenant(pg.db, tenantId, async (tx) => {
@@ -288,8 +307,70 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
                 const body = JSON.parse(call.body ?? '{}') as Record<string, unknown>;
                 sent.push(body);
                 n++;
-                return json(202, { data: waMessage({ id: n, to: body.to, body: body.body ?? null, status: 'queued' }) });
+                return json(202, { data: { ...waMessage({ id: n, to: body.to, body: body.body ?? null, status: 'queued' }), contact_id: 500 } });
             }
+            // ── v0.1.401: contactos, etiquetas, grupos, flujos, goteos y la bandeja ──
+            const body = call.body ? (JSON.parse(call.body) as Record<string, unknown>) : {};
+            if (call.method !== 'GET') ops.push({ method: call.method ?? 'GET', path, body });
+            const page = (rows: unknown[], size = 2) => {
+                // Páginas chicas a propósito: el servidor tiene que seguir el cursor.
+                const cursor = Number(new URL(call.url).searchParams.get('cursor') ?? '0');
+                const next = cursor + size < rows.length ? String(cursor + size) : null;
+                return json(200, { data: rows.slice(cursor, cursor + size), links: {}, meta: { next_cursor: next } });
+            };
+            if (path === '/contacts/lookup') {
+                const denied = need('contacts.view');
+                if (denied) return denied;
+                const phone = new URL(call.url).searchParams.get('phone');
+                const c = waContacts.find((x) => x.phone === phone);
+                return c ? json(200, { data: c }) : json(404, { error: { code: 'not_found', message: 'Contact not found.' } });
+            }
+            if (path === '/contacts' && call.method === 'PUT') {
+                const denied = need('contacts.manage');
+                if (denied) return denied;
+                let c = waContacts.find((x) => x.phone === body.phone);
+                if (!c) {
+                    c = { id: 600 + waContacts.length, phone: String(body.phone), name: null, email: null };
+                    waContacts.push(c);
+                }
+                if (typeof body.name === 'string') c.name = body.name;
+                if (typeof body.email === 'string') c.email = body.email;
+                return json(200, { data: c });
+            }
+            if (path === '/contacts/fields') return page([{ key: 'ciudad', label: 'Ciudad', type: 'text' }, { key: 'plan', label: 'Plan', type: 'select' }]);
+            const m = /^\/contacts\/(\d+)\/(tags|notes|consent)$/.exec(path);
+            if (m) {
+                if (!waContacts.some((x) => x.id === Number(m[1]))) return json(404, { error: { code: 'contact_not_found', message: 'Contact not found.' } });
+                if (m[2] === 'tags') return need('tags.manage') ?? json(200, { data: { attached: (body.tag_ids as number[]).length } });
+                return json(201, { data: { id: 1 } });
+            }
+            if (path === '/tags' && call.method === 'GET') return need('tags.view') ?? page(waTags);
+            if (path === '/tags' && call.method === 'POST') {
+                const t = { id: 10 + waTags.length, name: String(body.name) };
+                waTags.push(t);
+                return json(201, { data: t });
+            }
+            if (path === '/groups' && call.method === 'GET') return page(waGroups);
+            if (path === '/groups' && call.method === 'POST') {
+                const g = { id: 20 + waGroups.length, name: String(body.name) };
+                waGroups.push(g);
+                return json(201, { data: g });
+            }
+            if (/^\/groups\/\d+\/contacts$/.test(path)) return json(200, { data: { added: 1 } });
+            if (path === '/unsubscribed') return json(201, { data: { phone: body.phone } });
+            if (path === '/flows') return page(waFlows);
+            const flow = /^\/flows\/(\d+)\/trigger$/.exec(path);
+            if (flow) {
+                const f = waFlows.find((x) => x.id === Number(flow[1]));
+                if (!f || f.status !== 'active') return json(422, { error: { code: 'flow_not_active', message: 'The flow is not active.' } });
+                return json(202, { data: { id: 777, status: 'running' } });
+            }
+            if (/^\/flow-runs\/\d+\/resume$/.test(path)) return json(202, { data: { id: Number(path.split('/')[2]), status: 'running' } });
+            if (path === '/drips') return page([{ id: 41, name: 'Onboarding', status: 'active' }]);
+            if (/^\/drips\/\d+\/enroll$/.test(path)) return json(200, { data: dripRefuse ? { enrolled: 0, refused: 1 } : { enrolled: 1, refused: 0 } });
+            if (path === '/conversations') return json(200, { data: waConvs, links: {}, meta: { next_cursor: null } });
+            if (/^\/conversations\/\d+\/reply$/.test(path)) return need('messenger.send') ?? json(201, { data: { id: 9001 } });
+            if (/^\/conversations\/\d+\/(resolve|reopen)$/.test(path)) return json(200, { data: { id: Number(path.split('/')[2]) } });
             return json(404, { error: { code: 'not_found', message: 'Not found.' } });
         };
     }
@@ -354,7 +435,7 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
         expect(checkIntegrationResponse('whatsapp_web', 202, '{"data":{"id":1}}')).toBeNull();
 
         const text = (status: number, error: Record<string, unknown>) => waWebErrorText(parseWaWebError(status, JSON.stringify({ error }))!);
-        expect(text(403, { code: 'missing_ability', details: { ability: 'wa.send' } })).toMatch(/permiso «wa\.send \(enviar\)»/);
+        expect(text(403, { code: 'missing_ability', details: { ability: 'wa.send' } })).toMatch(/permiso «wa\.send \(enviar mensajes\)»/);
         expect(text(429, { code: 'rate_limited', details: { reason: 'wa_warmup_cap_reached' } })).toMatch(/calentamiento/);
         expect(text(429, { code: 'rate_limited', details: { scope: 'sending_limit', retry_after: 40 } })).toMatch(/40 segundos/);
         expect(text(422, { code: 'validation_failed', details: { fields: { to: ['Enter a valid phone number.'] } } })).toMatch(/número de destino no es válido/);
@@ -654,13 +735,250 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
         expect(incidents[0]).toMatchObject({ key: `connection:${id}`, source: 'connection' });
     });
 
+    // ── v0.1.401: el conector completo ───────────────────────────────
+
+    /** Una automatización «al crear» con esas acciones, corrida sobre el registro. */
+    async function runActions(listId: number, recordId: number, actions: Array<{ action_key: string; values: Record<string, string> }>, connId: number) {
+        const [auto] = await withTenant(pg.db, tenantId, (tx) =>
+            tx
+                .insert(automations)
+                .values({
+                    tenantId,
+                    listId,
+                    name: 'Whats completo',
+                    triggerType: 'record_created',
+                    triggerConfig: {},
+                    actions: actions.map((a) => ({ type: 'connector_action', config: { connection_id: connId, action_key: a.action_key, values: a.values } })),
+                    isActive: true,
+                })
+                .returning(),
+        );
+        const data = (await listRecords(listId)).find((r) => r.id === recordId)!.data;
+        await engine.process({ tenantId, listId, recordId, trigger: 'record_created', after: data });
+        const runs = await withTenant(pg.db, tenantId, (tx) => tx.select().from(automationRuns).where(eq(automationRuns.automationId, auto!.id)));
+        await withTenant(pg.db, tenantId, (tx) => tx.update(automations).set({ isActive: false }).where(eq(automations.id, auto!.id)));
+        return runs.sort((a, b) => b.id - a.id)[0]!.actionsLog as Array<{ status: string; message: string }>;
+    }
+
+    async function seedClient(): Promise<{ id: number; listId: number; recId: number; fieldsBy: Record<string, number> }> {
+        const id = await connect();
+        const { listId, fieldsBy } = await seedContacts(id);
+        await fieldsService.create(tenantId, 'clientes', { label: 'Ciudad', type: 'text' });
+        const ciudad = (await fieldsService.listByListId(tenantId, listId)).find((f) => f.slug === 'ciudad')!.id;
+        const [rec] = await withTenant(pg.db, tenantId, (tx) =>
+            tx
+                .insert(records)
+                .values({ tenantId, listId, data: { [`f${fieldsBy.nombre}`]: 'Ana Gómez', [`f${fieldsBy.telefono}`]: '3001112233', [`f${ciudad}`]: 'Bogotá' }, createdBy: adminId })
+                .returning(),
+        );
+        return { id, listId, recId: rec!.id, fieldsBy };
+    }
+
+    it('v0.1.401 — piezas puras: el plan valida los datos y dice lo que hará', () => {
+        const deps = {
+            phoneOf: (raw: string) => (/^\+?\d{10,15}$/.test(raw) ? { ok: true as const, digits: raw.replace(/\D/g, '') } : { ok: false as const, error: 'no es un teléfono' }),
+            names: (raw: string) => raw.split(',').map((x) => x.trim()).filter(Boolean),
+            keyValues: (raw: string) => (raw ? (JSON.parse(raw) as Record<string, string>) : {}),
+            flag: (raw: string, fb: boolean) => (raw === '' ? fb : raw === 'true'),
+            title: 'Ana',
+            nowIso: '2026-11-11T12:00:00.000Z',
+        };
+        expect(planWhatsAction('add_tags', { recipient: '', tags: 'VIP' }, deps)).toEqual({ ok: false, error: 'Falta el teléfono del contacto.' });
+        expect(planWhatsAction('add_tags', { recipient: 'hola', tags: 'VIP' }, deps)).toMatchObject({ ok: false, error: expect.stringMatching(/no sirve/) });
+        expect(planWhatsAction('add_tags', { recipient: '+573001112233', tags: ' ' }, deps)).toEqual({ ok: false, error: 'Elige al menos una etiqueta.' });
+        expect(planWhatsAction('upsert_contact', { recipient: '+573001112233', email: 'no-es-correo' }, deps)).toMatchObject({ ok: false });
+        expect(planWhatsAction('resume_flow', { run_id: 'abc', resume_token: 't' }, deps)).toMatchObject({ ok: false, error: expect.stringMatching(/no es el número/) });
+        const tags = planWhatsAction('add_tags', { recipient: '+573001112233', tags: 'VIP, Bogotá' }, deps);
+        expect(tags).toMatchObject({ ok: true, plan: { action: 'add_tags', phone: '573001112233', tags: ['VIP', 'Bogotá'], createMissing: true, createName: 'Ana' } });
+        expect(tags.ok && describeWhatsPlan(tags.plan)).toMatch(/VIP/);
+        const conv = planWhatsAction('conversation_status', { recipient: '+573001112233', operation: 'reopen', conversation: '#55' }, deps);
+        expect(conv).toMatchObject({ ok: true, plan: { operation: 'reopen', conversationId: 55 } });
+        // La conversación de ESE contacto, abierta antes que resuelta.
+        expect(
+            pickConversation(
+                [
+                    { id: 1, contactId: 9, channel: 'wa', status: 'open', lastMessageAt: '2026-11-10' },
+                    { id: 2, contactId: 5, channel: 'wa', status: 'resolved', lastMessageAt: '2026-11-11' },
+                    { id: 3, contactId: 5, channel: 'wa', status: 'open', lastMessageAt: '2026-11-01' },
+                    { id: 4, contactId: 5, channel: 'email', status: 'open', lastMessageAt: '2026-11-11' },
+                ],
+                5,
+            )?.id,
+        ).toBe(3);
+    });
+
+    it('v0.1.401 — contacto por teléfono: se crea si falta y se recuerda; etiquetas por nombre (crea las que faltan), grupo, nota, flujo y {{whats.*}}', async () => {
+        abilities = [...ALL, ...WA_WEB_EXTRA_ABILITIES];
+        const { id, listId, recId } = await seedClient();
+        const log = await runActions(
+            listId,
+            recId,
+            [
+                { action_key: 'add_tags', values: { recipient: '{{telefono}}', tags: 'cliente, VIP, {{ciudad}}' } },
+                { action_key: 'add_to_group', values: { recipient: '{{telefono}}', group: 'Clientes 2026' } },
+                { action_key: 'add_note', values: { recipient: '{{telefono}}', note: 'Contacto {{whats.contacto_id}} de {{ciudad}}' } },
+                { action_key: 'trigger_flow', values: { recipient: '{{telefono}}', flow: '31', flow_label: 'Bienvenida', variables: '{"cliente":"{{nombre}}"}' } },
+                { action_key: 'add_note', values: { recipient: '{{telefono}}', note: 'Flujo {{whats.ejecucion_id}}' } },
+            ],
+            id,
+        );
+        expect(log.map((l) => l.status)).toEqual(['success', 'success', 'success', 'success', 'success']);
+        // Se buscó UNA vez y se creó con el título del registro (el teléfono con el indicativo de la empresa).
+        expect(net.calls.filter((c) => c.url.includes('/contacts/lookup'))).toHaveLength(1);
+        expect(waContacts).toEqual([{ id: 600, phone: '+573001112233', name: 'Ana Gómez', email: null }]);
+        // «cliente» ya existía (sin importar mayúsculas); VIP y Bogotá se crearon; la lista se leyó siguiendo el cursor.
+        expect(ops.filter((o) => o.path === '/tags').map((o) => (o.body as { name: string }).name)).toEqual(['VIP', 'Bogotá']);
+        expect(ops.find((o) => o.path === '/contacts/600/tags')).toEqual({ method: 'POST', path: '/contacts/600/tags', body: { tag_ids: [1, 11, 12] } });
+        expect(ops.find((o) => o.path === '/groups/7/contacts')!.body).toEqual({ contact_ids: [600] });
+        expect(ops.find((o) => o.path === '/flows/31/trigger')!.body).toEqual({ contact_id: 600, variables: { cliente: 'Ana Gómez' } });
+        // Lo que deja cada acción sirve en la siguiente.
+        const notes = ops.filter((o) => o.path === '/contacts/600/notes').map((o) => (o.body as { body: string }).body);
+        expect(notes).toEqual(['Contacto 600 de Bogotá', 'Flujo 777']);
+        expect(log[3]!.message).toMatch(/Se activó el flujo «Bienvenida»/);
+        // La clave nunca queda en el registro de la corrida.
+        expect(JSON.stringify(log)).not.toContain(API_KEY);
+
+        // Una segunda corrida usa el contacto recordado: no lo vuelve a buscar.
+        const before = net.calls.filter((c) => c.url.includes('/contacts/lookup')).length;
+        await runActions(listId, recId, [{ action_key: 'add_note', values: { recipient: '{{telefono}}', note: 'otra' } }], id);
+        expect(net.calls.filter((c) => c.url.includes('/contacts/lookup'))).toHaveLength(before);
+        // Si lo borraron en Whats, se olvida y se busca (y crea) de nuevo, sin fallar.
+        waContacts = [];
+        const again = await runActions(listId, recId, [{ action_key: 'add_note', values: { recipient: '{{telefono}}', note: 'de nuevo' } }], id);
+        expect(again[0]!.status).toBe('success');
+        expect(waContacts).toHaveLength(1);
+    });
+
+    it('v0.1.401 — lo que no se puede: flujo inactivo falla; goteo rechazado y bandeja sin conversación se saltan; sin permiso abre un problema', async () => {
+        abilities = [...ALL, ...WA_WEB_EXTRA_ABILITIES];
+        const { id, listId, recId } = await seedClient();
+        const log = await runActions(
+            listId,
+            recId,
+            [
+                { action_key: 'trigger_flow', values: { recipient: '{{telefono}}', flow: '32', flow_label: 'Encuesta' } },
+                { action_key: 'reply_conversation', values: { recipient: '{{telefono}}', message: 'Hola' } },
+            ],
+            id,
+        );
+        expect(log[0]).toMatchObject({ status: 'failed', message: expect.stringMatching(/no está publicado y activo/) });
+        // El contacto no tenía conversación: se salta sin crear nada.
+        expect(log[1]!.status).toBe('skipped');
+        expect(incidents).toHaveLength(0);
+
+        // Con una conversación abierta de ese contacto: responde y la resuelve.
+        waContacts = [{ id: 600, phone: '+573001112233', name: 'Ana', email: null }];
+        waConvs = [
+            { id: 70, contact_id: 999, channel: 'wa', status: 'open', last_message_at: '2026-11-11T10:00:00Z' },
+            { id: 71, contact_id: 600, channel: 'wa', status: 'open', last_message_at: '2026-11-10T10:00:00Z' },
+        ];
+        dripRefuse = true;
+        const log2 = await runActions(
+            listId,
+            recId,
+            [
+                { action_key: 'reply_conversation', values: { recipient: '{{telefono}}', message: 'Hola {{nombre}}' } },
+                { action_key: 'conversation_status', values: { recipient: '{{telefono}}', operation: 'resolve' } },
+                { action_key: 'enroll_drip', values: { recipient: '{{telefono}}', drip: '41', drip_label: 'Onboarding' } },
+            ],
+            id,
+        );
+        expect(log2.map((l) => l.status)).toEqual(['success', 'success', 'skipped']);
+        expect(ops.find((o) => o.path === '/conversations/71/reply')!.body).toEqual({ body: 'Hola Ana Gómez' });
+        expect(ops.some((o) => o.path === '/conversations/71/resolve')).toBe(true);
+        expect(log2[2]!.message).toMatch(/no inscribió/);
+
+        // Sin el permiso de etiquetas: falla con el motivo y abre UN problema de la conexión.
+        abilities = [...ALL, 'contacts.view', 'contacts.manage'];
+        const log3 = await runActions(listId, recId, [{ action_key: 'add_tags', values: { recipient: '{{telefono}}', tags: 'VIP' } }], id);
+        expect(log3[0]!.status).toBe('failed');
+        expect(incidents).toHaveLength(1);
+        expect(incidents[0]).toMatchObject({ key: `connection:${id}`, source: 'connection' });
+    });
+
+    it('v0.1.401 — ubicación y tarjeta de contacto: el cuerpo EXACTO, y el contacto del envío queda recordado', async () => {
+        abilities = [...ALL, ...WA_WEB_EXTRA_ABILITIES];
+        const { id, listId, recId } = await seedClient();
+        // Whats crea el contacto al recibir el envío y devuelve su id (500).
+        waContacts = [{ id: 500, phone: '+573001112233', name: 'Ana', email: null }];
+        const log = await runActions(
+            listId,
+            recId,
+            [
+                { action_key: 'send_location', values: { recipient: '{{telefono}}', latitude: '4.6097', longitude: '-74.0817', place_name: 'Oficina', address: 'Cra 7 # 1-2' } },
+                { action_key: 'send_contact', values: { recipient: '{{telefono}}', contact_name: 'Asesora Laura', contact_phones: '+573004445566\n+573007778899' } },
+                { action_key: 'add_note', values: { recipient: '{{telefono}}', note: 'Mensaje {{whats.mensaje_id}}' } },
+            ],
+            id,
+        );
+        expect(log.map((l) => l.status)).toEqual(['success', 'success', 'success']);
+        expect(sent[0]).toEqual({ to: '+573001112233', type: 'location', wa_account_id: 1, location: { latitude: 4.6097, longitude: -74.0817, name: 'Oficina', address: 'Cra 7 # 1-2' } });
+        expect(sent[1]).toEqual({ to: '+573001112233', type: 'contact', wa_account_id: 1, contact: { name: 'Asesora Laura', phones: ['+573004445566', '+573007778899'] } });
+        // El envío devolvió el contacto (500): la nota no lo busca, y {{whats.mensaje_id}} es el del último envío.
+        expect(net.calls.some((c) => c.url.includes('/contacts/lookup'))).toBe(false);
+        expect(ops.find((o) => o.path === '/contacts/500/notes')!.body).toEqual({ body: 'Mensaje 102' });
+        // Una latitud que no es un número se dice antes de mandar nada.
+        const bad = await runActions(listId, recId, [{ action_key: 'send_location', values: { recipient: '{{telefono}}', latitude: 'norte', longitude: '-74' } }], id);
+        expect(bad[0]!.status).toBe('failed');
+        expect(sent).toHaveLength(2);
+    });
+
+    it('v0.1.401 — el editor: listas de la cuenta siguiendo el cursor, permisos que faltan por acción y «Probar ahora» sin tocar Whats', async () => {
+        abilities = [...ALL, 'contacts.view', 'contacts.manage', 'tags.view', 'tags.manage', 'flows.view'];
+        const { id } = await seedClient();
+        waTags = [1, 2, 3, 4, 5].map((n) => ({ id: n, name: `Etiqueta ${n}` }));
+        const tags = await svc.whatsOptions(tenantId, admin(), id, 'tags');
+        expect(tags).toEqual({ items: waTags.map((t) => ({ value: t.name, label: t.name, hint: null })), truncated: false, error: null });
+        // Se recuerda: pedirla otra vez no llama a Whats.
+        const calls = net.calls.length;
+        await svc.whatsOptions(tenantId, admin(), id, 'tags');
+        expect(net.calls.length).toBe(calls);
+        const flows = await svc.whatsOptions(tenantId, admin(), id, 'flows');
+        expect(flows.items).toEqual([
+            { value: '31', label: 'Bienvenida', hint: 'Activo' },
+            { value: '32', label: 'Encuesta', hint: 'Borrador' },
+        ]);
+        const fieldsOpt = await svc.whatsOptions(tenantId, admin(), id, 'contact_fields');
+        expect(fieldsOpt.items.map((i) => i.value)).toEqual(['ciudad', 'plan']);
+
+        const ab = await svc.whatsAbilities(tenantId, admin(), id);
+        expect(ab.missing.add_tags).toBeUndefined();
+        expect(ab.missing.add_to_group).toEqual(['groups.view', 'groups.manage']);
+        expect(ab.missing.reply_conversation).toEqual(['messenger.view', 'messenger.send']);
+
+        // «Ver qué haría»: con un registro real y sin un solo pedido a Whats.
+        const before = net.calls.length;
+        const preview = await svc.whatsActionTest(tenantId, admin(), 'clientes', {
+            connection_id: id,
+            action_key: 'add_tags',
+            values: { recipient: '{{telefono}}', tags: 'VIP, {{ciudad}}' },
+            execute: false,
+        });
+        expect(preview).toMatchObject({ ok: true, executed: false, error: null, steps: [] });
+        expect(preview.summary).toMatch(/VIP.*Bogotá/);
+        expect(net.calls.length).toBe(before);
+        const missing = await svc.whatsActionTest(tenantId, admin(), 'clientes', { connection_id: id, action_key: 'add_tags', values: { recipient: '{{telefono}}', tags: '' }, execute: false });
+        expect(missing).toMatchObject({ ok: false, error: 'Elige al menos una etiqueta.' });
+        // «Hacerlo de verdad»: los pedidos, sin la clave.
+        const real = await svc.whatsActionTest(tenantId, admin(), 'clientes', { connection_id: id, action_key: 'add_tags', values: { recipient: '{{telefono}}', tags: 'VIP' }, execute: true });
+        expect(real).toMatchObject({ ok: true, executed: true, outputs: { contacto_id: '600' } });
+        expect(real.steps.map((st) => st.label)).toEqual(['Buscar el contacto', 'Crear el contacto', 'Crear la etiqueta «VIP»', 'Poner las etiquetas']);
+        expect(JSON.stringify(real.steps)).not.toContain(API_KEY);
+    });
+
     it('el asistente y el MCP ven la conexión con sus acciones (sin plantillas)', async () => {
         const id = await connect();
         const conns = await connectors.list(tenantId, adminId, 'admin');
         const schema = await whatsappSchema(new TenantDb(pg.db), tenantId, conns, {}, []);
-        expect(schema?.connections).toEqual([
-            { connection_id: id, kind: 'whats', name: expect.any(String), phone: '+573178339119 · Augusto', actions: ['send_text {recipient, message}', 'send_media {recipient, url, caption}'] },
-        ]);
+        const conn = (schema?.connections as Array<Record<string, unknown>>)[0]!;
+        expect(conn).toMatchObject({ connection_id: id, kind: 'whats', phone: '+573178339119 · Augusto' });
+        // v0.1.401 — todas las del catálogo, con lo opcional marcado y lo que dejan para los pasos siguientes.
+        const actions = conn.actions as string[];
+        expect(actions).toHaveLength(17);
+        expect(actions).toContain('send_text {recipient, message} → {{whats.mensaje_id}} {{whats.contacto_id}}');
+        expect(actions).toContain('add_tags {recipient, tags, create_missing?, name?} → {{whats.contacto_id}}');
+        expect(actions.some((a) => a.startsWith('resume_flow {run_id, resume_token, variables?}'))).toBe(true);
         expect(String(schema?.rules)).toMatch(/kind "whats"/);
+        expect(String(schema?.rules)).toMatch(/Nunca se envía a grupos/);
     });
 });

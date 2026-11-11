@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { WA_WEB_ACCOUNT_STATUS_LABEL, WA_WEB_DEFAULT_SERVER, WA_WEB_HOOK_EVENTS, WA_WEB_KEY_ABILITIES } from '@imagina-base/shared';
+import { WA_WEB_ABILITY_LABEL, WA_WEB_ACCOUNT_STATUS_LABEL, WA_WEB_DEFAULT_SERVER, WA_WEB_HOOK_EVENTS, WA_WEB_KEY_ABILITIES } from '@imagina-base/shared';
 import type { IntegrationCreds, IntegrationRequest } from '../connectors/integration-calls';
 import type { InboundMessage, StatusUpdate } from './whatsapp-webhook';
 
@@ -68,16 +68,27 @@ export function waWebAccountRequest(c: WaWebCreds, accountId: number): Integrati
 
 export type WaWebPayload =
     | { kind: 'text'; to: string; text: string }
-    | { kind: 'media'; to: string; url: string; caption: string };
+    | { kind: 'media'; to: string; url: string; caption: string }
+    /** v0.1.401 — un punto en el mapa. */
+    | { kind: 'location'; to: string; latitude: number; longitude: number; name: string; address: string }
+    /** v0.1.401 — una tarjeta de contacto (nombre y de uno a diez teléfonos). */
+    | { kind: 'contact'; to: string; name: string; phones: string[] };
 
 /** El cuerpo del envío (`to` con el `+`; el número de la empresa por su id). */
 export function waWebSendBody(c: WaWebCreds, p: WaWebPayload, reference?: string): Record<string, unknown> {
     const body: Record<string, unknown> = { to: p.to.startsWith('+') ? p.to : `+${p.to}`, type: p.kind };
     if (c.accountId !== null) body.wa_account_id = c.accountId;
     if (p.kind === 'text') body.body = p.text;
-    else {
+    else if (p.kind === 'media') {
         body.media_url = p.url;
         if (p.caption.trim() !== '') body.body = p.caption;
+    } else if (p.kind === 'location') {
+        const location: Record<string, unknown> = { latitude: p.latitude, longitude: p.longitude };
+        if (p.name.trim() !== '') location.name = p.name.trim();
+        if (p.address.trim() !== '') location.address = p.address.trim();
+        body.location = location;
+    } else {
+        body.contact = { name: p.name, phones: p.phones };
     }
     if (reference && reference.trim() !== '') body.reference = reference.trim().slice(0, 191);
     return body;
@@ -161,13 +172,8 @@ export function parseWaWebError(status: number, body: string): WaWebError | null
     };
 }
 
-const ABILITY_LABEL: Record<string, string> = {
-    'account.view': 'account.view (ver la cuenta)',
-    'wa.accounts.view': 'wa.accounts.view (ver los números)',
-    'wa.send': 'wa.send (enviar)',
-    'wa.read': 'wa.read (leer los mensajes)',
-    'webhooks.manage': 'webhooks.manage (avisos)',
-};
+/** «tags.manage (poner y quitar etiquetas)»: el nombre de Whats y para qué sirve. */
+const ABILITY_LABEL: Record<string, string> = Object.fromEntries(Object.entries(WA_WEB_ABILITY_LABEL).map(([k, v]) => [k, `${k} (${v})`]));
 
 /**
  * El motivo en palabras. Los códigos son los de la documentación de la API
@@ -240,6 +246,36 @@ export function waWebErrorText(err: WaWebError): string {
         }
         case 'not_found':
             return 'El servidor de WhatsApp no encontró lo pedido (¿el número se eliminó del panel?).';
+        // v0.1.401 — contactos, flujos, goteos y la bandeja.
+        case 'contacts_cap_reached':
+            return 'Tu cuenta de Whats llegó a su límite de contactos: borra los que no uses o mejora el plan en Whats.';
+        case 'invalid_language':
+            return 'Whats no reconoce ese idioma: usa un código activo en tu cuenta (por ejemplo es) o déjalo vacío.';
+        case 'flow_not_active':
+            return 'El flujo no está publicado y activo en Whats: publícalo antes de activarlo.';
+        case 'flow_not_started':
+            return 'Whats no pudo arrancar el flujo para este contacto.';
+        case 'drip_not_active':
+            return 'El goteo no está activo en Whats: actívalo antes de inscribir contactos.';
+        case 'invalid_resume_token':
+            return 'El token para reanudar no corresponde a esa ejecución del flujo.';
+        case 'run_not_resumable':
+            return 'Esa ejecución del flujo ya no está esperando (terminó, se canceló o ya se reanudó).';
+        case 'contact_not_found':
+        case 'contact_deleted':
+            return 'El contacto ya no está en Whats.';
+        case 'contact_blocked':
+        case 'recipient_blocked':
+            return 'Ese contacto está bloqueado en Whats: no se le envía nada.';
+        case 'contact_unsubscribed':
+        case 'recipient_unsubscribed':
+        case 'recipient_opted_out':
+            return 'Ese contacto se dio de baja de tus mensajes en Whats.';
+        case 'wa_account_disabled':
+        case 'wa_account_unavailable':
+            return 'El número de WhatsApp está apagado o desconectado en tu panel de Whats.';
+        case 'reply_to_not_found':
+            return 'El mensaje que se quería citar no es de esta conversación.';
         default:
             if (err.status >= 500) return 'El servidor de WhatsApp tuvo un problema. Prueba de nuevo en un momento.';
             if (err.status === 404) return 'No encontramos el servidor de WhatsApp en esa dirección: revisa «Servidor» en las opciones avanzadas.';
@@ -262,15 +298,21 @@ export function isSystemicWaWebError(err: WaWebError): boolean {
     ].includes(err.code);
 }
 
-/** El envío aceptado (202): el id del mensaje para atarle sus estados. */
-export function parseWaWebSend(status: number, body: string): { ok: true; id: string } | { ok: false; error: WaWebError } {
+/**
+ * El envío aceptado (202): el id del mensaje para atarle sus estados y, desde
+ * v0.1.401, el del contacto de Whats (lo crea solo al enviar), que las acciones
+ * de contacto reusan sin buscarlo.
+ */
+export function parseWaWebSend(status: number, body: string): { ok: true; id: string; contactId: number | null } | { ok: false; error: WaWebError } {
     const err = parseWaWebError(status, body);
     if (err) return { ok: false, error: err };
-    const id = str(rec(rec(parseJson(body)).data).id);
+    const data = rec(rec(parseJson(body)).data);
+    const id = str(data.id);
     if (id === '') {
         return { ok: false, error: { status, code: 'unexpected_response', message: 'La respuesta no trae el id del mensaje.', details: {} } };
     }
-    return { ok: true, id };
+    const contact = Number(data.contact_id);
+    return { ok: true, id, contactId: Number.isInteger(contact) && contact > 0 ? contact : null };
 }
 
 export interface WaWebAccount {

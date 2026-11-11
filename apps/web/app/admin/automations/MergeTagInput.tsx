@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Plus, Search, Sparkles } from 'lucide-react';
-import { APPROVAL_MERGE_TAGS, BOOKING_MERGE_TAGS, EMAIL_MERGE_TAGS, MEETING_MERGE_TAGS, PAYMENT_MERGE_TAGS, SLA_MERGE_TAGS, SUBSCRIPTION_MERGE_TAGS, WHATSAPP_MERGE_TAGS } from '@imagina-base/shared';
+import { APPROVAL_MERGE_TAGS, BOOKING_MERGE_TAGS, EMAIL_MERGE_TAGS, MEETING_MERGE_TAGS, PAYMENT_MERGE_TAGS, SLA_MERGE_TAGS, SUBSCRIPTION_MERGE_TAGS, WHATS_ACTION_MERGE_TAGS, WHATSAPP_MERGE_TAGS } from '@imagina-base/shared';
 
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -398,6 +398,8 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
     const visibleSubscription = SUBSCRIPTION_MERGE_TAGS.filter((t) => matches(t.label) || matches(t.tag) || matches(__('Suscripción')));
     // v0.1.366 — la reunión que creó o cambió una acción de calendario anterior.
     const visibleMeeting = MEETING_MERGE_TAGS.filter((t) => matches(t.label) || matches(t.tag) || matches(__('Reunión')));
+    // v0.1.401 — lo que dejó una acción de Whats anterior (el contacto, el mensaje, el flujo).
+    const visibleWhatsOut = WHATS_ACTION_MERGE_TAGS.filter((t) => matches(t.label) || matches(t.tag) || matches(__('Whats')));
     // D3 — el mensaje de WhatsApp que llegó (trigger «Cuando llega un mensaje de WhatsApp»).
     const visibleWhatsapp = WHATSAPP_MERGE_TAGS.filter((t) => matches(t.label) || matches(t.tag) || matches(__('WhatsApp')));
     // C5 — la aprobación en contexto (disparador, «Pedir» o «Esperar aprobación»).
@@ -487,6 +489,13 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
                     <Section
                         title={__('Reunión (la que creó una acción anterior)')}
                         items={visibleMeeting.map((t) => ({ tag: t.tag, label: __(t.label), hint: `{{${t.tag}}}` }))}
+                        onPick={onPick}
+                    />
+                )}
+                {context === 'automation' && visibleWhatsOut.length > 0 && (
+                    <Section
+                        title={__('Whats (lo que dejó una acción anterior)')}
+                        items={visibleWhatsOut.map((t) => ({ tag: t.tag, label: __(t.label), hint: `{{${t.tag}}}` }))}
                         onPick={onPick}
                     />
                 )}

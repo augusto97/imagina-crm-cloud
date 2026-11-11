@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+    INTEGRATIONS,
+    WA_WEB_ABILITY_LABEL,
     WA_WEB_DEFAULT_SERVER,
     WHATSAPP_FIELD_ROLES,
     WHATSAPP_FIELD_ROLE_META,
@@ -258,7 +260,7 @@ function abilityText(a: string): string {
         case 'webhooks.manage':
             return __('manejar los avisos (webhooks)');
         default:
-            return a;
+            return WA_WEB_ABILITY_LABEL[a] ? __(WA_WEB_ABILITY_LABEL[a]) : a;
     }
 }
 
@@ -313,7 +315,47 @@ function WebAccountSection({ d, web }: { d: WhatsappConnectionDetail; web: NonNu
             {d.connection.secret_state === 'unreadable' && (
                 <p className="imcrm-mt-3 imcrm-text-sm imcrm-text-destructive">{__('La clave guardada no se puede leer: vuelve a escribirla en «Actualizar clave».')}</p>
             )}
+            <WhatsActionsAvailability connectionId={d.connection.id} />
         </section>
+    );
+}
+
+/**
+ * v0.1.401 — Qué acciones de las automatizaciones se pueden usar con esta clave
+ * (las de contactos, etiquetas, flujos o la bandeja piden permisos aparte).
+ */
+function WhatsActionsAvailability({ connectionId }: { connectionId: number }): JSX.Element | null {
+    const q = useQuery({
+        queryKey: ['whats-abilities', connectionId],
+        queryFn: () => api.whatsAbilities(connectionId),
+        retry: false,
+        staleTime: 60_000,
+    });
+    if (!q.data || q.data.error) return null;
+    const actions = INTEGRATIONS.find((i) => i.key === 'whatsapp_web')?.actions ?? [];
+    const blocked = actions.filter((a) => (q.data.missing[a.key] ?? []).length > 0);
+    const abilities = [...new Set(blocked.flatMap((a) => q.data.missing[a.key] ?? []))];
+    return (
+        <div className="imcrm-mt-3 imcrm-border-t imcrm-border-border imcrm-pt-3 imcrm-text-sm" data-testid="imcrm-whats-actions-availability" data-blocked={blocked.length}>
+            {blocked.length === 0 ? (
+                <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-emerald-700 dark:imcrm-text-emerald-400">
+                    <CheckCircle2 className="imcrm-h-4 imcrm-w-4" />
+                    {__('Con esta clave puedes usar todas las acciones de Whats en tus automatizaciones.')}
+                </p>
+            ) : (
+                <>
+                    <p>
+                        {__('En tus automatizaciones puedes usar')} <span className="imcrm-font-medium">{actions.length - blocked.length}</span> {__('de')} {actions.length}{' '}
+                        {__('acciones de Whats. Para usar también')} «{blocked.slice(0, 4).map((a) => __(a.label)).join('», «')}»
+                        {blocked.length > 4 ? ` ${__('y otras')} ${blocked.length - 4}` : ''}, {__('a la clave le faltan:')}{' '}
+                        <span className="imcrm-font-medium">{abilities.map(abilityText).join(', ')}</span>.
+                    </p>
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('Si no las vas a usar, no hace falta. Si sí: edita la clave en tu panel de Whats (API Keys), marca esos permisos y toca «Actualizar clave» en Integraciones.')}
+                    </p>
+                </>
+            )}
+        </div>
     );
 }
 

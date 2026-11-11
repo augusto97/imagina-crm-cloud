@@ -242,6 +242,15 @@ otra (por ejemplo de WAS a Whats) no se hace desde el MCP: es el botón
 «Reemplazar en automatizaciones» de Integraciones, que guarda una versión de
 cada automatización.
 
+Desde v0.1.401 la conexión `kind: "whats"` trae en `actions` las 17 acciones
+del conector, cada una como `clave {dato, dato_opcional?} → {{whats.salida}}`
+(por ejemplo `add_tags {recipient, tags, create_missing?, name?} →
+{{whats.contacto_id}}`). Se usan como `connector_action {connection_id,
+action_key, values}`. Las que trabajan sobre el contacto lo buscan por el
+teléfono (`recipient`) y lo crean si falta; `tags` y `group` van por nombre
+(con variables), `flow` y `drip` por id, y `variables`/`fields` son un JSON
+`{"clave": "{{slug}}"}`. No hay acción para mandar a grupos de WhatsApp.
+
 **Reuniones (v0.1.366).** `teams.create_meeting`, `outlook.create_event` y
 `google_calendar.create_event` devuelven la reunión: en el schema cada una trae
 `outputs` (`{{reunion.enlace}}`, `{{reunion.id}}`, `{{reunion.web}}`) y

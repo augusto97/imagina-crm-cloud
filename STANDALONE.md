@@ -5265,6 +5265,51 @@ Whats». Decisiones:
 6. De paso, el conteo de uso de una conexión no miraba dentro de «Repetir por
    cada vinculado»: una conexión usada sólo ahí figuraba «sin uso».
 
+**Addendum v0.1.401 — El conector completo de Whats: acciones.** Pedido del
+usuario con la documentación completa de la API v1 de Whats (Zender): «un
+conector completo… una acción por cada operación útil» (los disparadores van
+en v0.1.402). Decisiones aprobadas por el usuario: **no se envía a grupos de
+WhatsApp**, el contacto **se crea si falta**, nada de citas ni pagos de Whats,
+sin «asignar conversación».
+
+1. **Catálogo**: 17 acciones en `whatsapp_web` (las 2 de antes + ubicación,
+   tarjeta de contacto, crear/actualizar contacto, poner/quitar etiquetas,
+   agregar/quitar de un grupo, nota, consentimiento, baja, activar/reanudar un
+   flujo, inscribir en un goteo, responder y resolver/reabrir la
+   conversación). Las reglas puras viven en `whats-actions.ts` (shared):
+   permisos de la clave por acción (`WHATS_ACTION_ABILITIES`), qué se elige de
+   una lista de la cuenta (`WHATS_PARAM_LOOKUP`), lo que deja cada una
+   (`{{whats.*}}`), y cómo se leen nombres, teléfonos y filas clave→valor. El
+   teléfono se llama `recipient` en todas: cambiar de acción lo conserva.
+2. **El contacto por teléfono** (`WhatsActionsClient`): `GET
+   /contacts/lookup` y, si no está, `PUT /contacts` con el título del registro
+   (salvo las acciones que quitan algo: sin contacto, se saltan). El id se
+   recuerda 30 días en Redis (`whats:ct:{conexión}:{teléfono}`) — también el
+   que devuelve un envío —, así una automatización de seis acciones hace UNA
+   búsqueda (Whats permite 60 pedidos por minuto por clave). Un id recordado
+   que Whats ya no tiene se olvida y se busca de nuevo, una vez.
+3. **Etiquetas y grupos van por NOMBRE** (aceptan variables y se crean si
+   faltan, resolviendo una carrera 409/422 releyendo la lista); flujos y
+   goteos **por id** (renombrarlos en Whats no rompe nada), con el nombre al
+   lado sólo para los mensajes. Las listas de la cuenta se piden siguiendo
+   `meta.next_cursor` (hasta 5 páginas) y se recuerdan 2 minutos.
+4. **Plan puro + red después**: `planWhatsAction` valida y resuelve las
+   variables DENTRO de la transacción; `execute` llama a Whats con
+   `AfterCommit` (regla de v0.1.392). Errores de Whats en palabras
+   (`waWebErrorText`), y los sistemáticos (clave, permiso, plan) abren un
+   Problema de la conexión. Lo que deja cada acción entra en `ctx.whats` y
+   sobrevive a una espera.
+5. **Editor**: los datos salen del catálogo (`WhatsActionFields`): etiquetas
+   y grupos con chips de la cuenta y aviso de las que se van a crear, flujos y
+   goteos en una lista con su estado (aviso si están en borrador), filas
+   clave→valor para variables y campos del contacto, aviso de los permisos que
+   le faltan a la clave (`GET /whatsapp/connections/:id/whats/abilities`) y
+   «Probar ahora» en dos tiempos: **Ver qué haría** (sin ningún pedido a
+   Whats) y **Hacerlo de verdad** (con los pedidos, sin la clave). La página
+   de la conexión dice cuántas acciones se pueden usar con esa clave.
+6. El asistente/MCP describe cada acción con sus datos y lo que deja
+   (`whatsActionShapes`, sale del catálogo).
+
 ---
 
 ### ADR-S70 — Mesa de ayuda por correo (IMAP) + SLA en horas hábiles (v0.1.316)
