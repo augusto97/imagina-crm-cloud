@@ -952,6 +952,9 @@ function control(f: FieldItem, float: boolean): Control {
     const key = f.key;
     const id = 'q_' + f.id;
     const cfg = f.config || {};
+    // v0.1.407 — Sólo el texto de ejemplo escrito en la pregunta: vacío = sin
+    // ejemplo (antes el correo, el enlace y la duración inventaban uno que no
+    // se veía ni se podía borrar en el panel).
     const ph = float ? ' ' : f.placeholder || undefined;
     const bindText = <T extends HTMLInputElement | HTMLTextAreaElement>(input: T, transform?: (v: string) => unknown): T => {
         input.classList.add('ib-input');
@@ -985,9 +988,9 @@ function control(f: FieldItem, float: boolean): Control {
         case 'long_text':
             return bindText(el('textarea', { id, placeholder: ph, maxlength: cfg.max_length }));
         case 'email':
-            return bindText(el('input', { type: 'email', id, placeholder: float ? ' ' : ph || 'nombre@ejemplo.com', autocomplete: 'email' }));
+            return bindText(el('input', { type: 'email', id, placeholder: ph, autocomplete: 'email' }));
         case 'url':
-            return bindText(el('input', { type: 'text', inputmode: 'url', id, placeholder: float ? ' ' : ph || 'https://' }));
+            return bindText(el('input', { type: 'text', inputmode: 'url', id, placeholder: ph }));
         case 'phone':
             return bindText(el('input', { type: 'tel', id, placeholder: ph, autocomplete: 'tel' }));
         case 'date':
@@ -999,7 +1002,7 @@ function control(f: FieldItem, float: boolean): Control {
                 return Number.isNaN(d.getTime()) ? v : d.toISOString();
             });
         case 'duration':
-            return bindText(el('input', { type: 'text', id, placeholder: float ? ' ' : ph || 'Ej.: 1h 30m' }));
+            return bindText(el('input', { type: 'text', id, placeholder: ph }));
         case 'number':
         case 'currency':
         case 'percent': {
@@ -1899,6 +1902,270 @@ function previewable(node: HTMLElement, id: string, label?: string): void {
     );
 }
 
+// ─────────────── v0.1.407 — Mover y cambiar el ancho arrastrando ───────────────
+//
+// Sólo en la vista previa del constructor. La página no cambia nada: avisa a la
+// app qué se soltó dónde (`imb-form-move` / `imb-form-width`) y la app lo guarda
+// en el formulario (con «deshacer») y vuelve a mandar la vista previa.
+
+const PV_WIDTHS: ReadonlyArray<{ width: 'third' | 'half' | 'two_thirds' | 'full'; span: number; label: string }> = [
+    { width: 'third', span: 2, label: 'Un tercio' },
+    { width: 'half', span: 3, label: 'Mitad' },
+    { width: 'two_thirds', span: 4, label: 'Dos tercios' },
+    { width: 'full', span: 6, label: 'Ancho completo' },
+];
+
+const PV_ARRANGE_CSS = `
+.ib-pv-move{position:absolute;top:-6px;right:10px;transform:translateY(-50%);z-index:8;display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px 0 6px;border:0;border-radius:999px;background:var(--ib-accent);color:var(--ib-accent-ink);font:600 10.5px/1 system-ui,-apple-system,sans-serif;letter-spacing:0;text-transform:none;cursor:grab;touch-action:none;opacity:0;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.ib-pv-move svg{width:11px;height:11px;flex:none}
+.ib-pv-item:hover>.ib-pv-move,.ib-pv-item.ib-selected>.ib-pv-move,.ib-pv-move:focus-visible{opacity:1}
+.ib-pv-move:focus-visible{outline:2px solid var(--ib-text);outline-offset:2px}
+.ib-pv-size{position:absolute;top:0;bottom:0;right:-13px;width:14px;z-index:8;cursor:ew-resize;touch-action:none;opacity:0}
+.ib-pv-size::before{content:'';position:absolute;top:50%;left:5px;width:4px;height:min(36px,70%);transform:translateY(-50%);border-radius:4px;background:var(--ib-accent);box-shadow:0 0 0 2px var(--ib-card)}
+.ib-pv-item:hover>.ib-pv-size,.ib-pv-item.ib-selected>.ib-pv-size,.ib-pv-sizing>.ib-pv-size{opacity:1}
+.ib-pv-size:focus{outline:none}
+.ib-pv-sizing{outline:2px solid var(--ib-accent)!important}
+.ib-pv-width{position:absolute;top:50%;right:6px;transform:translateY(-50%);z-index:9;padding:3px 8px;border-radius:6px;background:var(--ib-text);color:var(--ib-card);font:600 11px/1.3 system-ui,-apple-system,sans-serif;white-space:nowrap;pointer-events:none}
+.ib-pv-dragging{opacity:.35}
+.ib-pv-drop{position:fixed;z-index:60;border-radius:3px;background:var(--ib-accent);pointer-events:none;box-shadow:0 0 0 2px var(--ib-card)}
+body.ib-pv-busy,body.ib-pv-busy *{user-select:none!important;-webkit-user-select:none!important}
+body.ib-pv-grabbing,body.ib-pv-grabbing *{cursor:grabbing!important}
+body.ib-pv-resizing,body.ib-pv-resizing *{cursor:ew-resize!important}
+@media (max-width:560px){.ib-pv-size{display:none}}
+@media (hover:none){.ib-pv-item.ib-selected>.ib-pv-move{height:26px;padding:0 10px 0 8px;font-size:12px}}
+`;
+
+function pvStyles(): void {
+    if (document.getElementById('ib-pv-arrange')) return;
+    const st = document.createElement('style');
+    st.id = 'ib-pv-arrange';
+    st.textContent = PV_ARRANGE_CSS;
+    document.head.appendChild(st);
+}
+
+/** Seis puntos: lo que se agarra. */
+function gripIcon(): SVGSVGElement {
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('viewBox', '0 0 12 12');
+    svg.setAttribute('aria-hidden', 'true');
+    for (const [cx, cy] of [[4, 2.5], [8, 2.5], [4, 6], [8, 6], [4, 9.5], [8, 9.5]] as const) {
+        const c = document.createElementNS(ns, 'circle');
+        c.setAttribute('cx', String(cx));
+        c.setAttribute('cy', String(cy));
+        c.setAttribute('r', '1.15');
+        c.setAttribute('fill', 'currentColor');
+        svg.appendChild(c);
+    }
+    return svg;
+}
+
+function pvArrange(node: HTMLElement, i: Item): void {
+    if (!BOOT.preview) return;
+    pvStyles();
+    node.setAttribute('data-pv-id', i.id);
+    const move = el('button', { type: 'button', cls: 'ib-pv-move', 'aria-label': 'Mover: arrastra o usa las flechas', title: 'Arrastra para mover (o elige y usa ↑ ↓)', 'data-testid': 'form-pv-move' });
+    move.appendChild(gripIcon());
+    move.appendChild(document.createTextNode('Mover'));
+    move.addEventListener('pointerdown', (e) => pvStartMove(e, move, node, i.id));
+    // Con el teclado: ↑ ↓ mueven una posición.
+    move.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+        e.preventDefault();
+        const nodes = pvNodes(null);
+        const k = nodes.indexOf(node);
+        const other = nodes[k + (e.key === 'ArrowUp' ? -1 : 1)];
+        const otherId = other?.getAttribute('data-pv-id');
+        if (otherId) parent.postMessage({ type: 'imb-form-move', id: i.id, target: otherId, place: e.key === 'ArrowUp' ? 'before' : 'after' }, location.origin);
+    });
+    node.appendChild(move);
+    const sized = (i.type === 'field' || i.type === 'image') && !chatMode() && !conversational();
+    if (sized) {
+        const grip = el('div', { cls: 'ib-pv-size', title: 'Arrastra para cambiar el ancho', 'data-testid': 'form-pv-size' });
+        grip.addEventListener('pointerdown', (e) => pvStartSize(e, grip, node, i.id, (i as FieldItem | ImageItem).width ?? 'full'));
+        node.appendChild(grip);
+    }
+}
+
+/** Las preguntas que se ven ahora (la página actual), en orden. */
+function pvNodes(except: HTMLElement | null): HTMLElement[] {
+    return Array.from(document.querySelectorAll<HTMLElement>('[data-pv-id]')).filter((n) => n !== except && n.offsetParent !== null);
+}
+
+interface PvDrop {
+    target: string;
+    place: 'before' | 'after';
+    rect: DOMRect;
+    across: boolean;
+}
+
+/** Dónde caería: la pregunta más cercana al puntero, y de qué lado. */
+function pvDropAt(x: number, y: number, dragged: HTMLElement): PvDrop | null {
+    let best: { n: HTMLElement; r: DOMRect; d: number } | null = null;
+    for (const n of pvNodes(dragged)) {
+        const r = n.getBoundingClientRect();
+        const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+        const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+        const d = dx * dx + dy * dy * 4;
+        if (!best || d < best.d) best = { n, r, d };
+    }
+    if (!best) return null;
+    const grid = best.n.parentElement?.getBoundingClientRect();
+    // Lado a lado (mitad, tercio): se decide por izquierda/derecha; a lo ancho, por arriba/abajo.
+    const across = !!grid && best.r.width < grid.width * 0.9;
+    const before = across ? x < best.r.left + best.r.width / 2 : y < best.r.top + best.r.height / 2;
+    return { target: best.n.getAttribute('data-pv-id')!, place: before ? 'before' : 'after', rect: best.r, across };
+}
+
+function pvPaintDrop(line: HTMLElement, drop: PvDrop | null): void {
+    if (!drop) {
+        line.hidden = true;
+        return;
+    }
+    line.hidden = false;
+    const r = drop.rect;
+    if (drop.across) {
+        line.style.width = '4px';
+        line.style.height = `${r.height}px`;
+        line.style.top = `${r.top}px`;
+        line.style.left = `${(drop.place === 'before' ? r.left - 8 : r.right + 8) - 2}px`;
+    } else {
+        line.style.height = '4px';
+        line.style.width = `${r.width}px`;
+        line.style.left = `${r.left}px`;
+        line.style.top = `${(drop.place === 'before' ? r.top - 8 : r.bottom + 8) - 2}px`;
+    }
+}
+
+function pvStartMove(e: PointerEvent, handle: HTMLElement, node: HTMLElement, id: string): void {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    // El foco a la vista previa: así Escape (cancelar) llega aquí y no al editor.
+    handle.focus({ preventScroll: true });
+    try {
+        handle.setPointerCapture(e.pointerId);
+    } catch {
+        // nada
+    }
+    const sx = e.clientX;
+    const sy = e.clientY;
+    let x = sx;
+    let y = sy;
+    let active = false;
+    let drop: PvDrop | null = null;
+    let raf = 0;
+    const line = el('div', { cls: 'ib-pv-drop', hidden: true, 'data-testid': 'form-pv-drop' });
+    document.body.appendChild(line);
+    // Cerca del borde de arriba o de abajo, la vista previa se desplaza sola.
+    const tick = (): void => {
+        const edge = 56;
+        const dy = y < edge ? -Math.ceil((edge - y) / 4) : y > window.innerHeight - edge ? Math.ceil((y - (window.innerHeight - edge)) / 4) : 0;
+        if (dy) {
+            window.scrollBy(0, dy);
+            drop = pvDropAt(x, y, node);
+            pvPaintDrop(line, drop);
+        }
+        raf = requestAnimationFrame(tick);
+    };
+    const onMove = (ev: PointerEvent): void => {
+        x = ev.clientX;
+        y = ev.clientY;
+        if (!active) {
+            if (Math.hypot(x - sx, y - sy) < 4) return;
+            active = true;
+            node.classList.add('ib-pv-dragging');
+            document.body.classList.add('ib-pv-busy', 'ib-pv-grabbing');
+            raf = requestAnimationFrame(tick);
+        }
+        drop = pvDropAt(x, y, node);
+        pvPaintDrop(line, drop);
+    };
+    const finish = (commit: boolean): void => {
+        cancelAnimationFrame(raf);
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.removeEventListener('pointercancel', onCancel);
+        window.removeEventListener('keydown', onKey, true);
+        node.classList.remove('ib-pv-dragging');
+        document.body.classList.remove('ib-pv-busy', 'ib-pv-grabbing');
+        line.remove();
+        if (commit && active && drop) parent.postMessage({ type: 'imb-form-move', id, target: drop.target, place: drop.place }, location.origin);
+    };
+    const onUp = (): void => finish(true);
+    const onCancel = (): void => finish(false);
+    const onKey = (ev: KeyboardEvent): void => {
+        if (ev.key !== 'Escape') return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        finish(false);
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onCancel);
+    window.addEventListener('keydown', onKey, true);
+}
+
+function pvStartSize(e: PointerEvent, grip: HTMLElement, node: HTMLElement, id: string, from: string): void {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const grid = node.parentElement;
+    if (!grid) return;
+    grip.setAttribute('tabindex', '-1');
+    grip.focus({ preventScroll: true });
+    try {
+        grip.setPointerCapture(e.pointerId);
+    } catch {
+        // nada
+    }
+    const g = grid.getBoundingClientRect();
+    const gap = parseFloat(getComputedStyle(grid).columnGap) || 16;
+    const col = (g.width - gap * 5) / 6;
+    const left = node.getBoundingClientRect().left;
+    let chosen = from;
+    const badge = el('div', { cls: 'ib-pv-width', 'data-testid': 'form-pv-width' });
+    node.appendChild(badge);
+    node.classList.add('ib-pv-sizing');
+    document.body.classList.add('ib-pv-busy', 'ib-pv-resizing');
+    const paint = (w: string): void => {
+        for (const o of PV_WIDTHS) node.classList.toggle(`ib-w-${o.width}`, o.width === w);
+        badge.textContent = PV_WIDTHS.find((o) => o.width === w)?.label ?? '';
+    };
+    paint(from);
+    const onMove = (ev: PointerEvent): void => {
+        const span = (ev.clientX - left + gap) / (col + gap);
+        let best = PV_WIDTHS[PV_WIDTHS.length - 1]!;
+        for (const o of PV_WIDTHS) if (Math.abs(o.span - span) < Math.abs(best.span - span)) best = o;
+        if (best.width !== chosen) {
+            chosen = best.width;
+            paint(chosen);
+        }
+    };
+    const finish = (commit: boolean): void => {
+        grip.removeEventListener('pointermove', onMove);
+        grip.removeEventListener('pointerup', onUp);
+        grip.removeEventListener('pointercancel', onCancel);
+        window.removeEventListener('keydown', onKey, true);
+        badge.remove();
+        node.classList.remove('ib-pv-sizing');
+        document.body.classList.remove('ib-pv-busy', 'ib-pv-resizing');
+        if (!commit) paint(from);
+        if (commit && chosen !== from) parent.postMessage({ type: 'imb-form-width', id, width: chosen }, location.origin);
+    };
+    const onUp = (): void => finish(true);
+    const onCancel = (): void => finish(false);
+    const onKey = (ev: KeyboardEvent): void => {
+        if (ev.key !== 'Escape') return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        finish(false);
+    };
+    grip.addEventListener('pointermove', onMove);
+    grip.addEventListener('pointerup', onUp);
+    grip.addEventListener('pointercancel', onCancel);
+    window.addEventListener('keydown', onKey, true);
+}
+
 function fieldNode(i: FieldItem, controls: Record<string, Control>): HTMLElement {
     // En el chat la pregunta va en su burbuja (nunca dentro del campo).
     const float = view()?.label_position === 'floating' && FLOAT_TYPES.has(i.field_type) && !i.hide_label && !chatMode();
@@ -1974,6 +2241,7 @@ function itemNode(i: Item, controls: Record<string, Control>): HTMLElement {
     if (BOOT.preview && i.show_if) node.insertBefore(pvTag('Condicional · sólo aparece si se cumple su condición'), node.firstChild);
     const kindLabel: Record<string, string> = { heading: 'Título de sección', text: 'Texto', image: 'Imagen', matrix: 'Matriz' };
     previewable(node, i.id, kindLabel[i.type] ?? 'Pregunta');
+    pvArrange(node, i);
     // v0.1.358 — para saber en qué pregunta lo dejó (estadísticas).
     if (i.type === 'field' || i.type === 'matrix') node.setAttribute('data-q', i.id);
     itemEls[i.id] = node;
@@ -2234,6 +2502,8 @@ function applyBodyClasses(): void {
     const bare = DEMO_STYLE === 'bare' ? true : DEMO_STYLE === 'card' ? false : !!v?.embed_bare;
     if (asEmbed && bare && !inPopup) cls.push('ib-embed-bare');
     else if (asEmbed && v?.embed_background) cls.push('ib-embed-bg');
+    // v0.1.407 — en el editor, el fondo de trabajo se ve siempre (publicado, sólo si se eligió publicarlo).
+    if (BOOT.preview && v?.preview_bg && !cls.includes('ib-solid-bg')) cls.push('ib-solid-bg');
     document.body.className = cls.join(' ');
 }
 
@@ -3337,6 +3607,14 @@ if (BOOT.preview) {
         if (!target || target.closest('input,select,textarea,button,a,label')) return;
         const id = target.closest('.ib-card') ? '@card' : '@page';
         parent.postMessage({ type: 'imb-form-select', id }, location.origin);
+    });
+    // v0.1.407 — con el foco en la vista previa (tras arrastrar), deshacer y rehacer siguen andando.
+    window.addEventListener('keydown', (e) => {
+        if (!(e.metaKey || e.ctrlKey)) return;
+        const k = e.key.toLowerCase();
+        if (k !== 'z' && k !== 'y') return;
+        e.preventDefault();
+        parent.postMessage({ type: 'imb-form-key', key: k === 'y' || e.shiftKey ? 'redo' : 'undo' }, location.origin);
     });
     parent.postMessage({ type: 'imb-form-ready' }, location.origin);
 }

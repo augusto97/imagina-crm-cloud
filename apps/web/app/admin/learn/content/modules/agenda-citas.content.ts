@@ -644,7 +644,7 @@ export const articles: LearnArticle[] = [
                 title: 'Lo que se oculta tocando cada parte',
                 rows: [
                     { name: 'El logo, el título, la descripción y dónde es la cita', what: 'Con su **ojo** en la lista de **Contenido**, o tócalos en la vista previa y apaga **Mostrar**. El logo es el de Ajustes → Marca.' },
-                    { name: 'La franja de color, la portada, el avance y la tarjeta', what: 'Igual: con su ojo. Sin tarjeta, la agenda queda sobre el fondo de la página.' },
+                    { name: 'La franja de color, la portada, el avance y la tarjeta', what: 'Igual: con el ojo de su fila; lo oculto queda en **Ocultos**, al pie de su bloque. Sin tarjeta, la agenda queda sobre el fondo de la página.' },
                     { name: 'La duración, la descripción y el precio de cada servicio', what: 'Toca **Servicios** → **Qué se ve de cada servicio**. Ocultar el precio sirve si prefieres hablar de precios después.' },
                     { name: 'La foto, el cargo y la descripción de quienes atienden', what: 'Toca **Quién atiende** → **Qué se ve de cada persona**: «Odontóloga», «Doce años de experiencia»…' },
                 ],

@@ -2,6 +2,7 @@ import type { FieldType } from '../schemas/field';
 import {
     formConfigSchema,
     newFormItemId,
+    suggestedFormPlaceholder,
     type FormConditionOp,
     type FormConfig,
     type FormFieldDisplay,
@@ -668,7 +669,7 @@ export function buildFormFromTemplate(
             field_id: field.id,
             label: it.label ?? '',
             help: it.help ?? '',
-            placeholder: it.placeholder ?? '',
+            placeholder: it.placeholder ?? suggestedFormPlaceholder(field.type),
             required: it.required === true,
             ...(it.display ? { display: it.display } : {}),
             ...(it.range ? { range: it.range } : {}),

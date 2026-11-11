@@ -318,6 +318,8 @@ function layoutVars(theme: PublicTheme): string {
         `--ib-title-ls:${px(t.title_letter_spacing)}`,
         `--ib-q-fs:${px(t.question_size)}`,
         `--ib-q-fw:${t.question_weight}`,
+        // v0.1.407 — el fondo liso de trabajo (sólo se usa con la clase `ib-solid-bg`).
+        ...(theme.layout.preview_bg ? [`--ib-solid-bg:${theme.layout.preview_bg}`] : []),
         `--ib-width:${px(theme.layout.width)}`,
         `--ib-pad:${px(theme.layout.padding)}`,
         `--ib-gap:${px(theme.layout.gap)}`,
@@ -359,6 +361,11 @@ export interface PublicThemeView {
     embed_background: boolean;
     /** v0.1.369 — Insertado en otro sitio, sin marco (sin fondo, borde ni espacios). */
     embed_bare: boolean;
+    /**
+     * v0.1.407 — Hay un fondo liso de trabajo (la vista previa del editor lo
+     * muestra siempre; publicado, sólo si `classes` trae `ib-solid-bg`).
+     */
+    preview_bg: boolean;
 }
 
 export function publicThemeView(theme: PublicTheme): PublicThemeView {
@@ -378,6 +385,8 @@ export function publicThemeView(theme: PublicTheme): PublicThemeView {
     if (theme.background.kind !== 'color' || theme.background.pattern !== 'none') c.push('ib-has-bg');
     if (theme.split.enabled) c.push('ib-split', `ib-split-${theme.split.side}`);
     c.push(`ib-ratio-${theme.choices.image_ratio}`);
+    // v0.1.407 — el fondo liso de trabajo, publicado (en el enlace directo y también insertado).
+    if (theme.layout.preview_bg && theme.layout.preview_bg_publish) c.push('ib-solid-bg');
     return {
         classes: c,
         label_position: theme.inputs.label_position,
@@ -390,6 +399,7 @@ export function publicThemeView(theme: PublicTheme): PublicThemeView {
         split: theme.split.enabled ? { side: theme.split.side, headline: theme.split.headline } : null,
         embed_background: theme.layout.embed_background,
         embed_bare: theme.layout.embed_style === 'bare',
+        preview_bg: !!theme.layout.preview_bg,
     };
 }
 
@@ -950,6 +960,9 @@ body.ib-embedded.ib-embed-bare .ib-inner{padding:0}
 body.ib-embedded.ib-embed-bare .ib-input:focus{box-shadow:inset 0 0 0 1px var(--ib-accent)}
 body.ib-embedded.ib-embed-bare.ib-input-underline .ib-input:focus{box-shadow:inset 0 -1px 0 0 var(--ib-accent)}
 body.ib-embedded.ib-embed-bare .ib-done{padding-left:0;padding-right:0}
+/* v0.1.407 — fondo liso (el de trabajo del editor, o publicado): manda sobre el de la página y sobre la transparencia de insertado. */
+body.ib-solid-bg,body.ib-solid-bg.ib-embedded,body.ib-solid-bg.ib-embedded.ib-embed-bare{background:var(--ib-solid-bg,var(--ib-bg))}
+body.ib-solid-bg .ib-bg{display:none}
 /* v0.1.394 (ADR-S99) — Dentro del panel del widget de contacto: el panel ya trae la marca y el título. */
 body.ib-in-widget{background:var(--ib-card,#fff)}
 body.ib-in-widget .ib-bg,body.ib-in-widget .ib-band,body.ib-in-widget .ib-cover,body.ib-in-widget .ib-split-media,body.ib-in-widget .ib-logo{display:none}

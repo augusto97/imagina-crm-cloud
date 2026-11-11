@@ -450,6 +450,8 @@ const CLIENT_JS = String.raw`
     var bare = DEMO_STYLE === 'bare' ? true : DEMO_STYLE === 'card' ? false : !!(v && v.embed_bare);
     if (embedded && !PREVIEW && !inPopup && bare) cls.push('ib-embed-bare');
     else if (embedded && !PREVIEW && v && v.embed_background) cls.push('ib-embed-bg');
+    // v0.1.407 — en el editor, el fondo de trabajo se ve siempre.
+    if (PREVIEW && v && v.preview_bg && cls.indexOf('ib-solid-bg') < 0) cls.push('ib-solid-bg');
     cls.push('bk-ch-' + (v && v.choice_style ? v.choice_style : 'list'));
     cls.push('bk-cal-' + (d.calendar_layout === 'stacked' ? 'stacked' : 'side'));
     cls.push('bk-slots-' + (d.slot_style === 'list' ? 'list' : 'grid'));

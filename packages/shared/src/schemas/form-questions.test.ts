@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     buildPublicFormItems,
+    defaultFormConfig,
     effectiveFormDisplay,
     formConfigSchema,
     formDisplaysFor,
@@ -9,6 +10,7 @@ import {
     matrixCellValue,
     rankingTextOptions,
     resolveFormRange,
+    suggestedFormPlaceholder,
     type FormFieldLike,
     type PublicFormFieldItem,
     type PublicFormMatrixItem,
@@ -224,5 +226,19 @@ describe('ayuda de la pregunta (v0.1.390)', () => {
         const byId = Object.fromEntries(items.map((i) => [i.id, i as PublicFormFieldItem]));
         expect(byId.qnit1!.help).toBe('');
         expect(byId.qnota1!.help).toBe('Sin dígito de verificación.');
+    });
+});
+
+describe('texto de ejemplo (v0.1.407)', () => {
+    it('se sugiere al crear la pregunta (y queda a la vista); vacío = sin ejemplo', () => {
+        expect(suggestedFormPlaceholder('email')).toBe('nombre@ejemplo.com');
+        expect(suggestedFormPlaceholder('url')).toBe('https://');
+        expect(suggestedFormPlaceholder('duration')).toBe('Ej.: 1h 30m');
+        expect(suggestedFormPlaceholder('text')).toBe('');
+        const cfg = defaultFormConfig('Contactos', [
+            { id: 1, type: 'text' },
+            { id: 2, type: 'email' },
+        ]);
+        expect(cfg.items.map((i) => (i.type === 'field' ? i.placeholder : null))).toEqual(['', 'nombre@ejemplo.com']);
     });
 });

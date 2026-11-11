@@ -144,6 +144,18 @@ export const publicLayoutSchema = z.object({
      * que le da el sitio, como un formulario de contacto propio.
      */
     embed_style: z.enum(PUBLIC_EMBED_STYLES).default('card'),
+    /**
+     * v0.1.407 — Un fondo de color liso para trabajar en el editor: un
+     * formulario sin fondo con letras blancas (para un sitio oscuro) se
+     * pierde sobre el blanco de la vista previa. null = el de la página.
+     */
+    preview_bg: color.nullable().catch(null).default(null),
+    /**
+     * v0.1.407 — Ese fondo, ¿se publica? false = sólo en el editor (al
+     * publicarlo el formulario va como siempre: transparente insertado en un
+     * sitio). true = también en el enlace directo e insertado.
+     */
+    preview_bg_publish: z.boolean().catch(false).default(false),
 });
 export type PublicLayout = z.infer<typeof publicLayoutSchema>;
 
