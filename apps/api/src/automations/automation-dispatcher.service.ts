@@ -191,6 +191,24 @@ export interface TriggerEvent {
     chain?: AutomationChain;
 }
 
+/**
+ * v0.1.402 — «Cuando pasa algo en Whats»: un evento de Whats para UNA
+ * automatización, con el registro ya encontrado (o creado) por teléfono.
+ * `stop`: no hay registro (o hay varios y no se puede elegir): la corrida
+ * queda con ese estado y el motivo, sin correr las acciones.
+ */
+export interface WhatsEventJob {
+    tenantId: number;
+    automationId: number;
+    listId: number;
+    recordId: number | null;
+    whatsapp: WhatsappEventInfo;
+    payload: Record<string, unknown>;
+    /** El primer paso del historial («Se encontró por teléfono…», «Se creó el registro…»). */
+    note?: string;
+    stop?: { status: 'cancelled' | 'failed'; message: string };
+}
+
 /** Lo que devuelve el worker al procesar un evento: las corridas que abrió. */
 export interface EventRunRef {
     automation_id: number;
@@ -302,8 +320,25 @@ export class AutomationDispatcher {
         return { v, types, watch };
     }
 
+    /**
+     * v0.1.402 — Quien quiere enterarse de que cambiaron las automatizaciones
+     * de una empresa (WhatsApp ajusta los avisos que le pide a Whats).
+     */
+    private readonly changeListeners: Array<(tenantId: number, listId: number) => void> = [];
+
+    onAutomationsChanged(fn: (tenantId: number, listId: number) => void): void {
+        this.changeListeners.push(fn);
+    }
+
     /** Las automatizaciones de la lista cambiaron (alta, edición, pausa, baja). */
     async invalidate(tenantId: number, listId: number): Promise<void> {
+        for (const fn of this.changeListeners) {
+            try {
+                fn(tenantId, listId);
+            } catch (err) {
+                this.logger.warn(`Aviso de cambio de automatizaciones: ${String(err)}`);
+            }
+        }
         if (!this.redis) return;
         await this.redis
             .incr(versionKey(tenantId, listId))
@@ -364,6 +399,19 @@ export class AutomationDispatcher {
         this.addFair('webhook', data).catch((err) => {
             this.lost(data.tenantId, null, data.automationId, 'el webhook entrante', err);
         });
+    }
+
+    /**
+     * v0.1.402 — encola un evento de Whats para una automatización (job
+     * 'whats-event'). false si no hay cola (sin Redis): quien llama lo corre
+     * en el acto.
+     */
+    dispatchWhatsEvent(data: WhatsEventJob): boolean {
+        if (!this.queue) return false;
+        this.addFair('whats-event', data).catch((err) => {
+            this.lost(data.tenantId, data.listId, data.automationId, 'el aviso de Whats', err);
+        });
+        return true;
     }
 
     /**

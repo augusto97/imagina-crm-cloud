@@ -20,9 +20,11 @@
 //        sent | delivered | read | failed | canceled
 //   POST /__inbound {from, text?, account?, type?, caption?}
 //        manda el aviso de un mensaje que te escriben
-//   POST /__account {id, status, is_enabled?}  → cambia el estado de un número
+//   POST /__account {id, status?, is_enabled?, receive_inbound_enabled?} → cambia un número
 //   POST /__reset                              → borra todo
 //   POST /__conversation {phone}               → abre una conversación de WhatsApp de ese contacto
+//   POST /__event {event, payload}              → v0.1.402: manda el aviso firmado de cualquier evento
+//        (contact.created, conversation.assigned, csat.received, link.clicked, form.submitted…)
 //
 // v0.1.401 — también contactos (lookup, PUT), etiquetas, grupos, notas,
 // consentimiento, bajas, flujos (Bienvenida activo, Encuesta en borrador),
@@ -56,8 +58,8 @@ const KEYS = {
 function fresh() {
     return {
         accounts: [
-            { id: 1, phone: '+573178339119', display_name: 'Café Aurora', status: 'connected', is_enabled: true },
-            { id: 2, phone: '+573005550142', display_name: 'Bodega', status: 'disconnected', is_enabled: true },
+            { id: 1, phone: '+573178339119', display_name: 'Café Aurora', status: 'connected', is_enabled: true, receive_inbound_enabled: true },
+            { id: 2, phone: '+573005550142', display_name: 'Bodega', status: 'disconnected', is_enabled: true, receive_inbound_enabled: true },
         ],
         hooks: [],
         messages: [],
@@ -161,11 +163,17 @@ const server = http.createServer(async (req, res) => {
         state.conversations.push(conv);
         return send(res, 200, conv);
     }
+    if (path === '/__event') {
+        const event = String(body.event ?? '');
+        if (event === '') return send(res, 400, { ok: false, error: 'falta event' });
+        return send(res, 200, { delivered: await deliver(event, body.payload ?? {}) });
+    }
     if (path === '/__account') {
         const a = state.accounts.find((x) => x.id === Number(body.id));
         if (!a) return send(res, 404, { ok: false });
         if (body.status) a.status = String(body.status);
         if (typeof body.is_enabled === 'boolean') a.is_enabled = body.is_enabled;
+        if (typeof body.receive_inbound_enabled === 'boolean') a.receive_inbound_enabled = body.receive_inbound_enabled;
         return send(res, 200, a);
     }
     if (path === '/__status') {
@@ -326,6 +334,12 @@ const server = http.createServer(async (req, res) => {
         if (typeof body.email === 'string') c.email = body.email;
         if (body.fields && typeof body.fields === 'object') c.fields = { ...(c.fields ?? {}), ...body.fields };
         return send(res, created ? 201 : 200, { data: c });
+    }
+    const one = /^\/contacts\/(\d+)$/.exec(p);
+    if (one && req.method === 'GET') {
+        if (!need('contacts.view')) return;
+        const c = contactById(one[1]);
+        return c ? send(res, 200, { data: c }) : send(res, 404, { error: { code: 'not_found', message: 'Not found.' } });
     }
     if (p === '/contacts/fields' && req.method === 'GET') {
         if (!need('contacts.view')) return;

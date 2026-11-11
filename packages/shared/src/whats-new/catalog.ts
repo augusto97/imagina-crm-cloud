@@ -2405,4 +2405,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.402-whats-disparadores',
+        version: '0.1.402',
+        date: '2026-11-11',
+        kind: 'feature',
+        title: 'Lo que pasa en WhatsApp (Whats) ya dispara tus automatizaciones',
+        summary:
+            'Con **Cuando pasa algo en Whats**, tus automatizaciones corren cuando un mensaje falla o se lee, llega un contacto nuevo, se asigna una conversación, califican la atención o envían un formulario. La app encuentra el registro por el teléfono.',
+        media: {
+            slides: [
+                {
+                    title: 'Elige qué evento escuchar',
+                    text: 'En «Cuando…» toca «Cuando pasa algo en Whats» y elige el evento: un mensaje que falló, un contacto nuevo, una conversación asignada, una calificación…',
+                    illustration: 'automation-whatsapp',
+                },
+                {
+                    title: 'El registro se encuentra por el teléfono',
+                    text: 'Con o sin indicativo. Si no está, puedes crearlo con el nombre, el teléfono y el correo del contacto, o no hacer nada y ver el motivo en el historial.',
+                    illustration: 'wab-was-conectar',
+                },
+                {
+                    title: 'Los datos del aviso, en tus acciones',
+                    text: 'Usa {{whatsapp.motivo}}, {{whatsapp.calificacion}}, {{whatsapp.enlace}} o cualquier dato del aviso con {{payload.…}}. Y Whats manda sólo los avisos que usas.',
+                    illustration: 'integ-connect-once',
+                },
+            ],
+        },
+        body: 'En una automatización, en **Cuando…**, elige **Cuando pasa algo en Whats** (en la sección WhatsApp) y luego el evento.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

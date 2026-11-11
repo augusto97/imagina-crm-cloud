@@ -23,6 +23,7 @@ import {
     ClipboardCheck,
     MessageCircle,
     MousePointerClick,
+    Radio,
     Stamp,
     ListTodo,
     ListTree,
@@ -30,7 +31,7 @@ import {
     type LucideIcon,
 } from 'lucide-react';
 
-import { APPROVAL_STATUS_LABELS, SUBSCRIPTION_EVENT_LABELS, type SubscriptionEvent, describeWait, describeWaitApproval, describeWebhookRecord, readApprovalTriggerResults, readWebhookRecordConfig, scheduleParts } from '@imagina-base/shared';
+import { APPROVAL_STATUS_LABELS, SUBSCRIPTION_EVENT_LABELS, type SubscriptionEvent, describeWait, describeWaitApproval, describeWebhookRecord, describeWhatsTrigger, readWhatsTriggerConfig, readApprovalTriggerResults, readWebhookRecordConfig, scheduleParts } from '@imagina-base/shared';
 
 import { __, _n, sprintf } from '@/lib/i18n';
 import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
@@ -90,6 +91,12 @@ export const TRIGGER_META: Record<string, StepMeta> = {
         icon: MessageCircle,
         title: 'Llega un mensaje de WhatsApp',
         description: 'Dispara cuando un contacto le escribe a tu número de WhatsApp Business (el registro ya se encontró o creó por su teléfono).',
+    },
+    // v0.1.402 — algo que avisa Whats (estado de lo enviado, contactos, conversaciones…).
+    whats_event: {
+        icon: Radio,
+        title: 'Pasa algo en Whats',
+        description: 'Dispara cuando Whats avisa del estado de un mensaje, un contacto nuevo o dado de baja, una conversación, una calificación, un clic o un formulario.',
     },
     payment_received: {
         icon: BadgeDollarSign,
@@ -372,6 +379,10 @@ export function summarizeTrigger(
         }
         case 'whatsapp_message_received':
             return __('Cuando llega un mensaje de WhatsApp');
+        case 'whats_event': {
+            const wc = readWhatsTriggerConfig(config);
+            return wc ? describeWhatsTrigger(wc) : __('Cuando pasa algo en Whats');
+        }
         case 'form_submitted': {
             // v0.1.386 — con el filtro de página, se dice.
             const page = typeof config.page_contains === 'string' ? config.page_contains.trim() : '';

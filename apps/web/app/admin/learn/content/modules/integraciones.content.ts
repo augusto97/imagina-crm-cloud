@@ -132,7 +132,8 @@ export const articles: LearnArticle[] = [
                     { name: 'Consentimiento y baja', what: '**Registrar consentimiento** guarda qué texto aceptó, dónde y cuándo. **Dar de baja** hace que Whats deje de mandarle mensajes y campañas.' },
                     { name: 'Flujos y goteos', what: '**Activar un flujo** (los publicados de tu cuenta) con variables del registro, **reanudar** uno que quedó esperando a tu sistema e **inscribir en un goteo**.', tip: 'Lo que deja cada acción sirve en las siguientes: `{{whats.contacto_id}}`, `{{whats.ejecucion_id}}`, `{{whats.mensaje_id}}`.' },
                     { name: 'Responder o resolver la conversación', what: 'Responde en la bandeja de Whats como lo haría tu equipo, o la marca como resuelta (o la reabre). Si el contacto no tiene conversación, la acción se salta.' },
-                    { name: 'Cuando llega un mensaje de WhatsApp', what: 'El disparador corre cuando un contacto te escribe, con `{{whatsapp.texto}}`, `{{whatsapp.nombre}}` y `{{whatsapp.de}}`.' },
+                    { name: 'Cuando llega un mensaje de WhatsApp', what: 'El disparador corre cuando un contacto te escribe, con `{{whatsapp.texto}}`, `{{whatsapp.nombre}}`, `{{whatsapp.de}}` y, si mandó un archivo, `{{whatsapp.archivo}}`.' },
+                    { name: 'Cuando pasa algo en Whats', what: 'El disparador para el resto de lo que pasa en tu cuenta. Eliges el evento: **cambió el estado de un mensaje que enviaste** (enviado, entregado, leído, falló o se canceló), **se creó un contacto**, **un contacto se dio de baja**, **una conversación empezó, se asignó o se resolvió**, **calificaron la atención**, **hicieron clic en un enlace** o **enviaron un formulario de Whats**.', tip: 'Cada evento deja sus datos: `{{whatsapp.motivo}}` de un mensaje que falló, `{{whatsapp.calificacion}}`, `{{whatsapp.enlace}}`… y cualquier dato del aviso con `{{payload.…}}`.' },
                     { name: 'Servidor (opciones avanzadas)', what: 'Sólo si usas un servidor de Whats propio. Casi nadie lo cambia.' },
                 ],
             },
@@ -140,6 +141,21 @@ export const articles: LearnArticle[] = [
                 t: 'callout',
                 tone: 'info',
                 md: 'Las acciones que trabajan sobre el contacto buscan en Whats el **teléfono del registro** y, si todavía no está, lo crean con el título del registro (salvo las que quitan algo). **Probar ahora → Ver qué haría** te muestra lo que va a pasar con un registro real sin tocar Whats. Para usarlas, la clave necesita además permisos de contactos, etiquetas, grupos, flujos o bandeja: la página **Configurar WhatsApp** te dice cuántas acciones puedes usar y qué permisos faltan.',
+            },
+            { t: 'h', text: 'Qué registro usa «Cuando pasa algo en Whats»' },
+            {
+                t: 'steps',
+                items: [
+                    'Si el aviso es de un mensaje que mandó un registro de la lista, se usa **ese registro**.',
+                    'Si no, se busca por el **teléfono** del contacto, con y sin indicativo, en el campo que elijas (o el de **Configurar WhatsApp**).',
+                    'Si hay varios con el mismo teléfono, se usa el que ya está vinculado a ese contacto; si ninguno lo está, la corrida falla y te dice cuáles son, para que no se cambie el registro equivocado.',
+                    'Si no hay ninguno, eliges: **crearlo** con el nombre, el teléfono y el correo del contacto, o **no hacer nada** (la corrida queda cancelada con el motivo en el historial).',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'Whats sólo le manda a la app los avisos que alguna automatización usa: al guardar una, se suman solos, y al pausarla, se quitan. Si un aviso trae sólo el contacto (sin su teléfono), la app se lo pregunta a Whats: para eso la clave necesita el permiso de **ver contactos**. Y si tu número tiene apagado **Recibir mensajes** en Whats, la página **Configurar WhatsApp** te lo avisa.',
             },
             {
                 t: 'p',

@@ -5,7 +5,7 @@ import { ENV, type Env } from '../config/env';
 import { RecurrencesService } from '../recurrences/recurrences.service';
 import { guardRedis } from '../redis/redis.util';
 import { AutomationBulkRunner } from './automation-bulk-runner.service';
-import { AutomationDispatcher, type BulkEditJob, type TriggerEvent } from './automation-dispatcher.service';
+import { AutomationDispatcher, type BulkEditJob, type TriggerEvent, type WhatsEventJob } from './automation-dispatcher.service';
 import { AutomationEngine } from './automation-engine.service';
 import { AutomationScheduler } from './automation-scheduler.service';
 import { AutomationWaitsService } from './automation-waits.service';
@@ -78,6 +78,9 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                     } else if (job.name === 'webhook') {
                         const d = job.data as SchedulerJobData & { payload: Record<string, unknown> };
                         await this.engine.runWebhook(d.tenantId, d.automationId, d.payload);
+                    } else if (job.name === 'whats-event') {
+                        // v0.1.402 — «Cuando pasa algo en Whats», con el registro ya encontrado.
+                        await this.engine.runWhatsEvent(job.data as WhatsEventJob);
                     } else if (job.name === 'bulk-edit') {
                         await this.bulkRunner.run(job.data as BulkEditJob);
                     } else if (job.name === WAITS_TICK_JOB) {

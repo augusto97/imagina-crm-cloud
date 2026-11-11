@@ -323,6 +323,8 @@ export interface WaWebAccount {
     statusReason: string | null;
     bannedUntil: string | null;
     enabled: boolean;
+    /** v0.1.402 — «Recibir mensajes» encendido en Whats (null = la respuesta no lo dice). */
+    receiveInbound: boolean | null;
 }
 
 function toAccount(a: Record<string, unknown>): WaWebAccount | null {
@@ -336,6 +338,7 @@ function toAccount(a: Record<string, unknown>): WaWebAccount | null {
         statusReason: strOrNull(a.status_reason),
         bannedUntil: strOrNull(a.banned_until),
         enabled: a.is_enabled !== false,
+        receiveInbound: typeof a.receive_inbound_enabled === 'boolean' ? a.receive_inbound_enabled : null,
     };
 }
 
@@ -353,6 +356,10 @@ export function waWebAccountStatusLabel(a: Pick<WaWebAccount, 'status' | 'enable
     if (!a.enabled) return 'Apagado en el panel';
     return WA_WEB_ACCOUNT_STATUS_LABEL[a.status] ?? a.status;
 }
+
+/** El aviso cuando el número tiene apagado «Recibir mensajes» en Whats. */
+export const WA_WEB_NO_INBOUND_TEXT =
+    'El número tiene apagado «Recibir mensajes» en Whats: los mensajes que te escriben no llegan a la app. Si los necesitas, actívalo en la configuración del número en tu panel de Whats.';
 
 /** Cómo se ve un número en la lista para elegir: «+57 317 833 9119 · Augusto · Conectado». */
 export function waWebAccountOption(a: WaWebAccount): { value: string; label: string } {
@@ -539,6 +546,8 @@ export function parseWaWebHook(body: unknown, headerEvent?: string): ParsedWaWeb
             at: whenOf(msg.created_at, root.sent_at),
             type: str(msg.type) || 'text',
             text: inboundText(msg),
+            media: Array.isArray(msg.attachments) ? strOrNull(rec(msg.attachments[0]).url) : null,
+            contactId: Number.isInteger(Number(msg.contact_id)) && Number(msg.contact_id) > 0 ? Number(msg.contact_id) : null,
         };
         return out;
     }

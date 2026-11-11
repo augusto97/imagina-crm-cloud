@@ -415,14 +415,19 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.401**
-(**el conector completo de WhatsApp (Whats), primera mitad: las acciones** —
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.402**
+(**el conector completo de WhatsApp (Whats), segunda mitad: los
+disparadores** — «Cuando pasa algo en Whats» con 7 eventos: estado de un
+mensaje enviado, contacto nuevo, baja, conversación, calificación, clic en un
+enlace y formulario; el registro se busca por teléfono, `{{whatsapp.*}}` y
+`{{payload.…}}`, Whats manda sólo los avisos que se usan, y aviso si el
+número tiene apagado «Recibir mensajes»; addendum ADR-S69). Antes v0.1.401
+(**primera mitad: las acciones** —
 17 en total: además de mensajes y archivos, ubicación, tarjeta de contacto,
 crear/actualizar contacto, etiquetas, grupos, notas, consentimiento, baja,
 flujos, goteos y la bandeja; el contacto se busca por teléfono y se crea si
 falta; listas de la cuenta para elegir, aviso de permisos que faltan y
-«Probar ahora» que primero muestra lo que haría; addendum ADR-S69. **Sigue
-v0.1.402** con los disparadores — ver «Hilos abiertos»). Antes v0.1.400
+«Probar ahora» que primero muestra lo que haría; addendum ADR-S69). Antes v0.1.400
 (**WhatsApp (Whats) y WhatsApp (WAS) con sus nombres** —Whats es la nueva,
 WAS la anterior, que sigue funcionando— y **«Reemplazar en
 automatizaciones»**: pasa de una vez las acciones de una conexión a otra,
@@ -626,17 +631,14 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 **Hilos abiertos (lo último que se habló)**
 - 2026-11-11 — **Conector completo de Whats** (el usuario adjuntó la
   documentación de la API v1 de Whats y aprobó la lista de acciones y
-  disparadores). **v0.1.401 HECHA** (acciones: ver la bitácora). **Falta
-  v0.1.402 — disparadores**: eventos `wa.message.*` (enviado/entregado/leído/
-  fallido además de recibido), `contact.created`, `contact.unsubscribed`,
-  `conversation.created/assigned/resolved`, `csat.received`, `link.clicked`,
-  `form.submitted/confirmed` — **sin citas ni pagos** (decisión del usuario).
-  Cada disparador ubica el registro por teléfono (o por id de mensaje para los
-  estados; por `contact_id` → `GET /contacts/{id}` con caché), expone
-  `{{whatsapp.*}}` y `{{payload.*}}`, y el aviso de Whats se suscribe sólo a
-  los eventos que alguna automatización usa. **Autorizado**: leer, SIN cambiar
-  nada, las entregas de avisos reales de su cuenta de Whats para confirmar la
-  forma de cada payload (la documentación sólo trae el del mensaje).
+  disparadores). **v0.1.401 y v0.1.402 HECHAS** (acciones y disparadores:
+  ver la bitácora). **Queda a confirmar con avisos reales** la forma exacta de
+  los eventos que no son de mensajes (contactos, conversaciones,
+  calificaciones, clics, formularios): la documentación no trae ejemplos y las
+  entregas guardadas que se pudieron leer no traían el cuerpo, así que se leen
+  con tolerancia (SUPUESTO marcado en `apps/api/src/whatsapp/whats-events.ts`);
+  lo que no se lea queda igual en `{{payload.…}}`. Si un evento real llega con
+  otra forma, ajustar ese lector.
 - 2026-11-10 — **«Cada vez que tecleo una tecla me saca del campo del
   formulario»** (reporte del usuario con captura: el número de WhatsApp de un
   botón del widget). **v0.1.398 HECHA**: ver la bitácora.
@@ -1822,6 +1824,31 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-11 · v0.1.402** — **El conector completo de WhatsApp (Whats):
+  los disparadores** (segunda mitad del pedido de v0.1.401, con lo aprobado:
+  sin citas ni pagos). Hecho: un disparador nuevo, **«Cuando pasa algo en
+  Whats»** (`whats_event`), con 7 eventos —estado de un mensaje enviado
+  (elige cuáles; falló por defecto), contacto nuevo, baja, conversación
+  (empezó/asignada/resuelta), calificación, clic en un enlace y formulario
+  (enviado/confirmado)—, conexión opcional, campo del teléfono y qué hacer si
+  no hay registro (crearlo o no hacer nada). El registro: el que mandó el
+  mensaje, o por teléfono con y sin indicativo; varios → el vinculado al
+  contacto, si no **falla con los ids**; un aviso con sólo el contacto le pide
+  el teléfono a Whats (permiso `contacts.view`, el editor lo avisa). Whats
+  manda sólo los avisos que usan las automatizaciones activas (se ajusta al
+  guardar o pausar); dedup por automatización. Variables `{{whatsapp.*}}`
+  (estado, motivo, correo, calificación, enlace…) y `{{payload.…}}`. De paso:
+  **bug** — «Cuando llega un mensaje de WhatsApp» perdía la conexión elegida
+  al guardar; `{{whatsapp.archivo}}`; y aviso si el número tiene apagado
+  «Recibir mensajes» en Whats (al conectar y en la página de la conexión; era
+  el último punto de la propuesta). **Lectura de avisos reales**: las
+  entregas guardadas que se pudieron leer no traían el cuerpo, así que los
+  eventos que no son de mensajes se leen con tolerancia (SUPUESTO marcado).
+  Verificado: 6 tests nuevos y uno extendido en `whatsapp-web.spec` (20/20), suites de
+  automatizaciones/WhatsApp/asistente/MCP 186/186, shared 861 (6 nuevos),
+  front 855 (2 nuevos), y E2E navegador 28/28 contra el Whats simulado
+  (escritorio y celular oscuro). Queda: confirmar con avisos reales la forma de
+  esos eventos.
 - **2026-11-11 · v0.1.401** — **El conector completo de WhatsApp (Whats):
   las acciones**. Pedido del usuario con la documentación completa de la API
   v1 de Whats (Zender): «rediseñar el conector como un conector completo:

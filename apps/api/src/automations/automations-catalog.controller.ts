@@ -36,6 +36,8 @@ const TRIGGERS: TriggerMeta[] = [
     { slug: 'booking_event', label: 'Cuando se agenda, reprograma o cancela una cita', event: 'imagina_crm/booking_event', config_schema: {} },
     // D3 — un contacto escribió por WhatsApp oficial (el registro ya se encontró o creó).
     { slug: 'whatsapp_message_received', label: 'Cuando llega un mensaje de WhatsApp', event: 'imagina_crm/whatsapp_message_received', config_schema: {} },
+    // v0.1.402 — algo que avisa Whats: el estado de lo enviado, un contacto, una conversación, una calificación, un clic, un formulario.
+    { slug: 'whats_event', label: 'Cuando pasa algo en Whats', event: 'imagina_crm/whats_event', config_schema: {} },
     // D2 — llegó un correo al buzón de soporte (ticket nuevo o respuesta del cliente).
     { slug: 'email_received', label: 'Cuando llega un correo', event: 'imagina_crm/email_received', config_schema: {} },
     // E5 — un SLA de la mesa de ayuda entró en riesgo o se venció.

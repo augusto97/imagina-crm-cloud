@@ -43,7 +43,7 @@ function str(v: unknown): string {
     return typeof v === 'string' ? v : typeof v === 'number' ? String(v) : '';
 }
 
-function useWhatsappConnections() {
+export function useWhatsappConnections() {
     return useQuery({
         queryKey: ['whatsapp-connections'],
         queryFn: () => cloud.whatsappConnections(),

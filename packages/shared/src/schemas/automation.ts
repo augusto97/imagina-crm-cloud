@@ -4,6 +4,7 @@ import { idSchema, isoDateTimeSchema } from './common';
 import { filterOperatorSchema } from './filter';
 import { RESPONSE_NAME_RE, waitConfigProblem } from './automation-flow';
 import { APPROVAL_RESULTS, waitApprovalProblem } from './approvals';
+import { WHATS_EVENT_TRIGGER, readWhatsTriggerConfig } from './whats-triggers';
 
 /**
  * Automatizaciones (CONTRACT.md §8) — modelo FLEXIBLE alineado al plugin
@@ -665,6 +666,10 @@ export function automationConfigIssues(input: {
     // A9 — «uno con un nombre en particular» sin nombre no dispararía nunca.
     if (input.trigger_type === 'checklist_completed' && cfg.checklist_mode === 'named' && isBlankConfig(cfg.checklist_name)) {
         out.push({ path: 'trigger_config.checklist_name', message: 'Escribe el nombre del checklist que dispara la automatización.' });
+    }
+    // v0.1.402 — «Cuando pasa algo en Whats» sin evento no dispararía nunca.
+    if (input.trigger_type === WHATS_EVENT_TRIGGER && readWhatsTriggerConfig(cfg) === null) {
+        out.push({ path: 'trigger_config.whats_event', message: 'Elige qué evento de Whats dispara la automatización.' });
     }
     if (input.actions !== undefined) actionIssues(input.actions, 'actions', 0, out, { inLoop: false, responseNames: new Set() });
     return out;

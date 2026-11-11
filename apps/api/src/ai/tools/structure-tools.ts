@@ -2,6 +2,8 @@ import { Injectable, Optional } from '@nestjs/common';
 import {
     meetingActionKind,
     describeWebhookRecord,
+    describeWhatsTrigger,
+    readWhatsTriggerConfig,
     readWebhookRecordConfig,
     AUTOMATION_ACTIONS,
     COLLECTION_FIELD_ROLES,
@@ -574,7 +576,7 @@ const automationSpec = z.object({
     list: z.string().max(63).describe('Slug de la lista'),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).optional(),
-    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'email_received', 'sla_alert', 'subscription_event']),
+    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'whats_event', 'email_received', 'sla_alert', 'subscription_event']),
     trigger_config: z
         .record(z.unknown())
         .optional()
@@ -593,6 +595,7 @@ const automationSpec = z.object({
                 'checklist_completed (se marcó el último ítem de un checklist del registro; las acciones usan {{checklist.nombre}}): {checklist_mode?: any (cualquier checklist, default) | named (sólo el de checklist_name) | all (cuando quedan TODOS los checklists del registro completos), checklist_name?, field_filters?}. ' +
                 'booking_event (se agendó, reprogramó o canceló una cita: desde una página de agenda de la lista, el enlace del correo del cliente o la app; el registro es la cita; las acciones usan {{cita.evento}} (agendada|reprogramada|cancelada|solicitada|rechazada), {{cita.servicio}}, {{cita.inicio}}, {{cita.fin}}, {{cita.persona}}, {{cita.cliente}}, {{cita.email}}, {{cita.lugar}}, {{cita.enlace_reunion}} (el enlace de Meet, Teams o el fijo), {{cita.enlace_reprogramar}}, {{cita.enlace_cancelar}}): {booking_page_id? (id de una de las `booking_pages` de get_list_schema; sin él, cualquiera), events?: [booked|rescheduled|cancelled|requested|declined] (sin él: booked, rescheduled y cancelled; requested = la pidieron y queda por confirmar, declined = el equipo la rechazó o venció el plazo; con aprobación, booked sale al aprobarla; con cobro «pagar para confirmar», booked sale cuando entra el pago), field_filters?}. ' +
                 'whatsapp_message_received (un contacto escribió por WhatsApp oficial; el registro ya se encontró o creó por teléfono; las acciones usan {{whatsapp.texto}}, {{whatsapp.de}}, {{whatsapp.nombre}}): {connection_id? (de `whatsapp.connections` en get_list_schema; vacío = cualquiera), field_filters?}. ' +
+                'whats_event (algo que avisa Whats, la conexión kind "whats": la app ubica el registro de ESTA lista por teléfono y, si no está, lo crea o cancela la corrida; las acciones usan {{whatsapp.evento}}, {{whatsapp.de}}, {{whatsapp.nombre}}, {{whatsapp.correo}}, {{whatsapp.contacto_id}} y lo que trae el aviso como {{payload.x}}): {whats_event: message_status ({{whatsapp.estado}}, {{whatsapp.motivo}}) | contact_created | contact_unsubscribed | conversation ({{whatsapp.conversacion_id}}, {{whatsapp.estado_conversacion}}, {{whatsapp.asignado_a}}) | csat ({{whatsapp.calificacion}}, {{whatsapp.comentario}}) | link_clicked ({{whatsapp.enlace}}) | form ({{whatsapp.formulario}}, respuestas en {{payload.answers.x}}), statuses?: [sent|delivered|read|failed|canceled] (default [failed]), conversation_events?: [created|assigned|resolved], form_events?: [submitted|confirmed], connection_id? (una conexión kind "whats"), phone_field? (slug de un campo teléfono o texto; vacío = el de la lista), if_missing?: create|skip (contact_created y form crean por defecto), field_filters?}. ' +
                 'email_received (MESA DE AYUDA: llegó un correo al buzón de soporte de la lista — ver `helpdesk` en get_list_schema; las acciones usan {{correo.de}}, {{correo.nombre}}, {{correo.asunto}}, {{correo.texto}}, {{correo.tipo}} (nuevo|respuesta)): {email_kind?: any (default) | new (sólo tickets nuevos) | reply (sólo respuestas del cliente), field_filters?}. ' +
                 'sla_alert (un SLA de la mesa de ayuda entró en riesgo o se venció; las acciones usan {{sla.alerta}}, {{sla.objetivo}}, {{sla.vence}}, {{sla.prioridad}}, {{sla.estado}}): {sla_alerts?: [at_risk|breached] (vacío = las dos), sla_targets?: [first_response|resolution] (vacío = los dos), field_filters?}.',
         ),
@@ -1040,7 +1043,7 @@ export class StructureTools implements AiProposalApplier {
                 name: z.string().min(1).max(190).optional(),
                 description: z.string().max(2000).nullable().optional(),
                 is_active: z.boolean().optional(),
-                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'email_received', 'sla_alert', 'subscription_event']).optional(),
+                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'whats_event', 'email_received', 'sla_alert', 'subscription_event']).optional(),
                 trigger_config: z.record(z.unknown()).optional(),
                 actions: z.array(z.record(z.unknown())).min(1).max(20).optional(),
             }),
@@ -2298,6 +2301,7 @@ export class StructureTools implements AiProposalApplier {
         parsed.data.trigger_config ??= {};
         translateScheduledEach(parsed.data.trigger_type, parsed.data.trigger_config, fields, list.name);
         translateButtonTrigger(parsed.data.trigger_type, parsed.data.trigger_config, buttonFieldResolver(fields));
+        translateWhatsTrigger(parsed.data.trigger_type, parsed.data.trigger_config, fields, list.name);
         // v0.1.399 — webhook entrante con registro: la búsqueda tiene que poder correr.
         parsed.data.trigger_config = webhookConfigForModel(parsed.data.trigger_type, parsed.data.trigger_config, fields);
         // C5 — flujos de aprobación por id o nombre → `approval_flow_id`.
@@ -2837,6 +2841,7 @@ export class StructureTools implements AiProposalApplier {
             merged.data.trigger_config ??= {};
             translateScheduledEach(merged.data.trigger_type, merged.data.trigger_config, fields, list.name);
             translateButtonTrigger(merged.data.trigger_type, merged.data.trigger_config, buttonFieldResolver(fields));
+            translateWhatsTrigger(merged.data.trigger_type, merged.data.trigger_config, fields, list.name);
             merged.data.trigger_config = webhookConfigForModel(merged.data.trigger_type, merged.data.trigger_config, fields);
             if (input.actions !== undefined || input.trigger_config !== undefined || input.trigger_type !== undefined) {
                 await this.translateApprovalRefs(ctx, list, merged.data.trigger_type, merged.data.trigger_config, merged.data.actions as unknown[]);
@@ -5146,6 +5151,10 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
         }
         case 'whatsapp_message_received':
             return 'Cuando llega un mensaje de WhatsApp';
+        case 'whats_event': {
+            const wc = readWhatsTriggerConfig(cfg);
+            return wc ? describeWhatsTrigger(wc) : 'Cuando pasa algo en Whats';
+        }
         case 'form_submitted':
             return typeof cfg.page_contains === 'string' && cfg.page_contains.trim() !== ''
                 ? `Cuando se envía un formulario desde una página con «${cfg.page_contains.trim()}»`
@@ -5278,6 +5287,25 @@ function translateButtonTrigger(triggerType: string, cfg: Record<string, unknown
         cfg.button_field_id = id;
     }
     delete cfg.button_field;
+}
+
+/**
+ * v0.1.402 — «Cuando pasa algo en Whats»: el campo del teléfono llega por SLUG
+ * (`phone_field`) y se guarda como `phone_field_id`; sin un evento válido,
+ * error corregible con los que hay.
+ */
+function translateWhatsTrigger(triggerType: string, cfg: Record<string, unknown>, fields: Field[], listName: string): void {
+    if (triggerType !== 'whats_event') return;
+    if (readWhatsTriggerConfig(cfg) === null) {
+        throw new AiToolError('whats_event: falta whats_event (message_status | contact_created | contact_unsubscribed | conversation | csat | link_clicked | form).');
+    }
+    const slug = cfg.phone_field;
+    if (typeof slug === 'string' && slug !== '') {
+        const f = fields.find((x) => x.slug === slug && (x.type === 'phone' || x.type === 'text'));
+        if (!f) throw new AiToolError(`whats_event: «${slug}» no es un campo de teléfono (o texto) de «${listName}».`);
+        cfg.phone_field_id = f.id;
+    }
+    delete cfg.phone_field;
 }
 
 function buttonFieldResolver(fields: Field[]): (slug: string) => number | undefined {

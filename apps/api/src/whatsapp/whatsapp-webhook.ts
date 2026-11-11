@@ -29,6 +29,9 @@ export interface InboundMessage {
     type: string;
     /** Resumen legible (texto, o «[Imagen] pie de foto»…). */
     text: string;
+    /** v0.1.402 — Whats: el enlace del archivo (vence a los 30 min) y el id del contacto. */
+    media?: string | null;
+    contactId?: number | null;
 }
 
 /** Un cambio de estado de un mensaje que mandó la empresa. */

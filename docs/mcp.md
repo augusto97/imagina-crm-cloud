@@ -251,6 +251,16 @@ teléfono (`recipient`) y lo crean si falta; `tags` y `group` van por nombre
 (con variables), `flow` y `drip` por id, y `variables`/`fields` son un JSON
 `{"clave": "{{slug}}"}`. No hay acción para mandar a grupos de WhatsApp.
 
+Desde v0.1.402 también hay un disparador para lo que pasa en Whats:
+`trigger_type: "whats_event"` con `trigger_config {whats_event, connection_id?,
+statuses?|conversation_events?|form_events?, phone_field?, if_missing?}`.
+`whats_event` es uno de `message_status`, `contact_created`,
+`contact_unsubscribed`, `conversation`, `csat`, `link_clicked` o `form`;
+`phone_field` es el slug del campo con el teléfono (se traduce a su id) e
+`if_missing` es `create` o `skip`. El registro se busca por teléfono y las
+acciones leen `{{whatsapp.*}}` (estado, motivo, correo, calificación,
+enlace…) y `{{payload.…}}`.
+
 **Reuniones (v0.1.366).** `teams.create_meeting`, `outlook.create_event` y
 `google_calendar.create_event` devuelven la reunión: en el schema cada una trae
 `outputs` (`{{reunion.enlace}}`, `{{reunion.id}}`, `{{reunion.web}}`) y

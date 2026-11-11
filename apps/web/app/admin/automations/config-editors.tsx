@@ -14,6 +14,7 @@ import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 
 import { BulkEditActionConfig } from './BulkEditActionConfig';
 import { WhatsappActionConfig, WhatsappTriggerConfig } from './WhatsappActionConfig';
+import { WhatsEventTriggerConfig } from './WhatsEventTriggerConfig';
 import { SmsActionConfig } from './SmsActionConfig';
 import { TeamsChannelField, TeamsChatStatus } from './TeamsChannelField';
 import { SubscriptionPlanPicker, SubscriptionTriggerConfig } from './SubscriptionAutomationParts';
@@ -204,6 +205,16 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
     if (Array.isArray(c.plan_ids) && c.plan_ids.length > 0) out.plan_ids = c.plan_ids;
     // D2/E5 — email_received (qué correos) y sla_alert (qué alertas y objetivos).
     cleanHelpdeskTriggerConfig(c, out);
+    // D3 — el número de WhatsApp del disparador. Antes de v0.1.402 se perdía al
+    // guardar: la automatización quedaba escuchando cualquier número.
+    if (typeof c.connection_id === 'number' && c.connection_id > 0) out.connection_id = c.connection_id;
+    // v0.1.402 — «Cuando pasa algo en Whats»: el evento, sus sub-opciones, el campo del teléfono y qué hacer si no está.
+    if (typeof c.whats_event === 'string' && c.whats_event !== '') out.whats_event = c.whats_event;
+    for (const k of ['statuses', 'conversation_events', 'form_events'] as const) {
+        if (Array.isArray(c[k]) && (c[k] as unknown[]).length > 0) out[k] = c[k];
+    }
+    if (typeof c.phone_field_id === 'number' && c.phone_field_id > 0) out.phone_field_id = c.phone_field_id;
+    if (c.if_missing === 'create' || c.if_missing === 'skip') out.if_missing = c.if_missing;
     return out;
 }
 
@@ -242,6 +253,8 @@ export function helpForTrigger(triggerType: string): string {
             return __('Se ejecuta cuando cambia una suscripción de Mercado Pago de un registro de esta lista: el cliente autorizó la tarjeta, se cobró una cuota, se rechazó un cobro (Mercado Pago lo reintenta), entró en mora, se venció (pasaron los días de gracia), se pausó o se canceló. Sirve para agradecer el pago, avisar al cliente que actualice su tarjeta o suspender el servicio. Puedes usar {{suscripcion.evento}}, {{suscripcion.estado}}, {{suscripcion.monto}}, {{suscripcion.proximo_cobro}} y {{suscripcion.motivo}}.');
         case 'payment_received':
             return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones puedes usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
+        case 'whats_event':
+            return __('Se ejecuta cuando Whats avisa que pasó algo: cambió el estado de un mensaje que enviaste, se creó o se dio de baja un contacto, empezó, se asignó o se resolvió una conversación, calificaron la atención, hicieron clic en un enlace o enviaron un formulario de Whats. La app busca en esta lista el registro con el teléfono del contacto y, si no está, lo crea o deja la corrida cancelada (tú eliges). En las acciones puedes usar {{whatsapp.evento}}, {{whatsapp.de}}, {{whatsapp.nombre}} y lo que trae cada aviso como {{payload.x}}.');
         case 'whatsapp_message_received':
             return __('Se ejecuta cuando un contacto le escribe a tu número de WhatsApp (Whats o la cuenta oficial de Meta). La app ya lo encontró por su teléfono en la lista (o lo creó, si así está configurado) y dejó el último mensaje en su registro. En las acciones puedes usar {{whatsapp.texto}}, {{whatsapp.nombre}} y {{whatsapp.de}}. Con WAS puedes contestarle cuando quieras; con la cuenta oficial, durante 24 h con «Enviar mensaje de texto de WhatsApp».');
         default:
@@ -349,6 +362,7 @@ export function TriggerConfigEditor({
             {triggerType === 'approval_resolved' && <ApprovalTriggerConfigHost config={config} onChange={onChange} />}
             {triggerType === 'checklist_completed' && <ChecklistCompletedConfig config={config} onChange={onChange} />}
             {triggerType === 'whatsapp_message_received' && <WhatsappTriggerConfig config={config} onChange={onChange} />}
+            {triggerType === 'whats_event' && <WhatsEventTriggerConfig config={config} onChange={onChange} fields={fields} />}
             {triggerType === 'subscription_event' && <SubscriptionTriggerConfig config={config} onChange={onChange} />}
         </div>
     );

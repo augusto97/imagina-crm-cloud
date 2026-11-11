@@ -280,14 +280,24 @@ export interface WhatsappListening {
     status_lists: string[];
     /** Imagina WAS: los avisos suscritos ahora mismo (null = Meta, o no se sabe). */
     events: string[] | null;
+    /**
+     * v0.1.402 — Los disparadores «Cuando pasa algo en Whats» activos que usan
+     * esta conexión (qué escuchan y cuántas automatizaciones).
+     */
+    triggers?: Array<{ label: string; count: number }>;
 }
 
-/** Los avisos de Imagina WAS para lo que se necesita (siempre las fallas). */
-export function waWebHookEventsFor(need: { inbound: boolean; statuses: boolean }): string[] {
+/**
+ * Los avisos de Imagina WAS para lo que se necesita (siempre las fallas).
+ * v0.1.402 — `extra`: los que piden los disparadores «Cuando pasa algo en
+ * Whats» activos (un contacto nuevo, una conversación…).
+ */
+export function waWebHookEventsFor(need: { inbound: boolean; statuses: boolean; extra?: readonly string[] }): string[] {
     const out: string[] = [];
     if (need.statuses) out.push('wa.message.sent', 'wa.message.delivered', 'wa.message.read');
     out.push('wa.message.failed', 'wa.message.canceled');
     if (need.inbound) out.push('wa.message.received');
+    for (const e of need.extra ?? []) if (!out.includes(e)) out.push(e);
     return out;
 }
 
@@ -729,6 +739,8 @@ export interface WhatsappWebState {
         status_reason: string | null;
         banned_until: string | null;
         enabled: boolean;
+        /** v0.1.402 — «Recibir mensajes» encendido en Whats (null = no se sabe). */
+        receive_inbound: boolean | null;
     } | null;
     account_error: string | null;
     /** Permisos de la clave y los que le faltan de los recomendados. */
@@ -864,6 +876,24 @@ export interface WhatsappEventInfo {
     conexion_id: number;
     mensaje_id: string;
     fecha: string;
+    /**
+     * v0.1.402 — Whats: el enlace del archivo que mandaron (vence a los 30
+     * min) y el id del contacto en Whats. Y, en el disparador «Cuando pasa algo
+     * en Whats» (ver `whats-triggers.ts`), lo que trae cada evento.
+     */
+    archivo?: string;
+    contacto_id?: string;
+    evento?: string;
+    correo?: string;
+    estado?: string;
+    motivo?: string;
+    conversacion_id?: string;
+    asignado_a?: string;
+    estado_conversacion?: string;
+    calificacion?: string;
+    comentario?: string;
+    enlace?: string;
+    formulario?: string;
 }
 
 /** Variables del disparador para el editor (`{{whatsapp.texto}}`…). */
@@ -874,4 +904,6 @@ export const WHATSAPP_MERGE_TAGS: Array<{ tag: string; label: string }> = [
     { tag: 'whatsapp.tipo', label: 'Tipo de mensaje' },
     { tag: 'whatsapp.fecha', label: 'Fecha y hora del mensaje' },
     { tag: 'whatsapp.conexion', label: 'Número de la empresa que lo recibió' },
+    { tag: 'whatsapp.archivo', label: 'Enlace del archivo (Whats; vence a los 30 min)' },
+    { tag: 'whatsapp.contacto_id', label: 'Id del contacto en Whats' },
 ];
