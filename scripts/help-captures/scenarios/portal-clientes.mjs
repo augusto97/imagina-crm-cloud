@@ -49,7 +49,7 @@ export default [
         title: 'Activar el portal de una lista',
         setup: (ctx) => setPortal(ctx, null),
         steps: [
-            { go: '/lists/{list:Clientes}/edit?s=compartir', wait: '[data-tour="share-portal"]', caption: 'En la configuración de la lista de clientes, pestaña «Compartir», está la tarjeta «Portal del cliente».' },
+            { go: '/lists/{list:Clientes}/edit?s=compartir', wait: '[data-tour="share-portal"]', caption: 'En la configuración de la lista de clientes, sección «Compartir», está la tarjeta «Portal del cliente».' },
             { click: '[data-tour="share-portal"] label:has-text("Activar el portal en esta lista") input', then: '[data-testid="portal-choose-template"]', caption: 'Marca «Activar el portal en esta lista».' },
             { wait: 1200 },
             { click: '[data-tour="share-portal"] label:has-text("Facturas") input', caption: 'En «Qué más ve el cliente», marca las listas vinculadas que debe ver: aquí, sus facturas.' },

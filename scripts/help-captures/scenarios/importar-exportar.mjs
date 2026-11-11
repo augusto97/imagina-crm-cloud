@@ -90,7 +90,7 @@ export default [
         key: 'ie-plantilla',
         title: 'Guardar una lista como plantilla',
         steps: [
-            { go: '/lists/{list:Clientes}/edit?s=general', wait: 'text=Duplicar o guardar como plantilla', caption: 'En la configuración de la lista, pestaña General, está «Duplicar o guardar como plantilla».' },
+            { go: '/lists/{list:Clientes}/edit?s=general', wait: 'text=Duplicar o guardar como plantilla', caption: 'En la configuración de la lista, sección «General», está «Duplicar o guardar como plantilla».' },
             { click: 'button:has-text("Guardar como plantilla")', caption: 'Toca «Guardar como plantilla».', then: 'role=dialog' },
             { shot: '[role="dialog"]', caption: 'Ponle nombre, descripción y categoría, y elige qué incluir. Queda en «Mis plantillas» para toda la empresa.' },
             { press: 'Escape', caption: null },

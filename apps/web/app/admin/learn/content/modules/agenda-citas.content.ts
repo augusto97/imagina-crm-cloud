@@ -37,8 +37,8 @@ export const articles: LearnArticle[] = [
                 t: 'steps',
                 items: [
                     'Abre la lista de citas y toca **Configurar lista**.',
-                    'Entra a la pestaña **Agenda** y toca **Nueva agenda** (o **Crear la primera**). Arranca con un servicio y contigo atendiendo de lunes a viernes.',
-                    'Se abre el constructor: al centro **la página real** con los horarios de verdad; a la izquierda, tres pestañas: **Contenido** (las partes de la página en el orden en que las recorre el cliente), **Diseño** y **Ajustes**.',
+                    'Entra a la sección **Agenda** y toca **Nueva agenda** (o **Crear la primera**). Arranca con un servicio y contigo atendiendo de lunes a viernes.',
+                    'Se abre el constructor: al centro **la página real** con los horarios de verdad; arriba eliges qué hacer: **Contenido** (a la izquierda, las partes de la página en el orden en que las recorre el cliente), **Diseño** o **Ajustes** (una página con un menú por grupos).',
                     'Toca **Servicios** y **Quién atiende** para cargar los tuyos; el horario está en **Ajustes → Horario y disponibilidad**.',
                     'Toca **Guardar** y, en **Ajustes → Publicar**, toca **Publicar la agenda**.',
                 ],
@@ -632,7 +632,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'En el constructor de la agenda (**Configurar lista → Agenda → Editar**) abre **Diseño**: a la izquierda, las plantillas y **Mis temas**; a la derecha, todos los ajustes del tema.',
+                    'En el constructor de la agenda (**Configurar lista → Agenda → Editar**) toca **Diseño** arriba: la página ocupa el centro y el panel de la derecha tiene **Plantillas** (con **Mis temas**) y **Personalizar** (todos los ajustes del tema).',
                     'En **Plantillas** toca una: **Clásico** es el diseño de siempre; las demás (Minimalista, Tarjetas, Oscuro, Píldoras, Con portada, Dividido…) toman el color de tu marca.',
                     'Mira la vista previa: los servicios, quién atiende, el calendario y los horarios ya se ven con el diseño.',
                     'Toca **Guardar**. Si quieres usar el mismo diseño en otras agendas o formularios, guárdalo en **Mis temas**.',

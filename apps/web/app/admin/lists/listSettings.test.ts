@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { ACCESS_LEVELS, blankRolePermissions, levelOf } from './listAccessLevels';
 import {
+    LIST_SETTINGS_GROUPS,
     LIST_SETTINGS_SECTIONS,
+    groupedListSettingsSections,
     listSettingsSection,
     resolveListSettingsSection,
 } from './listSettingsSections';
@@ -22,6 +24,29 @@ describe('secciones de la configuración de lista', () => {
             expect(resolveListSettingsSection(section.id)).toBe(section.id);
             expect(listSettingsSection(section.id).title).toBe(section.title);
         }
+    });
+});
+
+describe('menú agrupado de la configuración (v0.1.406)', () => {
+    it('cada sección aparece una sola vez, en su grupo y en el orden de los grupos', () => {
+        const groups = groupedListSettingsSections(() => true);
+        expect(groups.map((g) => g.id)).toEqual(LIST_SETTINGS_GROUPS.map((g) => g.id));
+        const ids = groups.flatMap((g) => g.sections.map((s) => s.id));
+        expect(new Set(ids).size).toBe(ids.length);
+        expect([...ids].sort()).toEqual(LIST_SETTINGS_SECTIONS.map((s) => s.id).sort());
+        for (const g of groups) for (const section of g.sections) expect(section.group).toBe(g.id);
+        // Campos sigue siendo lo primero (es la sección por defecto).
+        expect(ids[0]).toBe('campos');
+    });
+
+    it('lo que el rol o la lista no permiten no aparece, y un grupo vacío tampoco', () => {
+        const groups = groupedListSettingsSections((id) => id !== 'formularios' && id !== 'agenda' && id !== 'correo');
+        expect(groups.some((g) => g.id === 'intake')).toBe(false);
+        expect(groups.flatMap((g) => g.sections.map((s) => s.id))).not.toContain('formularios');
+    });
+
+    it('cada sección tiene su línea corta para el índice del celular', () => {
+        for (const section of LIST_SETTINGS_SECTIONS) expect(section.short.length).toBeGreaterThan(5);
     });
 });
 

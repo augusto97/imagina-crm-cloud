@@ -19,8 +19,8 @@ export function DuplicateTemplatePanel({ list }: { list: ListSummary }): JSX.Ele
     const [tplOpen, setTplOpen] = useState(false);
 
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4 sm:imcrm-flex-row sm:imcrm-items-center sm:imcrm-justify-between">
-            <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-0.5">
+        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4">
+            <div className="imcrm-flex imcrm-min-w-[220px] imcrm-flex-1 imcrm-flex-col imcrm-gap-0.5">
                 <h3 className="imcrm-text-sm imcrm-font-semibold imcrm-text-foreground">
                     {__('Duplicar o guardar como plantilla')}
                 </h3>

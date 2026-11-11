@@ -5,7 +5,7 @@ export default [
         key: 'mesa-buzon',
         title: 'Conectar el buzón de soporte',
         steps: [
-            { go: '/lists/{list:Tickets}/edit?s=correo', wait: '[data-testid="imcrm-helpdesk-mailbox"]', caption: 'En los ajustes de la lista de tickets, la pestaña «Correo entrante» conecta el buzón al que te escriben los clientes.' },
+            { go: '/lists/{list:Tickets}/edit?s=correo', wait: '[data-testid="imcrm-helpdesk-mailbox"]', caption: 'En los ajustes de la lista de tickets, la sección «Correo entrante» conecta el buzón al que te escriben los clientes.' },
             { click: '[data-testid="imcrm-helpdesk-preset-gmail"]', caption: 'Elige dónde está el buzón: Gmail, Outlook, Zoho u otro proveedor.' },
             { shot: '[data-testid="imcrm-helpdesk-mailbox"]', caption: 'Para cada proveedor aparecen los pasos para crear la contraseña de aplicación y el servidor ya completo.' },
             { fill: '#hd-support', text: 'soporte@cafeaurora.co', caption: 'Escribe la dirección de soporte (la que ven tus clientes), el usuario y la contraseña de aplicación.' },
@@ -32,7 +32,7 @@ export default [
         key: 'mesa-sla',
         title: 'Configurar el SLA',
         steps: [
-            { go: '/lists/{list:Tickets}/edit?s=sla', wait: '[data-testid="imcrm-sla-targets"]', caption: 'En la pestaña «SLA» de la lista se activa la medición y se ponen los objetivos.' },
+            { go: '/lists/{list:Tickets}/edit?s=sla', wait: '[data-testid="imcrm-sla-targets"]', caption: 'En la sección «SLA» de la lista se activa la medición y se ponen los objetivos.' },
             { shot: '[data-testid="imcrm-sla-targets"]', caption: 'Un objetivo de primera respuesta y uno de resolución, en horas hábiles, para cada prioridad.' },
             { shot: '[data-testid="imcrm-sla-columns"]', caption: 'Las columnas del SLA las mantiene la app: se filtran, se ordenan y se agrupan, pero no se editan a mano.' },
         ],

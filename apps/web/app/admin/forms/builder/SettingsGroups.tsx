@@ -1,7 +1,6 @@
 import {
     AlertTriangle,
     BadgeDollarSign,
-    ChevronRight,
     Clock,
     Code2,
     FileText,
@@ -40,7 +39,7 @@ import { FormOriginSettings } from '../design/RecordOriginSettings';
 import { RecallPicker, withToken } from '../design/LogicPanel';
 import { ChargeSettings, EditLinksSettings, LayoutSettings, SaveProgressSettings, WelcomeSettings } from '../design/StartSettings';
 import { emailQuestions, updateItem, updateSettings } from '../formDesignOps';
-import { SETTINGS_GROUPS, SETTINGS_GROUP_INFO, type PageElementId, type SettingsGroupId } from './pageElements';
+import { SETTINGS_GROUP_INFO, type PageElementId, type SettingsGroupId } from './pageElements';
 
 /**
  * v0.1.377 — «Ajustes» del constructor de formularios, en grupos con nombre
@@ -139,55 +138,6 @@ export function MissingRequiredNotice({ missing }: { missing: FieldEntity[] }): 
                 {__('La lista exige')} {missing.map((f) => `«${f.label}»`).join(', ')}{' '}
                 {__('y el formulario puede no traerlo: esas respuestas no se van a poder guardar. Agrégalo como pregunta visible y sin condición, o quítale el «obligatorio» en la lista.')}
             </span>
-        </div>
-    );
-}
-
-/** El índice de grupos (izquierda en la computadora; la pantalla de «Ajustes» en el celular). */
-export function SettingsIndex({
-    active,
-    onPick,
-    config,
-    captcha,
-    missing,
-}: {
-    active: SettingsGroupId | null;
-    onPick: (g: SettingsGroupId) => void;
-    config: FormConfig;
-    captcha: CaptchaAvailability | null;
-    missing: FieldEntity[];
-}): JSX.Element {
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-p-2" data-testid="form-settings-index">
-            <MissingRequiredNotice missing={missing} />
-            <nav aria-label={__('Ajustes del formulario')} className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-                {SETTINGS_GROUPS.map((g) => {
-                    const Icon = SETTINGS_GROUP_ICON[g];
-                    const on = active === g;
-                    return (
-                        <button
-                            key={g}
-                            type="button"
-                            onClick={() => onPick(g)}
-                            aria-current={on ? 'page' : undefined}
-                            data-settings-group={g}
-                            className={cn(
-                                'imcrm-flex imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2 imcrm-py-2 imcrm-text-left',
-                                on ? 'imcrm-bg-primary/10 imcrm-text-foreground' : 'hover:imcrm-bg-accent',
-                            )}
-                        >
-                            <span className={cn('imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md', on ? 'imcrm-bg-primary imcrm-text-primary-foreground' : 'imcrm-bg-muted imcrm-text-muted-foreground')}>
-                                <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
-                            </span>
-                            <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
-                                <span className="imcrm-truncate imcrm-text-[13px] imcrm-font-medium">{__(SETTINGS_GROUP_INFO[g].title)}</span>
-                                <span className="imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">{groupSummary(g, config, captcha)}</span>
-                            </span>
-                            <ChevronRight className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
-                        </button>
-                    );
-                })}
-            </nav>
         </div>
     );
 }

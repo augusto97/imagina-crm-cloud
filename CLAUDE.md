@@ -14152,6 +14152,54 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         subscriptions, billing, public-lists, export, automations-scale y 27
         del front.
 
+  - [x] **Editores de formularios y agenda reordenados + configuración de la
+        lista con menú lateral (v0.1.406, addendum ADR-S94, pedido del usuario:
+        "las barras laterales siguen siendo confusas, no se entiende cuáles son
+        de contenido y cuáles de ajustes… la pestaña de la izquierda tiene 4
+        pestañas… haz algo muy bueno como el popup de compartir" y "el panel de
+        configurar lista tiene un menú que se desliza horizontalmente… con tantas
+        opciones no es la mejor opción")**. (a) **Kit común**
+        (`admin/builder/BuilderShell.tsx`): barra superior de tres zonas —cerrar,
+        ícono y nombre editable en el lugar · los **modos** en un control
+        segmentado al centro (con contador de reglas o punto rojo si falta
+        algo) · deshacer/rehacer, tema y estadísticas (o «⋯» bajo 1280 px),
+        publicar como interruptor, Compartir y Guardar/«Guardado»—, paneles con
+        encabezado propio (`PanelHeader`: ícono, título, para qué sirve,
+        acciones y «‹ Volver»), `InspectorEmpty` con «Ir directo a…», menú de
+        ajustes por grupos (`SettingsNav`, con resumen de cómo está cada uno) y
+        página de ajustes (`SettingsPageLayout`), y en el celular barra superior
+        con «⋯» (publicar, compartir, estadísticas, deshacer/rehacer, tema) y
+        **barra de abajo** Contenido · Diseño · Vista previa · Lógica · Ajustes.
+        (b) **Cada columna dice qué es según el modo**: Contenido = Estructura |
+        vista previa | Propiedades; Diseño = vista previa a lo ancho + un solo
+        panel con **Plantillas** y **Personalizar**; Lógica = Recorrido | vista
+        previa | Reglas; **Ajustes = página completa** con menú por grupos y el
+        grupo en tarjetas de 760 px (sin vista previa al lado). Elegir una parte
+        estando en Diseño o Lógica abre su panel con «‹ Diseño»/«‹ Lógica»;
+        estando en Ajustes, vuelve a Contenido. (c) Ajustes agrupados: el
+        formulario en «El formulario», «Las respuestas», «Cobros» y «Seguridad
+        y medición»; la agenda en «Cuándo se agenda», «Al agendar», «Datos y
+        medición» y «Publicar»; el aviso de campos obligatorios arriba de la
+        página. (d) **Configuración de la lista**: la tira de doce pestañas pasa
+        a un **menú vertical fijo** por grupos («La lista», «Quién la ve»,
+        «Recibir registros», «Procesos») con el ícono de la lista y el número de
+        campos/punto de publicada; en el celular, un **índice** agrupado (el de
+        Ajustes) y «‹ Configuración» dentro de cada sección; `?s=` sigue
+        enlazando cada una. El administrador de campos deja su columna de
+        navegación (los tipos pasan a chips arriba de la tabla; «Otras listas»
+        se fue: para eso está el panel lateral) y decide la columna de ajustes y
+        las columnas de detalle por su ancho real (ResizeObserver + container
+        query `imcrm-fb`), no por la ventana. (e) Tarjetas «Duplicar o guardar
+        como plantilla» y «Eliminar esta lista» que se acomodan sin apretar el
+        título. Sin cambios de servidor. Ayuda: guías y Aprende de formularios,
+        agenda y listas corregidas donde describían la navegación vieja,
+        recorrido de formularios al día, escenarios de capturas con los
+        selectores nuevos («pestaña» → «sección») y novedad con carrusel.
+        Tests: `listSettings.test.ts` (+3 del menú agrupado), front 889 y shared
+        883 en verde, build dentro del presupuesto (login 248 / app 774 KB gz);
+        capturas de la ayuda de formularios, agenda y listas grabadas en local
+        11/11 y E2E navegador en escritorio (1440 y 1100 px), celular y oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

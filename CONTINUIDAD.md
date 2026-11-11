@@ -415,8 +415,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.405**
-(**rendimiento y robustez a escala** — colas idempotentes y separables con
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.406**
+(**editores de formularios y agenda reordenados** — modos arriba en un control
+segmentado, paneles con nombre, Diseño a lo ancho, Ajustes como página con menú
+por grupos, barra de abajo en el celular; y la **configuración de la lista**
+con menú vertical por grupos e índice en el celular; addendum de ADR-S94).
+Antes v0.1.405 (**rendimiento y robustez a escala** — colas idempotentes y separables con
 `WORKERS=on|off`, apagado ordenado, alta de registros sin contar toda la
 empresa, listas públicas con caché, índices, pantalla de recuperación, bundle
 más liviano con presupuesto en el CI y CI del frontend; ADR-S101). Pendientes
@@ -1852,6 +1856,17 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-11 · v0.1.406** — **Editores de formularios y agenda reordenados +
+  configuración de la lista con menú lateral** (pedido del usuario, con el
+  modelo cambiado a Opus 5.5: "las barras laterales siguen siendo confusas, no
+  se entiende cuáles son de contenido y cuáles de ajustes… hazlo como el popup
+  de compartir" y "el menú de configurar lista se desliza horizontalmente, con
+  tantas opciones no es lo mejor"). Kit común `admin/builder/BuilderShell.tsx`;
+  detalle en `CLAUDE.md` §5 y el addendum v0.1.406 de ADR-S94. El administrador
+  de campos perdió su columna «Por tipo / Otras listas» (chips arriba; para
+  saltar a otra lista se usa el panel lateral). Se regraban las capturas de
+  formularios, agenda, listas y campos, y las que muestran la configuración de
+  la lista (los escenarios cambiaron «pestaña» → «sección» y dos selectores).
 - **2026-11-11 · v0.1.405** — **Rendimiento y robustez a escala** (segunda
   mitad del pedido de la auditoría). Tres frentes: colas/tareas, API/base y
   frontend/CI; detalle en `CLAUDE.md` §5 y ADR-S101. Los agentes se retomaron

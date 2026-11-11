@@ -140,7 +140,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
         return map;
     }, [types.data]);
 
-    const all = fields.data ?? [];
+    const all = useMemo(() => fields.data ?? [], [fields.data]);
     const term = search.trim().toLowerCase();
     const visible = all.filter((f) => {
         if (typeFilter !== '' && f.type !== typeFilter) return false;

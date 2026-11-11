@@ -62,7 +62,7 @@ export default [
                     for (const f of await flowsOf(api, slug)) if (f.name === UI_FLOW) await api.del(`/lists/${slug}/approval-flows/${f.id}`).catch(() => {});
                 },
             },
-            { go: '/lists/{list:Oportunidades}/edit?s=aprobaciones', wait: 'button:has-text("Nuevo flujo")', caption: 'Los flujos se arman en los ajustes de cada lista: «Configurar lista» → pestaña «Aprobaciones».' },
+            { go: '/lists/{list:Oportunidades}/edit?s=aprobaciones', wait: 'button:has-text("Nuevo flujo")', caption: 'Los flujos se arman en los ajustes de cada lista: «Configurar lista» → sección «Aprobaciones».' },
             { click: 'button:has-text("Nuevo flujo")', then: 'input[placeholder="Por ejemplo: Gasto mayor a $1M"]', caption: 'Toca «Nuevo flujo».' },
             { fill: 'input[placeholder="Por ejemplo: Gasto mayor a $1M"]', text: UI_FLOW, caption: 'Ponle un nombre que diga cuándo se usa.' },
             { shot: 'text=Pasos (en orden)', caption: 'Arma los pasos en orden: quién aprueba cada uno (un campo Persona, un rol, personas puntuales o un equipo) y si basta con uno o tienen que aprobar todos.' },
