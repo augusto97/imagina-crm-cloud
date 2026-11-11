@@ -415,7 +415,11 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.406**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.407**
+(**arrastrar en la vista previa** —mover y cambiar el ancho de las preguntas—,
+**Estructura por bloques** con su zona y lo oculto al pie, **color de la
+tarjeta** en su panel, **fondo para ver en el editor** publicable o no, y el
+texto de ejemplo vacío queda vacío; addendum de ADR-S94). Antes v0.1.406
 (**editores de formularios y agenda reordenados** — modos arriba en un control
 segmentado, paneles con nombre, Diseño a lo ancho, Ajustes como página con menú
 por grupos, barra de abajo en el celular; y la **configuración de la lista**
@@ -1856,6 +1860,19 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-11 · v0.1.407** — **Arrastrar en la vista previa + Estructura por
+  bloques + color de la tarjeta + fondo del editor** (cuatro reportes del
+  usuario mirando la v0.1.406: "el campo de correo sigue teniendo un texto de
+  ayuda pese a que lo borro", "los campos no son drag and drop, no se pueden
+  mover ni redimensionar", "lo principal confuso es la Estructura: no se sabe
+  qué sección es cuál" y "controlar el color de fondo de la tarjeta… y un fondo
+  que no se publique, para ver las letras blancas mientras edito un formulario
+  sin fondo para un sitio oscuro; opcional decidir si se publica"). Detalle en
+  `CLAUDE.md` §5 y el addendum v0.1.407 de ADR-S94. Ojo: los formularios
+  guardados con «Texto de ejemplo» vacío ya no muestran el ejemplo automático
+  del correo/enlace/duración (el panel ofrece ponerlo con un clic). No se
+  regrabaron capturas (regla 10): las de formularios y agenda muestran la
+  Estructura anterior hasta que se toque su escenario.
 - **2026-11-11 · v0.1.406** — **Editores de formularios y agenda reordenados +
   configuración de la lista con menú lateral** (pedido del usuario, con el
   modelo cambiado a Opus 5.5: "las barras laterales siguen siendo confusas, no

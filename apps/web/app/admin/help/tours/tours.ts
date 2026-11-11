@@ -820,7 +820,7 @@ export const TOURS: TourDef[] = [
                 id: 'build',
                 art: 'form-click-edit',
                 title: 'Toca lo que quieras cambiar',
-                body: 'Toca cualquier parte en la vista previa —el título, el logo, una pregunta, el botón— y a la derecha aparece su panel: **Mostrar** para ocultarla, **Contenido** y **Estilo**. En **Contenido** está todo en orden, con su ojo.',
+                body: 'Toca cualquier parte en la vista previa —el título, el logo, una pregunta, el botón— y a la derecha aparece su panel: **Mostrar** para ocultarla, **Contenido** y **Estilo**. En **Contenido** está todo en bloques, en orden.',
                 tip: 'Lo que no se ve en el formulario (correo, cupos, cobros, seguridad) está en **Ajustes**, con un menú por grupos.',
             },
             {

@@ -14200,6 +14200,62 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         capturas de la ayuda de formularios, agenda y listas grabadas en local
         11/11 y E2E navegador en escritorio (1440 y 1100 px), celular y oscuro.
 
+  - [x] **Arrastrar en la vista previa, Estructura por bloques, color de la
+        tarjeta y fondo del editor (v0.1.407, addendum ADR-S94, cuatro reportes
+        del usuario sobre la v0.1.406)**. (a) **«El correo sigue teniendo un
+        texto de ayuda aunque lo borre»**: con «Texto de ejemplo» vacío la
+        página pública inventaba uno (correo «nombre@ejemplo.com», enlace
+        «https://», duración «Ej.: 1h 30m») que no se veía ni se borraba en el
+        panel. Ahora lo vacío queda vacío: el ejemplo se SUGIERE al crear la
+        pregunta (`suggestedFormPlaceholder` en shared, usado por
+        `addFieldItem`, `defaultFormConfig` y las plantillas) y queda a la
+        vista; el panel ofrece «Usar «nombre@ejemplo.com»» si está vacío. Los
+        formularios guardados con el campo vacío dejan de mostrar el ejemplo
+        automático. (b) **«Los campos no son drag and drop»**: en la vista
+        previa del constructor (`public-form/main.ts`, sólo `BOOT.preview`)
+        cada pregunta, título, texto, imagen o matriz trae el asa **«Mover»**
+        (pastilla arriba a la derecha, al pasar el mouse o al elegirla) y las
+        preguntas e imágenes un **borde derecho** para el ancho. Arrastrar
+        dibuja una línea donde cae (arriba/abajo, o izquierda/derecha si está
+        lado a lado), se desplaza sola cerca del borde y Escape cancela; el
+        ancho encaja en tercio / mitad / dos tercios / completo con una
+        etiqueta mientras se arrastra. Con pointer events (anda en táctil);
+        ↑/↓ con el teclado sobre «Mover». La página no cambia nada: avisa
+        `imb-form-move {id, target, place}` / `imb-form-width {id, width}` y el
+        constructor lo aplica con `moveItemNear` / `setItemWidth` (puros, con
+        tests) por `changeWith` (un paso de deshacer, ninguno si queda igual).
+        Ctrl/⌘+Z y Ctrl+Y siguen andando con el foco en la vista previa
+        (`imb-form-key`). (c) **«La Estructura es confusa, no se sabe qué
+        sección es cuál»**: kit nuevo `admin/builder/Outline.tsx`
+        (`OutlineSection`, `OutlineRow`, `OutlineAddChips`, `ZoneMark`): cada
+        sección es un bloque con su color, un dibujito de la página con SU
+        zona marcada (arriba, en el medio, abajo, el marco), nombre, una línea
+        de qué tiene y contador; lo apagado sale de la lista y queda al pie del
+        bloque en «Ocultos · tócalos para mostrarlos» (tocar lo muestra y lo
+        elige), y el ojo para ocultar aparece al pasar el mouse. Formularios:
+        Encabezado · Preguntas (con «Agregar pregunta o contenido» al pie) · Al
+        enviar · Marco y fondo. Agenda: Encabezado · Pasos del cliente
+        (numerados) · En «Tus datos» (anti-robots/autorización sin activar en
+        la empresa quedan deshabilitados con el motivo) · Marco y fondo.
+        (d) **Color de la tarjeta** en el panel «Tarjeta» (antes sólo en
+        Colores) y **«Fondo para ver en el editor»** en Diseño → Fondo:
+        `layout.preview_bg` (color liso) + `preview_bg_publish` (default no).
+        La vista previa del constructor (formulario y agenda, también «En tu
+        sitio») lo pinta siempre; publicado, sólo si se marca «Publicarlo
+        también» (`ib-solid-bg` en `publicThemeView`, gana sobre el fondo de la
+        página y sobre la transparencia de insertado y «sin marco»; la
+        variable `--ib-solid-bg` sale del tema). Para trabajar con letras
+        blancas en un formulario sin fondo pensado para un sitio oscuro. Sin
+        migración. Ayuda: guía de diseño y Aprende de formularios/agenda al día
+        (estructura, arrastrar, color de tarjeta, fondo del editor) y novedad
+        con carrusel. Tests: shared 885 (fondo del editor, texto de ejemplo),
+        front 891 (`moveItemNear`, `setItemWidth`, ejemplo al agregar), API de
+        formularios/agenda/diseño/caché en verde, presupuesto del bundle ok
+        (login 248 / app 774 KB gz) + E2E navegador: arrastrar arriba, lado a
+        lado, ancho a la mitad, Ctrl+Z con el foco en la vista previa, Escape
+        cancela; color de la tarjeta y fondo del editor medidos en el iframe;
+        estructura en escritorio, celular y oscuro sin desborde.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

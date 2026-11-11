@@ -133,6 +133,23 @@ describe('tema de las páginas públicas', () => {
         expect(pills.choices).toMatchObject({ style: 'buttons', radius: 999 });
     });
 
+    it('v0.1.407 — fondo para ver en el editor: sólo se publica si se elige', () => {
+        expect(DEFAULT_PUBLIC_THEME.layout.preview_bg).toBeNull();
+        expect(publicThemeView(DEFAULT_PUBLIC_THEME).preview_bg).toBe(false);
+        const work = publicThemeSchema.parse({ layout: { preview_bg: '#0f172a' } });
+        const v = publicThemeView(work);
+        expect(v.preview_bg).toBe(true);
+        // Sin «publicarlo», la página publicada no lo usa (lo prende sólo la vista previa).
+        expect(v.classes).not.toContain('ib-solid-bg');
+        expect(buildPublicThemeCss(work, { accent: '#0e7490' })).toContain('--ib-solid-bg:#0f172a');
+        const pub = publicThemeSchema.parse({ layout: { preview_bg: '#0f172a', preview_bg_publish: true } });
+        expect(publicThemeView(pub).classes).toContain('ib-solid-bg');
+        // Gana sobre el fondo de la página y sobre la transparencia de insertado (también «sin marco»).
+        expect(PUBLIC_BASE_CSS).toMatch(/body\.ib-solid-bg\.ib-embedded\.ib-embed-bare\{background:var\(--ib-solid-bg/);
+        // Un valor raro no tira el tema.
+        expect(readPublicTheme({ layout: { preview_bg: 'rojo', preview_bg_publish: 'si' } }).layout).toMatchObject({ preview_bg: null, preview_bg_publish: false });
+    });
+
     it('v0.1.369 — «Sin marco» al insertarlo: el CSS lo deja sin fondo, borde ni espacio, y lo de antes sigue «con su tarjeta»', () => {
         expect(DEFAULT_PUBLIC_THEME.layout.embed_style).toBe('card');
         expect(publicThemeView(DEFAULT_PUBLIC_THEME).embed_bare).toBe(false);

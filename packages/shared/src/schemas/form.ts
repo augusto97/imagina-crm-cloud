@@ -66,6 +66,25 @@ export function isFormFieldType(type: string): type is FormFieldType {
     return FORM_TYPE_SET.has(type);
 }
 
+/**
+ * v0.1.407 — El texto de ejemplo que se SUGIERE al agregar una pregunta de
+ * este tipo. Se guarda en la pregunta (se ve y se borra en el panel): la
+ * página pública ya no inventa uno cuando el campo «Texto de ejemplo» está
+ * vacío. Vacío = el tipo no tiene uno que sirva.
+ */
+export function suggestedFormPlaceholder(type: string): string {
+    switch (type) {
+        case 'email':
+            return 'nombre@ejemplo.com';
+        case 'url':
+            return 'https://';
+        case 'duration':
+            return 'Ej.: 1h 30m';
+        default:
+            return '';
+    }
+}
+
 export const FORM_CONDITION_OPS = [
     'eq',
     'neq',
@@ -1219,6 +1238,7 @@ export function defaultFormConfig(
             type: 'field',
             field_id: f.id,
             required: f.is_required === true,
+            placeholder: suggestedFormPlaceholder(f.type),
         })),
         settings: { title: listName },
     });

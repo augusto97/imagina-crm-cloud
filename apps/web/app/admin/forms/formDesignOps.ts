@@ -16,12 +16,14 @@ import {
     isUserWritableType,
     newFormItemId,
     splitFormPages,
+    suggestedFormPlaceholder,
     type FormCalc,
     type FormCalcPart,
     type FormConfig,
     type FormCondition,
     type FormEnding,
     type FormItem,
+    type FormItemWidth,
     type FormJump,
     type FormSettings,
     type FormShowIf,
@@ -111,12 +113,19 @@ export function defaultMatrixColumns(field: FieldLike | undefined): Array<{ valu
     return [1, 2, 3, 4, 5].map((n) => ({ value: String(n), label: String(n) }));
 }
 
-export function addFieldItem(config: FormConfig, fieldId: number, afterId: string | null): { config: FormConfig; id: string } {
+export function addFieldItem(
+    config: FormConfig,
+    fieldId: number,
+    afterId: string | null,
+    /** v0.1.407 — el tipo del campo, para sugerir su texto de ejemplo (que queda a la vista y se borra). */
+    fieldType?: string,
+): { config: FormConfig; id: string } {
     if (config.items.some((i) => i.type === 'field' && i.field_id === fieldId)) {
         const existing = config.items.find((i) => i.type === 'field' && i.field_id === fieldId)!;
         return { config, id: existing.id };
     }
-    const item = formItemSchema.parse({ id: newFormItemId(), type: 'field', field_id: fieldId });
+    const placeholder = fieldType ? suggestedFormPlaceholder(fieldType) : '';
+    const item = formItemSchema.parse({ id: newFormItemId(), type: 'field', field_id: fieldId, ...(placeholder ? { placeholder } : {}) });
     return { config: { ...config, items: insertAfter(config.items, item, afterId) }, id: item.id };
 }
 
@@ -574,6 +583,30 @@ export function moveItemTo(config: FormConfig, id: string, index: number): FormC
     const rest = config.items.filter((i) => i.id !== id);
     const at = Math.max(0, Math.min(index, rest.length));
     return { ...config, items: [...rest.slice(0, at), item, ...rest.slice(at)] };
+}
+
+/**
+ * v0.1.407 — Lo que se suelta al arrastrar en la vista previa: antes o después
+ * de otra pregunta. Si queda donde estaba, devuelve el MISMO objeto (no suma
+ * un paso de «deshacer»).
+ */
+export function moveItemNear(config: FormConfig, id: string, targetId: string, place: 'before' | 'after'): FormConfig {
+    if (id === targetId) return config;
+    const item = config.items.find((i) => i.id === id);
+    if (!item) return config;
+    const rest = config.items.filter((i) => i.id !== id);
+    const t = rest.findIndex((i) => i.id === targetId);
+    if (t < 0) return config;
+    const at = place === 'before' ? t : t + 1;
+    const items = [...rest.slice(0, at), item, ...rest.slice(at)];
+    return items.every((x, k) => x === config.items[k]) ? config : { ...config, items };
+}
+
+/** v0.1.407 — El ancho que se elige arrastrando el borde (sólo preguntas e imágenes lo tienen). */
+export function setItemWidth(config: FormConfig, id: string, width: FormItemWidth): FormConfig {
+    const item = config.items.find((i) => i.id === id);
+    if (!item || (item.type !== 'field' && item.type !== 'image') || item.width === width) return config;
+    return updateItem(config, id, { width } as Partial<FormItem>);
 }
 
 export function updateSettings(config: FormConfig, patch: Partial<FormSettings>): FormConfig {

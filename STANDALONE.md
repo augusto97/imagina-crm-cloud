@@ -7441,6 +7441,33 @@ de la derecha cambiaba de significado sin que nada lo dijera.
    estas pantallas se regraban (sus escenarios cambiaron de selector o de
    texto).
 
+**Addendum v0.1.407 — Arrastrar en la vista previa, Estructura por bloques y
+fondo del editor.** Cuatro reportes del usuario sobre la v0.1.406.
+
+1. **Lo que se ve en el panel es lo que sale.** La página pública ya no inventa
+   un texto de ejemplo cuando la pregunta lo tiene vacío (correo, enlace y
+   duración lo hacían, sin forma de quitarlo). El ejemplo se sugiere al crear
+   la pregunta (`suggestedFormPlaceholder`) y queda escrito, a la vista.
+2. **La vista previa es editable con el mouse.** En el modo vista previa la
+   página del formulario dibuja un asa «Mover» por elemento y un borde de
+   ancho por pregunta/imagen. Decisión: la página NO modifica la config —sólo
+   avisa qué se soltó dónde (`imb-form-move`, `imb-form-width`)— y el
+   constructor la cambia con funciones puras y con deshacer, igual que el
+   arrastre de la Estructura. Así hay una sola fuente de verdad y la página
+   publicada no carga nada de esto (el CSS del arrastre se inyecta sólo en
+   vista previa). Pointer events (táctil incluido), Escape cancela y los atajos
+   de deshacer se reenvían (`imb-form-key`) porque el foco queda en el iframe.
+3. **La Estructura dice dónde está cada cosa.** Bloques (`admin/builder/
+   Outline.tsx`) con color y un dibujo de la página con su zona marcada; lo
+   apagado no ocupa filas (queda en «Ocultos» al pie). Mismo kit en
+   formularios y agenda.
+4. **Fondo de trabajo.** `layout.preview_bg` + `preview_bg_publish` en el tema
+   común: la vista previa del constructor lo pinta siempre; publicado, sólo si
+   se elige, y entonces manda sobre el fondo de la página y sobre la
+   transparencia de insertado (clase `ib-solid-bg`). El color de la tarjeta
+   también se edita desde el panel «Tarjeta». Sin migración (lectura
+   tolerante: lo guardado antes sigue igual).
+
 ### ADR-S95 — Formularios y agenda insertados que aguantan mucho tráfico (v0.1.352)
 
 **Contexto.** El usuario preguntó: "si lo uso como formulario de contacto de

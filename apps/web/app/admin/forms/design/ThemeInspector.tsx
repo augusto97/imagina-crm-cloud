@@ -612,6 +612,40 @@ export function ThemeInspector<C extends Themed>({
                     ]}
                     onChange={(v) => set('background', { pattern: v })}
                 />
+                {/* v0.1.407 — un fondo para trabajar: ver letras blancas mientras se edita un formulario que va sin fondo. */}
+                <div
+                    className="imcrm-mt-1 imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-dashed imcrm-border-border imcrm-p-2.5"
+                    data-testid="form-theme-preview-bg"
+                    data-tour={booking ? undefined : 'form-preview-bg'}
+                >
+                    <div>
+                        <p className="imcrm-text-xs imcrm-font-semibold">{__('Fondo para ver en el editor')}</p>
+                        <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
+                            {__('Un color liso detrás del formulario mientras lo editas. Útil si va sin fondo sobre un sitio oscuro y las letras son claras: así se leen aquí.')}
+                        </p>
+                    </div>
+                    <ColorField
+                        label={__('Color')}
+                        value={t.layout.preview_bg}
+                        placeholder={pal.main.background}
+                        onChange={(v) => set('layout', { preview_bg: v, ...(v ? {} : { preview_bg_publish: false }) })}
+                    />
+                    {t.layout.preview_bg && (
+                        <>
+                            <Check
+                                label={__('Publicarlo también (en el enlace y al insertarlo en tu sitio)')}
+                                checked={t.layout.preview_bg_publish}
+                                onChange={(v) => set('layout', { preview_bg_publish: v })}
+                                testId="form-theme-preview-bg-publish"
+                            />
+                            <Hint>
+                                {t.layout.preview_bg_publish
+                                    ? __('Publicado, el formulario va con este fondo: reemplaza al de la página y, insertado en tu sitio, ya no queda transparente.')
+                                    : __('Sólo en el editor: publicado, el formulario va como siempre (insertado en tu sitio, sin fondo).')}
+                            </Hint>
+                        </>
+                    )}
+                </div>
             </StyleSection>
             )}
 
@@ -720,6 +754,11 @@ export function ThemeInspector<C extends Themed>({
             {show('card') && (
             <StyleSection title={__('Tarjeta')} defaultOpen={!!only} testId="form-theme-card" {...sec('card')}>
                 {t.layout.container === 'plain' && <Hint>{__('El formulario está «Sin tarjeta» (Página): estos ajustes no se ven.')}</Hint>}
+                {/* v0.1.407 — el color de la tarjeta, aquí también (antes sólo en «Colores»). */}
+                <div data-testid="form-theme-card-color">
+                    <ColorField label={__('Color de la tarjeta')} value={t.colors.card} allowEmpty={false} onChange={(v) => v && set('colors', { card: v })} />
+                </div>
+                {t.mode === 'auto' && <Hint>{__('En modo oscuro se usa el color oscuro de la tarjeta («Colores»).')}</Hint>}
                 <Grid>
                     <NumberField
                         label={__('Esquinas')}

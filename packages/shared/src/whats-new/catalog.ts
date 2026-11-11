@@ -2510,4 +2510,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.407-arrastrar-y-fondo',
+        version: '0.1.407',
+        date: '2026-11-11',
+        kind: 'improvement',
+        title: 'Arrastra las preguntas y trabaja sobre el fondo que quieras',
+        summary:
+            'En la vista previa del formulario, cada pregunta se mueve con su asa «Mover» y su ancho se cambia arrastrando el borde. La columna Estructura ahora va en bloques de colores, la tarjeta tiene su color en su panel y puedes poner un fondo sólo para el editor.',
+        media: {
+            slides: [
+                {
+                    title: 'Mover y cambiar el ancho',
+                    text: 'Pasa el mouse por una pregunta: «Mover» la lleva a otro lugar y el borde derecho la deja a un tercio, la mitad o dos tercios. Ctrl+Z lo deshace.',
+                    illustration: 'form-click-edit',
+                },
+                {
+                    title: 'La estructura, en bloques',
+                    text: 'Encabezado, Preguntas, Al enviar y Marco y fondo, cada uno con su color y un dibujito de en qué parte de la página está. Lo oculto queda al pie, listo para volver.',
+                    illustration: 'form-builder',
+                },
+                {
+                    title: 'Un fondo para editar',
+                    text: '¿El formulario va sin fondo y con letras blancas en un sitio oscuro? Pon un fondo oscuro sólo para el editor (Diseño → Fondo) y decide si también se publica.',
+                    illustration: 'form-embed-bare',
+                },
+            ],
+        },
+        body: 'También: el color de la tarjeta está en su propio panel, y el texto de ejemplo de una pregunta que dejas vacío queda vacío (antes el correo mostraba «nombre@ejemplo.com» aunque lo borraras).',
+        action: { label: 'Ver mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

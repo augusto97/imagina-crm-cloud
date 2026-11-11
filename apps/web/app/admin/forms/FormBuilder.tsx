@@ -35,6 +35,9 @@ import {
     formSubscriptionActive,
     formRecallMap,
     FORM_FILE_ACCEPT_INFO,
+    FORM_ITEM_WIDTHS,
+    suggestedFormPlaceholder,
+    type FormItemWidth,
     FORM_FILE_ACCEPTS,
     type FormFileAccept,
     type FormConfig,
@@ -123,6 +126,8 @@ import {
     defaultMatrixColumns,
     usedFieldIds,
     addFieldItem,
+    moveItemNear,
+    setItemWidth,
     conditionCandidates,
     endingName,
     logicCount,
@@ -270,6 +275,15 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
 
     const change = useCallback((next: FormConfig) => {
         setDraft((d) => {
+            setHistory((h) => ({ past: [...h.past.slice(-60), d.config], future: [] }));
+            return { ...d, config: next };
+        });
+    }, []);
+    /** v0.1.407 — Un cambio calculado sobre lo último (lo que llega de la vista previa). Sin cambios no suma «deshacer». */
+    const changeWith = useCallback((fn: (c: FormConfig) => FormConfig) => {
+        setDraft((d) => {
+            const next = fn(d.config);
+            if (next === d.config) return d;
             setHistory((h) => ({ past: [...h.past.slice(-60), d.config], future: [] }));
             return { ...d, config: next };
         });
@@ -440,15 +454,32 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
     useEffect(() => {
         const onMessage = (e: MessageEvent): void => {
             if (e.origin !== window.location.origin || e.source !== iframeRef.current?.contentWindow) return;
-            const data = e.data as { type?: string; id?: string } | null;
+            const data = e.data as { type?: string; id?: string; target?: string; place?: string; width?: string } | null;
             if (data?.type === 'imb-form-ready') setReady((n) => n + 1);
             if (data?.type === 'imb-form-select' && typeof data.id === 'string') {
                 pick(data.id);
             }
+            if (data?.type === 'imb-form-key') {
+                const k = (data as { key?: string }).key;
+                if (k === 'undo') undo();
+                else if (k === 'redo') redo();
+            }
+            // v0.1.407 — arrastrar en la vista previa: mover una pregunta o cambiarle el ancho.
+            if (data?.type === 'imb-form-move' && typeof data.id === 'string' && typeof data.target === 'string' && (data.place === 'before' || data.place === 'after')) {
+                const { id, target, place } = data;
+                changeWith((c) => moveItemNear(c, id, target, place));
+                pick(id);
+            }
+            if (data?.type === 'imb-form-width' && typeof data.id === 'string' && (FORM_ITEM_WIDTHS as readonly string[]).includes(data.width ?? '')) {
+                const { id } = data;
+                const width = data.width as FormItemWidth;
+                changeWith((c) => setItemWidth(c, id, width));
+                pick(id);
+            }
         };
         window.addEventListener('message', onMessage);
         return () => window.removeEventListener('message', onMessage);
-    }, [pick]);
+    }, [pick, changeWith, undo, redo]);
     useEffect(() => {
         if (!ready) return;
         iframeRef.current?.contentWindow?.postMessage(
@@ -539,7 +570,7 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
     const selectedItem = config.items.find((i) => i.id === selected) ?? null;
 
     const addField = (fieldId: number): void => {
-        const { config: next, id } = addFieldItem(config, fieldId, selected);
+        const { config: next, id } = addFieldItem(config, fieldId, selected, fields.find((f) => f.id === fieldId)?.type);
         change(next);
         pick(id);
     };
@@ -1208,8 +1239,31 @@ function ItemInspector({
                     </Field>
                     {(!['checkbox', 'select', 'multi_select', 'team', 'rating', 'file', 'date', 'datetime'].includes(field.type) || item.display === 'search') &&
                         !['scale', 'slider', 'ranking'].includes(item.display) && (
-                        <Field label={__('Texto de ejemplo')}>
-                            <Input value={item.placeholder} onChange={(e) => set({ placeholder: e.target.value })} />
+                        <Field
+                            label={__('Texto de ejemplo')}
+                            hint={
+                                item.display === 'search'
+                                    ? __('Vacío = «Escribe para buscar…».')
+                                    : __('Se ve dentro del campo vacío. Vacío = sin texto de ejemplo.')
+                            }
+                        >
+                            <Input
+                                value={item.placeholder}
+                                placeholder={item.display === 'search' ? __('Escribe para buscar…') : undefined}
+                                onChange={(e) => set({ placeholder: e.target.value })}
+                                data-testid="form-item-placeholder"
+                            />
+                            {/* v0.1.407 — el ejemplo que antes se ponía solo (sin verse aquí) ahora se agrega a propósito. */}
+                            {item.placeholder === '' && item.display !== 'search' && suggestedFormPlaceholder(field.type) !== '' && (
+                                <button
+                                    type="button"
+                                    className="imcrm-self-start imcrm-text-[11px] imcrm-text-primary hover:imcrm-underline"
+                                    onClick={() => set({ placeholder: suggestedFormPlaceholder(field.type) })}
+                                    data-testid="form-item-placeholder-suggest"
+                                >
+                                    {__('Usar «%s»').replace('%s', suggestedFormPlaceholder(field.type))}
+                                </button>
+                            )}
                         </Field>
                     )}
                     {field.type === 'file' && item.display !== 'signature' && (

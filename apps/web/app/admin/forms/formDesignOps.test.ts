@@ -22,6 +22,8 @@ import {
     missingRequired,
     moveItem,
     moveItemTo,
+    moveItemNear,
+    setItemWidth,
     pageCount,
     pageNumbers,
     questionCount,
@@ -80,6 +82,31 @@ describe('constructor de formularios', () => {
         expect(moveItem(base(), 'aaaa1', -1).items[0]!.id).toBe('aaaa1');
         expect(moveItem(base(), 'aaaa1', 1).items.map((i) => i.id)).toEqual(['aaaa2', 'aaaa1', 'aaaa3']);
         expect(moveItemTo(base(), 'aaaa3', 0).items.map((i) => i.id)).toEqual(['aaaa3', 'aaaa1', 'aaaa2']);
+    });
+
+    it('v0.1.407 — arrastrar en la vista previa: soltar antes o después de otra, y el ancho', () => {
+        const ids = (c: FormConfig): string[] => c.items.map((i) => i.id);
+        expect(ids(moveItemNear(base(), 'aaaa3', 'aaaa1', 'before'))).toEqual(['aaaa3', 'aaaa1', 'aaaa2']);
+        expect(ids(moveItemNear(base(), 'aaaa1', 'aaaa3', 'after'))).toEqual(['aaaa2', 'aaaa3', 'aaaa1']);
+        expect(ids(moveItemNear(base(), 'aaaa1', 'aaaa2', 'after'))).toEqual(['aaaa2', 'aaaa1', 'aaaa3']);
+        // Si queda donde estaba, el mismo objeto (no suma un «deshacer»).
+        const c = base();
+        expect(moveItemNear(c, 'aaaa1', 'aaaa2', 'before')).toBe(c);
+        expect(moveItemNear(c, 'aaaa1', 'aaaa1', 'after')).toBe(c);
+        expect(moveItemNear(c, 'aaaa1', 'zzzz9', 'after')).toBe(c);
+        const w = setItemWidth(c, 'aaaa1', 'half');
+        expect(w.items[0]).toMatchObject({ id: 'aaaa1', width: 'half' });
+        expect(setItemWidth(w, 'aaaa1', 'half')).toBe(w);
+        const { config: withHeading, id } = addContentItem(c, 'heading', null);
+        expect(setItemWidth(withHeading, id, 'half')).toBe(withHeading);
+    });
+
+    it('v0.1.407 — una pregunta de correo nace con su texto de ejemplo a la vista', () => {
+        const c = formConfigSchema.parse({ items: [] });
+        const { config } = addFieldItem(c, 9, null, 'email');
+        expect(config.items[0]).toMatchObject({ field_id: 9, placeholder: 'nombre@ejemplo.com' });
+        const { config: plain } = addFieldItem(c, 8, null, 'text');
+        expect(plain.items[0]).toMatchObject({ placeholder: '' });
     });
 
     it('editar no cambia el id ni el tipo', () => {
