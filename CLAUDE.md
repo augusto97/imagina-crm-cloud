@@ -14414,6 +14414,48 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         columnas, vencido, sitio limpio, guardar y la página pública en 200,
         «Permisos por rol», celular a pantalla completa y oscuro).
 
+  - [x] **Automatizaciones en carpetas: el índice de cada lista rediseñado
+        (v0.1.411, pedido del usuario: "la vista donde se ven todas las
+        automatizaciones de una lista también deberíamos mejorarla… ordenar por
+        carpetas… con 20 automatizaciones se hace difícil de entender cuál es
+        cuál")**. (a) **Carpetas por lista**: `automations.folder` (texto,
+        migración 0120 con índice parcial) y el ORDEN en
+        `lists.settings.automation_folders` (así puede haber carpetas vacías).
+        Reglas puras en `packages/shared/src/schemas/automation-folders.ts`:
+        nombre limpio de hasta 60, igualdad sin tildes ni mayúsculas
+        (`folderKey`), tope de 100, y la lista guardada se mezcla con las que
+        usan las automatizaciones. `GET/POST /lists/:l/automations/folders`
+        (crear, renombrar, eliminar, ordenar; 409 `folder_exists`, 404
+        `folder_not_found`) y `POST /lists/:l/automations/move` (`{ids,
+        folder|null}`; un nombre nuevo crea la carpeta), con
+        `manage_automations` y el chequeo de lista entera. Renombrar arrastra a
+        sus automatizaciones; eliminar una carpeta las deja sin carpeta (no se
+        borra ni se pausa ninguna). **Mover no edita**: no cambia `updated_at`
+        ni crea versión. Duplicar conserva la carpeta, migrar una empresa la
+        lleva y `get_list_schema` la muestra. (b) **Índice nuevo**
+        (`AutomationsPage` + `AutomationRow` + `automationIndex.ts`, puro con
+        tests): fila compacta por automatización —casilla al pasar el mouse,
+        interruptor optimista, ícono del disparador, nombre con «Pausada», qué
+        hace en una línea («+N más»), el motivo de la última falla y «Corrió /
+        Falló hace…» que abre el historial— con su menú (Editar, Historial,
+        **Mover a carpeta ›**, Duplicar, Guardar como plantilla, Eliminar).
+        Arriba, buscador (nombre, descripción, carpeta y lo que hace, sin
+        tildes, todas las palabras), filtros **Todas · Activas · Pausadas · Con
+        fallas**, **Agrupar** (carpeta / disparador / nada) y **Ordenar**
+        (nombre / nuevas / editadas / última corrida) recordados en el
+        dispositivo, y **Nueva carpeta**. Secciones plegables (recordado por
+        lista) con conteo, activas y fallas y su menú (seleccionar todas,
+        renombrar en el lugar, subir/bajar, eliminar con confirmación).
+        Selección con Mayús para rangos y barra para mover, activar o pausar
+        varias; arrastrar una fila (o las marcadas) hasta una carpeta. Sin
+        carpetas, la lista va sin títulos y con una pista para crearlas.
+        Ayuda: sección «Ordenarlas en carpetas y encontrarlas rápido» en Aprende
+        → Automatizaciones con la captura nueva `auto-carpetas`, guía
+        `automation-folders`, paso del recorrido (`automations-toolbar`) y
+        novedad. Tests: 4 de shared, 6 del front y 1 de integración de la API
+        + E2E navegador 36/36 en escritorio y 36/36 en celular oscuro, y las 6
+        capturas de automatizaciones grabadas en local.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -12,6 +12,11 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import {
+    automationFolderOpSchema,
+    moveAutomationsSchema,
+    type AutomationFolderOp,
+    type AutomationFolders,
+    type MoveAutomationsInput,
     automationTestRunInputSchema,
     createAutomationSchema,
     updateAutomationSchema,
@@ -117,6 +122,37 @@ export class AutomationsController {
         @Body(new ZodValidationPipe(automationTestRunInputSchema)) input: AutomationTestRunInput,
     ): Promise<AutomationTestRunResult> {
         return this.automations.testRun(req.tenant!.tenantId, list, input, actorOf(req));
+    }
+
+    /** v0.1.411 — Carpetas de la lista, en orden. */
+    @Get('folders')
+    @RequireCapability('manage_automations')
+    folders(@Req() req: FastifyRequest, @Param('list') list: string): Promise<AutomationFolders> {
+        return this.whole(req, list).then(() => this.automations.folders(req.tenant!.tenantId, list));
+    }
+
+    /** v0.1.411 — Crear, renombrar, borrar u ordenar carpetas. */
+    @Post('folders')
+    @HttpCode(200)
+    @RequireCapability('manage_automations')
+    folderOp(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(automationFolderOpSchema)) op: AutomationFolderOp,
+    ): Promise<AutomationFolders> {
+        return this.whole(req, list).then(() => this.automations.folderOp(req.tenant!.tenantId, list, op));
+    }
+
+    /** v0.1.411 — Mover una o varias a una carpeta (null = sin carpeta). */
+    @Post('move')
+    @HttpCode(200)
+    @RequireCapability('manage_automations')
+    move(
+        @Req() req: FastifyRequest,
+        @Param('list') list: string,
+        @Body(new ZodValidationPipe(moveAutomationsSchema)) input: MoveAutomationsInput,
+    ): Promise<AutomationFolders & { moved: number }> {
+        return this.whole(req, list).then(() => this.automations.moveToFolder(req.tenant!.tenantId, list, input));
     }
 
     /** v0.1.288 — Duplicar: una copia pausada «Nombre (copia)». */

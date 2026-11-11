@@ -1370,6 +1370,8 @@ export class StructureTools implements AiProposalApplier {
                     name: a.name,
                     description: a.description ?? null,
                     is_active: a.is_active,
+                    // v0.1.411 — carpeta del índice (sólo ordena la pantalla).
+                    folder: a.folder ?? null,
                     trigger_type: a.trigger_type,
                     ...(can(ctx, 'manage_automations')
                         ? {

@@ -24,6 +24,8 @@ export const automations = pgTable('automations', {
     triggerConfig: jsonb('trigger_config').$type<TriggerConfig>().notNull().default({}),
     actions: jsonb('actions').$type<ActionSpec[]>().notNull().default([]),
     isActive: boolean('is_active').notNull().default(true),
+    /** v0.1.411 — la carpeta (nombre) dentro de su lista; null = sin carpeta. */
+    folder: text('folder'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     /** Papelera: null = viva. */
