@@ -415,7 +415,14 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.400**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.401**
+(**el conector completo de WhatsApp (Whats), primera mitad: las acciones** —
+17 en total: además de mensajes y archivos, ubicación, tarjeta de contacto,
+crear/actualizar contacto, etiquetas, grupos, notas, consentimiento, baja,
+flujos, goteos y la bandeja; el contacto se busca por teléfono y se crea si
+falta; listas de la cuenta para elegir, aviso de permisos que faltan y
+«Probar ahora» que primero muestra lo que haría; addendum ADR-S69. **Sigue
+v0.1.402** con los disparadores — ver «Hilos abiertos»). Antes v0.1.400
 (**WhatsApp (Whats) y WhatsApp (WAS) con sus nombres** —Whats es la nueva,
 WAS la anterior, que sigue funcionando— y **«Reemplazar en
 automatizaciones»**: pasa de una vez las acciones de una conexión a otra,
@@ -617,6 +624,19 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-11 — **Conector completo de Whats** (el usuario adjuntó la
+  documentación de la API v1 de Whats y aprobó la lista de acciones y
+  disparadores). **v0.1.401 HECHA** (acciones: ver la bitácora). **Falta
+  v0.1.402 — disparadores**: eventos `wa.message.*` (enviado/entregado/leído/
+  fallido además de recibido), `contact.created`, `contact.unsubscribed`,
+  `conversation.created/assigned/resolved`, `csat.received`, `link.clicked`,
+  `form.submitted/confirmed` — **sin citas ni pagos** (decisión del usuario).
+  Cada disparador ubica el registro por teléfono (o por id de mensaje para los
+  estados; por `contact_id` → `GET /contacts/{id}` con caché), expone
+  `{{whatsapp.*}}` y `{{payload.*}}`, y el aviso de Whats se suscribe sólo a
+  los eventos que alguna automatización usa. **Autorizado**: leer, SIN cambiar
+  nada, las entregas de avisos reales de su cuenta de Whats para confirmar la
+  forma de cada payload (la documentación sólo trae el del mensaje).
 - 2026-11-10 — **«Cada vez que tecleo una tecla me saca del campo del
   formulario»** (reporte del usuario con captura: el número de WhatsApp de un
   botón del widget). **v0.1.398 HECHA**: ver la bitácora.
@@ -1802,6 +1822,30 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-11 · v0.1.401** — **El conector completo de WhatsApp (Whats):
+  las acciones**. Pedido del usuario con la documentación completa de la API
+  v1 de Whats (Zender): «rediseñar el conector como un conector completo:
+  acciones para cada operación útil y disparadores desde los webhooks…
+  propón la lista y espera mi aprobación». Propuse la lista y aprobó con:
+  **no enviar a grupos de WhatsApp**, **crear el contacto si no existe**
+  (recomendado), **sin eventos de citas ni pagos**, **sin «asignar
+  conversación»**, y autorizó **leer (sin cambiar nada) las entregas de avisos
+  reales de su cuenta** para confirmar la forma de los payloads (se usa en
+  v0.1.402). Se partió en dos: **v0.1.401 = acciones**, v0.1.402 =
+  disparadores. Hecho: 17 acciones (catálogo en shared, reglas puras en
+  `whats-actions.ts`), contacto por teléfono con caché de 30 días, etiquetas y
+  grupos por nombre (se crean si faltan), flujos y goteos por id, `{{whats.*}}`
+  para los pasos siguientes, red fuera de la transacción, errores en palabras y
+  Problema si falla la clave; editor con listas de la cuenta, filas
+  clave→valor, aviso de permisos y «Ver qué haría / Hacerlo de verdad»;
+  página de la conexión con cuántas acciones permite la clave; asistente/MCP.
+  Verificado: 5 tests de integración nuevos (14/14 en `whatsapp-web.spec`),
+  suites de WhatsApp/conectores/automatizaciones/MCP 170/170, front 853, shared
+  855, y E2E navegador 33/33 contra el Whats simulado (escritorio y celular
+  oscuro). **Ojo**: la clave de Whats que el usuario creó antes sólo tiene los
+  permisos de mandar y recibir; para usar las acciones nuevas tiene que crear
+  una con los permisos de contactos, etiquetas, grupos, flujos y bandeja (la
+  página de la conexión lo dice). Queda: v0.1.402 (disparadores).
 - **2026-11-10 · v0.1.400** — **WhatsApp (Whats) y WhatsApp (WAS) con sus
   nombres + «Reemplazar en automatizaciones»**. Pedidos del usuario: «estás
   confundiendo a los usuarios: la nueva app es Whats, no WAS; WAS es la versión

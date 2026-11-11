@@ -60,6 +60,11 @@ import {
     type WhatsappProvider,
     type WhatsappTemplate,
     type WhatsappTestSendInput,
+    type WhatsAbilitiesResult,
+    type WhatsActionTestInput,
+    type WhatsActionTestResult,
+    type WhatsLookupKind,
+    type WhatsLookupResult,
     type CollectionConnectionDetail,
     type CollectionFields,
     type SetCollectionFieldsInput,
@@ -1293,6 +1298,18 @@ export class CloudClient {
     }
     whatsappTestSend(list: string | number, input: WhatsappTestSendInput): Promise<WhatsappSendResult> {
         return this.request('POST', `/lists/${list}/automations/whatsapp-test`, { body: input, schema: z.custom<WhatsappSendResult>() });
+    }
+    /** v0.1.401 — etiquetas, grupos, flujos, goteos o campos de la cuenta de Whats. */
+    whatsOptions(connectionId: number, kind: WhatsLookupKind): Promise<WhatsLookupResult> {
+        return this.request('GET', `/whatsapp/connections/${connectionId}/whats/options/${kind}`, { schema: z.custom<WhatsLookupResult>() });
+    }
+    /** v0.1.401 — qué permisos tiene la clave de Whats y qué le falta a cada acción. */
+    whatsAbilities(connectionId: number): Promise<WhatsAbilitiesResult> {
+        return this.request('GET', `/whatsapp/connections/${connectionId}/whats/abilities`, { schema: z.custom<WhatsAbilitiesResult>() });
+    }
+    /** v0.1.401 — «Probar ahora» de las acciones de Whats que no mandan un mensaje. */
+    whatsActionTest(list: string | number, input: WhatsActionTestInput): Promise<WhatsActionTestResult> {
+        return this.request('POST', `/lists/${list}/automations/whats-action-test`, { body: input, schema: z.custom<WhatsActionTestResult>() });
     }
     // ── SMS: Twilio, BulkGate, Infobip, LabsMobile, Onurix (ADR-S82) ─────
     async smsConnections(): Promise<SmsConnectionSummary[]> {

@@ -827,7 +827,8 @@ export const whatsappTestSendSchema = z
     .object({
         connection_id: idSchema,
         to: z.string().trim().min(1).max(200),
-        kind: z.enum(['template', 'text', 'media']),
+        /** v0.1.401 — Whats también manda una ubicación o una tarjeta de contacto. */
+        kind: z.enum(['template', 'text', 'media', 'location', 'contact']),
         /** Los `values` de la acción tal cual se están editando (con variables). */
         values: z.record(z.unknown()).default({}),
         /** Registro para resolver las variables (default: el último de la lista). */

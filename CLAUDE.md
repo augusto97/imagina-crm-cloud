@@ -13868,6 +13868,52 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         que lee la respuesta queda con su motivo, versión en el historial y
         conteo de uso al día).
 
+  - [x] **WhatsApp (Whats) completo: las acciones (v0.1.401, addendum
+        ADR-S69, pedido del usuario con la documentación de la API v1 de
+        Whats: «un conector completo… una acción por cada operación útil»; los
+        disparadores van en v0.1.402)**. Decisiones aprobadas: no enviar a
+        grupos de WhatsApp, crear el contacto si falta, sin citas ni pagos, sin
+        «asignar conversación». (a) **17 acciones** en `whatsapp_web`: las de
+        siempre (mensaje, archivo) + **ubicación** y **tarjeta de contacto**
+        (por el mismo camino de los envíos: columnas, estados, actividad),
+        **crear o actualizar contacto**, **poner/quitar etiquetas**,
+        **agregar/quitar de un grupo**, **nota**, **consentimiento**, **baja**,
+        **activar** y **reanudar un flujo**, **inscribir en un goteo**,
+        **responder** y **resolver/reabrir la conversación**. Reglas puras en
+        `packages/shared/src/schemas/whats-actions.ts` (permisos por acción,
+        qué se elige de la cuenta, salidas `{{whats.*}}`, lectores de nombres,
+        teléfonos y filas clave→valor); el teléfono se llama `recipient` en
+        todas. (b) **Pedidos puros** (`apps/api/src/whatsapp/whats-actions.ts`:
+        un armador y un lector por endpoint + `planWhatsAction`, que valida y
+        resuelve las variables dentro de la transacción) y **red después**
+        (`whats-actions.client.ts`, por `AfterCommit`): el contacto se busca
+        por teléfono (`/contacts/lookup`) y, si falta, se crea con el título
+        del registro (`PUT /contacts`); el id se recuerda 30 días en Redis
+        —también el que devuelve un envío— y uno que Whats ya no tiene se
+        olvida y se busca de nuevo. Etiquetas y grupos por **nombre** (con
+        variables; se crean si faltan, resolviendo una carrera), flujos y
+        goteos por **id**; listas de la cuenta siguiendo `next_cursor` (5
+        páginas, 2 min de caché); errores de Whats en palabras y los de la
+        clave abren un Problema; un goteo rechazado o una bandeja sin
+        conversación se **saltan** con el motivo. (c) **Motor**: `ctx.whats`
+        con lo que deja cada acción (sobrevive a una espera) y merge
+        `{{whats.x}}`. (d) **Editor** (`WhatsActionFields.tsx`): los datos
+        salen del catálogo; chips con las etiquetas y grupos de la cuenta y
+        aviso de las que se van a crear; flujos y goteos con su estado;
+        filas clave→valor para variables y campos del contacto; aviso de los
+        permisos que le faltan a la clave; **«Ver qué haría»** (sin ningún
+        pedido a Whats) y **«Hacerlo de verdad»** (los pedidos, sin la clave);
+        sección «Whats» en el selector de variables. Endpoints
+        `GET /whatsapp/connections/:id/whats/options/:kind` y `/abilities`, y
+        `POST /lists/:l/automations/whats-action-test`. La página de la
+        conexión dice cuántas de las 17 acciones permite la clave. (e) El
+        asistente/MCP ve cada acción con sus datos y salidas. El Whats
+        simulado de desarrollo (`scripts/dev/fake-was.mjs`) suma contactos,
+        etiquetas, grupos, flujos, goteos y bandeja. Tests: 5 de integración
+        nuevos en `whatsapp-web.spec` (14/14) + `whats-actions.test` en shared,
+        suites relacionadas 170/170, front 853, shared 855 — E2E navegador
+        33/33 contra el Whats simulado (escritorio y celular oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -267,6 +267,11 @@ interface RunContext {
      */
     reunion?: Record<string, string>;
     /**
+     * v0.1.401 — lo que dejó la última acción de Whats (`{{whats.contacto_id}}`,
+     * `{{whats.ejecucion_id}}`…): se acumula entre pasos.
+     */
+    whats?: Record<string, string>;
+    /**
      * v0.1.290 — Bytes que guardó la acción en curso al CONGELAR un documento
      * emitido: si su transacción revierte, se descartan (un storage no es
      * transaccional) y los PDF armados en ella salen del cache del run.
@@ -416,6 +421,7 @@ export interface ResumeState {
         suscripcion?: SubscriptionEventInfo;
         pdf?: Record<string, unknown>;
         reunion?: Record<string, string>;
+        whats?: Record<string, string>;
         webhook?: ResponseInfo;
         responses?: Record<string, ResponseInfo>;
         chain?: AutomationChain;
@@ -1206,6 +1212,7 @@ export class AutomationEngine {
             ...(state.ctx.suscripcion ? { suscripcion: state.ctx.suscripcion } : {}),
             ...(state.ctx.pdf ? { pdf: state.ctx.pdf } : {}),
             ...(state.ctx.reunion ? { reunion: state.ctx.reunion } : {}),
+            ...(state.ctx.whats ? { whats: state.ctx.whats } : {}),
             ...(state.ctx.webhook ? { webhook: state.ctx.webhook } : {}),
             ...(state.ctx.responses ? { responses: state.ctx.responses } : {}),
             ...(state.ctx.chain ? { chain: state.ctx.chain } : {}),
@@ -1858,6 +1865,8 @@ export class AutomationEngine {
             // v0.1.366 — {{reunion.enlace}}, {{reunion.id}}… de la reunión que
             // creó o cambió una acción de calendario anterior.
             if (token.startsWith('reunion.')) return ctx.reunion?.[token.slice('reunion.'.length)] ?? '';
+            // v0.1.401 — {{whats.contacto_id}}, {{whats.ejecucion_id}}… de una acción de Whats anterior.
+            if (token.startsWith('whats.')) return ctx.whats?.[token.slice('whats.'.length)] ?? '';
             // v0.1.275 — {{formulario.nombre}} del formulario que se envió.
             if (token === 'formulario.nombre') return ctx.form?.name ?? '';
             // v0.1.386 — su título y de dónde llegó.
@@ -2157,6 +2166,7 @@ export class AutomationEngine {
                 ...(ctx.sla ? { sla: ctx.sla } : {}),
                 ...(ctx.pdf ? { pdf: ctx.pdf } : {}),
                 ...(ctx.reunion ? { reunion: ctx.reunion } : {}),
+                ...(ctx.whats ? { whats: ctx.whats } : {}),
                 ...(ctx.webhook ? { webhook: ctx.webhook } : {}),
                 ...(ctx.responses ? { responses: ctx.responses } : {}),
                 ...(ctx.chain ? { chain: ctx.chain } : {}),
@@ -3718,7 +3728,10 @@ export class AutomationEngine {
                     });
                     const finishWa = (out: WhatsappAutomationResult): ActionLogEntry => {
                         if (out.write) ctx.data = { ...ctx.data, ...out.write.after };
+                        if (out.outputs) ctx.whats = { ...(ctx.whats ?? {}), ...out.outputs };
                         if (out.status === 'failed') return fail('connector_action', out.message, { integration: waKey, ...out.details });
+                        // v0.1.401 — «no había nada que hacer» (quitar una etiqueta a quien no está en Whats).
+                        if (out.status === 'skipped') return skip('connector_action', out.message);
                         return ok('connector_action', out.message, { action: waAction, integration: waKey, ...out.details });
                     };
                     // v0.1.392 — el envío espera a WhatsApp fuera de la transacción.

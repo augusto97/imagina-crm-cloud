@@ -101,6 +101,7 @@ export * from './schemas/subscriptions';
 export * from './schemas/subscription-charge-log';
 export * from './schemas/subscription-import';
 export * from './schemas/whatsapp';
+export * from './schemas/whats-actions';
 export * from './schemas/sms';
 export * from './schemas/provider-guides';
 export * from './schemas/legal-pages';

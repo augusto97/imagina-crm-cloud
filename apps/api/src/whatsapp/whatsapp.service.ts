@@ -36,6 +36,19 @@ import {
     writeWhatsappListFields,
     validateFieldValue,
     isWhatsappProvider,
+    isWhatsAction,
+    isWhatsSendAction,
+    missingWhatsAbilities,
+    readWhatsKeyValues,
+    whatsFlag,
+    whatsNames,
+    whatsPhoneList,
+    WHATS_ACTION_KEYS,
+    type WhatsAbilitiesResult,
+    type WhatsActionTestInput,
+    type WhatsActionTestResult,
+    type WhatsLookupKind,
+    type WhatsLookupResult,
     type Field,
     type FieldType,
     type List,
@@ -127,6 +140,8 @@ import {
     type WaWebCreds,
     type WaWebPayload,
 } from './whatsapp-web';
+import { describeWhatsPlan, planWhatsAction, type WhatsPlan } from './whats-actions';
+import { WhatsActionsClient } from './whats-actions.client';
 import { encryptSecret } from '../common/secret-box';
 
 /**
@@ -199,7 +214,7 @@ export interface PreparedSend {
     creds: WhatsappCreds | null;
     /** Imagina WAS (null en Meta). */
     web: { creds: WaWebCreds; payload: WaWebPayload } | null;
-    kind: 'template' | 'text' | 'media';
+    kind: 'template' | 'text' | 'media' | 'location' | 'contact';
     to: string;
     payload: Record<string, unknown>;
     text: string;
@@ -220,6 +235,8 @@ interface Executed {
     errorCode: string | number | null;
     /** Error de red (no llegó al servidor). */
     network: string | null;
+    /** v0.1.401 — Whats: el contacto al que se le mandó (lo crea solo al enviar). */
+    contactId?: number | null;
 }
 
 /** Las cabeceras de un aviso: Meta firma con una, Imagina WAS con otras. */
@@ -304,18 +321,22 @@ export interface WhatsappAutomationResult {
     message: string;
     details: Record<string, unknown>;
     write: { listId: number; recordId: number; before: Record<string, unknown>; after: Record<string, unknown> } | null;
+    /** v0.1.401 — lo que deja para los pasos siguientes (`{{whats.*}}`). */
+    outputs?: Record<string, string>;
 }
 
 @Injectable()
 export class WhatsappService {
     private readonly logger = new Logger(WhatsappService.name);
     private sink: WhatsappJobSink | null = null;
+    /** v0.1.401 — la parte de red de las acciones de Whats (contactos, etiquetas, flujos, bandeja). */
+    private readonly whats: WhatsActionsClient;
 
     constructor(
         private readonly tenantDb: TenantDb,
         @Inject(DRIZZLE) private readonly db: Db,
         @Inject(ENV) private readonly env: Env,
-        @Inject(REDIS) private readonly redis: Pick<Redis, 'set' | 'del'>,
+        @Inject(REDIS) private readonly redis: Pick<Redis, 'get' | 'set' | 'del'>,
         private readonly connectors: ConnectorsService,
         private readonly lists: ListsService,
         private readonly fields: FieldsService,
@@ -329,6 +350,7 @@ export class WhatsappService {
         @Optional() private readonly aiFields?: AiFieldsService,
         @Optional() private readonly cache?: PublicCacheService,
     ) {
+        this.whats = new WhatsActionsClient(this.redis);
         // v0.1.389 — Imagina WAS: al conectar se registran solos los avisos; al
         // borrar la conexión se sacan (si no, seguirían llamando a una URL muerta).
         this.connectors.onAfterKeyConnect(async (tenantId, connectionId, key) => {
@@ -1759,7 +1781,7 @@ export class WhatsappService {
         tenantId: number,
         args: {
             connectionId: number;
-            kind: 'template' | 'text' | 'media';
+            kind: 'template' | 'text' | 'media' | 'location' | 'contact';
             to: string;
             template?: string;
             language?: string;
@@ -1771,12 +1793,21 @@ export class WhatsappService {
             /** v0.1.389 — Imagina WAS: el archivo (enlace https) y su texto. */
             mediaUrl?: string;
             caption?: string;
+            /** v0.1.401 — Whats: una ubicación… */
+            latitude?: string;
+            longitude?: string;
+            placeName?: string;
+            address?: string;
+            /** …o una tarjeta de contacto. */
+            contactName?: string;
+            contactPhones?: string;
         },
     ): Promise<PreparedSend> {
         const conn = await this.connRow(tx, tenantId, args.connectionId);
         if (!conn) throw new WhatsappSendError('La conexión de WhatsApp ya no existe: revisa la acción.', 'connection_missing');
         if (conn.provider === 'whatsapp_web') return this.prepareWebSendInTx(tx, tenantId, conn, args);
         if (args.kind === 'media') throw new WhatsappSendError('Con la API oficial de Meta los archivos van en el encabezado de una plantilla.', 'media_unsupported');
+        if (args.kind === 'location' || args.kind === 'contact') throw new WhatsappSendError('Esa acción es sólo de Whats.', 'kind_unsupported');
         let creds: WhatsappCreds;
         try {
             const out = await this.connectors.integrationCredsInTx(tx, tenantId, args.connectionId);
@@ -1891,6 +1922,34 @@ export class WhatsappService {
             if (args.kind === 'template') {
                 throw new WhatsappSendError('Whats no usa plantillas: elige «Mensaje» o «Archivo».', 'template_unsupported');
             }
+            if (args.kind === 'location') {
+                const lat = Number((args.latitude ?? '').trim().replace(',', '.'));
+                const lng = Number((args.longitude ?? '').trim().replace(',', '.'));
+                if ((args.latitude ?? '').trim() === '' || !Number.isFinite(lat) || lat < -90 || lat > 90) {
+                    throw new WhatsappSendError(`La latitud «${(args.latitude ?? '').trim()}» no sirve: tiene que ser un número entre -90 y 90.`, 'bad_location');
+                }
+                if ((args.longitude ?? '').trim() === '' || !Number.isFinite(lng) || lng < -180 || lng > 180) {
+                    throw new WhatsappSendError(`La longitud «${(args.longitude ?? '').trim()}» no sirve: tiene que ser un número entre -180 y 180.`, 'bad_location');
+                }
+                const placeName = (args.placeName ?? '').trim();
+                const address = (args.address ?? '').trim();
+                const payload: WaWebPayload = { kind: 'location', to: dest.digits, latitude: lat, longitude: lng, name: placeName, address };
+                const shown = placeName || address || `${lat}, ${lng}`;
+                return { ...base, kind: 'location', web: { creds, payload }, payload: { ...payload }, text: `[Ubicación] ${shown}` };
+            }
+            if (args.kind === 'contact') {
+                const cardName = (args.contactName ?? '').trim();
+                if (cardName === '') throw new WhatsappSendError('Falta el nombre de la tarjeta.', 'empty');
+                const phones: string[] = [];
+                for (const raw of whatsPhoneList(args.contactPhones ?? '')) {
+                    const ph = whatsappRecipient(raw, whatsappCountryOf(fieldsCfg.account_phone));
+                    if (!ph.ok) throw new WhatsappSendError(`El teléfono «${raw}» de la tarjeta no sirve: ${ph.error}`, 'bad_card');
+                    phones.push(`+${ph.digits}`);
+                }
+                if (phones.length === 0) throw new WhatsappSendError('La tarjeta necesita al menos un teléfono.', 'empty');
+                const payload: WaWebPayload = { kind: 'contact', to: dest.digits, name: cardName, phones };
+                return { ...base, kind: 'contact', web: { creds, payload }, payload: { ...payload }, text: `[Contacto] ${cardName}` };
+            }
             if (args.kind === 'media') {
                 const url = (args.mediaUrl ?? '').trim();
                 if (url === '') throw new WhatsappSendError('Falta el enlace del archivo.', 'empty');
@@ -1954,7 +2013,10 @@ export class WhatsappService {
             });
             const body = res.body ?? '';
             const parsed = parseWaWebSend(res.status, body);
-            if (parsed.ok) return { ok: true, wamid: parsed.id, status: res.status, body, errorText: null, systemic: false, errorCode: null, network: null };
+            if (parsed.ok) {
+                if (parsed.contactId !== null) await this.whats.rememberContact(p.connection.id, p.to, parsed.contactId);
+                return { ok: true, wamid: parsed.id, status: res.status, body, errorText: null, systemic: false, errorCode: null, network: null, contactId: parsed.contactId };
+            }
             return {
                 ok: false,
                 wamid: null,
@@ -2233,6 +2295,13 @@ export class WhatsappService {
                       text: input.kind === 'text' && str(v.message) ? merge(str(v.message)) : undefined,
                       mediaUrl: str(v.url) ? merge(str(v.url)) : undefined,
                       caption: str(v.caption) ? merge(str(v.caption)) : undefined,
+                      // v0.1.401 — ubicación y tarjeta de contacto.
+                      latitude: merge(str(v.latitude)),
+                      longitude: merge(str(v.longitude)),
+                      placeName: merge(str(v.place_name)),
+                      address: merge(str(v.address)),
+                      contactName: merge(str(v.contact_name)),
+                      contactPhones: merge(str(v.contact_phones)),
                   }
                 : {}),
             target: { listId: null, recordId: null, userId: actor.userId },
@@ -2299,12 +2368,11 @@ export class WhatsappService {
         // datos que ya usaba la versión anterior (recipient, message, url, caption).
         const conn = await this.connRow(tx, args.tenantId, args.connectionId);
         const web = conn?.provider === 'whatsapp_web';
-        const kind: 'text' | 'template' | 'media' | null = web
-            ? args.actionKey === 'send_text'
-                ? 'text'
-                : args.actionKey === 'send_media'
-                  ? 'media'
-                  : null
+        // v0.1.401 — el resto del conector de Whats (contactos, etiquetas, flujos, bandeja).
+        if (web && conn && isWhatsAction(args.actionKey) && !isWhatsSendAction(args.actionKey)) return this.runWhatsAction(tx, conn, args);
+        const webKinds: Record<string, 'text' | 'media' | 'location' | 'contact'> = { send_text: 'text', send_media: 'media', send_location: 'location', send_contact: 'contact' };
+        const kind: 'text' | 'template' | 'media' | 'location' | 'contact' | null = web
+            ? (webKinds[args.actionKey] ?? null)
             : args.actionKey === 'send_text'
               ? 'text'
               : args.actionKey === 'send_template'
@@ -2324,6 +2392,12 @@ export class WhatsappService {
                           text: kind === 'text' ? args.merge(str(v.message)) : undefined,
                           mediaUrl: kind === 'media' ? args.merge(str(v.url)) : undefined,
                           caption: kind === 'media' ? args.merge(str(v.caption)) : undefined,
+                          latitude: kind === 'location' ? args.merge(str(v.latitude)) : undefined,
+                          longitude: kind === 'location' ? args.merge(str(v.longitude)) : undefined,
+                          placeName: kind === 'location' ? args.merge(str(v.place_name)) : undefined,
+                          address: kind === 'location' ? args.merge(str(v.address)) : undefined,
+                          contactName: kind === 'contact' ? args.merge(str(v.contact_name)) : undefined,
+                          contactPhones: kind === 'contact' ? args.merge(str(v.contact_phones)) : undefined,
                       }
                     : {
                           connectionId: args.connectionId,
@@ -2342,7 +2416,16 @@ export class WhatsappService {
             if (err instanceof WhatsappSendError) return { status: 'failed', message: err.message, details: { code: err.code }, write: null };
             throw err;
         }
-        const label = kind === 'template' ? `la plantilla «${prepared.template?.name}»` : kind === 'media' ? 'el archivo' : 'el mensaje de texto';
+        const label =
+            kind === 'template'
+                ? `la plantilla «${prepared.template?.name}»`
+                : kind === 'media'
+                  ? 'el archivo'
+                  : kind === 'location'
+                    ? 'la ubicación'
+                    : kind === 'contact'
+                      ? 'la tarjeta de contacto'
+                      : 'el mensaje de texto';
         const request = this.shownRequest(prepared);
         if (!args.realCall) {
             return {
@@ -2370,14 +2453,185 @@ export class WhatsappService {
                 : await this.persistSentInTx(tx, ready, wamid, target);
             this.afterWrite(args.tenantId, write);
             this.connectionWorks(args.tenantId, ready.connection.id);
+            const outputs: Record<string, string> = { mensaje_id: wamid };
+            if (ex.contactId) outputs.contacto_id = String(ex.contactId);
             return {
                 status: 'success',
                 message: `${ready.connection.name} → envió ${label} a +${ready.to}.`,
                 details: { message_id: wamid, to: `+${ready.to}`, ...(ready.template ? { template: ready.template.name } : {}) },
                 write,
+                outputs: web ? outputs : undefined,
             };
         };
         return args.deferSend ? { later: send } : send();
+    }
+
+    // ── v0.1.401: el conector completo de Whats ─────────────────────────
+
+    /** Las credenciales de Whats de una conexión (dentro de la transacción; sin red). */
+    private async whatsCredsInTx(tx: Tx, tenantId: number, conn: Pick<ConnRow, 'id' | 'name' | 'ownerUserId'>): Promise<WaWebCreds> {
+        try {
+            const out = await this.connectors.integrationCredsInTx(tx, tenantId, conn.id);
+            if (!out) throw new WhatsappSendError('La conexión de WhatsApp ya no existe.', 'connection_missing');
+            return waWebCreds(out.creds);
+        } catch (err) {
+            if (err instanceof ConnectionUnusableError) {
+                this.reportConnection(tenantId, conn.id, conn, err.message);
+                throw new WhatsappSendError(err.message, 'connection_unusable');
+            }
+            throw err;
+        }
+    }
+
+    /** El título de un registro: el nombre con que se crea un contacto que no está en Whats. */
+    private async recordTitleInTx(tx: Tx, tenantId: number, listId: number, recordId: number | null): Promise<string> {
+        if (recordId === null) return '';
+        const [listRow] = await tx.select({ settings: lists.settings }).from(lists).where(and(eq(lists.tenantId, tenantId), eq(lists.id, listId))).limit(1);
+        const row = await this.recordsRepo.findById(tx, tenantId, listId, recordId);
+        if (!listRow || !row) return '';
+        const fields = await this.fields.listByListId(tenantId, listId);
+        const titleId = resolveTitleFieldId(fields, (listRow.settings ?? {}) as Record<string, unknown>);
+        const v = titleId ? (row.data as Record<string, unknown>)[jsonbKeyForField(titleId)] : undefined;
+        return typeof v === 'string' ? v.trim().slice(0, 255) : typeof v === 'number' ? String(v) : '';
+    }
+
+    /** El plan de una acción de Whats, con las variables resueltas (sin red). */
+    private async planWhatsInTx(
+        tx: Tx,
+        tenantId: number,
+        conn: ConnRow,
+        actionKey: string,
+        values: Record<string, unknown>,
+        merge: (s: string) => string,
+        title: string,
+    ): Promise<{ ok: true; creds: WaWebCreds; plan: WhatsPlan } | { ok: false; error: string }> {
+        let creds: WaWebCreds;
+        try {
+            creds = await this.whatsCredsInTx(tx, tenantId, conn);
+        } catch (err) {
+            if (err instanceof WhatsappSendError) return { ok: false, error: err.message };
+            throw err;
+        }
+        const merged: Record<string, string> = {};
+        for (const [k, raw] of Object.entries(values)) {
+            // Las filas clave → valor se resuelven valor por valor (un `{{x}}` dentro de un JSON).
+            if (k === 'variables' || k === 'fields') {
+                const kv = readWhatsKeyValues(raw);
+                merged[k] = JSON.stringify(Object.fromEntries(Object.entries(kv).map(([kk, vv]) => [kk, merge(vv)])));
+            } else {
+                merged[k] = merge(str(raw));
+            }
+        }
+        const country = whatsappCountryOf(((conn.config.fields ?? {}) as Record<string, string>).account_phone);
+        const planned = planWhatsAction(actionKey, merged, {
+            phoneOf: (raw) => whatsappRecipient(raw, country),
+            names: whatsNames,
+            keyValues: readWhatsKeyValues,
+            flag: whatsFlag,
+            title,
+            nowIso: new Date().toISOString(),
+        });
+        return planned.ok ? { ok: true, creds, plan: planned.plan } : planned;
+    }
+
+    private async runWhatsAction(
+        tx: Tx,
+        conn: ConnRow,
+        args: Parameters<WhatsappService['runAutomationAction']>[1],
+    ): Promise<WhatsappAutomationResult | { later: () => Promise<WhatsappAutomationResult> }> {
+        const title = await this.recordTitleInTx(tx, args.tenantId, args.listId, args.recordId);
+        const prep = await this.planWhatsInTx(tx, args.tenantId, conn, args.actionKey, args.values, args.merge, title);
+        if (!prep.ok) return { status: 'failed', message: `${whatsappConnLabel(conn.name)}: ${prep.error}`, details: {}, write: null };
+        const { creds, plan } = prep;
+        if (!args.realCall) return { status: 'success', message: describeWhatsPlan(plan), details: { _sim: 'would_run' }, write: null };
+        const run = async (): Promise<WhatsappAutomationResult> => {
+            const out = await this.whats.execute(creds, conn.id, plan);
+            const steps = out.steps.map((st) => `${st.label}: ${st.method} ${st.url.replace(/^https?:\/\/[^/]+/, '')} → ${st.status ?? 'sin respuesta'}`);
+            if (!out.ok) {
+                if (out.systemic) this.reportConnection(args.tenantId, conn.id, conn, out.message);
+                return { status: 'failed', message: `${whatsappConnLabel(conn.name)}: ${out.message}`, details: { ...(out.errorCode ? { error_code: out.errorCode } : {}), steps }, write: null };
+            }
+            this.connectionWorks(args.tenantId, conn.id);
+            return { status: out.skipped ? 'skipped' : 'success', message: `${conn.name} → ${out.message}`, details: { ...out.outputs, steps }, write: null, outputs: out.outputs };
+        };
+        return args.deferSend ? { later: run } : run();
+    }
+
+    /** Una conexión de Whats que la persona ve (para las listas y la prueba del editor). */
+    private async visibleWhatsConnection(tenantId: number, actor: WhatsappActor, connectionId: number): Promise<void> {
+        const visible = (await this.connectors.list(tenantId, actor.userId, actor.role)).find((c) => c.id === connectionId && c.integration_key === 'whatsapp_web');
+        if (!visible) throw this.notWhatsapp();
+    }
+
+    /** Las etiquetas, grupos, flujos, goteos o campos de la cuenta (para elegirlos en el editor). */
+    async whatsOptions(tenantId: number, actor: WhatsappActor, connectionId: number, kind: WhatsLookupKind): Promise<WhatsLookupResult> {
+        await this.visibleWhatsConnection(tenantId, actor, connectionId);
+        const creds = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const conn = await this.connRow(tx, tenantId, connectionId);
+            if (!conn) throw this.notWhatsapp();
+            return this.whatsCredsInTx(tx, tenantId, conn);
+        });
+        return this.whats.options(creds, connectionId, kind);
+    }
+
+    /** Los permisos de la clave y lo que le falta a cada acción (para avisarlo en el editor). */
+    async whatsAbilities(tenantId: number, actor: WhatsappActor, connectionId: number): Promise<WhatsAbilitiesResult> {
+        await this.visibleWhatsConnection(tenantId, actor, connectionId);
+        const creds = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const conn = await this.connRow(tx, tenantId, connectionId);
+            if (!conn) throw this.notWhatsapp();
+            return this.whatsCredsInTx(tx, tenantId, conn);
+        });
+        const me = await this.whats.abilities(creds, connectionId);
+        if (me.error) return { abilities: [], missing: {}, error: me.error };
+        const missing: Record<string, string[]> = {};
+        for (const key of WHATS_ACTION_KEYS) {
+            const m = missingWhatsAbilities(key, me.abilities);
+            if (m.length > 0) missing[key] = m;
+        }
+        return { abilities: me.abilities, missing, error: null };
+    }
+
+    /**
+     * «Probar ahora» de las acciones de Whats que no mandan un mensaje: resuelve
+     * las variables con un registro real y muestra lo que haría. Sólo con
+     * `execute` lo hace de verdad (sobre el contacto de ESE registro).
+     */
+    async whatsActionTest(tenantId: number, actor: WhatsappActor, listIdOrSlug: string, input: WhatsActionTestInput): Promise<WhatsActionTestResult> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        await this.visibleWhatsConnection(tenantId, actor, input.connection_id);
+        const fields = await this.fields.listByListId(tenantId, list.id);
+        const sample = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            if (input.record_id) {
+                const row = await this.recordsRepo.findById(tx, tenantId, list.id, input.record_id);
+                return row && listRowInScope(list.settings, actor, 'view', { id: row.id, createdBy: row.createdBy, data: row.data }) ? row : null;
+            }
+            const [row] = await tx
+                .select({ id: records.id, data: records.data })
+                .from(records)
+                .where(andWhere(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), isNull(records.deletedAt)), listScopeWhere(list.settings, actor, 'view')))
+                .orderBy(desc(records.id))
+                .limit(1);
+            return row ?? null;
+        });
+        const data = (sample?.data ?? {}) as Record<string, unknown>;
+        const hidden = hiddenFieldsFor(list.settings, actor);
+        const merge = await this.mergerFor(tenantId, list, fields, data, sample?.id ?? 0, hidden);
+        const titleId = resolveTitleFieldId(fields, list.settings as Record<string, unknown>);
+        const rawTitle = titleId ? data[jsonbKeyForField(titleId)] : undefined;
+        const title = typeof rawTitle === 'string' ? rawTitle.trim() : '';
+        const prep = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const conn = await this.connRow(tx, tenantId, input.connection_id);
+            if (!conn) throw this.notWhatsapp();
+            return { conn, plan: await this.planWhatsInTx(tx, tenantId, conn, input.action_key, input.values as Record<string, unknown>, merge, title) };
+        });
+        const base = { sample_record_id: sample?.id ?? null };
+        if (!prep.plan.ok) return { ok: false, executed: false, summary: '', steps: [], outputs: {}, error: prep.plan.error, ...base };
+        const summary = describeWhatsPlan(prep.plan.plan);
+        if (!input.execute) return { ok: true, executed: false, summary, steps: [], outputs: {}, error: null, ...base };
+        const out = await this.whats.execute(prep.plan.creds, prep.conn.id, prep.plan.plan);
+        if (!out.ok && out.systemic) this.reportConnection(tenantId, prep.conn.id, prep.conn, out.message);
+        return { ok: out.ok, executed: true, summary: out.message, steps: out.steps, outputs: out.outputs, error: out.ok ? null : out.message, ...base };
     }
 }
 

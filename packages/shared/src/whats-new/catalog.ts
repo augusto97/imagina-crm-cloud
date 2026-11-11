@@ -2374,4 +2374,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.401-whats-acciones',
+        version: '0.1.401',
+        date: '2026-11-11',
+        kind: 'feature',
+        title: 'WhatsApp (Whats) ahora hace mucho más que enviar mensajes',
+        summary:
+            'Tus automatizaciones ahora crean o actualizan el contacto en Whats, le ponen etiquetas, lo suman a un grupo, le dejan notas, activan un flujo, lo inscriben en un goteo y responden su conversación. También envían una ubicación o una tarjeta de contacto.',
+        media: {
+            slides: [
+                {
+                    title: 'El contacto se encuentra por su teléfono',
+                    text: 'Cada acción busca el contacto con el teléfono del registro y, si todavía no está en Whats, lo crea con su nombre. Nada de copiar ids.',
+                    illustration: 'wab-was-conectar',
+                },
+                {
+                    title: 'Eliges de tu cuenta',
+                    text: 'Las etiquetas, los grupos, los flujos y los goteos aparecen para elegirlos con un toque. Las etiquetas que no existan se crean solas.',
+                    illustration: 'automation-whatsapp',
+                },
+                {
+                    title: 'Pruébalo antes de guardarlo',
+                    text: '«Ver qué haría» te muestra lo que va a pasar con un registro real, sin tocar Whats. Si a tu clave le falta un permiso, el editor te lo dice.',
+                    illustration: 'automation-whatsapp',
+                },
+            ],
+        },
+        body: 'En una automatización, toca **Añadir acción** y busca las de **WhatsApp (Whats)**: «Poner etiquetas en Whats», «Activar un flujo de Whats», «Responder en la conversación de Whats» y más.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];
