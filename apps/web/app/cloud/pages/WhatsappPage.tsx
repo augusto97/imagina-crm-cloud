@@ -28,6 +28,7 @@ import {
 import { Link, useParams } from 'react-router';
 
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
+import { IntegrationPermissions } from '@/cloud/components/IntegrationPermissions';
 import { CopyButton } from '@/cloud/components/payments/paymentUi';
 import { TemplateStatusBadge, WhatsappBubble, rejectedReasonText, templateCategoryLabel } from '@/cloud/components/whatsapp/whatsappUi';
 import { api } from '@/cloud/session';
@@ -340,7 +341,9 @@ function WhatsActionsAvailability({ connectionId }: { connectionId: number }): J
         staleTime: 60_000,
     });
     if (!q.data || q.data.error) return null;
-    const actions = INTEGRATIONS.find((i) => i.key === 'whatsapp_web')?.actions ?? [];
+    const def = INTEGRATIONS.find((i) => i.key === 'whatsapp_web');
+    const actions = def?.actions ?? [];
+    const groups = def?.auth.kind === 'key' ? (def.auth.permissions ?? []) : [];
     const blocked = actions.filter((a) => (q.data.missing[a.key] ?? []).length > 0);
     const abilities = [...new Set(blocked.flatMap((a) => q.data.missing[a.key] ?? []))];
     return (
@@ -363,6 +366,7 @@ function WhatsActionsAvailability({ connectionId }: { connectionId: number }): J
                     </p>
                 </>
             )}
+            {groups.length > 0 && <IntegrationPermissions className="imcrm-mt-3" groups={groups} granted={q.data.abilities} />}
         </div>
     );
 }

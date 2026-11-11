@@ -250,6 +250,10 @@ action_key, values}`. Las que trabajan sobre el contacto lo buscan por el
 teléfono (`recipient`) y lo crean si falta; `tags` y `group` van por nombre
 (con variables), `flow` y `drip` por id, y `variables`/`fields` son un JSON
 `{"clave": "{{slug}}"}`. No hay acción para mandar a grupos de WhatsApp.
+Desde v0.1.403 las mismas acciones, en el bloque `connectors`, traen también
+`outputs` (por ejemplo `trigger_flow` → `{{whats.contacto_id}}` y
+`{{whats.ejecucion_id}}`, el id de la ejecución del flujo para los pasos
+siguientes).
 
 Desde v0.1.402 también hay un disparador para lo que pasa en Whats:
 `trigger_type: "whats_event"` con `trigger_config {whats_event, connection_id?,

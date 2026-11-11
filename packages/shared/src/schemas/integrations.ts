@@ -6,6 +6,7 @@ import {
     type ConnectorAction,
     type ConnectorPair,
 } from './connector';
+import { WA_WEB_ABILITY_LABEL, WA_WEB_PERMISSION_GROUPS } from './whats-actions';
 
 /**
  * Integraciones (v0.1.203, ADR-S22 fase 4) — la galería de apps.
@@ -196,6 +197,20 @@ export interface IntegrationFieldDef {
     secret_slot: 'token' | 'signing_secret';
 }
 
+/**
+ * v0.1.403 — Un grupo de permisos de la clave (Whats): qué habilita y cómo se
+ * llama cada permiso en el panel del servicio. La ventana de conexión los
+ * muestra y, al revisar la clave, marca cuáles tiene.
+ */
+export interface IntegrationPermissionGroup {
+    key: string;
+    title: string;
+    help: string;
+    /** Necesarios para conectar; el resto, sólo para las funciones que los usan. */
+    required: boolean;
+    permissions: Array<{ key: string; label: string }>;
+}
+
 export type IntegrationAuth =
     | { kind: 'oauth'; provider: IntegrationProvider; scopes: string }
     | {
@@ -204,6 +219,8 @@ export type IntegrationAuth =
           how_to: string[];
           /** Mensaje de prueba real antes de guardar: a quién se le manda. */
           test?: { label: string; placeholder: string; help: string };
+          /** Los permisos que tiene que tener la clave, por lo que habilitan (v0.1.403). */
+          permissions?: IntegrationPermissionGroup[];
       };
 
 export interface IntegrationDef {
@@ -361,8 +378,6 @@ const emailParams: Array<Record<string, unknown>> = [
 const WAS_DEFAULT_SERVER = 'https://was.imagina.cloud';
 /** v0.1.389 — el servidor de la versión nueva de Imagina WAS (API v1). */
 export const WA_WEB_DEFAULT_SERVER = 'https://whats.imagina.cloud';
-/** Los permisos que necesita la clave de la versión nueva (se piden al crearla). */
-export const WA_WEB_KEY_ABILITIES = ['account.view', 'wa.accounts.view', 'wa.send', 'wa.read', 'webhooks.manage'] as const;
 
 /**
  * v0.1.401 — El conector completo de Whats: además de enviar mensajes y
@@ -480,7 +495,7 @@ const WHATS_EXTRA_ACTIONS: ConnectorAction[] = [
     action({
         key: 'trigger_flow',
         label: 'Activar un flujo de Whats',
-        description: 'Arranca para este contacto un flujo publicado y activo de Whats, con las variables que le pases.',
+        description: 'Arranca para este contacto un flujo publicado y activo de Whats, con las variables que le pases. Deja el id de la ejecución en {{whats.ejecucion_id}} para los pasos siguientes.',
         params: [
             WHATS_RECIPIENT,
             { key: 'flow', label: 'Flujo', type: 'select', required: true, help: 'Los flujos publicados de tu cuenta.' },
@@ -1024,10 +1039,18 @@ export const INTEGRATIONS: readonly IntegrationDef[] = [
             ],
             how_to: [
                 'Entra a tu panel de WhatsApp (whats.imagina.cloud) y conecta tu número, si todavía no lo hiciste, escaneando el código QR.',
-                `Ve a API Keys y crea una clave con estos permisos: ${WA_WEB_KEY_ABILITIES.join(', ')}.`,
-                'Pégala aquí y toca «Buscar mis cuentas» para elegir el número.',
+                'Ve a API Keys y crea una clave. Marca los permisos de «Conectar, enviar y recibir» (abajo están todos) y, si vas a usar acciones o disparadores de contactos, etiquetas, grupos, flujos, goteos o la bandeja, también los de esas secciones.',
+                'Pégala aquí y toca «Buscar mis cuentas»: elige el número y mira, abajo, qué permisos tiene la clave y cuáles le faltan.',
                 'Mándate un mensaje de prueba a tu propio número: si llega, quedó conectado. Al conectar registramos solos los avisos que nos dicen si cada mensaje se entregó o se leyó y nos traen los mensajes de tus clientes.',
+                'Si después quieres usar algo que pide más permisos, edita la clave en API Keys y toca «Actualizar clave» aquí: no hace falta crear otra conexión.',
             ],
+            permissions: WA_WEB_PERMISSION_GROUPS.map((g) => ({
+                key: g.key,
+                title: g.title,
+                help: g.help,
+                required: g.required,
+                permissions: g.abilities.map((a) => ({ key: a, label: WA_WEB_ABILITY_LABEL[a] ?? a })),
+            })),
             test: {
                 label: 'Número para el mensaje de prueba',
                 placeholder: '+573001234567',
@@ -2237,6 +2260,11 @@ export const verifyIntegrationResultSchema = z.object({
     options: z.record(z.array(z.object({ value: z.string(), label: z.string() }))),
     /** Se pidió un mensaje de prueba y el servicio lo aceptó. */
     test_sent: z.boolean().default(false),
+    /**
+     * v0.1.403 — Los permisos que tiene la clave, cuando el servicio los informa
+     * (Whats). `null` = no se sabe. La ventana marca con ellos los de `permissions`.
+     */
+    granted: z.array(z.string()).nullable().default(null),
 });
 export type VerifyIntegrationResult = z.infer<typeof verifyIntegrationResultSchema>;
 

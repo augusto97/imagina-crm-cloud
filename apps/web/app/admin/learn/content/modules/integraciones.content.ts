@@ -112,9 +112,9 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'En tu panel de Whats ve a **API Keys** y crea una clave. Marca los permisos de ver la cuenta, ver los números, enviar, leer los mensajes y manejar los avisos (webhooks).',
+                    'En tu panel de Whats ve a **API Keys** y crea una clave. Marca los permisos de ver la cuenta, ver los números, enviar, leer los mensajes y manejar los avisos (webhooks). Si vas a usar acciones o disparadores de contactos, etiquetas, grupos, flujos, goteos o la bandeja, marca también los suyos: la ventana de conexión los lista en **Permisos de la clave**, con lo que habilita cada uno.',
                     'En **Ajustes → Integraciones**, toca **Conectar** en **WhatsApp (Whats)** y pega la clave en **Clave de API**.',
-                    'Toca **Buscar mis cuentas** y elige tu número en **Número de WhatsApp**: aparecen todos los que tienes vinculados, con su estado. No hace falta copiar el «Account ID» de tu panel.',
+                    'Toca **Buscar mis cuentas** y elige tu número en **Número de WhatsApp**: aparecen todos los que tienes vinculados, con su estado. No hace falta copiar el «Account ID» de tu panel. En **Permisos de la clave** cada permiso queda tildado o marcado como faltante; **Copiar los que faltan** te deja la lista para marcarlos en tu panel.',
                     'En **Número para el mensaje de prueba** escribe tu propio número con indicativo (+57 300…) y toca **Enviar prueba**. Llega un WhatsApp real.',
                     'Si te llegó, toca **Conectar**. La app registra sola los avisos en tu cuenta de Whats.',
                     'Toca **Configurar WhatsApp** en la conexión, elige la lista donde caen los mensajes y toca **Preparar columnas**.',

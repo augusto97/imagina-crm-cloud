@@ -1,3 +1,4 @@
+import { missingWaWebPermissionGroups } from '@imagina-base/shared';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { redactValues } from '../connectors/connection-parts';
 import type { IntegrationCreds, IntegrationRequest, VerifyOutcome } from '../connectors/integration-calls';
@@ -101,6 +102,8 @@ export async function verifyWhatsappWeb(creds: IntegrationCreds): Promise<Verify
         const meErr = parseWaWebError(meRes.status, meRes.body);
         if (meErr) return fail(waWebErrorText(meErr));
         const me = parseWaWebMe(meRes.body);
+        // La ventana de conexión marca con esto qué permisos tiene la clave y cuáles le faltan.
+        out.granted = me.abilities;
         if (me.features.api === false) return fail('Tu plan de WhatsApp no incluye el acceso por API: pide que lo activen en tu cuenta de Whats.');
         if (me.features.wa === false) return fail('Tu plan de WhatsApp no incluye WhatsApp: pide que lo activen en tu cuenta de Whats.');
         if (!me.abilities.includes('wa.send')) {
@@ -111,6 +114,14 @@ export async function verifyWhatsappWeb(creds: IntegrationCreds): Promise<Verify
         if (missing.length > 0) {
             warnings.push(
                 `A la clave le faltan permisos: ${missing.map(waWebAbilityLabel).join(', ')}. Sin ellos no sabremos si cada mensaje se entregó o se leyó ni recibiremos los mensajes de tus clientes: márcalos en API Keys y actualiza la clave aquí.`,
+            );
+        }
+        // v0.1.403 — Los opcionales no bloquean, pero se dicen: sin ellos esas
+        // acciones (y los disparadores que traen sólo el contacto) fallan después.
+        const optional = missingWaWebPermissionGroups(me.abilities);
+        if (optional.length > 0) {
+            warnings.push(
+                `Para usar también ${joinEs(optional.map((g) => g.title.toLowerCase()))} en tus automatizaciones, a la clave le faltan permisos (la lista «Permisos de la clave» dice cuáles). Si no los vas a usar, no hace falta.`,
             );
         }
         const fields: Record<string, string> = { workspace: me.workspace ?? '', abilities: me.abilities.join(',') };
@@ -145,4 +156,9 @@ export async function verifyWhatsappWeb(creds: IntegrationCreds): Promise<Verify
         const message = redactValues(err instanceof Error ? err.message : String(err), [c.key]);
         return fail(`No pudimos comunicarnos con el servidor de WhatsApp (${message}). Revisa la dirección y prueba de nuevo en un momento.`);
     }
+}
+
+function joinEs(items: string[]): string {
+    if (items.length <= 1) return items.join('');
+    return `${items.slice(0, -1).join(', ')} y ${items[items.length - 1]}`;
 }

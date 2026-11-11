@@ -11,6 +11,7 @@ import type {
 import { CheckCircle2, ChevronDown, ChevronRight, Search, Send, X } from 'lucide-react';
 
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
+import { IntegrationPermissions } from '@/cloud/components/IntegrationPermissions';
 import { api } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,6 +52,7 @@ export function IntegrationKeyDialog({
         def.auth.kind === 'key' ? def.auth.fields.filter((f) => !f.hidden) : [];
     const howTo = def.auth.kind === 'key' ? def.auth.how_to : [];
     const testDef = def.auth.kind === 'key' ? (def.auth.test ?? null) : null;
+    const permissionGroups = def.auth.kind === 'key' ? (def.auth.permissions ?? []) : [];
     const [testTo, setTestTo] = useState('');
     const [sentTo, setSentTo] = useState<string | null>(null);
     const [values, setValues] = useState<Record<string, string>>(() =>
@@ -213,6 +215,19 @@ export function IntegrationKeyDialog({
                                 <li key={step}>{step}</li>
                             ))}
                         </ol>
+                    )}
+
+                    {permissionGroups.length > 0 && (
+                        <IntegrationPermissions
+                            className="imcrm-mt-3"
+                            groups={permissionGroups}
+                            granted={check?.granted ?? null}
+                            hint={
+                                editing
+                                    ? __('Toca «Buscar mis cuentas» para ver cuáles tiene la clave guardada.')
+                                    : __('Márcalos al crear la clave en tu panel. Al tocar «Buscar mis cuentas» te decimos cuáles tiene.')
+                            }
+                        />
                     )}
 
                     <form

@@ -136,7 +136,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { DocumentsService } from '../../documents/documents.service';
 import { ConnectorsService } from '../../connectors/connectors.service';
-import { assertWhatsappTemplateAction, whatsappSchema } from './whatsapp-ai';
+import { assertWhatsappTemplateAction, whatsActionOutputsForAi, whatsappSchema } from './whatsapp-ai';
 import { smsSchema } from './sms-ai';
 import { CommentsService } from '../../comments/comments.service';
 import { PublicListsService } from '../../public-lists/public-lists.service';
@@ -1586,6 +1586,11 @@ export class StructureTools implements AiProposalApplier {
                                 ...(p.help !== '' ? { help: p.help } : {}),
                                 options: p.options.map((o) => o.value),
                             })),
+                            // v0.1.403 — Whats: lo que deja cada acción ({{whats.x}}).
+                            // Sólo estaba en el bloque `whatsapp`, así que quien leía
+                            // las acciones aquí creía que «Activar un flujo» no
+                            // devolvía el id de la ejecución.
+                            ...(c.integration_key === 'whatsapp_web' ? whatsActionOutputsForAi(a.key) : {}),
                             // v0.1.365 — lo que deja la acción para los pasos
                             // siguientes (el asistente inventaba `{{respuestas.pago.url}}`).
                             ...(a.key === 'create_payment_link'

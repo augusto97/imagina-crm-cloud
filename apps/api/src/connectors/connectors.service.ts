@@ -1529,6 +1529,7 @@ export class ConnectorsService {
                 warning: null,
                 options: {},
                 test_sent: false,
+                granted: null,
             };
         }
         const outcome = await this.runVerify(key, creds);
@@ -1539,6 +1540,7 @@ export class ConnectorsService {
             warning: outcome.warning,
             options: outcome.options,
             test_sent: false,
+            granted: outcome.granted ?? null,
         };
         const to = (input.test_to ?? '').trim();
         if (!outcome.ok || to === '') return base;

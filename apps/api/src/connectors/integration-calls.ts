@@ -1246,6 +1246,8 @@ export interface VerifyOutcome {
      * la conexión (WooCommerce: cómo acepta la clave esa tienda).
      */
     fields?: Record<string, string>;
+    /** v0.1.403 — Los permisos de la clave, si el servicio los informa (Whats). */
+    granted?: string[];
 }
 
 export function parseVerify(
