@@ -49,6 +49,7 @@ import {
     type WooJson,
 } from './woocommerce/woo-map';
 import { WOO_PARENT_RESOURCE } from './woocommerce/woo-pack';
+import { releaseRedisLock } from '../redis/redis-lock';
 
 /**
  * Motor de sincronización con tiendas (v0.1.206, ADR-S24).
@@ -174,8 +175,8 @@ export class StoreSyncEngine {
     }
 
     async release(syncId: number, token: string): Promise<void> {
-        const current = await this.redis.get(this.lockKey(syncId));
-        if (current === token) await this.redis.del(this.lockKey(syncId));
+        // Leer y borrar en un paso: entre el GET y el DEL otro nodo podía tomarlo.
+        await releaseRedisLock(this.redis, this.lockKey(syncId), token);
     }
 
     // ── Corrida ─────────────────────────────────────────────────────────────

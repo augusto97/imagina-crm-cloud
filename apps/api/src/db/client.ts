@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { recordServerError } from '../observability/diagnostics';
+import { poolMax } from './pool-size';
 import * as schema from './schema';
 
 export type Db = NodePgDatabase<typeof schema>;
@@ -30,11 +31,6 @@ const logger = new Logger('Postgres');
  *  - `connectionTimeoutMillis`: si la base no acepta conexiones, el pedido
  *    falla en 10 s con un error claro en vez de esperar para siempre.
  */
-function poolMax(): number {
-    const n = Number(process.env.DB_POOL_MAX);
-    return Number.isInteger(n) && n >= 2 && n <= 200 ? n : 20;
-}
-
 /** Milisegundos de una variable de entorno (0 = sin tope); si no es válida, el default. */
 function envMs(name: string, fallback: number): number {
     const raw = process.env[name];
@@ -67,10 +63,13 @@ export function createPool(connectionString: string, timeouts: PoolTimeouts = {}
     const idleInTx = timeouts.idleInTransactionMs ?? envMs('DB_IDLE_IN_TX_TIMEOUT_MS', 120_000);
     const pool = new Pool({
         connectionString,
-        // v0.1.252 — configurable (DB_POOL_MAX). 20 por defecto: la API y los
-        // workers (automatizaciones, sincronizaciones, cobros) comparten el
-        // pool, y con 10 unos pocos tableros abiertos lo agotaban. Postgres
-        // acepta 100 conexiones por defecto: sobra para un nodo.
+        // v0.1.252 — configurable (DB_POOL_MAX). La API y los workers
+        // (automatizaciones, sincronizaciones, cobros) comparten el pool. El
+        // default pasó de 20 a 30: la concurrencia configurada de los workers
+        // suma ~60 y, aunque casi todo ese tiempo es red y no base, con 20 una
+        // ráfaga de trabajo en segundo plano dejaba a los pedidos esperando
+        // conexión. Postgres acepta 100 por defecto: 30 deja lugar para tres
+        // procesos (o API + workers separados con WORKERS=off).
         max: poolMax(),
         keepAlive: true,
         idleTimeoutMillis: 30_000,

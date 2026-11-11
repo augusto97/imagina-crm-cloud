@@ -40,6 +40,7 @@ import { HelpdeskQueue } from './helpdesk.queue';
 import { ByteBudget, imapErrorDiagnostic, type ImapFetched } from './imap-reader';
 import { bodyToRichDoc, parseInbound, stripQuotedReply, type InboundAttachment, type InboundMail } from './inbound-mail';
 import { planIncludesSql } from '../billing/plan-module-gate';
+import { releaseRedisLock } from '../redis/redis-lock';
 
 const SYSTEM_ACTOR: Actor = { userId: 0, role: 'admin' };
 /** Correos por vuelta (si hay más, se encola otra enseguida). */
@@ -180,8 +181,7 @@ export class HelpdeskIngestService {
             await this.runLocked(tenantId, mailboxId);
             return true;
         } finally {
-            const current = await this.redis.get(lockKey).catch(() => null);
-            if (current === token) await this.redis.del(lockKey).catch(() => undefined);
+            await releaseRedisLock(this.redis, lockKey, token);
         }
     }
 

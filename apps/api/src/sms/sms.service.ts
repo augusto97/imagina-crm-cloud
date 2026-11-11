@@ -43,7 +43,7 @@ import {
     type SmsStatus,
     type SmsTestSendInput,
 } from '@imagina-base/shared';
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
 import { ActivityService } from '../activity/activity.service';
 import { AiFieldsService } from '../ai-fields/ai-fields.service';
 import { AuditService } from '../audit/audit.service';
@@ -1074,29 +1074,7 @@ export class SmsService {
         const maxMs = opts.maxMs ?? 55_000;
         let done = 0;
         for (;;) {
-            const claimed = await this.db.execute<{ id: number; tenant_id: number; connection_id: number | null }>(sql`
-                UPDATE ${smsMessages} SET status = 'enviando', claimed_at = now(), attempts = attempts + 1, updated_at = now()
-                WHERE id IN (
-                    -- v0.1.393 — por turnos: como mucho unos pocos por empresa y conexión
-                    -- en cada tanda. Antes era por orden de llegada, y un envío masivo
-                    -- de 500 de una empresa (al ritmo de su proveedor) dejaba a las
-                    -- demás esperando detrás.
-                    SELECT id FROM ${smsMessages}
-                    WHERE id IN (
-                        SELECT q.id FROM (
-                            SELECT id, row_number() OVER (PARTITION BY tenant_id, connection_id ORDER BY id) AS rn
-                            FROM ${smsMessages}
-                            WHERE status = 'en_cola' OR (status = 'programado' AND send_after <= ${(opts.now ?? new Date()).toISOString()}::timestamptz)
-                        ) q
-                        WHERE q.rn <= ${PER_CONNECTION_PER_ROUND}
-                        ORDER BY q.rn, q.id
-                        LIMIT 40
-                    )
-                    FOR UPDATE SKIP LOCKED
-                )
-                RETURNING id, tenant_id, connection_id
-            `);
-            const rows = (claimed as unknown as { rows?: Array<{ id: number; tenant_id: number; connection_id: number | null }> }).rows ?? (claimed as unknown as Array<{ id: number; tenant_id: number; connection_id: number | null }>);
+            const rows = await this.claimBatch(opts.now);
             if (!rows || rows.length === 0) break;
             // En el orden en que se pidieron (el RETURNING no garantiza orden).
             rows.sort((a, b) => Number(a.id) - Number(b.id));
@@ -1127,6 +1105,44 @@ export class SmsService {
             }
         }
         return done;
+    }
+
+    /**
+     * Toma una tanda de SMS para mandar y los deja «enviando». Público para
+     * poder probar que dos nodos a la vez nunca toman el mismo.
+     */
+    async claimBatch(now?: Date): Promise<Array<{ id: number; tenant_id: number; connection_id: number | null }>> {
+        const at = (now ?? new Date()).toISOString();
+        // Lo que está para salir. La condición va TRES veces a propósito: en la
+        // ventana (elegir), al bloquear la fila y en el UPDATE. Con sólo la
+        // primera, si otro nodo confirmaba su reclamo entre la foto de esta
+        // consulta y el bloqueo, Postgres volvía a mirar únicamente `id IN (…)`
+        // (ya calculado) y la fila se tomaba dos veces: el SMS salía doble.
+        const due = (alias: SQL) => sql`(${alias}.status = 'en_cola' OR (${alias}.status = 'programado' AND ${alias}.send_after <= ${at}::timestamptz))`;
+        const claimed = await this.db.execute<{ id: number; tenant_id: number; connection_id: number | null }>(sql`
+            UPDATE ${smsMessages} AS u SET status = 'enviando', claimed_at = now(), attempts = attempts + 1, updated_at = now()
+            WHERE ${due(sql`u`)} AND u.id IN (
+                -- v0.1.393 — por turnos: como mucho unos pocos por empresa y conexión
+                -- en cada tanda. Antes era por orden de llegada, y un envío masivo
+                -- de 500 de una empresa (al ritmo de su proveedor) dejaba a las
+                -- demás esperando detrás.
+                SELECT m.id FROM ${smsMessages} m
+                WHERE ${due(sql`m`)} AND m.id IN (
+                    SELECT q.id FROM (
+                        SELECT id, row_number() OVER (PARTITION BY tenant_id, connection_id ORDER BY id) AS rn
+                        FROM ${smsMessages}
+                        WHERE status = 'en_cola' OR (status = 'programado' AND send_after <= ${at}::timestamptz)
+                    ) q
+                    WHERE q.rn <= ${PER_CONNECTION_PER_ROUND}
+                    ORDER BY q.rn, q.id
+                    LIMIT 40
+                )
+                FOR UPDATE OF m SKIP LOCKED
+            )
+            RETURNING u.id, u.tenant_id, u.connection_id
+        `);
+        const rows = (claimed as unknown as { rows?: Array<{ id: number; tenant_id: number; connection_id: number | null }> }).rows ?? (claimed as unknown as Array<{ id: number; tenant_id: number; connection_id: number | null }>);
+        return rows ?? [];
     }
 
     /** Manda UN SMS ya reclamado. Devuelve la pausa (ms) hasta el siguiente de su conexión. */

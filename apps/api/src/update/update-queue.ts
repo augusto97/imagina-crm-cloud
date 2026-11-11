@@ -8,6 +8,7 @@ import { CheckUpdatesService } from './check-updates.service';
 import { PostgresWalService } from './postgres-wal';
 import { UpdateManager } from './update-manager.service';
 import { UPDATE_QUEUE } from './update.types';
+import { createWorker, registerScheduler } from '../redis/queue-runtime';
 
 /**
  * Cola BullMQ de la auto-actualización (ADR-S13). Un solo worker (concurrency
@@ -43,7 +44,7 @@ export class UpdateQueue implements OnModuleInit, OnApplicationShutdown {
             };
             this.queue = new Queue(UPDATE_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de actualización con error: ${err.message}`));
-            this.worker = new Worker(
+            this.worker = createWorker(
                 UPDATE_QUEUE,
                 async (job) => {
                     if (job.name === 'check') return void (await this.checkUpdates.check());
@@ -60,31 +61,24 @@ export class UpdateQueue implements OnModuleInit, OnApplicationShutdown {
                 // 1 a la vez; lock largo (>30min) para no re-encolar el deploy en curso.
                 { connection: conn(), concurrency: 1, lockDuration: 1_900_000, maxStalledCount: 0 },
             );
-            this.worker.on('failed', (job, err) => {
+            this.worker?.on('failed', (job, err) => {
                 this.logger.error(`Update job ${job?.name} falló: ${err.message}`);
                 if (job?.name === 'snapshot' || job?.name === 'drive-upload') void this.backups.markFailed(err.message);
                 else if (job?.name !== 'check' && job?.name !== 'backups-tick' && job?.name !== 'server-health') void this.manager.markFailed(err.message);
             });
-            this.worker.on('error', (err) => this.logger.warn(`Worker de actualización con error: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de actualización con error: ${err.message}`));
 
             // Chequeo horario de releases (persiste en Redis → sobrevive reinicios).
             // SIN await: la conexión de BullMQ usa maxRetriesPerRequest:null, así
             // que si Redis no está disponible ahora este comando se encola y NO
             // debe bloquear el arranque del API. Se registra cuando Redis vuelve.
-            void this.queue
-                .upsertJobScheduler('update-check-hourly', { pattern: '0 * * * *' }, { name: 'check' })
-                .then(() => this.logger.log('Scheduler de chequeo horario registrado'))
-                .catch((err) => this.logger.warn(`No se pudo registrar el scheduler horario: ${String(err)}`));
+            registerScheduler(this.queue, 'update-check-hourly', { pattern: '0 * * * *' }, { name: 'check' }, this.logger);
             // v0.1.179 — tick horario de copias automáticas (a los :05, así no
             // compite con el chequeo de releases de las :00).
-            void this.queue
-                .upsertJobScheduler('backups-hourly', { pattern: '5 * * * *' }, { name: 'backups-tick' })
-                .catch((err) => this.logger.warn(`No se pudo registrar el scheduler de copias: ${String(err)}`));
+            registerScheduler(this.queue, 'backups-hourly', { pattern: '5 * * * *' }, { name: 'backups-tick' }, this.logger);
             // v0.1.337 — cada 15 min: que el archivado del WAL funcione (si se
             // traba, Postgres guarda todo y llena el disco) y que quede disco.
-            void this.queue
-                .upsertJobScheduler('server-health', { pattern: '10,25,40,55 * * * *' }, { name: 'server-health' })
-                .catch((err) => this.logger.warn(`No se pudo registrar la revisión del servidor: ${String(err)}`));
+            registerScheduler(this.queue, 'server-health', { pattern: '10,25,40,55 * * * *' }, { name: 'server-health' }, this.logger);
             this.logger.log('Cola de actualización lista');
         } catch (err) {
             this.logger.warn(`Auto-actualización deshabilitada (sin Redis): ${String(err)}`);

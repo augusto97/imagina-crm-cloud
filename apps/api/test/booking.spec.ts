@@ -856,6 +856,20 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         expect(appt!.remindersSent).toEqual(['rem24h', 'rem1h']);
     });
 
+    it('recordatorios con decenas de miles de agendas activas: la consulta no choca con el tope de parámetros de Postgres', async () => {
+        await freshPage();
+        await book({ staff: 'stfana', start: at(D, 10) });
+        await vi.waitFor(() => expect(mailbox.sent.length).toBe(1));
+        const now = new Date(Date.parse(at(D, 10)) - 23 * 3600_000);
+        // 20.000 recordatorios de otras agendas (80.000 parámetros con la lista
+        // VALUES de antes: Postgres rechazaba la consulta y no salía ninguno).
+        const specs = Array.from({ length: 20_000 }, (_, i) => ({ pageId: 9_000_000 + i, id: 'rem24h', minutes: 1440, needsEmail: true }));
+        specs.push({ pageId, id: 'rem24h', minutes: 1440, needsEmail: true });
+        const due = await (reminders as unknown as { dueAppointmentIds(s: typeof specs, n: Date): Promise<number[]> }).dueAppointmentIds(specs, now);
+        const [appt] = await appointments();
+        expect(due).toEqual([Number(appt!.id)]);
+    });
+
     it('recordatorios con más de 200 citas en la ventana: el que toca sale igual (v0.1.393)', async () => {
         await freshPage();
         await book({ staff: 'stfana', start: at(D, 10) });

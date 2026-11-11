@@ -6,6 +6,7 @@ import { guardRedis } from '../redis/redis.util';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { DASHBOARD_REPORTS_QUEUE, DashboardSubscriptionScheduler, SEND_JOB } from './dashboard-subscription-scheduler';
 import { DashboardSubscriptionsService } from './dashboard-subscriptions.service';
+import { createWorker, workersEnabled } from '../redis/queue-runtime';
 
 /**
  * v0.1.292 (ADR-S50) — Cola y worker de los envíos programados de tableros.
@@ -35,7 +36,7 @@ export class DashboardSubscriptionsQueue implements OnModuleInit, OnApplicationS
             };
             this.queue = new Queue(DASHBOARD_REPORTS_QUEUE, { connection: conn(), defaultJobOptions: { removeOnComplete: 100, removeOnFail: 500 } });
             this.queue.on('error', (err) => this.logger.warn(`Cola de envíos de tableros con error: ${err.message}`));
-            this.worker = new Worker(
+            this.worker = createWorker(
                 DASHBOARD_REPORTS_QUEUE,
                 async (job) => {
                     if (job.name !== SEND_JOB) return;
@@ -44,14 +45,16 @@ export class DashboardSubscriptionsQueue implements OnModuleInit, OnApplicationS
                 },
                 { connection: conn(), concurrency: 2 },
             );
-            this.worker.on('failed', (job, err) => this.logger.error(`Envío de tablero ${job?.id} falló: ${err.message}`));
-            this.worker.on('error', (err) => this.logger.warn(`Worker de envíos de tableros con error: ${err.message}`));
+            this.worker?.on('failed', (job, err) => this.logger.error(`Envío de tablero ${job?.id} falló: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de envíos de tableros con error: ${err.message}`));
             this.scheduler.setQueue(this.queue);
             // Re-registra los horarios en segundo plano (no demora el arranque).
-            void this.subscriptions
-                .resyncSchedules()
-                .then((n) => n > 0 && this.logger.log(`Horarios de envíos de tableros sincronizados: ${n}`))
-                .catch((err) => this.logger.warn(`No se pudieron sincronizar los envíos de tableros: ${String(err)}`));
+            if (workersEnabled()) {
+                void this.subscriptions
+                    .resyncSchedules()
+                    .then((n) => n > 0 && this.logger.log(`Horarios de envíos de tableros sincronizados: ${n}`))
+                    .catch((err) => this.logger.warn(`No se pudieron sincronizar los envíos de tableros: ${String(err)}`));
+            }
             // Cambiar la zona de la empresa mueve los envíos sin zona propia.
             this.timeZones?.onChange((tenantId) => this.subscriptions.resyncTenantSchedules(tenantId));
         } catch (err) {

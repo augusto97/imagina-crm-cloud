@@ -8,6 +8,7 @@ import { bookingAppointments, bookingPages } from '../db/schema';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import { readBookingConfig } from './booking-config';
 import { BookingPublicService } from './booking-public.service';
+import { createWorker, registerScheduler } from '../redis/queue-runtime';
 
 const QUEUE = 'booking-reminders';
 /** Recordatorios hasta dos semanas antes (el máximo que deja configurar la página). */
@@ -58,7 +59,7 @@ export class BookingRemindersService implements OnModuleInit, OnApplicationShutd
             this.queue = new Queue(QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de recordatorios de citas con error: ${err.message}`));
             // v0.1.353 — en el mismo barrido vencen las citas por confirmar que nadie decidió.
-            this.worker = new Worker(
+            this.worker = createWorker(
                 QUEUE,
                 async () => {
                     await this.tick();
@@ -68,9 +69,9 @@ export class BookingRemindersService implements OnModuleInit, OnApplicationShutd
                 },
                 { connection: conn() },
             );
-            this.worker.on('failed', (_job, err) => this.logger.error(`Recordatorios de citas fallaron: ${err.message}`));
-            this.worker.on('error', (err) => this.logger.warn(`Worker de recordatorios de citas con error: ${err.message}`));
-            await this.queue.upsertJobScheduler('booking-reminders', { every: 60_000 }, { name: 'tick', data: {} });
+            this.worker?.on('failed', (_job, err) => this.logger.error(`Recordatorios de citas fallaron: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de recordatorios de citas con error: ${err.message}`));
+            registerScheduler(this.queue, 'booking-reminders', { every: 60_000 }, { name: 'tick', data: {} }, this.logger);
         } catch (err) {
             this.logger.warn(`Recordatorios de citas deshabilitados (sin Redis): ${String(err)}`);
         }
@@ -138,14 +139,15 @@ export class BookingRemindersService implements OnModuleInit, OnApplicationShutd
 
     /** Las citas con al menos un recordatorio vencido y sin enviar, las más próximas primero. */
     private async dueAppointmentIds(specs: ReminderSpec[], now: Date): Promise<number[]> {
-        const values = sql.join(
-            specs.map((r) => sql`(${r.pageId}::bigint, ${r.id}::text, ${r.minutes}::int, ${r.needsEmail}::boolean)`),
-            sql`, `,
-        );
+        // Los recordatorios viajan en UN parámetro (JSON). Antes iban como una
+        // lista `VALUES` con 4 parámetros por recordatorio: pasados ~16.000
+        // (páginas × recordatorios de toda la plataforma) Postgres rechazaba la
+        // consulta —el tope es 65.535 parámetros— y dejaban de salir TODOS.
+        const specsJson = JSON.stringify(specs.map((r) => ({ page_id: r.pageId, rem_id: r.id, minutes: r.minutes, needs_email: r.needsEmail })));
         const res = await this.db.execute<{ id: number }>(sql`
             SELECT a.id, MIN(a.start_at) AS start_at
             FROM booking_appointments a
-            JOIN (VALUES ${values}) AS v(page_id, rem_id, minutes, needs_email) ON v.page_id = a.page_id
+            JOIN jsonb_to_recordset(${specsJson}::jsonb) AS v(page_id bigint, rem_id text, minutes int, needs_email boolean) ON v.page_id = a.page_id
             WHERE a.status IN (${sql.join(LIVE_STATUSES.map((st) => sql`${st}`), sql`, `)})
               AND a.start_at > ${now}
               AND a.start_at <= ${now}::timestamptz + make_interval(mins => v.minutes)

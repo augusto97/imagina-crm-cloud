@@ -734,6 +734,37 @@ describe('SMS — Twilio, BulkGate, Infobip, LabsMobile y Onurix (ADR-S82)', () 
         expect(sent).toHaveLength(0);
     });
 
+    it('dos nodos a la vez nunca toman el mismo SMS (el reclamo vuelve a mirar el estado al bloquear la fila)', async () => {
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(smsMessages).values(
+                Array.from({ length: 150 }, (_, i) => ({
+                    tenantId,
+                    connectionId: null,
+                    provider: 'sms_twilio',
+                    source: 'bulk' as const,
+                    toPhone: '+573001112233',
+                    body: 'Hola',
+                    segments: 1,
+                    encoding: 'gsm7' as const,
+                    status: 'en_cola' as const,
+                    reference: `scarrera${String(i).padStart(4, '0')}`,
+                })),
+            ),
+        );
+        const taken: number[] = [];
+        const claimer = async () => {
+            for (;;) {
+                const rows = await svc.claimBatch();
+                if (rows.length === 0) return;
+                taken.push(...rows.map((r) => Number(r.id)));
+            }
+        };
+        await Promise.all(Array.from({ length: 12 }, claimer));
+        expect(new Set(taken).size).toBe(150);
+        expect(taken).toHaveLength(150);
+        await pg.pool.query(`DELETE FROM sms_messages WHERE reference LIKE 'scarrera%'`);
+    });
+
     // ── Permisos, asistente y RLS ───────────────────────────────────────
 
     it('permisos: mandar exige poder editar el registro; el teléfono oculto no se usa; la página de la conexión es de quien la edita', async () => {

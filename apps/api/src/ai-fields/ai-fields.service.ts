@@ -45,6 +45,7 @@ import {
     parseAiFieldAnswer,
     type AiFieldInput,
 } from './ai-field-prompt';
+import { createWorker } from '../redis/queue-runtime';
 
 /** Archivos que se le pasan al modelo por campo, y su tamaño máximo. */
 const MAX_FILES = 3;
@@ -136,7 +137,7 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
             };
             this.queue = new Queue(QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de campos con IA con error: ${err.message}`));
-            this.worker = new Worker(
+            this.worker = createWorker(
                 QUEUE,
                 async (job) => {
                     const d = job.data as AiFieldJob;
@@ -144,7 +145,7 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
                 },
                 { connection: conn(), concurrency: 2 },
             );
-            this.worker.on('error', (err) => this.logger.warn(`Worker de campos con IA con error: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de campos con IA con error: ${err.message}`));
         } catch (err) {
             this.logger.warn(`Campos con IA en segundo plano deshabilitados (sin Redis): ${String(err)}`);
         }

@@ -3,6 +3,7 @@ import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
+import { addDedupedJob, createWorker, registerScheduler } from '../redis/queue-runtime';
 
 export const HELPDESK_QUEUE = 'helpdesk';
 const TICK_JOB = 'tick';
@@ -48,21 +49,14 @@ export class HelpdeskQueue {
     enqueuePoll(tenantId: number, mailboxId: number, delayMs = 0): void {
         if (!this.queue) return;
         const data: HelpdeskPollJob = { tenantId, mailboxId };
-        this.queue
-            .add('poll', data, {
-                jobId: `poll-${mailboxId}${delayMs > 0 ? '-later' : ''}`,
-                delay: delayMs,
-                removeOnComplete: true,
-                removeOnFail: 100,
-            })
+        addDedupedJob(this.queue, 'poll', data, { jobId: `poll-${mailboxId}${delayMs > 0 ? '-later' : ''}`, delay: delayMs })
             .catch((err) => this.logger.error(`No se pudo encolar la lectura del buzón #${mailboxId}: ${String(err)}`));
     }
 
     enqueueSlaList(tenantId: number, listId: number): void {
         if (!this.queue) return;
         const data: HelpdeskSlaListJob = { tenantId, listId };
-        this.queue
-            .add('sla-list', data, { jobId: `sla-list-${listId}`, delay: 500, removeOnComplete: true, removeOnFail: 100 })
+        addDedupedJob(this.queue, 'sla-list', data, { jobId: `sla-list-${listId}`, delay: 500 })
             .catch((err) => this.logger.error(`No se pudo encolar el SLA de la lista #${listId}: ${String(err)}`));
     }
 }
@@ -99,7 +93,7 @@ export class HelpdeskQueueBootstrap implements OnModuleInit, OnApplicationShutdo
             };
             this.queue = new Queue(HELPDESK_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de la mesa de ayuda con error: ${err.message}`));
-            this.worker = new Worker(
+            this.worker = createWorker(
                 HELPDESK_QUEUE,
                 async (job) => {
                     if (!this.handlers) return;
@@ -118,10 +112,10 @@ export class HelpdeskQueueBootstrap implements OnModuleInit, OnApplicationShutdo
                 },
                 { connection: conn(), concurrency: this.env.HELPDESK_POLL_CONCURRENCY, lockDuration: 5 * 60_000 },
             );
-            this.worker.on('failed', (job, err) => this.logger.error(`Mesa de ayuda: ${job?.name} ${job?.id} falló: ${err.message}`));
-            this.worker.on('error', (err) => this.logger.warn(`Worker de la mesa de ayuda con error: ${err.message}`));
+            this.worker?.on('failed', (job, err) => this.logger.error(`Mesa de ayuda: ${job?.name} ${job?.id} falló: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de la mesa de ayuda con error: ${err.message}`));
             this.dispatcher.setQueue(this.queue);
-            await this.queue.upsertJobScheduler(TICK_JOB, { every: 60_000 }, { name: TICK_JOB, data: {} });
+            registerScheduler(this.queue, TICK_JOB, { every: 60_000 }, { name: TICK_JOB, data: {} }, this.logger);
             this.logger.log('Cola de la mesa de ayuda lista');
         } catch (err) {
             this.logger.warn(`Mesa de ayuda sin cola (sin Redis): ${String(err)}`);

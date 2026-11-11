@@ -712,6 +712,29 @@ describe('v0.1.350 — calendario de cada persona, videollamada y sincronizació
         await vi.waitFor(() => expect(mailbox.sent.some((m) => /cancelada/.test(m.subject))).toBe(true));
     });
 
+    it('con más calendarios que el tope de una vuelta, la siguiente sigue donde quedó (nadie queda sin revisar)', async () => {
+        await freshPage();
+        await book({ staff: 'stfana', start: at(D, 8) });
+        await book({ staff: 'stfbeto', start: at(D, 14) });
+        await vi.waitFor(async () => {
+            const all = await appointments();
+            expect(all.filter((a) => a.externalEvent?.event_id)).toHaveLength(2);
+        });
+        // Los dos borran su evento: uno en Google, el otro en Outlook.
+        const google = (await appointments()).find((a) => a.externalEvent?.provider === 'google_calendar')!;
+        const ev = api.g.get(google.externalEvent!.event_id)!;
+        ev.status = 'cancelled';
+        ev.updated = Date.now();
+        api.o.clear();
+        // Una vuelta con lugar para UN calendario, y después otra.
+        const r1 = await sync.tick(new Date(), { maxGroups: 1 });
+        expect(r1.cancelled).toBe(1);
+        expect((await appointments()).filter((a) => a.status === 'cancelled')).toHaveLength(1);
+        const r2 = await sync.tick(new Date(), { maxGroups: 1 });
+        expect(r2.cancelled).toBe(1);
+        expect((await appointments()).filter((a) => a.status === 'cancelled')).toHaveLength(2);
+    });
+
     it('lo que mueve la propia app (el cliente reprograma) no se toma por un cambio de quien atiende', async () => {
         await freshPage();
         const res = await book({ staff: 'stfana', start: at(D, 8) });

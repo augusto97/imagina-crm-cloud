@@ -5,6 +5,7 @@ import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { REDIS } from '../redis/redis.module';
+import { withRedisLock } from '../redis/redis-lock';
 
 /**
  * v0.1.393 — Retención de las tablas que crecían sin tope. Con miles de
@@ -89,16 +90,15 @@ export class RetentionService implements OnModuleInit, OnApplicationShutdown {
 
     /** Una vuelta (en un solo nodo). Devuelve cuántas filas se borraron por tabla. */
     async tick(): Promise<Record<string, number> | null> {
-        const got = await this.redis.set(LOCK_KEY, String(process.pid), 'EX', LOCK_TTL_S, 'NX').catch(() => 'OK');
-        if (got !== 'OK') return null;
-        try {
-            const out = await pruneTables(this.db);
-            const total = Object.values(out).reduce((a, b) => a + b, 0);
-            if (total > 0) this.logger.log(`Retención: ${Object.entries(out).filter(([, n]) => n > 0).map(([t, n]) => `${t} ${n}`).join(', ')}.`);
-            return out;
-        } finally {
-            await this.redis.del(LOCK_KEY).catch(() => undefined);
-        }
+        // Candado con dueño y renovado: un error de Redis no cuenta como tomado
+        // (antes, con Redis fallando, todos los nodos borraban a la vez).
+        const out = await withRedisLock(this.redis, LOCK_KEY, LOCK_TTL_S, async () => {
+            const res = await pruneTables(this.db);
+            const total = Object.values(res).reduce((a, b) => a + b, 0);
+            if (total > 0) this.logger.log(`Retención: ${Object.entries(res).filter(([, n]) => n > 0).map(([t, n]) => `${t} ${n}`).join(', ')}.`);
+            return res;
+        });
+        return out.ran ? out.result : null;
     }
 }
 
