@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Optional } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Optional } from '@nestjs/common';
 import {
     type BillingStatus,
     type BillingSummary,
@@ -13,6 +13,7 @@ import type { Tx } from '../db/client';
 import { attachments, automations, memberships, records, tenants } from '../db/schema';
 import { EmailQuotaService } from '../mail/email-quota.service';
 import { TenantSmtpService } from '../mail/tenant-smtp.service';
+import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { PlansService } from './plans.service';
 import { accessOf } from './tenant-access';
@@ -25,6 +26,49 @@ export function readLapsedFrom(settings: unknown): { plan: string; at: string } 
     return typeof from_plan === 'string' && typeof at === 'string' ? { plan: from_plan, at } : null;
 }
 
+/**
+ * Lo que el tope de registros necesita de Redis (un subconjunto de ioredis,
+ * para poder probarlo con un doble). Ver `BillingService.farFromRecordLimit`.
+ */
+export interface RecordCountStore {
+    eval(script: string, numKeys: number, ...args: (string | number)[]): Promise<unknown>;
+    set(key: string, value: string, mode: 'EX', seconds: number): Promise<unknown>;
+}
+
+/** Cuánto vale el conteo guardado de una empresa. */
+export const RECORD_COUNT_TTL_SECONDS = 60;
+/** Cuánto se recuerda un lote que está por entrar (import, sincronización). */
+export const RECORD_BULK_TTL_SECONDS = 300;
+/** Desde cuántas altas un chequeo cuenta como lote. */
+const RECORD_BULK_FROM = 50;
+
+/**
+ * Margen bajo el tope dentro del cual SIEMPRE se cuenta de verdad y con las
+ * altas en fila. Cubre lo que el conteo guardado puede no haber visto: altas
+ * de otros servidores que todavía no confirmaron cuando se contó.
+ */
+export function recordLimitMargin(limit: number): number {
+    return Math.max(250, Math.ceil(limit * 0.02));
+}
+
+export const recordCountKey = (tenantId: number): string => `planrec:n:${tenantId}`;
+export const recordBulkKey = (tenantId: number): string => `planrec:bulk:${tenantId}`;
+
+/**
+ * Suma `n` al conteo guardado SÓLO si existe (sin conteo no hay nada que
+ * sumar: toca contar) y devuelve conteo + lotes por entrar; -1 si no existe.
+ */
+const RESERVE_LUA = `
+if redis.call('EXISTS', KEYS[1]) == 0 then return -1 end
+local v = redis.call('INCRBY', KEYS[1], ARGV[1])
+local b = tonumber(redis.call('GET', KEYS[2]) or '0')
+return v + b`;
+
+const BULK_LUA = `
+local v = redis.call('INCRBY', KEYS[1], ARGV[1])
+redis.call('EXPIRE', KEYS[1], ARGV[2])
+return v`;
+
 @Injectable()
 export class BillingService {
     constructor(
@@ -36,7 +80,55 @@ export class BillingService {
         // service a mano sigueran compilando; en la app siempre están.
         @Optional() private readonly aiQuota?: AiQuotaService,
         @Optional() private readonly aiSettings?: AiSettingsService,
+        // Conteo de registros por empresa para no contar la tabla en cada alta.
+        // Opcional: sin Redis se cuenta siempre, como antes.
+        @Optional() @Inject(REDIS) private readonly redis?: RecordCountStore,
     ) {}
+
+    /**
+     * ¿La empresa está LEJOS del tope? Lo responde un conteo guardado en Redis
+     * (compartido entre servidores, 60 s) al que cada alta le suma lo suyo de
+     * forma atómica. Cerca del tope —dentro del margen— devuelve false y quien
+     * llama cuenta de verdad. El conteo guardado sólo puede quedarse CORTO por
+     * altas que no confirmaron cuando se contó (decenas, el margen las cubre):
+     * las bajas lo dejan de más (más conteos exactos, nunca menos) y los lotes
+     * se anotan aparte antes de insertarse (`noteBulk`).
+     * Sin Redis, o si falla, false: se cuenta.
+     */
+    private async farFromRecordLimit(tenantId: number, limit: number, additional: number): Promise<boolean> {
+        if (!this.redis) return false;
+        const margin = recordLimitMargin(limit);
+        if (limit <= margin) return false;
+        try {
+            const v = Number(await this.redis.eval(RESERVE_LUA, 2, recordCountKey(tenantId), recordBulkKey(tenantId), String(additional)));
+            return Number.isFinite(v) && v >= 0 && v <= limit - margin;
+        } catch {
+            return false;
+        }
+    }
+
+    /** Guarda el conteo exacto recién hecho (más lo que está por entrar). */
+    private async rememberRecordCount(tenantId: number, count: number): Promise<void> {
+        if (!this.redis) return;
+        try {
+            await this.redis.set(recordCountKey(tenantId), String(count), 'EX', RECORD_COUNT_TTL_SECONDS);
+        } catch {
+            /* sin Redis se cuenta la próxima vez */
+        }
+    }
+
+    /**
+     * Un lote pasó el chequeo y está por insertarse: hasta que entre (y un
+     * conteo lo vea) las altas sueltas lo descuentan del lugar disponible.
+     */
+    private async noteBulk(tenantId: number, additional: number): Promise<void> {
+        if (!this.redis) return;
+        try {
+            await this.redis.eval(BULK_LUA, 1, recordBulkKey(tenantId), String(additional), String(RECORD_BULK_TTL_SECONDS));
+        } catch {
+            /* idem */
+        }
+    }
 
     async summary(tenantId: number): Promise<BillingSummary> {
         const row = await this.planStatus(tenantId);
@@ -109,6 +201,10 @@ export class BillingService {
      * conexión con ésta ocupada (y con el pool lleno, se trancarían).
      */
     async assertRecordRoomInTx(tx: Tx, tenantId: number, cap: { limit: number; plan: Plan }, additional = 1): Promise<void> {
+        // Lejos del tope no hace falta ni la fila ni contar la tabla entera
+        // de la empresa en cada alta (era O(registros) con todas las altas de
+        // la empresa esperando). Cerca del tope, todo como siempre.
+        if (await this.farFromRecordLimit(tenantId, cap.limit, Math.max(1, additional))) return;
         await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`records-limit:${tenantId}`}, 0))`);
         const count = await this.countRecords(tx, tenantId);
         // C6 — una plantilla crea el registro y sus subtareas en una
@@ -123,6 +219,7 @@ export class BillingService {
                 data: { status: 403, errors: { plan: 'límite de registros' } },
             });
         }
+        await this.rememberRecordCount(tenantId, count + Math.max(1, additional));
     }
 
     /**
@@ -145,6 +242,8 @@ export class BillingService {
         const { plan } = await this.planStatus(tenantId);
         const limit = (await this.plans.limits(plan)).max_records;
         if (limit === null) return;
+        const bulk = additional >= RECORD_BULK_FROM;
+        if (!bulk && (await this.farFromRecordLimit(tenantId, limit, additional))) return;
         const count = await this.tenantDb.withTenant(tenantId, (tx) => this.countRecords(tx, tenantId));
         if (count + additional > limit) {
             throw new ForbiddenException({
@@ -153,6 +252,8 @@ export class BillingService {
                 data: { status: 403, errors: { plan: 'límite de registros' } },
             });
         }
+        if (bulk) await this.noteBulk(tenantId, additional);
+        else await this.rememberRecordCount(tenantId, count + additional);
     }
 
     /**
