@@ -225,7 +225,9 @@ export class QueueRuntimeLifecycle implements OnApplicationBootstrap, BeforeAppl
         }
         const total = workerConcurrencyTotal();
         const pool = poolMax();
-        if (total > pool) {
+        // Los workers pasan casi todo su tiempo en la red, no en la base: sólo se avisa cuando la suma
+        // supera con holgura al pool (con los valores por defecto no avisa).
+        if (total > pool * 2.5) {
             logger.warn(
                 `La concurrencia de los workers suma ${total} y el pool de la base tiene ${pool} conexiones (DB_POOL_MAX). ` +
                     'Bajo carga, el trabajo en segundo plano puede dejar esperando a los pedidos: sube DB_POOL_MAX o separa los workers (WORKERS=off en el proceso del API).',

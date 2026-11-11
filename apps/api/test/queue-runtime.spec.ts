@@ -242,12 +242,12 @@ describe('Colas: piezas comunes (Redis real)', () => {
 
     it('al arrancar avisa si la concurrencia de los workers supera el pool de la base', () => {
         const prev = process.env.DB_POOL_MAX;
-        process.env.DB_POOL_MAX = '5';
+        process.env.DB_POOL_MAX = '3';
         const w = createWorker(qname(), async () => undefined, { connection: conn(), concurrency: 9, autorun: false })!;
         const warns: string[] = [];
         const spy = vi.spyOn(Logger.prototype, 'warn').mockImplementation((m: unknown) => void warns.push(String(m)));
         new QueueRuntimeLifecycle().onApplicationBootstrap();
-        expect(warns.some((m) => /suma 9/.test(m) && /5 conexiones/.test(m))).toBe(true);
+        expect(warns.some((m) => /suma 9/.test(m) && /3 conexiones/.test(m))).toBe(true);
         warns.length = 0;
         process.env.DB_POOL_MAX = '50';
         new QueueRuntimeLifecycle().onApplicationBootstrap();
