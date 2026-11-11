@@ -181,7 +181,7 @@ export class ImportUpdateService {
                 continue;
             }
             try {
-                const saved = await this.records.update(tenantId, actor, String(ctx.list.id), p.recordId, { data: p.patch }, { silent: true });
+                const saved = await this.records.update(tenantId, actor, String(ctx.list.id), p.recordId, { data: p.patch }, { silent: true, lean: true });
                 const after: Record<string, unknown> = {};
                 for (const key of Object.keys(p.patch)) after[key] = (saved.data as Record<string, unknown>)[key] ?? null;
                 items.push({ recordId: p.recordId, title: p.title, before: p.before, after });

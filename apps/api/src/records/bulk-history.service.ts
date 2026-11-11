@@ -288,7 +288,7 @@ export class BulkHistoryService {
         force: boolean,
     ): Promise<BulkRevertResult> {
         const result: BulkRevertResult = { reverted: 0, conflicts: 0, failed: [] };
-        const { rows, fields } = await this.currentRows(tenantId, actor, edit.listId, items);
+        const { rows, fields, list } = await this.currentRows(tenantId, actor, edit.listId, items);
         const byId = new Map(fields.map((f) => [f.id, f]));
         const done: number[] = [];
         for (const item of items) {
@@ -303,7 +303,7 @@ export class BulkHistoryService {
             }
             // Sólo lo que la edición cambió; lo demás de la fila no se toca.
             try {
-                await this.records.update(tenantId, actor, String(edit.listId), row.id, { data: item.before }, { silent: true });
+                await this.records.update(tenantId, actor, String(edit.listId), row.id, { data: item.before }, { silent: true, lean: true, prepared: { list, fields } });
                 done.push(item.id);
                 result.reverted++;
             } catch (err) {

@@ -67,6 +67,9 @@ export interface ThroughPlan {
 export interface ThroughFieldsSource {
     listByListIdWithinTx(tx: Tx, tenantId: number, listId: number): Promise<Field[]>;
     findAnyByIdWithinTx(tx: Tx, tenantId: number, fieldId: number): Promise<Field | null>;
+    /** Opcionales: lo mismo de a varios, en una consulta (sin ellos se pide de a uno). */
+    findAnyByIdsWithinTx?(tx: Tx, tenantId: number, fieldIds: number[]): Promise<Field[]>;
+    listByListIdsWithinTx?(tx: Tx, tenantId: number, listIds: number[]): Promise<Map<number, Field[]>>;
 }
 
 /** Vinculados por registro que trae un lookup (el resto no se muestra). */
@@ -134,11 +137,68 @@ export class ThroughEngine {
      * del otro lado. Lo que no resuelve se SALTA (el campo sale vacío) — una
      * relación borrada no puede tumbar el listado entero.
      */
-    async plans(tx: Tx, tenantId: number, listId: number, fields: Field[]): Promise<ThroughPlan[]> {
+    /**
+     * Planes ya resueltos en ESTA transacción para ESTE arreglo de campos. Un
+     * mismo pedido los necesita varias veces (lo oculto para quien pide, los
+     * valores de lookup/rollup, las fórmulas): antes cada una volvía a leer las
+     * relaciones y los campos de las otras listas. Vive lo que vive la
+     * transacción (no es una caché entre pedidos: un cambio de campos se ve en
+     * el pedido siguiente) y sólo vale para el MISMO arreglo, así que releer
+     * los campos dentro de la transacción calcula de nuevo.
+     */
+    private readonly memo = new WeakMap<object, WeakMap<Field[], Promise<ThroughPlan[]>>>();
+
+    plans(tx: Tx, tenantId: number, listId: number, fields: Field[]): Promise<ThroughPlan[]> {
+        if (!fields.some((f) => isThroughField(f.type))) return Promise.resolve([]);
+        let byFields = this.memo.get(tx);
+        if (!byFields) {
+            byFields = new WeakMap();
+            this.memo.set(tx, byFields);
+        }
+        let hit = byFields.get(fields);
+        if (!hit) {
+            hit = this.resolvePlans(tx, tenantId, listId, fields);
+            byFields.set(fields, hit);
+            // Un fallo no se recuerda (la transacción igual queda abortada).
+            hit.catch(() => byFields.delete(fields));
+        }
+        // Copia: quien recibe el arreglo puede filtrarlo sin tocar el guardado.
+        return hit.then((plans) => [...plans]);
+    }
+
+    private async resolvePlans(tx: Tx, tenantId: number, listId: number, fields: Field[]): Promise<ThroughPlan[]> {
         const through = fields.filter((f) => isThroughField(f.type));
         if (through.length === 0) return [];
         const relCache = new Map<number, Field | null>();
         const listFields = new Map<number, Field[]>([[listId, fields]]);
+        // Las relaciones de ESTA lista ya están en `fields`; las de otras
+        // listas (relación hacia adentro) y los campos del otro lado se piden
+        // de una vez: antes era una consulta por relación y otra por lista.
+        const own = new Map(fields.map((f) => [f.id, f]));
+        const relIds = [...new Set(through.map((f) => asId((f.config as { relation_field_id?: unknown }).relation_field_id)).filter((id): id is number => id !== null))];
+        for (const id of relIds) {
+            const mine = own.get(id);
+            if (mine) relCache.set(id, mine);
+        }
+        const foreign = relIds.filter((id) => !relCache.has(id));
+        if (foreign.length > 1 && this.fields.findAnyByIdsWithinTx) {
+            const found = new Map((await this.fields.findAnyByIdsWithinTx(tx, tenantId, foreign)).map((f) => [f.id, f]));
+            for (const id of foreign) relCache.set(id, found.get(id) ?? null);
+        }
+        if (this.fields.listByListIdsWithinTx) {
+            const others = new Set<number>();
+            for (const id of relIds) {
+                const rel = relCache.get(id);
+                if (!rel || rel.type !== 'relation') continue;
+                const target = asId((rel.config as { target_list_id?: unknown }).target_list_id);
+                if (rel.list_id === listId && target !== null) others.add(target);
+                else if (target === listId) others.add(rel.list_id);
+            }
+            others.delete(listId);
+            if (others.size > 1) {
+                for (const [id, rows] of await this.fields.listByListIdsWithinTx(tx, tenantId, [...others])) listFields.set(id, rows);
+            }
+        }
         const out: ThroughPlan[] = [];
         let timeZone: string | null = null;
         for (const field of through) {
