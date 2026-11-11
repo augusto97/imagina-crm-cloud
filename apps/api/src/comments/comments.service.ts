@@ -215,7 +215,11 @@ export class CommentsService {
             }
             const changes: Partial<typeof import('../db/schema').comments.$inferInsert> = {};
             if (patch.body !== undefined) changes.body = patch.body;
-            if (patch.metadata !== undefined) changes.metadata = patch.metadata;
+            // Las marcas del servidor (correo de la mesa de ayuda, agente de IA) no las
+            // pone ni las quita quien edita: se conservan las que el comentario ya tenía.
+            if (patch.metadata !== undefined) {
+                changes.metadata = { ...stripReservedCommentMetadata(patch.metadata), ...reservedCommentMetadata(current.metadata) };
+            }
             if (patch.visibility !== undefined && actor.role === 'guest' && patch.visibility === 'client') {
                 // C3 — un invitado no escribe para el portal del cliente.
                 throw new ForbiddenException({
@@ -408,4 +412,29 @@ function commentNotFound(id: number): NotFoundException {
         message: `Comentario ${id} no encontrado`,
         data: { status: 404 },
     });
+}
+
+/**
+ * Claves de `metadata` que sólo escribe el servidor: `email` (la mesa de ayuda:
+ * con `direction: 'in'` el comentario se muestra como escrito por el CLIENTE,
+ * con su nombre y su correo) y `agent` (lo escribió un agente de IA). Una
+ * persona no puede fabricar un «correo del cliente» ni firmar como un agente.
+ */
+export const RESERVED_COMMENT_METADATA_KEYS = ['email', 'agent'] as const;
+
+export function stripReservedCommentMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(metadata)) {
+        if (!(RESERVED_COMMENT_METADATA_KEYS as readonly string[]).includes(k)) out[k] = v;
+    }
+    return out;
+}
+
+function reservedCommentMetadata(metadata: unknown): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    if (!metadata || typeof metadata !== 'object') return out;
+    for (const k of RESERVED_COMMENT_METADATA_KEYS) {
+        if (k in (metadata as Record<string, unknown>)) out[k] = (metadata as Record<string, unknown>)[k];
+    }
+    return out;
 }

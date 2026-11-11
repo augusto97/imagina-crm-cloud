@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ConflictException, NotFoundException } from '@nestjs/common';
@@ -232,6 +232,160 @@ describe('Copias de seguridad completas (v0.1.179) — snapshot real (Postgres +
             rmSync(work, { recursive: true, force: true });
         }
     }, 120_000);
+
+    /** Un snapshot "ajeno": el real, con otro env (y otra versión) y checksums válidos. */
+    async function poisonedSnapshot(work: string, envLines: string[], version?: string): Promise<string> {
+        const [snap] = await svc.list();
+        execFileSync('tar', ['-xf', svc.resolve(snap!.name), '-C', work]);
+        const inner = readdirSync(work).find((d) => d.startsWith('imagina-snapshot-'))!;
+        const root = path.join(work, inner);
+        writeFileSync(path.join(root, 'env.production'), [...envLines, ''].join('\n'));
+        const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8')) as { app_version: string; includes: Record<string, boolean> };
+        manifest.includes.env = true;
+        if (version !== undefined) manifest.app_version = version;
+        writeFileSync(path.join(root, 'manifest.json'), JSON.stringify(manifest));
+        const files = readdirSync(root).filter((f) => f !== 'checksums.sha256');
+        writeFileSync(path.join(root, 'checksums.sha256'), execFileSync('sha256sum', files, { cwd: root }));
+        const out = path.join(work, `${inner}.tar`);
+        execFileSync('tar', ['-cf', out, '-C', work, inner]);
+        rmSync(root, { recursive: true, force: true });
+        return out;
+    }
+    const cleanEnv = (): NodeJS.ProcessEnv => {
+        const { DATABASE_URL: _d, NODE_OPTIONS: _n, REDIS_URL: _r, UPLOADS_DIR: _u, BASE_PATH: _b, ENV_FILE: _e, MIGRATE_CMD: _m, ...rest } = process.env;
+        void [_d, _n, _r, _u, _b, _e, _m];
+        return rest;
+    };
+
+    it('SEC-37 (lista de permitidas): el env de un snapshot no ejecuta MIGRATE_CMD / STOP_CMD ni instala rutas de scripts, repo de actualización o claves desconocidas', async () => {
+        const work = mkdtempSync(path.join(tmpdir(), 'sec37b-'));
+        const base = path.join(work, 'base');
+        mkdirSync(base, { recursive: true });
+        const marker = path.join(work, 'pwned');
+        const scratchUrl = pg.container.getConnectionUri().replace(/\/[^/]+$/, '/imagina_scratch_env');
+        await pg.pool.query('CREATE DATABASE imagina_scratch_env');
+        try {
+            const poisoned = await poisonedSnapshot(work, [
+                'NODE_ENV=production',
+                `DATABASE_URL=${scratchUrl}`,
+                'SECRETS_KEY=abc',
+                'MAIL_FROM=Acme <no-reply@acme.test>',
+                `MIGRATE_CMD=touch ${marker}.migrate`,
+                `STOP_CMD=touch ${marker}.stop`,
+                `START_CMD=touch ${marker}.start`,
+                'NODE_OPTIONS=--require /tmp/pwn.js',
+                'BACKUPS_SCRIPTS_DIR=/tmp/evil-scripts',
+                'RECOVERY_SCRIPT=/tmp/evil.sh',
+                'UPDATER_GITHUB_REPO=evil/repo',
+                'UPDATER_PUBLIC_KEY=evilkey',
+                'PG_CONTAINER=evil-container',
+                'MERCADOPAGO_API_URL=https://evil.test',
+                `UPLOADS_DIR=${path.join(work, 'evil-uploads')}`,
+                'CLAVE_DESCONOCIDA=1',
+            ]);
+            // Servidor NUEVO: sin env instalado → el script se conecta con el del snapshot y lo instala.
+            const run = spawnSync('bash', [path.join(SCRIPTS, 'snapshot-restore.sh'), poisoned, '--yes', '--no-safety', '--skip-redis'], {
+                env: { ...cleanEnv(), BASE_PATH: base, APP_VERSION: '9.9.9', STOP_CMD: 'true', START_CMD: 'true' },
+                encoding: 'utf8',
+            });
+            expect(run.status, `${run.stdout}\n${run.stderr}`).toBe(0);
+            // Nada de lo del snapshot se ejecutó.
+            expect(existsSync(`${marker}.migrate`)).toBe(false);
+            expect(existsSync(`${marker}.stop`)).toBe(false);
+            expect(existsSync(`${marker}.start`)).toBe(false);
+            // Los uploads fueron a la carpeta de ESTE servidor, no a la que decía el snapshot.
+            expect(existsSync(path.join(base, 'shared', 'uploads', 't1', 'logo.png'))).toBe(true);
+            expect(existsSync(path.join(work, 'evil-uploads'))).toBe(false);
+            const installed = readFileSync(path.join(base, 'shared', '.env.production'), 'utf8');
+            for (const bad of ['MIGRATE_CMD', 'STOP_CMD', 'START_CMD', 'NODE_OPTIONS', 'BACKUPS_SCRIPTS_DIR', 'RECOVERY_SCRIPT', 'UPDATER_GITHUB_REPO', 'UPDATER_PUBLIC_KEY', 'PG_CONTAINER', 'MERCADOPAGO_API_URL', 'UPLOADS_DIR', 'CLAVE_DESCONOCIDA']) {
+                expect(installed, bad).not.toContain(bad);
+            }
+            // Lo que es configuración de la app sobrevive tal cual.
+            expect(installed).toContain('SECRETS_KEY=abc');
+            expect(installed).toContain(`DATABASE_URL=${scratchUrl}`);
+            expect(installed).toContain('MAIL_FROM=Acme <no-reply@acme.test>');
+            expect(installed).toContain(`UPDATER_BASE_PATH=${base}`);
+            expect(`${run.stdout}\n${run.stderr}`).toContain('se descartaron variables que no son de la app: MIGRATE_CMD STOP_CMD START_CMD NODE_OPTIONS');
+
+            // Una versión que no es x.y.z en el manifest: no se restaura.
+            const work2 = mkdtempSync(path.join(tmpdir(), 'sec37c-'));
+            try {
+                const badVersion = await poisonedSnapshot(work2, [`DATABASE_URL=${scratchUrl}`], '../../x');
+                const r2 = spawnSync('bash', [path.join(SCRIPTS, 'snapshot-restore.sh'), badVersion, '--dry-run'], {
+                    env: { ...cleanEnv(), ENV_FILE: path.join(work2, 'nuevo', '.env.production'), APP_VERSION: '9.9.9' },
+                    encoding: 'utf8',
+                });
+                expect(r2.status).not.toBe(0);
+                expect(r2.stderr).toContain('versión inválida');
+                // bootstrap-server.sh: la versión va a una URL y a una ruta → se rechaza antes de descargar nada.
+                const b2 = spawnSync('bash', [path.join(SCRIPTS, 'bootstrap-server.sh'), '--snapshot', badVersion, '--yes'], {
+                    env: { ...cleanEnv(), BASE_PATH: path.join(work2, 'srv') },
+                    encoding: 'utf8',
+                });
+                expect(b2.status).not.toBe(0);
+                expect(b2.stderr).toContain('versión inválida');
+                expect(existsSync(path.join(work2, 'srv', 'releases')) ? readdirSync(path.join(work2, 'srv', 'releases')) : []).toEqual([]);
+            } finally {
+                rmSync(work2, { recursive: true, force: true });
+            }
+        } finally {
+            rmSync(work, { recursive: true, force: true });
+        }
+    }, 180_000);
+
+    it('bootstrap-server.sh instala el env del snapshot FILTRADO (antes lo copiaba tal cual) y no ejecuta su MIGRATE_CMD', async () => {
+        const work = mkdtempSync(path.join(tmpdir(), 'sec37d-'));
+        const base = path.join(work, 'srv');
+        const bin = path.join(work, 'bin');
+        mkdirSync(bin, { recursive: true });
+        const marker = path.join(work, 'pwned');
+        const scratchUrl = pg.container.getConnectionUri().replace(/\/[^/]+$/, '/imagina_scratch_boot');
+        await pg.pool.query('CREATE DATABASE imagina_scratch_boot');
+        try {
+            const poisoned = await poisonedSnapshot(work, [
+                `DATABASE_URL=${scratchUrl}`,
+                `REDIS_URL=${redisC.url.replace(/\/\d+$/, '')}/4`,
+                'SECRETS_KEY=abc',
+                `MIGRATE_CMD=touch ${marker}`,
+                'NODE_OPTIONS=--require /tmp/pwn.js',
+                'export LD_PRELOAD=/tmp/pwn.so',
+                'BACKUPS_SCRIPTS_DIR=/tmp/evil-scripts',
+                'UPDATER_GITHUB_REPO=evil/repo',
+                'CLAVE_DESCONOCIDA=1',
+            ]);
+            // "GitHub" falso: curl entrega un bundle mínimo y su sha256.
+            const bundle = path.join(work, 'bundle');
+            mkdirSync(path.join(bundle, 'apps', 'api'), { recursive: true });
+            mkdirSync(path.join(bundle, 'deploy'), { recursive: true });
+            writeFileSync(path.join(bundle, 'VERSION'), '9.9.9\n');
+            const zip = path.join(work, 'bundle.zip');
+            execFileSync('zip', ['-q', '-r', zip, '.'], { cwd: bundle });
+            const sha = execFileSync('sha256sum', [zip]).toString().split(' ')[0]!;
+            writeFileSync(
+                path.join(bin, 'curl'),
+                `#!/usr/bin/env bash\nout=""; url=""\nwhile [[ $# -gt 0 ]]; do case "$1" in -o) out="$2"; shift 2;; -H|--retry) shift 2;; -*) shift;; *) url="$1"; shift;; esac; done\necho "$url" >> "${work}/curl.log"\nif [[ "$url" == *.sha256 ]]; then echo "${sha}  bundle.zip" > "$out"; else cp "${zip}" "$out"; fi\n`,
+            );
+            chmodSync(path.join(bin, 'curl'), 0o755);
+            const run = spawnSync('bash', [path.join(SCRIPTS, 'bootstrap-server.sh'), '--snapshot', poisoned, '--yes'], {
+                env: { ...cleanEnv(), PATH: `${bin}:${process.env.PATH}`, BASE_PATH: base },
+                encoding: 'utf8',
+            });
+            expect(run.status, `${run.stdout}\n${run.stderr}`).toBe(0);
+            expect(existsSync(marker)).toBe(false);
+            const installed = readFileSync(path.join(base, 'shared', '.env.production'), 'utf8');
+            for (const bad of ['MIGRATE_CMD', 'NODE_OPTIONS', 'LD_PRELOAD', 'BACKUPS_SCRIPTS_DIR', 'evil/repo', 'CLAVE_DESCONOCIDA']) {
+                expect(installed, bad).not.toContain(bad);
+            }
+            expect(installed).toContain('SECRETS_KEY=abc');
+            expect(installed).toContain(`DATABASE_URL=${scratchUrl}`);
+            // De dónde se actualiza y dónde vive: de ESTE servidor.
+            expect(installed).toContain('UPDATER_GITHUB_REPO=augusto97/imagina-crm-cloud');
+            expect(installed).toContain(`UPDATER_BASE_PATH=${base}`);
+            expect(readFileSync(path.join(work, 'curl.log'), 'utf8')).toContain('/releases/download/v9.9.9/imagina-base-9.9.9.zip');
+        } finally {
+            rmSync(work, { recursive: true, force: true });
+        }
+    }, 180_000);
 
     it('settings: defaults, PATCH parcial persiste en Redis (platform:*), y el tick respeta la hora', async () => {
         expect(await svc.getSettings()).toEqual({ enabled: false, hour_utc: 3, keep: 14, include_env: true });

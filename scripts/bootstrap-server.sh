@@ -46,6 +46,12 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$SNAPSHOT" && -f "$SNAPSHOT" ]] || { echo "✗ falta --snapshot <archivo>" >&2; exit 2; }
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILTER="$HERE/snapshot-env-filter.sh"
+[[ -f "$ENV_FILTER" ]] || ENV_FILTER="$HERE/../deploy/snapshot-env-filter.sh"
+[[ -f "$ENV_FILTER" ]] || { echo "✗ falta snapshot-env-filter.sh junto a este script" >&2; exit 1; }
+# shellcheck source=../deploy/snapshot-env-filter.sh
+source "$ENV_FILTER"
+[[ "$REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || { echo "✗ --repo debe ser owner/repo" >&2; exit 2; }
 for tool in node curl unzip tar; do command -v "$tool" >/dev/null 2>&1 || { echo "✗ falta $tool en el PATH" >&2; exit 1; }; done
 
 # ── 1. layout ───────────────────────────────────────────────────────────────
@@ -72,10 +78,21 @@ PARTS="$(find "$WORK" -mindepth 1 -maxdepth 1 -type d -name 'imagina-snapshot-*'
 SNAP_VERSION="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).app_version||"")' "$PARTS/manifest.json")"
 VERSION="${VERSION:-$SNAP_VERSION}"
 [[ -n "$VERSION" && "$VERSION" != "dev" ]] || { echo "✗ el snapshot no trae versión (dev): pasa --version x.y.z" >&2; exit 1; }
+# La versión (del manifest del snapshot o de --version) va a una URL y a una
+# ruta de disco: sólo x.y.z.
+is_snapshot_version "$VERSION" || { echo "✗ versión inválida (se espera x.y.z): no se instala" >&2; exit 1; }
 ENV_FILE="$BASE_PATH/shared/.env.production"
 if [[ ! -f "$ENV_FILE" ]]; then
     [[ -f "$PARTS/env.production" ]] || { echo "✗ el snapshot no incluye env y no existe $ENV_FILE" >&2; exit 1; }
-    cp "$PARTS/env.production" "$ENV_FILE"; chmod 600 "$ENV_FILE"
+    # Sólo la configuración de la app (lista de permitidas, la misma de
+    # snapshot-restore.sh): un snapshot ajeno no instala NODE_OPTIONS,
+    # MIGRATE_CMD, rutas de scripts ni de dónde se actualiza este servidor.
+    ( umask 077; : > "$ENV_FILE" )
+    filter_snapshot_env "$PARTS/env.production" "$ENV_FILE"; chmod 600 "$ENV_FILE"
+    [[ -n "$SNAPSHOT_ENV_DROPPED" ]] && echo "  ⚠ env del snapshot: se descartaron variables que no son de la app:$SNAPSHOT_ENV_DROPPED" >&2
+    [[ -n "$SNAPSHOT_ENV_WARNED" ]] && echo "  ⚠ env del snapshot: revisa estas variables, permiten conexiones a la red interna:$SNAPSHOT_ENV_WARNED" >&2
+    # De ESTE servidor: dónde vive la instalación y de qué repositorio se actualiza.
+    printf '\n# — de este servidor —\nUPDATER_GITHUB_REPO=%s\nUPDATER_BASE_PATH=%s\n' "$REPO" "$BASE_PATH" >> "$ENV_FILE"
     echo "→ env instalado en $ENV_FILE (revisa dominio/URLs si cambian en este servidor)"
 fi
 echo "→ snapshot versión $SNAP_VERSION → se instala el bundle $VERSION"

@@ -141,6 +141,7 @@ describe('v0.1.387 — cobrar al agendar (Postgres + Redis reales, Mercado Pago 
     let collections: CollectionsService;
     let booking: BookingService;
     let pub: BookingPublicService;
+    let recsSvc: RecordsService;
     let tenantId: number;
     let ana = 0;
     let beto = 0;
@@ -303,6 +304,7 @@ describe('v0.1.387 — cobrar al agendar (Postgres + Redis reales, Mercado Pago 
         const activity = new ActivityService(tenantDb, new ActivityRepository(), lists);
         const hub = new RecordChangeHub();
         const recs = new RecordsService(tenantDb, new RecordsRepository(), lists, fieldsSvc, rt, activity, dispatcher, new RelationsRepository(), undefined, hub);
+        recsSvc = recs;
         collections = new CollectionsService(tenantDb, pg.db, env, connectors, lists, new RecordsRepository(), activity, rt, dispatcher, audit, fieldsSvc);
         files = new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imb-bookpay-'))), env);
         const calendar = new FakeCalendar(env, redis, tenantDb);
@@ -542,6 +544,82 @@ describe('v0.1.387 — cobrar al agendar (Postgres + Redis reales, Mercado Pago 
         expect((await linkOf(appt!.paymentLinkId!)).status).toBe('expired');
         // Dos veces no: ya no espera el pago.
         await expect(pub.decide(tenantId, { userId: ana, role: 'admin' }, 'citas', appt!.recordId, { decision: 'mark_paid' })).rejects.toMatchObject({ status: 409 });
+    });
+
+    /** El valor de la opción de estado con esa etiqueta (lo que guarda el registro). */
+    const statusValue = async (label: string): Promise<string> => {
+        const fields = await fieldsSvc.listByListId(tenantId, listId);
+        const opts = (fields.find((x) => x.id === f.estado!.id)!.config as { options?: Array<{ value: string; label: string }> }).options ?? [];
+        return opts.find((o) => o.label === label)!.value;
+    };
+    /** Alguien cambia el campo Estado del registro desde la app (un PATCH común). */
+    const setStatusField = async (actor: { userId: number; role: 'admin' | 'manager' }, recordId: number, label: string): Promise<void> => {
+        await recsSvc.update(tenantId, actor, 'citas', recordId, { data: { [`f${f.estado!.id}`]: await statusValue(label) } });
+    };
+
+    it('seguridad: una cita que espera el pago NO se reprograma desde el enlace del cliente (quedaría activa sin pagar)', async () => {
+        await freshPage();
+        const res = await book({ start: at(D, 9) });
+        const ref = refOf(res.appointment!.manage_url);
+        const [appt] = await appointments();
+        expect(appt!.status).toBe('unpaid');
+
+        // Ni horarios para elegir…
+        const slots = await pub.manageSlots(ref, nextIp(), { service: 'svclimpieza', staff: 'stfana', from: D, to: D });
+        expect(slots.slots).toEqual([]);
+        // …ni el cambio pedido a mano por la API.
+        await expect(pub.reschedule(ref, nextIp(), { start: at(D, 11) })).rejects.toMatchObject({ status: 403, response: { code: 'booking_locked' } });
+        const [same] = await appointments();
+        expect(same).toMatchObject({ status: 'unpaid', manageVersion: appt!.manageVersion });
+        expect(same!.startAt.toISOString()).toBe(at(D, 9));
+        expect(await statusLabel(appt!.recordId)).toBe('Esperando el pago');
+
+        // Sigue venciendo como cualquier cita sin pagar: el horario se libera.
+        expect(await pub.expireUnpaid(new Date(Date.now() + 31 * 60_000))).toBe(1);
+        expect((await appointments())[0]!.status).toBe('cancelled');
+    });
+
+    it('seguridad: poner «Confirmada» en el campo Estado no confirma una cita sin pagar si quien lo cambia no aprueba (ni una automatización)', async () => {
+        await freshPage();
+        await book({ start: at(D, 9, 30) });
+        const [appt] = await appointments();
+        expect(appt!.status).toBe('unpaid');
+
+        // Beto puede editar el registro, pero no es de quienes aprueban: el estado vuelve al real.
+        await setStatusField({ userId: beto, role: 'manager' }, appt!.recordId, 'Confirmada');
+        expect(await waitLabel(appt!.recordId, 'Esperando el pago')).toBe('Esperando el pago');
+        expect((await appointments())[0]).toMatchObject({ status: 'unpaid', paidMarkedBy: null });
+        expect((await linkOf(appt!.paymentLinkId!)).status).not.toBe('expired');
+
+        // Una automatización (sin persona) tampoco la da por pagada.
+        await setStatusField({ userId: 0, role: 'admin' }, appt!.recordId, 'Confirmada');
+        expect(await waitLabel(appt!.recordId, 'Esperando el pago')).toBe('Esperando el pago');
+        expect((await appointments())[0]!.status).toBe('unpaid');
+
+        // Quien sí aprueba (Ana, admin) la confirma poniendo el estado, como siempre.
+        await setStatusField({ userId: ana, role: 'admin' }, appt!.recordId, 'Confirmada');
+        await waitStatus(appt!.id, 'confirmed');
+        expect((await appointments())[0]!.paidMarkedBy).toBe(ana);
+    });
+
+    it('seguridad: una cita «por confirmar» no la aprueba ni la rechaza por el campo Estado quien no aprueba; una automatización sí', async () => {
+        await freshPage((c) => {
+            c.approval = { ...c.approval, mode: 'all' };
+        });
+        await book({ start: at(D, 16), service: 'svcvaloracion', email: 'otra@cliente.co' });
+        const [appt] = await appointments();
+        expect(appt!.status).toBe('pending');
+
+        await setStatusField({ userId: beto, role: 'manager' }, appt!.recordId, 'Confirmada');
+        expect(await waitLabel(appt!.recordId, 'Por confirmar')).toBe('Por confirmar');
+        expect((await appointments())[0]).toMatchObject({ status: 'pending', decidedBy: null });
+        await setStatusField({ userId: beto, role: 'manager' }, appt!.recordId, 'Rechazada');
+        expect(await waitLabel(appt!.recordId, 'Por confirmar')).toBe('Por confirmar');
+        expect((await appointments())[0]!.status).toBe('pending');
+
+        // Una automatización que la configuró quien administra sí la aprueba (como hasta ahora).
+        await setStatusField({ userId: 0, role: 'admin' }, appt!.recordId, 'Confirmada');
+        await waitStatus(appt!.id, 'confirmed');
     });
 
     it('con aprobación: primero se paga y después queda «por confirmar»; un servicio sin cobro no pasa por el pago', async () => {

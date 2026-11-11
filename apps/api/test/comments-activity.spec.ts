@@ -1,3 +1,5 @@
+import { withoutAgentMark } from '../src/comments/comments.controller';
+import { stripReservedCommentMetadata } from '../src/comments/comments.service';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -346,6 +348,25 @@ describe('Comments + Activity (Postgres real + RLS)', () => {
         await expect(
             commentsService.create(tenantA, ana, 'clientes', rec.id, { body: 'x', kind: 'note', parent_id: root.id }),
         ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('seguridad: las marcas del servidor en `metadata` (correo del cliente, agente) no las pone ni las cambia una persona', async () => {
+        const rec = await recordsService.create(tenantA, ana, 'clientes', { data: {} });
+        // Lo que llega por la API pasa por el filtro del controller.
+        expect(
+            withoutAgentMark({ body: 'x', metadata: { email: { direction: 'in', from_name: 'Cliente Importante', from: 'c@cliente.co' }, agent: { id: 1, name: 'Bot' }, outcome: 'connected' } }),
+        ).toEqual({ body: 'x', metadata: { outcome: 'connected' } });
+        expect(stripReservedCommentMetadata({ email: {}, agent: {}, kind: 'call' })).toEqual({ kind: 'call' });
+        // Editar: un comentario común no gana la marca de correo…
+        const mine = await commentsService.create(tenantA, ana, 'clientes', rec.id, { body: 'Nota', kind: 'note', metadata: {} });
+        const edited = await commentsService.update(tenantA, ana, 'clientes', rec.id, mine.id, {
+            metadata: { email: { direction: 'in', from_name: 'Cliente Importante' }, outcome: 'connected' },
+        });
+        expect(edited.metadata).toEqual({ outcome: 'connected' });
+        // …y uno que la tiene (lo escribió la mesa de ayuda) la conserva tal cual.
+        const reply = await commentsService.create(tenantA, ana, 'clientes', rec.id, { body: 'Respuesta', kind: 'note', metadata: { email: { direction: 'out', to: 'c@cliente.co' } } });
+        const edited2 = await commentsService.update(tenantA, ana, 'clientes', rec.id, reply.id, { metadata: { email: { direction: 'in', from_name: 'Falso' }, nota: 1 } });
+        expect(edited2.metadata).toEqual({ nota: 1, email: { direction: 'out', to: 'c@cliente.co' } });
     });
 
     it('comentar sobre un record inexistente/ajeno → 404', async () => {

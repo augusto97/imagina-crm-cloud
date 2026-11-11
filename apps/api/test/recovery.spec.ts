@@ -184,12 +184,12 @@ describe('recover-from-snapshot.sh — con docker y systemctl falsos', () => {
         writeFileSync(path.join(deploy, 'bootstrap-server.sh'), `#!/usr/bin/env bash\necho "$*" > "${base}/bootstrap.args"\n`);
         writeFileSync(
             path.join(base, 'shared', '.env.production'),
-            'APP_BASE_URL=https://app.nuevo.co\nUPDATER_BASE_PATH=/opt/imagina-base\nRECOVERY_CODE_SHA256=abc\nSECRETS_KEY=nuevo\nPOSTGRES_PASSWORD=nuevo\nPOSTGRES_PORT=5433\nREDIS_PORT=6380\n',
+            'APP_BASE_URL=https://app.nuevo.co\nUPDATER_BASE_PATH=/opt/imagina-base\nRECOVERY_CODE_SHA256=abc\nUPDATER_GITHUB_REPO=augusto97/imagina-crm-cloud\nSECRETS_KEY=nuevo\nPOSTGRES_PASSWORD=nuevo\nPOSTGRES_PORT=5433\nREDIS_PORT=6380\n',
         );
         const tar = snapshot(
             base,
             '20261018T030000Z',
-            { env: 'SECRETS_KEY=viejo\nPOSTGRES_PASSWORD=viejo\nAPP_BASE_URL=https://app.viejo.co\nNODE_OPTIONS=--require /tmp/x.js\nMAIL_FROM="Acme <a@acme.co>"\nDATABASE_URL=postgres://imagina:viejo@127.0.0.1:5432/imagina_base\nREDIS_URL=redis://:rviejo@127.0.0.1:6379\n' },
+            { env: 'SECRETS_KEY=viejo\nPOSTGRES_PASSWORD=viejo\nAPP_BASE_URL=https://app.viejo.co\nNODE_OPTIONS=--require /tmp/x.js\nMIGRATE_CMD=touch /tmp/imagina-pwned\nBACKUPS_SCRIPTS_DIR=/tmp/evil\nRECOVERY_SCRIPT=/tmp/evil.sh\nUPDATER_GITHUB_REPO=evil/repo\nUPDATER_PUBLIC_KEY=evil\nUPDATER_BASE_PATH=/tmp/evil-base\nPG_CONTAINER=evil\nCLAVE_DESCONOCIDA=1\nMAIL_FROM="Acme <a@acme.co>"\nDATABASE_URL=postgres://imagina:viejo@127.0.0.1:5432/imagina_base\nREDIS_URL=redis://:rviejo@127.0.0.1:6379\n' },
         );
         const run = () =>
             spawnSync('bash', [path.join(DEPLOY, 'recover-from-snapshot.sh'), path.join(base, tar)], {
@@ -211,6 +211,13 @@ describe('recover-from-snapshot.sh — con docker y systemctl falsos', () => {
         expect(envNow).not.toContain('app.viejo.co');
         expect(envNow).not.toContain('NODE_OPTIONS');
         expect(envNow).not.toContain('RECOVERY_CODE_SHA256');
+        // Lista de permitidas: nada que decida qué se ejecuta o de dónde se actualiza sale de la copia…
+        for (const bad of ['MIGRATE_CMD', 'BACKUPS_SCRIPTS_DIR', 'RECOVERY_SCRIPT', 'evil/repo', 'UPDATER_PUBLIC_KEY', '/tmp/evil-base', 'PG_CONTAINER', 'CLAVE_DESCONOCIDA']) {
+            expect(envNow, bad).not.toContain(bad);
+        }
+        // …eso es de ESTE servidor (lo que dejó el instalador).
+        expect(envNow).toContain('UPDATER_GITHUB_REPO=augusto97/imagina-crm-cloud');
+        expect(envNow).toContain('UPDATER_BASE_PATH=/opt/imagina-base');
         // Los puertos son de este servidor: las URLs de la copia se reapuntan.
         expect(envNow).toContain('DATABASE_URL=postgres://imagina:viejo@127.0.0.1:5433/imagina_base');
         expect(envNow).toContain('REDIS_URL=redis://:rviejo@127.0.0.1:6380');

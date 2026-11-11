@@ -7,7 +7,7 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
-import { isBlockedCrossSite } from './common/cross-site';
+import { isBlockedCrossSite, isFormBodyOnOperatorRoute, ownOriginOf } from './common/cross-site';
 import { ApiExceptionFilter } from './common/http-exception.filter';
 import { registerRequestInputHooks } from './common/request-input';
 import { FILE_IMPORT_CONTENT_TYPE } from '@imagina-base/shared';
@@ -150,6 +150,7 @@ async function bootstrap(): Promise<void> {
         .split(',')
         .map((s) => s.trim())
         .filter((s) => s !== '');
+    const appOrigin = ownOriginOf(env.APP_BASE_URL);
     fastify.addHook('onRequest', (req, reply, done) => {
         const header = (name: string): string | undefined => {
             const v = req.headers[name];
@@ -160,15 +161,26 @@ async function bootstrap(): Promise<void> {
                 method: req.method,
                 path: pathOf(req.url),
                 host: req.host,
+                protocol: req.protocol,
                 secFetchSite: header('sec-fetch-site'),
                 origin: header('origin'),
                 allowedOrigins: crossSiteAllowed,
+                appOrigin,
             })
         ) {
             void reply.code(403).send({
                 code: 'cross_site_request',
                 message: 'Pedido rechazado: viene de otro sitio.',
                 data: { status: 403 },
+            });
+            return;
+        }
+        // Las consolas del operador sólo reciben JSON (o un archivo): un cuerpo de `<form>` no es de la app.
+        if (isFormBodyOnOperatorRoute({ method: req.method, path: pathOf(req.url), contentType: header('content-type') })) {
+            void reply.code(415).send({
+                code: 'unsupported_body',
+                message: 'Este pedido sólo se acepta como JSON.',
+                data: { status: 415 },
             });
             return;
         }
