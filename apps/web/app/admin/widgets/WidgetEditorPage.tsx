@@ -1,47 +1,72 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { AlertTriangle, ArrowLeft, Check, Copy, LayoutList, MessageSquareText, PanelBottom, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 import {
-    WIDGET_BUTTON_TYPES,
-    WIDGET_MAX_BUTTONS,
-    WIDGET_TYPE_INFO,
-    readContactWidgetConfig,
-    widgetEmbedCode,
-    type ContactWidgetConfig,
-    type ContactWidgetDto,
-    type ContactWidgetOptions,
-    type WidgetButtonType,
-} from '@imagina-base/shared';
+    BarChart3,
+    Clock,
+    Code2,
+    Eye,
+    EyeOff,
+    Globe,
+    Loader2,
+    MessageCircle,
+    MessageSquareText,
+    Moon,
+    MousePointerClick,
+    Palette,
+    Send,
+    SlidersHorizontal,
+    Sun,
+    type LucideIcon,
+} from 'lucide-react';
+import { WIDGET_MAX_BUTTONS, readContactWidgetConfig, widgetEmbedCode, type ContactWidgetConfig, type ContactWidgetDto, type ContactWidgetOptions, type WidgetButtonType, type WidgetProblem } from '@imagina-base/shared';
 
-import { Row, Segmented, Toggle } from '@/admin/records/layout/editor/inspectorUi';
-import { Badge } from '@/components/ui/badge';
+import {
+    BuilderMobileNav,
+    BuilderMobileTopBar,
+    BuilderModeSwitch,
+    BuilderTopBar,
+    InlineName,
+    MobileBackBar,
+    MoreMenu,
+    PanelHeader,
+    PublishSwitch,
+    SaveButton,
+    SettingsCard,
+    SettingsMobileIndex,
+    SettingsNav,
+    SettingsPageHeader,
+    type BuilderMode,
+    type MenuAction,
+    type SettingsNavItem,
+} from '@/admin/builder/BuilderShell';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/components/ui/toast';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { __, sprintf } from '@/lib/i18n';
+import { useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
-import { ColorChoice, IconSelect, WidgetButtonEditor } from './WidgetButtonEditor';
-import { WidgetDisplayEditor } from './WidgetDisplayEditor';
+import { WidgetButtonsPanel } from './WidgetButtonsPanel';
+import { WidgetDisplayEditor, WidgetGreetingEditor } from './WidgetDisplayEditor';
 import { WidgetHoursEditor } from './WidgetHoursEditor';
-import { WidgetIconView } from './WidgetIconView';
+import { WidgetInstallPanel } from './WidgetInstallPanel';
+import { WidgetLookEditor } from './WidgetLookEditor';
 import { WidgetPreview } from './WidgetPreview';
 import { WidgetStatsPanel } from './WidgetStatsPanel';
+import { addButton, editorProblems, newButton, previewMeta, sameConfig } from './widgetEditor';
 import {
-    addButton,
-    canAddButton,
-    editorProblems,
-    moveButton,
-    newButton,
-    parseDomains,
-    previewMeta,
-    removeButton,
-    sameConfig,
-    updateButton,
-} from './widgetEditor';
+    WIDGET_SECTIONS,
+    WIDGET_SECTION_INFO,
+    problemSection,
+    sectionsWithProblems,
+    widgetLocation,
+    widgetSectionSummary,
+    type WidgetEditorMode,
+    type WidgetSection,
+} from './widgetSections';
 import {
     useContactWidget,
     useDeleteContactWidget,
@@ -50,89 +75,106 @@ import {
     useWidgetOptions,
 } from './useContactWidgets';
 
-type Tab = 'buttons' | 'look' | 'hours' | 'show' | 'publish' | 'stats';
-const TABS: Array<{ id: Tab; label: string }> = [
-    { id: 'buttons', label: 'Botones' },
-    { id: 'look', label: 'Apariencia' },
-    { id: 'hours', label: 'Horario' },
-    { id: 'show', label: 'Dónde aparece' },
-    { id: 'publish', label: 'Publicar' },
-    { id: 'stats', label: 'Estadísticas' },
-];
+const SECTION_ICON: Record<WidgetSection, LucideIcon> = {
+    buttons: MousePointerClick,
+    look: Palette,
+    hours: Clock,
+    show: Globe,
+    greeting: MessageCircle,
+    publish: Code2,
+};
+
+/** La pantalla del editor tapa la app (como los editores de formularios y agenda). */
+function Shell({ children }: { children: React.ReactNode }): JSX.Element {
+    return (
+        <div className="imcrm-fixed imcrm-inset-0 imcrm-z-40 imcrm-flex imcrm-flex-col imcrm-bg-background imcrm-text-foreground" data-testid="widget-editor">
+            {children}
+        </div>
+    );
+}
 
 /**
- * v0.1.394 (ADR-S99) — El editor de un widget de contacto: los botones, cómo
- * se ve y el código para pegar, con la vista previa en vivo al lado.
+ * v0.1.394 (ADR-S99) — El editor de un widget de contacto.
+ *
+ * v0.1.408 — A pantalla completa y con las piezas de los editores de
+ * formularios y agenda: arriba el nombre, «Editar · Estadísticas», publicar y
+ * guardar; a la izquierda las secciones (cada una dice cómo está); al centro
+ * la sección elegida; a la derecha la vista previa, a todo el alto. En el
+ * celular: el índice de secciones, la vista previa y las estadísticas en una
+ * barra fija abajo.
  */
 export function WidgetEditorPage(): JSX.Element {
     const { widgetId } = useParams();
+    const nav = useNavigate();
     const id = Number(widgetId);
     const q = useContactWidget(id);
     const options = useWidgetOptions();
 
-    const back = (
-        <Link to="/settings?s=widgets" className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-text-sm imcrm-text-muted-foreground hover:imcrm-text-foreground">
-            <ArrowLeft className="imcrm-h-4 imcrm-w-4" />
-            {__('Widget de contacto')}
-        </Link>
-    );
-    if (q.isLoading || options.isLoading) return <div className="imcrm-p-6 imcrm-text-sm imcrm-text-muted-foreground">{__('Cargando…')}</div>;
-    if (q.isError || !q.data || !options.data) {
+    if (q.isLoading || options.isLoading) {
         return (
-            <div className="imcrm-mx-auto imcrm-max-w-4xl imcrm-space-y-4 imcrm-p-6">
-                {back}
-                <p className="imcrm-text-sm imcrm-text-destructive">
-                    {q.error instanceof Error ? q.error.message : __('No se pudo cargar el widget.')}
-                </p>
-            </div>
+            <Shell>
+                <div className="imcrm-flex imcrm-flex-1 imcrm-items-center imcrm-justify-center imcrm-gap-2 imcrm-text-sm imcrm-text-muted-foreground">
+                    <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />
+                    {__('Cargando…')}
+                </div>
+            </Shell>
         );
     }
-    return <Editor key={q.data.id} widget={q.data} options={options.data} back={back} />;
+    if (q.isError || !q.data || !options.data) {
+        return (
+            <Shell>
+                <div className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-3 imcrm-p-6 imcrm-text-center">
+                    <p className="imcrm-text-sm imcrm-text-destructive">{q.error instanceof Error ? q.error.message : __('No se pudo cargar el widget.')}</p>
+                    <Button variant="outline" size="sm" onClick={() => nav('/settings?s=widgets')}>
+                        {__('Volver a los widgets')}
+                    </Button>
+                </div>
+            </Shell>
+        );
+    }
+    return (
+        <Shell>
+            <Editor key={q.data.id} widget={q.data} options={options.data} />
+        </Shell>
+    );
 }
 
-function Editor({ widget, options, back }: { widget: ContactWidgetDto; options: ContactWidgetOptions; back: JSX.Element }): JSX.Element {
+function Editor({ widget, options }: { widget: ContactWidgetDto; options: ContactWidgetOptions }): JSX.Element {
     const nav = useNavigate();
     const confirm = useConfirm();
-    const [params, setParams] = useSearchParams();
-    const tab: Tab = (TABS.find((t) => t.id === params.get('t'))?.id ?? 'buttons') as Tab;
-    const setTab = (t: Tab): void => {
-        const next = new URLSearchParams(params);
-        next.set('t', t);
-        setParams(next, { replace: true });
-    };
+    const toast = useToast();
+    const appTheme = useTheme();
+    const narrow = useMediaQuery('(max-width: 1023px)');
+    const wide = useMediaQuery('(min-width: 1280px)');
 
-    // Con muchas pestañas la tira se desliza: la elegida siempre a la vista (sólo en horizontal).
-    const tabsRef = useRef<HTMLDivElement | null>(null);
-    useEffect(() => {
-        const list = tabsRef.current;
-        const active = list?.querySelector<HTMLElement>('[data-active="1"]');
-        if (!list || !active) return;
-        const left = active.offsetLeft - list.offsetLeft;
-        if (left < list.scrollLeft) list.scrollLeft = left;
-        else if (left + active.offsetWidth > list.scrollLeft + list.clientWidth) list.scrollLeft = left + active.offsetWidth - list.clientWidth;
-    }, [tab]);
+    // La sección y el modo viven en la dirección (`?t=`): se pueden enlazar.
+    const [params, setParams] = useSearchParams();
+    const loc = widgetLocation(params.get('t'));
+    const mode = loc.mode;
+    const section = loc.section;
+    const go = (next: { mode?: WidgetEditorMode; section?: WidgetSection }): void => {
+        const m = next.mode ?? mode;
+        const s = next.section ?? section;
+        const p = new URLSearchParams(params);
+        p.set('t', m === 'stats' ? 'stats' : s);
+        setParams(p, { replace: true });
+    };
 
     const [name, setName] = useState(widget.name);
     const [config, setConfig] = useState<ContactWidgetConfig>(() => readContactWidgetConfig(widget.config));
     const [openId, setOpenId] = useState<string | null>(widget.config.buttons[0]?.id ?? null);
     const saved = useRef({ name: widget.name, config: readContactWidgetConfig(widget.config) });
-    const [domainsText, setDomainsText] = useState(widget.config.allowed_domains.join('\n'));
 
     const update = useUpdateContactWidget(widget.id);
     const regenerate = useRegenerateContactWidget(widget.id);
     const remove = useDeleteContactWidget();
 
     const dirty = name.trim() !== saved.current.name || !sameConfig(config, saved.current.config);
-    useUnsavedChangesGuard(dirty);
+    const { confirmLeave } = useUnsavedChangesGuard(dirty);
 
     const problems = useMemo(() => editorProblems(config, options), [config, options]);
+    const problemSections = useMemo(() => sectionsWithProblems(problems), [problems]);
     const meta = useMemo(() => previewMeta(config, options), [config, options]);
-    const [justSaved, setJustSaved] = useState(false);
-    useEffect(() => {
-        if (!justSaved) return;
-        const t = window.setTimeout(() => setJustSaved(false), 2000);
-        return () => window.clearTimeout(t);
-    }, [justSaved]);
 
     // El interruptor se mueve al tocarlo (no espera la respuesta del servidor).
     const [enabledView, setEnabledView] = useState<boolean | null>(null);
@@ -144,8 +186,9 @@ function Editor({ widget, options, back }: { widget: ContactWidgetDto; options: 
                 saved.current = { name: doc.name, config: readContactWidgetConfig(doc.config) };
                 setName(doc.name);
                 setConfig(readContactWidgetConfig(doc.config));
-                setJustSaved(true);
+                if (extra?.enabled === undefined) toast.success(__('Widget guardado'));
             },
+            onError: (e) => toast.error(__('No se pudo guardar'), e instanceof Error ? e.message : undefined),
             onSettled: () => setEnabledView(null),
         });
     };
@@ -155,399 +198,296 @@ function Editor({ widget, options, back }: { widget: ContactWidgetDto; options: 
     const code = widgetEmbedCode(window.location.origin, live.public_path);
 
     const patchConfig = (patch: Partial<ContactWidgetConfig>): void => setConfig((c) => ({ ...c, ...patch }));
-
     const onAdd = (type: WidgetButtonType): void => {
         const b = newButton(type, config, options);
         setConfig((c) => addButton(c, b));
         setOpenId(b.id);
     };
+    const fix = (p: WidgetProblem): void => {
+        if (p.button_id) setOpenId(p.button_id);
+        openSection(problemSection(p));
+    };
+    const togglePublish = (): void => {
+        if (!enabled && problems.length > 0) {
+            openSection('publish');
+            toast.warning(__('Todavía no se puede publicar'), problems.length === 1 ? __('Falta una cosa: está en «Instalar».') : sprintf(__('Faltan %d cosas: están en «Instalar».'), problems.length));
+            return;
+        }
+        save({ enabled: !enabled });
+    };
+    const close = async (): Promise<void> => {
+        if (await confirmLeave()) nav('/settings?s=widgets');
+    };
+
+    // Ctrl/⌘ + S guarda.
+    const saveRef = useRef(save);
+    saveRef.current = save;
+    const dirtyRef = useRef(dirty);
+    dirtyRef.current = dirty;
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent): void => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+                e.preventDefault();
+                if (dirtyRef.current) saveRef.current();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
+
+    // En el celular: el índice de secciones o una sección; la vista previa; las estadísticas.
+    const [mobileTab, setMobileTab] = useState<'edit' | 'preview' | 'stats'>(mode === 'stats' ? 'stats' : 'edit');
+    const [mobileSection, setMobileSection] = useState<WidgetSection | null>(params.get('t') && mode === 'edit' ? section : null);
+    function openSection(s: WidgetSection): void {
+        go({ mode: 'edit', section: s });
+        setMobileTab('edit');
+        setMobileSection(s);
+    }
+
+    const navItems: Array<SettingsNavItem<WidgetSection>> = WIDGET_SECTIONS.map((s) => ({
+        id: s,
+        label: __(WIDGET_SECTION_INFO[s].label),
+        icon: SECTION_ICON[s],
+        group: __(WIDGET_SECTION_INFO[s].group),
+        summary: __(widgetSectionSummary(s, config, enabled)),
+        problem: problemSections.has(s),
+    }));
+
+    const sectionBody = (s: WidgetSection): JSX.Element => {
+        switch (s) {
+            case 'buttons':
+                return <WidgetButtonsPanel config={config} options={options} problems={problems} openId={openId} onOpen={setOpenId} onConfig={(fn) => setConfig(fn)} onAdd={onAdd} />;
+            case 'look':
+                return <WidgetLookEditor config={config} options={options} onChange={patchConfig} />;
+            case 'hours':
+                return <WidgetHoursEditor config={config} options={options} onChange={(hours) => patchConfig({ hours })} />;
+            case 'show':
+                return <WidgetDisplayEditor config={config} onDisplay={(display) => patchConfig({ display })} />;
+            case 'greeting':
+                return <WidgetGreetingEditor config={config} onGreeting={(greeting) => patchConfig({ greeting })} />;
+            case 'publish':
+                return (
+                    <WidgetInstallPanel
+                        enabled={enabled}
+                        busy={update.isPending}
+                        problems={problems}
+                        onTogglePublish={togglePublish}
+                        onFix={fix}
+                        code={code}
+                        domains={config.allowed_domains}
+                        onDomains={(allowed_domains) => patchConfig({ allowed_domains })}
+                        regenerating={regenerate.isPending}
+                        onRegenerate={async () => {
+                            const ok = await confirm({
+                                title: __('¿Cambiar el código?'),
+                                description: __('El código pegado en tu sitio deja de mostrar el widget hasta que pegues el nuevo.'),
+                                confirmLabel: __('Cambiar el código'),
+                            });
+                            if (ok) regenerate.mutate();
+                        }}
+                        deleting={remove.isPending}
+                        onDelete={async () => {
+                            const ok = await confirm({
+                                title: sprintf(__('¿Eliminar «%s»?'), widget.name),
+                                description: __('El botón desaparece de tu sitio. Los registros que llegaron por él se quedan en sus listas.'),
+                                confirmLabel: __('Eliminar'),
+                                destructive: true,
+                            });
+                            if (!ok) return;
+                            remove.mutate(widget.id, { onSuccess: () => nav('/settings?s=widgets') });
+                        }}
+                    />
+                );
+        }
+    };
+    const sectionHeader = (s: WidgetSection, mobile = false): JSX.Element => (
+        <PanelHeader
+            icon={mobile ? undefined : SECTION_ICON[s]}
+            title={__(WIDGET_SECTION_INFO[s].title)}
+            subtitle={__(WIDGET_SECTION_INFO[s].hint)}
+            testId="widget-panel-header"
+            actions={
+                s === 'buttons' ? (
+                    <span className="imcrm-rounded-full imcrm-bg-muted imcrm-px-2 imcrm-py-0.5 imcrm-text-[11px] imcrm-font-medium imcrm-tabular-nums imcrm-text-muted-foreground">
+                        {config.buttons.length}/{WIDGET_MAX_BUTTONS}
+                    </span>
+                ) : undefined
+            }
+        />
+    );
+
+    const stats = (
+        <div className="imcrm-mx-auto imcrm-flex imcrm-w-full imcrm-max-w-[960px] imcrm-flex-col imcrm-gap-5 imcrm-px-4 imcrm-py-5 sm:imcrm-px-8 sm:imcrm-py-8" data-testid="widget-stats-page">
+            <SettingsPageHeader icon={BarChart3} title={__('Estadísticas')} hint={__('Cuántas veces apareció, cuántas lo abrieron, qué botón tocan más y cuántos te dejaron sus datos. Son conteos: nunca datos de una persona.')} />
+            <SettingsCard>
+                <div className="imcrm-p-4 sm:imcrm-p-5">
+                    <WidgetStatsPanel widgetId={widget.id} config={config} />
+                </div>
+            </SettingsCard>
+        </div>
+    );
+
+    const nameInput = <InlineName value={name} onChange={setName} label={__('Nombre del widget')} testId="widget-name" />;
+    const themeAction: MenuAction = { label: appTheme.resolved === 'dark' ? __('Modo claro') : __('Modo oscuro'), icon: appTheme.resolved === 'dark' ? Sun : Moon, onSelect: appTheme.toggle };
+    const saveButton = <SaveButton dirty={dirty} busy={update.isPending && enabledView === null} onClick={() => save()} testId="widget-save" />;
+
+    if (narrow) {
+        const items: Array<BuilderMode<'edit' | 'preview' | 'stats'>> = [
+            { id: 'edit', label: __('Editar'), icon: SlidersHorizontal, problem: problems.length > 0, testId: 'widget-tab-edit' },
+            { id: 'preview', label: __('Vista previa'), icon: Eye, testId: 'widget-tab-preview' },
+            { id: 'stats', label: __('Estadísticas'), icon: BarChart3, testId: 'widget-tab-stats' },
+        ];
+        return (
+            <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col">
+                <BuilderMobileTopBar
+                    onClose={() => void close()}
+                    name={nameInput}
+                    published={enabled}
+                    statusText={enabled ? __('Publicado') : __('Sin publicar')}
+                    more={
+                        <MoreMenu
+                            testId="widget-more"
+                            actions={[
+                                { label: enabled ? __('Dejar de mostrarlo') : __('Publicar'), icon: enabled ? EyeOff : Send, onSelect: togglePublish, testId: 'widget-publish-toggle' },
+                                { label: __('Instalar en tu sitio'), icon: Code2, onSelect: () => openSection('publish') },
+                                { ...themeAction, separated: true },
+                            ]}
+                        />
+                    }
+                    save={saveButton}
+                />
+                {mobileTab === 'edit' && mobileSection !== null && (
+                    <MobileBackBar label={__('Widget')} title={__(WIDGET_SECTION_INFO[mobileSection].title)} onBack={() => setMobileSection(null)} testId="widget-section-back" />
+                )}
+                <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-bg-canvas">
+                    {mobileTab === 'edit' &&
+                        (mobileSection === null ? (
+                            <SettingsMobileIndex
+                                items={navItems}
+                                onPick={(s) => {
+                                    setMobileSection(s);
+                                    go({ mode: 'edit', section: s });
+                                }}
+                                testId="widget-section-index"
+                                intro={
+                                    <div className="imcrm-flex imcrm-items-center imcrm-gap-3 imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-3">
+                                        <span className="imcrm-flex imcrm-h-10 imcrm-w-10 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-primary/10 imcrm-text-primary">
+                                            <MessageSquareText className="imcrm-h-5 imcrm-w-5" />
+                                        </span>
+                                        <p className="imcrm-text-[13px] imcrm-leading-snug imcrm-text-muted-foreground">
+                                            {__('Un botón fijo en tu sitio para que te escriban por WhatsApp, te dejen sus datos o agenden. Míralo en «Vista previa».')}
+                                        </p>
+                                    </div>
+                                }
+                            />
+                        ) : (
+                            <div className="imcrm-bg-card" data-testid="widget-section">
+                                {sectionHeader(mobileSection, true)}
+                                {sectionBody(mobileSection)}
+                            </div>
+                        ))}
+                    {mobileTab === 'preview' && (
+                        <div className="imcrm-h-full">
+                            <WidgetPreview meta={meta} compact initialDevice="mobile" />
+                        </div>
+                    )}
+                    {mobileTab === 'stats' && stats}
+                </div>
+                <BuilderMobileNav
+                    items={items}
+                    value={mobileTab}
+                    onChange={(v) => {
+                        setMobileTab(v);
+                        if (v === 'stats') go({ mode: 'stats' });
+                        else if (v === 'edit') go({ mode: 'edit' });
+                    }}
+                />
+            </div>
+        );
+    }
+
+    const modes: Array<BuilderMode<WidgetEditorMode>> = [
+        { id: 'edit', label: __('Editar'), icon: SlidersHorizontal, problem: problems.length > 0, testId: 'widget-tab-edit' },
+        { id: 'stats', label: __('Estadísticas'), icon: BarChart3, testId: 'widget-tab-stats', tour: 'widget-stats' },
+    ];
 
     return (
-        <div className="imcrm-mx-auto imcrm-flex imcrm-w-full imcrm-max-w-[1400px] imcrm-flex-col imcrm-gap-4 imcrm-p-4 sm:imcrm-p-6" data-testid="widget-editor">
-            {back}
-            <header className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-3">
-                <Input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    maxLength={120}
-                    aria-label={__('Nombre del widget')}
-                    className="imcrm-h-9 imcrm-max-w-sm imcrm-text-base imcrm-font-semibold"
-                    data-testid="widget-name"
-                />
-                <Badge variant={enabled ? 'success' : 'secondary'} dot data-testid="widget-status">
-                    {enabled ? __('Publicado') : __('Sin publicar')}
-                </Badge>
-                <div className="imcrm-ml-auto imcrm-flex imcrm-items-center imcrm-gap-2">
-                    {justSaved && (
-                        <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs imcrm-text-success">
-                            <Check className="imcrm-h-3.5 imcrm-w-3.5" />
-                            {__('Guardado')}
-                        </span>
-                    )}
-                    <Button size="sm" onClick={() => save()} disabled={!dirty || update.isPending} data-testid="widget-save">
-                        {update.isPending ? __('Guardando…') : __('Guardar')}
-                    </Button>
-                </div>
-            </header>
-            {update.isError && (
-                <p className="imcrm-rounded-lg imcrm-border imcrm-border-destructive/30 imcrm-bg-destructive/5 imcrm-p-2.5 imcrm-text-sm imcrm-text-destructive" data-testid="widget-error">
-                    {update.error instanceof Error ? update.error.message : __('No se pudo guardar.')}
-                </p>
-            )}
+        <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col">
+            <BuilderTopBar
+                kindIcon={MessageSquareText}
+                kindLabel={__('Widget de contacto')}
+                onClose={() => void close()}
+                name={nameInput}
+                modes={<BuilderModeSwitch modes={modes} value={mode} onChange={(m) => go({ mode: m })} />}
+                actions={
+                    <>
+                        {wide ? <ThemeToggle compact /> : <MoreMenu testId="widget-more" actions={[themeAction]} />}
+                        <PublishSwitch enabled={enabled} busy={update.isPending} onClick={togglePublish} testId="widget-publish-switch" compact={!wide} />
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className={cn('imcrm-ml-1 imcrm-gap-1.5', mode === 'edit' && section === 'publish' && 'imcrm-border-primary/40 imcrm-text-primary')}
+                            onClick={() => openSection('publish')}
+                            data-testid="widget-install"
+                            title={__('Instalar en tu sitio')}
+                        >
+                            <Code2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {wide && <span>{__('Instalar')}</span>}
+                        </Button>
+                        {saveButton}
+                    </>
+                }
+            />
 
-            <div className="imcrm-grid imcrm-gap-6 lg:imcrm-grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
-                <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-4">
-                    <div ref={tabsRef} className="imcrm-flex imcrm-gap-1 imcrm-overflow-x-auto imcrm-border-b imcrm-border-border" role="tablist">
-                        {TABS.map((t) => (
-                            <button
-                                key={t.id}
-                                type="button"
-                                role="tab"
-                                aria-selected={tab === t.id}
-                                onClick={() => setTab(t.id)}
-                                className={cn(
-                                    '-imcrm-mb-px imcrm-shrink-0 imcrm-whitespace-nowrap imcrm-border-b-2 imcrm-px-3 imcrm-py-2 imcrm-text-sm',
-                                    tab === t.id ? 'imcrm-border-primary imcrm-font-semibold imcrm-text-foreground' : 'imcrm-border-transparent imcrm-text-muted-foreground hover:imcrm-text-foreground',
-                                )}
-                                data-testid={`widget-tab-${t.id}`}
-                                data-active={tab === t.id ? '1' : undefined}
-                            >
-                                {__(t.label)}
-                                {t.id === 'publish' && problems.length > 0 && <span className="imcrm-ml-1.5 imcrm-inline-block imcrm-h-1.5 imcrm-w-1.5 imcrm-rounded-full imcrm-bg-warning imcrm-align-middle" />}
-                            </button>
-                        ))}
+            {mode === 'stats' ? (
+                <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-bg-canvas">{stats}</div>
+            ) : (
+                <div className={cn('imcrm-grid imcrm-min-h-0 imcrm-flex-1', wide ? 'imcrm-grid-cols-[252px_420px_minmax(0,1fr)]' : 'imcrm-grid-cols-[60px_380px_minmax(0,1fr)]')}>
+                    <aside className="imcrm-min-h-0 imcrm-overflow-y-auto imcrm-border-r imcrm-border-border imcrm-bg-card" data-testid="widget-sections">
+                        {wide ? (
+                            <SettingsNav items={navItems} active={section} onPick={(s) => openSection(s)} label={__('Secciones del widget')} dense />
+                        ) : (
+                            <SectionRail items={navItems} active={section} onPick={(s) => openSection(s)} />
+                        )}
+                    </aside>
+                    <aside className="imcrm-min-h-0 imcrm-overflow-y-auto imcrm-border-r imcrm-border-border imcrm-bg-card" data-testid="widget-section">
+                        {sectionHeader(section)}
+                        {sectionBody(section)}
+                    </aside>
+                    <div className="imcrm-min-h-0 imcrm-min-w-0">
+                        <WidgetPreview meta={meta} showClosed={section === 'greeting' && config.greeting.enabled} />
                     </div>
-
-                    {tab === 'buttons' && (
-                        <section className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-tour="widget-buttons">
-                            {config.buttons.length === 0 && (
-                                <p className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-p-4 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
-                                    {__('Agrega el primer botón: WhatsApp, un formulario, tu agenda…')}
-                                </p>
-                            )}
-                            {config.buttons.map((b, i) => (
-                                <WidgetButtonEditor
-                                    key={b.id}
-                                    button={b}
-                                    options={options}
-                                    problems={problems.filter((p) => p.button_id === b.id)}
-                                    open={openId === b.id}
-                                    first={i === 0}
-                                    last={i === config.buttons.length - 1}
-                                    onToggle={() => setOpenId((cur) => (cur === b.id ? null : b.id))}
-                                    onChange={(patch) => setConfig((c) => updateButton(c, b.id, patch))}
-                                    onMove={(delta) => setConfig((c) => moveButton(c, b.id, delta))}
-                                    onRemove={() => setConfig((c) => removeButton(c, b.id))}
-                                    hoursEnabled={config.hours.enabled}
-                                />
-                            ))}
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button variant="outline" size="sm" className="imcrm-self-start" disabled={!canAddButton(config)} data-testid="widget-add-button" data-tour="widget-add-button">
-                                        <Plus className="imcrm-h-4 imcrm-w-4" />
-                                        {canAddButton(config) ? __('Agregar un botón') : sprintf(__('Máximo %d botones'), WIDGET_MAX_BUTTONS)}
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="start" className="imcrm-w-80">
-                                    {WIDGET_BUTTON_TYPES.map((type) => (
-                                        <DropdownMenuItem key={type} onSelect={() => onAdd(type)} className="imcrm-items-start imcrm-gap-2.5 imcrm-py-2" data-testid={`widget-add-${type}`}>
-                                            <span
-                                                className="imcrm-mt-0.5 imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-muted"
-                                                style={WIDGET_TYPE_INFO[type].color ? { background: WIDGET_TYPE_INFO[type].color!, color: '#fff' } : undefined}
-                                            >
-                                                <WidgetIconView icon={WIDGET_TYPE_INFO[type].icon} className="imcrm-h-3.5 imcrm-w-3.5" />
-                                            </span>
-                                            <span className="imcrm-flex imcrm-flex-col">
-                                                <span className="imcrm-text-sm imcrm-font-medium">{__(WIDGET_TYPE_INFO[type].label)}</span>
-                                                <span className="imcrm-text-xs imcrm-text-muted-foreground">{__(WIDGET_TYPE_INFO[type].hint)}</span>
-                                            </span>
-                                        </DropdownMenuItem>
-                                    ))}
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                        </section>
-                    )}
-
-                    {tab === 'look' && (
-                        <section className="imcrm-flex imcrm-flex-col imcrm-gap-5" data-tour="widget-look">
-                            <Row label={__('Al tocar el botón')}>
-                                <div className="imcrm-grid imcrm-gap-2 sm:imcrm-grid-cols-2" role="radiogroup">
-                                    <LayoutCard
-                                        active={config.layout === 'card'}
-                                        onClick={() => patchConfig({ layout: 'card' })}
-                                        icon={<MessageSquareText className="imcrm-h-5 imcrm-w-5" />}
-                                        title={__('Panel tipo chat')}
-                                        hint={__('Un saludo y los botones; un formulario o la agenda se abren ahí mismo.')}
-                                        testId="widget-layout-card"
-                                    />
-                                    <LayoutCard
-                                        active={config.layout === 'menu'}
-                                        onClick={() => patchConfig({ layout: 'menu' })}
-                                        icon={<LayoutList className="imcrm-h-5 imcrm-w-5" />}
-                                        title={__('Botones apilados')}
-                                        hint={__('Los botones salen uno sobre otro, encima del botón redondo.')}
-                                        testId="widget-layout-menu"
-                                    />
-                                </div>
-                            </Row>
-                            {config.layout === 'card' && (
-                                <div className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-2">
-                                    <Row label={__('Saludo')}>
-                                        <Input value={config.title} maxLength={80} onChange={(e) => patchConfig({ title: e.target.value })} data-testid="widget-title" />
-                                    </Row>
-                                    <Row label={__('Debajo del saludo')}>
-                                        <Input value={config.subtitle} maxLength={200} onChange={(e) => patchConfig({ subtitle: e.target.value })} />
-                                    </Row>
-                                    <Toggle
-                                        label={__('Mostrar el logo de la empresa')}
-                                        hint={options.logo_url ? undefined : __('Sube tu logo en Ajustes → Marca.')}
-                                        checked={config.show_logo}
-                                        onChange={(v) => patchConfig({ show_logo: v })}
-                                    />
-                                </div>
-                            )}
-                            <div className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-2">
-                                <Row label={__('Color')}>
-                                    <ColorChoice value={config.color} fallbackLabel={__('El de tu marca')} onChange={(c) => patchConfig({ color: c })} />
-                                </Row>
-                                <Row label={__('Lado de la pantalla')}>
-                                    <Segmented<'right' | 'left'>
-                                        ariaLabel={__('Lado de la pantalla')}
-                                        value={config.position}
-                                        onChange={(v) => patchConfig({ position: v })}
-                                        options={[
-                                            { value: 'left', label: __('Izquierda') },
-                                            { value: 'right', label: __('Derecha') },
-                                        ]}
-                                    />
-                                </Row>
-                                <Row label={__('Separación del borde (px)')}>
-                                    <div className="imcrm-flex imcrm-gap-2">
-                                        <NumberInput label={__('Del costado')} value={config.offset_x} onChange={(v) => patchConfig({ offset_x: v })} />
-                                        <NumberInput label={__('De abajo')} value={config.offset_y} onChange={(v) => patchConfig({ offset_y: v })} />
-                                    </div>
-                                </Row>
-                                <Row label={__('Texto al lado del botón (opcional)')} hint={__('Por ejemplo, «¿Hablamos?». Vacío = sólo el ícono.')}>
-                                    <Input value={config.launcher_label} maxLength={40} onChange={(e) => patchConfig({ launcher_label: e.target.value })} data-testid="widget-launcher-label" />
-                                </Row>
-                            </div>
-                            <Row label={__('Ícono del botón redondo')}>
-                                <IconSelect value={config.launcher_icon} onChange={(icon) => patchConfig({ launcher_icon: icon ?? 'chat' })} />
-                            </Row>
-                            <div className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
-                                <PanelBottom className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" />
-                                <Toggle
-                                    label={__('En el celular, una barra fija abajo')}
-                                    hint={__('En vez del botón redondo, los botones van en una barra a lo ancho de la pantalla (con más de tres, los demás en «Más»).')}
-                                    checked={config.mobile_bar}
-                                    onChange={(v) => patchConfig({ mobile_bar: v })}
-                                />
-                            </div>
-                        </section>
-                    )}
-
-                    {tab === 'hours' && <WidgetHoursEditor config={config} options={options} onChange={(hours) => patchConfig({ hours })} />}
-
-                    {tab === 'show' && <WidgetDisplayEditor config={config} onDisplay={(display) => patchConfig({ display })} onGreeting={(greeting) => patchConfig({ greeting })} />}
-
-                    {tab === 'stats' && <WidgetStatsPanel widgetId={widget.id} config={config} />}
-
-                    {tab === 'publish' && (
-                        <section className="imcrm-flex imcrm-flex-col imcrm-gap-5" data-tour="widget-publish">
-                            {problems.length > 0 && (
-                                <div className="imcrm-rounded-lg imcrm-border imcrm-border-warning/30 imcrm-bg-warning/10 imcrm-p-3" data-testid="widget-problems">
-                                    <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-sm imcrm-font-medium">
-                                        <AlertTriangle className="imcrm-h-4 imcrm-w-4 imcrm-text-warning" />
-                                        {__('Antes de publicar')}
-                                    </p>
-                                    <ul className="imcrm-mt-1.5 imcrm-list-disc imcrm-space-y-0.5 imcrm-pl-6 imcrm-text-sm">
-                                        {problems.map((p, i) => (
-                                            <li key={i}>
-                                                {p.button_id ? (
-                                                    <button
-                                                        type="button"
-                                                        className="imcrm-text-left imcrm-underline-offset-2 hover:imcrm-underline"
-                                                        onClick={() => {
-                                                            setOpenId(p.button_id);
-                                                            setTab('buttons');
-                                                        }}
-                                                    >
-                                                        {p.message}
-                                                    </button>
-                                                ) : (
-                                                    p.message
-                                                )}
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                            <label className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-4 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
-                                <span className="imcrm-flex imcrm-flex-col">
-                                    <span className="imcrm-text-sm imcrm-font-medium">{__('Publicado')}</span>
-                                    <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                                        {enabled
-                                            ? __('Se ve en los sitios donde pegaste el código.')
-                                            : __('Sin publicar, el código pegado no muestra nada.')}
-                                    </span>
-                                </span>
-                                <input
-                                    type="checkbox"
-                                    role="switch"
-                                    className="imcrm-mt-0.5 imcrm-h-5 imcrm-w-5 imcrm-shrink-0 imcrm-accent-primary"
-                                    checked={enabled}
-                                    disabled={update.isPending || (!enabled && problems.length > 0)}
-                                    onChange={(e) => save({ enabled: e.target.checked })}
-                                    data-testid="widget-enabled"
-                                />
-                            </label>
-
-                            <Row
-                                label={__('Código para tu sitio')}
-                                hint={__('Pégalo una sola vez en el pie de tu sitio (antes de </body>) y el botón aparece en todas las páginas. En WordPress, con un plugin para agregar código al pie o en el tema.')}
-                            >
-                                <Textarea readOnly rows={3} value={code} className="imcrm-font-mono imcrm-text-xs" onFocus={(e) => e.currentTarget.select()} data-testid="widget-code" />
-                                <div className="imcrm-mt-1.5">
-                                    <CopyCode value={code} />
-                                </div>
-                            </Row>
-
-                            <Row
-                                label={__('Sólo en estos sitios (opcional)')}
-                                hint={__('Uno por renglón, por ejemplo «tuempresa.com». Vacío = cualquier sitio. Si un formulario sólo se puede insertar en ciertos sitios, agrega ahí también este.')}
-                            >
-                                <Textarea
-                                    rows={3}
-                                    value={domainsText}
-                                    placeholder="tuempresa.com"
-                                    onChange={(e) => {
-                                        setDomainsText(e.target.value);
-                                        patchConfig({ allowed_domains: parseDomains(e.target.value) });
-                                    }}
-                                    data-testid="widget-domains"
-                                />
-                            </Row>
-
-                            <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-4">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={regenerate.isPending}
-                                    onClick={async () => {
-                                        const ok = await confirm({
-                                            title: __('¿Cambiar el código?'),
-                                            description: __('El código pegado en tu sitio deja de mostrar el widget hasta que pegues el nuevo.'),
-                                            confirmLabel: __('Cambiar el código'),
-                                        });
-                                        if (ok) regenerate.mutate();
-                                    }}
-                                >
-                                    <RefreshCw className="imcrm-h-4 imcrm-w-4" />
-                                    {__('Cambiar el código')}
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="imcrm-text-destructive hover:imcrm-text-destructive"
-                                    disabled={remove.isPending}
-                                    onClick={async () => {
-                                        const ok = await confirm({
-                                            title: sprintf(__('¿Eliminar «%s»?'), widget.name),
-                                            description: __('El botón desaparece de tu sitio. Los registros que llegaron por él se quedan en sus listas.'),
-                                            confirmLabel: __('Eliminar'),
-                                            destructive: true,
-                                        });
-                                        if (!ok) return;
-                                        remove.mutate(widget.id, { onSuccess: () => nav('/settings?s=widgets') });
-                                    }}
-                                    data-testid="widget-delete"
-                                >
-                                    <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                                    {__('Eliminar el widget')}
-                                </Button>
-                            </div>
-                        </section>
-                    )}
                 </div>
-
-                <div className="imcrm-min-w-0 lg:imcrm-sticky lg:imcrm-top-2 lg:imcrm-self-start">
-                    <WidgetPreview meta={meta} showClosed={tab === 'show' && config.greeting.enabled} />
-                </div>
-            </div>
+            )}
         </div>
     );
 }
 
-function LayoutCard({
-    active,
-    onClick,
-    icon,
-    title,
-    hint,
-    testId,
-}: {
-    active: boolean;
-    onClick: () => void;
-    icon: JSX.Element;
-    title: string;
-    hint: string;
-    testId: string;
-}): JSX.Element {
+/** El menú de secciones angosto (sólo íconos, con su nombre al pasar el mouse). */
+function SectionRail({ items, active, onPick }: { items: ReadonlyArray<SettingsNavItem<WidgetSection>>; active: WidgetSection; onPick: (s: WidgetSection) => void }): JSX.Element {
     return (
-        <button
-            type="button"
-            role="radio"
-            aria-checked={active}
-            onClick={onClick}
-            className={cn(
-                'imcrm-flex imcrm-items-start imcrm-gap-2.5 imcrm-rounded-lg imcrm-border imcrm-p-3 imcrm-text-left',
-                active ? 'imcrm-border-primary imcrm-bg-primary/5' : 'imcrm-border-border hover:imcrm-border-primary/40',
-            )}
-            data-testid={testId}
-        >
-            <span className={cn('imcrm-mt-0.5', active ? 'imcrm-text-primary' : 'imcrm-text-muted-foreground')}>{icon}</span>
-            <span className="imcrm-flex imcrm-flex-col">
-                <span className="imcrm-text-sm imcrm-font-medium">{title}</span>
-                <span className="imcrm-text-xs imcrm-text-muted-foreground">{hint}</span>
-            </span>
-        </button>
-    );
-}
-
-function NumberInput({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }): JSX.Element {
-    return (
-        <label className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-1 imcrm-text-[11px] imcrm-text-muted-foreground">
-            {label}
-            <Input
-                type="number"
-                min={0}
-                max={200}
-                value={value}
-                onChange={(e) => {
-                    const n = Math.round(Number(e.target.value));
-                    if (Number.isFinite(n)) onChange(Math.max(0, Math.min(200, n)));
-                }}
-            />
-        </label>
-    );
-}
-
-function CopyCode({ value }: { value: string }): JSX.Element {
-    const [copied, setCopied] = useState(false);
-    return (
-        <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-                void navigator.clipboard?.writeText(value).then(() => {
-                    setCopied(true);
-                    window.setTimeout(() => setCopied(false), 1600);
-                });
-            }}
-            data-testid="widget-copy-code"
-        >
-            {copied ? <Check className="imcrm-h-4 imcrm-w-4" /> : <Copy className="imcrm-h-4 imcrm-w-4" />}
-            {copied ? __('Copiado') : __('Copiar el código')}
-        </Button>
+        <nav aria-label={__('Secciones del widget')} className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1 imcrm-py-3">
+            {items.map((it) => {
+                const on = it.id === active;
+                return (
+                    <button
+                        key={it.id}
+                        type="button"
+                        onClick={() => onPick(it.id)}
+                        aria-current={on ? 'page' : undefined}
+                        aria-label={it.label}
+                        title={it.summary ? `${it.label} · ${it.summary}` : it.label}
+                        data-settings-group={it.id}
+                        className={cn(
+                            'imcrm-relative imcrm-flex imcrm-h-10 imcrm-w-10 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-transition-colors',
+                            on ? 'imcrm-bg-primary imcrm-text-primary-foreground' : 'imcrm-text-muted-foreground hover:imcrm-bg-muted hover:imcrm-text-foreground',
+                        )}
+                    >
+                        <it.icon className="imcrm-h-4 imcrm-w-4" />
+                        {it.problem && <span className="imcrm-absolute imcrm-right-1.5 imcrm-top-1.5 imcrm-h-2 imcrm-w-2 imcrm-rounded-full imcrm-bg-destructive imcrm-ring-2 imcrm-ring-card" aria-label={__('Falta algo')} />}
+                    </button>
+                );
+            })}
+        </nav>
     );
 }

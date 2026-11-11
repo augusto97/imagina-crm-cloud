@@ -471,7 +471,7 @@ export function PreviewToolbar({ hint, children }: { hint: string; children?: Re
         <div className="imcrm-flex imcrm-h-11 imcrm-shrink-0 imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-px-4">
             <span className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-[12px] imcrm-text-muted-foreground">
                 <Eye className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-hidden />
-                <span className="imcrm-font-medium imcrm-text-foreground">{__('Vista previa')}</span>
+                <span className="imcrm-shrink-0 imcrm-whitespace-nowrap imcrm-font-medium imcrm-text-foreground">{__('Vista previa')}</span>
                 <span className="imcrm-hidden imcrm-truncate xl:imcrm-inline">· {hint}</span>
             </span>
             <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5">{children}</div>

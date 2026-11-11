@@ -856,10 +856,11 @@ window.addEventListener('message', (e: MessageEvent) => {
             meta = (d.meta as PublicWidgetMeta | null) ?? null;
             if (d.host && typeof d.host === 'object') host = d.host as HostInfo;
             forcedOpen = typeof d.hours_open === 'boolean' ? d.hours_open : null;
-            const wasOpen = d.open === true;
             build();
-            // Sin mover el foco: quien edita sigue escribiendo en el editor.
-            if (wasOpen) setOpen(true, false);
+            // Abierto o cerrado según el editor (antes sólo abría: `open` sobrevive a build() y el
+            // panel quedaba abierto con «Cerrado» elegido). Sin mover el foco: quien edita sigue
+            // escribiendo en el editor.
+            setOpen(d.open === true, false);
         }
         return;
     }

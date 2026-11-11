@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { AlertTriangle, ArrowDown, ArrowUp, ChevronDown, Plus, Trash2, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ChevronDown, ClipboardList, MessagesSquare, Plus, SquareStack, Trash2, Users, X } from 'lucide-react';
 import {
     WIDGET_ICONS,
     WIDGET_MAX_ADVISORS,
@@ -14,7 +14,7 @@ import {
     type WidgetWhen,
 } from '@imagina-base/shared';
 
-import { Row, Toggle } from '@/admin/records/layout/editor/inspectorUi';
+import { Row } from '@/admin/records/layout/editor/inspectorUi';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils';
 
 import { WIDGET_ICON_LABEL, WidgetIconView } from './WidgetIconView';
 import { addAdvisor, startAdvisors, stopAdvisors, updateAdvisor, whatsappVars } from './widgetEditor';
+import { SubSection, SwitchRow } from './widgetUi';
 
 const WHEN_LABEL: Record<WidgetWhen, string> = {
     always: 'Siempre',
@@ -64,21 +65,24 @@ export function WidgetButtonEditor({
     const color = button.color ?? info.color ?? null;
     return (
         <div
-            className={cn('imcrm-rounded-xl imcrm-border imcrm-bg-card', open ? 'imcrm-border-primary/40 imcrm-shadow-imcrm-sm' : 'imcrm-border-border')}
+            className={cn(
+                'imcrm-overflow-hidden imcrm-rounded-xl imcrm-border imcrm-bg-card imcrm-transition-shadow',
+                open ? 'imcrm-border-primary/40 imcrm-shadow-imcrm-sm imcrm-ring-1 imcrm-ring-primary/10' : 'imcrm-border-border hover:imcrm-border-primary/30',
+            )}
             data-testid="widget-button"
             data-button-type={button.type}
         >
-            <div className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-p-2.5">
-                <button type="button" onClick={onToggle} className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-2.5 imcrm-text-left" aria-expanded={open}>
+            <div className={cn('imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-py-2 imcrm-pl-2.5 imcrm-pr-1.5', open && 'imcrm-bg-muted/30')}>
+                <button type="button" onClick={onToggle} className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-items-center imcrm-gap-2.5 imcrm-py-0.5 imcrm-text-left" aria-expanded={open}>
                     <span
-                        className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-muted imcrm-text-foreground/70"
+                        className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-primary imcrm-text-primary-foreground imcrm-shadow-sm"
                         style={color ? { background: color, color: '#fff' } : undefined}
                     >
                         <WidgetIconView icon={widgetButtonIcon(button)} />
                     </span>
                     <span className="imcrm-min-w-0 imcrm-flex-1">
-                        <span className="imcrm-block imcrm-truncate imcrm-text-sm imcrm-font-medium">{widgetButtonLabel(button)}</span>
-                        <span className="imcrm-block imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">
+                        <span className="imcrm-block imcrm-truncate imcrm-text-[13.5px] imcrm-font-medium">{widgetButtonLabel(button)}</span>
+                        <span className="imcrm-block imcrm-truncate imcrm-text-[11.5px] imcrm-text-muted-foreground">
                             {[
                                 button.type === 'whatsapp' && button.capture_form_id !== null ? __('WhatsApp con datos primero') : __(info.label),
                                 button.type === 'whatsapp' && button.advisors.length > 1 ? sprintfPeople(button.advisors.length) : null,
@@ -88,7 +92,12 @@ export function WidgetButtonEditor({
                                 .join(' · ')}
                         </span>
                     </span>
-                    {problems.length > 0 && <AlertTriangle className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-warning" aria-label={__('Le falta algo')} />}
+                    {problems.length > 0 && (
+                        <span className="imcrm-inline-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1 imcrm-rounded-full imcrm-bg-warning/15 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-[10.5px] imcrm-font-medium imcrm-text-warning-foreground" aria-label={__('Le falta algo')}>
+                            <AlertTriangle className="imcrm-h-3 imcrm-w-3 imcrm-text-warning" />
+                            {__('Falta algo')}
+                        </span>
+                    )}
                     <ChevronDown className={cn('imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground imcrm-transition-transform', open && 'imcrm-rotate-180')} />
                 </button>
                 <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center">
@@ -104,30 +113,21 @@ export function WidgetButtonEditor({
                 </div>
             </div>
             {open && (
-                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-p-3">
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-5 imcrm-border-t imcrm-border-border imcrm-px-3.5 imcrm-py-4">
                     {problems.length > 0 && (
-                        <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-rounded-lg imcrm-bg-warning/10 imcrm-p-2 imcrm-text-xs imcrm-text-foreground" data-testid="widget-button-problems">
+                        <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-rounded-lg imcrm-border imcrm-border-warning/30 imcrm-bg-warning/10 imcrm-p-2.5 imcrm-text-xs imcrm-text-foreground" data-testid="widget-button-problems">
                             {problems.map((p, i) => (
                                 <li key={i} className="imcrm-flex imcrm-gap-1.5">
-                                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-warning" />
                                     {p.message.replace(/^«[^»]*»: /, '')}
                                 </li>
                             ))}
                         </ul>
                     )}
-                    <TypeFields button={button} options={options} onChange={onChange} />
-                    {hoursEnabled && (
-                        <Row label={__('Cuándo se ve')} hint={__('Según el horario de atención del widget (pestaña Horario).')}>
-                            <Select value={button.when} onChange={(e) => onChange({ when: e.target.value as WidgetWhen })} data-testid="widget-button-when">
-                                {(Object.keys(WHEN_LABEL) as WidgetWhen[]).map((w) => (
-                                    <option key={w} value={w}>
-                                        {__(WHEN_LABEL[w])}
-                                    </option>
-                                ))}
-                            </Select>
-                        </Row>
-                    )}
-                    <div className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-2">
+                    <SubSection title={__('Qué hace')}>
+                        <TypeFields button={button} options={options} onChange={onChange} />
+                    </SubSection>
+                    <SubSection title={__('Cómo se ve')}>
                         <Row label={__('Nombre del botón')}>
                             <Input value={button.label} maxLength={60} placeholder={info.label} onChange={(e) => onChange({ label: e.target.value })} data-testid="widget-button-label" />
                         </Row>
@@ -139,15 +139,35 @@ export function WidgetButtonEditor({
                                 onChange={(e) => onChange({ description: e.target.value })}
                             />
                         </Row>
-                    </div>
-                    <div className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-2">
                         <Row label={__('Ícono')}>
                             <IconSelect value={button.icon} fallback={info.icon} onChange={(icon) => onChange({ icon })} />
                         </Row>
                         <Row label={__('Color')}>
-                            <ColorChoice value={button.color} fallbackLabel={info.color ? __('El de WhatsApp') : __('El del widget')} onChange={(c) => onChange({ color: c })} />
+                            <ColorChoice value={button.color} fallbackLabel={info.color ? __('El de WhatsApp') : __('El del widget')} fallbackColor={info.color} onChange={(c) => onChange({ color: c })} />
                         </Row>
-                    </div>
+                    </SubSection>
+                    {hoursEnabled && (
+                        <SubSection title={__('Cuándo se ve')} hint={__('Según el horario de atención del widget.')}>
+                            <div className="imcrm-grid imcrm-grid-cols-3 imcrm-gap-1 imcrm-rounded-lg imcrm-bg-muted/60 imcrm-p-0.5" role="radiogroup" aria-label={__('Cuándo se ve')} data-testid="widget-button-when">
+                                {(Object.keys(WHEN_LABEL) as WidgetWhen[]).map((w) => (
+                                    <button
+                                        key={w}
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={button.when === w}
+                                        onClick={() => onChange({ when: w })}
+                                        data-when={w}
+                                        className={cn(
+                                            'imcrm-rounded-md imcrm-px-1.5 imcrm-py-1.5 imcrm-text-[11.5px] imcrm-leading-tight',
+                                            button.when === w ? 'imcrm-bg-card imcrm-font-semibold imcrm-text-foreground imcrm-shadow-imcrm-sm' : 'imcrm-text-muted-foreground hover:imcrm-text-foreground',
+                                        )}
+                                    >
+                                        {__(WHEN_LABEL[w])}
+                                    </button>
+                                ))}
+                            </div>
+                        </SubSection>
+                    )}
                 </div>
             )}
         </div>
@@ -187,62 +207,63 @@ function TypeFields({
                         </Row>
                     )}
                     <AdvisorsBlock button={button} options={options} onChange={onChange} />
-                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-p-2.5" data-tour="widget-capture">
-                        <Toggle
+                    <div data-tour="widget-capture">
+                        <SwitchRow
+                            boxed
+                            icon={ClipboardList}
                             label={__('Pedir sus datos antes de abrir WhatsApp')}
                             hint={__('La persona llena un formulario corto (por ejemplo, nombre y celular), queda como registro en tu lista y después se abre WhatsApp con el mensaje armado con sus respuestas.')}
                             checked={button.capture_form_id !== null}
                             onChange={(on) =>
                                 onChange({ capture_form_id: on ? options.forms.find((f) => f.enabled)?.id ?? options.forms[0]?.id ?? null : null })
                             }
-                        />
-                        {button.capture_form_id !== null && (
+                            testId="widget-capture-toggle"
+                        >
                             <Row label={__('Formulario')}>
                                 <FormSelect options={options} value={button.capture_form_id} onChange={(id) => onChange({ capture_form_id: id, assign_field_id: null })} testId="widget-capture-form" />
                             </Row>
-                        )}
-                        {button.capture_form_id !== null && (
-                            <Toggle
+                            <SwitchRow
+                                icon={MessagesSquare}
                                 label={__('Abrirlo como un chat')}
                                 hint={__('Una pregunta por burbuja, como una conversación. Apágalo para verlo como lo armaste.')}
                                 checked={button.as_chat}
                                 onChange={(v) => onChange({ as_chat: v })}
                             />
-                        )}
-                        {button.capture_form_id !== null && many && capture && (
-                            <Row
-                                label={__('Asignar el registro a quien atiende')}
-                                hint={
-                                    (capture.person_fields ?? []).length === 0
-                                        ? __('La lista del formulario no tiene un campo «Persona». Agrégale uno para que cada registro quede a nombre de quien lo atiende.')
-                                        : __('Sólo para las personas vinculadas a alguien del equipo.')
-                                }
-                            >
-                                <Select
-                                    value={button.assign_field_id ?? ''}
-                                    onChange={(e) => onChange({ assign_field_id: e.target.value ? Number(e.target.value) : null })}
-                                    disabled={(capture.person_fields ?? []).length === 0}
-                                    data-testid="widget-assign-field"
+                            {many && capture && (
+                                <Row
+                                    label={__('Asignar el registro a quien atiende')}
+                                    hint={
+                                        (capture.person_fields ?? []).length === 0
+                                            ? __('La lista del formulario no tiene un campo «Persona». Agrégale uno para que cada registro quede a nombre de quien lo atiende.')
+                                            : __('Sólo para las personas vinculadas a alguien del equipo.')
+                                    }
                                 >
-                                    <option value="">{__('No asignar')}</option>
-                                    {(capture.person_fields ?? []).map((pf) => (
-                                        <option key={pf.id} value={pf.id}>
-                                            {pf.label}
-                                        </option>
-                                    ))}
-                                </Select>
-                            </Row>
-                        )}
-                        {capture && !capture.asks_phone && (
-                            <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                                {__('Este formulario no pregunta un celular. Si quieres escribirle después por WhatsApp desde la app, agrégale esa pregunta.')}
-                            </p>
-                        )}
-                        {options.forms.length === 0 && (
-                            <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                                {__('Todavía no tienes formularios. Se arman en los Ajustes de cada lista → Formularios.')}
-                            </p>
-                        )}
+                                    <Select
+                                        value={button.assign_field_id ?? ''}
+                                        onChange={(e) => onChange({ assign_field_id: e.target.value ? Number(e.target.value) : null })}
+                                        disabled={(capture.person_fields ?? []).length === 0}
+                                        data-testid="widget-assign-field"
+                                    >
+                                        <option value="">{__('No asignar')}</option>
+                                        {(capture.person_fields ?? []).map((pf) => (
+                                            <option key={pf.id} value={pf.id}>
+                                                {pf.label}
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </Row>
+                            )}
+                            {capture && !capture.asks_phone && (
+                                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                                    {__('Este formulario no pregunta un celular. Si quieres escribirle después por WhatsApp desde la app, agrégale esa pregunta.')}
+                                </p>
+                            )}
+                            {options.forms.length === 0 && (
+                                <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                                    {__('Todavía no tienes formularios. Se arman en los Ajustes de cada lista → Formularios.')}
+                                </p>
+                            )}
+                        </SwitchRow>
                     </div>
                     <Row label={__('Mensaje que ya va escrito')} hint={__('La persona lo puede cambiar antes de enviarlo.')}>
                         <Textarea
@@ -277,7 +298,8 @@ function TypeFields({
                     <Row label={__('Formulario que se abre')} hint={__('Se abre dentro del panel. Lo que llenen queda como registro en su lista.')}>
                         <FormSelect options={options} value={button.form_id} onChange={(id) => onChange({ form_id: id })} testId="widget-form" />
                     </Row>
-                    <Toggle
+                    <SwitchRow
+                        icon={MessagesSquare}
                         label={__('Abrirlo como un chat')}
                         hint={__('Una pregunta por burbuja, como una conversación. Apágalo para verlo como lo armaste.')}
                         checked={button.as_chat}
@@ -314,7 +336,7 @@ function TypeFields({
             );
         case 'email':
             return (
-                <div className="imcrm-grid imcrm-gap-3 sm:imcrm-grid-cols-2">
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
                     <Row label={__('Correo')}>
                         <Input value={button.email} type="email" placeholder="hola@tuempresa.com" onChange={(e) => onChange({ email: e.target.value })} />
                     </Row>
@@ -329,7 +351,7 @@ function TypeFields({
                     <Row label={__('Enlace')} hint={__('Tu catálogo, tienda, preguntas frecuentes… Tiene que empezar con https://.')}>
                         <Input value={button.url} placeholder="https://" onChange={(e) => onChange({ url: e.target.value })} />
                     </Row>
-                    <Toggle label={__('Abrir en otra pestaña')} checked={button.new_tab} onChange={(v) => onChange({ new_tab: v })} />
+                    <SwitchRow icon={SquareStack} label={__('Abrir en otra pestaña')} checked={button.new_tab} onChange={(v) => onChange({ new_tab: v })} />
                 </>
             );
     }
@@ -349,43 +371,52 @@ function AdvisorsBlock({ button, options, onChange }: { button: WidgetButton; op
     const set = (advisors: WidgetAdvisor[]): void => onChange({ advisors });
     const members = options.members ?? [];
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-p-2.5" data-tour="widget-advisors">
-            <Toggle
+        <div data-tour="widget-advisors">
+            <SwitchRow
+                boxed
+                icon={Users}
                 label={__('Varias personas atienden')}
                 hint={__('Cada conversación le llega a una persona distinta (por turnos o al azar). Sus números no se ven en tu sitio.')}
                 checked={many}
                 onChange={(on) => onChange(on ? { advisors: startAdvisors(button), phone: '' } : stopAdvisors(button))}
-            />
-            {many && (
-                <>
-                    <ul className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="widget-advisors">
-                        {button.advisors.map((a, i) => (
-                            <li key={a.id} className="imcrm-grid imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-2 sm:imcrm-grid-cols-[1fr_1fr_auto]" data-testid="widget-advisor">
+                testId="widget-advisors-toggle"
+            >
+                <ul className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="widget-advisors">
+                    {button.advisors.map((a, i) => (
+                        <li key={a.id} className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/30 imcrm-p-2" data-testid="widget-advisor">
+                            <div className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                                <span className="imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-primary/10 imcrm-text-[11px] imcrm-font-semibold imcrm-text-primary" aria-hidden>
+                                    {i + 1}
+                                </span>
                                 <Input
                                     value={a.name}
                                     maxLength={60}
                                     placeholder={__('Nombre (ej. Ana)')}
                                     aria-label={__('Nombre de la persona %d').replace('%d', String(i + 1))}
                                     onChange={(e) => set(updateAdvisor(button.advisors, a.id, { name: e.target.value }))}
+                                    className="imcrm-h-8"
                                     data-testid="widget-advisor-name"
                                 />
+                                <button
+                                    type="button"
+                                    onClick={() => (button.advisors.length === 1 ? onChange(stopAdvisors(button)) : set(button.advisors.filter((x) => x.id !== a.id)))}
+                                    className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-destructive"
+                                    aria-label={__('Quitar a esta persona')}
+                                    title={__('Quitar a esta persona')}
+                                >
+                                    <X className="imcrm-h-4 imcrm-w-4" />
+                                </button>
+                            </div>
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-pl-[30px] imcrm-pr-[38px]">
                                 <Input
                                     value={a.phone}
                                     inputMode="tel"
                                     placeholder="+57 300 123 4567"
                                     aria-label={__('WhatsApp de la persona %d').replace('%d', String(i + 1))}
                                     onChange={(e) => set(updateAdvisor(button.advisors, a.id, { phone: e.target.value }))}
+                                    className="imcrm-h-8"
                                     data-testid="widget-advisor-phone"
                                 />
-                                <button
-                                    type="button"
-                                    onClick={() => (button.advisors.length === 1 ? onChange(stopAdvisors(button)) : set(button.advisors.filter((x) => x.id !== a.id)))}
-                                    className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-items-center imcrm-justify-center imcrm-self-center imcrm-justify-self-end imcrm-rounded-md imcrm-text-muted-foreground hover:imcrm-bg-accent hover:imcrm-text-destructive"
-                                    aria-label={__('Quitar a esta persona')}
-                                    title={__('Quitar a esta persona')}
-                                >
-                                    <X className="imcrm-h-4 imcrm-w-4" />
-                                </button>
                                 {members.length > 0 && (
                                     <Select
                                         value={a.user_id ?? ''}
@@ -394,7 +425,7 @@ function AdvisorsBlock({ button, options, onChange }: { button: WidgetButton; op
                                             const m = members.find((x) => x.id === id);
                                             set(updateAdvisor(button.advisors, a.id, { user_id: id, name: a.name || m?.name || '' }));
                                         }}
-                                        className="sm:imcrm-col-span-3"
+                                        className="imcrm-h-8 imcrm-text-xs"
                                         aria-label={__('Persona del equipo')}
                                         data-testid="widget-advisor-user"
                                     >
@@ -406,35 +437,35 @@ function AdvisorsBlock({ button, options, onChange }: { button: WidgetButton; op
                                         ))}
                                     </Select>
                                 )}
-                            </li>
-                        ))}
-                    </ul>
-                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
-                        <button
-                            type="button"
-                            onClick={() => set(addAdvisor(button.advisors))}
-                            disabled={button.advisors.length >= WIDGET_MAX_ADVISORS}
-                            className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-text-xs imcrm-font-medium imcrm-text-primary hover:imcrm-underline disabled:imcrm-opacity-40"
-                            data-testid="widget-advisor-add"
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
+                    <button
+                        type="button"
+                        onClick={() => set(addAdvisor(button.advisors))}
+                        disabled={button.advisors.length >= WIDGET_MAX_ADVISORS}
+                        className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-1.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-text-primary hover:imcrm-bg-primary/5 disabled:imcrm-opacity-40"
+                        data-testid="widget-advisor-add"
+                    >
+                        <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Agregar otra persona')}
+                    </button>
+                    <label className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('Reparto')}
+                        <Select
+                            value={button.rotation}
+                            onChange={(e) => onChange({ rotation: e.target.value as WidgetButton['rotation'] })}
+                            className="imcrm-h-8 imcrm-w-auto imcrm-text-xs"
+                            data-testid="widget-advisor-rotation"
                         >
-                            <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
-                            {__('Agregar otra persona')}
-                        </button>
-                        <label className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-text-muted-foreground">
-                            {__('Reparto')}
-                            <Select
-                                value={button.rotation}
-                                onChange={(e) => onChange({ rotation: e.target.value as WidgetButton['rotation'] })}
-                                className="imcrm-h-8 imcrm-w-auto imcrm-text-xs"
-                                data-testid="widget-advisor-rotation"
-                            >
-                                <option value="round_robin">{__('Por turnos')}</option>
-                                <option value="random">{__('Al azar')}</option>
-                            </Select>
-                        </label>
-                    </div>
-                </>
-            )}
+                            <option value="round_robin">{__('Por turnos')}</option>
+                            <option value="random">{__('Al azar')}</option>
+                        </Select>
+                    </label>
+                </div>
+            </SwitchRow>
         </div>
     );
 }
@@ -464,67 +495,92 @@ function FormSelect({
 }
 
 export function IconSelect({ value, fallback, onChange }: { value: WidgetIcon | null; fallback?: WidgetIcon; onChange: (v: WidgetIcon | null) => void }): JSX.Element {
+    const cell = (on: boolean): string =>
+        cn(
+            'imcrm-flex imcrm-h-8 imcrm-items-center imcrm-justify-center imcrm-rounded-lg imcrm-border imcrm-transition-colors',
+            on ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-text-primary' : 'imcrm-border-border imcrm-bg-card imcrm-text-muted-foreground hover:imcrm-border-primary/40 hover:imcrm-text-foreground',
+        );
     return (
-        <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1" role="radiogroup" aria-label={__('Ícono')}>
+        <div className="imcrm-grid imcrm-grid-cols-7 imcrm-gap-1" role="radiogroup" aria-label={__('Ícono')}>
             {fallback && (
-                <button
-                    type="button"
-                    role="radio"
-                    aria-checked={value === null}
-                    onClick={() => onChange(null)}
-                    className={cn(
-                        'imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-1 imcrm-text-[11px]',
-                        value === null ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-font-medium' : 'imcrm-border-border imcrm-text-muted-foreground hover:imcrm-text-foreground',
-                    )}
-                >
-                    {__('El del tipo')}
+                <button type="button" role="radio" aria-checked={value === null} onClick={() => onChange(null)} className={cn(cell(value === null), 'imcrm-col-span-2 imcrm-gap-1 imcrm-px-1.5 imcrm-text-[11px]')} title={__('El ícono de su tipo')}>
+                    <WidgetIconView icon={fallback} className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                    <span className="imcrm-truncate">{__('Automático')}</span>
                 </button>
             )}
             {WIDGET_ICONS.map((icon) => (
-                <button
-                    key={icon}
-                    type="button"
-                    role="radio"
-                    aria-checked={value === icon}
-                    aria-label={WIDGET_ICON_LABEL[icon]}
-                    title={WIDGET_ICON_LABEL[icon]}
-                    onClick={() => onChange(icon)}
-                    className={cn(
-                        'imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-border',
-                        value === icon ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-text-foreground' : 'imcrm-border-border imcrm-text-muted-foreground hover:imcrm-text-foreground',
-                    )}
-                >
-                    <WidgetIconView icon={icon} className="imcrm-h-3.5 imcrm-w-3.5" />
+                <button key={icon} type="button" role="radio" aria-checked={value === icon} aria-label={WIDGET_ICON_LABEL[icon]} title={WIDGET_ICON_LABEL[icon]} onClick={() => onChange(icon)} className={cell(value === icon)}>
+                    <WidgetIconView icon={icon} className="imcrm-h-4 imcrm-w-4" />
                 </button>
             ))}
         </div>
     );
 }
 
-export function ColorChoice({ value, fallbackLabel, onChange }: { value: string | null; fallbackLabel: string; onChange: (v: string | null) => void }): JSX.Element {
+const SWATCHES = ['#2563eb', '#0e7490', '#16a34a', '#25d366', '#d97706', '#dc2626', '#db2777', '#7c3aed', '#0f172a'];
+
+/** El color: el de siempre (de la marca o del tipo), uno de las muestras o cualquiera. */
+export function ColorChoice({
+    value,
+    fallbackLabel,
+    fallbackColor,
+    onChange,
+}: {
+    value: string | null;
+    fallbackLabel: string;
+    /** El color que se usa sin elegir uno (para dibujarlo). */
+    fallbackColor?: string | null;
+    onChange: (v: string | null) => void;
+}): JSX.Element {
+    const custom = value !== null && !SWATCHES.includes(value.toLowerCase());
     return (
-        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
-            <button
-                type="button"
-                onClick={() => onChange(null)}
-                aria-pressed={value === null}
-                className={cn(
-                    'imcrm-rounded-md imcrm-border imcrm-px-2 imcrm-py-1 imcrm-text-[11px]',
-                    value === null ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-font-medium' : 'imcrm-border-border imcrm-text-muted-foreground hover:imcrm-text-foreground',
-                )}
-            >
-                {fallbackLabel}
-            </button>
-            <label className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-[11px] imcrm-text-muted-foreground">
-                <input
-                    type="color"
-                    value={value ?? '#2563eb'}
-                    onChange={(e) => onChange(e.target.value.toLowerCase())}
-                    className="imcrm-h-7 imcrm-w-9 imcrm-cursor-pointer imcrm-rounded imcrm-border imcrm-border-border imcrm-bg-transparent"
-                    aria-label={__('Otro color')}
-                />
-                {value ? value : __('Otro color')}
-            </label>
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5">
+                <button
+                    type="button"
+                    onClick={() => onChange(null)}
+                    aria-pressed={value === null}
+                    className={cn(
+                        'imcrm-inline-flex imcrm-h-7 imcrm-items-center imcrm-gap-1.5 imcrm-rounded-full imcrm-border imcrm-pl-1 imcrm-pr-2.5 imcrm-text-[11.5px]',
+                        value === null ? 'imcrm-border-primary imcrm-bg-primary/10 imcrm-font-medium imcrm-text-foreground' : 'imcrm-border-border imcrm-text-muted-foreground hover:imcrm-text-foreground',
+                    )}
+                >
+                    <span className="imcrm-h-5 imcrm-w-5 imcrm-rounded-full imcrm-border imcrm-border-black/10" style={{ background: fallbackColor ?? 'hsl(var(--imcrm-primary))' }} aria-hidden />
+                    {fallbackLabel}
+                </button>
+                {SWATCHES.map((c) => (
+                    <button
+                        key={c}
+                        type="button"
+                        title={c}
+                        aria-label={c}
+                        aria-pressed={value?.toLowerCase() === c}
+                        onClick={() => onChange(c)}
+                        className={cn(
+                            'imcrm-h-6 imcrm-w-6 imcrm-rounded-full imcrm-border imcrm-border-black/10 dark:imcrm-border-white/30 imcrm-ring-offset-2 imcrm-ring-offset-card imcrm-transition-transform hover:imcrm-scale-110',
+                            value?.toLowerCase() === c && 'imcrm-ring-2 imcrm-ring-primary',
+                        )}
+                        style={{ background: c }}
+                    />
+                ))}
+                <label
+                    className={cn(
+                        'imcrm-relative imcrm-flex imcrm-h-6 imcrm-w-6 imcrm-cursor-pointer imcrm-items-center imcrm-justify-center imcrm-overflow-hidden imcrm-rounded-full imcrm-border imcrm-border-border imcrm-ring-offset-2 imcrm-ring-offset-card',
+                        custom && 'imcrm-ring-2 imcrm-ring-primary',
+                    )}
+                    title={__('Otro color')}
+                    style={custom ? { background: value! } : { background: 'conic-gradient(#ef4444, #f59e0b, #22c55e, #06b6d4, #6366f1, #d946ef, #ef4444)' }}
+                >
+                    <input
+                        type="color"
+                        value={value ?? fallbackColor ?? '#2563eb'}
+                        onChange={(e) => onChange(e.target.value.toLowerCase())}
+                        className="imcrm-absolute imcrm-inset-0 imcrm-h-full imcrm-w-full imcrm-cursor-pointer imcrm-opacity-0"
+                        aria-label={__('Otro color')}
+                    />
+                </label>
+            </div>
+            {value && <span className="imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground">{value}</span>}
         </div>
     );
 }

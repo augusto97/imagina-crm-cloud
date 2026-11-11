@@ -14256,6 +14256,66 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         cancela; color de la tarjeta y fondo del editor medidos en el iframe;
         estructura en escritorio, celular y oscuro sin desborde.
 
+  - [x] **El editor del widget de contacto, rediseñado (v0.1.408, addendum
+        ADR-S99, pedido del usuario con captura: "esta interfaz del widget de
+        contacto no está casi bonita ni pulida, mejora esa interfaz" + "hablo
+        del editor también")**. El editor era una página dentro de Ajustes con
+        siete pestañas en tira y la vista previa angosta al lado; ahora usa el
+        MISMO kit de formularios y agenda (`admin/builder/BuilderShell.tsx`).
+        (a) **Pantalla completa** (`WidgetEditorPage`): barra superior con
+        cerrar (avisa si hay cambios), nombre editable, modos **Editar ·
+        Estadísticas**, tema, **publicar como interruptor**, **«Instalar»** y
+        Guardar (también **Ctrl/⌘+S**); menú de secciones por grupos — El
+        widget (Botones, Apariencia) · Cuándo y dónde (Horario, Dónde aparece,
+        Saludo) · Publicar (Instalar) — con el **estado de cada una en
+        palabras** (`widgetSections.ts`, puro: «WhatsApp, Cotiza y 1 más»,
+        «Panel tipo chat · a la derecha», «Atiendes lun a vie», «Sólo algunas
+        páginas · sólo celular», «Publicado») y punto rojo donde falta algo;
+        panel con encabezado y la **vista previa a todo el alto**. `?t=` enlaza
+        cada sección (`stats` abre las estadísticas, a lo ancho). Bajo 1280 px
+        el menú es un riel de íconos; en el celular, índice → sección con
+        «‹ Widget» y barra de abajo Editar · Vista previa · Estadísticas.
+        (b) **Paneles pulidos** (`widgetUi.tsx`: interruptores con su
+        explicación, subsecciones, tarjetas con dibujo): **Botones** con
+        tarjetas por botón (ícono de color, «Falta algo») divididas en Qué hace
+        / Cómo se ve / Cuándo se ve, «Pedir sus datos» y «Varias personas
+        atienden» como interruptores con lo suyo adentro, íconos en grilla y
+        colores con muestras, y **«Agregar un botón»** en mosaicos por tipo
+        (`WidgetButtonsPanel`); **Apariencia** (`WidgetLookEditor`) con dibujos
+        de «panel tipo chat / botones apilados» y de la esquina, el panel, el
+        botón redondo y el celular; **Horario**, **Dónde aparece** y **Saludo**
+        (sección propia) por subsecciones; **Instalar** (`WidgetInstallPanel`)
+        con el estado, **lo que falta para publicar (cada problema lleva a su
+        sección y botón**: `problemSection`), el código coloreado con «Copiar»
+        y los pasos, los sitios como etiquetas (`DomainChips`, exportado de
+        Compartir) y cambiar el código / eliminar. Publicar con problemas abre
+        Instalar con la lista.
+        (c) **Vista previa** (`WidgetPreview`): navegador o teléfono de
+        ejemplo con un sitio más real, Cerrado/Abierto, Ahora/En horario/Fuera
+        y Computador/Celular. **Tres bugs**: en el escritorio el widget se
+        armaba como en un celular y tapaba todo (decide por el ancho del host y
+        la columna medía menos de 640 px → en «Computador» se le informa un
+        host de al menos 1024 px); con «Cerrado» elegido el panel seguía
+        abierto (el mensaje de la vista previa sólo abría: `open` sobrevivía a
+        `build()` en `public-widget/main.ts`); y en pantalla completa
+        (celular) los desplazamientos en línea le ganaban al `inset:0`
+        (`widget-page.ts`) y dejaban una franja del sitio a la vista — también
+        unos px en un teléfono real con el widget insertado.
+        Sin cambios de modelo ni de API. Ayuda: guía `contact-widget` y Aprende
+        → Formularios → Widget de contacto al día (secciones en vez de
+        pestañas, «Instalar», «Saludo») y novedad con carrusel; no hay
+        escenario de capturas del widget (nada que regrabar). Tests:
+        `widgetSections.test.ts` (4) — front 895, shared 885, specs del widget
+        y la caché pública 20/20, presupuesto del bundle ok (login 248 / app
+        774 KB gz) — + E2E navegador 20/20 en escritorio claro y oscuro (a
+        1100 px con el riel) y 5/5 en celular claro y oscuro: agregar botones
+        sin perder el foco, resúmenes del menú, panel de la vista previa al 51
+        % del marco, posición y horario, saludo con la vista previa cerrada de
+        verdad, Instalar con el problema que lleva al botón, sitio como
+        etiqueta, Ctrl+S persistido, no publica con problemas, estadísticas,
+        cerrar vuelve a Ajustes, y en el celular el panel ocupa toda la
+        pantalla del teléfono.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
