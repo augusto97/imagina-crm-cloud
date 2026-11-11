@@ -53,8 +53,9 @@ export class AuthController {
     async register(
         @Body(new ZodValidationPipe(registerInputSchema)) input: RegisterInput,
         @Res({ passthrough: true }) reply: FastifyReply,
+        @Req() req?: FastifyRequest,
     ): Promise<AuthSession> {
-        const session = await this.auth.register(input);
+        const session = await this.auth.register(input, { host: req?.host });
         this.setSessionCookie(reply, session.token as string);
         return session;
     }
@@ -71,6 +72,7 @@ export class AuthController {
         const result = await this.auth.login(input, {
             userAgent: String(req?.headers['user-agent'] ?? ''),
             ip: req?.ip ?? '',
+            host: req?.host,
         });
         // v0.1.120 — con 2FA el login no abre sesión: devuelve el desafío.
         if ('mfa_required' in result) return result;
@@ -84,8 +86,9 @@ export class AuthController {
     async loginTwoFactor(
         @Body(new ZodValidationPipe(verifyTwoFactorSchema)) input: VerifyTwoFactorInput,
         @Res({ passthrough: true }) reply: FastifyReply,
+        @Req() req?: FastifyRequest,
     ): Promise<AuthSession> {
-        const session = await this.auth.verifyTwoFactorLogin(input);
+        const session = await this.auth.verifyTwoFactorLogin(input, { host: req?.host });
         this.setSessionCookie(reply, session.token as string);
         return session;
     }
@@ -235,7 +238,7 @@ export class AuthController {
     @Get('me')
     @UseGuards(SessionGuard)
     me(@Req() req: FastifyRequest): Promise<AuthSession> {
-        return this.auth.me(req.authUserId as number, req.impersonatedBy, req.sessionVia ?? null);
+        return this.auth.me(req.authUserId as number, req.impersonatedBy, req.sessionVia ?? null, req.boundTenantId);
     }
 
     /**

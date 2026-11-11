@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { type CreateFieldInput, type Field, type WidgetSpec } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AggregateService } from '../src/aggregate/aggregate.service';
@@ -21,8 +21,9 @@ import {
     resetPublicPageCache,
 } from '../src/dashboard-sharing/public-dashboard-page';
 import { PublicDashboardsService } from '../src/dashboard-sharing/public-dashboards.service';
-import { DashboardsService } from '../src/dashboards/dashboards.service';
-import { auditLog, dashboardSubscriptions, memberships, plans, records, tenants, users } from '../src/db/schema';
+import { DASHBOARD_EVAL_MAX_WIDGETS, DashboardsService } from '../src/dashboards/dashboards.service';
+import { PublicBusyError, PublicCache } from '../src/public-cache/public-cache';
+import { auditLog, dashboards as dashboardsTable, dashboardSubscriptions, memberships, plans, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -128,6 +129,9 @@ describe('Tableros hacia afuera — enlace público y envío programado (Postgre
     let dashboards: DashboardsService;
     let snapshots: DashboardSnapshotService;
     let publicDash: PublicDashboardsService;
+    let pubCache: PublicCache;
+    let cachedDashboards: DashboardsService;
+    let cachedPublic: PublicDashboardsService;
     let subs: DashboardSubscriptionsService;
     let branding: BrandingService;
     let smtp: TenantSmtpService;
@@ -170,6 +174,10 @@ describe('Tableros hacia afuera — enlace público y envío programado (Postgre
         snapshots = new DashboardSnapshotService(tenantDb, dashboards, fieldsService, aggregate);
         const domains = { baseUrlFor: () => Promise.resolve('https://app.afuera.test') } as never;
         publicDash = new PublicDashboardsService(pg.db, dashboards, snapshots, files, audit, domains, tzs);
+        // Los mismos servicios con la caché pública y un tope de UN armado a la vez.
+        pubCache = new PublicCache({ maxEntries: 100, concurrency: 1, maxQueue: 0, queueTimeoutMs: 50 });
+        cachedDashboards = new DashboardsService(tenantDb, aggregate, recordsService, fieldsService, pubCache as never);
+        cachedPublic = new PublicDashboardsService(pg.db, cachedDashboards, snapshots, files, audit, domains, tzs, pubCache as never);
         smtp = new TenantSmtpService(pg.db, env);
         capture = new CapturingMailTransport();
         plansService = new PlansService(pg.db);
@@ -303,6 +311,83 @@ describe('Tableros hacia afuera — enlace público y envío programado (Postgre
         const withPeriod = await publicDash.bundle(token, 'today');
         expect(withPeriod.period).toBe('today');
         expect(withPeriod.data.kf).toMatchObject({ value: 1 });
+    });
+
+    it('el enlace público pasa por la caché y el tope de armados: visitas simultáneas calculan una vez y un período desconocido no suma cálculos', async () => {
+        const admin = await cachedPublic.update(tenantId, dashId, asManager(), { allow_period: true });
+        const token = admin.path!.split('/').pop()!;
+        const spy = vi.spyOn(snapshots, 'snapshot');
+        try {
+            const [a, b] = await Promise.all([cachedPublic.bundle(token, undefined), cachedPublic.bundle(token, undefined)]);
+            expect(spy).toHaveBeenCalledTimes(1);
+            expect(a).toBe(b);
+            await cachedPublic.bundle(token, undefined);
+            // Un período que no existe (o enorme) es «sin período»: la misma entrada.
+            for (const p of ['no-es-un-periodo', 'custom:ayer:hoy', 'x'.repeat(500)]) {
+                expect((await cachedPublic.bundle(token, p)).period).toBe('');
+            }
+            expect(spy).toHaveBeenCalledTimes(1);
+            expect((await cachedPublic.bundle(token, 'today')).period).toBe('today');
+            expect(spy).toHaveBeenCalledTimes(2);
+
+            // Cambiar el tablero deja viejo lo calculado.
+            await cachedDashboards.update(tenantId, dashId, asManager(), { description: 'cambió' });
+            expect((await cachedPublic.bundle(token, undefined)).description).toBe('cambió');
+            expect(spy).toHaveBeenCalledTimes(3);
+
+            // Tope de armados lleno: la visita pública recibe «ocupado» y la app
+            // (con sesión) sigue calculando su tablero.
+            let free!: () => void;
+            const hold = pubCache.gate(() => new Promise<void>((r) => (free = r)));
+            await cachedDashboards.update(tenantId, dashId, asManager(), { description: null });
+            await expect(cachedPublic.bundle(token, undefined)).rejects.toBeInstanceOf(PublicBusyError);
+            const dash = await dashboards.get(tenantId, dashId, asManager());
+            expect((await dashboards.evaluateDashboard(tenantId, dash, asManager(), {})).k1).toMatchObject({ value: 1850000 });
+            free();
+            await hold;
+            await expect(cachedPublic.bundle(token, undefined)).resolves.toBeTruthy();
+
+            // Despublicar corta al instante aunque hubiera algo en la caché.
+            await cachedPublic.update(tenantId, dashId, asManager(), { enabled: false });
+            await expect(cachedPublic.bundle(token, undefined)).rejects.toMatchObject({ status: 404 });
+            await cachedPublic.update(tenantId, dashId, asManager(), { enabled: true });
+        } finally {
+            spy.mockRestore();
+        }
+    });
+
+    it('topes del tablero: hasta 60 widgets al crear, uno anterior con más no puede crecer, y la evaluación tiene tope de widgets y de tiempo', async () => {
+        const content = (n: number): WidgetSpec[] =>
+            Array.from({ length: n }, (_v, i) => ({ id: `c${i}`, type: 'heading', list_id: 0, title: '', config: { text: 'x' }, layout: { x: 0, y: i, w: 12, h: 1 } }) as WidgetSpec);
+        await expect(dashboards.create(tenantId, u.manager, { name: 'Muchos', widgets: content(61) } as never)).rejects.toMatchObject({
+            response: { code: 'dashboard_too_many_widgets' },
+        });
+        const ok = await dashboards.create(tenantId, u.manager, { name: 'Justo', widgets: content(60) } as never);
+        await expect(dashboards.update(tenantId, ok.id, asManager(), { widgets: content(61) })).rejects.toMatchObject({
+            response: { code: 'dashboard_too_many_widgets' },
+        });
+        // Un tablero de antes del tope (70): se abre y se edita, pero no crece.
+        await withTenant(pg.db, tenantId, (tx) => tx.update(dashboardsTable).set({ widgets: content(70) as unknown[] }).where(eq(dashboardsTable.id, ok.id)));
+        expect((await dashboards.get(tenantId, ok.id, asManager())).widgets).toHaveLength(70);
+        expect((await dashboards.update(tenantId, ok.id, asManager(), { widgets: content(70) })).widgets).toHaveLength(70);
+        await expect(dashboards.update(tenantId, ok.id, asManager(), { widgets: content(71) })).rejects.toMatchObject({
+            response: { code: 'dashboard_too_many_widgets' },
+        });
+        expect((await dashboards.update(tenantId, ok.id, asManager(), { widgets: content(3) })).widgets).toHaveLength(3);
+
+        // Evaluación: lo que pasa del tope de widgets no se calcula…
+        const L = f.cliente!.list_id;
+        const kpis = Array.from({ length: DASHBOARD_EVAL_MAX_WIDGETS + 3 }, (_v, i) => ({ id: `k${i}`, type: 'kpi', list_id: L, title: '', config: { metric: 'count' }, layout: { x: 0, y: i, w: 3, h: 2 } }) as WidgetSpec);
+        const evaluate = (
+            dashboards as unknown as { evaluate(t: number, v: unknown, w: WidgetSpec[], o: { deadlineMs?: number }): Promise<Record<string, { value?: number; __error?: string }>> }
+        ).evaluate.bind(dashboards);
+        const many = await evaluate(tenantId, asManager(), kpis, {});
+        expect(many.k0).toMatchObject({ value: 3 });
+        expect(many[`k${DASHBOARD_EVAL_MAX_WIDGETS - 1}`]).toMatchObject({ value: 3 });
+        expect(many[`k${DASHBOARD_EVAL_MAX_WIDGETS}`]!.__error).toMatch(/demasiados widgets/);
+        // …y con el tiempo agotado no se abre ni una consulta más.
+        const late = await evaluate(tenantId, asManager(), kpis.slice(0, 5), { deadlineMs: -1 });
+        expect(Object.values(late).every((v) => /tardó demasiado/.test(v.__error ?? ''))).toBe(true);
     });
 
     it('404 opaco: vencido, despublicado, regenerado, empresa archivada o quien publicó perdió el acceso', async () => {

@@ -120,10 +120,27 @@ export class AssistantService {
      */
     async chat(ctx: AiToolContext, req: AiChatRequest, emit: (ev: AiChatEvent) => void, signal?: AbortSignal): Promise<void> {
         const access = await this.settings.resolve(ctx.tenantId);
-        if (access.source === 'platform') await this.quota.assertWithinQuota(ctx.tenantId);
+        // El pedido se reserva ANTES de llamar al modelo (atómico) y cuenta
+        // aunque la persona corte la respuesta: el proveedor ya lo cobró.
+        const metered = access.source === 'platform';
+        if (metered) await this.quota.reserve(ctx.tenantId);
+        let providerStarted = false;
+        // Uso de la vuelta EN CURSO (lo va diciendo el stream): si se corta,
+        // esos tokens se registran igual.
+        let pendingIn = 0;
+        let pendingOut = 0;
+        /** Algo falló antes de hablar con el modelo: la reserva se devuelve. */
+        const orRelease = async <T>(p: Promise<T>): Promise<T> => {
+            try {
+                return await p;
+            } catch (err) {
+                if (metered) await this.quota.settle(ctx.tenantId, { input: 0, output: 0 });
+                throw err;
+            }
+        };
 
         const conv =
-            (req.conversation_id ? await this.conversations.load(ctx.tenantId, ctx.userId, req.conversation_id) : null) ??
+            (req.conversation_id ? await orRelease(this.conversations.load(ctx.tenantId, ctx.userId, req.conversation_id)) : null) ??
             newConversation(ctx, req.conversation_id);
         const toolCtx: AiToolContext = { ...ctx, listSlug: req.context?.list_slug ?? ctx.listSlug, conversationId: conv.id };
         emit({ type: 'start', conversation_id: conv.id });
@@ -140,7 +157,7 @@ export class AssistantService {
 
         const client = this.clientFactory(access.apiKey);
         const tools = this.registry.toAnthropicTools(ctx);
-        const timeZone = this.timeZones ? await this.timeZones.get(toolCtx.tenantId) : null;
+        const timeZone = this.timeZones ? await orRelease(this.timeZones.get(toolCtx.tenantId)) : null;
         const system = buildSystemPrompt(toolCtx, this.registry, timeZone, { recordId: req.context?.record_id });
         const textParts: string[] = [];
         const proposals: AiProposal[] = [];
@@ -156,6 +173,7 @@ export class AssistantService {
 
         try {
             for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration++) {
+                providerStarted = true;
                 const stream = client.messages.stream(
                     {
                         model: access.model,
@@ -169,6 +187,12 @@ export class AssistantService {
                     { signal },
                 );
                 for await (const ev of stream as AsyncIterable<MessageStreamEvent>) {
+                    if (ev.type === 'message_start') {
+                        const u = ev.message?.usage;
+                        if (u) pendingIn = (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
+                    } else if (ev.type === 'message_delta') {
+                        pendingOut = ev.usage?.output_tokens ?? pendingOut;
+                    }
                     if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta' && ev.delta.text) {
                         // El texto de esta vuelta empieza en otro párrafo (si no,
                         // se pegaba al de la vuelta anterior: «…revisar.Tienes»).
@@ -178,6 +202,8 @@ export class AssistantService {
                     }
                 }
                 const final: Message = await stream.finalMessage();
+                pendingIn = 0;
+                pendingOut = 0;
                 partial = '';
                 inputTokens += final.usage.input_tokens + (final.usage.cache_creation_input_tokens ?? 0) + (final.usage.cache_read_input_tokens ?? 0);
                 outputTokens += final.usage.output_tokens;
@@ -237,10 +263,15 @@ export class AssistantService {
                 at: new Date().toISOString(),
             });
             await this.conversations.save(conv).catch((err) => this.logger.warn(`No se pudo guardar la conversación: ${String(err)}`));
-            if (access.source === 'platform' && (inputTokens > 0 || outputTokens > 0)) {
-                await this.quota
-                    .record(ctx.tenantId, { input: inputTokens, output: outputTokens })
-                    .catch((err) => this.logger.warn(`No se pudo registrar el uso IA: ${String(err)}`));
+            if (metered) {
+                // Lo de la vuelta que quedó a medias también cuenta. La reserva
+                // sólo se devuelve si el modelo no llegó a generar nada y no fue
+                // un corte de la persona (un corte ya lo cobró el proveedor).
+                await this.quota.settle(
+                    ctx.tenantId,
+                    { input: inputTokens + pendingIn, output: outputTokens + pendingOut },
+                    { keep: providerStarted && Boolean(signal?.aborted) },
+                );
             }
         }
 

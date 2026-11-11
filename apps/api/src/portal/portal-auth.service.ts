@@ -1,3 +1,4 @@
+import { rateKeyForIp } from '../common/client-ip';
 import { randomBytes } from 'node:crypto';
 import { incrWithTtl } from '../redis/redis.util';
 import {
@@ -39,7 +40,7 @@ const IP_MAX = 40;
 const SET_MAX = 6;
 
 const failKey = (tenantId: number, email: string): string => `portalpwfail:${tenantId}:${email.toLowerCase()}`;
-const ipKey = (ip: string): string => `portalpwip:${ip}`;
+const ipKey = (ip: string): string => `portalpwip:${rateKeyForIp(ip)}`;
 
 const BAD_CREDENTIALS = 'Correo o contraseña incorrectos.';
 
@@ -152,7 +153,9 @@ export class PortalAuthService {
         }
 
         const fk = failKey(tenant.id, input.email);
-        if (Number((await this.redis.get(fk)) ?? 0) >= FAIL_MAX) {
+        // Se cuenta ANTES de verificar (una ráfaga en paralelo no pasa el tope)
+        // y se borra con una contraseña buena.
+        if ((await incrWithTtl(this.redis, fk, FAIL_WINDOW_S)) > FAIL_MAX) {
             throw tooMany('Demasiados intentos fallidos. Espera unos minutos o entra con un enlace por correo.');
         }
 
@@ -177,7 +180,6 @@ export class PortalAuthService {
         // SEC-24: la cuenta de un superadmin jamás entra a un portal.
         const superadmin = user ? this.env.PLATFORM_SUPERADMINS.includes(user.email.toLowerCase()) : false;
         if (!user || !cred || !valid || superadmin) {
-            await incrWithTtl(this.redis, fk, FAIL_WINDOW_S);
             throw new UnauthorizedException({ code: 'invalid_credentials', message: BAD_CREDENTIALS, data: { status: 401 } });
         }
         await this.redis.del(fk);

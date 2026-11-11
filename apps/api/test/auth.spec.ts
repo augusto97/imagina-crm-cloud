@@ -290,6 +290,38 @@ describe('AuthService (Postgres + Redis reales)', () => {
         expect(ok.token).toBeTruthy();
     });
 
+    it('una ráfaga de contraseñas en PARALELO no pasa el tope por cuenta', async () => {
+        const email = 'rafaga@acme.test';
+        await auth.register({ email, password: 'secreto-123', name: 'Ráfaga', workspace_name: 'Ráfaga WS' });
+        const results = await Promise.all(
+            Array.from({ length: 30 }, () =>
+                auth.login({ email, password: 'incorrecta' }).then(
+                    () => 'ok',
+                    (e: unknown) => (e instanceof UnauthorizedException ? 'bad' : /demasiados/i.test(String((e as Error).message)) ? 'locked' : 'other'),
+                ),
+            ),
+        );
+        // Como mucho 10 llegaron a comparar la contraseña; el resto se cortó antes.
+        expect(results.filter((r) => r === 'bad').length).toBeLessThanOrEqual(10);
+        expect(results.filter((r) => r === 'locked').length).toBeGreaterThanOrEqual(20);
+        expect(results.filter((r) => r === 'ok' || r === 'other')).toHaveLength(0);
+
+        // Y un login bueno después de unos fallos sigue limpiando el contador.
+        await redis.del(`loginfail:${email}`);
+        for (let i = 0; i < 3; i++) await expect(auth.login({ email, password: 'incorrecta' })).rejects.toThrow();
+        await loginOk(auth, { email, password: 'secreto-123' });
+        expect(await redis.get(`loginfail:${email}`)).toBeNull();
+
+        // Lo mismo las acciones que piden la contraseña con la sesión abierta.
+        const [u] = await pg.db.select().from(users).where(eq(users.email, email)).limit(1);
+        const { verifyAccountPassword } = await import('../src/auth/password-check');
+        const burst = await Promise.all(
+            Array.from({ length: 30 }, () => verifyAccountPassword(redis, u!.id, u!.passwordHash, 'incorrecta').then((v) => (v ? 'ok' : 'bad'), () => 'locked')),
+        );
+        expect(burst.filter((r) => r === 'bad').length).toBeLessThanOrEqual(10);
+        expect(burst.filter((r) => r === 'ok')).toHaveLength(0);
+    });
+
     it('me devuelve usuario + memberships', async () => {
         const login = await loginOk(auth, { email: 'ana@acme.test', password: 'secreto-123' });
         const me = await auth.me(login.user.id);

@@ -123,6 +123,7 @@ describe('Mesa de ayuda (Postgres + Redis + IMAP reales)', () => {
     const mail = new CapturingMail();
     const dispatcher = new CapturingDispatcher();
     const delivered: Delivered[] = [];
+    const imapReader = new ImapFlowReader();
     const reports: IncidentReport[] = [];
     const resolved: string[] = [];
     let tenantId: number;
@@ -171,7 +172,7 @@ describe('Mesa de ayuda (Postgres + Redis + IMAP reales)', () => {
         recs = new RecordsService(tenantDb, new RecordsRepository(), lists, fieldsSvc, rt, activitySvc, dispatcher, new RelationsRepository(), undefined, changes, billing, tz, notify);
         const files = new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imb-helpdesk-'))), env);
         const queue = new HelpdeskQueue();
-        config = new HelpdeskConfigService(tenantDb, env, lists, fieldsSvc, new AuditService(tenantDb), new ImapFlowReader(), queue, incidents);
+        config = new HelpdeskConfigService(tenantDb, env, lists, fieldsSvc, new AuditService(tenantDb), imapReader, queue, incidents);
         const notifications = {
             deliver: (_t: number, kind: string, userIds: number[], p: { title: string }) => {
                 delivered.push({ kind, users: [...userIds].sort((a, b) => a - b), title: p.title });
@@ -700,6 +701,50 @@ describe('Mesa de ayuda (Postgres + Redis + IMAP reales)', () => {
         row = await mb();
         expect((row.state as Record<string, unknown>).quiet_runs).toBe(0);
         expect(inMin(row.nextCheckAt)).toBe(1);
+    });
+
+    it('los correos se bajan de a uno y el tope de tamaño se aplica a lo que LLEGA, no a lo que informa el servidor', async () => {
+        // (a) De a uno: al procesar el correo N sólo se pidieron N cuerpos.
+        imap.append(buildMime({ from: 'ana@cliente.test', to: SUPPORT, subject: 'Uno por vez A', text: 'a', messageId: 'lazy1@cliente.test' }));
+        imap.append(buildMime({ from: 'ana@cliente.test', to: SUPPORT, subject: 'Uno por vez B', text: 'b', messageId: 'lazy2@cliente.test' }));
+        const bodies = () => imap.commands.filter((c) => /BODY/.test(c)).length;
+        const before = bodies();
+        const seenAtCall: number[] = [];
+        const original = ingest.processOne.bind(ingest);
+        const spy = vi.spyOn(ingest, 'processOne').mockImplementation(async (ctx, m) => {
+            seenAtCall.push(bodies() - before);
+            return original(ctx, m);
+        });
+        await run();
+        expect(seenAtCall).toEqual([1, 2]);
+
+        // (b) El servidor informa 100 bytes y manda mucho más que el tope del
+        // lector: no se guarda en memoria, queda «ignorado» y el cursor avanza.
+        seenAtCall.length = 0;
+        imapReader.maxLiteralBytes = 150_000;
+        const bigUid = imap.append(buildMime({ from: 'ana@cliente.test', to: SUPPORT, subject: 'Enorme', text: 'x'.repeat(400_000), messageId: 'big1@cliente.test' }));
+        imap.folders.get('INBOX')!.find((m) => m.uid === bigUid)!.listedSize = 100;
+        imap.append(buildMime({ from: 'ana@cliente.test', to: SUPPORT, subject: 'Después del enorme', text: 'sigo', messageId: 'after-big@cliente.test' }));
+        const held: Array<number | null> = [];
+        spy.mockImplementation(async (ctx, m) => {
+            held.push(m.source === null ? null : m.source.length);
+            return original(ctx, m);
+        });
+        try {
+            await run();
+            // La sesión quedó cortada tras el enorme: el siguiente entra en otra vuelta.
+            await run();
+        } finally {
+            imapReader.maxLiteralBytes = 50 * 1024 * 1024 + 64 * 1024;
+            spy.mockRestore();
+        }
+        expect(held[0]).toBeNull();
+        expect(held.every((h) => h === null || h < 150_000)).toBe(true);
+        const msgs = await messageRows();
+        const big = msgs.find((m) => m.uid === bigUid);
+        expect(big?.status).toBe('ignored');
+        expect(big?.reason).toMatch(/más datos que el tamaño/);
+        expect(msgs.find((m) => m.messageId === 'after-big@cliente.test')?.status).toBe('ticket');
     });
 
     it('RLS: los buzones, correos y tickets de una empresa no los ve otra', async () => {

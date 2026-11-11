@@ -95,7 +95,7 @@ import { PublicBusyError } from '../public-cache/public-cache';
 import { PublicCacheService } from '../public-cache/public-cache.service';
 import { FieldsService } from '../fields/fields.service';
 import { IncidentHub } from '../incidents/incident-hub';
-import { andWhere, hiddenFieldsFor, listRowInScope, listScopeWhere, type AclExtras } from '../lists/list-acl';
+import { andWhere, listRowInScope, listScopeWhere, type AclExtras } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RecordsRepository } from '../records/records.repository';
@@ -2422,7 +2422,7 @@ export class WhatsappService {
 
     async recordInfo(tenantId: number, actor: WhatsappActor, listIdOrSlug: string, recordId: number): Promise<WhatsappRecordInfo> {
         const { list, fields, data } = await this.recordFor(tenantId, actor, listIdOrSlug, recordId, 'view');
-        const phoneRaw = visiblePhone(list, fields, data, hiddenFieldsFor(list.settings, actor));
+        const phoneRaw = visiblePhone(list, fields, data, await this.fields.hiddenSlugsFor(tenantId, list, fields, actor));
         const recipient = typeof phoneRaw === 'string' && phoneRaw.trim() !== '' ? phoneRaw.trim() : null;
         const conns = (await this.connectors.list(tenantId, actor.userId, actor.role)).filter((c) => isWhatsappProvider(c.integration_key));
         const canEdit = can({ role: actor.role, capabilities: actor.capabilities }, 'edit_records') || can({ role: actor.role, capabilities: actor.capabilities }, 'edit_own_records');
@@ -2504,7 +2504,7 @@ export class WhatsappService {
             (c) => c.id === input.connection_id && isWhatsappProvider(c.integration_key),
         );
         if (!visible) throw this.notWhatsapp();
-        const hidden = hiddenFieldsFor(list.settings, actor);
+        const hidden = await this.fields.hiddenSlugsFor(tenantId, list, fields, actor);
         const merge = await this.mergerFor(tenantId, list, fields, data, recordId, hidden);
         // Un teléfono oculto para el rol no se usa por defecto: la respuesta lo mostraría.
         const phoneRaw = visiblePhone(list, fields, data, hidden);
@@ -2555,7 +2555,7 @@ export class WhatsappService {
             return row ?? null;
         });
         const data = (sample?.data ?? {}) as Record<string, unknown>;
-        const hidden = hiddenFieldsFor(list.settings, actor);
+        const hidden = await this.fields.hiddenSlugsFor(tenantId, list, fields, actor);
         const merge = await this.mergerFor(tenantId, list, fields, data, sample?.id ?? 0, hidden);
         const v = input.values as Record<string, unknown>;
         // v0.1.389 — Imagina WAS: los datos se llaman como en la versión anterior (message, url, caption).
@@ -2896,7 +2896,7 @@ export class WhatsappService {
             return row ?? null;
         });
         const data = (sample?.data ?? {}) as Record<string, unknown>;
-        const hidden = hiddenFieldsFor(list.settings, actor);
+        const hidden = await this.fields.hiddenSlugsFor(tenantId, list, fields, actor);
         const merge = await this.mergerFor(tenantId, list, fields, data, sample?.id ?? 0, hidden);
         const titleId = resolveTitleFieldId(fields, list.settings as Record<string, unknown>);
         const rawTitle = titleId ? data[jsonbKeyForField(titleId)] : undefined;

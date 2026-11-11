@@ -115,7 +115,7 @@ export class DocumentsController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(createDocumentTemplateSchema)) input: CreateDocumentTemplateInput,
     ): Promise<DocumentTemplate> {
-        return this.documents.create(req.tenant!.tenantId, req.authUserId!, list, input);
+        return this.documents.create(req.tenant!.tenantId, req.authUserId!, list, input, actor(req));
     }
 
     @Patch(':id')
@@ -126,7 +126,7 @@ export class DocumentsController {
         @Param('id', ParseIntPipe) id: number,
         @Body(new ZodValidationPipe(updateDocumentTemplateSchema)) input: UpdateDocumentTemplateInput,
     ): Promise<DocumentTemplate> {
-        return this.documents.update(req.tenant!.tenantId, req.authUserId!, list, id, input);
+        return this.documents.update(req.tenant!.tenantId, req.authUserId!, list, id, input, actor(req));
     }
 
     @Delete(':id')
@@ -190,12 +190,23 @@ export class PublicDocumentsController {
     async open(
         @Param('template', ParseIntPipe) template: number,
         @Param('record', ParseIntPipe) record: number,
+        @Req() req: FastifyRequest,
         @Res() reply: FastifyReply,
         @Query('tenant') tenant?: string,
         @Query('exp') exp?: string,
         @Query('sig') sig?: string,
+        @Query('u') issuer?: string,
     ): Promise<void> {
-        const doc = await this.documents.renderLiveLink(template, record, Number(tenant ?? 0), Number(exp ?? 0), String(sig ?? ''));
+        const doc = await this.documents.renderLiveLink(
+            template,
+            record,
+            Number(tenant ?? 0),
+            Number(exp ?? 0),
+            String(sig ?? ''),
+            // Quién pidió el enlace (va firmado): el PDF se arma con su acceso.
+            issuer !== undefined && issuer !== '' ? Number(issuer) : undefined,
+            req.ip,
+        );
         reply.raw.writeHead(200, {
             'content-type': 'application/pdf',
             'content-length': String(doc.buffer.length),
@@ -213,3 +224,4 @@ export class PublicDocumentsController {
 function actor(req: FastifyRequest): Actor {
     return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }
+

@@ -37,13 +37,19 @@ import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { HelpdeskConfigService, HelpdeskConnectError } from './helpdesk-config.service';
 import { HelpdeskSlaService } from './helpdesk-sla.service';
 import { HelpdeskQueue } from './helpdesk.queue';
-import { imapErrorDiagnostic, type ImapFetched } from './imap-reader';
+import { ByteBudget, imapErrorDiagnostic, type ImapFetched } from './imap-reader';
 import { bodyToRichDoc, parseInbound, stripQuotedReply, type InboundAttachment, type InboundMail } from './inbound-mail';
 import { planIncludesSql } from '../billing/plan-module-gate';
 
 const SYSTEM_ACTOR: Actor = { userId: 0, role: 'admin' };
 /** Correos por vuelta (si hay más, se encola otra enseguida). */
 export const HELPDESK_MAX_PER_RUN = 50;
+/** Bytes de correos que se procesan por vuelta de un buzón; el resto sigue en la próxima. */
+export const HELPDESK_MAX_RUN_BYTES = 64 * 1024 * 1024;
+/** Correos en memoria a la vez entre TODOS los buzones que se leen en paralelo. */
+export const HELPDESK_BYTES = new ByteBudget(128 * 1024 * 1024);
+/** Reserva mínima por correo (el tamaño que informa el servidor no es de fiar). */
+const HELPDESK_MIN_RESERVE = 1024 * 1024;
 /** Vida del candado de una lectura (más que una vuelta de 50 correos). */
 const LOCK_TTL_MS = 10 * 60_000;
 /** Cada cuánto se lee un buzón que anda bien. */
@@ -226,6 +232,7 @@ export class HelpdeskIngestService {
 
         let pendingReason: string | null = null;
         let more = false;
+        let cut = false;
         let found = 0;
         try {
             const box = await session.open(mailbox.folder, { writable: mailbox.markSeen });
@@ -248,11 +255,44 @@ export class HelpdeskIngestService {
                     uidValidity: box.uidValidity,
                 };
                 const maxBytes = ctx.settings.max_size_mb * 1024 * 1024;
-                const fetched = await session.fetchAfter(lastUid, HELPDESK_MAX_PER_RUN, maxBytes);
-                found = fetched.length;
+                // Se lista primero (sólo UID y tamaño) y cada correo se baja JUSTO
+                // antes de procesarlo: en memoria hay como mucho uno por buzón.
+                const listed = await session.listAfter(lastUid, HELPDESK_MAX_PER_RUN);
+                found = listed.length;
                 const seen: number[] = [];
-                for (const m of fetched) {
-                    const outcome = await this.processOne(ctx, m);
+                let runBytes = 0;
+                for (const item of listed) {
+                    if (runBytes >= HELPDESK_MAX_RUN_BYTES) {
+                        // Suficiente por esta vuelta: el resto sigue en la próxima.
+                        cut = true;
+                        break;
+                    }
+                    let m: ImapFetched;
+                    let release: (() => void) | null = null;
+                    let lost = false;
+                    if (item.size > maxBytes) {
+                        m = { uid: item.uid, size: item.size, source: null };
+                    } else {
+                        // No se confía en el tamaño informado: se reserva al menos un piso
+                        // y el tope real lo pone el lector sobre los bytes recibidos.
+                        release = await HELPDESK_BYTES.acquire(Math.max(item.size, HELPDESK_MIN_RESERVE));
+                        try {
+                            const got = await session.fetchSource(item.uid, maxBytes);
+                            lost = got.connectionLost;
+                            m = { uid: item.uid, size: got.source?.length ?? item.size, source: got.source, oversizeOnDownload: got.source === null };
+                        } catch (err) {
+                            release();
+                            throw err;
+                        }
+                    }
+                    runBytes += m.source?.length ?? 0;
+                    let outcome: Outcome;
+                    try {
+                        outcome = await this.processOne(ctx, m);
+                    } finally {
+                        m.source = null;
+                        release?.();
+                    }
                     if (outcome.kind === 'pending') {
                         pendingReason = outcome.reason;
                         break;
@@ -260,9 +300,14 @@ export class HelpdeskIngestService {
                     counts[outcome.status === 'ticket' ? 'tickets' : outcome.status === 'reply' ? 'replies' : outcome.status === 'failed' ? 'failed' : 'ignored'] += 1;
                     await this.saveState(tenantId, mailbox.id, { last_uid: m.uid, counts });
                     if (mailbox.markSeen) seen.push(m.uid);
+                    if (lost) {
+                        // La sesión quedó cortada: se sigue en otra, desde el siguiente.
+                        cut = true;
+                        break;
+                    }
                 }
                 if (seen.length > 0) await session.markSeen(seen).catch(() => undefined);
-                more = fetched.length === HELPDESK_MAX_PER_RUN && pendingReason === null;
+                more = (cut || listed.length === HELPDESK_MAX_PER_RUN) && pendingReason === null;
             }
         } catch (err) {
             const d = imapErrorDiagnostic(err, { host: mailbox.host, port: mailbox.port, security: mailbox.security as 'tls', folder: mailbox.folder });
@@ -332,6 +377,14 @@ export class HelpdeskIngestService {
 
     async processOne(ctx: RunCtx, m: ImapFetched): Promise<Outcome> {
         const support = ctx.mailbox.supportAddress.toLowerCase();
+        if (m.source === null && m.oversizeOnDownload) {
+            await this.logMessage(ctx, {
+                status: 'ignored',
+                reason: `El correo pesa más que el máximo (${ctx.settings.max_size_mb} MB): el servidor envió más datos que el tamaño que había informado.`,
+                uid: m.uid,
+            });
+            return { kind: 'done', status: 'ignored' };
+        }
         if (m.source === null) {
             const mb = (m.size / 1024 / 1024).toFixed(1);
             await this.logMessage(ctx, { status: 'ignored', reason: `Pesa ${mb} MB: más que el máximo (${ctx.settings.max_size_mb} MB).`, uid: m.uid });

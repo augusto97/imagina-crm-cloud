@@ -1,3 +1,4 @@
+import { assertAccountWideSession } from '../auth/host-tenant';
 import {
     Body,
     Controller,
@@ -23,6 +24,7 @@ import {
     updateGuideProgressSchema,
     updateMostUsedSchema,
     type DeleteAccountInput,
+    type Capability,
     type FavoriteView,
     type Favorites,
     type GuideProgress,
@@ -37,6 +39,7 @@ import {
     type UpdateMostUsedInput,
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
+import { aclOf } from '../tenancy/acl-of';
 import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
@@ -94,7 +97,7 @@ export class MeController {
         @Query('ids') ids?: string,
     ): Promise<{ data: MeUserSummary[] }> {
         const parsed = (ids ?? '').split(',').map((s) => Number(s.trim()));
-        return { data: await this.me.getUsers(tenantId(req), parsed, req.tenant!.role) };
+        return { data: await this.me.getUsers(tenantId(req), parsed, directoryViewerOf(req)) };
     }
 
     @Get('users/:id')
@@ -104,7 +107,7 @@ export class MeController {
         @Req() req: FastifyRequest,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<MeUserSummary> {
-        return this.me.getUser(tenantId(req), id, req.tenant!.role);
+        return this.me.getUser(tenantId(req), id, directoryViewerOf(req));
     }
 
     /** v0.1.107 — favoritos del menú (listas + dashboards) del usuario en el tenant activo. */
@@ -252,6 +255,9 @@ export class MeController {
     @Get('data-export')
     @UseGuards(SessionGuard)
     exportData(@Req() req: FastifyRequest): Promise<AccountExport> {
+        // Reúne lo de TODAS las empresas de la persona: no desde una sesión
+        // atada a una sola.
+        assertAccountWideSession(req);
         return this.account.exportData(req.authUserId!);
     }
 
@@ -264,6 +270,7 @@ export class MeController {
     async deletionBlockers(
         @Req() req: FastifyRequest,
     ): Promise<{ workspaces: Array<{ id: number; name: string }> }> {
+        assertAccountWideSession(req);
         return { workspaces: await this.account.soleAdminWorkspaces(req.authUserId!) };
     }
 
@@ -275,6 +282,7 @@ export class MeController {
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(deleteAccountSchema)) input: DeleteAccountInput,
     ): Promise<void> {
+        assertAccountWideSession(req);
         await this.account.deleteAccount(req.authUserId!, input.password);
     }
 
@@ -306,4 +314,8 @@ function assertAdmin(req: FastifyRequest): void {
 
 function tenantId(req: FastifyRequest): number {
     return req.tenant!.tenantId;
+}
+
+function directoryViewerOf(req: FastifyRequest): { role: string; userId: number; capabilities?: readonly Capability[] } {
+    return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }

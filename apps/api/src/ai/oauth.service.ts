@@ -1,4 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { rateKeyForIp } from '../common/client-ip';
+import { incrWithTtl } from '../redis/redis.util';
 import { effectiveCapabilities, type OauthApproveInput, type OauthAuthorizationRequest, type OauthDecision, type PersonalTokenScope, type Role } from '@imagina-base/shared';
 import { and, eq } from 'drizzle-orm';
 import type Redis from 'ioredis';
@@ -110,6 +112,12 @@ export type AuthorizationStart = { kind: 'consent'; requestId: string } | { kind
  * un solo uso (rotación con WHERE del hash viejo) y `resource` (RFC 8707)
  * que, si viene, tiene que ser nuestro MCP.
  */
+/** Registros de clientes por red (IPv4 o /64) y hora, y en total por día. */
+export const DCR_PER_NETWORK_HOUR = 20;
+export const DCR_GLOBAL_DAY = 2000;
+/** Largo total de las redirect_uris de un cliente. */
+const DCR_MAX_URI_CHARS = 4096;
+
 @Injectable()
 export class OauthService {
     constructor(
@@ -156,10 +164,35 @@ export class OauthService {
 
     // ── Registro dinámico de clientes (RFC 7591) ──────────────────────────
 
-    async registerClient(input: unknown): Promise<RegisteredClient> {
+    /** Cupo de registros: por red y global (compartido entre servidores, en Redis). */
+    private async takeRegistrationBudget(clientIp: string | undefined): Promise<void> {
+        const busy = (): OauthError =>
+            new OauthError('temporarily_unavailable', 'Demasiados registros de clientes por ahora. Vuelve a intentarlo más tarde.', 429);
+        let perNet = 0;
+        let global = 0;
+        try {
+            if (clientIp !== undefined) perNet = await incrWithTtl(this.redis, `oauth:dcr:net:${rateKeyForIp(clientIp)}`, 3600);
+            if (perNet <= DCR_PER_NETWORK_HOUR) global = await incrWithTtl(this.redis, `oauth:dcr:day:${new Date().toISOString().slice(0, 10)}`, 26 * 3600);
+        } catch {
+            // Sin Redis no se puede contar: no se registra (tampoco funcionaría el resto del flujo).
+            throw new OauthError('temporarily_unavailable', 'El registro de clientes no está disponible en este momento.', 503);
+        }
+        if (perNet > DCR_PER_NETWORK_HOUR || global > DCR_GLOBAL_DAY) throw busy();
+    }
+
+    /**
+     * `clientIp`: la dirección de quien se registra (el controller la pasa
+     * siempre). El registro es abierto, así que tiene un cupo por red (IPv4 o
+     * /64 de IPv6) y uno global por día: sin ellos, cada pedido anónimo dejaba
+     * una fila para siempre.
+     */
+    async registerClient(input: unknown, clientIp?: string): Promise<RegisteredClient> {
         const body = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
         const uris = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
         if (uris.length === 0 || uris.length > 10) throw new OauthError('invalid_redirect_uri', 'redirect_uris: se requiere entre 1 y 10');
+        if (uris.reduce((n: number, u) => n + (typeof u === 'string' ? u.length : 0), 0) > DCR_MAX_URI_CHARS) {
+            throw new OauthError('invalid_redirect_uri', `redirect_uris: en total no pueden pasar de ${DCR_MAX_URI_CHARS} caracteres`);
+        }
         for (const u of uris) {
             if (!isAllowedRedirectUri(u as string)) {
                 throw new OauthError('invalid_redirect_uri', `redirect_uri no admitida: ${String(u).slice(0, 120)} (https, http en localhost o esquema de app nativa)`);
@@ -173,6 +206,8 @@ export class OauthService {
         for (const r of responses) if (r !== 'code') throw new OauthError('invalid_client_metadata', `response_type no soportado: ${r}`);
         const rawName = typeof body.client_name === 'string' ? body.client_name.trim() : '';
         const clientName = (rawName === '' ? hostOf(uris[0] as string) : rawName).slice(0, 80);
+
+        await this.takeRegistrationBudget(clientIp);
 
         const clientId = `ibc_${randomBytes(16).toString('base64url')}`;
         const secret = method === 'none' ? undefined : randomBytes(32).toString('base64url');

@@ -14,6 +14,7 @@ import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { aclOf } from '../tenancy/acl-of';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { PublicThemesService } from './public-themes.service';
@@ -40,7 +41,7 @@ export class PublicThemesController {
     @Post()
     @RequireCapability('manage_forms')
     async create(@Req() req: FastifyRequest, @Body(new ZodValidationPipe(createPublicThemeSchema)) input: CreatePublicThemeInput): Promise<SavedPublicTheme> {
-        const out = await this.themes.create(req.tenant!.tenantId, input, { isAdmin: req.tenant!.role === 'admin' });
+        const out = await this.themes.create(req.tenant!.tenantId, input, { isAdmin: req.tenant!.role === 'admin', file: { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) } });
         await this.log(req, 'public_theme.create', out.name);
         return out;
     }
@@ -60,7 +61,7 @@ export class PublicThemesController {
         @Param('id', idPipe) id: string,
         @Body(new ZodValidationPipe(updatePublicThemeSchema)) input: UpdatePublicThemeInput,
     ): Promise<SavedPublicTheme> {
-        const out = await this.themes.update(req.tenant!.tenantId, id, input, { isAdmin: req.tenant!.role === 'admin' });
+        const out = await this.themes.update(req.tenant!.tenantId, id, input, { isAdmin: req.tenant!.role === 'admin', file: { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) } });
         await this.log(req, 'public_theme.update', out.name);
         return out;
     }

@@ -29,7 +29,7 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { AllowGuest } from '../tenancy/allow-guest.decorator';
 import type { Actor } from '../records/records.service';
-import { CommentsService } from './comments.service';
+import { CommentsService, stripReservedCommentMetadata } from './comments.service';
 import { aclOf } from '../tenancy/acl-of';
 
 /** Comentarios por record (CONTRACT.md §1). Ver requiere ver el record. */
@@ -108,13 +108,13 @@ export class CommentsController {
 }
 
 /**
- * E6 — La marca «lo escribió un agente de IA» (`metadata.agent`) la pone sólo
- * el motor de agentes: una persona no puede firmar como un agente.
+ * Las marcas que sólo pone el servidor (`metadata.agent` — E6, el motor de
+ * agentes — y `metadata.email` — la mesa de ayuda) no las manda una persona:
+ * no puede firmar como un agente ni fabricar un «correo del cliente».
  */
-function withoutAgentMark<T extends { metadata?: Record<string, unknown> }>(input: T): T {
-    if (!input.metadata || !('agent' in input.metadata)) return input;
-    const { agent: _agent, ...rest } = input.metadata;
-    return { ...input, metadata: rest };
+export function withoutAgentMark<T extends { metadata?: Record<string, unknown> }>(input: T): T {
+    if (!input.metadata) return input;
+    return { ...input, metadata: stripReservedCommentMetadata(input.metadata) };
 }
 
 function actor(req: FastifyRequest): Actor {

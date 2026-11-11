@@ -16,6 +16,7 @@ import {
     type WidgetReport,
 } from '@imagina-base/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { memberNames } from '../tenancy/member-names';
 import { AggregateService } from '../aggregate/aggregate.service';
 import { customRoles, lists, memberships, tenants, users } from '../db/schema';
 import { DashboardsService, type DashboardViewer } from '../dashboards/dashboards.service';
@@ -155,9 +156,8 @@ export class DashboardSnapshotService {
                 ? await tx.select({ id: lists.id, name: lists.name, slug: lists.slug }).from(lists).where(inArray(lists.id, listIds))
                 : [],
             tenantRow: (await tx.select({ name: tenants.name, settings: tenants.settings }).from(tenants).where(eq(tenants.id, tenantId)).limit(1))[0],
-            userRows: userIds.size
-                ? await tx.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, [...userIds].slice(0, 500)))
-                : [],
+            // SEC — sólo personas de ESTA empresa (los ids salen de los datos).
+            userRows: [...(await memberNames(tx, tenantId, [...userIds]))].map(([id, u]) => ({ id, name: u.name })),
         }));
         if (!tenantRow) throw new NotFoundException({ code: 'dashboard_not_found', data: { status: 404 } });
         const settings = (tenantRow.settings ?? {}) as Record<string, unknown>;

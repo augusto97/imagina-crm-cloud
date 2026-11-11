@@ -38,6 +38,7 @@ import { customRoles, impersonationLog, memberships, personalAccessTokens, plans
 import { withUser } from '../db/tenant-tx';
 import { MailService } from '../mail/mail.service';
 import { REDIS } from '../redis/redis.module';
+import { tenantBoundToHost } from './host-tenant';
 import { passwordCheckFailKey, verifyAccountPassword } from './password-check';
 import { deletePushForSessionId, deletePushForUser } from '../pwa/push-cleanup';
 import { sessionPublicId, SessionService, type ActiveSession } from './session.service';
@@ -113,6 +114,20 @@ function safeEqualHex(a: string, b: string): boolean {
 function oneLine(s: string): string {
     return s.replace(/[\r\n]+/g, ' ').trim();
 }
+
+/**
+ * Texto libre que escribe una empresa (su nombre, el de quien invita, lo que
+ * comparte) dentro de un correo que sale por la cuenta de la PLATAFORMA: una
+ * línea y con tope, para que no sirva de vehículo de un mensaje largo.
+ */
+function mailLabel(s: string, max = 80): string {
+    const flat = oneLine(s);
+    return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/** Correos de invitación/aviso a UNA dirección: por hora y por día. */
+const INVITE_TO_MAX_HOUR = 3;
+const INVITE_TO_MAX_DAY = 8;
 
 function escapeHtml(s: string): string {
     return s.replace(/[&<>"']/g, (c) =>
@@ -217,6 +232,86 @@ export class AuthService implements OnModuleInit {
         return true;
     }
 
+    /**
+     * Cupo de los correos de cuenta que dispara una EMPRESA (invitación, «te
+     * sumaron», «compartieron contigo»). Salen por el correo de la plataforma
+     * y fuera de la cuota del plan, así que sin esto servían para inundar la
+     * casilla de un tercero (sumar y quitar a la misma persona en bucle) con
+     * texto elegido por la empresa. Dos topes en Redis: por DESTINATARIO (3
+     * por hora, 8 por día, sin importar qué empresa) y por EMPRESA por día,
+     * según el tamaño de su plan.
+     */
+    private async inviteMailAllowed(tenantId: number, email: string): Promise<boolean> {
+        const to = sha256Hex(email.trim().toLowerCase());
+        if (!(await this.withinMailBudget(`invite-to:h:${to}`, INVITE_TO_MAX_HOUR, 3600))) return false;
+        if (!(await this.withinMailBudget(`invite-to:d:${to}`, INVITE_TO_MAX_DAY, 86_400))) return false;
+        return this.withinMailBudget(`invite-by:d:${tenantId}`, await this.tenantInviteDailyCap(tenantId), 86_400);
+    }
+
+    /** Correos de invitación por día de una empresa: 2 × (usuarios + invitados del plan), entre 20 y 500. */
+    private async tenantInviteDailyCap(tenantId: number): Promise<number> {
+        const [row] = await this.db
+            .select({ maxUsers: plans.maxUsers, maxGuests: plans.maxGuests })
+            .from(tenants)
+            .leftJoin(plans, eq(plans.slug, tenants.plan))
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+        // Sin tope de usuarios en el plan (o sin plan conocido): el máximo.
+        if (!row || row.maxUsers === null) return 500;
+        return Math.min(500, Math.max(20, 2 * (row.maxUsers + (row.maxGuests ?? 0))));
+    }
+
+    private inviteBudgetExceeded(): HttpException {
+        return new HttpException(
+            {
+                code: 'too_many_requests',
+                message: 'Se enviaron demasiadas invitaciones en poco tiempo. Prueba más tarde.',
+                data: { status: 429 },
+            },
+            429,
+        );
+    }
+
+    /**
+     * Cierra todo lo que daba acceso a una cuenta: sesiones, tokens de acceso
+     * y avisos push. La contraseña la cambia quien llama.
+     */
+    private async revokeAccess(userId: number): Promise<void> {
+        await this.sessions.destroyAllForUser(userId);
+        await this.db
+            .update(personalAccessTokens)
+            .set({ revokedAt: new Date() })
+            .where(and(eq(personalAccessTokens.userId, userId), isNull(personalAccessTokens.revokedAt)));
+        await deletePushForUser(this.db, userId).catch(() => undefined);
+        await this.redis.del(totpPendingKey(userId)).catch(() => undefined);
+    }
+
+    /**
+     * Una cuenta que alguien REGISTRÓ por su cuenta y nunca confirmó el correo
+     * no prueba que sea de la persona dueña de esa casilla: cualquiera pudo
+     * registrarla antes con un correo ajeno y quedarse esperando a que una
+     * empresa la invite. Cuando una empresa le da acceso por correo, la cuenta
+     * pasa a ser una INVITACIÓN: contraseña nueva que nadie conoce, sin
+     * segundo factor, y (después del commit, `revokeAccess`) sin sesiones ni
+     * tokens. Entra quien abre el enlace que llega a la casilla.
+     */
+    private async turnIntoInvitation(tx: Tx, userId: number): Promise<void> {
+        const passwordHash = await argon2.hash(randomBytes(32).toString('hex'));
+        await tx
+            .update(users)
+            .set({ passwordHash, invitedAt: new Date(), totpSecret: null, totpEnabledAt: null, totpBackupCodes: null })
+            .where(eq(users.id, userId));
+    }
+
+    /** ¿Cuenta registrada por su cuenta que nunca confirmó el correo? (los superadmins no entran aquí) */
+    private isUnprovenAccount(u: { email: string; emailVerifiedAt: Date | null; invitedAt: Date | null }): boolean {
+        return (
+            u.emailVerifiedAt === null &&
+            u.invitedAt === null &&
+            !this.env.PLATFORM_SUPERADMINS.includes(u.email.toLowerCase())
+        );
+    }
+
     /** Consume el token y setea la nueva contraseña. Token de un solo uso. */
     async resetPassword(token: string, password: string): Promise<void> {
         // SEC-26: un solo uso ATÓMICO (GETDEL), como el magic link y la
@@ -235,7 +330,18 @@ export class AuthService implements OnModuleInit {
         // invitación pendiente.
         const [updated] = await this.db
             .update(users)
-            .set({ passwordHash, invitedAt: null, emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())` })
+            .set({
+                passwordHash,
+                invitedAt: null,
+                emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, now())`,
+                // Un segundo factor puesto ANTES de probar que el correo es de la
+                // persona no es de ella: lo pudo activar quien registró la cuenta
+                // con un correo ajeno, y dejaría afuera al dueño aun con el
+                // enlace de su casilla. (Las expresiones leen la fila de antes.)
+                totpSecret: sql`case when ${users.emailVerifiedAt} is null then null else ${users.totpSecret} end`,
+                totpEnabledAt: sql`case when ${users.emailVerifiedAt} is null then null else ${users.totpEnabledAt} end`,
+                totpBackupCodes: sql`case when ${users.emailVerifiedAt} is null then null else ${users.totpBackupCodes} end`,
+            })
             .where(eq(users.id, Number(userId)))
             .returning({ email: users.email });
         // v0.1.254 — el aviso de "demasiados intentos" ofrece restablecer la
@@ -321,19 +427,39 @@ export class AuthService implements OnModuleInit {
             .from(users)
             .where(sql`lower(${users.email}) = ${email}`)
             .limit(1);
-        if (!known) await this.mail.assertAccountMailAvailable();
+        const [knownProof] = known
+            ? await this.db
+                  .select({ email: users.email, emailVerifiedAt: users.emailVerifiedAt, invitedAt: users.invitedAt })
+                  .from(users)
+                  .where(eq(users.id, known.id))
+                  .limit(1)
+            : [];
+        if (!known || (knownProof && this.isUnprovenAccount(knownProof))) await this.mail.assertAccountMailAvailable();
         const result = await this.db.transaction(async (tx) => {
             const [existing] = await tx
-                .select({ id: users.id, email: users.email, name: users.name })
+                .select({
+                    id: users.id,
+                    email: users.email,
+                    name: users.name,
+                    emailVerifiedAt: users.emailVerifiedAt,
+                    invitedAt: users.invitedAt,
+                })
                 .from(users)
                 .where(sql`lower(${users.email}) = ${email}`)
                 .limit(1);
             let userId: number;
             let invited = false;
+            let reclaimed = false;
             let name: string;
             if (existing) {
                 userId = existing.id;
                 name = existing.name;
+                // Cuenta registrada sin confirmar el correo: pasa a invitación.
+                if (this.isUnprovenAccount(existing)) {
+                    await this.turnIntoInvitation(tx, existing.id);
+                    invited = true;
+                    reclaimed = true;
+                }
             } else {
                 const passwordHash = await argon2.hash(randomBytes(32).toString('hex'));
                 const [u] = await tx
@@ -360,9 +486,10 @@ export class AuthService implements OnModuleInit {
             await tx.execute(sql`select set_config('app.tenant_id', ${String(tenant.id)}, true)`);
             await tx.insert(memberships).values({ userId, tenantId: tenant.id, role: 'admin' });
 
-            return { tenantId: tenant.id, userId, invited, email, name };
+            return { tenantId: tenant.id, userId, invited, reclaimed, email, name };
         });
 
+        if (result.reclaimed) await this.revokeAccess(result.userId);
         if (result.invited) {
             await this.issueSetupLink(result.userId, result.email, result.name, 'invite', {
                 tenantName: input.workspace_name,
@@ -483,6 +610,13 @@ export class AuthService implements OnModuleInit {
     ): Promise<void> {
         const token = randomBytes(32).toString('base64url');
         const invite = kind === 'invite';
+        name = mailLabel(name);
+        opts = {
+            ...opts,
+            ...(opts.tenantName !== undefined ? { tenantName: mailLabel(opts.tenantName) } : {}),
+            ...(opts.invitedBy ? { invitedBy: mailLabel(opts.invitedBy) } : {}),
+            ...(opts.shared ? { shared: { label: mailLabel(opts.shared.label, 120) } } : {}),
+        };
         await this.redis.set(resetKey(token), String(userId), 'EX', invite ? INVITE_TTL_SECONDS : RESET_TTL_SECONDS);
         // `invite=1` sólo cambia los textos de la pantalla ("Define tu
         // contraseña" en vez de "Nueva contraseña"); el token es el mismo.
@@ -543,6 +677,8 @@ export class AuthService implements OnModuleInit {
             allowReserved?: boolean;
             /** C3 — lo que se le compartió a un invitado (para el correo). */
             shared?: { label: string } | null;
+            /** La consola de plataforma (el operador) no gasta el cupo de invitaciones. */
+            skipMailBudget?: boolean;
         } = {},
     ): Promise<{
         user: { id: number; name: string; email: string };
@@ -576,7 +712,13 @@ export class AuthService implements OnModuleInit {
             throw new NotFoundException({ code: 'tenant_not_found', message: `Empresa ${tenantId} no encontrada`, data: { status: 404 } });
         }
         const [known] = await this.db
-            .select({ id: users.id, disabledAt: users.disabledAt })
+            .select({
+                id: users.id,
+                email: users.email,
+                disabledAt: users.disabledAt,
+                emailVerifiedAt: users.emailVerifiedAt,
+                invitedAt: users.invitedAt,
+            })
             .from(users)
             .where(sql`lower(${users.email}) = ${email}`)
             .limit(1);
@@ -588,8 +730,9 @@ export class AuthService implements OnModuleInit {
             });
         }
         // Una cuenta nueva sólo sirve si le llega el correo: sin SMTP de cuenta
-        // se corta aquí, antes de crear nada.
-        if (!known) await this.mail.assertAccountMailAvailable();
+        // se corta aquí, antes de crear nada. Lo mismo una cuenta registrada que
+        // nunca confirmó su correo: va a entrar por el enlace de la invitación.
+        if (!known || this.isUnprovenAccount(known)) await this.mail.assertAccountMailAvailable();
         // Quién invita, para el correo ("Ana te invitó…").
         let invitedBy: string | null = null;
         if (opts.invitedById) {
@@ -600,13 +743,24 @@ export class AuthService implements OnModuleInit {
         const result = await this.db.transaction(async (tx) => {
             let user: { id: number; name: string; email: string; invitedAt: Date | null };
             let invited = false;
+            // Cuenta registrada por su cuenta y sin correo confirmado: el acceso
+            // lo recibe quien abra el enlace de la casilla (ver `turnIntoInvitation`).
+            let reclaim = false;
+            let unjoined = false;
             const [existing] = await tx
-                .select({ id: users.id, name: users.name, email: users.email, invitedAt: users.invitedAt })
+                .select({
+                    id: users.id,
+                    name: users.name,
+                    email: users.email,
+                    invitedAt: users.invitedAt,
+                    emailVerifiedAt: users.emailVerifiedAt,
+                })
                 .from(users)
                 .where(sql`lower(${users.email}) = ${email}`)
                 .limit(1);
             if (existing) {
-                user = existing;
+                user = { id: existing.id, name: existing.name, email: existing.email, invitedAt: existing.invitedAt };
+                reclaim = this.isUnprovenAccount(existing);
             } else {
                 const fallbackName = email.split('@')[0] ?? email;
                 const passwordHash = await argon2.hash(randomBytes(32).toString('hex'));
@@ -636,7 +790,7 @@ export class AuthService implements OnModuleInit {
             }
             // C3 — compartir con alguien que YA es invitado: se reusa su membresía.
             if (membership?.role === 'guest' && input.role === 'guest') {
-                return { user, invited, alreadyGuest: true };
+                return { user, invited, alreadyGuest: true, reclaimed: false, unjoined: false };
             }
             // C3 — alguien del equipo no se invita como persona de afuera: ya
             // ve lo que su rol le deja ver (se le comparte desde los permisos).
@@ -662,19 +816,43 @@ export class AuthService implements OnModuleInit {
                     data: { status: 409, errors: { email: 'Ya es miembro' } },
                 });
             }
+            // Una cuenta nueva, una invitación sin abrir o una cuenta sin probar
+            // sólo sirven si les llega el correo: si el cupo de invitaciones se
+            // agotó, se rechaza ANTES de escribir nada (la transacción se deshace).
+            if ((invited || reclaim || user.invitedAt !== null) && !opts.skipMailBudget) {
+                if (!(await this.inviteMailAllowed(tenantId, email))) throw this.inviteBudgetExceeded();
+            }
+            // Una cuenta que YA existía y que suma el admin de una empresa (no
+            // el operador): nadie le pidió permiso a esa persona. Queda sumada,
+            // pero hasta que ENTRE a la empresa (`joined_at`) no se muestra su
+            // nombre ni se usa su firma de correo: sumar un correo ajeno no
+            // sirve para leer los datos de esa cuenta.
+            unjoined = !invited && !reclaim && user.invitedAt === null && !opts.skipMailBudget && !opts.allowReserved;
             await tx.insert(memberships).values({
                 userId: user.id,
                 tenantId,
                 role: input.role,
                 customRoleId: input.role === 'guest' || input.role === 'admin' ? null : input.customRoleId ?? null,
+                ...(unjoined ? { joinedAt: null } : {}),
             });
-            return { user, invited, alreadyGuest: false };
+            if (reclaim) {
+                // `users` se escribe con la conexión base, no con el rol de la app.
+                await tx.execute(sql`reset role`);
+                await this.turnIntoInvitation(tx, user.id);
+                user = { ...user, invitedAt: new Date() };
+                invited = true;
+            }
+            return { user, invited, alreadyGuest: false, reclaimed: reclaim, unjoined };
         });
 
-        const { user, invited, alreadyGuest } = result;
+        const { user, invited, alreadyGuest, reclaimed } = result;
+        // Fuera de la transacción: las sesiones viven en Redis.
+        if (reclaimed) await this.revokeAccess(user.id);
         const shared = input.role === 'guest' ? opts.shared ?? null : null;
         let notified = false;
-        if (invited) {
+        if (alreadyGuest) {
+            // Nada nuevo que avisar aquí: quien comparte manda su propio aviso.
+        } else if (invited) {
             await this.issueSetupLink(user.id, user.email, user.name, 'invite', {
                 tenantName: tenant.name,
                 invitedBy,
@@ -690,12 +868,16 @@ export class AuthService implements OnModuleInit {
                 shared,
             }).catch(() => undefined);
             notified = true;
-        } else {
+        } else if (opts.skipMailBudget || (await this.inviteMailAllowed(tenantId, email))) {
             notified = await this.notifyAddedToTenant(user, tenant.name, invitedBy, shared);
         }
-        this.logger.log(`Usuario ${user.id} sumado a la empresa ${tenantId} (${invited ? 'invitado' : 'cuenta existente'})`);
+        // (Sin cupo, una cuenta que ya existía queda sumada igual y sin correo:
+        // el aviso es una cortesía, `notified` lo dice.)
+        this.logger.log(`Usuario ${user.id} sumado a la empresa ${tenantId} (${reclaimed ? 'cuenta sin confirmar → invitación' : invited ? 'invitado' : 'cuenta existente'})`);
         return {
-            user: { id: user.id, name: user.name, email: user.email },
+            // El nombre real de una cuenta ajena no vuelve a quien la sumó por
+            // su correo: hasta que la persona entra, sólo lo que ya se sabía.
+            user: { id: user.id, name: result.unjoined ? (user.email.split('@')[0] ?? user.email) : user.name, email: user.email },
             role: input.role,
             invited,
             pending: invited || user.invitedAt !== null,
@@ -766,6 +948,9 @@ export class AuthService implements OnModuleInit {
         try {
             const status = await this.mail.accountMailStatus();
             if (!status.available) return false;
+            tenantName = mailLabel(tenantName);
+            invitedBy = invitedBy ? mailLabel(invitedBy) : null;
+            user = { ...user, name: mailLabel(user.name) };
             const base = this.env.APP_BASE_URL.replace(/\/$/, '');
             if (shared) return await this.sendSharedMail(user, tenantName, invitedBy, shared.label, base);
             const who = invitedBy ? `${escapeHtml(invitedBy)} te sumó` : 'Te sumaron';
@@ -791,10 +976,13 @@ export class AuthService implements OnModuleInit {
         tenantName: string,
         invitedBy: string | null,
         label: string,
+        /** Con la empresa, el aviso gasta el cupo de invitaciones (sin cupo no sale). */
+        tenantId?: number,
     ): Promise<boolean> {
         try {
             const status = await this.mail.accountMailStatus();
             if (!status.available) return false;
+            if (tenantId !== undefined && !(await this.inviteMailAllowed(tenantId, user.email))) return false;
             return await this.sendSharedMail(user, tenantName, invitedBy, label, this.env.APP_BASE_URL.replace(/\/$/, ''));
         } catch (err) {
             this.logger.warn(`No se pudo avisar a ${user.email} de lo compartido en «${tenantName}»: ${(err as Error).message}`);
@@ -809,7 +997,10 @@ export class AuthService implements OnModuleInit {
         label: string,
         base: string,
     ): Promise<boolean> {
-        const who = invitedBy ? `${oneLine(invitedBy)} compartió contigo` : 'Compartieron contigo';
+        tenantName = mailLabel(tenantName);
+        label = mailLabel(label, 120);
+        user = { ...user, name: mailLabel(user.name) };
+        const who = invitedBy ? `${mailLabel(invitedBy)} compartió contigo` : 'Compartieron contigo';
         await this.mail.enqueue({
             to: user.email,
             subject: `${who} «${oneLine(label)}»`,
@@ -824,7 +1015,7 @@ export class AuthService implements OnModuleInit {
      * transacción. La membership exige `app.tenant_id`/`app.user_id` en el
      * contexto (WITH CHECK de las policies RLS).
      */
-    async register(input: RegisterInput): Promise<AuthSession> {
+    async register(input: RegisterInput, meta: { host?: string } = {}): Promise<AuthSession> {
         // SEC-04: el registro público nunca puede crear una cuenta con un email
         // de superadmin (evita reclamar el privilegio de plataforma). Se
         // responde con el mismo mensaje que un email ya tomado para no revelar
@@ -889,7 +1080,13 @@ export class AuthService implements OnModuleInit {
         // registro (se puede reenviar desde Ajustes).
         void this.sendEmailVerification(result.user.id).catch(() => undefined);
 
-        const token = await this.sessions.create(result.user.id, { via: 'password' });
+        // Registrarse desde la dirección de una empresa: la sesión queda atada a
+        // la empresa recién creada (no vale para las que se sumen después).
+        const onTenantHost = (await tenantBoundToHost(this.db, this.env, meta.host)) !== null;
+        const token = await this.sessions.create(result.user.id, {
+            via: 'password',
+            boundTenantId: onTenantHost ? result.tenant.id : null,
+        });
         return {
             user: this.toSessionUser(result.user),
             memberships: [
@@ -907,13 +1104,17 @@ export class AuthService implements OnModuleInit {
 
     async login(
         input: LoginInput,
-        meta: { userAgent?: string; ip?: string } = {},
+        meta: { userAgent?: string; ip?: string; host?: string } = {},
     ): Promise<AuthSession | MfaChallenge> {
         // Freno por cuenta: se chequea ANTES de tocar la DB o verificar el hash
         // (argon2 es caro a propósito; no queremos gastarlo con el atacante).
+        // El intento se CUENTA antes de verificar y se borra si la contraseña
+        // era buena: leer, verificar y después sumar dejaba que una ráfaga en
+        // paralelo probara muchas más contraseñas que el tope (todos los
+        // pedidos en vuelo leían el mismo número).
         const failKey = loginFailKey(input.email);
-        const fails = Number((await this.redis.get(failKey)) ?? 0);
-        if (fails >= LOGIN_FAIL_MAX) {
+        const attempts = await incrWithTtl(this.redis, failKey, LOGIN_FAIL_WINDOW_SECONDS);
+        if (attempts > LOGIN_FAIL_MAX) {
             throw new HttpException(
                 {
                     code: 'too_many_attempts',
@@ -937,10 +1138,12 @@ export class AuthService implements OnModuleInit {
             '$argon2id$v=19$m=65536,t=3,p=4$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
         const valid = await argon2.verify(hash, input.password).catch(() => false);
         if (!user || !valid) {
-            // Se cuenta el fallo (ventana deslizante de 15 min).
-            await incrWithTtl(this.redis, failKey, LOGIN_FAIL_WINDOW_SECONDS);
+            // El fallo ya quedó contado arriba (ventana de 15 min).
             throw new UnauthorizedException('Credenciales inválidas');
         }
+        // Contraseña buena → se limpia el contador de la cuenta (también si
+        // está desactivada: no fue un intento fallido).
+        await this.redis.del(failKey);
 
         // Cuenta desactivada por el operador (ADR-S15 F2): credenciales válidas
         // pero el acceso está bloqueado. Se revela sólo tras autenticar bien.
@@ -952,26 +1155,31 @@ export class AuthService implements OnModuleInit {
             });
         }
 
-        // Login bueno → se limpia el contador de fallos de la cuenta.
-        await this.redis.del(failKey);
-
         // v0.1.120 — con segundo factor activo NO se abre sesión todavía: se
         // devuelve un desafío de un solo uso que hay que canjear con el código.
+        // La sesión que se abre en la dirección de una empresa es sólo de ESA
+        // empresa (ver `host-tenant.ts`).
+        const boundTenantId = await tenantBoundToHost(this.db, this.env, meta.host);
         if (user.totpEnabledAt !== null) {
             const challenge = randomBytes(32).toString('base64url');
             await this.redis.set(
                 mfaKey(challenge),
-                JSON.stringify({ userId: user.id, ...meta }),
+                JSON.stringify({ userId: user.id, userAgent: meta.userAgent, ip: meta.ip, boundTenantId }),
                 'EX',
                 MFA_CHALLENGE_TTL_SECONDS,
             );
             return { mfa_required: true, challenge };
         }
 
-        const token = await this.sessions.create(user.id, { ...meta, via: 'password' });
+        const token = await this.sessions.create(user.id, {
+            userAgent: meta.userAgent,
+            ip: meta.ip,
+            via: 'password',
+            boundTenantId,
+        });
         return {
             user: this.toSessionUser(user),
-            memberships: await this.membershipsOf(user.id),
+            memberships: await this.membershipsOf(user.id, boundTenantId),
             token,
         };
     }
@@ -985,7 +1193,7 @@ export class AuthService implements OnModuleInit {
      * intentos fallidos se cuentan igual (freno de fuerza bruta sobre el
      * desafío) y agotarlo lo invalida.
      */
-    async verifyTwoFactorLogin(input: VerifyTwoFactorInput): Promise<AuthSession> {
+    async verifyTwoFactorLogin(input: VerifyTwoFactorInput, meta: { host?: string } = {}): Promise<AuthSession> {
         const raw = await this.redis.get(mfaKey(input.challenge));
         if (raw === null) {
             throw new UnauthorizedException({
@@ -994,7 +1202,7 @@ export class AuthService implements OnModuleInit {
                 data: { status: 401 },
             });
         }
-        const parsed = JSON.parse(raw) as { userId: number; userAgent?: string; ip?: string };
+        const parsed = JSON.parse(raw) as { userId: number; userAgent?: string; ip?: string; boundTenantId?: number | null };
         const tries = await incrWithTtl(this.redis, mfaTriesKey(input.challenge), MFA_CHALLENGE_TTL_SECONDS);
         if (tries > MFA_MAX_TRIES) {
             await this.redis.del(mfaKey(input.challenge));
@@ -1013,8 +1221,9 @@ export class AuthService implements OnModuleInit {
         // SEC-26 (v0.1.226): tope de fallos POR USUARIO. El de arriba es por
         // desafío, y cada login con la contraseña correcta emite uno nuevo:
         // quien ya tiene la contraseña probaba códigos sin límite.
+        // Se cuenta ANTES de verificar (una ráfaga en paralelo no pasa el tope).
         const failKey = mfaUserFailKey(user.id);
-        if (Number((await this.redis.get(failKey)) ?? 0) >= MFA_USER_MAX_FAILS) {
+        if ((await incrWithTtl(this.redis, failKey, MFA_USER_LOCK_SECONDS)) > MFA_USER_MAX_FAILS) {
             throw new UnauthorizedException({
                 code: 'mfa_locked',
                 message: 'Demasiados códigos incorrectos. Espera 15 minutos y vuelve a intentar.',
@@ -1033,21 +1242,23 @@ export class AuthService implements OnModuleInit {
             if (!ok && prev !== null) await this.redis.set(totpLastKey(user.id), prev, 'EX', 300);
         }
         if (!ok) ok = await this.consumeBackupCode(user.id, user.totpBackupCodes ?? [], input.code);
-        if (!ok) {
-            await incrWithTtl(this.redis, failKey, MFA_USER_LOCK_SECONDS);
-            throw new UnauthorizedException('Código inválido');
-        }
+        if (!ok) throw new UnauthorizedException('Código inválido');
         await this.redis.del(failKey);
 
         await this.redis.del(mfaKey(input.challenge), mfaTriesKey(input.challenge));
+        // Atada a la empresa de la dirección donde se puso la contraseña o donde
+        // se completó el código (la que haya).
+        const boundTenantId =
+            (await tenantBoundToHost(this.db, this.env, meta.host)) ?? parsed.boundTenantId ?? null;
         const token = await this.sessions.create(user.id, {
             userAgent: parsed.userAgent,
             ip: parsed.ip,
             via: 'password',
+            boundTenantId,
         });
         return {
             user: this.toSessionUser(user),
-            memberships: await this.membershipsOf(user.id),
+            memberships: await this.membershipsOf(user.id, boundTenantId),
             token,
         };
     }
@@ -1295,6 +1506,8 @@ export class AuthService implements OnModuleInit {
          * `SuperadminGuard` (email en la lista + sin impersonar + contraseña).
          */
         sessionVia?: 'password' | 'portal' | null,
+        /** La sesión es sólo de esta empresa (se abrió en su dirección). */
+        boundTenantId?: number,
     ): Promise<AuthSession> {
         const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
         if (!user) {
@@ -1302,11 +1515,14 @@ export class AuthService implements OnModuleInit {
         }
         const session: AuthSession = {
             user: this.toSessionUser(user),
-            memberships: await this.membershipsOf(user.id),
+            memberships: await this.membershipsOf(user.id, boundTenantId),
         };
         if (sessionVia !== undefined) {
             const operator =
                 impersonatedBy === undefined &&
+                // Desde la dirección de una empresa no hay consola de plataforma
+                // (ni se pide volver a entrar: no serviría).
+                boundTenantId === undefined &&
                 sessionVia !== 'portal' &&
                 this.env.PLATFORM_SUPERADMINS.includes(user.email.toLowerCase());
             session.is_superadmin = operator && sessionVia === 'password';
@@ -1329,7 +1545,7 @@ export class AuthService implements OnModuleInit {
         await deletePushForSessionId(this.db, sessionPublicId(token));
     }
 
-    async membershipsOf(userId: number): Promise<MembershipSummary[]> {
+    async membershipsOf(userId: number, onlyTenantId?: number | null): Promise<MembershipSummary[]> {
         return withUser(this.db, userId, async (tx) => {
             const rows = await tx
                 .select({
@@ -1359,7 +1575,14 @@ export class AuthService implements OnModuleInit {
                 // de la app de equipo: el TenantGuard lo rechaza (SEC-24), así
                 // que listarlo sólo hacía que la app abriera una empresa donde
                 // todo responde 403. El portal tiene su propia entrada.
-                .where(and(eq(memberships.userId, userId), ne(memberships.role, 'client')));
+                .where(
+                    and(
+                        eq(memberships.userId, userId),
+                        ne(memberships.role, 'client'),
+                        // Sesión atada a una empresa: sólo esa.
+                        typeof onlyTenantId === 'number' ? eq(memberships.tenantId, onlyTenantId) : undefined,
+                    ),
+                );
             return rows.map((r) => {
                 const disabled = readDisabledModules(r.disabledModules);
                 // C2 — sin «Roles propios» en el plan, la persona usa su rol base.

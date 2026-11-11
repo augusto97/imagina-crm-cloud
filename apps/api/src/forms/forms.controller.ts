@@ -25,6 +25,7 @@ import {
     updateFormSchema,
     type CaptchaAvailability,
     type CreateFormInput,
+    type Role,
     type DuplicateFormInput,
     type FormDataConsentAvailability,
     type FormDto,
@@ -175,7 +176,7 @@ export class FormsController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(createFormSchema)) input: CreateFormInput,
     ): Promise<FormDto> {
-        return this.forms.create(req.tenant!.tenantId, req.authUserId!, list, input, { isAdmin: req.tenant!.role === 'admin' });
+        return this.forms.create(req.tenant!.tenantId, req.authUserId!, list, input, formActor(req));
     }
 
     /** v0.1.388 — Una copia sin publicar, con su propia dirección. */
@@ -189,7 +190,7 @@ export class FormsController {
         @Body(new ZodValidationPipe(duplicateFormSchema)) input: DuplicateFormInput,
     ): Promise<FormDto> {
         const tenantId = req.tenant!.tenantId;
-        const doc = await this.forms.duplicate(tenantId, req.authUserId!, list, id, input ?? {}, { isAdmin: req.tenant!.role === 'admin' });
+        const doc = await this.forms.duplicate(tenantId, req.authUserId!, list, id, input ?? {}, formActor(req));
         await this.audit.log({
             tenantId,
             userId: req.authUserId ?? null,
@@ -212,7 +213,7 @@ export class FormsController {
         const tenantId = req.tenant!.tenantId;
         const before =
             input.enabled !== undefined || input.regenerate_token || input.config !== undefined ? await this.forms.get(tenantId, list, id) : null;
-        const doc = await this.forms.update(tenantId, list, id, input, { isAdmin: req.tenant!.role === 'admin' });
+        const doc = await this.forms.update(tenantId, list, id, input, formActor(req));
         // v0.1.289 — prender o apagar la verificación anti-robots queda en la bitácora.
         if (before && before.config.settings.captcha !== doc.config.settings.captcha) {
             await this.audit.log({
@@ -636,4 +637,9 @@ function notAvailablePage(): string {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex" /><title>Formulario no disponible</title>
 <style>body{margin:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:#f4f5f7;color:#1d2330;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}div{max-width:420px;text-align:center}h1{font-size:20px;margin:0 0 6px}p{color:#667085;margin:0}</style></head>
 <body><div><h1>Este formulario no está disponible</h1><p>Puede que la dirección esté mal escrita o que ya no reciba respuestas.</p></div></body></html>`;
+}
+
+/** Quién guarda el formulario (el CSS propio es de admin; las imágenes nuevas, archivos que puede usar). */
+function formActor(req: FastifyRequest): { isAdmin: boolean; file: { userId: number; role: Role } & ReturnType<typeof aclOf> } {
+    return { isAdmin: req.tenant!.role === 'admin', file: { userId: req.authUserId!, role: req.tenant!.role as Role, ...aclOf(req) } };
 }

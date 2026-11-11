@@ -94,7 +94,7 @@ describe('buildWebhookRequest con conexión', () => {
     it('la cabecera de la acción pisa la de la conexión', () => {
         const parts = partsFor({ headers: [{ key: 'X-Modo', value: 'prod' }] });
         const req = buildWebhookRequest(
-            { url: 'https://a.com/x', headers: [{ key: 'X-Modo', value: 'test' }] },
+            { url: 'https://was.example.com/x', headers: [{ key: 'X-Modo', value: 'test' }] },
             NO_MERGE,
             { recordId: 1, listId: 2 },
             parts,
@@ -105,7 +105,7 @@ describe('buildWebhookRequest con conexión', () => {
     it('auth de cuerpo: el campo entra con las filas clave/valor', () => {
         const parts = partsFor({ authType: 'body', authKey: 'secret' });
         const req = buildWebhookRequest(
-            { url: 'https://a.com/x', content_type: 'form', body_params: [{ key: 'msg', value: 'hola' }] },
+            { url: 'https://was.example.com/x', content_type: 'form', body_params: [{ key: 'msg', value: 'hola' }] },
             NO_MERGE,
             { recordId: 1, listId: 2 },
             parts,
@@ -116,7 +116,7 @@ describe('buildWebhookRequest con conexión', () => {
     it('con un cuerpo escrito a mano NO se le reescribe el JSON al usuario', () => {
         const parts = partsFor({ authType: 'body', authKey: 'secret' });
         const req = buildWebhookRequest(
-            { url: 'https://a.com/x', body_template: '{"a":1}' },
+            { url: 'https://was.example.com/x', body_template: '{"a":1}' },
             NO_MERGE,
             { recordId: 1, listId: 2 },
             parts,
@@ -126,7 +126,7 @@ describe('buildWebhookRequest con conexión', () => {
 
     it('el secreto de firma de la conexión manda sobre el escrito en la acción', () => {
         const withConn = buildWebhookRequest(
-            { url: 'https://a.com/x', secret: 'viejo' },
+            { url: 'https://was.example.com/x', secret: 'viejo' },
             NO_MERGE,
             { recordId: 1, listId: 2 },
             partsFor({}, { signing_secret: 'nuevo' } as never),

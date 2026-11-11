@@ -1,10 +1,10 @@
 import { BadRequestException, ConflictException, ExecutionContext, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import Redis from 'ioredis';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { layoutBlocks } from '@imagina-base/shared';
 import { loadEnv } from '../src/config/env';
-import { memberships, tenants, users } from '../src/db/schema';
+import { fields, lists, memberships, portalLinks, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { SessionService } from '../src/auth/session.service';
 import { PORTAL_SESSION_COOKIE, SESSION_COOKIE, SessionGuard } from '../src/auth/session.guard';
@@ -333,6 +333,35 @@ describe('PortalService (Postgres + Redis reales)', () => {
         );
     });
 
+    it('SEC — la plantilla anterior no deja al cliente escribir archivos, personas ni equipos (ids de la empresa)', async () => {
+        const uid = await clientSession('legacy-file@acme.test');
+        const adjunto = await fieldsService.create(tenantId, 'clientes', { label: 'Adjunto', type: 'file', slug: 'adjunto' });
+        const persona = await fieldsService.create(tenantId, 'clientes', { label: 'Asesor', type: 'user', slug: 'asesor' });
+        await listsService.update(tenantId, 'clientes', {
+            settings: {
+                portal_template: {
+                    blocks: [{ type: 'editable_form', config: { editable_field_slugs: ['adjunto', 'asesor', 'nombre'] } }],
+                },
+            },
+        });
+        // Un id cualquiera de adjunto / de usuario: antes se guardaba y `me` lo firmaba.
+        await expect(portal.updateMe(actor(uid), { fields: { adjunto: [1] } })).rejects.toMatchObject({ response: { code: 'portal_field_forbidden' } });
+        await expect(portal.updateMe(actor(uid), { fields: { asesor: 1 } })).rejects.toMatchObject({ response: { code: 'portal_field_forbidden' } });
+        const boot = await portal.me(actor(uid));
+        expect(boot.editable_field_ids).not.toContain(adjunto.id);
+        expect(boot.editable_field_ids).not.toContain(persona.id);
+        expect(boot.editable_field_ids).toContain(fieldId);
+        expect(boot.record.data[`f${adjunto.id}`] ?? null).toBeNull();
+        // El texto de la misma plantilla se sigue editando.
+        await portal.updateMe(actor(uid), { fields: { nombre: 'ACME Legacy' } });
+        expect((await portal.me(actor(uid))).record.data[`f${fieldId}`]).toBe('ACME Legacy');
+        // Como lo dejó el caso anterior (los siguientes leen ese estado).
+        await portal.updateMe(actor(uid), { fields: { nombre: 'ACME Renovada' } });
+        await listsService.update(tenantId, 'clientes', {
+            settings: { portal_template: { blocks: [{ type: 'editable_form', config: { editable_field_slugs: ['cupo'] } }] } },
+        });
+    });
+
     it('las listas vinculadas sólo se leen por el diseño (no hay endpoint para leer cualquier lista)', async () => {
         // v0.1.286 — `/portal/lists/:slug/records` y `/aggregates` aceptaban
         // CUALQUIER lista de la empresa y devolvían todas sus columnas. Se
@@ -622,8 +651,8 @@ describe('PortalService (Postgres + Redis reales)', () => {
             const bootB = await portal.me({ userId: sB!.userId, tenantId: sB!.portalTenantId! });
             expect(bootA.record.id).toBe(recordId);
             expect(bootB.record.id).toBe(recB.id);
-            // Una sesión vieja (sin empresa) con dos vínculos es ambigua → 404, no "la primera".
-            await expect(portal.me({ userId: sA!.userId, tenantId: null })).rejects.toBeInstanceOf(NotFoundException);
+            // Sin empresa en la sesión no se sirve ningún portal (ni «el primero» ni «el único»).
+            await expect(portal.me({ userId: sA!.userId, tenantId: null })).rejects.toBeInstanceOf(UnauthorizedException);
             // Quitar el acceso en A no saca al cliente de B.
             await portal.revokeAccess(tenantId, 'clientes', sA!.userId);
             expect(await sessions.get(tokA)).toBeNull();
@@ -786,6 +815,56 @@ describe('PortalService (Postgres + Redis reales)', () => {
             expect(viaCustom.portalAccount).toBeUndefined();
         });
 
+        it('un enlace que sale por el dominio de una empresa NUNCA vale para «todas mis cuentas», se canjee donde se canjee', async () => {
+            // Delta atiende su propio dominio: quien maneja ese dominio ve el
+            // token cuando el cliente abre el correo.
+            const [td] = await pg.db.select().from(tenants).where(eq(tenants.slug, 'delta41')).limit(1);
+            const tenantD = td!.id;
+            servingDomains.add('portal.delta41.test');
+            await redis.del(`domserve:${tenantD}:portal.delta41.test`);
+            const deltaMail = () => {
+                const hit = [...mailbox.sent].reverse().find((m) => (m.text ?? '').includes('https://portal.delta41.test/'));
+                if (!hit) throw new Error('no salió el correo por el dominio de Delta');
+                return /token=([A-Za-z0-9_-]+)/.exec(hit.text ?? '')![1]!;
+            };
+            try {
+                // 1) «Pedir un enlace» (público).
+                mailbox.sent.length = 0;
+                await portal.requestAccess('viajero@empresas.test');
+                await portal.whenIdle();
+                // …canjeado en la dirección de la PLATAFORMA (lo que haría quien lo capturó).
+                const viaRequest = await sessionOf((await portal.consume(deltaMail(), { host: 'app.imagina.test' })).sessionToken);
+                expect(viaRequest.portalTenantId).toBe(tenantD);
+                expect(viaRequest.portalAccount).toBeUndefined();
+                const stolen = { userId: viaRequest.userId, tenantId: tenantD, linkId: viaRequest.portalLinkId, account: viaRequest.portalAccount === true };
+                const seen = await portal.accounts(stolen);
+                expect(seen.all_companies).toBe(false);
+                expect(seen.accounts.map((a) => a.tenant_name)).toEqual(['Delta']);
+                const [acmeLink] = await pg.db
+                    .select()
+                    .from(portalLinks)
+                    .where(and(eq(portalLinks.userId, viaRequest.userId), eq(portalLinks.tenantId, tenantId)))
+                    .limit(1);
+                await expect(portal.switchAccount(stolen, acmeLink!.id)).rejects.toBeInstanceOf(NotFoundException);
+
+                // 2) Delta le da acceso a una cuenta que ya existía (el enlace sólo va al correo).
+                const [listD] = await pg.db.select().from(lists).where(eq(lists.tenantId, tenantD)).limit(1);
+                const [fD] = await pg.db.select().from(fields).where(eq(fields.listId, listD!.id)).limit(1);
+                const otra = await recordsService.create(tenantD, { userId: admin.userId, role: 'admin' }, listD!.slug, {
+                    data: { [`f${fD!.id}`]: 'Obra Dos' },
+                });
+                mailbox.sent.length = 0;
+                // (`staff@gamma.test` es del equipo de Gamma y cliente de ACME, no de Delta.)
+                const res = await portal.issue(tenantD, listD!.slug, { record_id: otra.id, email: 'staff@gamma.test' });
+                expect(res.token).toBeNull();
+                const viaIssue = await sessionOf((await portal.consume(deltaMail(), { host: 'app.imagina.test' })).sessionToken);
+                expect(viaIssue.portalAccount).toBeUndefined();
+            } finally {
+                servingDomains.delete('portal.delta41.test');
+                await redis.del(`domserve:${tenantD}:portal.delta41.test`);
+            }
+        });
+
         it('pedir un enlace manda UNO por empresa aunque tenga varios accesos en ella', async () => {
             await portal.issue(tenantId, 'clientes', { record_id: rec2, email: 'dosfichas@acme.test' });
             await portal.issue(tenantId, 'clientes', { record_id: rec3, email: 'dosfichas@acme.test' });
@@ -801,6 +880,12 @@ describe('PortalService (Postgres + Redis reales)', () => {
                 const req = { url, cookies, headers: {} } as unknown as Record<string, unknown>;
                 return { req, ctx: { switchToHttp: () => ({ getRequest: () => req }) } as unknown as ExecutionContext };
             };
+            /** Como llega de verdad: la dirección cruda + la ruta que resolvió el router. */
+            const routed = (url: string, route: string, cookies: Record<string, string>) => {
+                const made = ctx(url, cookies);
+                made.req.routeOptions = { url: route };
+                return made;
+            };
             const res = await portal.issue(tenantId, 'clientes', { record_id: rec2, email: 'cookie41@acme.test' });
             const portalTok = (await portal.consume(res.token!)).sessionToken;
             const work = await sessions.create(admin.userId, { via: 'password' });
@@ -815,6 +900,20 @@ describe('PortalService (Postgres + Redis reales)', () => {
             // Una sesión de trabajo no abre un portal.
             const c = ctx('/api/v1/portal/me', { [SESSION_COOKIE]: work });
             await expect(guard.canActivate(c.ctx)).rejects.toBeInstanceOf(UnauthorizedException);
+            // …tampoco escribiendo la dirección de otra forma: el router decodifica
+            // `%70ortal` y llega al mismo controlador (antes entraba por la rama
+            // general y el servicio le servía «su único acceso»).
+            for (const raw of ['/api/v1/%70ortal/me', '/api/v1/portal/m%65', '/api/v1/portal/me#x']) {
+                const enc = routed(raw, '/api/v1/portal/me', { [SESSION_COOKIE]: work });
+                await expect(guard.canActivate(enc.ctx)).rejects.toMatchObject({ response: { code: 'portal_session_required' } });
+                // Y sin la ruta resuelta (404), la dirección decodificada decide igual.
+                await expect(guard.canActivate(ctx(raw, { [SESSION_COOKIE]: work }).ctx)).rejects.toBeInstanceOf(UnauthorizedException);
+            }
+            // Sin empresa en la sesión el servicio no sirve ningún portal.
+            await expect(portal.me({ userId: admin.userId, tenantId: null })).rejects.toMatchObject({ response: { code: 'portal_session_required' } });
+            // Una sesión del portal tampoco sale de él por una dirección codificada de la app.
+            const escaped = routed('/api/v1/auth/m%65', '/api/v1/auth/me', { [SESSION_COOKIE]: portalTok });
+            await expect(guard.canActivate(escaped.ctx)).rejects.toBeInstanceOf(ForbiddenException);
             // Y la del portal sigue sin servir para la app (SEC-24).
             const d = ctx('/api/v1/lists', { [SESSION_COOKIE]: portalTok });
             await expect(guard.canActivate(d.ctx)).rejects.toBeInstanceOf(ForbiddenException);

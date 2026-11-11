@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { Body, Controller, Get, HttpCode, Inject, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, ParseIntPipe, Patch, Post, Query, Req, Res, ServiceUnavailableException, UseGuards } from '@nestjs/common';
 import {
     updatePublicDashboardSchema,
     type PublicDashboardAdmin,
@@ -16,6 +16,7 @@ import { useWebBuild } from '../common/web-build';
 import type { DashboardViewer } from '../dashboards/dashboards.service';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { devPublicPage, loadBuiltPublicPage, missingBuildPage, publicDashboardCsp, unavailableDashboardPage } from './public-dashboard-page';
+import { PublicBusyError } from '../public-cache/public-cache';
 import { PublicDashboardsService } from './public-dashboards.service';
 import { aclOf } from '../tenancy/acl-of';
 import { PlanModule } from '../tenancy/plan-module.decorator';
@@ -72,8 +73,25 @@ export class PublicDashboardsDataController {
         @Query('period') period: string | undefined,
         @Res({ passthrough: true }) reply: FastifyReply,
     ): Promise<PublicDashboardBundle> {
-        void reply.header('Cache-Control', 'no-store').header('X-Robots-Tag', 'noindex');
-        return this.publicDashboards.bundle(token, typeof period === 'string' ? period : undefined);
+        void reply.header('X-Robots-Tag', 'noindex');
+        try {
+            const bundle = await this.publicDashboards.bundle(token, typeof period === 'string' ? period : undefined);
+            // Los datos ya se calculan como mucho cada 30 s: el navegador (o un
+            // CDN) puede guardar la respuesta ese mismo tiempo.
+            void reply.header('Cache-Control', 'public, max-age=30');
+            return bundle;
+        } catch (err) {
+            void reply.header('Cache-Control', 'no-store');
+            if (err instanceof PublicBusyError) {
+                void reply.header('Retry-After', '5');
+                throw new ServiceUnavailableException({
+                    code: 'public_busy',
+                    message: 'Hay muchas visitas en este momento. Vuelve a intentarlo en unos segundos.',
+                    data: { status: 503 },
+                });
+            }
+            throw err;
+        }
     }
 }
 

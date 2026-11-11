@@ -24,7 +24,7 @@ import {
 } from '@imagina-base/shared';
 import { attachments, memberships, records, teams, users } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
-import { hiddenFieldsFor } from '../lists/list-acl';
+import { effectivePermissions, listScopeWhere } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { RecordsService, type Actor } from '../records/records.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -100,6 +100,7 @@ export class ExportService {
         const labeler = await this.relationLabeler(
             tenantId,
             columns.filter((c) => c.type === 'relation'),
+            actor,
         );
 
         // v0.1.252 — el CSV dice lo que ve una persona: la ETIQUETA de una
@@ -187,7 +188,7 @@ export class ExportService {
     ): Promise<{ rows: number }> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const fields = await this.exportColumns(tenantId, list, actor, opts.fieldIds);
-        const labeler = await this.relationLabeler(tenantId, fields.filter((c) => c.type === 'relation'));
+        const labeler = await this.relationLabeler(tenantId, fields.filter((c) => c.type === 'relation'), actor);
         const readable = await this.readableFormatter(tenantId, fields);
         const format = await readTenantFormat(this.tenantDb, tenantId);
         const includeSubtasks = opts.includeSubtasks !== false;
@@ -306,7 +307,9 @@ export class ExportService {
         fieldIds: number[],
     ): Promise<Field[]> {
         const all = await this.fields.list(tenantId, String(list.id));
-        const hidden = hiddenFieldsFor(list.settings, actor);
+        // La misma regla del listado: también los derivados de un campo oculto
+        // (su NOMBRE tampoco es para esa persona).
+        const hidden = await this.fields.hiddenSlugsFor(tenantId, list, all, actor);
         const exportable = all
             .filter((f) => (isDataField(f.type) || isExportableDerived(f.type)) && !hidden.has(f.slug))
             // Fórmulas (A1): salen con el formato de su resultado (moneda, fecha…).
@@ -472,8 +475,16 @@ export class ExportService {
         };
     }
 
-    private async relationLabeler(tenantId: number, relFields: Field[]): Promise<RelationLabeler> {
-        const targets = new Map<number, { listId: number; titleKey: string }>();
+    /**
+     * Títulos de los registros vinculados. El título de un registro de OTRA
+     * lista sólo sale si quien exporta podría leerlo ahí: la lista destino con
+     * su alcance (ninguno / lo suyo / lo asignado) y su campo de título no
+     * oculto — la misma regla que las búsquedas (SEC-36) y que el listado de
+     * la otra lista, de donde la pantalla saca los títulos. Lo que no alcanza
+     * sale como `#id` (el id del vínculo ya lo ve en la lista que exporta).
+     */
+    private async relationLabeler(tenantId: number, relFields: Field[], actor: Actor): Promise<RelationLabeler> {
+        const targets = new Map<number, { listId: number; titleKey: string; scope: SQL | undefined } | null>();
         for (const f of relFields) {
             const listId = Number((f.config as { target_list_id?: unknown }).target_list_id);
             if (!Number.isInteger(listId) || listId <= 0) continue;
@@ -482,7 +493,19 @@ export class ExportService {
             const otherFields = await this.fields.listByListId(tenantId, listId);
             const titleId = resolveTitleFieldId(otherFields, otherList.settings);
             if (titleId === null) continue;
-            targets.set(f.id, { listId, titleKey: jsonbKeyForField(titleId) });
+            const titleField = otherFields.find((x) => x.id === titleId);
+            const perms = effectivePermissions(otherList.settings, actor);
+            const hidden = await this.fields.hiddenSlugsFor(tenantId, otherList, otherFields, actor);
+            if (perms.view === 'none' || !titleField || hidden.has(titleField.slug)) {
+                // Sin acceso a esos títulos: la columna sale con los ids.
+                targets.set(f.id, null);
+                continue;
+            }
+            targets.set(f.id, {
+                listId,
+                titleKey: jsonbKeyForField(titleId),
+                scope: listScopeWhere(otherList.settings, actor, 'view'),
+            });
         }
         const cache = new Map<number, string>();
 
@@ -497,8 +520,8 @@ export class ExportService {
                     }
                 }
                 if (wanted.size === 0) return;
-                const byList = new Map<string, number[]>();
-                for (const t of targets.values()) byList.set(t.titleKey, []);
+                const byList = new Map<number, { titleKey: string; scope: SQL | undefined; ids: number[] }>();
+                for (const t of targets.values()) if (t) byList.set(t.listId, { titleKey: t.titleKey, scope: t.scope, ids: [] });
                 // Los ids de todas las relaciones se piden juntos por clave de
                 // título: dos relaciones a la misma lista comparten la query.
                 for (const f of relFields) {
@@ -507,10 +530,10 @@ export class ExportService {
                     for (const r of rows) {
                         const ids = r.relations?.[jsonbKeyForField(f.id)];
                         if (!Array.isArray(ids)) continue;
-                        for (const id of ids) if (wanted.has(id)) byList.get(t.titleKey)!.push(id);
+                        for (const id of ids) if (wanted.has(id)) byList.get(t.listId)!.ids.push(id);
                     }
                 }
-                for (const [titleKey, ids] of byList) {
+                for (const [listId, { titleKey, scope, ids }] of byList) {
                     if (ids.length === 0) continue;
                     const unique = [...new Set(ids)];
                     const rowsOut = await this.tenantDb.withTenant(tenantId, (tx) =>
@@ -523,8 +546,10 @@ export class ExportService {
                             .where(
                                 and(
                                     eq(records.tenantId, tenantId),
+                                    eq(records.listId, listId),
                                     inArray(records.id, unique),
                                     isNull(records.deletedAt),
+                                    scope,
                                 ),
                             ),
                     );

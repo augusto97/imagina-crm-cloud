@@ -41,7 +41,9 @@ import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RecordsRepository, type RecordRow } from '../records/records.repository';
-import { RecordsService, type Actor, type PreparedCreate } from '../records/records.service';
+import { RecordsService, hiddenWriteKeys, withoutHiddenWrites, type Actor, type PreparedCreate } from '../records/records.service';
+import { assertAttachable, fileIdsUnder } from '../files/files.service';
+import { effectivePermissions } from '../lists/list-acl';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 
@@ -91,8 +93,15 @@ export class RecordTemplatesService {
 
     // ─────────────────────────── CRUD ───────────────────────────
 
-    async list(tenantId: number, listKey: string, kind?: RecordTemplateKind): Promise<RecordTemplate[]> {
+    /**
+     * `actor` (SEC, auditoría 2026-11): quien las pide desde la app. Sin acceso
+     * a la lista (ver: nada) → 404; y los valores de los campos ocultos para esa
+     * persona no viajan (una plantilla guarda valores de registros). Sin actor
+     * = uso interno.
+     */
+    async list(tenantId: number, listKey: string, kind?: RecordTemplateKind, actor?: Actor): Promise<RecordTemplate[]> {
         const list = await this.lists.get(tenantId, listKey);
+        const view = await this.viewFor(tenantId, list, actor);
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .select()
@@ -106,18 +115,43 @@ export class RecordTemplatesService {
                 )
                 .orderBy(asc(recordTemplates.position), asc(recordTemplates.id)),
         );
-        return rows.map(toDto);
+        return rows.map((r) => view(toDto(r)));
     }
 
-    async get(tenantId: number, listKey: string, id: number): Promise<RecordTemplate> {
+    async get(tenantId: number, listKey: string, id: number, actor?: Actor): Promise<RecordTemplate> {
         const list = await this.lists.get(tenantId, listKey);
+        const view = await this.viewFor(tenantId, list, actor);
         const row = await this.tenantDb.withTenant(tenantId, (tx) => this.find(tx, tenantId, list.id, id));
-        return toDto(row);
+        return view(toDto(row));
     }
 
-    async create(tenantId: number, actorId: number, listKey: string, input: CreateRecordTemplateInput): Promise<RecordTemplate> {
+    /** Cómo ve una plantilla quien la pide: 404 sin acceso a la lista; sin los valores de sus campos ocultos. */
+    private async viewFor(tenantId: number, list: List, actor: Actor | undefined): Promise<(t: RecordTemplate) => RecordTemplate> {
+        if (!actor || actor.role === 'admin') return (t) => t;
+        if (effectivePermissions(list.settings, actor).view === 'none') {
+            throw new NotFoundException({ code: 'list_not_found', message: 'Lista no encontrada', data: { status: 404 } });
+        }
+        const hidden = hiddenWriteKeys(list.settings, await this.fields.listByListId(tenantId, list.id), actor);
+        if (hidden.size === 0) return (t) => t;
+        return (t) => ({
+            ...t,
+            content: {
+                ...t.content,
+                values: withoutTemplateKeys(t.content.values, hidden),
+                subtasks: t.content.subtasks.map((s) => ({ ...s, values: withoutTemplateKeys(s.values, hidden) })),
+            },
+        });
+    }
+
+    /**
+     * `actor`: quien la guarda desde la app. No pone valores en campos ocultos
+     * para él (al editar se conservan los que ya tenía la plantilla) y sólo
+     * suma a la descripción archivos que subió o que puede ver.
+     */
+    async create(tenantId: number, actorId: number, listKey: string, input: CreateRecordTemplateInput, actor?: Actor): Promise<RecordTemplate> {
         const list = await this.lists.get(tenantId, listKey);
         const fields = await this.fields.listByListId(tenantId, list.id);
+        const hidden = actor ? hiddenWriteKeys(list.settings, fields, actor) : new Set<string>();
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [count] = await tx
                 .select({ n: sql<number>`count(*)::int`, p: sql<number>`coalesce(max(${recordTemplates.position}), -1)::int` })
@@ -127,6 +161,9 @@ export class RecordTemplatesService {
                 throw badRequest('template_limit', `Una lista admite hasta ${RECORD_TEMPLATE_MAX_PER_LIST} plantillas de cada tipo.`);
             }
             const content = await this.sanitize(tx, tenantId, fields, input.kind, input.content);
+            content.values = withoutTemplateKeys(content.values, hidden);
+            content.subtasks = content.subtasks.map((s) => ({ ...s, values: withoutTemplateKeys(s.values, hidden) }));
+            if (actor) await assertAttachable(tx, tenantId, actor, fileIdsUnder(content.record_description, ['fileId']));
             const [inserted] = await tx
                 .insert(recordTemplates)
                 .values({
@@ -154,12 +191,13 @@ export class RecordTemplatesService {
             meta: { template_id: row.id, kind: row.kind },
         });
         this.realtime.records(tenantId, list.id);
-        return toDto(row);
+        return actor ? (await this.viewFor(tenantId, list, actor))(toDto(row)) : toDto(row);
     }
 
-    async update(tenantId: number, actorId: number, listKey: string, id: number, patch: UpdateRecordTemplateInput): Promise<RecordTemplate> {
+    async update(tenantId: number, actorId: number, listKey: string, id: number, patch: UpdateRecordTemplateInput, actor?: Actor): Promise<RecordTemplate> {
         const list = await this.lists.get(tenantId, listKey);
         const fields = await this.fields.listByListId(tenantId, list.id);
+        const hidden = actor ? hiddenWriteKeys(list.settings, fields, actor) : new Set<string>();
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.find(tx, tenantId, list.id, id);
             const set: Partial<typeof recordTemplates.$inferInsert> = { updatedAt: new Date() };
@@ -168,7 +206,21 @@ export class RecordTemplatesService {
             if (patch.icon !== undefined) set.icon = patch.icon;
             if (patch.color !== undefined) set.color = patch.color;
             if (patch.content !== undefined) {
-                set.content = await this.sanitize(tx, tenantId, fields, current.kind as RecordTemplateKind, patch.content);
+                const next = await this.sanitize(tx, tenantId, fields, current.kind as RecordTemplateKind, patch.content);
+                const prev = readTemplateContent(current.content);
+                if (hidden.size > 0) {
+                    // Lo oculto para quien edita no lo ve (ni lo manda): queda como estaba.
+                    next.values = { ...withoutTemplateKeys(next.values, hidden), ...onlyTemplateKeys(prev.values, hidden) };
+                    next.subtasks = next.subtasks.map((s, i) => ({
+                        ...s,
+                        values: { ...withoutTemplateKeys(s.values, hidden), ...onlyTemplateKeys(prev.subtasks[i]?.values ?? {}, hidden) },
+                    }));
+                }
+                if (actor) {
+                    const had = new Set(fileIdsUnder(prev.record_description, ['fileId']));
+                    await assertAttachable(tx, tenantId, actor, fileIdsUnder(next.record_description, ['fileId']).filter((f) => !had.has(f)));
+                }
+                set.content = next;
             }
             const [updated] = await tx
                 .update(recordTemplates)
@@ -187,7 +239,7 @@ export class RecordTemplatesService {
             meta: { template_id: row.id },
         });
         this.realtime.records(tenantId, list.id);
-        return toDto(row);
+        return actor ? (await this.viewFor(tenantId, list, actor))(toDto(row)) : toDto(row);
     }
 
     /**
@@ -253,11 +305,15 @@ export class RecordTemplatesService {
         const tz = await this.timeZone(tenantId);
         const now = new Date();
         const titleId = resolveTitleFieldId(fields, list.settings as Record<string, unknown>);
+        // SEC — lo que quien guarda la plantilla no ve del registro no se copia
+        // (antes iban TODOS los campos de la fila cruda, ocultos incluidos).
+        const hidden = hiddenWriteKeys(list.settings, fields, actor);
         const toValues = (data: Record<string, unknown>, skipTitle: boolean): TemplateValues => {
             const out: TemplateValues = {};
             for (const f of fields) {
                 if (!isTemplateValueType(f.type) || f.is_unique || (skipTitle && f.id === titleId)) continue;
                 const key = jsonbKeyForField(f.id);
+                if (hidden.has(key)) continue;
                 const v = data[key];
                 if (v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0)) continue;
                 if (f.type === 'date' || f.type === 'datetime') {
@@ -279,14 +335,16 @@ export class RecordTemplatesService {
             if (input.include.values) out.values = toValues(data, true);
             if (input.include.subtasks && row.parentId === null) {
                 const subs = await tx
-                    .select({ id: records.id, data: records.data })
+                    .select({ id: records.id, data: records.data, createdBy: records.createdBy })
                     .from(records)
                     .where(and(eq(records.tenantId, tenantId), eq(records.parentId, row.id), isNull(records.deletedAt)))
                     .orderBy(asc(records.id))
                     .limit(50);
                 for (const s of subs) {
                     const sd = s.data as Record<string, unknown>;
-                    const t = titleId !== null ? sd[jsonbKeyForField(titleId)] : null;
+                    // Sólo las subtareas que la persona alcanza con su acceso.
+                    if (!this.records.canReach(list, actor, 'view', { id: s.id, data: sd, createdBy: s.createdBy })) continue;
+                    const t = titleId !== null && !hidden.has(jsonbKeyForField(titleId)) ? sd[jsonbKeyForField(titleId)] : null;
                     out.subtasks.push({ title: typeof t === 'string' && t.trim() ? t.trim().slice(0, 500) : `Subtarea ${out.subtasks.length + 1}`, values: toValues(sd, true) });
                 }
             }
@@ -307,13 +365,13 @@ export class RecordTemplatesService {
             }
             return this.withoutFormerMembers(tx, tenantId, out);
         });
-        return this.create(tenantId, actor.userId, String(list.id), {
-            kind: 'record',
-            name: input.name,
-            description: input.description ?? null,
-            icon: input.icon ?? null,
-            content,
-        });
+        return this.create(
+            tenantId,
+            actor.userId,
+            String(list.id),
+            { kind: 'record', name: input.name, description: input.description ?? null, icon: input.icon ?? null, content },
+            actor,
+        );
     }
 
     /** Un checklist de un registro → plantilla de checklist de la lista. */
@@ -338,11 +396,13 @@ export class RecordTemplatesService {
             const content = await this.withoutFormerMembers(tx, tenantId, { values: {}, subtasks: [], checklists: [out], record_description: null });
             return content.checklists[0] ?? out;
         });
-        return this.create(tenantId, actor.userId, String(list.id), {
-            kind: 'checklist',
-            name: input.name ?? spec.name,
-            content: { values: {}, subtasks: [], checklists: [spec], record_description: null },
-        });
+        return this.create(
+            tenantId,
+            actor.userId,
+            String(list.id),
+            { kind: 'checklist', name: input.name ?? spec.name, content: { values: {}, subtasks: [], checklists: [spec], record_description: null } },
+            actor,
+        );
     }
 
     // ─────────────────────────── Usar ───────────────────────────
@@ -371,7 +431,10 @@ export class RecordTemplatesService {
         // El registro principal: la plantilla, y encima lo que trae el alta.
         const root = resolveTemplateValues(content.values, fields, { now, timeZone: tz, creatorId: actor.userId, base: input.data });
         warnings.push(...root.warnings);
-        const rootData = await this.dropNonMembers(tenantId, fields, { ...root.data, ...input.data }, new Set(Object.keys(input.data)), warnings);
+        // SEC — lo que la plantilla pone en un campo oculto para quien crea no se
+        // escribe (lo que manda el alta en un campo oculto se rechaza, como siempre).
+        const tplData = withoutHiddenWrites(list.settings, fields, actor, root.data);
+        const rootData = await this.dropNonMembers(tenantId, fields, { ...tplData, ...input.data }, new Set(Object.keys(input.data)), warnings);
         const lenient = opts.lenientRequired === true;
         const rootPrep = await this.records.prepareCreate(tenantId, actor, list, fields, { data: rootData, parent_id: input.parent_id ?? null }, { lenientRequired: lenient });
 
@@ -521,7 +584,7 @@ export class RecordTemplatesService {
         const titleId = resolveTitleFieldId(fields, list.settings as Record<string, unknown>);
         if (titleId !== null) data[jsonbKeyForField(titleId)] = s.title;
         const clean = await this.dropNonMembers(tenantId, fields, data, new Set(), warnings);
-        return this.records.prepareCreate(tenantId, actor, list, fields, { data: clean }, { lenientRequired: ctx.lenient });
+        return this.records.prepareCreate(tenantId, actor, list, fields, { data: clean }, { lenientRequired: ctx.lenient, serverData: true });
     }
 
     private resolveChecklists(
@@ -693,6 +756,19 @@ export function actionsUseTemplate(actions: unknown, templateId: number): boolea
         return false;
     };
     return walk(actions);
+}
+
+function withoutTemplateKeys(values: TemplateValues, keys: ReadonlySet<string>): TemplateValues {
+    if (keys.size === 0) return values;
+    const out: TemplateValues = {};
+    for (const [k, v] of Object.entries(values)) if (!keys.has(k)) out[k] = v;
+    return out;
+}
+
+function onlyTemplateKeys(values: TemplateValues, keys: ReadonlySet<string>): TemplateValues {
+    const out: TemplateValues = {};
+    for (const [k, v] of Object.entries(values)) if (keys.has(k)) out[k] = v;
+    return out;
 }
 
 export function toDto(row: RecordTemplateRow): RecordTemplate {

@@ -98,6 +98,8 @@ export const importTenantResultSchema = z.object({
     tenant_id: idSchema,
     slug: z.string(),
     name: z.string(),
+    /** El plan con el que quedó la empresa (lo decide este servidor, no el archivo). */
+    plan: z.string().optional(),
     counts: tenantTransferCountsSchema,
     /** Cuentas creadas vs. cuentas que ya existían en el destino (por email). */
     users_created: z.number().int().min(0),

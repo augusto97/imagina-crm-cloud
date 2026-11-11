@@ -677,6 +677,22 @@ describe('C2/C3 — roles propios e invitados (Postgres + Redis reales)', () => 
         expect(rows).toHaveLength(0);
     });
 
+    it('compartir en bucle con la misma persona no le inunda la casilla: 3 correos por hora, el acceso se da igual', async () => {
+        const email = 'bucle@afuera.test';
+        const ids: number[] = [];
+        for (let i = 0; i < 5; i++) {
+            ids.push((await recs.create(tenantId, admin(), 'proyectos', { data: { [key('titulo')]: `Bucle ${i}`, [key('costo')]: 1 } })).id);
+        }
+        sent.length = 0;
+        for (const id of ids) {
+            const s = await guests.shareRecord(tenantId, admin(), 'proyectos', id, { email, level: 'view' });
+            expect(s.level).toBe('view');
+        }
+        await new Promise((r) => setTimeout(r, 80));
+        // La invitación + dos avisos; el 4.º y el 5.º se comparten sin correo.
+        expect(sent.filter((m) => m.to === email)).toHaveLength(3);
+    });
+
     it('RLS: los registros compartidos son de su empresa', async () => {
         const fromOther = await withTenant(pg.db, otherTenant, (tx) => tx.select().from(recordShares));
         expect(fromOther).toHaveLength(0);

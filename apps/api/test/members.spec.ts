@@ -1,8 +1,9 @@
 import { ConflictException, ForbiddenException, HttpException, NotFoundException } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import Redis from 'ioredis';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AuthService } from '../src/auth/auth.service';
+import { EmailComposer } from '../src/automations/email-composer';
 import { SessionService } from '../src/auth/session.service';
 import { BillingService } from '../src/billing/billing.service';
 import { PlansService } from '../src/billing/plans.service';
@@ -62,7 +63,8 @@ describe('MembersService (Postgres real, RLS)', () => {
     async function makeUser(name: string): Promise<{ id: number; email: string }> {
         counter += 1;
         const email = `${name}-${counter}@acme.test`;
-        const [u] = await pg.db.insert(users).values({ email, passwordHash: 'x', name }).returning();
+        // Cuenta con el correo CONFIRMADO (una sin confirmar pasa a invitación: ver abajo).
+        const [u] = await pg.db.insert(users).values({ email, passwordHash: 'x', name, emailVerifiedAt: new Date() }).returning();
         return { id: u!.id, email };
     }
 
@@ -121,6 +123,51 @@ describe('MembersService (Postgres real, RLS)', () => {
         expect(await members.list(tenantId)).toHaveLength(2);
         const mail = await mailTo(bob.email, /Te sumaron a «ACME»/);
         expect(mail.html).toContain('admin te sumó');
+    });
+
+    it('add: una cuenta ajena sumada por su correo no entrega su nombre ni su firma hasta que la persona ENTRA', async () => {
+        // La víctima tiene cuenta (en otra empresa), nombre real y firma de correo.
+        const [victim] = await pg.db
+            .insert(users)
+            .values({ email: 'victima@otra.test', passwordHash: 'x', name: 'Victoria Real', emailVerifiedAt: new Date(), emailSignature: '<p>Victoria · Tel 555-0101</p>' })
+            .returning();
+        const added = await members.add(tenantId, { email: 'victima@otra.test', role: 'viewer' }, { invitedById: adminId });
+        // La respuesta no trae el nombre de la cuenta: sólo lo que ya se sabía (el correo).
+        expect(added.name).toBe('victima');
+        expect(JSON.stringify(added)).not.toContain('Victoria');
+        // Tampoco la lista de miembros ni la firma en un correo de automatización.
+        expect(JSON.stringify(await members.list(tenantId))).not.toContain('Victoria');
+        const composer = new EmailComposer();
+        const compose = () =>
+            withTenant(pg.db, tenantId, (tx) =>
+                composer.compose(tx, {
+                    tenantId,
+                    cfg: { subject: 'Hola', body: 'Texto', include_signature: true, signature_user_id: victim!.id },
+                    merge: (v) => String(v ?? ''),
+                    mergeHtml: (v) => String(v ?? ''),
+                    fieldsBySlug: new Map(),
+                    fieldValue: () => null,
+                }),
+            );
+        const before = await compose();
+        expect(`${before.text ?? ''}${before.html ?? ''}`).not.toContain('555-0101');
+        expect(before.signatureNote).toBeTruthy();
+
+        // La persona entra a la empresa (lo marca el TenantGuard en su primer pedido).
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.update(memberships).set({ joinedAt: new Date() }).where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, victim!.id))),
+        );
+        const after = await compose();
+        expect(`${after.text ?? ''}${after.html ?? ''}`).toContain('555-0101');
+        expect(JSON.stringify(await members.list(tenantId))).toContain('Victoria Real');
+
+        // La consola de plataforma (el operador) suma sin esa espera.
+        const [otra] = await pg.db
+            .insert(users)
+            .values({ email: 'operada@otra.test', passwordHash: 'x', name: 'Olga Operada', emailVerifiedAt: new Date() })
+            .returning();
+        const byOperator = await members.add(tenantId, { email: otra!.email, role: 'viewer' }, { enforcePlan: false });
+        expect(byOperator.name).toBe('Olga Operada');
     });
 
     it('add: sin cuenta, la crea por INVITACIÓN; definir la contraseña cierra la invitación y verifica el email', async () => {
@@ -230,6 +277,125 @@ describe('MembersService (Postgres real, RLS)', () => {
         const second = await members.add(tenantId, { email: 'doble@acme.test', role: 'viewer' });
         expect(second).toMatchObject({ invited: false, pending: true });
         await mailTo('doble@acme.test', /Te invitaron a «ACME»/);
+    });
+
+    it('add: una cuenta REGISTRADA sin confirmar el correo no recibe el acceso — pasa a invitación y entra quien abre el enlace', async () => {
+        // Alguien registra el correo de otra persona y se queda esperando.
+        const squat = await auth.register({ email: `victima-${counter}@acme.test`, password: 'clave-del-intruso', name: 'Intruso', workspace_name: `Trampa ${counter}` });
+        const sessions = new SessionService(redis, env);
+        const squatToken = squat.token as string;
+        const email = `victima-${counter}@acme.test`;
+        // Con segundo factor puesto por el intruso, para que el dueño no pueda entrar.
+        await pg.db.update(users).set({ totpSecret: 'x', totpEnabledAt: new Date(), totpBackupCodes: ['a'] }).where(eq(users.id, squat.user.id));
+        sent.length = 0;
+
+        const r = await members.add(tenantId, { email, role: 'admin' }, { invitedById: adminId });
+        expect(r.user_id).toBe(squat.user.id);
+        expect(r.pending).toBe(true);
+        expect(r.invited).toBe(true);
+        // La sesión del intruso murió y su contraseña ya no entra.
+        expect(await sessions.get(squatToken)).toBeNull();
+        await expect(auth.login({ email, password: 'clave-del-intruso' })).rejects.toThrow();
+        const [row] = await pg.db.select().from(users).where(eq(users.id, squat.user.id));
+        expect(row!.invitedAt).not.toBeNull();
+        expect(row!.totpEnabledAt).toBeNull();
+        expect(row!.totpSecret).toBeNull();
+        expect(row!.totpBackupCodes).toBeNull();
+        // A la casilla llega la invitación (no un «te sumaron»): quien la abre define la contraseña.
+        const mail = await mailTo(email, /Te invitaron a «ACME»/);
+        const token = /token=([A-Za-z0-9_-]+)/.exec(mail.text ?? '')![1]!;
+        await auth.resetPassword(token, 'clave-de-la-duena');
+        const ok = await auth.login({ email, password: 'clave-de-la-duena' });
+        expect('token' in ok).toBe(true);
+        const [after] = await pg.db.select().from(users).where(eq(users.id, squat.user.id));
+        expect(after!.emailVerifiedAt).not.toBeNull();
+        expect(after!.invitedAt).toBeNull();
+
+        // Una cuenta CONFIRMADA no se toca: sigue con su contraseña y sus sesiones.
+        const fine = await auth.register({ email: `ok-${counter}@acme.test`, password: 'mi-clave-123', name: 'Ok', workspace_name: `Ok ${counter}` });
+        await pg.db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.id, fine.user.id));
+        const r2 = await members.add(tenantId, { email: `ok-${counter}@acme.test`, role: 'agent' }, { invitedById: adminId });
+        expect(r2.pending).toBe(false);
+        expect(await sessions.get(fine.token as string)).not.toBeNull();
+        expect('token' in (await auth.login({ email: `ok-${counter}@acme.test`, password: 'mi-clave-123' }))).toBe(true);
+    });
+
+    it('restablecer la contraseña de una cuenta NUNCA confirmada le quita el segundo factor; a una confirmada no', async () => {
+        const mk = async (tag: string, verified: boolean): Promise<number> => {
+            const s = await auth.register({ email: `${tag}-${counter}@acme.test`, password: 'clave-123456', name: tag, workspace_name: `${tag} ${counter}` });
+            await pg.db
+                .update(users)
+                .set({ totpSecret: 'x', totpEnabledAt: new Date(), totpBackupCodes: ['a'], emailVerifiedAt: verified ? new Date() : null })
+                .where(eq(users.id, s.user.id));
+            return s.user.id;
+        };
+        const reset = async (id: number): Promise<void> => {
+            const token = `t-${id}-${Date.now()}`;
+            await redis.set(`pwreset:${token}`, String(id), 'EX', 60);
+            await auth.resetPassword(token, 'otra-clave-123');
+        };
+        const never = await mk('nunca', false);
+        const proven = await mk('confirmada', true);
+        await reset(never);
+        await reset(proven);
+        const [a] = await pg.db.select().from(users).where(eq(users.id, never));
+        const [b] = await pg.db.select().from(users).where(eq(users.id, proven));
+        expect(a!.totpEnabledAt).toBeNull();
+        expect(a!.totpSecret).toBeNull();
+        expect(a!.emailVerifiedAt).not.toBeNull();
+        expect(b!.totpEnabledAt).not.toBeNull();
+        expect(b!.totpSecret).toBe('x');
+    });
+
+    it('add: los correos de invitación tienen cupo por destinatario — sumar y quitar en bucle no inunda una casilla', async () => {
+        const email = `bucle-${counter}@acme.test`;
+        const invites = () => sent.filter((m) => m.to === email).length;
+        for (let i = 0; i < 3; i++) {
+            const r = await members.add(tenantId, { email, role: 'agent' }, { invitedById: adminId });
+            await mailTo(email, /Te invitaron/);
+            await members.remove(tenantId, adminId, r.user_id);
+        }
+        await new Promise((r) => setTimeout(r, 50));
+        expect(invites()).toBe(3);
+        // El 4.º en la hora se rechaza y NO deja a la persona sumada.
+        const err = await members.add(tenantId, { email, role: 'agent' }, { invitedById: adminId }).catch((e) => e);
+        expect(err).toBeInstanceOf(HttpException);
+        expect((err as HttpException).getStatus()).toBe(429);
+        expect((await members.list(tenantId)).some((m) => m.email === email)).toBe(false);
+        // Tampoco desde OTRA empresa: el cupo es de la casilla.
+        const err2 = await members.add(otherTenantId, { email, role: 'agent' }, { enforcePlan: true }).catch((e) => e);
+        expect((err2 as HttpException).getStatus()).toBe(429);
+        await new Promise((r) => setTimeout(r, 50));
+        expect(invites()).toBe(3);
+        // La consola de plataforma (el operador) no gasta el cupo.
+        const viaOperator = await members.add(tenantId, { email, role: 'agent' }, { enforcePlan: false });
+        expect(viaOperator.pending).toBe(true);
+
+        // Una cuenta que ya existía (confirmada): sin cupo queda sumada, pero sin correo.
+        const known = await makeUser('conocida');
+        await redis.set(`invite-to:h:${(await import('node:crypto')).createHash('sha256').update(known.email).digest('hex')}`, '3', 'EX', 600);
+        sent.length = 0;
+        const r = await members.add(tenantId, { email: known.email, role: 'viewer' }, { invitedById: adminId });
+        expect(r.pending).toBe(false);
+        await new Promise((res) => setTimeout(res, 50));
+        expect(sent.filter((m) => m.to === known.email)).toHaveLength(0);
+        expect((await members.list(tenantId)).some((m) => m.email === known.email)).toBe(true);
+    });
+
+    it('add: el cupo por EMPRESA corta una ráfaga de invitaciones a casillas distintas; los nombres largos se recortan', async () => {
+        // Plan trial: 3 usuarios + 5 invitados → 20 por día (el mínimo).
+        await pg.db.update(tenants).set({ plan: 'trial' }).where(eq(tenants.id, tenantId));
+        await redis.set(`invite-by:d:${tenantId}`, '19', 'EX', 600);
+        const largo = 'Visita https://malo.example ahora '.repeat(20);
+        await pg.db.update(users).set({ name: largo }).where(eq(users.id, adminId));
+        const a = await members.add(tenantId, { email: `rafaga-a-${counter}@acme.test`, role: 'agent' }, { invitedById: adminId });
+        expect(a.pending).toBe(true);
+        const mail = await mailTo(`rafaga-a-${counter}@acme.test`, /Te invitaron/);
+        expect((mail.html ?? '').length).toBeLessThan(900);
+        const err = await members.add(tenantId, { email: `rafaga-b-${counter}@acme.test`, role: 'agent' }, { invitedById: adminId }).catch((e) => e);
+        expect((err as HttpException).getStatus()).toBe(429);
+        const [ghost] = await pg.db.select().from(users).where(eq(users.email, `rafaga-b-${counter}@acme.test`));
+        expect(ghost).toBeUndefined();
     });
 
     it('updateRole: cambia el rol; 409 si degrada al último admin; los clientes del portal no se tocan', async () => {

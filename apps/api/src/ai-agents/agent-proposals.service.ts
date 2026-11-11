@@ -119,18 +119,78 @@ export class AgentProposalsService {
     /** Las pendientes de un registro (para la tarjeta de la ficha). Quien mira tiene que ver el registro. */
     async forRecord(tenantId: number, actor: Actor, listIdOrSlug: string, recordId: number): Promise<AiAgentProposalDto[]> {
         await this.records.get(tenantId, actor, listIdOrSlug, recordId);
-        return this.tenantDb.withTenant(tenantId, (tx) => this.pendingForRecordInTx(tx, tenantId, recordId));
+        return this.pendingForRecord(tenantId, actor, recordId);
     }
 
-    async pendingForRecordInTx(tx: Tx, tenantId: number, recordId: number): Promise<AiAgentProposalDto[]> {
-        const rows = await tx
-            .select({ p: aiAgentProposals, color: aiAgents.color, icon: aiAgents.icon, liveName: aiAgents.name })
-            .from(aiAgentProposals)
-            .leftJoin(aiAgents, eq(aiAgents.id, aiAgentProposals.agentId))
-            .where(and(eq(aiAgentProposals.tenantId, tenantId), eq(aiAgentProposals.recordId, recordId), eq(aiAgentProposals.status, 'pending')))
-            .orderBy(desc(aiAgentProposals.id))
-            .limit(20);
-        return rows.map((r) => toDto(r.p, { color: r.color, icon: r.icon, name: r.liveName }, null, null));
+    /**
+     * Las pendientes de un registro, como las ve `actor` (el registro ya pasó
+     * su ACL). El agente arma cada propuesta con lo que ve su DUEÑO: quien la
+     * mira no tiene por qué ver lo mismo, así que el detalle se recorta.
+     */
+    async pendingForRecord(tenantId: number, actor: Actor, recordId: number): Promise<AiAgentProposalDto[]> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ p: aiAgentProposals, color: aiAgents.color, icon: aiAgents.icon, liveName: aiAgents.name })
+                .from(aiAgentProposals)
+                .leftJoin(aiAgents, eq(aiAgents.id, aiAgentProposals.agentId))
+                .where(and(eq(aiAgentProposals.tenantId, tenantId), eq(aiAgentProposals.recordId, recordId), eq(aiAgentProposals.status, 'pending')))
+                .orderBy(desc(aiAgentProposals.id))
+                .limit(20),
+        );
+        const linesOf = await this.linesFor(tenantId, actor, rows.map((r) => r.p));
+        return rows.map((r) => toDto(r.p, { color: r.color, icon: r.icon, name: r.liveName }, null, null, linesOf));
+    }
+
+    /**
+     * Qué líneas («Costo: 10 → 20») de cada cambio puede leer `actor`: fuera las
+     * de los campos que tiene ocultos en esa lista (también los derivados), y
+     * un cambio sobre un registro que no alcanza queda sólo con su título.
+     * Aplicar la propuesta ya corre con el acceso de quien aplica; esto es lo
+     * que faltaba al MOSTRARLA.
+     */
+    private async linesFor(tenantId: number, actor: Actor, rows: AiAgentProposalRow[]): Promise<(c: StoredAgentChange) => AiAgentProposalItem['lines']> {
+        if (actor.role === 'admin') return (c) => c.lines ?? [];
+        const changes = rows.flatMap((r) => (Array.isArray(r.changes) ? r.changes : []) as StoredAgentChange[]);
+        const hiddenLabels = new Map<number, Set<string> | null>();
+        for (const listId of new Set(changes.map((c) => c.list_id))) {
+            try {
+                hiddenLabels.set(
+                    listId,
+                    await this.records.readScoped(tenantId, actor, String(listId), async (_tx, scope) => {
+                        const out = new Set<string>();
+                        for (const f of scope.fields) {
+                            if (!scope.hiddenIds.has(f.id)) continue;
+                            out.add(f.label);
+                            out.add(`f${f.id}`);
+                        }
+                        return out;
+                    }),
+                );
+            } catch {
+                // Lista que no puede leer (o que ya no existe): sin detalle.
+                hiddenLabels.set(listId, null);
+            }
+        }
+        const reach = new Map<string, boolean>();
+        for (const c of changes) {
+            const recordId = 'record_id' in c ? c.record_id : null;
+            if (!recordId) continue;
+            const key = `${c.list_id}:${recordId}`;
+            if (reach.has(key)) continue;
+            reach.set(key, (await this.records.viewersOf(tenantId, c.list_id, recordId, [actor]).catch(() => new Set<number>())).has(actor.userId));
+        }
+        return (c) => {
+            const hidden = hiddenLabels.get(c.list_id);
+            if (!hidden) return [];
+            const recordId = 'record_id' in c ? c.record_id : null;
+            if (recordId && !reach.get(`${c.list_id}:${recordId}`)) return [];
+            if (c.kind !== 'update_fields' && c.kind !== 'create_record') return c.lines ?? [];
+            const drop = new Set(hidden);
+            if (c.kind === 'update_fields') {
+                for (const [key, label] of Object.entries(c.labels ?? {})) if (hidden.has(key)) drop.add(label);
+            }
+            return (c.lines ?? []).filter((l) => !drop.has(l.label));
+        };
     }
 
     /** «Mi trabajo»: lo que espera MI revisión (soy revisor del agente, o su dueño si no tiene revisores) y puedo ver. */
@@ -158,7 +218,7 @@ export class AgentProposalsService {
                 .orderBy(desc(aiAgentProposals.id))
                 .limit(MY_PROPOSALS_LIMIT * 3);
             const mineRows = rows.filter((r) => reviewersOf({ ownerId: r.ownerId, settings: r.settings }).includes(actor.userId));
-            if (mineRows.length === 0) return { pending: [] };
+            if (mineRows.length === 0) return [];
             const listIds = [...new Set(mineRows.map((r) => r.p.listId))];
             const listsById = new Map<number, Awaited<ReturnType<ListsService['getWithinTx']>>>();
             for (const id of listIds) {
@@ -169,16 +229,22 @@ export class AgentProposalsService {
                 }
             }
             const titles = await this.agents.recordTitles(tx, [...new Set(mineRows.map((r) => r.p.recordId))]);
-            const out: AiAgentProposalDto[] = [];
+            const out: Array<{ row: (typeof mineRows)[number]; title: string }> = [];
             for (const r of mineRows) {
                 const list = listsById.get(r.p.listId);
                 if (!list || !this.records.canReach(list, actor, 'view', { data: r.recData, createdBy: r.recCreatedBy })) continue;
-                out.push(
-                    toDto(r.p, { color: r.color, icon: r.icon, name: r.liveName }, { slug: r.listSlug, name: r.listName }, titles.get(r.p.recordId) ?? `Registro #${r.p.recordId}`),
-                );
+                out.push({ row: r, title: titles.get(r.p.recordId) ?? `Registro #${r.p.recordId}` });
                 if (out.length >= MY_PROPOSALS_LIMIT) break;
             }
-            return { pending: out };
+            return out;
+        }).then(async (picked) => {
+            // Fuera de la transacción: el recorte lee cada lista con el acceso de quien mira.
+            const linesOf = await this.linesFor(tenantId, actor, picked.map((x) => x.row.p));
+            return {
+                pending: picked.map(({ row: r, title }) =>
+                    toDto(r.p, { color: r.color, icon: r.icon, name: r.liveName }, { slug: r.listSlug, name: r.listName }, title, linesOf),
+                ),
+            };
         });
     }
 
@@ -357,13 +423,15 @@ function toDto(
     agent: { color: string | null; icon: string | null; name: string | null },
     list: { slug: string; name: string } | null,
     recordTitle: string | null,
+    /** Las líneas de cada cambio que puede leer quien mira (sin esto, todas). */
+    linesOf: (c: StoredAgentChange) => AiAgentProposalItem['lines'] = (c) => c.lines ?? [],
 ): AiAgentProposalDto {
     const result = (p.result ?? {}) as { items?: Array<{ ok: boolean; message: string }> };
     const changes = (Array.isArray(p.changes) ? p.changes : []) as StoredAgentChange[];
     const items: AiAgentProposalItem[] = changes.map((c, i) => ({
         kind: c.kind,
         title: c.title,
-        lines: c.lines ?? [],
+        lines: linesOf(c),
         outcome: result.items?.[i] ?? null,
     }));
     return {

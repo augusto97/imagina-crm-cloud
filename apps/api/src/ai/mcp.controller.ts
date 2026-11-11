@@ -4,6 +4,9 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ENV, type Env } from '../config/env';
+import type Redis from 'ioredis';
+import { REDIS } from '../redis/redis.module';
+import { checkMcpBudget, jsonRpcId } from './mcp-budget';
 import { McpService } from './mcp.service';
 import { OauthService } from './oauth.service';
 import { requestOrigin } from './oauth.util';
@@ -38,6 +41,7 @@ export class McpController {
         private readonly mcp: McpService,
         private readonly oauth: OauthService,
         @Inject(ENV) private readonly env: Env,
+        @Inject(REDIS) private readonly redis: Redis,
     ) {}
 
     @All()
@@ -57,6 +61,15 @@ export class McpController {
             // descubrir el servidor OAuth y ofrecer "Autorizar" (v0.1.184).
             raw.writeHead(401, { 'Content-Type': 'application/json', 'WWW-Authenticate': this.oauth.wwwAuthenticate(requestOrigin(req)) });
             raw.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32001, message: 'Token de acceso inválido, vencido o revocado' }, id: null }));
+            return;
+        }
+        const budget = await checkMcpBudget(this.redis, resolved, req.body);
+        if (!budget.ok) {
+            raw.writeHead(budget.retryAfter ? 429 : 400, {
+                'Content-Type': 'application/json',
+                ...(budget.retryAfter ? { 'Retry-After': String(budget.retryAfter) } : {}),
+            });
+            raw.end(JSON.stringify({ jsonrpc: '2.0', error: { code: budget.code, message: budget.message }, id: jsonRpcId(req.body) }));
             return;
         }
         const ctx: AiToolContext = {

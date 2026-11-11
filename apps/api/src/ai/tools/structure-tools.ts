@@ -189,6 +189,8 @@ import {
     type DesignFieldRef,
 } from './design-builders';
 import { buildRecordLayoutV3, describeRecordLayoutV3, recordDesignSpec, type DesignField, type DesignRelation, type RecordDesignSpec } from './record-layout-design';
+import { can } from '../../authz/can';
+import { redactAutomationSecrets } from '../../automations/automation-secrets';
 import { canonicalPublicSettings } from '../../public-lists/public-lists.service';
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
 import { buildButtonConfig, buttonSpec, describeButtonForModel, type ButtonFieldRef } from './button-ai';
@@ -1226,7 +1228,9 @@ export class StructureTools implements AiProposalApplier {
         const [fields, views, autos, count, connections] = await Promise.all([
             this.fields.listByListId(ctx.tenantId, list.id),
             this.views.list(ctx.tenantId, String(list.id), { userId: ctx.userId, role: ctx.role }),
-            this.automations.list(ctx.tenantId, String(list.id)),
+            // La configuración de las automatizaciones (y su última corrida)
+            // sólo la lee quien ve la lista entera.
+            this.automations.seesWholeList(ctx.tenantId, String(list.id), ctx).then((ok) => (ok ? this.automations.list(ctx.tenantId, String(list.id)) : [])),
             this.countRecords(ctx.tenantId, list.id),
             // Las conexiones son del WORKSPACE, no de la lista, pero el
             // asistente lee este esquema antes de proponer una automatización.
@@ -1358,15 +1362,22 @@ export class StructureTools implements AiProposalApplier {
                 // copiar ni explicar una automatización ("sólo veo que
                 // existe"). Los secretos (token del webhook entrante, HMAC
                 // de webhooks salientes, contraseñas) viajan enmascarados.
+                // La configuración sólo la lee quien puede administrar
+                // automatizaciones (lo mismo que exige la app): el resto ve
+                // qué automatizaciones hay, no cómo están armadas.
                 automations: autos.map((a) => ({
                     id: a.id,
                     name: a.name,
                     description: a.description ?? null,
                     is_active: a.is_active,
                     trigger_type: a.trigger_type,
-                    trigger_config: redactSecrets(a.trigger_config),
-                    // v0.1.281 — los correos diseñados con su texto en formato sencillo.
-                    actions: emailActionsForModel(redactSecrets(a.actions)),
+                    ...(can(ctx, 'manage_automations')
+                        ? {
+                              trigger_config: redactSecrets(a.trigger_config),
+                              // v0.1.281 — los correos diseñados con su texto en formato sencillo.
+                              actions: emailActionsForModel(redactSecrets(a.actions)),
+                          }
+                        : {}),
                 })),
                 // v0.1.198 — acciones CON NOMBRE de los conectores de la
                 // empresa. Van aquí porque es la lectura que el asistente hace
@@ -2287,6 +2298,9 @@ export class StructureTools implements AiProposalApplier {
 
     private async proposeCreateAutomation(ctx: AiToolContext, input: AutomationSpec): Promise<AiToolResult> {
         const list = await this.resolveList(ctx, input.list);
+        await this.automations.assertWholeList(ctx.tenantId, String(list.id), ctx).catch((err: Error) => {
+            throw new AiToolError(err.message);
+        });
         const fields = await this.fields.listByListId(ctx.tenantId, list.id);
         const lists = await this.lists.list(ctx.tenantId);
         const bySlug = new Map(lists.map((l) => [l.slug, l]));
@@ -2799,6 +2813,9 @@ export class StructureTools implements AiProposalApplier {
     // ── v0.1.195 — editar y borrar automatizaciones, vistas y listas ─────
 
     private async resolveAutomation(ctx: AiToolContext, list: List, ref: number | string): Promise<{ id: number; name: string; description: string | null; is_active: boolean; trigger_type: string; trigger_config: Record<string, unknown>; actions: unknown[] }> {
+        await this.automations.assertWholeList(ctx.tenantId, String(list.id), ctx).catch((err: Error) => {
+            throw new AiToolError(err.message);
+        });
         const autos = await this.automations.list(ctx.tenantId, String(list.id));
         const hit =
             typeof ref === 'number' ? autos.find((a) => a.id === ref) : autos.find((a) => a.name.trim().toLowerCase() === ref.trim().toLowerCase());
@@ -3095,7 +3112,7 @@ export class StructureTools implements AiProposalApplier {
     private async listAutomationRuns(ctx: AiToolContext, input: { list: string; automation: number | string; limit?: number }): Promise<AiToolResult> {
         const list = await this.resolveList(ctx, input.list);
         const auto = await this.resolveAutomation(ctx, list, input.automation);
-        const { data } = await this.automations.runsById(ctx.tenantId, auto.id, { limit: input.limit ?? 10 });
+        const { data } = await this.automations.runsById(ctx.tenantId, auto.id, { limit: input.limit ?? 10 }, ctx);
         return {
             content: {
                 automation: { id: auto.id, name: auto.name, is_active: auto.is_active },
@@ -3174,6 +3191,7 @@ export class StructureTools implements AiProposalApplier {
                 };
             }
             case 'create_automation': {
+                await this.automations.assertWholeList(ctx.tenantId, String(payload.listId), ctx);
                 const auto = await this.automations.create(ctx.tenantId, String(payload.listId), payload.input, { actorId: ctx.userId, note: 'Creada desde el asistente' });
                 return {
                     message: `Automatización «${auto.name}» creada${auto.is_active ? ' y activa' : ' (pausada)'}.`,
@@ -3240,6 +3258,7 @@ export class StructureTools implements AiProposalApplier {
                 };
             }
             case 'update_automation': {
+                await this.automations.assertWholeList(ctx.tenantId, String(payload.listId), ctx);
                 const auto = await this.automations.update(ctx.tenantId, String(payload.listId), payload.automationId, payload.patch, { actorId: ctx.userId, note: 'Cambio desde el asistente' });
                 return {
                     message: `Automatización «${auto.name}» actualizada${payload.patch.is_active !== undefined ? (auto.is_active ? ' y activa' : ' (pausada)') : ''}.`,
@@ -3248,6 +3267,7 @@ export class StructureTools implements AiProposalApplier {
                 };
             }
             case 'delete_automation': {
+                await this.automations.assertWholeList(ctx.tenantId, String(payload.listId), ctx);
                 await this.automations.remove(ctx.tenantId, String(payload.listId), payload.automationId, ctx.userId);
                 return { message: 'Automatización eliminada.', links: [{ label: 'Ver las automatizaciones', href: `/lists/${payload.listSlug}/automations` }], warnings: [] };
             }
@@ -3301,7 +3321,7 @@ export class StructureTools implements AiProposalApplier {
                 };
             }
             case 'create_document_template': {
-                const tpl = await this.docsService().create(ctx.tenantId, ctx.userId, String(payload.listId), payload.input);
+                const tpl = await this.docsService().create(ctx.tenantId, ctx.userId, String(payload.listId), payload.input, ctx);
                 return {
                     message: `Plantilla «${tpl.name}» creada.`,
                     links: [{ label: 'Abrir en el editor de documentos', href: `/lists/${payload.listSlug}/edit?s=documentos&doc=${tpl.id}` }],
@@ -3309,7 +3329,7 @@ export class StructureTools implements AiProposalApplier {
                 };
             }
             case 'update_document_template': {
-                const tpl = await this.docsService().update(ctx.tenantId, ctx.userId, String(payload.listId), payload.templateId, payload.patch);
+                const tpl = await this.docsService().update(ctx.tenantId, ctx.userId, String(payload.listId), payload.templateId, payload.patch, ctx);
                 return {
                     message: `Plantilla «${tpl.name}» actualizada.`,
                     links: [{ label: 'Abrir en el editor de documentos', href: `/lists/${payload.listSlug}/edit?s=documentos&doc=${tpl.id}` }],
@@ -3339,7 +3359,11 @@ export class StructureTools implements AiProposalApplier {
      * compartir una lista con una persona puntual.
      */
     private async listMembers(ctx: AiToolContext): Promise<AiToolResult> {
-        const rows = await this.lists.workspaceMembers(ctx.tenantId);
+        // Los CLIENTES del portal (su nombre es su correo) no son del equipo:
+        // no se les asigna ni se les comparte una lista, y sólo los ve quien
+        // administra las listas (que es quien maneja los accesos al portal).
+        const seeClients = can(ctx, 'manage_lists');
+        const rows = (await this.lists.workspaceMembers(ctx.tenantId)).filter((m) => m.role !== 'client' || seeClients);
         // C1 — los equipos de cada persona (una consulta para todos).
         const teams = this.teams ? await this.teams.list(ctx.tenantId) : [];
         const teamsOf = new Map<number, string[]>();
@@ -4485,6 +4509,20 @@ export class StructureTools implements AiProposalApplier {
                     walk((cfg.actions as unknown[] | undefined) ?? [], `${where}.cada.`);
                     return;
                 }
+                if (type === 'call_webhook') {
+                    // Con conexión: una API personalizada del equipo o tuya (las
+                    // apps conectadas se usan con connector_action).
+                    const id = Number(cfg.connection_id);
+                    if (cfg.connection_id === undefined || cfg.connection_id === null || cfg.connection_id === '') return;
+                    const own = connections.find((c) => c.id === id);
+                    if (!own || own.integration_key !== null || own.purpose === 'agenda') {
+                        throw new AiToolError(
+                            `La acción ${where} (call_webhook) usa la conexión ${String(cfg.connection_id)}, que no existe, no está a tu alcance o es una app conectada. ` +
+                                'En call_webhook sólo sirven las APIs personalizadas del equipo o tuyas; para una app conectada usa connector_action.',
+                        );
+                    }
+                    return;
+                }
                 if (type !== 'connector_action') return;
                 const conn = connections.find((c) => c.id === Number(cfg.connection_id));
                 if (!conn) {
@@ -4747,8 +4785,6 @@ const DEFAULT_SIZE: Partial<Record<string, { w: number; h: number }>> = {
 };
 
 /** Slug snake_case desde un texto humano (sin acentos, arranca con letra). */
-const SECRET_KEY_RE = /(secret|token|password|api_key|apikey|authorization)/i;
-
 /**
  * v0.1.193 — copia profunda de una config enmascarando los valores cuyas
  * claves huelen a secreto (`webhook_token` del disparador entrante, `secret`
@@ -4757,17 +4793,13 @@ const SECRET_KEY_RE = /(secret|token|password|api_key|apikey|authorization)/i;
  * automatización, nunca para llevarse credenciales.
  */
 export function redactSecrets<T>(value: T): T {
-    if (Array.isArray(value)) return value.map((v) => redactSecrets(v)) as unknown as T;
-    if (value !== null && typeof value === 'object') {
-        const out: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-            out[k] = SECRET_KEY_RE.test(k) && v !== null && v !== undefined && v !== ''
-                ? '[oculto]'
-                : redactSecrets(v);
-        }
-        return out as T;
-    }
-    return value;
+    // El mismo enmascarado del historial de versiones: claves con nombre de
+    // secreto, filas `{key, value}` / `{name, value}` (cabeceras, parámetros y
+    // campos del cuerpo: `Authorization`, `secret`, `api_key`…), la contraseña
+    // y los parámetros secretos de una URL, y un `Bearer …` escrito a mano.
+    // Antes sólo se miraban las CLAVES, y el editor guarda las cabeceras como
+    // filas: `{key: 'Authorization', value: 'Bearer …'}` viajaba en claro.
+    return redactAutomationSecrets(value);
 }
 
 export function toSlug(label: string): string {

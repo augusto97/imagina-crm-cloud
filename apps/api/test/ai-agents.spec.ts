@@ -427,6 +427,25 @@ describe('Agentes de IA (Postgres + Redis reales, modelo falso)', () => {
         expect(feed.data.some((e) => e.action === 'ai_agent')).toBe(true);
     });
 
+    it('la propuesta se muestra recortada a lo que ve quien la mira (el agente la armó con lo que ve su dueño)', async () => {
+        const a = await newAgent(ana);
+        const r = await ticket();
+        script.push({ tools: [{ name: 'update_fields', input: { values: { prioridad: 'Alta', costo: 12345 } } }] }, { text: 'Propuse dos cambios.' });
+        await ask(a.id, r.id);
+        // La dueña (admin) ve las dos líneas.
+        const full = await proposals.forRecord(tenantA, ana, 'tickets', r.id);
+        expect(full[0]!.items[0]!.lines.map((l) => l.label).sort()).toEqual(['Costo interno', 'Prioridad']);
+        // Beto (agente) tiene «Costo» oculto en la lista: ni el valor de ahora ni el propuesto.
+        const cut = await proposals.forRecord(tenantA, beto, 'tickets', r.id);
+        expect(cut).toHaveLength(1);
+        expect(cut[0]!.items[0]!.lines).toEqual([{ label: 'Prioridad', from: 'Baja', to: 'Alta' }]);
+        expect(JSON.stringify(cut[0]!.items)).not.toMatch(/Costo|12345|900/);
+        // Lo mismo en el paquete de la ficha y en «Mi trabajo».
+        expect(JSON.stringify((await proposals.pendingForRecord(tenantA, beto, r.id))[0]!.items)).not.toMatch(/Costo|12345/);
+        expect(JSON.stringify((await proposals.mine(tenantA, ana)).pending[0]!.items)).toContain('Costo');
+        await proposals.discard(tenantA, ana, full[0]!.id);
+    });
+
     it('«Hace los cambios»: escribe solo, con la actividad del agente (sin persona) y su nota', async () => {
         const a = await newAgent(ana, { mode: 'act' });
         const r = await ticket();

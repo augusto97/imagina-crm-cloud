@@ -1,3 +1,4 @@
+import { sessionTenantScope } from '../auth/host-tenant';
 import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { oauthApproveInputSchema, type OauthApproveInput, type OauthAuthorizationRequest, type OauthDecision } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -42,9 +43,9 @@ export class OauthController {
     /** RFC 7591 — registro dinámico. Abierto a propósito (así funcionan claude.ai y Cursor); rate-limit por IP. */
     @Post('register')
     @HttpCode(201)
-    async register(@Body() body: unknown, @Res() reply: FastifyReply): Promise<void> {
+    async register(@Req() req: FastifyRequest, @Body() body: unknown, @Res() reply: FastifyReply): Promise<void> {
         try {
-            const client: RegisteredClient = await this.oauth.registerClient(body);
+            const client: RegisteredClient = await this.oauth.registerClient(body, req.ip);
             void reply.header('Cache-Control', 'no-store').code(201).send(client);
         } catch (err) {
             sendOauthError(reply, err);
@@ -97,6 +98,8 @@ export class OauthController {
         @Param('id') id: string,
         @Body(new ZodValidationPipe(oauthApproveInputSchema)) input: OauthApproveInput,
     ): Promise<OauthDecision> {
+        // Una sesión atada a una empresa no autoriza un conector para OTRA.
+        if (req.boundTenantId !== undefined && input.tenant_id !== req.boundTenantId) throw sessionTenantScope();
         const request = await this.oauth.getRequest(id);
         const decision = await this.oauth.approve(id, req.authUserId!, input);
         await this.audit.log({

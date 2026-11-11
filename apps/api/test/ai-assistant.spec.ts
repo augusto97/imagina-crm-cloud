@@ -554,6 +554,35 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         void monto;
     });
 
+    it('get_list_schema: la configuración de las automatizaciones sólo para quien las administra, y sin credenciales', async () => {
+        const list = await lists.create(tenantId, { name: 'Avisos IA' });
+        await fields.create(tenantId, String(list.id), { label: 'Nombre', type: 'text' });
+        await automations.create(tenantId, String(list.id), {
+            name: 'Aviso al gateway',
+            trigger_type: 'record_created',
+            trigger_config: {},
+            actions: [
+                {
+                    type: 'call_webhook',
+                    config: {
+                        url: 'https://x.test/h?api_key=S3CRET-C',
+                        headers: [{ key: 'Authorization', value: 'Bearer S3CRET-A' }],
+                        body_params: [{ key: 'secret', value: 'S3CRET-B' }, { key: 'message', value: 'Hola {{nombre}}' }],
+                    },
+                },
+            ],
+        });
+        // Un lector (sin «automatizaciones»): ve que existe, no cómo está armada.
+        const viewer = (await registry.execute({ ...ctx, role: 'viewer' }, 'get_list_schema', { list: list.slug })).content as { automations: Array<Record<string, unknown>> };
+        expect(viewer.automations).toEqual([{ id: expect.any(Number), name: 'Aviso al gateway', description: null, is_active: true, trigger_type: 'record_created' }]);
+        expect(JSON.stringify(viewer)).not.toMatch(/S3CRET|x\.test/);
+        // Quien las administra: la config completa, con lo secreto tapado.
+        const full = JSON.stringify((await registry.execute(ctx, 'get_list_schema', { list: list.slug })).content);
+        expect(full).toContain('Hola {{nombre}}');
+        expect(full).toContain('https://x.test/h?api_key=[oculto]');
+        expect(full).not.toMatch(/S3CRET-[ABC]/);
+    });
+
     it('v0.1.291 — crea «Tiempo registrado» (sin config) y el esquema lo describe como de sólo lectura', async () => {
         const list = await lists.create(tenantId, { name: 'Proyectos IA' });
         await fields.create(tenantId, String(list.id), { label: 'Nombre', type: 'text' });
@@ -738,6 +767,87 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         expect(res.proposal).toMatchObject({ kind: 'delete_field', destructive: true });
         await proposals.apply(ctx, res.proposal!.id);
         expect((await fields.listByListId(tenantId, list.id)).some((x) => x.id === f.id)).toBe(false);
+    });
+
+    it('la cuota se RESERVA antes de llamar al modelo: un pedido cortado cuenta, uno que nunca respondió no, y cinco a la vez con un cupo libre dejan pasar uno', async () => {
+        const usage = async () => (await pg.db.select().from(aiUsage).where(eq(aiUsage.tenantId, tenantId)))[0] ?? { requests: 0, inputTokens: 0, outputTokens: 0 };
+        const before = await usage();
+
+        // (a) La persona corta la respuesta después del primer texto: el
+        // proveedor ya cobró ese pedido → cuenta, con los tokens que informó el stream.
+        const ac = new AbortController();
+        const stopping = new AssistantService(settings, quota, conversations, registry, () =>
+            ({
+                messages: {
+                    stream: () => ({
+                        async *[Symbol.asyncIterator]() {
+                            yield { type: 'message_start', message: { usage: { input_tokens: 70, output_tokens: 1 } } };
+                            yield { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Empiezo a…' } };
+                            yield { type: 'message_delta', delta: {}, usage: { output_tokens: 9 } };
+                            ac.abort();
+                            throw new Error('Request was aborted.');
+                        },
+                        finalMessage: async () => {
+                            throw new Error('nunca');
+                        },
+                    }),
+                },
+            }) as never,
+        );
+        await expect(stopping.chat(ctx, { message: 'hola' }, () => undefined, ac.signal)).rejects.toThrow('aborted');
+        let now = await usage();
+        expect(now.requests).toBe(before.requests + 1);
+        expect(now.inputTokens).toBe(before.inputTokens + 70);
+        expect(now.outputTokens).toBe(before.outputTokens + 9);
+
+        // Cortó antes de que llegara nada: igual cuenta (el pedido salió).
+        const ac2 = new AbortController();
+        const early = new AssistantService(settings, quota, conversations, registry, () =>
+            ({
+                messages: {
+                    stream: () => ({
+                        // eslint-disable-next-line require-yield
+                        async *[Symbol.asyncIterator]() {
+                            ac2.abort();
+                            throw new Error('Request was aborted.');
+                        },
+                        finalMessage: async () => {
+                            throw new Error('nunca');
+                        },
+                    }),
+                },
+            }) as never,
+        );
+        await expect(early.chat(ctx, { message: 'hola' }, () => undefined, ac2.signal)).rejects.toThrow('aborted');
+        expect((await usage()).requests).toBe(before.requests + 2);
+
+        // El proveedor falló sin generar nada (no fue un corte): la reserva se devuelve.
+        const broken = new AssistantService(settings, quota, conversations, registry, () =>
+            ({
+                messages: {
+                    stream: () => {
+                        throw Object.assign(new Error('sobrecarga'), { status: 529 });
+                    },
+                },
+            }) as never,
+        );
+        await expect(broken.chat(ctx, { message: 'hola' }, () => undefined)).rejects.toMatchObject({ status: 529 });
+        now = await usage();
+        expect(now.requests).toBe(before.requests + 2);
+
+        // (b) Queda UN cupo y llegan cinco pedidos a la vez: pasa uno solo.
+        await plans.update('trial', { max_ai_requests_month: now.requests + 1 });
+        const { svc, fake } = assistantWith(Array.from({ length: 5 }, () => ({ text: 'hola' })));
+        const results = await Promise.allSettled([1, 2, 3, 4, 5].map((i) => run(svc, ctx, `pedido ${i}`)));
+        expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+        const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+        expect(rejected).toHaveLength(4);
+        for (const r of rejected) expect(r.reason).toBeInstanceOf(AiQuotaExceededError);
+        expect(fake.calls.n).toBe(1);
+        expect((await usage()).requests).toBe(now.requests + 1);
+        await plans.update('trial', { max_ai_requests_month: 20 });
+        // Que los tests que siguen arranquen con lugar en la cuota.
+        await pg.db.update(aiUsage).set({ requests: before.requests }).where(eq(aiUsage.tenantId, tenantId));
     });
 
     it('cuota por plan: con clave de plataforma se corta al llegar al límite; con clave propia no cuenta', async () => {

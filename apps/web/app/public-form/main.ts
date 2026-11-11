@@ -17,6 +17,7 @@
  * `meta.theme`. En la vista previa del constructor los dos llegan por
  * postMessage y se reemplazan en vivo.
  */
+import { isDemoFrame } from './demoGate';
 import type { ConversionResult, PublicFormFieldItem, PublicFormItem, PublicFormMeta, PublicThemeView } from '@imagina-base/shared';
 import { FORM_DRAFT_TTL_DAYS, FORM_EDIT_CODE_RE, formStatSource, type FormStatDevice, type FormStatEvent, type PublicFormEdit } from '@imagina-base/shared/src/schemas/form-stats-logic';
 import {
@@ -70,10 +71,12 @@ const inPopup = embedded && (window.name === 'imagina-popup' || inWidget);
  * v0.1.381 — La demostración de «Compartir» (dentro de la app): el formulario
  * se ve y se usa como de verdad, pero nada se envía, no cuenta en las
  * estadísticas ni manda correos. `imb_style` deja probar «Sin marco» antes de
- * guardar. Agregar el parámetro a mano sólo le quita cosas a la página.
+ * guardar.
  */
 const DEMO_PARAMS = new URLSearchParams(location.search);
-const DEMO = DEMO_PARAMS.get('imb_demo') === '1';
+// Sólo dentro de un marco de la propia app (ver demoGate.ts): el parámetro
+// suelto en un enlace o en un sitio ajeno se ignora y el envío es real.
+const DEMO = isDemoFrame(window);
 const DEMO_STYLE = DEMO ? DEMO_PARAMS.get('imb_style') : null;
 /**
  * v0.1.395 — Abierto como chat (lo pide el widget de contacto con

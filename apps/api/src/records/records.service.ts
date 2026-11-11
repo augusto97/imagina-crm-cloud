@@ -76,6 +76,7 @@ import { assertNotStoreManaged, mirrorStillAliveError } from '../lists/store-gua
 import { countGoneInList, goneIdsInList, rowIsGone } from '../sync/source-gone';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { assertAttachable, fileIdsIn, fileIdsUnder } from '../files/files.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { compileFilterTree, descriptionSearchFilterable, fieldTypedExpr, type FilterableField, type QueryClock } from './query-builder';
 import { RecurrencesService } from '../recurrences/recurrences.service';
@@ -269,7 +270,7 @@ export class RecordsService {
         const planCap = opts.planChecked ? null : ((await this.billing?.recordLimit(tenantId)) ?? null);
         const prep = await this.prepareCreate(tenantId, actor, list, fields, input, { lenientRequired: opts.lenientRequired === true, sync: opts.sync === true });
 
-        const { row, enriched, rt } = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const { row, enriched, rt, hiddenKeys } = await this.tenantDb.withTenant(tenantId, async (tx) => {
             if (planCap && this.billing) await this.billing.assertRecordRoomInTx(tx, tenantId, planCap);
             const inserted = await this.insertPreparedInTx(tx, tenantId, actor, prep);
             // v0.1.170 — lookup/rollup sólo para el DTO (la actividad y las
@@ -278,16 +279,35 @@ export class RecordsService {
                 row: inserted,
                 enriched: await this.withThrough(tx, tenantId, listId, fields, [inserted]),
                 rt: await this.formulaRuntime(tx, tenantId, listId, fields),
+                hiddenKeys: await this.hiddenKeysFor(tx, tenantId, list, fields, actor),
             };
         });
         // `silent` (v0.1.294): el alta en lote avisa UNA vez al final.
         if (!opts.silent) this.realtime.records(tenantId, listId);
         if (!opts.noAutomations) this.afterCreate(tenantId, actor, prep, row, opts.automationChain ? { automationChain: opts.automationChain } : {});
         const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
-        return toRecord(withComputed(fields, enriched[0] ?? row, rt), {
-            ...byFieldToKeys(relFieldIds, undefined),
-            ...relationsToMap(prep.relValues),
-        });
+        // SEC — la respuesta no lleva lo que quien crea no ve (valores por
+        // defecto de campos ocultos, búsquedas hacia listas que no alcanza).
+        return stripHidden(
+            toRecord(withComputed(fields, enriched[0] ?? row, rt), {
+                ...byFieldToKeys(relFieldIds, undefined),
+                ...relationsToMap(prep.relValues),
+            }),
+            hiddenKeys,
+        );
+    }
+
+    /**
+     * Claves (`f{id}`) que quien pide NO ve en esta lista: ocultas para su
+     * acceso, lo que un invitado nunca ve, búsquedas/resúmenes hacia listas que
+     * no alcanza (SEC-36) y los calculados que dependen de cualquiera de ellos.
+     * Vacío para el admin y el sistema (sin consultas).
+     */
+    private async hiddenKeysFor(tx: Tx, tenantId: number, list: List, fields: Field[], actor: Actor): Promise<Set<string>> {
+        if (actor.role === 'admin') return new Set();
+        const plans = await this.fields.through.plans(tx, tenantId, list.id, fields);
+        const restricted = await this.fields.through.restrictedFor(tx, tenantId, plans, actor);
+        return hiddenKeysWithDerived(fields, list.settings, actor, restricted);
     }
 
     /**
@@ -332,10 +352,16 @@ export class RecordsService {
         list: List,
         fields: Field[],
         input: CreateRecordInput,
-        opts: { lenientRequired?: boolean; sync?: boolean } = {},
+        /**
+         * `serverData`: los datos los armó el SERVIDOR (una plantilla, un ítem
+         * de checklist), no quien pide: lo que cae en un campo oculto para esa
+         * persona se descarta en vez de rechazar el alta.
+         */
+        opts: { lenientRequired?: boolean; sync?: boolean; serverData?: boolean } = {},
     ): Promise<PreparedCreate> {
-        // C3 — un invitado no escribe en lo que no ve.
-        assertGuestWritable(list.settings, fields, actor, input.data);
+        // Nadie escribe en lo que no ve (C3: invitados; SEC: todo el equipo).
+        if (opts.serverData) input = { ...input, data: withoutHiddenWrites(list.settings, fields, actor, input.data) };
+        else assertWritable(list.settings, fields, actor, input.data);
         // D2/E5 + v0.1.383 — las columnas protegidas (SLA, cobros, suscripciones,
         // registro de cobros) las llena su sincronización, no el alta: ni el
         // valor que venga, ni un valor por defecto, ni «obligatorio».
@@ -364,6 +390,7 @@ export class RecordsService {
     async insertPreparedInTx(tx: Tx, tenantId: number, actor: Actor, prep: PreparedCreate, parentIdOverride?: number | null): Promise<RecordRow> {
         const listId = prep.list.id;
         await this.assertUniqueInTx(tx, tenantId, listId, prep.fields, prep.data, null);
+        await this.assertReferencesInTx(tx, tenantId, actor, prep.fields, prep.data, null);
         // Subtareas (v0.1.132): el padre tiene que existir, ser de ESTA
         // lista y ser de primer nivel — un solo nivel de anidado.
         const parentId = parentIdOverride !== undefined ? parentIdOverride : prep.parentId;
@@ -1139,6 +1166,13 @@ export class RecordsService {
             prepared?: { list: List; fields: Field[] };
             /** D5 — el cambio lo hizo la agenda (ver `RecordChange.origin`). */
             origin?: 'booking';
+            /**
+             * SEC — QUÉ campo se escribe y con qué valor lo decidió el servidor
+             * (la config de un botón, el estado tras responder un ticket), no
+             * quien pide: no se rechaza aunque el campo esté oculto para esa
+             * persona. La respuesta igual sale sin lo que no ve.
+             */
+            serverDecided?: boolean;
         } = {},
     ): Promise<RecordDto> {
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
@@ -1148,21 +1182,25 @@ export class RecordsService {
             const listId = list.id;
             const fields = opts.prepared?.fields ?? (await this.fields.listByListIdWithinTx(tx, tenantId, listId));
 
-            // C3 — un invitado no escribe en lo que no ve.
-            assertGuestWritable(list.settings, fields, actor, input.data);
+            // Nadie escribe en lo que no ve (C3: invitados; SEC: todo el equipo).
+            if (!opts.serverDecided) assertWritable(list.settings, fields, actor, input.data);
             // Los campos `relation` presentes en el patch se sincronizan aparte
             // (semántica parcial: los ausentes no se tocan).
             const rel = splitRelationValues(fields, input.data);
             // Con lock: dos ediciones simultáneas se encolan en vez de pisarse.
             const current = await this.repo.findByIdForUpdate(tx, tenantId, listId, id);
             if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
-            if (opts.expect) await this.assertUnchanged(tx, tenantId, fields, current, opts.expect);
+            // SEC — lo que quien edita no ve: no sale en la respuesta ni se
+            // compara en `expect` (sería un oráculo de igualdad).
+            const hiddenKeys = await this.hiddenKeysFor(tx, tenantId, list, fields, actor);
+            if (opts.expect) await this.assertUnchanged(tx, tenantId, fields, current, withoutKeys(opts.expect, hiddenKeys));
 
             // Merge parcial: validamos SOLO los campos presentes en el patch.
             // D2/E5 + v0.1.383 — una columna protegida no se cambia a mano (reenviar
             // el MISMO valor no es un cambio: se saca del patch).
             const patch = keepManagedUnchanged(list.settings, fields, current.data, this.validateData(fields, rel.data, { partial: true }), rel.values);
             await this.assertUniqueInTx(tx, tenantId, listId, fields, patch, id);
+            await this.assertReferencesInTx(tx, tenantId, actor, fields, patch, current.data);
             const merged = mergeData(current.data, patch);
             // v0.1.300 — obligatorio-si: sólo las reglas que tocan algo que cambió
             // (un registro viejo que no cumplía una regla nueva no bloquea la
@@ -1205,11 +1243,12 @@ export class RecordsService {
                 : 0;
             // C3 — un invitado no ve los indicadores de la operación interna.
             const internal = updated && actor.role !== 'guest';
-            const blockedOpen = internal ? (await this.openBlockers(tx, tenantId, fields, new Set(), [id])).get(id) ?? 0 : 0;
+            const hiddenIds = new Set([...hiddenKeys].map((k) => Number(k.slice(1))));
+            const blockedOpen = internal ? (await this.openBlockers(tx, tenantId, fields, hiddenIds, [id])).get(id) ?? 0 : 0;
             const approvalPending = internal ? (await pendingApprovalCounts(tx, [id])).get(id) ?? 0 : 0;
             const checklist = internal ? (await this.checklists.progressOf(tx, tenantId, [id])).get(id) : undefined;
             const rt = updated ? await this.formulaRuntime(tx, tenantId, listId, fields) : undefined;
-            return { updated, enriched, before: current.data, rels, subtasks, rescheduled, blockedOpen, approvalPending, checklist, rt, list, fields };
+            return { updated, enriched, before: current.data, rels, subtasks, rescheduled, blockedOpen, approvalPending, checklist, rt, list, fields, hiddenKeys };
         });
         const { list, fields } = result;
         const listId = list.id;
@@ -1248,20 +1287,25 @@ export class RecordsService {
                     this.logger.error(`Recurrencias post-update de record ${changed.id}: ${String(err)}`),
                 );
         }
-        return {
-            ...toRecord(
-                withComputed(fields, result.enriched ?? row, result.rt),
-                byFieldToKeys(
-                    fields.filter((f) => f.type === 'relation').map((f) => f.id),
-                    result.rels.get(row.id),
+        // SEC — igual que `get`: sin lo que quien edita no ve (antes un PATCH
+        // con `data: {}` devolvía el registro entero, campos ocultos incluidos).
+        return stripHidden(
+            {
+                ...toRecord(
+                    withComputed(fields, result.enriched ?? row, result.rt),
+                    byFieldToKeys(
+                        fields.filter((f) => f.type === 'relation').map((f) => f.id),
+                        result.rels.get(row.id),
+                    ),
+                    result.subtasks,
                 ),
-                result.subtasks,
-            ),
-            blocked_by_open: result.blockedOpen,
-            approval_pending: result.approvalPending,
-            ...withChecklist(result.checklist),
-            ...(result.rescheduled.length > 0 ? { rescheduled: result.rescheduled.map((r) => r.id) } : {}),
-        };
+                blocked_by_open: result.blockedOpen,
+                approval_pending: result.approvalPending,
+                ...withChecklist(result.checklist),
+                ...(result.rescheduled.length > 0 ? { rescheduled: result.rescheduled.map((r) => r.id) } : {}),
+            },
+            result.hiddenKeys,
+        );
     }
 
     /**
@@ -1354,7 +1398,7 @@ export class RecordsService {
      * ¿El actor alcanza esta fila para la acción? (dependencias: quien agrega
      * o quita una dependencia tiene que poder editar el registro bloqueado).
      */
-    canReach(list: List, actor: Actor, action: 'view' | 'edit' | 'delete', row: Pick<RecordRow, 'data' | 'createdBy'>): boolean {
+    canReach(list: List, actor: Actor, action: 'view' | 'edit' | 'delete', row: Pick<RecordRow, 'data' | 'createdBy'> & { id?: number }): boolean {
         return this.aclCanReach(list, actor, action, row);
     }
 
@@ -1374,13 +1418,14 @@ export class RecordsService {
         opts: { lenientRequired?: boolean } = {},
     ): Promise<{ patch: Record<string, unknown>; before: Record<string, unknown>; list: List; fields: Field[] }> {
         const { list, fields } = await this.listAndFields(tenantId, listIdOrSlug);
-        assertGuestWritable(list.settings, fields, actor, data);
+        assertWritable(list.settings, fields, actor, data);
         const rel = splitRelationValues(fields, data);
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, list.id, id);
             if (!current || !this.aclCanReach(list, actor, 'edit', current)) throw recordNotFound(id);
             const patch = keepManagedUnchanged(list.settings, fields, current.data, this.validateData(fields, rel.data, { partial: true }), rel.values);
             await this.assertUniqueInTx(tx, tenantId, list.id, fields, patch, id);
+            await this.assertReferencesInTx(tx, tenantId, actor, fields, patch, current.data);
             const merged = mergeData(current.data, patch);
             if (!opts.lenientRequired) assertRequiredIf(fields, merged, new Set(Object.keys(patch)));
             this.assertStoreEdit(list, fields, current.data, merged, [
@@ -1406,7 +1451,10 @@ export class RecordsService {
         const { list, fields } = await this.listAndFields(tenantId, listIdOrSlug);
         this.assertCanCreate(list, actor);
         const prep = await this.prepareCreate(tenantId, actor, list, fields, input, { lenientRequired: opts.lenientRequired === true });
-        await this.tenantDb.withTenant(tenantId, (tx) => this.assertUniqueInTx(tx, tenantId, list.id, fields, prep.data, null));
+        await this.tenantDb.withTenant(tenantId, async (tx) => {
+            await this.assertUniqueInTx(tx, tenantId, list.id, fields, prep.data, null);
+            await this.assertReferencesInTx(tx, tenantId, actor, fields, prep.data, null);
+        });
         return { data: prep.data, list, fields };
     }
 
@@ -1430,6 +1478,13 @@ export class RecordsService {
         list: List;
         fields: Field[];
         total: number;
+        /**
+         * SEC — campos que quien pide NO ve (los mismos del listado: ocultos,
+         * búsquedas/resúmenes restringidos y calculados que dependen de ellos).
+         * Sus valores no vienen en `rows`; quien arma una operación con las
+         * filas no los puede leer ni escribir.
+         */
+        hiddenIds: Set<number>;
         rows: Array<{
             id: number;
             data: Record<string, unknown>;
@@ -1443,7 +1498,12 @@ export class RecordsService {
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
             const plans = await this.fields.through.plans(tx, tenantId, list.id, fields);
             const perms = effectivePermissions(list.settings, actor);
-            const scopeW = scopeWhere(perms[scope], actor, assignmentKeys(list.settings));
+            const scopeW = scopeWhere(perms[scope], actor, assignmentKeys(list.settings), scope);
+            // El MISMO conjunto de ocultos que el listado (`readContext`).
+            const hiddenIds = new Set(fields.filter((f) => perms.fields_hidden.includes(f.slug)).map((f) => f.id));
+            for (const id of guestExtraHidden(fields, actor)) hiddenIds.add(id);
+            for (const id of await this.fields.through.restrictedFor(tx, tenantId, plans, actor)) hiddenIds.add(id);
+            for (const id of withDependentComputed(fields, hiddenIds)) hiddenIds.add(id);
             let where: SQL | undefined;
             let parent: 'roots' | 'any';
             if ('ids' in target) {
@@ -1451,7 +1511,6 @@ export class RecordsService {
                 parent = 'any';
             } else {
                 // SEC-25: tampoco se apunta una edición en lote por un campo oculto.
-                const hiddenIds = new Set(fields.filter((f) => perms.fields_hidden.includes(f.slug)).map((f) => f.id));
                 const bulkClock: QueryClock = { ...(await this.clock(tenantId)), myTeamIds: actor.teamIds ?? [] };
                 const fieldsById = withComputedExprs(
                     new Map<number, FilterableField>(
@@ -1480,7 +1539,7 @@ export class RecordsService {
                     data: { status: 400, total, cap },
                 });
             }
-            if (total === 0) return { list, fields, total, rows: [] };
+            if (total === 0) return { list, fields, total, hiddenIds, rows: [] };
             const listed = await this.repo.list(tx, tenantId, list.id, { parent, where, limit: cap, dir: 'asc' });
             const enriched = await this.fields.through.attach(tx, tenantId, plans, listed.slice(0, cap), fields);
             const rt = await this.formulaRuntime(tx, tenantId, list.id, fields, plans);
@@ -1494,16 +1553,18 @@ export class RecordsService {
             const rows = enriched.map((r) => {
                 const byField = rels.get(r.id);
                 const relations: Record<number, number[]> = {};
-                for (const id of relFieldIds) relations[id] = byField?.get(id) ?? [];
+                for (const id of relFieldIds) if (!hiddenIds.has(id)) relations[id] = byField?.get(id) ?? [];
+                const data = { ...(withComputed(fields, r, rt).data as Record<string, unknown>) };
+                for (const id of hiddenIds) delete data[jsonbKeyForField(id)];
                 return {
                     id: r.id,
-                    data: withComputed(fields, r, rt).data as Record<string, unknown>,
+                    data,
                     relations,
                     parentId: r.parentId ?? null,
                     updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt),
                 };
             });
-            return { list, fields, total, rows };
+            return { list, fields, total, hiddenIds, rows };
         });
     }
 
@@ -1594,6 +1655,11 @@ export class RecordsService {
             const row = await this.repo.findByIdForUpdate(tx, tenantId, list.id, id);
             if (!row || !this.aclCanReach(list, actor, 'edit', row)) return false;
             const before = row.hasDescription ? (await this.repo.findDescription(tx, tenantId, list.id, id))?.description ?? null : null;
+            // SEC — imágenes y adjuntos que se SUMAN en este guardado: sólo lo
+            // que quien escribe subió o ya puede ver (re-guardar lo que ya
+            // estaba no se revisa: el autoguardado reescribe el documento).
+            const hadFiles = new Set(fileIdsUnder(before, ['fileId']));
+            await assertAttachable(tx, tenantId, actor, fileIdsUnder(clean, ['fileId']).filter((f) => !hadFiles.has(f)));
             await this.repo.updateDescription(tx, tenantId, list.id, id, clean, actor.userId);
             newlyMentioned = await this.storeDescriptionMentions(tx, tenantId, list.id, id, actor.userId, clean);
             // C1 — @equipo: sólo los equipos que se SUMARON en este guardado
@@ -2016,8 +2082,11 @@ export class RecordsService {
                 if (item.expect && Object.keys(item.expect).length > 0) {
                     await this.tenantDb.withTenant(tenantId, async (tx) => {
                         const current = await this.repo.findById(tx, tenantId, list.id, item.id);
-                        if (!current) throw recordNotFound(item.id);
-                        await this.assertUnchanged(tx, tenantId, fields, current, item.expect!);
+                        // SEC — el ACL de borrar ANTES de comparar: si no, `expect`
+                        // era un oráculo de igualdad sobre registros ajenos.
+                        if (!current || !this.aclCanReach(list, actor, 'delete', current)) throw recordNotFound(item.id);
+                        const hiddenKeys = await this.hiddenKeysFor(tx, tenantId, list, fields, actor);
+                        await this.assertUnchanged(tx, tenantId, fields, current, withoutKeys(item.expect!, hiddenKeys));
                     });
                 }
                 await this.remove(tenantId, actor, String(list.id), item.id, { silent: true });
@@ -2261,6 +2330,57 @@ export class RecordsService {
         }
     }
 
+    /**
+     * SEC — Lo que un valor REFERENCIA tiene que ser de quien escribe:
+     *  - campo de archivo: los adjuntos que se SUMAN (los que ya estaban no se
+     *    revisan) tienen que ser suyos o visibles para él (`assertAttachable`);
+     *  - campo Persona: la persona que se PONE tiene que ser de esta empresa
+     *    (el sistema —userId 0— no se revisa: sincronizaciones y motores).
+     * `current` = los datos de antes (null en un alta).
+     */
+    private async assertReferencesInTx(
+        tx: Tx,
+        tenantId: number,
+        actor: Actor,
+        fields: Field[],
+        data: Record<string, unknown>,
+        current: Record<string, unknown> | null,
+    ): Promise<void> {
+        const newFiles: number[] = [];
+        const newUsers = new Map<number, Field>();
+        for (const f of fields) {
+            if (f.type !== 'file' && f.type !== 'user') continue;
+            const key = jsonbKeyForField(f.id);
+            if (!(key in data) || data[key] === null || data[key] === undefined) continue;
+            if (f.type === 'file') {
+                const had = new Set(fileIdsIn(current?.[key]));
+                for (const id of fileIdsIn(data[key])) if (!had.has(id)) newFiles.push(id);
+            } else if (actor.userId > 0) {
+                const id = Number(data[key]);
+                if (Number.isInteger(id) && id > 0 && Number(current?.[key]) !== id) newUsers.set(id, f);
+            }
+        }
+        await assertAttachable(tx, tenantId, actor, newFiles);
+        if (newUsers.size === 0) return;
+        const found = new Set(
+            (
+                await tx
+                    .select({ id: memberships.userId })
+                    .from(memberships)
+                    .where(and(eq(memberships.tenantId, tenantId), inArray(memberships.userId, [...newUsers.keys()])))
+            ).map((r) => r.id),
+        );
+        const errors: Record<string, string> = {};
+        for (const [id, f] of newUsers) if (!found.has(id)) errors[f.slug] = 'Esa persona no es parte de esta empresa.';
+        if (Object.keys(errors).length > 0) {
+            throw new BadRequestException({
+                code: 'validation_failed',
+                message: 'Datos del registro inválidos',
+                data: { status: 400, errors },
+            });
+        }
+    }
+
     private validateData(
         fields: Field[],
         rawData: Record<string, unknown>,
@@ -2387,22 +2507,34 @@ function effectiveUpdatedBy(row: { updatedBy?: number | null; createdBy: number;
  * sets a sincronizar.
  */
 /**
- * C3 — Un INVITADO no escribe en los campos que no ve: los ocultos para su
- * acceso (los del lector incluidos) ni las relaciones. 403 con el campo.
+ * Claves (`f{id}`) en las que quien pide NO puede escribir: los campos ocultos
+ * para su acceso en la lista (por rol, rol propio, equipo o persona) y, para un
+ * invitado, además las relaciones y compañía. Vacío para el admin y el sistema.
  */
-function assertGuestWritable(
+export function hiddenWriteKeys(settings: Record<string, unknown>, fields: Field[], actor: Actor): Set<string> {
+    if (actor.role === 'admin') return new Set();
+    const hidden = hiddenFieldsFor(settings, actor);
+    const blocked = new Set(guestExtraHidden(fields, actor));
+    return new Set(fields.filter((f) => hidden.has(f.slug) || blocked.has(f.id)).map((f) => jsonbKeyForField(f.id)));
+}
+
+/**
+ * Nadie escribe en los campos que no ve (C3: un invitado; SEC, auditoría
+ * 2026-11: cualquier miembro — antes un agente con un campo oculto lo podía
+ * pisar a ciegas mandando su `f{id}`). 403 con el campo.
+ */
+function assertWritable(
     settings: Record<string, unknown>,
     fields: Field[],
     actor: Actor,
     rawData: Record<string, unknown>,
 ): void {
-    if (actor.role !== 'guest') return;
-    const hidden = hiddenFieldsFor(settings, actor);
-    const blocked = new Set(guestExtraHidden(fields, actor));
+    const hidden = hiddenWriteKeys(settings, fields, actor);
+    if (hidden.size === 0) return;
     const byKey = new Map(fields.map((f) => [jsonbKeyForField(f.id), f]));
     for (const key of Object.keys(rawData)) {
         const f = byKey.get(key);
-        if (f && (hidden.has(f.slug) || blocked.has(f.id))) {
+        if (f && hidden.has(key)) {
             throw new ForbiddenException({
                 code: 'field_hidden',
                 message: `No tienes acceso al campo «${f.label}»`,
@@ -2410,6 +2542,23 @@ function assertGuestWritable(
             });
         }
     }
+}
+
+/** Los datos sin lo que quien pide no puede escribir (datos que armó el servidor). */
+export function withoutHiddenWrites(
+    settings: Record<string, unknown>,
+    fields: Field[],
+    actor: Actor,
+    data: Record<string, unknown>,
+): Record<string, unknown> {
+    return withoutKeys(data, hiddenWriteKeys(settings, fields, actor));
+}
+
+function withoutKeys(data: Record<string, unknown>, keys: ReadonlySet<string>): Record<string, unknown> {
+    if (keys.size === 0) return data;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(data)) if (!keys.has(k)) out[k] = v;
+    return out;
 }
 
 /** D2/E5 + v0.1.383 — saca del alta los valores de las columnas protegidas. */
@@ -2864,7 +3013,7 @@ function describeError(err: unknown): {
     const message = typeof body.message === 'string' ? body.message : err instanceof Error ? err.message : 'Error';
     const data = body.data ?? {};
     let fieldErrors: Record<string, string> | undefined;
-    if (code === 'validation_failed' && data.errors && typeof data.errors === 'object') {
+    if ((code === 'validation_failed' || code === 'field_hidden') && data.errors && typeof data.errors === 'object') {
         fieldErrors = data.errors as Record<string, string>;
     } else if ((code === 'store_field_locked' || code === 'store_invalid_value') && typeof data.field_id === 'number') {
         fieldErrors = { [`f${data.field_id}`]: message };

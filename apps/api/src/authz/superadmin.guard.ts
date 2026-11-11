@@ -29,6 +29,10 @@ export class SuperadminGuard implements CanActivate {
         // contraseña" de abajo → `reauth_required` → la app cerraba la sesión y
         // la impersonación terminaba en el login apenas empezaba.
         if (req.impersonatedBy !== undefined) throw new ForbiddenException('Requiere superadmin de plataforma');
+        // Ni una abierta en la dirección de una empresa: la consola de plataforma
+        // sólo se usa desde la dirección de la plataforma. (403 y no
+        // `reauth_required`: la app no tiene que cerrar la sesión.)
+        if (req.boundTenantId !== undefined) throw new ForbiddenException('Requiere superadmin de plataforma');
         if (this.env.PLATFORM_SUPERADMINS.length === 0) {
             throw new ForbiddenException('No hay superadmins de plataforma configurados');
         }

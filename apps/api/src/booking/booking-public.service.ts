@@ -1,3 +1,4 @@
+import { rateKeyForIp } from '../common/client-ip';
 import {
     BadRequestException,
     ConflictException,
@@ -16,6 +17,8 @@ import {
     bookableWindow,
     bookingLocationPublic,
     bookingLocationText,
+    effectiveCapabilities,
+    type Role,
     bookingMergeValue,
     bookingPayLabel,
     bookingPaymentAmount,
@@ -72,7 +75,8 @@ import {
     type TenantFormat,
 } from '@imagina-base/shared';
 import { accessOf } from '../billing/tenant-access';
-import { and, asc, desc, eq, inArray, isNull, lte, ne, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, lte, ne, notInArray, sql } from 'drizzle-orm';
+import { memberNames } from '../tenancy/member-names';
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { can } from '../authz/can';
 import type Redis from 'ioredis';
@@ -80,7 +84,7 @@ import { AutomationDispatcher } from '../automations/automation-dispatcher.servi
 import { ENV, type Env } from '../config/env';
 import { DataConsentService } from '../data-consent/data-consent.service';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { bookingAppointments, bookingPages, lists, records, tenants, users, type BookingAppointmentRow, type BookingPageRow } from '../db/schema';
+import { bookingAppointments, bookingPages, customRoles, lists, memberships, records, tenants, users, type BookingAppointmentRow, type BookingPageRow } from '../db/schema';
 import { DomainsService } from '../domains/domains.service';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
@@ -112,6 +116,10 @@ import { CollectionError, CollectionsService } from '../collections/collections.
 
 /** El sistema crea y mueve el registro: no hay persona del equipo detrás de la reserva. */
 const SYSTEM_ACTOR = { userId: 0, role: 'admin' as const };
+
+/** Estados en los que el cliente puede reprogramar su cita desde el enlace. */
+const RESCHEDULABLE_STATUSES: readonly string[] = ['confirmed', 'rescheduled', 'pending'];
+const isReschedulable = (status: string): boolean => RESCHEDULABLE_STATUSES.includes(status);
 
 /** Menos de esto entre cargar la página y reservar es un robot (elegir un horario lleva más). */
 const MIN_FILL_MS = 2500;
@@ -507,13 +515,11 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     }
 
     /** Nombre visible de cada persona o recurso (la persona: su nombre en la app). */
-    async staffNames(config: BookingConfig): Promise<Map<string, string>> {
+    async staffNames(config: BookingConfig, tenantId: number): Promise<Map<string, string>> {
         const ids = config.staff.filter((s) => s.kind === 'user' && s.staff_user_id !== null).map((s) => s.staff_user_id!);
         const names = new Map<number, string>();
-        if (ids.length > 0) {
-            const rows = await this.db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ids));
-            for (const r of rows) names.set(r.id, r.name);
-        }
+        // SEC — sólo personas de ESTA empresa (la página es pública y el id sale de la configuración).
+        for (const [id, u] of await memberNames(this.db, tenantId, ids)) names.set(id, u.name);
         return new Map(
             config.staff.map((s) => [
                 s.id,
@@ -525,7 +531,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     private async buildMeta(p: ResolvedPage): Promise<PublicBookingMeta> {
         const s = p.config.settings;
         const b = this.brand(p);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const keys = s.captcha && this.captcha ? await this.captcha.resolve(p.tenantId, p.tenantSettings) : null;
         const consent = this.dataConsent && s.data_consent ? await this.dataConsent.active(p.tenantId, p.tenantSettings) : null;
         const staff = p.config.staff.filter((x) => x.active && (x.kind === 'resource' || x.staff_user_id !== null));
@@ -731,7 +737,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                 });
         }
 
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         let created: { appt: BookingAppointmentRow; record: { id: number; data: Record<string, unknown> }; staff: BookingStaff } | null = null;
         let lastReason = 'taken';
         try {
@@ -1054,7 +1060,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         this.forgetSlots(p.tenantId);
         if (x.notify) {
             const base = await this.base(p.tenantId);
-            const names = await this.staffNames(p.config);
+            const names = await this.staffNames(p.config, p.tenantId);
             // El cliente se entera siempre: si no, se presentaría a una cita que no existe.
             void this.sendClientMail(p, row, 'unpaid_expired', { base, names });
         }
@@ -1155,7 +1161,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         }
         this.forgetSlots(p.tenantId);
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const info = this.eventInfo(p, row, 'requested', 'client', base, names, null);
         this.notifyApprovers(p, row, info, 'requested');
         this.dispatchEvent(p, row, info, null);
@@ -1217,7 +1223,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         });
         void (async () => {
             const base = await this.base(p.tenantId);
-            const names = await this.staffNames(p.config);
+            const names = await this.staffNames(p.config, p.tenantId);
             await this.sendClientMail(p, appt, 'paid_late', { base, names });
         })().catch(() => undefined);
     }
@@ -1229,7 +1235,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const payment = await this.paymentFor(p, appt, { refresh: true });
         const row = await this.settleIfPaid(p, appt, payment);
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         return this.summary(p, row, base, names, stale, row.status === appt.status ? payment : await this.paymentFor(p, row));
     }
 
@@ -1549,7 +1555,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     ): Promise<void> {
         const now = Math.floor(Date.now() / 1000);
         for (const { scope, window, max } of limits) {
-            const who = scope === 'ip' ? `ip:${ip}:${pageId}` : `page:${pageId}`;
+            const who = scope === 'ip' ? `ip:${rateKeyForIp(ip)}:${pageId}` : `page:${pageId}`;
             const key = `bookrl:${what}:${window}:${Math.floor(now / window)}:${who}`;
             let count: number;
             try {
@@ -1768,7 +1774,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             manage_url: url,
             ics_url: `${base}/api/v1/public/booking/manage/${this.manageRef(p.tenantId, appt.id, appt.manageVersion)}/ics`,
             // v0.1.387 — esperando el pago no se reprograma (se paga o se deja vencer).
-            can_reschedule: locked === null && p.config.rules.allow_reschedule && appt.status !== 'unpaid',
+            can_reschedule: locked === null && p.config.rules.allow_reschedule && isReschedulable(appt.status),
             can_cancel: locked === null && p.config.rules.allow_cancel,
             locked_reason: locked,
             payment,
@@ -1778,7 +1784,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     async manageMeta(ref: string): Promise<PublicManageMeta> {
         const { p, appt, stale } = await this.resolveAppointment(ref);
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const booking = await this.buildMeta(p);
         // v0.1.387 — el pago (si espera el pago, se le pregunta al proveedor: el cliente pudo volver de pagar).
         const payment = await this.paymentFor(p, appt, { refresh: appt.status === 'unpaid' });
@@ -1805,14 +1811,17 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     async manageSlots(ref: string, ip: string, q: BookingSlotsQuery): Promise<PublicBookingSlots> {
         const { p, appt, stale } = await this.resolveAppointment(ref);
         await this.enforce(SLOTS_LIMITS, p.pageId, ip, 'horarios');
-        if (this.lockedReason(p, appt, new Date(), stale) || !p.config.rules.allow_reschedule) return { slots: [], first_day: q.from, last_day: q.to };
+        // Sólo una cita activa se reprograma: una que espera el pago, no (se confirma pagando).
+        if (this.lockedReason(p, appt, new Date(), stale) || !p.config.rules.allow_reschedule || !isReschedulable(appt.status)) {
+            return { slots: [], first_day: q.from, last_day: q.to };
+        }
         return this.availability.slots(p, appt.serviceId, this.staffSelection(p, q.staff), q.from, q.to, { excludeRecordId: appt.recordId, durationMin: appointmentMinutes(appt) });
     }
 
     async ics(ref: string): Promise<{ filename: string; body: string }> {
         const { p, appt } = await this.resolveAppointment(ref);
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         return { filename: 'cita.ics', body: this.icsFor(p, appt, base, names) };
     }
 
@@ -1873,12 +1882,12 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         if (appt.status === 'unpaid') {
             // Nadie del equipo supo de ella (todavía no se había pagado): sólo el correo al cliente.
             const base = await this.base(p.tenantId);
-            const names = await this.staffNames(p.config);
+            const names = await this.staffNames(p.config, p.tenantId);
             void this.sendClientMail(p, row, 'cancelled', { base, names });
             return this.summary(p, row, base, names);
         }
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const staff = p.config.staff.find((s) => s.id === appt.staffId);
         const info = this.eventInfo(p, row!, 'cancelled', 'client', base, names, null);
         this.dispatchEvent(p, row!, info, null);
@@ -1894,6 +1903,16 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         if (locked || !p.config.rules.allow_reschedule) {
             throw new ForbiddenException({ code: 'booking_locked', message: locked ?? 'Esta agenda no permite reprogramar en línea. Comunícate con la empresa.', data: { status: 403 } });
         }
+        // Una cita que espera el pago no se reprograma: pasaría a «Reprogramada»
+        // (activa, con evento y videollamada) sin haber pagado, y la revisión de
+        // pagos vencidos ya no la soltaría. Sólo las activas o por confirmar.
+        if (!isReschedulable(appt.status)) {
+            throw new ForbiddenException({
+                code: 'booking_locked',
+                message: appt.status === 'unpaid' ? 'Esta cita está esperando el pago: complétalo para poder cambiarla.' : 'Esta cita no se puede reprogramar.',
+                data: { status: 403 },
+            });
+        }
         const service = this.availability.service(p.config, appt.serviceId);
         const start = new Date(input.start);
         if (Number.isNaN(start.getTime())) throw badRequest('booking_invalid', 'Elige un horario.');
@@ -1906,7 +1925,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         // Quien atendía primero (si sigue libre, no se cambia de persona sin necesidad).
         candidates.sort((a, b) => Number(b.id === appt.staffId) - Number(a.id === appt.staffId));
         if (candidates.length === 0) throw badRequest('booking_invalid', 'No hay quién atienda ese servicio en este momento.');
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const fieldsById = new Map(p.fields.map((f) => [f.id, f]));
         // v0.1.353 — una por confirmar sigue por confirmar en el horario nuevo.
         const wasPending = appt.status === 'pending';
@@ -1954,7 +1973,15 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                         updatedAt: new Date(),
                         ...(input.time_zone && isValidTimeZone(input.time_zone) ? { clientTz: input.time_zone } : {}),
                     })
-                    .where(and(eq(bookingAppointments.tenantId, p.tenantId), eq(bookingAppointments.id, appt.id), eq(bookingAppointments.manageVersion, appt.manageVersion)))
+                    .where(
+                        and(
+                            eq(bookingAppointments.tenantId, p.tenantId),
+                            eq(bookingAppointments.id, appt.id),
+                            eq(bookingAppointments.manageVersion, appt.manageVersion),
+                            // El estado no cambió mientras tanto (ni pasó a esperar el pago, cancelada…).
+                            eq(bookingAppointments.status, appt.status),
+                        ),
+                    )
                     .returning();
                 // Otro cambio entró un segundo antes con el mismo enlace: éste ya no vale.
                 if (!row) throw new ForbiddenException({ code: 'booking_locked', message: 'La cita cambió mientras elegías. Recarga la página.', data: { status: 403 } });
@@ -2316,7 +2343,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             const row = await setAppt({ status: 'cancelled', cancelledAt: new Date(), externalEvent: null });
             if (!row) return 'ignored';
             const base = await this.base(p.tenantId);
-            const names = await this.staffNames(p.config);
+            const names = await this.staffNames(p.config, p.tenantId);
             const staff = p.config.staff.find((s) => s.id === row.staffId) ?? null;
             await this.afterChange(p, row, staff, 'cancelled', { base, names, byTeam: true, fromCalendar: true, dispatch: { data: null, by: 'calendar', previous: null } }).done;
             return 'cancelled';
@@ -2348,7 +2375,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const row = await setAppt({ startAt: start, endAt: end, status: 'rescheduled', remindersSent: this.passedReminders(p.config, start), externalEvent: moved });
         if (!row) return 'ignored';
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         await this.afterChange(p, row, staff, 'rescheduled', {
             base,
             names,
@@ -2460,7 +2487,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const p = await this.resolveById(appt.pageId);
         if (!p || p.readOnly) return false;
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const hours = Math.round(minutesBefore / 60);
         const lead =
             minutesBefore >= 20 * 60 && minutesBefore <= 28 * 60
@@ -2502,7 +2529,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const phone = rec ? (rec.data as Record<string, unknown>)[jsonbKeyForField(phoneId)] : null;
         if (typeof phone !== 'string' || phone.trim() === '') return false;
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const info = { ...this.eventInfo(p, appt, 'booked', 'client', base, names, null), time_zone: appt.clientTz ?? p.timeZone };
         const text = cfg.text.replace(/\{\{\s*cita\.([a-z_]+)\s*\}\}/g, (_m, key: string) => bookingMergeValue(info, key, p.format.time_format));
         const res = await sms.sendNow(p.tenantId, {
@@ -2596,7 +2623,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     }
 
     private async recordDto(p: ResolvedPage, appt: BookingAppointmentRow, actor: BookingDecider): Promise<RecordBookingDto> {
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const nameOf = async (id: number | null): Promise<string | null> => {
             if (id === null) return null;
             const [u] = await this.db.select({ name: users.name, email: users.email }).from(users).where(eq(users.id, id)).limit(1);
@@ -2716,7 +2743,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         }
         this.forgetSlots(p.tenantId);
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const info = this.eventInfo(p, row, 'booked', 'team', base, names, null);
         // A quien atiende, si no fue quien la aprobó.
         if (staff && !(staff.kind === 'user' && staff.staff_user_id === x.by)) this.notifyStaff(p, row, staff, 'booked', info);
@@ -2757,7 +2784,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         }
         this.forgetSlots(p.tenantId);
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const info = this.eventInfo(p, row, 'declined', x.by ? 'team' : 'client', base, names, null);
         this.dispatchEvent(p, row, info, null);
         if (x.expired) this.notifyApprovers(p, row, info, 'expired');
@@ -2815,6 +2842,42 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         this.listsWithPages.delete(tenantId);
     }
 
+    /** El acceso VIGENTE de una persona del equipo (rol, rol propio, equipos); null si no es del equipo. */
+    private async deciderOf(tenantId: number, userId: number): Promise<BookingDecider | null> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({
+                    role: memberships.role,
+                    teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${memberships.userId} AND tm.tenant_id = ${memberships.tenantId})`,
+                    customRoleId: memberships.customRoleId,
+                    customCaps: customRoles.capabilities,
+                })
+                .from(memberships)
+                .innerJoin(users, eq(users.id, memberships.userId))
+                .leftJoin(customRoles, and(eq(customRoles.id, memberships.customRoleId), eq(customRoles.tenantId, memberships.tenantId)))
+                .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId), isNull(users.disabledAt)))
+                .limit(1),
+        );
+        if (!row || row.role === 'client' || row.role === 'guest') return null;
+        const custom = row.customCaps ? (row.customCaps as string[]) : null;
+        return {
+            userId,
+            role: row.role as Role,
+            teamIds: (row.teamIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0),
+            customRoleId: custom ? row.customRoleId : null,
+            capabilities: effectiveCapabilities(row.role as Role, custom),
+        };
+    }
+
+    /** El estado del registro vuelve a decir el estado REAL de la cita (alguien que no decide lo cambió). */
+    private async restoreStatusField(p: ResolvedPage, appt: BookingAppointmentRow): Promise<void> {
+        const status = statusValueFor(p.config.mapping, appt.status as BookingStatus);
+        if (p.config.mapping.status_field_id === null || !status) return;
+        await this.records
+            .update(p.tenantId, SYSTEM_ACTOR, String(p.listId), appt.recordId, { data: { [jsonbKeyForField(p.config.mapping.status_field_id)]: status } }, { origin: 'booking' })
+            .catch((err: unknown) => this.logger.warn(`no se pudo devolver el estado de la cita ${appt.id}: ${err instanceof Error ? err.message : String(err)}`));
+    }
+
     /**
      * El equipo movió o canceló una cita desde la app (es un registro común):
      * la cita se mantiene al día — recordatorios, evento del calendario, aviso
@@ -2851,6 +2914,28 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
                     : new Date(start!.getTime() + (Number.isFinite(durRaw) && durRaw > 0 ? durRaw : (appt.endAt.getTime() - appt.startAt.getTime()) / 60_000) * 60_000);
             return { start: start!, end };
         };
+        // Poner el estado en la ficha DECIDE la cita (aprobar, rechazar, darla por
+        // pagada, revivir una rechazada): vale lo mismo que el botón de la ficha,
+        // así que exige lo mismo — ser de quienes aprueban (`canDecide`). Quien
+        // sólo puede editar el registro (un agente, un invitado con «editar», el
+        // cliente desde el portal) no decide: el estado vuelve al real.
+        // Una automatización o el sistema (sin persona) aprueba o rechaza una
+        // «por confirmar» (la configuró quien administra), pero NUNCA da por
+        // pagada una que espera el pago: eso es el pago o «Marcar como pagada».
+        const saidActive = said === 'confirmed' || said === 'rescheduled';
+        const decides =
+            (appt.status === 'unpaid' && saidActive) ||
+            (appt.status === 'pending' && (saidActive || said === 'declined')) ||
+            (appt.status === 'declined' && saidActive);
+        if (decides) {
+            const person = typeof c.actorId === 'number' && c.actorId > 0 && !c.viaPortal ? await this.deciderOf(c.tenantId, c.actorId) : null;
+            const bySystem = !c.viaPortal && !(typeof c.actorId === 'number' && c.actorId > 0);
+            const allowed = !p.readOnly && (bySystem ? appt.status !== 'unpaid' : person !== null && this.canDecide(person, p, appt));
+            if (!allowed) {
+                await this.restoreStatusField(p, appt);
+                return;
+            }
+        }
         // v0.1.387 — Esperando el pago: el equipo la confirma a mano (pagó por otro medio).
         if (appt.status === 'unpaid' && !p.readOnly && (said === 'confirmed' || said === 'rescheduled')) {
             const row = await this.confirmUnpaid(p, appt, { by: c.actorId ?? null, recordDone: true });
@@ -2909,7 +2994,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             await this.collections?.expireForBooking(p.tenantId, row.paymentLinkId).catch(() => undefined);
         }
         const base = await this.base(p.tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         const info = this.eventInfo(p, row, event, 'team', base, names, event === 'rescheduled' ? { start: appt.startAt, end: appt.endAt } : null);
         this.dispatcher.dispatch({ tenantId: p.tenantId, listId: p.listId, recordId: row.recordId, trigger: 'booking_event', after, booking: info });
         const staff = p.config.staff.find((s) => s.id === row.staffId) ?? null;
@@ -2931,7 +3016,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         const p = await this.resolveById(appt.pageId);
         if (!p) return null;
         const base = await this.base(tenantId);
-        const names = await this.staffNames(p.config);
+        const names = await this.staffNames(p.config, p.tenantId);
         return this.eventInfo(p, appt, event, 'client', base, names, event === 'rescheduled' ? { start: new Date(appt.startAt.getTime() - 86_400_000), end: new Date(appt.endAt.getTime() - 86_400_000) } : null);
     }
 }

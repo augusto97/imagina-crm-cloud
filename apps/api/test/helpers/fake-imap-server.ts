@@ -14,6 +14,8 @@ export interface FakeImapMessage {
     uid: number;
     flags: Set<string>;
     raw: Buffer;
+    /** Tamaño que el servidor INFORMA (para simular uno que informa de menos). */
+    listedSize?: number;
 }
 
 export interface FakeImapServer {
@@ -184,7 +186,7 @@ export function startFakeImap(opts: { user: string; pass: string; port?: number;
                         const seq = all.indexOf(u) + 1;
                         const m = box[seq - 1]!;
                         const bits = [`UID ${m.uid}`];
-                        if (items.includes('RFC822.SIZE')) bits.push(`RFC822.SIZE ${m.raw.length}`);
+                        if (items.includes('RFC822.SIZE')) bits.push(`RFC822.SIZE ${m.listedSize ?? m.raw.length}`);
                         if (items.includes('FLAGS')) bits.push(`FLAGS (${[...m.flags].join(' ')})`);
                         const wantsBody = items.includes('BODY.PEEK[]') || items.includes('BODY[]') || items.includes('RFC822)') || items.endsWith('RFC822');
                         if (wantsBody) {

@@ -21,6 +21,12 @@ export const memberships = pgTable(
         settings: jsonb('settings').$type<Record<string, unknown>>().notNull().default({}),
         // C2 — rol PROPIO (capacidades); `role` sigue siendo su base.
         customRoleId: bigint('custom_role_id', { mode: 'number' }).references(() => customRoles.id, { onDelete: 'set null' }),
+        /**
+         * Cuándo la persona ENTRÓ por primera vez a la empresa. NULL = un admin
+         * sumó una cuenta que ya existía y la persona todavía no entró: hasta
+         * entonces su nombre no se muestra y su firma de correo no se usa.
+         */
+        joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow(),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     },

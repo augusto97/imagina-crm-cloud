@@ -8461,3 +8461,48 @@ entregas y la idea D7).**
    empresa (se avisa) y se borran con ella. Pestaña **Estadísticas** del
    editor (`GET /contact-widgets/:id/stats?days=7|30|90`).
 
+### ADR-S100 — Auditoría de seguridad III: referencias a archivos, credenciales atadas a su origen y sesiones atadas a su dominio (v0.1.404)
+
+**Contexto.** Auditoría integral pedida por el usuario (interno, integraciones,
+lo que se inserta en otros sitios y automatizaciones), con hallazgos
+verificados uno por uno antes de corregir. Las decisiones que cambian el modelo:
+
+1. **Una referencia a un archivo es un permiso** (SEC-38). Todo lugar que guarda
+   el id de un archivo (valor de un campo, descripción, tema, logo, plantilla,
+   widget de tablero, configuración de lista) pasa por
+   `FilesService.assertAttachable`: sólo se puede adjuntar lo que quien escribe
+   ya puede leer. Sin esto, escribir el id ajeno en un registro propio lo hacía
+   legible. Lo que escribe el servidor (sincronizaciones, formularios) declara
+   `serverDecided`/`serverData`.
+2. **Los campos ocultos son ocultos en TODA respuesta y en toda escritura**
+   (SEC-39): crear/editar devuelven el registro ya recortado y escribir un campo
+   oculto es 403 `field_hidden`. Siguen guardados por slug en el ACL (renombrar
+   los arrastra); pasarlos a id queda como deuda.
+3. **La credencial de una conexión sólo viaja a su origen** (SEC-40). Una
+   acción con una URL absoluta de otro origen falla antes de salir. Cambiar la
+   dirección base de una API personalizada exige re-escribir el secreto. Las
+   variables dentro de una URL se codifican. Una automatización sólo adjunta
+   conexiones del equipo o de su autor, nunca las de propósito «agenda».
+4. **Una sesión abierta en el dominio de una empresa vale sólo para esa
+   empresa** (SEC-41, `boundTenantId`): el dominio propio lo controla la empresa
+   (ADR-S17), así que su cookie no puede valer para otras ni para la consola de
+   plataforma. Pendiente: que el login en un dominio propio se haga en el
+   dominio de la plataforma y vuelva con un código de un solo uso (hoy la
+   contraseña se escribe en el dominio de la empresa).
+5. **Same-site no es same-origin** (SEC-42): CSRF exige Origin igual al propio;
+   las rutas del operador no aceptan cuerpos de `<form>`; el WebSocket valida
+   Origin.
+6. **Todo trabajo que elige un extraño tiene presupuesto** (SEC-43): patrones de
+   validación en un motor con tope de pasos, HTML de correo en una pasada, IMAP
+   con tope de bytes, widgets por tablero, PDF público, registro OAuth, cuota de
+   IA atómica, MCP por pedido/token/empresa, e IPv6 agrupado por /64 en los
+   límites por IP.
+7. **Restaurar una copia no importa configuración arbitraria** (SEC-44): lista
+   blanca de variables del `.env` (antes, lista negra).
+8. **La demostración de una página pública sólo existe dentro de la app**
+   (SEC-45): `imb_demo` se ignora fuera de un marco del mismo origen.
+
+**Consecuencias.** Automatizaciones con conexiones usadas contra otro servidor
+dejan de funcionar hasta crear la conexión correcta; el MCP puede responder
+429; reglas de validación con construcciones que el motor no soporta rechazan
+el valor (se ve en el editor del campo).

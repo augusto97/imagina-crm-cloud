@@ -122,7 +122,7 @@ import { AutomationDispatcher } from '../automations/automation-dispatcher.servi
 import { IncidentHub } from '../incidents/incident-hub';
 import { BillingService } from '../billing/billing.service';
 import { FieldsService } from '../fields/fields.service';
-import { FilesService } from '../files/files.service';
+import { FilesService, assertNewAttachable, type FileActor } from '../files/files.service';
 import { ListsService } from '../lists/lists.service';
 import { MailService } from '../mail/mail.service';
 import { senderName, type PortalEmailBrand } from '../portal/portal-email';
@@ -136,6 +136,7 @@ import { FormStatsService, type FormStatsTarget } from './form-stats.service';
 import { planModuleOff } from '../billing/plan-module-gate';
 import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-cache';
 import { PublicCacheService } from '../public-cache/public-cache.service';
+import { rateKeyForIp } from '../common/client-ip';
 import { CollectionError, CollectionsService } from '../collections/collections.service';
 import { SubscriptionError, SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { ContactWidgetsService } from '../contact-widgets/contact-widgets.service';
@@ -210,6 +211,10 @@ export const CONFIRM_TTL_MS = 48 * 3600 * 1000;
 export const RESPONDENT_MAIL_LIMITS = [
     { scope: 'email', window: 3600, max: 3 },
     { scope: 'ip', window: 3600, max: 10 },
+    // Por formulario y por empresa: aunque cada pedido llegue desde otra
+    // dirección y con otro correo, un formulario no manda más que esto.
+    { scope: 'form', window: 3600, max: 100 },
+    { scope: 'tenant', window: 86_400, max: 300 },
 ] as const;
 
 /** `ana@gmail.com` → `an***@gmail.com` (para decir a dónde salió el correo). */
@@ -327,6 +332,8 @@ export function pastCloseDate(closesAt: string | null, timeZone: string, now = n
 /** v0.1.351 — Quién guarda (para el CSS propio, que es sólo de administradores). */
 export interface FormActor {
     isAdmin: boolean;
+    /** Quién guarda, para revisar que las imágenes NUEVAS sean archivos que puede usar. */
+    file?: FileActor;
 }
 
 interface ResolvedForm {
@@ -498,7 +505,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         // v0.1.351 — un formulario nuevo nace con el tema por defecto de la empresa (si eligió uno).
         const def = await this.defaultTheme(tenantId);
         if (!config.settings.theme && def) config.settings.theme = def;
-        await this.assertDesign(tenantId, config, def?.custom_css ?? '', actor);
+        await this.assertDesign(tenantId, config, def?.custom_css ?? '', actor, []);
         const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .insert(forms)
@@ -546,7 +553,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         await this.assertTemplate(tenantId, list.id, config.settings.record_template_id);
         await this.assertPayment(tenantId, config);
         await this.assertSubscription(tenantId, config);
-        await this.assertDesign(tenantId, config, config.settings.theme?.custom_css ?? '', actor);
+        // La copia lleva las imágenes del formulario de origen (ya revisadas al guardarlo).
+        await this.assertDesign(tenantId, config, config.settings.theme?.custom_css ?? '', { ...actor, file: undefined }, []);
         const siblings = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .select({ name: forms.name })
@@ -590,7 +598,11 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             await this.assertPayment(tenantId, clean);
             await this.assertSubscription(tenantId, clean);
             const prev = readPublicTheme(((current.config as Record<string, unknown>)?.settings as Record<string, unknown> | undefined)?.theme ?? {});
-            await this.assertDesign(tenantId, clean, prev.custom_css, actor);
+            const had = readConfig(current.config);
+            await this.assertDesign(tenantId, clean, prev.custom_css, actor, [
+                ...formConfigFileIds(had),
+                ...(had.settings.theme ? publicThemeFileIds(had.settings.theme) : []),
+            ]);
             patch.config = clean as unknown as Record<string, unknown>;
         }
         if (input.regenerate_token) patch.token = newToken();
@@ -643,7 +655,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
      * fondo, panel, ítems y opciones) tiene que ser un archivo de ESTA empresa
      * y una imagen que se muestra sin ejecutar nada (nada de SVG).
      */
-    private async assertDesign(tenantId: number, config: FormConfig, previousCss: string, actor: FormActor): Promise<void> {
+    private async assertDesign(tenantId: number, config: FormConfig, previousCss: string, actor: FormActor, knownFiles: number[]): Promise<void> {
         const theme = config.settings.theme;
         if (theme) {
             const css = sanitizePublicCss(theme.custom_css).css;
@@ -660,12 +672,20 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             theme.custom_css = css;
         }
         const ids = [...new Set([...(theme ? publicThemeFileIds(theme) : []), ...formConfigFileIds(config)])];
-        await this.assertImages(tenantId, ids);
+        await this.assertImages(tenantId, ids, { actor, known: knownFiles });
     }
 
     /** Las imágenes tienen que ser archivos de la empresa y de un tipo que se muestra sin riesgo. */
-    async assertImages(tenantId: number, ids: number[]): Promise<void> {
+    async assertImages(tenantId: number, ids: number[], who: { actor?: FormActor; known?: number[] } = {}): Promise<void> {
         if (ids.length === 0) return;
+        // Las imágenes que se SUMAN tienen que ser archivos que quien guarda
+        // subió o ya puede ver (las de antes y las de un tema de la empresa no
+        // se revisan): la página pública las sirve a cualquiera.
+        if (who.actor?.file && !who.actor.isAdmin) {
+            const saved = (await this.savedThemes(tenantId)).flatMap((t) => publicThemeFileIds(t.theme));
+            const file = who.actor.file;
+            await this.tenantDb.withTenant(tenantId, (tx) => assertNewAttachable(tx, tenantId, file, ids, [...(who.known ?? []), ...saved]));
+        }
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             tx
                 .select({ id: attachments.id, mime: attachments.mime })
@@ -954,7 +974,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 HttpStatus.SERVICE_UNAVAILABLE,
             );
         }
-        if (!(await this.allowRespondentMail(input.email, ip))) {
+        if (!(await this.allowRespondentMail(input.email, ip, { id: f.row.id, tenantId: f.row.tenantId }))) {
             throw new HttpException(
                 {
                     code: 'rate_limited',
@@ -1802,7 +1822,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 HttpStatus.SERVICE_UNAVAILABLE,
             );
         }
-        if (!(await this.allowRespondentMail(email, ip))) {
+        if (!(await this.allowRespondentMail(email, ip, { id: f.row.id, tenantId: f.row.tenantId }))) {
             throw new HttpException(
                 {
                     code: 'rate_limited',
@@ -2128,10 +2148,17 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     }
 
     /** Freno a los correos hacia quien responde (por dirección y por IP). */
-    private async allowRespondentMail(email: string, ip: string): Promise<boolean> {
+    private async allowRespondentMail(email: string, ip: string, form: { id: number; tenantId: number }): Promise<boolean> {
         const now = Math.floor(Date.now() / 1000);
         for (const { scope, window, max } of RESPONDENT_MAIL_LIMITS) {
-            const who = scope === 'email' ? `email:${email.toLowerCase()}` : `ip:${ip}`;
+            const who =
+                scope === 'email'
+                    ? `email:${email.toLowerCase()}`
+                    : scope === 'ip'
+                      ? `ip:${rateKeyForIp(ip)}`
+                      : scope === 'form'
+                        ? `form:${form.id}`
+                        : `tenant:${form.tenantId}`;
             const key = `formmail:${window}:${Math.floor(now / window)}:${who}`;
             try {
                 const res = await this.redis.multi().incr(key).expire(key, window).exec();
@@ -2169,7 +2196,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         withdrawRef: string | null = null,
     ): Promise<boolean> {
         if (!this.mail) return false;
-        if (!(await this.allowRespondentMail(email, ip))) return false;
+        if (!(await this.allowRespondentMail(email, ip, { id: f.row.id, tenantId: f.row.tenantId }))) return false;
         const answers = await this.answerLines(f, fields, data);
         const base = (await this.publicBase(f.row.tenantId)) ?? this.env.APP_BASE_URL.replace(/\/+$/, '');
         const brand = await this.emailBrand(f, base);
@@ -2275,7 +2302,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     private async enforceBytes(formId: number, ip: string): Promise<void> {
         const now = Math.floor(Date.now() / 1000);
         for (const { scope, window, max } of UPLOAD_BYTE_LIMITS) {
-            const who = scope === 'ip' ? `ip:${ip}:${formId}` : `form:${formId}`;
+            const who = scope === 'ip' ? `ip:${rateKeyForIp(ip)}:${formId}` : `form:${formId}`;
             const key = `formrl:bytes:${window}:${Math.floor(now / window)}:${who}`;
             let used = 0;
             try {
@@ -2299,7 +2326,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     private async addBytes(formId: number, ip: string, bytes: number): Promise<void> {
         const now = Math.floor(Date.now() / 1000);
         for (const { scope, window } of UPLOAD_BYTE_LIMITS) {
-            const who = scope === 'ip' ? `ip:${ip}:${formId}` : `form:${formId}`;
+            const who = scope === 'ip' ? `ip:${rateKeyForIp(ip)}:${formId}` : `form:${formId}`;
             const key = `formrl:bytes:${window}:${Math.floor(now / window)}:${who}`;
             await this.redis
                 .multi()
@@ -2859,7 +2886,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     ): Promise<void> {
         const now = Math.floor(Date.now() / 1000);
         for (const { scope, window, max } of limits) {
-            const who = scope === 'ip' ? `ip:${ip}:${formId}` : `form:${formId}`;
+            const who = scope === 'ip' ? `ip:${rateKeyForIp(ip)}:${formId}` : `form:${formId}`;
             const key = `formrl:${what}:${window}:${Math.floor(now / window)}:${who}`;
             let count: number;
             try {

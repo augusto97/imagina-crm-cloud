@@ -59,6 +59,9 @@ PARTS="$(find "$WORK" -mindepth 1 -maxdepth 1 -type d -name 'imagina-snapshot-*'
 [[ -n "$PARTS" && -f "$PARTS/manifest.json" ]] || fail "El archivo no es una copia de Imagina Base."
 [[ -f "$PARTS/env.production" ]] || fail "La copia no trae los secretos del servidor (.env): elige una copia completa."
 SNAP_VERSION="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).app_version||"")' "$PARTS/manifest.json")"
+if [[ -n "$SNAP_VERSION" && "$SNAP_VERSION" != "dev" && ! "$SNAP_VERSION" =~ ^[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}$ ]]; then
+    fail "La copia trae una versión inválida."
+fi
 CUR_VERSION="$(basename "$(readlink -f "$BASE_PATH/current")" | sed -E 's/^[0-9]+_//')"
 
 PG_CONTAINER="${PG_CONTAINER:-imagina-base-prod-postgres-1}"
@@ -71,28 +74,37 @@ fi
 
 # ── 1. env ──────────────────────────────────────────────────────────────────
 status env "Instalando los secretos del servidor de la copia…"
-# El mismo filtro que snapshot-restore.sh (SEC-37): una copia ajena no mete
-# variables que cambian cómo arranca el proceso.
-ENV_DENY_RE='^(NODE_OPTIONS|NODE_PATH|NODE_EXTRA_CA_CERTS|NODE_TLS_REJECT_UNAUTHORIZED|NODE_REPL_EXTERNAL_MODULE|LD_[A-Z_]+|DYLD_[A-Z_]+|PATH|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|IFS|GCONV_PATH|PERL5OPT|PERL5LIB|PYTHONPATH|PYTHONSTARTUP|RUBYOPT|npm_config_[A-Za-z_]+|NPM_CONFIG_[A-Z_]+|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|NO_PROXY|http_proxy|https_proxy|all_proxy|no_proxy|SSL_CERT_FILE|SSL_CERT_DIR|OPENSSL_CONF|SYSTEMD_[A-Z_]+)$'
+# El mismo filtro que snapshot-restore.sh y bootstrap-server.sh (SEC-37): de
+# una copia sólo pasa la configuración de la app (lista de permitidas). Qué se
+# ejecuta, dónde vive la instalación y de dónde se actualiza es de ESTE
+# servidor.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILTER="$HERE/snapshot-env-filter.sh"
+[[ -f "$ENV_FILTER" ]] || ENV_FILTER="$DEPLOY/snapshot-env-filter.sh"
+[[ -f "$ENV_FILTER" ]] || fail "Falta snapshot-env-filter.sh: no se instala el .env de una copia sin su filtro."
+# shellcheck source=snapshot-env-filter.sh
+source "$ENV_FILTER"
 # Lo que es de ESTE servidor (dominio y layout) se conserva del instalador.
-KEEP_RE='^(APP_BASE_URL|UPDATER_BASE_PATH|PORT|COOKIE_SECURE|TRUST_PROXY|POSTGRES_PORT|REDIS_PORT)$'
-key_of() { [[ "${1%$'\r'}" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*= ]] && echo "${BASH_REMATCH[2]}" || true; }
+KEEP_RE='^(APP_BASE_URL|PORT|COOKIE_SECURE|TRUST_PROXY|POSTGRES_PORT|REDIS_PORT)$'
+FILTERED="$WORK/env.filtered"
+filter_snapshot_env "$PARTS/env.production" "$FILTERED"
+[[ -n "$SNAPSHOT_ENV_DROPPED" ]] && echo "  ⚠ se descartan de la copia:$SNAPSHOT_ENV_DROPPED"
+[[ -n "$SNAPSHOT_ENV_WARNED" ]] && echo "  ⚠ revisa estas variables de la copia, permiten conexiones a la red interna:$SNAPSHOT_ENV_WARNED"
 NEW="$WORK/env.new"
 : > "$NEW"
 while IFS= read -r line || [[ -n "$line" ]]; do
-    k="$(key_of "$line")"
-    if [[ -n "$k" ]]; then
-        [[ "$k" =~ $ENV_DENY_RE ]] && { echo "  ⚠ se descarta $k de la copia"; continue; }
-        [[ "$k" =~ $KEEP_RE ]] && continue
-        [[ "$k" =~ ^RECOVERY_ ]] && continue
-    fi
+    k="$(snapshot_env_key_of "$line")"
+    if [[ -n "$k" && "$k" =~ $KEEP_RE ]]; then continue; fi
     printf '%s\n' "$line" >> "$NEW"
-done < "$PARTS/env.production"
+done < "$FILTERED"
 {
     echo
     echo "# — de este servidor (install.sh, $STAMP) —"
-    grep -E '^[[:space:]]*(export[[:space:]]+)?(APP_BASE_URL|UPDATER_BASE_PATH|PORT|COOKIE_SECURE|TRUST_PROXY|POSTGRES_PORT|REDIS_PORT)[[:space:]]*=' "$ENV_FILE" || true
+    grep -E '^[[:space:]]*(export[[:space:]]+)?(APP_BASE_URL|PORT|COOKIE_SECURE|TRUST_PROXY|POSTGRES_PORT|REDIS_PORT)[[:space:]]*=' "$ENV_FILE" || true
 } >> "$NEW"
+# Y todo lo que una copia no puede traer (UPDATER_GITHUB_REPO, UPDATER_BASE_PATH,
+# UPDATER_PUBLIC_KEY, rutas…) sale del instalador; el modo recuperación no.
+append_local_env "$ENV_FILE" "$NEW" '^RECOVERY_'
 # Los puertos de Postgres/Redis son de ESTE servidor (el instalador eligió unos
 # libres si el 5432/6379 estaban ocupados): las URLs de la copia se reapuntan.
 port_of() { sed -nE "s/^[[:space:]]*(export[[:space:]]+)?$1[[:space:]]*=[[:space:]]*\"?([0-9]+).*/\2/p" "$ENV_FILE" | tail -1; }

@@ -3,7 +3,7 @@ import type { Field } from '@imagina-base/shared';
 import { describeHelpdeskForModel } from '../src/ai/tools/helpdesk-schema';
 import { accountMailParts, buildAccountRfc2822, threadHeaderLines } from '../src/connectors/mail-account-request';
 import { autoReplyReason, parseInbound, stripQuotedReply } from '../src/helpdesk/inbound-mail';
-import { imapErrorDiagnostic } from '../src/helpdesk/imap-reader';
+import { ByteBudget, imapErrorDiagnostic } from '../src/helpdesk/imap-reader';
 import { htmlToRichDoc, textToRichDoc } from '../src/helpdesk/mail-html';
 import { buildMime } from './helpers/fake-imap-server';
 
@@ -149,5 +149,78 @@ describe('Mesa de ayuda — piezas puras', () => {
         expect(out?.initial_status).toBe('Nuevo');
         expect((out?.sla as { targets: unknown[] }).targets).toHaveLength(1);
         expect(describeHelpdeskForModel({}, fields)).toBeNull();
+    });
+
+    it('la conversión del HTML de un correo tiene tiempo acotado con entradas grandes', () => {
+        const N = 400_000;
+        const fill = (piece: string, size = N): string => piece.repeat(Math.ceil(size / piece.length)).slice(0, size);
+        const lt = '<';
+        const shapes: Array<[string, string]> = [
+            ['comentario sin cierre', fill(lt + '!--')],
+            ['CDATA sin cierre', fill(lt + '![CDATA[')],
+            ['declaración sin cierre', fill(lt + '!doctype ')],
+            ['elemento descartable sin cierre', fill(lt + 'script ')],
+            ['elemento descartable con cierre incompleto', fill(lt + 'style>a</style ')],
+            ['etiqueta sin cierre', fill(lt + 'p ')],
+            ['enlace con atributo y sin cierre', fill(lt + 'a href="x" ')],
+            ['ítem de lista sin cierre', fill(lt + 'li ')],
+            ['espacios dentro de preformateado', lt + 'pre>' + fill(' '.repeat(63) + 'x', N - 10)],
+            ['muchos saltos', fill(lt + 'br>')],
+            ['muchos formatos abiertos', fill(lt + 'b>x')],
+            ['citas anidadas con ítems', fill(lt + 'blockquote>', N / 2) + fill(lt + 'li>x' + lt + '/ul>', N / 2)],
+            ['enlaces abiertos', fill(lt + 'a href="https://a.co">x')],
+        ];
+        for (const [name, input] of shapes) {
+            const t0 = performance.now();
+            htmlToRichDoc(input);
+            expect(performance.now() - t0, name).toBeLessThan(1500);
+        }
+        // Lo que pasa del tope se recorta y se avisa.
+        const big = htmlToRichDoc(fill('<p>hola</p>', 2_000_000));
+        expect(JSON.stringify(big)).toContain('muy largo');
+        // Un correo normal no cambia.
+        expect(JSON.stringify(htmlToRichDoc('<!-- x --><p>Hola <a href="https://a.co">sitio</a><br>chao</p><style>p{}</style>'))).toBe(
+            JSON.stringify({
+                type: 'doc',
+                content: [
+                    {
+                        type: 'paragraph',
+                        content: [
+                            { type: 'text', text: 'Hola ' },
+                            { type: 'text', text: 'sitio', marks: [{ type: 'link', attrs: { href: 'https://a.co' } }] },
+                            { type: 'hardBreak' },
+                            { type: 'text', text: 'chao' },
+                        ],
+                    },
+                ],
+            }),
+        );
+    });
+
+    it('presupuesto de bytes en vuelo: quien no entra espera su turno', async () => {
+        const budget = new ByteBudget(100);
+        const a = await budget.acquire(60);
+        const order: string[] = [];
+        const pb = budget.acquire(60).then((r) => {
+            order.push('b');
+            return r;
+        });
+        const pc = budget.acquire(1000).then((r) => {
+            order.push('c');
+            return r;
+        });
+        await new Promise((r) => setTimeout(r, 10));
+        expect(order).toEqual([]);
+        expect(budget.inFlight).toBe(60);
+        a();
+        a(); // soltar dos veces no descuenta dos veces
+        const b = await pb;
+        expect(budget.inFlight).toBe(60);
+        b();
+        const c = await pc; // pide más que el total: se le da todo el presupuesto, solo
+        expect(budget.inFlight).toBe(100);
+        c();
+        expect(budget.inFlight).toBe(0);
+        expect(order).toEqual(['b', 'c']);
     });
 });

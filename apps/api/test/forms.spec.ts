@@ -33,7 +33,7 @@ import { FieldsService } from '../src/fields/fields.service';
 import { LocalFileStorage } from '../src/files/file-storage';
 import { FilesService } from '../src/files/files.service';
 import { FORM_EMBED_JS, formFrameAncestors, formPageCsp, renderFormPage } from '../src/forms/form-page';
-import { FormsService, pastCloseDate, sanitizeConfig } from '../src/forms/forms.service';
+import { FormsService, pastCloseDate, sanitizeConfig, RESPONDENT_MAIL_LIMITS } from '../src/forms/forms.service';
 import { PublicCache } from '../src/public-cache/public-cache';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
@@ -449,6 +449,33 @@ describe('v0.1.275 — formularios (Postgres + Redis reales)', () => {
         // Otra IP sigue pudiendo.
         await svc.submit(token, '198.51.100.9', { values: { [f.nombre!.id]: 'Otra IP' }, uploads: {}, stamp: oldStamp(id) });
         expect(await countRecords()).toBe(9);
+    });
+
+    it('una red IPv6 (/64) cuenta como UN visitante, y los correos a quien responde tienen tope por formulario', async () => {
+        const { id, token } = await contactForm();
+        await awayFromMinuteEdge();
+        // Ocho respuestas desde ocho direcciones de la misma red: la novena, desde otra más, no pasa.
+        for (let i = 0; i < 8; i++) {
+            await svc.submit(token, `2001:db8:77:1::${(i + 1).toString(16)}`, { values: { [f.nombre!.id]: `V6-${i}` }, uploads: {}, stamp: oldStamp(id) });
+        }
+        await expect(
+            svc.submit(token, '2001:db8:77:1:abcd:ef01:2345:6789', { values: { [f.nombre!.id]: 'V6-9' }, uploads: {}, stamp: oldStamp(id) }),
+        ).rejects.toMatchObject({ status: 429 });
+        // Otra red sí.
+        await svc.submit(token, '2001:db8:77:2::1', { values: { [f.nombre!.id]: 'Otra red' }, uploads: {}, stamp: oldStamp(id) });
+
+        // Correos a quien responde: cada pedido con otra dirección y otro correo
+        // esquivaba los topes por correo y por IP; el del formulario no.
+        const allow = (i: number): Promise<boolean> =>
+            (svc as unknown as { allowRespondentMail(e: string, ip: string, form: { id: number; tenantId: number }): Promise<boolean> }).allowRespondentMail(
+                `persona${i}@destino${i}.test`,
+                `198.18.${Math.floor(i / 250)}.${(i % 250) + 1}`,
+                { id, tenantId },
+            );
+        const perForm = RESPONDENT_MAIL_LIMITS.find((l) => l.scope === 'form')!.max;
+        let sent = 0;
+        for (let i = 0; i < perForm + 5; i++) if (await allow(i)) sent++;
+        expect(sent).toBe(perForm);
     });
 
     it('cerrado: tope de respuestas, fecha vencida y empresa en solo-lectura', async () => {

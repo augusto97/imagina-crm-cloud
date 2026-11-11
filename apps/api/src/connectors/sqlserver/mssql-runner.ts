@@ -1,4 +1,4 @@
-import { createConnection } from 'node:net';
+import { createConnection, type Socket } from 'node:net';
 import type { SqlSource } from '@imagina-base/shared';
 import { SQL_LAST_SYNC_PARAM } from '@imagina-base/shared';
 import { resolvePublicHost } from '../../common/safe-fetch';
@@ -132,6 +132,38 @@ async function withDeadline(p: Promise<unknown>, ms: number): Promise<void> {
     if (timer) clearTimeout(timer);
 }
 
+/** Abre un socket TCP hacia una IP (ya validada) y espera a que conecte. */
+function dialTcp(address: string, port: number, signal?: AbortSignal): Promise<Socket> {
+    return new Promise<Socket>((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(signal.reason instanceof Error ? signal.reason : new Error('La conexión se canceló.'));
+            return;
+        }
+        const socket = createConnection({ host: address, port });
+        const onAbort = (): void => {
+            socket.destroy();
+            reject(signal?.reason instanceof Error ? signal.reason : new Error('La conexión se canceló.'));
+        };
+        const cleanup = (): void => {
+            socket.removeListener('error', onError);
+            socket.removeListener('connect', onConnect);
+            signal?.removeEventListener('abort', onAbort);
+        };
+        const onError = (err: Error): void => {
+            cleanup();
+            socket.destroy();
+            reject(err);
+        };
+        const onConnect = (): void => {
+            cleanup();
+            resolve(socket);
+        };
+        signal?.addEventListener('abort', onAbort, { once: true });
+        socket.once('error', onError);
+        socket.once('connect', onConnect);
+    });
+}
+
 async function loadMssql(): Promise<MssqlLike> {
     if (!loaded) {
         // Nombre en variable: el compilador no intenta resolver los tipos.
@@ -158,8 +190,35 @@ export class MssqlRunner implements SqlRunner {
             probe?: (host: string, port: number) => Promise<TcpProbe>;
             connectTimeoutMs?: number;
             retryDelaysMs?: number[];
+            /** Abre el socket hacia una IP ya validada (los tests no tocan la red). */
+            dial?: (address: string, port: number, signal?: AbortSignal) => Promise<Socket>;
         },
     ) {}
+
+    /**
+     * TODA conexión que abre el driver pasa por aquí: se resuelve el nombre,
+     * se valida que sea un servidor público y se conecta a ESA dirección. El
+     * driver resolvía el nombre por su cuenta en cada intento (un DNS que
+     * cambia la respuesta entre la validación y la conexión apuntaba a la red
+     * interna) y además obedece la redirección que le manda el servidor
+     * («conéctate a este otro host:puerto»), que nunca se validaba.
+     */
+    private readonly connector = async (
+        target: { host: string; port: number },
+        _lookup?: unknown,
+        signal?: AbortSignal,
+    ): Promise<Socket> => {
+        const resolved = await resolvePublicHost(target.host, { allowPrivate: this.opts.allowPrivate });
+        if (!resolved.ok) {
+            throw new SqlRunError(
+                resolved.reason === 'dns'
+                    ? `No se encontró el servidor «${target.host}».`
+                    : `«${target.host}» es una dirección de red interna: por seguridad sólo se conecta a servidores públicos.`,
+                resolved.reason === 'dns' ? 'dns' : 'blocked',
+            );
+        }
+        return (this.opts.dial ?? dialTcp)(resolved.address, target.port, signal);
+    };
 
     async verify(conn: SqlConnParams): Promise<SqlVerifyResult> {
         const res = await this.run(conn, { kind: 'query', sql: SQL_VERIFY_QUERY }, { maxRows: 1, timeoutMs: 15_000, lastSync: null, connectAttempts: 1 });
@@ -190,7 +249,10 @@ export class MssqlRunner implements SqlRunner {
         const started = Date.now();
         const connectTimeoutMs = this.opts.connectTimeoutMs ?? CONNECT_TIMEOUT_MS;
         const config = {
-            server: conn.server,
+            // Con instancia con nombre, el driver le pregunta el puerto a SQL
+            // Browser (UDP) resolviendo el nombre él mismo: se le da la IP ya
+            // validada y el nombre queda para el certificado (`serverName`).
+            server: conn.instanceName ? target.address : conn.server,
             // Con instancia con nombre el puerto lo resuelve SQL Browser.
             ...(conn.instanceName ? {} : { port: conn.port }),
             database: conn.database,
@@ -200,7 +262,10 @@ export class MssqlRunner implements SqlRunner {
             requestTimeout: opts.timeoutMs,
             pool: { max: 1, min: 0, idleTimeoutMillis: 1_000 },
             options: {
-                ...(conn.instanceName ? { instanceName: conn.instanceName } : {}),
+                ...(conn.instanceName ? { instanceName: conn.instanceName, serverName: conn.server } : {}),
+                // Cada socket (también el de una redirección del servidor) se
+                // abre hacia una dirección validada.
+                connector: this.connector,
                 encrypt: conn.encrypt,
                 trustServerCertificate: conn.trustServerCertificate,
                 appName: 'Imagina Base',

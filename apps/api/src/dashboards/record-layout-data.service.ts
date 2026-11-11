@@ -19,7 +19,6 @@ import {
 import { and, eq } from 'drizzle-orm';
 import { fields as fieldsTable } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
-import { hiddenFieldsFor } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import type { RelatedScope } from '../records/related-scope';
 import { RecordsService } from '../records/records.service';
@@ -337,8 +336,10 @@ export class RecordLayoutDataService {
         portal: PortalMode | null,
     ): Promise<unknown> {
         const list = await this.lists.get(tenantId, String(src.listId));
-        const hidden = hiddenFieldsFor(list.settings, { ...viewer, role: viewer.role as Role });
-        let visible = (await fieldsOf(src.listId)).filter((f) => !hidden.has(f.slug));
+        const allFields = await fieldsOf(src.listId);
+        // La regla completa del listado (también derivados de un campo oculto).
+        const hidden = await this.fields.hiddenSlugsFor(tenantId, list, allFields, { ...viewer, role: viewer.role as Role });
+        let visible = allFields.filter((f) => !hidden.has(f.slug));
         if (portal) {
             // Al cliente sólo le llegan las columnas del bloque (+ el título y
             // los campos que la vista necesita para agrupar/ubicar).

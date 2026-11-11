@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { idSchema } from './common';
+import { embedDomainSchema } from './dashboard-sharing';
 import { tenantFormatSchema } from './tenant';
 
 /**
@@ -68,7 +69,12 @@ export const PUBLIC_LIST_DEFAULTS: PublicListSettings = {
  */
 export const updatePublicListSchema = publicListSettingsSchema
     .omit({ token: true })
-    .partial();
+    .partial()
+    // Al GUARDAR, cada dominio tiene que ser un dominio u origen bien formado:
+    // el valor termina en la cabecera CSP (`frame-ancestors`) de la página, y
+    // un texto libre podía agregarle directivas o dejarla inválida. (Al leer
+    // lo ya guardado el esquema sigue tolerante; la página descarta lo malo.)
+    .extend({ allowed_domains: z.array(embedDomainSchema).max(50).optional() });
 export type UpdatePublicListInput = z.infer<typeof updatePublicListSchema>;
 
 /**

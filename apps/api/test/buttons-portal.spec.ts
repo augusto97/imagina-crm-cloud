@@ -278,6 +278,13 @@ describe('Campo «Botón» en el portal del cliente (Postgres + Redis reales)', 
     it('cambia sólo campos editables del portal; después queda deshabilitado con su motivo', async () => {
         const res = await portal.pressButton(actor(), id.aprobar);
         expect(res.ok).toBe(true);
+        // SEC — al cliente sólo le vuelven los campos de SU portal: antes volvía
+        // el registro entero leído como admin (la nota interna incluida).
+        const back = res.record as { data: Record<string, unknown>; relations: Record<string, unknown> };
+        expect(back.data[`f${id.estado}`]).toBe('aprobada');
+        expect(back.data).not.toHaveProperty(`f${id.interno}`);
+        expect(JSON.stringify(back)).not.toContain('deuda');
+        expect(back.relations).toEqual({});
         const rec = await records.get(tenantId, admin, 'clientes', client.recordId);
         expect(rec.data[`f${id.estado}`]).toBe('aprobada');
         expect((await portal.me(actor())).buttons[String(id.aprobar)]).toEqual({ disabled: true, reason: 'Ya la aprobaste', blocked: null });

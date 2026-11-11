@@ -7,9 +7,12 @@ import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
-import { isBlockedCrossSite } from './common/cross-site';
+import { isBlockedCrossSite, isFormBodyOnOperatorRoute, ownOriginOf } from './common/cross-site';
 import { ApiExceptionFilter } from './common/http-exception.filter';
 import { registerRequestInputHooks } from './common/request-input';
+import { isHealthProbe, rateLimitMaxFor } from './common/rate-limit-policy';
+import { routePath } from './common/route-path';
+import { rateKeyForIp } from './common/client-ip';
 import { FILE_IMPORT_CONTENT_TYPE } from '@imagina-base/shared';
 import { loadEnv } from './config/env';
 import { recordServerError } from './observability/diagnostics';
@@ -47,45 +50,15 @@ async function bootstrap(): Promise<void> {
     // rutas sensibles (login/registro/reset/portal) para frenar fuerza bruta,
     // credential stuffing y el DoS de CPU del verify argon2. Store en memoria
     // (por nodo) → no acopla la disponibilidad del login a Redis.
-    const sensitivePaths = [
-        '/auth/login',
-        '/auth/register',
-        '/auth/forgot-password',
-        '/auth/reset-password',
-        '/portal/consume',
-        // v0.1.289 — entrar al portal con contraseña y pedir un enlace.
-        '/portal/login',
-        '/portal/request-access',
-    ];
-    // SEC-28 (v0.1.225): las decisiones se toman sobre el PATH, nunca sobre
-    // `req.url` entero — trae la query string, y `POST /auth/register?/health`
-    // matcheaba el allowList de los health probes y salteaba el límite.
-    const pathOf = (url: string): string => url.split('?')[0] ?? '';
-    const HEALTH_PATHS = new Set(['/api/v1/health', '/api/v1/health/live', '/api/v1/health/ready']);
+    // Qué límite le toca a cada ruta: `common/rate-limit-policy.ts`.
     await app.register(fastifyRateLimit, {
         global: true,
-        max: (req) => {
-            const path = pathOf(req.url);
-            return sensitivePaths.some((p) => path.endsWith(p))
-                ? env.RATE_LIMIT_AUTH_MAX
-                : // v0.1.207 — los avisos de una tienda llegan todos de la misma IP y
-                  // en ráfagas (una edición masiva de productos); WooCommerce APAGA el
-                  // aviso tras varias entregas fallidas. Van firmados (HMAC) y con token.
-                  // v0.1.251 — avisos de pago de Mercado Pago / Wompi: mismo caso.
-                  path.startsWith('/api/v1/public/store-hooks/') ||
-                    path.startsWith('/api/v1/public/collections/') ||
-                    // D3 — los avisos de WhatsApp llegan de Meta en ráfagas (estados de cada envío).
-                    path.startsWith('/api/v1/public/whatsapp/') ||
-                    // SMS (ADR-S82) — los avisos de entrega llegan en ráfagas tras un envío masivo.
-                    path.startsWith('/api/v1/public/sms/') ||
-                    // ADR-S84 — los avisos del complemento de WordPress (una edición masiva en el sitio).
-                    path.startsWith('/api/v1/public/site-hooks/')
-                  ? env.RATE_LIMIT_MAX * 10
-                  : env.RATE_LIMIT_MAX;
-        },
+        max: (req) => rateLimitMaxFor(req, env),
         timeWindow: '1 minute',
+        // Una red IPv6 (/64) cuenta como un solo visitante: rotar direcciones dentro del bloque no esquiva el límite.
+        keyGenerator: (req) => rateKeyForIp(req.ip),
         // No limitar los health probes (evita 429/503 espurios del monitoreo).
-        allowList: (req) => HEALTH_PATHS.has(pathOf(req.url)),
+        allowList: (req) => isHealthProbe(req),
     });
 
     // Compresión de respuestas (gzip/deflate/brotli). Las respuestas JSON del
@@ -106,17 +79,18 @@ async function bootstrap(): Promise<void> {
     // y pueden pasar del tope general: un tipo de contenido propio con su
     // propio tope, que SÓLO aceptan esas rutas. Cualquier otra ruta lo
     // rechaza antes de leer el cuerpo.
-    const isFileImportUrl = (url: string): boolean => (url.split('?')[0] ?? '').startsWith('/api/v1/file-import/');
+    const isFileImportUrl = (req: { url: string; routeOptions?: { url?: string } }): boolean =>
+        routePath(req).startsWith('/api/v1/file-import/');
     fastify.addHook('onRequest', (req, reply, done) => {
         const ct = String(req.headers['content-type'] ?? '');
-        if (ct.startsWith(FILE_IMPORT_CONTENT_TYPE) && !isFileImportUrl(req.url)) {
+        if (ct.startsWith(FILE_IMPORT_CONTENT_TYPE) && !isFileImportUrl(req)) {
             void reply.code(415).send({ code: 'unsupported_media_type', message: 'Tipo de contenido no admitido.', data: { status: 415 } });
             return;
         }
         done();
     });
     fastify.addContentTypeParser(FILE_IMPORT_CONTENT_TYPE, { parseAs: 'string', bodyLimit: env.FILE_IMPORT_BODY_LIMIT_BYTES }, (req, body, done) => {
-        if (!isFileImportUrl(req.url)) {
+        if (!isFileImportUrl(req)) {
             done(Object.assign(new Error('Tipo de contenido no admitido.'), { statusCode: 415 }), undefined);
             return;
         }
@@ -131,7 +105,7 @@ async function bootstrap(): Promise<void> {
     // canjea tokens con fetch cross-origin. No lleva cookies (auth por Bearer),
     // así que `*` no expone la sesión. El resto del API sigue same-origin.
     fastify.addHook('onRequest', (req, reply, done) => {
-        const url = req.url.split('?')[0] ?? '';
+        const url = routePath(req);
         if (url.startsWith('/.well-known/oauth-') || url.startsWith('/api/v1/oauth/') || url === '/api/v1/mcp') {
             reply.raw.setHeader('Access-Control-Allow-Origin', '*');
             reply.raw.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -150,6 +124,7 @@ async function bootstrap(): Promise<void> {
         .split(',')
         .map((s) => s.trim())
         .filter((s) => s !== '');
+    const appOrigin = ownOriginOf(env.APP_BASE_URL);
     fastify.addHook('onRequest', (req, reply, done) => {
         const header = (name: string): string | undefined => {
             const v = req.headers[name];
@@ -158,17 +133,28 @@ async function bootstrap(): Promise<void> {
         if (
             isBlockedCrossSite({
                 method: req.method,
-                path: pathOf(req.url),
+                path: (req.url.split('?')[0] ?? ''),
                 host: req.host,
+                protocol: req.protocol,
                 secFetchSite: header('sec-fetch-site'),
                 origin: header('origin'),
                 allowedOrigins: crossSiteAllowed,
+                appOrigin,
             })
         ) {
             void reply.code(403).send({
                 code: 'cross_site_request',
                 message: 'Pedido rechazado: viene de otro sitio.',
                 data: { status: 403 },
+            });
+            return;
+        }
+        // Las consolas del operador sólo reciben JSON (o un archivo): un cuerpo de `<form>` no es de la app.
+        if (isFormBodyOnOperatorRoute({ method: req.method, path: routePath(req), contentType: header('content-type') })) {
+            void reply.code(415).send({
+                code: 'unsupported_body',
+                message: 'Este pedido sólo se acepta como JSON.',
+                data: { status: 415 },
             });
             return;
         }

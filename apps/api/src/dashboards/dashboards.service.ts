@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, HttpException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import {
     AGGREGATE_OTHERS_KEY,
     BREAKDOWN_WIDGET_TYPES,
@@ -25,6 +25,7 @@ import {
     type TimeBucket,
     type UpdateDashboardInput,
     type WidgetSpec,
+    DASHBOARD_MAX_WIDGETS,
 } from '@imagina-base/shared';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { AggregateService, MAX_GROUPS, type AggregateListContext } from '../aggregate/aggregate.service';
@@ -38,7 +39,12 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { mapLimit } from '../common/map-limit';
 import { fillTimeBuckets, zeroFillable } from './time-buckets';
 import { trashRow } from '../trash/trash-ops';
+import { PublicCacheService } from '../public-cache/public-cache.service';
 import { aclExtras, type AclExtras } from '../lists/list-acl';
+import { assertAttachable, fileIdsUnder, type FileActor } from '../files/files.service';
+
+/** Claves de un widget (o de los ajustes del tablero) que guardan el id de un adjunto. */
+const DASHBOARD_FILE_KEYS = ['file_id', 'image_file_id'] as const;
 
 /**
  * v0.1.286 — El bundle agrupa los widgets por LISTA: cada lista resuelve su
@@ -46,8 +52,21 @@ import { aclExtras, type AclExtras } from '../lists/list-acl';
  * sumo `CHUNKS_PER_LIST` transacciones en paralelo; de a `LIST_CONCURRENCY`
  * listas. Ninguna transacción espera a otra (sin riesgo de agotar el pool).
  */
+/** Espacio de versiones de la caché pública de un tablero (ver PublicCache). */
+export const publicDashboardCacheNs = (dashboardId: number): string => `pdash:${dashboardId}`;
+
 const LIST_CONCURRENCY = 2;
 const CHUNKS_PER_LIST = 2;
+/**
+ * Topes de UNA evaluación (bundle): cuántos widgets se calculan como mucho
+ * (los tableros de antes del tope de `DASHBOARD_MAX_WIDGETS` siguen
+ * cargando) y cuánto tiempo en total. Lo que queda fuera vuelve con su
+ * motivo, como cualquier widget que no se pudo calcular.
+ */
+export const DASHBOARD_EVAL_MAX_WIDGETS = 200;
+export const DASHBOARD_EVAL_DEADLINE_MS = 20_000;
+const TOO_MANY = 'El tablero tiene demasiados widgets: este no se calculó.';
+const TOO_SLOW = 'El tablero tardó demasiado en calcularse: este widget quedó sin calcular. Prueba con menos widgets o con filtros.';
 
 /** Tope de grupos de un gráfico por categoría (el resto va a "Otros"). */
 const DEFAULT_TOP_N = 50;
@@ -97,7 +116,13 @@ export class DashboardsService {
         private readonly aggregate: AggregateService,
         private readonly records: RecordsService,
         private readonly fields: FieldsService,
+        @Optional() private readonly publicCache?: PublicCacheService,
     ) {}
+
+    /** El tablero cambió: lo que su enlace público tenía calculado deja de valer. */
+    private changed(id: number): void {
+        this.publicCache?.bump(publicDashboardCacheNs(id));
+    }
 
     async list(tenantId: number, viewer: DashboardViewer): Promise<Dashboard[]> {
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
@@ -121,8 +146,15 @@ export class DashboardsService {
         return toDashboard(row);
     }
 
-    async create(tenantId: number, userId: number, input: CreateDashboardInput): Promise<Dashboard> {
+    /**
+     * `actor` (SEC): quien lo crea desde la app — las imágenes de sus widgets
+     * tienen que ser archivos que subió o que ya puede ver (un tablero visible
+     * vuelve legibles sus imágenes). Sin actor = uso interno (plantillas).
+     */
+    async create(tenantId: number, userId: number, input: CreateDashboardInput, actor?: DashboardViewer): Promise<Dashboard> {
+        if ((input.widgets ?? []).length > DASHBOARD_MAX_WIDGETS) throw tooManyWidgets();
         const [row] = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            if (actor) await assertAttachable(tx, tenantId, actor as FileActor, fileIdsUnder([input.widgets ?? [], input.settings ?? {}], DASHBOARD_FILE_KEYS));
             if (input.is_default) await clearDefault(tx, tenantId);
             return tx
                 .insert(dashboards)
@@ -147,6 +179,28 @@ export class DashboardsService {
     async update(tenantId: number, id: number, viewer: DashboardViewer, patch: UpdateDashboardInput): Promise<Dashboard> {
         await this.assertCanManage(tenantId, id, viewer);
         const [row] = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            if (patch.widgets !== undefined && patch.widgets.length > DASHBOARD_MAX_WIDGETS) {
+                // Un tablero de antes del tope se puede editar, pero no crecer.
+                const [cur] = await tx
+                    .select({ widgets: dashboards.widgets })
+                    .from(dashboards)
+                    .where(and(eq(dashboards.tenantId, tenantId), eq(dashboards.id, id)))
+                    .limit(1);
+                const had = Array.isArray(cur?.widgets) ? cur.widgets.length : 0;
+                if (patch.widgets.length > had) throw tooManyWidgets();
+            }
+            // SEC — imágenes que se SUMAN en este guardado (las que ya tenía el
+            // tablero no se revisan): sólo archivos propios o visibles.
+            if (patch.widgets !== undefined || patch.settings !== undefined) {
+                const [prev] = await tx
+                    .select({ widgets: dashboards.widgets, settings: dashboards.settings })
+                    .from(dashboards)
+                    .where(and(eq(dashboards.tenantId, tenantId), eq(dashboards.id, id)))
+                    .limit(1);
+                const had = new Set(fileIdsUnder([prev?.widgets ?? [], prev?.settings ?? {}], DASHBOARD_FILE_KEYS));
+                const wanted = fileIdsUnder([patch.widgets ?? [], patch.settings ?? {}], DASHBOARD_FILE_KEYS).filter((f) => !had.has(f));
+                await assertAttachable(tx, tenantId, viewer as FileActor, wanted);
+            }
             if (patch.is_default) await clearDefault(tx, tenantId);
             return tx
                 .update(dashboards)
@@ -165,6 +219,7 @@ export class DashboardsService {
                 .returning();
         });
         if (!row) throw notFound(id);
+        this.changed(id);
         return toDashboard(row);
     }
 
@@ -175,6 +230,7 @@ export class DashboardsService {
     async remove(tenantId: number, id: number, viewer: DashboardViewer): Promise<void> {
         await this.assertCanManage(tenantId, id, viewer);
         await this.tenantDb.withTenant(tenantId, (tx) => trashRow(tx, 'dashboards', tenantId, id, viewer.userId));
+        this.changed(id);
     }
 
     /**
@@ -338,9 +394,15 @@ export class DashboardsService {
     ): Promise<Record<string, unknown>> {
         const out: Record<string, unknown> = {};
         const byList = new Map<number, WidgetSpec[]>();
+        const deadline = Date.now() + (opts.deadlineMs ?? DASHBOARD_EVAL_DEADLINE_MS);
+        let evaluated = 0;
         for (const w of widgets) {
             if (CONTENT_WIDGET_TYPES.includes(w.type)) {
                 out[w.id] = {};
+                continue;
+            }
+            if (++evaluated > DASHBOARD_EVAL_MAX_WIDGETS) {
+                out[w.id] = { __error: TOO_MANY };
                 continue;
             }
             const group = byList.get(w.list_id) ?? [];
@@ -349,6 +411,10 @@ export class DashboardsService {
         }
         await mapLimit([...byList.entries()], LIST_CONCURRENCY, async ([listId, ws]) => {
             let ctx: AggregateListContext;
+            if (Date.now() > deadline) {
+                for (const w of ws) out[w.id] = { __error: TOO_SLOW };
+                return;
+            }
             try {
                 ctx = await this.aggregate.listContext(tenantId, String(listId), aggViewer(viewer));
             } catch (err) {
@@ -359,7 +425,7 @@ export class DashboardsService {
             }
             const chunks: WidgetSpec[][] = Array.from({ length: Math.min(CHUNKS_PER_LIST, ws.length) }, () => []);
             ws.forEach((w, i) => chunks[i % chunks.length]!.push(w));
-            await Promise.all(chunks.map((queue) => this.drain(tenantId, viewer, ctx, queue, opts, out)));
+            await Promise.all(chunks.map((queue) => this.drain(tenantId, viewer, ctx, queue, opts, out, deadline)));
         });
         // Mismo orden que los widgets del tablero.
         return Object.fromEntries(widgets.map((w) => [w.id, out[w.id] ?? { __error: 'No se pudo calcular este widget.' }]));
@@ -378,9 +444,16 @@ export class DashboardsService {
         queue: WidgetSpec[],
         opts: BundleOptions,
         out: Record<string, unknown>,
+        deadline: number,
     ): Promise<void> {
         const work = async (tx: Tx): Promise<void> => {
             while (queue.length > 0) {
+                if (Date.now() > deadline) {
+                    // Se acabó el tiempo del tablero: lo que falta no se calcula
+                    // (y la conexión vuelve al pool).
+                    for (const rest of queue.splice(0)) out[rest.id] = { __error: TOO_SLOW };
+                    return;
+                }
                 const w = queue.shift()!;
                 try {
                     out[w.id] = await this.computeWidget(
@@ -730,6 +803,16 @@ const FIELD_METRICS = new Set(['count_unique', 'count_empty', 'sum', 'avg', 'min
 interface BundleOptions {
     periodOverride?: string;
     filters?: DashboardFilterValue[];
+    /** Tiempo total de la evaluación (por defecto `DASHBOARD_EVAL_DEADLINE_MS`). */
+    deadlineMs?: number;
+}
+
+function tooManyWidgets(): BadRequestException {
+    return new BadRequestException({
+        code: 'dashboard_too_many_widgets',
+        message: `Un tablero admite hasta ${DASHBOARD_MAX_WIDGETS} widgets. Reparte el contenido en otro tablero.`,
+        data: { status: 400 },
+    });
 }
 
 interface WidgetEnv {
@@ -746,6 +829,16 @@ interface WidgetEnv {
 
 function aggViewer(viewer: DashboardViewer): { role: Role; userId: number } & AclExtras {
     return { ...aclExtras(viewer), role: viewer.role as Role, userId: viewer.userId };
+}
+
+/**
+ * El período que se aplica de lo que llega por la dirección de un tablero
+ * público: un preset conocido o un rango `custom:desde:hasta` bien formado;
+ * cualquier otra cosa es «sin período» (así no multiplica la caché).
+ */
+export function normalizeDashboardPeriod(raw: string | undefined): string {
+    if (typeof raw !== 'string' || raw.length > 64) return '';
+    return parsePeriodOverride(raw) !== undefined ? raw : '';
 }
 
 function bundleOptions(req: DashboardBundleRequest): BundleOptions {

@@ -36,6 +36,13 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { AutomationsService } from './automations.service';
 import { PlanModule } from '../tenancy/plan-module.decorator';
+import { aclOf } from '../tenancy/acl-of';
+import type { Actor } from '../records/records.service';
+
+/** Quien pide, con su rol y su acceso por lista (para leer el registro de muestra como esa persona). */
+function actorOf(req: FastifyRequest): Actor {
+    return { userId: req.authUserId as number, role: req.tenant!.role, ...aclOf(req) };
+}
 
 /** CRUD de automatizaciones por lista + runs (CONTRACT.md §8). */
 @PlanModule('automations')
@@ -44,10 +51,15 @@ import { PlanModule } from '../tenancy/plan-module.decorator';
 export class AutomationsController {
     constructor(private readonly automations: AutomationsService) {}
 
+    /** Armar o leer automatizaciones exige ver la lista entera (corren como sistema). */
+    private whole(req: FastifyRequest, list: string): Promise<void> {
+        return this.automations.assertWholeList(req.tenant!.tenantId, list, actorOf(req));
+    }
+
     @Get()
     @RequireCapability('manage_automations')
     all(@Req() req: FastifyRequest, @Param('list') list: string): Promise<{ data: Automation[] }> {
-        return this.automations.list(req.tenant!.tenantId, list).then((data) => ({ data }));
+        return this.whole(req, list).then(() => this.automations.list(req.tenant!.tenantId, list)).then((data) => ({ data }));
     }
 
     @Get(':id')
@@ -57,7 +69,7 @@ export class AutomationsController {
         @Param('list') list: string,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<Automation> {
-        return this.automations.get(req.tenant!.tenantId, list, id);
+        return this.whole(req, list).then(() => this.automations.get(req.tenant!.tenantId, list, id));
     }
 
     /**
@@ -72,7 +84,7 @@ export class AutomationsController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(webhookTestInputSchema)) input: WebhookTestInput,
     ): Promise<WebhookTestResult> {
-        return this.automations.testWebhook(req.tenant!.tenantId, list, input);
+        return this.automations.testWebhook(req.tenant!.tenantId, list, input, actorOf(req));
     }
 
     /**
@@ -88,7 +100,7 @@ export class AutomationsController {
         @Body(new ZodValidationPipe(emailTestInputSchema)) input: EmailTestInput,
     ): Promise<EmailTestResult> {
         const email = await this.automations.userEmail(req.authUserId!);
-        return this.automations.testEmail(req.tenant!.tenantId, list, input, { id: req.authUserId!, email });
+        return this.automations.testEmail(req.tenant!.tenantId, list, input, { id: req.authUserId!, email }, actorOf(req));
     }
 
     /**
@@ -104,7 +116,7 @@ export class AutomationsController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(automationTestRunInputSchema)) input: AutomationTestRunInput,
     ): Promise<AutomationTestRunResult> {
-        return this.automations.testRun(req.tenant!.tenantId, list, input);
+        return this.automations.testRun(req.tenant!.tenantId, list, input, actorOf(req));
     }
 
     /** v0.1.288 — Duplicar: una copia pausada «Nombre (copia)». */
@@ -116,7 +128,7 @@ export class AutomationsController {
         @Param('list') list: string,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<Automation> {
-        return this.automations.duplicate(req.tenant!.tenantId, list, id, req.authUserId ?? null);
+        return this.whole(req, list).then(() => this.automations.duplicate(req.tenant!.tenantId, list, id, req.authUserId ?? null));
     }
 
     /** v0.1.288 — Historial de versiones (más nueva primero). */
@@ -127,7 +139,7 @@ export class AutomationsController {
         @Param('list') list: string,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<{ data: AutomationVersion[] }> {
-        return this.automations.versions(req.tenant!.tenantId, list, id).then((data) => ({ data }));
+        return this.whole(req, list).then(() => this.automations.versions(req.tenant!.tenantId, list, id)).then((data) => ({ data }));
     }
 
     /** v0.1.221 — «Ejecutar ahora» de una automatización programada. */
@@ -139,7 +151,7 @@ export class AutomationsController {
         @Param('list') list: string,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<{ queued: true }> {
-        return this.automations.runNow(req.tenant!.tenantId, list, id);
+        return this.whole(req, list).then(() => this.automations.runNow(req.tenant!.tenantId, list, id));
     }
 
     @Post()
@@ -150,7 +162,7 @@ export class AutomationsController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(createAutomationSchema)) input: CreateAutomationInput,
     ): Promise<Automation> {
-        return this.automations.create(req.tenant!.tenantId, list, input, { actorId: req.authUserId ?? null });
+        return this.whole(req, list).then(() => this.automations.create(req.tenant!.tenantId, list, input, { actorId: req.authUserId ?? null }));
     }
 
     @Patch(':id')
@@ -161,7 +173,7 @@ export class AutomationsController {
         @Param('id', ParseIntPipe) id: number,
         @Body(new ZodValidationPipe(updateAutomationSchema)) patch: UpdateAutomationInput,
     ): Promise<Automation> {
-        return this.automations.update(req.tenant!.tenantId, list, id, patch, { actorId: req.authUserId ?? null });
+        return this.whole(req, list).then(() => this.automations.update(req.tenant!.tenantId, list, id, patch, { actorId: req.authUserId ?? null }));
     }
 
     @Delete(':id')
@@ -172,6 +184,7 @@ export class AutomationsController {
         @Param('list') list: string,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<void> {
+        await this.whole(req, list);
         await this.automations.remove(req.tenant!.tenantId, list, id, req.authUserId ?? null);
     }
 }

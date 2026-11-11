@@ -22,9 +22,13 @@ export class AiQuotaExceededError extends Error {
 /**
  * Cuota mensual de pedidos al asistente por empresa (ADR-S21). Sólo cuentan
  * los pedidos hechos con la clave de la PLATAFORMA (los paga el operador);
- * con clave propia la empresa no consume nada. Se chequea ANTES de llamar al
- * modelo y se registra DESPUÉS de una respuesta completa, con los tokens
- * reales para que el operador conozca el costo por cliente.
+ * con clave propia la empresa no consume nada.
+ *
+ * El pedido se RESERVA antes de llamar al modelo (`reserve`, atómico: dos
+ * pedidos a la vez con la cuota a uno del final no pasan los dos) y cuenta
+ * aunque la persona corte la respuesta a mitad — el proveedor ya lo cobró.
+ * Al terminar se suman los tokens reales (`addTokens`); la reserva sólo se
+ * devuelve (`release`) si el pedido nunca llegó a generar nada.
  */
 @Injectable()
 export class AiQuotaService {
@@ -56,6 +60,74 @@ export class AiQuotaService {
         if (used >= limit) throw new AiQuotaExceededError(used, limit);
     }
 
+    /**
+     * Reserva UN pedido del mes antes de llamar al modelo. Con tope, el UPSERT
+     * sólo suma si no se pasa (la fila queda bloqueada mientras tanto); sin
+     * tope, se cuenta igual para que el operador vea el uso. Lanza
+     * `AiQuotaExceededError` si no entra.
+     */
+    async reserve(tenantId: number, now: Date = new Date()): Promise<void> {
+        const limit = await this.limitFor(tenantId);
+        const period = periodOf(now);
+        if (limit === null) {
+            await this.db
+                .insert(aiUsage)
+                .values({ tenantId, period, requests: 1, inputTokens: 0, outputTokens: 0 })
+                .onConflictDoUpdate({
+                    target: [aiUsage.tenantId, aiUsage.period],
+                    set: { requests: sql`${aiUsage.requests} + 1`, updatedAt: new Date() },
+                });
+            return;
+        }
+        const res = await this.db.execute<{ requests: number }>(sql`
+            INSERT INTO ai_usage (tenant_id, period, requests, updated_at)
+            SELECT ${tenantId}, ${period}, 1, now() WHERE 1 <= ${limit}
+            ON CONFLICT (tenant_id, period) DO UPDATE
+                SET requests = ai_usage.requests + 1, updated_at = now()
+                WHERE ai_usage.requests + 1 <= ${limit}
+            RETURNING requests`);
+        const rows = (res as unknown as { rows?: unknown[] }).rows ?? (res as unknown as unknown[]);
+        if (rows.length === 0) throw new AiQuotaExceededError(await this.usedThisMonth(tenantId, now), limit);
+    }
+
+    /** Devuelve una reserva cuyo pedido nunca generó nada (falló antes de responder). */
+    async release(tenantId: number, now: Date = new Date()): Promise<void> {
+        await this.db
+            .update(aiUsage)
+            .set({ requests: sql`GREATEST(${aiUsage.requests} - 1, 0)`, updatedAt: new Date() })
+            .where(and(eq(aiUsage.tenantId, tenantId), eq(aiUsage.period, periodOf(now))));
+    }
+
+    /** Suma los tokens reales de un pedido YA reservado (no cuenta otro pedido). */
+    async addTokens(tenantId: number, tokens: { input: number; output: number }, now: Date = new Date()): Promise<void> {
+        if (!(tokens.input > 0) && !(tokens.output > 0)) return;
+        await this.db
+            .insert(aiUsage)
+            .values({ tenantId, period: periodOf(now), requests: 0, inputTokens: tokens.input, outputTokens: tokens.output })
+            .onConflictDoUpdate({
+                target: [aiUsage.tenantId, aiUsage.period],
+                set: {
+                    inputTokens: sql`${aiUsage.inputTokens} + ${tokens.input}`,
+                    outputTokens: sql`${aiUsage.outputTokens} + ${tokens.output}`,
+                    updatedAt: new Date(),
+                },
+            });
+    }
+
+    /**
+     * Cierra una reserva: suma los tokens si hubo y, si el pedido no llegó a
+     * generar nada y NO fue un corte de la persona, la devuelve. Nunca lanza.
+     */
+    async settle(tenantId: number, tokens: { input: number; output: number }, opts: { keep?: boolean } = {}): Promise<void> {
+        try {
+            if (tokens.input > 0 || tokens.output > 0) await this.addTokens(tenantId, tokens);
+            else if (!opts.keep) await this.release(tenantId);
+        } catch {
+            // El uso es informativo: no rompe el pedido.
+        }
+    }
+
+    /** @deprecated Cuenta un pedido DESPUÉS de hecho (sin reserva). Usa `reserve` + `settle`. */
     async record(
         tenantId: number,
         tokens: { input: number; output: number },

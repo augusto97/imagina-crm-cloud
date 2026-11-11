@@ -2,7 +2,8 @@ import { eq } from 'drizzle-orm';
 import Redis from 'ioredis';
 import { createHash, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ACCESS_TTL_MS, isKnownRedirect, OauthService, REFRESH_TTL_MS } from '../src/ai/oauth.service';
+import { ACCESS_TTL_MS, DCR_PER_NETWORK_HOUR, isKnownRedirect, OauthService, REFRESH_TTL_MS } from '../src/ai/oauth.service';
+import { OAUTH_UNUSED_CLIENT_DAYS, pruneTables } from '../src/retention/retention.service';
 import {
     OauthError,
     extractClientCredentials,
@@ -298,5 +299,44 @@ describe('Servidor OAuth 2.1 del MCP (v0.1.184, Postgres + Redis reales)', () =>
         // Silencioso si ya no existe.
         await oauth.revoke({ token: issued.access_token, client_id: conf.client_id, client_secret: conf.client_secret }, undefined);
         await expect(oauth.token({ grant_type: 'password', client_id: conf.client_id, client_secret: conf.client_secret }, undefined)).rejects.toMatchObject({ error: 'unsupported_grant_type' });
+    });
+
+    it('el registro dinámico tiene cupo por red (IPv4 o /64 de IPv6) y los clientes que nunca se usaron se limpian', async () => {
+        const reg = (ip: string) => oauth.registerClient({ client_name: 'Claude', redirect_uris: [REDIRECT] }, ip);
+        // Veinte direcciones distintas de la MISMA red /64: el cupo es uno solo.
+        for (let i = 0; i < DCR_PER_NETWORK_HOUR; i++) await reg(`2001:db8:aa:bb::${(i + 1).toString(16)}`);
+        await expect(reg('2001:db8:aa:bb:ffff:1:2:3')).rejects.toMatchObject({ error: 'temporarily_unavailable', status: 429 });
+        // Otra red (y una IPv4) siguen pudiendo.
+        await expect(reg('2001:db8:aa:cc::1')).resolves.toBeTruthy();
+        for (let i = 0; i < DCR_PER_NETWORK_HOUR; i++) await reg(i % 2 === 0 ? '203.0.113.7' : '::ffff:203.0.113.7');
+        await expect(reg('203.0.113.7')).rejects.toMatchObject({ status: 429 });
+        // Demasiado texto en las redirect_uris.
+        const long = Array.from({ length: 10 }, (_v, i) => `https://claude.ai/cb/${i}/${'a'.repeat(600)}`);
+        await expect(oauth.registerClient({ redirect_uris: long })).rejects.toMatchObject({ error: 'invalid_redirect_uri' });
+
+        // Limpieza: registrado hace 31 días y nunca usado → se borra; con un
+        // token, usado alguna vez o reciente → queda.
+        const old = new Date(Date.now() - (OAUTH_UNUSED_CLIENT_DAYS + 1) * 86_400_000);
+        const mk = async (id: string, patch: Partial<typeof oauthClients.$inferInsert> = {}) =>
+            pg.db.insert(oauthClients).values({ clientId: id, clientName: id, redirectUris: [REDIRECT], tokenEndpointAuthMethod: 'none', createdAt: old, ...patch });
+        await mk('ibc_viejo_sin_uso');
+        await mk('ibc_viejo_con_token');
+        await mk('ibc_viejo_usado', { lastUsedAt: old });
+        await mk('ibc_nuevo', { createdAt: new Date() });
+        const [anyUser] = await pg.db.select().from(users).limit(1);
+        await pg.db.insert(personalAccessTokens).values({
+            userId: anyUser!.id,
+            tenantId,
+            name: 'oauth',
+            prefix: 'ib_pat_yyyyyy',
+            tokenHash: createHash('sha256').update('ib_pat_de_cliente_viejo').digest('hex'),
+            scope: 'read',
+            clientId: 'ibc_viejo_con_token',
+        });
+        const out = await pruneTables(pg.db);
+        expect(out.oauth_clients).toBe(1);
+        const left = (await pg.db.select({ id: oauthClients.clientId }).from(oauthClients)).map((r) => r.id);
+        expect(left).not.toContain('ibc_viejo_sin_uso');
+        expect(left).toEqual(expect.arrayContaining(['ibc_viejo_con_token', 'ibc_viejo_usado', 'ibc_nuevo']));
     });
 });

@@ -299,7 +299,7 @@ export class ChecklistsService {
         });
         const tz = await this.timeZone(tenantId);
         const data = subtaskDataFor(list, fields, { text: peek.text, assigneeId: peek.assigneeId, due: dueOf(peek) }, tz);
-        const prep = await this.records.prepareCreate(tenantId, actor, list, fields, { data, parent_id: recordId }, { lenientRequired: true });
+        const prep = await this.records.prepareCreate(tenantId, actor, list, fields, { data, parent_id: recordId }, { lenientRequired: true, serverData: true });
         const planCap = await this.records.planRoomChecker(tenantId, 1);
         let createdRow: { id: number; data: Record<string, unknown> } | null = null;
         const result = await this.mutate(

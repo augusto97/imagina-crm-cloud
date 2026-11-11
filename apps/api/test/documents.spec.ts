@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildDocumentStarter, type DocDesign, type DocTotalRow, type Field } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AuditService } from '../src/audit/audit.service';
@@ -14,7 +14,7 @@ import { AutomationsRepository } from '../src/automations/automations.repository
 import { AutomationsService, type HookCaptureStore } from '../src/automations/automations.service';
 import { loadEnv } from '../src/config/env';
 import { ConnectorsService } from '../src/connectors/connectors.service';
-import { attachments, documentNumbers, documentTemplates, records, tenants, users } from '../src/db/schema';
+import { attachments, documentNumbers, documentTemplates, memberships, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { computeTotalRows } from '../src/documents/document-totals';
 import { DocumentsService, resolveDocTemplate, sanitizeFilename, type DocTagContext } from '../src/documents/documents.service';
@@ -436,6 +436,27 @@ describe('v0.1.266 — documentos PDF (Postgres real)', () => {
         const pdf = await docs.renderLiveLink(tplId, recId, ten, exp, sig);
         expect(pdf.buffer.subarray(0, 5).toString()).toBe('%PDF-');
         expect(pdf.filename).toBe('Cuenta Zeta.pdf');
+        // El mismo enlace abierto muchas veces (también a la vez) NO arma el
+        // PDF cada vez: mismos bytes durante unos minutos.
+        const renders = vi.spyOn(docs as unknown as { renderLiveLinkNow: () => Promise<unknown> }, 'renderLiveLinkNow');
+        const again = await Promise.all(Array.from({ length: 6 }, () => docs.renderLiveLink(tplId, recId, ten, exp, sig, undefined, '198.51.100.9')));
+        expect(renders).not.toHaveBeenCalled();
+        for (const a of again) expect(a.buffer).toBe(pdf.buffer);
+        // Cambiar la plantilla deja de servir lo guardado; visitas simultáneas arman UNA vez.
+        await docs.update(tenantId, admin.userId, 'cobros', tpl.id, { name: tpl.name });
+        const fresh = await Promise.all(Array.from({ length: 4 }, () => docs.renderLiveLink(tplId, recId, ten, exp, sig, undefined, '198.51.100.9')));
+        expect(renders).toHaveBeenCalledTimes(1);
+        expect(new Set(fresh.map((f) => f.buffer)).size).toBe(1);
+        // Tope de pedidos por visitante (la red /64 cuenta como uno).
+        let limited = 0;
+        for (let i = 0; i < 45; i++) {
+            await docs.renderLiveLink(tplId, recId, ten, exp, sig, undefined, `2001:db8:1:2::${(i + 1).toString(16)}`).catch((e: { status?: number }) => {
+                if (e.status === 429) limited++;
+                else throw e;
+            });
+        }
+        expect(limited).toBe(5);
+        renders.mockRestore();
         // Firma alterada, otro registro, otra empresa o vencido: el mismo 404.
         await expect(docs.renderLiveLink(tplId, recId, ten, exp, sig.replace(/^./, sig[0] === 'a' ? 'b' : 'a'))).rejects.toMatchObject({ status: 404 });
         await expect(docs.renderLiveLink(tplId, cobroId, ten, exp, sig)).rejects.toMatchObject({ status: 404 });
@@ -453,6 +474,50 @@ describe('v0.1.266 — documentos PDF (Postgres real)', () => {
         expect(link.url).toContain(`/api/v1/public/documents/${tpl.id}/${nuevo.id}?`);
         await expect(docs.linkForRecord(tenantId, admin, 'items', item!.id, tpl.id)).rejects.toMatchObject({ status: 404 });
         await automations.remove(tenantId, 'cobros', auto.id);
+    });
+
+    it('«Copiar enlace»: el PDF se arma con el acceso de quien lo pidió, no como sistema', async () => {
+        const [agentUser] = await pg.db.insert(users).values({ email: 'agente@acme.test', passwordHash: 'x', name: 'Agente' }).returning();
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(memberships).values([
+                { tenantId, userId: admin.userId, role: 'admin' },
+                { tenantId, userId: agentUser!.id, role: 'agent' },
+            ]),
+        );
+        const agent: Actor = { userId: agentUser!.id, role: 'agent' };
+        const list = await lists.get(tenantId, 'cobros');
+        await lists.update(tenantId, 'cobros', {
+            settings: { ...list.settings, permissions: { permissions: { agent: { view: 'all', create: true, edit: 'all', delete: 'none', fields_hidden: ['nit'] } } } },
+        });
+        // El nombre del archivo delata lo que el PDF pudo leer.
+        const tpl = await docs.create(tenantId, admin.userId, 'cobros', { name: 'Con NIT', filename: 'Cuenta [{{nit}}]', design });
+        const open = async (url: string) => {
+            const u = new URL(url, 'http://x');
+            const [, , , , , t, r] = u.pathname.split('/');
+            const issuer = u.searchParams.get('u');
+            return docs.renderLiveLink(Number(t), Number(r), Number(u.searchParams.get('tenant')), Number(u.searchParams.get('exp')), u.searchParams.get('sig')!, issuer === null ? undefined : Number(issuer));
+        };
+
+        const byAgent = await docs.linkForRecord(tenantId, agent, 'cobros', cobroId, tpl.id);
+        expect(new URL(byAgent.url, 'http://x').searchParams.get('u')).toBe(String(agentUser!.id));
+        expect((await open(byAgent.url)).filename).toBe('Cuenta [].pdf');
+        // El de un admin (y el de una automatización, sin persona) sí lo trae.
+        const byAdmin = await docs.linkForRecord(tenantId, admin, 'cobros', cobroId, tpl.id);
+        expect((await open(byAdmin.url)).filename).toBe('Cuenta [900.123.456-7].pdf');
+        expect((await open(docs.liveLink(tenantId, tpl.id, cobroId))).filename).toBe('Cuenta [900.123.456-7].pdf');
+
+        // Quién lo pidió va FIRMADO: no se cambia por otra persona ni se quita.
+        const u = new URL(byAgent.url, 'http://x');
+        const args = [tpl.id, cobroId, tenantId, Number(u.searchParams.get('exp')), u.searchParams.get('sig')!] as const;
+        await expect(docs.renderLiveLink(...args, admin.userId)).rejects.toMatchObject({ status: 404 });
+        await expect(docs.renderLiveLink(...args)).rejects.toMatchObject({ status: 404 });
+
+        // Si esa persona deja de ser del equipo, su enlace deja de servir.
+        await withTenant(pg.db, tenantId, (tx) => tx.delete(memberships).where(eq(memberships.userId, agentUser!.id)));
+        await expect(open(byAgent.url)).rejects.toMatchObject({ status: 404 });
+
+        await lists.update(tenantId, 'cobros', { settings: list.settings });
+        await docs.remove(tenantId, admin.userId, 'cobros', tpl.id);
     });
 
     it('portal: sólo plantillas publicadas, de su lista y con su registro', async () => {

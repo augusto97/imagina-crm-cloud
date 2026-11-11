@@ -433,6 +433,18 @@ export class AgentRunnerService implements AgentHandler, OnModuleInit, OnApplica
         let error: string | null = null;
         let n = 0;
         const budgetLeft = budget === null ? Number.POSITIVE_INFINITY : budget - usage.tokensMonth;
+        // Reserva atómica del pedido justo antes de hablar con el modelo (el
+        // chequeo de arriba sólo evita trabajo si ya no queda cuota).
+        const metered = access.source === 'platform';
+        if (metered) {
+            try {
+                await this.quota.reserve(tenantId);
+            } catch (err) {
+                const msg = err instanceof AiQuotaExceededError ? err.message : errorText(err);
+                this.reportIncident(tenantId, incidentKey, agent.id, agent.name, run.listId, `Sin IA disponible: ${msg}`);
+                return done('failed', `Sin IA disponible: ${msg}`);
+            }
+        }
         try {
             // Un PASO es una vuelta con herramientas; la vuelta de más es para
             // que el modelo cierre con su resumen.
@@ -503,9 +515,7 @@ export class AgentRunnerService implements AgentHandler, OnModuleInit, OnApplica
             error = providerError(err);
             this.reportIncident(tenantId, incidentKey, agent.id, agent.name, run.listId, error);
         } finally {
-            if (access.source === 'platform' && (inputTokens > 0 || outputTokens > 0)) {
-                await this.quota.record(tenantId, { input: inputTokens, output: outputTokens }).catch((e) => this.logger.warn(`No se pudo registrar el uso IA: ${String(e)}`));
-            }
+            if (metered) await this.quota.settle(tenantId, { input: inputTokens, output: outputTokens });
         }
 
         // La propuesta (modo «propone»), si juntó cambios.

@@ -267,7 +267,9 @@ describe('Excel (.xlsx): export de la vista e import de planillas', () => {
             permissions: { agent: { view: 'own', create: true, edit: 'own', delete: 'none', fields_hidden: ['monto'] } },
         });
         const agent: Actor = { userId: anaId, role: 'agent' };
-        await recs.create(tenantId, agent, 'facturas', { data: { [`f${f.numero!.id}`]: 'F-ANA', [`f${f.monto!.id}`]: 10 } });
+        // El monto (oculto para la agente) lo pone el admin: ella no escribe en lo que no ve.
+        const ana = await recs.create(tenantId, agent, 'facturas', { data: { [`f${f.numero!.id}`]: 'F-ANA' } });
+        await recs.update(tenantId, admin, 'facturas', ana.id, { data: { [`f${f.monto!.id}`]: 10 } });
         const sheet = openXlsx((await exportXlsx(agent, 'facturas')).bytes).readSheet(0);
         const head = sheet.rows[0]!.cells.map((c) => (c as { v: unknown }).v);
         expect(head).not.toContain('Monto');

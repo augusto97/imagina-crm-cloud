@@ -613,7 +613,7 @@ export class BookingTools implements AiProposalApplier {
         const p = stored.payload as Payload;
         let page: BookingPageDto;
         // v0.1.354 — el CSS propio del diseño sólo lo cambia un admin (también por el asistente).
-        const actor = { isAdmin: ctx.role === 'admin' };
+        const actor = { isAdmin: ctx.role === 'admin', file: { userId: ctx.userId, role: ctx.role, teamIds: ctx.teamIds, customRoleId: ctx.customRoleId, capabilities: ctx.capabilities, shares: ctx.shares } };
         if (p.pageId === null) {
             page = await this.booking.create(ctx.tenantId, ctx.userId, String(p.listId), { name: p.name, config: p.config }, actor);
             if (p.publish === true) page = await this.booking.update(ctx.tenantId, String(p.listId), page.id, { enabled: true }, actor);

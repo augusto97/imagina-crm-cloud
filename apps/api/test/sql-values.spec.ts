@@ -255,3 +255,102 @@ describe('SQL Server — diagnóstico de una conexión que falla (v0.1.330)', ()
         expect((await probeTcp('127.0.0.1', port)).status).toBe('refused');
     });
 });
+
+/**
+ * El driver resolvía el nombre por su cuenta (y obedece la redirección que le
+ * manda el servidor): toda conexión pasa ahora por un conector que valida y
+ * FIJA la dirección.
+ */
+describe('SQL Server — cada socket va a una dirección validada', () => {
+    function capture() {
+        const configs: Array<Record<string, unknown>> = [];
+        const fake = {
+            ConnectionPool: class {
+                constructor(config: Record<string, unknown>) {
+                    configs.push(config);
+                }
+                async connect() {
+                    throw Object.assign(new Error('Login failed for user'), { code: 'ELOGIN' });
+                }
+                async close() {}
+            },
+            Transaction: class { async begin() {} async rollback() {} },
+            Request: class {},
+            DateTime2: 'DateTime2',
+        };
+        return { fake, configs };
+    }
+    type Connector = (target: { host: string; port: number }) => Promise<unknown>;
+
+    it('el conector rechaza la red interna (también en una redirección) y marca la IP que validó', async () => {
+        const { fake, configs } = capture();
+        const dialed: Array<{ address: string; port: number }> = [];
+        const runner = new MssqlRunner({
+            allowPrivate: false,
+            load: async () => fake as never,
+            probe: async () => ({ status: 'open', ms: 1 }),
+            dial: async (address, port) => {
+                dialed.push({ address, port });
+                return {} as never;
+            },
+        });
+        const conn = sqlConnParams({ server: '93.184.216.34', database: 'db', user: 'u' }, 'p');
+        await expect(runner.run(conn, { kind: 'query', sql: 'SELECT 1' }, { maxRows: 1, timeoutMs: 1000, lastSync: null, connectAttempts: 1 })).rejects.toThrow();
+        const options = configs[0]!.options as { connector?: Connector };
+        expect(typeof options.connector).toBe('function');
+        const connector = options.connector!;
+
+        // Lo que el servidor le pida al driver (redirección) o lo que resuelva un DNS que cambió.
+        for (const host of ['127.0.0.1', '10.0.0.5', '169.254.169.254', '::1', 'localhost']) {
+            await expect(connector({ host, port: 1433 })).rejects.toThrow(/red interna|No se encontró/);
+        }
+        expect(dialed).toHaveLength(0);
+        await connector({ host: '93.184.216.34', port: 1433 });
+        expect(dialed).toEqual([{ address: '93.184.216.34', port: 1433 }]);
+    });
+
+    it('con instancia con nombre, el driver recibe la IP validada y el nombre queda para el certificado', async () => {
+        const { fake, configs } = capture();
+        const runner = new MssqlRunner({ allowPrivate: true, load: async () => fake as never, probe: async () => ({ status: 'open', ms: 1 }) });
+        const conn = sqlConnParams({ server: 'localhost\\SQLEXPRESS', database: 'db', user: 'u' }, 'p');
+        await expect(runner.run(conn, { kind: 'query', sql: 'SELECT 1' }, { maxRows: 1, timeoutMs: 1000, lastSync: null, connectAttempts: 1 })).rejects.toThrow();
+        const cfg = configs[0]!;
+        expect(['127.0.0.1', '::1']).toContain(cfg.server);
+        expect((cfg.options as { serverName?: string; instanceName?: string }).serverName).toBe('localhost');
+        expect((cfg.options as { instanceName?: string }).instanceName).toBe('SQLEXPRESS');
+    });
+
+    it('con el driver REAL: la conexión sale por el conector (llega el PRELOGIN de TDS)', async () => {
+        let first: Buffer | null = null;
+        const server: Server = createServer((socket) => {
+            socket.once('data', (chunk: Buffer) => {
+                first = chunk;
+                socket.destroy();
+            });
+            socket.on('error', () => undefined);
+        });
+        await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+        const port = (server.address() as { port: number }).port;
+        const dialed: string[] = [];
+        const { createConnection } = await import('node:net');
+        const runner = new MssqlRunner({
+            allowPrivate: true,
+            probe: async () => ({ status: 'open', ms: 1 }),
+            connectTimeoutMs: 4000,
+            dial: (address, p) =>
+                new Promise((resolve, reject) => {
+                    dialed.push(`${address}:${p}`);
+                    const socket = createConnection({ host: address, port: p });
+                    socket.once('connect', () => resolve(socket));
+                    socket.once('error', reject);
+                }),
+        });
+        const conn = { ...sqlConnParams({ server: `127.0.0.1:${port}`, database: 'db', user: 'u' }, 'p'), encrypt: false };
+        await expect(runner.run(conn, { kind: 'query', sql: 'SELECT 1' }, { maxRows: 1, timeoutMs: 1000, lastSync: null, connectAttempts: 1 })).rejects.toThrow();
+        await new Promise<void>((r) => server.close(() => r()));
+        expect(dialed).toEqual([`127.0.0.1:${port}`]);
+        // 0x12 = paquete PRELOGIN: el driver habló TDS por NUESTRO socket.
+        expect(first).not.toBeNull();
+        expect(first![0]).toBe(0x12);
+    }, 20_000);
+});

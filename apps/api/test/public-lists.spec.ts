@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { loadEnv } from '../src/config/env';
 import { LocalFileStorage } from '../src/files/file-storage';
 import { FilesService } from '../src/files/files.service';
-import { attachments, fields, lists, publicLists, records, savedViews, tenants, users } from '../src/db/schema';
+import { attachments, fields, lists, memberships, publicLists, records, savedViews, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -20,6 +20,7 @@ import { ActivityService } from '../src/activity/activity.service';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
 import { PublicListsService, isExpired } from '../src/public-lists/public-lists.service';
+import { updatePublicListSchema } from '@imagina-base/shared';
 import { frameAncestors, publicListPageCsp, publicListUnavailablePage, renderPublicListPage } from '../src/public-lists/public-page';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
@@ -378,9 +379,15 @@ describe('Listas públicas embebibles', () => {
         const [att] = await withTenant(pg.db, tenantId, (tx) =>
             tx.insert(attachments).values({ tenantId, filename: 'contrato.pdf', mime: 'application/pdf', sizeBytes: 3, storageKey: `t${tenantId}/c.pdf`, createdBy: u!.id }).returning(),
         );
+        await withTenant(pg.db, tenantId, (tx) => tx.insert(memberships).values({ tenantId, userId: u!.id, role: 'agent' }));
         await recs.create(tenantId, admin, 'directorio', {
             data: { [key('nombre')]: 'Con todo', [`f${estado.id}`]: 'al_dia', [`f${resp.id}`]: u!.id, [`f${adj.id}`]: [att!.id] },
         });
+        // SEC — un id de alguien que NO es de la empresa (lo escribe el sistema:
+        // una persona no puede) no se resuelve a su nombre en la página pública.
+        const [ajeno] = await pg.db.insert(users).values({ email: `ajeno-${Date.now()}@otra.test`, passwordHash: 'x', name: 'Persona Ajena' }).returning();
+        await expect(recs.create(tenantId, admin, 'directorio', { data: { [key('nombre')]: 'Ajeno', [`f${resp.id}`]: ajeno!.id } })).rejects.toMatchObject({ response: { code: 'validation_failed' } });
+        await recs.create(tenantId, { userId: 0, role: 'admin' }, 'directorio', { data: { [key('nombre')]: 'Zz ajeno', [`f${resp.id}`]: ajeno!.id } });
         await pg.db.update(tenants).set({ settings: { format: { number_format: 'dot_comma', date_format: 'dmy', time_format: 'h24', timezone: 'America/Bogota' } } }).where(eq(tenants.id, tenantId));
         const cfg = await pub.updateAdmin(tenantId, 'directorio', {
             enabled: true,
@@ -389,8 +396,10 @@ describe('Listas públicas embebibles', () => {
         const meta = await pub.getMeta(cfg.token);
         expect(meta.format).toMatchObject({ number_format: 'dot_comma', date_format: 'dmy' });
         expect(meta.fields.find((x) => x.slug === 'estado')!.options).toEqual([{ value: 'al_dia', label: 'Al día', color: '#16a34a' }]);
-        const row = (await pub.getRecords(cfg.token, {})).data[0]!;
+        const rows = (await pub.getRecords(cfg.token, {})).data;
+        const row = rows.find((r) => r.data.nombre === 'Con todo')!;
         expect(row.data.resp).toBe('Ana Pérez');
+        expect(JSON.stringify(rows)).not.toContain('Persona Ajena');
         expect(row.data.contrato).toEqual([{ name: 'contrato.pdf', url: expect.stringMatching(/^\/api\/v1\/files\/\d+\/signed\?/) }]);
         await pg.db.update(tenants).set({ settings: {} }).where(eq(tenants.id, tenantId));
     });
@@ -422,5 +431,20 @@ describe('Listas públicas embebibles', () => {
         expect(frameAncestors(['example.com', 'https://foo.com/path'])).toBe(
             "frame-ancestors 'self' example.com https://foo.com",
         );
+    });
+
+    it('seguridad: un dominio guardado que no es un dominio no llega a la cabecera CSP, y al guardar se rechaza', () => {
+        // Lo ya guardado (antes no se validaba): se descarta lo que no es un host u origen.
+        const csp = publicListPageCsp('n0nce', ["acme.com; script-src-elem 'unsafe-inline' *", 'ok.com', 'x\r\nSet-Cookie: a=b', '*.acme.com']);
+        expect(csp).toContain("frame-ancestors 'self' ok.com *.acme.com");
+        expect(csp).not.toContain('script-src-elem');
+        expect(csp).not.toContain('Set-Cookie');
+        expect(csp).not.toMatch(/[\r\n]/);
+        // Si NINGUNO sirve, no se abre a cualquiera.
+        expect(frameAncestors(['no es un dominio; x'])).toBe("frame-ancestors 'self'");
+        // Al guardar, el esquema del PATCH lo rechaza; los válidos pasan.
+        expect(updatePublicListSchema.safeParse({ allowed_domains: ["acme.com; script-src *"] }).success).toBe(false);
+        expect(updatePublicListSchema.safeParse({ allowed_domains: ['acme.com', '*.acme.com', 'https://www.acme.com'] }).success).toBe(true);
+        expect(updatePublicListSchema.safeParse({ enabled: true }).success).toBe(true);
     });
 });

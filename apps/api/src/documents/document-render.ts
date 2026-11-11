@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
+import { PDF_RENDER_GATE } from './pdf-limits';
 
 import {
     DESIGN_FONT_DEFS,
@@ -152,7 +153,16 @@ function pdfmake(): PdfMakeLike {
  * registradas y sin acceso a red ni a disco— que los documentos.
  */
 export function renderPdfDefinition(def: Record<string, unknown>): Promise<Buffer> {
-    return pdfmake().createPdf(def).getBuffer();
+    return renderGated(def);
+}
+
+/**
+ * TODO PDF pasa por aquí: la maquetación de pdfmake es un tramo sincrónico
+ * sobre el hilo que atiende los pedidos, así que se hace de a uno, cediendo
+ * el hilo entre uno y otro, con fila acotada (ver pdf-limits.ts).
+ */
+function renderGated(def: Record<string, unknown>): Promise<Buffer> {
+    return PDF_RENDER_GATE.run(() => pdfmake().createPdf(def).getBuffer());
 }
 
 /** La familia del PDF para una tipografía del diseño (Roboto si no está). */
@@ -986,7 +996,7 @@ export async function renderDocument(input: DocRenderInput): Promise<DocRenderOu
         },
     };
 
-    const buffer = await pdfmake().createPdf(def).getBuffer();
+    const buffer = await renderGated(def);
     // Páginas: las cuenta el propio PDF (la última pasada de maquetación manda).
     const pages = Math.max(1, (buffer.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) ?? []).length);
     const bottom = pageHeight - (margin + (footer.page_numbers || footer.text ? footerH - 10 : 0));

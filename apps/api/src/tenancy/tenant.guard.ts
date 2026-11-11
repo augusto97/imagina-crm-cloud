@@ -16,7 +16,7 @@ import {
     type PlanModule,
     type TenantAccess,
 } from '@imagina-base/shared';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import { accessOf, planModuleDisabled } from '../billing/tenant-access';
 import { memberships, plans, recordShares, tenants } from '../db/schema';
@@ -25,6 +25,7 @@ import { ALLOW_GUEST } from './allow-guest.decorator';
 import { ALLOW_LOCKED } from './allow-locked.decorator';
 import { ALLOW_READ_ONLY } from './allow-read-only.decorator';
 import { PLAN_MODULE } from './plan-module.decorator';
+import { sessionTenantScope } from '../auth/host-tenant';
 import { TenantDb } from './tenant-db.service';
 
 export interface TenantContext {
@@ -99,6 +100,7 @@ export class TenantGuard implements CanActivate {
                     teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${memberships.userId} AND tm.tenant_id = ${memberships.tenantId})`,
                     // C2 — rol propio: `custom_roles_self` deja leerlo sin empresa activa.
                     customRoleId: memberships.customRoleId,
+                    joinedAt: memberships.joinedAt,
                     customCaps: sql<string[] | null>`(SELECT cr.capabilities FROM custom_roles cr WHERE cr.id = ${memberships.customRoleId} AND cr.tenant_id = ${memberships.tenantId})`,
                 })
                 .from(memberships)
@@ -116,6 +118,12 @@ export class TenantGuard implements CanActivate {
 
         if (!membership) {
             throw new ForbiddenException('No eres miembro de ese workspace');
+        }
+        // Una sesión abierta en la dirección de UNA empresa (su dominio propio)
+        // sólo sirve para esa empresa: quien maneja ese dominio no puede usarla
+        // contra las otras empresas de la persona.
+        if (req.boundTenantId !== undefined && membership.tenantId !== req.boundTenantId) {
+            throw sessionTenantScope();
         }
         // SEC-24 (v0.1.225): el rol `client` es SÓLO portal. Sus endpoints
         // (`/portal/*`) resuelven la empresa por el vínculo, nunca por este
@@ -187,6 +195,20 @@ export class TenantGuard implements CanActivate {
             Array.isArray(membership.customCaps) && membership.customRoleId && !disabledModules.includes('custom_roles')
                 ? membership.customCaps
                 : null;
+        // La primera vez que la persona ENTRA a una empresa a la que la sumaron
+        // (su cuenta ya existía): desde ahora es del equipo a todos los efectos
+        // (su nombre se muestra, su firma se puede usar). Una sola escritura
+        // por membresía; el operador que la impersona no la acepta por ella.
+        if (membership.joinedAt === null && req.impersonatedBy === undefined) {
+            await this.tenantDb
+                .withTenant(membership.tenantId, (tx) =>
+                    tx
+                        .update(memberships)
+                        .set({ joinedAt: new Date() })
+                        .where(and(eq(memberships.tenantId, membership.tenantId), eq(memberships.userId, userId), isNull(memberships.joinedAt))),
+                )
+                .catch(() => undefined);
+        }
         req.tenant = {
             tenantId: membership.tenantId,
             tenantSlug: membership.tenantSlug,

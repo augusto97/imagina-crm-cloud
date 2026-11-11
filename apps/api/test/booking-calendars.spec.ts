@@ -675,6 +675,8 @@ describe('v0.1.350 — calendario de cada persona, videollamada y sincronizació
             expect(appt!.externalEvent?.event_id).toBeTruthy();
         });
         await vi.waitFor(() => expect(mailbox.sent).toHaveLength(1));
+        // El disparador de «se agendó» sale después del correo: se espera antes de limpiar.
+        await vi.waitFor(() => expect(dispatcher.events.some((e) => e.trigger === 'booking_event')).toBe(true));
         mailbox.sent.length = 0;
         dispatcher.events.length = 0;
         // Ana la corre una hora en su Google Calendar.
@@ -693,7 +695,7 @@ describe('v0.1.350 — calendario de cada persona, videollamada y sincronizació
         expect(data[k(f.estado!)]).toBe('reprogramada');
         await vi.waitFor(() => expect(mailbox.sent).toHaveLength(1));
         expect(mailbox.sent[0]!.subject).toMatch(/cambió de horario/);
-        const dispatched = dispatcher.events.find((e) => e.trigger === 'booking_event')!;
+        const dispatched = dispatcher.events.find((e) => e.trigger === 'booking_event' && e.booking?.event === 'rescheduled')!;
         expect(dispatched.booking).toMatchObject({ event: 'rescheduled', by: 'calendar', previous_start: at(D, 8) });
         // Otra vuelta sin cambios: nada.
         mailbox.sent.length = 0;

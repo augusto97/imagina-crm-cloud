@@ -403,12 +403,14 @@ export function PlatformTransfersCard(): JSX.Element {
                                                     onChange={(e) => setTrustCredentials(e.target.checked)}
                                                 />
                                                 <span>
-                                                    Conservar las contraseñas de las cuentas nuevas
+                                                    Conservar las contraseñas de las cuentas nuevas y el plan de la empresa
                                                     <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground">
                                                         Márcalo sólo si el archivo lo exportó un servidor tuyo. Si no,
                                                         las cuentas nuevas nacen sin contraseña y cada persona entra
                                                         con «¿Olvidaste tu contraseña?» — así nadie puede crear una
-                                                        cuenta con el correo de otro y una contraseña elegida por él.
+                                                        cuenta con el correo de otro y una contraseña elegida por él — y
+                                                        la empresa llega en el plan de prueba (le eliges el plan
+                                                        después), no con el plan ni el período pagado que diga el archivo.
                                                     </span>
                                                 </span>
                                             </label>

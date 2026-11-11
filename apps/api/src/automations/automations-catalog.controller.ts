@@ -7,6 +7,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { AutomationsService } from './automations.service';
+import { aclOf } from '../tenancy/acl-of';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
@@ -126,9 +127,12 @@ export class AutomationsCatalogController {
         @Param('id', ParseIntPipe) id: number,
         @Query('cursor') cursor?: string,
     ): Promise<{ data: AutomationRun[]; meta: { next_cursor: string | null } }> {
-        return this.automations.runsById(req.tenant!.tenantId, id, {
-            cursor: cursor ? Number(cursor) : undefined,
-        });
+        return this.automations.runsById(
+            req.tenant!.tenantId,
+            id,
+            { cursor: cursor ? Number(cursor) : undefined },
+            { userId: req.authUserId as number, role: req.tenant!.role, ...aclOf(req) },
+        );
     }
 
     /** v0.1.288 — «Cancelar espera» de una corrida en pausa (desde el historial). */
@@ -164,7 +168,9 @@ export class AutomationsCatalogController {
                       ...(query.match_key ? { match_key: query.match_key } : {}),
                   }
                 : undefined;
-        return this.automations.hookCaptures(req.tenant!.tenantId, id, preview).then((data) => ({ data }));
+        return this.automations
+            .hookCaptures(req.tenant!.tenantId, id, preview, { userId: req.authUserId as number, role: req.tenant!.role, ...aclOf(req) })
+            .then((data) => ({ data }));
     }
 
     /** v0.1.399 — secreto opcional del webhook entrante (sólo se ve al crearlo). */

@@ -13,9 +13,10 @@ import {
     type OnModuleInit,
 } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
-import { AI_INPUT_TYPES, aiFieldConfigSchema, type Field, type Role } from '@imagina-base/shared';
+import { AI_INPUT_TYPES, aiFieldConfigSchema, type Field } from '@imagina-base/shared';
 import { Queue, Worker } from 'bullmq';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { memberNames } from '../tenancy/member-names';
 import IORedis from 'ioredis';
 import type Redis from 'ioredis';
 import type { Readable } from 'node:stream';
@@ -25,7 +26,7 @@ import { AiSettingsService } from '../ai/ai-settings.service';
 import { fieldModelParams } from '../ai/model-params';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { attachments, records, users } from '../db/schema';
+import { attachments, records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
 import { ImageProxyService } from '../files/image-proxy';
@@ -33,7 +34,7 @@ import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { IncidentHub } from '../incidents/incident-hub';
 import { RecordChangeHub, type RecordChange } from '../records/record-change-hub';
-import { RecordsService } from '../records/records.service';
+import { RecordsService, type Actor } from '../records/records.service';
 import { REDIS } from '../redis/redis.module';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -236,7 +237,7 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
         const sources = (cfg.inputs ?? [])
             .map((id) => fields.find((f) => f.id === id))
             .filter((f): f is Field => !!f && AI_INPUT_TYPES.includes(f.type));
-        const names = await this.userNames(sources, data);
+        const names = await this.userNames(tenantId, sources, data);
         const inputs: AiFieldInput[] = [];
         const blocks: Anthropic.ContentBlockParam[] = [];
         for (const f of sources) {
@@ -261,7 +262,12 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
         }
 
         const access = await this.settings.resolve(tenantId);
-        if (access.source === 'platform') await this.quota.assertWithinQuota(tenantId);
+        // Reserva atómica del pedido ANTES de llamar al modelo; si el pedido
+        // no llega a responder, se devuelve.
+        const metered = access.source === 'platform';
+        if (metered) await this.quota.reserve(tenantId);
+        let res: Awaited<ReturnType<ReturnType<AiClientFactory>['messages']['create']>>;
+        try {
         const { system, user } = buildAiFieldPrompt(cfg, { fieldLabel: field.label, listName: list.name, inputs, attachments: blocks.length });
         // Calidad «rápida» (default): el más reciente de la familia económica,
         // resuelto contra lo que ve la clave — muchas filas, poco texto.
@@ -269,18 +275,26 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
             cfg.quality === 'best' ? { id: access.model, caps: access.caps } : await this.settings.fastModel(access.apiKey);
         const params = fieldModelParams(model.caps, AI_FIELD_MAX_TOKENS[cfg.length ?? 'short']);
         const client = this.clientFactory(access.apiKey);
-        const res = await client.messages.create({
+        res = await client.messages.create({
             model: model.id,
             max_tokens: params.max_tokens,
             ...params.extra,
             system,
             messages: [{ role: 'user', content: [...blocks, { type: 'text', text: user }] }],
         });
-        if (access.source === 'platform') {
-            await this.quota.record(tenantId, {
-                input: res.usage.input_tokens + (res.usage.cache_creation_input_tokens ?? 0) + (res.usage.cache_read_input_tokens ?? 0),
-                output: res.usage.output_tokens,
-            });
+        } catch (err) {
+            if (metered) await this.quota.settle(tenantId, { input: 0, output: 0 });
+            throw err;
+        }
+        if (metered) {
+            await this.quota.settle(
+                tenantId,
+                {
+                    input: res.usage.input_tokens + (res.usage.cache_creation_input_tokens ?? 0) + (res.usage.cache_read_input_tokens ?? 0),
+                    output: res.usage.output_tokens,
+                },
+                { keep: true },
+            );
         }
         const text = res.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
         const parsed = parseAiFieldAnswer(cfg, text);
@@ -349,19 +363,25 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
         return { blocks, names };
     }
 
-    private async userNames(fields: Field[], data: Record<string, unknown>): Promise<Map<number, string>> {
+    private async userNames(tenantId: number, fields: Field[], data: Record<string, unknown>): Promise<Map<number, string>> {
         const ids = fields.filter((f) => f.type === 'user').map((f) => Number(data[`f${f.id}`])).filter((n) => Number.isInteger(n) && n > 0);
-        if (ids.length === 0) return new Map();
-        const rows = await this.db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ids));
-        return new Map(rows.map((r) => [r.id, r.name]));
+        // SEC — sólo personas de ESTA empresa (el id sale de los datos del registro).
+        return new Map([...(await memberNames(this.db, tenantId, ids))].map(([id, u]) => [id, u.name]));
     }
 
     // ─────────────────────────── Endpoints ───────────────────────────
 
     /** «Recalcular» desde la ficha: espera la respuesta (con el ACL de quien lo pide). */
-    async runNow(tenantId: number, actor: { userId: number; role: Role }, listIdOrSlug: string, recordId: number, fieldId: number): Promise<{ value: string | null }> {
+    async runNow(tenantId: number, actor: Actor, listIdOrSlug: string, recordId: number, fieldId: number): Promise<{ value: string | null }> {
         const list = await this.lists.get(tenantId, listIdOrSlug);
-        await this.records.get(tenantId, actor, String(list.id), recordId);
+        // Recalcular ESCRIBE en el registro (y gasta un pedido de IA): hace
+        // falta poder editarlo, no sólo verlo; y el campo no puede ser uno que
+        // la persona tiene oculto (también por depender de una entrada oculta).
+        const { fields } = await this.records.checkUpdate(tenantId, actor, String(list.id), recordId, {});
+        const target = fields.find((f) => f.id === fieldId);
+        if (target && (await this.fields.hiddenSlugsFor(tenantId, list, fields, actor)).has(target.slug)) {
+            throw new NotFoundException({ code: 'field_not_found', message: 'Campo con IA no encontrado' });
+        }
         try {
             return { value: await this.compute(tenantId, list.id, recordId, fieldId) };
         } catch (err) {

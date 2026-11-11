@@ -50,7 +50,7 @@ import {
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { approvalFlows, lists, memberships, records, users } from '../db/schema';
-import { assignmentKeys, type AclSubject, effectivePermissions, scopeWhere } from '../lists/list-acl';
+import { assignmentKeys, type AclSubject, effectivePermissions, guestExtraHidden, renameHiddenFieldSlug, scopeWhere, withDependentComputed } from '../lists/list-acl';
 import type { Tx } from '../db/client';
 import { pgErrorCode } from '../common/http-exception.filter';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -104,6 +104,35 @@ export class FieldsService {
     async throughPlansFor(tenantId: number, listId: number, fields: Field[]): Promise<ThroughPlan[]> {
         if (!ThroughEngine.hasThrough(fields)) return [];
         return this.tenantDb.withTenant(tenantId, (tx) => this.through.plans(tx, tenantId, listId, fields));
+    }
+
+    /**
+     * Slugs de TODO lo que quien pide no ve en esta lista: lo oculto para su
+     * acceso, lo que un invitado nunca ve, las búsquedas/resúmenes hacia
+     * listas que no alcanza (SEC-36) y los derivados (calculado, fórmula,
+     * campo con IA) que dependen de cualquiera de ellos. Es la MISMA regla del
+     * listado de registros; quien compare sólo contra `fields_hidden` deja
+     * pasar un derivado de un campo oculto.
+     */
+    async hiddenSlugsFor(
+        tenantId: number,
+        list: { id: number; settings: Record<string, unknown> },
+        fields: Field[],
+        actor: AclSubject,
+    ): Promise<Set<string>> {
+        if (actor.role === 'admin') return new Set();
+        const slugs = effectivePermissions(list.settings, actor).fields_hidden;
+        const ids = new Set<number>([
+            ...fields.filter((f) => slugs.includes(f.slug)).map((f) => f.id),
+            ...guestExtraHidden(fields, actor),
+        ]);
+        const plans = await this.throughPlansFor(tenantId, list.id, fields);
+        if (plans.length > 0) {
+            const restricted = await this.tenantDb.withTenant(tenantId, (tx) => this.through.restrictedFor(tx, tenantId, plans, actor));
+            for (const id of restricted) ids.add(id);
+        }
+        const all = withDependentComputed(fields, ids);
+        return new Set(fields.filter((f) => all.has(f.id)).map((f) => f.slug));
     }
 
     /**
@@ -670,6 +699,22 @@ export class FieldsService {
                     throw slugConflict(patch.slug);
                 }
                 changes.slug = patch.slug;
+                // El ACL de la lista oculta campos por slug: el cambio de
+                // nombre interno viaja al ACL en la MISMA transacción (si no,
+                // el campo quedaría a la vista de quien lo tenía oculto).
+                const [listRow] = await tx
+                    .select({ settings: lists.settings })
+                    .from(lists)
+                    .where(and(eq(lists.tenantId, tenantId), eq(lists.id, listId)))
+                    .for('update');
+                const nextSettings = renameHiddenFieldSlug(
+                    (listRow?.settings ?? {}) as Record<string, unknown>,
+                    current.slug,
+                    patch.slug,
+                );
+                if (nextSettings) {
+                    await tx.update(lists).set({ settings: nextSettings }).where(and(eq(lists.tenantId, tenantId), eq(lists.id, listId)));
+                }
             }
 
             const updated = await this.repo.update(tx, tenantId, listId, current.id, changes);

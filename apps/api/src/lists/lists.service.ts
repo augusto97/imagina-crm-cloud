@@ -21,6 +21,11 @@ import {
     type UpdateListPermissionsInput,
 } from '@imagina-base/shared';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { memberDisplayName } from '../tenancy/member-names';
+import { assertNewAttachable, fileIdsUnder, type FileActor } from '../files/files.service';
+
+/** Claves de `settings` (diseño de la ficha y del portal) que guardan el id de un adjunto. */
+const LIST_SETTINGS_FILE_KEYS = ['file_id', 'image_file_id'] as const;
 import type { Tx } from '../db/client';
 import { customRoles, fields, listGroups, listSlugHistory, memberships, teamMembers, teams, users } from '../db/schema';
 import { resolvePermissions } from './list-acl';
@@ -154,7 +159,7 @@ export class ListsService {
     ): Promise<Array<{ id: number; name: string; email: string; role: string; customRole: string | null }>> {
         return this.tenantDb.withTenant(tenantId, async (tx) =>
             tx
-                .select({ id: users.id, name: users.name, email: users.email, role: memberships.role, customRole: customRoles.name })
+                .select({ id: users.id, name: memberDisplayName, email: users.email, role: memberships.role, customRole: customRoles.name })
                 .from(memberships)
                 .innerJoin(users, eq(users.id, memberships.userId))
                 // C2 — el rol propio de cada persona (si tiene uno).
@@ -392,10 +397,28 @@ export class ListsService {
         idOrSlug: string,
         patch: UpdateListInput,
         /** D2 — sólo la mesa de ayuda escribe la marca de su buzón (`settings.helpdesk.mailbox`). */
-        opts: { helpdeskMailbox?: boolean } = {},
+        opts: {
+            helpdeskMailbox?: boolean;
+            /**
+             * Quien guarda desde la app: las imágenes que SUMA al diseño de la
+             * ficha o del portal tienen que ser archivos que subió o ya puede
+             * ver (el diseño las vuelve visibles para todo el que abre la lista
+             * y, en el portal, para el cliente). Sin actor = uso interno.
+             */
+            actor?: FileActor;
+        } = {},
     ): Promise<List> {
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.resolve(tx, tenantId, idOrSlug);
+            if (patch.settings !== undefined && opts.actor) {
+                await assertNewAttachable(
+                    tx,
+                    tenantId,
+                    opts.actor,
+                    fileIdsUnder(patch.settings, LIST_SETTINGS_FILE_KEYS),
+                    fileIdsUnder(current.settings ?? {}, LIST_SETTINGS_FILE_KEYS),
+                );
+            }
 
             const changes: Partial<typeof import('../db/schema').lists.$inferInsert> = {};
             if (patch.name !== undefined) changes.name = patch.name;

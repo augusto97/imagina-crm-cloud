@@ -62,6 +62,8 @@ export class MembersService {
             {
                 invitedById: opts.invitedById ?? null,
                 allowReserved: opts.allowReserved === true,
+                // La consola de plataforma (sin límite del plan) no gasta el cupo.
+                skipMailBudget: opts.enforcePlan === false,
             },
         );
         return {

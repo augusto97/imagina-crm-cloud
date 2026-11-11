@@ -120,7 +120,7 @@ export class BookingController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(createBookingPageSchema)) input: CreateBookingPageInput,
     ): Promise<BookingPageDto> {
-        const doc = await this.booking.create(req.tenant!.tenantId, req.authUserId!, list, input, { isAdmin: req.tenant!.role === 'admin' });
+        const doc = await this.booking.create(req.tenant!.tenantId, req.authUserId!, list, input, { isAdmin: req.tenant!.role === 'admin', file: decider(req) });
         this.publicSvc.forgetLists(req.tenant!.tenantId);
         return doc;
     }
@@ -135,7 +135,7 @@ export class BookingController {
     ): Promise<BookingPageDto> {
         const tenantId = req.tenant!.tenantId;
         const before = input.enabled !== undefined || input.regenerate_token ? await this.booking.get(tenantId, list, id) : null;
-        const doc = await this.booking.update(tenantId, list, id, input, { isAdmin: req.tenant!.role === 'admin' });
+        const doc = await this.booking.update(tenantId, list, id, input, { isAdmin: req.tenant!.role === 'admin', file: decider(req) });
         // Publicar deja que cualquiera con el enlace agende en la lista: queda en
         // la bitácora (igual que los formularios y la lista pública).
         if (before && (before.enabled !== doc.enabled || input.regenerate_token)) {

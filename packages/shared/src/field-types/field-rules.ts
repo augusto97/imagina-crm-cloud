@@ -1,6 +1,19 @@
 import { isUserWritableType, jsonbKeyForField, type FieldType } from '../schemas/field';
 import type { FieldDefault, FieldValidation, FieldFormatPreset, RequiredIfOp } from '../schemas/field-rules';
 import { zonedToday } from '../schemas/timezone';
+import { USER_PATTERN_VALUE_MAX, compileUserPattern } from './pattern-matcher';
+
+export {
+    USER_PATTERN_VALUE_MAX,
+    analyzeUserPattern,
+    compileUserPattern,
+    type PatternAnalysis,
+    type UserPattern,
+} from './pattern-matcher';
+
+/** Mensaje cuando la expresión guardada en el campo no se puede ejecutar. */
+export const USER_PATTERN_UNUSABLE =
+    'La regla de formato de este campo no se puede evaluar: pide a un administrador que corrija la expresión regular.';
 
 /**
  * v0.1.300 — Valores por defecto y validaciones de un campo (las reglas viven en
@@ -220,9 +233,6 @@ export const FIELD_FORMAT_LABELS: Record<FieldFormatPreset, string> = {
     regex: 'Expresión regular propia',
 };
 
-/** Valor máximo (caracteres) sobre el que se evalúa una expresión regular propia. */
-export const USER_PATTERN_VALUE_MAX = 200;
-
 function checkFormat(format: FieldFormatPreset, raw: string, pattern: string | undefined, ignoreCase: boolean): string | null {
     const value = raw.trim();
     switch (format) {
@@ -245,212 +255,15 @@ function checkFormat(format: FieldFormatPreset, raw: string, pattern: string | u
         case 'regex': {
             if (!pattern) return null;
             const re = compileUserPattern(pattern, ignoreCase);
-            // Un patrón que no pasa el análisis (llegó por una vía que no lo
-            // validó al guardar) no se ejecuta: mejor no validar que colgar.
-            if (re === null || raw.length > USER_PATTERN_VALUE_MAX) return null;
+            // Un patrón que el motor propio no puede ejecutar (se guardó con
+            // una versión anterior, o llegó por una vía que no lo validó) NO
+            // deja pasar el valor: se rechaza hasta que alguien corrija la
+            // regla. Sólo se revisa el campo que se está escribiendo, así que
+            // no bloquea editar los demás campos del registro.
+            if (re === null) return USER_PATTERN_UNUSABLE;
             return re.test(raw) ? null : 'El valor no tiene el formato esperado.';
         }
     }
-}
-
-// ─── Expresión regular propia: protección contra ReDoS ───────────────────
-
-/**
- * Presupuesto de "pasos" de la expresión en el peor caso, con un valor de
- * `USER_PATTERN_VALUE_MAX` caracteres. Ver `analyzeUserPattern`.
- */
-const PATTERN_STEP_BUDGET = 10_000_000;
-const MAX_BOUNDED_REPEAT = 1000;
-
-export type PatternAnalysis = { ok: true } | { ok: false; reason: string };
-
-interface Cx {
-    /** Cuantificadores sin tope (`*`, `+`, `{n,}`) que se suman en serie. */
-    u: number;
-    /** Factor de ramificación (alternativas × rangos de los cuantificadores con tope). */
-    b: number;
-}
-
-class PatternError extends Error {}
-
-/**
- * ¿Es seguro ejecutar esta expresión en el servidor? Las expresiones
- * regulares de JavaScript retroceden (backtracking): un patrón como
- * `(a+)+$` tarda un tiempo EXPONENCIAL en fallar y bloquea el proceso
- * (ReDoS). Node no tiene timeout para una regex, así que se rechaza al
- * GUARDAR todo lo que pueda explotar:
- *
- *  1. Largo del patrón ≤ 200 y debe compilar.
- *  2. Nada de referencias hacia atrás (`\1`, `\k<x>`) ni lookarounds.
- *  3. Nada de cuantificador SIN TOPE sobre un grupo que ya repite o tiene
- *     alternativas (`(a+)+`, `(a|ab)*`): el caso exponencial clásico.
- *  4. Estimación del peor caso: el patrón se ejecuta ANCLADO (`^…$`) sobre
- *     valores de hasta 200 caracteres, así que cuesta ≈ 200^U × B pasos,
- *     con U = cuantificadores sin tope en serie y B = producto de las
- *     alternativas y de los rangos de los cuantificadores con tope. Se
- *     exige ≤ 10.000.000 (medido: ~10 ms en el peor caso): en la práctica,
- *     hasta tres `*`/`+` y rangos chicos — lo que necesita un código, una
- *     placa, un correo o un número de radicado.
- *
- * Al ejecutar, además, el valor se recorta a 200 caracteres (más largo →
- * error de formato) y un patrón que no pasa este análisis no se ejecuta.
- */
-export function analyzeUserPattern(pattern: string): PatternAnalysis {
-    if (pattern.length === 0) return { ok: false, reason: 'Escribe la expresión regular.' };
-    if (pattern.length > 200) return { ok: false, reason: 'La expresión no puede pasar de 200 caracteres.' };
-    if (buildRegex(pattern, false) === null) return { ok: false, reason: 'La expresión regular no es válida.' };
-    try {
-        const cx = parseAlternatives(pattern, { i: 0 }, false);
-        const steps = Math.pow(USER_PATTERN_VALUE_MAX, cx.u) * cx.b;
-        if (!Number.isFinite(steps) || steps > PATTERN_STEP_BUDGET) {
-            return {
-                ok: false,
-                reason: 'La expresión es demasiado costosa de evaluar: usa como máximo tres repeticiones abiertas (* o +) y rangos {n,m} chicos.',
-            };
-        }
-        return { ok: true };
-    } catch (e) {
-        return { ok: false, reason: e instanceof PatternError ? e.message : 'La expresión regular no es válida.' };
-    }
-}
-
-function parseAlternatives(src: string, pos: { i: number }, inGroup: boolean): Cx {
-    const branches: Cx[] = [parseSequence(src, pos)];
-    while (pos.i < src.length && src[pos.i] === '|') {
-        pos.i++;
-        branches.push(parseSequence(src, pos));
-    }
-    if (inGroup) {
-        if (src[pos.i] !== ')') throw new PatternError('Falta cerrar un paréntesis.');
-        pos.i++;
-    }
-    return {
-        u: Math.max(...branches.map((b) => b.u)),
-        b: branches.reduce((acc, b) => acc + b.b, 0),
-    };
-}
-
-function parseSequence(src: string, pos: { i: number }): Cx {
-    let u = 0;
-    let b = 1;
-    while (pos.i < src.length && src[pos.i] !== '|' && src[pos.i] !== ')') {
-        let atom: Cx;
-        let quantifiable = true;
-        const c = src[pos.i]!;
-        if (c === '\\') {
-            const next = src[pos.i + 1] ?? '';
-            if (/[1-9]/.test(next)) throw new PatternError('No se admiten referencias hacia atrás (\\1).');
-            if (next === 'k' && src[pos.i + 2] === '<') throw new PatternError('No se admiten referencias hacia atrás (\\k<…>).');
-            pos.i += 2;
-            if (next === 'u' && src[pos.i] === '{') {
-                while (pos.i < src.length && src[pos.i] !== '}') pos.i++;
-                pos.i++;
-            } else if (next === 'u') pos.i += 4;
-            else if (next === 'x') pos.i += 2;
-            else if (next === 'c') pos.i += 1;
-            else if ((next === 'p' || next === 'P') && src[pos.i] === '{') {
-                while (pos.i < src.length && src[pos.i] !== '}') pos.i++;
-                pos.i++;
-            }
-            if (next === 'b' || next === 'B') quantifiable = false;
-            atom = { u: 0, b: 1 };
-        } else if (c === '[') {
-            pos.i++;
-            if (src[pos.i] === '^') pos.i++;
-            if (src[pos.i] === ']') pos.i++;
-            while (pos.i < src.length && src[pos.i] !== ']') {
-                pos.i += src[pos.i] === '\\' ? 2 : 1;
-            }
-            if (src[pos.i] !== ']') throw new PatternError('Falta cerrar un corchete.');
-            pos.i++;
-            atom = { u: 0, b: 1 };
-        } else if (c === '(') {
-            pos.i++;
-            if (src[pos.i] === '?') {
-                const ahead = src.slice(pos.i, pos.i + 3);
-                if (ahead.startsWith('?=') || ahead.startsWith('?!') || ahead === '?<=' || ahead === '?<!') {
-                    throw new PatternError('No se admiten lookahead ni lookbehind.');
-                }
-                if (ahead.startsWith('?:')) pos.i += 2;
-                else if (ahead.startsWith('?<')) {
-                    while (pos.i < src.length && src[pos.i] !== '>') pos.i++;
-                    pos.i++;
-                } else throw new PatternError('Grupo no admitido.');
-            }
-            atom = parseAlternatives(src, pos, true);
-        } else if (c === '^' || c === '$') {
-            pos.i++;
-            quantifiable = false;
-            atom = { u: 0, b: 1 };
-        } else {
-            pos.i++;
-            atom = { u: 0, b: 1 };
-        }
-
-        const q = quantifiable ? readQuantifier(src, pos) : null;
-        if (q) {
-            const unbounded = q.max === Infinity;
-            if (unbounded) {
-                if (atom.u > 0 || atom.b > 1) {
-                    throw new PatternError('No se admiten repeticiones anidadas como (a+)+ o (a|b)*: pueden colgar la validación.');
-                }
-                atom = { u: 1, b: 1 };
-            } else {
-                if (q.max > MAX_BOUNDED_REPEAT) throw new PatternError(`Una repetición {n,m} no puede pasar de ${MAX_BOUNDED_REPEAT}.`);
-                const range = q.max - q.min + 1;
-                atom = { u: atom.u * q.max, b: Math.pow(atom.b, Math.max(q.max, 1)) * range };
-            }
-        }
-        u += atom.u;
-        b *= atom.b;
-        if (!Number.isFinite(b) || b > 1e15) b = Infinity;
-    }
-    return { u, b };
-}
-
-function readQuantifier(src: string, pos: { i: number }): { min: number; max: number } | null {
-    const c = src[pos.i];
-    let q: { min: number; max: number } | null = null;
-    if (c === '*') q = { min: 0, max: Infinity };
-    else if (c === '+') q = { min: 1, max: Infinity };
-    else if (c === '?') q = { min: 0, max: 1 };
-    if (q) {
-        pos.i++;
-    } else if (c === '{') {
-        const m = /^\{(\d+)(,(\d*))?\}/.exec(src.slice(pos.i));
-        if (!m) return null; // `{` literal
-        const min = Number(m[1]);
-        const max = m[2] === undefined ? min : m[3] === '' ? Infinity : Number(m[3]);
-        q = { min, max };
-        pos.i += m[0].length;
-    }
-    if (q && src[pos.i] === '?') pos.i++; // perezoso
-    return q;
-}
-
-function buildRegex(pattern: string, ignoreCase: boolean): RegExp | null {
-    const flags = ignoreCase ? 'i' : '';
-    try {
-        return new RegExp(`^(?:${pattern})$`, `${flags}u`);
-    } catch {
-        try {
-            return new RegExp(`^(?:${pattern})$`, flags);
-        } catch {
-            return null;
-        }
-    }
-}
-
-const patternCache = new Map<string, RegExp | null>();
-
-/** La expresión propia lista para usar (anclada), o null si no es segura/válida. */
-export function compileUserPattern(pattern: string, ignoreCase = false): RegExp | null {
-    const key = `${ignoreCase ? 'i' : '-'}:${pattern}`;
-    if (patternCache.has(key)) return patternCache.get(key)!;
-    const re = analyzeUserPattern(pattern).ok ? buildRegex(pattern, ignoreCase) : null;
-    if (patternCache.size > 500) patternCache.clear();
-    patternCache.set(key, re);
-    return re;
 }
 
 // ─── Obligatorio si… ─────────────────────────────────────────────────────
