@@ -1,6 +1,6 @@
 import type { Field } from '@imagina-base/shared';
 import { sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { tenants } from '../src/db/schema';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -125,6 +125,27 @@ describe('búsqueda global de registros por título', () => {
         expect(await titles(admin, "'; drop table records; --")).toEqual([]);
         expect(await titles(admin, '%')).toEqual([]);
         expect(await titles(admin, '_')).toEqual([]);
+    });
+
+    it('con una sola letra no consulta nada, y la consulta lleva su propio tope de tiempo', async () => {
+        const db = (search as unknown as { tenantDb: TenantDb }).tenantDb;
+        const real = db.withTenant.bind(db);
+        const seen: string[] = [];
+        const spy = vi.spyOn(db, 'withTenant').mockImplementation(((t: number, fn: (tx: never) => Promise<unknown>) =>
+            real(t, async (tx) => {
+                const out = await fn(tx as never);
+                const r = await tx.execute(sql`select current_setting('statement_timeout') as v`);
+                seen.push(String((r.rows[0] as { v: string }).v));
+                return out;
+            })) as never);
+        try {
+            expect(await search.search(tenantId, admin, { q: 'i', limit: 20 })).toEqual([]);
+            expect(spy).not.toHaveBeenCalled();
+            expect((await search.search(tenantId, admin, { q: 'in', limit: 20 })).length).toBeGreaterThan(0);
+            expect(seen).toEqual(['4s']);
+        } finally {
+            spy.mockRestore();
+        }
     });
 
     it('el rol client no busca nada', async () => {

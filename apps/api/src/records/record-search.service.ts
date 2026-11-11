@@ -45,14 +45,27 @@ interface SearchTarget {
  *    buscar por un campo oculto sería un oráculo (SEC-25).
  * Todo va bindeado: claves `f{id}` y el texto buscado (regla de oro nº 4).
  */
+/** Con menos letras casi todo coincide: es recorrer todos los registros de la empresa para nada. */
+export const GLOBAL_SEARCH_MIN_CHARS = 2;
+/**
+ * Tope de la consulta de la búsqueda global. No hay índice que la ayude (es un
+ * recorrido de los registros de todas las listas visibles), así que en una
+ * empresa muy grande puede tardar: la paleta se usa tecla a tecla y no puede
+ * tener consultas de 30 s (el tope general) ocupando conexiones.
+ */
+export const GLOBAL_SEARCH_BUDGET_MS = 4000;
+
 @Injectable()
 export class RecordSearchService {
     constructor(private readonly tenantDb: TenantDb) {}
 
     async search(tenantId: number, actor: Actor, query: GlobalSearchQuery): Promise<GlobalSearchHit[]> {
         const needle = query.q.trim().toLowerCase();
-        if (needle === '' || actor.role === 'client') return [];
+        // La app ya pide desde 2 letras; esto cubre a quien llama a la API directo.
+        if (needle.length < GLOBAL_SEARCH_MIN_CHARS || actor.role === 'client') return [];
         return this.tenantDb.withTenant(tenantId, async (tx) => {
+            // Sólo para esta transacción; si se pasa, la API responde 503 «tardó demasiado».
+            await tx.execute(sql.raw(`SET LOCAL statement_timeout = ${GLOBAL_SEARCH_BUDGET_MS}`));
             const listRows = await tx
                 .select({
                     id: lists.id,
