@@ -859,6 +859,7 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
                 name={config.settings.title.trim() || draft.name || form.name}
                 url={formPublicUrl(form)}
                 origin={formPublicOrigin(form)}
+                embedOrigin={form.embed_origin ?? null}
                 path={form.public_path}
                 version={demoVersion([saved, enabled])}
                 published={enabled}

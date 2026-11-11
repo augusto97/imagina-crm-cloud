@@ -15,6 +15,7 @@ import { routePath } from './common/route-path';
 import { rateKeyForIp } from './common/client-ip';
 import { FILE_IMPORT_CONTENT_TYPE } from '@imagina-base/shared';
 import { loadEnv } from './config/env';
+import { buildTrustProxy } from './common/trust-proxy';
 import { recordServerError } from './observability/diagnostics';
 import { RedisIoAdapter } from './realtime/redis-io.adapter';
 
@@ -39,7 +40,11 @@ async function bootstrap(): Promise<void> {
             // v0.1.202 — ya no es `true` (confiar en cualquiera que mande
             // `X-Forwarded-*`) sino la DIRECCIÓN del proxy: por defecto
             // `loopback`, que es donde corre el Caddy/nginx de este repo.
-            trustProxy: env.TRUST_PROXY,
+            //
+            // v0.1.409 (ADR-S102) — una función: además de `TRUST_PROXY`, las
+            // direcciones de Cloudflare cuando Plataforma → Dominios dice que
+            // la dirección rápida pasa por ahí (o `TRUST_PROXY=…,cloudflare`).
+            trustProxy: buildTrustProxy(env.TRUST_PROXY),
         }),
         // rawBody: para verificar la firma de los webhooks de pago (ADR-S12)
         // sobre el cuerpo exacto recibido, no el re-serializado.

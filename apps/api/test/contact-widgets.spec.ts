@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { contactWidgetConfigSchema, formConfigSchema, type ContactWidgetConfig, type Field } from '@imagina-base/shared';
@@ -19,6 +19,8 @@ import { FieldsService } from '../src/fields/fields.service';
 import { LocalFileStorage } from '../src/files/file-storage';
 import { FilesService } from '../src/files/files.service';
 import { FORM_EMBED_JS } from '../src/forms/form-page';
+import { embedScriptSource } from '../src/forms/forms.controller';
+import { WIDGET_PAGE_CACHE_CONTROL } from '../src/contact-widgets/contact-widgets.controller';
 import { FormsService } from '../src/forms/forms.service';
 import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
@@ -441,6 +443,86 @@ describe('v0.1.394 — widget de contacto (Postgres + Redis reales)', () => {
         expect(await stats.flush()).toBe(0);
         const left = await withTenant(pg.db, tenantId, (tx) => tx.select().from(widgetStats).where(eq(widgetStats.widgetId, w.id)));
         expect(left).toHaveLength(0);
+    });
+
+    it('v0.1.409 — el logo: dirección fija del propio widget, sólo ese archivo y en memoria', async () => {
+        // Un PNG mínimo (8 bytes de firma + IHDR) y un archivo que no es imagen.
+        const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 1)]);
+        const { logoId, otherId } = await withTenant(pg.db, tenantId, async (tx) => ({
+            logoId: (await files.storeBufferInTx(tx, tenantId, 0, 'logo.png', 'image/png', png)).id,
+            otherId: (await files.storeBufferInTx(tx, tenantId, 0, 'nota.txt', 'text/plain', Buffer.from('hola'))).id,
+        }));
+        const [before] = await pg.db.select().from(tenants).where(eq(tenants.id, tenantId));
+        const settings = (before!.settings ?? {}) as Record<string, unknown>;
+        await pg.db
+            .update(tenants)
+            .set({ settings: { ...settings, branding: { ...((settings.branding as object) ?? {}), logo_file_id: logoId } } })
+            .where(eq(tenants.id, tenantId));
+        try {
+            const w = await widgets.create(tenantId, 0, { name: 'Con logo' });
+            await widgets.update(tenantId, w.id, { enabled: true, config: cfg({ buttons: [{ id: 'wa', type: 'whatsapp', phone: '+573001112233' }] }) });
+            const token = await widgetToken(tenantId, w.id);
+            const fresh = new ContactWidgetsService(pg.db, tenantDb, files);
+            const info = await fresh.cachedPageInfo(token);
+            // La dirección no lleva firma ni vencimiento: la misma para siempre
+            // (el navegador y Cloudflare la guardan un año).
+            expect(info!.meta.logo_url).toBe(`/api/v1/public/w/${token}/logo/${logoId}`);
+            expect(info!.logoFileId).toBe(logoId);
+
+            let reads = 0;
+            const read = files.readStream.bind(files);
+            (files as unknown as { readStream: typeof read }).readStream = (...a) => {
+                reads++;
+                return read(...a);
+            };
+            const got = await fresh.logo(token, logoId);
+            expect(got?.mime).toBe('image/png');
+            expect(got?.bytes.equals(png)).toBe(true);
+            // La segunda vez sale de memoria, sin leer el archivo de nuevo.
+            await fresh.logo(token, logoId);
+            expect(reads).toBe(1);
+            // Sólo sirve el logo que ese widget muestra: otro archivo de la
+            // misma empresa (o un número cualquiera) no sale por aquí.
+            expect(await fresh.logo(token, otherId)).toBeNull();
+            expect(await fresh.logo(token, logoId + 999)).toBeNull();
+            expect(await fresh.logo('noexiste-noexiste-noexiste', logoId)).toBeNull();
+            (files as unknown as { readStream: typeof read }).readStream = read;
+
+            // Si el logo de la empresa no es una imagen, no se sirve.
+            await pg.db
+                .update(tenants)
+                .set({ settings: { ...settings, branding: { ...((settings.branding as object) ?? {}), logo_file_id: otherId } } })
+                .where(eq(tenants.id, tenantId));
+            expect(await new ContactWidgetsService(pg.db, tenantDb, files).logo(token, otherId)).toBeNull();
+        } finally {
+            await pg.db.update(tenants).set({ settings }).where(eq(tenants.id, tenantId));
+        }
+    });
+
+    it('v0.1.409 — embed.js minificado: el mismo script, más chico', () => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { minifyEmbed } = require('../scripts/minify-embed.cjs') as { minifyEmbed: (s: string) => string };
+        const min = minifyEmbed(FORM_EMBED_JS);
+        expect(min.length).toBeLessThan(FORM_EMBED_JS.length * 0.7);
+        for (const marker of ['__imbFormsEmbed', 'data-imagina-widget', 'imb-w-size', 'imagina-popup', 'imb-conversion']) {
+            expect(min).toContain(marker);
+        }
+        // Se puede evaluar (no rompe la sintaxis) y el servidor lo prefiere si está.
+        expect(() => new Function(min)).not.toThrow();
+        const dir = mkdtempSync(join(tmpdir(), 'imb-embed-'));
+        expect(embedScriptSource(dir)).toBe(FORM_EMBED_JS);
+        writeFileSync(join(dir, 'embed.min.js'), `${min}\n`);
+        expect(embedScriptSource(dir)).toBe(`${min}\n`);
+        // Uno roto o vacío no se usa.
+        writeFileSync(join(dir, 'embed.min.js'), 'x');
+        expect(embedScriptSource(dir)).toBe(FORM_EMBED_JS);
+    });
+
+    it('v0.1.409 — la página del widget se guarda 5 minutos en el navegador', () => {
+        expect(WIDGET_PAGE_CACHE_CONTROL).toMatch(/^public, /);
+        expect(WIDGET_PAGE_CACHE_CONTROL).toContain('max-age=300');
+        expect(WIDGET_PAGE_CACHE_CONTROL).toContain('stale-while-revalidate');
+        expect(WIDGET_PAGE_CACHE_CONTROL).not.toMatch(/private|no-store/);
     });
 
     it('la página: CSP con los sitios elegidos, sin nada de afuera, y embed.js con el modo widget', () => {

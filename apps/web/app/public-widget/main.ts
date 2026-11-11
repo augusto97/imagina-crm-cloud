@@ -336,9 +336,12 @@ function build(): void {
     if (meta.logo_url || meta.company) {
         const brand = el('div', 'w-brand');
         if (meta.logo_url) {
+            // v0.1.409 — el logo se pide recién al abrir el panel (ver `paint`):
+            // la gran mayoría de las visitas nunca lo abre.
             const img = el('img', 'w-logo');
-            img.src = meta.logo_url;
+            img.dataset.src = meta.logo_url;
             img.alt = meta.company;
+            img.decoding = 'async';
             brand.appendChild(img);
         }
         if (meta.company && !meta.logo_url) brand.appendChild(el('span', 'w-company', meta.company));
@@ -518,7 +521,9 @@ function checkReveal(): void {
     if (st.shown) {
         revealed = true;
         watchScroll = false;
-        stat({ kind: 'view', dev: isMobile() ? 'mobile' : 'desktop' });
+        // v0.1.409 — una vez por visita (no por cada página que recorre): es el
+        // único pedido que el widget hace en cada página y no se puede guardar.
+        if (firstThisVisit('view')) stat({ kind: 'view', dev: isMobile() ? 'mobile' : 'desktop' });
         scheduleGreeting();
     } else if (st.wait !== null) {
         revealTimer = window.setTimeout(checkReveal, Math.min(st.wait + 50, 130_000));
@@ -562,7 +567,8 @@ function scheduleGreeting(): void {
     greetTimer = window.setTimeout(() => {
         if (open || greetDismissed() || showsBar()) return;
         greetText = text;
-        stat({ kind: 'greet' });
+        // El saludo vuelve a salir en cada página hasta que lo cierran, pero cuenta una vez por visita.
+        if (firstThisVisit('greet')) stat({ kind: 'greet' });
         paint();
     }, wait);
 }
@@ -594,6 +600,22 @@ function flushStats(beacon = false): void {
         }
         void fetch(url, { method: 'POST', credentials: 'omit', keepalive: true, headers: { 'Content-Type': 'application/json' }, body }).catch(() => undefined);
     }
+}
+
+/**
+ * v0.1.409 — ¿Es la primera vez en esta visita (que apareció, que saludó)? La visita es la
+ * pestaña: `sessionStorage` del marco sigue mientras la persona recorre el
+ * sitio en esa pestaña. Si el navegador no deja guardar, se cuenta igual.
+ */
+function firstThisVisit(kind: 'view' | 'greet'): boolean {
+    const key = `imb-w-${kind}:${location.pathname}`;
+    try {
+        if (sessionStorage.getItem(key) !== null) return false;
+        sessionStorage.setItem(key, '1');
+    } catch {
+        // sin almacenamiento: se cuenta cada página
+    }
+    return true;
 }
 
 /** Cuenta algo para las estadísticas (en la vista previa o abierta sola, no). */
@@ -714,6 +736,13 @@ function paint(): void {
 
     const showPanel = open && (meta.layout === 'card' || current !== null || barMode);
     panel.classList.toggle('w-hidden', !showPanel);
+    if (showPanel) {
+        const logo = panel.querySelector<HTMLImageElement>('img.w-logo[data-src]');
+        if (logo?.dataset.src) {
+            logo.src = logo.dataset.src;
+            delete logo.dataset.src;
+        }
+    }
     menu.classList.toggle('w-hidden', !(open && !showPanel));
     if (!full) panel.style.setProperty('--w-ph', `${panelHeight()}px`);
 

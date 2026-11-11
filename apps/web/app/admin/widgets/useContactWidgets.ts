@@ -31,7 +31,7 @@ export function useContactWidget(id: number) {
     });
 }
 
-/** v0.1.396 — Estadísticas del widget (apariciones, aperturas, toques y contactos por botón). */
+/** v0.1.396 — Estadísticas del widget (visitas, aperturas, toques y contactos por botón). */
 export function useWidgetStats(id: number, days: number, enabled = true) {
     return useQuery({
         queryKey: [...widgetKeys.one(id), 'stats', days] as const,

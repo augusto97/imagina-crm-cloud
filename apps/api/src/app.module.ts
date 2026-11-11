@@ -18,6 +18,7 @@ import { LegalModule } from './legal/legal.module';
 import { HelpModule } from './help/help.module';
 import { BrandModule } from './brand/brand.module';
 import { DomainsModule } from './domains/domains.module';
+import { NetworkModule } from './network/network.module';
 import { BillingModule } from './billing/billing.module';
 import { ExportModule } from './export/export.module';
 import { QrModule } from './qr/qr.module';
@@ -159,6 +160,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         // v0.1.292 (ADR-S50) — enlace público y envío programado de tableros.
         DashboardSharingModule,
         DomainsModule,
+        NetworkModule,
         LegalModule,
         // Fase 7 · entrega 2 — centro de ayuda (Plataforma → Ayuda).
         HelpModule,

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 
 import { WidgetFromFormCard } from '@/admin/widgets/WidgetFromFormCard';
 import { EmbedCodePicker } from './EmbedCodePicker';
+import { useEmbedOrigin } from './useEmbedOrigin';
 import { PublicQrCard } from './PublicQrCard';
 import { cleanEmbedDomain, shareMessage } from './shareHelpers';
 
@@ -49,6 +50,7 @@ export function ShareDialog({
     tab,
     onTab,
     formId,
+    embedOrigin,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -75,7 +77,10 @@ export function ShareDialog({
     onTab: (t: ShareTab) => void;
     /** v0.1.394 — el formulario (para armar un widget de contacto con él). */
     formId?: number;
+    /** v0.1.409 (ADR-S102) — la dirección rápida (por Cloudflare) que mandó el servidor. */
+    embedOrigin?: string | null;
 }): JSX.Element {
+    const codeOrigin = useEmbedOrigin(embedOrigin);
     const isForm = kind === 'form';
     const prefix = isForm ? 'form' : 'booking';
     const view: 'link' | 'embed' = tab === 'embed' ? 'embed' : 'link';
@@ -144,6 +149,7 @@ export function ShareDialog({
                                     testId={`${prefix}-embed`}
                                     dataTour={`${prefix}-embed-mode`}
                                     bare={bare}
+                                    embedOrigin={codeOrigin}
                                     demo={{ path, version, published, dirty, onPublish, onSave, busy: publishBusy }}
                                     extra={
                                         <>

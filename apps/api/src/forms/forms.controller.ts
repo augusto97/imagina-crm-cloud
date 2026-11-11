@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
     BadRequestException,
     Body,
@@ -604,7 +606,22 @@ export class PublicFormPageController {
 let embedBody: Precompressed | null = null;
 /** `embed.js` comprimido una sola vez por proceso. */
 function embedScriptBody(): Precompressed {
-    return (embedBody ??= precompress(FORM_EMBED_JS, { quality: 11 }));
+    return (embedBody ??= precompress(embedScriptSource(), { quality: 11 }));
+}
+
+/**
+ * v0.1.409 — La versión minificada que deja el build (`dist/forms/embed.min.js`,
+ * `scripts/minify-embed.cjs`): 24 KB → 14 KB. Sin ella (desarrollo con la
+ * fuente, tests) se sirve la fuente tal cual.
+ */
+export function embedScriptSource(dir: string = __dirname): string {
+    try {
+        const min = readFileSync(join(dir, 'embed.min.js'), 'utf8');
+        if (min.includes('__imbFormsEmbed') && min.length > 2000) return min;
+    } catch {
+        // sin el minificado
+    }
+    return FORM_EMBED_JS;
 }
 
 interface RenderedPage {

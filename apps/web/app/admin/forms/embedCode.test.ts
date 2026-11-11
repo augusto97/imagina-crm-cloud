@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buttonInk, defaultEmbedLabel, embedCode, embedPopupAttribute, qrTargetUrl, safeHex, type EmbedTarget } from './embedCode';
+import { buttonInk, defaultEmbedLabel, embedCode, embedPopupAttribute, qrTargetUrl, safeHex, withEmbedOrigin, type EmbedTarget } from './embedCode';
 
 const target: EmbedTarget = {
     url: 'https://app.acme.co/api/v1/public/f/abc123',
@@ -64,5 +64,22 @@ describe('v0.1.352 — código para insertar', () => {
         expect(qrTargetUrl('https://app.acme.co/api/v1/public/f/abc123?origen=feria')).toBe(
             'https://app.acme.co/api/v1/public/f/abc123?origen=feria&utm_source=qr',
         );
+    });
+
+    it('v0.1.409 — con la dirección rápida, el código usa esa dirección (la página y el script)', () => {
+        const fast = withEmbedOrigin(target, 'https://w.acme.co');
+        expect(fast.url).toBe('https://w.acme.co/api/v1/public/f/abc123');
+        expect(fast.origin).toBe('https://w.acme.co');
+        const code = embedCode(fast, 'inline', { label: '', color: '#0e7490', position: 'right' });
+        expect(code).toContain('<iframe src="https://w.acme.co/api/v1/public/f/abc123"');
+        expect(code).toContain('<script src="https://w.acme.co/api/v1/public/f/embed.js" async></script>');
+        expect(code).not.toContain('app.acme.co');
+        expect(embedPopupAttribute(fast)).toContain('https://w.acme.co/api/v1/public/f/abc123');
+        // Conserva la consulta (el formulario en modo chat del widget).
+        expect(withEmbedOrigin({ ...target, url: 'https://app.acme.co/api/v1/public/f/abc?imb_chat=1' }, 'https://w.acme.co').url).toBe(
+            'https://w.acme.co/api/v1/public/f/abc?imb_chat=1',
+        );
+        // Sin dirección rápida, nada cambia.
+        expect(withEmbedOrigin(target, null)).toBe(target);
     });
 });

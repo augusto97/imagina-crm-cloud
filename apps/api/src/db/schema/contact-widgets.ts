@@ -28,7 +28,7 @@ export const contactWidgets = pgTable(
 export type ContactWidgetRow = typeof contactWidgets.$inferSelect;
 
 /**
- * v0.1.396 — Estadísticas por widget y por día: apariciones, aperturas,
+ * v0.1.396 — Estadísticas por widget y por día: visitas (desde v0.1.409, una por visita), aperturas,
  * toques de cada botón, saludo y registros por botón. Sumas, nunca datos de
  * una persona (se suman en Redis y se vuelcan aquí).
  */

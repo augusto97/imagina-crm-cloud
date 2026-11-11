@@ -817,6 +817,8 @@ export interface BookingPageDto {
     /** La dirección absoluta (dominio propio de la empresa si responde). */
     public_url?: string;
     public_origin?: string;
+    /** v0.1.409 (ADR-S102) — la dirección rápida para los códigos de insertar (ver `FormDto`). */
+    embed_origin?: string | null;
     bookings_count: number;
     last_booked_at: string | null;
     /** Citas futuras confirmadas (para el contador del panel). */

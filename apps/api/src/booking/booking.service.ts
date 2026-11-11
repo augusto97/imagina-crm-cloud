@@ -32,6 +32,7 @@ import { and, asc, eq, gt, inArray, isNull, notInArray, sql } from 'drizzle-orm'
 import { DRIZZLE, type Db } from '../db/client';
 import { attachments, bookingAppointments, bookingPages, connections, memberships, tenants, users, type BookingPageRow } from '../db/schema';
 import { DomainsService } from '../domains/domains.service';
+import { PlatformNetworkService } from '../network/platform-network.service';
 import { FieldsService } from '../fields/fields.service';
 import { effectivePermissions } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
@@ -133,6 +134,8 @@ export class BookingService {
         @Optional() private readonly cache?: PublicCacheService,
         // v0.1.387 — cobrar al agendar con la conexión de cobro de la empresa.
         @Optional() private readonly collections?: CollectionsService,
+        // v0.1.409 (ADR-S102) — la dirección rápida (por Cloudflare) para los códigos de insertar.
+        @Optional() private readonly network?: PlatformNetworkService,
     ) {}
 
     /** La página guardada y los horarios de la empresa dejan de valer (en todos los servidores). */
@@ -164,6 +167,7 @@ export class BookingService {
             config,
             public_path: path,
             ...(base ? { public_url: `${base}${path}`, public_origin: base } : {}),
+            embed_origin: this.network?.embedOriginFor(base) ?? null,
             bookings_count: row.bookingsCount,
             last_booked_at: row.lastBookedAt ? row.lastBookedAt.toISOString() : null,
             upcoming_count: upcoming,

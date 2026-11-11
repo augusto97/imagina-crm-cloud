@@ -67,8 +67,8 @@ function StatsBody({ data, config }: { data: WidgetStatsDto; config: ContactWidg
     return (
         <>
             <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-3 lg:imcrm-grid-cols-4" data-testid="widget-stats-kpis">
-                <StatTile icon={Eye} label={__('Apariciones')} value={formatNumber(data.views)} hint={__('Páginas donde se vio')} />
-                <StatTile icon={PanelTopOpen} label={__('Lo abrieron')} value={formatNumber(data.opens)} hint={`${widgetRate(data.opens, data.views)} ${__('de las apariciones')}`} />
+                <StatTile icon={Eye} label={__('Visitas')} value={formatNumber(data.views)} hint={__('Visitas donde apareció (una por visita, aunque recorra varias páginas)')} />
+                <StatTile icon={PanelTopOpen} label={__('Lo abrieron')} value={formatNumber(data.opens)} hint={`${widgetRate(data.opens, data.views)} ${__('de las visitas')}`} />
                 <StatTile icon={MousePointerClick} label={__('Toques en botones')} value={formatNumber(data.clicks)} />
                 <StatTile icon={UserCheck} label={__('Contactos')} value={formatNumber(data.leads)} hint={__('Dejaron sus datos o agendaron')} />
             </div>
@@ -116,7 +116,7 @@ function StatsBody({ data, config }: { data: WidgetStatsDto; config: ContactWidg
                             <Section title={__('El saludo')}>
                                 <p className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm" data-testid="widget-stats-greeting">
                                     <MessageCircle className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" />
-                                    {(data.greetings === 1 ? __('Se vio %1 vez y lo tocaron %2 (%3).') : __('Se vio %1 veces y lo tocaron %2 (%3).'))
+                                    {(data.greetings === 1 ? __('Se vio en %1 visita y lo tocaron %2 (%3).') : __('Se vio en %1 visitas y lo tocaron %2 (%3).'))
                                         .replace('%1', formatNumber(data.greetings))
                                         .replace('%2', formatNumber(data.greeting_clicks))
                                         .replace('%3', widgetRate(data.greeting_clicks, data.greetings))}
@@ -130,7 +130,7 @@ function StatsBody({ data, config }: { data: WidgetStatsDto; config: ContactWidg
     );
 }
 
-/** Apariciones (columna clara) y contactos (columna llena) por día. */
+/** Visitas (columna clara) y contactos (columna llena) por día. */
 function DailyChart({ data }: { data: WidgetStatsDto }): JSX.Element {
     const [hover, setHover] = useState<number | null>(null);
     const days = data.days;
@@ -151,14 +151,14 @@ function DailyChart({ data }: { data: WidgetStatsDto }): JSX.Element {
             <div className="imcrm-mb-1 imcrm-flex imcrm-items-center imcrm-gap-4 imcrm-text-[11px] imcrm-text-muted-foreground">
                 <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
                     <span className="imcrm-inline-block imcrm-h-2.5 imcrm-w-2.5 imcrm-rounded-sm imcrm-bg-primary/25" aria-hidden />
-                    {__('Apariciones')}
+                    {__('Visitas')}
                 </span>
                 <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
                     <span className="imcrm-inline-block imcrm-h-2.5 imcrm-w-2.5 imcrm-rounded-sm imcrm-bg-primary" aria-hidden />
                     {__('Contactos')}
                 </span>
             </div>
-            <svg viewBox={`0 0 ${W} ${H}`} className="imcrm-h-auto imcrm-w-full imcrm-overflow-visible" role="img" aria-label={__('Apariciones y contactos por día')} onMouseLeave={() => setHover(null)}>
+            <svg viewBox={`0 0 ${W} ${H}`} className="imcrm-h-auto imcrm-w-full imcrm-overflow-visible" role="img" aria-label={__('Visitas y contactos por día')} onMouseLeave={() => setHover(null)}>
                 {ticks.map((v) => (
                     <g key={v}>
                         <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} className="imcrm-stroke-border" strokeWidth={1} strokeDasharray={v === 0 ? undefined : '3 3'} />
@@ -196,7 +196,7 @@ function DailyChart({ data }: { data: WidgetStatsDto }): JSX.Element {
                 <div className="imcrm-pointer-events-none imcrm-absolute imcrm-top-0 imcrm-right-0 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-popover imcrm-px-2.5 imcrm-py-1.5 imcrm-text-[11px] imcrm-shadow-sm">
                     <p className="imcrm-font-medium imcrm-text-foreground">{formatDateStr(h.day)}</p>
                     <p className="imcrm-text-muted-foreground">
-                        {__('Apariciones')}: <span className="imcrm-text-foreground">{formatNumber(h.views)}</span> · {__('Lo abrieron')}:{' '}
+                        {__('Visitas')}: <span className="imcrm-text-foreground">{formatNumber(h.views)}</span> · {__('Lo abrieron')}:{' '}
                         <span className="imcrm-text-foreground">{formatNumber(h.opens)}</span> · {__('Contactos')}: <span className="imcrm-text-foreground">{formatNumber(h.leads)}</span>
                     </p>
                 </div>

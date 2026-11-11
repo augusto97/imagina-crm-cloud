@@ -415,7 +415,14 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.408**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.409**
+(**el widget de contacto más liviano + «dirección rápida» por Cloudflare** —
+estadística por visita, logo al abrir con dirección fija, página guardada 5
+minutos, `embed.js` minificado, y Plataforma → Dominios → «Dirección rápida
+para los sitios web» con la IP real detrás de Cloudflare y «Comprobar»;
+ADR-S102. **Falta que el operador la configure** en Cloudflare/ServerAvatar
+—pasos en la tarjeta y en `docs/runbook-public-traffic.md`— y que las empresas
+copien de nuevo el código). Antes v0.1.408
 (**el editor del widget de contacto rediseñado** con el kit de los
 constructores — pantalla completa, menú de secciones con su estado, vista previa
 que ya no cae a «celular» en el escritorio, «Instalar» con lo que falta; addendum
@@ -1863,6 +1870,25 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-11 · v0.1.409** — **El widget, más liviano + la «dirección rápida»
+  por Cloudflare** (pregunta del usuario: "¿ese widget es súper liviano?… va a
+  cargar en todas las secciones de los sitios de los clientes y no quiero que me
+  consuma recursos del servidor ni lo ponga lento; analiza y dime qué opciones
+  hay" → eligió «la A y la B»). Medido antes: el servidor aguantaba (~0,13 ms de
+  CPU por pedido), pero cada visitante pedía de más. A: estadística «apareció»
+  y saludo por VISITA, logo recién al abrir por una dirección fija cacheada un
+  año (no una URL firmada que cambiaba cada hora), página del widget 5 minutos
+  en el navegador, `embed.js` minificado (4,5 KB por la red). B: dirección
+  aparte para lo insertado, detrás de Cloudflare (la app y los dominios propios
+  siguen directos), con la IP real por los rangos de Cloudflare y un
+  «Comprobar» que revisa cada paso; los códigos nuevos salen por ahí (salvo las
+  empresas con dominio propio). De paso: los formularios nunca recibían el
+  dominio propio de la empresa para sus enlaces (al módulo le faltaba
+  `DomainsModule`). Decisión: no se genera una versión chica del logo (sólo se
+  pide al abrir). **Pendiente del operador**: configurar la dirección
+  (CNAME en gris → alias + certificado en ServerAvatar → naranja + SSL Full
+  strict → Cache Rule → apagar Email Obfuscation y Rocket Loader → dominios del
+  captcha → «Comprobar» y «Guardar»). Detalle en `CLAUDE.md` §5 y ADR-S102.
 - **2026-11-11 · v0.1.408** — **El editor del widget de contacto, rediseñado**
   (pedido del usuario con captura: "esta interfaz del widget de contacto no está
   casi bonita ni pulida, mejora esa interfaz… hablo del editor también"). Usa el

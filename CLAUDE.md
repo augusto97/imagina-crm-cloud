@@ -14316,6 +14316,64 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         cerrar vuelve a Ajustes, y en el celular el panel ocupa toda la
         pantalla del teléfono.
 
+  - [x] **El widget, más liviano + la «dirección rápida» por Cloudflare
+        (v0.1.409, ADR-S102, pregunta del usuario: "¿ese widget es súper
+        liviano?… va a cargar en todas las secciones de los sitios de los
+        clientes y no quiero que me consuma recursos del servidor; analiza y
+        dime qué opciones hay" → «la A y la B»)**. Medido antes en un proceso:
+        script y página del widget ~8-9 mil pedidos/s (~0,13 ms de CPU), la
+        estadística ~3,8 mil/s. El servidor aguantaba; lo que sobraba eran
+        pedidos por visitante.
+        (a) **Menos pedidos por visitante**: «apareció» y «se vio el saludo» se
+        cuentan una vez por VISITA (`firstThisVisit`, sessionStorage por página
+        del sitio; Estadísticas dice «Visitas»); el **logo** se pide recién al
+        abrir el panel (`data-src`) por una dirección FIJA del propio widget
+        (`GET /public/w/:token/logo/:fileId`: sólo el logo que ese widget
+        muestra y con «Mostrar el logo» encendido, imagen reconocida por sus
+        bytes —nunca SVG—, `public, max-age=31536000, immutable`, `CSP:
+        sandbox`, en memoria con LRU de 32 MB y single-flight) en vez de una URL
+        firmada que cambiaba cada hora; la **página del widget** se guarda 5
+        minutos en el navegador (`WIDGET_PAGE_CACHE_CONTROL`: `max-age=300,
+        s-maxage=60, stale-while-revalidate=86400`); **`embed.js` minificado**
+        al compilar (`apps/api/scripts/minify-embed.cjs` con esbuild: 24,6 →
+        14,3 KB, 4,6 KB por la red), y `embedScriptSource` usa el original si
+        falta. Decisión: no se genera una versión chica del logo (re-mapeo de
+        adjuntos y papelera, para algo que ya se pide sólo al abrir).
+        (b) **Dirección rápida** (Plataforma → Dominios → «Dirección rápida para
+        los sitios web», `PlatformEmbedHostCard`): una dirección APARTE (p. ej.
+        `w.tudominio.com`) detrás de Cloudflare para lo insertado; la app y los
+        dominios propios siguen directos (proxiar todo rompería los dominios de
+        las empresas). Redis `platform:network` (viaja en el snapshot, se relee
+        cada minuto), `GET/PUT /platform/network` y `POST
+        /platform/network/check` (superadmin). Se valida: ni la de la app, ni
+        bajo `PUBLIC_BASE_DOMAIN`, ni el dominio de una empresa. Los DTO de
+        formularios, agenda y widget traen `embed_origin` y los códigos
+        (Compartir → Insertar e Instalar) salen por ahí (`withEmbedOrigin`),
+        salvo con dominio propio (`embedOriginFor` en el servidor y
+        `useEmbedOrigin` en el front); la demostración sigue con la app.
+        (c) **IP real**: `trustProxy` es ahora una función
+        (`common/trust-proxy.ts`): `TRUST_PROXY` + los rangos oficiales de
+        Cloudflare si la plataforma marca «Las visitas llegan por Cloudflare»
+        (o `TRUST_PROXY=loopback,cloudflare`). (d) **«Comprobar»** sin guardar:
+        responde, es ESTA instalación (huella por `GET /public/net-check`, que
+        no devuelve IPs), pasa por Cloudflare, el servidor ve la IP real y
+        Cloudflare guarda el script y la página (`cf-cache-status`), con el
+        motivo en palabras (521, regla de caché que falta…). La tarjeta trae
+        los 7 pasos con la regla de caché para copiar (apagar Email Obfuscation
+        y Rocket Loader, SSL Full strict, dominios del captcha). (e) **Bug de
+        paso**: `FormsModule` no importaba `DomainsModule`, así que los enlaces
+        de los formularios nunca salían por el dominio propio de la empresa
+        (ADR-S17). Runbook `docs/runbook-public-traffic.md` reescrito (faltaba
+        `/public/w/` en la regla) y doble de desarrollo
+        `scripts/dev/fake-cloudflare.mjs`. Novedad en el catálogo. Tests:
+        `trust-proxy.spec` (6), `platform-network.spec` (5),
+        `contact-widgets.spec` +3 (logo, minificado, caché) y `embedCode.test`
+        +1 — E2E navegador 24/24 contra el Cloudflare simulado y un sitio de
+        otro origen (tres páginas = una visita, logo sólo al abrir, el segundo
+        visitante sale de la caché, tarjeta en claro, oscuro y celular).
+        **Pendiente del operador**: configurar la dirección y avisar a las
+        empresas que copien el código de nuevo.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
