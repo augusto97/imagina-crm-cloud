@@ -415,7 +415,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.409**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.410**
+(**«Compartir» de la lista rediseñado** — pestañas Personas / Enlace público,
+un buscador para personas, equipos y correos de afuera, «Quién tiene acceso» en
+una sola lista, la página pública con interruptor; **sigue v0.1.411: el índice
+de automatizaciones de una lista con carpetas y orden**, pedido del usuario
+mientras se hacía esta). Antes **v0.1.409**
 (**el widget de contacto más liviano + «dirección rápida» por Cloudflare** —
 estadística por visita, logo al abrir con dirección fija, página guardada 5
 minutos, `embed.js` minificado, y Plataforma → Dominios → «Dirección rápida
@@ -1870,6 +1875,25 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-11 · v0.1.410** — **«Compartir» de la lista rediseñado** (pedido
+  del usuario con captura: "esta pantalla también deberíamos mejorarla
+  visualmente"). La ventana era una columna con tres secciones apiladas (enlace,
+  personas, equipos, personas de afuera, página pública), cada una con su propio
+  buscador y nivel, y un texto con voseo. Ahora: dos pestañas (**Personas** con
+  contador · **Enlace público** con punto verde si está publicada); en Personas
+  UN buscador (personas de la empresa, equipos y, si se escribe un correo que no
+  es de nadie, «Invitar a…» como persona de afuera, con «Puede ver» o «Puede
+  editar» según el nivel elegido) y **Quién tiene acceso** en una sola lista
+  (Todos en la empresa con el atajo a «Permisos por rol», equipos, personas y de
+  afuera con su nivel en línea y ×); abajo «Copiar enlace». En Enlace público:
+  tarjeta con interruptor, enlace con copiar y abrir, registros/vence/columnas,
+  insertar plegado con los sitios como etiquetas, pie con «Descartar» y
+  «Guardar». Pantalla completa en el celular. **Bug de paso**: abierto desde el
+  menú lateral, «Copiar enlace» copiaba la pantalla de atrás y no la lista.
+  Ayuda (Aprende, guías, escenarios de capturas) y novedad al día. **Pedido
+  nuevo del usuario durante esta versión** (queda para v0.1.411): mejorar la
+  vista con todas las automatizaciones de una lista —con 20 o más no se entiende
+  cuál es cuál— con carpetas u otra forma de ordenarlas.
 - **2026-11-11 · v0.1.409** — **El widget, más liviano + la «dirección rápida»
   por Cloudflare** (pregunta del usuario: "¿ese widget es súper liviano?… va a
   cargar en todas las secciones de los sitios de los clientes y no quiero que me

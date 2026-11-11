@@ -289,6 +289,9 @@ export const ListPanelItem = memo(function ListPanelItem({
                         }}
                         listId={list.id}
                         listName={list.name}
+                        listSlug={list.slug}
+                        listIcon={list.icon}
+                        listColor={list.color}
                         canPublish={canManage}
                     />
                 </Suspense>

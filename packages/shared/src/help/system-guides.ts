@@ -499,7 +499,7 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
             '3. En **Ajuste fino** decides qué campos no ve ese rol y si «lo suyo» son los registros que creó o los que tiene asignados.',
             '4. Toca **Guardar permisos**.',
         ].join('\n'),
-        tip: 'Para una persona o un equipo puntual, usa **Compartir → Con tu equipo**: su acceso manda sobre el de su rol, sólo en esa lista.',
+        tip: 'Para una persona o un equipo puntual, usa **Compartir → Personas** en la lista: su acceso manda sobre el de su rol, sólo en esa lista.',
         screens: ['list-settings:permisos'],
         keywords: 'permisos acceso lista privado ocultar campos rol quien ve',
         route: '/lists/{list}/edit?s=permisos',
@@ -531,7 +531,7 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         category: 'team',
         minutes: 1,
         body: [
-            '- Una lista entera: en la lista toca **Compartir → Con tu equipo** y, en **Personas de afuera**, escribe su correo y toca **Invitar**.',
+            '- Una lista entera: en la lista toca **Compartir → Personas**, escribe su correo completo en el buscador y toca **Invitar a…**.',
             '- Un solo registro: en la ficha, toca el botón de compartir (**Compartir este registro con alguien de afuera**).',
             'La persona invitada ve sólo lo que le compartiste, con el nivel que elijas, y no ocupa un usuario de tu plan.',
         ].join('\n'),

@@ -3,7 +3,7 @@ import { AlertTriangle, Check, CheckCircle2, ChevronRight, Copy, Globe, RefreshC
 import type { WidgetProblem } from '@imagina-base/shared';
 
 import { CodeBlock } from '@/admin/forms/EmbedCodePicker';
-import { DomainChips } from '@/admin/forms/ShareDialog';
+import { DomainChips } from '@/admin/forms/DomainChips';
 import { Button } from '@/components/ui/button';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';

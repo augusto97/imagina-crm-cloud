@@ -68,23 +68,18 @@ export default [
         setup: removeGuest,
         steps: [
             { go: '/lists/{list:Tareas}/records', wait: '[data-tour="records-share"]' },
-            { click: '[data-tour="records-share"]', then: '[data-testid="list-guest-access"]', caption: 'En la lista, toca «Compartir».' },
+            { click: '[data-tour="records-share"]', then: '[data-testid="share-add-input"]', caption: 'En la lista, toca «Compartir»: se abre en «Personas».' },
+            { fill: '[data-testid="share-add-input"]', text: GUEST_EMAIL, caption: 'En el buscador, escribe el correo completo del proveedor, el freelancer o el contador.' },
+            { wait: '[data-testid="share-option-email"]' },
+            { click: '[data-testid="share-option-email"]', caption: 'Toca «Invitar a…»: ve sólo esta lista y no ocupa un usuario de tu plan.' },
+            { wait: '[data-testid="share-row-guest"]' },
             {
                 run: async ({ page, sleep }) => {
-                    await page.locator('[data-testid="list-guest-access"]').first().scrollIntoViewIfNeeded();
-                    await sleep(600);
+                    await page.locator('[data-testid="share-row-guest"] select').first().selectOption('comment');
+                    await sleep(1200);
                 },
             },
-            { fill: '[data-testid="guest-invite-form"] input[type="email"]', text: GUEST_EMAIL, caption: 'En «Personas de afuera», escribe el correo del proveedor, el freelancer o el contador.' },
-            {
-                run: async ({ page, sleep }) => {
-                    await page.locator('[data-testid="guest-invite-form"] select').first().selectOption({ label: 'Puede comentar' });
-                    await sleep(300);
-                },
-            },
-            { click: '[data-testid="guest-invite-form"] button[type="submit"]', caption: 'Elige el nivel —aquí, «Puede comentar»— y toca «Invitar».' },
-            { wait: 1800 },
-            { shot: '[data-testid="list-guest-access"]', caption: 'Le llega una invitación por correo. Desde aquí cambias su nivel o le quitas el acceso cuando termine.' },
+            { shot: '[data-testid="share-access-list"]', caption: 'Queda en «Quién tiene acceso» y le llega una invitación por correo. En su fila cambias el nivel —aquí «Puede comentar»— o le quitas el acceso con la ×.' },
             { run: removeGuest },
         ],
     },
