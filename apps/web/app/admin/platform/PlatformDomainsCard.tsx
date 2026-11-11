@@ -10,6 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { __ } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 
+import { PlatformEmbedHostCard } from './PlatformEmbedHostCard';
+
 /**
  * v0.1.246 — Plataforma → Dominios. El servidor atiende los dominios de las
  * empresas con el camino de ServerAvatar: cada uno se agrega A MANO como
@@ -23,6 +25,17 @@ import { formatDateTimeStr } from '@/lib/tenantFormat';
 const KEY = ['platform-domains'];
 
 export function PlatformDomainsCard(): JSX.Element {
+    // v0.1.409 — la dirección rápida no depende de la revisión de dominios
+    // (que consulta el DNS de cada empresa y puede tardar).
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4">
+            <TenantDomains />
+            <PlatformEmbedHostCard />
+        </div>
+    );
+}
+
+function TenantDomains(): JSX.Element {
     const q = useQuery({ queryKey: KEY, queryFn: () => api.platformDomainsGet() });
 
     if (q.isLoading) {

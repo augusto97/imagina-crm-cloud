@@ -8,7 +8,7 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
 import { EmbedDemo } from './EmbedDemo';
-import { defaultEmbedLabel, embedCode, embedPopupAttribute, safeHex, type EmbedMode, type EmbedOpen, type EmbedTarget } from './embedCode';
+import { defaultEmbedLabel, embedCode, embedPopupAttribute, safeHex, withEmbedOrigin, type EmbedMode, type EmbedOpen, type EmbedTarget } from './embedCode';
 import { highlightEmbedCode, type CodeToken } from './shareHelpers';
 
 const MODES: Array<{ id: EmbedMode; label: string; short: string }> = [
@@ -47,6 +47,7 @@ export function EmbedCodePicker({
     bare,
     demo,
     extra,
+    embedOrigin,
 }: {
     target: EmbedTarget;
     accent: string;
@@ -65,6 +66,11 @@ export function EmbedCodePicker({
     demo?: { path: string; version: string; published: boolean; dirty: boolean; onPublish?: () => void; onSave?: () => void; busy?: boolean };
     /** Lo que va debajo del código (p. ej. los sitios permitidos). */
     extra?: ReactNode;
+    /**
+     * v0.1.409 (ADR-S102) — La dirección rápida (por Cloudflare): el código
+     * sale de ahí. La demostración sigue por la dirección de la app.
+     */
+    embedOrigin?: string | null;
 }): JSX.Element {
     const wide = useMediaQuery('(min-width: 1024px)');
     const [mode, setMode] = useState<EmbedMode>('inline');
@@ -73,8 +79,9 @@ export function EmbedCodePicker({
     const [position, setPosition] = useState<'right' | 'left'>('right');
     const [open, setOpen] = useState<EmbedOpen>('window');
     const [copied, setCopied] = useState<'code' | 'attr' | null>(null);
-    const code = embedCode(target, mode, { label, color, position, open });
-    const popupAttr = embedPopupAttribute(target, open, position);
+    const codeTarget = withEmbedOrigin(target, embedOrigin);
+    const code = embedCode(codeTarget, mode, { label, color, position, open });
+    const popupAttr = embedPopupAttribute(codeTarget, open, position);
     // La esquina del flotante y, en el botón, el lado del panel lateral.
     const showSide = mode === 'float' || open === 'side';
     const copy = (text: string, which: 'code' | 'attr'): void => {

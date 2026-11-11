@@ -2572,4 +2572,30 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver mis widgets', href: '/settings?s=widgets' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.409-widget-liviano',
+        version: '0.1.409',
+        date: '2026-11-11',
+        kind: 'improvement',
+        title: 'El widget de contacto, más liviano para tu sitio',
+        summary:
+            'El widget que pegas en tu sitio pesa menos y carga menos cosas: el logo se pide recién cuando alguien lo abre, y lo demás queda guardado en el navegador mientras la persona recorre tus páginas.',
+        media: {
+            slides: [
+                {
+                    title: 'Lo justo en cada página',
+                    text: 'El script se achicó a la mitad y la página del widget se guarda unos minutos en el navegador: al pasar de una página a otra de tu sitio casi no se vuelve a pedir nada.',
+                    illustration: 'widget-contacto',
+                },
+                {
+                    title: 'Estadísticas por visita',
+                    text: 'En Estadísticas, «Visitas» cuenta una por cada persona que entra a tu sitio, aunque recorra varias páginas. Antes se contaba una por cada página que abría.',
+                    illustration: 'form-stats',
+                },
+            ],
+        },
+        body: 'Si copiaste el código del widget, de un formulario o de la agenda hace tiempo, cópialo de nuevo desde **Instalar** o **Compartir → Insertar en tu sitio**: el código nuevo puede salir por una dirección más rápida.',
+        action: { label: 'Ver mis widgets', href: '/settings?s=widgets' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

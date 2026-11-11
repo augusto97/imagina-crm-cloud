@@ -360,6 +360,9 @@ import {
     type PlatformDiagnostics,
     type PlatformDomain,
     type PlatformDomains,
+    type PlatformNetworkView,
+    type NetworkCheckResult,
+    type UpdatePlatformNetworkInput,
     type SmtpDiagnoseInput,
     type SmtpDiagnostic,
     type SmtpDnsReport,
@@ -1735,6 +1738,16 @@ export class CloudClient {
     }
     platformDomainDismissRetired(domain: string): Promise<void> {
         return this.request('DELETE', `/platform/domains/retired/${encodeURIComponent(domain)}`, {});
+    }
+    /** v0.1.409 (ADR-S102) — la dirección rápida para los sitios (por Cloudflare). */
+    platformNetworkGet(): Promise<PlatformNetworkView> {
+        return this.request('GET', '/platform/network', { schema: z.custom<PlatformNetworkView>() });
+    }
+    platformNetworkUpdate(input: UpdatePlatformNetworkInput): Promise<PlatformNetworkView> {
+        return this.request('PUT', '/platform/network', { body: input, schema: z.custom<PlatformNetworkView>() });
+    }
+    platformNetworkCheck(input: UpdatePlatformNetworkInput): Promise<NetworkCheckResult> {
+        return this.request('POST', '/platform/network/check', { body: input, schema: z.custom<NetworkCheckResult>() });
     }
 
     // --- payments (ADR-S12) ---

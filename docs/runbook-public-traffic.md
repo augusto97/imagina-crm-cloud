@@ -1,9 +1,10 @@
-# Formularios y agenda con mucho tráfico (ADR-S95)
+# Formularios, agenda y widget con mucho tráfico (ADR-S95, ADR-S102)
 
-Un formulario o una agenda insertados en el sitio de una empresa reciben una
-visita por cada persona que abre esa página del sitio, la llene o no. Desde
-v0.1.352 la app aguanta eso sola; esta guía explica qué hace y qué hacer si
-alguna vez no alcanza.
+Un formulario, una agenda o el widget de contacto insertados en el sitio de una
+empresa reciben una visita por cada persona que abre esa página del sitio, la
+llene o no (el widget, en TODAS las páginas del sitio). Desde v0.1.352 la app
+aguanta eso sola; esta guía explica qué hace y cómo poner Cloudflare delante
+para que el servidor casi no lo vea.
 
 ## Lo que hace la app sola
 
@@ -33,7 +34,14 @@ alguna vez no alcanza.
 - **Insertar sin cargar.** Con «Ventana al hacer clic» o «Botón flotante» el
   formulario no se pide hasta que alguien toca el botón (o pasa el mouse sobre
   él). Es lo que hacen Calendly y Cal.com.
-- **`embed.js`** va comprimido de antemano, con `ETag` y una hora de caché.
+- **`embed.js`** va minificado y comprimido de antemano (13,9 KB → 4,5 KB por
+  la red), con `ETag` y una hora de caché.
+- **El widget de contacto** (v0.1.409): su página (`/api/v1/public/w/<token>`)
+  se arma una vez y se reusa como la de un formulario, y el navegador la guarda
+  5 minutos (`max-age=300, s-maxage=60`). El logo se pide recién al abrir el
+  panel, por una dirección fija del propio widget que se guarda un año. Las
+  estadísticas cuentan una «aparición» por visita (no una por página), así un
+  visitante que recorre diez páginas manda un aviso y no diez.
 
 ## Cuándo preocuparse
 
@@ -47,32 +55,79 @@ picos:
    pone lenta durante los picos.
 2. Pon una CDN delante (abajo).
 
-## Cloudflare delante (opcional)
+## Cloudflare delante: la «dirección rápida» (v0.1.409, ADR-S102)
 
-La app ya manda las cabeceras correctas; sólo hay que decirle a Cloudflare que
-respete las del servidor en las rutas públicas.
+La idea: lo que se inserta en los sitios de las empresas (el script
+`embed.js`, el widget y los formularios y agendas insertados) sale por una
+dirección APARTE, por ejemplo `w.tudominio.com`, que pasa por Cloudflare.
+Cloudflare entrega esas páginas desde su red y el servidor casi no las ve. La
+app del equipo y los dominios propios de las empresas (ADR-S17) siguen yendo
+directo al servidor: no se pone la app entera detrás de Cloudflare (los
+dominios propios de las empresas dejarían de funcionar, errores 1001/1014).
 
-1. Apunta el dominio por Cloudflare (proxy naranja).
-2. **Caching → Cache Rules → Create rule**:
-   - Nombre: `Páginas públicas`.
-   - Condición (*Custom filter expression*):
-     `(starts_with(http.request.uri.path, "/api/v1/public/f/") or starts_with(http.request.uri.path, "/api/v1/public/b/"))`
-   - Acción: **Eligible for cache**, *Edge TTL* → **Use cache-control header if
-     present**, *Browser TTL* → **Respect origin**.
-3. No hace falta excluir nada a mano: el sello, los envíos, los horarios y las
-   reservas salen con `no-store` o por POST, y Cloudflare no los guarda.
-4. Comprueba con `curl -sI https://tu-dominio/api/v1/public/f/<token>`: la
-   segunda vez debe decir `cf-cache-status: HIT`.
-5. (v0.1.374) **Que los parámetros de las campañas no rompan la caché.** Un
-   enlace con `?utm_campaign=…&gclid=…` es una dirección distinta por cada clic
-   de anuncio, y Cloudflare, por defecto, la guarda aparte. La página es la
-   misma para todos (los datos de origen los lee el navegador y viajan con el
-   envío), así que en la misma regla, en **Cache key → Query string**, elige
-   **Ignore query string** (o «Exclude» con `utm_*`, `gclid`, `gbraid`,
-   `wbraid`, `fbclid`, `msclkid`, `ttclid`). Insertado en un sitio, el
-   formulario NO recibe esos datos por su dirección (llegan por mensaje del
-   script de inserción), así que este paso sólo importa para el enlace directo
-   compartido en anuncios.
+Todo se configura en **Plataforma → Dominios → «Dirección rápida para los sitios
+web»**, que trae los pasos y un botón **«Comprobar»**. En resumen:
+
+1. **DNS en Cloudflare**: un CNAME `w` → el host de la app (por ejemplo
+   `base.tudominio.com`), **en gris (DNS only)** por ahora. Tiene que ser un
+   subdominio DIRECTO del dominio (`w.tudominio.com`): el certificado gratis de
+   Cloudflare no cubre uno de segundo nivel (`w.base.tudominio.com`).
+2. **ServerAvatar**: agrega `w.tudominio.com` como alias de la aplicación y
+   vuelve a emitir el certificado de Let's Encrypt (con la nube en gris, para
+   que Let's Encrypt llegue al servidor).
+3. **Nube naranja** en ese registro y, en **SSL/TLS**, el modo **Full
+   (strict)** (el servidor ya tiene su certificado).
+4. **Caching → Cache Rules → Create rule** con la condición que muestra el
+   panel:
+   `(http.host eq "w.tudominio.com" and starts_with(http.request.uri.path, "/api/v1/public/"))`
+   - Acción: **Eligible for cache**; *Edge TTL* → **Use cache-control header if
+     present, bypass cache if not**; *Browser TTL* → **Respect origin**.
+   - No hace falta excluir nada a mano: el sello anti-robots, los envíos, los
+     clics, las estadísticas, los horarios y las reservas salen con `no-store`,
+     sin `Cache-Control` o por POST, y Cloudflare no los guarda.
+   - (v0.1.374) En la misma regla, **Cache key → Query string → Ignore query
+     string** (o «Exclude» con `utm_*`, `gclid`, `gbraid`, `wbraid`, `fbclid`,
+     `msclkid`, `ttclid`): un enlace con datos de campaña es una dirección
+     distinta por cada clic y, por defecto, Cloudflare la guarda aparte.
+5. **Rules → Configuration Rules**, con la misma condición: apaga **Email
+   Obfuscation** y **Rocket Loader**. Los dos reescriben el HTML y rompen las
+   páginas (los scripts van autorizados por hash en la CSP).
+6. **Captcha**: si los formularios usan Turnstile, hCaptcha o reCAPTCHA, agrega
+   `w.tudominio.com` a los dominios permitidos de la clave.
+7. En el panel, escribe la dirección, marca **«Las visitas llegan por
+   Cloudflare»**, toca **«Comprobar»** y, si todo sale bien, **«Guardar»**.
+
+«Comprobar» revisa, sin guardar nada: que la dirección responda, que sea ESTA
+instalación, que pase por Cloudflare, que el servidor vea la IP real de cada
+visitante y que Cloudflare guarde el script y la página del widget
+(`cf-cache-status: HIT`). Si algo falta lo dice en palabras (por ejemplo, un
+521 o la regla de caché que falta).
+
+**La IP real.** Detrás de Cloudflare el servidor ve llegar los pedidos desde
+los nodos de Cloudflare. Con «Las visitas llegan por Cloudflare» el servidor le
+cree la cadena `X-Forwarded-For` a las direcciones oficiales de Cloudflare
+(`apps/api/src/common/trust-proxy.ts`, tomadas de cloudflare.com/ips) y ve la
+IP del visitante: los límites por visitante siguen siendo por visitante. El
+nginx de ServerAvatar ya pasa esa cabecera. También se puede fijar desde el
+`.env` con `TRUST_PROXY=loopback,cloudflare`. Ojo: alguien que hable directo
+con el servidor desde una dirección de Cloudflare (un Worker) puede elegir la
+IP que el servidor ve; sólo afecta a los límites por IP (las contraseñas
+también se frenan por cuenta).
+
+**Qué cambia para las empresas.** Los códigos que copien desde ahora (Compartir
+→ Insertar en tu sitio, e Instalar del widget) salen con la dirección rápida.
+Los que ya pegaron siguen funcionando por la dirección de la app; para que
+pasen por Cloudflare, que copien el código de nuevo. Las empresas que comparten
+por su dominio propio siguen con su dominio (white-label): no se les pone una
+dirección de la plataforma.
 
 Al despublicar un formulario, la CDN puede seguir mostrando la página vieja
-hasta 30 segundos (el envío ya lo rechaza el servidor al instante).
+hasta 30 segundos (60 la del widget; el envío ya lo rechaza el servidor al
+instante).
+
+### Probarlo en desarrollo
+
+`node scripts/dev/fake-cloudflare.mjs 8790` levanta un «Cloudflare» de prueba
+delante del API (agrega `cf-ray`, la cadena `X-Forwarded-For` con un nodo de
+Cloudflare y una caché con `cf-cache-status`). En el panel, la dirección es
+`http://127.0.0.1:8790` (en desarrollo se acepta http).

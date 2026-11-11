@@ -683,6 +683,7 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
             name={config.settings.title.trim() || draft.name || page.name}
             url={bookingPublicUrl(current)}
             origin={bookingPublicOrigin(current)}
+            embedOrigin={current.embed_origin ?? null}
             path={current.public_path}
             version={demoVersion([current.updated_at, current.enabled, current.public_path])}
             published={current.enabled}

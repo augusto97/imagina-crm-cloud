@@ -2,6 +2,7 @@ import { PublicThemesController } from './public-themes.controller';
 import { PublicThemesService } from './public-themes.service';
 import { Global, Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { DomainsModule } from '../domains/domains.module';
 import { FieldsModule } from '../fields/fields.module';
 import { FilesModule } from '../files/files.module';
 import { ListsModule } from '../lists/lists.module';
@@ -23,7 +24,7 @@ import { FormStatsService } from './form-stats.service';
  */
 @Global()
 @Module({
-    imports: [AuthModule, ListsModule, FieldsModule, FilesModule, RecordsModule, RecordTemplatesModule],
+    imports: [AuthModule, DomainsModule, ListsModule, FieldsModule, FilesModule, RecordsModule, RecordTemplatesModule],
     controllers: [FormsController, PublicFormsController, PublicFormPageController, PlatformCaptchaController, WorkspaceCaptchaController, PublicThemesController],
     providers: [FormsService, FormStatsService, CaptchaService, PublicThemesService],
     exports: [FormsService, FormStatsService, CaptchaService, PublicThemesService],

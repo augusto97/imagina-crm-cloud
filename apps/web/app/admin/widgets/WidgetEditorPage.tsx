@@ -55,6 +55,7 @@ import { WidgetHoursEditor } from './WidgetHoursEditor';
 import { WidgetInstallPanel } from './WidgetInstallPanel';
 import { WidgetLookEditor } from './WidgetLookEditor';
 import { WidgetPreview } from './WidgetPreview';
+import { useEmbedOrigin } from '@/admin/forms/useEmbedOrigin';
 import { WidgetStatsPanel } from './WidgetStatsPanel';
 import { addButton, editorProblems, newButton, previewMeta, sameConfig } from './widgetEditor';
 import {
@@ -194,8 +195,10 @@ function Editor({ widget, options }: { widget: ContactWidgetDto; options: Contac
     };
 
     const live = update.data ?? widget;
+    const codeOrigin = useEmbedOrigin(live.embed_origin ?? widget.embed_origin);
     const enabled = enabledView ?? live.enabled;
-    const code = widgetEmbedCode(window.location.origin, live.public_path);
+    // v0.1.409 (ADR-S102) — por la dirección rápida (Cloudflare) si la plataforma la tiene.
+    const code = widgetEmbedCode(codeOrigin ?? window.location.origin, live.public_path);
 
     const patchConfig = (patch: Partial<ContactWidgetConfig>): void => setConfig((c) => ({ ...c, ...patch }));
     const onAdd = (type: WidgetButtonType): void => {

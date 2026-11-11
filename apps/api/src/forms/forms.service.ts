@@ -118,6 +118,7 @@ import { configureFormEditRuntime, editLinkCode, editLinkUrl, parseEditCode, rea
 import { RecordTemplatesService } from '../record-templates/record-templates.service';
 import { DataConsentService, newWithdrawRef } from '../data-consent/data-consent.service';
 import { DomainsService } from '../domains/domains.service';
+import { PlatformNetworkService } from '../network/platform-network.service';
 import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
 import { IncidentHub } from '../incidents/incident-hub';
 import { BillingService } from '../billing/billing.service';
@@ -383,6 +384,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         @Optional() private readonly subscriptionsSvc?: SubscriptionsService,
         // v0.1.394 (ADR-S99) — «WhatsApp con datos primero» de un widget de contacto.
         @Optional() private readonly widgets?: ContactWidgetsService,
+        // v0.1.409 (ADR-S102) — la dirección rápida (por Cloudflare) para los códigos de insertar.
+        @Optional() private readonly network?: PlatformNetworkService,
     ) {
         this.pcache = cache ?? NO_PUBLIC_CACHE;
     }
@@ -438,6 +441,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
             config: readConfig(row.config),
             public_path: path,
             ...(base ? { public_url: `${base}${path}`, public_origin: base } : {}),
+            embed_origin: this.network?.embedOriginFor(base) ?? null,
             submissions_count: row.submissionsCount,
             last_submitted_at: row.lastSubmittedAt ? row.lastSubmittedAt.toISOString() : null,
             created_at: row.createdAt.toISOString(),

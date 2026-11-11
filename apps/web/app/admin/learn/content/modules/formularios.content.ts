@@ -1531,7 +1531,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Estadísticas' },
             {
                 t: 'p',
-                md: '**Estadísticas** (arriba, junto a «Editar») muestra, por día y en los últimos 7, 30 o 90 días, cuántas veces **apareció** el widget, cuántas lo **abrieron**, los **toques** de cada botón y los **contactos**: quienes dejaron sus datos en el formulario o agendaron desde ese botón. También cuántas veces se vio y se tocó el saludo, y si vienen del celular o del computador. Son conteos: no se guarda nada de cada persona.',
+                md: '**Estadísticas** (arriba, junto a «Editar») muestra, por día y en los últimos 7, 30 o 90 días, en cuántas **visitas** apareció el widget (una por visita, aunque la persona recorra varias páginas), cuántas lo **abrieron**, los **toques** de cada botón y los **contactos**: quienes dejaron sus datos en el formulario o agendaron desde ese botón. También en cuántas visitas se vio el saludo y cuántas lo tocaron, y si vienen del celular o del computador. Son conteos: no se guarda nada de cada persona.',
             },
             {
                 t: 'callout',

@@ -8640,3 +8640,61 @@ el valor (se ve en el editor del campo).
    CI revisa lint, tipos, build y pruebas del frontend.
 8. **Una página que falla no tumba la app**: límites de error en la raíz y
    alrededor del contenido de cada ruta.
+
+### ADR-S102 — Lo que se inserta en los sitios: liviano por visita y por una dirección propia detrás de Cloudflare (v0.1.409)
+
+**Contexto.** El widget de contacto (ADR-S99) se pega en TODAS las páginas del
+sitio de una empresa: cada visita de cada página llega a este servidor. Medido
+en un proceso, el servidor aguanta (~8-9 mil pedidos por segundo de script o
+página del widget, ~0,13 ms de CPU cada uno), pero cada visitante hacía pedidos
+de más: una estadística «apareció» por PÁGINA, el logo con una URL firmada que
+cambiaba cada hora (consulta + lectura del disco), y la página del widget
+guardada sólo 30 s. Y no había forma de poner una CDN delante sin poner la app
+entera, lo que rompe los dominios propios de las empresas (ADR-S17: un dominio
+de un cliente con CNAME a una zona proxied de Cloudflare da 1001/1014).
+
+**Decisión.**
+1. **Menos pedidos por visitante**: «apareció» y «se vio el saludo» se cuentan
+   una vez por VISITA (sessionStorage por página del sitio); el logo se pide
+   recién al abrir el panel, por una dirección fija del propio widget
+   (`/api/v1/public/w/<token>/logo/<id>`, sólo el logo que ese widget muestra,
+   imagen reconocida por sus bytes, `immutable` un año, en memoria con tope de
+   32 MB) en vez de una URL firmada; la página del widget se guarda 5 minutos en
+   el navegador (`max-age=300, s-maxage=60, stale-while-revalidate`); `embed.js`
+   se minifica al compilar (esbuild, `scripts/minify-embed.cjs`; 24 → 14 KB,
+   4,5 KB por la red) y el servidor usa el original si falta. No se genera una
+   versión chica del logo: el re-mapeo de adjuntos y la papelera lo
+   complicarían por poco, ya que sólo se pide al abrir.
+2. **Una dirección aparte para lo insertado** (`platform:network.embed_origin`,
+   «dirección rápida», p. ej. `w.tudominio.com`), un subdominio DIRECTO del
+   dominio (el certificado gratis de Cloudflare no cubre segundo nivel) con la
+   nube naranja. Sólo sirve lo público (`/api/v1/public/*`); la app y los
+   dominios propios siguen directos. Se valida: ni la de la app, ni bajo
+   `PUBLIC_BASE_DOMAIN`, ni el dominio de una empresa.
+3. **Los códigos salen por esa dirección** (formularios, agenda y widget:
+   `embed_origin` en sus DTO) salvo que la empresa comparta por su dominio
+   propio (white-label: `embedOriginFor(base)` sólo con la base de la
+   plataforma; además el front no la usa en el dominio de una empresa). Los
+   códigos ya pegados siguen funcionando por la dirección de la app.
+4. **La IP real detrás de Cloudflare**: `trustProxy` pasa a ser una función
+   (`common/trust-proxy.ts`) que le cree a `TRUST_PROXY` (loopback) y, si la
+   plataforma marca «Las visitas llegan por Cloudflare» o `TRUST_PROXY` incluye
+   `cloudflare`, a los rangos oficiales de Cloudflare (lista en el código, se
+   actualiza en un release). Límite asumido: un Worker de Cloudflare que hable
+   directo con el servidor puede elegir la IP que ve; sólo afecta a los límites
+   por IP.
+5. **«Comprobar»** (`POST /platform/network/check`, superadmin) prueba la
+   dirección SIN guardar: responde, es ESTA instalación (huella de
+   `APP_BASE_URL` por `GET /public/net-check`, que nunca devuelve una IP), pasa
+   por Cloudflare (`cf-ray`), el servidor ve la IP real, y Cloudflare guarda el
+   script y la página del widget (`cf-cache-status`). La regla de caché de
+   Cloudflare respeta el `Cache-Control` del servidor (lo que no se guarda va
+   con `no-store`, sin cabecera o por POST).
+
+**Consecuencias.** Un visitante que recorre diez páginas manda una estadística
+en vez de diez y casi no repite pedidos; con Cloudflare, el script y las páginas
+salen de su red y al servidor llegan sólo los envíos y las estadísticas. La
+configuración vive en Redis `platform:network` (viaja en el snapshot de
+ADR-S20) y los demás servidores la releen cada minuto. Para probar en
+desarrollo: `scripts/dev/fake-cloudflare.mjs`. Guía del operador:
+`docs/runbook-public-traffic.md`.

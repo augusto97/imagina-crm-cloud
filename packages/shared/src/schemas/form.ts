@@ -809,6 +809,12 @@ export interface FormDto {
     public_url?: string;
     /** El origen de esa dirección (para el script que ajusta el alto al insertarlo). */
     public_origin?: string;
+    /**
+     * v0.1.409 (ADR-S102) — La dirección rápida (por Cloudflare) para los
+     * códigos de insertar. Sólo cuando la empresa NO usa su dominio propio:
+     * un dominio propio manda (white-label).
+     */
+    embed_origin?: string | null;
     submissions_count: number;
     last_submitted_at: string | null;
     created_at: string;

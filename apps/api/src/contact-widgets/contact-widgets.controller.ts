@@ -22,10 +22,10 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ENV, type Env } from '../config/env';
 import { inlineScriptHash, newNonce } from '../forms/form-page';
 import { PublicBusyError } from '../public-cache/public-cache';
-import { PUBLIC_PAGE_CACHE_CONTROL, precompress, sendPrecompressed, type Precompressed } from '../public-cache/public-send';
+import { precompress, sendPrecompressed, type Precompressed } from '../public-cache/public-send';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
-import { ContactWidgetsService, type WidgetPageInfo } from './contact-widgets.service';
+import { ContactWidgetsService, type WidgetLogo, type WidgetPageInfo } from './contact-widgets.service';
 import { loadWidgetClient, renderWidgetPage, widgetMissingPage, widgetPageCsp } from './widget-page';
 import { WidgetStatsService } from './widget-stats.service';
 
@@ -57,7 +57,7 @@ export class ContactWidgetsController {
         return this.widgets.options(req.tenant!.tenantId);
     }
 
-    /** v0.1.396 — Estadísticas: apariciones, aperturas, toques y contactos por botón (7, 30 o 90 días). */
+    /** v0.1.396 — Estadísticas: visitas, aperturas, toques y contactos por botón (7, 30 o 90 días). */
     @Get(':id/stats')
     @RequireCapability('manage_forms')
     async statsFor(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number, @Query('days') days?: string): Promise<WidgetStatsDto> {
@@ -205,6 +205,36 @@ export class PublicWidgetController {
         reply.redirect(url, 302);
     }
 
+    /**
+     * v0.1.409 — El logo del panel. La dirección lleva el id del archivo, que
+     * nunca cambia de contenido: el navegador y una CDN lo guardan un año
+     * (cambiar el logo cambia la dirección). Sólo sirve el logo que ESE
+     * widget muestra hoy.
+     */
+    @Get(':token/logo/:fileId')
+    async logo(@Param('token') token: string, @Param('fileId') fileIdRaw: string, @Res() reply: FastifyReply): Promise<void> {
+        const fileId = Number(fileIdRaw);
+        let logo: WidgetLogo | null = null;
+        if (/^\d{1,15}$/.test(fileIdRaw) && Number.isSafeInteger(fileId) && fileId > 0) {
+            try {
+                logo = await this.widgets.logo(token, fileId);
+            } catch (err) {
+                if (!(err instanceof PublicBusyError)) throw err;
+            }
+        }
+        reply.header('X-Content-Type-Options', 'nosniff').header('X-Robots-Tag', 'noindex');
+        if (!logo) {
+            reply.status(404).header('Cache-Control', 'public, max-age=60').send();
+            return;
+        }
+        reply
+            .header('Cache-Control', 'public, max-age=31536000, immutable')
+            .header('Content-Security-Policy', "default-src 'none'; sandbox")
+            .header('Cross-Origin-Resource-Policy', 'same-origin')
+            .type(logo.mime)
+            .send(logo.bytes);
+    }
+
     @Get(':token')
     async page(@Req() req: FastifyRequest, @Param('token') token: string, @Res() reply: FastifyReply): Promise<void> {
         let info: WidgetPageInfo | null;
@@ -221,7 +251,7 @@ export class PublicWidgetController {
         reply
             .header('Content-Security-Policy', page.csp)
             .header('X-Robots-Tag', 'noindex')
-            .header('Cache-Control', PUBLIC_PAGE_CACHE_CONTROL)
+            .header('Cache-Control', WIDGET_PAGE_CACHE_CONTROL)
             .header('Referrer-Policy', 'strict-origin-when-cross-origin');
         sendPrecompressed(req, reply, page.body, 'text/html; charset=utf-8');
     }
@@ -264,6 +294,16 @@ export class PublicWidgetController {
             .send(widgetMissingPage());
     }
 }
+
+/**
+ * v0.1.409 — La página del widget se carga en CADA página de los sitios de las
+ * empresas: el navegador la guarda 5 minutos (y la sigue usando un día más
+ * mientras la renueva por detrás), así quien recorre un sitio casi no vuelve a
+ * pedirla. Una CDN delante la renueva cada minuto (`s-maxage`). Un cambio en el
+ * widget tarda hasta 5 minutos en verse para quien ya estaba navegando; quien
+ * llega nuevo lo ve al instante.
+ */
+export const WIDGET_PAGE_CACHE_CONTROL = 'public, max-age=300, s-maxage=60, stale-while-revalidate=86400';
 
 /** Sólo una dirección http(s) (la página del sitio), sin el ancla. */
 function cleanPageUrl(raw: unknown): string | null {

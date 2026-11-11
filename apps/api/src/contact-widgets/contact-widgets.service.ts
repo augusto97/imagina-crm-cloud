@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type { Readable } from 'node:stream';
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import {
     WIDGET_ADVISOR_VAR,
@@ -43,8 +44,10 @@ import { accessColumns, accessOf } from '../billing/tenant-access';
 import { planModuleOff } from '../billing/plan-module-gate';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { BookingHolidaysService } from '../booking/booking-holidays';
-import { bookingPages, contactWidgets, fields, forms, lists, memberships, tenants, users, type ContactWidgetRow } from '../db/schema';
+import { attachments, bookingPages, contactWidgets, fields, forms, lists, memberships, tenants, users, type ContactWidgetRow } from '../db/schema';
 import { FilesService } from '../files/files.service';
+import { DomainsService } from '../domains/domains.service';
+import { PlatformNetworkService } from '../network/platform-network.service';
 import { staffRoleSql } from '../helpdesk/staff-roles';
 import { REDIS } from '../redis/redis.module';
 import { incrWithTtl } from '../redis/redis.util';
@@ -105,7 +108,25 @@ export interface WidgetPageInfo {
     meta: PublicWidgetMeta;
     allowedDomains: string[];
     whatsapp: Record<string, WhatsappTarget>;
+    /** v0.1.409 — El logo que muestra el panel (lo único que sirve `/logo/:id`). */
+    logoFileId: number | null;
 }
+
+/** Un logo listo para mandar (en memoria: el panel lo pide al abrirse). */
+export interface WidgetLogo {
+    bytes: Buffer;
+    mime: string;
+}
+
+/**
+ * v0.1.409 — Topes del logo del widget: hasta 3 MB se sirve (más grande no
+ * es un logo); hasta 512 KB queda en memoria (con un total de 32 MB entre
+ * todos) para no volver a la base ni al disco en cada visitante nuevo.
+ */
+const LOGO_MAX_BYTES = 3 * 1024 * 1024;
+const LOGO_MEMO_MAX_BYTES = 512 * 1024;
+const LOGO_MEMO_TOTAL_BYTES = 32 * 1024 * 1024;
+const LOGO_MEMO_TTL_MS = 60 * 60 * 1000;
 
 interface Refs {
     forms: Map<
@@ -120,6 +141,10 @@ export class WidgetNotReadyError extends BadRequestException {}
 @Injectable()
 export class ContactWidgetsService {
     private readonly pcache: PublicCacheLike;
+    /** v0.1.409 — Logos en memoria (orden de uso: el primero es el más viejo). */
+    private readonly logos = new Map<string, WidgetLogo & { at: number }>();
+    private logosBytes = 0;
+    private readonly logoLoads = new Map<string, Promise<WidgetLogo | null>>();
 
     constructor(
         @Inject(DRIZZLE) private readonly db: Db,
@@ -128,8 +153,21 @@ export class ContactWidgetsService {
         @Optional() cache?: PublicCacheService,
         @Optional() @Inject(REDIS) private readonly redis?: Redis,
         @Optional() private readonly holidays?: BookingHolidaysService,
+        // v0.1.409 (ADR-S102) — de dónde sale el código para pegar.
+        @Optional() private readonly network?: PlatformNetworkService,
+        @Optional() private readonly domains?: DomainsService,
     ) {
         this.pcache = cache ?? NO_PUBLIC_CACHE;
+    }
+
+    /**
+     * v0.1.409 (ADR-S102) — La dirección rápida (por Cloudflare) para el
+     * código de pegar, salvo que la empresa comparta por su dominio propio.
+     */
+    private async embedOrigin(tenantId: number): Promise<string | null> {
+        if (!this.network?.embedOrigin()) return null;
+        const base = this.domains ? await this.domains.baseUrlFor(tenantId, 'app').catch(() => undefined) : undefined;
+        return this.network.embedOriginFor(base);
     }
 
     // ─────────────────────────── Equipo ───────────────────────────
@@ -139,6 +177,9 @@ export class ContactWidgetsService {
             const rows = await tx.select().from(contactWidgets).where(eq(contactWidgets.tenantId, tenantId)).orderBy(asc(contactWidgets.id));
             const refs = await this.refs(tx, tenantId);
             return rows.map((r) => this.toDto(r, refs));
+        }).then(async (dtos) => {
+            const embed = await this.embedOrigin(tenantId);
+            return dtos.map((d) => ({ ...d, embed_origin: embed }));
         });
     }
 
@@ -155,7 +196,7 @@ export class ContactWidgetsService {
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const row = await this.load(tx, tenantId, id);
             return this.toDto(row, await this.refs(tx, tenantId));
-        });
+        }).then(async (d) => ({ ...d, embed_origin: await this.embedOrigin(tenantId) }));
     }
 
     async create(tenantId: number, userId: number, input: CreateContactWidgetInput): Promise<ContactWidgetDto> {
@@ -182,7 +223,7 @@ export class ContactWidgetsService {
                 .values({ tenantId, name: input.name, token: newToken(), enabled: false, config, createdBy: userId })
                 .returning();
             return this.toDto(row!, await this.refs(tx, tenantId));
-        });
+        }).then(async (d) => ({ ...d, embed_origin: await this.embedOrigin(tenantId) }));
     }
 
     async update(tenantId: number, id: number, input: UpdateContactWidgetInput): Promise<{ dto: ContactWidgetDto; before: ContactWidgetRow }> {
@@ -208,7 +249,7 @@ export class ContactWidgetsService {
                 .returning();
             this.pcache.invalidate(cacheKey(row.token));
             return { dto: this.toDto(next!, refs), before: row };
-        });
+        }).then(async (r) => ({ ...r, dto: { ...r.dto, embed_origin: await this.embedOrigin(tenantId) } }));
     }
 
     /** Una dirección nueva: la anterior deja de funcionar al instante (hay que pegar el código otra vez). */
@@ -222,7 +263,7 @@ export class ContactWidgetsService {
                 .returning();
             this.pcache.invalidate(cacheKey(row.token));
             return this.toDto(next!, await this.refs(tx, tenantId));
-        });
+        }).then(async (d) => ({ ...d, embed_origin: await this.embedOrigin(tenantId) }));
     }
 
     async remove(tenantId: number, id: number): Promise<ContactWidgetRow> {
@@ -349,7 +390,10 @@ export class ContactWidgetsService {
                     b.type === 'whatsapp' && b.capture_form_id !== null && !refs.forms.get(b.capture_form_id)?.enabled ? { ...b, capture_form_id: null } : b,
                 ),
             };
-            const brand = brandOf(hit.tenantSettings, hit.tenantName, (id) => this.files.signedUrl(tenantId, id, LOGO_TTL_S));
+            // v0.1.409 — el logo por una dirección del propio widget que no
+            // cambia (el id del archivo): el navegador y una CDN lo guardan un
+            // año, y el panel recién lo pide al abrirse.
+            const brand = brandOf(hit.tenantSettings, hit.tenantName, (id) => `/api/v1/public/w/${token}/logo/${id}`);
             const accent = config.color ?? brand.accent;
             const buttons: PublicWidgetButton[] = [];
             const whatsapp: Record<string, WhatsappTarget> = {};
@@ -404,8 +448,63 @@ export class ContactWidgetsService {
                 meta,
                 allowedDomains: config.allowed_domains,
                 whatsapp,
+                logoFileId: config.show_logo ? brand.logoId : null,
             };
         });
+    }
+
+    /**
+     * v0.1.409 — El logo del panel del widget. Sólo el que ESE widget muestra
+     * hoy (nunca un archivo cualquiera de la empresa), leído una vez y
+     * guardado en memoria.
+     */
+    async logo(token: string, fileId: number): Promise<WidgetLogo | null> {
+        const info = await this.cachedPageInfo(token);
+        if (!info || info.logoFileId === null || info.logoFileId !== fileId) return null;
+        const key = `${info.tenantId}:${fileId}`;
+        const hit = this.logos.get(key);
+        if (hit && Date.now() - hit.at < LOGO_MEMO_TTL_MS) {
+            this.logos.delete(key);
+            this.logos.set(key, hit);
+            return hit;
+        }
+        let load = this.logoLoads.get(key);
+        if (!load) {
+            load = this.loadLogo(info.tenantId, fileId).finally(() => this.logoLoads.delete(key));
+            this.logoLoads.set(key, load);
+        }
+        const logo = await load;
+        if (logo && logo.bytes.length <= LOGO_MEMO_MAX_BYTES && !this.logos.has(key)) {
+            this.logos.set(key, { ...logo, at: Date.now() });
+            this.logosBytes += logo.bytes.length;
+            for (const [k, v] of this.logos) {
+                if (this.logosBytes <= LOGO_MEMO_TOTAL_BYTES) break;
+                this.logos.delete(k);
+                this.logosBytes -= v.bytes.length;
+            }
+        }
+        return logo;
+    }
+
+    private async loadLogo(tenantId: number, fileId: number): Promise<WidgetLogo | null> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ size: attachments.sizeBytes, storageKey: attachments.storageKey, storageConnectionId: attachments.storageConnectionId })
+                .from(attachments)
+                .where(and(eq(attachments.tenantId, tenantId), eq(attachments.id, fileId)))
+                .limit(1),
+        );
+        if (!row || row.size > LOGO_MAX_BYTES) return null;
+        let bytes: Buffer | null;
+        try {
+            bytes = await readCapped(await this.files.readStream(tenantId, row), LOGO_MAX_BYTES);
+        } catch {
+            return null;
+        }
+        if (!bytes) return null;
+        // El tipo sale de los BYTES (nunca del nombre ni de lo que dijo quien lo subió); nada de SVG.
+        const mime = imageMimeOf(bytes);
+        return mime ? { bytes, mime } : null;
     }
 
     /**
@@ -603,10 +702,38 @@ function askedFieldIds(config: unknown): number[] {
     return out;
 }
 
-function brandOf(settings: unknown, tenantName: string, sign: (id: number) => string): { accent: string; company: string; logoUrl: string | null } {
+function brandOf(
+    settings: unknown,
+    tenantName: string,
+    sign: (id: number) => string,
+): { accent: string; company: string; logoUrl: string | null; logoId: number | null } {
     const b = brandingSchema.safeParse((settings as Record<string, unknown> | null)?.branding ?? {});
     const accent = (b.success ? b.data.primary_color : null) ?? '#0e7490';
     const company = (b.success ? b.data.app_name : null) || tenantName;
     const logoId = b.success ? b.data.logo_file_id : null;
-    return { accent, company, logoUrl: logoId ? sign(logoId) : null };
+    return { accent, company, logoUrl: logoId ? sign(logoId) : null, logoId: logoId ?? null };
+}
+
+/** PNG, JPEG, GIF o WebP por su cabecera; cualquier otra cosa (SVG incluido) no es un logo que se sirva. */
+export function imageMimeOf(b: Buffer): string | null {
+    if (b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
+    if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+    if (b.length > 6 && b.subarray(0, 6).toString('latin1').startsWith('GIF8')) return 'image/gif';
+    if (b.length > 12 && b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
+    return null;
+}
+
+async function readCapped(stream: Readable, max: number): Promise<Buffer | null> {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of stream) {
+        const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+        size += b.length;
+        if (size > max) {
+            stream.destroy();
+            return null;
+        }
+        chunks.push(b);
+    }
+    return Buffer.concat(chunks);
 }

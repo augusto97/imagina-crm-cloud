@@ -582,6 +582,12 @@ export interface ContactWidgetDto {
     config: ContactWidgetConfig;
     /** `/api/v1/public/w/<token>` (relativo: el origen lo pone quien lo muestra). */
     public_path: string;
+    /**
+     * v0.1.409 (ADR-S102) — De dónde sale el código para pegar: la dirección
+     * rápida (por Cloudflare) si la plataforma la tiene y la empresa no usa su
+     * dominio propio. null = la dirección desde donde se mira.
+     */
+    embed_origin?: string | null;
     problems: WidgetProblem[];
     created_at: string;
     updated_at: string;

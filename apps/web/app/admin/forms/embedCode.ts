@@ -70,6 +70,23 @@ export function safeHex(hex: string, fallback = '#0e7490'): string {
     return /^#[0-9a-f]{6}$/i.test(hex.trim()) ? hex.trim().toLowerCase() : fallback;
 }
 
+/**
+ * v0.1.409 (ADR-S102) — El mismo destino por la dirección rápida (la que pasa
+ * por Cloudflare): el script y el formulario o la agenda salen de ahí. Sin
+ * dirección rápida, el destino tal cual.
+ */
+export function withEmbedOrigin(t: EmbedTarget, origin: string | null | undefined): EmbedTarget {
+    if (!origin) return t;
+    let path = t.url;
+    try {
+        const u = new URL(t.url);
+        path = `${u.pathname}${u.search}`;
+    } catch {
+        // ya era una ruta
+    }
+    return { ...t, origin, url: `${origin}${path.startsWith('/') ? path : `/${path}`}` };
+}
+
 export function embedCode(t: EmbedTarget, mode: EmbedMode, opts: EmbedOptions): string {
     const script = `${t.origin}/api/v1/public/f/embed.js`;
     const title = attr(t.title);
