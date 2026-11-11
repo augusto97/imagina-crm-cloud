@@ -125,6 +125,31 @@ describe('v0.1.352 — caché de lo público (puro)', () => {
         expect(await c.get('b', 1000, async () => 2)).toBe(2);
     });
 
+    it('getUngated: guarda y junta pedidos igual, pero no ocupa un lugar del tope mientras espera', async () => {
+        const { c } = cache({ concurrency: 1 });
+        let release!: () => void;
+        const waiting = new Promise<void>((r) => (release = r));
+        let runs = 0;
+        // Un armado que espera a la red (el calendario de quien atiende)…
+        const slow = Promise.all(
+            Array.from({ length: 5 }, () =>
+                c.getUngated('slots', 1000, async () => {
+                    runs += 1;
+                    await waiting;
+                    return c.gate(async () => 'horarios');
+                }),
+            ),
+        );
+        await tick();
+        expect(c.stats().active).toBe(0);
+        // …no frena a las páginas de las demás empresas, que sí usan el tope (de 1).
+        expect(await c.get('otra-pagina', 1000, async () => 'ok')).toBe('ok');
+        release();
+        expect(await slow).toEqual(Array(5).fill('horarios'));
+        expect(runs).toBe(1);
+        expect(await c.getUngated('slots', 1000, async () => 'nuevo')).toBe('horarios');
+    });
+
     it('se van las más viejas cuando se llena', async () => {
         const { c } = cache({ maxEntries: 3 });
         for (const k of ['a', 'b', 'c', 'd']) await c.get(k, 30_000, async () => k);

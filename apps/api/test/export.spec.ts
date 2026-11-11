@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { sql } from 'drizzle-orm';
+import { ExportSlots } from '../src/export/export-slots';
 import { exportBundleSchema } from '@imagina-base/shared';
 import { memberships, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
@@ -299,6 +301,57 @@ describe('ExportService (Postgres real)', () => {
         expect(parsed.list.id).toBe(list.id);
         expect(parsed.fields.map((x) => x.slug)).toEqual(['nombre']);
         expect(parsed.records.map((r) => r.data[`f${f.id}`])).toEqual(['X', 'Y']);
+    });
+
+    it('el JSON no trae la descripción de la base: sólo dice si el registro tiene una', async () => {
+        await listsService.create(tenantId, { name: 'Cuerpo' });
+        const f = await fieldsService.create(tenantId, 'cuerpo', { label: 'Nombre', type: 'text', slug: 'nombre' });
+        const a = await recordsService.create(tenantId, admin, 'cuerpo', { data: { [`f${f.id}`]: 'Con' } });
+        await recordsService.create(tenantId, admin, 'cuerpo', { data: { [`f${f.id}`]: 'Sin' } });
+        const marca = 'TEXTO-DE-LA-DESCRIPCION';
+        await recordsService.updateDescription(tenantId, admin, 'cuerpo', a.id, { description: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: marca }] }],
+        } });
+        // Lo que sale de la base por cada página (lo que antes ocupaba la memoria).
+        const tenantDb = (exportService as unknown as { tenantDb: TenantDb }).tenantDb;
+        const real = tenantDb.withTenant.bind(tenantDb);
+        const pages: string[] = [];
+        (tenantDb as unknown as { withTenant: unknown }).withTenant = async (t: number, fn: (tx: never) => Promise<unknown>) => {
+            const out = await real(t, fn as never);
+            pages.push(JSON.stringify(out));
+            return out;
+        };
+        let out = '';
+        try {
+            await exportService.streamExport(tenantId, 'cuerpo', '2026-07-08T00:00:00.000Z', (c) => {
+                out += c;
+            });
+        } finally {
+            (tenantDb as unknown as { withTenant: unknown }).withTenant = real;
+        }
+        expect(pages.join('')).not.toContain(marca);
+        const parsed = exportBundleSchema.parse(JSON.parse(out));
+        expect(parsed.records.map((r) => r.has_description)).toEqual([true, false]);
+        // (la descripción sigue guardada)
+        const [row] = (await withTenant(pg.db, tenantId, (tx) => tx.execute(sql`select description_text from records where id = ${a.id}`))).rows;
+        expect(String((row as { description_text: string }).description_text)).toContain(marca);
+    });
+
+    it('como mucho dos exportaciones a la vez por empresa; al terminar una entra otra', () => {
+        const slots = new ExportSlots();
+        const a = slots.take(1);
+        const b = slots.take(1);
+        expect(a && b).toBeTruthy();
+        expect(slots.take(1)).toBeNull();
+        // Otra empresa no se entera.
+        const other = slots.take(2);
+        expect(other).toBeTruthy();
+        a!();
+        a!(); // soltar dos veces no libera de más
+        expect(slots.active(1)).toBe(1);
+        expect(slots.take(1)).toBeTruthy();
+        expect(slots.take(1)).toBeNull();
     });
 
     it('paginación keyset: exporta más de 1000 records', async () => {

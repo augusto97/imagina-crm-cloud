@@ -75,6 +75,21 @@ export class PublicCache {
      * dirección inventada que piden mil veces tampoco consulta mil veces).
      */
     async get<T>(key: string, ttlMs: number, loader: () => Promise<T>, negativeTtlMs = ttlMs): Promise<T> {
+        return this.load(key, ttlMs, loader, negativeTtlMs, true);
+    }
+
+    /**
+     * Igual que `get` (guardar + un solo armado por clave) pero SIN ocupar un
+     * lugar del tope de armados: para lo que antes de tocar la base espera a
+     * la red (el calendario de quien atiende). El `loader` pasa su parte de
+     * base por `gate`. Así una espera de red no se queda con los lugares que
+     * comparten todas las páginas públicas.
+     */
+    async getUngated<T>(key: string, ttlMs: number, loader: () => Promise<T>, negativeTtlMs = ttlMs): Promise<T> {
+        return this.load(key, ttlMs, loader, negativeTtlMs, false);
+    }
+
+    private async load<T>(key: string, ttlMs: number, loader: () => Promise<T>, negativeTtlMs: number, gated: boolean): Promise<T> {
         const hit = this.entries.get(key);
         if (hit && hit.expires > this.now()) {
             this.stat.hits += 1;
@@ -92,7 +107,7 @@ export class PublicCache {
         this.stat.misses += 1;
         const startEpoch = this.epoch;
         const job = (async () => {
-            await this.acquire();
+            if (gated) await this.acquire();
             try {
                 const value = await loader();
                 if (this.epoch === startEpoch) {
@@ -101,7 +116,7 @@ export class PublicCache {
                 }
                 return value;
             } finally {
-                this.release();
+                if (gated) this.release();
             }
         })();
         this.pending.set(key, job);
@@ -213,8 +228,9 @@ export class PublicCache {
  * Sin caché (los tests que arman los servicios a mano, y lo que corre sin la
  * app completa): todo se arma en el momento, como antes de v0.1.352.
  */
-export const NO_PUBLIC_CACHE: Pick<PublicCache, 'get' | 'gate' | 'invalidate' | 'invalidatePrefix' | 'version' | 'bump'> = {
+export const NO_PUBLIC_CACHE: Pick<PublicCache, 'get' | 'getUngated' | 'gate' | 'invalidate' | 'invalidatePrefix' | 'version' | 'bump'> = {
     get: <T>(_key: string, _ttl: number, loader: () => Promise<T>) => loader(),
+    getUngated: <T>(_key: string, _ttl: number, loader: () => Promise<T>) => loader(),
     gate: <T>(task: () => Promise<T>) => task(),
     invalidate: () => undefined,
     invalidatePrefix: () => undefined,

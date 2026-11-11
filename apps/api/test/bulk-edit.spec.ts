@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { bulkOperationSchema, type BulkOperationInput, type CreateFieldInput, type Field } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AutomationDispatcher } from '../src/automations/automation-dispatcher.service';
@@ -140,6 +140,41 @@ describe('edición masiva (v0.1.216)', () => {
         // Pasa por la bitácora como una edición común.
         const log = await withTenant(pg.db, tenantId, (tx) => tx.select().from(activity).where(eq(activity.recordId, b.id)));
         expect(log.some((l) => l.action === 'record_updated')).toBe(true);
+    });
+
+    it('una edición en lote no arma la ficha de cada fila ni vuelve a leer la lista y los campos por fila', async () => {
+        const made = [];
+        for (let i = 0; i < 6; i++) made.push(await create(admin, `P${i}`, 1000 + i));
+        const operations = ops([{ op: 'add', field_id: f.precio!.id, amount: 5 }]);
+        const spied = recs as unknown as { withThrough: () => Promise<unknown>; formulaRuntime: () => Promise<unknown> };
+        const through = vi.spyOn(spied, 'withThrough');
+        const formulas = vi.spyOn(spied, 'formulaRuntime');
+        const listReads = vi.spyOn(lists_, 'getWithinTx');
+        const fieldReads = vi.spyOn(fields_, 'listByListIdWithinTx');
+        try {
+            const res = await bulk.apply(tenantId, admin, 'productos', made.map((m) => m.id), operations);
+            expect(res.succeeded).toHaveLength(6);
+            // Una lectura de lista y campos para el lote (antes: una por fila, más la del lote).
+            expect(listReads).toHaveBeenCalledTimes(1);
+            expect(fieldReads).toHaveBeenCalledTimes(1);
+            // Lo de la ficha (búsquedas, resúmenes, fórmulas) no se calcula por fila.
+            expect(through).not.toHaveBeenCalled();
+            // (una vez, al cargar el lote: no una por fila)
+            expect(formulas.mock.calls.length).toBeLessThanOrEqual(1);
+        } finally {
+            through.mockRestore();
+            formulas.mockRestore();
+            listReads.mockRestore();
+            fieldReads.mockRestore();
+        }
+        expect((await recs.get(tenantId, admin, 'productos', made[3]!.id)).data[key('precio')]).toBe(1008);
+        // `lean`: la respuesta trae lo GUARDADO (lo que miran la edición masiva y deshacer); la normal, además lo calculado.
+        const leanDto = await recs.update(tenantId, admin, 'productos', made[0]!.id, { data: { [key('costo')]: 400 } }, { lean: true });
+        expect(leanDto.data[key('costo')]).toBe(400);
+        expect(leanDto.data[key('precio')]).toBe(1005);
+        expect(key('margen') in leanDto.data).toBe(false);
+        const fullDto = await recs.update(tenantId, admin, 'productos', made[0]!.id, { data: { [key('costo')]: 401 } });
+        expect(key('margen') in fullDto.data).toBe(true);
     });
 
     it('por filtro: abarca todo lo que coincide (no sólo la página) y calcula entre columnas', async () => {

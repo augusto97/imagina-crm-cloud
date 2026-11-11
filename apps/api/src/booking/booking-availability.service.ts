@@ -30,6 +30,15 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { BookingCalendarService } from './booking-calendar';
 import { inactiveStatusValues, readBookingConfig } from './booking-config';
 import { BookingHolidaysService } from './booking-holidays';
+import { CalendarPool } from './calendar-pool';
+
+/**
+ * Lecturas de calendarios externos de las páginas públicas: 16 a la vez en
+ * total, 3 por empresa; lo que no entra en 6 s sigue sin ese calendario.
+ */
+const PUBLIC_CALENDAR_POOL = { total: 16, perKey: 3, maxWaitMs: 6000, maxQueue: 200 };
+/** Corre la parte de base de datos dentro de un tope (el de armados públicos). */
+export type DbGate = <T>(task: () => Promise<T>) => Promise<T>;
 
 /**
  * D5 — Lo ocupado y los horarios libres de una página de agenda. El cálculo
@@ -129,19 +138,16 @@ export class BookingAvailabilityService {
         staffSel: string,
         fromYmd: string,
         toYmd: string,
-        opts: { excludeRecordId?: number; now?: Date; durationMin?: number } = {},
+        opts: { excludeRecordId?: number; now?: Date; durationMin?: number; gate?: DbGate } = {},
     ): Promise<PublicBookingSlots> {
         const now = opts.now ?? new Date();
         const svc = this.service(ctx.config, serviceId);
         const rules = serviceRules(ctx.config.rules, svc);
-        const window = bookableWindow(rules, ctx.timeZone, now);
-        const from = fromYmd < window.first ? window.first : fromYmd;
-        let to = toYmd > window.last ? window.last : toYmd;
-        if (to > addDaysYmd(from, BOOKING_MAX_RANGE_DAYS)) to = addDaysYmd(from, BOOKING_MAX_RANGE_DAYS);
+        const { from, to, window } = this.clampRange(ctx, serviceId, fromYmd, toYmd, now);
         if (from > to) return { slots: [], first_day: window.first, last_day: window.last };
         const staff = this.candidates(ctx.config, svc.id, staffSel);
         if (staff.length === 0) return { slots: [], first_day: window.first, last_day: window.last };
-        const inputs = await this.staffInputs(ctx, staff, from, to, opts.excludeRecordId);
+        const inputs = await this.staffInputs(ctx, staff, from, to, opts.excludeRecordId, opts.gate);
         const slots = computeBookingSlots({
             staff: inputs,
             durationMin: pickServiceDuration(svc, opts.durationMin),
@@ -156,9 +162,20 @@ export class BookingAvailabilityService {
     }
 
     /** Lo ocupado de cada persona o recurso (citas de las listas + calendario externo) y sus festivos. */
-    async staffInputs(ctx: PageContext, staff: BookingStaff[], fromYmd: string, toYmd: string, excludeRecordId?: number): Promise<StaffSlotsInput[]> {
-        const outside = await Promise.all(staff.map((s) => this.outside(ctx, s, fromYmd, toYmd)));
-        return this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+    async staffInputs(
+        ctx: PageContext,
+        staff: BookingStaff[],
+        fromYmd: string,
+        toYmd: string,
+        excludeRecordId?: number,
+        gate?: DbGate,
+    ): Promise<StaffSlotsInput[]> {
+        // La red (calendarios, festivos) va ANTES y FUERA del tope de armados:
+        // con `gate`, las lecturas de calendario pasan por su propio cupo por
+        // empresa y sólo la consulta a la base ocupa un lugar del tope.
+        const outside = await Promise.all(staff.map((s) => this.outside(ctx, s, fromYmd, toYmd, gate !== undefined)));
+        const run: DbGate = gate ?? ((task) => task());
+        return run(() => this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
             const out: StaffSlotsInput[] = [];
             for (const [i, s] of staff.entries()) {
                 const o = outside[i]!;
@@ -172,12 +189,29 @@ export class BookingAvailabilityService {
                 });
             }
             return out;
-        });
+        }));
+    }
+
+    private readonly calendarPool = new CalendarPool(PUBLIC_CALENDAR_POOL);
+
+    /**
+     * El rango pedido, recortado a lo reservable y al máximo de días. Es lo
+     * que de verdad se calcula: quien guarda el resultado usa ESTE rango en la
+     * clave (un rango que elige el visitante, fuera de la ventana, da lo mismo
+     * que el recortado y no tiene por qué ocupar otra entrada).
+     */
+    clampRange(ctx: PageContext, serviceId: string, fromYmd: string, toYmd: string, now: Date = new Date()): { from: string; to: string; window: { first: string; last: string } } {
+        const svc = this.service(ctx.config, serviceId);
+        const window = bookableWindow(serviceRules(ctx.config.rules, svc), ctx.timeZone, now);
+        const from = fromYmd < window.first ? window.first : fromYmd;
+        let to = toYmd > window.last ? window.last : toYmd;
+        if (to > addDaysYmd(from, BOOKING_MAX_RANGE_DAYS)) to = addDaysYmd(from, BOOKING_MAX_RANGE_DAYS);
+        return { from, to, window };
     }
 
     /** Lo de la red de una persona (calendario y festivos), antes de tomar cualquier candado. */
-    async outside(ctx: PageContext, s: BookingStaff, fromYmd: string, toYmd: string): Promise<StaffOutside> {
-        const [external, holidays] = await Promise.all([this.externalBusy(ctx, s, fromYmd, toYmd), this.staffHolidays(ctx, s)]);
+    async outside(ctx: PageContext, s: BookingStaff, fromYmd: string, toYmd: string, pooled = false): Promise<StaffOutside> {
+        const [external, holidays] = await Promise.all([this.externalBusy(ctx, s, fromYmd, toYmd, pooled), this.staffHolidays(ctx, s)]);
         return { external, holidays };
     }
 
@@ -239,8 +273,16 @@ export class BookingAvailabilityService {
     }
 
     /** Lo ocupado del calendario externo de una persona; si falla, se sigue sin él y se avisa. */
-    async externalBusy(ctx: PageContext, s: BookingStaff, fromYmd: string, toYmd: string): Promise<BusyInterval[]> {
+    async externalBusy(ctx: PageContext, s: BookingStaff, fromYmd: string, toYmd: string, pooled = false): Promise<BusyInterval[]> {
         if (s.kind !== 'user' || !s.read_busy) return [];
+        if (pooled) {
+            // Los horarios que mira un visitante: dentro del cupo por empresa.
+            // Sin lugar a tiempo se sigue sin ese calendario (la reserva vuelve
+            // a leerlo, sin cupo, antes de confirmar).
+            const got = await this.calendarPool.run(String(ctx.tenantId), () => this.externalBusy(ctx, s, fromYmd, toYmd));
+            if (got === null) this.logger.warn(`Agenda ${ctx.pageId}: muchas lecturas de calendario a la vez; se ofrecen los horarios sin el calendario de ${s.id}.`);
+            return got ?? [];
+        }
         const from = zonedInstant(addDaysYmd(fromYmd, -1), ctx.timeZone);
         const to = zonedInstant(addDaysYmd(toYmd, 2), ctx.timeZone);
         const key = `booking-calendar:${ctx.pageId}:${s.id}`;

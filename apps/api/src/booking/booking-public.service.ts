@@ -613,10 +613,20 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         if (this.closedReason(p)) return { slots: [], first_day: q.from, last_day: q.to };
         const staff = this.staffSelection(p, q.staff);
         const ns = slotsNamespace(p.tenantId);
-        const key = `${ns}:v${this.pcache.version(ns)}:${p.pageId}:${q.service}:${staff}:${q.from}:${q.to}:${q.duration ?? ''}`;
-        return this.pcache.get(key, SLOTS_CACHE_TTL_MS, async () => {
+        // La clave lleva el rango que de verdad se calcula (recortado a lo
+        // reservable): los rangos que elija el visitante por fuera de la
+        // ventana caen todos en la misma entrada.
+        const range = this.availability.clampRange(p, q.service, q.from, q.to);
+        if (range.from > range.to) return { slots: [], first_day: range.window.first, last_day: range.window.last };
+        const key = `${ns}:v${this.pcache.version(ns)}:${p.pageId}:${q.service}:${staff}:${range.from}:${range.to}:${q.duration ?? ''}`;
+        // Sin ocupar un lugar del tope de armados mientras se espera al
+        // calendario de quien atiende: sólo la consulta a la base lo ocupa.
+        return this.pcache.getUngated(key, SLOTS_CACHE_TTL_MS, async () => {
             await this.enforce(SLOTS_LIMITS.filter((l) => l.scope === 'page'), p.pageId, ip, 'horarios');
-            return this.availability.slots(p, q.service, staff, q.from, q.to, q.duration !== undefined ? { durationMin: q.duration } : {});
+            return this.availability.slots(p, q.service, staff, range.from, range.to, {
+                ...(q.duration !== undefined ? { durationMin: q.duration } : {}),
+                gate: (task) => this.pcache.gate(task),
+            });
         });
     }
 

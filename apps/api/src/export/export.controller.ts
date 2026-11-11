@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, ForbiddenException, Get, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, ForbiddenException, Get, HttpException, HttpStatus, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { filterTreeSchema, type FilterGroup } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { SessionGuard } from '../auth/session.guard';
@@ -11,6 +11,7 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { ExportService } from './export.service';
 import { aclOf } from '../tenancy/acl-of';
 import { can } from '../authz/can';
+import { ExportAborted, ExportSlots, MAX_EXPORTS_PER_TENANT } from './export-slots';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -33,6 +34,8 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 export class ExportController {
     constructor(private readonly exportService: ExportService) {}
 
+    private readonly slots = new ExportSlots();
+
     @Get()
     @RequireCapability('export_records')
     async export(
@@ -50,6 +53,45 @@ export class ExportController {
         @Query('sheet') sheet?: string,
         @Query('with_id') withId?: string,
         @Query('freeze') freeze?: string,
+    ): Promise<void> {
+        // Cada exportación recorre la lista entera en este proceso: como mucho
+        // dos a la vez por empresa (la tercera espera a que termine una).
+        const release = this.slots.take(req.tenant!.tenantId);
+        if (!release) {
+            throw new HttpException(
+                {
+                    code: 'too_many_exports',
+                    message: `Tu empresa ya tiene ${MAX_EXPORTS_PER_TENANT} exportaciones en curso. Espera a que termine una y vuelve a intentarlo.`,
+                    data: { status: 429 },
+                },
+                HttpStatus.TOO_MANY_REQUESTS,
+            );
+        }
+        try {
+            await this.run(req, list, reply, format, fields, delimiter, withBom, rawFilterTree, search, sort, subtasks, sheet, withId, freeze);
+        } catch (err) {
+            // Cerraron la pestaña a mitad de la descarga: se deja de armar el archivo.
+            if (!(err instanceof ExportAborted)) throw err;
+        } finally {
+            release();
+        }
+    }
+
+    private async run(
+        req: FastifyRequest,
+        list: string,
+        reply: FastifyReply,
+        format?: string,
+        fields?: string,
+        delimiter?: string,
+        withBom?: string,
+        rawFilterTree?: string,
+        search?: string,
+        sort?: string,
+        subtasks?: string,
+        sheet?: string,
+        withId?: string,
+        freeze?: string,
     ): Promise<void> {
         const actor: Actor = { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
         const fieldIds = (fields ?? '')
@@ -150,8 +192,10 @@ export class ExportController {
  * cliente lento el archivo ENTERO quedaba acumulado en la memoria del proceso.
  */
 function writeWithBackpressure(raw: NodeJS.WritableStream & { destroyed?: boolean }, chunk: string | Uint8Array): Promise<void> | void {
+    // La conexión se cerró: se corta la exportación (antes seguía recorriendo
+    // la lista hasta el final para nadie).
+    if (raw.destroyed) throw new ExportAborted();
     if (raw.write(chunk)) return;
-    if (raw.destroyed) return;
     return new Promise<void>((resolve) => {
         const done = (): void => {
             raw.off('drain', done);

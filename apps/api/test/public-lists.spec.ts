@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadEnv } from '../src/config/env';
 import { LocalFileStorage } from '../src/files/file-storage';
 import { FilesService } from '../src/files/files.service';
@@ -19,7 +19,8 @@ import { RelationsRepository } from '../src/records/relations.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
-import { PublicListsService, isExpired } from '../src/public-lists/public-lists.service';
+import { PUBLIC_LIST_MAX_OFFSET, PUBLIC_LIST_QUERIES_PER_MINUTE, PublicListsService, isExpired } from '../src/public-lists/public-lists.service';
+import { PublicCache } from '../src/public-cache/public-cache';
 import { updatePublicListSchema } from '@imagina-base/shared';
 import { frameAncestors, publicListPageCsp, publicListUnavailablePage, renderPublicListPage } from '../src/public-lists/public-page';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
@@ -420,6 +421,114 @@ describe('Listas públicas embebibles', () => {
         expect(html).toContain('Esta lista no está disponible');
         expect(html).not.toContain('public_list');
         expect(renderPublicListPage('tok', 'Mi lista', 'n0nce')).toContain('<script nonce="n0nce">');
+    });
+
+    describe('con la caché de lo público (como en la app)', () => {
+        /** Un Redis mínimo en memoria para el tope por enlace. */
+        const fakeRedis = () => {
+            const m = new Map<string, number>();
+            return {
+                incr: async (k: string) => {
+                    m.set(k, (m.get(k) ?? 0) + 1);
+                    return m.get(k)!;
+                },
+                expire: async () => 1,
+            };
+        };
+        const cached = () => {
+            const cache = new PublicCache({ maxEntries: 100, concurrency: 4, maxQueue: 50, queueTimeoutMs: 2000 });
+            const tenantDb = new TenantDb(pg.db);
+            const withTenantSpy = vi.spyOn(tenantDb, 'withTenant');
+            const svc = new PublicListsService(
+                pg.db,
+                tenantDb,
+                lists_,
+                new FilesService(tenantDb, new LocalFileStorage(mkdtempSync(join(tmpdir(), 'imcrm-pubc-'))), loadEnv({ FILES_SIGNING_SECRET: 'test-public-secret' })),
+                undefined,
+                cache as never,
+                fakeRedis() as never,
+            );
+            return { svc, cache, withTenantSpy };
+        };
+
+        it('meta y la primera página se arman una vez: las visitas siguientes no tocan la base', async () => {
+            const cfg = await publish();
+            await seed();
+            const { svc, withTenantSpy } = cached();
+            const first = await svc.getRecords(cfg.token, {});
+            await svc.getMeta(cfg.token);
+            await svc.pageBootstrap(cfg.token);
+            const after = withTenantSpy.mock.calls.length;
+            // 3 transacciones en total: config, registros y meta (antes: 4 + 4 + 2 por visita).
+            expect(after).toBe(3);
+            for (let i = 0; i < 20; i++) {
+                expect(await svc.getRecords(cfg.token, {})).toEqual(first);
+                await svc.getMeta(cfg.token);
+                await svc.pageBootstrap(cfg.token);
+            }
+            expect(withTenantSpy.mock.calls.length).toBe(after);
+            // Veinte visitas a la vez de otra página: UNA consulta.
+            await Promise.all(Array.from({ length: 20 }, () => svc.getRecords(cfg.token, { sort: 'nombre:desc' })));
+            expect(withTenantSpy.mock.calls.length).toBe(after + 1);
+        });
+
+        it('despublicar u ocultar un campo vale al instante (no espera a que venza la caché)', async () => {
+            const cfg = await publish();
+            await seed();
+            const { svc } = cached();
+            expect(Object.keys((await svc.getRecords(cfg.token, {})).data[0]!.data)).toContain('email');
+            await svc.updateAdmin(tenantId, 'directorio', { visible_field_slugs: ['nombre'] });
+            expect(Object.keys((await svc.getRecords(cfg.token, {})).data[0]!.data)).toEqual(['nombre']);
+            expect((await svc.getMeta(cfg.token)).fields.map((x) => x.slug)).toEqual(['nombre']);
+            await svc.updateAdmin(tenantId, 'directorio', { enabled: false });
+            await expect(svc.getRecords(cfg.token, {})).rejects.toBeInstanceOf(NotFoundException);
+            await expect(svc.getMeta(cfg.token)).rejects.toBeInstanceOf(NotFoundException);
+        });
+
+        it('la caducidad se mira en cada pedido aunque la config esté guardada', async () => {
+            const cfg = await publish();
+            const { svc } = cached();
+            await svc.getMeta(cfg.token);
+            // Vence por fuera del servicio (sin invalidar): la fecha ya está en la config guardada…
+            await svc.updateAdmin(tenantId, 'directorio', { expires_at: '2099-01-01' });
+            await svc.getMeta(cfg.token);
+            vi.useFakeTimers({ now: new Date('2099-06-01T00:00:00Z'), toFake: ['Date'] });
+            try {
+                await expect(svc.getMeta(cfg.token)).rejects.toBeInstanceOf(NotFoundException);
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it('una búsqueda de una letra no busca; el tope por enlace corta las consultas que no salen de la caché', async () => {
+            const cfg = await publish();
+            await seed();
+            const { svc } = cached();
+            // "a" coincidiría con Ana y Carla: con una letra se ignora y llegan los 3.
+            expect((await svc.getRecords(cfg.token, { search: 'a' })).data).toHaveLength(3);
+            expect((await svc.getRecords(cfg.token, { search: 'an' })).data.map((r) => r.data.nombre)).toEqual(['Ana']);
+            // Cada búsqueda distinta llega a la base: pasado el tope, 429.
+            let limited = 0;
+            for (let i = 0; i < PUBLIC_LIST_QUERIES_PER_MINUTE + 5; i++) {
+                await svc.getRecords(cfg.token, { search: `zz${i}` }).catch((e: { getStatus?: () => number }) => {
+                    if (e.getStatus?.() === 429) limited += 1;
+                    else throw e;
+                });
+            }
+            expect(limited).toBeGreaterThanOrEqual(4);
+            // Lo que ya está guardado se sigue sirviendo.
+            expect((await svc.getRecords(cfg.token, { search: 'a' })).data).toHaveLength(3);
+        });
+
+        it('la paginación no pasa de la fila tope', async () => {
+            const cfg = await publish();
+            await seed();
+            const { svc, withTenantSpy } = cached();
+            await svc.getMeta(cfg.token);
+            const before = withTenantSpy.mock.calls.length;
+            expect(await svc.getRecords(cfg.token, { cursor: PUBLIC_LIST_MAX_OFFSET + 1 })).toEqual({ data: [], meta: { next_cursor: null } });
+            expect(withTenantSpy.mock.calls.length).toBe(before);
+        });
     });
 
     it('token inexistente → 404', async () => {
