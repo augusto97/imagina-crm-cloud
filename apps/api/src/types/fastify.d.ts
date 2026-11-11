@@ -19,6 +19,8 @@ declare module 'fastify' {
         portalAccount?: boolean;
         /** SEC-24 — cómo se abrió la sesión (ver SessionData.via). */
         sessionVia?: 'password' | 'portal';
+        /** La sesión se abrió en la dirección de esta empresa: sólo sirve para ella. */
+        boundTenantId?: number;
         /** Seteado por TenantGuard. */
         tenant?: TenantContext;
     }

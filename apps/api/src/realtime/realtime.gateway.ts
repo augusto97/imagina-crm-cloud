@@ -88,6 +88,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnAp
         }
         client.data.userId = auth.userId;
         client.data.token = auth.token;
+        if (auth.boundTenantId !== undefined) client.data.boundTenantId = auth.boundTenantId;
     }
 
     /** Sockets de ESTE nodo (cada nodo revisa los suyos). */
@@ -179,6 +180,9 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnAp
         if (!parsed.success || !userId) {
             return { ok: false };
         }
+        // Sesión abierta en la dirección de una empresa: sólo los avisos de esa.
+        const bound = client.data.boundTenantId as number | undefined;
+        if (bound !== undefined && bound !== parsed.data.tenantId) return { ok: false };
         const memberRole = await this.tenantDb.withUser(userId, async (tx) => {
             const [row] = await tx
                 .select({ tenantId: memberships.tenantId, role: memberships.role })
@@ -210,7 +214,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnAp
         return { ok: true };
     }
 
-    private async authenticate(client: Socket): Promise<{ userId: number; token: string } | null> {
+    private async authenticate(client: Socket): Promise<{ userId: number; token: string; boundTenantId?: number } | null> {
         const raw = client.handshake.headers.cookie;
         if (!raw) return null;
         const token = readCookie(raw, SESSION_COOKIE);
@@ -218,7 +222,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnAp
         const session = await this.sessions.get(token).catch(() => null);
         // SEC-24/25: una sesión del portal no abre el socket de la app.
         if (!session || session.portalTenantId !== undefined) return null;
-        return { userId: session.userId, token };
+        return { userId: session.userId, token, ...(session.boundTenantId !== undefined ? { boundTenantId: session.boundTenantId } : {}) };
     }
 }
 

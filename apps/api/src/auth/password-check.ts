@@ -23,7 +23,11 @@ export async function verifyAccountPassword(
     hash: string,
     password: string,
 ): Promise<boolean> {
-    if (redis && Number((await redis.get(failKey(userId)).catch(() => null)) ?? 0) >= MAX_FAILS) {
+    // El intento se CUENTA antes de verificar (y se borra si la contraseña era
+    // buena). Leer el contador, verificar y recién después sumar dejaba pasar
+    // una ráfaga entera: todos los pedidos en vuelo leían el mismo número.
+    const n = redis ? await incrWithTtl(redis, failKey(userId), WINDOW_SECONDS).catch(() => 0) : 0;
+    if (n > MAX_FAILS) {
         throw new HttpException(
             {
                 code: 'too_many_attempts',
@@ -34,12 +38,6 @@ export async function verifyAccountPassword(
         );
     }
     const valid = await argon2.verify(hash, password).catch(() => false);
-    if (redis) {
-        if (valid) {
-            await redis.del(failKey(userId)).catch(() => undefined);
-        } else {
-            await incrWithTtl(redis, failKey(userId), WINDOW_SECONDS).catch(() => 0);
-        }
-    }
+    if (redis && valid) await redis.del(failKey(userId)).catch(() => undefined);
     return valid;
 }

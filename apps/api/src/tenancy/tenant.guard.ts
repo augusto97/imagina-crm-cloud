@@ -25,6 +25,7 @@ import { ALLOW_GUEST } from './allow-guest.decorator';
 import { ALLOW_LOCKED } from './allow-locked.decorator';
 import { ALLOW_READ_ONLY } from './allow-read-only.decorator';
 import { PLAN_MODULE } from './plan-module.decorator';
+import { sessionTenantScope } from '../auth/host-tenant';
 import { TenantDb } from './tenant-db.service';
 
 export interface TenantContext {
@@ -116,6 +117,12 @@ export class TenantGuard implements CanActivate {
 
         if (!membership) {
             throw new ForbiddenException('No eres miembro de ese workspace');
+        }
+        // Una sesión abierta en la dirección de UNA empresa (su dominio propio)
+        // sólo sirve para esa empresa: quien maneja ese dominio no puede usarla
+        // contra las otras empresas de la persona.
+        if (req.boundTenantId !== undefined && membership.tenantId !== req.boundTenantId) {
+            throw sessionTenantScope();
         }
         // SEC-24 (v0.1.225): el rol `client` es SÓLO portal. Sus endpoints
         // (`/portal/*`) resuelven la empresa por el vínculo, nunca por este

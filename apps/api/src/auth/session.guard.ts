@@ -6,6 +6,7 @@ import {
     UnauthorizedException,
 } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
+import { routePath, type RoutePathSource } from '../common/route-path';
 import { SessionService } from './session.service';
 
 export const SESSION_COOKIE = 'imbase_session';
@@ -18,13 +19,19 @@ export const SESSION_COOKIE = 'imbase_session';
 export const PORTAL_SESSION_COOKIE = 'imbase_portal';
 
 /** Rutas del portal autenticado (las que leen la cookie del portal). */
-export function isPortalApiPath(url: string): boolean {
-    return (url.split('?')[0] ?? '').startsWith('/api/v1/portal/');
+/**
+ * Se decide sobre la RUTA que resolvió el router (`routePath`), no sobre el
+ * texto de la dirección: `/api/v1/%70ortal/me` llega al mismo controlador que
+ * `/api/v1/portal/me` y antes entraba por la rama general, con una sesión de
+ * trabajo.
+ */
+export function isPortalApiPath(req: RoutePathSource): boolean {
+    return routePath(req).startsWith('/api/v1/portal/');
 }
 
 /** Rutas que una sesión del portal puede usar: el portal y cerrar sesión. */
-export function isPortalPath(url: string): boolean {
-    const path = url.split('?')[0] ?? '';
+export function isPortalPath(req: RoutePathSource): boolean {
+    const path = routePath(req);
     return path.startsWith('/api/v1/portal/') || path === '/api/v1/auth/logout';
 }
 
@@ -38,7 +45,7 @@ export class SessionGuard implements CanActivate {
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const req = context.switchToHttp().getRequest<FastifyRequest>();
-        if (isPortalApiPath(req.url)) return this.activatePortal(req);
+        if (isPortalApiPath(req)) return this.activatePortal(req);
         const token = this.extractToken(req);
         if (!token) {
             throw new UnauthorizedException('Sesión requerida');
@@ -51,13 +58,14 @@ export class SessionGuard implements CanActivate {
         req.sessionToken = token;
         req.impersonatedBy = session.impersonatedBy;
         req.sessionVia = session.via;
+        if (session.boundTenantId !== undefined) req.boundTenantId = session.boundTenantId;
         // SEC-24 (v0.1.225): una sesión abierta con un enlace del portal sólo
         // sirve para el portal. Sin este corte, el enlace de una cuenta que no
         // era cliente (el caso del superadmin) daba acceso a TODO lo que esa
         // cuenta podía hacer.
         if (session.portalTenantId !== undefined) {
             req.portalTenantId = session.portalTenantId;
-            if (!isPortalPath(req.url)) {
+            if (!isPortalPath(req)) {
                 throw new ForbiddenException({
                     code: 'portal_session_scope',
                     message: 'Esta sesión es del portal del cliente',

@@ -1,3 +1,4 @@
+import { sessionTenantScope } from '../auth/host-tenant';
 import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { oauthApproveInputSchema, type OauthApproveInput, type OauthAuthorizationRequest, type OauthDecision } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -97,6 +98,8 @@ export class OauthController {
         @Param('id') id: string,
         @Body(new ZodValidationPipe(oauthApproveInputSchema)) input: OauthApproveInput,
     ): Promise<OauthDecision> {
+        // Una sesión atada a una empresa no autoriza un conector para OTRA.
+        if (req.boundTenantId !== undefined && input.tenant_id !== req.boundTenantId) throw sessionTenantScope();
         const request = await this.oauth.getRequest(id);
         const decision = await this.oauth.approve(id, req.authUserId!, input);
         await this.audit.log({

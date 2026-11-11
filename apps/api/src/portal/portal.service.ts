@@ -12,6 +12,7 @@ import {
     NotFoundException,
     type OnModuleInit,
     Optional,
+    UnauthorizedException,
 } from '@nestjs/common';
 import {
     collectionCurrencyError,
@@ -172,6 +173,15 @@ const REPLY_EMAIL_WINDOW_S = 15 * 60;
 
 /** v0.1.289 — campos del registro que sirven como monto del botón «Pagar». */
 const PAYABLE_AMOUNT_TYPES: ReadonlySet<string> = new Set(['number', 'currency', 'computed', 'rollup']);
+
+/** ¿Las dos direcciones son el mismo origen (esquema + host + puerto)? */
+function sameOrigin(a: string, b: string): boolean {
+    try {
+        return new URL(a).origin === new URL(b).origin;
+    } catch {
+        return false;
+    }
+}
 
 @Injectable()
 export class PortalService implements OnModuleInit {
@@ -652,16 +662,23 @@ export class PortalService implements OnModuleInit {
         email: string,
         opts: { linkId?: number; account?: boolean; baseUrl?: string; allAccounts?: boolean } = {},
     ): Promise<MagicLinkResult> {
+        // v0.1.245 — el enlace sale por el dominio del PORTAL de la empresa (o
+        // el del equipo, o el de la plataforma) y el correo lleva SU marca.
+        const base = opts.baseUrl ?? (await this.domains.baseUrlFor(tenantId, 'portal'));
+        // Un enlace que vale para «todas mis cuentas» sólo viaja por la
+        // dirección de la PLATAFORMA. El dominio de una empresa lo atiende quien
+        // maneja su DNS: ahí vería el token al abrirse el correo y podría
+        // canjearlo en la plataforma para entrar a las cuentas de esa persona
+        // en OTRAS empresas. Por un dominio de empresa, el enlace es sólo de
+        // esa empresa (la decisión queda en el token, no en el Host del canje).
+        const account = opts.account === true && sameOrigin(base, this.env.APP_BASE_URL);
         const token = await this.mintToken({
             userId,
             tenantId,
             ...(opts.linkId !== undefined ? { linkId: opts.linkId } : {}),
-            ...(opts.account === true ? { account: true } : {}),
+            ...(account ? { account: true } : {}),
         });
         const path = `/portal/acceso?token=${token}`;
-        // v0.1.245 — el enlace sale por el dominio del PORTAL de la empresa (o
-        // el del equipo, o el de la plataforma) y el correo lleva SU marca.
-        const base = opts.baseUrl ?? (await this.domains.baseUrlFor(tenantId, 'portal'));
         const url = `${base}${path}`;
         const brand = await this.emailBrand(tenantId, base);
         const message = portalAccessEmail(brand, url, { allAccounts: opts.allAccounts });
@@ -1043,15 +1060,15 @@ export class PortalService implements OnModuleInit {
                 data: { status: 404 },
             });
         if (actor.tenantId === null) {
-            // Sesión vieja (anterior a SEC-24, sin empresa): sólo con UN vínculo.
-            const rows = await this.tenantDb.withUser(actor.userId, (tx) =>
-                tx.select().from(portalLinks).where(eq(portalLinks.userId, actor.userId)).limit(2),
-            );
-            const only = rows.length === 1 ? rows[0]! : null;
-            if (!only) throw notLinked();
-            if ((await this.liveRecordIds(only.tenantId, [only.recordId])).size === 0) throw notLinked();
-            if (await this.portalSwitchedOff(only.tenantId, only.listId)) throw disabled();
-            return only;
+            // Sin empresa en la sesión no hay portal: toda sesión del portal la
+            // trae (SEC-24) y `SessionGuard` no deja pasar otra cosa. Antes aquí
+            // se servía «el único vínculo de la persona», y una sesión de
+            // trabajo que llegara por otro camino veía un portal.
+            throw new UnauthorizedException({
+                code: 'portal_session_required',
+                message: 'Entra al portal con tu enlace de acceso',
+                data: { status: 401 },
+            });
         }
         const tenantId = actor.tenantId;
         const allRows = await this.tenantDb.withUser(actor.userId, (tx) =>

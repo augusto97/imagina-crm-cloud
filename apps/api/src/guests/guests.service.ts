@@ -411,7 +411,7 @@ export class GuestsService {
                 ? await this.tenantDb.withTenant(tenantId, (tx) => tx.select({ name: users.name }).from(users).where(eq(users.id, actorId)).limit(1))
                 : [];
             const company = await this.tenantName(tenantId);
-            notified = await this.auth.notifyGuestShared(r.user, company, inviter?.name ?? null, label);
+            notified = await this.auth.notifyGuestShared(r.user, company, inviter?.name ?? null, label, tenantId);
         }
         return { user_id: r.user.id, invited: r.invited, notified };
     }

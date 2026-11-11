@@ -44,6 +44,12 @@ export interface SessionData {
      * que pudo haber acuñado el enlace del portal) tienen que volver a entrar.
      */
     via?: 'password' | 'portal';
+    /**
+     * La sesión se abrió en la dirección de UNA empresa (su dominio propio o su
+     * subdominio): sólo sirve para esa empresa — ni las otras de la persona ni
+     * la consola de plataforma. Ver `auth/host-tenant.ts`.
+     */
+    boundTenantId?: number;
 }
 
 /** Sesión activa tal como la ve el dueño de la cuenta (nunca expone el token). */
@@ -118,6 +124,7 @@ export class SessionService {
             portalLinkId?: number;
             portalAccount?: boolean;
             via?: 'password' | 'portal';
+            boundTenantId?: number | null;
         } = {},
     ): Promise<string> {
         const token = randomBytes(32).toString('base64url');
@@ -135,6 +142,7 @@ export class SessionService {
                   }
                 : {}),
             ...(meta.via === 'password' ? { via: 'password' as const } : {}),
+            ...(typeof meta.boundTenantId === 'number' ? { boundTenantId: meta.boundTenantId } : {}),
         };
         await this.redis.set(this.key(token), JSON.stringify(data), 'EX', this.env.SESSION_TTL_SECONDS);
         // Registrar el token en el set del usuario (para revocación masiva). El

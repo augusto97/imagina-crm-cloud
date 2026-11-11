@@ -1,3 +1,4 @@
+import { assertAccountWideSession } from '../auth/host-tenant';
 import {
     Body,
     Controller,
@@ -252,6 +253,9 @@ export class MeController {
     @Get('data-export')
     @UseGuards(SessionGuard)
     exportData(@Req() req: FastifyRequest): Promise<AccountExport> {
+        // Reúne lo de TODAS las empresas de la persona: no desde una sesión
+        // atada a una sola.
+        assertAccountWideSession(req);
         return this.account.exportData(req.authUserId!);
     }
 
@@ -264,6 +268,7 @@ export class MeController {
     async deletionBlockers(
         @Req() req: FastifyRequest,
     ): Promise<{ workspaces: Array<{ id: number; name: string }> }> {
+        assertAccountWideSession(req);
         return { workspaces: await this.account.soleAdminWorkspaces(req.authUserId!) };
     }
 
@@ -275,6 +280,7 @@ export class MeController {
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(deleteAccountSchema)) input: DeleteAccountInput,
     ): Promise<void> {
+        assertAccountWideSession(req);
         await this.account.deleteAccount(req.authUserId!, input.password);
     }
 

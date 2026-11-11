@@ -715,6 +715,8 @@ describe('PlatformService (consola de operador, cross-tenant)', () => {
         // (v0.1.118) → lo esperamos antes de limpiar el buzón, si no cae
         // después del reset y ensucia la comprobación de abajo.
         await waitForMail((m) => m.to === 'ya@existe.test');
+        // Cuenta con el correo CONFIRMADO (una sin confirmar pasaría a invitación).
+        await pg.db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.email, 'ya@existe.test'));
         sentMail.length = 0;
         const t = await platform.createTenant({
             workspace_name: 'Segunda Empresa',
