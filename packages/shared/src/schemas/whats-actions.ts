@@ -84,6 +84,13 @@ export const WHATS_ACTION_ABILITIES: Record<WhatsActionKey, readonly string[]> =
 };
 
 /**
+ * Los permisos que necesita la clave para conectar (v0.1.389): ver la cuenta y
+ * los números, enviar, leer los mensajes y manejar los avisos. Sin `wa.send` no
+ * se conecta; sin los otros se conecta con un aviso.
+ */
+export const WA_WEB_KEY_ABILITIES = ['account.view', 'wa.accounts.view', 'wa.send', 'wa.read', 'webhooks.manage'] as const;
+
+/**
  * Los permisos que suman las acciones de v0.1.401 (los de los mensajes ya se
  * pedían al conectar). Son opcionales: sin ellos sólo esas acciones avisan.
  */
@@ -122,6 +129,82 @@ export const WA_WEB_ABILITY_LABEL: Record<string, string> = {
     'messenger.send': 'responder y resolver conversaciones',
     'unsubscribed.manage': 'dar de baja',
 };
+
+/**
+ * v0.1.403 — Los permisos de la clave agrupados por lo que habilitan, para la
+ * ventana de conexión y la página de la conexión. Antes los pasos nombraban
+ * sólo los cinco de conectar, y las acciones de contactos, etiquetas, grupos,
+ * flujos y la bandeja —y los disparadores que traen sólo el contacto— fallaban
+ * después por un permiso que nadie había pedido. Un test exige que cada permiso
+ * que usa una acción esté en algún grupo.
+ */
+export interface WaWebPermissionGroup {
+    key: string;
+    title: string;
+    /** Qué habilita, en palabras. */
+    help: string;
+    /** Sin ellos no se conecta (o se conecta a medias); el resto, sólo si se usa. */
+    required: boolean;
+    abilities: readonly string[];
+}
+
+export const WA_WEB_PERMISSION_GROUPS: readonly WaWebPermissionGroup[] = [
+    {
+        key: 'base',
+        title: 'Conectar, enviar y recibir',
+        help: 'Ver la cuenta y tus números, enviar mensajes y archivos, saber si cada uno se entregó o se leyó y recibir los mensajes que te escriben.',
+        required: true,
+        abilities: WA_WEB_KEY_ABILITIES,
+    },
+    {
+        key: 'contacts',
+        title: 'Contactos',
+        help: 'Buscar el contacto por teléfono y crearlo si falta: lo usan casi todas las acciones sobre el contacto («Crear o actualizar contacto», notas, consentimiento, etiquetas, grupos, flujos, goteos). También los disparadores de «Cuando pasa algo en Whats» que traen sólo el contacto.',
+        required: false,
+        abilities: ['contacts.view', 'contacts.manage'],
+    },
+    {
+        key: 'tags',
+        title: 'Etiquetas',
+        help: 'Poner y quitar etiquetas, y elegirlas de la lista de tu cuenta.',
+        required: false,
+        abilities: ['tags.view', 'tags.manage'],
+    },
+    {
+        key: 'groups',
+        title: 'Grupos de contactos',
+        help: 'Agregar o quitar el contacto de un grupo de tu cuenta (no son grupos de WhatsApp).',
+        required: false,
+        abilities: ['groups.view', 'groups.manage'],
+    },
+    {
+        key: 'flows',
+        title: 'Flujos y goteos',
+        help: 'Elegir el flujo o el goteo de la lista (flows.view), activar un flujo e inscribir en un goteo (flows.trigger) y reanudar un flujo que quedó esperando (flows.run).',
+        required: false,
+        abilities: ['flows.view', 'flows.trigger', 'flows.run'],
+    },
+    {
+        key: 'inbox',
+        title: 'Bandeja de conversaciones',
+        help: 'Responder una conversación y resolverla o reabrirla.',
+        required: false,
+        abilities: ['messenger.view', 'messenger.send'],
+    },
+    {
+        key: 'unsubscribe',
+        title: 'Bajas',
+        help: 'Dar de baja a un contacto para que no reciba más mensajes.',
+        required: false,
+        abilities: ['unsubscribed.manage'],
+    },
+];
+
+/** Qué grupos opcionales le faltan a la clave (con algún permiso pendiente). Una clave con `*` tiene todo. */
+export function missingWaWebPermissionGroups(abilities: readonly string[]): WaWebPermissionGroup[] {
+    if (abilities.includes('*')) return [];
+    return WA_WEB_PERMISSION_GROUPS.filter((g) => !g.required && g.abilities.some((a) => !abilities.includes(a)));
+}
 
 /** Los permisos que le faltan a la clave para una acción (vacío = tiene todo). */
 export function missingWhatsAbilities(actionKey: string, abilities: readonly string[]): string[] {

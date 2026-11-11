@@ -55,7 +55,7 @@ import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import { MailService } from '../src/mail/mail.service';
 import type { MailMessage, MailTransport } from '../src/mail/mail.types';
-import { whatsappSchema } from '../src/ai/tools/whatsapp-ai';
+import { whatsActionOutputsForAi, whatsappSchema } from '../src/ai/tools/whatsapp-ai';
 import { emptyMaps, remapWhatsappConnectionConfig } from '../src/platform/tenant-transfer.remap';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { RecordsRepository } from '../src/records/records.repository';
@@ -517,6 +517,18 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
             { value: '1', label: '+573178339119 · Augusto · Conectado' },
             { value: '2', label: '+573000000001 · Soporte · Desconectado' },
         ]);
+        // v0.1.403 — La revisión devuelve los permisos de la clave (la ventana los
+        // marca) y nombra lo que no se podrá usar sin los opcionales.
+        expect(lookup.granted).toEqual([...ALL]);
+        expect(lookup.warning).toMatch(/Para usar también contactos, etiquetas, grupos de contactos, flujos y goteos, bandeja de conversaciones y bajas/);
+        abilities = [...ALL, ...WA_WEB_EXTRA_ABILITIES];
+        const full = await connectors.verifyIntegration(tenantId, adminId, 'admin', 'whatsapp_web', { fields: { api_key: API_KEY } });
+        expect(full.granted).toEqual([...ALL, ...WA_WEB_EXTRA_ABILITIES]);
+        expect(full.warning ?? '').not.toMatch(/Para usar también/);
+        abilities = [...ALL, 'contacts.view', 'contacts.manage', 'flows.view'];
+        const partial = await connectors.verifyIntegration(tenantId, adminId, 'admin', 'whatsapp_web', { fields: { api_key: API_KEY } });
+        expect(partial.warning).toMatch(/Para usar también etiquetas, grupos de contactos, flujos y goteos, bandeja de conversaciones y bajas/);
+        abilities = [...ALL];
         // Elegir un número desconectado avisa (sin bloquear).
         const off = await connectors.verifyIntegration(tenantId, adminId, 'admin', 'whatsapp_web', { fields: { api_key: API_KEY, account: '2' } });
         expect(off.warning).toMatch(/Desconectado/);
@@ -1007,6 +1019,13 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
         expect(actions.some((a) => a.startsWith('resume_flow {run_id, resume_token, variables?}'))).toBe(true);
         expect(String(schema?.rules)).toMatch(/kind "whats"/);
         expect(String(schema?.rules)).toMatch(/Nunca se envía a grupos/);
+        // v0.1.403 — También en el bloque `connectors`: «Activar un flujo» deja la ejecución.
+        expect(whatsActionOutputsForAi('trigger_flow')).toMatchObject({
+            outputs: { '{{whats.contacto_id}}': 'Id del contacto en Whats', '{{whats.ejecucion_id}}': 'Id de la ejecución del flujo' },
+            _nota: expect.stringMatching(/update_field/),
+        });
+        expect(whatsActionOutputsForAi('unsubscribe')).toEqual({});
+        expect(whatsActionOutputsForAi('send_template')).toEqual({});
     });
     // ── v0.1.402: «Cuando pasa algo en Whats» ──────────────────────────
 

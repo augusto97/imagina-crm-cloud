@@ -1,6 +1,8 @@
 import {
     INTEGRATIONS,
+    WHATS_ACTION_MERGE_TAGS,
     WHATS_ACTION_OUTPUTS,
+    isWhatsAction,
     WHATSAPP_FIELD_ROLES,
     readWhatsappListFields,
     renderWhatsappTemplate,
@@ -68,6 +70,26 @@ function whatsActionShapes(): string[] {
         const outs = WHATS_ACTION_OUTPUTS[a.key as keyof typeof WHATS_ACTION_OUTPUTS] ?? [];
         return `${a.key} {${params}}${outs.length ? ` → ${outs.map((o) => `{{whats.${o}}}`).join(' ')}` : ''}`;
     });
+}
+
+/**
+ * v0.1.403 — Lo que deja una acción de Whats, para el bloque `connectors` de
+ * get_list_schema (`{"{{whats.ejecucion_id}}": "Id de la ejecución del flujo"}`).
+ * Sólo estaba en las formas cortas del bloque `whatsapp`, así que quien leía las
+ * acciones en `connectors` creía que «Activar un flujo» no devolvía la ejecución.
+ */
+export function whatsActionOutputsForAi(actionKey: string): { outputs: Record<string, string>; _nota?: string } | Record<string, never> {
+    if (!isWhatsAction(actionKey)) return {};
+    const keys = WHATS_ACTION_OUTPUTS[actionKey];
+    if (keys.length === 0) return {};
+    const labels = new Map(WHATS_ACTION_MERGE_TAGS.map((t) => [t.tag, t.label]));
+    const outputs = Object.fromEntries(keys.map((k) => [`{{whats.${k}}}`, labels.get(`whats.${k}`) ?? k]));
+    return actionKey === 'trigger_flow'
+        ? {
+              outputs,
+              _nota: 'Úsalos en los pasos siguientes de la misma automatización; para guardar la ejecución en el registro, un update_field con {{whats.ejecucion_id}}. «Reanudar un flujo» necesita además el token que da el flujo al pausarse ({{payload.resume_token}} si llega por un webhook entrante).',
+          }
+        : { outputs };
 }
 
 /** El bloque `whatsapp` de get_list_schema (null si la empresa no conectó WhatsApp oficial). */

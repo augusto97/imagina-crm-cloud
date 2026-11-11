@@ -55,6 +55,8 @@ const KEYS = {
     'was-clave-sin-envio': ['account.view', 'wa.accounts.view', 'wa.read', 'webhooks.manage'],
 };
 
+const KEYS_ORIGINAL = JSON.parse(JSON.stringify(KEYS));
+
 function fresh() {
     return {
         accounts: [
@@ -153,7 +155,15 @@ const server = http.createServer(async (req, res) => {
     if (path === '/__state') return send(res, 200, state);
     if (path === '/__reset') {
         state = fresh();
+        for (const k of Object.keys(KEYS)) KEYS[k] = [...KEYS_ORIGINAL[k]];
         return send(res, 200, { ok: true });
+    }
+    // v0.1.403 — Cambiar los permisos de una clave (como editarla en API Keys).
+    if (path === '/__key') {
+        const key = String(body.key ?? '');
+        if (!KEYS[key] || !Array.isArray(body.abilities)) return send(res, 400, { ok: false, error: 'key y abilities' });
+        KEYS[key] = body.abilities.map(String);
+        return send(res, 200, { key, abilities: KEYS[key] });
     }
     if (path === '/__conversation') {
         const phone = String(body.phone ?? '');

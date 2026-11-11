@@ -415,7 +415,11 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.402**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.403**
+(**los permisos de la clave de Whats a la vista** — la ventana de conexión
+y la página de la conexión listan los permisos por lo que habilitan y marcan
+cuáles tiene la clave; el MCP ve `{{whats.ejecucion_id}}` y las demás salidas
+de Whats en `connectors`). Antes v0.1.402
 (**el conector completo de WhatsApp (Whats), segunda mitad: los
 disparadores** — «Cuando pasa algo en Whats» con 7 eventos: estado de un
 mensaje enviado, contacto nuevo, baja, conversación, calificación, clic en un
@@ -1824,6 +1828,23 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-11 · v0.1.403** — **Los permisos de la clave de Whats, a la
+  vista** (reporte del usuario: las instrucciones de conexión no decían que
+  la clave necesita además `flows.view`, `flows.trigger`, `flows.run`,
+  `contacts.view`, `contacts.manage`… para ciertas acciones, flujos y
+  disparadores). Hecho: los permisos agrupados por lo que habilitan
+  (conectar, contactos, etiquetas, grupos, flujos y goteos, bandeja, bajas)
+  en la ventana de conexión, tildados o faltantes al tocar «Buscar mis
+  cuentas», con «Copiar los que faltan»; los pasos explican qué marcar; aviso
+  al conectar; la misma lista en la página de la conexión. **De paso** (otro
+  reporte que llegó de una conexión por MCP: «Activar un flujo no devuelve el
+  id de la ejecución, por ejemplo {{flujo.ejecucion_id}}»): el id SÍ se
+  devuelve desde v0.1.401 como `{{whats.ejecucion_id}}`, pero el bloque
+  `connectors` de `get_list_schema` no mostraba las salidas de las acciones
+  de Whats; ahora las trae, con una nota de cómo guardarlo en el registro. No
+  se agregó un alias `{{flujo.*}}`: todas las salidas de Whats van bajo
+  `{{whats.*}}`. Queda: lo mismo de siempre (confirmar con avisos reales la
+  forma de los eventos que no son de mensajes).
 - **2026-11-11 · v0.1.402** — **El conector completo de WhatsApp (Whats):
   los disparadores** (segunda mitad del pedido de v0.1.401, con lo aprobado:
   sin citas ni pagos). Hecho: un disparador nuevo, **«Cuando pasa algo en

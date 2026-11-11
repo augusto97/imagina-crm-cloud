@@ -8,6 +8,9 @@ import {
     WHATS_PARAM_LOOKUP,
     WA_WEB_ABILITY_LABEL,
     WA_WEB_EXTRA_ABILITIES,
+    WA_WEB_KEY_ABILITIES,
+    WA_WEB_PERMISSION_GROUPS,
+    missingWaWebPermissionGroups,
     missingWhatsAbilities,
     readWhatsKeyValues,
     whatsFlag,
@@ -69,5 +72,42 @@ describe('v0.1.401 — acciones de Whats', () => {
         expect(whatsFlag('', true)).toBe(true);
         expect(whatsFlag('false', true)).toBe(false);
         expect(whatsFlag('Sí', false)).toBe(true);
+    });
+});
+
+describe('v0.1.403 — los permisos de la clave, por grupo', () => {
+    const grouped = WA_WEB_PERMISSION_GROUPS.flatMap((g) => g.abilities);
+
+    it('cada permiso que usa una acción o la conexión está en un grupo, con su nombre en palabras', () => {
+        const used = new Set<string>([...WA_WEB_KEY_ABILITIES, ...Object.values(WHATS_ACTION_ABILITIES).flat()]);
+        for (const a of used) {
+            expect(grouped).toContain(a);
+            expect(WA_WEB_ABILITY_LABEL[a]).toBeTruthy();
+        }
+        // Ninguno repetido entre grupos.
+        expect(new Set(grouped).size).toBe(grouped.length);
+    });
+
+    it('los obligatorios son los de conectar y los opcionales, los de las acciones', () => {
+        const required = WA_WEB_PERMISSION_GROUPS.filter((g) => g.required).flatMap((g) => g.abilities);
+        expect([...required].sort()).toEqual([...WA_WEB_KEY_ABILITIES].sort());
+        const optional = WA_WEB_PERMISSION_GROUPS.filter((g) => !g.required).flatMap((g) => g.abilities);
+        expect([...optional].sort()).toEqual([...WA_WEB_EXTRA_ABILITIES].sort());
+    });
+
+    it('la ventana de conexión los muestra y los pasos los mencionan', () => {
+        const auth = whats.auth;
+        if (auth.kind !== 'key') throw new Error('Whats conecta con clave');
+        expect(auth.permissions?.map((g) => g.key)).toEqual(WA_WEB_PERMISSION_GROUPS.map((g) => g.key));
+        expect(auth.permissions?.find((g) => g.key === 'flows')?.permissions.map((p) => p.key)).toEqual(['flows.view', 'flows.trigger', 'flows.run']);
+        expect(auth.how_to.join(' ')).toMatch(/contactos, etiquetas, grupos, flujos, goteos o la bandeja/);
+    });
+
+    it('dice qué grupos le faltan a una clave', () => {
+        expect(missingWaWebPermissionGroups([...WA_WEB_KEY_ABILITIES]).map((g) => g.key)).toEqual(['contacts', 'tags', 'groups', 'flows', 'inbox', 'unsubscribe']);
+        expect(missingWaWebPermissionGroups([...WA_WEB_KEY_ABILITIES, ...WA_WEB_EXTRA_ABILITIES])).toEqual([]);
+        expect(missingWaWebPermissionGroups(['*'])).toEqual([]);
+        // Un grupo a medias cuenta como faltante.
+        expect(missingWaWebPermissionGroups([...WA_WEB_KEY_ABILITIES, 'flows.view', 'contacts.view', 'contacts.manage']).map((g) => g.key)).toContain('flows');
     });
 });

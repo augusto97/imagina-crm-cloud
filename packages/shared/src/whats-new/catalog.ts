@@ -2436,4 +2436,17 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.403-whats-permisos',
+        version: '0.1.403',
+        date: '2026-11-11',
+        kind: 'improvement',
+        title: 'Al conectar Whats ves qué permisos necesita tu clave',
+        summary:
+            'La ventana de conexión de WhatsApp (Whats) lista los permisos de la clave por lo que habilitan: contactos, etiquetas, grupos, flujos y goteos, bandeja y bajas. Al tocar «Buscar mis cuentas» marca cuáles tiene tu clave y cuáles le faltan.',
+        media: { illustration: 'wab-was-conectar' },
+        body: 'En **Ajustes → Integraciones**, abre **WhatsApp (Whats)**: la lista está en **Permisos de la clave**. Con **Copiar los que faltan** te llevas los nombres para marcarlos en tu panel de Whats y después tocas **Actualizar clave**.',
+        action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
+        audience: { roles: ['admin'] },
+    },
 ];

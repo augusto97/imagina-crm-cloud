@@ -13967,6 +13967,44 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         front 855, suites relacionadas 186/186 — + E2E navegador 28/28 contra
         el Whats simulado (escritorio y celular oscuro).
 
+  - [x] **Permisos de la clave de Whats a la vista + salidas de Whats para el
+        MCP (v0.1.403, addendum ADR-S69, reporte del usuario: "en las
+        instrucciones de conexión no dices que deben agregarse más permisos
+        como flows.view, flows.trigger, flows.run, contacts.view y
+        contacts.manage" y "Activar un flujo no devuelve el id de la ejecución,
+        por ejemplo {{flujo.ejecucion_id}}")**. (a) **Permisos por grupo**
+        (`WA_WEB_PERMISSION_GROUPS` en `whats-actions.ts`, adonde se mudó
+        `WA_WEB_KEY_ABILITIES`): conectar, enviar y recibir (necesarios),
+        contactos (también los disparadores que traen sólo el contacto),
+        etiquetas, grupos de contactos, flujos y goteos (`flows.view` elegir,
+        `flows.trigger` activar e inscribir, `flows.run` reanudar), bandeja y
+        bajas, cada uno con lo que habilita; un test exige que todo permiso que
+        use una acción o la conexión esté en un grupo con su nombre en palabras.
+        (b) **Ventana de conexión**: la definición por clave gana `permissions`
+        (`IntegrationPermissionGroup[]`) y la revisión devuelve `granted` (lo
+        que informa `/me`); `IntegrationPermissions` muestra **Permisos de la
+        clave** (opcionales plegados, se abren solos si falta alguno), marca
+        cada permiso tildado o faltante al tocar «Buscar mis cuentas», «Le
+        faltan N» / «Tiene todos» y **Copiar los que faltan**; los pasos
+        explican qué marcar y que se puede actualizar la clave después. Al
+        conectar, un aviso no bloqueante nombra lo que no se podrá usar
+        («Para usar también contactos, etiquetas…»). La página de la conexión
+        muestra la misma lista con lo que tiene la clave hoy. (c) **El id de la
+        ejecución ya existía** (`{{whats.ejecucion_id}}`, leído de `data.id` de
+        `POST /flows/{flow}/trigger`), pero el bloque `connectors` de
+        `get_list_schema` no traía las salidas de las acciones de Whats (sólo
+        el bloque `whatsapp`): ahora trae `outputs` por acción
+        (`whatsActionOutputsForAi`) y, en «Activar un flujo», una nota de cómo
+        guardarlo con `update_field`; la descripción de la acción lo dice. El
+        Whats simulado gana `POST /__key` (cambiar los permisos de una clave).
+        Ayuda: guía de WhatsApp, Aprende → Integraciones y novedad (sin
+        capturas ni ilustraciones nuevas). Tests: 4 de shared (865 en verde),
+        `whatsapp-web.spec` 20/20 con `granted`, el aviso y las salidas, front
+        855 — E2E navegador 29/29 contra el Whats simulado (pasos, grupos,
+        clave básica con 12 faltantes y copiar, clave completa «Tiene todos»,
+        página de la conexión con flujos faltantes, celular oscuro sin
+        desborde).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

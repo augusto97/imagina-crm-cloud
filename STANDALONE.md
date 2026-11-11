@@ -5362,6 +5362,32 @@ leer las entregas reales sólo para entender su forma (sin cambiar nada).
    la cuenta, también al conectar). El asistente/MCP acepta `whats_event`
    (con `phone_field` por slug).
 
+**Addendum v0.1.403 — Los permisos de la clave, por lo que habilitan.** Los
+pasos de conexión de Whats nombraban sólo los cinco permisos de conectar
+(`account.view`, `wa.accounts.view`, `wa.send`, `wa.read`,
+`webhooks.manage`), así que una clave creada siguiéndolos conectaba bien pero
+las acciones de contactos, etiquetas, grupos, flujos o la bandeja —y los
+disparadores que traen sólo el contacto— fallaban después por un permiso que
+nadie había pedido (reporte del usuario).
+
+1. `WA_WEB_PERMISSION_GROUPS` (shared, `whats-actions.ts`): conectar
+   (necesarios), contactos, etiquetas, grupos de contactos, flujos y goteos
+   (`flows.view` para elegirlos, `flows.trigger` para activar e inscribir,
+   `flows.run` para reanudar), bandeja y bajas, cada uno con lo que habilita.
+   Un test exige que todo permiso que use una acción o la conexión esté en un
+   grupo y tenga su nombre en palabras. `WA_WEB_KEY_ABILITIES` se mudó ahí.
+2. La definición por clave de una integración puede traer `permissions`
+   (`IntegrationPermissionGroup[]`) y la revisión devuelve `granted` (los
+   permisos de la clave, si el servicio los informa). La ventana de conexión
+   los muestra en **Permisos de la clave** (los opcionales plegados), marca
+   cada uno como presente o faltante al tocar «Buscar mis cuentas» y copia los
+   que faltan; la página de la conexión muestra la misma lista. Al conectar,
+   un aviso no bloqueante nombra lo que no se podrá usar.
+3. El bloque `connectors` de `get_list_schema` trae `outputs` en las acciones
+   de Whats (`{{whats.ejecucion_id}}` en «Activar un flujo»): sólo estaban en
+   el bloque `whatsapp`, y un cliente MCP que leía `connectors` concluía que
+   el flujo no devolvía la ejecución.
+
 ---
 
 ### ADR-S70 — Mesa de ayuda por correo (IMAP) + SLA en horas hábiles (v0.1.316)
