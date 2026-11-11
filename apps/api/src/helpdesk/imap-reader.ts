@@ -32,15 +32,40 @@ export interface ImapFolderState {
 export interface ImapFetched {
     uid: number;
     size: number;
-    /** null = se pasó del tamaño máximo (no se bajó). */
+    /** null = se pasó del tamaño máximo (no se bajó, o se descartó al bajarlo). */
     source: Buffer | null;
+    /** El servidor mandó más bytes que el tamaño que había informado. */
+    oversizeOnDownload?: boolean;
 }
+
+export interface ImapListed {
+    uid: number;
+    /** Tamaño que INFORMA el servidor (no se confía en él para acotar la memoria). */
+    size: number;
+}
+
+export interface ImapSource {
+    /** null = lo recibido pasa de `maxBytes` (se descartó). */
+    source: Buffer | null;
+    /** La sesión quedó inservible (el servidor mandó un bloque mayor al tope): hay que abrir otra. */
+    connectionLost: boolean;
+}
+
+/**
+ * Tope ABSOLUTO de un bloque que se acepta del servidor IMAP, en bytes
+ * recibidos (no en lo que el servidor dice que pesa). Es el máximo
+ * configurable por lista (50 MB) más un margen; por lista se aplica además
+ * su propio tope al terminar de bajar cada correo.
+ */
+export const IMAP_MAX_LITERAL_BYTES = 50 * 1024 * 1024 + 64 * 1024;
 
 export interface ImapSession {
     folders(): Promise<string[]>;
     open(folder: string, opts: { writable: boolean }): Promise<ImapFolderState>;
-    /** UIDs mayores que `afterUid`, en orden, hasta `max`; el MIME sólo si pesa ≤ `maxBytes`. */
-    fetchAfter(afterUid: number, max: number, maxBytes: number): Promise<ImapFetched[]>;
+    /** UIDs mayores que `afterUid`, en orden, hasta `max` (sin bajar ningún correo). */
+    listAfter(afterUid: number, max: number): Promise<ImapListed[]>;
+    /** El MIME de UN correo. Lo que pase de `maxBytes` se descarta (no se devuelve). */
+    fetchSource(uid: number, maxBytes: number): Promise<ImapSource>;
     markSeen(uids: number[]): Promise<void>;
     close(): Promise<void>;
 }
@@ -57,6 +82,9 @@ const SOCKET_TIMEOUT = 60_000;
 
 @Injectable()
 export class ImapFlowReader implements ImapReader {
+    /** Tope de un bloque recibido (los tests lo bajan para no mover 50 MB). */
+    maxLiteralBytes = IMAP_MAX_LITERAL_BYTES;
+
     async connect(params: ImapConnParams): Promise<ImapSession> {
         const client = new ImapFlow({
             host: params.host,
@@ -73,11 +101,17 @@ export class ImapFlowReader implements ImapReader {
             connectionTimeout: CONNECT_TIMEOUT,
             greetingTimeout: CONNECT_TIMEOUT,
             socketTimeout: SOCKET_TIMEOUT,
+            // El límite se aplica a los bytes que LLEGAN: un servidor que
+            // informa un tamaño chico y manda uno enorme se corta aquí (el
+            // valor por defecto de la librería es 1 GB por bloque).
+            maxLiteralSize: this.maxLiteralBytes,
+            maxResponseSize: this.maxLiteralBytes + 1024 * 1024,
         });
+        const session = new ImapFlowSession(client);
         // Un error del socket después de conectar no puede tumbar el proceso.
-        client.on('error', () => undefined);
+        client.on('error', (err: unknown) => session.noteError(err));
         await client.connect();
-        return new ImapFlowSession(client);
+        return session;
     }
 }
 
@@ -94,23 +128,35 @@ class ImapFlowSession implements ImapSession {
         return { uidValidity: Number(box.uidValidity), uidNext: box.uidNext, exists: box.exists };
     }
 
-    async fetchAfter(afterUid: number, max: number, maxBytes: number): Promise<ImapFetched[]> {
-        const found: Array<{ uid: number; size: number }> = [];
+    private literalTooLarge = false;
+
+    noteError(err: unknown): void {
+        if (isLiteralTooLarge(err)) this.literalTooLarge = true;
+    }
+
+    async listAfter(afterUid: number, max: number): Promise<ImapListed[]> {
+        const found: ImapListed[] = [];
         // `n:*` siempre trae al menos el último mensaje: se filtra por UID.
         for await (const msg of this.client.fetch(`${afterUid + 1}:*`, { uid: true, size: true }, { uid: true })) {
             if (msg.uid > afterUid) found.push({ uid: msg.uid, size: msg.size ?? 0 });
         }
         found.sort((a, b) => a.uid - b.uid);
-        const out: ImapFetched[] = [];
-        for (const m of found.slice(0, max)) {
-            if (m.size > maxBytes) {
-                out.push({ uid: m.uid, size: m.size, source: null });
-                continue;
-            }
-            const full = await this.client.fetchOne(String(m.uid), { uid: true, source: true }, { uid: true });
-            out.push({ uid: m.uid, size: m.size, source: full && full.source ? full.source : null });
+        return found.slice(0, max);
+    }
+
+    async fetchSource(uid: number, maxBytes: number): Promise<ImapSource> {
+        try {
+            const full = await this.client.fetchOne(String(uid), { uid: true, source: true }, { uid: true });
+            const source = full && full.source ? full.source : null;
+            if (source !== null && source.length > maxBytes) return { source: null, connectionLost: false };
+            if (source === null && this.literalTooLarge) return { source: null, connectionLost: true };
+            return { source, connectionLost: false };
+        } catch (err) {
+            // El servidor anunció un bloque mayor al tope: la librería corta la
+            // conexión sin leerlo. No es un error del buzón: ese correo se salta.
+            if (this.literalTooLarge || isLiteralTooLarge(err)) return { source: null, connectionLost: true };
+            throw err;
         }
-        return out;
     }
 
     async markSeen(uids: number[]): Promise<void> {
@@ -123,6 +169,51 @@ class ImapFlowSession implements ImapSession {
             await this.client.logout();
         } catch {
             this.client.close();
+        }
+    }
+}
+
+function isLiteralTooLarge(err: unknown): boolean {
+    const e = (err ?? {}) as { code?: unknown; message?: unknown };
+    return e.code === 'LiteralTooLarge' || (typeof e.message === 'string' && /^Literal size \d+ exceeds/.test(e.message));
+}
+
+/**
+ * Presupuesto de bytes EN VUELO para todo el proceso: varios buzones se
+ * leen a la vez (HELPDESK_POLL_CONCURRENCY) y cada correo se parsea en
+ * memoria. Quien no entra en el presupuesto espera su turno (en orden).
+ */
+export class ByteBudget {
+    private used = 0;
+    private readonly waiting: Array<{ n: number; go: () => void }> = [];
+
+    constructor(private readonly capacity: number) {}
+
+    get inFlight(): number {
+        return this.used;
+    }
+
+    async acquire(bytes: number): Promise<() => void> {
+        const n = Math.max(1, Math.min(Math.ceil(bytes), this.capacity));
+        if (this.waiting.length > 0 || this.used + n > this.capacity) {
+            await new Promise<void>((resolve) => this.waiting.push({ n, go: resolve }));
+        } else {
+            this.used += n;
+        }
+        let released = false;
+        return () => {
+            if (released) return;
+            released = true;
+            this.used -= n;
+            this.drain();
+        };
+    }
+
+    private drain(): void {
+        while (this.waiting.length > 0 && this.used + this.waiting[0]!.n <= this.capacity) {
+            const next = this.waiting.shift()!;
+            this.used += next.n;
+            next.go();
         }
     }
 }

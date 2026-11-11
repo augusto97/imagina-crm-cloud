@@ -12,7 +12,9 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { DRIZZLE, type Db } from '../db/client';
 import { dashboards, publicDashboards, tenants, users } from '../db/schema';
-import { DashboardsService, type DashboardViewer } from '../dashboards/dashboards.service';
+import { DashboardsService, normalizeDashboardPeriod, publicDashboardCacheNs, type DashboardViewer } from '../dashboards/dashboards.service';
+import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-cache';
+import { PublicCacheService } from '../public-cache/public-cache.service';
 import { DomainsService } from '../domains/domains.service';
 import { FilesService } from '../files/files.service';
 import { isExpired } from '../public-lists/public-lists.service';
@@ -107,6 +109,8 @@ const notFound = () => new NotFoundException({ code: 'public_dashboard_not_found
 export class PublicDashboardsService {
     private readonly logger = new Logger(PublicDashboardsService.name);
 
+    private readonly pcache: PublicCacheLike;
+
     constructor(
         @Inject(DRIZZLE) private readonly db: Db,
         private readonly dashboards: DashboardsService,
@@ -115,7 +119,10 @@ export class PublicDashboardsService {
         private readonly audit: AuditService,
         @Optional() private readonly domains?: DomainsService,
         @Optional() private readonly timeZones?: TenantTimeZones,
-    ) {}
+        @Optional() cache?: PublicCacheService,
+    ) {
+        this.pcache = cache ?? NO_PUBLIC_CACHE;
+    }
 
     // ─────────────────────────── Admin ───────────────────────────
 
@@ -164,6 +171,7 @@ export class PublicDashboardsService {
         if (input.enabled === false) {
             if (current) {
                 await this.db.delete(publicDashboards).where(eq(publicDashboards.token, current.token));
+                this.forget(current.token, dashboardId);
                 await this.audit.log({ tenantId, userId: viewer.userId, action: 'dashboard.public_disable', targetType: 'dashboard', targetId: dashboardId, targetLabel: dash.name });
             }
             return this.toAdmin(tenantId, dashboardId, undefined, viewer);
@@ -205,6 +213,7 @@ export class PublicDashboardsService {
             })
             .where(eq(publicDashboards.token, current.token))
             .returning();
+        this.forget(current.token, dashboardId);
         return this.toAdmin(tenantId, dashboardId, row, viewer);
     }
 
@@ -219,6 +228,7 @@ export class PublicDashboardsService {
             .set({ token: newToken(), updatedAt: new Date() })
             .where(eq(publicDashboards.token, current.token))
             .returning();
+        this.forget(current.token, dashboardId);
         await this.audit.log({ tenantId, userId: viewer.userId, action: 'dashboard.public_regenerate', targetType: 'dashboard', targetId: dashboardId, targetLabel: dash.name });
         return this.toAdmin(tenantId, dashboardId, row, viewer);
     }
@@ -257,24 +267,69 @@ export class PublicDashboardsService {
         return hit.row;
     }
 
+    /** El enlace cambió (o dejó de existir): lo guardado en la caché pública no vale más. */
+    private forget(token: string, dashboardId: number): void {
+        this.pcache.invalidate(rowCacheKey(token));
+        this.pcache.bump(publicDashboardCacheNs(dashboardId));
+    }
+
+    /**
+     * La fila del enlace, por la caché pública (30 s; lo que no existe, 15 s):
+     * mil visitas a la vez hacen UNA consulta, dentro del tope de armados.
+     */
+    private async cachedRow(token: string): Promise<Row> {
+        if (!TOKEN_RE.test(token)) throw notFound();
+        const row = await this.pcache.get(
+            rowCacheKey(token),
+            ROW_TTL_MS,
+            async () => {
+                try {
+                    return await this.resolve(token);
+                } catch (err) {
+                    if (err instanceof NotFoundException) return null;
+                    throw err;
+                }
+            },
+            MISSING_TTL_MS,
+        );
+        if (!row) throw notFound();
+        return row;
+    }
+
     /** Los dominios que pueden insertarlo (para la cabecera `frame-ancestors`). */
     async pageConfig(token: string): Promise<{ allowed_domains: string[] }> {
-        const row = await this.resolve(token);
+        const row = await this.cachedRow(token);
         return { allowed_domains: row.allowedDomains ?? [] };
     }
 
+    /**
+     * Los datos de la página pública. Se calculan como mucho una vez cada
+     * 30 s por enlace y período (visitas simultáneas esperan ese mismo
+     * cálculo), dentro del tope de armados públicos: un tablero pesado
+     * abierto por muchos a la vez no ocupa las conexiones de la app.
+     * `PublicBusyError` si la fila de armados está llena (→ 503).
+     */
     async bundle(token: string, period: string | undefined): Promise<PublicDashboardBundle> {
-        const row = await this.resolve(token);
+        const row = await this.cachedRow(token);
+        // Sólo un período conocido (o un rango bien formado): cualquier otro
+        // valor NO crea otra entrada de caché ni otro cálculo.
+        const applied = row.allowPeriod ? normalizeDashboardPeriod(period) : '';
+        const key = `pdash:data:${row.token}:${this.pcache.version(publicDashboardCacheNs(row.dashboardId))}:${applied}`;
+        const bundle = await this.pcache.get(key, DATA_TTL_MS, () => this.compute(row, applied), MISSING_TTL_MS);
+        if (!bundle) throw notFound();
+        return bundle;
+    }
+
+    private async compute(row: Row, applied: string): Promise<PublicDashboardBundle | null> {
         const viewer = await this.snapshots.viewerFor(row.tenantId, row.publishedBy);
         // Quien publicó ya no es parte de la empresa (o fue desactivado): el
         // enlace deja de mostrar datos — igual que uno desconocido.
-        if (!viewer) throw notFound();
-        const applied = row.allowPeriod && typeof period === 'string' ? period.slice(0, 64) : '';
+        if (!viewer) return null;
         let snap;
         try {
             snap = await this.snapshots.snapshot(row.tenantId, row.dashboardId, viewer, applied ? { period_preset: applied } : {});
         } catch (err) {
-            if (err instanceof NotFoundException) throw notFound();
+            if (err instanceof NotFoundException) return null;
             throw err;
         }
         const b = snap.branding;
@@ -310,6 +365,12 @@ export class PublicDashboardsService {
         };
     }
 }
+
+const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
+const ROW_TTL_MS = 30_000;
+const DATA_TTL_MS = 30_000;
+const MISSING_TTL_MS = 15_000;
+const rowCacheKey = (token: string): string => `pdash:row:${token}`;
 
 function newToken(): string {
     return randomBytes(24).toString('base64url');

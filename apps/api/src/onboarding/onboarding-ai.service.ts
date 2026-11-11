@@ -153,10 +153,28 @@ export class OnboardingAiService {
             if (job && job.state === 'running' && Date.now() - job.started_at < RUNNING_STALE_MS) return { id: job.id };
         }
 
+        // Reserva atómica del pedido (el chequeo de arriba no reserva nada): dos
+        // pedidos a la vez con la cuota a uno del final no pasan los dos.
+        const metered = access.source === 'platform';
+        if (metered) {
+            try {
+                await this.quota.reserve(ctx.tenantId);
+            } catch (err) {
+                if (err instanceof AiQuotaExceededError) {
+                    throw new ServiceUnavailableException({ code: 'onboarding_ai_unavailable', message: friendlyAiReason(err), data: { status: 503 } });
+                }
+                throw err;
+            }
+        }
         const id = randomBytes(12).toString('base64url');
         const job: StoredJob = { id, state: 'running', stage: 'thinking', proposal: null, error: null, started_at: Date.now() };
-        await this.write(ctx.tenantId, ctx.userId, job);
-        await this.redis.set(runningKey(ctx.tenantId, ctx.userId), id, 'EX', Math.ceil(RUNNING_STALE_MS / 1000));
+        try {
+            await this.write(ctx.tenantId, ctx.userId, job);
+            await this.redis.set(runningKey(ctx.tenantId, ctx.userId), id, 'EX', Math.ceil(RUNNING_STALE_MS / 1000));
+        } catch (err) {
+            if (metered) await this.quota.settle(ctx.tenantId, { input: 0, output: 0 });
+            throw err;
+        }
         // El consentimiento queda en la bitácora (el texto no: puede traer datos del negocio).
         void this.audit.log({
             tenantId: ctx.tenantId,
@@ -318,11 +336,9 @@ export class OnboardingAiService {
         } finally {
             await this.redis.del(runningKey(ctx.tenantId, ctx.userId)).catch(() => undefined);
             // UN pedido de la cuota, con los tokens reales de los intentos.
-            if (access.source === 'platform' && (inputTokens > 0 || outputTokens > 0)) {
-                await this.quota
-                    .record(ctx.tenantId, { input: inputTokens, output: outputTokens })
-                    .catch((e: unknown) => this.logger.warn(`No se pudo registrar el uso IA: ${String(e)}`));
-            }
+            // (El pedido ya se reservó en `start`; aquí sólo se suman los tokens,
+            // o se devuelve si el modelo nunca respondió.)
+            if (access.source === 'platform') await this.quota.settle(ctx.tenantId, { input: inputTokens, output: outputTokens });
         }
     }
 

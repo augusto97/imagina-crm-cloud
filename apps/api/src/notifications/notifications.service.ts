@@ -58,7 +58,7 @@ import { ListsService } from '../lists/lists.service';
 import { MailService } from '../mail/mail.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RecordChangeHub, type RecordChange } from '../records/record-change-hub';
-import { assignmentKeys, type AclSubject, effectivePermissions, scopeWhere, withDependentComputed } from '../lists/list-acl';
+import { assignmentKeys, type AclSubject, effectivePermissions, guestExtraHidden, scopeWhere, withDependentComputed } from '../lists/list-acl';
 import { compileFilterTree, type FilterableField } from '../records/query-builder';
 import { RecordsService } from '../records/records.service';
 import { REDIS } from '../redis/redis.module';
@@ -93,6 +93,8 @@ const MAX_ITEMS = 200;
 /** v0.1.393 — recordatorios por tanda y tandas por minuto (el resto, al siguiente). */
 const REMINDER_BATCH = 200;
 const REMINDER_MAX_ROUNDS = 10;
+
+const NO_HIDDEN: ReadonlySet<number> = new Set<number>();
 
 interface RecordCtx {
     list: List;
@@ -196,7 +198,8 @@ export class NotificationsService implements OnModuleInit {
                 listId: e.listId,
                 recordId: e.recordId,
                 actorId: e.actorId,
-                title: notificationTitle('mention', { actorName, recordTitle: ctx.title, source: 'comment' }),
+                title: (recordTitle: string) => notificationTitle('mention', { actorName, recordTitle, source: 'comment' }),
+                ctx,
                 body: snippet,
             });
             // C1 — @equipo: sus personas (que pueden ver el registro; nunca
@@ -209,7 +212,8 @@ export class NotificationsService implements OnModuleInit {
                     listId: e.listId,
                     recordId: e.recordId,
                     actorId: e.actorId,
-                    title: teamMentionTitle(actorName, ctx.title, t.name, 'comment'),
+                    title: (recordTitle: string) => teamMentionTitle(actorName, recordTitle, t.name, 'comment'),
+                    ctx,
                     body: snippet,
                 });
             }
@@ -223,7 +227,8 @@ export class NotificationsService implements OnModuleInit {
                     listId: e.listId,
                     recordId: e.recordId,
                     actorId: e.actorId,
-                    title: notificationTitle('reply', { actorName, recordTitle: ctx.title }),
+                    title: (recordTitle: string) => notificationTitle('reply', { actorName, recordTitle }),
+                    ctx,
                     body: snippet,
                 });
             }
@@ -236,7 +241,8 @@ export class NotificationsService implements OnModuleInit {
                     listId: e.listId,
                     recordId: e.recordId,
                     actorId: e.actorId,
-                    title: notificationTitle('comment', { actorName, recordTitle: ctx.title }),
+                    title: (recordTitle: string) => notificationTitle('comment', { actorName, recordTitle }),
+                    ctx,
                     body: snippet,
                 },
             );
@@ -251,7 +257,8 @@ export class NotificationsService implements OnModuleInit {
                     listId: e.listId,
                     recordId: e.recordId,
                     actorId: e.actorId > 0 ? e.actorId : null,
-                    title: checklistAssignedTitle(e.actorId > 0 ? actorName : null, items, ctx.title),
+                    title: (recordTitle: string) => checklistAssignedTitle(e.actorId > 0 ? actorName : null, items, recordTitle),
+                    ctx,
                     body: checklistAssignedBody(items),
                 });
             }
@@ -261,7 +268,8 @@ export class NotificationsService implements OnModuleInit {
             listId: e.listId,
             recordId: e.recordId,
             actorId: e.actorId,
-            title: notificationTitle('mention', { actorName, recordTitle: ctx.title, source: 'description' }),
+            title: (recordTitle: string) => notificationTitle('mention', { actorName, recordTitle, source: 'description' }),
+            ctx,
             body: e.snippet,
         });
         // C1 — equipos mencionados en la descripción (los que se sumaron).
@@ -281,7 +289,8 @@ export class NotificationsService implements OnModuleInit {
                     listId: e.listId,
                     recordId: e.recordId,
                     actorId: e.actorId,
-                    title: teamMentionTitle(actorName, ctx.title, info.name, 'description'),
+                    title: (recordTitle: string) => teamMentionTitle(actorName, recordTitle, info.name, 'description'),
+                    ctx,
                     body: e.snippet,
                 });
             }
@@ -309,11 +318,13 @@ export class NotificationsService implements OnModuleInit {
         if (c.kind === 'created' && actorId > 0 && !c.viaPortal) await this.follow(c.tenantId, c.listId, c.recordId, [actorId]);
         if (assigned.length > 0) {
             await this.follow(c.tenantId, c.listId, c.recordId, assigned);
+            const assigner = await actorNameOf();
             await this.deliver(c.tenantId, 'assigned', assigned, {
                 listId: c.listId,
                 recordId: c.recordId,
                 actorId: actorId > 0 ? actorId : null,
-                title: notificationTitle('assigned', { actorName: await actorNameOf(), recordTitle: ctx.title }),
+                title: (recordTitle: string) => notificationTitle('assigned', { actorName: assigner, recordTitle }),
+                ctx,
                 body: `En «${ctx.list.name}»`,
             });
         }
@@ -332,11 +343,13 @@ export class NotificationsService implements OnModuleInit {
                 if (!info) continue;
                 const to = (members.get(t) ?? []).filter((u) => u !== actorId && !reached.has(u));
                 to.forEach((u) => reached.add(u));
+                const assigner = await actorNameOf();
                 await this.deliver(c.tenantId, 'team_assigned', to, {
                     listId: c.listId,
                     recordId: c.recordId,
                     actorId: actorId > 0 ? actorId : null,
-                    title: teamAssignedTitle(await actorNameOf(), ctx.title, info.name),
+                    title: (recordTitle: string) => teamAssignedTitle(assigner, recordTitle, info.name),
+                    ctx,
                     body: `En «${ctx.list.name}»`,
                 });
             }
@@ -351,12 +364,26 @@ export class NotificationsService implements OnModuleInit {
         if (summary.fieldIds.length === 0) return;
         const followers = (await this.followerIds(c.tenantId, c.recordId)).filter((u) => !assigned.includes(u) && u !== actorId);
         if (followers.length === 0) return;
+        const changer = await actorNameOf();
         await this.deliver(c.tenantId, 'update', followers, {
             listId: c.listId,
             recordId: c.recordId,
             actorId: actorId > 0 ? actorId : null,
-            title: notificationTitle('update', { actorName: await actorNameOf(), recordTitle: ctx.title }),
-            body: summary.text,
+            title: (recordTitle: string) => notificationTitle('update', { actorName: changer, recordTitle }),
+            // El resumen se arma POR destinatario, sólo con los campos que esa
+            // persona puede ver: un campo oculto para su rol no viaja ni con su
+            // nombre ni con sus valores, y si no cambió nada visible no se le avisa.
+            body: (hidden: ReadonlySet<number>) => {
+                if (hidden.size === 0) return summary.text;
+                const own = changeSummary(
+                    ctx.fields.filter((f) => !hidden.has(f.id)),
+                    c.before,
+                    c.after,
+                    names,
+                );
+                return own.fieldIds.length > 0 ? own.text : null;
+            },
+            ctx,
             coalesce: true,
         });
     }
@@ -393,8 +420,19 @@ export class NotificationsService implements OnModuleInit {
             listId: number | null;
             recordId: number | null;
             actorId: number | null;
-            title: string;
-            body: string;
+            /**
+             * Con `ctx`, una función: recibe el título del registro TAL COMO LO
+             * VE ese destinatario («Registro #12» si el campo de título está
+             * oculto para él).
+             */
+            title: string | ((recordTitle: string) => string);
+            /**
+             * Con `ctx`, puede ser una función de los campos OCULTOS para ese
+             * destinatario (ids); `null` = no hay nada que contarle.
+             */
+            body: string | ((hiddenFieldIds: ReadonlySet<number>) => string | null);
+            /** La lista y los campos del registro: para armar el aviso por destinatario. */
+            ctx?: RecordCtx;
             coalesce?: boolean;
             /**
              * C5 — el correo con botones propios (Aprobar / Rechazar / Abrir):
@@ -432,10 +470,34 @@ export class NotificationsService implements OnModuleInit {
                       }),
                   )
                 : null;
-        const allowed: Recipient[] = recipients.filter((r) => viewers === null || viewers.has(r.userId));
+        const canView: Recipient[] = recipients.filter((r) => viewers === null || viewers.has(r.userId));
+        if (canView.length === 0) return 0;
+
+        // El texto del aviso por destinatario: lo que está oculto para SU rol
+        // (o su acceso propio en la lista) no viaja — ni el título del
+        // registro si el campo de título le está oculto, ni un campo oculto
+        // en el resumen de cambios. Vale para la campana, el push, el correo y
+        // el resumen diario (que reusa lo guardado).
+        const texts = new Map<number, { title: string; body: string }>();
+        const bySignature = new Map<string, { title: string; body: string } | null>();
+        const titleFieldId = n.ctx ? resolveTitleFieldId(n.ctx.fields, n.ctx.list.settings as Record<string, unknown>) : null;
+        for (const r of canView) {
+            const hidden = n.ctx ? this.hiddenFor(n.ctx, r, n.recordId !== null ? guestShares.get(r.userId) : undefined, n.recordId) : NO_HIDDEN;
+            const signature = hidden.size === 0 ? '' : [...hidden].sort((a, b) => a - b).join(',');
+            let text = bySignature.get(signature);
+            if (text === undefined) {
+                const recordTitle =
+                    n.ctx && titleFieldId !== null && hidden.has(titleFieldId) ? `Registro #${n.recordId ?? ''}`.trim() : (n.ctx?.title ?? '');
+                const title = typeof n.title === 'function' ? n.title(recordTitle) : n.title;
+                const rawBody = typeof n.body === 'function' ? n.body(hidden) : n.body;
+                text = rawBody === null ? null : { title, body: rawBody.slice(0, 2000) };
+                bySignature.set(signature, text);
+            }
+            if (text) texts.set(r.userId, text);
+        }
+        const allowed: Recipient[] = canView.filter((r) => texts.has(r.userId));
         if (allowed.length === 0) return 0;
 
-        const body = n.body.slice(0, 2000);
         await this.tenantDb.withTenant(tenantId, async (tx) => {
             for (const r of allowed) {
                 if (n.coalesce && n.recordId !== null) {
@@ -457,7 +519,7 @@ export class NotificationsService implements OnModuleInit {
                     if (prev) {
                         await tx
                             .update(notifications)
-                            .set({ title: n.title, body, actorId: n.actorId, createdAt: new Date() })
+                            .set({ title: texts.get(r.userId)!.title, body: texts.get(r.userId)!.body, actorId: n.actorId, createdAt: new Date() })
                             .where(eq(notifications.id, prev.id));
                         continue;
                     }
@@ -469,8 +531,8 @@ export class NotificationsService implements OnModuleInit {
                     listId: n.listId,
                     recordId: n.recordId,
                     actorId: n.actorId,
-                    title: n.title,
-                    body,
+                    title: texts.get(r.userId)!.title,
+                    body: texts.get(r.userId)!.body,
                 });
             }
         });
@@ -482,9 +544,14 @@ export class NotificationsService implements OnModuleInit {
         // Un fallo del canal no tumba la bandeja ni el correo.
         const pushTo = allowed.filter((r) => r.role !== 'guest' && r.role !== 'client');
         if (this.push && pushTo.length > 0) {
-            await this.push
-                .deliver(tenantId, pushTo, { kind, listId: n.listId, recordId: n.recordId, title: n.title, body })
-                .catch((err) => this.logger.warn(`Push de aviso: ${String(err)}`));
+            // Un envío por cada texto distinto (casi siempre, uno solo).
+            const groups = groupBy(pushTo, (r) => `${texts.get(r.userId)!.title}\u0000${texts.get(r.userId)!.body}`);
+            for (const group of groups.values()) {
+                const text = texts.get(group[0]!.userId)!;
+                await this.push
+                    .deliver(tenantId, group, { kind, listId: n.listId, recordId: n.recordId, title: text.title, body: text.body })
+                    .catch((err) => this.logger.warn(`Push de aviso: ${String(err)}`));
+            }
         }
 
         const mailTo = allowed.filter((r) => r.prefs.email[kind]);
@@ -495,8 +562,8 @@ export class NotificationsService implements OnModuleInit {
                 if (!(await this.underMailCap(tenantId, r.userId))) continue;
                 const content = notificationEmail({
                     company,
-                    title: n.title,
-                    body,
+                    title: texts.get(r.userId)!.title,
+                    body: texts.get(r.userId)!.body,
                     link:
                         kind === 'failure'
                             ? `${links.base}/#/settings?s=problemas`
@@ -516,6 +583,31 @@ export class NotificationsService implements OnModuleInit {
             }
         }
         return allowed.length;
+    }
+
+    /**
+     * Los campos de la lista que ESTE destinatario no puede ver: los ocultos
+     * para su rol / rol propio / equipos / acceso propio, lo que un invitado
+     * nunca ve, y los calculados que dependen de alguno de ésos.
+     */
+    private hiddenFor(
+        ctx: RecordCtx,
+        r: Recipient,
+        share: { listId: number; level: GuestLevel } | undefined,
+        recordId: number | null,
+    ): ReadonlySet<number> {
+        const settings = ctx.list.settings as Record<string, unknown>;
+        const subject: AclSubject = {
+            userId: r.userId,
+            role: r.role,
+            teamIds: r.teamIds,
+            customRoleId: r.customRoleId,
+            ...(share && recordId !== null ? { shares: new Map([[recordId, share]]) } : {}),
+        };
+        const slugs = effectivePermissions(settings, subject).fields_hidden;
+        const ids = new Set<number>(guestExtraHidden(ctx.fields, { role: r.role }));
+        if (slugs.length > 0) for (const f of ctx.fields) if (slugs.includes(f.slug)) ids.add(f.id);
+        return ids.size === 0 ? NO_HIDDEN : withDependentComputed(ctx.fields, ids);
     }
 
     private async underMailCap(tenantId: number, userId: number): Promise<boolean> {
@@ -908,13 +1000,24 @@ export class NotificationsService implements OnModuleInit {
             const tenantId = Number(raw.tenant_id);
             const listId = raw.list_id === null ? null : Number(raw.list_id);
             const recordId = raw.record_id === null ? null : Number(raw.record_id);
-            let title = raw.note ? `Recordatorio: ${raw.note.slice(0, 120)}` : 'Recordatorio';
-            let body = '';
+            const title = raw.note ? `Recordatorio: ${raw.note.slice(0, 120)}` : 'Recordatorio';
+            const body = '';
             if (listId !== null && recordId !== null) {
                 const ctx = await this.recordCtx(tenantId, listId, recordId).catch(() => null);
                 if (!ctx) continue;
-                title = notificationTitle('reminder', { actorName: null, recordTitle: ctx.title });
-                body = raw.note;
+                const reminderCtx = ctx;
+                n += await this.deliver(tenantId, 'reminder', [Number(raw.user_id)], {
+                    listId,
+                    recordId,
+                    actorId: null,
+                    title: (recordTitle: string) => notificationTitle('reminder', { actorName: null, recordTitle }),
+                    body: raw.note,
+                    ctx: reminderCtx,
+                }).catch((err) => {
+                    this.logger.warn(`Recordatorio ${raw.id}: ${String(err)}`);
+                    return 0;
+                });
+                continue;
             }
             n += await this.deliver(tenantId, 'reminder', [Number(raw.user_id)], { listId, recordId, actorId: null, title, body }).catch((err) => {
                 this.logger.warn(`Recordatorio ${raw.id}: ${String(err)}`);

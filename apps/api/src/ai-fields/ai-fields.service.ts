@@ -262,7 +262,12 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
         }
 
         const access = await this.settings.resolve(tenantId);
-        if (access.source === 'platform') await this.quota.assertWithinQuota(tenantId);
+        // Reserva atómica del pedido ANTES de llamar al modelo; si el pedido
+        // no llega a responder, se devuelve.
+        const metered = access.source === 'platform';
+        if (metered) await this.quota.reserve(tenantId);
+        let res: Awaited<ReturnType<ReturnType<AiClientFactory>['messages']['create']>>;
+        try {
         const { system, user } = buildAiFieldPrompt(cfg, { fieldLabel: field.label, listName: list.name, inputs, attachments: blocks.length });
         // Calidad «rápida» (default): el más reciente de la familia económica,
         // resuelto contra lo que ve la clave — muchas filas, poco texto.
@@ -270,18 +275,26 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
             cfg.quality === 'best' ? { id: access.model, caps: access.caps } : await this.settings.fastModel(access.apiKey);
         const params = fieldModelParams(model.caps, AI_FIELD_MAX_TOKENS[cfg.length ?? 'short']);
         const client = this.clientFactory(access.apiKey);
-        const res = await client.messages.create({
+        res = await client.messages.create({
             model: model.id,
             max_tokens: params.max_tokens,
             ...params.extra,
             system,
             messages: [{ role: 'user', content: [...blocks, { type: 'text', text: user }] }],
         });
-        if (access.source === 'platform') {
-            await this.quota.record(tenantId, {
-                input: res.usage.input_tokens + (res.usage.cache_creation_input_tokens ?? 0) + (res.usage.cache_read_input_tokens ?? 0),
-                output: res.usage.output_tokens,
-            });
+        } catch (err) {
+            if (metered) await this.quota.settle(tenantId, { input: 0, output: 0 });
+            throw err;
+        }
+        if (metered) {
+            await this.quota.settle(
+                tenantId,
+                {
+                    input: res.usage.input_tokens + (res.usage.cache_creation_input_tokens ?? 0) + (res.usage.cache_read_input_tokens ?? 0),
+                    output: res.usage.output_tokens,
+                },
+                { keep: true },
+            );
         }
         const text = res.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
         const parsed = parseAiFieldAnswer(cfg, text);

@@ -18,6 +18,8 @@ import { REDIS } from '../redis/redis.module';
  *  - Problemas resueltos hace más de 90 días;
  *  - corridas de agentes terminadas de más de 90 días (las propuestas quedan);
  *  - SMS de más de 180 días que ya terminaron (el estado queda en el registro);
+ *  - clientes OAuth registrados hace más de 30 días que nunca pidieron un
+ *    token (y no tienen ninguno);
  *  - el historial de ediciones masivas pasado su plazo (antes sólo se podaba
  *    cuando la misma empresa hacía otra edición masiva).
  *
@@ -29,7 +31,12 @@ export interface RetentionRule {
     table: string;
     /** Condición de las filas que se pueden borrar (sobre la tabla sin alias). */
     where: SQL;
+    /** Columna de la clave primaria (por defecto `id`). */
+    key?: string;
 }
+
+/** Días que se conserva un cliente OAuth registrado que nunca llegó a pedir un token. */
+export const OAUTH_UNUSED_CLIENT_DAYS = 30;
 
 export const RETENTION_RULES: readonly RetentionRule[] = [
     {
@@ -41,6 +48,14 @@ export const RETENTION_RULES: readonly RetentionRule[] = [
     { table: 'ai_agent_runs', where: sql`status NOT IN ('queued', 'running') AND created_at < now() - interval '90 days'` },
     { table: 'sms_messages', where: sql`status NOT IN ('programado', 'en_cola', 'enviando') AND created_at < now() - interval '180 days'` },
     { table: 'bulk_edits', where: sql`created_at < now() - make_interval(days => ${BULK_HISTORY_DAYS})` },
+    // El registro dinámico de clientes OAuth (para el MCP) es abierto: un
+    // cliente que se registró y nunca se usó para un token, y que no tiene
+    // ningún token, no le sirve a nadie (un cliente real se registra otra vez).
+    {
+        table: 'oauth_clients',
+        key: 'client_id',
+        where: sql`last_used_at IS NULL AND created_at < now() - make_interval(days => ${OAUTH_UNUSED_CLIENT_DAYS}) AND NOT EXISTS (SELECT 1 FROM personal_access_tokens t WHERE t.client_id = oauth_clients.client_id)`,
+    },
 ];
 
 const BATCH = 5000;
@@ -93,7 +108,8 @@ export async function pruneTables(db: Db, rules: readonly RetentionRule[] = RETE
     for (const rule of rules) {
         let n = 0;
         for (let i = 0; i < MAX_ROUNDS; i++) {
-            const res = await db.execute(sql`DELETE FROM ${sql.identifier(rule.table)} WHERE id IN (SELECT id FROM ${sql.identifier(rule.table)} WHERE ${rule.where} LIMIT ${BATCH})`);
+            const key = sql.identifier(rule.key ?? 'id');
+            const res = await db.execute(sql`DELETE FROM ${sql.identifier(rule.table)} WHERE ${key} IN (SELECT ${key} FROM ${sql.identifier(rule.table)} WHERE ${rule.where} LIMIT ${BATCH})`);
             const count = res.rowCount ?? 0;
             n += count;
             if (count < BATCH) break;

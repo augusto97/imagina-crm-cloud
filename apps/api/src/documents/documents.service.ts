@@ -3,12 +3,17 @@ import {
     ConflictException,
     ForbiddenException,
     HttpException,
+    Inject,
     Injectable,
     Logger,
     NotFoundException,
     Optional,
     ServiceUnavailableException,
 } from '@nestjs/common';
+import type Redis from 'ioredis';
+import { rateKeyForIp } from '../common/client-ip';
+import { REDIS } from '../redis/redis.module';
+import { DOC_MAX_RENDER_CELLS, HitLimiter, LiveLinkCache, tooManyRequests } from './pdf-limits';
 import {
     effectiveCapabilities,
     type Role,
@@ -157,6 +162,11 @@ export interface RenderRequest {
  * campos que le están ocultos (el motor de automatizaciones corre como
  * sistema, igual que el resto de sus acciones).
  */
+/** Pedidos del enlace público de un PDF, por visitante (IP o red /64) y por documento, cada 5 minutos. */
+const LIVE_LINK_PER_IP = 40;
+const LIVE_LINK_PER_DOC = 120;
+const LIVE_LINK_WINDOW_S = 300;
+
 @Injectable()
 export class DocumentsService {
     private readonly logger = new Logger(DocumentsService.name);
@@ -170,7 +180,14 @@ export class DocumentsService {
         private readonly audit: AuditService,
         @Optional() private readonly billing?: BillingService,
         @Optional() private readonly timeZones?: TenantTimeZones,
-    ) {}
+        @Optional() @Inject(REDIS) redis?: Redis,
+    ) {
+        this.linkHits = new HitLimiter(redis ?? null);
+    }
+
+    /** El PDF de un enlace público: se arma como mucho una vez cada 2 min por documento. */
+    private readonly linkCache = new LiveLinkCache<RenderedDocument>((d) => d.buffer.length);
+    private readonly linkHits: HitLimiter;
 
     // ── Plantillas (CRUD) ────────────────────────────────────────────────
 
@@ -275,6 +292,7 @@ export class DocumentsService {
         id: number,
         input: UpdateDocumentTemplateInput,
     ): Promise<DocumentTemplate> {
+        this.linkCache.clear();
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const patch: Partial<typeof documentTemplates.$inferInsert> = { updatedAt: new Date() };
         if (input.name !== undefined) patch.name = input.name.trim();
@@ -308,6 +326,7 @@ export class DocumentsService {
      * error aparecería recién cuando corra (mismo criterio que las conexiones).
      */
     async remove(tenantId: number, userId: number, listIdOrSlug: string, id: number): Promise<void> {
+        this.linkCache.clear();
         const list = await this.lists.get(tenantId, listIdOrSlug);
         const removed = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const row = await this.findInTx(tx, tenantId, list.id, id);
@@ -633,7 +652,7 @@ export class DocumentsService {
     }
 
     /** El PDF de un enlace de `liveLink` (sin sesión). 404 opaco si no cuadra. */
-    async renderLiveLink(templateId: number, recordId: number, tenantId: number, exp: number, sig: string, issuerId?: number): Promise<RenderedDocument> {
+    async renderLiveLink(templateId: number, recordId: number, tenantId: number, exp: number, sig: string, issuerId?: number, ip?: string): Promise<RenderedDocument> {
         const now = Math.floor(Date.now() / 1000);
         const byPerson = issuerId !== undefined;
         if (
@@ -648,7 +667,28 @@ export class DocumentsService {
         ) {
             throw templateNotFound(templateId);
         }
-        const rendered = await this.withDocTx(tenantId, async (tx, uploads) => {
+        // Enlace válido. Pedidos por visitante y por enlace (el enlace lo tiene
+        // cualquiera a quien se lo reenviaron)…
+        const okIp = await this.linkHits.hit(`doclink:ip:${rateKeyForIp(ip)}`, LIVE_LINK_PER_IP, LIVE_LINK_WINDOW_S);
+        const okLink = await this.linkHits.hit(`doclink:doc:${tenantId}:${templateId}:${recordId}`, LIVE_LINK_PER_DOC, LIVE_LINK_WINDOW_S);
+        if (!okIp || !okLink) throw tooManyRequests('Demasiados pedidos de este documento. Vuelve a intentarlo en unos minutos.');
+        // El enlace de una persona vale mientras ella siga en el equipo: se
+        // comprueba ANTES de mirar lo guardado (si no, quien ya no está seguiría
+        // recibiendo el PDF durante los minutos que dura la caché).
+        if (byPerson) {
+            const still = await this.tenantDb.withTenant(tenantId, (tx) => this.issuerActor(tx, tenantId, issuerId as number));
+            if (!still) throw templateNotFound(templateId);
+        }
+        // …y el PDF se arma como mucho una vez cada 2 minutos por documento:
+        // las visitas simultáneas esperan ese mismo armado (uno público a la vez).
+        const rendered = await this.linkCache.get(`${tenantId}:${templateId}:${recordId}:${byPerson ? issuerId : 0}`, () => this.renderLiveLinkNow(templateId, recordId, tenantId, byPerson ? issuerId : undefined));
+        if (rendered.recordId === null) throw templateNotFound(templateId);
+        return rendered;
+    }
+
+    private renderLiveLinkNow(templateId: number, recordId: number, tenantId: number, issuerId?: number): Promise<RenderedDocument> {
+        const byPerson = issuerId !== undefined;
+        return this.withDocTx(tenantId, async (tx, uploads) => {
             // v0.1.338 (ADR-S87) — empresa pausada o plan sin «Documentos PDF»:
             // el enlace responde como uno vencido.
             if (await publicSurfaceOff(tx, tenantId, 'documents')) {
@@ -661,7 +701,7 @@ export class DocumentsService {
             // siempre como sistema: con «Copiar enlace» alguien con campos
             // ocultos recibía el PDF con esos campos). El de una automatización
             // sigue como sistema: la firma es la autorización.
-            const actor = byPerson ? await this.issuerActor(tx, tenantId, issuerId) : PORTAL_RENDER_ACTOR;
+            const actor = byPerson ? await this.issuerActor(tx, tenantId, issuerId as number) : PORTAL_RENDER_ACTOR;
             if (!actor) throw templateNotFound(templateId);
             return this.renderInTx(tx, {
                 tenantId,
@@ -676,8 +716,6 @@ export class DocumentsService {
                 uploads,
             });
         });
-        if (rendered.recordId === null) throw templateNotFound(templateId);
-        return rendered;
     }
 
     /** «Copiar enlace» de la ficha: quien lo pide tiene que poder ver el registro. */
@@ -847,6 +885,8 @@ export class DocumentsService {
                     data: { status: 400 },
                 });
             }
+            // El enlace público no puede seguir sirviendo el anulado.
+            this.linkCache.clear();
             const voided = await tx
                 .update(documentNumbers)
                 .set({ voidedAt: new Date(), voidedBy: actor.userId > 0 ? actor.userId : null, voidReason: input.reason?.trim() || null })
@@ -1056,6 +1096,17 @@ export class DocumentsService {
                 drawn.push({ id: r.id, label: tagsMode ? r.label : resolve(r.label), emphasis: r.emphasis, value });
             }
             totalsResolved.set(b.id, drawn);
+        }
+        // Presupuesto ANTES de maquetar: las celdas de todas las tablas de ítems
+        // (maquetar es lo caro y corre sobre el hilo que atiende los pedidos).
+        let cells = 0;
+        for (const t of itemsTables.values()) cells += t.rows.length * (t.columns.length + 1);
+        if (cells > DOC_MAX_RENDER_CELLS) {
+            throw new BadRequestException({
+                code: 'document_too_many_cells',
+                message: `Las tablas de ítems de este documento suman ${cells.toLocaleString('es')} celdas: el máximo es ${DOC_MAX_RENDER_CELLS.toLocaleString('es')}. Baja el límite de filas o quita columnas.`,
+                data: { status: 400 },
+            });
         }
         const images = await this.loadImages(tx, tenantId, actor, design, tenant.logoFileId, warnings);
 

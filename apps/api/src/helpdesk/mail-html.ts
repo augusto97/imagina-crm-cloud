@@ -1,4 +1,4 @@
-import { sanitizeRichDoc, type RichDoc, type RichMark, type RichNode } from '@imagina-base/shared';
+import { capHtml, htmlAttr, sanitizeRichDoc, scanHtml, type RichDoc, type RichMark, type RichNode } from '@imagina-base/shared';
 
 /**
  * D2 — El HTML de un correo → la descripción del ticket (árbol ProseMirror).
@@ -17,6 +17,9 @@ import { sanitizeRichDoc, type RichDoc, type RichMark, type RichNode } from '@im
 
 /** Tope del HTML que se lee (un boletín de 2 MB no aporta nada a un ticket). */
 const MAX_HTML = 400_000;
+/** Tope de anidamiento (listas y citas) y de formatos abiertos a la vez. */
+const MAX_DEPTH = 40;
+const MAX_OPEN_MARKS = 24;
 
 const NAMED: Record<string, string> = {
     nbsp: ' ',
@@ -116,25 +119,34 @@ const MARK_OF: Record<string, string> = {
     kbd: 'code',
 };
 /** Lo que no aporta nada (y se descarta con todo su contenido). */
-const DROP_WITH_CONTENT = /<(head|style|script|title|xml|noscript|template|svg|object|iframe|select|textarea|button)\b[\s\S]*?<\/\1\s*>/gi;
+const DROP_WITH_CONTENT: ReadonlySet<string> = new Set([
+    'head',
+    'style',
+    'script',
+    'title',
+    'xml',
+    'noscript',
+    'template',
+    'svg',
+    'object',
+    'iframe',
+    'select',
+    'textarea',
+    'button',
+]);
 
 type Container = { kind: 'root'; content: RichNode[] } | { kind: 'list'; node: RichNode } | { kind: 'item'; node: RichNode } | { kind: 'quote'; node: RichNode };
 
 /** Lee el `href` de los atributos de una etiqueta `<a …>`. */
 function hrefOf(attrs: string): string | null {
-    const m = /\bhref\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs);
-    const raw = m ? (m[2] ?? m[3] ?? m[4] ?? '') : '';
-    const v = decodeEntities(raw).trim();
+    const v = decodeEntities(htmlAttr(attrs, 'href') ?? '').trim();
     return v !== '' ? v : null;
 }
 
 export function htmlToRichDoc(html: string): RichDoc | null {
-    const src = html
-        .slice(0, MAX_HTML)
-        .replace(/<!--[\s\S]*?-->/g, '')
-        .replace(DROP_WITH_CONTENT, '')
-        .replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, '')
-        .replace(/<!doctype[^>]*>/gi, '');
+    // Lectura de UNA pasada y costo lineal (html-scan): comentarios, CDATA,
+    // declaraciones y los elementos de DROP_WITH_CONTENT no llegan aquí.
+    const src = capHtml(html, MAX_HTML);
 
     const root: Container = { kind: 'root', content: [] };
     const stack: Container[] = [root];
@@ -161,18 +173,19 @@ export function htmlToRichDoc(html: string): RichDoc | null {
 
     const flush = (): void => {
         // Sin espacios ni saltos colgados al principio y al final del bloque.
-        while (inline.length > 0 && (inline[0]!.type === 'hardBreak' || (inline[0]!.type === 'text' && (inline[0]!.text ?? '').trim() === ''))) inline.shift();
-        while (
-            inline.length > 0 &&
-            (inline[inline.length - 1]!.type === 'hardBreak' || (inline[inline.length - 1]!.type === 'text' && (inline[inline.length - 1]!.text ?? '').trim() === ''))
-        ) {
-            inline.pop();
-        }
+        // (Con índices: quitar de a uno del principio de un arreglo largo cuesta
+        // el cuadrado del largo.)
+        const blank = (n: RichNode): boolean => n.type === 'hardBreak' || (n.type === 'text' && (n.text ?? '').trim() === '');
+        let from = 0;
+        let to = inline.length;
+        while (from < to && blank(inline[from]!)) from++;
+        while (to > from && blank(inline[to - 1]!)) to--;
+        if (from > 0 || to < inline.length) inline = inline.slice(from, to);
         if (inline.length > 0) {
             const first = inline[0]!;
-            if (first.type === 'text') first.text = (first.text ?? '').replace(/^\s+/, '');
+            if (first.type === 'text') first.text = (first.text ?? '').trimStart();
             const last = inline[inline.length - 1]!;
-            if (last.type === 'text') last.text = (last.text ?? '').replace(/\s+$/, '');
+            if (last.type === 'text') last.text = (last.text ?? '').trimEnd();
             const content = inline.filter((n) => n.type !== 'text' || (n.text ?? '') !== '');
             if (content.length > 0) {
                 target().push(heading !== null ? { type: 'heading', attrs: { level: heading }, content } : { type: 'paragraph', content });
@@ -199,56 +212,53 @@ export function htmlToRichDoc(html: string): RichDoc | null {
         inline.push(withMarks({ type: 'text', text }, activeMarks));
     };
 
-    const re = /<\s*(\/?)\s*([a-zA-Z][a-zA-Z0-9:-]*)\b([^>]*)>|([^<]+)|</g;
-    for (const m of src.matchAll(re)) {
-        if (m[4] !== undefined) {
-            pushText(m[4]);
-            continue;
+    const onToken = (token: Parameters<Parameters<typeof scanHtml>[1]>[0]): void => {
+        if (token.kind === 'text') {
+            pushText(token.text);
+            return;
         }
-        if (m[2] === undefined) {
-            pushText('<');
-            continue;
-        }
-        const closing = m[1] === '/';
-        const tag = m[2].toLowerCase();
-        const attrs = m[3] ?? '';
-        const selfClosing = /\/\s*$/.test(attrs);
+        const closing = token.closing;
+        const tag = token.name;
+        const attrs = token.attrs;
+        const selfClosing = attrs.trimEnd().endsWith('/');
 
         if (tag === 'br') {
             inline.push({ type: 'hardBreak' });
-            continue;
+            return;
         }
         if (tag === 'hr') {
             flush();
             target().push({ type: 'horizontalRule' });
-            continue;
+            return;
         }
         if (tag === 'img') {
             // Las imágenes no se traen (píxeles de seguimiento); el alt sí, si dice algo.
-            const alt = /\balt\s*=\s*("([^"]*)"|'([^']*)')/i.exec(attrs);
-            const text = alt ? decodeEntities(alt[2] ?? alt[3] ?? '').trim() : '';
+            const alt = htmlAttr(attrs, 'alt', false);
+            const text = alt !== null ? decodeEntities(alt).trim() : '';
             if (text !== '' && text.length <= 80) pushText(` [${text}] `);
-            continue;
+            return;
         }
         if (tag in HEADING) {
             flush();
             if (!closing) heading = HEADING[tag]!;
-            continue;
+            return;
         }
         if (tag === 'ul' || tag === 'ol') {
             flush();
             if (!closing) {
+                if (stack.length >= MAX_DEPTH) return;
                 const node: RichNode = { type: tag === 'ul' ? 'bulletList' : 'orderedList', content: [] };
                 target().push(node);
                 stack.push({ kind: 'list', node });
             } else {
                 popUntil(stack, 'list');
             }
-            continue;
+            return;
         }
         if (tag === 'li') {
             flush();
             if (!closing) {
+                if (stack.length >= MAX_DEPTH) return;
                 // Un <li> sin lista abierta: se arma una de viñetas.
                 if (!stack.some((c) => c.kind === 'list')) {
                     const node: RichNode = { type: 'bulletList', content: [] };
@@ -264,35 +274,36 @@ export function htmlToRichDoc(html: string): RichDoc | null {
             } else {
                 popUntil(stack, 'item');
             }
-            continue;
+            return;
         }
         if (tag === 'blockquote') {
             flush();
             if (!closing) {
+                if (stack.length >= MAX_DEPTH) return;
                 const node: RichNode = { type: 'blockquote', content: [] };
                 target().push(node);
                 stack.push({ kind: 'quote', node });
             } else {
                 popUntil(stack, 'quote');
             }
-            continue;
+            return;
         }
         if (tag === 'td' || tag === 'th') {
             // Las tablas de maquetación se leen como texto corrido.
             if (closing) pushText(' ');
-            continue;
+            return;
         }
         if (BLOCK_TAGS.has(tag)) {
             if (tag === 'pre') pre = closing ? Math.max(0, pre - 1) : pre + 1;
             flush();
-            continue;
+            return;
         }
         const markType = tag === 'a' ? 'link' : MARK_OF[tag];
         if (markType) {
             if (closing) {
                 const idx = findLastIndex(marks, (x) => x.tag === tag);
                 if (idx >= 0) marks.splice(idx, 1);
-            } else if (!selfClosing) {
+            } else if (!selfClosing && marks.length < MAX_OPEN_MARKS) {
                 if (markType === 'link') {
                     const href = hrefOf(attrs);
                     if (href) marks.push({ tag, mark: { type: 'link', attrs: { href } } });
@@ -301,12 +312,18 @@ export function htmlToRichDoc(html: string): RichDoc | null {
                     marks.push({ tag, mark: { type: markType } });
                 }
             }
-            continue;
+            return;
         }
         // Cualquier otra etiqueta (span, font, o:p…) no aporta estructura.
-    }
+    };
+    scanHtml(src, onToken, { dropWithContent: DROP_WITH_CONTENT });
     flush();
-    return sanitizeRichDoc({ type: 'doc', content: root.content.length > 0 ? cleanEmpty(root.content) : [] });
+    const doc = sanitizeRichDoc({ type: 'doc', content: root.content.length > 0 ? cleanEmpty(root.content) : [] });
+    // Se recortó: se avisa al final en vez de cortar en silencio.
+    if (doc && html.length > MAX_HTML) {
+        (doc.content ??= []).push({ type: 'paragraph', content: [{ type: 'text', text: '[…] (el mensaje era muy largo: aquí se ve sólo el comienzo)' }] });
+    }
+    return doc;
 }
 
 function popUntil(stack: Container[], kind: Container['kind']): void {

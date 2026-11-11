@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { rateKeyForIp } from '../common/client-ip';
 import {
     summarizeWidgetStats,
     widgetStatFields,
@@ -102,7 +103,7 @@ export class WidgetStatsService implements OnModuleInit, OnModuleDestroy {
     }
 
     private async overLimit(ip: string): Promise<boolean> {
-        const key = `wstrl:${ip}:${Math.floor(Date.now() / 60_000)}`;
+        const key = `wstrl:${rateKeyForIp(ip)}:${Math.floor(Date.now() / 60_000)}`;
         try {
             const res = await this.redis.multi().incr(key).expire(key, 90).exec();
             return Number(res?.[0]?.[1] ?? 0) > MAX_BATCHES_PER_MIN;

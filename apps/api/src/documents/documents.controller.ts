@@ -190,6 +190,7 @@ export class PublicDocumentsController {
     async open(
         @Param('template', ParseIntPipe) template: number,
         @Param('record', ParseIntPipe) record: number,
+        @Req() req: FastifyRequest,
         @Res() reply: FastifyReply,
         @Query('tenant') tenant?: string,
         @Query('exp') exp?: string,
@@ -204,6 +205,7 @@ export class PublicDocumentsController {
             String(sig ?? ''),
             // Quién pidió el enlace (va firmado): el PDF se arma con su acceso.
             issuer !== undefined && issuer !== '' ? Number(issuer) : undefined,
+            req.ip,
         );
         reply.raw.writeHead(200, {
             'content-type': 'application/pdf',

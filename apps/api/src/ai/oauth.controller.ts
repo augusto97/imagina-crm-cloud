@@ -43,9 +43,9 @@ export class OauthController {
     /** RFC 7591 — registro dinámico. Abierto a propósito (así funcionan claude.ai y Cursor); rate-limit por IP. */
     @Post('register')
     @HttpCode(201)
-    async register(@Body() body: unknown, @Res() reply: FastifyReply): Promise<void> {
+    async register(@Req() req: FastifyRequest, @Body() body: unknown, @Res() reply: FastifyReply): Promise<void> {
         try {
-            const client: RegisteredClient = await this.oauth.registerClient(body);
+            const client: RegisteredClient = await this.oauth.registerClient(body, req.ip);
             void reply.header('Cache-Control', 'no-store').code(201).send(client);
         } catch (err) {
             sendOauthError(reply, err);

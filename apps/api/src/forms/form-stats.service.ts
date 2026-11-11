@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { rateKeyForIp } from '../common/client-ip';
 import {
     formStatFields,
     formStatsDayRange,
@@ -115,7 +116,7 @@ export class FormStatsService implements OnModuleInit, OnModuleDestroy {
 
     /** ¿Este IP ya mandó demasiados lotes este minuto? (un lote de más se ignora sin error). */
     private async overLimit(ip: string): Promise<boolean> {
-        const key = `fstrl:${ip}:${Math.floor(Date.now() / 60_000)}`;
+        const key = `fstrl:${rateKeyForIp(ip)}:${Math.floor(Date.now() / 60_000)}`;
         try {
             const res = await this.redis.multi().incr(key).expire(key, 90).exec();
             return Number(res?.[0]?.[1] ?? 0) > MAX_BATCHES_PER_MIN;

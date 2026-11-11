@@ -82,12 +82,22 @@ export const widgetLayoutSchema = z.object({
     hm: z.number().int().positive().max(100).optional(),
 });
 
+/**
+ * Tope de widgets de un tablero. Cada widget es al menos una consulta por
+ * cada vez que alguien abre el tablero (también el enlace público, sin
+ * sesión): sin tope, un tablero podía ocupar todas las conexiones a la base.
+ * Un tablero anterior con más sigue cargando y se puede editar, pero no
+ * crecer (`DASHBOARD_MAX_WIDGETS_LEGACY` es sólo el techo de ese caso).
+ */
+export const DASHBOARD_MAX_WIDGETS = 60;
+export const DASHBOARD_MAX_WIDGETS_LEGACY = 500;
+
 export const widgetSpecSchema = z.object({
-    id: z.string().min(1),
+    id: z.string().min(1).max(100),
     type: widgetTypeSchema,
     /** 0 = widget de contenido (sin lista). */
     list_id: z.number().int().nonnegative(),
-    title: z.string().default(''),
+    title: z.string().max(500).default(''),
     config: z.record(z.unknown()).default({}),
     layout: widgetLayoutSchema,
 });
@@ -130,7 +140,7 @@ export type Dashboard = z.infer<typeof dashboardSchema>;
 export const createDashboardSchema = z.object({
     name: z.string().trim().min(1).max(190),
     description: z.string().max(2000).nullable().optional(),
-    widgets: z.array(widgetSpecSchema).default([]),
+    widgets: z.array(widgetSpecSchema).max(DASHBOARD_MAX_WIDGETS, `Un tablero admite hasta ${DASHBOARD_MAX_WIDGETS} widgets.`).default([]),
     settings: dashboardSettingsSchema.optional(),
     is_default: z.boolean().optional(),
     position: z.number().int().nonnegative().optional(),
@@ -139,7 +149,11 @@ export const createDashboardSchema = z.object({
 });
 export type CreateDashboardInput = z.infer<typeof createDashboardSchema>;
 
-export const updateDashboardSchema = createDashboardSchema.partial();
+export const updateDashboardSchema = createDashboardSchema.partial().extend({
+    // El tope real al editar lo pone el servidor: el mayor entre el tope y
+    // lo que el tablero YA tenía (no puede crecer por encima del tope).
+    widgets: z.array(widgetSpecSchema).max(DASHBOARD_MAX_WIDGETS_LEGACY).optional(),
+});
 export type UpdateDashboardInput = z.infer<typeof updateDashboardSchema>;
 
 /** v0.1.286 — Reordenar los tableros del menú (posición = índice). */

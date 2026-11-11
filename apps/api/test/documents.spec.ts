@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildDocumentStarter, type DocDesign, type DocTotalRow, type Field } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AuditService } from '../src/audit/audit.service';
@@ -436,6 +436,27 @@ describe('v0.1.266 — documentos PDF (Postgres real)', () => {
         const pdf = await docs.renderLiveLink(tplId, recId, ten, exp, sig);
         expect(pdf.buffer.subarray(0, 5).toString()).toBe('%PDF-');
         expect(pdf.filename).toBe('Cuenta Zeta.pdf');
+        // El mismo enlace abierto muchas veces (también a la vez) NO arma el
+        // PDF cada vez: mismos bytes durante unos minutos.
+        const renders = vi.spyOn(docs as unknown as { renderLiveLinkNow: () => Promise<unknown> }, 'renderLiveLinkNow');
+        const again = await Promise.all(Array.from({ length: 6 }, () => docs.renderLiveLink(tplId, recId, ten, exp, sig, undefined, '198.51.100.9')));
+        expect(renders).not.toHaveBeenCalled();
+        for (const a of again) expect(a.buffer).toBe(pdf.buffer);
+        // Cambiar la plantilla deja de servir lo guardado; visitas simultáneas arman UNA vez.
+        await docs.update(tenantId, admin.userId, 'cobros', tpl.id, { name: tpl.name });
+        const fresh = await Promise.all(Array.from({ length: 4 }, () => docs.renderLiveLink(tplId, recId, ten, exp, sig, undefined, '198.51.100.9')));
+        expect(renders).toHaveBeenCalledTimes(1);
+        expect(new Set(fresh.map((f) => f.buffer)).size).toBe(1);
+        // Tope de pedidos por visitante (la red /64 cuenta como uno).
+        let limited = 0;
+        for (let i = 0; i < 45; i++) {
+            await docs.renderLiveLink(tplId, recId, ten, exp, sig, undefined, `2001:db8:1:2::${(i + 1).toString(16)}`).catch((e: { status?: number }) => {
+                if (e.status === 429) limited++;
+                else throw e;
+            });
+        }
+        expect(limited).toBe(5);
+        renders.mockRestore();
         // Firma alterada, otro registro, otra empresa o vencido: el mismo 404.
         await expect(docs.renderLiveLink(tplId, recId, ten, exp, sig.replace(/^./, sig[0] === 'a' ? 'b' : 'a'))).rejects.toMatchObject({ status: 404 });
         await expect(docs.renderLiveLink(tplId, cobroId, ten, exp, sig)).rejects.toMatchObject({ status: 404 });

@@ -21,6 +21,7 @@ import { valueBaseType, type FieldType } from './field';
 import type { RichDoc, RichMark, RichNode } from './rich-text';
 import { richDocSchema, sanitizeRichDoc } from './rich-text';
 import type { TenantFormat } from './tenant';
+import { HTML_SCAN_MAX, capHtml, htmlAttr, scanHtml } from './html-scan';
 
 /**
  * v0.1.265 — Correos DISEÑADOS (ADR-S34).
@@ -1194,20 +1195,56 @@ export function renderEmailHtml(design: EmailDesign, opts: EmailRenderOptions): 
 // ---------------------------------------------------------------------------
 
 /** HTML → texto legible (firma, bloque HTML, modo HTML sin alternativa). */
+const PLAIN_DROP: ReadonlySet<string> = new Set(['script', 'style', 'head', 'title']);
+const PLAIN_BREAK_AFTER: ReadonlySet<string> = new Set(['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'tr', 'table', 'ul', 'ol', 'blockquote', 'pre']);
+
 export function htmlToPlainText(html: string): string {
-    let s = html;
-    s = s.replace(/<(script|style|head|title)\b[\s\S]*?<\/\1\s*>/gi, '');
-    s = s.replace(/<!--[\s\S]*?-->/g, '');
-    s = s.replace(/<a\b[^>]*href\s*=\s*("([^"]*)"|'([^']*)')[^>]*>([\s\S]*?)<\/a>/gi, (_m, _q, d, s2, text: string) => {
-        const href = (d ?? s2 ?? '').trim();
-        const label = text.replace(/<[^>]+>/g, '').trim();
-        if (!href || href === '#' || href === label || /^mailto:/i.test(href) && href.slice(7) === label) return label;
-        return label ? `${label} (${href})` : href;
-    });
-    s = s.replace(/<br\s*\/?>/gi, '\n');
-    s = s.replace(/<li\b[^>]*>/gi, '\n- ');
-    s = s.replace(/<\/(p|div|h[1-6]|tr|table|ul|ol|blockquote|pre)>/gi, '\n');
-    s = s.replace(/<[^>]+>/g, '');
+    // Una pasada lineal (ver html-scan.ts) sobre un HTML con tope de tamaño:
+    // antes eran varias expresiones regulares de costo cuadrático o peor
+    // con etiquetas o comentarios sin cerrar.
+    const parts: string[] = [];
+    let anchor: { href: string; label: string[] } | null = null;
+    const closeAnchor = (): void => {
+        if (!anchor) return;
+        const href = anchor.href.trim();
+        const label = anchor.label.join('').trim();
+        anchor = null;
+        if (!href || href === '#' || href === label || (/^mailto:/i.test(href) && href.slice(7) === label)) parts.push(label);
+        else parts.push(label ? `${label} (${href})` : href);
+    };
+    scanHtml(
+        capHtml(html),
+        (t) => {
+            if (t.kind === 'text') {
+                (anchor ? anchor.label : parts).push(t.text);
+                return;
+            }
+            if (anchor) {
+                // Dentro de un enlace las etiquetas no aportan; `</a>` lo cierra.
+                if (t.name === 'a' && t.closing) closeAnchor();
+                return;
+            }
+            if (t.name === 'a' && !t.closing) {
+                const href = htmlAttr(t.attrs, 'href', false);
+                if (href !== null) anchor = { href, label: [] };
+                return;
+            }
+            if (t.name === 'br' && !t.closing) {
+                const rest = t.attrs.trim();
+                if (rest === '' || rest === '/') parts.push('\n');
+                return;
+            }
+            if (t.name === 'li' && !t.closing) {
+                parts.push('\n- ');
+                return;
+            }
+            if (t.closing && PLAIN_BREAK_AFTER.has(t.name)) parts.push('\n');
+        },
+        { dropWithContent: PLAIN_DROP },
+    );
+    // Un enlace que nunca se cerró: queda su texto.
+    if (anchor) parts.push((anchor as { label: string[] }).label.join(''));
+    let s = parts.join('');
     s = s
         .replace(/&nbsp;/g, ' ')
         .replace(/&#847;|&zwnj;/g, '')
@@ -1216,12 +1253,14 @@ export function htmlToPlainText(html: string): string {
         .replace(/&quot;/g, '"')
         .replace(/&#39;/g, "'")
         .replace(/&amp;/g, '&');
-    return s
+    const out = s
         .split('\n')
         .map((l) => l.replace(/[ \t]+/g, ' ').trim())
         .join('\n')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
+    // Se recortó: se avisa en vez de cortar en silencio.
+    return typeof html === 'string' && html.length > HTML_SCAN_MAX ? `${out}\n\n[…] (contenido recortado por su tamaño)` : out;
 }
 
 function richText(ctx: Ctx, nodes: RichNode[] | undefined): string {

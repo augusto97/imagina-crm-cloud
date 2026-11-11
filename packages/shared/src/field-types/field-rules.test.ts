@@ -162,7 +162,8 @@ describe('protección contra ReDoS', () => {
     it('un patrón inseguro que llegó sin pasar por el guardado no se ejecuta', () => {
         expect(compileUserPattern('(a+)+$')).toBeNull();
         const field = f(1, 'text', { validation: { format: 'regex', pattern: '(a+)+$' } });
-        expect(checkValueRules(field, 'a'.repeat(50) + '!')).toBeNull();
+        // No se ejecuta y tampoco deja pasar el valor (falla cerrado).
+        expect(checkValueRules(field, 'a'.repeat(50) + '!')).not.toBeNull();
     });
 });
 

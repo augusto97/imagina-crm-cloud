@@ -275,6 +275,59 @@ describe('v0.1.276 — avisos (Postgres + Redis reales)', () => {
         expect(sent.filter((m) => m.to === 'ana@acme.test')).toHaveLength(0);
     });
 
+    it('el aviso de un cambio se arma POR destinatario: un campo oculto para su rol no viaja (ni el título del registro si está oculto)', async () => {
+        const agent = { userId: caro, role: 'agent' as const };
+        const id = await create({ [`f${f.titulo!.id}`]: 'Contrato Zeta', [`f${f.estado!.id}`]: 'pendiente' });
+        const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select({ settings: listsTable.settings }).from(listsTable).where(eq(listsTable.id, listId)));
+        const settingsBefore = (row?.settings ?? {}) as Record<string, unknown>;
+        try {
+            // El agente ve la lista, pero «Vence» está oculto para su rol.
+            await listsSvc.updatePermissions(tenantId, 'tareas', {
+                permissions: { agent: { view: 'all', create: true, edit: 'all', delete: 'none', fields_hidden: ['vence'] } },
+            });
+            await svc.setFollowing(tenantId, agent, 'tareas', id, true);
+
+            // Cambian un campo oculto y uno visible: al agente sólo le llega el visible.
+            await update(id, { [`f${f.vence!.id}`]: '2026-12-24', [`f${f.estado!.id}`]: 'curso' });
+            let c = await inbox(caro);
+            expect(c).toHaveLength(1);
+            expect(c[0]).toMatchObject({ kind: 'update', title: 'Beto cambió «Contrato Zeta»', body: 'Estado: Pendiente → En curso' });
+            // El admin (que también sigue el registro) ve todo.
+            let a = await inbox(ana);
+            expect(a[0]!.body).toBe('Estado: Pendiente → En curso · Vence: vacío → 2026-12-24');
+
+            // Sólo cambia el campo oculto: al agente no le llega nada nuevo (ni se pisa el aviso que tenía).
+            await update(id, { [`f${f.vence!.id}`]: '2026-12-31' });
+            c = await inbox(caro);
+            expect(c).toHaveLength(1);
+            expect(c[0]!.body).toBe('Estado: Pendiente → En curso');
+            expect(JSON.stringify(c)).not.toContain('2026-12');
+            expect(JSON.stringify(c)).not.toContain('Vence');
+            a = await inbox(ana);
+            expect(a[0]!.body).toBe('Vence: 2026-12-24 → 2026-12-31');
+
+            // Con el campo de título oculto, el aviso nombra el registro por su número.
+            await listsSvc.updatePermissions(tenantId, 'tareas', {
+                permissions: { agent: { view: 'all', create: true, edit: 'all', delete: 'none', fields_hidden: ['vence', 'titulo'] } },
+            });
+            await withTenant(pg.db, tenantId, (tx) => tx.delete(notifications).where(eq(notifications.tenantId, tenantId)));
+            await update(id, { [`f${f.titulo!.id}`]: 'Contrato Zeta (confidencial)', [`f${f.estado!.id}`]: 'hecha' });
+            c = await inbox(caro);
+            expect(c).toHaveLength(1);
+            expect(c[0]).toMatchObject({ title: `Beto cambió «Registro #${id}»`, body: 'Estado: En curso → Completada' });
+            expect(JSON.stringify(c)).not.toContain('Zeta');
+            expect((await inbox(ana))[0]!.title).toBe('Beto cambió «Contrato Zeta (confidencial)»');
+            // Un comentario: el mismo cuidado con el título.
+            await comments.create(tenantId, manager(), 'tareas', id, { body: 'Revisado', kind: 'note' });
+            await settle();
+            const comment = (await inbox(caro)).find((n) => n.kind === 'comment');
+            expect(comment?.title).toContain(`«Registro #${id}»`);
+            expect(comment?.title).not.toContain('Zeta');
+        } finally {
+            await withTenant(pg.db, tenantId, (tx) => tx.update(listsTable).set({ settings: settingsBefore }).where(eq(listsTable.id, listId)));
+        }
+    });
+
     it('comentarios: mención directa, seguidores y nadie que no pueda ver el registro', async () => {
         const id = await create({ [`f${f.titulo!.id}`]: 'Cotización', [`f${f.resp!.id}`]: beto });
         await comments.create(tenantId, admin(), 'tareas', id, { body: 'Mira esto @caro@acme.test y @cli@cliente.test', kind: 'note' });

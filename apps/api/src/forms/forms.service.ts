@@ -136,6 +136,7 @@ import { FormStatsService, type FormStatsTarget } from './form-stats.service';
 import { planModuleOff } from '../billing/plan-module-gate';
 import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-cache';
 import { PublicCacheService } from '../public-cache/public-cache.service';
+import { rateKeyForIp } from '../common/client-ip';
 import { CollectionError, CollectionsService } from '../collections/collections.service';
 import { SubscriptionError, SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { ContactWidgetsService } from '../contact-widgets/contact-widgets.service';
@@ -210,6 +211,10 @@ export const CONFIRM_TTL_MS = 48 * 3600 * 1000;
 export const RESPONDENT_MAIL_LIMITS = [
     { scope: 'email', window: 3600, max: 3 },
     { scope: 'ip', window: 3600, max: 10 },
+    // Por formulario y por empresa: aunque cada pedido llegue desde otra
+    // dirección y con otro correo, un formulario no manda más que esto.
+    { scope: 'form', window: 3600, max: 100 },
+    { scope: 'tenant', window: 86_400, max: 300 },
 ] as const;
 
 /** `ana@gmail.com` → `an***@gmail.com` (para decir a dónde salió el correo). */
@@ -954,7 +959,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 HttpStatus.SERVICE_UNAVAILABLE,
             );
         }
-        if (!(await this.allowRespondentMail(input.email, ip))) {
+        if (!(await this.allowRespondentMail(input.email, ip, { id: f.row.id, tenantId: f.row.tenantId }))) {
             throw new HttpException(
                 {
                     code: 'rate_limited',
@@ -1802,7 +1807,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 HttpStatus.SERVICE_UNAVAILABLE,
             );
         }
-        if (!(await this.allowRespondentMail(email, ip))) {
+        if (!(await this.allowRespondentMail(email, ip, { id: f.row.id, tenantId: f.row.tenantId }))) {
             throw new HttpException(
                 {
                     code: 'rate_limited',
@@ -2128,10 +2133,17 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     }
 
     /** Freno a los correos hacia quien responde (por dirección y por IP). */
-    private async allowRespondentMail(email: string, ip: string): Promise<boolean> {
+    private async allowRespondentMail(email: string, ip: string, form: { id: number; tenantId: number }): Promise<boolean> {
         const now = Math.floor(Date.now() / 1000);
         for (const { scope, window, max } of RESPONDENT_MAIL_LIMITS) {
-            const who = scope === 'email' ? `email:${email.toLowerCase()}` : `ip:${ip}`;
+            const who =
+                scope === 'email'
+                    ? `email:${email.toLowerCase()}`
+                    : scope === 'ip'
+                      ? `ip:${rateKeyForIp(ip)}`
+                      : scope === 'form'
+                        ? `form:${form.id}`
+                        : `tenant:${form.tenantId}`;
             const key = `formmail:${window}:${Math.floor(now / window)}:${who}`;
             try {
                 const res = await this.redis.multi().incr(key).expire(key, window).exec();
@@ -2169,7 +2181,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         withdrawRef: string | null = null,
     ): Promise<boolean> {
         if (!this.mail) return false;
-        if (!(await this.allowRespondentMail(email, ip))) return false;
+        if (!(await this.allowRespondentMail(email, ip, { id: f.row.id, tenantId: f.row.tenantId }))) return false;
         const answers = await this.answerLines(f, fields, data);
         const base = (await this.publicBase(f.row.tenantId)) ?? this.env.APP_BASE_URL.replace(/\/+$/, '');
         const brand = await this.emailBrand(f, base);
@@ -2275,7 +2287,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     private async enforceBytes(formId: number, ip: string): Promise<void> {
         const now = Math.floor(Date.now() / 1000);
         for (const { scope, window, max } of UPLOAD_BYTE_LIMITS) {
-            const who = scope === 'ip' ? `ip:${ip}:${formId}` : `form:${formId}`;
+            const who = scope === 'ip' ? `ip:${rateKeyForIp(ip)}:${formId}` : `form:${formId}`;
             const key = `formrl:bytes:${window}:${Math.floor(now / window)}:${who}`;
             let used = 0;
             try {
@@ -2299,7 +2311,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     private async addBytes(formId: number, ip: string, bytes: number): Promise<void> {
         const now = Math.floor(Date.now() / 1000);
         for (const { scope, window } of UPLOAD_BYTE_LIMITS) {
-            const who = scope === 'ip' ? `ip:${ip}:${formId}` : `form:${formId}`;
+            const who = scope === 'ip' ? `ip:${rateKeyForIp(ip)}:${formId}` : `form:${formId}`;
             const key = `formrl:bytes:${window}:${Math.floor(now / window)}:${who}`;
             await this.redis
                 .multi()
@@ -2859,7 +2871,7 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
     ): Promise<void> {
         const now = Math.floor(Date.now() / 1000);
         for (const { scope, window, max } of limits) {
-            const who = scope === 'ip' ? `ip:${ip}:${formId}` : `form:${formId}`;
+            const who = scope === 'ip' ? `ip:${rateKeyForIp(ip)}:${formId}` : `form:${formId}`;
             const key = `formrl:${what}:${window}:${Math.floor(now / window)}:${who}`;
             let count: number;
             try {
