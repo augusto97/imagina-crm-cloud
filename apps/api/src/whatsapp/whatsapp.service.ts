@@ -24,6 +24,7 @@ import {
     suggestWhatsappFields,
     whatsappCountryOf,
     whatsappIdVariants,
+    splitPhone,
     whatsappRecipient,
     whatsappStatusFromMeta,
     whatsappStatusWanted,
@@ -44,6 +45,12 @@ import {
     whatsNames,
     whatsPhoneList,
     WHATS_ACTION_KEYS,
+    WHATS_EVENT_KIND_META,
+    WHATS_EVENT_TRIGGER,
+    readWhatsTriggerConfig,
+    whatsTriggerEvents,
+    whatsTriggerMatches,
+    type WhatsTriggerConfig,
     type WhatsAbilitiesResult,
     type WhatsActionTestInput,
     type WhatsActionTestResult,
@@ -74,7 +81,7 @@ import { ActivityService } from '../activity/activity.service';
 import { AiFieldsService } from '../ai-fields/ai-fields.service';
 import { AuditService } from '../audit/audit.service';
 import { can } from '../authz/can';
-import { AutomationDispatcher } from '../automations/automation-dispatcher.service';
+import { AutomationDispatcher, type WhatsEventJob } from '../automations/automation-dispatcher.service';
 import { applyMergeTags, labelResolverFor, regionalFormatterFor, type LabelFieldLike } from '../automations/merge-tags';
 import { recordLinkFor, recordTokenValue } from '../qr/qr-runtime';
 import { devPrivateEgressAllowed, safeWebhookFetch } from '../common/safe-fetch';
@@ -83,7 +90,7 @@ import { redactValues } from '../connectors/connection-parts';
 import { ConnectionUnusableError, ConnectorsService } from '../connectors/connectors.service';
 import { planModuleOff } from '../billing/plan-module-gate';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { activity, connections, lists, records, whatsappContacts, whatsappHooks, whatsappTemplates, type WhatsappTemplateRowDb } from '../db/schema';
+import { activity, automations, connections, lists, records, whatsappContacts, whatsappHooks, whatsappTemplates, type WhatsappTemplateRowDb } from '../db/schema';
 import { PublicBusyError } from '../public-cache/public-cache';
 import { PublicCacheService } from '../public-cache/public-cache.service';
 import { FieldsService } from '../fields/fields.service';
@@ -142,6 +149,7 @@ import {
 } from './whatsapp-web';
 import { describeWhatsPlan, planWhatsAction, type WhatsPlan } from './whats-actions';
 import { WhatsActionsClient } from './whats-actions.client';
+import { parseWhatsEvent, type ParsedWhatsEvent } from './whats-events';
 import { encryptSecret } from '../common/secret-box';
 
 /**
@@ -192,6 +200,11 @@ const DEDUP_TTL_S = 2 * 24 * 3600;
 const HOOK_CTX_TTL_MS = 60_000;
 /** Varios mensajes del mismo contacto en este rato quedan en UNA línea de la actividad. */
 const ACTIVITY_GROUP_MS = 30 * 60_000;
+/** v0.1.402 — Guardados seguidos de automatizaciones: los avisos de Whats se ajustan una vez. */
+const AUTOMATION_RESYNC_DEBOUNCE_MS = 1_500;
+/** v0.1.402 — Qué registro mandó cada mensaje (para atarle sus estados): una semana. */
+const OUTBOUND_TTL_S = 7 * 24 * 3600;
+const outboundKey = (tenantId: number, connectionId: number, messageId: string): string => `wa:out:${tenantId}:${connectionId}:${messageId}`;
 
 const seenKey = (tenantId: number, id: string): string => `wa:seen:${tenantId}:${id}`;
 
@@ -269,6 +282,18 @@ interface HookNeeds {
     inbound: boolean;
     statuses: boolean;
     statusLists: string[];
+    /** v0.1.402 — Los avisos que piden los disparadores «Cuando pasa algo en Whats» activos de esta conexión. */
+    extra: string[];
+    /** v0.1.402 — Qué escuchan esos disparadores (para explicarlo en la pantalla de la conexión). */
+    triggers: Array<{ label: string; count: number }>;
+}
+
+/** v0.1.402 — Una automatización activa «Cuando pasa algo en Whats», ya leída. */
+interface WhatsTriggerAuto {
+    id: number;
+    name: string;
+    listId: number;
+    cfg: WhatsTriggerConfig;
 }
 
 /** v0.1.391 — Lo que se sabe de una URL de avisos (en memoria un rato). */
@@ -303,7 +328,9 @@ function readWebHookState(config: Record<string, unknown>): WebHookState {
 export type WhatsappJob =
     | { kind: 'message'; tenantId: number; connectionId: number; message: Omit<InboundMessage, 'at'> & { at: string } }
     | { kind: 'status'; tenantId: number; connectionId: number; status: Omit<StatusUpdate, 'at'> & { at: string } }
-    | { kind: 'templates'; tenantId: number; connectionId: number };
+    | { kind: 'templates'; tenantId: number; connectionId: number }
+    /** v0.1.402 — un aviso para los disparadores «Cuando pasa algo en Whats». */
+    | { kind: 'whats_event'; tenantId: number; connectionId: number; event: ParsedWhatsEvent };
 
 /** Cola de avisos (la arma `WhatsappQueue`; sin ella se procesa en el acto). */
 export interface WhatsappJobSink {
@@ -357,6 +384,31 @@ export class WhatsappService {
             if (key === 'whatsapp_web') await this.ensureWebHook(tenantId, connectionId, false);
         });
         this.connectors.onBeforeRemove((tenantId, connectionId) => this.forgetWebHook(tenantId, connectionId));
+        // v0.1.402 — Cambió una automatización: si es «Cuando pasa algo en Whats», Whats
+        // tiene que empezar (o dejar) de mandar ese aviso. Varios guardados seguidos, un ajuste.
+        this.dispatcher.onAutomationsChanged((tenantId) => this.automationsChanged(tenantId));
+    }
+
+    private readonly resyncTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+    private automationsChanged(tenantId: number): void {
+        this.changed(tenantId);
+        const prev = this.resyncTimers.get(tenantId);
+        if (prev) clearTimeout(prev);
+        const t = setTimeout(() => {
+            this.resyncTimers.delete(tenantId);
+            void this.resyncTenantWebHooks(tenantId);
+        }, AUTOMATION_RESYNC_DEBOUNCE_MS);
+        t.unref?.();
+        this.resyncTimers.set(tenantId, t);
+    }
+
+    /** Para los specs: ajusta los avisos ya (sin esperar el rato de los guardados seguidos). */
+    async flushAutomationResync(tenantId: number): Promise<void> {
+        const prev = this.resyncTimers.get(tenantId);
+        if (prev) clearTimeout(prev);
+        this.resyncTimers.delete(tenantId);
+        await this.resyncTenantWebHooks(tenantId);
     }
 
     setSink(sink: WhatsappJobSink | null): void {
@@ -431,7 +483,8 @@ export class WhatsappService {
      * caen en una lista viva (sin lista no disparan nada); entregado/leído,
      * sólo si alguna lista muestra el estado del último envío.
      */
-    private async needsInTx(tx: Tx, tenantId: number, config: Record<string, unknown>): Promise<HookNeeds> {
+    private async needsInTx(tx: Tx, tenantId: number, conn: { id: number; provider: string; config: Record<string, unknown> }): Promise<HookNeeds> {
+        const config = conn.config;
         const cfg = readWhatsappConnectionConfig(config);
         const inboundId = cfg.inbound_list_id ?? 0;
         const rows = await tx
@@ -444,7 +497,39 @@ export class WhatsappService {
                 return f.status !== null || f.status_detail !== null;
             })
             .map((r) => r.name);
-        return { inbound: inboundId > 0 && rows.some((r) => r.id === inboundId), statuses: statusLists.length > 0, statusLists };
+        // v0.1.402 — Los disparadores «Cuando pasa algo en Whats» (sólo Whats: la cuenta oficial no los manda).
+        const extra = new Set<string>();
+        const byKind = new Map<string, number>();
+        if (conn.provider === 'whatsapp_web') {
+            for (const a of await this.whatsTriggerAutosInTx(tx, tenantId)) {
+                if (a.cfg.connectionId !== null && a.cfg.connectionId !== conn.id) continue;
+                for (const e of whatsTriggerEvents(a.cfg)) extra.add(e);
+                const label = WHATS_EVENT_KIND_META[a.cfg.kind].label;
+                byKind.set(label, (byKind.get(label) ?? 0) + 1);
+            }
+        }
+        return {
+            inbound: inboundId > 0 && rows.some((r) => r.id === inboundId),
+            statuses: statusLists.length > 0,
+            statusLists,
+            extra: [...extra],
+            triggers: [...byKind.entries()].map(([label, count]) => ({ label, count })),
+        };
+    }
+
+    /** v0.1.402 — Las automatizaciones activas «Cuando pasa algo en Whats» de la empresa (de listas vivas). */
+    private async whatsTriggerAutosInTx(tx: Tx, tenantId: number): Promise<WhatsTriggerAuto[]> {
+        const rows = await tx
+            .select({ id: automations.id, name: automations.name, listId: automations.listId, config: automations.triggerConfig })
+            .from(automations)
+            .innerJoin(lists, and(eq(lists.id, automations.listId), isNull(lists.deletedAt)))
+            .where(and(eq(automations.tenantId, tenantId), eq(automations.isActive, true), eq(automations.triggerType, WHATS_EVENT_TRIGGER), isNull(automations.deletedAt)));
+        const out: WhatsTriggerAuto[] = [];
+        for (const r of rows) {
+            const cfg = readWhatsTriggerConfig(r.config);
+            if (cfg) out.push({ id: r.id, name: r.name, listId: r.listId, cfg });
+        }
+        return out;
     }
 
     /** Lo que se sabe de una URL de avisos: la conexión, con qué se firma y qué necesita. */
@@ -462,7 +547,7 @@ export class WhatsappService {
         const out = await this.tenantDb.withTenant(row.tenantId, async (tx) => {
             const conn = await this.connRow(tx, row.tenantId, row.connectionId);
             if (!conn) return null;
-            const needs = await this.needsInTx(tx, row.tenantId, conn.config);
+            const needs = await this.needsInTx(tx, row.tenantId, conn);
             let secret = '';
             let accountId: number | null = null;
             try {
@@ -644,6 +729,13 @@ export class WhatsappService {
                 });
             }
         }
+        // v0.1.402 — Lo que esperan los disparadores «Cuando pasa algo en Whats».
+        if (needs.extra.length > 0) {
+            const ev = parseWhatsEvent(body, headerEvent);
+            if (ev && needs.extra.includes(ev.event) && !(ev.accountId !== null && ownAccount !== null && ev.accountId !== ownAccount)) {
+                jobs.push({ job: { kind: 'whats_event', tenantId: hook.tenantId, connectionId: hook.connectionId, event: ev }, dedup: `e-${ev.deliveryId || ev.fingerprint}` });
+            }
+        }
         await this.enqueue(jobs);
     }
 
@@ -674,6 +766,8 @@ export class WhatsappService {
             await this.handleInbound(job.tenantId, job.connectionId, { ...job.message, at: new Date(job.message.at) });
         } else if (job.kind === 'status') {
             await this.handleStatus(job.tenantId, job.connectionId, { ...job.status, at: new Date(job.status.at) });
+        } else if (job.kind === 'whats_event') {
+            await this.handleWhatsEvent(job.tenantId, job.connectionId, job.event);
         } else {
             await this.syncTemplates(job.tenantId, job.connectionId).catch((err: unknown) => this.logger.warn(`Plantillas de WhatsApp: ${String(err)}`));
         }
@@ -792,7 +886,7 @@ export class WhatsappService {
                 .from(connections)
                 .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
                 .limit(1);
-            const needs = await this.needsInTx(tx, tenantId, row.config);
+            const needs = await this.needsInTx(tx, tenantId, row);
             return { row, cfg, f, templates, allLists, totals, lastErr, needs };
         });
         const inbound = out.cfg.inbound_list_id ? await this.listColumns(tenantId, String(out.cfg.inbound_list_id)).catch(() => null) : null;
@@ -840,7 +934,7 @@ export class WhatsappService {
             template_manager_url: whatsappTemplateManagerUrl(out.f.waba_id ?? ''),
             totals: { contacts: Number(out.totals?.contacts ?? 0), open_windows: Number(out.totals?.open ?? 0) },
             last_error: out.lastErr?.ok === false ? (out.lastErr.error ?? null) : null,
-            listening: { inbound: out.needs.inbound, statuses: out.needs.statuses, status_lists: out.needs.statusLists, events: null },
+            listening: { inbound: out.needs.inbound, statuses: out.needs.statuses, status_lists: out.needs.statusLists, events: null, triggers: out.needs.triggers },
         };
     }
 
@@ -997,7 +1091,7 @@ export class WhatsappService {
             return { status: res.status, body: res.body ?? '' };
         };
         // v0.1.391 — Sólo los avisos que algo usa (ver `needsInTx`).
-        const needs = await this.tenantDb.withTenant(tenantId, (tx) => this.needsInTx(tx, tenantId, row.config));
+        const needs = await this.tenantDb.withTenant(tenantId, (tx) => this.needsInTx(tx, tenantId, row));
         const desired = waWebHookEventsFor(needs);
         try {
             const hasSecret = (await this.hookAuthOf(tenantId, connectionId)) !== null;
@@ -1049,7 +1143,7 @@ export class WhatsappService {
         const row = await this.tenantDb.withTenant(tenantId, (tx) => this.connRow(tx, tenantId, connectionId));
         if (!row || row.provider !== 'whatsapp_web') return false;
         const prev = readWebHookState(row.config);
-        const needs = await this.tenantDb.withTenant(tenantId, (tx) => this.needsInTx(tx, tenantId, row.config));
+        const needs = await this.tenantDb.withTenant(tenantId, (tx) => this.needsInTx(tx, tenantId, row));
         const desired = waWebHookEventsFor(needs);
         if (prev.hook_id !== null && prev.error === null && prev.events && sameWaWebEvents(prev.events, desired)) return false;
         await this.ensureWebHook(tenantId, connectionId, false);
@@ -1125,7 +1219,7 @@ export class WhatsappService {
                 .from(connections)
                 .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
                 .limit(1);
-            const needs = await this.needsInTx(tx, tenantId, row.config);
+            const needs = await this.needsInTx(tx, tenantId, row);
             return { row, cfg, f, allLists, totals, lastErr, needs };
         });
         const inbound = out.cfg.inbound_list_id ? await this.listColumns(tenantId, String(out.cfg.inbound_list_id)).catch(() => null) : null;
@@ -1154,6 +1248,7 @@ export class WhatsappService {
                             status_reason: a.statusReason,
                             banned_until: a.bannedUntil,
                             enabled: a.enabled,
+                            receive_inbound: a.receiveInbound,
                         };
                     }
                 }
@@ -1205,6 +1300,7 @@ export class WhatsappService {
                 statuses: out.needs.statuses,
                 status_lists: out.needs.statusLists,
                 events: hookState.hook_id !== null ? (hookState.events ?? null) : null,
+                triggers: out.needs.triggers,
             },
         };
     }
@@ -1646,6 +1742,9 @@ export class WhatsappService {
             conexion_id: conn.id,
             mensaje_id: msg.id,
             fecha: msg.at.toISOString(),
+            // v0.1.402 — Whats: el archivo que mandaron y el id del contacto.
+            ...(msg.media ? { archivo: msg.media } : {}),
+            ...(msg.contactId ? { contacto_id: String(msg.contactId) } : {}),
         };
         this.dispatcher.dispatch({
             tenantId,
@@ -1709,6 +1808,186 @@ export class WhatsappService {
         const row = await this.recordsRepo.findById(tx, tenantId, list.id, recordId);
         if (!row) return null;
         return { write: null, after: row.data as Record<string, unknown> };
+    }
+
+    // ── v0.1.402 — «Cuando pasa algo en Whats» ─────────────────────────
+
+    /**
+     * Un aviso de Whats para los disparadores: por cada automatización que lo
+     * espera, el registro de SU lista con ese teléfono (o el que mandó el
+     * mensaje, en los estados de lo enviado). Si no está: se crea (con el
+     * nombre, el teléfono y el correo) o la corrida queda cancelada con el
+     * motivo. Si hay varios: el que ya está vinculado a ese contacto; si no,
+     * falla diciendo cuáles (nunca adivina).
+     */
+    async handleWhatsEvent(tenantId: number, connectionId: number, ev: ParsedWhatsEvent): Promise<number> {
+        const prep = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const conn = await this.connRow(tx, tenantId, connectionId);
+            if (!conn || conn.provider !== 'whatsapp_web') return null;
+            const autos = (await this.whatsTriggerAutosInTx(tx, tenantId)).filter((a) => whatsTriggerMatches(a.cfg, ev.event, conn.id));
+            return { conn, autos };
+        });
+        if (!prep || prep.autos.length === 0) return 0;
+        const { conn } = prep;
+        // El mismo evento por dos conexiones de la misma cuenta (un «cualquiera»): una vez por automatización.
+        const autos: WhatsTriggerAuto[] = [];
+        for (const a of prep.autos) {
+            const first = await this.redis.set(`whats:evd:${tenantId}:${a.id}:${ev.fingerprint}`, '1', 'EX', DEDUP_TTL_S, 'NX').catch(() => 'OK');
+            if (first !== null) autos.push(a);
+        }
+        if (autos.length === 0) return 0;
+
+        // El teléfono: el que trae el aviso o, con sólo el id del contacto, se le pregunta a Whats.
+        let phone = ev.phone;
+        let name = ev.name;
+        let email = ev.email;
+        let lookupNote: string | null = null;
+        if (!phone && ev.contactId !== null) {
+            const creds = await this.webCredsFor(tenantId, connectionId).catch(() => null);
+            const c = creds ? await this.whats.contactById(creds, connectionId, ev.contactId) : null;
+            if (c) {
+                phone = c.phone;
+                if (!name) name = c.name;
+                if (!email) email = c.email;
+            } else {
+                lookupNote = 'El aviso trae sólo el id del contacto y no se pudo leer su teléfono en Whats (¿la clave tiene el permiso contacts.view?).';
+            }
+        }
+        if (phone && ev.contactId !== null) await this.whats.rememberContact(connectionId, phone, ev.contactId);
+        // Un estado de un mensaje enviado: el registro que lo mandó.
+        let sentBy: { listId: number; recordId: number } | null = null;
+        if (ev.messageId) {
+            const raw = await this.redis.get(outboundKey(tenantId, connectionId, ev.messageId)).catch(() => null);
+            const [l, r] = String(raw ?? '').split(':').map(Number);
+            if (Number.isInteger(l) && Number.isInteger(r) && l! > 0 && r! > 0) sentBy = { listId: l!, recordId: r! };
+        }
+        const info: WhatsappEventInfo = {
+            texto: ev.info.texto ?? '',
+            de: phone ? `+${phone}` : '',
+            nombre: name,
+            tipo: '',
+            conexion: conn.name,
+            conexion_id: conn.id,
+            mensaje_id: ev.info.mensaje_id ?? '',
+            fecha: ev.at,
+            ...ev.info,
+            correo: email,
+            ...(ev.contactId !== null ? { contacto_id: String(ev.contactId) } : {}),
+        };
+
+        // Por lista (y campo de teléfono): una búsqueda y, si hace falta, UN registro nuevo.
+        const groups = new Map<string, WhatsTriggerAuto[]>();
+        for (const a of autos) {
+            const k = `${a.listId}:${a.cfg.phoneFieldId ?? 0}`;
+            groups.set(k, [...(groups.get(k) ?? []), a]);
+        }
+        let queued = 0;
+        for (const group of groups.values()) {
+            const head = group[0]!;
+            const target = await this.whatsEventTarget(tenantId, conn, head.listId, head.cfg.phoneFieldId, {
+                phone,
+                name,
+                email,
+                sentBy,
+                create: group.some((a) => a.cfg.ifMissing === 'create'),
+                lookupNote,
+            });
+            for (const a of group) {
+                const job: WhatsEventJob = {
+                    tenantId,
+                    automationId: a.id,
+                    listId: a.listId,
+                    recordId: target.recordId,
+                    whatsapp: info,
+                    payload: ev.payload,
+                    ...(target.note ? { note: target.note } : {}),
+                    ...(target.stop ? { stop: target.stop } : {}),
+                };
+                if (!this.dispatcher.dispatchWhatsEvent(job)) {
+                    this.logger.warn(`Aviso de Whats para la automatización ${a.id}: no hay cola de automatizaciones.`);
+                    continue;
+                }
+                queued++;
+            }
+        }
+        return queued;
+    }
+
+    /** El registro de un evento de Whats en una lista (ver `handleWhatsEvent`). */
+    private async whatsEventTarget(
+        tenantId: number,
+        conn: ConnRow,
+        listId: number,
+        phoneFieldId: number | null,
+        who: { phone: string | null; name: string; email: string; sentBy: { listId: number; recordId: number } | null; create: boolean; lookupNote: string | null },
+    ): Promise<{ recordId: number | null; note?: string; stop?: { status: 'cancelled' | 'failed'; message: string } }> {
+        const found = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [list] = await tx
+                .select({ id: lists.id, name: lists.name, settings: lists.settings })
+                .from(lists)
+                .where(and(eq(lists.tenantId, tenantId), eq(lists.id, listId), isNull(lists.deletedAt)))
+                .limit(1);
+            if (!list) return null;
+            const fields = await this.fields.listByListIdWithinTx(tx, tenantId, list.id);
+            // El mensaje lo mandó un registro de esta lista: ése.
+            if (who.sentBy && who.sentBy.listId === list.id) {
+                const row = await this.recordsRepo.findById(tx, tenantId, list.id, who.sentBy.recordId);
+                if (row) return { list, fields, phoneField: null, ids: [row.id], viaSend: true };
+            }
+            const chosen = phoneFieldId ? fields.find((f) => f.id === phoneFieldId && (f.type === 'phone' || f.type === 'text')) : undefined;
+            const mapped = effectiveMapping(list.settings, fields).phone;
+            const phoneField = chosen ?? (mapped ? fields.find((f) => f.id === mapped) : undefined) ?? null;
+            if (!phoneField || !who.phone) return { list, fields, phoneField, ids: [] as number[], viaSend: false };
+            let ids = await findAllByPhone(tx, tenantId, list.id, phoneField.id, who.phone, 5);
+            if (ids.length > 1) {
+                // Varios con el mismo teléfono: el que ya está vinculado a ese contacto (el último que le escribió).
+                const [contact] = await tx
+                    .select({ listId: whatsappContacts.lastOutboundListId, recordId: whatsappContacts.lastOutboundRecordId })
+                    .from(whatsappContacts)
+                    .where(and(eq(whatsappContacts.tenantId, tenantId), eq(whatsappContacts.connectionId, conn.id), eq(whatsappContacts.phone, who.phone)))
+                    .limit(1);
+                if (contact && contact.listId === list.id && contact.recordId !== null && ids.includes(contact.recordId)) ids = [contact.recordId];
+            }
+            return { list, fields, phoneField, ids, viaSend: false };
+        });
+        if (!found) return { recordId: null, stop: { status: 'cancelled', message: 'La lista de la automatización ya no existe.' } };
+        const { list, fields, phoneField, ids, viaSend } = found;
+        const shownPhone = who.phone ? `+${who.phone}` : '';
+        if (ids.length === 1) {
+            return { recordId: ids[0]!, note: viaSend ? 'Es el registro que mandó el mensaje.' : `Se encontró por el teléfono ${shownPhone} en «${list.name}».` };
+        }
+        if (ids.length > 1) {
+            return {
+                recordId: null,
+                stop: {
+                    status: 'failed',
+                    message: `Hay ${ids.length} registros con el teléfono ${shownPhone} en «${list.name}» (#${ids.join(', #')}) y ninguno está vinculado a ese contacto: deja uno solo con ese número.`,
+                },
+            };
+        }
+        if (!who.phone) {
+            return { recordId: null, stop: { status: 'cancelled', message: who.lookupNote ?? 'El aviso de Whats no trae el teléfono del contacto: no se puede ubicar su registro.' } };
+        }
+        if (!phoneField) {
+            return { recordId: null, stop: { status: 'failed', message: `La lista «${list.name}» no tiene un campo de teléfono para encontrar al contacto: elige uno en el disparador.` } };
+        }
+        if (!who.create || !this.recordsSvc) {
+            return { recordId: null, stop: { status: 'cancelled', message: `No hay un registro con el teléfono ${shownPhone} en «${list.name}» (y el disparador no crea uno nuevo).` } };
+        }
+        const data: Record<string, unknown> = { [jsonbKeyForField(phoneField.id)]: shownPhone };
+        const titleId = resolveTitleFieldId(fields, list.settings);
+        const titleField = titleId ? fields.find((f) => f.id === titleId) : undefined;
+        if (titleField && titleField.id !== phoneField.id && (titleField.type === 'text' || titleField.type === 'long_text')) {
+            data[jsonbKeyForField(titleField.id)] = who.name || shownPhone;
+        }
+        const emailField = fields.find((f) => f.type === 'email');
+        if (emailField && who.email) data[jsonbKeyForField(emailField.id)] = who.email;
+        try {
+            const created = await this.recordsSvc.create(tenantId, SYSTEM_ACTOR, String(list.id), { data }, { lenientRequired: true });
+            return { recordId: created.id, note: `Se creó el registro #${created.id} con el teléfono ${shownPhone} en «${list.name}».` };
+        } catch (err) {
+            return { recordId: null, stop: { status: 'failed', message: `No se pudo crear el registro del contacto en «${list.name}»: ${err instanceof Error ? err.message : String(err)}` } };
+        }
     }
 
     // ── Estados de lo enviado ───────────────────────────────────────────
@@ -2086,6 +2365,8 @@ export class WhatsappService {
                 },
             });
         if (target.listId === null || target.recordId === null) return null;
+        // v0.1.402 — Para atarle sus estados al registro que lo mandó (aunque después salgan otros).
+        void this.redis.set(outboundKey(p.tenantId, p.connection.id, wamid), `${target.listId}:${target.recordId}`, 'EX', OUTBOUND_TTL_S).catch(() => undefined);
         const write = await this.writeChannelInTx(tx, p.tenantId, target.listId, target.recordId, {
             message: p.text,
             message_at: now,
@@ -2756,6 +3037,36 @@ async function findByPhone(tx: Tx, tenantId: number, listId: number, phoneFieldI
         .orderBy(asc(records.id))
         .limit(1);
     return row?.id ?? null;
+}
+
+/**
+ * v0.1.402 — Todos los registros (hasta `limit`) con ese teléfono, con y sin
+ * indicativo: un número guardado sin el +57 (un Excel importado, un campo de
+ * texto) también se encuentra.
+ */
+async function findAllByPhone(tx: Tx, tenantId: number, listId: number, phoneFieldId: number, waId: string, limit: number): Promise<number[]> {
+    const variants = whatsappIdVariants(waId);
+    if (variants.length === 0) return [];
+    const national = splitPhone(`+${waId.replace(/\D/g, '')}`).national;
+    if (national.length >= 7 && !variants.includes(national)) variants.push(national);
+    const key = jsonbKeyForField(phoneFieldId);
+    const rows = await tx
+        .select({ id: records.id })
+        .from(records)
+        .where(
+            and(
+                eq(records.tenantId, tenantId),
+                eq(records.listId, listId),
+                isNull(records.deletedAt),
+                sql`regexp_replace(coalesce(${records.data} ->> ${key}, ''), '\\D', '', 'g') IN (${sql.join(
+                    variants.map((v) => sql`${v}`),
+                    sql`, `,
+                )})`,
+            ),
+        )
+        .orderBy(asc(records.id))
+        .limit(limit);
+    return rows.map((r) => r.id);
 }
 
 /** El teléfono del registro, salvo que el campo esté oculto para quien pide. */

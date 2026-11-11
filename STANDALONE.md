@@ -5310,6 +5310,58 @@ sin «asignar conversación».
 6. El asistente/MCP describe cada acción con sus datos y lo que deja
    (`whatsActionShapes`, sale del catálogo).
 
+**Addendum v0.1.402 — El conector completo de Whats: disparadores.** Segunda
+mitad del mismo pedido («disparadores a partir de los eventos de webhook…
+ubica el registro por teléfono»), con lo aprobado: nada de citas ni pagos, y
+leer las entregas reales sólo para entender su forma (sin cambiar nada).
+
+1. **Un solo disparador, `whats_event`** («Cuando pasa algo en Whats», en la
+   sección WhatsApp del menú «Cuando…», junto a «Cuando llega un mensaje de
+   WhatsApp», que sigue siendo el de los mensajes que te escriben). Guarda qué
+   evento escucha (`whats_event`): estado de un mensaje enviado (elige cuáles:
+   enviado / entregado / leído / falló / cancelado; falló por defecto),
+   contacto nuevo, baja, conversación (empezó / asignada / resuelta),
+   calificación de la atención, clic en un enlace y formulario de Whats
+   (enviado / confirmado). Opcionales: la conexión (vacía = cualquiera), el
+   campo con el teléfono y qué hacer si no hay registro (`if_missing`: crear,
+   por defecto en contacto nuevo y formulario; o no hacer nada). Las reglas
+   son puras en `whats-triggers.ts` (shared, sin zod): lectura tolerante,
+   qué eventos pide cada uno, si un aviso coincide, el resumen en palabras y
+   las variables.
+2. **Lectura de los avisos** (`whats-events.ts`, puro): la documentación sólo
+   trae ejemplos de mensajes; el resto se lee con **tolerancia** a partir de
+   la forma de cada recurso (SUPUESTO marcado en el código para los nombres
+   alternativos). Se ignoran los grupos y otros canales. Todo el objeto queda
+   como `{{payload.…}}`; lo conocido como `{{whatsapp.estado|motivo|
+   mensaje_id|correo|conversacion_id|asignado_a|estado_conversacion|
+   calificacion|comentario|enlace|formulario|contacto_id|archivo}}`.
+3. **El registro**: un estado de un mensaje que mandó un registro de la
+   lista usa ESE registro (`wa:out:{t}:{conexión}:{mensaje}`, 7 días); si
+   no, se busca por teléfono con y sin indicativo. Varios con el mismo
+   teléfono → el vinculado a ese contacto en `whatsapp_contacts`; si ninguno,
+   la corrida **falla con los ids** (nunca adivinar). Sin registro: se crea
+   (título = nombre o teléfono, primer campo de correo) o la corrida queda
+   **cancelada** con el motivo. Un aviso que trae sólo `contact_id` le pide
+   el teléfono a Whats (`GET /contacts/{id}`, permiso `contacts.view`,
+   recordado 30 días); sin el permiso, cancelada con ese motivo y el editor
+   lo avisa.
+4. **Suscripción según uso** (regla de v0.1.391): `needsInTx` suma los
+   eventos de las automatizaciones activas (`extra`), y guardar, pausar o
+   borrar una dispara un re-ajuste del aviso en Whats (escucha del
+   dispatcher, con espera de 1,5 s por empresa); la revisión horaria cubre el
+   resto. «Qué recibe la app» lista los avisos para automatizaciones.
+5. **Corrida**: job `whats-event` en la cola de automatizaciones (turnos por
+   empresa), dedup por automatización y huella del evento (el mismo evento
+   por dos conexiones o reintentado corre una vez), `runWhatsEvent` en el
+   motor con el registro, `{{whatsapp.*}}`, `{{payload.*}}` y los filtros del
+   disparador; solo-lectura y plan como siempre.
+6. De paso: «Cuando llega un mensaje de WhatsApp» perdía la conexión elegida
+   al guardar (`cleanTriggerConfig` no la conservaba); `{{whatsapp.archivo}}`
+   en los mensajes con archivo; y la página de la conexión avisa si el número
+   tiene apagado **Recibir mensajes** en Whats (`receive_inbound_enabled` de
+   la cuenta, también al conectar). El asistente/MCP acepta `whats_event`
+   (con `phone_field` por slug).
+
 ---
 
 ### ADR-S70 — Mesa de ayuda por correo (IMAP) + SLA en horas hábiles (v0.1.316)

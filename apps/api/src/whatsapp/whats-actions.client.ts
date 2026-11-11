@@ -24,6 +24,7 @@ import {
     waWebGroupContactsRequest,
     waWebListRequest,
     waWebLookupContactRequest,
+    waWebGetContactRequest,
     waWebReplyRequest,
     waWebResumeFlowRequest,
     waWebTriggerFlowRequest,
@@ -117,6 +118,45 @@ export class WhatsActionsClient {
 
     private listKey(connectionId: number, kind: WhatsLookupKind): string {
         return `whats:lk:${connectionId}:${kind}`;
+    }
+
+    private contactByIdKey(connectionId: number, contactId: number): string {
+        return `whats:cp:${connectionId}:${contactId}`;
+    }
+
+    /**
+     * v0.1.402 — El teléfono, nombre y correo de un contacto por su id (los
+     * avisos de contactos, conversaciones o formularios a veces traen sólo el
+     * id). Se recuerda 30 días: el mismo contacto no se pregunta de nuevo.
+     * `null` = no existe, la clave no tiene `contacts.view` o Whats no respondió.
+     */
+    async contactById(creds: WaWebCreds, connectionId: number, contactId: number): Promise<{ phone: string; name: string; email: string } | null> {
+        const key = this.contactByIdKey(connectionId, contactId);
+        const hit = await this.cacheGet(key);
+        if (hit) {
+            try {
+                const parsed = JSON.parse(hit) as { phone?: unknown; name?: unknown; email?: unknown };
+                if (typeof parsed.phone === 'string' && parsed.phone !== '') {
+                    return { phone: parsed.phone, name: typeof parsed.name === 'string' ? parsed.name : '', email: typeof parsed.email === 'string' ? parsed.email : '' };
+                }
+            } catch {
+                /* se vuelve a preguntar */
+            }
+        }
+        let res: { status: number; body: string };
+        try {
+            res = await this.call(creds, waWebGetContactRequest(creds, contactId), 'Leer el contacto', []);
+        } catch {
+            return null;
+        }
+        if (res.status < 200 || res.status >= 300) return null;
+        const c = parseWaWebContact(res.body);
+        const phone = (c?.phone ?? '').replace(/\D/g, '');
+        if (!c || phone === '') return null;
+        const out = { phone, name: c.name ?? '', email: c.email ?? '' };
+        await this.cacheSet(key, JSON.stringify(out), CONTACT_TTL_S);
+        await this.cacheSet(this.contactKey(connectionId, phone), String(c.id), CONTACT_TTL_S);
+        return out;
     }
 
     /** El contacto de un envío (Whats lo crea solo): las acciones siguientes no lo buscan. */

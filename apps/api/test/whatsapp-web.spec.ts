@@ -39,7 +39,7 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
 import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AuditService } from '../src/audit/audit.service';
-import { AutomationDispatcher, type TriggerEvent } from '../src/automations/automation-dispatcher.service';
+import { AutomationDispatcher, type TriggerEvent, type WhatsEventJob } from '../src/automations/automation-dispatcher.service';
 import { AutomationEngine } from '../src/automations/automation-engine.service';
 import { AutomationsRepository } from '../src/automations/automations.repository';
 import { loadEnv } from '../src/config/env';
@@ -63,6 +63,7 @@ import { RecordsService } from '../src/records/records.service';
 import { RelationsRepository } from '../src/records/relations.repository';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import {
+    parseWaWebAccount,
     parseWaWebError,
     parseWaWebHook,
     signWaWebBody,
@@ -73,6 +74,7 @@ import {
 } from '../src/whatsapp/whatsapp-web';
 import { WhatsappService } from '../src/whatsapp/whatsapp.service';
 import { describeWhatsPlan, pickConversation, planWhatsAction } from '../src/whatsapp/whats-actions';
+import { parseWhatsEvent } from '../src/whatsapp/whats-events';
 import { startPostgres, type TestPg } from './helpers/containers';
 import { memoryOAuthStore } from './helpers/oauth-store';
 
@@ -91,8 +93,13 @@ class NullMail implements MailTransport {
 
 class CapturingDispatcher extends AutomationDispatcher {
     events: TriggerEvent[] = [];
+    whatsJobs: WhatsEventJob[] = [];
     override dispatch(event: TriggerEvent): void {
         this.events.push(event);
+    }
+    override dispatchWhatsEvent(job: WhatsEventJob): boolean {
+        this.whatsJobs.push(job);
+        return true;
     }
 }
 
@@ -156,6 +163,7 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
     let waConvs: Array<{ id: number; contact_id: number; channel: string; status: string; last_message_at: string }>;
     let dripRefuse: boolean;
     let ops: Array<{ method: string; path: string; body: unknown }>;
+    let contactReads: number;
 
     beforeAll(async () => {
         pg = await startPostgres();
@@ -217,6 +225,8 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
         sent = [];
         incidents.length = 0;
         dispatcher.events.length = 0;
+        dispatcher.whatsJobs.length = 0;
+        contactReads = 0;
         abilities = [...ALL];
         keyOk = API_KEY;
         hooksCreated = 0;
@@ -338,6 +348,15 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
                 return json(200, { data: c });
             }
             if (path === '/contacts/fields') return page([{ key: 'ciudad', label: 'Ciudad', type: 'text' }, { key: 'plan', label: 'Plan', type: 'select' }]);
+            // v0.1.402 — un contacto por su id (los avisos que traen sólo `contact_id`).
+            const one = /^\/contacts\/(\d+)$/.exec(path);
+            if (one && call.method === 'GET') {
+                const denied = need('contacts.view');
+                if (denied) return denied;
+                contactReads++;
+                const c = waContacts.find((x) => x.id === Number(one[1]));
+                return c ? json(200, { data: { ...c, country_iso: 'CO', is_unsubscribed: false } }) : json(404, { error: { code: 'not_found', message: 'Not found.' } });
+            }
             const m = /^\/contacts\/(\d+)\/(tags|notes|consent)$/.exec(path);
             if (m) {
                 if (!waContacts.some((x) => x.id === Number(m[1]))) return json(404, { error: { code: 'contact_not_found', message: 'Contact not found.' } });
@@ -501,6 +520,14 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
         // Elegir un número desconectado avisa (sin bloquear).
         const off = await connectors.verifyIntegration(tenantId, adminId, 'admin', 'whatsapp_web', { fields: { api_key: API_KEY, account: '2' } });
         expect(off.warning).toMatch(/Desconectado/);
+        // v0.1.402 — Un número con «Recibir mensajes» apagado en Whats también avisa.
+        account1.receive_inbound_enabled = false;
+        const noInbound = await connectors.verifyIntegration(tenantId, adminId, 'admin', 'whatsapp_web', { fields: { api_key: API_KEY, account: '1' } });
+        expect(noInbound.ok).toBe(true);
+        expect(noInbound.warning).toMatch(/apagado «Recibir mensajes»/);
+        delete account1.receive_inbound_enabled;
+        expect(parseWaWebAccount(JSON.stringify({ data: { id: 3, receive_inbound_enabled: false } }))?.receiveInbound).toBe(false);
+        expect(parseWaWebAccount(JSON.stringify({ data: { id: 3 } }))?.receiveInbound).toBeNull();
         await expect(
             connectors.connectIntegrationKey(tenantId, adminId, 'admin', 'whatsapp_web', { fields: { api_key: API_KEY, account: '7' }, visibility: 'workspace' }),
         ).rejects.toThrow(/no está en tu cuenta/);
@@ -980,5 +1007,161 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
         expect(actions.some((a) => a.startsWith('resume_flow {run_id, resume_token, variables?}'))).toBe(true);
         expect(String(schema?.rules)).toMatch(/kind "whats"/);
         expect(String(schema?.rules)).toMatch(/Nunca se envía a grupos/);
+    });
+    // ── v0.1.402: «Cuando pasa algo en Whats» ──────────────────────────
+
+    async function whatsAuto(listId: number, triggerConfig: Record<string, unknown>, actions: unknown[] = []): Promise<number> {
+        const [a] = await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(automations).values({ tenantId, listId, name: 'Aviso de Whats', triggerType: 'whats_event', triggerConfig, actions: actions as never, isActive: true }).returning(),
+        );
+        // Guardar una automatización avisa a WhatsApp, que ajusta lo que le pide a Whats.
+        await dispatcher.invalidate(tenantId, listId);
+        await svc.flushAutomationResync(tenantId);
+        return a!.id;
+    }
+
+    async function runsOf(automationId: number) {
+        return withTenant(pg.db, tenantId, (tx) => tx.select().from(automationRuns).where(eq(automationRuns.automationId, automationId)));
+    }
+
+    it('v0.1.402 — piezas puras: cada aviso se lee aunque traiga el contacto entero o sólo su id', () => {
+        const env = (event: string, payload: Record<string, unknown>) => ({ id: `d-${event}`, event, payload, sent_at: '2026-11-11T10:00:00Z' });
+        const created = parseWhatsEvent(env('contact.created', { id: 12, phone: '+57 300 111 2233', name: 'Jane', email: 'jane@x.test' }))!;
+        expect(created).toMatchObject({ phone: '573001112233', contactId: 12, name: 'Jane', email: 'jane@x.test', info: { evento: 'Contacto nuevo', contacto_id: '12' } });
+        // Envuelto en `contact` también.
+        expect(parseWhatsEvent(env('contact.unsubscribed', { contact: { id: 5, phone: '+573001112233' } }))).toMatchObject({ contactId: 5, phone: '573001112233' });
+        const conv = parseWhatsEvent(env('conversation.assigned', { id: 42, contact_id: 12, channel: 'wa', status: 'open', assigned_member_id: 7 }))!;
+        expect(conv).toMatchObject({ phone: null, contactId: 12, info: { conversacion_id: '42', estado_conversacion: 'open', asignado_a: '7' } });
+        expect(parseWhatsEvent(env('csat.received', { conversation_id: 42, contact_id: 12, rating: 5, comment: 'Excelente' }))!.info).toMatchObject({ calificacion: '5', comentario: 'Excelente' });
+        expect(parseWhatsEvent(env('link.clicked', { contact_id: 12, url: 'https://acme.test/promo' }))!.info.enlace).toBe('https://acme.test/promo');
+        const form = parseWhatsEvent(env('form.submitted', { form_id: 3, form_name: 'Newsletter', contact_id: 7, answers: { phone: '+12015550100', first_name: 'Jane', last_name: 'Doe', email: 'jane@example.com' } }))!;
+        expect(form).toMatchObject({ phone: '12015550100', name: 'Jane Doe', email: 'jane@example.com', info: { formulario: 'Newsletter' } });
+        const read = parseWhatsEvent(env('wa.message.read', waMessage({ id: 77, status: 'read' })))!;
+        expect(read).toMatchObject({ phone: '573001112233', messageId: '77', accountId: 1, info: { estado: 'Leído', texto: 'Hola' } });
+        const failed = parseWhatsEvent(env('wa.message.failed', waMessage({ status: 'failed', failure_reason: 'no_whatsapp' })))!;
+        expect(failed.info.motivo).toBe('Ese número no tiene WhatsApp.');
+        // Un grupo, otro canal o un evento que el disparador no lee: nada.
+        expect(parseWhatsEvent(env('wa.message.read', waMessage({ to: '1203@g.us' })))).toBeNull();
+        expect(parseWhatsEvent(env('wa.message.read', waMessage({ channel: 'sms' })))).toBeNull();
+        expect(parseWhatsEvent(env('appointment.booked', { appointment_id: 1 }))).toBeNull();
+        expect(parseWhatsEvent(env('wa.message.received', waMessage({ direction: 'in' })))).toBeNull();
+        // El mismo evento por dos avisos (dos conexiones): la misma huella.
+        expect(parseWhatsEvent({ ...env('contact.created', { id: 12 }), id: 'otra' })!.fingerprint).toBe(parseWhatsEvent(env('contact.created', { id: 12 }))!.fingerprint);
+    });
+
+    it('v0.1.402 — el aviso se le pide a Whats sólo mientras una automatización activa lo usa', async () => {
+        const id = await connect();
+        const { listId } = await seedContacts(id);
+        expect(hookEvents).not.toContain('contact.created');
+        const autoId = await whatsAuto(listId, { whats_event: 'contact_created' });
+        expect(hookEvents).toContain('contact.created');
+        const detail = await svc.connectionDetail(tenantId, admin(), id);
+        expect(detail.listening.triggers).toEqual([{ label: 'Se creó un contacto en Whats', count: 1 }]);
+        // Pausada: Whats deja de mandarlo.
+        await withTenant(pg.db, tenantId, (tx) => tx.update(automations).set({ isActive: false }).where(eq(automations.id, autoId)));
+        await dispatcher.invalidate(tenantId, listId);
+        await svc.flushAutomationResync(tenantId);
+        expect(hookEvents).not.toContain('contact.created');
+        // Sin automatización que lo use, un aviso que igual llega no hace nada.
+        await post(id, 'contact.created', { id: 700, phone: '+573005551212', name: 'Beto' });
+        expect(dispatcher.whatsJobs).toHaveLength(0);
+    });
+
+    it('v0.1.402 — contacto nuevo: crea el registro con nombre, teléfono y correo, corre con {{whatsapp.x}} y {{payload.x}}, y no repite', async () => {
+        const id = await connect();
+        const { listId } = await seedContacts(id);
+        await fieldsService.create(tenantId, 'clientes', { label: 'Correo', type: 'email' });
+        await fieldsService.create(tenantId, 'clientes', { label: 'Notas', type: 'text' });
+        const autoId = await whatsAuto(listId, { whats_event: 'contact_created' }, [
+            { type: 'update_field', config: { values: { notas: '{{whatsapp.evento}}: {{whatsapp.nombre}} ({{payload.email}}) #{{whatsapp.contacto_id}}' } } },
+        ]);
+        await post(id, 'contact.created', { id: 700, phone: '+57 300 555 1212', name: 'Beto', email: 'beto@acme.test' });
+        expect(dispatcher.whatsJobs).toHaveLength(1);
+        const job = dispatcher.whatsJobs[0]!;
+        expect(job).toMatchObject({ automationId: autoId, listId, whatsapp: { de: '+573005551212', nombre: 'Beto', correo: 'beto@acme.test', evento: 'Contacto nuevo' } });
+        expect(job.note).toMatch(/Se creó el registro #\d+ con el teléfono \+573005551212/);
+        const all = await fieldsService.listByListId(tenantId, listId);
+        const key = (slug: string) => `f${all.find((f) => f.slug === slug)!.id}`;
+        let rec = (await listRecords(listId)).find((r) => r.id === job.recordId)!;
+        expect(rec.data).toMatchObject({ [key('telefono')]: '+573005551212', [key('nombre')]: 'Beto', [key('correo')]: 'beto@acme.test' });
+        await engine.runWhatsEvent(job);
+        rec = (await listRecords(listId)).find((r) => r.id === job.recordId)!;
+        expect(rec.data[key('notas')]).toBe('Contacto nuevo: Beto (beto@acme.test) #700');
+        const [run] = await runsOf(autoId);
+        expect(run).toMatchObject({ status: 'success', recordId: job.recordId });
+        expect(JSON.stringify(run!.actionsLog)).toMatch(/Se creó el registro/);
+        // El mismo aviso otra vez (un reintento): una sola corrida.
+        await post(id, 'contact.created', { id: 700, phone: '+57 300 555 1212', name: 'Beto', email: 'beto@acme.test' });
+        expect(dispatcher.whatsJobs).toHaveLength(1);
+    });
+
+    it('v0.1.402 — sólo el id del contacto: se le pregunta el teléfono a Whats (una vez); sin registro y «no hacer nada», cancelada con el motivo', async () => {
+        const id = await connect();
+        const { listId, fieldsBy } = await seedContacts(id);
+        abilities.push('contacts.view');
+        waContacts.push({ id: 801, phone: '+573001112233', name: 'Ana', email: null });
+        const [rec] = await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(records).values({ tenantId, listId, data: { [`f${fieldsBy.nombre}`]: 'Ana', [`f${fieldsBy.telefono}`]: '+57 300 111 2233' }, createdBy: adminId }).returning(),
+        );
+        const autoId = await whatsAuto(listId, { whats_event: 'contact_unsubscribed' });
+        await post(id, 'contact.unsubscribed', { contact_id: 801 });
+        expect(contactReads).toBe(1);
+        expect(dispatcher.whatsJobs[0]).toMatchObject({ recordId: rec!.id, whatsapp: { de: '+573001112233', nombre: 'Ana', contacto_id: '801' } });
+        expect(dispatcher.whatsJobs[0]!.note).toMatch(/Se encontró por el teléfono \+573001112233 en «Clientes»/);
+        // Otra baja del mismo contacto: el teléfono ya se sabe.
+        await post(id, 'contact.unsubscribed', { contact_id: 801, at: 'otra vez' });
+        expect(contactReads).toBe(1);
+        expect(dispatcher.whatsJobs).toHaveLength(2);
+        // Un número que no está en la lista y el disparador no crea: cancelada con el motivo.
+        await post(id, 'contact.unsubscribed', { id: 900, phone: '+573009999999' });
+        const job = dispatcher.whatsJobs[2]!;
+        expect(job.stop).toEqual({ status: 'cancelled', message: 'No hay un registro con el teléfono +573009999999 en «Clientes» (y el disparador no crea uno nuevo).' });
+        await engine.runWhatsEvent(job);
+        const runs = await runsOf(autoId);
+        expect(runs.find((r) => r.status === 'cancelled')).toMatchObject({ recordId: null, error: job.stop!.message });
+        // Sin el permiso de ver contactos: no se puede ubicar y se dice por qué.
+        abilities.splice(abilities.indexOf('contacts.view'), 1);
+        await post(id, 'contact.unsubscribed', { contact_id: 950 });
+        expect(dispatcher.whatsJobs[3]!.stop?.message).toMatch(/contacts\.view/);
+    });
+
+    it('v0.1.402 — varios con el mismo teléfono: el vinculado a ese contacto; si no hay, falla diciendo cuáles', async () => {
+        const id = await connect();
+        const { listId, fieldsBy } = await seedContacts(id);
+        const mk = (name: string) =>
+            withTenant(pg.db, tenantId, (tx) => tx.insert(records).values({ tenantId, listId, data: { [`f${fieldsBy.nombre}`]: name, [`f${fieldsBy.telefono}`]: '3001112233' }, createdBy: adminId }).returning());
+        const [a] = await mk('Ana');
+        const [b] = await mk('Ana (repetida)');
+        await whatsAuto(listId, { whats_event: 'link_clicked' });
+        await post(id, 'link.clicked', { contact_id: 12, phone: '+573001112233', url: 'https://acme.test/promo' });
+        expect(dispatcher.whatsJobs[0]!.stop).toMatchObject({ status: 'failed' });
+        expect(dispatcher.whatsJobs[0]!.stop!.message).toContain(`#${a!.id}, #${b!.id}`);
+        // El último que le escribió a ese contacto fue «b»: ése.
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(whatsappContacts).values({ tenantId, connectionId: id, phone: '573001112233', lastOutboundListId: listId, lastOutboundRecordId: b!.id, lastOutboundAt: new Date() }),
+        );
+        await post(id, 'link.clicked', { contact_id: 12, phone: '+573001112233', url: 'https://acme.test/otra' });
+        expect(dispatcher.whatsJobs[1]).toMatchObject({ recordId: b!.id, whatsapp: { enlace: 'https://acme.test/otra' } });
+    });
+
+    it('v0.1.402 — estado de lo enviado: se ata al registro que mandó el mensaje; sólo los estados elegidos y la conexión elegida', async () => {
+        const id = await connect();
+        const { listId, fieldsBy } = await seedContacts(id);
+        const [rec] = await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(records).values({ tenantId, listId, data: { [`f${fieldsBy.nombre}`]: 'Ana', [`f${fieldsBy.telefono}`]: '+573001112233' }, createdBy: adminId }).returning(),
+        );
+        const autoId = await whatsAuto(listId, { whats_event: 'message_status', statuses: ['read'] });
+        await whatsAuto(listId, { whats_event: 'message_status', statuses: ['read'], connection_id: id + 999 });
+        expect(hookEvents).toContain('wa.message.read');
+        const res = await svc.sendFromRecord(tenantId, admin(), 'clientes', rec!.id, { connection_id: id, kind: 'text', text: 'Hola', variables: {} });
+        await post(id, 'wa.message.delivered', waMessage({ id: Number(res.message_id), status: 'delivered' }));
+        expect(dispatcher.whatsJobs).toHaveLength(0);
+        await post(id, 'wa.message.read', waMessage({ id: Number(res.message_id), status: 'read', read_at: new Date().toISOString() }));
+        // Una sola: la de la otra conexión no coincide.
+        expect(dispatcher.whatsJobs).toHaveLength(1);
+        expect(dispatcher.whatsJobs[0]).toMatchObject({ automationId: autoId, recordId: rec!.id, note: 'Es el registro que mandó el mensaje.', whatsapp: { estado: 'Leído', mensaje_id: res.message_id } });
+        // Una conversación sin automatización que la espere: ni se procesa.
+        await post(id, 'conversation.created', { id: 5, contact_id: 801, status: 'open' });
+        expect(dispatcher.whatsJobs).toHaveLength(1);
     });
 });

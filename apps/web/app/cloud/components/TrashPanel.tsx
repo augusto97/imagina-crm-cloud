@@ -67,6 +67,7 @@ const TRIGGER_LABEL: Record<string, string> = {
     payment_received: 'Al recibir un pago',
     subscription_event: 'Al cambiar una suscripción',
     whatsapp_message_received: 'Al llegar un WhatsApp',
+    whats_event: 'Al pasar algo en Whats',
     form_submitted: 'Al enviar un formulario',
     button_pressed: 'Al presionar el botón',
     booking_event: 'Al agendar una cita',

@@ -42,6 +42,11 @@ export function waWebLookupContactRequest(c: WaWebCreds, phoneDigits: string): I
     return get(c, `/contacts/lookup?phone=${encodeURIComponent(e164(phoneDigits))}`);
 }
 
+/** v0.1.402 — Un contacto por su id (un aviso que trae sólo `contact_id`). Necesita `contacts.view`. */
+export function waWebGetContactRequest(c: WaWebCreds, contactId: number): IntegrationRequest {
+    return get(c, `/contacts/${contactId}`);
+}
+
 export interface WaWebContactInput {
     phone: string;
     name?: string;

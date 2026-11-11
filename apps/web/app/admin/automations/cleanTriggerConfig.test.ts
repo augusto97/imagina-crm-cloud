@@ -26,3 +26,23 @@ describe('cleanTriggerConfig — webhook entrante (v0.1.399)', () => {
         expect(cleanTriggerConfig({ webhook_token: 't', record_mode: 'none', match_key: 'x' })).toEqual({ webhook_token: 't' });
     });
 });
+
+describe('cleanTriggerConfig — WhatsApp (v0.1.402)', () => {
+    it('conserva el número del disparador (antes se perdía al guardar)', () => {
+        expect(cleanTriggerConfig({ connection_id: 7 })).toEqual({ connection_id: 7 });
+        expect(cleanTriggerConfig({ connection_id: 0 })).toEqual({});
+    });
+
+    it('conserva el evento de Whats, sus sub-opciones, el teléfono y qué hacer si no está', () => {
+        const out = cleanTriggerConfig({
+            whats_event: 'message_status',
+            statuses: ['read', 'failed'],
+            conversation_events: [],
+            phone_field_id: 12,
+            if_missing: 'skip',
+            connection_id: 3,
+            otra: true,
+        });
+        expect(out).toEqual({ whats_event: 'message_status', statuses: ['read', 'failed'], phone_field_id: 12, if_missing: 'skip', connection_id: 3 });
+    });
+});

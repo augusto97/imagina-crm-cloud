@@ -118,7 +118,8 @@ export async function whatsappSchema(
             'Conexiones kind "oficial" (Meta): send_template sirve siempre (plantilla APROBADA de approved_templates, con todas sus variables en values.variables: {"body.1": "{{slug}}"…}). ' +
             'send_text (texto libre) sólo funciona si el contacto escribió en las últimas 24 h — fuera de esa ventana la acción falla: para avisos usa una plantilla. ' +
             'El destinatario es values.to (un campo teléfono: "{{telefono}}"). Las plantillas se crean y aprueban en Meta, nunca desde aquí. ' +
-            'Disparador whatsapp_message_received (llegó un mensaje de un contacto; {{whatsapp.texto}}, {{whatsapp.de}}, {{whatsapp.nombre}}): {connection_id?, field_filters?}. ' +
+            'Disparador whatsapp_message_received (llegó un mensaje de un contacto; {{whatsapp.texto}}, {{whatsapp.de}}, {{whatsapp.nombre}}, {{whatsapp.archivo}} con Whats): {connection_id?, field_filters?}. ' +
+            'Disparador whats_event (sólo conexiones kind "whats"): el estado de un mensaje enviado, un contacto nuevo o dado de baja, una conversación, una calificación, un clic o un formulario de Whats; ver su descripción en propose_create_automation. ' +
             'En el registro queda sólo el último mensaje (list_columns): un campo con IA cuya fuente es esa columna puede resumirlo o clasificarlo.',
     };
 }

@@ -13914,6 +13914,59 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         suites relacionadas 170/170, front 853, shared 855 — E2E navegador
         33/33 contra el Whats simulado (escritorio y celular oscuro).
 
+  - [x] **WhatsApp (Whats) completo: los disparadores (v0.1.402, addendum
+        ADR-S69, segunda mitad del pedido de v0.1.401; sin citas ni pagos)**.
+        (a) **«Cuando pasa algo en Whats»** (`whats_event`, sección WhatsApp
+        del menú «Cuando…», `TriggerOptions`): un disparador que guarda qué
+        evento escucha —**estado de un mensaje enviado** (enviado / entregado
+        / leído / falló / cancelado; falló por defecto), **contacto nuevo**,
+        **baja**, **conversación** (empezó / asignada / resuelta),
+        **calificación de la atención**, **clic en un enlace** y **formulario
+        de Whats** (enviado / confirmado)—, la conexión (o cualquiera), el
+        campo con el teléfono y qué hacer si no hay registro (crearlo, por
+        defecto en contacto nuevo y formulario, o no hacer nada). Reglas puras
+        en `packages/shared/src/schemas/whats-triggers.ts` (lectura tolerante,
+        eventos por tipo, coincidencia, resumen en palabras, variables) y el
+        guardado lo valida (`automationConfigIssues`).
+        (b) **Lectura de los avisos** (`apps/api/src/whatsapp/whats-events.ts`,
+        puro): la documentación sólo trae ejemplos de mensajes; el resto se lee
+        con tolerancia (SUPUESTO marcado) y todo el objeto queda como
+        `{{payload.…}}`. Grupos y otros canales se ignoran. Variables
+        `{{whatsapp.estado|motivo|mensaje_id|correo|conversacion_id|
+        asignado_a|estado_conversacion|calificacion|comentario|enlace|
+        formulario|contacto_id}}` (el motivo de una falla en palabras).
+        (c) **El registro**: el que mandó el mensaje (si es de la lista,
+        `wa:out:*` 7 días), si no por teléfono con y sin indicativo
+        (`findAllByPhone` suma el número nacional); varios → el vinculado al
+        contacto en `whatsapp_contacts`, si ninguno la corrida **falla con los
+        ids**; sin registro, se crea (título, teléfono y primer correo) o queda
+        **cancelada** con el motivo. Un aviso con sólo `contact_id` pide el
+        teléfono a Whats (`GET /contacts/{id}`, `contacts.view`, 30 días en
+        Redis); sin el permiso, cancelada y el editor lo avisa.
+        (d) **Suscripción según uso**: `needsInTx` suma los eventos de las
+        automatizaciones activas y guardar/pausar/borrar re-ajusta el aviso en
+        Whats (`AutomationDispatcher.onAutomationsChanged`, espera de 1,5 s por
+        empresa); «Qué recibe la app» lista los avisos para automatizaciones.
+        (e) **Corrida**: job `whats-event` con turnos por empresa
+        (`dispatchWhatsEvent`), dedup por automatización y huella del evento,
+        `AutomationEngine.runWhatsEvent` con el registro, los filtros del
+        disparador, solo-lectura y plan.
+        (f) Editor `WhatsEventTriggerConfig` (evento, sub-opciones, conexión,
+        campo, si falta, variables) y resumen («Cuando un mensaje de Whats
+        falla»); asistente/MCP con `whats_event` (`phone_field` por slug).
+        (g) **De paso**: «Cuando llega un mensaje de WhatsApp» perdía la
+        conexión elegida al guardar (`cleanTriggerConfig`); `{{whatsapp.archivo}}`
+        en mensajes con archivo; y aviso si el número tiene apagado **Recibir
+        mensajes** en Whats (`receive_inbound_enabled`, al conectar y en la
+        página de la conexión). El Whats simulado suma `/__event` (cualquier
+        aviso firmado), `GET /contacts/{id}` y `receive_inbound_enabled`.
+        Ayuda: guía de WhatsApp, Aprende → Integraciones (disparador, qué
+        registro usa, avisos según uso) y novedad con carrusel. Tests:
+        `whats-triggers.test.ts` (6) en shared, 6 nuevos y uno extendido en
+        `whatsapp-web.spec` (20/20), 2 de `cleanTriggerConfig` — shared 861,
+        front 855, suites relacionadas 186/186 — + E2E navegador 28/28 contra
+        el Whats simulado (escritorio y celular oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

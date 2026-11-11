@@ -293,6 +293,14 @@ function WebAccountSection({ d, web }: { d: WhatsappConnectionDetail; web: NonNu
                     {web.account_error ?? __('No se pudo leer el número en Whats.')}
                 </p>
             )}
+            {a?.receive_inbound === false && (
+                <p className="imcrm-mt-3 imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-sm imcrm-text-amber-700 dark:imcrm-text-amber-400" data-testid="imcrm-whatsapp-account-no-inbound">
+                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
+                    {d.config.inbound_list_id
+                        ? __('Este número tiene apagado «Recibir mensajes» en Whats: los mensajes que te escriben no llegan, así que la lista elegida y las automatizaciones «Cuando llega un mensaje de WhatsApp» no se van a activar. Actívalo en la configuración del número en tu panel de Whats.')
+                        : __('Este número tiene apagado «Recibir mensajes» en Whats: los mensajes que te escriben no llegan a la app. Si los necesitas, actívalo en la configuración del número en tu panel de Whats.')}
+                </p>
+            )}
             {down && (
                 <p className="imcrm-mt-3 imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-sm imcrm-text-amber-700 dark:imcrm-text-amber-400" data-testid="imcrm-whatsapp-account-down">
                     <AlertTriangle className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
@@ -476,10 +484,19 @@ function ListeningInfo({ d }: { d: WhatsappConnectionDetail }): JSX.Element {
                     'imcrm-whatsapp-listen-statuses',
                 )}
                 {row(true, __('Fallas:'), __('siempre: un mensaje que no salió se marca y, si es de la conexión, aparece en Problemas.'), 'imcrm-whatsapp-listen-failures')}
+                {web &&
+                    row(
+                        (l.triggers ?? []).length > 0,
+                        __('Avisos para automatizaciones:'),
+                        (l.triggers ?? []).length > 0
+                            ? `${(l.triggers ?? []).map((t) => (t.count > 1 ? `${t.label} (${t.count})` : t.label)).join('; ')}.`
+                            : __('ninguno. Una automatización «Cuando pasa algo en Whats» (un contacto nuevo, una conversación, una calificación…) los activa sola.'),
+                        'imcrm-whatsapp-listen-triggers',
+                    )}
             </ul>
             <p className="imcrm-mt-2 imcrm-text-xs imcrm-text-muted-foreground">
                 {web
-                    ? __('Whats manda sólo estos avisos: así la app no procesa lo que no usas. Se ajusta solo cuando eliges una lista o preparas columnas.')
+                    ? __('Whats manda sólo estos avisos: así la app no procesa lo que no usas. Se ajusta solo cuando eliges una lista, preparas columnas o guardas una automatización.')
                     : __('Meta manda todos los avisos; la app descarta al instante los que nada usa.')}
             </p>
         </div>

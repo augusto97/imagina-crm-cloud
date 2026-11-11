@@ -50,6 +50,9 @@ import {
     readWaitConfig,
     resolveTitleFieldId,
     readWebhookRecordConfig,
+    WHATS_EVENT_TRIGGER,
+    readWhatsTriggerConfig,
+    describeWhatsTrigger,
     type WebhookRecordConfig,
     mirrorCellAccess,
     mirrorFieldMap,
@@ -138,6 +141,7 @@ import {
     type EventRunRef,
     type FormEventInfo,
     type TriggerEvent,
+    type WhatsEventJob,
     watchedSlugs,
 } from './automation-dispatcher.service';
 import { evaluateCondition, explainCondition, type ConditionOptions } from './condition-evaluator';
@@ -944,6 +948,46 @@ export class AutomationEngine {
         await this.runOne(ctx, auto, { preLog });
     }
 
+    /**
+     * v0.1.402 — «Cuando pasa algo en Whats»: el servicio de WhatsApp ya
+     * encontró (o creó) el registro por teléfono en la lista de la
+     * automatización. Corre sobre él con `{{whatsapp.x}}` y `{{payload.x}}`;
+     * con `stop` (no hay registro, o hay varios y no se puede elegir) la corrida
+     * queda con el motivo, sin acciones.
+     */
+    async runWhatsEvent(job: WhatsEventJob): Promise<number | null> {
+        const prep = await this.tenantDb.withTenant(job.tenantId, async (tx) => {
+            // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
+            if ((await tenantIsReadOnly(tx, job.tenantId)) || (await planModuleOff(tx, job.tenantId, 'automations'))) return null;
+            const auto = await this.automations.findById(tx, job.tenantId, job.automationId);
+            if (!auto || !auto.isActive || auto.triggerType !== WHATS_EVENT_TRIGGER || auto.listId !== job.listId) return null;
+            const maps = await this.fieldMaps(tx, job.tenantId, auto.listId);
+            const row = job.recordId !== null ? await this.recordsRepo.findById(tx, job.tenantId, auto.listId, job.recordId) : null;
+            return { auto, maps, row };
+        });
+        if (!prep) return null;
+        const { auto, maps, row } = prep;
+        const ctx: RunContext = {
+            tenantId: job.tenantId,
+            listId: auto.listId,
+            recordId: row ? row.id : null,
+            data: row ? { ...(row.data as Record<string, unknown>) } : {},
+            ...maps,
+            whatsapp: job.whatsapp,
+            payload: job.payload,
+        };
+        const step = (status: ActionLogEntry['status'], message: string): ActionLogEntry => ({ action: 'whats_event', status, message, details: {} });
+        if (job.stop) {
+            return this.runOne(ctx, auto, { stop: { status: job.stop.status, log: [step(job.stop.status === 'cancelled' ? 'skipped' : 'failed', job.stop.message)] } });
+        }
+        if (job.recordId !== null && !row) {
+            return this.runOne(ctx, auto, { stop: { status: 'cancelled', log: [step('skipped', 'El registro se borró antes de que corriera la automatización.')] } });
+        }
+        if (ctx.recordId !== null) ctx.data = { ...ctx.data, ...(await this.derivedData(job.tenantId, auto.listId, ctx.recordId, maps)) };
+        if (!evaluateCondition(auto.triggerConfig.field_filters as ConditionData | undefined, this.accessor(ctx), this.condOpts(ctx))) return null;
+        return this.runOne(ctx, auto, job.note ? { preLog: [step('success', job.note)] } : {});
+    }
+
     /** v0.1.399 — busca el registro del webhook (ver `lookupWebhookRecord`). */
     private async lookupWebhook(tx: Tx, tenantId: number, listId: number, rc: WebhookRecordConfig, payload: Record<string, unknown>): Promise<WebhookLookup> {
         const fieldRows = await this.fields.listByList(tx, tenantId, listId);
@@ -1506,6 +1550,13 @@ export class AutomationEngine {
             case 'whatsapp_message_received':
                 notes.push('En la prueba no llegó un mensaje real: las variables {{whatsapp.x}} quedan vacías.');
                 break;
+            case WHATS_EVENT_TRIGGER: {
+                // v0.1.402 — «Cuando pasa algo en Whats».
+                const wc = readWhatsTriggerConfig(cfg);
+                if (!wc) reasons.push('falta elegir qué evento de Whats la dispara');
+                else notes.push(`${describeWhatsTrigger(wc)}: en la prueba no llegó un aviso real, así que {{whatsapp.x}} y {{payload.x}} quedan vacías.`);
+                break;
+            }
             case 'form_submitted':
                 notes.push('Se asume que este registro llegó por el formulario.');
                 break;

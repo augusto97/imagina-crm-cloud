@@ -80,6 +80,7 @@ import { ActionTypeSelect } from './ActionTypeSelect';
 import { AutomationTestPanel } from './AutomationTestPanel';
 import { AutomationVersionsSheet, versionHasSecrets } from './AutomationVersionsSheet';
 import { AutomationFlowContext, StepScope, type AutomationFlowValue } from './flowContext';
+import { TriggerOptions } from './TriggerOptions';
 
 // El lienzo visual (vista n8n/Make) se carga bajo demanda — la mayoría
 // de automatizaciones simples se editan en el flujo vertical.
@@ -785,11 +786,7 @@ function EditorBody({
                                 }
                                 aria-label={__('Disparador')}
                             >
-                                {triggers.map((t) => (
-                                    <option key={t.slug} value={t.slug}>
-                                        {t.label}
-                                    </option>
-                                ))}
+                                <TriggerOptions triggers={triggers} />
                             </Select>
                             {helpForTrigger(state.triggerType) !== '' && (
                                 <p className="imcrm-rounded-lg imcrm-border imcrm-border-info/20 imcrm-bg-info/5 imcrm-p-3 imcrm-text-[12px] imcrm-leading-relaxed imcrm-text-foreground">

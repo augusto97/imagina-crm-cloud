@@ -20,6 +20,7 @@ import {
     waWebAbilityLabel,
     waWebAccountOption,
     waWebAccountStatusLabel,
+    WA_WEB_NO_INBOUND_TEXT,
     waWebAccountsRequest,
     waWebCreds,
     waWebErrorText,
@@ -135,6 +136,7 @@ export async function verifyWhatsappWeb(creds: IntegrationCreds): Promise<Verify
             if (!chosen.enabled || chosen.status !== 'connected') {
                 warnings.push(`El número está «${waWebAccountStatusLabel(chosen)}»: los mensajes no van a salir hasta que vuelva a estar conectado en tu panel de WhatsApp.`);
             }
+            if (chosen.receiveInbound === false) warnings.push(WA_WEB_NO_INBOUND_TEXT);
         } else if (me.workspace) {
             out.label = me.workspace;
         }

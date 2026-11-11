@@ -48,6 +48,7 @@ import {
 import { LoopItemProvider, StepScope } from './flowContext';
 import { ActionTypeSelect } from './ActionTypeSelect';
 import { actionTitle } from './actionTypeOptions';
+import { TriggerOptions } from './TriggerOptions';
 
 /**
  * Lienzo visual del editor de automatizaciones (v0.1.91) — vista tipo
@@ -753,11 +754,7 @@ export function AutomationCanvas({
                                     onChange={(e) => onTriggerTypeChange(e.target.value)}
                                     aria-label={__('Disparador')}
                                 >
-                                    {triggers.map((t) => (
-                                        <option key={t.slug} value={t.slug}>
-                                            {t.label}
-                                        </option>
-                                    ))}
+                                    <TriggerOptions triggers={triggers} />
                                 </Select>
                                 {helpForTrigger(triggerType) !== '' && (
                                     <p className="imcrm-rounded-lg imcrm-border imcrm-border-info/20 imcrm-bg-info/5 imcrm-p-3 imcrm-text-[12px] imcrm-leading-relaxed">
