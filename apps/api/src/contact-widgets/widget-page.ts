@@ -110,7 +110,7 @@ a{color:inherit}
 .w-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#98a2b3}
 .w-spin{width:26px;height:26px;border-radius:999px;border:3px solid #e4e7ec;border-top-color:var(--w-accent);animation:w-rot .8s linear infinite}
 .w-note{margin:12px 2px 0;font-size:12px;color:#667085;text-align:center}
-.w-full .w-root{inset:0;bottom:0;right:0;left:0;gap:0}
+.w-full .w-root{top:0!important;right:0!important;bottom:0!important;left:0!important;gap:0}
 .w-full .w-panel{width:100%;height:100%;max-height:100%;border-radius:0;box-shadow:none;animation:none}
 .w-full .w-launcher{display:none}
 .w-bar{position:fixed;left:0;right:0;bottom:0;display:flex;background:#fff;border-top:1px solid #e4e7ec;box-shadow:0 -6px 18px rgba(15,23,42,.08);padding-bottom:env(safe-area-inset-bottom)}

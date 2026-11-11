@@ -66,7 +66,7 @@ function StatsBody({ data, config }: { data: WidgetStatsDto; config: ContactWidg
     };
     return (
         <>
-            <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-3" data-testid="widget-stats-kpis">
+            <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-3 lg:imcrm-grid-cols-4" data-testid="widget-stats-kpis">
                 <StatTile icon={Eye} label={__('Apariciones')} value={formatNumber(data.views)} hint={__('Páginas donde se vio')} />
                 <StatTile icon={PanelTopOpen} label={__('Lo abrieron')} value={formatNumber(data.opens)} hint={`${widgetRate(data.opens, data.views)} ${__('de las apariciones')}`} />
                 <StatTile icon={MousePointerClick} label={__('Toques en botones')} value={formatNumber(data.clicks)} />

@@ -2541,4 +2541,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.408-editor-del-widget',
+        version: '0.1.408',
+        date: '2026-11-11',
+        kind: 'improvement',
+        title: 'El editor del widget de contacto, renovado',
+        summary:
+            'El widget de tu sitio se arma ahora a pantalla completa, como los formularios y la agenda: las secciones a la izquierda con cómo está cada una, lo que editas al centro y la vista previa grande a la derecha.',
+        media: {
+            slides: [
+                {
+                    title: 'Cada sección dice cómo está',
+                    text: 'Botones, Apariencia, Horario, Dónde aparece, Saludo e Instalar: en el menú ves de un vistazo qué botones tiene, de qué lado va o si saluda, y un punto rojo donde falta algo.',
+                    illustration: 'widget-contacto',
+                },
+                {
+                    title: 'Elige viendo',
+                    text: 'El panel tipo chat o los botones apilados, el lado de la pantalla y el color se eligen con un dibujo de cómo queda. La vista previa es el widget de verdad, también en el celular.',
+                    illustration: 'widget-horario',
+                },
+                {
+                    title: 'Instalar en tres pasos',
+                    text: 'En Instalar lo publicas, copias el código y eliges en qué sitios puede aparecer. Si algo falta, tócalo y te lleva a arreglarlo.',
+                    illustration: 'embed-popup',
+                },
+            ],
+        },
+        body: 'Ve a **Ajustes → Widget de contacto** y abre uno. Guarda con **Guardar** o Ctrl+S; las **Estadísticas** están arriba, junto a **Editar**.',
+        action: { label: 'Ver mis widgets', href: '/settings?s=widgets' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

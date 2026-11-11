@@ -415,8 +415,11 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.407**
-(**arrastrar en la vista previa** —mover y cambiar el ancho de las preguntas—,
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.408**
+(**el editor del widget de contacto rediseñado** con el kit de los
+constructores — pantalla completa, menú de secciones con su estado, vista previa
+que ya no cae a «celular» en el escritorio, «Instalar» con lo que falta; addendum
+de ADR-S99). Antes v0.1.407 (**arrastrar en la vista previa** —mover y cambiar el ancho de las preguntas—,
 **Estructura por bloques** con su zona y lo oculto al pie, **color de la
 tarjeta** en su panel, **fondo para ver en el editor** publicable o no, y el
 texto de ejemplo vacío queda vacío; addendum de ADR-S94). Antes v0.1.406
@@ -1860,6 +1863,17 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-11 · v0.1.408** — **El editor del widget de contacto, rediseñado**
+  (pedido del usuario con captura: "esta interfaz del widget de contacto no está
+  casi bonita ni pulida, mejora esa interfaz… hablo del editor también"). Usa el
+  MISMO kit que formularios y agenda: pantalla completa, menú de secciones por
+  grupos con su estado en palabras (Botones, Apariencia, Horario, Dónde aparece,
+  Saludo, Instalar), panel con nombre y vista previa a todo el alto en Computador
+  o Celular. Lo que falta para publicar lleva a su sección. Bugs de la vista
+  previa: en el escritorio se armaba como en un celular (la columna medía menos
+  de 640 px), «Cerrado» dejaba el panel abierto y en pantalla completa quedaba
+  una franja del sitio. Detalle en `CLAUDE.md` §5 y el addendum v0.1.408 de
+  ADR-S99. No hay escenario de capturas del widget: nada que regrabar.
 - **2026-11-11 · v0.1.407** — **Arrastrar en la vista previa + Estructura por
   bloques + color de la tarjeta + fondo del editor** (cuatro reportes del
   usuario mirando la v0.1.406: "el campo de correo sigue teniendo un texto de

@@ -1427,10 +1427,10 @@ export const articles: LearnArticle[] = [
                 t: 'steps',
                 items: [
                     'Ve a **Ajustes → Widget de contacto** y toca **Nuevo widget**. Escribe tu número de WhatsApp y, si quieres, elige un formulario: el widget nace con esos botones.',
-                    'En la pestaña **Botones** agrega lo que quieras ofrecer (hasta 8): WhatsApp, un formulario, tu agenda, llamar, correo o un enlace. Ordénalos con las flechas.',
+                    'El editor se abre a pantalla completa: las secciones a la izquierda, la elegida al centro y la vista previa a la derecha. En **Botones** agrega lo que quieras ofrecer (hasta 8): WhatsApp, un formulario, tu agenda, llamar, correo o un enlace. Ordénalos con las flechas.',
                     'En **Apariencia** elige si al tocar el botón se abre un **panel tipo chat** (con un saludo) o los **botones apilados**, el lado de la pantalla, el color y el texto del botón.',
                     'A la derecha ves el widget de verdad sobre una página de ejemplo, en computador o celular. Puedes tocar los botones: un formulario o la agenda se abren de prueba y no se guarda nada.',
-                    'Toca **Guardar**. En **Publicar** enciende **Publicado** y copia el **código para tu sitio**.',
+                    'Toca **Guardar** (o Ctrl+S). En **Instalar** enciende **Publicado** y copia el **código para tu sitio**.',
                 ],
             },
             {
@@ -1498,7 +1498,7 @@ export const articles: LearnArticle[] = [
             { t: 'anim', key: 'widget-horario', caption: 'En horario se ve «En línea» y el WhatsApp; fuera de horario, el aviso con cuándo vuelven a atender y el formulario.' },
             {
                 t: 'p',
-                md: 'En la pestaña **Horario** enciende **Usar un horario de atención** y marca los días y horas en que se atiende. El panel dice **En línea** o **Fuera de horario** y, fuera de horario, tu mensaje con **cuándo vuelven a atender** («Abrimos mañana a las 8:00 a. m.»), en la hora de la persona que visita tu sitio.',
+                md: 'En la sección **Horario** enciende **Usar un horario de atención** y marca los días y horas en que se atiende. El panel dice **En línea** o **Fuera de horario** y, fuera de horario, tu mensaje con **cuándo vuelven a atender** («Abrimos mañana a las 8:00 a. m.»), en la hora de la persona que visita tu sitio.',
             },
             {
                 t: 'settings',
@@ -1506,13 +1506,13 @@ export const articles: LearnArticle[] = [
                     { name: 'Días y horas', what: 'Uno o varios tramos por día (por ejemplo, de 8 a 12 y de 2 a 6).' },
                     { name: 'Zona horaria', what: 'La de tu empresa, salvo que elijas otra.' },
                     { name: 'Festivos', what: 'Los festivos de un país se ven como fuera de horario. Salen del calendario oficial y se actualizan solos.' },
-                    { name: 'Cuándo se ve cada botón', what: 'En la pestaña **Botones**, cada uno elige: **Siempre**, **Sólo en horario** (WhatsApp, llamar) o **Sólo fuera de horario** (un formulario para que te dejen un mensaje).', tip: 'En la vista previa, toca «En horario» o «Fuera de horario» para ver cada caso.' },
+                    { name: 'Cuándo se ve cada botón', what: 'En **Botones**, al abrir cada uno, elige: **Siempre**, **Sólo en horario** (WhatsApp, llamar) o **Sólo fuera de horario** (un formulario para que te dejen un mensaje).', tip: 'En la vista previa, toca «En horario» o «Fuera de horario» para ver cada caso.' },
                 ],
             },
             { t: 'h', text: 'Dónde aparece y el saludo' },
             {
                 t: 'p',
-                md: 'Pega el código **una sola vez** en todo tu sitio y elige en la pestaña **Dónde aparece** en qué páginas se ve: en todas, **sólo en las que contienen** ciertas palabras en la dirección (por ejemplo, «planes, cotizacion») o **en todas menos** algunas (como el pago). También puedes mostrarlo sólo en el celular o sólo en el computador, y hacer que aparezca a los segundos o cuando la persona baja por la página: así no tapa nada apenas entra.',
+                md: 'Pega el código **una sola vez** en todo tu sitio y elige en la sección **Dónde aparece** en qué páginas se ve: en todas, **sólo en las que contienen** ciertas palabras en la dirección (por ejemplo, «planes, cotizacion») o **en todas menos** algunas (como el pago). También puedes mostrarlo sólo en el celular o sólo en el computador, y hacer que aparezca a los segundos o cuando la persona baja por la página: así no tapa nada apenas entra.',
             },
             {
                 t: 'settings',
@@ -1523,7 +1523,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Aparece al bajar (%)', what: 'Cuánto tiene que bajar la persona por la página. 0 = no hace falta.' },
                     {
                         name: 'Saludar antes de que abran el widget',
-                        what: 'Un mensaje junto al botón («¿Dudas con los planes?») a los segundos que elijas, con un texto distinto por página si quieres. Tocarlo abre el widget; si lo cierran, no vuelve en esa visita.',
+                        what: 'En su propia sección, **Saludo**: un mensaje junto al botón («¿Dudas con los planes?») a los segundos que elijas, con un texto distinto por página si quieres. Tocarlo abre el widget; si lo cierran, no vuelve en esa visita.',
                         tip: 'Con el saludo encendido, la vista previa se muestra cerrada para que lo veas.',
                     },
                 ],
@@ -1531,7 +1531,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Estadísticas' },
             {
                 t: 'p',
-                md: 'La pestaña **Estadísticas** muestra, por día y en los últimos 7, 30 o 90 días, cuántas veces **apareció** el widget, cuántas lo **abrieron**, los **toques** de cada botón y los **contactos**: quienes dejaron sus datos en el formulario o agendaron desde ese botón. También cuántas veces se vio y se tocó el saludo, y si vienen del celular o del computador. Son conteos: no se guarda nada de cada persona.',
+                md: '**Estadísticas** (arriba, junto a «Editar») muestra, por día y en los últimos 7, 30 o 90 días, cuántas veces **apareció** el widget, cuántas lo **abrieron**, los **toques** de cada botón y los **contactos**: quienes dejaron sus datos en el formulario o agendaron desde ese botón. También cuántas veces se vio y se tocó el saludo, y si vienen del celular o del computador. Son conteos: no se guarda nada de cada persona.',
             },
             {
                 t: 'callout',
@@ -1545,7 +1545,7 @@ export const articles: LearnArticle[] = [
                     { q: '¿Se pone lento mi sitio?', a: 'No. El código carga el widget cuando la página termina de cargar y sólo trae un botón chico; los formularios y la agenda se cargan cuando alguien los abre.' },
                     { q: '¿Puedo tener varios widgets?', a: 'Sí, por ejemplo uno para tu sitio y otro para tu tienda, con botones distintos. Cada uno tiene su propio código.' },
                     { q: '¿Y si lo despublico?', a: 'El código pegado deja de mostrar el botón (no sale ningún cartel en tu sitio). Lo vuelves a publicar cuando quieras, sin cambiar el código.' },
-                    { q: '¿Puedo limitarlo a mi sitio?', a: 'Sí: en **Publicar → Sólo en estos sitios** escribe tus dominios. Fuera de ellos, el widget no se muestra.' },
+                    { q: '¿Puedo limitarlo a mi sitio?', a: 'Sí: en **Instalar → Sitios donde puede aparecer** escribe tus dominios. Fuera de ellos, el widget no se muestra.' },
                     { q: '¿Cuenta un contacto de WhatsApp directo?', a: 'Se cuenta el toque en el botón; la conversación sigue en WhatsApp. Si quieres que quede como contacto, enciende **Pedir sus datos antes de abrir WhatsApp**.' },
                     { q: '¿Qué pasa si una persona sale del equipo?', a: 'Su número sigue atendiendo hasta que la quites del botón, pero los registros dejan de asignársele.' },
                 ],

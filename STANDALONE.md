@@ -8537,6 +8537,40 @@ entregas y la idea D7).**
    empresa (se avisa) y se borran con ella. Pestaña **Estadísticas** del
    editor (`GET /contact-widgets/:id/stats?days=7|30|90`).
 
+**Addendum v0.1.408 — el editor del widget con el kit de los constructores.**
+Pedido del usuario: «la interfaz del widget de contacto no está casi bonita ni
+pulida… hablo del editor también». El editor era una página dentro de Ajustes
+con una tira de siete pestañas y la vista previa angosta al lado; ahora usa el
+MISMO kit que formularios y agenda (ADR-S94, `admin/builder/BuilderShell.tsx`)
+para que los tres se manejen igual:
+
+1. **Pantalla completa** con barra superior (cerrar, nombre editable, modos
+   Editar / Estadísticas, tema, publicar como interruptor, «Instalar» y
+   Guardar con Ctrl+S) y tres columnas: el **menú de secciones** por grupos con
+   el estado de cada una en palabras (`widgetSectionSummary`, puro: «WhatsApp,
+   Cotiza y 1 más», «Atiendes lun a vie», «Sólo algunas páginas · sólo
+   celular»), el **panel** de la sección y la **vista previa** a todo el alto.
+   Secciones: Botones, Apariencia, Horario, Dónde aparece, Saludo e Instalar
+   (`?t=` las enlaza; `stats` abre las estadísticas). Bajo 1280 px el menú
+   pasa a un riel de íconos; en el celular, índice → sección con «‹ Widget» y
+   barra de abajo Editar · Vista previa · Estadísticas.
+2. **Lo que falta para publicar va a su lugar**: cada problema de
+   `widgetProblems` se lleva a la sección (y al botón) donde se arregla
+   (`problemSection`), con punto rojo en el menú; publicar con problemas abre
+   Instalar con la lista.
+3. **La vista previa ya no cae a «celular» en el escritorio**: el widget decide
+   el modo por el ancho del host y la columna de la vista previa mide menos de
+   640 px, así que el panel tapaba todo; en «Computador» se le informa un host
+   de al menos 1024 px. Dos bugs de la página del widget que salieron en la
+   prueba: con «Cerrado» elegido el panel seguía abierto (el mensaje de vista
+   previa sólo abría: `open` sobrevivía a `build()`), y en pantalla completa
+   (celular) los desplazamientos en línea le ganaban al `inset:0` y dejaban
+   una franja del sitio a la vista (también unos px en un teléfono real con el
+   widget insertado).
+
+Sin cambios de modelo ni de API; las piezas comunes (`CodeBlock`,
+`DomainChips`) se exportan desde Compartir y se reusan en Instalar.
+
 ### ADR-S100 — Auditoría de seguridad III: referencias a archivos, credenciales atadas a su origen y sesiones atadas a su dominio (v0.1.404)
 
 **Contexto.** Auditoría integral pedida por el usuario (interno, integraciones,

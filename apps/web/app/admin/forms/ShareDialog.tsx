@@ -422,11 +422,13 @@ function DomainsSection({ kind, domains, testId }: { kind: 'form' | 'booking'; d
 }
 
 /** Un sitio por etiqueta: se agrega con Enter, coma o espacio; Retroceso borra el último. */
-function DomainChips({ value, onChange, testId }: { value: string[]; onChange: (v: string[]) => void; testId: string }): JSX.Element {
+export function DomainChips({ value, onChange, testId, autoFocus = true, max = 50 }: { value: string[]; onChange: (v: string[]) => void; testId: string; autoFocus?: boolean; max?: number }): JSX.Element {
     const [draft, setDraft] = useState('');
     const [error, setError] = useState<string | null>(null);
     const input = useRef<HTMLInputElement>(null);
-    useEffect(() => input.current?.focus(), []);
+    useEffect(() => {
+        if (autoFocus) input.current?.focus();
+    }, [autoFocus]);
     const add = (raw: string): void => {
         const parts = raw.split(/[\s,;]+/).filter(Boolean);
         if (parts.length === 0) {
@@ -440,7 +442,7 @@ function DomainChips({ value, onChange, testId }: { value: string[]; onChange: (
             if (!d) bad.push(p);
             else if (!next.includes(d)) next.push(d);
         }
-        if (next.length !== value.length) onChange(next.slice(0, 50));
+        if (next.length !== value.length) onChange(next.slice(0, max));
         setDraft(bad.join(' '));
         setError(bad.length ? __('«%s» no parece un sitio: escribe algo como tusitio.com.').replace('%s', bad[0]!) : null);
     };

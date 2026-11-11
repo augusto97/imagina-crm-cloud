@@ -378,7 +378,7 @@ const TOKEN_COLOR: Record<CodeToken['kind'], string> = {
 };
 
 /** El código completo, coloreado y legible (en los dos temas va sobre fondo oscuro). */
-function CodeBlock({ code, testId }: { code: string; testId: string }): JSX.Element {
+export function CodeBlock({ code, testId }: { code: string; testId: string }): JSX.Element {
     return (
         <pre
             className="imcrm-max-h-44 imcrm-overflow-auto imcrm-whitespace-pre-wrap imcrm-break-all imcrm-rounded-lg imcrm-px-3 imcrm-py-2.5 imcrm-font-mono imcrm-text-[11.5px] imcrm-leading-relaxed"
