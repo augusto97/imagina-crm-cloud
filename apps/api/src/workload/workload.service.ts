@@ -26,7 +26,8 @@ import {
     type WorkloadPerson,
     type WorkloadZoom,
 } from '@imagina-base/shared';
-import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
+import { memberNames } from '../tenancy/member-names';
 import { AuditService } from '../audit/audit.service';
 import { can } from '../authz/can';
 import type { Tx } from '../db/client';
@@ -194,7 +195,7 @@ export class WorkloadService {
             for (const it of raw.items) if (it.person !== WORKLOAD_UNASSIGNED) presentIds.add(Number(it.person));
             for (const k of Object.keys(unscheduled)) if (k !== WORKLOAD_UNASSIGNED) presentIds.add(Number(k));
             const outsiders = [...presentIds].filter((id) => !memberById.get(id)?.canView);
-            const outsiderNames = await this.userNames(tx, outsiders.filter((id) => !memberById.has(id)));
+            const outsiderNames = await this.userNames(tx, tenantId, outsiders.filter((id) => !memberById.has(id)));
             let wanted = q.userIds ? new Set(q.userIds) : null;
             if (q.teamId) {
                 const known = this.teams ? await this.teams.infos(tx, tenantId, [q.teamId]) : new Map();
@@ -352,10 +353,10 @@ export class WorkloadService {
     }
 
     /** Nombres de quienes tienen registros asignados sin ser (ya) del equipo. */
-    private async userNames(tx: Tx, ids: number[]): Promise<Map<number, { name: string; email: string }>> {
-        if (ids.length === 0) return new Map();
-        const rows = await tx.select({ id: users.id, name: users.name, email: users.email }).from(users).where(inArray(users.id, ids.slice(0, 500)));
-        return new Map(rows.map((r) => [r.id, { name: r.name?.trim() ? r.name : r.email, email: r.email }]));
+    private async userNames(tx: Tx, tenantId: number, ids: number[]): Promise<Map<number, { name: string; email: string }>> {
+        // SEC — sólo personas de ESTA empresa (el id sale de los datos de un registro).
+        const found = await memberNames(tx, tenantId, ids);
+        return new Map([...found].map(([id, r]) => [id, { name: r.name.trim() ? r.name : r.email, email: r.email }]));
     }
 
     /** Las personas que pueden ver la lista, con su capacidad (el diálogo de la vista). */

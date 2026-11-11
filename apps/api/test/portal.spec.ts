@@ -333,6 +333,35 @@ describe('PortalService (Postgres + Redis reales)', () => {
         );
     });
 
+    it('SEC — la plantilla anterior no deja al cliente escribir archivos, personas ni equipos (ids de la empresa)', async () => {
+        const uid = await clientSession('legacy-file@acme.test');
+        const adjunto = await fieldsService.create(tenantId, 'clientes', { label: 'Adjunto', type: 'file', slug: 'adjunto' });
+        const persona = await fieldsService.create(tenantId, 'clientes', { label: 'Asesor', type: 'user', slug: 'asesor' });
+        await listsService.update(tenantId, 'clientes', {
+            settings: {
+                portal_template: {
+                    blocks: [{ type: 'editable_form', config: { editable_field_slugs: ['adjunto', 'asesor', 'nombre'] } }],
+                },
+            },
+        });
+        // Un id cualquiera de adjunto / de usuario: antes se guardaba y `me` lo firmaba.
+        await expect(portal.updateMe(actor(uid), { fields: { adjunto: [1] } })).rejects.toMatchObject({ response: { code: 'portal_field_forbidden' } });
+        await expect(portal.updateMe(actor(uid), { fields: { asesor: 1 } })).rejects.toMatchObject({ response: { code: 'portal_field_forbidden' } });
+        const boot = await portal.me(actor(uid));
+        expect(boot.editable_field_ids).not.toContain(adjunto.id);
+        expect(boot.editable_field_ids).not.toContain(persona.id);
+        expect(boot.editable_field_ids).toContain(fieldId);
+        expect(boot.record.data[`f${adjunto.id}`] ?? null).toBeNull();
+        // El texto de la misma plantilla se sigue editando.
+        await portal.updateMe(actor(uid), { fields: { nombre: 'ACME Legacy' } });
+        expect((await portal.me(actor(uid))).record.data[`f${fieldId}`]).toBe('ACME Legacy');
+        // Como lo dejó el caso anterior (los siguientes leen ese estado).
+        await portal.updateMe(actor(uid), { fields: { nombre: 'ACME Renovada' } });
+        await listsService.update(tenantId, 'clientes', {
+            settings: { portal_template: { blocks: [{ type: 'editable_form', config: { editable_field_slugs: ['cupo'] } }] } },
+        });
+    });
+
     it('las listas vinculadas sólo se leen por el diseño (no hay endpoint para leer cualquier lista)', async () => {
         // v0.1.286 — `/portal/lists/:slug/records` y `/aggregates` aceptaban
         // CUALQUIER lista de la empresa y devolvían todas sus columnas. Se

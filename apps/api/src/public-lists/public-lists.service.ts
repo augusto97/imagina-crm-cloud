@@ -21,8 +21,9 @@ import {
     type UpdatePublicListInput,
 } from '@imagina-base/shared';
 import { and, asc, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import { memberNames } from '../tenancy/member-names';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { attachments, fields, lists, publicLists, records, savedViews, tenants, users } from '../db/schema';
+import { attachments, fields, lists, publicLists, records, savedViews, tenants } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
 import { compileFilterTree, fieldTypedExpr, type FilterableField } from '../records/query-builder';
 import { FilesService } from '../files/files.service';
@@ -437,8 +438,8 @@ export class PublicListsService {
         const fileIds = idsOf('file');
         const names = new Map<number, string>();
         if (userIds.length > 0) {
-            const found = await tx.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, userIds));
-            for (const u of found) names.set(u.id, (u.name ?? '').includes('@') ? '' : (u.name ?? ''));
+            // SEC — sólo personas de ESTA empresa (la página es pública y el id sale del registro).
+            for (const [id, u] of await memberNames(tx, tenantId, userIds)) names.set(id, u.name.includes('@') ? '' : u.name);
         }
         const filesById = new Map<number, string>();
         if (fileIds.length > 0) {

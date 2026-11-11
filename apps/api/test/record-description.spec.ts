@@ -1,5 +1,5 @@
 import { sanitizeRichDoc, type RichDoc } from '@imagina-base/shared';
-import { memberships, mentions, users } from '../src/db/schema';
+import { attachments, memberships, mentions, users } from '../src/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ActivityRepository } from '../src/activity/activity.repository';
@@ -410,12 +410,24 @@ describe('Descripción del registro (v0.1.133)', () => {
 
     it('los bloques de archivo e imagen conservan su referencia; sin ella se descartan', async () => {
         const rec = await create();
+        // Los adjuntos tienen que existir en la empresa (SEC: no se referencia un id cualquiera).
+        const [img, pdf] = await withTenant(pg.db, tenantId, (tx) =>
+            tx
+                .insert(attachments)
+                .values(['plano.png', 'contrato.pdf'].map((filename) => ({ tenantId, filename, mime: 'application/octet-stream', sizeBytes: 1, storageKey: `t${tenantId}/${filename}` })))
+                .returning(),
+        );
+        await expect(
+            recs.updateDescription(tenantId, admin, 'tareas', rec.id, {
+                description: { type: 'doc', content: [{ type: 'fileBlock', attrs: { fileId: 99999999, name: 'x' } }] } as RichDoc,
+            }),
+        ).rejects.toMatchObject({ response: { code: 'file_not_attachable' } });
         await recs.updateDescription(tenantId, admin, 'tareas', rec.id, {
             description: {
                 type: 'doc',
                 content: [
-                    { type: 'imageBlock', attrs: { fileId: 7, alt: 'Plano' } },
-                    { type: 'fileBlock', attrs: { fileId: 9, name: 'contrato.pdf', size: 2048 } },
+                    { type: 'imageBlock', attrs: { fileId: img!.id, alt: 'Plano' } },
+                    { type: 'fileBlock', attrs: { fileId: pdf!.id, name: 'contrato.pdf', size: 2048 } },
                     // Sin fileId ni src: no hay nada que resolver → fuera.
                     { type: 'imageBlock', attrs: { alt: 'huérfana' } },
                     // Una URL externa con esquema peligroso tampoco sobrevive.
@@ -425,7 +437,7 @@ describe('Descripción del registro (v0.1.133)', () => {
         });
         const stored = await recs.getDescription(tenantId, admin, 'tareas', rec.id);
         expect(stored?.content).toHaveLength(2);
-        expect(stored?.content?.[0]).toMatchObject({ type: 'imageBlock', attrs: { fileId: 7 } });
-        expect(stored?.content?.[1]).toMatchObject({ type: 'fileBlock', attrs: { fileId: 9 } });
+        expect(stored?.content?.[0]).toMatchObject({ type: 'imageBlock', attrs: { fileId: img!.id } });
+        expect(stored?.content?.[1]).toMatchObject({ type: 'fileBlock', attrs: { fileId: pdf!.id } });
     });
 });

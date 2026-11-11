@@ -23,6 +23,7 @@ import { ListsService } from '../lists/lists.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { BulkHistoryService, type BulkItemInput } from '../records/bulk-history.service';
 import { RecordsService, type Actor } from '../records/records.service';
+import { hiddenFieldsFor } from '../lists/list-acl';
 import { storeRuleError } from '../records/store-rule-check';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { parseCsv } from './csv-parser';
@@ -74,7 +75,7 @@ export class ImportUpdateService {
     ) {}
 
     async preview(tenantId: number, actor: Actor, listIdOrSlug: string, input: ImportUpdateInput): Promise<ImportUpdatePreview> {
-        const ctx = await this.context(tenantId, listIdOrSlug, input);
+        const ctx = await this.context(tenantId, actor, listIdOrSlug, input);
         const plans = await this.plan(tenantId, actor, ctx, input, 0, ctx.rows.length);
         const out: ImportUpdatePreview = {
             total_rows: ctx.rows.length,
@@ -113,7 +114,7 @@ export class ImportUpdateService {
     }
 
     async apply(tenantId: number, actor: Actor, listIdOrSlug: string, input: ImportUpdateInput): Promise<ImportUpdateResult> {
-        const ctx = await this.context(tenantId, listIdOrSlug, input);
+        const ctx = await this.context(tenantId, actor, listIdOrSlug, input);
         const from = Math.min(input.row_offset, ctx.rows.length);
         const to = Math.min(ctx.rows.length, from + (input.row_limit ?? IMPORT_UPDATE_CHUNK));
         // Opciones de select que el archivo trae y la lista no tiene: se agregan
@@ -124,7 +125,7 @@ export class ImportUpdateService {
         // desconocido queda como error de la fila.
         if (!ctx.store && from === 0 && can(actor, 'manage_fields')) {
             const expanded = await this.importer.expandSelectOptions(tenantId, ctx.list.id, ctx.rows, ctx.mapping, ctx.fields);
-            if (Object.keys(expanded).length > 0) ctx.fields = await this.importer.importableFields(tenantId, ctx.list.id);
+            if (Object.keys(expanded).length > 0) ctx.fields = await this.writableFields(tenantId, ctx.list, actor);
         }
         const plans = await this.plan(tenantId, actor, ctx, input, from, to);
         const result: ImportUpdateResult = { updated: 0, created: 0, unchanged: 0, unmatched: 0, failed: [], edit_id: input.edit_id ?? null };
@@ -197,7 +198,20 @@ export class ImportUpdateService {
 
     // ── Detalles ────────────────────────────────────────────────────────────
 
-    private async context(tenantId: number, listIdOrSlug: string, input: ImportUpdateInput) {
+    /**
+     * Los campos que ESTA persona puede actualizar desde un archivo: los que se
+     * escriben a mano, sin las columnas protegidas (SLA, cobros, suscripciones)
+     * y —SEC, auditoría 2026-11— sin los ocultos para su acceso en la lista
+     * (igual que el import): antes se podían mapear, emparejar por ellos y la
+     * vista previa mostraba su valor actual.
+     */
+    private async writableFields(tenantId: number, list: List, actor: Actor): Promise<Field[]> {
+        const managed = new Set(managedFieldIds(list.settings));
+        const hidden = actor.role === 'admin' ? new Set<string>() : hiddenFieldsFor(list.settings, actor);
+        return (await this.importer.importableFields(tenantId, list.id)).filter((f) => !managed.has(f.id) && !hidden.has(f.slug));
+    }
+
+    private async context(tenantId: number, actor: Actor, listIdOrSlug: string, input: ImportUpdateInput) {
         const list = await this.lists.get(tenantId, listIdOrSlug);
         // v0.1.333 — una lista de una tienda o de un sitio WordPress (lista espejo).
         const store = readMirrorListMarker(list.settings);
@@ -218,8 +232,7 @@ export class ImportUpdateService {
         const truncated = parsed.rows.length > IMPORT_UPDATE_MAX_ROWS;
         const rows = parsed.rows.slice(0, IMPORT_UPDATE_MAX_ROWS);
         // E5 + v0.1.383 — las columnas protegidas (SLA, cobros, suscripciones) no se escriben desde un archivo.
-        const managed = new Set(managedFieldIds(list.settings));
-        const fields = (await this.importer.importableFields(tenantId, list.id)).filter((f) => !managed.has(f.id));
+        const fields = await this.writableFields(tenantId, list, actor);
         const bySlug = new Map(fields.map((f) => [f.slug, f]));
 
         const matchCol = input.match.column_index;

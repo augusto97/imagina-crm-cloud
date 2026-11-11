@@ -72,6 +72,20 @@ export interface PressScope {
     readAs?: Actor;
 }
 
+/**
+ * SEC — El registro que vuelve a quien presionó. En el portal el registro se
+ * LEE completo (`readAs`) para evaluar el botón, pero al cliente sólo le vuelven
+ * los campos que su portal muestra, sin vínculos (antes volvía entero).
+ */
+function pressedRecordFor(record: RecordDto, scope: PressScope): RecordDto {
+    if (!scope.visibleFieldIds && !scope.readAs) return record;
+    const visible = scope.visibleFieldIds ?? new Set<number>();
+    const data: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(record.data)) if (visible.has(Number(k.slice(1)))) data[k] = v;
+    const { formula_errors: _errors, ...rest } = record;
+    return { ...rest, data, relations: {} };
+}
+
 /** El estado de un botón para presionar: lista, campo, config y registro. */
 interface Prepared {
     list: List;
@@ -328,7 +342,7 @@ export class ButtonsService {
             ok,
             message: ok ? `Listo: «${prep.label}».` : `«${prep.label}» no terminó. ${failed ?? ''}`.trim(),
             actions: results,
-            record: changed ? (current as unknown as Record<string, unknown>) : null,
+            record: changed ? (pressedRecordFor(current, scope) as unknown as Record<string, unknown>) : null,
         };
     }
 
@@ -362,8 +376,11 @@ export class ButtonsService {
                     const fresh = { ...record, data: { ...record.data, ...patch } };
                     return { result: { type: 'update_fields', ok: true, changed: labels }, record: fresh };
                 }
+                // `serverDecided`: qué campos cambia el botón lo configuró quien
+                // administra la lista (puede ser un campo que quien presiona no ve).
                 const updated = await this.records.update(tenantId, actor, String(prep.list.id), record.id, { data: patch } as never, {
                     silent: scope.silent === true,
+                    serverDecided: true,
                 });
                 return { result: { type: 'update_fields', ok: true, changed: labels }, record: updated };
             }

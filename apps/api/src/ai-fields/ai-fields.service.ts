@@ -16,6 +16,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { AI_INPUT_TYPES, aiFieldConfigSchema, type Field, type Role } from '@imagina-base/shared';
 import { Queue, Worker } from 'bullmq';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { memberNames } from '../tenancy/member-names';
 import IORedis from 'ioredis';
 import type Redis from 'ioredis';
 import type { Readable } from 'node:stream';
@@ -25,7 +26,7 @@ import { AiSettingsService } from '../ai/ai-settings.service';
 import { fieldModelParams } from '../ai/model-params';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { attachments, records, users } from '../db/schema';
+import { attachments, records } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
 import { ImageProxyService } from '../files/image-proxy';
@@ -236,7 +237,7 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
         const sources = (cfg.inputs ?? [])
             .map((id) => fields.find((f) => f.id === id))
             .filter((f): f is Field => !!f && AI_INPUT_TYPES.includes(f.type));
-        const names = await this.userNames(sources, data);
+        const names = await this.userNames(tenantId, sources, data);
         const inputs: AiFieldInput[] = [];
         const blocks: Anthropic.ContentBlockParam[] = [];
         for (const f of sources) {
@@ -349,11 +350,10 @@ export class AiFieldsService implements OnModuleInit, OnApplicationShutdown {
         return { blocks, names };
     }
 
-    private async userNames(fields: Field[], data: Record<string, unknown>): Promise<Map<number, string>> {
+    private async userNames(tenantId: number, fields: Field[], data: Record<string, unknown>): Promise<Map<number, string>> {
         const ids = fields.filter((f) => f.type === 'user').map((f) => Number(data[`f${f.id}`])).filter((n) => Number.isInteger(n) && n > 0);
-        if (ids.length === 0) return new Map();
-        const rows = await this.db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ids));
-        return new Map(rows.map((r) => [r.id, r.name]));
+        // SEC — sólo personas de ESTA empresa (el id sale de los datos del registro).
+        return new Map([...(await memberNames(this.db, tenantId, ids))].map(([id, u]) => [id, u.name]));
     }
 
     // ─────────────────────────── Endpoints ───────────────────────────

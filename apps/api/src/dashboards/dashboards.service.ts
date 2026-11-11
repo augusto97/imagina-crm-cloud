@@ -39,6 +39,10 @@ import { mapLimit } from '../common/map-limit';
 import { fillTimeBuckets, zeroFillable } from './time-buckets';
 import { trashRow } from '../trash/trash-ops';
 import { aclExtras, type AclExtras } from '../lists/list-acl';
+import { assertAttachable, fileIdsUnder, type FileActor } from '../files/files.service';
+
+/** Claves de un widget (o de los ajustes del tablero) que guardan el id de un adjunto. */
+const DASHBOARD_FILE_KEYS = ['file_id', 'image_file_id'] as const;
 
 /**
  * v0.1.286 — El bundle agrupa los widgets por LISTA: cada lista resuelve su
@@ -121,8 +125,14 @@ export class DashboardsService {
         return toDashboard(row);
     }
 
-    async create(tenantId: number, userId: number, input: CreateDashboardInput): Promise<Dashboard> {
+    /**
+     * `actor` (SEC): quien lo crea desde la app — las imágenes de sus widgets
+     * tienen que ser archivos que subió o que ya puede ver (un tablero visible
+     * vuelve legibles sus imágenes). Sin actor = uso interno (plantillas).
+     */
+    async create(tenantId: number, userId: number, input: CreateDashboardInput, actor?: DashboardViewer): Promise<Dashboard> {
         const [row] = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            if (actor) await assertAttachable(tx, tenantId, actor as FileActor, fileIdsUnder([input.widgets ?? [], input.settings ?? {}], DASHBOARD_FILE_KEYS));
             if (input.is_default) await clearDefault(tx, tenantId);
             return tx
                 .insert(dashboards)
@@ -147,6 +157,18 @@ export class DashboardsService {
     async update(tenantId: number, id: number, viewer: DashboardViewer, patch: UpdateDashboardInput): Promise<Dashboard> {
         await this.assertCanManage(tenantId, id, viewer);
         const [row] = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            // SEC — imágenes que se SUMAN en este guardado (las que ya tenía el
+            // tablero no se revisan): sólo archivos propios o visibles.
+            if (patch.widgets !== undefined || patch.settings !== undefined) {
+                const [prev] = await tx
+                    .select({ widgets: dashboards.widgets, settings: dashboards.settings })
+                    .from(dashboards)
+                    .where(and(eq(dashboards.tenantId, tenantId), eq(dashboards.id, id)))
+                    .limit(1);
+                const had = new Set(fileIdsUnder([prev?.widgets ?? [], prev?.settings ?? {}], DASHBOARD_FILE_KEYS));
+                const wanted = fileIdsUnder([patch.widgets ?? [], patch.settings ?? {}], DASHBOARD_FILE_KEYS).filter((f) => !had.has(f));
+                await assertAttachable(tx, tenantId, viewer as FileActor, wanted);
+            }
             if (patch.is_default) await clearDefault(tx, tenantId);
             return tx
                 .update(dashboards)

@@ -167,11 +167,15 @@ describe('Carga de trabajo — bundle (B2)', () => {
             // 03:30 UTC del 27 = 22:30 del 26 en Bogotá.
             [admin, { titulo: 'Noche', responsable: carla.userId, cuando: '2026-10-27T03:30:00.000Z' }],
         ];
+        // El «ex miembro» ERA del equipo cuando le asignaron el registro (un
+        // campo Persona sólo acepta gente de la empresa) y después se fue.
+        await withTenant(pg.db, tenantId, (tx) => tx.insert(memberships).values({ tenantId, userId: exUserId, role: 'agent' }));
         for (const [actor, row] of rows) {
             const data: Record<string, unknown> = {};
             for (const [slug, v] of Object.entries(row)) data[key(slug)] = v;
             ids[String(row.titulo)] = (await recs.create(tenantId, actor, 'tareas', { data })).id;
         }
+        await withTenant(pg.db, tenantId, (tx) => tx.delete(memberships).where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, exUserId))));
         await recs.remove(tenantId, admin, 'tareas', ids.Borrado!);
     });
 
@@ -179,7 +183,8 @@ describe('Carga de trabajo — bundle (B2)', () => {
         const b = await bundle(admin);
         expect(b.meta).toMatchObject({ metric: 'estimate', time_zone: 'America/Bogota', hide_done: true, truncated: false, estimate_unit_minutes: 60 });
         // Filas: el equipo que ve la lista (sin el cliente ni la cuenta de baja), el ex miembro con trabajo y «Sin asignar».
-        expect(b.people.map((p) => p.name)).toEqual(['Admin', 'Ana', 'Beto', 'Carla', 'Ex miembro', 'Sin asignar']);
+        // SEC — quien ya no es de la empresa no se resuelve por nombre (sólo su id).
+        expect(b.people.map((p) => p.name)).toEqual(['Admin', 'Ana', 'Beto', 'Carla', `#${exUserId}`, 'Sin asignar']);
         expect(b.people.find((p) => p.user_id === exUserId)!.member).toBe(false);
         // Ana: 4 h (Diseño) + 2 h (Antes) por día, y el 28 además 10 h de Llamadas.
         expect(cell(b, ana.userId, '2026-10-26')).toBeCloseTo(360);

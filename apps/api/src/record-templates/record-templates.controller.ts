@@ -52,7 +52,7 @@ export class RecordTemplatesController {
     ): Promise<{ data: RecordTemplate[] }> {
         const k = kind === undefined || kind === '' ? undefined : recordTemplateKindSchema.safeParse(kind);
         if (k && !k.success) throw new BadRequestException({ code: 'invalid_kind', message: 'Tipo de plantilla inválido.', data: { status: 400 } });
-        return { data: await this.templates.list(req.tenant!.tenantId, list, k?.data) };
+        return { data: await this.templates.list(req.tenant!.tenantId, list, k?.data, actor(req)) };
     }
 
     @Post('record-templates/from-record')
@@ -84,7 +84,7 @@ export class RecordTemplatesController {
         @Param('list') list: string,
         @Param('id', ParseIntPipe) id: number,
     ): Promise<{ data: RecordTemplate }> {
-        return { data: await this.templates.get(req.tenant!.tenantId, list, id) };
+        return { data: await this.templates.get(req.tenant!.tenantId, list, id, actor(req)) };
     }
 
     @Post('record-templates')
@@ -95,7 +95,7 @@ export class RecordTemplatesController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(createRecordTemplateSchema)) input: CreateRecordTemplateInput,
     ): Promise<{ data: RecordTemplate }> {
-        return { data: await this.templates.create(req.tenant!.tenantId, req.authUserId!, list, input) };
+        return { data: await this.templates.create(req.tenant!.tenantId, req.authUserId!, list, input, actor(req)) };
     }
 
     @Patch('record-templates/:id')
@@ -106,7 +106,7 @@ export class RecordTemplatesController {
         @Param('id', ParseIntPipe) id: number,
         @Body(new ZodValidationPipe(updateRecordTemplateSchema)) patch: UpdateRecordTemplateInput,
     ): Promise<{ data: RecordTemplate }> {
-        return { data: await this.templates.update(req.tenant!.tenantId, req.authUserId!, list, id, patch) };
+        return { data: await this.templates.update(req.tenant!.tenantId, req.authUserId!, list, id, patch, actor(req)) };
     }
 
     @Delete('record-templates/:id')
