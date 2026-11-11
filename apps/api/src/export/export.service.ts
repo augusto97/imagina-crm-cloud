@@ -588,9 +588,22 @@ export class ExportService {
         let cursor: number | undefined;
         for (;;) {
             const cursorClause: SQL | undefined = cursor !== undefined ? gt(records.id, cursor) : undefined;
+            // Sólo las columnas que salen en el archivo. Antes era `select()`:
+            // traía la descripción entera de cada registro (hasta 512 KB, y otra
+            // vez como texto plano) para emitir sólo «tiene descripción» — una
+            // página de 1.000 podía ocupar cientos de MB de memoria.
             const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
                 tx
-                    .select()
+                    .select({
+                        id: records.id,
+                        listId: records.listId,
+                        data: records.data,
+                        parentId: records.parentId,
+                        hasDescription: sql<boolean>`(${records.description} IS NOT NULL)`,
+                        createdBy: records.createdBy,
+                        createdAt: records.createdAt,
+                        updatedAt: records.updatedAt,
+                    })
                     .from(records)
                     .where(
                         and(
@@ -612,7 +625,7 @@ export class ExportService {
                     // subtarea de quién se reconstruye por estos ids.
                     parent_id: r.parentId ?? null,
                     subtask_count: 0,
-                    has_description: (r.description ?? null) !== null,
+                    has_description: r.hasDescription === true,
                     created_by: r.createdBy,
                     created_at: r.createdAt.toISOString(),
                     updated_at: r.updatedAt.toISOString(),
