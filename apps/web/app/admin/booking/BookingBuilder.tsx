@@ -3,8 +3,6 @@ import * as Dialog from '@radix-ui/react-dialog';
 import {
     AlarmClock,
     ArrowDown,
-    ArrowLeft,
-    MousePointerClick,
     BarChart3,
     ArrowUp,
     CalendarClock,
@@ -15,7 +13,10 @@ import {
     ExternalLink,
     Link2,
     ListChecks,
-    Loader2,
+    Eye,
+    EyeOff,
+    LayoutTemplate,
+    ListTree,
     Mail,
     Monitor,
     Moon,
@@ -24,7 +25,9 @@ import {
     QrCode,
     Redo2,
     Send,
+    Settings2,
     ShieldCheck,
+    SlidersHorizontal,
     Smartphone,
     Sun,
     Trash2,
@@ -56,7 +59,7 @@ import {
 
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useSession } from '@/cloud/session';
-import { getThemeState } from '@/lib/theme';
+import { getThemeState, useTheme } from '@/lib/theme';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
@@ -124,6 +127,30 @@ import {
 import { CalendarSyncEditor, StaffCalendarPanel } from './BookingCalendarParts';
 import { HolidayPanel, IconBtn, intervalLabel, NOTICE_OPTIONS, ServiceCard, StaffProfile, TimeOffEditor, WeekHoursEditor } from './BookingRulesParts';
 import { demoVersion } from '../forms/EmbedDemo';
+import {
+    BuilderMobileNav,
+    BuilderMobileTopBar,
+    BuilderModeSwitch,
+    BuilderTopBar,
+    IconToggleGroup,
+    InlineName,
+    InspectorEmpty,
+    MobileBackBar,
+    MoreMenu,
+    PanelHeader,
+    PanelSegments,
+    PreviewToolbar,
+    PublishSwitch,
+    SaveButton,
+    SettingsCard,
+    SettingsMobileIndex,
+    SettingsNav,
+    SettingsPageHeader,
+    SettingsPageLayout,
+    type BuilderMode,
+    type MenuAction,
+    type SettingsNavItem,
+} from '../builder/BuilderShell';
 import { ShareDialog, type ShareTab } from '../forms/ShareDialog';
 import {
     bookingPublicOrigin,
@@ -185,6 +212,9 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
     const captcha = useCaptchaAvailability(listId);
     const dataConsent = useDataConsentAvailability(listId);
     const narrow = useMediaQuery('(max-width: 1023px)');
+    // v0.1.406 — con menos de 1280 px, lo de los costados de la barra de arriba se achica.
+    const wide = useMediaQuery('(min-width: 1280px)');
+    const appTheme = useTheme();
 
     const [current, setCurrent] = useState<BookingPageDto>(page);
     const [draft, setDraft] = useState<Draft>({ name: page.name, config: page.config });
@@ -193,11 +223,13 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
     const [future, setFuture] = useState<BookingConfig[]>([]);
     // v0.1.378 — Como el constructor de formularios: Contenido · Diseño · Ajustes
     // a la izquierda, la página real al centro y, a la derecha, lo que se toca.
-    const [leftTab, setLeftTab] = useState<'content' | 'design' | 'settings'>('content');
+    // v0.1.406 — el modo del editor (arriba, al centro): Contenido · Diseño · Ajustes.
+    const [mode, setMode] = useState<Mode>('content');
+    const [designTab, setDesignTab] = useState<'templates' | 'customize'>('templates');
     const [selected, setSelected] = useState<BookingElementId | null>(null);
     const [group, setGroup] = useState<BookingSettingsGroup | null>(null);
     const [inspectorTab, setInspectorTab] = useState<InspectorTab>('content');
-    const [mobileTab, setMobileTab] = useState<'content' | 'preview' | 'design' | 'settings' | 'edit'>('preview');
+    const [mobileTab, setMobileTab] = useState<MobileView | 'edit'>('preview');
     const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
     const [shareOpen, setShareOpen] = useState(false);
     // v0.1.381 — «Compartir» es una ventana con pestañas (el único lugar para compartir).
@@ -358,6 +390,8 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
         (id: BookingElementId, fromPreview = false): void => {
             setSelected(id);
             setInspectorTab('content');
+            // En «Ajustes» no hay vista previa: elegir una parte lleva a «Contenido».
+            setMode((m) => (m === 'settings' ? 'content' : m));
             if (narrow) {
                 setMobileReturn(fromPreview ? 'preview' : 'content');
                 setMobileTab('edit');
@@ -373,14 +407,21 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
     );
     const pickRef = useRef(pick);
     pickRef.current = pick;
-    const openGroup = useCallback(
-        (g: BookingSettingsGroup): void => {
+    /** Cambiar de modo (arriba). Elegir un modo muestra su panel. */
+    const goMode = useCallback(
+        (m: Mode): void => {
+            setMode(m);
             setSelected(null);
-            setGroup(g);
-            setLeftTab('settings');
-            if (narrow) setMobileTab('settings');
+            if (narrow) setMobileTab(m);
         },
         [narrow],
+    );
+    const openGroup = useCallback(
+        (g: BookingSettingsGroup): void => {
+            setGroup(g);
+            goMode('settings');
+        },
+        [goMode],
     );
     const closeSelection = (): void => {
         setSelected(null);
@@ -422,11 +463,7 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
                 const t = problemTarget(first);
                 if ('element' in t) pick(t.element);
                 else if ('group' in t) openGroup(t.group);
-                else {
-                    setSelected(null);
-                    setLeftTab('design');
-                    if (narrow) setMobileTab('design');
-                }
+                else goMode('design');
             }
             toast.error(__('Todavía no se puede publicar'), Object.values(problems).flat()[0] ?? '');
             return;
@@ -506,27 +543,27 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
             consentActive={dataConsent.data?.active === true}
         />
     );
-    const settingsIndex = (
-        <SettingsIndex
-            active={narrow ? null : (group ?? 'availability')}
-            problems={problems}
-            onPick={(g) => {
-                setGroup(g);
-                setSelected(null);
-            }}
-        />
-    );
     const designLibrary = (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-p-3">
-            <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                <Palette className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
-                {__('Elige una plantilla o un tema guardado. Los colores, fuentes y tamaños de toda la página se ajustan a la derecha; los de una parte, tocándola.')}
-            </p>
-            <BookingDesignLibrary config={config} onChange={change} brand={brandColor} isAdmin={isAdmin} suggestedName={config.settings.title || draft.name} narrow={narrow} />
-        </div>
+        <BookingDesignLibrary config={config} onChange={change} brand={brandColor} isAdmin={isAdmin} suggestedName={config.settings.title || draft.name} narrow={narrow} />
     );
     const themePanel = <BookingThemePanel config={config} onChange={change} brand={brandColor} isAdmin={isAdmin} />;
-    const groupPanel = (g: BookingSettingsGroup): JSX.Element => <SettingsGroupPanel group={g} p={editorProps} />;
+    const designPanel = (
+        <div className="imcrm-flex imcrm-flex-col" data-testid="booking-design-panel">
+            <PanelHeader icon={Palette} title={__('Diseño')} subtitle={__('Cómo se ve toda la agenda. Para cambiar una sola parte, tócala en la vista previa.')}>
+                <PanelSegments
+                    value={designTab}
+                    onChange={setDesignTab}
+                    options={[
+                        { id: 'templates', label: __('Plantillas'), icon: LayoutTemplate, testId: 'booking-design-templates' },
+                        { id: 'customize', label: __('Personalizar'), icon: SlidersHorizontal, testId: 'booking-design-customize' },
+                    ]}
+                />
+            </PanelHeader>
+            {designTab === 'templates' ? <div className="imcrm-p-4">{designLibrary}</div> : themePanel}
+        </div>
+    );
+    // Volver de una parte elegida al panel del modo en que se estaba.
+    const backFromSelection = mode === 'design' ? { label: __('Diseño'), onClick: closeSelection } : undefined;
     const elementPanel = selected ? (
         <BookingElementInspector
             key={selected}
@@ -538,6 +575,8 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
             tab={inspectorTab}
             onTab={setInspectorTab}
             onClose={closeSelection}
+            back={narrow ? undefined : backFromSelection}
+            closeable={!narrow}
             content={elementContent(selected, editorProps)}
             problems={selected === '@services' ? problems.servicios : selected === '@staff' ? problems.atienden : undefined}
             lockedReason={
@@ -549,93 +588,81 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
             }
         />
     ) : null;
-    const left = (
-        <div className="imcrm-flex imcrm-flex-col">
-            <BuilderTabs
-                tab={leftTab}
-                onTab={(t) => {
-                    setLeftTab(t as typeof leftTab);
-                    setSelected(null);
-                }}
-                tabs={[
-                    ['content', __('Contenido')],
-                    ['design', __('Diseño')],
-                    ['settings', __('Ajustes')],
-                ]}
-                dot={(k) => (k === 'settings' ? BOOKING_SETTINGS_GROUPS.some((g) => (problems[BOOKING_SETTINGS_GROUP_INFO[g].section]?.length ?? 0) > 0) : k === 'content' ? withProblems.size > 0 : false)}
-            />
-            {leftTab === 'content' && outline}
-            {leftTab === 'design' && designLibrary}
-            {leftTab === 'settings' && settingsIndex}
-        </div>
+    const emptyInspector = (
+        <InspectorEmpty
+            title={__('Toca cualquier parte de la agenda')}
+            text={__('En la vista previa o en la estructura de la izquierda: el título, los servicios, el calendario, el botón… Aquí aparece lo que dice, si se muestra y su estilo.')}
+            quick={[
+                ['@title', __('El título')],
+                ['@services', __('Los servicios')],
+                ['@staff', __('Quién atiende')],
+                ['@calendar', __('El calendario')],
+                ['@submit', __('El botón')],
+                ['@done', __('La confirmación')],
+            ]}
+            onPick={(id) => pick(id as BookingElementId)}
+            testId="booking-inspector-empty"
+        />
     );
-    const right = elementPanel ?? (leftTab === 'design' ? themePanel : leftTab === 'settings' ? groupPanel(group ?? 'availability') : <EmptyInspector onPick={(id) => pick(id)} />);
+
+    const settingsProblem = (g: BookingSettingsGroup): boolean => (problems[BOOKING_SETTINGS_GROUP_INFO[g].section]?.length ?? 0) > 0;
+    const settingsItems: SettingsNavItem<BookingSettingsGroup>[] = BOOKING_SETTINGS_GROUPS.map((g) => ({
+        id: g,
+        label: __(BOOKING_SETTINGS_GROUP_INFO[g].title),
+        icon: BOOKING_GROUP_ICON[g],
+        summary: settingsProblem(g) ? __('Falta algo para publicar') : bookingGroupSummary(g, config, current.enabled),
+        group: __(BOOKING_GROUP_SECTION[g]),
+        problem: settingsProblem(g),
+    }));
+    const activeGroup: BookingSettingsGroup = group ?? 'availability';
+    const settingsContent = (g: BookingSettingsGroup): JSX.Element => (
+        <>
+            <SettingsPageHeader icon={BOOKING_GROUP_ICON[g]} title={__(BOOKING_SETTINGS_GROUP_INFO[g].title)} hint={__(BOOKING_SETTINGS_GROUP_INFO[g].hint)} />
+            <SettingsCard testId="booking-settings-card">
+                <SettingsGroupPanel group={g} p={editorProps} />
+            </SettingsCard>
+        </>
+    );
+    const anyProblem = BOOKING_SETTINGS_GROUPS.some(settingsProblem);
+    const modes: Array<BuilderMode<Mode>> = [
+        { id: 'content', label: __('Contenido'), icon: ListTree, problem: withProblems.size > 0, testId: 'booking-tab-content' },
+        { id: 'design', label: __('Diseño'), icon: Palette, testId: 'booking-tab-design' },
+        { id: 'settings', label: __('Ajustes'), icon: Settings2, problem: anyProblem, testId: 'booking-tab-settings' },
+    ];
+
     const preview = (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-bg-canvas">
-            <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-3 imcrm-py-1.5">
-                <span className="imcrm-min-w-0 imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">
-                    {__('Vista previa con los horarios reales — toca cualquier parte para editarla (nada se reserva aquí)')}
-                </span>
-                <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5">
-                    {theme.mode === 'auto' && (
-                        <div
-                            role="group"
-                            aria-label={__('Modo de la vista previa')}
-                            className="imcrm-flex imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5"
-                            data-testid="booking-preview-scheme"
-                        >
-                            {(
-                                [
-                                    ['light', Sun, __('Claro')],
-                                    ['dark', Moon, __('Oscuro')],
-                                ] as const
-                            ).map(([key, Icon, label]) => (
-                                <button
-                                    key={key}
-                                    type="button"
-                                    title={`${__('Ver como en un dispositivo en modo')} ${label.toLowerCase()}`}
-                                    aria-pressed={previewScheme === key}
-                                    onClick={() => setPreviewScheme(key)}
-                                    className={cn(
-                                        'imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-[11px]',
-                                        previewScheme === key ? 'imcrm-bg-background imcrm-text-foreground imcrm-shadow-sm' : 'imcrm-text-muted-foreground',
-                                    )}
-                                >
-                                    <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    <span className="imcrm-hidden sm:imcrm-inline">{label}</span>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                    <div role="group" aria-label={__('Dispositivo')} className="imcrm-flex imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5">
-                        {(
-                            [
-                                ['desktop', Monitor, __('Computadora')],
-                                ['mobile', Smartphone, __('Celular')],
-                            ] as const
-                        ).map(([key, Icon, label]) => (
-                            <button
-                                key={key}
-                                type="button"
-                                title={label}
-                                aria-pressed={device === key}
-                                onClick={() => setDevice(key)}
-                                className={cn('imcrm-rounded imcrm-p-1', device === key ? 'imcrm-bg-background imcrm-text-foreground imcrm-shadow-sm' : 'imcrm-text-muted-foreground')}
-                            >
-                                <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-            <div className="imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-justify-center imcrm-overflow-hidden imcrm-p-3">
+            <PreviewToolbar hint={__('con los horarios reales; toca cualquier parte para editarla (nada se reserva aquí)')}>
+                {theme.mode === 'auto' && (
+                    <IconToggleGroup
+                        label={__('Modo de la vista previa')}
+                        value={previewScheme}
+                        onChange={setPreviewScheme}
+                        testId="booking-preview-scheme"
+                        options={[
+                            { id: 'light', label: __('Claro'), icon: Sun, showLabel: true },
+                            { id: 'dark', label: __('Oscuro'), icon: Moon, showLabel: true },
+                        ]}
+                    />
+                )}
+                <IconToggleGroup
+                    label={__('Dispositivo')}
+                    value={device}
+                    onChange={setDevice}
+                    options={[
+                        { id: 'desktop', label: __('Computadora'), icon: Monitor },
+                        { id: 'mobile', label: __('Celular'), icon: Smartphone },
+                    ]}
+                />
+            </PreviewToolbar>
+            <div className={cn('imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-justify-center imcrm-overflow-hidden', narrow ? 'imcrm-px-2 imcrm-pb-2' : 'imcrm-px-5 imcrm-pb-5')}>
                 <iframe
                     ref={iframeRef}
                     src="/api/v1/public/b/preview"
                     title={__('Vista previa de la agenda')}
                     style={{ background: previewBg }}
                     className={cn(
-                        'imcrm-h-full imcrm-rounded-lg imcrm-border imcrm-border-border',
+                        'imcrm-h-full imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-shadow-imcrm-sm',
                         device === 'mobile' ? 'imcrm-w-[375px]' : 'imcrm-w-full',
                         device === 'desktop' && (theme.split.enabled ? 'imcrm-max-w-[1100px]' : 'imcrm-max-w-[860px]'),
                     )}
@@ -645,142 +672,175 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
         </div>
     );
 
+    const saveNow = (): void => void save().then((ok) => ok && toast.success(__('Agenda guardada')));
+    const nameInput = <InlineName value={draft.name} onChange={(name) => setDraft((d) => ({ ...d, name }))} label={__('Nombre de la agenda')} testId="booking-name" />;
+    const themeAction: MenuAction = { label: appTheme.resolved === 'dark' ? __('Modo claro') : __('Modo oscuro'), icon: appTheme.resolved === 'dark' ? Sun : Moon, onSelect: appTheme.toggle };
+    const shareDialog = (
+        <ShareDialog
+            open={shareOpen}
+            onOpenChange={setShareOpen}
+            kind="booking"
+            name={config.settings.title.trim() || draft.name || page.name}
+            url={bookingPublicUrl(current)}
+            origin={bookingPublicOrigin(current)}
+            path={current.public_path}
+            version={demoVersion([current.updated_at, current.enabled, current.public_path])}
+            published={current.enabled}
+            onPublish={() => {
+                // Con algo pendiente, la ventana se cierra para mostrar dónde se arregla.
+                if (!current.enabled && problemCount > 0) setShareOpen(false);
+                void togglePublish();
+            }}
+            publishBusy={update.isPending}
+            publishProblems={Object.values(problems)
+                .flat()
+                .map((m) => __(m))}
+            accent={resolvedAccent(config.settings, brandColor, BOOKING_CLASSIC_THEME)}
+            bare={{
+                value: effectiveTheme(config.settings, BOOKING_CLASSIC_THEME).layout.embed_style === 'bare',
+                onChange: (v) => change(patchThemeSection(config, 'layout', { embed_style: v ? 'bare' : 'card' }, BOOKING_CLASSIC_THEME)),
+                unsaved:
+                    effectiveTheme(config.settings, BOOKING_CLASSIC_THEME).layout.embed_style !==
+                    effectiveTheme(current.config.settings, BOOKING_CLASSIC_THEME).layout.embed_style,
+            }}
+            domains={{
+                value: config.settings.allowed_domains,
+                onChange: (v) => change({ ...config, settings: { ...config.settings, allowed_domains: v } }),
+                unsaved: config.settings.allowed_domains.join('\n') !== current.config.settings.allowed_domains.join('\n'),
+            }}
+            dirty={dirty}
+            onSave={saveNow}
+            onRegenerate={() => void regenerate()}
+            tab={shareTab}
+            onTab={setShareTab}
+        />
+    );
+    const outlinePanel = (
+        <>
+            <PanelHeader icon={ListTree} title={__('Estructura')} subtitle={__('La página en el orden en que la recorre el cliente. Toca una fila para editarla; el ojo la oculta.')} />
+            {outline}
+        </>
+    );
+
+    if (narrow) {
+        const mobileItems: Array<BuilderMode<MobileView>> = [
+            { id: 'content', label: __('Contenido'), icon: ListTree, problem: withProblems.size > 0, testId: 'booking-tab-content' },
+            { id: 'design', label: __('Diseño'), icon: Palette, testId: 'booking-tab-design' },
+            { id: 'preview', label: __('Vista previa'), icon: Eye, testId: 'booking-tab-preview' },
+            { id: 'settings', label: __('Ajustes'), icon: Settings2, problem: anyProblem, testId: 'booking-tab-settings' },
+        ];
+        return (
+            <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col">
+                <BuilderMobileTopBar
+                    onClose={() => void close()}
+                    name={nameInput}
+                    published={current.enabled}
+                    statusText={current.enabled ? __('Publicada') : __('Sin publicar')}
+                    more={
+                        <MoreMenu
+                            testId="booking-more"
+                            actions={[
+                                { label: current.enabled ? __('Dejar de recibir reservas') : __('Publicar'), icon: current.enabled ? EyeOff : Send, onSelect: () => void togglePublish(), testId: 'booking-publish' },
+                                { label: __('Compartir'), icon: Link2, onSelect: () => openShare(shareTab), testId: 'booking-share' },
+                                { label: __('Deshacer'), icon: Undo2, onSelect: undo, disabled: past.length === 0, separated: true },
+                                { label: __('Rehacer'), icon: Redo2, onSelect: redo, disabled: future.length === 0 },
+                                { ...themeAction, separated: true },
+                            ]}
+                        />
+                    }
+                    save={<SaveButton dirty={dirty} busy={update.isPending} onClick={saveNow} testId="booking-save" />}
+                />
+                {shareDialog}
+                {mobileTab === 'edit' && <MobileBackBar label={__('Volver')} onBack={closeSelection} testId="booking-edit-back" />}
+                {mobileTab === 'settings' && group !== null && <MobileBackBar label={__('Ajustes')} onBack={() => setGroup(null)} testId="booking-settings-back" />}
+                <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-bg-canvas">
+                    {mobileTab === 'content' && <div className="imcrm-bg-card">{outlinePanel}</div>}
+                    {mobileTab === 'preview' && <div className="imcrm-h-full">{preview}</div>}
+                    {mobileTab === 'design' && <div className="imcrm-bg-card" data-testid="booking-design-mobile">{designPanel}</div>}
+                    {mobileTab === 'settings' &&
+                        (group === null ? (
+                            <SettingsMobileIndex items={settingsItems} onPick={(g) => setGroup(g)} testId="booking-settings-index" tour="booking-settings" />
+                        ) : (
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-4">{settingsContent(group)}</div>
+                        ))}
+                    {mobileTab === 'edit' && <div className="imcrm-bg-card">{elementPanel ?? emptyInspector}</div>}
+                </div>
+                <BuilderMobileNav
+                    items={mobileItems}
+                    value={mobileTab === 'edit' ? mobileReturn : mobileTab}
+                    onChange={(v) => {
+                        setSelected(null);
+                        setMobileTab(v);
+                        if (v !== 'preview') setMode(v);
+                        if (v === 'settings') setGroup(null);
+                    }}
+                />
+            </div>
+        );
+    }
+
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col">
-            <header className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-3 imcrm-py-2">
-                <Button variant="ghost" size="icon" aria-label={__('Cerrar')} onClick={() => void close()}>
-                    <X className="imcrm-h-4 imcrm-w-4" />
-                </Button>
-                <Input
-                    value={draft.name}
-                    onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-                    className="imcrm-h-8 imcrm-w-56 imcrm-max-w-[45vw] imcrm-font-medium"
-                    aria-label={__('Nombre de la agenda')}
-                />
-                <PublishSwitch enabled={current.enabled} busy={update.isPending} onClick={() => void togglePublish()} />
-                <div className="imcrm-ml-auto imcrm-flex imcrm-items-center imcrm-gap-1">
-                    <Button variant="ghost" size="icon" aria-label={__('Deshacer')} disabled={past.length === 0} onClick={undo}>
-                        <Undo2 className="imcrm-h-4 imcrm-w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" aria-label={__('Rehacer')} disabled={future.length === 0} onClick={redo}>
-                        <Redo2 className="imcrm-h-4 imcrm-w-4" />
-                    </Button>
-                    <ThemeToggle />
-                    <Button variant="outline" size="sm" className="imcrm-gap-1.5" onClick={() => openShare(shareTab)} data-testid="booking-share">
-                        <Link2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                        <span className="imcrm-hidden sm:imcrm-inline">{__('Compartir')}</span>
-                    </Button>
-                    <Button
-                        size="sm"
-                        disabled={!dirty || update.isPending}
-                        onClick={() => void save().then((ok) => ok && toast.success(__('Agenda guardada')))}
-                        data-testid="booking-save"
-                    >
-                        {update.isPending ? <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" /> : __('Guardar')}
-                    </Button>
-                </div>
-            </header>
-            <ShareDialog
-                open={shareOpen}
-                onOpenChange={setShareOpen}
-                kind="booking"
-                name={config.settings.title.trim() || draft.name || page.name}
-                url={bookingPublicUrl(current)}
-                origin={bookingPublicOrigin(current)}
-                path={current.public_path}
-                version={demoVersion([current.updated_at, current.enabled, current.public_path])}
-                published={current.enabled}
-                onPublish={() => {
-                    // Con algo pendiente, la ventana se cierra para mostrar dónde se arregla.
-                    if (!current.enabled && problemCount > 0) setShareOpen(false);
-                    void togglePublish();
-                }}
-                publishBusy={update.isPending}
-                publishProblems={Object.values(problems)
-                    .flat()
-                    .map((m) => __(m))}
-                accent={resolvedAccent(config.settings, brandColor, BOOKING_CLASSIC_THEME)}
-                bare={{
-                    value: effectiveTheme(config.settings, BOOKING_CLASSIC_THEME).layout.embed_style === 'bare',
-                    onChange: (v) => change(patchThemeSection(config, 'layout', { embed_style: v ? 'bare' : 'card' }, BOOKING_CLASSIC_THEME)),
-                    unsaved:
-                        effectiveTheme(config.settings, BOOKING_CLASSIC_THEME).layout.embed_style !==
-                        effectiveTheme(current.config.settings, BOOKING_CLASSIC_THEME).layout.embed_style,
-                }}
-                domains={{
-                    value: config.settings.allowed_domains,
-                    onChange: (v) => change({ ...config, settings: { ...config.settings, allowed_domains: v } }),
-                    unsaved: config.settings.allowed_domains.join('\n') !== current.config.settings.allowed_domains.join('\n'),
-                }}
-                dirty={dirty}
-                onSave={() => void save().then((ok) => ok && toast.success(__('Agenda guardada')))}
-                onRegenerate={() => void regenerate()}
-                tab={shareTab}
-                onTab={setShareTab}
-            />
-
-            {narrow ? (
-                <>
-                    {mobileTab === 'edit' ? (
-                        <div className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-border-b imcrm-border-border imcrm-px-2 imcrm-py-1.5">
-                            <Button variant="ghost" size="sm" className="imcrm-gap-1" onClick={closeSelection} data-testid="booking-edit-back">
-                                <ArrowLeft className="imcrm-h-4 imcrm-w-4" />
-                                {__('Volver')}
-                            </Button>
-                            <span className="imcrm-ml-auto imcrm-text-[11px] imcrm-text-muted-foreground">{__('Editando')}</span>
-                        </div>
-                    ) : (
-                        <BuilderTabs
-                            full
-                            tab={mobileTab}
-                            onTab={(t) => {
-                                setMobileTab(t as typeof mobileTab);
-                                setSelected(null);
-                                if (t === 'settings') setGroup(null);
-                            }}
-                            tabs={[
-                                ['content', __('Contenido')],
-                                ['preview', __('Vista previa')],
-                                ['design', __('Diseño')],
-                                ['settings', __('Ajustes')],
-                            ]}
-                            dot={(k) => (k === 'settings' ? BOOKING_SETTINGS_GROUPS.some((g) => (problems[BOOKING_SETTINGS_GROUP_INFO[g].section]?.length ?? 0) > 0) : k === 'content' ? withProblems.size > 0 : false)}
+            <BuilderTopBar
+                kindIcon={CalendarClock}
+                kindLabel={__('Agenda de citas')}
+                onClose={() => void close()}
+                name={nameInput}
+                modes={<BuilderModeSwitch modes={modes} value={mode} onChange={goMode} />}
+                actions={
+                    <>
+                        <Button variant="ghost" size="icon" aria-label={__('Deshacer')} title={__('Deshacer (Ctrl+Z)')} disabled={past.length === 0} onClick={undo}>
+                            <Undo2 className="imcrm-h-4 imcrm-w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" aria-label={__('Rehacer')} title={__('Rehacer (Ctrl+Shift+Z)')} disabled={future.length === 0} onClick={redo}>
+                            <Redo2 className="imcrm-h-4 imcrm-w-4" />
+                        </Button>
+                        <span className="imcrm-mx-1 imcrm-h-6 imcrm-w-px imcrm-bg-border" aria-hidden />
+                        {wide ? <ThemeToggle compact /> : <MoreMenu testId="booking-more" actions={[themeAction]} />}
+                        <PublishSwitch
+                            enabled={current.enabled}
+                            busy={update.isPending}
+                            onClick={() => void togglePublish()}
+                            testId="booking-publish"
+                            labelOn={__('Publicada')}
+                            compact={!wide}
                         />
-                    )}
-                    <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto">
-                        {mobileTab === 'content' && outline}
-                        {mobileTab === 'preview' && <div className="imcrm-h-full">{preview}</div>}
-                        {mobileTab === 'design' && (
-                            <div className="imcrm-flex imcrm-flex-col" data-testid="booking-design-mobile">
-                                <div className="imcrm-border-b imcrm-border-border">{designLibrary}</div>
-                                {themePanel}
-                            </div>
-                        )}
-                        {mobileTab === 'settings' &&
-                            (group === null ? (
-                                settingsIndex
-                            ) : (
-                                <div className="imcrm-flex imcrm-flex-col">
-                                    <button
-                                        type="button"
-                                        onClick={() => setGroup(null)}
-                                        className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-px-4 imcrm-pt-3 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground"
-                                        data-testid="booking-settings-back"
-                                    >
-                                        <ArrowLeft className="imcrm-h-3.5 imcrm-w-3.5" />
-                                        {__('Ajustes')}
-                                    </button>
-                                    {groupPanel(group)}
-                                </div>
-                            ))}
-                        {mobileTab === 'edit' && (elementPanel ?? <EmptyInspector onPick={(id) => pick(id)} />)}
-                    </div>
-                </>
+                        <Button variant="outline" size="sm" className="imcrm-ml-1 imcrm-gap-1.5" onClick={() => openShare(shareTab)} data-testid="booking-share" title={__('Compartir')}>
+                            <Link2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {wide && <span>{__('Compartir')}</span>}
+                        </Button>
+                        <SaveButton dirty={dirty} busy={update.isPending} onClick={saveNow} testId="booking-save" />
+                    </>
+                }
+            />
+            {shareDialog}
+
+            {mode === 'settings' ? (
+                <SettingsPageLayout
+                    scrollKey={activeGroup}
+                    nav={<SettingsNav items={settingsItems} active={activeGroup} onPick={(g) => setGroup(g)} label={__('Ajustes de la agenda')} testId="booking-settings-index" tour="booking-settings" />}
+                >
+                    {settingsContent(activeGroup)}
+                </SettingsPageLayout>
             ) : (
-                <div className="imcrm-grid imcrm-min-h-0 imcrm-flex-1 imcrm-grid-cols-[270px_minmax(0,1fr)_380px]">
-                    <aside className="imcrm-min-h-0 imcrm-overflow-y-auto imcrm-border-r imcrm-border-border">{left}</aside>
+                <div className={cn('imcrm-grid imcrm-min-h-0 imcrm-flex-1', mode === 'design' ? 'imcrm-grid-cols-[minmax(0,1fr)_380px]' : 'imcrm-grid-cols-[290px_minmax(0,1fr)_380px]')} data-mode={mode}>
+                    {mode === 'content' && (
+                        <aside className="imcrm-min-h-0 imcrm-overflow-y-auto imcrm-border-r imcrm-border-border imcrm-bg-card" data-testid="booking-left-panel">
+                            {outlinePanel}
+                        </aside>
+                    )}
                     <div className="imcrm-min-h-0">{preview}</div>
-                    <aside className="imcrm-min-h-0 imcrm-overflow-y-auto imcrm-border-l imcrm-border-border">{right}</aside>
+                    <aside className="imcrm-min-h-0 imcrm-overflow-y-auto imcrm-border-l imcrm-border-border imcrm-bg-card" data-testid="booking-right-panel">
+                        {elementPanel ??
+                            (mode === 'design' ? (
+                                designPanel
+                            ) : (
+                                <>
+                                    <PanelHeader icon={SlidersHorizontal} title={__('Propiedades')} subtitle={__('Lo de la parte que elijas.')} />
+                                    {emptyInspector}
+                                </>
+                            ))}
+                    </aside>
                 </div>
             )}
         </div>
@@ -790,143 +850,61 @@ function Builder({ onOpenChange, listId, page, fields }: BookingBuilderProps): J
 /** El orden en que se recorre lo que falta para publicar. */
 const PROBLEM_ORDER: BookingSection[] = ['servicios', 'atienden', 'disponibilidad', 'reglas', 'aprobacion', 'cobro', 'campos', 'correos', 'diseno', 'medir', 'publicar'];
 
-/** v0.1.378 — Las pestañas del constructor (también la tira del celular). */
-function BuilderTabs({
-    tab,
-    onTab,
-    tabs,
-    dot,
-    full,
-}: {
-    tab: string;
-    onTab: (t: string) => void;
-    tabs: ReadonlyArray<readonly [string, string]>;
-    /** Un punto rojo donde falta algo para publicar. */
-    dot: (key: string) => boolean;
-    full?: boolean;
-}): JSX.Element {
-    return (
-        <div role="tablist" className={cn('imcrm-flex imcrm-border-b imcrm-border-border', full ? '' : 'imcrm-gap-0.5 imcrm-px-1 imcrm-pt-2')}>
-            {tabs.map(([key, label]) => (
-                <button
-                    key={key}
-                    role="tab"
-                    type="button"
-                    aria-selected={tab === key}
-                    data-testid={`booking-tab-${key}`}
-                    onClick={() => onTab(key)}
-                    className={cn(
-                        '-imcrm-mb-px imcrm-flex-1 imcrm-whitespace-nowrap imcrm-border-b-2',
-                        full ? 'imcrm-py-2 imcrm-text-[13px]' : 'imcrm-px-1.5 imcrm-pb-2 imcrm-text-xs',
-                        tab === key ? 'imcrm-border-primary imcrm-font-medium imcrm-text-foreground' : 'imcrm-border-transparent imcrm-text-muted-foreground',
-                    )}
-                >
-                    {label}
-                    {dot(key) && <span className="imcrm-ml-1 imcrm-inline-block imcrm-h-1.5 imcrm-w-1.5 imcrm-rounded-full imcrm-bg-destructive imcrm-align-middle" aria-label={__('Falta algo')} />}
-                </button>
-            ))}
-        </div>
-    );
-}
+type Mode = 'content' | 'design' | 'settings';
+type MobileView = Mode | 'preview';
 
-/** v0.1.378 — Lo que se ve a la derecha cuando no hay nada elegido. */
-function EmptyInspector({ onPick }: { onPick: (id: BookingElementId) => void }): JSX.Element {
-    const quick: Array<[BookingElementId, string]> = [
-        ['@title', 'El título'],
-        ['@services', 'Los servicios'],
-        ['@calendar', 'El calendario'],
-        ['@submit', 'El botón'],
-        ['@done', 'La confirmación'],
-        ['@page', 'El fondo'],
-    ];
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-3 imcrm-px-6 imcrm-py-12 imcrm-text-center" data-testid="booking-inspector-empty">
-            <span className="imcrm-flex imcrm-h-11 imcrm-w-11 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-primary/10 imcrm-text-primary">
-                <MousePointerClick className="imcrm-h-5 imcrm-w-5" />
-            </span>
-            <div>
-                <p className="imcrm-text-sm imcrm-font-semibold">{__('Toca cualquier parte de la agenda')}</p>
-                <p className="imcrm-mt-1 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                    {__('En la vista previa o en la lista de la izquierda: el título, los servicios, el calendario, el botón… Aquí aparece lo que dice, si se muestra y su estilo.')}
-                </p>
-            </div>
-            <div className="imcrm-flex imcrm-flex-wrap imcrm-justify-center imcrm-gap-1.5">
-                {quick.map(([id, label]) => (
-                    <button
-                        key={id}
-                        type="button"
-                        onClick={() => onPick(id)}
-                        className="imcrm-rounded-full imcrm-border imcrm-border-border imcrm-px-2.5 imcrm-py-1 imcrm-text-[11px] hover:imcrm-bg-accent"
-                    >
-                        {__(label)}
-                    </button>
-                ))}
-            </div>
-        </div>
-    );
-}
+const BOOKING_GROUP_ICON: Record<BookingSettingsGroup, LucideIcon> = {
+    availability: CalendarDays,
+    rules: AlarmClock,
+    approval: ShieldCheck,
+    payment: CreditCard,
+    emails: Mail,
+    record: ListChecks,
+    measure: BarChart3,
+    publish: Send,
+};
 
-/** v0.1.378 — «Ajustes» en grupos: lo que no es una parte de la página. */
-function SettingsIndex({
-    active,
-    problems,
-    onPick,
-}: {
-    active: BookingSettingsGroup | null;
-    problems: Partial<Record<BookingSection, string[]>>;
-    onPick: (g: BookingSettingsGroup) => void;
-}): JSX.Element {
-    const ICONS: Record<BookingSettingsGroup, LucideIcon> = {
-        availability: CalendarDays,
-        rules: AlarmClock,
-        approval: ShieldCheck,
-        payment: CreditCard,
-        emails: Mail,
-        record: ListChecks,
-        measure: BarChart3,
-        publish: Send,
-    };
-    return (
-        <nav className="imcrm-flex imcrm-flex-col imcrm-gap-0.5 imcrm-p-2" aria-label={__('Ajustes de la agenda')} data-testid="booking-settings-index" data-tour="booking-settings">
-            {BOOKING_SETTINGS_GROUPS.map((g) => {
-                const info = BOOKING_SETTINGS_GROUP_INFO[g];
-                const Icon = ICONS[g];
-                const has = (problems[info.section]?.length ?? 0) > 0;
-                return (
-                    <button
-                        key={g}
-                        type="button"
-                        onClick={() => onPick(g)}
-                        aria-current={active === g ? 'page' : undefined}
-                        data-settings-group={g}
-                        data-booking-section={info.section}
-                        className={cn(
-                            'imcrm-flex imcrm-items-start imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2.5 imcrm-py-2 imcrm-text-left',
-                            active === g ? 'imcrm-bg-primary/10' : 'hover:imcrm-bg-accent',
-                        )}
-                    >
-                        <Icon className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" />
-                        <span className="imcrm-min-w-0 imcrm-flex-1">
-                            <span className={cn('imcrm-block imcrm-text-sm', active === g && 'imcrm-font-medium')}>{__(info.title)}</span>
-                            <span className="imcrm-block imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{__(info.hint)}</span>
-                        </span>
-                        {has && <span className="imcrm-mt-1.5 imcrm-h-2 imcrm-w-2 imcrm-shrink-0 imcrm-rounded-full imcrm-bg-destructive" aria-label={__('Falta algo')} />}
-                    </button>
-                );
-            })}
-        </nav>
-    );
+/** En qué grupo del menú de «Ajustes» va cada grupo. */
+const BOOKING_GROUP_SECTION: Record<BookingSettingsGroup, string> = {
+    availability: 'Cuándo se agenda',
+    rules: 'Cuándo se agenda',
+    approval: 'Al agendar',
+    payment: 'Al agendar',
+    emails: 'Al agendar',
+    record: 'Datos y medición',
+    measure: 'Datos y medición',
+    publish: 'Publicar',
+};
+
+/** Una línea con cómo está cada grupo, para el menú. */
+function bookingGroupSummary(g: BookingSettingsGroup, config: BookingConfig, published: boolean): string {
+    switch (g) {
+        case 'availability': {
+            const n = config.staff.length;
+            return n === 0 ? __('Sin quién atienda') : n === 1 ? __('El horario de 1 persona o recurso') : sprintf(__('El horario de %d personas o recursos'), n);
+        }
+        case 'rules':
+            return __('Márgenes, anticipación y topes');
+        case 'approval':
+            return __(BOOKING_APPROVAL_MODE_LABELS[config.approval.mode]);
+        case 'payment':
+            return config.payment.enabled ? __('Cobra al agendar') : __('Apagado');
+        case 'emails':
+            return __('Confirmación y recordatorios');
+        case 'record':
+            return __('En qué campos queda cada dato');
+        case 'measure':
+            return __('Google Ads, Meta y de dónde vino');
+        case 'publish':
+            return published ? __('Publicada') : __('Sin publicar');
+    }
 }
 
 function SettingsGroupPanel({ group, p }: { group: BookingSettingsGroup; p: SectionEditorProps }): JSX.Element {
     const info = BOOKING_SETTINGS_GROUP_INFO[group];
     const list = p.problems[info.section] ?? [];
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-4" data-testid={`booking-editor-${info.section}`} data-settings-panel={group}>
-            <div>
-                <h2 className="imcrm-text-base imcrm-font-semibold">{__(info.title)}</h2>
-                <p className="imcrm-text-xs imcrm-text-muted-foreground">{__(info.hint)}</p>
-            </div>
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-5" data-testid={`booking-editor-${info.section}`} data-settings-panel={group}>
             {list.length > 0 && group !== 'publish' && (
                 <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-border-destructive/30 imcrm-bg-destructive/5 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-destructive" data-testid="booking-section-problems">
                     {list.map((m) => (
@@ -1128,28 +1106,6 @@ function elementContent(id: BookingElementId, p: SectionEditorProps): JSX.Elemen
         default:
             return null;
     }
-}
-
-function PublishSwitch({ enabled, busy, onClick }: { enabled: boolean; busy: boolean; onClick: () => void }): JSX.Element {
-    return (
-        <button
-            type="button"
-            role="switch"
-            aria-checked={enabled}
-            disabled={busy}
-            onClick={onClick}
-            data-testid="booking-publish"
-            className={cn(
-                'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-full imcrm-border imcrm-py-1 imcrm-pl-1.5 imcrm-pr-3 imcrm-text-[12px] imcrm-font-medium imcrm-transition-colors',
-                enabled ? 'imcrm-border-success/30 imcrm-bg-success/10 imcrm-text-success' : 'imcrm-border-border imcrm-bg-muted imcrm-text-muted-foreground',
-            )}
-        >
-            <span className={cn('imcrm-relative imcrm-inline-flex imcrm-h-4 imcrm-w-7 imcrm-items-center imcrm-rounded-full imcrm-transition-colors', enabled ? 'imcrm-bg-success' : 'imcrm-bg-border')} aria-hidden>
-                <span className={cn('imcrm-inline-block imcrm-h-3 imcrm-w-3 imcrm-rounded-full imcrm-bg-white imcrm-shadow imcrm-transition-transform', enabled ? 'imcrm-translate-x-3.5' : 'imcrm-translate-x-0.5')} />
-            </span>
-            {enabled ? __('Publicada') : __('Sin publicar')}
-        </button>
-    );
 }
 
 // ─────────────────────────── Secciones ───────────────────────────

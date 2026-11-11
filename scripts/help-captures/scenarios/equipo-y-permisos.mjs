@@ -130,7 +130,7 @@ export default [
             {
                 go: '/lists/{list:Oportunidades}/edit?s=permisos',
                 wait: '[role="radiogroup"]',
-                caption: 'En los ajustes de la lista, la pestaña Permisos tiene una tarjeta por rol.',
+                caption: 'En los ajustes de la lista, la sección «Permisos» tiene una tarjeta por rol.',
             },
             {
                 click: '[role="radiogroup"][aria-label$="Agente"] [role="radio"]:has-text("Colaborar")',

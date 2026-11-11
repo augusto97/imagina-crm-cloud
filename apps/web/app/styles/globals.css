@@ -1599,3 +1599,37 @@ body.imcrm-grid-selecting {
         animation: none;
     }
 }
+
+/*
+ * v0.1.406 — Administrador de campos: las columnas de detalle (Propiedades,
+ * Creado) se deciden por el ancho de la TABLA, no por la ventana. El mismo
+ * administrador vive en la configuración de la lista (con su menú a la
+ * izquierda) y con el panel de ajustes del campo al costado.
+ */
+.imcrm-fb {
+    container: imcrm-fb / inline-size;
+}
+.imcrm-fb-grid {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) 36px;
+}
+.imcrm-fb-props,
+.imcrm-fb-created {
+    display: none;
+}
+@container imcrm-fb (min-width: 520px) {
+    .imcrm-fb-grid {
+        grid-template-columns: 20px minmax(0, 1fr) 150px 36px;
+    }
+    .imcrm-fb-props {
+        display: flex;
+    }
+}
+@container imcrm-fb (min-width: 680px) {
+    .imcrm-fb-grid {
+        grid-template-columns: 20px minmax(0, 1fr) 150px 100px 36px;
+    }
+    .imcrm-fb-created {
+        display: block;
+    }
+}

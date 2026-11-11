@@ -3,7 +3,6 @@ import { BOOKING_CLASSIC_THEME, type BookingConfig, type PublicThemePreset, type
 import { useToast } from '@/components/ui/toast';
 import { __ } from '@/lib/i18n';
 
-import { Section } from '../automations/email/EmailBlockInspector';
 import { MyThemes } from '../forms/design/MyThemes';
 import { ThemeGallery } from '../forms/design/ThemeGallery';
 import { ThemeInspector } from '../forms/design/ThemeInspector';
@@ -48,10 +47,8 @@ export function BookingDesignLibrary({
     };
 
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-tour="booking-design" data-testid="booking-design-library">
-            <Section title={__('Plantillas')}>
-                <ThemeGallery brand={brand} activeId={activePresetId(s)} onApply={applyPreset} columns={narrow ? 3 : 2} />
-            </Section>
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-5" data-tour="booking-design" data-testid="booking-design-library">
+            <ThemeGallery brand={brand} activeId={activePresetId(s)} onApply={applyPreset} columns={narrow ? 3 : 2} />
             <MyThemes brand={brand} current={startTheme(s, BOOKING_CLASSIC_THEME)} suggestedName={suggestedName.slice(0, 60)} onApply={applySaved} />
         </div>
     );
@@ -79,6 +76,7 @@ export function BookingThemePanel({
                 showLogo={config.settings.show_logo}
                 variant="booking"
                 classicTheme={BOOKING_CLASSIC_THEME}
+                noTitle
             />
         </div>
     );

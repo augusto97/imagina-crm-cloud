@@ -54,11 +54,14 @@ export function LogicPanel({
     previewEnding,
     onPreviewEnding,
     onOpenSettings,
+    noTitle,
 }: {
     config: FormConfig;
     fields: FieldEntity[];
     fieldsById: Map<number, FieldEntity>;
     onChange: (next: FormConfig) => void;
+    /** v0.1.406 — sin el título propio (el encabezado del panel ya lo dice). */
+    noTitle?: boolean;
     /** La pantalla final que se ve en la vista previa (`''` = la de siempre; null = el formulario). */
     previewEnding: string | null;
     onPreviewEnding: (id: string | null) => void;
@@ -75,9 +78,11 @@ export function LogicPanel({
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-4" data-testid="form-logic-panel" data-tour="form-logic">
             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
-                <h2 className="imcrm-text-sm imcrm-font-semibold">{__('Lógica')}</h2>
+                {!noTitle && <h2 className="imcrm-text-sm imcrm-font-semibold">{__('Lógica')}</h2>}
                 <p className="imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">
-                    {__('Decide adónde va cada persona según lo que responde y qué ve al terminar. Para mostrar u ocultar una pregunta, tócala y usa «Mostrar sólo si…».')}
+                    {noTitle
+                        ? __('Para mostrar u ocultar una pregunta según otra respuesta, tócala en «Contenido» y usa «Mostrar sólo si…».')
+                        : __('Decide adónde va cada persona según lo que responde y qué ve al terminar. Para mostrar u ocultar una pregunta, tócala y usa «Mostrar sólo si…».')}
                 </p>
             </div>
 
@@ -437,13 +442,13 @@ export function describeCondition(c: FormShowIf | null, fieldsById: Map<number, 
 }
 
 /** El mapa de la lógica (panel izquierdo): qué pasa al terminar cada página y cada pantalla final. */
-export function LogicMap({ config, fieldsById }: { config: FormConfig; fieldsById: Map<number, FieldEntity> }): JSX.Element {
+export function LogicMap({ config, fieldsById, noIntro }: { config: FormConfig; fieldsById: Map<number, FieldEntity>; noIntro?: boolean }): JSX.Element {
     const pages = pageChoices(config);
     const { jumps, endings } = config.settings;
     const targetLabel = (from: string, to: string): string => jumpTargets(config, from).find((t) => t.value === to)?.label ?? __('Un destino que ya no existe');
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-p-3 imcrm-text-xs" data-testid="form-logic-map">
-            <p className="imcrm-leading-snug imcrm-text-muted-foreground">{__('Así recorre el formulario cada persona. Se edita a la derecha.')}</p>
+            {!noIntro && <p className="imcrm-leading-snug imcrm-text-muted-foreground">{__('Así recorre el formulario cada persona. Se edita a la derecha.')}</p>}
             {pages.map((p) => {
                 const own = jumps.filter((j) => j.from === p.key);
                 return (

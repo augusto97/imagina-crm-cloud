@@ -46,7 +46,7 @@ export default [
         setup: clearForms,
         steps: [
             { go: '/lists/{list:Tickets}/edit?s=formularios', wait: '[data-tour="forms-new"]' },
-            { click: '[data-tour="forms-new"]', then: '[data-testid="form-create-dialog"]', caption: 'En la configuración de la lista, pestaña «Formularios», toca «Nuevo formulario»: eliges una plantilla o arrancas con las preguntas de la lista.' },
+            { click: '[data-tour="forms-new"]', then: '[data-testid="form-create-dialog"]', caption: 'En la configuración de la lista, sección «Formularios», toca «Nuevo formulario»: eliges una plantilla o arrancas con las preguntas de la lista.' },
             { click: '[data-testid="form-create-mode-blank"]', then: '[data-testid="form-create-blank"]', caption: '«Con los campos de la lista» arma uno con todas las preguntas de la lista ya puestas.' },
             { click: '[data-testid="form-create-blank"]', caption: 'Toca «Crear formulario»: se abre el editor.' },
             {

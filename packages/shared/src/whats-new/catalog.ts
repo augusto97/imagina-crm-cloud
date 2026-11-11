@@ -2474,4 +2474,40 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         body: 'También: una pestaña que no estás mirando ya no recarga en segundo plano (se pone al día al volver), y las listas públicas se sirven desde una copia de hasta 30 segundos para aguantar muchas visitas.',
         action: { label: 'Ver mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.406-editores-ordenados',
+        version: '0.1.406',
+        date: '2026-11-11',
+        kind: 'improvement',
+        title: 'Los editores de formularios y agendas, más ordenados',
+        summary:
+            'Arriba del editor eliges qué hacer: Contenido, Diseño, Lógica o Ajustes. Cada panel dice qué es, el diseño ocupa toda la pantalla y los ajustes son una página con un menú por grupos. La configuración de la lista también tiene su menú a la izquierda.',
+        media: {
+            slides: [
+                {
+                    title: 'Qué hacer, arriba',
+                    text: 'Contenido para las partes y las preguntas, Diseño para cómo se ve, Lógica para los saltos y el puntaje y Ajustes para lo que no se ve. En el celular, en la barra de abajo.',
+                    illustration: 'form-click-edit',
+                },
+                {
+                    title: 'El diseño, a lo ancho',
+                    text: 'La vista previa ocupa el centro y a la derecha eliges entre las plantillas o personalizar colores, fuentes, fondo y botón.',
+                    illustration: 'form-design',
+                },
+                {
+                    title: 'La agenda, igual',
+                    text: 'Las mismas tres partes en el editor de la agenda: Contenido, Diseño y Ajustes, con un menú por grupos.',
+                    illustration: 'agenda-click-edit',
+                },
+                {
+                    title: 'La configuración de la lista',
+                    text: 'Las secciones ya no se deslizan de costado: un menú a la izquierda las agrupa en La lista, Quién la ve, Recibir registros y Procesos. En el celular, una lista para tocar.',
+                    illustration: 'lc-ajustes',
+                },
+            ],
+        },
+        body: 'Abre un formulario en **Configurar lista → Formularios → Editar**: arriba están **Contenido**, **Diseño**, **Lógica** y **Ajustes**. Toca cualquier parte en la vista previa para editarla; su panel aparece a la derecha.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

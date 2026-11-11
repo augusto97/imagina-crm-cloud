@@ -101,25 +101,25 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Cada lista tiene su **configuración**. Se abre desde la lista con **Configurar lista** (arriba a la derecha) o desde el menú «…» de la lista en el panel lateral. Arriba ves una tira de pestañas; cada una ordena un tema y guarda lo suyo.',
+                md: 'Cada lista tiene su **configuración**. Se abre desde la lista con **Configurar lista** (arriba a la derecha) o desde el menú «…» de la lista en el panel lateral. A la izquierda ves un menú con las secciones agrupadas (en el celular, una lista para tocar); cada sección ordena un tema y guarda lo suyo.',
             },
             { t: 'anim', key: 'lc-ajustes', caption: 'En «General» se cambia el ícono por un recibo y el color a verde; el cambio se ve también en el menú.' },
-            { t: 'h', text: 'Las pestañas de la configuración' },
+            { t: 'h', text: 'Las secciones de la configuración' },
             {
                 t: 'settings',
                 rows: [
-                    { name: 'Campos', what: 'El administrador de campos: crear, editar, ordenar y borrar las columnas de la lista.', tip: 'Es la pestaña que más vas a usar.' },
+                    { name: 'Campos', what: 'El administrador de campos: crear, editar, ordenar y borrar las columnas de la lista.', tip: 'Es la sección que más vas a usar.' },
                     { name: 'General', what: 'Nombre, ícono y color, dirección web y descripción. También duplicar la lista, guardarla como plantilla y eliminarla.' },
                     { name: 'Apariencia', what: 'Cómo se ve la ficha de cada registro: **Ficha simple** (todos los campos, uno debajo del otro) o **Ficha diseñada** (portada, etapas, pestañas y gráficos).' },
                     { name: 'Permisos', what: 'Quién ve y quién edita los registros de esta lista, por rol, por equipo o por persona.' },
                     { name: 'Compartir', what: 'El portal del cliente y la publicación de la lista con un enlace público.' },
                     { name: 'Documentos', what: 'Plantillas de PDF (cotizaciones, cuentas de cobro) que se generan desde los registros.' },
                     { name: 'Formularios', what: 'Formularios públicos que crean registros en esta lista.' },
-                    { name: 'Más pestañas', what: 'Según tu plan y lo que uses: **Agenda**, **Aprobaciones**, **Plantillas** de registro, **Correo entrante** y **SLA**.' },
+                    { name: 'Más secciones', what: 'Según tu plan y lo que uses: **Agenda**, **Aprobaciones**, **Plantillas** de registro, **Correo entrante** y **SLA**. El menú las agrupa en **La lista**, **Quién la ve**, **Recibir registros** y **Procesos**.' },
                 ],
             },
-            { t: 'demo', key: 'lc-ajustes', caption: 'Las pestañas General, Apariencia y Permisos de una lista.', fallback: 'lc-ajustes' },
-            { t: 'h', text: 'La pestaña General' },
+            { t: 'demo', key: 'lc-ajustes', caption: 'Las secciones General, Apariencia y Permisos de una lista.', fallback: 'lc-ajustes' },
+            { t: 'h', text: 'La sección General' },
             {
                 t: 'settings',
                 rows: [
@@ -134,8 +134,8 @@ export const articles: LearnArticle[] = [
             {
                 t: 'callout',
                 tone: 'info',
-                title: 'Cada pestaña guarda lo suyo',
-                md: 'En **General**, los cambios se aplican al tocar **Guardar cambios**. En **Campos**, cada campo se guarda al crearlo o editarlo. No hay un botón que guarde todas las pestañas a la vez: termina lo de una pestaña antes de pasar a la siguiente.',
+                title: 'Cada sección guarda lo suyo',
+                md: 'En **General**, los cambios se aplican al tocar **Guardar cambios**. En **Campos**, cada campo se guarda al crearlo o editarlo. No hay un botón que guarde todas las secciones a la vez: termina lo de una sección antes de pasar a la siguiente.',
             },
             { t: 'h', text: 'Ideas' },
             {
@@ -203,7 +203,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'El administrador de campos' },
             {
                 t: 'p',
-                md: 'En la configuración de la lista, la pestaña **Campos** muestra todos los campos agrupados por tipo. A la izquierda filtras **Todos los campos**, **Por tipo** o saltas a **Otras listas**; arriba, **Buscar un campo…** y **Nuevo campo**. Al tocar un campo se abren todos sus ajustes. Cada campo muestra insignias como **Título**, **Obligatorio**, **Sin repetidos** o **Código**.',
+                md: 'En la configuración de la lista, la sección **Campos** muestra todos los campos agrupados por tipo. Arriba, **Buscar un campo…**, **Nuevo campo** y los filtros por tipo (**Todos los campos**, **Texto**, **Fecha**…), con cuántos hay de cada uno. Al tocar un campo se abren todos sus ajustes. Cada campo muestra insignias como **Título**, **Obligatorio**, **Sin repetidos** o **Código**.',
             },
             { t: 'demo', key: 'lc-campos', caption: 'El administrador de campos de la lista Clientes y los ajustes de un campo.', fallback: 'lc-agregar-campo' },
             {

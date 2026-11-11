@@ -30,10 +30,10 @@ export default [
         title: 'Los ajustes de una lista',
         steps: [
             { go: '/lists/{list:Clientes}/edit?s=general', wait: 'text=Dirección web', caption: 'En la configuración de la lista, «General» guarda el nombre, el ícono, la dirección web y la descripción.' },
-            { click: '[role="tablist"] >> text=Apariencia', caption: 'Las pestañas de arriba ordenan el resto: campos, apariencia, permisos, compartir, documentos y más.' },
+            { click: '[data-settings-group="apariencia"]', caption: 'El menú de la izquierda ordena el resto por grupos: la lista, quién la ve, cómo llegan los registros y los procesos.' },
             { shot: true, caption: '«Apariencia» define cómo se ve la ficha de cada registro.' },
-            { click: '[role="tablist"] >> text=Permisos', caption: '«Permisos» decide quién ve y quién edita esta lista.' },
-            { shot: true, caption: 'Cada pestaña guarda lo suyo: no hay un botón general que guarde todo junto.' },
+            { click: '[data-settings-group="permisos"]', caption: '«Permisos» decide quién ve y quién edita esta lista.' },
+            { shot: true, caption: 'Cada sección guarda lo suyo: no hay un botón general que guarde todo junto.' },
         ],
     },
     {
@@ -41,7 +41,7 @@ export default [
         title: 'El administrador de campos',
         steps: [
             { go: '/lists/{list:Clientes}/edit?s=campos', wait: 'text=Todos los campos', caption: 'En «Campos» ves todos los campos de la lista, agrupados por tipo.' },
-            { shot: 'text=Por tipo', caption: 'A la izquierda filtras por tipo o saltas a los campos de otra lista.' },
+            { shot: '[data-testid="fields-type-filter"]', caption: 'Arriba de la tabla filtras por tipo; el número dice cuántos campos hay de cada uno.' },
             { click: 'text=NIT / RUT', caption: 'Toca un campo para abrir todos sus ajustes.', then: 'role=dialog' },
             { shot: '[role="dialog"]', caption: 'Nombre, descripción, tipo, configuración, valor por defecto, validaciones y quién lo ve.' },
         ],

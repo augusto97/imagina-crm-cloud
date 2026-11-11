@@ -104,7 +104,7 @@ export default [
             saved.settings = (res.data ?? res).settings ?? {};
         },
         steps: [
-            { go: '/lists/{list:Clientes}/edit?s=apariencia', wait: 'button:has-text("Ficha diseñada")', caption: 'En la configuración de la lista, pestaña «Apariencia», eliges cómo se ve la ficha de sus registros.' },
+            { go: '/lists/{list:Clientes}/edit?s=apariencia', wait: 'button:has-text("Ficha diseñada")', caption: 'En la configuración de la lista, sección «Apariencia», eliges cómo se ve la ficha de sus registros.' },
             { click: 'button:has-text("Ficha diseñada")', then: 'button:has-text("Contacto")', caption: 'Toca «Ficha diseñada».' },
             { wait: 800 },
             { click: 'button:has-text("Contacto")', caption: 'Elige una plantilla: aquí, «Contacto», pensada para clientes.' },

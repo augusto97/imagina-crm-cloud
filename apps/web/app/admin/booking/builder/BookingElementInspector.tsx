@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button';
 import { __ } from '@/lib/i18n';
 
 import { Section } from '../../automations/email/EmailBlockInspector';
+import { PanelHeader } from '../../builder/BuilderShell';
+import { BOOKING_ELEMENT_ICON } from './BookingOutline';
 import { InspectorTabs, VisibilitySwitch, type InspectorTab } from '../../forms/builder/PageElementInspector';
 import { ElementColors } from '../../forms/design/ElementColors';
 import { ThemeInspector } from '../../forms/design/ThemeInspector';
@@ -29,6 +31,8 @@ export function BookingElementInspector({
     content,
     problems,
     lockedReason,
+    back,
+    closeable = true,
 }: {
     id: BookingElementId;
     config: BookingConfig;
@@ -44,6 +48,10 @@ export function BookingElementInspector({
     problems?: string[];
     /** Por qué no se puede encender (sin llaves del captcha, sin autorización en la empresa). */
     lockedReason?: string | null;
+    /** v0.1.406 — «‹ Diseño»: volver al panel del modo en que se estaba. */
+    back?: { label: string; onClick: () => void };
+    /** La ✕ (en el celular se vuelve con la barra de arriba). */
+    closeable?: boolean;
 }): JSX.Element {
     const info = BOOKING_ELEMENTS[id];
     const visible = bookingElementVisible(config, id);
@@ -52,16 +60,21 @@ export function BookingElementInspector({
     const shown: InspectorTab = !hasContent ? 'style' : !hasStyle ? 'content' : tab;
 
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-p-4" data-testid="booking-element-inspector" data-element={id}>
-            <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2">
-                <div className="imcrm-min-w-0">
-                    <p className="imcrm-truncate imcrm-text-sm imcrm-font-semibold">{__(info.label)}</p>
-                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{__(info.hint)}</p>
-                </div>
-                <Button variant="ghost" size="icon" aria-label={__('Cerrar')} onClick={onClose}>
-                    <X className="imcrm-h-4 imcrm-w-4" />
-                </Button>
-            </div>
+        <div className="imcrm-flex imcrm-flex-col" data-testid="booking-element-inspector" data-element={id}>
+            <PanelHeader
+                icon={BOOKING_ELEMENT_ICON[id]}
+                title={__(info.label)}
+                subtitle={__(info.hint)}
+                back={back}
+                actions={
+                    closeable && !back ? (
+                        <Button variant="ghost" size="icon" aria-label={__('Cerrar')} onClick={onClose}>
+                            <X className="imcrm-h-4 imcrm-w-4" />
+                        </Button>
+                    ) : undefined
+                }
+            />
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-p-4">
             {problems && problems.length > 0 && (
                 <ul
                     className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-rounded-md imcrm-border imcrm-border-destructive/30 imcrm-bg-destructive/5 imcrm-px-3 imcrm-py-2 imcrm-text-xs imcrm-text-destructive"
@@ -108,6 +121,7 @@ export function BookingElementInspector({
                     )}
                 </div>
             )}
+            </div>
         </div>
     );
 }

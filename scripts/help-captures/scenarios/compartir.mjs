@@ -33,7 +33,7 @@ export default [
         setup: unpublish,
         steps: [
             { go: '/lists/{list:Productos}/edit?s=compartir', wait: '[data-tour="share-public"]' },
-            { click: '[data-tour="share-public"] label:has-text("Publicar esta lista") input', caption: 'En la pestaña «Compartir» de la lista, tarjeta «Página pública», marca «Publicar esta lista».' },
+            { click: '[data-tour="share-public"] label:has-text("Publicar esta lista") input', caption: 'En la sección «Compartir» de la lista, tarjeta «Página pública», marca «Publicar esta lista».' },
             { wait: 700 },
             { click: field('Producto'), caption: 'En «Qué campos se muestran», marca sólo lo que puede ver cualquiera.' },
             { click: field('Categoría'), caption: null },

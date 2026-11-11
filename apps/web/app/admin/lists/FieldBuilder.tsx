@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { isMirrorField, managedFieldLockMap, mirrorSourceName, readMirrorListMarker, readScanFieldId, SCAN_SEARCH_FIELD_TYPES, type ManagedFieldLock } from '@imagina-base/shared';
 import {
@@ -10,7 +10,6 @@ import {
     ScanLine,
     KeyRound,
     Layers,
-    List as ListIcon,
     Loader2,
     Lock,
     MoreHorizontal,
@@ -48,8 +47,9 @@ import { fieldsKeys, useCreateField, useDeleteField, useFields, useReorderFields
 import { formulaDeleteWarning } from '@/lib/formulaDependents';
 import { useTrashedToast } from '@/hooks/useTrash';
 import { useFieldTypes } from '@/hooks/useFieldTypes';
-import { useList, useLists, useUpdateList } from '@/hooks/useLists';
+import { useList, useUpdateList } from '@/hooks/useLists';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useContainerWidth } from '@/admin/dashboards/widgets/useContainerWidth';
 import { invalidateForList } from '@/hooks/useRecords';
 import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
 import { formatDateStr } from '@/lib/tenantFormat';
@@ -95,7 +95,6 @@ function canBeTitle(field: FieldEntity): boolean {
  */
 export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     const qc = useQueryClient();
-    const navigate = useNavigate();
     const list = useList(listId);
     const listData = list.data;
     // v0.1.213 — columnas que vienen de la tienda: sólo cambian de nombre.
@@ -107,7 +106,6 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     // v0.1.383 — columnas que escribe una sincronización (cobros, suscripciones, registro de cobros, SLA).
     const managedLocks = managedFieldLockMap(listData?.settings);
     const managedOf = (f: FieldEntity | null | undefined): ManagedFieldLock | null => (f ? managedLocks.get(f.id) ?? null : null);
-    const lists = useLists();
     const fields = useFields(listId);
     const types = useFieldTypes();
     const createField = useCreateField(listId);
@@ -117,8 +115,15 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     const confirm = useConfirm();
     const toast = useToast();
     const trashed = useTrashedToast();
-    /** ¿Entra la columna de ajustes? (`xl` de Tailwind = 1280px.) */
-    const wideEnough = useMediaQuery('(min-width: 1280px)');
+    /**
+     * ¿Entra la columna de ajustes al lado de la tabla? v0.1.406: se decide
+     * por el ANCHO REAL del administrador, no por la ventana — dentro de la
+     * configuración de la lista hay un menú a la izquierda y la misma
+     * ventana deja menos lugar. Mientras no se midió, manda la ventana.
+     */
+    const [bodyRef, bodyWidth] = useContainerWidth<HTMLDivElement>();
+    const wideViewport = useMediaQuery('(min-width: 1280px)');
+    const wideEnough = bodyWidth > 0 ? bodyWidth >= 820 : wideViewport;
 
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingField, setEditingField] = useState<FieldEntity | null>(null);
@@ -135,7 +140,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
         return map;
     }, [types.data]);
 
-    const all = fields.data ?? [];
+    const all = useMemo(() => fields.data ?? [], [fields.data]);
     const term = search.trim().toLowerCase();
     const visible = all.filter((f) => {
         if (typeFilter !== '' && f.type !== typeFilter) return false;
@@ -309,7 +314,6 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     };
 
     const requiredCount = all.filter((f) => f.is_required).length;
-    const otherLists = (lists.data ?? []).filter((l) => l.id !== listId);
 
     // Las notas y marcas de los editores dicen de dónde viene cada columna.
     const mirrorRules = mirror && fields.data ? { marker: mirror, fields: fields.data } : null;
@@ -376,16 +380,16 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
 
             {all.length > 0 && (
                 <>
-                {/* Bajo `lg` no hay lugar para la columna de navegación: los
-                    mismos filtros van como CHIPS horizontales arriba de la
-                    tabla (v0.1.165 — en celular sólo se veía la primera
-                    columna, reporte del usuario). */}
-                <div className="imcrm-flex imcrm-gap-1.5 imcrm-overflow-x-auto imcrm-pb-1 lg:imcrm-hidden">
+                {/* El filtro por tipo va como CHIPS arriba de la tabla
+                    (v0.1.406: también en computador — la configuración de la
+                    lista ya tiene su menú a la izquierda y una segunda
+                    columna de navegación le quitaba el lugar a la tabla). */}
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5" data-testid="fields-type-filter">
                     <TypeChip
                         active={typeFilter === ''}
                         onClick={() => setTypeFilter('')}
                         icon={Layers}
-                        label={__('Todos')}
+                        label={__('Todos los campos')}
                         count={all.length}
                     />
                     {typeCounts.map(([type, count]) => (
@@ -398,58 +402,20 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                             count={count}
                         />
                     ))}
+                    {requiredCount > 0 && (
+                        <span className="imcrm-ml-auto imcrm-pl-2 imcrm-text-xs imcrm-text-muted-foreground">
+                            {sprintf(
+                                /* translators: %d: cantidad de campos obligatorios */
+                                __('%d obligatorios'),
+                                requiredCount,
+                            )}
+                        </span>
+                    )}
                 </div>
 
-                <div className="imcrm-flex imcrm-items-start imcrm-gap-4">
-                    {/* ── Columna 1: navegación ───────────────────────── */}
-                    <nav className="imcrm-hidden imcrm-w-52 imcrm-shrink-0 imcrm-flex-col imcrm-gap-4 lg:imcrm-flex">
-                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-                            <NavItem
-                                active={typeFilter === ''}
-                                onClick={() => setTypeFilter('')}
-                                icon={Layers}
-                                label={__('Todos los campos')}
-                                count={all.length}
-                            />
-                            <p className="imcrm-px-2 imcrm-pt-1 imcrm-text-[11px] imcrm-text-muted-foreground">
-                                {requiredCount > 0 && sprintf(
-                                    /* translators: %d: cantidad de campos obligatorios */
-                                    __('%d obligatorios'),
-                                    requiredCount,
-                                )}
-                            </p>
-                        </div>
-
-                        <NavSection title={__('Por tipo')}>
-                            {typeCounts.map(([type, count]) => (
-                                <NavItem
-                                    key={type}
-                                    active={typeFilter === type}
-                                    onClick={() => setTypeFilter(type)}
-                                    icon={fieldTypeIcon(type)}
-                                    label={typeLabels.get(type) ?? type}
-                                    count={count}
-                                />
-                            ))}
-                        </NavSection>
-
-                        {otherLists.length > 0 && (
-                            <NavSection title={__('Otras listas')}>
-                                {otherLists.slice(0, 12).map((l) => (
-                                    <NavItem
-                                        key={l.id}
-                                        active={false}
-                                        onClick={() => navigate(`/lists/${l.slug}/edit?s=campos`)}
-                                        icon={ListIcon}
-                                        label={l.name}
-                                    />
-                                ))}
-                            </NavSection>
-                        )}
-                    </nav>
-
-                    {/* ── Columna 2: la tabla, agrupada por tipo ──────── */}
-                    <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-3">
+                <div ref={bodyRef} className="imcrm-flex imcrm-items-start imcrm-gap-4">
+                    {/* ── La tabla, agrupada por tipo ─────────────────── */}
+                    <div className="imcrm-fb imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-3">
                         {visible.length === 0 ? (
                             <p className="imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-4 imcrm-py-6 imcrm-text-center imcrm-text-sm imcrm-text-muted-foreground">
                                 {__('Ningún campo coincide con la búsqueda.')}
@@ -532,9 +498,10 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                         )}
                     </div>
 
-                    {/* ── Columna 3: ajustes del campo elegido ────────── */}
-                    <div className="imcrm-hidden imcrm-w-[340px] imcrm-shrink-0 xl:imcrm-block">
-                        {selected && wideEnough ? (
+                    {/* ── Ajustes del campo elegido (si hay lugar) ────── */}
+                    {wideEnough && (
+                    <div className="imcrm-sticky imcrm-top-2 imcrm-w-[340px] imcrm-shrink-0" data-testid="field-settings-column">
+                        {selected ? (
                             <FieldSettingsPanel
                                 key={selected.id}
                                 listId={listId}
@@ -554,11 +521,12 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                             </div>
                         )}
                     </div>
+                    )}
                 </div>
                 </>
             )}
 
-            {/* Bajo `xl` la columna de ajustes no entra: tocar una fila abre
+            {/* Sin lugar para la columna de ajustes: tocar una fila abre
                 el MISMO panel en un sheet lateral (v0.1.165 — antes tocarla
                 no hacía nada visible en celular, así que no había forma de
                 editar un campo). */}
@@ -568,7 +536,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                     if (!next) setSelectedId(null);
                 }}
             >
-                <SheetContent side="right" className="imcrm-w-full sm:imcrm-max-w-md xl:imcrm-hidden">
+                <SheetContent side="right" className="imcrm-w-full sm:imcrm-max-w-md">
                     <SheetHeader className="imcrm-flex imcrm-flex-row imcrm-items-center imcrm-justify-between imcrm-gap-2">
                         <SheetTitle>{selected?.label ?? __('Campo')}</SheetTitle>
                         <SheetCloseButton />
@@ -638,69 +606,20 @@ function TypeChip({
     );
 }
 
-function NavSection({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-            <p className="imcrm-px-2 imcrm-pb-1 imcrm-text-[11px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
-                {title}
-            </p>
-            {children}
-        </div>
-    );
-}
-
-function NavItem({
-    active,
-    onClick,
-    icon: Icon,
-    label,
-    count,
-}: {
-    active: boolean;
-    onClick: () => void;
-    icon: React.ComponentType<{ className?: string }>;
-    label: string;
-    count?: number;
-}): JSX.Element {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            className={cn(
-                'imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left imcrm-text-sm',
-                active
-                    ? 'imcrm-bg-accent imcrm-font-medium imcrm-text-foreground'
-                    : 'imcrm-text-muted-foreground hover:imcrm-bg-accent/50 hover:imcrm-text-foreground',
-            )}
-        >
-            <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0" />
-            <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate">{label}</span>
-            {count !== undefined && (
-                <span className="imcrm-shrink-0 imcrm-text-xs imcrm-tabular-nums imcrm-text-muted-foreground">
-                    {count}
-                </span>
-            )}
-        </button>
-    );
-}
-
 /**
  * v0.1.161 — grilla de COLUMNAS alineadas, como el administrador de campos
  * de ClickUp: con 15 campos, una lista de tarjetas no deja comparar nada.
  * Las mismas columnas que el encabezado — de ahí que compartan `FIELD_GRID`.
  */
-const FIELD_GRID = cn(
-    'imcrm-grid imcrm-items-center imcrm-gap-2',
-    // Las columnas de detalle sólo aparecen cuando hay ancho para ellas: con
-    // el panel de ajustes abierto en pantallas medianas, forzarlas hacía que
-    // los textos se pisaran entre sí.
-    'imcrm-grid-cols-[20px_minmax(0,1fr)_36px]',
-    '[@media(min-width:1100px)]:imcrm-grid-cols-[20px_minmax(0,1fr)_150px_36px]',
-    '[@media(min-width:1320px)]:imcrm-grid-cols-[20px_minmax(0,1fr)_150px_100px_36px]',
-);
+// Las columnas de detalle sólo aparecen cuando hay ancho para ellas (con el
+// panel de ajustes abierto, forzarlas hacía que los textos se pisaran). Se
+// decide por el ancho de la TABLA (container query `imcrm-fb` en
+// globals.css), no por la ventana: el mismo administrador vive en páginas
+// con y sin menú lateral.
+const FIELD_GRID = 'imcrm-fb-grid imcrm-items-center imcrm-gap-2';
 /** Celdas que sólo se muestran a partir de cierto ancho. */
-const CELL_PROPS = 'imcrm-hidden [@media(min-width:1100px)]:imcrm-flex';
-const CELL_CREATED = 'imcrm-hidden [@media(min-width:1320px)]:imcrm-block';
+const CELL_PROPS = 'imcrm-fb-props';
+const CELL_CREATED = 'imcrm-fb-created';
 
 function FieldsTableHeader(): JSX.Element {
     return (

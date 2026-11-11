@@ -183,8 +183,8 @@ export function DangerZonePanel({ list }: Props): JSX.Element {
     };
 
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-destructive/30 imcrm-bg-destructive/5 imcrm-p-4 sm:imcrm-flex-row sm:imcrm-items-center sm:imcrm-justify-between">
-            <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-col imcrm-gap-0.5">
+        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-3 imcrm-rounded-lg imcrm-border imcrm-border-destructive/30 imcrm-bg-destructive/5 imcrm-p-4">
+            <div className="imcrm-flex imcrm-min-w-[220px] imcrm-flex-1 imcrm-flex-col imcrm-gap-0.5">
                 <h3 className="imcrm-text-sm imcrm-font-semibold imcrm-text-foreground">
                     {__('Eliminar esta lista')}
                 </h3>

@@ -1,7 +1,6 @@
 import {
     AlertTriangle,
     BadgeDollarSign,
-    ChevronRight,
     Clock,
     Code2,
     FileText,
@@ -40,7 +39,7 @@ import { FormOriginSettings } from '../design/RecordOriginSettings';
 import { RecallPicker, withToken } from '../design/LogicPanel';
 import { ChargeSettings, EditLinksSettings, LayoutSettings, SaveProgressSettings, WelcomeSettings } from '../design/StartSettings';
 import { emailQuestions, updateItem, updateSettings } from '../formDesignOps';
-import { SETTINGS_GROUPS, SETTINGS_GROUP_INFO, type PageElementId, type SettingsGroupId } from './pageElements';
+import { SETTINGS_GROUP_INFO, type PageElementId, type SettingsGroupId } from './pageElements';
 
 /**
  * v0.1.377 — «Ajustes» del constructor de formularios, en grupos con nombre
@@ -49,7 +48,7 @@ import { SETTINGS_GROUPS, SETTINGS_GROUP_INFO, type PageElementId, type Settings
  * se toca en la vista previa o en «Contenido».
  */
 
-const GROUP_ICON: Record<SettingsGroupId, LucideIcon> = {
+export const SETTINGS_GROUP_ICON: Record<SettingsGroupId, LucideIcon> = {
     general: Settings2,
     welcome: Hand,
     after: Sparkles,
@@ -143,58 +142,9 @@ export function MissingRequiredNotice({ missing }: { missing: FieldEntity[] }): 
     );
 }
 
-/** El índice de grupos (izquierda en la computadora; la pantalla de «Ajustes» en el celular). */
-export function SettingsIndex({
-    active,
-    onPick,
-    config,
-    captcha,
-    missing,
-}: {
-    active: SettingsGroupId | null;
-    onPick: (g: SettingsGroupId) => void;
-    config: FormConfig;
-    captcha: CaptchaAvailability | null;
-    missing: FieldEntity[];
-}): JSX.Element {
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-p-2" data-testid="form-settings-index">
-            <MissingRequiredNotice missing={missing} />
-            <nav aria-label={__('Ajustes del formulario')} className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
-                {SETTINGS_GROUPS.map((g) => {
-                    const Icon = GROUP_ICON[g];
-                    const on = active === g;
-                    return (
-                        <button
-                            key={g}
-                            type="button"
-                            onClick={() => onPick(g)}
-                            aria-current={on ? 'page' : undefined}
-                            data-settings-group={g}
-                            className={cn(
-                                'imcrm-flex imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2 imcrm-py-2 imcrm-text-left',
-                                on ? 'imcrm-bg-primary/10 imcrm-text-foreground' : 'hover:imcrm-bg-accent',
-                            )}
-                        >
-                            <span className={cn('imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md', on ? 'imcrm-bg-primary imcrm-text-primary-foreground' : 'imcrm-bg-muted imcrm-text-muted-foreground')}>
-                                <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
-                            </span>
-                            <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
-                                <span className="imcrm-truncate imcrm-text-[13px] imcrm-font-medium">{__(SETTINGS_GROUP_INFO[g].title)}</span>
-                                <span className="imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">{groupSummary(g, config, captcha)}</span>
-                            </span>
-                            <ChevronRight className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
-                        </button>
-                    );
-                })}
-            </nav>
-        </div>
-    );
-}
-
 /** El encabezado de un grupo (título, para qué sirve). */
 function GroupHeader({ group }: { group: SettingsGroupId }): JSX.Element {
-    const Icon = GROUP_ICON[group];
+    const Icon = SETTINGS_GROUP_ICON[group];
     return (
         <div className="imcrm-flex imcrm-items-start imcrm-gap-2.5">
             <span className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-primary/10 imcrm-text-primary">
@@ -211,7 +161,7 @@ function GroupHeader({ group }: { group: SettingsGroupId }): JSX.Element {
 /** Lo de un grupo (derecha en la computadora). */
 export function SettingsGroupPanel({ group, ctx, showHeader = true }: { group: SettingsGroupId; ctx: SettingsContext; showHeader?: boolean }): JSX.Element {
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-4" data-testid="form-settings" data-settings-panel={group}>
+        <div className={cn('imcrm-flex imcrm-flex-col imcrm-gap-4', showHeader ? 'imcrm-p-4' : 'imcrm-p-5')} data-testid="form-settings" data-settings-panel={group}>
             {showHeader && <GroupHeader group={group} />}
             {group === 'general' && <GeneralGroup ctx={ctx} />}
             {group === 'welcome' && (
@@ -249,7 +199,6 @@ const PARTS: Array<[PageElementId, string]> = [
 function GeneralGroup({ ctx }: { ctx: SettingsContext }): JSX.Element {
     return (
         <>
-            <MissingRequiredNotice missing={ctx.missing} />
             <Field label={__('Nombre interno')} hint={__('Sólo lo ve tu equipo.')}>
                 <Input value={ctx.name} onChange={(e) => ctx.setName(e.target.value)} data-testid="form-internal-name" />
             </Field>
@@ -394,7 +343,6 @@ function RecordSettings({ ctx }: { ctx: SettingsContext }): JSX.Element {
     const templates = recordTemplates.data ?? [];
     return (
         <>
-            <MissingRequiredNotice missing={ctx.missing} />
             <Section title={__('Registro que se crea')}>
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                     {__('Cada respuesta crea un registro en esta lista, con lo que la persona respondió en cada campo.')}

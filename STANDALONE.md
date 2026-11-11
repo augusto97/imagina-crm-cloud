@@ -7392,6 +7392,55 @@ dónde quitar u ocultar los títulos… y se pueda cambiar el color de todo»).*
 5. El asistente/MCP acepta `labels` en `propose_configure_booking_page`.
 6. Sin migración: todo vive en `booking_pages.config`.
 
+**Addendum v0.1.406 — Los editores reordenados: modos arriba, paneles con
+nombre, ajustes como página.** El usuario: "esas barras laterales siguen siendo
+confusas, no se entiende cuáles son de contenido y cuáles de ajustes, hay mucho
+comprimido… la pestaña de la izquierda tiene 4 pestañas… haz algo muy bueno
+como el popup de compartir" y "el panel de configurar lista tiene un menú que
+se desliza horizontalmente… con tantas opciones no es la mejor opción". La
+causa: cuatro modos distintos (qué hay, cómo se ve, cómo se comporta, lo que no
+se ve) vivían como pestañas DENTRO de la columna izquierda, así que la columna
+de la derecha cambiaba de significado sin que nada lo dijera.
+
+1. **Kit común** (`apps/web/app/admin/builder/BuilderShell.tsx`): barra
+   superior de tres zonas (cerrar + ícono + nombre editable en el lugar ·
+   **modos** en un control segmentado al centro, con contador o punto rojo ·
+   deshacer/rehacer, tema y estadísticas —o «⋯» bajo 1280 px—, publicar como
+   interruptor, Compartir y Guardar/«Guardado»), `PanelHeader` (ícono, título,
+   para qué sirve, acciones y «‹ Volver»), `PanelSegments`, `InspectorEmpty`
+   («Ir directo a…»), `SettingsNav` (menú por grupos con resumen de estado,
+   punto rojo y `badge`), `SettingsPageLayout` (menú + contenido de 760 px en
+   tarjetas), `SettingsMobileIndex`, `MobileBackBar` y, en el celular,
+   `BuilderMobileTopBar` + `BuilderMobileNav` (barra de abajo:
+   Contenido · Diseño · Vista previa · Lógica · Ajustes).
+2. **Qué es cada columna, según el modo**: Contenido = Estructura | vista
+   previa | Propiedades; Diseño = vista previa | un solo panel a la derecha con
+   **Plantillas** y **Personalizar** (sin columna izquierda); Lógica (sólo
+   formularios) = Recorrido | vista previa | Reglas; **Ajustes = página
+   completa** (menú por grupos a la izquierda, el grupo a lo ancho, sin vista
+   previa). Elegir una parte en Diseño o Lógica abre su panel con «‹ Diseño» /
+   «‹ Lógica»; elegirla estando en Ajustes vuelve a Contenido.
+3. **Ajustes agrupados**: formularios en «El formulario» (General, Bienvenida,
+   Al enviar), «Las respuestas» (Correo de quien responde, Cupos y cierre,
+   Guardar el avance, Registros, Origen), «Cobros» y «Seguridad y medición»;
+   agenda en «Cuándo se agenda» (Horario, Reglas), «Al agendar» (Aprobación,
+   Cobro, Correos), «Datos y medición» y «Publicar». Cada grupo dice cómo está
+   sin abrirlo y el aviso de campos obligatorios va arriba de la página.
+4. **Configuración de la lista** (`ListBuilderPage`): la tira de doce pestañas
+   pasa a un **menú vertical fijo** por grupos —«La lista» (Campos, General,
+   Apariencia), «Quién la ve» (Permisos, Compartir), «Recibir registros»
+   (Formularios, Agenda, Correo entrante) y «Procesos» (Plantillas,
+   Aprobaciones, Documentos, SLA)— con el ícono de la lista arriba; en el
+   celular, sin `?s=` un **índice** agrupado (`SectionIndex`, el de Ajustes) y
+   dentro de una sección «‹ Configuración». `?s=` sigue siendo el enlace de
+   cada sección. El administrador de campos deja su propia columna de
+   navegación (los tipos pasan a chips arriba de la tabla) y decide la columna
+   de ajustes y las columnas de detalle por el ancho REAL (ResizeObserver y
+   container query `imcrm-fb`), no por la ventana.
+5. Sin cambios de servidor ni migración. Las capturas de la ayuda que muestran
+   estas pantallas se regraban (sus escenarios cambiaron de selector o de
+   texto).
+
 ### ADR-S95 — Formularios y agenda insertados que aguantan mucho tráfico (v0.1.352)
 
 **Contexto.** El usuario preguntó: "si lo uso como formulario de contacto de

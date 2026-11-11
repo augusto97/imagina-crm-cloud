@@ -278,7 +278,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Una matriz para calificar varios aspectos a la vez' },
             {
                 t: 'p',
-                md: 'La **matriz** junta varias preguntas en una tabla: cada **fila** es un aspecto y cada **columna** una respuesta posible. En la pestaña **Agregar** toca **Matriz**, elige qué campos van como filas y qué columnas usar. Cada fila guarda su respuesta en **su propio campo** de la lista, así después puedes filtrar, agrupar o promediar cada aspecto por separado.',
+                md: 'La **matriz** junta varias preguntas en una tabla: cada **fila** es un aspecto y cada **columna** una respuesta posible. En **Contenido** toca **Agregar pregunta o contenido** y elige **Matriz**; después elige qué campos van como filas y qué columnas usar. Cada fila guarda su respuesta en **su propio campo** de la lista, así después puedes filtrar, agrupar o promediar cada aspecto por separado.',
             },
             {
                 t: 'settings',
@@ -362,7 +362,7 @@ export const articles: LearnArticle[] = [
                 t: 'callout',
                 tone: 'info',
                 title: 'Varias reglas y saltos',
-                md: 'Con **Otra condición** una pregunta puede depender de varias respuestas a la vez, todas o alguna. Para saltar a otra página, terminar antes o mostrar un mensaje final distinto, usa la pestaña **Lógica**: lo explicamos en «Saltos, pantallas finales y respuestas que se recuerdan».',
+                md: 'Con **Otra condición** una pregunta puede depender de varias respuestas a la vez, todas o alguna. Para saltar a otra página, terminar antes o mostrar un mensaje final distinto, usa **Lógica** (arriba del editor): lo explicamos en «Saltos, pantallas finales y respuestas que se recuerdan».',
             },
             { t: 'h', text: 'Formularios por pasos' },
             { t: 'anim', key: 'form-pages', caption: 'Un formulario en tres pasos con barra de progreso.' },
@@ -431,7 +431,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Con la pestaña **Lógica** del constructor el formulario se adapta a cada persona: **salta** las páginas que no le corresponden, **termina** con un mensaje distinto según lo que respondió y la **llama por su nombre** en las preguntas que siguen. Todo se ve al instante en la vista previa.',
+                md: 'Con **Lógica**, arriba del constructor, el formulario se adapta a cada persona: **salta** las páginas que no le corresponden, **termina** con un mensaje distinto según lo que respondió y la **llama por su nombre** en las preguntas que siguen. Todo se ve al instante en la vista previa.',
             },
             { t: 'anim', key: 'form-logic', caption: 'Laura escribe su nombre, elige «Persona», salta la página de la empresa y termina en «¡Gracias, Laura!».' },
             { t: 'h', text: 'Saltar a otra página' },
@@ -439,7 +439,7 @@ export const articles: LearnArticle[] = [
                 t: 'steps',
                 items: [
                     'Divide el formulario en páginas con **Salto de página** (en **Agregar → Contenido**). Sin páginas igual puedes terminar antes o elegir la pantalla final.',
-                    'Abre la pestaña **Lógica**. Cada página tiene su bloque «Al terminar la página…».',
+                    'Toca **Lógica** arriba. Cada página tiene su bloque «Al terminar la página…».',
                     'Toca **Agregar un salto**, elige la pregunta que decide, la comparación y el valor (por ejemplo **Tipo de cliente** · **es** · **Persona**).',
                     'En **Entonces** elige adónde va: una página de más adelante, **Terminar el formulario** o una pantalla final.',
                     'Prueba el camino respondiendo en la vista previa y toca **Guardar**.',
@@ -454,7 +454,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Qué preguntas deciden', what: 'Las de esa página y las de las páginas anteriores.' },
                     { name: 'Lo escrito en una página saltada', what: 'No se pide, no cuenta en otras condiciones y no se guarda, aunque la persona lo hubiera escrito antes de cambiar su respuesta.', tip: 'Si elige «Empresa», escribe el NIT, vuelve y cambia a «Persona», el NIT no llega a la lista.' },
                     { name: '«Paso 2 de 3»', what: 'La barra de progreso cuenta sólo las páginas por las que pasa esa persona. Si un salto termina el formulario, en esa página ya aparece **Enviar**.' },
-                    { name: 'En la computadora', what: 'A la izquierda, la pestaña **Lógica** muestra el recorrido completo de un vistazo («Si Edad es menor que 18 → Terminar en «Menores»»); se edita a la derecha.' },
+                    { name: 'En la computadora', what: 'Con **Lógica** abierta, la columna **Recorrido** de la izquierda muestra el camino completo de un vistazo («Si Edad es menor que 18 → Terminar en «Menores»»); se edita a la derecha, en **Reglas**.' },
                 ],
             },
             { t: 'h', text: 'Varias reglas: todas o alguna' },
@@ -472,7 +472,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'En la pestaña **Lógica**, sección **Pantallas finales**, toca **Agregar una pantalla final**.',
+                    'En **Lógica**, sección **Pantallas finales**, toca **Agregar una pantalla final**.',
                     'Ponle un nombre que sólo ves tú («Empresas grandes»), el título y el mensaje que verá la persona.',
                     'En **Se muestra si**, agrega su condición (por ejemplo **Empleados** · **es mayor que** · **50**). Sin condición, sólo se muestra si un salto lleva a ella.',
                     'Toca **Ver** para mirarla en la vista previa.',
@@ -501,7 +501,7 @@ export const articles: LearnArticle[] = [
                     { name: '{{nombre}}', what: 'La respuesta como la lee una persona: la etiqueta de la opción elegida, «Sí» o «No», y los números con los separadores de tu empresa.' },
                     { name: '{{nombre|amigo}}', what: 'Lo que va después de la barra se muestra si todavía no respondió: «Hola, amigo».' },
                     { name: 'Dónde sirve', what: 'En preguntas, ayudas, títulos de sección y de página, textos, la descripción, el agradecimiento y las pantallas finales.' },
-                    { name: 'Qué nombre usar', what: 'El nombre interno del campo. La pestaña **Lógica** lista los que puedes usar: sólo las preguntas de este formulario.', tip: 'En la vista previa, sin respuestas, se ve «[nombre]» para que sepas dónde irá.' },
+                    { name: 'Qué nombre usar', what: 'El nombre interno del campo. **Lógica** lista los que puedes usar: sólo las preguntas de este formulario.', tip: 'En la vista previa, sin respuestas, se ve «[nombre]» para que sepas dónde irá.' },
                 ],
             },
             {
@@ -541,7 +541,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'En el constructor, abre la pestaña **Lógica** y baja hasta **Cálculos y puntaje**.',
+                    'En el constructor, toca **Lógica** arriba y baja hasta **Cálculos y puntaje**.',
                     'Toca **Agregar un cálculo**. Ponle un **Nombre** («Puntaje») y, si quieres, desde cuánto **Empieza**.',
                     'En **Qué suma cada respuesta**, toca cada pregunta y escribe los puntos de cada opción. En una pregunta de número (o una escala), escribe por cuánto se multiplica la respuesta.',
                     'Debajo ves entre cuánto y cuánto puede dar el resultado.',
@@ -720,7 +720,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'Abre el formulario en **Configurar lista → Formularios** y ve a la pestaña **Ajustes**.',
+                    'Abre el formulario en **Configurar lista → Formularios** y toca **Ajustes** arriba.',
                     'En **Actualizar un registro**, enciende **Permitir enlaces para actualizar un registro**.',
                     'Elige cuántos días sirve cada enlace y, si quieres, el mensaje que verá la persona al guardar.',
                     'Publica el formulario: un enlace sólo funciona si el formulario está publicado.',
@@ -800,7 +800,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'Abre el formulario en **Configurar lista → Formularios** y ve a la pestaña **Ajustes**.',
+                    'Abre el formulario en **Configurar lista → Formularios** y toca **Ajustes** arriba.',
                     'En **Cobrar al enviar**, enciende **Cobrar al enviar el formulario**.',
                     'Elige **con qué cuenta se cobra** y escribe el **concepto** del cobro (lo que verá la persona al pagar).',
                     'Elige **cuánto se cobra** y qué pasa **después de enviar**.',
@@ -812,7 +812,7 @@ export const articles: LearnArticle[] = [
                 t: 'settings',
                 rows: [
                     { name: 'Monto fijo', what: 'Todos pagan lo mismo: una inscripción, una entrada, una cuota.', tip: 'Escribe el monto con los separadores de tu empresa: «150.000».' },
-                    { name: 'Según un cálculo', what: 'El total sale de un cálculo de la pestaña **Lógica → Cálculos y puntaje**. Por ejemplo, cada plan suma su precio como puntos, o la cantidad por el precio unitario.', tip: 'La persona ve el total cambiar mientras elige, antes de enviar.' },
+                    { name: 'Según un cálculo', what: 'El total sale de un cálculo de **Lógica → Cálculos y puntaje**. Por ejemplo, cada plan suma su precio como puntos, o la cantidad por el precio unitario.', tip: 'La persona ve el total cambiar mientras elige, antes de enviar.' },
                     { name: 'Lo escribe la persona', what: 'Un aporte, una donación o un abono: la persona escribe cuánto paga en una pregunta de número o moneda, con un **mínimo** y un **máximo** opcionales.', tip: 'Si escribe menos del mínimo o más del máximo, el formulario se lo dice y no se envía.' },
                 ],
             },
@@ -893,7 +893,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'Abre el formulario en **Configurar lista → Formularios** y ve a la pestaña **Ajustes**.',
+                    'Abre el formulario en **Configurar lista → Formularios** y toca **Ajustes** arriba.',
                     'En **Correo de quien responde**, elige la pregunta con el correo.',
                     'En **Suscribir al enviar**, enciende **Suscribir con débito automático al enviar**.',
                     'Marca los **planes que se ofrecen** (hasta 6). Se muestran en el orden de la lista.',
@@ -959,7 +959,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Lo que se **ve** en el formulario (el título, la descripción, el logo, el botón, el agradecimiento) se edita tocándolo en la vista previa o en **Contenido**. Lo que **no se ve** está en la pestaña **Ajustes**, en grupos con nombre: **General**, **Bienvenida**, **Al enviar**, **Correo de quien responde**, **Cupos y cierre**, **Guardar el avance**, **Cobrar o suscribir**, **Registros**, **Seguridad y datos** y **Medir conversiones**. Cada grupo dice cómo está («Sin límite», «Apagado»…) sin abrirlo. Aquí están todos.',
+                md: 'Lo que se **ve** en el formulario (el título, la descripción, el logo, el botón, el agradecimiento) se edita tocándolo en la vista previa o en **Contenido**. Lo que **no se ve** está en **Ajustes** (arriba del editor): una página con un menú de grupos a la izquierda: **General**, **Bienvenida**, **Al enviar**, **Correo de quien responde**, **Cupos y cierre**, **Guardar el avance**, **Cobrar o suscribir**, **Registros**, **Seguridad y datos** y **Medir conversiones**. Cada grupo dice cómo está («Sin límite», «Apagado»…) sin abrirlo. Aquí están todos.',
             },
             { t: 'anim', key: 'form-closing', caption: 'Con un cupo de 30, el formulario se cierra solo al llegar a 30 respuestas.' },
             { t: 'h', text: 'Textos de la página (se tocan en la vista previa)' },
@@ -1015,7 +1015,7 @@ export const articles: LearnArticle[] = [
                         what: 'Toca el logo en la vista previa (o **Logo** en **Contenido**): **El de la empresa** (el de **Ajustes → Marca**), **Otro logo** (sólo para este formulario: sale arriba del título y en los correos) o **Sin logo**. El ojo de su fila lo oculta.',
                         tip: 'Otro logo sirve cuando el formulario es de una marca o un producto tuyo distinto. Acepta PNG, JPG o WebP; el alto y la alineación están en la pestaña **Estilo** del logo.',
                     },
-                    { name: 'Colores de cada parte', what: 'Cada parte que tocas tiene su **Estilo** con sus colores: el título, la descripción, las preguntas, las opciones, el botón, el avance, la franja y los enlaces. Vacío = el color general (se ve punteado). Los colores generales y las plantillas están en la pestaña **Diseño**, que además tiene **Colores de cada elemento** con todos juntos.', tip: 'Lo explicamos completo en «Diseña tu formulario: plantillas, colores, fuentes y tamaños».' },
+                    { name: 'Colores de cada parte', what: 'Cada parte que tocas tiene su **Estilo** con sus colores: el título, la descripción, las preguntas, las opciones, el botón, el avance, la franja y los enlaces. Vacío = el color general (se ve punteado). Los colores generales y las plantillas están en **Diseño**, que además tiene **Colores de cada elemento** con todos juntos.', tip: 'Lo explicamos completo en «Diseña tu formulario: plantillas, colores, fuentes y tamaños».' },
                 ],
             },
             {
@@ -1053,7 +1053,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Cada formulario puede verse exactamente como tu marca: una plantilla de partida, tus colores, tus fuentes, el tamaño de cada cosa, las esquinas, los bordes, una imagen de fondo o una portada. Todo se hace en la pestaña **Diseño** del constructor y lo ves cambiar al instante en la vista previa, que es la página real que se publica.\n\nLos formularios que ya tenías siguen viéndose igual que antes —con el diseño **Clásico**— hasta que elijas otro.',
+                md: 'Cada formulario puede verse exactamente como tu marca: una plantilla de partida, tus colores, tus fuentes, el tamaño de cada cosa, las esquinas, los bordes, una imagen de fondo o una portada. Todo se hace en **Diseño**, arriba del constructor, y lo ves cambiar al instante en la vista previa, que es la página real que se publica.\n\nLos formularios que ya tenías siguen viéndose igual que antes —con el diseño **Clásico**— hasta que elijas otro.',
             },
             { t: 'anim', key: 'form-design', caption: 'Elegir una plantilla en la pestaña Diseño: el mismo formulario cambia de colores, esquinas y botón.' },
             { t: 'h', text: 'Empieza por una plantilla' },
@@ -1061,7 +1061,7 @@ export const articles: LearnArticle[] = [
                 t: 'steps',
                 items: [
                     'Ve a **Configurar lista → Formularios** y edita el formulario.',
-                    'Toca la pestaña **Diseño** (a la izquierda; en el celular, en la barra de arriba).',
+                    'Toca **Diseño** arriba (en el celular, en la barra de abajo): la vista previa ocupa el centro y el panel de la derecha tiene **Plantillas** y **Personalizar**.',
                     'En **Plantillas** toca la que más se parezca a lo que quieres. Todas toman el color de tu marca.',
                     'Retoca lo que quieras en el panel de la derecha. Si no te convenció, **Ctrl + Z** la deshace.',
                     'Toca **Guardar**. Mientras no guardes, el formulario publicado sigue como estaba.',
@@ -1081,7 +1081,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Todo lo que puedes ajustar' },
             {
                 t: 'p',
-                md: 'Con la pestaña **Diseño** abierta y nada elegido, el panel derecho muestra **Diseño del formulario**, dividido en secciones que se abren y se cierran. Cada sección tiene su botón para volver a lo de la plantilla.\n\nPara cambiar **una sola parte**, tócala en la vista previa y abre su pestaña **Estilo**: el título trae su fuente, tamaño, grosor y color; el botón, sus colores, tamaño, esquinas e ícono; una pregunta, su ancho y los colores y tamaños de todas las preguntas.',
+                md: 'Con **Diseño** abierto y nada elegido, toca **Personalizar** en el panel derecho: el diseño de todo el formulario, dividido en secciones que se abren y se cierran. Cada sección tiene su botón para volver a lo de la plantilla.\n\nPara cambiar **una sola parte**, tócala en la vista previa y abre su pestaña **Estilo**: el título trae su fuente, tamaño, grosor y color; el botón, sus colores, tamaño, esquinas e ícono; una pregunta, su ancho y los colores y tamaños de todas las preguntas.',
             },
             {
                 t: 'settings',
@@ -1134,7 +1134,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'Cuando el diseño quede como quieres, abre **Mis temas** en la pestaña **Diseño** y toca **Guardar este diseño como tema**.',
+                    'Cuando el diseño quede como quieres, en **Diseño → Plantillas** abre **Mis temas** y toca **Guardar este diseño como tema**.',
                     'Ponle un nombre («Marca 2026»). Ya aparece en todos los formularios de la empresa.',
                     'Para usarlo en otro formulario, ábrelo y toca el tema en **Mis temas**.',
                     'Toca la estrella de un tema para que los **formularios nuevos** nazcan con él.',
@@ -1725,7 +1725,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'steps',
                 items: [
-                    'Abre el formulario en **Configurar lista → Formularios** y ve a la pestaña **Ajustes**.',
+                    'Abre el formulario en **Configurar lista → Formularios** y toca **Ajustes** arriba.',
                     'Toca **Origen y etiquetas**.',
                     'En **Página desde donde se envió**, toca **Crear las columnas** (crea «Página de origen» y «Llegó desde») o elige columnas que ya tengas.',
                     'En **Nombre del formulario**, toca **Crear la columna «Formulario»** y elige si guardar el nombre interno o el título.',
