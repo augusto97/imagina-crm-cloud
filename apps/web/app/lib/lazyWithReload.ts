@@ -47,7 +47,7 @@ import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
 const RELOADED_KEY = 'imcrm:reloaded-after-chunk-fail';
 const RETRY_DELAYS_MS = [500, 1500];
 
-function isChunkLoadError(err: unknown): boolean {
+export function isChunkLoadError(err: unknown): boolean {
     if (! err) return false;
     const msg = err instanceof Error ? err.message : String(err);
     return (

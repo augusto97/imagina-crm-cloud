@@ -4,6 +4,7 @@ import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
+import { addDedupedJob, createWorker, registerScheduler } from '../redis/queue-runtime';
 
 export const STORE_SYNC_QUEUE = 'store-sync';
 /**
@@ -70,15 +71,7 @@ export class StoreSyncQueue {
         if (!this.queue) return;
         const suffix = `${opts.full ? '-full' : ''}${opts.only?.length ? `-${[...opts.only].sort().join('_')}` : ''}`;
         const data: StoreSyncRunJob = { tenantId, syncId, ...opts };
-        this.queue
-            .add(RUN_JOB, data, {
-                // Un reintento diferido no puede reusar el id: el job que lo
-                // pide todavía existe (está corriendo) y BullMQ lo descartaría.
-                jobId: `run-${syncId}${suffix}${delayMs > 0 ? '-retry' : ''}`,
-                delay: delayMs,
-                removeOnComplete: true,
-                removeOnFail: 100,
-            })
+        addDedupedJob(this.queue, RUN_JOB, data, { jobId: `run-${syncId}${suffix}${delayMs > 0 ? '-retry' : ''}`, delay: delayMs })
             .catch((err) => this.logger.error(`No se pudo encolar la sincronización #${syncId}: ${String(err)}`));
     }
 
@@ -166,17 +159,17 @@ export class StoreSyncQueueBootstrap implements OnModuleInit, OnApplicationShutd
                 }
             };
             // Dos a la vez: una tienda enorme no frena la de otra empresa.
-            this.worker = new Worker(STORE_SYNC_QUEUE, process, { connection: conn(), concurrency: 2, lockDuration: 120_000 });
-            this.worker.on('failed', (job, err) => this.logger.error(`Sincronización ${job?.id} falló: ${err.message}`));
-            this.worker.on('error', (err) => this.logger.warn(`Worker de sincronización con error: ${err.message}`));
+            this.worker = createWorker(STORE_SYNC_QUEUE, process, { connection: conn(), concurrency: 2, lockDuration: 120_000 });
+            this.worker?.on('failed', (job, err) => this.logger.error(`Sincronización ${job?.id} falló: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de sincronización con error: ${err.message}`));
             // v0.1.393 — avisos y envíos en su propia cola (ver STORE_SYNC_LIVE_QUEUE).
             this.liveQueue = new Queue(STORE_SYNC_LIVE_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.liveQueue.on('error', (err) => this.logger.warn(`Cola de avisos de tiendas con error: ${err.message}`));
-            this.liveWorker = new Worker(STORE_SYNC_LIVE_QUEUE, process, { connection: conn(), concurrency: 4, lockDuration: 120_000 });
-            this.liveWorker.on('failed', (job, err) => this.logger.error(`Aviso de tienda ${job?.id} falló: ${err.message}`));
-            this.liveWorker.on('error', (err) => this.logger.warn(`Worker de avisos de tiendas con error: ${err.message}`));
+            this.liveWorker = createWorker(STORE_SYNC_LIVE_QUEUE, process, { connection: conn(), concurrency: 4, lockDuration: 120_000 });
+            this.liveWorker?.on('failed', (job, err) => this.logger.error(`Aviso de tienda ${job?.id} falló: ${err.message}`));
+            this.liveWorker?.on('error', (err) => this.logger.warn(`Worker de avisos de tiendas con error: ${err.message}`));
             this.dispatcher.setQueue(this.queue, this.liveQueue);
-            await this.queue.upsertJobScheduler(TICK_JOB, { every: 60_000 }, { name: TICK_JOB, data: {} });
+            registerScheduler(this.queue, TICK_JOB, { every: 60_000 }, { name: TICK_JOB, data: {} }, this.logger);
             this.logger.log('Cola de sincronización con tiendas lista');
         } catch (err) {
             this.logger.warn(`Sincronización con tiendas deshabilitada (sin Redis): ${String(err)}`);

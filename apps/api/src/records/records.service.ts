@@ -1173,8 +1173,19 @@ export class RecordsService {
              * persona. La respuesta igual sale sin lo que no ve.
              */
             serverDecided?: boolean;
+            /**
+             * Edición en lote / desde un archivo / deshacer: quien llama sólo
+             * mira los valores GUARDADOS de lo que cambió (`data` y, de las
+             * relaciones que mandó, `relations`). Con esto la respuesta sale sin
+             * lo que se calcula para la ficha (búsquedas y resúmenes, fórmulas,
+             * subtareas, bloqueos, aprobaciones, checklists): eran 5-8 consultas
+             * por fila, CON la fila bloqueada, para un resultado que se tiraba.
+             * Lo que se escribe, se valida, se registra y se dispara es igual.
+             */
+            lean?: boolean;
         } = {},
     ): Promise<RecordDto> {
+        const lean = opts.lean === true;
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
             // v0.1.392 — lista y campos en ESTA transacción: antes eran dos más
             // (una por paso) en cada edición de cada registro.
@@ -1229,26 +1240,28 @@ export class RecordsService {
                 });
                 rescheduled = await this.rescheduleDependentsInTx(tx, tenantId, list, fields, actor, id, current.data, updated.data);
             }
-            const relFieldIds = fields.filter((f) => f.type === 'relation').map((f) => f.id);
-            const rels = updated
+            // En modo `lean` sólo las relaciones que vinieron en el cambio.
+            const relFieldIds = lean ? rel.values.map((v) => v.field.id) : fields.filter((f) => f.type === 'relation').map((f) => f.id);
+            const rels = updated && relFieldIds.length > 0
                 ? await this.relationsRepo.batchTargets(tx, tenantId, [id], relFieldIds)
                 : new Map<number, Map<number, number[]>>();
-            const enriched = updated
+            const full = updated !== null && updated !== undefined && !lean;
+            const enriched = full
                 ? (await this.withThrough(tx, tenantId, listId, fields, [updated]))[0] ?? updated
                 : null;
             // La respuesta reemplaza al registro en los caches del front: sin
             // esto volvía con 0 subtareas aunque las tuviera.
-            const subtasks = updated && (updated.parentId ?? null) === null
+            const subtasks = full && (updated.parentId ?? null) === null
                 ? (await this.repo.subtaskCounts(tx, tenantId, [id])).get(id) ?? 0
                 : 0;
             // C3 — un invitado no ve los indicadores de la operación interna.
-            const internal = updated && actor.role !== 'guest';
+            const internal = full && actor.role !== 'guest';
             const hiddenIds = new Set([...hiddenKeys].map((k) => Number(k.slice(1))));
             const blockedOpen = internal ? (await this.openBlockers(tx, tenantId, fields, hiddenIds, [id])).get(id) ?? 0 : 0;
             const approvalPending = internal ? (await pendingApprovalCounts(tx, [id])).get(id) ?? 0 : 0;
             const checklist = internal ? (await this.checklists.progressOf(tx, tenantId, [id])).get(id) : undefined;
-            const rt = updated ? await this.formulaRuntime(tx, tenantId, listId, fields) : undefined;
-            return { updated, enriched, before: current.data, rels, subtasks, rescheduled, blockedOpen, approvalPending, checklist, rt, list, fields, hiddenKeys };
+            const rt = full ? await this.formulaRuntime(tx, tenantId, listId, fields) : undefined;
+            return { updated, enriched, before: current.data, rels, relFieldIds, subtasks, rescheduled, blockedOpen, approvalPending, checklist, rt, list, fields, hiddenKeys };
         });
         const { list, fields } = result;
         const listId = list.id;
@@ -1289,6 +1302,13 @@ export class RecordsService {
         }
         // SEC — igual que `get`: sin lo que quien edita no ve (antes un PATCH
         // con `data: {}` devolvía el registro entero, campos ocultos incluidos).
+        if (lean) {
+            // Sólo lo guardado: sin calculados ni indicadores (nadie los mira).
+            return stripHidden(
+                toRecord(row, byFieldToKeys(result.relFieldIds, result.rels.get(row.id))),
+                result.hiddenKeys,
+            );
+        }
         return stripHidden(
             {
                 ...toRecord(
@@ -1926,12 +1946,14 @@ export class RecordsService {
 
         const succeeded: number[] = [];
         const failed: Array<{ id: number; message: string }> = [];
+        // Lista y campos UNA vez para todo el lote (antes, por cada fila).
+        const prepared = action === 'update' && ids.length > 1 ? await this.listAndFields(tenantId, listIdOrSlug) : undefined;
         for (const id of ids) {
             try {
                 if (action === 'delete') {
                     await this.remove(tenantId, actor, listIdOrSlug, id, { silent: true });
                 } else {
-                    await this.update(tenantId, actor, listIdOrSlug, id, { data }, { silent: true });
+                    await this.update(tenantId, actor, listIdOrSlug, id, { data }, { silent: true, lean: true, ...(prepared ? { prepared } : {}) });
                 }
                 succeeded.push(id);
             } catch (err) {

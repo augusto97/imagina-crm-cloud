@@ -39,6 +39,7 @@ import { BillingService } from '../billing/billing.service';
 import { assignmentKeys, effectivePermissions, listRowInScope, scopeWhere } from '../lists/list-acl';
 import { tenantIsReadOnly } from '../tenancy/read-only';
 import { IncidentHub } from '../incidents/incident-hub';
+import { withRedisLock } from '../redis/redis-lock';
 
 /** Resultado interno de un fire (para emitir realtime/automations tras el tx). */
 interface FireOutcome {
@@ -547,13 +548,10 @@ export class RecurrencesService {
         // v0.1.393 — un barrido a la vez: si uno tarda más de 5 minutos (un
         // día de facturación con miles de recurrencias), el siguiente no
         // repite el trabajo en paralelo.
-        const lock = this.redis ? await this.redis.set(TICK_LOCK_KEY, '1', 'EX', TICK_LOCK_TTL_S, 'NX').catch(() => 'OK') : 'OK';
-        if (lock !== 'OK') return;
-        try {
-            await this.tickLocked();
-        } finally {
-            await this.redis?.del(TICK_LOCK_KEY).catch(() => undefined);
-        }
+        if (!this.redis) return this.tickLocked();
+        // Candado con dueño y renovado mientras dura (un barrido más largo que
+        // el vencimiento ya no deja entrar a otro, ni borra el candado ajeno).
+        await withRedisLock(this.redis, TICK_LOCK_KEY, TICK_LOCK_TTL_S, () => this.tickLocked());
     }
 
     private async tickLocked(): Promise<void> {

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router';
+import { Link, NavLink, useLocation } from 'react-router';
+
+import { SafeOutlet } from '@/admin/layout/SafeOutlet';
 import { FileText, Inbox, Info, Settings, X } from 'lucide-react';
 
 import { Topbar } from '@/admin/layout/Topbar';
@@ -108,7 +110,7 @@ export function GuestShell(): JSX.Element {
                 </div>
                 <main id="imcrm-main" aria-label={__('Contenido principal')} className="imcrm-flex-1 imcrm-overflow-auto imcrm-px-3 imcrm-py-2 sm:imcrm-px-4" tabIndex={-1}>
                     <div className="imcrm-w-full">
-                        <Outlet />
+                        <SafeOutlet />
                     </div>
                 </main>
             </div>

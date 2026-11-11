@@ -3,6 +3,7 @@ import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
+import { addDedupedJob, createWorker, registerScheduler } from '../redis/queue-runtime';
 
 export const SQL_SYNC_QUEUE = 'sql-sync';
 const TICK_JOB = 'tick';
@@ -32,13 +33,7 @@ export class SqlSyncQueue {
     enqueueRun(tenantId: number, syncId: number, delayMs = 0): void {
         if (!this.queue) return;
         const data: SqlSyncRunJob = { tenantId, syncId };
-        this.queue
-            .add(RUN_JOB, data, {
-                jobId: `run-${syncId}${delayMs > 0 ? '-retry' : ''}`,
-                delay: delayMs,
-                removeOnComplete: true,
-                removeOnFail: 100,
-            })
+        addDedupedJob(this.queue, RUN_JOB, data, { jobId: `run-${syncId}${delayMs > 0 ? '-retry' : ''}`, delay: delayMs })
             .catch((err) => this.logger.error(`No se pudo encolar la sincronización SQL #${syncId}: ${String(err)}`));
     }
 }
@@ -74,7 +69,7 @@ export class SqlSyncQueueBootstrap implements OnModuleInit, OnApplicationShutdow
             };
             this.queue = new Queue(SQL_SYNC_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de SQL con error: ${err.message}`));
-            this.worker = new Worker(
+            this.worker = createWorker(
                 SQL_SYNC_QUEUE,
                 async (job) => {
                     if (!this.handlers) return;
@@ -90,10 +85,10 @@ export class SqlSyncQueueBootstrap implements OnModuleInit, OnApplicationShutdow
                 // Dos a la vez: la base lenta de una empresa no frena la de otra.
                 { connection: conn(), concurrency: 2, lockDuration: 6 * 60_000 },
             );
-            this.worker.on('failed', (job, err) => this.logger.error(`Sincronización SQL ${job?.id} falló: ${err.message}`));
-            this.worker.on('error', (err) => this.logger.warn(`Worker de SQL con error: ${err.message}`));
+            this.worker?.on('failed', (job, err) => this.logger.error(`Sincronización SQL ${job?.id} falló: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de SQL con error: ${err.message}`));
             this.dispatcher.setQueue(this.queue);
-            await this.queue.upsertJobScheduler(TICK_JOB, { every: 60_000 }, { name: TICK_JOB, data: {} });
+            registerScheduler(this.queue, TICK_JOB, { every: 60_000 }, { name: TICK_JOB, data: {} }, this.logger);
             this.logger.log('Cola de sincronización SQL lista');
         } catch (err) {
             this.logger.warn(`Sincronización SQL deshabilitada (sin Redis): ${String(err)}`);

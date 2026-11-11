@@ -1,4 +1,3 @@
-import { timeKeys } from '@/hooks/useTimeTracking';
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -9,25 +8,7 @@ import {
 } from '@imagina-base/shared';
 import { io, type Socket } from 'socket.io-client';
 import { useSession } from '@/cloud/session';
-import { fieldsKeys } from '@/hooks/useFields';
-import { isRecentLocalListsChange, listsKeys } from '@/hooks/useLists';
-import { activityKeys } from '@/hooks/useActivity';
-import { fieldHistoryKeys } from '@/hooks/fieldHistoryKeys';
-import { commentsKeys } from '@/hooks/useComments';
-import { descriptionKeys } from '@/hooks/useRecordDescription';
-import {
-    AGGREGATES_NS,
-    invalidateForList,
-    isRecentLocalRecordsChange,
-    listIdentifiersFor,
-    recordsKeys,
-} from '@/hooks/useRecords';
-import { layoutDataKeys } from '@/admin/records/layout/useLayoutData';
-import { viewsKeys } from '@/hooks/useSavedViews';
-import { notificationKeys } from '@/hooks/useNotifications';
-import { invalidateDashboardsForList } from '@/hooks/useDashboards';
-import { teamsKeys } from '@/hooks/useTeams';
-import { customRolesKeys } from '@/hooks/useCustomRoles';
+import { createRealtimeInvalidator } from '@/cloud/realtimeInvalidate';
 
 /**
  * Realtime por invalidación push (STANDALONE §7). Conecta el socket (auth por
@@ -54,6 +35,14 @@ export function useRealtime(): void {
         const join = () => socket.emit(RT_EVENT_JOIN, { tenantId });
         socket.on('connect', join);
 
+        // Qué se vuelve a pedir con cada aviso (y cuándo NO): `realtimeInvalidate`.
+        const invalidator = createRealtimeInvalidator(qc);
+        const invalidate = (ev: RtInvalidate): void => invalidator.handle(ev);
+        const onVisibility = (): void => {
+            if (!document.hidden) invalidator.onVisible();
+        };
+        document.addEventListener('visibilitychange', onVisibility);
+
         // v0.1.286 — los eventos llegan en RÁFAGAS (aplicar una plantilla crea
         // 2-3 listas con sus campos y vistas: un evento por cada cosa) y cada
         // uno re-pedía lo mismo — `GET /lists` ×5 tras crear una lista desde
@@ -75,94 +64,10 @@ export function useRealtime(): void {
             if (flushTimer === null) flushTimer = window.setTimeout(flush, 150);
         });
 
-        function invalidate(ev: RtInvalidate): void {
-            // v0.1.105 — invalidar por ID *y* SLUG (`invalidateForList`): los
-            // eventos traen el id numérico pero RecordsPage registra sus
-            // queries bajo el slug → con la key directa los cambios de
-            // ajustes/campos hechos en otra pestaña (u otro usuario) jamás
-            // refrescaban la lista abierta hasta recargar.
-            switch (ev.topic) {
-                case 'lists':
-                    // El eco de un cambio hecho en ESTA pestaña: la mutación ya
-                    // refrescó las listas (v0.1.286). `cancelRefetch: false`: si
-                    // ya se están trayendo, no se corta para pedirlas otra vez.
-                    if (!isRecentLocalListsChange()) {
-                        void qc.invalidateQueries({ queryKey: listsKeys.all }, { cancelRefetch: false });
-                    }
-                    break;
-                case 'fields':
-                    if (ev.listId !== undefined) invalidateForList(qc, fieldsKeys.all, ev.listId);
-                    else void qc.invalidateQueries({ queryKey: fieldsKeys.all });
-                    // Un campo convertido o borrado cambia lo que calculan.
-                    invalidateDashboardsForList(qc, ev.listId);
-                    break;
-                case 'records':
-                    // El eco de una edición hecha en ESTA pestaña: la mutación
-                    // ya refrescó la lista (v0.1.253).
-                    if (ev.listId !== undefined) {
-                        if (!isRecentLocalRecordsChange(ev.listId)) {
-                            invalidateForList(qc, recordsKeys.all, ev.listId);
-                            // La ficha abierta: descripción, actividad y
-                            // comentarios viven fuera de `records` (sólo se
-                            // refrescan las queries montadas).
-                            invalidateForList(qc, descriptionKeys.all, ev.listId);
-                            invalidateForList(qc, activityKeys.all, ev.listId);
-                            // v0.1.291 — historial por campo y registro de tiempo.
-                            invalidateForList(qc, fieldHistoryKeys.all, ev.listId);
-                            invalidateForList(qc, timeKeys.all, ev.listId);
-                            const ids = listIdentifiersFor(qc, ev.listId);
-                            void qc.invalidateQueries({
-                                predicate: (q) =>
-                                    q.queryKey[0] === commentsKeys.all[0]
-                                    && typeof q.queryKey[2] === 'string'
-                                    && ids.has(q.queryKey[2]),
-                            });
-                        }
-                    } else {
-                        void qc.invalidateQueries({ queryKey: recordsKeys.all });
-                        // v0.1.286 — y los totales del pie de la tabla (con
-                        // lista, `invalidateForList` de records ya los incluye).
-                        void qc.invalidateQueries({ queryKey: [AGGREGATES_NS] });
-                    }
-                    // v0.1.230 — los gráficos y vinculados de una ficha abierta
-                    // leen OTRAS listas: un cambio en cualquiera puede moverlos.
-                    void qc.invalidateQueries({ queryKey: layoutDataKeys.all });
-                    // v0.1.286 — los tableros con algún widget sobre esa lista
-                    // (antes quedaban viejos hasta recargar). También el eco
-                    // local: la mutación de la tabla no toca los tableros.
-                    invalidateDashboardsForList(qc, ev.listId);
-                    break;
-                case 'views':
-                    if (ev.listId !== undefined) invalidateForList(qc, viewsKeys.all, ev.listId);
-                    else void qc.invalidateQueries({ queryKey: viewsKeys.all });
-                    break;
-                case 'notifications':
-                    // v0.1.276 — llega sólo a la sala de esta persona.
-                    void qc.invalidateQueries({ queryKey: notificationKeys.all });
-                    break;
-                case 'teams':
-                    // C1 — alguien creó, cambió o borró un equipo (nombre,
-                    // color, personas): chips, selectores y permisos.
-                    void qc.invalidateQueries({ queryKey: teamsKeys.all });
-                    break;
-                case 'roles':
-                    // C2 — un rol propio cambió (permisos, nombre o quién lo
-                    // tiene): la tabla de Roles y las capacidades de quien
-                    // mira (se re-arman con la sesión).
-                    void qc.invalidateQueries({ queryKey: customRolesKeys.all });
-                    void qc.invalidateQueries({ queryKey: ['me'] });
-                    break;
-                case 'timer':
-                    // v0.1.291 — el cronómetro de esta persona cambió en otra
-                    // pestaña o dispositivo (iniciado o detenido).
-                    void qc.invalidateQueries({ queryKey: timeKeys.active });
-                    void qc.invalidateQueries({ queryKey: timeKeys.all });
-                    break;
-            }
-        }
-
         return () => {
             if (flushTimer !== null) window.clearTimeout(flushTimer);
+            document.removeEventListener('visibilitychange', onVisibility);
+            invalidator.dispose();
             socket.off('connect', join);
             socket.disconnect();
         };

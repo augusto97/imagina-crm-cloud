@@ -2,6 +2,7 @@ import { Global, Inject, Injectable, Logger, Module, type OnApplicationShutdown 
 import Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { attachDiagnostics } from '../observability/diagnostics';
+import { QueueRuntimeLifecycle } from './queue-runtime';
 import { guardRedis } from './redis.util';
 
 export const REDIS = Symbol('REDIS');
@@ -41,6 +42,8 @@ export function createCoreRedis(url: string, commandTimeoutMs: number): Redis {
             inject: [ENV],
         },
         RedisLifecycle,
+        // Apagado ordenado de TODOS los workers de BullMQ + aviso de concurrencia.
+        QueueRuntimeLifecycle,
     ],
     exports: [REDIS],
 })

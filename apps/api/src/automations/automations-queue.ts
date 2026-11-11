@@ -12,6 +12,7 @@ import { AutomationWaitsService } from './automation-waits.service';
 import { AutomationsService } from './automations.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
+import { createWorker, registerScheduler, runInJobScope, workersEnabled } from '../redis/queue-runtime';
 
 interface SchedulerJobData {
     tenantId: number;
@@ -65,9 +66,9 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
             };
             this.queue = new Queue(AUTOMATIONS_QUEUE, { connection: conn(), defaultJobOptions: { removeOnComplete: 100, removeOnFail: 500 } });
             this.queue.on('error', (err) => this.logger.warn(`Cola de automatizaciones con error: ${err.message}`));
-            this.worker = new Worker(
+            this.worker = createWorker(
                 AUTOMATIONS_QUEUE,
-                async (job) => {
+                (job) => runInJobScope(AUTOMATIONS_QUEUE, job.id, async () => {
                     // Despacho por tipo de job: evento de record, cron o due-date.
                     if (job.name === 'scheduled') {
                         const d = job.data as SchedulerJobData;
@@ -82,6 +83,13 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                         // v0.1.402 — «Cuando pasa algo en Whats», con el registro ya encontrado.
                         await this.engine.runWhatsEvent(job.data as WhatsEventJob);
                     } else if (job.name === 'bulk-edit') {
+                        // Una edición en lote que se repite tras un corte volvería a
+                        // sumar o multiplicar sobre lo ya cambiado: no se repite (lo
+                        // aplicado queda en el historial de ediciones, con Deshacer).
+                        if (!(await this.engine.firstTimeInJob('bulk-edit'))) {
+                            this.logger.warn(`Edición en lote ${job.id}: el trabajo se repitió tras un corte; no se vuelve a ejecutar.`);
+                            return undefined;
+                        }
                         await this.bulkRunner.run(job.data as BulkEditJob);
                     } else if (job.name === WAITS_TICK_JOB) {
                         await this.waits.tick();
@@ -100,18 +108,22 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                         return this.engine.process(job.data as TriggerEvent);
                     }
                     return undefined;
-                },
+                }),
                 // v0.1.392 — antes 5 fijas. Los pasos de red ya no retienen una
                 // conexión a la base mientras esperan (ver `runPlainAction`).
-                { connection: conn(), concurrency: this.env.AUTOMATIONS_CONCURRENCY },
+                // `lockDuration` 90 s (default 30): BullMQ da un trabajo por colgado si
+                // su candado no se renueva a tiempo; con 30 s alcanzaba un render de
+                // PDF o un export grande ocupando el proceso para que otro nodo lo
+                // tomara y lo corriera a la par.
+                { connection: conn(), concurrency: this.env.AUTOMATIONS_CONCURRENCY, lockDuration: 90_000 },
             );
             // v0.1.392 — la tarea terminó: se libera el turno de su empresa.
             const releaseTurn = (job: { opts?: { priority?: number }; data?: unknown } | undefined): void => {
                 const tenantId = (job?.data as { tenantId?: unknown } | undefined)?.tenantId;
                 if (job?.opts?.priority && typeof tenantId === 'number') void this.dispatcher.release(tenantId);
             };
-            this.worker.on('completed', (job) => releaseTurn(job));
-            this.worker.on('failed', (job, err) => {
+            this.worker?.on('completed', (job) => releaseTurn(job));
+            this.worker?.on('failed', (job, err) => {
                 releaseTurn(job);
                 this.logger.error(`Job ${job?.id} falló: ${err.message}`);
                 // v0.1.285 (ADR-S44) — el trabajo se cayó ANTES de poder
@@ -129,22 +141,20 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
                     message: `El motor se detuvo antes de terminar: ${errorText(err)}`,
                 });
             });
-            this.worker.on('error', (err) => this.logger.warn(`Worker de automatizaciones con error: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de automatizaciones con error: ${err.message}`));
             this.dispatcher.setQueue(this.queue);
             this.scheduler.setQueue(this.queue);
             // Job repeatable global (persiste en Redis → sobrevive reinicios).
-            await this.queue.upsertJobScheduler(
-                RECURRENCES_TICK_JOB,
-                { pattern: RECURRENCES_TICK_PATTERN },
-                { name: RECURRENCES_TICK_JOB, data: {} },
-            );
+            registerScheduler(this.queue, RECURRENCES_TICK_JOB, { pattern: RECURRENCES_TICK_PATTERN }, { name: RECURRENCES_TICK_JOB, data: {} }, this.logger);
             // v0.1.288 — el reloj de las esperas (corridas en un «Esperar»).
-            await this.queue.upsertJobScheduler(WAITS_TICK_JOB, { every: 60_000 }, { name: WAITS_TICK_JOB, data: {} });
+            registerScheduler(this.queue, WAITS_TICK_JOB, { every: 60_000 }, { name: WAITS_TICK_JOB, data: {} }, this.logger);
             // v0.1.221 — Re-registra los horarios en segundo plano (no demora el arranque).
-            void this.automations
-                .resyncSchedules()
-                .then((n) => n > 0 && this.logger.log(`Horarios de automatizaciones sincronizados: ${n}`))
-                .catch((err) => this.logger.warn(`No se pudieron sincronizar los horarios: ${String(err)}`));
+            if (workersEnabled()) {
+                void this.automations
+                    .resyncSchedules()
+                    .then((n) => n > 0 && this.logger.log(`Horarios de automatizaciones sincronizados: ${n}`))
+                    .catch((err) => this.logger.warn(`No se pudieron sincronizar los horarios: ${String(err)}`));
+            }
             // v0.1.263 — cambiar la zona de la empresa re-registra sus horarios.
             this.timeZones?.onChange((tenantId) =>
                 this.automations.resyncTenantSchedules(tenantId).then(() => undefined),
@@ -164,6 +174,9 @@ export class AutomationsQueueBootstrap implements OnModuleInit, OnApplicationShu
     private async maintainRuns(): Promise<void> {
         if (Date.now() - this.lastMaintenance < 60 * 60 * 1000) return;
         this.lastMaintenance = Date.now();
+        // Turnos que quedaron contados de más (sólo corrige con la cola vacía).
+        const fixed = await this.dispatcher.reconcileTurns();
+        if (fixed > 0) this.logger.log(`Turnos de la cola de automatizaciones corregidos: ${fixed}`);
         try {
             const out = await this.automations.maintainRuns();
             if (out.pruned > 0 || out.interrupted > 0) {

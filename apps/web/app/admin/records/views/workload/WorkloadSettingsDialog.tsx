@@ -26,6 +26,7 @@ import type { FieldEntity } from '@/types/field';
 import type { SavedViewEntity } from '@/types/view';
 
 import { viewConfigToWorkload, workloadToViewConfig } from '../savedViewMapping';
+import { WORKLOAD_ZOOM_LABEL, WORKLOAD_METRIC_LABEL } from '../viewSettingsLabels';
 
 interface WorkloadSettingsDialogProps {
     listId: number;
@@ -34,18 +35,6 @@ interface WorkloadSettingsDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }
-
-export const WORKLOAD_ZOOM_LABEL: Record<WorkloadZoom, string> = {
-    day: __('Día'),
-    week: __('Semana'),
-    month: __('Mes'),
-};
-
-export const WORKLOAD_METRIC_LABEL: Record<WorkloadMetric, string> = {
-    count: __('Registros'),
-    estimate: __('Esfuerzo estimado'),
-    time: __('Tiempo registrado'),
-};
 
 /**
  * «Configurar carga» (B2): de quién es cada registro (el campo Persona), en qué

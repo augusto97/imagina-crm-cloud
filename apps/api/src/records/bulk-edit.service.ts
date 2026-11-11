@@ -143,7 +143,7 @@ export class BulkEditService {
                 continue;
             }
             try {
-                const saved = await this.records.update(tenantId, actor, String(loaded.list.id), row.id, { data: res.patch }, { silent: true, noAutomations: opts.noAutomations });
+                const saved = await this.records.update(tenantId, actor, String(loaded.list.id), row.id, { data: res.patch }, { silent: true, noAutomations: opts.noAutomations, lean: true, prepared: { list: loaded.list, fields: loaded.fields } });
                 result.succeeded.push(row.id);
                 // El DESPUÉS es lo que quedó guardado (ya validado y normalizado),
                 // no el pedido: así, al deshacer, «sigue igual» se compara bien.

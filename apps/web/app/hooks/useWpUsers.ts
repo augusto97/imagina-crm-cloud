@@ -46,6 +46,47 @@ export async function memberNamesFor(
     return qc.fetchQuery({ queryKey: memberNamesKey(clean), queryFn: () => fetchNames(clean), staleTime: 5 * 60_000 });
 }
 
+// ── Carga por id AGRUPADA (estilo DataLoader, como la de archivos) ─────────
+// Una tabla, un kanban o la actividad con 40 personas distintas pedían 40
+// veces `GET /me/users/:id`. Cada celda sigue pidiendo de a una, y este
+// cargador junta todas las del mismo tick en UN `GET /me/users?ids=`.
+type UserWaiter = (user: WpUserSummary | null) => void;
+let pendingUsers: Map<number, UserWaiter[]> | null = null;
+const USERS_PER_REQUEST = 100;
+
+/** Un miembro por id; `null` si no existe, no se puede ver o la carga falló. */
+export function loadWpUser(id: number): Promise<WpUserSummary | null> {
+    if (!Number.isInteger(id) || id <= 0) return Promise.resolve(null);
+    return new Promise((resolve) => {
+        if (pendingUsers === null) {
+            pendingUsers = new Map();
+            setTimeout(() => void flushUsers(), 0);
+        }
+        const list = pendingUsers.get(id) ?? [];
+        list.push(resolve);
+        pendingUsers.set(id, list);
+    });
+}
+
+async function flushUsers(): Promise<void> {
+    const batch = pendingUsers;
+    pendingUsers = null;
+    if (batch === null) return;
+    const ids = [...batch.keys()].sort((x, y) => x - y);
+    const chunks: number[][] = [];
+    for (let i = 0; i < ids.length; i += USERS_PER_REQUEST) chunks.push(ids.slice(i, i + USERS_PER_REQUEST));
+    await Promise.all(chunks.map(async (chunk) => {
+        let byId = new Map<number, WpUserSummary>();
+        try {
+            const res = await api.get<WpUserSummary[]>('/me/users', { query: { ids: chunk.join(',') } });
+            byId = new Map(res.data.map((u) => [u.id, u]));
+        } catch {
+            // Sin permiso o sin red: la UI muestra «Usuario #X» (como antes).
+        }
+        for (const id of chunk) for (const resolve of batch.get(id) ?? []) resolve(byId.get(id) ?? null);
+    }));
+}
+
 /**
  * Busca usuarios de WP por nombre o login. Devuelve hasta `limit`
  * resultados ordenados por display_name. Sin query (string vacío)
@@ -81,17 +122,9 @@ export function useWpUser(id: number | null | undefined) {
     const directory = useContext(MemberDirectoryContext);
     const query = useQuery<WpUserSummary | null>({
         queryKey: ['wp-user', id],
-        queryFn: async () => {
-            if (!id || id <= 0) return null;
-            try {
-                const res = await api.get<WpUserSummary>(`/me/users/${id}`);
-                return res.data;
-            } catch {
-                // User no existe (borrado) o sin permiso. El UserPicker
-                // muestra "Usuario #X" como fallback.
-                return null;
-            }
-        },
+        // User que no existe (borrado) o sin permiso → null: el UserPicker
+        // muestra "Usuario #X" como fallback.
+        queryFn: () => (id ? loadWpUser(id) : null),
         enabled: directory === null && typeof id === 'number' && id > 0,
         // Los users no cambian frecuente; cacheamos generoso.
         staleTime: 5 * 60_000,
@@ -115,10 +148,7 @@ export function usePrefetchWpUser(): (id: number) => void {
         if (id <= 0) return;
         void qc.prefetchQuery({
             queryKey: ['wp-user', id],
-            queryFn: async () => {
-                const res = await api.get<WpUserSummary>(`/me/users/${id}`);
-                return res.data;
-            },
+            queryFn: () => loadWpUser(id),
             staleTime: 5 * 60_000,
         });
     };

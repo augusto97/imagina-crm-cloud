@@ -63,8 +63,6 @@ import { SampleDataBanner } from '@/admin/onboarding/SampleDataBanner';
 import { StoreRulesContext, storeColumnKind, type StoreRules } from './storeRules';
 import { ExportButton } from './ExportButton';
 import { visibleExportFieldIds } from './exportFields';
-import { FieldCreateDialog } from './FieldCreateDialog';
-import { FieldsPanel } from './FieldsPanel';
 import { FiltersPanel } from './FiltersPanel';
 import { Pagination } from './Pagination';
 import { RecordCreateDialog } from './RecordCreateDialog';
@@ -106,7 +104,6 @@ import { GroupedTableView } from './views/GroupedTableView';
 import { useEventCallback } from '@/hooks/useEventCallback';
 
 import { TableView } from './views/TableView';
-import { SaveViewDialog } from './views/SaveViewDialog';
 import { ViewSettingsSheet } from './views/ViewSettingsSheet';
 import { GridHistoryProvider } from './grid/history';
 import { newColorRuleId } from './grid/colorRules';
@@ -120,6 +117,7 @@ import {
     stateToViewConfig,
     viewConfigToState,
 } from './views/savedViewMapping';
+import { lazyDialog } from '@/lib/lazyDialog';
 import { lazyWithReload } from '@/lib/lazyWithReload';
 import { ManagedFieldsContext, useManagedFieldLocks } from '@/admin/records/managedFields';
 import { PaymentSyncListContext } from '@/admin/records/StoreColumnBadge';
@@ -142,6 +140,11 @@ const ShareDialog = lazyWithReload(() => import('./ShareDialog').then((m) => ({ 
 // v0.1.341 — sugerencias para esta lista (a pedido: sólo se baja al abrirse).
 const ListSuggestionsSheet = lazyWithReload(() => import('./suggestions/ListSuggestionsSheet').then((m) => ({ default: m.ListSuggestionsSheet })));
 // H3 — escáner de códigos de la lista (cámara + lector): sólo se baja al abrirlo.
+// Se abren de vez en cuando y traen los editores de configuración de campos
+// (botón, reglas, IA, fórmula…): a pedido, la primera vez que se abren.
+const FieldCreateDialog = lazyDialog(() => import('./FieldCreateDialog').then((m) => ({ default: m.FieldCreateDialog })));
+const FieldsPanel = lazyDialog(() => import('./FieldsPanel').then((m) => ({ default: m.FieldsPanel })));
+const SaveViewDialog = lazyDialog(() => import('./views/SaveViewDialog').then((m) => ({ default: m.SaveViewDialog })));
 const ListScanDialog = lazyWithReload(() => import('@/admin/scan/ListScanDialog'));
 
 

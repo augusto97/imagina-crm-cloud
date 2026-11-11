@@ -31,6 +31,7 @@ import { RealtimeService } from '../realtime/realtime.service';
 import { REDIS } from '../redis/redis.module';
 import { tenantIsReadOnly } from '../tenancy/read-only';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { releaseRedisLock } from '../redis/redis-lock';
 
 /** Filas por transacción al escribir. */
 const WRITE_CHUNK = 500;
@@ -157,8 +158,7 @@ export class SqlSyncEngine {
             }
             return true;
         } finally {
-            const current = await this.redis.get(lockKey).catch(() => null);
-            if (current === token) await this.redis.del(lockKey).catch(() => undefined);
+            await releaseRedisLock(this.redis, lockKey, token);
         }
     }
 

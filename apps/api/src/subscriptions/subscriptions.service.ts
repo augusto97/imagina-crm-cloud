@@ -137,6 +137,7 @@ import {
     paypalTransactionsRequest,
     readPaypalPlanRefs,
 } from './paypal-subscriptions';
+import { acquireRedisLock, releaseRedisLock } from '../redis/redis-lock';
 
 const FETCH_TIMEOUT_MS = 15_000;
 const DAY = 24 * 60 * 60 * 1000;
@@ -1419,10 +1420,10 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
      * los avisos de Mercado Pago configurados, esto alcanza.
      */
     async tick(now = new Date(), limit = TICK_BATCH): Promise<number> {
-        if (this.redis) {
-            const got = await this.redis.set(TICK_LOCK, String(process.pid), 'EX', 240, 'NX').catch(() => 'OK');
-            if (got !== 'OK') return 0;
-        }
+        // Candado con dueño: un error de Redis no cuenta como tomado y sólo
+        // quien lo tomó lo suelta.
+        const lockToken = this.redis ? await acquireRedisLock(this.redis, TICK_LOCK, 240) : null;
+        if (this.redis && !lockToken) return 0;
         try {
             const due = await this.db.execute(sql`
                 select id, tenant_id as "tenantId" from subscriptions
@@ -1461,7 +1462,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
             });
             return done;
         } finally {
-            if (this.redis) await this.redis.del(TICK_LOCK).catch(() => undefined);
+            if (this.redis && lockToken) await releaseRedisLock(this.redis, TICK_LOCK, lockToken);
         }
     }
 

@@ -5,6 +5,7 @@ import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import { WhatsappService, type WhatsappJob } from './whatsapp.service';
+import { createWorker, registerScheduler, workersEnabled } from '../redis/queue-runtime';
 
 const QUEUE = 'whatsapp';
 
@@ -42,7 +43,7 @@ export class WhatsappQueue implements OnModuleInit, OnApplicationShutdown {
             };
             this.queue = new Queue(QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de WhatsApp con error: ${err.message}`));
-            this.worker = new Worker(
+            this.worker = createWorker(
                 QUEUE,
                 async (job) => {
                     if (job.name === 'templates-refresh') {
@@ -58,13 +59,19 @@ export class WhatsappQueue implements OnModuleInit, OnApplicationShutdown {
                 },
                 { connection: conn(), concurrency: 4 },
             );
-            this.worker.on('failed', (job, err) => this.logger.warn(`Aviso de WhatsApp (${job?.name ?? '?'}) falló: ${err.message}`));
-            this.worker.on('error', (err) => this.logger.warn(`Worker de WhatsApp con error: ${err.message}`));
-            await this.queue.upsertJobScheduler('templates-refresh', { pattern: '17 */6 * * *' }, { name: 'templates-refresh', data: {} });
+            this.worker?.on('failed', (job, err) => this.logger.warn(`Aviso de WhatsApp (${job?.name ?? '?'}) falló: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de WhatsApp con error: ${err.message}`));
+            registerScheduler(this.queue, 'templates-refresh', { pattern: '17 */6 * * *' }, { name: 'templates-refresh', data: {} }, this.logger);
             // v0.1.391 — Cada hora, los avisos de Imagina WAS quedan sólo en lo que se usa (y
             // un rato después de arrancar: así una actualización ajusta los ya registrados).
-            await this.queue.upsertJobScheduler('hooks-reconcile', { pattern: '43 * * * *' }, { name: 'hooks-reconcile', data: {} });
-            await this.queue.add('hooks-reconcile', {}, { delay: 90_000, removeOnComplete: true, removeOnFail: true });
+            registerScheduler(this.queue, 'hooks-reconcile', { pattern: '43 * * * *' }, { name: 'hooks-reconcile', data: {} }, this.logger);
+            // Sin `await` (con Redis caído no terminaría nunca y frenaría el arranque)
+            // y con id fijo: varios nodos que arrancan juntos no apilan barridos.
+            if (workersEnabled()) {
+                void this.queue
+                    .add('hooks-reconcile', {}, { jobId: 'hooks-reconcile-boot', delay: 90_000, removeOnComplete: true, removeOnFail: true })
+                    .catch((err) => this.logger.warn(`No se pudo encolar la revisión de avisos de WhatsApp: ${String(err)}`));
+            }
             const queue = this.queue;
             this.whatsapp.setSink({
                 add: async (job, dedup) => {

@@ -1,15 +1,16 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Outlet, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 
-import { AssistantPanel } from '@/admin/assistant/AssistantPanel';
+import { AssistantPanelHost } from '@/admin/assistant/AssistantPanelHost';
 import { AccessBanner } from '@/admin/layout/AccessBanner';
 import { EmailVerifyBanner } from '@/admin/layout/EmailVerifyBanner';
 import { GlobalCommandPalette } from '@/admin/layout/GlobalCommandPalette';
 import { ImpersonationBanner } from '@/admin/layout/ImpersonationBanner';
-import { ListCreateDialog } from '@/admin/lists/ListCreateDialog';
+import { ListCreateDialog } from '@/admin/lists/ListCreateDialogLazy';
 import { GettingStarted } from '@/admin/onboarding/GettingStarted';
 import { ActivePathSync } from './activePath';
 import { RouteTracker } from './RouteTracker';
+import { SafeOutlet } from './SafeOutlet';
 import { ShortcutsDialog } from './ShortcutsDialog';
 import { registerShellActions } from './shellActions';
 import { MobileTabBar } from '@/admin/layout/MobileTabBar';
@@ -114,7 +115,8 @@ export function AdminShell(): JSX.Element {
                         la ventana, como ClickUp (las páginas de formularios
                         —Ajustes, sincronizaciones— ponen su propio tope). */}
                     <div className="imcrm-w-full">
-                        <Outlet />
+                        {/* Una pantalla que falla no se lleva el menú ni la barra. */}
+                        <SafeOutlet />
                     </div>
                 </main>
                 <MobileTabBar onSearch={openPalette} onScan={openScan} />
@@ -147,7 +149,7 @@ export function AdminShell(): JSX.Element {
             {shortcutsOpen && <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />}
             {createListOpen && <ListCreateDialog open={createListOpen} onOpenChange={setCreateListOpen} />}
             {/* v0.1.181 — asistente IA (ADR-S21): drawer a la derecha, se abre desde el Topbar. */}
-            <AssistantPanel />
+            <AssistantPanelHost />
             {/* F7 (ADR-S72) — «Primeros pasos»: widget flotante abajo a la derecha. */}
             <GettingStarted onCreateList={openCreateList} />
             {/* Fase 7 — panel de Novedades y diálogo de destacadas. */}

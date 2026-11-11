@@ -10,7 +10,7 @@ import {
 import { AlertTriangle, Clock, MessageCircle, Send, X } from 'lucide-react';
 import type { WhatsappProvider } from '@imagina-base/shared';
 
-import { SendReport } from '@/admin/automations/WhatsappActionConfig';
+import { SendReport } from '@/cloud/components/whatsapp/SendReport';
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 import { WhatsappBubble, WhatsappStatusChip, templateOptionLabel } from '@/cloud/components/whatsapp/whatsappUi';
 import { api } from '@/cloud/session';

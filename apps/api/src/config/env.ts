@@ -167,6 +167,18 @@ const envSchema = z.object({
      * bajar los correos): con 3, unos 90 buzones por minuto como mucho.
      */
     HELPDESK_POLL_CONCURRENCY: z.coerce.number().int().min(1).max(50).default(8),
+    /**
+     * `off` = este proceso es API pura: encola pero no toma trabajos en segundo
+     * plano ni registra tareas periódicas (otro proceso con `on` los hace).
+     * Lo lee `redis/queue-runtime.ts` directo de `process.env`.
+     */
+    WORKERS: z.enum(['on', 'off']).default('on'),
+    /**
+     * Cuánto se espera al apagar a los trabajos en curso antes de cerrar los
+     * workers a la fuerza. Tiene que ser MENOR que el `TimeoutStopSec` de
+     * systemd (20 s en `deploy/imagina-api.service`).
+     */
+    WORKERS_DRAIN_MS: z.coerce.number().int().min(0).max(600_000).default(14_000),
     // Token opcional para GET /metrics (SEC-17). Vacío = abierto (dev). Seteado
     // = requiere `Authorization: Bearer <token>` (compatible con scrapers).
     METRICS_TOKEN: z.string().default(''),

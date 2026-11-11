@@ -14097,6 +14097,61 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         415, demostración sólo dentro de la app, formulario público sin
         errores).
 
+  - [x] **Rendimiento y robustez a escala: colas, base de datos y frontend
+        (v0.1.405, ADR-S101, segunda mitad del pedido de la auditoría:
+        "detecta problemas de rendimiento o cosas estructuralmente mal
+        hechas… debe ser muy segura y eficiente")**. Tres relevamientos (API y
+        base, tareas en segundo plano, frontend y estructura) y tres frentes de
+        corrección; cada problema se reprodujo o midió antes de tocarlo.
+        (a) **Colas y tareas** (`redis/queue-runtime.ts`, `redis/redis-lock.ts`):
+        un trabajo fallido con id fijo dejaba MUDA para siempre la
+        sincronización de un buzón, una tienda, un sitio o SQL (BullMQ ignora
+        un `add` con el id de un trabajo fallido retenido) → `addDedupedJob`;
+        dos servidores podían enviar el MISMO SMS (155 tomas para 150 mensajes
+        en la prueba) → el estado se re-chequea al tomar; el arranque ya no se
+        cuelga sin Redis (12 colas esperaban `upsertJobScheduler`) →
+        `registerScheduler` con reintentos; recordatorios de citas con un solo
+        parámetro jsonb (pasaba de 65.535 parámetros con muchas agendas);
+        la vuelta de calendarios rota por calendario con cursor (antes sólo
+        las primeras 3.000 citas, y el cursor de Google avanzaba sin
+        compararlas); candados de Redis con dueño y borrado atómico (un error
+        de Redis ya no cuenta como «lo tengo»); el contador de turnos por
+        empresa se reconcilia; **apagado ordenado** (pausa todos los workers,
+        espera `WORKERS_DRAIN_MS` —14 s— y corta) y una corrida de
+        automatización interrumpida NO se repite al reintentar (queda fallida
+        con el motivo, en vez de duplicar correos o WhatsApp);
+        **`WORKERS=on|off`** para separar el proceso del API del de los
+        trabajos; `DB_POOL_MAX` por defecto 30.
+        (b) **API y base**: el alta de un registro hacía `count(*)` de toda la
+        empresa bajo un candado (≈45 ms con 300k registros) → contador en Redis
+        y conteo exacto sólo cerca del límite del plan; listas públicas por la
+        caché pública (30 s / 15 s), búsqueda de 2+ letras, tope de página y
+        freno por enlace; los calendarios externos ya no ocupan un lugar del
+        cupo público (`getUngated` + `CalendarPool`); índices que faltaban en
+        FKs y un índice muerto fuera (migración 0119); búsqueda global con
+        tope de 4 s; `through.plans` una vez por transacción; ediciones masivas
+        sin armar el DTO por fila (`lean`); exportar JSON sin descripciones,
+        2 exportaciones a la vez por empresa y se corta si el cliente se va.
+        (c) **Frontend**: pantalla de recuperación (`AppErrorBoundary`,
+        `SafeOutlet`) en vez de página en blanco; carga inicial 345 → 246 KB
+        (entrada) y 949 → 769 KB (lista), con presupuesto en el CI
+        (`check-bundle-size.mjs`); `lazyDialog`; nombres de personas en un
+        pedido; tiempo real acotado (pestaña oculta no recarga; ráfagas cada
+        2 s / 5 s); memo de celdas; `primeFieldMap` con prefijo de empresa;
+        el CI revisa el frontend.
+        **Cambios que se notan**: listas públicas hasta 30 s atrasadas; una
+        tercera exportación simultánea responde 429; una automatización
+        cortada por un reinicio queda «fallida» y no se repite.
+        **Queda** (anotado en CONTINUIDAD): emisión de PDF fuera de la
+        transacción, PDF/XLSX en hilo aparte, partición y retención de
+        `activity`/`automation_runs`, turnos por empresa en correo/IA/
+        sincronizaciones, `TimeoutStopSec=60`, dividir `CloudClient`, regla de
+        oro nº 7 en ~38 hooks, virtualizar kanban, topes por plan de listas/
+        campos/vistas. Tests nuevos: `queue-runtime`, `calendar-pool`,
+        `fk-indexes`, `through-plans-memo`, casos en sms, booking,
+        subscriptions, billing, public-lists, export, automations-scale y 27
+        del front.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -14,6 +14,7 @@ import { MailService } from '../mail/mail.service';
 import { PaymentsReconcileService } from './payments-reconcile.service';
 import { REDIS } from '../redis/redis.module';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
+import { createWorker, registerScheduler } from '../redis/queue-runtime';
 
 /**
  * Avisos del ciclo de cobro:
@@ -347,7 +348,7 @@ export class BillingRemindersBootstrap implements OnModuleInit, OnApplicationShu
             this.queue = new Queue(QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de avisos de cobro con error: ${err.message}`));
             // v0.1.382 — la misma cola corre la revisión de respaldo de los cobros.
-            this.worker = new Worker(
+            this.worker = createWorker(
                 QUEUE,
                 async (job) => {
                     if (job.name === 'reconcile') {
@@ -358,16 +359,16 @@ export class BillingRemindersBootstrap implements OnModuleInit, OnApplicationShu
                 },
                 { connection: conn() },
             );
-            this.worker.on('failed', (_job, err) => this.logger.error(`Ciclo de cobro falló: ${err.message}`));
-            this.worker.on('error', (err) => this.logger.warn(`Worker de avisos de cobro con error: ${err.message}`));
+            this.worker?.on('failed', (_job, err) => this.logger.error(`Ciclo de cobro falló: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de avisos de cobro con error: ${err.message}`));
             // Cada hora (v0.1.338; antes 6 h): el acceso se corta solo por la
             // fecha, esto cambia el plan de las que no renovaron y avisa el
             // mismo día aunque el servidor estuviera apagado; Redis evita repetir.
-            await this.queue.upsertJobScheduler('tick', { every: 60 * 60 * 1000 }, { name: 'tick', data: {} });
+            registerScheduler(this.queue, 'tick', { every: 60 * 60 * 1000 }, { name: 'tick', data: {} }, this.logger);
             // v0.1.382 — el reloj de la revisión de respaldo late cada 5 minutos
             // y corre sólo cuando le toca según la frecuencia de Plataforma →
             // Cobros (así cambiarla no exige re-registrar nada).
-            await this.queue.upsertJobScheduler('reconcile', { every: 5 * 60 * 1000 }, { name: 'reconcile', data: {} });
+            registerScheduler(this.queue, 'reconcile', { every: 5 * 60 * 1000 }, { name: 'reconcile', data: {} }, this.logger);
         } catch (err) {
             this.logger.warn(`Avisos de vencimiento deshabilitados (sin Redis): ${String(err)}`);
         }

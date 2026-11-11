@@ -96,6 +96,18 @@ export class FieldsService {
         return row ? toField(row) : null;
     }
 
+    /** Varios campos por id en UNA consulta (los planes de lookup/rollup). */
+    async findAnyByIdsWithinTx(tx: Tx, tenantId: number, fieldIds: number[]): Promise<Field[]> {
+        return (await this.repo.findAnyByIds(tx, tenantId, fieldIds)).map(toField);
+    }
+
+    /** Los campos de varias listas en UNA consulta, por lista. */
+    async listByListIdsWithinTx(tx: Tx, tenantId: number, listIds: number[]): Promise<Map<number, Field[]>> {
+        const out = new Map<number, Field[]>(listIds.map((id) => [id, []]));
+        for (const row of await this.repo.listByLists(tx, tenantId, listIds)) out.get(row.listId)?.push(toField(row));
+        return out;
+    }
+
     /**
      * Planes de los lookup/rollup de una lista (v0.1.170). Camino rápido sin
      * transacción cuando la lista no tiene ninguno — el caso del 99% de las

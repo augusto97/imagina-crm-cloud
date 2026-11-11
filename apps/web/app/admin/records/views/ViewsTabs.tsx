@@ -26,10 +26,12 @@ import { cn } from '@/lib/utils';
 import type { SavedViewConfig, SavedViewEntity } from '@/types/view';
 
 import { EditCardsViewDialog } from './EditCardsViewDialog';
-import { CalendarSettingsDialog } from './calendar/CalendarSettingsDialog';
-import { EditKanbanViewDialog } from './EditKanbanViewDialog';
-import { GanttSettingsDialog } from './gantt/GanttSettingsDialog';
-import { WorkloadSettingsDialog } from './workload/WorkloadSettingsDialog';
+import { lazyDialog } from '@/lib/lazyDialog';
+
+const CalendarSettingsDialog = lazyDialog(() => import('./calendar/CalendarSettingsDialog').then((m) => ({ default: m.CalendarSettingsDialog })));
+const GanttSettingsDialog = lazyDialog(() => import('./gantt/GanttSettingsDialog').then((m) => ({ default: m.GanttSettingsDialog })));
+const WorkloadSettingsDialog = lazyDialog(() => import('./workload/WorkloadSettingsDialog').then((m) => ({ default: m.WorkloadSettingsDialog })));
+const EditKanbanViewDialog = lazyDialog(() => import('./EditKanbanViewDialog').then((m) => ({ default: m.EditKanbanViewDialog })));
 
 interface ViewsTabsProps {
     listId: number;

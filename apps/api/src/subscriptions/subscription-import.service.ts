@@ -68,6 +68,9 @@ import {
     type ImportedPreapproval,
 } from './subscription-gateway';
 import { SubscriptionsService } from './subscriptions.service';
+import { isShuttingDown } from '../redis/queue-runtime';
+import { acquireRedisLock, releaseRedisLock, renewRedisLock, withRedisLock } from '../redis/redis-lock';
+import { mapLimit } from '../common/map-limit';
 
 const FETCH_TIMEOUT_MS = 15_000;
 /** Cuántas suscripciones se leen de Mercado Pago como mucho (50 páginas de 100). */
@@ -83,6 +86,9 @@ const STATUS_TTL_S = 30 * 24 * 60 * 60;
 const LOCK_TTL_S = 15 * 60;
 /** Una revisión periódica trae como mucho estas (el resto, en la próxima). */
 const SCAN_IMPORT_CAP = 100;
+/** Conexiones que se revisan a la vez en la revisión periódica, y su tope de tiempo. */
+const SCAN_CONCURRENCY = 3;
+const SCAN_BUDGET_MS = 200_000;
 const SYSTEM_ACTOR = { userId: 0, role: 'admin' as const };
 
 function badRequest(code: string, message: string): never {
@@ -526,10 +532,17 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
 
     // ── Importar ────────────────────────────────────────────────────────
 
+    /** Token del candado de cada conexión que ESTE proceso tiene tomado. */
+    private readonly lockTokens = new Map<number, string>();
+
     private async takeLock(connectionId: number): Promise<boolean> {
         if (this.redis) {
-            const got = await this.redis.set(lockKey(connectionId), String(process.pid), 'EX', LOCK_TTL_S, 'NX').catch(() => 'OK');
-            return got === 'OK';
+            // Con dueño: un error de Redis no cuenta como tomado, y sólo quien
+            // lo tomó lo suelta o lo renueva.
+            const token = await acquireRedisLock(this.redis, lockKey(connectionId), LOCK_TTL_S);
+            if (!token) return false;
+            this.lockTokens.set(connectionId, token);
+            return true;
         }
         if (this.memLocks.has(connectionId)) return false;
         this.memLocks.add(connectionId);
@@ -537,12 +550,16 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
     }
 
     private async releaseLock(connectionId: number): Promise<void> {
-        if (this.redis) await this.redis.del(lockKey(connectionId)).catch(() => undefined);
-        else this.memLocks.delete(connectionId);
+        if (this.redis) {
+            const token = this.lockTokens.get(connectionId);
+            this.lockTokens.delete(connectionId);
+            if (token) await releaseRedisLock(this.redis, lockKey(connectionId), token);
+        } else this.memLocks.delete(connectionId);
     }
 
     private async refreshLock(connectionId: number): Promise<void> {
-        if (this.redis) await this.redis.expire(lockKey(connectionId), LOCK_TTL_S).catch(() => undefined);
+        const token = this.lockTokens.get(connectionId);
+        if (this.redis && token) await renewRedisLock(this.redis, lockKey(connectionId), token, LOCK_TTL_S);
     }
 
     /**
@@ -1204,35 +1221,46 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
      * hace más de 30 minutos que no se revisan (los avisos son el camino
      * rápido; esto cubre a quien no los configuró).
      */
-    async scanAll(now = new Date()): Promise<number> {
-        if (this.redis) {
-            const got = await this.redis.set(TICK_LOCK, String(process.pid), 'EX', 240, 'NX').catch(() => 'OK');
-            if (got !== 'OK') return 0;
-        }
-        try {
-            const due = await this.db.execute(sql`
-                select id, tenant_id as "tenantId" from connections
-                where provider = 'mercadopago'
-                  and config->'subscription_import'->>'auto' = 'true'
-                  and coalesce((config->'subscription_import'->>'last_scan_at')::timestamptz, 'epoch') < ${new Date(now.getTime() - SCAN_EVERY_MS)}
-                order by id
-                limit 50
-            `);
-            const rows = (due as unknown as { rows: Array<{ id: number | string; tenantId: number | string }> }).rows;
-            let total = 0;
-            for (const r of rows) {
-                const tenantId = Number(r.tenantId);
-                const connectionId = Number(r.id);
-                try {
-                    total += await this.scanConnection(tenantId, connectionId, now);
-                } catch (err) {
-                    this.logger.warn(`Conexión ${connectionId}: no se pudieron revisar las suscripciones nuevas: ${errorText(err)}`);
-                }
+    async scanAll(now = new Date(), opts: { limit?: number; budgetMs?: number } = {}): Promise<number> {
+        if (!this.redis) return this.scanDue(now, opts, () => true);
+        // Candado con dueño y RENOVADO mientras dura la revisión: antes vencía a
+        // los 4 minutos con la revisión a medias (cada conexión son pedidos a
+        // Mercado Pago), otro nodo empezaba la misma vuelta y el primero, al
+        // terminar, borraba el candado del segundo.
+        const out = await withRedisLock(this.redis, TICK_LOCK, 240, (stillMine) => this.scanDue(now, opts, stillMine));
+        return out.ran ? out.result : 0;
+    }
+
+    private async scanDue(now: Date, opts: { limit?: number; budgetMs?: number }, stillMine: () => boolean): Promise<number> {
+        // Primero las que hace MÁS tiempo que no se revisan (las nunca revisadas,
+        // antes). Con `order by id`, las primeras volvían a tocar cada 30 minutos
+        // y siempre pasaban adelante: pasadas unas ~300 conexiones, las de id
+        // alto no se revisaban nunca.
+        const due = await this.db.execute(sql`
+            select id, tenant_id as "tenantId" from connections
+            where provider = 'mercadopago'
+              and config->'subscription_import'->>'auto' = 'true'
+              and coalesce((config->'subscription_import'->>'last_scan_at')::timestamptz, 'epoch') < ${new Date(now.getTime() - SCAN_EVERY_MS)}
+            order by coalesce((config->'subscription_import'->>'last_scan_at')::timestamptz, 'epoch'), id
+            limit ${Math.max(1, opts.limit ?? 50)}
+        `);
+        const rows = (due as unknown as { rows: Array<{ id: number | string; tenantId: number | string }> }).rows;
+        const deadline = Date.now() + (opts.budgetMs ?? SCAN_BUDGET_MS);
+        let total = 0;
+        // De a pocas a la vez (cada una es de OTRA cuenta de Mercado Pago). Lo que
+        // no entra en el tiempo queda para la próxima vuelta: sigue siendo la
+        // más vieja, así que va primera.
+        await mapLimit(rows, SCAN_CONCURRENCY, async (r) => {
+            if (Date.now() > deadline || !stillMine() || isShuttingDown()) return;
+            const tenantId = Number(r.tenantId);
+            const connectionId = Number(r.id);
+            try {
+                total += await this.scanConnection(tenantId, connectionId, now);
+            } catch (err) {
+                this.logger.warn(`Conexión ${connectionId}: no se pudieron revisar las suscripciones nuevas: ${errorText(err)}`);
             }
-            return total;
-        } finally {
-            if (this.redis) await this.redis.del(TICK_LOCK).catch(() => undefined);
-        }
+        });
+        return total;
     }
 
     async scanConnection(tenantId: number, connectionId: number, now = new Date()): Promise<number> {

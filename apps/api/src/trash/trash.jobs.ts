@@ -4,6 +4,7 @@ import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import { TrashService } from './trash.service';
+import { createWorker, registerScheduler } from '../redis/queue-runtime';
 
 const QUEUE = 'trash';
 
@@ -35,7 +36,7 @@ export class TrashJobs implements OnModuleInit, OnApplicationShutdown {
             };
             this.queue = new Queue(QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de la papelera con error: ${err.message}`));
-            this.worker = new Worker(
+            this.worker = createWorker(
                 QUEUE,
                 async () => {
                     const n = await this.trash.purgeExpired();
@@ -43,9 +44,9 @@ export class TrashJobs implements OnModuleInit, OnApplicationShutdown {
                 },
                 { connection: conn() },
             );
-            this.worker.on('failed', (_job, err) => this.logger.error(`El vaciado de la papelera falló: ${err.message}`));
-            this.worker.on('error', (err) => this.logger.warn(`Worker de la papelera con error: ${err.message}`));
-            await this.queue.upsertJobScheduler('purge', { pattern: '17 4 * * *' }, { name: 'purge', data: {} });
+            this.worker?.on('failed', (_job, err) => this.logger.error(`El vaciado de la papelera falló: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de la papelera con error: ${err.message}`));
+            registerScheduler(this.queue, 'purge', { pattern: '17 4 * * *' }, { name: 'purge', data: {} }, this.logger);
         } catch (err) {
             this.logger.warn(`Vaciado automático de la papelera deshabilitado (sin Redis): ${String(err)}`);
         }

@@ -856,6 +856,20 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
         expect(appt!.remindersSent).toEqual(['rem24h', 'rem1h']);
     });
 
+    it('recordatorios con decenas de miles de agendas activas: la consulta no choca con el tope de parámetros de Postgres', async () => {
+        await freshPage();
+        await book({ staff: 'stfana', start: at(D, 10) });
+        await vi.waitFor(() => expect(mailbox.sent.length).toBe(1));
+        const now = new Date(Date.parse(at(D, 10)) - 23 * 3600_000);
+        // 20.000 recordatorios de otras agendas (80.000 parámetros con la lista
+        // VALUES de antes: Postgres rechazaba la consulta y no salía ninguno).
+        const specs = Array.from({ length: 20_000 }, (_, i) => ({ pageId: 9_000_000 + i, id: 'rem24h', minutes: 1440, needsEmail: true }));
+        specs.push({ pageId, id: 'rem24h', minutes: 1440, needsEmail: true });
+        const due = await (reminders as unknown as { dueAppointmentIds(s: typeof specs, n: Date): Promise<number[]> }).dueAppointmentIds(specs, now);
+        const [appt] = await appointments();
+        expect(due).toEqual([Number(appt!.id)]);
+    });
+
     it('recordatorios con más de 200 citas en la ventana: el que toca sale igual (v0.1.393)', async () => {
         await freshPage();
         await book({ staff: 'stfana', start: at(D, 10) });
@@ -1235,6 +1249,47 @@ describe('D5 — agenda (Postgres + Redis reales)', () => {
             await expect(cached.stamp(token)).rejects.toMatchObject({ status: 404 });
         } finally {
             spy.mockRestore();
+        }
+    });
+
+    it('los horarios no ocupan el tope de armados mientras esperan al calendario; los rangos fuera de la ventana comparten entrada', async () => {
+        await freshPage();
+        // Tope de UN armado a la vez: si la espera de red lo ocupara, nada más pasaría.
+        const cache = new PublicCache({ maxEntries: 200, concurrency: 1, maxQueue: 100, queueTimeoutMs: 5000 });
+        const cached = new BookingPublicService(
+            pg.db, tenantDb, lists, fieldsSvc, recs, files, redis as never, dispatcher, env, availability, calendar, rt, hub,
+            new NotifyHub(), undefined, undefined, undefined, new MailService(env, mailbox), undefined, undefined, cache as never,
+        );
+        cached.onModuleInit();
+        await cached.pageInfo(token);
+        let release!: () => void;
+        const network = new Promise<void>((r) => (release = r));
+        const realOutside = availability.outside.bind(availability);
+        const outside = vi.spyOn(availability, 'outside').mockImplementation(async (...args) => {
+            await network; // el calendario de quien atiende, lento
+            return realOutside(...args);
+        });
+        const slotsSpy = vi.spyOn(availability, 'slots');
+        try {
+            const pending = cached.slots(token, nextIp(), { service: 'svcconsulta', staff: 'any', from: D, to: D });
+            await vi.waitFor(() => expect(outside).toHaveBeenCalled());
+            // Mientras tanto el tope está libre: otra página pública se arma sin esperar.
+            expect(cache.stats().active).toBe(0);
+            expect(await cache.get('otra-empresa', 1000, async () => 'ok')).toBe('ok');
+            release();
+            expect((await pending).slots.length).toBeGreaterThan(0);
+
+            // Rangos distintos que el visitante elige FUERA de lo reservable: una sola entrada.
+            slotsSpy.mockClear();
+            const a = await cached.slots(token, nextIp(), { service: 'svcconsulta', staff: 'any', from: '2000-01-01', to: D });
+            const b = await cached.slots(token, nextIp(), { service: 'svcconsulta', staff: 'any', from: '2001-05-05', to: D });
+            const c = await cached.slots(token, nextIp(), { service: 'svcconsulta', staff: 'any', from: '1999-12-31', to: D });
+            expect(slotsSpy).toHaveBeenCalledTimes(1);
+            expect(b).toEqual(a);
+            expect(c).toEqual(a);
+        } finally {
+            outside.mockRestore();
+            slotsSpy.mockRestore();
         }
     });
 

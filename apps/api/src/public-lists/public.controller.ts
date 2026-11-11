@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { Body, Controller, Get, Param, Patch, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpException, HttpStatus, Param, Patch, Query, Req, Res, UseGuards } from '@nestjs/common';
 import {
     publicRecordsQuerySchema,
     updatePublicListSchema,
@@ -19,6 +19,24 @@ import { publicListPageCsp, publicListUnavailablePage, renderPublicListPage } fr
 import { AuditService } from '../audit/audit.service';
 import { PublicListsService } from './public-lists.service';
 import { PlanModule } from '../tenancy/plan-module.decorator';
+import { PublicBusyError } from '../public-cache/public-cache';
+import { busyPage } from '../public-cache/public-send';
+
+/** La fila de armados públicos está llena: 503 con el aviso, no un 500. */
+async function orBusy<T>(work: Promise<T>): Promise<T> {
+    try {
+        return await work;
+    } catch (err) {
+        if (err instanceof PublicBusyError) {
+            throw new HttpException(
+                { code: 'public_busy', message: 'Hay muchas visitas en este momento. Prueba de nuevo en unos segundos.', data: { status: 503 } },
+                HttpStatus.SERVICE_UNAVAILABLE,
+            );
+        }
+        throw err;
+    }
+}
+
 
 /**
  * Endpoints PÚBLICOS (sin auth ni tenant) de listas publicadas. El acceso se
@@ -35,7 +53,7 @@ export class PublicController {
 
     @Get(':token/meta')
     meta(@Param('token') token: string): Promise<PublicListMeta> {
-        return this.publicLists.getMeta(token);
+        return orBusy(this.publicLists.getMeta(token));
     }
 
     @Get(':token/records')
@@ -43,7 +61,7 @@ export class PublicController {
         @Param('token') token: string,
         @Query(new ZodValidationPipe(publicRecordsQuerySchema)) query: PublicRecordsQuery,
     ): Promise<PublicRecordsPage> {
-        return this.publicLists.getRecords(token, query);
+        return orBusy(this.publicLists.getRecords(token, query));
     }
 }
 
@@ -62,7 +80,17 @@ export class PublicPageController {
         let boot: { name: string; allowed_domains: string[] };
         try {
             boot = await this.publicLists.pageBootstrap(token);
-        } catch {
+        } catch (err) {
+            if (err instanceof PublicBusyError) {
+                reply
+                    .status(503)
+                    .header('Retry-After', '3')
+                    .header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors *")
+                    .header('Cache-Control', 'no-store')
+                    .type('text/html; charset=utf-8')
+                    .send(busyPage());
+                return;
+            }
             // Desconocido, despublicado o vencido: una página amable (no el
             // JSON del 404 dentro del marco del sitio que la inserta).
             reply

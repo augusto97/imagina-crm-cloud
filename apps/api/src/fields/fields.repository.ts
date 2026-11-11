@@ -19,6 +19,25 @@ export class FieldsRepository {
             .orderBy(asc(fields.position), asc(fields.id));
     }
 
+    /** Los campos de VARIAS listas en una consulta (en el orden de cada lista). */
+    listByLists(tx: Tx, tenantId: number, listIds: number[]): Promise<FieldRow[]> {
+        if (listIds.length === 0) return Promise.resolve([]);
+        return tx
+            .select()
+            .from(fields)
+            .where(and(eq(fields.tenantId, tenantId), inArray(fields.listId, listIds)))
+            .orderBy(asc(fields.listId), asc(fields.position), asc(fields.id));
+    }
+
+    /** Varios campos por id (de cualquier lista de la empresa) en una consulta. */
+    findAnyByIds(tx: Tx, tenantId: number, ids: number[]): Promise<FieldRow[]> {
+        if (ids.length === 0) return Promise.resolve([]);
+        return tx
+            .select()
+            .from(fields)
+            .where(and(eq(fields.tenantId, tenantId), inArray(fields.id, ids)));
+    }
+
     /** Todos los campos del tenant (para el endpoint bootstrap — sin N+1). */
     listByTenant(tx: Tx, tenantId: number): Promise<FieldRow[]> {
         return tx

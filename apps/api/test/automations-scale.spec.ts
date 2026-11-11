@@ -8,7 +8,7 @@ import { ActivityRepository } from '../src/activity/activity.repository';
 import { ActivityService } from '../src/activity/activity.service';
 import { AuditService } from '../src/audit/audit.service';
 import { AutomationDispatcher, type TriggerEvent } from '../src/automations/automation-dispatcher.service';
-import { AutomationEngine, DUE_FULL_SCAN_MS } from '../src/automations/automation-engine.service';
+import { AutomationEngine, DUE_FULL_SCAN_MS, INTERRUPTED_MESSAGE } from '../src/automations/automation-engine.service';
 import { AutomationsRepository } from '../src/automations/automations.repository';
 import { dueScanPattern } from '../src/automations/automation-scheduler.service';
 import { changedDateLike } from '../src/automations/automation-waits.service';
@@ -30,6 +30,7 @@ import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { TenantTimeZones } from '../src/tenancy/tenant-time-zone.service';
 import { startPostgres, startRedis, type TestPg, type TestRedis } from './helpers/containers';
 import { memoryIntegrationApps, memoryOAuthStore } from './helpers/oauth-store';
+import { runInJobScope } from '../src/redis/queue-runtime';
 
 /** Un correo que tarda en salir (un SMTP lento). */
 class SlowMail implements MailTransport {
@@ -197,6 +198,33 @@ describe('Automatizaciones a escala (v0.1.392)', () => {
         expect(mail.sent.map((m) => m.subject)).toContain('Factura Soporte');
         const [run] = await runsOf(autoId);
         expect(run?.status).toBe('success');
+        await withTenant(pg.db, tenantId, (tx) => tx.update(automations).set({ isActive: false }).where(eq(automations.id, autoId)));
+    });
+
+    it('un trabajo de la cola que se repite tras un corte NO vuelve a ejecutar la corrida que ya había empezado', async () => {
+        const autoId = await newAutomation({
+            name: 'Avisar una sola vez',
+            actions: [{ type: 'send_email', config: { to: 'cobros@acme.test', subject: 'Una vez {{concepto}}', body: 'Hola' } }],
+        });
+        const rec = await recs.create(tenantId, admin, 'facturas', { data: { [k('concepto')]: 'Corte' } });
+        const event = { tenantId, listId, recordId: rec.id, trigger: 'record_updated' as const, after: rec.data, before: {} };
+        const sentNow = () => mail.sent.filter((m) => m.subject === 'Una vez Corte').length;
+        // Primer intento del trabajo «j1»: corre y manda el correo.
+        const first = await runInJobScope('automations', 'j1', () => engine.process(event));
+        expect(sentNow()).toBe(1);
+        // El servidor "se cae" antes de cerrar la corrida: queda «en curso».
+        await withTenant(pg.db, tenantId, (tx) => tx.update(automationRuns).set({ status: 'running', finishedAt: null }).where(eq(automationRuns.id, first[0]!.run_id)));
+        // BullMQ lo da por colgado y lo repite (mismo id de trabajo): no hay segundo correo.
+        const again = await runInJobScope('automations', 'j1', () => engine.process(event));
+        expect(sentNow()).toBe(1);
+        expect(again).toEqual(first);
+        const runs = await runsOf(autoId);
+        expect(runs).toHaveLength(1);
+        expect(runs[0]!.status).toBe('failed');
+        expect(runs[0]!.error).toBe(INTERRUPTED_MESSAGE);
+        // Otro trabajo (otro cambio del mismo registro) corre normal.
+        await runInJobScope('automations', 'j2', () => engine.process(event));
+        expect(sentNow()).toBe(2);
         await withTenant(pg.db, tenantId, (tx) => tx.update(automations).set({ isActive: false }).where(eq(automations.id, autoId)));
     });
 

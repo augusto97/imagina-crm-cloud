@@ -12,7 +12,7 @@ import { matchesListQuery } from '@/lib/folderSections';
 import { __, sprintf } from '@/lib/i18n';
 import { CAP, useCan } from '@/lib/permissions';
 import { parseUtcDate } from '@/lib/utcDate';
-import { ListCreateDialog } from '@/admin/lists/ListCreateDialog';
+import { ListCreateDialog } from '@/admin/lists/ListCreateDialogLazy';
 
 import { FolderSquare } from './FolderBadge';
 import { CardGrid, ListCard } from './ListCard';

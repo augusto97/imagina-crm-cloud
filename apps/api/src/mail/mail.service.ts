@@ -28,6 +28,7 @@ import {
 import { PlatformSettingsService } from './platform-settings.service';
 import { TenantSmtpService } from './tenant-smtp.service';
 import { SmtpMailTransport } from './transports/smtp.transport';
+import { createWorker } from '../redis/queue-runtime';
 
 export const MAIL_QUEUE = 'mail';
 
@@ -295,7 +296,7 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
             };
             this.queue = new Queue<MailMessage>(MAIL_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de correo con error: ${err.message}`));
-            this.worker = new Worker<MailMessage>(
+            this.worker = createWorker<MailMessage>(
                 MAIL_QUEUE,
                 async (job) => {
                     try {
@@ -310,10 +311,10 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
                 },
                 { connection: conn(), concurrency: 5 },
             );
-            this.worker.on('failed', (job, err) =>
+            this.worker?.on('failed', (job, err) =>
                 this.logger.error(`Mail job ${job?.id} falló: ${err.message}`),
             );
-            this.worker.on('error', (err) => this.logger.warn(`Worker de correo con error: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de correo con error: ${err.message}`));
             this.logger.log(`Cola de correo lista (transporte: ${this.transport.name})`);
         } catch (err) {
             this.logger.warn(`Cola de correo deshabilitada (sin Redis): ${String(err)}`);

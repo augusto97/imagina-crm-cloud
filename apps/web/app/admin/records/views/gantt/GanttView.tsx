@@ -81,7 +81,10 @@ import { ganttToViewConfig, viewConfigToGantt } from '../savedViewMapping';
 import { MAIN_SCROLLER_ID } from '../stickyTop';
 import { GanttBarItem } from './GanttBarItem';
 import { GanttMoveDatesDialog } from './GanttMoveDatesDialog';
-import { GanttSettingsDialog, GANTT_ZOOM_LABEL } from './GanttSettingsDialog';
+import { lazyDialog } from '@/lib/lazyDialog';
+import { GANTT_ZOOM_LABEL } from '../viewSettingsLabels';
+
+const GanttSettingsDialog = lazyDialog(() => import('./GanttSettingsDialog').then((m) => ({ default: m.GanttSettingsDialog })));
 import {
     barBox,
     dayAtX,

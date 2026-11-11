@@ -415,8 +415,17 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.404**
-(**auditoría de seguridad III** — archivos por referencia, campos ocultos en
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.405**
+(**rendimiento y robustez a escala** — colas idempotentes y separables con
+`WORKERS=on|off`, apagado ordenado, alta de registros sin contar toda la
+empresa, listas públicas con caché, índices, pantalla de recuperación, bundle
+más liviano con presupuesto en el CI y CI del frontend; ADR-S101). Pendientes
+de ese lote: emisión de PDF fuera de la transacción, PDF/XLSX en hilo aparte,
+retención/partición de `activity` y `automation_runs`, turnos por empresa en
+correo/IA/sincronizaciones, `TimeoutStopSec=60` + `WORKERS_DRAIN_MS=45000`,
+dividir `CloudClient`, regla de oro nº 7 en ~38 hooks, kanban virtualizado,
+topes por plan de listas/campos/vistas, quitar los layouts del índice de
+listas. Antes v0.1.404 (**auditoría de seguridad III** — archivos por referencia, campos ocultos en
 toda respuesta, credenciales de conexiones atadas a su origen, sesiones atadas
 al dominio de la empresa, CSRF/sockets, límites y presupuestos; ADR-S100).
 **Hilos abiertos de la auditoría** (decisiones del usuario): login de dominios
@@ -1843,6 +1852,12 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-11 · v0.1.405** — **Rendimiento y robustez a escala** (segunda
+  mitad del pedido de la auditoría). Tres frentes: colas/tareas, API/base y
+  frontend/CI; detalle en `CLAUDE.md` §5 y ADR-S101. Los agentes se retomaron
+  tras el corte por límite de uso (sus worktrees originales se habían perdido;
+  rehicieron en `g1-workers`, `g2-api`, `g3-front`). Lo no hecho quedó listado
+  en §10.
 - **2026-11-11 · v0.1.404** — **Auditoría de seguridad III** (pedido del
   usuario: usar la skill de auditoría de Cloudflare y corregir todo, más
   rendimiento y estructura). 33 + 9 hallazgos confirmados, ninguno crítico;

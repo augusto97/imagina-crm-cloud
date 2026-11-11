@@ -4,6 +4,7 @@ import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import { SmsService } from './sms.service';
+import { createWorker, registerScheduler } from '../redis/queue-runtime';
 
 const QUEUE = 'sms';
 
@@ -38,7 +39,7 @@ export class SmsQueue implements OnModuleInit, OnApplicationShutdown {
             };
             this.queue = new Queue(QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de SMS con error: ${err.message}`));
-            this.worker = new Worker(
+            this.worker = createWorker(
                 QUEUE,
                 async (job) => {
                     if (job.name === 'tick') {
@@ -49,9 +50,9 @@ export class SmsQueue implements OnModuleInit, OnApplicationShutdown {
                 },
                 { connection: conn(), concurrency: 1 },
             );
-            this.worker.on('failed', (job, err) => this.logger.warn(`Trabajo de SMS (${job?.name ?? '?'}) falló: ${err.message}`));
-            this.worker.on('error', (err) => this.logger.warn(`Worker de SMS con error: ${err.message}`));
-            await this.queue.upsertJobScheduler('sms-tick', { every: 60_000 }, { name: 'tick', data: {} });
+            this.worker?.on('failed', (job, err) => this.logger.warn(`Trabajo de SMS (${job?.name ?? '?'}) falló: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de SMS con error: ${err.message}`));
+            registerScheduler(this.queue, 'sms-tick', { every: 60_000 }, { name: 'tick', data: {} }, this.logger);
             const queue = this.queue;
             this.sms.setKicker(() => {
                 void queue

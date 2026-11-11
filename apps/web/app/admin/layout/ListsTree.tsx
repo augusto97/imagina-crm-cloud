@@ -31,7 +31,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { ListGroup, ListSummary } from '@/types/list';
 
-import { ListCreateDialog } from '@/admin/lists/ListCreateDialog';
+import { ListCreateDialog } from '@/admin/lists/ListCreateDialogLazy';
 
 import { IconColorSubmenu } from './IconColorSubmenu';
 import { useEventCallback } from '@/hooks/useEventCallback';

@@ -9,6 +9,7 @@ import {
     mapRecord,
     mapRecordBody,
     normalizeDates,
+    primeFieldMap,
     recordsPathKind,
     rememberFieldKey,
 } from '@/lib/api';
@@ -242,5 +243,35 @@ describe('C6 / A9 — alta desde una plantilla y progreso del checklist', () => 
         expect(calls[1]!.body).toEqual({ template_id: 4, parent_id: null, data: { f801: 'Acme' } });
         expect(res.data).toMatchObject({ id: 9, fields: { nombre: 'Acme', estado: 'nuevo' } });
         expect(res.meta).toMatchObject({ subtask_ids: [10, 11] });
+    });
+});
+
+describe('primeFieldMap — el mapa sembrado desde la ficha se USA', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('el listado de una lista sembrada no vuelve a pedir /fields (por slug ni por id)', async () => {
+        primeFieldMap([8801, 'sembrada'], [
+            { id: 9001, slug: 'nombre', list_id: 8801 },
+            { id: 9002, slug: 'monto', list_id: 8801 },
+        ]);
+        const urls: string[] = [];
+        vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+            urls.push(String(url));
+            return new Response(JSON.stringify({ data: [{ id: 1, data: { f9001: 'Acme', f9002: 5 } }], meta: {} }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+            });
+        }));
+        const bySlug = await api.get<Array<{ fields: Record<string, unknown> }>>('/lists/sembrada/records');
+        const byId = await api.get<Array<{ fields: Record<string, unknown> }>>('/lists/8801/records');
+        expect(bySlug.data[0]!.fields).toEqual({ nombre: 'Acme', monto: 5 });
+        expect(byId.data[0]!.fields).toEqual({ nombre: 'Acme', monto: 5 });
+        expect(urls.filter((u) => u.includes('/fields'))).toEqual([]);
+    });
+
+    it('un campo nuevo llega al mapa sembrado', () => {
+        const map = primeFieldMap([8802, 'sembrada_b'], [{ id: 9101, slug: 'a', list_id: 8802 }]);
+        rememberFieldKey({ id: 9102, slug: 'b', list_id: 8802 });
+        expect(map.toSlug.f9102).toBe('b');
     });
 });

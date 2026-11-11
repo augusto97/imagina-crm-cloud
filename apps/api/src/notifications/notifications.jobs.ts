@@ -4,6 +4,7 @@ import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import { NotificationsService } from './notifications.service';
+import { createWorker, registerScheduler } from '../redis/queue-runtime';
 
 const QUEUE = 'notifications';
 
@@ -35,15 +36,15 @@ export class NotificationsJobs implements OnModuleInit, OnApplicationShutdown {
             };
             this.queue = new Queue(QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de avisos con error: ${err.message}`));
-            this.worker = new Worker(
+            this.worker = createWorker(
                 QUEUE,
                 async (job) => (job.name === 'digest' ? this.notifications.digestTick() : this.notifications.reminderTick()),
                 { connection: conn() },
             );
-            this.worker.on('failed', (job, err) => this.logger.error(`Avisos (${job?.name ?? '?'}) fallaron: ${err.message}`));
-            this.worker.on('error', (err) => this.logger.warn(`Worker de avisos con error: ${err.message}`));
-            await this.queue.upsertJobScheduler('reminders', { every: 60_000 }, { name: 'reminders', data: {} });
-            await this.queue.upsertJobScheduler('digest', { pattern: '2 * * * *' }, { name: 'digest', data: {} });
+            this.worker?.on('failed', (job, err) => this.logger.error(`Avisos (${job?.name ?? '?'}) fallaron: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de avisos con error: ${err.message}`));
+            registerScheduler(this.queue, 'reminders', { every: 60_000 }, { name: 'reminders', data: {} }, this.logger);
+            registerScheduler(this.queue, 'digest', { pattern: '2 * * * *' }, { name: 'digest', data: {} }, this.logger);
         } catch (err) {
             this.logger.warn(`Recordatorios y resumen diario deshabilitados (sin Redis): ${String(err)}`);
         }

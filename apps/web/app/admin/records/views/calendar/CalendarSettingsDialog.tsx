@@ -30,6 +30,7 @@ import type { SavedViewEntity } from '@/types/view';
 import { ROW_COLOR_HEX, ROW_COLOR_LABEL } from '../../grid/colorRules';
 import { ColorRulesEditor } from '../ColorRulesEditor';
 import { calendarToViewConfig, viewConfigToCalendar } from '../savedViewMapping';
+import { CALENDAR_MODE_LABEL } from '../viewSettingsLabels';
 
 const DURATIONS: Array<{ value: number; label: string }> = [
     { value: 0, label: __('Todo el día') },
@@ -43,13 +44,6 @@ const DURATIONS: Array<{ value: number; label: string }> = [
     { value: 240, label: __('4 horas') },
     { value: 480, label: __('8 horas') },
 ];
-
-export const CALENDAR_MODE_LABEL: Record<CalendarMode, string> = {
-    month: __('Mes'),
-    week: __('Semana'),
-    day: __('Día'),
-    agenda: __('Agenda'),
-};
 
 const hourLabel = (h: number): string => `${String(h).padStart(2, '0')}:00`;
 

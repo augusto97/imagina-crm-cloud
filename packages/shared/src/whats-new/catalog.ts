@@ -2462,4 +2462,16 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ver Problemas', href: '/settings?s=problemas' },
         audience: { roles: ['admin'] },
     },
+    {
+        key: 'v0.1.405-rendimiento',
+        version: '0.1.405',
+        date: '2026-11-11',
+        kind: 'improvement',
+        title: 'La app abre más rápido y aguanta más',
+        summary:
+            'La pantalla de entrada y las listas cargan con menos peso, crear registros es más rápido en empresas grandes y, si una página falla, el menú sigue en pie con un botón para recargar.',
+        media: { illustration: 'celular-pestanas' },
+        body: 'También: una pestaña que no estás mirando ya no recarga en segundo plano (se pone al día al volver), y las listas públicas se sirven desde una copia de hasta 30 segundos para aguantar muchas visitas.',
+        action: { label: 'Ver mis listas', href: '/lists' },
+    },
 ];

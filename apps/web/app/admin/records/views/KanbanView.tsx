@@ -51,7 +51,9 @@ import type { SavedViewEntity } from '@/types/view';
 
 import { isCloseCancelled } from '../dependencies/closeGuard';
 import { storeAccessFor, useStoreRules } from '../storeRules';
-import { EditKanbanViewDialog } from './EditKanbanViewDialog';
+import { lazyDialog } from '@/lib/lazyDialog';
+
+const EditKanbanViewDialog = lazyDialog(() => import('./EditKanbanViewDialog').then((m) => ({ default: m.EditKanbanViewDialog })));
 import { createHScrollGroup } from './hscrollGroup';
 import { KanbanCard, type MoveTarget } from './kanban/KanbanCard';
 import { KanbanColumnSettingsDialog } from './kanban/KanbanColumnSettingsDialog';

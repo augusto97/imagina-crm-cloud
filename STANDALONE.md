@@ -8506,3 +8506,27 @@ verificados uno por uno antes de corregir. Las decisiones que cambian el modelo:
 dejan de funcionar hasta crear la conexión correcta; el MCP puede responder
 429; reglas de validación con construcciones que el motor no soporta rechazan
 el valor (se ve en el editor del campo).
+
+### ADR-S101 — Rendimiento y robustez a escala: procesos separables, trabajos idempotentes y presupuestos de carga (v0.1.405)
+
+1. **Un proceso puede ser sólo API o sólo trabajos** (`WORKERS=on|off`, default
+   on). Todas las colas crean su worker y registran sus tareas periódicas por
+   `redis/queue-runtime.ts`; ninguna espera a Redis en el arranque.
+2. **Reintentar no duplica**: una corrida de automatización se reclama por id
+   de trabajo; si el proceso muere a mitad, el reintento la cierra como fallida
+   en vez de repetir acciones ya ejecutadas (a-lo-sumo-una-vez por corrida; la
+   reanudación paso a paso queda pendiente). Los trabajos con id fijo se
+   re-encolan aunque el anterior haya fallado.
+3. **Apagado ordenado**: pausar todos los workers, esperar lo que está en curso
+   hasta `WORKERS_DRAIN_MS` (14 s, por debajo del `TimeoutStopSec` de systemd) y
+   cortar. Recomendado subir la unidad a 60 s / 45 s.
+4. **Candados de Redis con dueño** (`redis/redis-lock.ts`); un error de Redis
+   significa «no lo tengo».
+5. **El límite del plan no se cuenta en cada alta**: contador aproximado en
+   Redis y conteo exacto con candado sólo cerca del límite.
+6. **Lo público nunca espera a un tercero dentro del cupo**: las lecturas de
+   calendarios externos van por su propio pool acotado por empresa.
+7. **El peso del frontend es un contrato**: presupuesto de bundle en el CI, y el
+   CI revisa lint, tipos, build y pruebas del frontend.
+8. **Una página que falla no tumba la app**: límites de error en la raíz y
+   alrededor del contenido de cada ruta.
