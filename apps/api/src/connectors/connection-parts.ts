@@ -29,6 +29,8 @@ export interface ConnectionInput {
 }
 
 export interface ConnectionParts {
+    /** Nombre de la conexión, para los mensajes de error (lo pone el service). */
+    name?: string;
     baseUrl: string;
     /** Cabeceras fijas + la de autenticación, en minúsculas. */
     headers: Record<string, string>;
@@ -104,14 +106,19 @@ export function connectionParts(conn: ConnectionInput, secrets: ConnectionSecret
     }
 
     const signing = secrets.signing_secret ?? '';
-    const redact = [
+    const plain = [
         token,
         secrets.password ?? '',
         signing,
         secrets.access_token ?? '',
         secrets.refresh_token ?? '',
         secrets.client_secret ?? '',
-    ].filter((v) => v.length >= 4);
+    ];
+    // También como VIAJAN: `Basic` va en base64 y un token en la URL o en un
+    // formulario va codificado. Si el destino devuelve lo que recibió (un eco),
+    // la respuesta que se muestra no puede traer la credencial en otra forma.
+    const basic = (headers['authorization'] ?? '').startsWith('Basic ') ? headers['authorization']!.slice(6) : '';
+    const redact = [...new Set([...plain, basic, ...plain.map((v) => encodeURIComponent(v))])].filter((v) => v.length >= 4);
     return {
         baseUrl: conn.baseUrl.trim(),
         headers,

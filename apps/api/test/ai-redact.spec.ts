@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { redactSecrets } from '../src/ai/tools/structure-tools';
+import { restoreRedactedSecrets } from '../src/automations/automation-secrets';
 
 describe('redactSecrets (v0.1.193) — lo que lee el asistente/MCP no lleva credenciales', () => {
     it('enmascara claves que huelen a secreto a cualquier profundidad', () => {
@@ -41,5 +42,59 @@ describe('redactSecrets (v0.1.193) — lo que lee el asistente/MCP no lleva cred
         expect(redactSecrets({ secret: '', token: null })).toEqual({ secret: '', token: null });
         expect(redactSecrets('texto')).toBe('texto');
         expect(redactSecrets(42)).toBe(42);
+    });
+
+    it('filas clave/valor, URL y Bearer escrito a mano: el editor guarda las cabeceras como filas', () => {
+        const cfg = {
+            url: 'https://usuario:Cl4ve-Url@x.test/h?api_key=S3CRET-C&page=2&token={{token_campo}}',
+            headers: [
+                { key: 'Authorization', value: 'Bearer S3CRET-A' },
+                { key: 'X-Api-Key', value: 'S3CRET-K' },
+                { key: 'X-Trace', value: 'visible' },
+            ],
+            body_params: [
+                { key: 'secret', value: 'S3CRET-B' },
+                { key: 'message', value: 'Hola {{nombre}}' },
+            ],
+            query_params: [{ name: 'access_token', value: 'S3CRET-D' }],
+            body_template: '{"auth":"Bearer abc123.def456.ghi789","texto":"Bearer de buenas noticias"}',
+        };
+        const out = redactSecrets(cfg);
+        const json = JSON.stringify(out);
+        for (const secret of ['S3CRET-A', 'S3CRET-B', 'S3CRET-C', 'S3CRET-D', 'S3CRET-K', 'Cl4ve-Url', 'abc123.def456.ghi789']) {
+            expect(json).not.toContain(secret);
+        }
+        // Lo que no es secreto viaja: sirve para explicar y recrear la acción.
+        expect(out.url).toBe('https://usuario:[oculto]@x.test/h?api_key=[oculto]&page=2&token={{token_campo}}');
+        expect(out.headers[2]).toEqual({ key: 'X-Trace', value: 'visible' });
+        expect(out.headers[0]).toEqual({ key: 'Authorization', value: '[oculto]' });
+        expect(out.body_params[1]!.value).toBe('Hola {{nombre}}');
+        expect(out.body_template).toContain('Bearer de buenas noticias');
+        // No muta el original.
+        expect(cfg.headers[0]!.value).toBe('Bearer S3CRET-A');
+    });
+
+    it('al guardar lo leído, lo tapado vuelve a su valor actual (también dentro de una URL)', () => {
+        const current = {
+            actions: [
+                {
+                    type: 'call_webhook',
+                    config: {
+                        url: 'https://x.test/h?api_key=S3CRET-C',
+                        headers: [{ key: 'Authorization', value: 'Bearer S3CRET-A' }],
+                        body_params: [{ key: 'secret', value: 'S3CRET-B' }, { key: 'message', value: 'viejo' }],
+                    },
+                },
+            ],
+            triggerConfig: {},
+        };
+        const read = redactSecrets(current.actions) as typeof current.actions;
+        read[0]!.config.body_params[1]!.value = 'nuevo';
+        const restored = restoreRedactedSecrets({ actions: read }, current) as { actions: typeof current.actions };
+        expect(restored.actions[0]!.config).toEqual({
+            url: 'https://x.test/h?api_key=S3CRET-C',
+            headers: [{ key: 'Authorization', value: 'Bearer S3CRET-A' }],
+            body_params: [{ key: 'secret', value: 'S3CRET-B' }, { key: 'message', value: 'nuevo' }],
+        });
     });
 });

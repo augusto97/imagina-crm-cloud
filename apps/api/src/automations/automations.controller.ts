@@ -36,6 +36,13 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { AutomationsService } from './automations.service';
 import { PlanModule } from '../tenancy/plan-module.decorator';
+import { aclOf } from '../tenancy/acl-of';
+import type { Actor } from '../records/records.service';
+
+/** Quien pide, con su rol y su acceso por lista (para leer el registro de muestra como esa persona). */
+function actorOf(req: FastifyRequest): Actor {
+    return { userId: req.authUserId as number, role: req.tenant!.role, ...aclOf(req) };
+}
 
 /** CRUD de automatizaciones por lista + runs (CONTRACT.md §8). */
 @PlanModule('automations')
@@ -72,7 +79,7 @@ export class AutomationsController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(webhookTestInputSchema)) input: WebhookTestInput,
     ): Promise<WebhookTestResult> {
-        return this.automations.testWebhook(req.tenant!.tenantId, list, input);
+        return this.automations.testWebhook(req.tenant!.tenantId, list, input, actorOf(req));
     }
 
     /**
@@ -88,7 +95,7 @@ export class AutomationsController {
         @Body(new ZodValidationPipe(emailTestInputSchema)) input: EmailTestInput,
     ): Promise<EmailTestResult> {
         const email = await this.automations.userEmail(req.authUserId!);
-        return this.automations.testEmail(req.tenant!.tenantId, list, input, { id: req.authUserId!, email });
+        return this.automations.testEmail(req.tenant!.tenantId, list, input, { id: req.authUserId!, email }, actorOf(req));
     }
 
     /**
@@ -104,7 +111,7 @@ export class AutomationsController {
         @Param('list') list: string,
         @Body(new ZodValidationPipe(automationTestRunInputSchema)) input: AutomationTestRunInput,
     ): Promise<AutomationTestRunResult> {
-        return this.automations.testRun(req.tenant!.tenantId, list, input);
+        return this.automations.testRun(req.tenant!.tenantId, list, input, actorOf(req));
     }
 
     /** v0.1.288 — Duplicar: una copia pausada «Nombre (copia)». */

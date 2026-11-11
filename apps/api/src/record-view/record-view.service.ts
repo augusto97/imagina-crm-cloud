@@ -154,7 +154,7 @@ export class RecordViewService {
             // E6 — propuestas pendientes de los agentes de IA (el registro ya pasó el ACL arriba).
             () =>
                 this.agentProposals
-                    ? soft('propuestas de agentes', () => this.tenantDb.withTenant(tenantId, (tx) => this.agentProposals!.pendingForRecordInTx(tx, tenantId, recordId)))
+                    ? soft('propuestas de agentes', () => this.agentProposals!.pendingForRecord(tenantId, actor, recordId))
                     : Promise.resolve(null),
         ];
         const [

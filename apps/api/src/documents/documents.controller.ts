@@ -194,8 +194,17 @@ export class PublicDocumentsController {
         @Query('tenant') tenant?: string,
         @Query('exp') exp?: string,
         @Query('sig') sig?: string,
+        @Query('u') issuer?: string,
     ): Promise<void> {
-        const doc = await this.documents.renderLiveLink(template, record, Number(tenant ?? 0), Number(exp ?? 0), String(sig ?? ''));
+        const doc = await this.documents.renderLiveLink(
+            template,
+            record,
+            Number(tenant ?? 0),
+            Number(exp ?? 0),
+            String(sig ?? ''),
+            // Quién pidió el enlace (va firmado): el PDF se arma con su acceso.
+            issuer !== undefined && issuer !== '' ? Number(issuer) : undefined,
+        );
         reply.raw.writeHead(200, {
             'content-type': 'application/pdf',
             'content-length': String(doc.buffer.length),

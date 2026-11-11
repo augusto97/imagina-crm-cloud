@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { joinUrl, type ConnectionParts } from '../connectors/connection-parts';
+import { MERGE_TAG_RE } from './merge-tags';
 
 /**
  * Construcción de la petición de `call_webhook` (v0.1.155).
@@ -92,6 +93,105 @@ const MIME: Record<WebhookContentType, string> = {
     html: 'text/html; charset=utf-8',
 };
 
+/** ¿La conexión le agrega algo a la petición (credencial, cabeceras, firma)? */
+function connectionCarries(c: ConnectionParts): boolean {
+    return Object.keys(c.headers).length > 0 || c.query.length > 0 || c.body.length > 0 || c.signingSecret !== null;
+}
+
+function originOf(url: string): string | null {
+    try {
+        const u = new URL(url);
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+        // Con usuario en la dirección (`https://api.x.com@otro.com/`) el host
+        // real es el de después de la arroba: `URL` ya lo resuelve así.
+        return u.origin.toLowerCase();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * La credencial de una conexión (token, usuario y contraseña, cabeceras fijas,
+ * firma) sólo se manda al servidor de la conexión: mismo esquema, host y
+ * puerto que su dirección. Se revisa sobre la URL YA resuelta, así una
+ * variable no puede mover el destino. Sin esto, cualquier acción podía apuntar
+ * la credencial de una conexión a otro servidor y leerla ahí.
+ */
+export function assertConnectionOrigin(connection: ConnectionParts, url: string): void {
+    if (!connectionCarries(connection)) return;
+    const name = connection.name ? `«${connection.name}»` : 'elegida';
+    const base = originOf(connection.baseUrl);
+    if (base === null) {
+        throw new Error(
+            `La conexión ${name} no tiene una dirección (URL base) válida, así que su credencial no se envía. Un administrador tiene que completarla en Ajustes → Integraciones → Avanzado: API personalizada.`,
+        );
+    }
+    const target = originOf(url);
+    if (target !== base) {
+        throw new Error(
+            `La conexión ${name} sólo envía su credencial a ${base} y esta acción llama a ${target ?? 'una dirección que no es válida'}. Cambia la URL de la acción o la dirección de la conexión (Ajustes → Integraciones).`,
+        );
+    }
+}
+
+/** Codifica un valor para la URL sin tocar lo que ya venía codificado (`%20`). */
+function encodeKeepingEscapes(value: string, keep: RegExp): string {
+    let out = '';
+    const chars = Array.from(value);
+    for (let i = 0; i < chars.length; i++) {
+        const c = chars[i]!;
+        if (c === '%' && /^[0-9A-Fa-f]{2}$/.test(`${chars[i + 1] ?? ''}${chars[i + 2] ?? ''}`)) out += c;
+        else if (keep.test(c)) out += c;
+        else out += encodeURIComponent(c);
+    }
+    return out;
+}
+
+/** Un valor en la ruta: conserva las barras salvo que intente subir de carpeta. */
+function encodePathValue(value: string): string {
+    const climbs = value.split('/').some((seg) => seg === '..' || seg === '.');
+    return encodeKeepingEscapes(value, climbs ? /[A-Za-z0-9\-_.~@]/ : /[A-Za-z0-9\-_.~@/]/);
+}
+
+/**
+ * Resuelve las variables de la URL de la acción, valor por valor:
+ *  - una variable al PRINCIPIO es la dirección entera (un campo con la URL) y
+ *    se copia tal cual — la misma regla del campo «Botón»;
+ *  - las demás se codifican según dónde caen: en el servidor (antes de la
+ *    primera barra) sólo letras, números, punto, guion y dos puntos; en la
+ *    ruta se conservan las barras; después del «?» se codifica todo.
+ * Así el valor de un registro (que puede venir de un formulario público o de
+ * un webhook entrante) no agrega parámetros, no corta la ruta ni cambia el
+ * servidor. El texto que escribió quien armó la acción no se toca.
+ */
+export function mergeUrl(raw: unknown, merge: MergeFn): string {
+    const template = typeof raw === 'string' ? raw : '';
+    if (template === '') return merge(raw);
+    const re = new RegExp(MERGE_TAG_RE.source, 'g');
+    let out = '';
+    let last = 0;
+    for (let m = re.exec(template); m !== null; m = re.exec(template)) {
+        out += template.slice(last, m.index);
+        last = m.index + m[0].length;
+        if (out.trim() === '') {
+            out += merge(m[0]);
+            continue;
+        }
+        const soFar = out.trim();
+        const inQuery = /[?#]/.test(soFar);
+        const inAuthority = !inQuery && /^[a-z][a-z0-9+.-]*:(\/{0,2}[^/]*)?$/i.test(soFar);
+        out += merge(
+            m[0],
+            inQuery
+                ? (v) => encodeKeepingEscapes(v, /[A-Za-z0-9\-_.~]/)
+                : inAuthority
+                  ? (v) => encodeKeepingEscapes(v.replace(/%/g, '%25'), /[A-Za-z0-9\-.:]/)
+                  : encodePathValue,
+        );
+    }
+    return out + template.slice(last);
+}
+
 /**
  * v0.1.196 — `connection` son las partes YA resueltas de un conector (base
  * URL, cabeceras con la credencial inyectada, query fija y secreto de firma).
@@ -115,8 +215,12 @@ export function buildWebhookRequest(
     // Query params: se agregan a la URL respetando lo que ya traiga escrito.
     // Con conexión, lo que escribe la acción puede ser sólo el path (`/send`);
     // una URL absoluta gana siempre sobre la base del conector.
-    let url = merge(cfg.url).trim();
-    if (connection) url = joinUrl(connection.baseUrl, url);
+    let url = mergeUrl(cfg.url, merge).trim();
+    if (connection) {
+        url = joinUrl(connection.baseUrl, url);
+        // La credencial de una conexión sólo viaja a SU servidor (ver abajo).
+        if (url !== '') assertConnectionOrigin(connection, url);
+    }
     const query = [...(connection?.query ?? []), ...readPairs(cfg.query_params, merge)];
     if (query.length > 0) {
         const qs = query
