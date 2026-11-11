@@ -161,6 +161,7 @@ export function ThemeInspector<C extends Themed>({
     variant = 'form',
     classicTheme,
     only,
+    noTitle,
 }: {
     config: C;
     onChange: (next: C) => void;
@@ -179,6 +180,8 @@ export function ThemeInspector<C extends Themed>({
      * de un elemento (el título, el botón…) muestra lo que lo cambia a él.
      */
     only?: ReadonlyArray<ThemeResetKey>;
+    /** v0.1.406 — sin el título propio (el encabezado del panel ya lo dice). */
+    noTitle?: boolean;
 }): JSX.Element {
     const booking = variant === 'booking';
     const show = (k: ThemeResetKey): boolean => !only || only.includes(k);
@@ -213,7 +216,7 @@ export function ThemeInspector<C extends Themed>({
         >
             {!only && (
             <div>
-                <p className="imcrm-text-sm imcrm-font-semibold">{booking ? __('Diseño de la agenda') : __('Diseño del formulario')}</p>
+                {!noTitle && <p className="imcrm-text-sm imcrm-font-semibold">{booking ? __('Diseño de la agenda') : __('Diseño del formulario')}</p>}
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                     {classic
                         ? __('Tiene el diseño de siempre («Clásico»). Elige una plantilla o cambia cualquier ajuste.')

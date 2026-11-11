@@ -35,7 +35,7 @@ import { BOOKING_ELEMENTS, bookingElementVisible, setBookingElementVisible, type
  * a ese paso); si se puede ocultar, tiene su ojo.
  */
 
-const ICON: Record<BookingElementId, LucideIcon> = {
+export const BOOKING_ELEMENT_ICON: Record<BookingElementId, LucideIcon> = {
     '@page': Paintbrush,
     '@card': SquareDashed,
     '@cover': LayoutTemplate,
@@ -112,9 +112,6 @@ export function BookingOutline({
     );
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-p-2" data-testid="booking-outline" data-tour="booking-outline">
-            <p className="imcrm-px-1.5 imcrm-pt-1 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                {__('Toca una parte aquí o en la vista previa para editarla. El ojo la oculta.')}
-            </p>
             <GroupLabel>{__('Encabezado')}</GroupLabel>
             {row('@logo', hasLogo ? __('El de la empresa') : __('Sin logo cargado'))}
             {row('@title', s.title || pageName)}
@@ -168,7 +165,7 @@ function Row({
     onSelect: (id: BookingElementId) => void;
     onChange: (next: BookingConfig) => void;
 }): JSX.Element {
-    const Icon = ICON[id];
+    const Icon = BOOKING_ELEMENT_ICON[id];
     const visible = bookingElementVisible(config, id);
     const off = visible === false;
     const label = __(BOOKING_ELEMENTS[id].label);

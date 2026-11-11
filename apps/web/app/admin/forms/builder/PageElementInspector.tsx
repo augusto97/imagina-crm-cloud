@@ -1,4 +1,6 @@
 import { Eye, EyeOff, X } from 'lucide-react';
+
+import { PanelHeader } from '../../builder/BuilderShell';
 import {
     DEFAULT_PUBLIC_THEME,
     type CaptchaAvailability,
@@ -24,6 +26,7 @@ import { ChargeSettings, WelcomeSettings } from '../design/StartSettings';
 import { ThemeInspector } from '../design/ThemeInspector';
 import { effectiveTheme, patchThemeSection } from '../design/themeOps';
 import { updateSettings } from '../formDesignOps';
+import { ELEMENT_ICON } from './ContentOutline';
 import { AfterSubmitSettings, CaptchaSettings, DataConsentSettings } from './SettingsGroups';
 import { PAGE_ELEMENTS, elementVisible, setElementVisible, visibilityLabel, type PageElementId, type SettingsGroupId } from './pageElements';
 
@@ -125,12 +128,18 @@ export function PageElementInspector({
     tab,
     onTab,
     onClose,
+    back,
+    closeable = true,
 }: {
     id: PageElementId;
     ctx: PageElementContext;
     tab: InspectorTab;
     onTab: (t: InspectorTab) => void;
     onClose: () => void;
+    /** v0.1.406 — «‹ Diseño»: volver al panel del modo en que se estaba. */
+    back?: { label: string; onClick: () => void };
+    /** La ✕ (en el celular se vuelve con la barra de arriba). */
+    closeable?: boolean;
 }): JSX.Element {
     const info = PAGE_ELEMENTS[id];
     const base = ctx.base ?? DEFAULT_PUBLIC_THEME;
@@ -140,16 +149,21 @@ export function PageElementInspector({
     const shown: InspectorTab = !content ? 'style' : !style ? 'content' : tab;
 
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-p-4" data-testid="form-element-inspector" data-element={id}>
-            <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-2">
-                <div className="imcrm-min-w-0">
-                    <p className="imcrm-truncate imcrm-text-sm imcrm-font-semibold">{__(info.label)}</p>
-                    <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{__(info.hint)}</p>
-                </div>
-                <Button variant="ghost" size="icon" aria-label={__('Cerrar')} onClick={onClose}>
-                    <X className="imcrm-h-4 imcrm-w-4" />
-                </Button>
-            </div>
+        <div className="imcrm-flex imcrm-flex-col" data-testid="form-element-inspector" data-element={id}>
+            <PanelHeader
+                icon={ELEMENT_ICON[id]}
+                title={__(info.label)}
+                subtitle={__(info.hint)}
+                back={back}
+                actions={
+                    closeable && !back ? (
+                        <Button variant="ghost" size="icon" aria-label={__('Cerrar')} onClick={onClose}>
+                            <X className="imcrm-h-4 imcrm-w-4" />
+                        </Button>
+                    ) : undefined
+                }
+            />
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-p-4">
             {visible !== null && (
                 <VisibilitySwitch
                     on={visible}
@@ -160,6 +174,7 @@ export function PageElementInspector({
             )}
             <InspectorTabs tab={shown} onTab={onTab} hasContent={content} hasStyle={style} />
             {shown === 'content' ? <ElementContent id={id} ctx={ctx} /> : <ElementStyle id={id} ctx={ctx} base={base} />}
+            </div>
         </div>
     );
 }

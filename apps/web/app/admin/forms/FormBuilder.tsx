@@ -2,16 +2,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useQuery } from '@tanstack/react-query';
 import {
-    ArrowLeft,
-    MousePointerClick,
+    BarChart3,
+    ClipboardList,
+    Eye,
+    EyeOff,
+    GitBranch,
     Globe,
+    LayoutTemplate,
     Link2,
-    Loader2,
+    ListTree,
     Monitor,
     Moon,
     Palette,
-    BarChart3,
     Redo2,
+    Route,
+    Send,
+    Settings2,
+    SlidersHorizontal,
     Smartphone,
     Sun,
     Trash2,
@@ -55,7 +62,7 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useTeams } from '@/hooks/useTeams';
 import { __ } from '@/lib/i18n';
 import { getTenantFormat } from '@/lib/tenantFormat';
-import { getThemeState } from '@/lib/theme';
+import { getThemeState, useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
@@ -69,10 +76,34 @@ import { MyThemes } from './design/MyThemes';
 import { ThemeGallery } from './design/ThemeGallery';
 import { ThemeInspector } from './design/ThemeInspector';
 import { ElementColors } from './design/ElementColors';
-import { ContentOutline } from './builder/ContentOutline';
+import { ContentOutline, itemIcon } from './builder/ContentOutline';
 import { InspectorTabs, PageElementInspector, type InspectorTab, type PageElementContext } from './builder/PageElementInspector';
-import { SettingsGroupPanel, SettingsIndex, type SettingsContext } from './builder/SettingsGroups';
-import { QUESTION_STYLE, isPageElement, type SettingsGroupId } from './builder/pageElements';
+import { MissingRequiredNotice, SETTINGS_GROUP_ICON, SettingsGroupPanel, groupSummary, type SettingsContext } from './builder/SettingsGroups';
+import { QUESTION_STYLE, SETTINGS_GROUP_INFO, isPageElement, type SettingsGroupId } from './builder/pageElements';
+import {
+    BuilderMobileNav,
+    BuilderMobileTopBar,
+    BuilderModeSwitch,
+    BuilderTopBar,
+    IconToggleGroup,
+    InlineName,
+    InspectorEmpty,
+    MobileBackBar,
+    MoreMenu,
+    PanelHeader,
+    PanelSegments,
+    PreviewToolbar,
+    PublishSwitch,
+    SaveButton,
+    SettingsCard,
+    SettingsMobileIndex,
+    SettingsNav,
+    SettingsPageHeader,
+    SettingsPageLayout,
+    type BuilderMode,
+    type MenuAction,
+    type SettingsNavItem,
+} from '../builder/BuilderShell';
 import { Choice, NumberField } from '@/components/design/DesignStyleControls';
 import {
     activePresetId,
@@ -163,6 +194,9 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
     const captcha = useCaptchaAvailability(listId);
     const dataConsent = useDataConsentAvailability(listId);
     const narrow = useMediaQuery('(max-width: 1023px)');
+    // v0.1.406 — con menos de 1280 px, lo de los costados de la barra de arriba se achica.
+    const wide = useMediaQuery('(min-width: 1280px)');
+    const appTheme = useTheme();
     // v0.1.351 — el CSS propio lo escribe sólo un administrador (el rol, no la capacidad).
     const isAdmin = useSession((st) => st.memberships.find((m) => m.tenant_id === st.activeTenantId)?.role === 'admin');
 
@@ -172,10 +206,14 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
     const [enabled, setEnabled] = useState(form.enabled);
     const [history, setHistory] = useState<History>({ past: [], future: [] });
     const [selected, setSelected] = useState<string | null>(null);
-    const [leftTab, setLeftTab] = useState<LeftTab>('content');
-    // v0.1.377 — `edit` = el panel de lo elegido (en el celular, a pantalla completa con «Volver»).
-    const [mobileTab, setMobileTab] = useState<'content' | 'logic' | 'preview' | 'design' | 'settings' | 'edit'>('preview');
-    const [mobileBack, setMobileBack] = useState<'content' | 'logic' | 'preview' | 'design' | 'settings'>('preview');
+    // v0.1.406 — el modo del editor (arriba, al centro): Contenido · Diseño · Lógica · Ajustes.
+    const [mode, setMode] = useState<Mode>('content');
+    // v0.1.406 — Diseño: plantillas o personalizar (un solo panel a la derecha).
+    const [designTab, setDesignTab] = useState<'templates' | 'customize'>('templates');
+    // En el celular: lo que se ve (con la vista previa como una pantalla más) y
+    // `edit` = el panel de lo elegido, a pantalla completa con «Volver».
+    const [mobileView, setMobileView] = useState<MobileView | 'edit'>('preview');
+    const [mobileBack, setMobileBack] = useState<MobileView>('preview');
     // v0.1.377 — el grupo de Ajustes abierto (en el celular, null = el índice).
     const [settingsGroup, setSettingsGroup] = useState<SettingsGroupId | null>(null);
     // v0.1.377 — Contenido / Estilo del panel de lo elegido (se recuerda al cambiar de elemento).
@@ -209,12 +247,23 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
             setSelected(id);
             // La pantalla de agradecimiento se mira en la vista previa al elegirla.
             setPreviewEnding(id === '@thanks' ? '' : null);
+            // En «Ajustes» no hay vista previa: elegir una parte lleva a «Contenido».
+            setMode((m) => (m === 'settings' ? 'content' : m));
             if (narrow) {
-                setMobileTab((cur) => {
+                setMobileView((cur) => {
                     if (cur !== 'edit') setMobileBack(cur);
                     return 'edit';
                 });
             }
+        },
+        [narrow],
+    );
+    /** Cambiar de modo (arriba). Elegir un modo muestra su panel. */
+    const goMode = useCallback(
+        (m: Mode): void => {
+            setMode(m);
+            setSelected(null);
+            if (narrow) setMobileView(m);
         },
         [narrow],
     );
@@ -423,8 +472,8 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
     }, [selected]);
     // Al salir de «Lógica» la vista previa vuelve al formulario (salvo mirando el agradecimiento).
     useEffect(() => {
-        if (leftTab !== 'logic' && selected !== '@thanks') setPreviewEnding(null);
-    }, [leftTab, selected]);
+        if (mode !== 'logic' && selected !== '@thanks') setPreviewEnding(null);
+    }, [mode, selected]);
 
     const save = async (extra: { enabled?: boolean } = {}): Promise<boolean> => {
         // v0.1.356 — una pantalla final con la dirección a medio escribir se perdería al guardar.
@@ -435,9 +484,7 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
                 __('Revisa la pantalla final «%s»').replace('%s', endingName(e, badEnding)),
                 __('Su dirección tiene que empezar con https://, o déjala vacía para mostrar el mensaje.'),
             );
-            setSelected(null);
-            if (narrow) setMobileTab('logic');
-            setLeftTab('logic');
+            goMode('logic');
             return false;
         }
         try {
@@ -534,7 +581,7 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
         </div>
     );
     const themeInspector = (
-        <ThemeInspector config={config} onChange={change} brand={brandColor} isAdmin={isAdmin} showLogo={config.settings.show_logo} />
+        <ThemeInspector config={config} onChange={change} brand={brandColor} isAdmin={isAdmin} showLogo={config.settings.show_logo} noTitle />
     );
 
     // La pantalla de agradecimiento «de siempre» se edita tocándola.
@@ -548,16 +595,17 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
             previewEnding={previewEnding}
             onPreviewEnding={(id) => {
                 setPreviewEnding(id);
-                // En el celular la vista previa es otra pestaña: ir a mirarla.
-                if (narrow && id !== null) setMobileTab('preview');
+                // En el celular la vista previa es otra pantalla: ir a mirarla.
+                if (narrow && id !== null) setMobileView('preview');
             }}
             onOpenSettings={openSettings}
+            noTitle
         />
     );
 
     const closeSelection = (): void => {
         setSelected(null);
-        if (narrow) setMobileTab(mobileBack);
+        if (narrow) setMobileView(mobileBack);
     };
     const selectedElement = isPageElement(selected) ? selected : null;
     const settingsCtx: SettingsContext = {
@@ -572,15 +620,18 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
         dataConsent: dataConsent.data ?? null,
         missing,
         previewWelcome,
-        onPreviewWelcome: setPreviewWelcome,
+        // En «Ajustes» no hay vista previa al lado: «Ver la bienvenida» lleva a verla.
+        onPreviewWelcome: (on) => {
+            if (on) pick('@welcome');
+            else setPreviewWelcome(false);
+        },
         onSelectElement: pick,
         onOpenShare: openShare,
     };
     const openSettingsGroup = (g: SettingsGroupId): void => {
         setSelected(null);
         setSettingsGroup(g);
-        setLeftTab('settings');
-        if (narrow) setMobileTab('settings');
+        goMode('settings');
     };
     const elementCtx: PageElementContext = {
         config,
@@ -593,11 +644,7 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
         previewWelcome,
         onPreviewWelcome: setPreviewWelcome,
         onOpenSettings: openSettingsGroup,
-        onOpenLogic: () => {
-            setSelected(null);
-            setLeftTab('logic');
-            if (narrow) setMobileTab('logic');
-        },
+        onOpenLogic: () => goMode('logic'),
     };
 
     const outline = (
@@ -616,51 +663,27 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
             locked={lockedFields}
         />
     );
-    const settingsIndex = (
-        <SettingsIndex
-            active={narrow ? null : (settingsGroup ?? 'general')}
-            onPick={(g) => {
-                setSettingsGroup(g);
-                setSelected(null);
-            }}
-            config={config}
-            captcha={captcha.data ?? null}
-            missing={missing}
-        />
+    const settingsItems: SettingsNavItem<SettingsGroupId>[] = SETTINGS_NAV_ORDER.map((g) => ({
+        id: g,
+        label: __(SETTINGS_GROUP_INFO[g].title),
+        icon: SETTINGS_GROUP_ICON[g],
+        summary: groupSummary(g, config, captcha.data ?? null),
+        group: __(SETTINGS_GROUP_SECTION[g]),
+        problem: g === 'general' && missing.length > 0,
+    }));
+    const activeGroup: SettingsGroupId = settingsGroup ?? 'general';
+    const settingsContent = (g: SettingsGroupId): JSX.Element => (
+        <>
+            <SettingsPageHeader icon={SETTINGS_GROUP_ICON[g]} title={__(SETTINGS_GROUP_INFO[g].title)} hint={__(SETTINGS_GROUP_INFO[g].hint)} />
+            <MissingRequiredNotice missing={missing} />
+            <SettingsCard testId="form-settings-card">
+                <SettingsGroupPanel group={g} ctx={settingsCtx} showHeader={false} />
+            </SettingsCard>
+        </>
     );
-    const designLeft = (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-p-3">
-            <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                <Palette className="imcrm-mt-0.5 imcrm-h-3 imcrm-w-3 imcrm-shrink-0" />
-                {__('Elige una plantilla o un tema guardado. Los colores, fuentes y tamaños de todo el formulario se ajustan a la derecha; los de una parte, tocándola.')}
-            </p>
-            {designLibrary}
-        </div>
-    );
-    const left = (
-        <div className="imcrm-flex imcrm-flex-col">
-            <BuilderTabs
-                tab={leftTab}
-                onTab={(t) => {
-                    setLeftTab(t as LeftTab);
-                    // Elegir una pestaña muestra sus ajustes a la derecha.
-                    setSelected(null);
-                }}
-                tabs={[
-                    ['content', __('Contenido')],
-                    ['design', __('Diseño')],
-                    ['logic', __('Lógica')],
-                    ['settings', __('Ajustes')],
-                ]}
-                logicCount={logicCount(config)}
-                itemsCount={config.items.length}
-            />
-            {leftTab === 'content' && outline}
-            {leftTab === 'design' && designLeft}
-            {leftTab === 'logic' && <LogicMap config={config} fieldsById={fieldsById} />}
-            {leftTab === 'settings' && settingsIndex}
-        </div>
-    );
+
+    // Volver de una parte elegida al panel del modo en que se estaba.
+    const backFromSelection = mode === 'design' ? { label: __('Diseño'), onClick: closeSelection } : mode === 'logic' ? { label: __('Lógica'), onClick: closeSelection } : undefined;
     const itemInspector = selectedItem ? (
         <ItemInspector
             key={selectedItem.id}
@@ -676,87 +699,91 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
             onTab={setInspectorTab}
             brand={brandColor}
             isAdmin={isAdmin}
+            back={narrow ? undefined : backFromSelection}
         />
     ) : null;
     const elementInspector = selectedElement ? (
-        <PageElementInspector key={selectedElement} id={selectedElement} ctx={elementCtx} tab={inspectorTab} onTab={setInspectorTab} onClose={closeSelection} />
+        <PageElementInspector
+            key={selectedElement}
+            id={selectedElement}
+            ctx={elementCtx}
+            tab={inspectorTab}
+            onTab={setInspectorTab}
+            onClose={closeSelection}
+            back={narrow ? undefined : backFromSelection}
+            closeable={!narrow}
+        />
     ) : null;
-    const right =
-        itemInspector ??
-        elementInspector ??
-        (leftTab === 'design' ? (
-            themeInspector
-        ) : leftTab === 'logic' ? (
-            logicPanel
-        ) : leftTab === 'settings' ? (
-            <SettingsGroupPanel group={settingsGroup ?? 'general'} ctx={settingsCtx} />
-        ) : (
-            <EmptyInspector onPick={pick} />
-        ));
+    const emptyInspector = (
+        <InspectorEmpty
+            title={__('Toca cualquier parte del formulario')}
+            text={__('En la vista previa o en la estructura de la izquierda: una pregunta, el título, el logo, el botón… Aquí aparece lo que dice, si se muestra y su estilo.')}
+            quick={[
+                ['@title', __('El título')],
+                ['@logo', __('El logo')],
+                ['@submit', __('El botón')],
+                ['@thanks', __('El agradecimiento')],
+                ['@card', __('La tarjeta')],
+                ['@page', __('El fondo')],
+            ]}
+            onPick={pick}
+            testId="form-inspector-empty"
+        />
+    );
+    const designPanel = (
+        <div className="imcrm-flex imcrm-flex-col" data-testid="form-design-panel">
+            <PanelHeader
+                icon={Palette}
+                title={__('Diseño')}
+                subtitle={__('Cómo se ve todo el formulario. Para cambiar una sola parte, tócala en la vista previa.')}
+            >
+                <PanelSegments
+                    value={designTab}
+                    onChange={setDesignTab}
+                    options={[
+                        { id: 'templates', label: __('Plantillas'), icon: LayoutTemplate, testId: 'form-design-templates' },
+                        { id: 'customize', label: __('Personalizar'), icon: SlidersHorizontal, testId: 'form-design-customize' },
+                    ]}
+                />
+            </PanelHeader>
+            {designTab === 'templates' ? <div className="imcrm-p-4">{designLibrary}</div> : themeInspector}
+        </div>
+    );
+
+    const modes: Array<BuilderMode<Mode>> = [
+        { id: 'content', label: __('Contenido'), icon: ListTree, testId: 'form-tab-content', tour: 'form-content-tab' },
+        { id: 'design', label: __('Diseño'), icon: Palette, testId: 'form-tab-design', tour: 'form-design-tab' },
+        { id: 'logic', label: __('Lógica'), icon: GitBranch, count: logicCount(config) || null, testId: 'form-tab-logic' },
+        { id: 'settings', label: __('Ajustes'), icon: Settings2, problem: missing.length > 0, testId: 'form-tab-settings', tour: 'form-settings-tab' },
+    ];
+
     const preview = (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-bg-canvas">
-            <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-3 imcrm-py-1.5">
-                <span className="imcrm-min-w-0 imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">
-                    {__('Vista previa — toca cualquier parte para editarla')}
-                </span>
-                <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5">
-                    {theme.mode === 'auto' && (
-                        <div
-                            role="group"
-                            aria-label={__('Ver en modo claro u oscuro')}
-                            className="imcrm-flex imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5"
-                            data-testid="form-preview-scheme"
-                        >
-                            {(
-                                [
-                                    ['light', Sun, __('Claro')],
-                                    ['dark', Moon, __('Oscuro')],
-                                ] as const
-                            ).map(([key, Icon, label]) => (
-                                <button
-                                    key={key}
-                                    type="button"
-                                    title={`${__('Ver como en un dispositivo en modo')} ${label.toLowerCase()}`}
-                                    aria-pressed={previewScheme === key}
-                                    onClick={() => setPreviewScheme(key)}
-                                    className={cn(
-                                        'imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-rounded imcrm-px-1.5 imcrm-py-1 imcrm-text-[11px]',
-                                        previewScheme === key ? 'imcrm-bg-background imcrm-text-foreground imcrm-shadow-sm' : 'imcrm-text-muted-foreground',
-                                    )}
-                                >
-                                    <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
-                                    <span className="imcrm-hidden sm:imcrm-inline">{label}</span>
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                    <div role="group" aria-label={__('Dispositivo')} className="imcrm-flex imcrm-gap-0.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-0.5">
-                        {(
-                            [
-                                ['desktop', Monitor, __('Computadora')],
-                                ['mobile', Smartphone, __('Celular')],
-                                ['site', Globe, __('Insertado en tu sitio')],
-                            ] as const
-                        ).map(([key, Icon, label]) => (
-                            <button
-                                key={key}
-                                type="button"
-                                title={label}
-                                aria-pressed={device === key}
-                                onClick={() => setDevice(key)}
-                                data-testid={`form-preview-device-${key}`}
-                                className={cn(
-                                    'imcrm-rounded imcrm-p-1',
-                                    device === key ? 'imcrm-bg-background imcrm-text-foreground imcrm-shadow-sm' : 'imcrm-text-muted-foreground',
-                                )}
-                            >
-                                <Icon className="imcrm-h-3.5 imcrm-w-3.5" />
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-            <div className="imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-justify-center imcrm-overflow-hidden imcrm-p-3">
+            <PreviewToolbar hint={__('toca cualquier parte para editarla')}>
+                {theme.mode === 'auto' && (
+                    <IconToggleGroup
+                        label={__('Ver en modo claro u oscuro')}
+                        value={previewScheme}
+                        onChange={setPreviewScheme}
+                        testId="form-preview-scheme"
+                        options={[
+                            { id: 'light', label: __('Claro'), icon: Sun, showLabel: true },
+                            { id: 'dark', label: __('Oscuro'), icon: Moon, showLabel: true },
+                        ]}
+                    />
+                )}
+                <IconToggleGroup
+                    label={__('Dispositivo')}
+                    value={device}
+                    onChange={setDevice}
+                    options={[
+                        { id: 'desktop', label: __('Computadora'), icon: Monitor, testId: 'form-preview-device-desktop' },
+                        { id: 'mobile', label: __('Celular'), icon: Smartphone, testId: 'form-preview-device-mobile' },
+                        { id: 'site', label: __('Insertado en tu sitio'), icon: Globe, testId: 'form-preview-device-site' },
+                    ]}
+                />
+            </PreviewToolbar>
+            <div className={cn('imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-justify-center imcrm-overflow-hidden', narrow ? 'imcrm-px-2 imcrm-pb-2' : 'imcrm-px-5 imcrm-pb-5')}>
                 {device === 'site' ? (
                     <SitePreviewFrame bare={theme.layout.embed_style === 'bare'}>
                         <iframe
@@ -774,7 +801,7 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
                         src="/api/v1/public/f/preview"
                         title={__('Vista previa del formulario')}
                         className={cn(
-                            'imcrm-h-full imcrm-rounded-lg imcrm-border imcrm-border-border',
+                            'imcrm-h-full imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-shadow-imcrm-sm',
                             device === 'mobile' ? 'imcrm-w-[375px]' : 'imcrm-w-full imcrm-max-w-[760px]',
                         )}
                         // La miniatura toma el fondo del diseño (no un blanco que parpadea al cargar).
@@ -786,47 +813,13 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
         </div>
     );
 
-    return (
-        <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col">
-            <header className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-border-b imcrm-border-border imcrm-px-3 imcrm-py-2">
-                <Button variant="ghost" size="icon" aria-label={__('Cerrar')} onClick={() => void close()}>
-                    <X className="imcrm-h-4 imcrm-w-4" />
-                </Button>
-                <Input
-                    value={draft.name}
-                    onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-                    className="imcrm-h-8 imcrm-w-56 imcrm-max-w-[45vw] imcrm-font-medium"
-                    aria-label={__('Nombre del formulario')}
-                />
-                <PublishSwitch enabled={enabled} busy={update.isPending} onClick={() => void togglePublish()} />
-                <div className="imcrm-ml-auto imcrm-flex imcrm-items-center imcrm-gap-1">
-                    <Button variant="ghost" size="icon" aria-label={__('Deshacer')} disabled={history.past.length === 0} onClick={undo}>
-                        <Undo2 className="imcrm-h-4 imcrm-w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" aria-label={__('Rehacer')} disabled={history.future.length === 0} onClick={redo}>
-                        <Redo2 className="imcrm-h-4 imcrm-w-4" />
-                    </Button>
-                    <ThemeToggle />
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={__('Estadísticas')}
-                        title={__('Estadísticas')}
-                        onClick={() => setStatsOpen(true)}
-                        data-testid="form-stats-open"
-                        data-tour="form-stats"
-                    >
-                        <BarChart3 className="imcrm-h-4 imcrm-w-4" />
-                    </Button>
-                    <Button variant="outline" size="sm" className="imcrm-gap-1.5" onClick={() => openShare(shareTab)} data-testid="form-share">
-                        <Link2 className="imcrm-h-3.5 imcrm-w-3.5" />
-                        <span className="imcrm-hidden sm:imcrm-inline">{__('Compartir')}</span>
-                    </Button>
-                    <Button size="sm" disabled={!dirty || update.isPending} onClick={() => void save().then((ok) => ok && toast.success(__('Formulario guardado')))} data-testid="form-save">
-                        {update.isPending ? <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" /> : __('Guardar')}
-                    </Button>
-                </div>
-            </header>
+    const saveNow = (): void => void save().then((ok) => ok && toast.success(__('Formulario guardado')));
+    const nameInput = <InlineName value={draft.name} onChange={(name) => setDraft((d) => ({ ...d, name }))} label={__('Nombre del formulario')} testId="form-name" />;
+    const statsAction: MenuAction = { label: __('Estadísticas'), icon: BarChart3, onSelect: () => setStatsOpen(true), testId: 'form-stats-menu' };
+    const themeAction: MenuAction = { label: appTheme.resolved === 'dark' ? __('Modo claro') : __('Modo oscuro'), icon: appTheme.resolved === 'dark' ? Sun : Moon, onSelect: appTheme.toggle };
+
+    const dialogs = (
+        <>
             {statsOpen && <FormStatsSheet open onOpenChange={setStatsOpen} listId={listId} form={form} fields={fields} />}
             <ShareDialog
                 open={shareOpen}
@@ -852,211 +845,223 @@ function Builder({ onOpenChange, listId, form, fields, lockedFields }: FormBuild
                     unsaved: config.settings.allowed_domains.join('\n') !== saved.config.settings.allowed_domains.join('\n'),
                 }}
                 dirty={dirty}
-                onSave={() => void save().then((ok) => ok && toast.success(__('Formulario guardado')))}
+                onSave={saveNow}
                 tab={shareTab}
                 onTab={setShareTab}
                 formId={form.id}
             />
+        </>
+    );
 
-            {narrow ? (
-                <>
-                    {mobileTab === 'edit' ? (
-                        <div className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-border-b imcrm-border-border imcrm-px-2 imcrm-py-1.5">
-                            <Button variant="ghost" size="sm" className="imcrm-gap-1" onClick={closeSelection} data-testid="form-edit-back">
-                                <ArrowLeft className="imcrm-h-4 imcrm-w-4" />
-                                {__('Volver')}
-                            </Button>
-                            <span className="imcrm-ml-auto imcrm-text-[11px] imcrm-text-muted-foreground">{__('Editando')}</span>
-                        </div>
-                    ) : (
-                        <BuilderTabs
-                            full
-                            tab={mobileTab}
-                            onTab={(t) => {
-                                setMobileTab(t as typeof mobileTab);
-                                setSelected(null);
-                                if (t === 'settings') setSettingsGroup(null);
-                            }}
-                            tabs={[
-                                ['content', __('Contenido')],
-                                ['logic', __('Lógica')],
-                                ['preview', __('Vista previa')],
-                                ['design', __('Diseño')],
-                                ['settings', __('Ajustes')],
+    if (narrow) {
+        const mobileItems: Array<BuilderMode<MobileView>> = [
+            { id: 'content', label: __('Contenido'), icon: ListTree, testId: 'form-tab-content', tour: 'form-content-tab' },
+            { id: 'design', label: __('Diseño'), icon: Palette, testId: 'form-tab-design', tour: 'form-design-tab' },
+            { id: 'preview', label: __('Vista previa'), icon: Eye, testId: 'form-tab-preview' },
+            { id: 'logic', label: __('Lógica'), icon: GitBranch, count: logicCount(config) || null, testId: 'form-tab-logic' },
+            { id: 'settings', label: __('Ajustes'), icon: Settings2, problem: missing.length > 0, testId: 'form-tab-settings', tour: 'form-settings-tab' },
+        ];
+        return (
+            <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col">
+                <BuilderMobileTopBar
+                    onClose={() => void close()}
+                    name={nameInput}
+                    published={enabled}
+                    statusText={enabled ? __('Publicado') : __('Sin publicar')}
+                    more={
+                        <MoreMenu
+                            testId="form-more"
+                            actions={[
+                                { label: enabled ? __('Dejar de recibir respuestas') : __('Publicar'), icon: enabled ? EyeOff : Send, onSelect: () => void togglePublish(), testId: 'form-publish' },
+                                { label: __('Compartir'), icon: Link2, onSelect: () => openShare(shareTab), testId: 'form-share' },
+                                { ...statsAction, testId: 'form-stats' },
+                                { label: __('Deshacer'), icon: Undo2, onSelect: undo, disabled: history.past.length === 0, separated: true },
+                                { label: __('Rehacer'), icon: Redo2, onSelect: redo, disabled: history.future.length === 0 },
+                                { ...themeAction, separated: true },
                             ]}
-                            logicCount={logicCount(config)}
                         />
+                    }
+                    save={<SaveButton dirty={dirty} busy={update.isPending} onClick={saveNow} testId="form-save" />}
+                />
+                {dialogs}
+                {mobileView === 'edit' && <MobileBackBar label={__('Volver')} onBack={closeSelection} testId="form-edit-back" />}
+                {mobileView === 'settings' && settingsGroup !== null && (
+                    <MobileBackBar label={__('Ajustes')} onBack={() => setSettingsGroup(null)} testId="form-settings-back" />
+                )}
+                <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-bg-canvas">
+                    {mobileView === 'content' && (
+                        <div className="imcrm-bg-card">
+                            <PanelHeader icon={ListTree} title={__('Estructura')} subtitle={__('Todo el formulario en orden. Toca una fila para editarla.')} />
+                            {outline}
+                        </div>
                     )}
-                    <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto">
-                        {mobileTab === 'content' && outline}
-                        {mobileTab === 'logic' && logicPanel}
-                        {mobileTab === 'design' && (
-                            <div className="imcrm-flex imcrm-flex-col" data-testid="form-design-mobile">
-                                <div className="imcrm-border-b imcrm-border-border imcrm-p-3">{designLibrary}</div>
-                                {themeInspector}
-                            </div>
+                    {mobileView === 'logic' && (
+                        <div className="imcrm-bg-card">
+                            <PanelHeader icon={GitBranch} title={__('Lógica')} subtitle={__('Adónde va cada persona según lo que responde y qué ve al terminar.')} />
+                            {logicPanel}
+                        </div>
+                    )}
+                    {mobileView === 'design' && <div className="imcrm-bg-card" data-testid="form-design-mobile">{designPanel}</div>}
+                    {mobileView === 'preview' && <div className="imcrm-h-full">{preview}</div>}
+                    {mobileView === 'settings' &&
+                        (settingsGroup === null ? (
+                            <SettingsMobileIndex
+                                items={settingsItems}
+                                onPick={(g) => setSettingsGroup(g)}
+                                testId="form-settings-index"
+                                intro={<MissingRequiredNotice missing={missing} />}
+                            />
+                        ) : (
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-4">{settingsContent(settingsGroup)}</div>
+                        ))}
+                    {mobileView === 'edit' && <div className="imcrm-bg-card">{itemInspector ?? elementInspector ?? emptyInspector}</div>}
+                </div>
+                <BuilderMobileNav
+                    items={mobileItems}
+                    value={mobileView === 'edit' ? mobileBack : mobileView}
+                    onChange={(v) => {
+                        setSelected(null);
+                        setMobileView(v);
+                        if (v !== 'preview') setMode(v);
+                        if (v === 'settings') setSettingsGroup(null);
+                    }}
+                />
+            </div>
+        );
+    }
+
+    return (
+        <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col">
+            <BuilderTopBar
+                kindIcon={ClipboardList}
+                kindLabel={__('Formulario')}
+                onClose={() => void close()}
+                name={nameInput}
+                modes={<BuilderModeSwitch modes={modes} value={mode} onChange={goMode} />}
+                actions={
+                    <>
+                        <Button variant="ghost" size="icon" aria-label={__('Deshacer')} title={__('Deshacer (Ctrl+Z)')} disabled={history.past.length === 0} onClick={undo}>
+                            <Undo2 className="imcrm-h-4 imcrm-w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" aria-label={__('Rehacer')} title={__('Rehacer (Ctrl+Shift+Z)')} disabled={history.future.length === 0} onClick={redo}>
+                            <Redo2 className="imcrm-h-4 imcrm-w-4" />
+                        </Button>
+                        <span className="imcrm-mx-1 imcrm-h-6 imcrm-w-px imcrm-bg-border" aria-hidden />
+                        {wide ? (
+                            <>
+                                <ThemeToggle compact />
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label={__('Estadísticas')}
+                                    title={__('Estadísticas')}
+                                    onClick={() => setStatsOpen(true)}
+                                    data-testid="form-stats-open"
+                                    data-tour="form-stats"
+                                >
+                                    <BarChart3 className="imcrm-h-4 imcrm-w-4" />
+                                </Button>
+                            </>
+                        ) : (
+                            <span data-tour="form-stats" className="imcrm-contents">
+                                <MoreMenu testId="form-more" actions={[{ ...statsAction, testId: 'form-stats-open' }, themeAction]} />
+                            </span>
                         )}
-                        {mobileTab === 'preview' && <div className="imcrm-h-full">{preview}</div>}
-                        {mobileTab === 'settings' &&
-                            (settingsGroup === null ? (
-                                settingsIndex
-                            ) : (
-                                <div className="imcrm-flex imcrm-flex-col">
-                                    <button
-                                        type="button"
-                                        onClick={() => setSettingsGroup(null)}
-                                        className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-px-4 imcrm-pt-3 imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-text-foreground"
-                                        data-testid="form-settings-back"
-                                    >
-                                        <ArrowLeft className="imcrm-h-3.5 imcrm-w-3.5" />
-                                        {__('Ajustes')}
-                                    </button>
-                                    <SettingsGroupPanel group={settingsGroup} ctx={settingsCtx} />
-                                </div>
-                            ))}
-                        {mobileTab === 'edit' && (itemInspector ?? elementInspector ?? <EmptyInspector onPick={pick} />)}
-                    </div>
-                </>
+                        <PublishSwitch enabled={enabled} busy={update.isPending} onClick={() => void togglePublish()} testId="form-publish" compact={!wide} />
+                        <Button variant="outline" size="sm" className="imcrm-ml-1 imcrm-gap-1.5" onClick={() => openShare(shareTab)} data-testid="form-share" title={__('Compartir')}>
+                            <Link2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {wide && <span>{__('Compartir')}</span>}
+                        </Button>
+                        <SaveButton dirty={dirty} busy={update.isPending} onClick={saveNow} testId="form-save" />
+                    </>
+                }
+            />
+            {dialogs}
+
+            {mode === 'settings' ? (
+                <SettingsPageLayout
+                    scrollKey={activeGroup}
+                    nav={
+                        <SettingsNav
+                            items={settingsItems}
+                            active={activeGroup}
+                            onPick={(g) => setSettingsGroup(g)}
+                            label={__('Ajustes del formulario')}
+                            testId="form-settings-index"
+                        />
+                    }
+                >
+                    {settingsContent(activeGroup)}
+                </SettingsPageLayout>
             ) : (
-                <div className="imcrm-grid imcrm-min-h-0 imcrm-flex-1 imcrm-grid-cols-[280px_minmax(0,1fr)_320px]">
-                    <aside className="imcrm-min-h-0 imcrm-overflow-y-auto imcrm-border-r imcrm-border-border">{left}</aside>
+                <div
+                    className={cn(
+                        'imcrm-grid imcrm-min-h-0 imcrm-flex-1',
+                        mode === 'design' ? 'imcrm-grid-cols-[minmax(0,1fr)_380px]' : 'imcrm-grid-cols-[300px_minmax(0,1fr)_360px]',
+                    )}
+                    data-mode={mode}
+                >
+                    {mode !== 'design' && (
+                        <aside className="imcrm-min-h-0 imcrm-overflow-y-auto imcrm-border-r imcrm-border-border imcrm-bg-card" data-testid="form-left-panel">
+                            {mode === 'content' ? (
+                                <>
+                                    <PanelHeader icon={ListTree} title={__('Estructura')} subtitle={__('Todo el formulario, en el orden en que se ve. Toca una fila para editarla.')} />
+                                    {outline}
+                                </>
+                            ) : (
+                                <>
+                                    <PanelHeader icon={Route} title={__('Recorrido')} subtitle={__('Por dónde pasa cada persona, página por página.')} />
+                                    <LogicMap config={config} fieldsById={fieldsById} noIntro />
+                                </>
+                            )}
+                        </aside>
+                    )}
                     <main className="imcrm-min-h-0">{preview}</main>
-                    <aside className="imcrm-min-h-0 imcrm-overflow-y-auto imcrm-border-l imcrm-border-border">{right}</aside>
+                    <aside className="imcrm-min-h-0 imcrm-overflow-y-auto imcrm-border-l imcrm-border-border imcrm-bg-card" data-testid="form-right-panel">
+                        {itemInspector ??
+                            elementInspector ??
+                            (mode === 'design' ? (
+                                designPanel
+                            ) : mode === 'logic' ? (
+                                <>
+                                    <PanelHeader icon={GitBranch} title={__('Reglas')} subtitle={__('Saltos entre páginas, pantallas finales y puntaje.')} />
+                                    {logicPanel}
+                                </>
+                            ) : (
+                                <>
+                                    <PanelHeader icon={SlidersHorizontal} title={__('Propiedades')} subtitle={__('Lo de la parte que elijas.')} />
+                                    {emptyInspector}
+                                </>
+                            ))}
+                    </aside>
                 </div>
             )}
         </div>
     );
 }
 
-function PublishSwitch({ enabled, busy, onClick }: { enabled: boolean; busy: boolean; onClick: () => void }): JSX.Element {
-    return (
-        <button
-            type="button"
-            role="switch"
-            aria-checked={enabled}
-            disabled={busy}
-            onClick={onClick}
-            data-testid="form-publish"
-            className={cn(
-                'imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-full imcrm-border imcrm-py-1 imcrm-pl-1.5 imcrm-pr-3 imcrm-text-[12px] imcrm-font-medium imcrm-transition-colors',
-                enabled
-                    ? 'imcrm-border-success/30 imcrm-bg-success/10 imcrm-text-success'
-                    : 'imcrm-border-border imcrm-bg-muted imcrm-text-muted-foreground',
-            )}
-        >
-            <span
-                className={cn(
-                    'imcrm-relative imcrm-inline-flex imcrm-h-4 imcrm-w-7 imcrm-items-center imcrm-rounded-full imcrm-transition-colors',
-                    enabled ? 'imcrm-bg-success' : 'imcrm-bg-border',
-                )}
-                aria-hidden
-            >
-                <span
-                    className={cn(
-                        'imcrm-inline-block imcrm-h-3 imcrm-w-3 imcrm-rounded-full imcrm-bg-white imcrm-shadow imcrm-transition-transform',
-                        enabled ? 'imcrm-translate-x-3.5' : 'imcrm-translate-x-0.5',
-                    )}
-                />
-            </span>
-            {enabled ? __('Publicado') : __('Sin publicar')}
-        </button>
-    );
-}
+// ─────────────────────────── Modos ───────────────────────────
 
-// ─────────────────────────── Panel izquierdo ───────────────────────────
+type Mode = 'content' | 'design' | 'logic' | 'settings';
+type MobileView = Mode | 'preview';
 
-type LeftTab = 'content' | 'design' | 'logic' | 'settings';
+/** El orden del menú de «Ajustes» (agrupado por tema). */
+const SETTINGS_NAV_ORDER: SettingsGroupId[] = ['general', 'welcome', 'after', 'email', 'limits', 'save', 'record', 'origin', 'charge', 'security', 'embed'];
 
-/** Ancla del recorrido para la pestaña «Diseño» (escritorio y celular). */
-function designTabTour(tab: string): string | undefined {
-    return tab === 'design' ? 'form-design-tab' : tab === 'settings' ? 'form-settings-tab' : tab === 'content' ? 'form-content-tab' : undefined;
-}
-
-/**
- * v0.1.377 — Las pestañas del constructor: Contenido (todo lo que tiene el
- * formulario, en orden), Diseño (plantillas y temas), Lógica y Ajustes (en
- * grupos). Cada pestaña dice para qué sirve, así nunca hay que adivinar.
- */
-function BuilderTabs({
-    tab,
-    onTab,
-    tabs,
-    logicCount: rules,
-    itemsCount,
-    full,
-}: {
-    tab: string;
-    onTab: (t: string) => void;
-    tabs: ReadonlyArray<readonly [string, string]>;
-    logicCount: number;
-    itemsCount?: number;
-    /** En el celular, la tira de pestañas de arriba (a todo el ancho). */
-    full?: boolean;
-}): JSX.Element {
-    return (
-        <div role="tablist" className={cn('imcrm-flex imcrm-border-b imcrm-border-border', full ? '' : 'imcrm-gap-0.5 imcrm-px-1 imcrm-pt-2')}>
-            {tabs.map(([key, label]) => (
-                <button
-                    key={key}
-                    role="tab"
-                    type="button"
-                    aria-selected={tab === key}
-                    data-tour={designTabTour(key)}
-                    data-testid={`form-tab-${key}`}
-                    aria-label={key === 'content' && itemsCount !== undefined ? `${label} (${itemsCount})` : key === 'logic' && rules > 0 ? `${label} (${rules})` : undefined}
-                    title={key === 'logic' && rules > 0 ? __('%s saltos y pantallas finales').replace('%s', String(rules)) : undefined}
-                    onClick={() => onTab(key)}
-                    className={cn(
-                        '-imcrm-mb-px imcrm-whitespace-nowrap imcrm-border-b-2',
-                        full ? 'imcrm-flex-1 imcrm-py-2 imcrm-text-[13px]' : 'imcrm-flex-1 imcrm-px-1.5 imcrm-pb-2 imcrm-text-xs',
-                        tab === key ? 'imcrm-border-primary imcrm-font-medium imcrm-text-foreground' : 'imcrm-border-transparent imcrm-text-muted-foreground',
-                    )}
-                >
-                    {label}
-                    {key === 'logic' && rules > 0 && (
-                        <span className="imcrm-ml-1 imcrm-inline-block imcrm-h-1.5 imcrm-w-1.5 imcrm-rounded-full imcrm-bg-primary imcrm-align-middle" aria-hidden="true" />
-                    )}
-                </button>
-            ))}
-        </div>
-    );
-}
-
-/** v0.1.377 — Lo que se ve a la derecha cuando no hay nada elegido. */
-function EmptyInspector({ onPick }: { onPick: (id: string) => void }): JSX.Element {
-    const quick: Array<[string, string]> = [
-        ['@title', 'El título'],
-        ['@logo', 'El logo'],
-        ['@submit', 'El botón'],
-        ['@thanks', 'El agradecimiento'],
-        ['@page', 'El fondo'],
-    ];
-    return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-3 imcrm-px-6 imcrm-py-12 imcrm-text-center" data-testid="form-inspector-empty">
-            <span className="imcrm-flex imcrm-h-11 imcrm-w-11 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-primary/10 imcrm-text-primary">
-                <MousePointerClick className="imcrm-h-5 imcrm-w-5" />
-            </span>
-            <div>
-                <p className="imcrm-text-sm imcrm-font-semibold">{__('Toca cualquier parte del formulario')}</p>
-                <p className="imcrm-mt-1 imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
-                    {__('En la vista previa o en la lista de la izquierda: una pregunta, el título, el logo, el botón… Aquí aparece lo que dice, si se muestra y su estilo.')}
-                </p>
-            </div>
-            <div className="imcrm-flex imcrm-flex-wrap imcrm-justify-center imcrm-gap-1.5">
-                {quick.map(([id, label]) => (
-                    <button
-                        key={id}
-                        type="button"
-                        onClick={() => onPick(id)}
-                        className="imcrm-rounded-full imcrm-border imcrm-border-border imcrm-px-2.5 imcrm-py-1 imcrm-text-[11px] hover:imcrm-bg-accent"
-                    >
-                        {__(label)}
-                    </button>
-                ))}
-            </div>
-        </div>
-    );
-}
+/** En qué grupo del menú de «Ajustes» va cada grupo. */
+const SETTINGS_GROUP_SECTION: Record<SettingsGroupId, string> = {
+    general: 'El formulario',
+    welcome: 'El formulario',
+    after: 'El formulario',
+    email: 'Las respuestas',
+    limits: 'Las respuestas',
+    save: 'Las respuestas',
+    record: 'Las respuestas',
+    origin: 'Las respuestas',
+    charge: 'Cobros',
+    security: 'Seguridad y medición',
+    embed: 'Seguridad y medición',
+};
 
 // ─────────────────────────── Inspector ───────────────────────────
 
@@ -1073,10 +1078,13 @@ function ItemInspector({
     onTab,
     brand,
     isAdmin,
+    back,
 }: {
     item: FormItem;
     config: FormConfig;
     fieldsById: Map<number, FieldEntity>;
+    /** v0.1.406 — «‹ Diseño»: volver al panel del modo en que se estaba. */
+    back?: { label: string; onClick: () => void };
     /** v0.1.355 — los campos de la lista (matriz y «Otro»). */
     fields: FieldEntity[];
     listId: number;
@@ -1108,29 +1116,41 @@ function ItemInspector({
     const hasStyle = item.type === 'field' ? !item.hidden : item.type === 'heading' || item.type === 'text' || item.type === 'matrix';
     const shown: InspectorTab = hasStyle ? tab : 'content';
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-4" data-testid="form-item-inspector">
-            <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
-                <div className="imcrm-min-w-0">
-                    <p className="imcrm-truncate imcrm-text-sm imcrm-font-semibold">{title}</p>
-                    {field && <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Se guarda en el campo')} «{field.label}»</p>}
-                </div>
-                <div className="imcrm-flex imcrm-shrink-0 imcrm-gap-1">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={__('Quitar del formulario')}
-                        onClick={() => {
-                            onChange(removeItem(config, item.id));
-                            onClose();
-                        }}
-                    >
-                        <Trash2 className="imcrm-h-4 imcrm-w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" aria-label={__('Cerrar')} onClick={onClose}>
-                        <X className="imcrm-h-4 imcrm-w-4" />
-                    </Button>
-                </div>
-            </div>
+        <div className="imcrm-flex imcrm-flex-col" data-testid="form-item-inspector">
+            <PanelHeader
+                icon={itemIcon(item, fieldsById)}
+                title={title}
+                subtitle={
+                    field
+                        ? `${__('Pregunta')} · ${__('se guarda en')} «${field.label}»`
+                        : item.type === 'page_break'
+                          ? __('Desde aquí empieza una página nueva.')
+                          : __('Contenido del formulario')
+                }
+                back={back}
+                actions={
+                    <>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={__('Quitar del formulario')}
+                            title={__('Quitar del formulario')}
+                            onClick={() => {
+                                onChange(removeItem(config, item.id));
+                                onClose();
+                            }}
+                        >
+                            <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                        </Button>
+                        {!back && (
+                            <Button variant="ghost" size="icon" aria-label={__('Cerrar')} onClick={onClose} className="imcrm-hidden lg:imcrm-inline-flex">
+                                <X className="imcrm-h-4 imcrm-w-4" />
+                            </Button>
+                        )}
+                    </>
+                }
+            />
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-4">
             <InspectorTabs tab={shown} onTab={onTab} hasStyle={hasStyle} />
             {shown === 'style' ? (
                 <ItemStyle item={item} field={field} config={config} fields={fields} listId={listId} themeChoiceStyle={themeChoiceStyle} onChange={onChange} brand={brand} isAdmin={isAdmin} />
@@ -1262,6 +1282,7 @@ function ItemInspector({
             )}
             </>
             )}
+            </div>
         </div>
     );
 }

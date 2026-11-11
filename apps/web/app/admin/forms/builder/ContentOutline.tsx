@@ -49,7 +49,7 @@ import { PAGE_ELEMENTS, elementVisible, setElementVisible, type PageElementId } 
  * es encontrarlo en la lista, no adivinar en qué pestaña está.
  */
 
-const ELEMENT_ICON: Record<PageElementId, LucideIcon> = {
+export const ELEMENT_ICON: Record<PageElementId, LucideIcon> = {
     '@page': Paintbrush,
     '@card': SquareDashed,
     '@cover': LayoutTemplate,

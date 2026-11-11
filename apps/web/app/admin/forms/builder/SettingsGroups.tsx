@@ -49,7 +49,7 @@ import { SETTINGS_GROUPS, SETTINGS_GROUP_INFO, type PageElementId, type Settings
  * se toca en la vista previa o en «Contenido».
  */
 
-const GROUP_ICON: Record<SettingsGroupId, LucideIcon> = {
+export const SETTINGS_GROUP_ICON: Record<SettingsGroupId, LucideIcon> = {
     general: Settings2,
     welcome: Hand,
     after: Sparkles,
@@ -162,7 +162,7 @@ export function SettingsIndex({
             <MissingRequiredNotice missing={missing} />
             <nav aria-label={__('Ajustes del formulario')} className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
                 {SETTINGS_GROUPS.map((g) => {
-                    const Icon = GROUP_ICON[g];
+                    const Icon = SETTINGS_GROUP_ICON[g];
                     const on = active === g;
                     return (
                         <button
@@ -194,7 +194,7 @@ export function SettingsIndex({
 
 /** El encabezado de un grupo (título, para qué sirve). */
 function GroupHeader({ group }: { group: SettingsGroupId }): JSX.Element {
-    const Icon = GROUP_ICON[group];
+    const Icon = SETTINGS_GROUP_ICON[group];
     return (
         <div className="imcrm-flex imcrm-items-start imcrm-gap-2.5">
             <span className="imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-primary/10 imcrm-text-primary">
@@ -211,7 +211,7 @@ function GroupHeader({ group }: { group: SettingsGroupId }): JSX.Element {
 /** Lo de un grupo (derecha en la computadora). */
 export function SettingsGroupPanel({ group, ctx, showHeader = true }: { group: SettingsGroupId; ctx: SettingsContext; showHeader?: boolean }): JSX.Element {
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-4 imcrm-p-4" data-testid="form-settings" data-settings-panel={group}>
+        <div className={cn('imcrm-flex imcrm-flex-col imcrm-gap-4', showHeader ? 'imcrm-p-4' : 'imcrm-p-5')} data-testid="form-settings" data-settings-panel={group}>
             {showHeader && <GroupHeader group={group} />}
             {group === 'general' && <GeneralGroup ctx={ctx} />}
             {group === 'welcome' && (
@@ -249,7 +249,6 @@ const PARTS: Array<[PageElementId, string]> = [
 function GeneralGroup({ ctx }: { ctx: SettingsContext }): JSX.Element {
     return (
         <>
-            <MissingRequiredNotice missing={ctx.missing} />
             <Field label={__('Nombre interno')} hint={__('Sólo lo ve tu equipo.')}>
                 <Input value={ctx.name} onChange={(e) => ctx.setName(e.target.value)} data-testid="form-internal-name" />
             </Field>
@@ -394,7 +393,6 @@ function RecordSettings({ ctx }: { ctx: SettingsContext }): JSX.Element {
     const templates = recordTemplates.data ?? [];
     return (
         <>
-            <MissingRequiredNotice missing={ctx.missing} />
             <Section title={__('Registro que se crea')}>
                 <p className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">
                     {__('Cada respuesta crea un registro en esta lista, con lo que la persona respondió en cada campo.')}
