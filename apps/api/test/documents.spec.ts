@@ -14,7 +14,7 @@ import { AutomationsRepository } from '../src/automations/automations.repository
 import { AutomationsService, type HookCaptureStore } from '../src/automations/automations.service';
 import { loadEnv } from '../src/config/env';
 import { ConnectorsService } from '../src/connectors/connectors.service';
-import { attachments, documentNumbers, documentTemplates, records, tenants, users } from '../src/db/schema';
+import { attachments, documentNumbers, documentTemplates, memberships, records, tenants, users } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { computeTotalRows } from '../src/documents/document-totals';
 import { DocumentsService, resolveDocTemplate, sanitizeFilename, type DocTagContext } from '../src/documents/documents.service';
@@ -453,6 +453,50 @@ describe('v0.1.266 — documentos PDF (Postgres real)', () => {
         expect(link.url).toContain(`/api/v1/public/documents/${tpl.id}/${nuevo.id}?`);
         await expect(docs.linkForRecord(tenantId, admin, 'items', item!.id, tpl.id)).rejects.toMatchObject({ status: 404 });
         await automations.remove(tenantId, 'cobros', auto.id);
+    });
+
+    it('«Copiar enlace»: el PDF se arma con el acceso de quien lo pidió, no como sistema', async () => {
+        const [agentUser] = await pg.db.insert(users).values({ email: 'agente@acme.test', passwordHash: 'x', name: 'Agente' }).returning();
+        await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(memberships).values([
+                { tenantId, userId: admin.userId, role: 'admin' },
+                { tenantId, userId: agentUser!.id, role: 'agent' },
+            ]),
+        );
+        const agent: Actor = { userId: agentUser!.id, role: 'agent' };
+        const list = await lists.get(tenantId, 'cobros');
+        await lists.update(tenantId, 'cobros', {
+            settings: { ...list.settings, permissions: { permissions: { agent: { view: 'all', create: true, edit: 'all', delete: 'none', fields_hidden: ['nit'] } } } },
+        });
+        // El nombre del archivo delata lo que el PDF pudo leer.
+        const tpl = await docs.create(tenantId, admin.userId, 'cobros', { name: 'Con NIT', filename: 'Cuenta [{{nit}}]', design });
+        const open = async (url: string) => {
+            const u = new URL(url, 'http://x');
+            const [, , , , , t, r] = u.pathname.split('/');
+            const issuer = u.searchParams.get('u');
+            return docs.renderLiveLink(Number(t), Number(r), Number(u.searchParams.get('tenant')), Number(u.searchParams.get('exp')), u.searchParams.get('sig')!, issuer === null ? undefined : Number(issuer));
+        };
+
+        const byAgent = await docs.linkForRecord(tenantId, agent, 'cobros', cobroId, tpl.id);
+        expect(new URL(byAgent.url, 'http://x').searchParams.get('u')).toBe(String(agentUser!.id));
+        expect((await open(byAgent.url)).filename).toBe('Cuenta [].pdf');
+        // El de un admin (y el de una automatización, sin persona) sí lo trae.
+        const byAdmin = await docs.linkForRecord(tenantId, admin, 'cobros', cobroId, tpl.id);
+        expect((await open(byAdmin.url)).filename).toBe('Cuenta [900.123.456-7].pdf');
+        expect((await open(docs.liveLink(tenantId, tpl.id, cobroId))).filename).toBe('Cuenta [900.123.456-7].pdf');
+
+        // Quién lo pidió va FIRMADO: no se cambia por otra persona ni se quita.
+        const u = new URL(byAgent.url, 'http://x');
+        const args = [tpl.id, cobroId, tenantId, Number(u.searchParams.get('exp')), u.searchParams.get('sig')!] as const;
+        await expect(docs.renderLiveLink(...args, admin.userId)).rejects.toMatchObject({ status: 404 });
+        await expect(docs.renderLiveLink(...args)).rejects.toMatchObject({ status: 404 });
+
+        // Si esa persona deja de ser del equipo, su enlace deja de servir.
+        await withTenant(pg.db, tenantId, (tx) => tx.delete(memberships).where(eq(memberships.userId, agentUser!.id)));
+        await expect(open(byAgent.url)).rejects.toMatchObject({ status: 404 });
+
+        await lists.update(tenantId, 'cobros', { settings: list.settings });
+        await docs.remove(tenantId, admin.userId, 'cobros', tpl.id);
     });
 
     it('portal: sólo plantillas publicadas, de su lista y con su registro', async () => {

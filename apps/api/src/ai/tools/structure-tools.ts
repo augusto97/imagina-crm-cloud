@@ -189,6 +189,8 @@ import {
     type DesignFieldRef,
 } from './design-builders';
 import { buildRecordLayoutV3, describeRecordLayoutV3, recordDesignSpec, type DesignField, type DesignRelation, type RecordDesignSpec } from './record-layout-design';
+import { can } from '../../authz/can';
+import { redactAutomationSecrets } from '../../automations/automation-secrets';
 import { canonicalPublicSettings } from '../../public-lists/public-lists.service';
 import { AiToolError, AiToolRegistry, type AiToolContext, type AiToolResult } from './registry';
 import { buildButtonConfig, buttonSpec, describeButtonForModel, type ButtonFieldRef } from './button-ai';
@@ -1358,15 +1360,22 @@ export class StructureTools implements AiProposalApplier {
                 // copiar ni explicar una automatización ("sólo veo que
                 // existe"). Los secretos (token del webhook entrante, HMAC
                 // de webhooks salientes, contraseñas) viajan enmascarados.
+                // La configuración sólo la lee quien puede administrar
+                // automatizaciones (lo mismo que exige la app): el resto ve
+                // qué automatizaciones hay, no cómo están armadas.
                 automations: autos.map((a) => ({
                     id: a.id,
                     name: a.name,
                     description: a.description ?? null,
                     is_active: a.is_active,
                     trigger_type: a.trigger_type,
-                    trigger_config: redactSecrets(a.trigger_config),
-                    // v0.1.281 — los correos diseñados con su texto en formato sencillo.
-                    actions: emailActionsForModel(redactSecrets(a.actions)),
+                    ...(can(ctx, 'manage_automations')
+                        ? {
+                              trigger_config: redactSecrets(a.trigger_config),
+                              // v0.1.281 — los correos diseñados con su texto en formato sencillo.
+                              actions: emailActionsForModel(redactSecrets(a.actions)),
+                          }
+                        : {}),
                 })),
                 // v0.1.198 — acciones CON NOMBRE de los conectores de la
                 // empresa. Van aquí porque es la lectura que el asistente hace
@@ -3095,7 +3104,7 @@ export class StructureTools implements AiProposalApplier {
     private async listAutomationRuns(ctx: AiToolContext, input: { list: string; automation: number | string; limit?: number }): Promise<AiToolResult> {
         const list = await this.resolveList(ctx, input.list);
         const auto = await this.resolveAutomation(ctx, list, input.automation);
-        const { data } = await this.automations.runsById(ctx.tenantId, auto.id, { limit: input.limit ?? 10 });
+        const { data } = await this.automations.runsById(ctx.tenantId, auto.id, { limit: input.limit ?? 10 }, ctx);
         return {
             content: {
                 automation: { id: auto.id, name: auto.name, is_active: auto.is_active },
@@ -4485,6 +4494,20 @@ export class StructureTools implements AiProposalApplier {
                     walk((cfg.actions as unknown[] | undefined) ?? [], `${where}.cada.`);
                     return;
                 }
+                if (type === 'call_webhook') {
+                    // Con conexión: una API personalizada del equipo o tuya (las
+                    // apps conectadas se usan con connector_action).
+                    const id = Number(cfg.connection_id);
+                    if (cfg.connection_id === undefined || cfg.connection_id === null || cfg.connection_id === '') return;
+                    const own = connections.find((c) => c.id === id);
+                    if (!own || own.integration_key !== null || own.purpose === 'agenda') {
+                        throw new AiToolError(
+                            `La acción ${where} (call_webhook) usa la conexión ${String(cfg.connection_id)}, que no existe, no está a tu alcance o es una app conectada. ` +
+                                'En call_webhook sólo sirven las APIs personalizadas del equipo o tuyas; para una app conectada usa connector_action.',
+                        );
+                    }
+                    return;
+                }
                 if (type !== 'connector_action') return;
                 const conn = connections.find((c) => c.id === Number(cfg.connection_id));
                 if (!conn) {
@@ -4747,8 +4770,6 @@ const DEFAULT_SIZE: Partial<Record<string, { w: number; h: number }>> = {
 };
 
 /** Slug snake_case desde un texto humano (sin acentos, arranca con letra). */
-const SECRET_KEY_RE = /(secret|token|password|api_key|apikey|authorization)/i;
-
 /**
  * v0.1.193 — copia profunda de una config enmascarando los valores cuyas
  * claves huelen a secreto (`webhook_token` del disparador entrante, `secret`
@@ -4757,17 +4778,13 @@ const SECRET_KEY_RE = /(secret|token|password|api_key|apikey|authorization)/i;
  * automatización, nunca para llevarse credenciales.
  */
 export function redactSecrets<T>(value: T): T {
-    if (Array.isArray(value)) return value.map((v) => redactSecrets(v)) as unknown as T;
-    if (value !== null && typeof value === 'object') {
-        const out: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-            out[k] = SECRET_KEY_RE.test(k) && v !== null && v !== undefined && v !== ''
-                ? '[oculto]'
-                : redactSecrets(v);
-        }
-        return out as T;
-    }
-    return value;
+    // El mismo enmascarado del historial de versiones: claves con nombre de
+    // secreto, filas `{key, value}` / `{name, value}` (cabeceras, parámetros y
+    // campos del cuerpo: `Authorization`, `secret`, `api_key`…), la contraseña
+    // y los parámetros secretos de una URL, y un `Bearer …` escrito a mano.
+    // Antes sólo se miraban las CLAVES, y el editor guarda las cabeceras como
+    // filas: `{key: 'Authorization', value: 'Bearer …'}` viajaba en claro.
+    return redactAutomationSecrets(value);
 }
 
 export function toSlug(label: string): string {

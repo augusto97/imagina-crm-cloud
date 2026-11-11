@@ -10,6 +10,8 @@ import {
     ServiceUnavailableException,
 } from '@nestjs/common';
 import {
+    effectiveCapabilities,
+    type Role,
     DOC_MAX_PDF_BYTES,
     FALLBACK_TIME_ZONE,
     applyWordModifiers,
@@ -61,7 +63,7 @@ import { applyDateModifiers, labelForFieldValue } from '../automations/merge-tag
 import { BillingService } from '../billing/billing.service';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import type { Tx } from '../db/client';
-import { attachments, automations, documentNumbers, documentTemplates, fields as fieldsTable, memberships, records as recordsTable, tenants, users } from '../db/schema';
+import { attachments, automations, customRoles, documentNumbers, documentTemplates, fields as fieldsTable, memberships, records as recordsTable, tenants, users } from '../db/schema';
 import type { DocumentTemplateRow } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService, type StoredFileRef } from '../files/files.service';
@@ -585,23 +587,64 @@ export class DocumentsService {
      * muestra los datos ACTUALES del registro (el número, una vez emitido,
      * no cambia).
      */
-    liveLink(tenantId: number, templateId: number, recordId: number, ttlSeconds = LIVE_LINK_TTL): string {
+    liveLink(tenantId: number, templateId: number, recordId: number, ttlSeconds = LIVE_LINK_TTL, issuerId?: number): string {
         const now = Math.floor(Date.now() / 1000);
         // Redondeado a la hora: el mismo registro da el mismo enlace un rato.
         const exp = Math.ceil((now + ttlSeconds) / 3600) * 3600;
-        const sig = this.files.signParts('doc', tenantId, templateId, recordId, exp);
-        return `${this.files.baseUrl}/api/v1/public/documents/${templateId}/${recordId}?tenant=${tenantId}&exp=${exp}&sig=${sig}`;
+        const base = `${this.files.baseUrl}/api/v1/public/documents/${templateId}/${recordId}?tenant=${tenantId}&exp=${exp}`;
+        // Un enlace que pide una PERSONA lleva firmado quién lo pidió: el PDF se
+        // arma con lo que esa persona ve HOY (sus campos ocultos y sus listas).
+        // Sin persona (una automatización) se arma como sistema.
+        if (issuerId !== undefined && Number.isInteger(issuerId) && issuerId > 0) {
+            return `${base}&u=${issuerId}&sig=${this.files.signParts('doc', tenantId, templateId, recordId, exp, `u${issuerId}`)}`;
+        }
+        return `${base}&sig=${this.files.signParts('doc', tenantId, templateId, recordId, exp)}`;
+    }
+
+    /**
+     * El acceso VIGENTE de quien pidió un enlace (rol en vivo, rol propio,
+     * equipos). `null` si ya no es del equipo, su cuenta está desactivada o es
+     * cliente del portal o invitada: su enlace deja de servir.
+     */
+    private async issuerActor(tx: Tx, tenantId: number, userId: number): Promise<Actor | null> {
+        const [row] = await tx
+            .select({
+                role: memberships.role,
+                teamIds: sql<string[] | null>`(SELECT array_agg(tm.team_id) FROM team_members tm WHERE tm.user_id = ${memberships.userId} AND tm.tenant_id = ${memberships.tenantId})`,
+                customRoleId: memberships.customRoleId,
+                customCaps: customRoles.capabilities,
+            })
+            .from(memberships)
+            .innerJoin(users, eq(users.id, memberships.userId))
+            .leftJoin(customRoles, and(eq(customRoles.id, memberships.customRoleId), eq(customRoles.tenantId, memberships.tenantId)))
+            .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId), isNull(users.disabledAt)))
+            .limit(1);
+        if (!row || row.role === 'client' || row.role === 'guest') return null;
+        const custom = row.customCaps ? (row.customCaps as string[]) : null;
+        const capabilities = effectiveCapabilities(row.role as Role, custom);
+        if (!capabilities.includes('view_records') && !capabilities.includes('view_own_records')) return null;
+        return {
+            userId,
+            role: row.role as Role,
+            teamIds: (row.teamIds ?? []).map(Number).filter((n: number) => Number.isInteger(n) && n > 0),
+            customRoleId: custom ? row.customRoleId : null,
+            capabilities,
+        };
     }
 
     /** El PDF de un enlace de `liveLink` (sin sesión). 404 opaco si no cuadra. */
-    async renderLiveLink(templateId: number, recordId: number, tenantId: number, exp: number, sig: string): Promise<RenderedDocument> {
+    async renderLiveLink(templateId: number, recordId: number, tenantId: number, exp: number, sig: string, issuerId?: number): Promise<RenderedDocument> {
         const now = Math.floor(Date.now() / 1000);
+        const byPerson = issuerId !== undefined;
         if (
             !Number.isInteger(tenantId) ||
             tenantId <= 0 ||
             !Number.isFinite(exp) ||
             exp < now ||
-            !this.files.verifyParts(sig, 'doc', tenantId, templateId, recordId, exp)
+            (byPerson && (!Number.isInteger(issuerId) || issuerId <= 0)) ||
+            !(byPerson
+                ? this.files.verifyParts(sig, 'doc', tenantId, templateId, recordId, exp, `u${issuerId}`)
+                : this.files.verifyParts(sig, 'doc', tenantId, templateId, recordId, exp))
         ) {
             throw templateNotFound(templateId);
         }
@@ -614,11 +657,15 @@ export class DocumentsService {
             const tpl = await this.findAnyInTx(tx, tenantId, templateId);
             if (!tpl) throw templateNotFound(templateId);
             const design = this.validDesign(tpl.design);
+            // El enlace de una persona se arma con SU acceso de hoy (antes,
+            // siempre como sistema: con «Copiar enlace» alguien con campos
+            // ocultos recibía el PDF con esos campos). El de una automatización
+            // sigue como sistema: la firma es la autorización.
+            const actor = byPerson ? await this.issuerActor(tx, tenantId, issuerId) : PORTAL_RENDER_ACTOR;
+            if (!actor) throw templateNotFound(templateId);
             return this.renderInTx(tx, {
                 tenantId,
-                // Como sistema: el enlace lo emitió alguien con acceso (una
-                // automatización o la ficha) y la firma es la autorización.
-                actor: PORTAL_RENDER_ACTOR,
+                actor,
                 listId: tpl.listId,
                 recordId,
                 design,
@@ -642,7 +689,7 @@ export class DocumentsService {
         });
         // ACL: 404 si no lo alcanza (mismo camino que abrir la ficha).
         await this.records.get(tenantId, actor, String(list.id), recordId);
-        const url = this.liveLink(tenantId, templateId, recordId);
+        const url = this.liveLink(tenantId, templateId, recordId, LIVE_LINK_TTL, actor.userId > 0 ? actor.userId : undefined);
         const exp = Number(new URL(url, 'http://x').searchParams.get('exp'));
         return { url, expires_at: new Date(exp * 1000).toISOString() };
     }

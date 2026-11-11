@@ -45,7 +45,7 @@ import {
     googleGrantMissing,
     googleScopeLabels,
 } from '@imagina-base/shared';
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import {
     collectionVerifyRequest,
@@ -390,7 +390,65 @@ export class ConnectorsService {
      */
     async resolveParts(tenantId: number, connectionId: number): Promise<ConnectionParts | null> {
         const row = await this.ensureFreshToken(tenantId, await this.row(tenantId, connectionId));
-        return this.partsFrom(row, tenantId);
+        return this.webhookPartsFrom(row, tenantId);
+    }
+
+    /**
+     * ¿Quién puede ELEGIR una conexión para una acción (guardarla en una
+     * automatización, probarla, proponerla desde el asistente)? Las del equipo,
+     * cualquiera; una privada, sólo su dueño; el calendario personal de la
+     * agenda («Mi calendario»), nadie: no es para automatizaciones. Una que no
+     * existe y una que no se puede usar responden igual (404), así los ids no
+     * sirven para averiguar qué conexiones tiene otra persona.
+     *
+     * Ejecutar una automatización YA guardada con la conexión privada de quien
+     * la armó sigue funcionando para todo el equipo (ADR-S22): esto se revisa
+     * al elegirla, no al correr.
+     */
+    async assertAttachable(tenantId: number, userId: number, connectionIds: readonly number[], outerTx?: Tx): Promise<void> {
+        const ids = [...new Set(connectionIds.filter((n) => Number.isInteger(n) && n > 0))];
+        if (ids.length === 0) return;
+        const read = (tx: Tx) =>
+            tx
+                .select({ id: connections.id, visibility: connections.visibility, ownerUserId: connections.ownerUserId, config: connections.config })
+                .from(connections)
+                .where(and(eq(connections.tenantId, tenantId), inArray(connections.id, ids)));
+        const rows = outerTx ? await read(outerTx) : await this.tenantDb.withTenant(tenantId, read);
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        for (const id of ids) {
+            const row = byId.get(id);
+            const usable =
+                row !== undefined &&
+                (row.visibility !== 'private' || row.ownerUserId === userId) &&
+                (row.config as Record<string, unknown> | null)?.purpose !== 'agenda';
+            if (!usable) {
+                throw new NotFoundException({
+                    code: 'connection_not_found',
+                    message: `La conexión #${id} no existe o no la puedes usar: elige una del equipo o una tuya.`,
+                    data: { status: 404, connection_id: id },
+                });
+            }
+        }
+    }
+
+    /**
+     * Partes para «Llamar webhook externo». El calendario personal de la agenda
+     * nunca se usa desde una automatización, y una app de la galería con
+     * credencial (Google, Microsoft, Slack…) sólo se usa con SUS acciones: por
+     * aquí su token saldría hacia la URL que escriba la acción.
+     */
+    private webhookPartsFrom(row: ConnectionRow | null, tenantId: number): ConnectionParts | null {
+        if (!row) return null;
+        if (row.config.purpose === 'agenda') throw new Error(AGENDA_CONNECTION_ERROR);
+        const parts = this.partsFrom(row, tenantId);
+        if (!parts) return null;
+        const carries = Object.keys(parts.headers).length > 0 || parts.query.length > 0 || parts.body.length > 0 || parts.signingSecret !== null;
+        if (carries && integrationDef(row.provider) && isIntegrationKey(row.provider)) {
+            throw new Error(
+                `«${row.name}» es una app conectada: úsala con sus acciones («Apps conectadas» en el menú de acciones), no con «Llamar webhook externo».`,
+            );
+        }
+        return parts;
     }
 
     /**
@@ -406,7 +464,7 @@ export class ConnectorsService {
             .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
             .limit(1);
         const row = await this.ensureFreshToken(tenantId, (raw as ConnectionRow | undefined) ?? null);
-        return this.partsFrom(row, tenantId);
+        return this.webhookPartsFrom(row, tenantId);
     }
 
     /**
@@ -438,6 +496,8 @@ export class ConnectorsService {
             .from(connections)
             .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connectionId)))
             .limit(1);
+        // El calendario personal de la agenda no es para automatizaciones.
+        if ((raw as ConnectionRow | undefined)?.config.purpose === 'agenda') throw new Error(AGENDA_CONNECTION_ERROR);
         const row = await this.ensureFreshToken(tenantId, (raw as ConnectionRow | undefined) ?? null);
         const parts = this.partsFrom(row, tenantId);
         if (!row || !parts) return null;
@@ -798,16 +858,19 @@ export class ConnectorsService {
         if (!row) return null;
         const secrets = this.readSecrets(row);
         if (secrets === null) throw this.unusable(tenantId, row);
-        return connectionParts(
-            {
-                baseUrl: row.baseUrl,
-                authType: row.authType as ConnectorAuthType,
-                authKey: String(row.config.auth_key ?? ''),
-                headers: readConfigPairs(row.config.headers),
-                queryParams: readConfigPairs(row.config.query_params),
-            },
-            secrets,
-        );
+        return {
+            ...connectionParts(
+                {
+                    baseUrl: row.baseUrl,
+                    authType: row.authType as ConnectorAuthType,
+                    authKey: String(row.config.auth_key ?? ''),
+                    headers: readConfigPairs(row.config.headers),
+                    queryParams: readConfigPairs(row.config.query_params),
+                },
+                secrets,
+            ),
+            name: row.name,
+        };
     }
 
     // ── OAuth 2.0 como cliente (v0.1.199, ADR-S22 fase 3) ────────────────
@@ -2146,6 +2209,19 @@ export class ConnectorsService {
         if (patch.visibility !== undefined && patch.visibility !== current.visibility) {
             await this.assertMayUseVisibility(tenantId, role, patch.visibility);
         }
+        // Mover una conexión a OTRO servidor conservando la credencial guardada
+        // sería mandársela a ese servidor: hay que escribirla de nuevo.
+        if (patch.base_url !== undefined && !integrationDef(current.provider) && !this.touchesSecret(patch)) {
+            const before = originOrNull(current.baseUrl);
+            const hasSecret = Object.values(current.secrets ?? {}).some((v) => typeof v === 'string' && v !== '');
+            if (before !== null && hasSecret && originOrNull(patch.base_url) !== before) {
+                throw new BadRequestException({
+                    code: 'connection_secret_required',
+                    message: 'Para cambiar el servidor de la conexión, vuelve a escribir su credencial: la guardada sólo se envía a la dirección anterior.',
+                    data: { status: 400 },
+                });
+            }
+        }
         const config = { ...current.config };
         if (patch.auth_key !== undefined) config.auth_key = patch.auth_key;
         if (patch.headers !== undefined) config.headers = patch.headers;
@@ -2346,6 +2422,21 @@ export class ConnectorsService {
             // parece un problema de configuración y no lo es: se renueva igual
             // que al ejecutar una automatización.
             const row = (await this.ensureFreshToken(tenantId, saved)) ?? saved;
+            // La credencial GUARDADA sólo se prueba contra el servidor guardado:
+            // con otra dirección (la del formulario sin guardar, o una ruta
+            // absoluta) saldría hacia un servidor que nunca la recibió.
+            const storedOrigin = originOrNull(row.baseUrl);
+            const probed = originOrNull(joinUrl(input.base_url !== '' ? input.base_url : row.baseUrl, input.path));
+            if (storedOrigin !== null && probed !== storedOrigin) {
+                return {
+                    ok: false,
+                    status: null,
+                    sent_headers: {},
+                    url: '',
+                    body: null,
+                    error: `La credencial guardada sólo se prueba contra ${storedOrigin}. Para probar otra dirección, guarda el cambio escribiendo de nuevo la credencial.`,
+                };
+            }
             const secrets = this.readSecrets(row);
             if (secrets === null) {
                 return {
@@ -2974,4 +3065,17 @@ export function googlePartialGrant(requested: string, granted: string | null | u
     if (missing.length === 0) return null;
     const labels = googleScopeLabels(missing).map((l) => `«${l.toLowerCase()}»`).join(' y ');
     return `Google conectó la cuenta, pero sin el permiso de ${labels}, y sin eso ${appName} no puede funcionar. Vuelve a tocar «Conectar» y, en la pantalla de Google, deja marcadas todas las casillas.`;
+}
+
+const AGENDA_CONNECTION_ERROR =
+    'Esa conexión es el calendario personal de alguien del equipo (agenda de citas): no se usa en automatizaciones. Conecta el calendario en Ajustes → Integraciones.';
+
+/** Esquema + host + puerto de una dirección http(s), o null si no lo es. */
+function originOrNull(url: string): string | null {
+    try {
+        const u = new URL(url.trim());
+        return u.protocol === 'http:' || u.protocol === 'https:' ? u.origin.toLowerCase() : null;
+    } catch {
+        return null;
+    }
 }

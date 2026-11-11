@@ -102,6 +102,7 @@ import {
 import { settleGoogleMeet } from '../connectors/meeting-settle';
 import { ConnectorsService } from '../connectors/connectors.service';
 import { buildWebhookRequest, type MergeFn } from './webhook-request';
+import { hiddenFieldsFor, listRowInScope, listScopeWhere } from '../lists/list-acl';
 import type { Tx } from '../db/client';
 import { BillingService } from '../billing/billing.service';
 import { CollectionsService } from '../collections/collections.service';
@@ -344,6 +345,14 @@ interface SimulationState {
     unknownTokens: Set<string>;
     /** C5 — con qué resultado se simula una aprobación (si la persona lo eligió). */
     approvalResult?: ApprovalResult;
+    /**
+     * Quien prueba, cuando su acceso a la lista es parcial (no admin): los
+     * vinculados se leen con SU acceso y lo que se ejecuta de verdad sólo usa
+     * conexiones que esa persona puede elegir.
+     */
+    viewer?: Actor;
+    /** Quien prueba (cualquier rol): id para revisar las conexiones que se ejecutan de verdad. */
+    tester?: number;
 }
 
 /** v0.1.288 — una pausa en un «Esperar»: cuándo y desde dónde se sigue. */
@@ -1362,8 +1371,11 @@ export class AutomationEngine {
         payload?: Record<string, unknown> | null;
         /** C5 — con qué resultado se simula una aprobación. */
         approvalResult?: ApprovalResult;
+        /** Quien prueba: el registro de muestra se lee con SU acceso a la lista. */
+        viewer?: Actor;
     }): Promise<SimulationResult> {
         const { tenantId, auto } = input;
+        const viewer = input.viewer && input.viewer.role !== 'admin' ? input.viewer : null;
         const prep = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const fieldRows = await this.fields.listByList(tx, tenantId, auto.listId);
             const [list] = await tx
@@ -1371,12 +1383,29 @@ export class AutomationEngine {
                 .from(lists)
                 .where(and(eq(lists.tenantId, tenantId), eq(lists.id, auto.listId)))
                 .limit(1);
-            const where = input.recordId
-                ? and(eq(records.tenantId, tenantId), eq(records.listId, auto.listId), eq(records.id, input.recordId), isNull(records.deletedAt))
-                : and(eq(records.tenantId, tenantId), eq(records.listId, auto.listId), isNull(records.deletedAt));
-            const [rec] = await tx.select({ id: records.id, data: records.data }).from(records).where(where).orderBy(sql`${records.id} desc`).limit(1);
-            return { fieldRows, settings: (list?.settings ?? {}) as Record<string, unknown>, rec: rec ?? null, maps: await this.fieldMaps(tx, tenantId, auto.listId) };
+            const settings = (list?.settings ?? {}) as Record<string, unknown>;
+            // Con acceso parcial a la lista, la muestra es un registro que esa
+            // persona alcanza (el último, o el elegido si lo ve).
+            const scope = viewer ? listScopeWhere(settings, viewer, 'view') : undefined;
+            const where = and(
+                eq(records.tenantId, tenantId),
+                eq(records.listId, auto.listId),
+                isNull(records.deletedAt),
+                ...(input.recordId ? [eq(records.id, input.recordId)] : []),
+                ...(scope ? [scope] : []),
+            );
+            const [rec] = await tx.select({ id: records.id, data: records.data, createdBy: records.createdBy }).from(records).where(where).orderBy(sql`${records.id} desc`).limit(1);
+            return { fieldRows, settings, rec: rec ?? null, maps: await this.fieldMaps(tx, tenantId, auto.listId) };
         });
+        // …y sin los campos que tiene ocultos en esta lista.
+        const hiddenSlugs = viewer ? hiddenFieldsFor(prep.settings, viewer) : new Set<string>();
+        const hiddenKeys = new Set(prep.fieldRows.filter((f) => hiddenSlugs.has(f.slug)).map((f) => jsonbKeyForField(f.id)));
+        const visibleData = (row: { id: number; data: unknown; createdBy?: number }): { id: number; data: Record<string, unknown> } | null => {
+            if (viewer && !listRowInScope(prep.settings, viewer, 'view', { id: row.id, createdBy: row.createdBy ?? 0, data: row.data })) return null;
+            const data = { ...((row.data ?? {}) as Record<string, unknown>) };
+            for (const k of hiddenKeys) delete data[k];
+            return { id: row.id, data };
+        };
         // Sin registro: un horario «normal» y un webhook entrante corren así de verdad.
         const usesRecord = !(auto.triggerType === 'incoming_webhook' || (auto.triggerType === 'scheduled' && auto.triggerConfig.for_each_record !== true));
         const payload = auto.triggerType === 'incoming_webhook' ? (input.payload ?? {}) : undefined;
@@ -1387,7 +1416,8 @@ export class AutomationEngine {
             payload && hookRc && hookRc.mode !== 'none'
                 ? await this.tenantDb.withTenant(tenantId, (tx) => this.lookupWebhook(tx, tenantId, auto.listId, hookRc, payload))
                 : null;
-        const rec = usesRecord ? prep.rec : hookLookup?.kind === 'found' ? { id: hookLookup.record.id, data: hookLookup.record.data } : null;
+        const found = usesRecord ? prep.rec : hookLookup?.kind === 'found' ? hookLookup.record : null;
+        const rec = found ? visibleData(found) : null;
         const data: Record<string, unknown> = rec ? { ...rec.data } : {};
         if (payload && (!hookLookup || hookLookup.kind !== 'found' || hookRc?.applyPayloadFields)) {
             for (const [k, v] of Object.entries(payload)) {
@@ -1400,6 +1430,8 @@ export class AutomationEngine {
             responses: {},
             unknownTokens: new Set(),
             ...(input.approvalResult ? { approvalResult: input.approvalResult } : {}),
+            ...(viewer ? { viewer } : {}),
+            ...(input.viewer ? { tester: input.viewer.userId } : {}),
         };
         const ctx: RunContext = {
             tenantId,
@@ -1425,7 +1457,7 @@ export class AutomationEngine {
                         preLog.push(await this.createRecord(ctx, { target_list: auto.listId, values: webhookPayloadValues(payload, prep.maps.slugToKey, hookRc, 'create') }));
                     } else if (hookRc.applyPayloadFields) {
                         const values = webhookPayloadValues(payload, prep.maps.slugToKey, hookRc, 'update');
-                        ctx.data = { ...hookLookup.record.data };
+                        ctx.data = { ...(rec ? rec.data : viewer ? {} : hookLookup.record.data) };
                         if (Object.keys(values).length > 0) preLog.push(await this.updateField(ctx, { values }));
                     }
                 } catch (err) {
@@ -2841,7 +2873,8 @@ export class AutomationEngine {
         }
         const page = await svc.list(
             ctx.tenantId,
-            SYSTEM_ACTOR,
+            // En una prueba de alguien con acceso parcial: sólo los vinculados que ve.
+            ctx.sim?.viewer ?? SYSTEM_ACTOR,
             String(rel.other.id),
             { limit: FOR_EACH_MAX_ITEMS, sort_dir: 'asc', with_total: true, ...(filter ? { filter_tree: filter } : {}) } as ListRecordsQuery,
             { related: { fieldId: relationFieldId, recordId: ctx.recordId!, direction: rel.direction } },
@@ -3477,6 +3510,8 @@ export class AutomationEngine {
                 const connectionId = Number(cfg.connection_id);
                 let connection: ConnectionParts | null = null;
                 if (Number.isFinite(connectionId) && connectionId > 0) {
+                    // «Ejecutar de verdad» en una prueba es USAR la conexión.
+                    if (sim?.tester && realCall) await this.connectors.assertAttachable(ctx.tenantId, sim.tester, [connectionId], tx);
                     // v0.1.338 (ADR-S87) — el módulo de ESA conexión tiene que estar en el plan.
                     const off = await connectionModuleStepError(tx, ctx.tenantId, connectionId);
                     if (off) return fail('call_webhook', off);
@@ -3547,6 +3582,8 @@ export class AutomationEngine {
                 if (!Number.isFinite(connId) || connId <= 0) {
                     return skip('connector_action', 'Sin conexión elegida.');
                 }
+                // «Ejecutar de verdad» en una prueba es USAR la conexión.
+                if (sim?.tester && realCall) await this.connectors.assertAttachable(ctx.tenantId, sim.tester, [connId], tx);
                 const resolved = await this.connectors.resolveActionInTx(
                     tx,
                     ctx.tenantId,

@@ -554,6 +554,35 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         void monto;
     });
 
+    it('get_list_schema: la configuración de las automatizaciones sólo para quien las administra, y sin credenciales', async () => {
+        const list = await lists.create(tenantId, { name: 'Avisos IA' });
+        await fields.create(tenantId, String(list.id), { label: 'Nombre', type: 'text' });
+        await automations.create(tenantId, String(list.id), {
+            name: 'Aviso al gateway',
+            trigger_type: 'record_created',
+            trigger_config: {},
+            actions: [
+                {
+                    type: 'call_webhook',
+                    config: {
+                        url: 'https://x.test/h?api_key=S3CRET-C',
+                        headers: [{ key: 'Authorization', value: 'Bearer S3CRET-A' }],
+                        body_params: [{ key: 'secret', value: 'S3CRET-B' }, { key: 'message', value: 'Hola {{nombre}}' }],
+                    },
+                },
+            ],
+        });
+        // Un lector (sin «automatizaciones»): ve que existe, no cómo está armada.
+        const viewer = (await registry.execute({ ...ctx, role: 'viewer' }, 'get_list_schema', { list: list.slug })).content as { automations: Array<Record<string, unknown>> };
+        expect(viewer.automations).toEqual([{ id: expect.any(Number), name: 'Aviso al gateway', description: null, is_active: true, trigger_type: 'record_created' }]);
+        expect(JSON.stringify(viewer)).not.toMatch(/S3CRET|x\.test/);
+        // Quien las administra: la config completa, con lo secreto tapado.
+        const full = JSON.stringify((await registry.execute(ctx, 'get_list_schema', { list: list.slug })).content);
+        expect(full).toContain('Hola {{nombre}}');
+        expect(full).toContain('https://x.test/h?api_key=[oculto]');
+        expect(full).not.toMatch(/S3CRET-[ABC]/);
+    });
+
     it('v0.1.291 — crea «Tiempo registrado» (sin config) y el esquema lo describe como de sólo lectura', async () => {
         const list = await lists.create(tenantId, { name: 'Proyectos IA' });
         await fields.create(tenantId, String(list.id), { label: 'Nombre', type: 'text' });

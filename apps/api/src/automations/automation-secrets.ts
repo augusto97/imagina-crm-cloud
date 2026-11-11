@@ -14,16 +14,42 @@ import { AUTOMATION_SECRET_MARKER } from '@imagina-base/shared';
 /** Claves cuyo valor es un secreto (las mismas que tapa el MCP, v0.1.193). */
 const SECRET_KEY_RE = /(secret|token|password|api_key|apikey|authorization)/i;
 /** Cabeceras / parámetros (filas `{key, value}`) cuyo valor es un secreto. */
-const SECRET_ROW_RE = /(authorization|token|secret|password|api[-_]?key|cookie)/i;
+const SECRET_ROW_RE = /(authorization|token|secret|password|passwd|api[-_]?key|cookie|credential|signature|x-auth)/i;
+
+/**
+ * Secretos DENTRO de un texto: la contraseña de una dirección
+ * (`https://usuario:clave@host`), los parámetros de la URL con nombre de
+ * secreto (`?api_key=…`) y un `Bearer …` escrito a mano (en un cuerpo
+ * crudo o en una cabecera con otro nombre). Un token metido en la RUTA
+ * de una URL (`/bot123:ABC/sendMessage`) no se puede reconocer: para eso están
+ * las conexiones.
+ */
+export function redactSecretsInText(text: string): string {
+    if (text.length < 8) return text;
+    let out = text;
+    if (/https?:\/\//i.test(out)) {
+        out = out.replace(/(https?:\/\/[^\s/?#@:]*:)([^\s/?#@]+)(@)/gi, (_m, a: string, _pass: string, at: string) => `${a}${AUTOMATION_SECRET_MARKER}${at}`);
+        out = out.replace(/([?&]([^=&#\s]+)=)([^&#\s"'<>]+)/g, (m, lead: string, name: string, value: string) =>
+            SECRET_ROW_RE.test(name) && !/^\{\{[^}]*\}\}$/.test(value) ? `${lead}${AUTOMATION_SECRET_MARKER}` : m,
+        );
+    }
+    // Un token escrito a mano tras `Bearer`: tiene algún número o signo (así
+    // una frase que diga «Bearer …» no se toca).
+    out = out.replace(/\bBearer\s+(?!\{\{)(?=[A-Za-z0-9._~+/=-]*[0-9._~+/=-])[A-Za-z0-9._~+/=-]{12,}/g, `Bearer ${AUTOMATION_SECRET_MARKER}`);
+    return out;
+}
 
 const isPlain = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const hasValue = (v: unknown): boolean => v !== null && v !== undefined && v !== '';
 
 export function redactAutomationSecrets<T>(value: T): T {
+    if (typeof value === 'string') return redactSecretsInText(value) as unknown as T;
     if (Array.isArray(value)) return value.map((v) => redactAutomationSecrets(v)) as unknown as T;
     if (!isPlain(value)) return value;
-    // Una fila clave/valor (cabeceras, parámetros de la URL) con nombre de secreto.
-    if (typeof value.key === 'string' && 'value' in value && SECRET_ROW_RE.test(value.key) && hasValue(value.value)) {
+    // Una fila clave/valor (cabeceras, parámetros de la URL, campos del
+    // cuerpo) con nombre de secreto: `{key, value}` o `{name, value}`.
+    const rowName = typeof value.key === 'string' ? value.key : typeof value.name === 'string' ? value.name : null;
+    if (rowName !== null && 'value' in value && SECRET_ROW_RE.test(rowName) && hasValue(value.value) && typeof value.value !== 'object') {
         return { ...value, value: AUTOMATION_SECRET_MARKER } as T;
     }
     const out: Record<string, unknown> = {};
@@ -35,7 +61,7 @@ export function redactAutomationSecrets<T>(value: T): T {
 
 /** ¿Hay alguna marca de secreto adentro? */
 export function hasRedactedSecrets(value: unknown): boolean {
-    if (value === AUTOMATION_SECRET_MARKER) return true;
+    if (typeof value === 'string') return value.includes(AUTOMATION_SECRET_MARKER);
     if (Array.isArray(value)) return value.some(hasRedactedSecrets);
     if (isPlain(value)) return Object.values(value).some(hasRedactedSecrets);
     return false;
@@ -48,11 +74,20 @@ export function hasRedactedSecrets(value: unknown): boolean {
  */
 function fillFrom(incoming: unknown, current: unknown): unknown {
     if (incoming === AUTOMATION_SECRET_MARKER) return typeof current === 'string' ? current : '';
+    // Un texto con el secreto tapado ADENTRO (una URL con `?api_key=[oculto]`):
+    // vuelve el texto actual sólo si es el mismo salvo por lo tapado.
+    if (typeof incoming === 'string' && incoming.includes(AUTOMATION_SECRET_MARKER)) {
+        return typeof current === 'string' && redactSecretsInText(current) === incoming ? current : incoming;
+    }
     if (Array.isArray(incoming)) {
         const cur = Array.isArray(current) ? current : [];
         return incoming.map((item, i) => {
             if (isPlain(item) && typeof item.key === 'string') {
                 const twin = cur.find((c) => isPlain(c) && c.key === item.key);
+                return fillFrom(item, twin);
+            }
+            if (isPlain(item) && typeof item.name === 'string' && 'value' in item) {
+                const twin = cur.find((c) => isPlain(c) && c.name === item.name);
                 return fillFrom(item, twin);
             }
             return fillFrom(item, cur[i]);
@@ -73,7 +108,9 @@ interface ActionLike {
 /** La "identidad" de una acción para emparejarla con su versión actual. */
 function signature(a: ActionLike): string {
     const c = isPlain(a.config) ? a.config : {};
-    return [a.type, c.url ?? '', c.connection_id ?? '', c.action_key ?? ''].map((x) => String(x)).join('|');
+    // La URL, con sus secretos tapados: así la acción que llega tapada se
+    // empareja con la actual (que los tiene en claro).
+    return [a.type, redactSecretsInText(String(c.url ?? '')), c.connection_id ?? '', c.action_key ?? ''].map((x) => String(x)).join('|');
 }
 
 function flatten(actions: unknown, out: ActionLike[] = []): ActionLike[] {

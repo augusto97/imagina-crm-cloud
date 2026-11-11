@@ -2,7 +2,7 @@ import { assertApprovalFlowRefs } from '../approvals/approval-refs';
 import { mapLimit } from '../common/map-limit';
 import { assertAgentRefs } from '../ai-agents/agent-refs';
 import { createHash, randomBytes } from 'node:crypto';
-import { BadRequestException, Inject, Injectable, Logger, forwardRef, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, forwardRef, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type {
     Automation,
     AutomationRun,
@@ -38,11 +38,14 @@ import { connectionModuleStepError, planModuleOff } from '../billing/plan-module
 import { accessOf } from '../billing/tenant-access';
 import { and, desc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
-import { maskHeaders, redactValues } from '../connectors/connection-parts';
+import { maskHeaders, redactValues, type ConnectionParts } from '../connectors/connection-parts';
 import { ConnectorsService, type ResolvedAction } from '../connectors/connectors.service';
+import type { Actor } from '../records/records.service';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { automationHooks, automationRuns, automations, automationVersions, fields, records, tenants, users } from '../db/schema';
 import { ListsService } from '../lists/lists.service';
+import { effectivePermissions, hiddenFieldsFor, listRowInScope, listScopeWhere, type AclSubject } from '../lists/list-acl';
+import { walkActions } from '../connectors/inline-scan';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
@@ -416,6 +419,10 @@ export class AutomationsService {
             await assertApprovalFlowRefs(tx, tenantId, list.id, { trigger_type: input.trigger_type, trigger_config: input.trigger_config ?? {}, actions: input.actions });
             // E6 — los agentes de IA que nombra tienen que trabajar en esta lista.
             await assertAgentRefs(tx, tenantId, list.id, input.actions);
+            // Las conexiones que elige tienen que ser del equipo o de quien guarda.
+            if (opts.actorId) {
+                await this.connectors.assertAttachable(tenantId, opts.actorId, connectionIdsOf(input.actions, input.trigger_config), tx);
+            }
             // v0.1.399 — webhook entrante con registro: la búsqueda tiene que poder correr.
             const triggerConfig = normalizeWebhookRecordConfig(input.trigger_type, input.trigger_config ?? {}, await this.listFieldsForWebhook(tx, tenantId, list.id));
             const inserted = await this.repo.insert(tx, {
@@ -565,7 +572,7 @@ export class AutomationsService {
      * ejecuta de verdad. No escribe, no envía, no llama ni emite números de
      * documento (salvo los webhooks/conectores marcados para ejecutar).
      */
-    async testRun(tenantId: number, listIdOrSlug: string, input: AutomationTestRunInput): Promise<AutomationTestRunResult> {
+    async testRun(tenantId: number, listIdOrSlug: string, input: AutomationTestRunInput, viewer?: Actor): Promise<AutomationTestRunResult> {
         if (!this.engine) {
             throw new ServiceUnavailableException({ code: 'engine_unavailable', message: 'El motor de automatizaciones no está disponible.', data: { status: 503 } });
         }
@@ -573,7 +580,7 @@ export class AutomationsService {
         normalizeEmailDesigns(input.actions);
         let payload: Record<string, unknown> | null = null;
         if (input.trigger_type === 'incoming_webhook' && input.automation_id) {
-            const caps = await this.hookCaptures(tenantId, input.automation_id).catch(() => []);
+            const caps = await this.hookCaptures(tenantId, input.automation_id, undefined, viewer).catch(() => []);
             payload = caps[0]?.payload ?? null;
         }
         const out = await this.engine.simulate({
@@ -590,6 +597,7 @@ export class AutomationsService {
             },
             ...(input.record_id ? { recordId: input.record_id } : {}),
             realSteps: input.real_steps,
+            ...(viewer ? { viewer } : {}),
             payload,
             ...(input.approval_result ? { approvalResult: input.approval_result } : {}),
         });
@@ -664,6 +672,15 @@ export class AutomationsService {
             }
             // E6 — sólo si cambian las acciones (pausar una con un agente borrado se puede).
             if (patch.actions !== undefined) await assertAgentRefs(tx, tenantId, list.id, patch.actions);
+            // Una conexión NUEVA en la automatización tiene que ser del equipo o
+            // de quien guarda. Las que ya estaban se conservan: la conexión
+            // privada de quien la armó sigue sirviendo cuando otra persona del
+            // equipo edita otra parte (ADR-S22).
+            if (opts.actorId && (patch.actions !== undefined || patch.trigger_config !== undefined)) {
+                const before = new Set(connectionIdsOf(current.actions, current.triggerConfig));
+                const added = connectionIdsOf(patch.actions ?? [], patch.trigger_config ?? {}).filter((id) => !before.has(id));
+                await this.connectors.assertAttachable(tenantId, opts.actorId, added, tx);
+            }
             // v0.1.399 — webhook entrante con registro: la búsqueda tiene que poder correr.
             if (patch.trigger_config !== undefined || patch.trigger_type !== undefined) {
                 const type = patch.trigger_type ?? current.triggerType;
@@ -722,13 +739,52 @@ export class AutomationsService {
      * motor (`|label`, `{{date.today}}` en la zona de la empresa). Lo usan el
      * probador de webhooks y el de correos: lo que se prueba es lo que sale.
      */
-    private async sampleContext(tenantId: number, listIdOrSlug: string, recordId?: number) {
+    private async sampleContext(tenantId: number, listIdOrSlug: string, recordId?: number, viewer?: AclSubject) {
         const list = await this.lists.get(tenantId, listIdOrSlug);
+        // El registro de muestra se lee como QUIEN prueba: sólo uno que su rol
+        // alcanza en esta lista y sin los campos que tiene ocultos. Sin esto,
+        // probar un correo o un webhook era una forma de leer cualquier
+        // registro (y cualquier campo oculto) con sólo poder armar automatizaciones.
+        const restricted = viewer !== undefined && viewer.role !== 'admin';
+        const hidden = restricted ? hiddenFieldsFor(list.settings, viewer) : new Set<string>();
         const sample = await this.tenantDb.withTenant(tenantId, async (tx) => {
-            const fieldRows = await tx
-                .select({ id: fields.id, slug: fields.slug, label: fields.label, type: fields.type, config: fields.config })
-                .from(fields)
-                .where(eq(fields.listId, list.id));
+            const fieldRows = (
+                await tx
+                    .select({ id: fields.id, slug: fields.slug, label: fields.label, type: fields.type, config: fields.config })
+                    .from(fields)
+                    .where(eq(fields.listId, list.id))
+            ).filter((f) => !hidden.has(f.slug));
+            if (restricted) {
+                const scope = listScopeWhere(list.settings, viewer, 'view');
+                const [row] = await tx
+                    .select({ id: records.id, data: records.data, createdBy: records.createdBy })
+                    .from(records)
+                    .where(
+                        and(
+                            eq(records.tenantId, tenantId),
+                            eq(records.listId, list.id),
+                            isNull(records.deletedAt),
+                            ...(recordId ? [eq(records.id, recordId)] : []),
+                            ...(scope ? [scope] : []),
+                        ),
+                    )
+                    .orderBy(desc(records.id))
+                    .limit(1);
+                const visible = row && listRowInScope(list.settings, viewer, 'view', row) ? row : null;
+                const keep = new Set(fieldRows.map((f) => `f${f.id}`));
+                return {
+                    slugToKey: new Map(fieldRows.map((f) => [f.slug, `f${f.id}`])),
+                    fieldsBySlug: new Map(fieldRows.map((f) => [f.slug, { type: f.type, config: f.config, label: f.label }])),
+                    record: visible
+                        ? {
+                              id: visible.id,
+                              data: Object.fromEntries(
+                                  Object.entries((visible.data ?? {}) as Record<string, unknown>).filter(([k]) => keep.has(k)),
+                              ),
+                          }
+                        : null,
+                };
+            }
             const where = recordId
                 ? and(
                       eq(records.tenantId, tenantId),
@@ -797,8 +853,9 @@ export class AutomationsService {
         listIdOrSlug: string,
         input: EmailTestInput,
         user: { id: number; email: string },
+        viewer?: Actor,
     ): Promise<EmailTestResult> {
-        const sample = await this.sampleContext(tenantId, listIdOrSlug, input.record_id);
+        const sample = await this.sampleContext(tenantId, listIdOrSlug, input.record_id, viewer);
         const cfg = input.config;
         let composed: ComposedEmail;
         try {
@@ -851,7 +908,8 @@ export class AutomationsService {
                             listId: sample.list.id,
                             recordId: sample.record!.id,
                             templateId: id,
-                            actor: { userId: 0, role: 'admin' },
+                            // El PDF de la prueba, con lo que ve quien prueba.
+                            actor: viewer ?? { userId: 0, role: 'admin' },
                             // v0.1.290 — Una prueba no emite números ni congela.
                             assign: false,
                         }),
@@ -894,27 +952,34 @@ export class AutomationsService {
         tenantId: number,
         listIdOrSlug: string,
         input: WebhookTestInput,
+        viewer?: Actor,
     ): Promise<WebhookTestResult> {
-        const sample = await this.sampleContext(tenantId, listIdOrSlug, input.record_id);
+        const sample = await this.sampleContext(tenantId, listIdOrSlug, input.record_id, viewer);
         const { merge, mergeHtml } = sample;
 
         // v0.1.196 — el probador resuelve la CONEXIÓN igual que el motor: si
         // la acción usa un conector, lo que se prueba lleva su credencial.
         const connectionId = Number((input.config as Record<string, unknown>).connection_id);
-        let connection = null;
+        const rawActionKey = (input.config as Record<string, unknown>).action_key;
+        const hasActionKey = rawActionKey !== undefined && rawActionKey !== null && String(rawActionKey) !== '';
+        let connection: ConnectionParts | null = null;
         try {
             if (Number.isFinite(connectionId) && connectionId > 0) {
+                // Probar es USAR la conexión: del equipo, o de quien prueba.
+                if (viewer) await this.connectors.assertAttachable(tenantId, viewer.userId, [connectionId]);
                 // v0.1.338 (ADR-S87) — el módulo de ESA conexión tiene que estar
                 // en el plan (lo mismo que exige el motor al ejecutar).
                 const off = await connectionModuleStepError(this.db, tenantId, connectionId);
                 if (off) throw new Error(off);
-                connection = await this.connectors.resolveParts(tenantId, connectionId);
+                // Una acción con NOMBRE trae sus partes al resolverla (abajo):
+                // por aquí sólo pasa «Llamar webhook externo».
+                if (!hasActionKey) connection = await this.connectors.resolveParts(tenantId, connectionId);
             }
         } catch (err) {
             return {
                 request: { url: '', method: 'POST', headers: {}, body: null },
                 response: null,
-                error: err instanceof Error ? err.message : String(err),
+                error: errorMessageOf(err),
                 sample_record_id: sample.record?.id ?? null,
             };
         }
@@ -925,16 +990,20 @@ export class AutomationsService {
         let mergeForBuild = merge;
         const actionKey = (input.config as Record<string, unknown>).action_key;
         if (actionKey !== undefined && actionKey !== null && String(actionKey) !== '') {
+            let resolveError: string | null = null;
             const resolved = await this.connectors
                 .resolveAction(tenantId, connectionId, actionKey)
-                .catch(() => null);
+                .catch((err: unknown) => {
+                    resolveError = errorMessageOf(err);
+                    return null;
+                });
             if (!resolved?.action) {
                 return {
                     request: { url: '', method: 'POST', headers: {}, body: null },
                     response: null,
                     error: resolved
                         ? `«${resolved.name}» ya no tiene la acción «${String(actionKey)}».`
-                        : `La conexión #${connectionId} ya no existe.`,
+                        : (resolveError ?? `La conexión #${connectionId} ya no existe.`),
                     sample_record_id: sample.record?.id ?? null,
                 };
             }
@@ -954,16 +1023,28 @@ export class AutomationsService {
                 };
             }
             cfg = call.cfg;
+            connection = resolved.parts;
             // Los valores ya pasaron por merge en el compilador (ver el motor).
             mergeForBuild = (raw: unknown): string => String(raw ?? '');
         }
 
-        const req = buildWebhookRequest(
-            cfg,
-            mergeForBuild,
-            { recordId: sample.record?.id ?? null, listId: sample.list.id },
-            connection,
-        );
+        let req;
+        try {
+            req = buildWebhookRequest(
+                cfg,
+                mergeForBuild,
+                { recordId: sample.record?.id ?? null, listId: sample.list.id },
+                connection,
+            );
+        } catch (err) {
+            // P. ej. la conexión no envía su credencial a ese servidor.
+            return {
+                request: { url: '', method: 'POST', headers: {}, body: null },
+                response: null,
+                error: errorMessageOf(err),
+                sample_record_id: sample.record?.id ?? null,
+            };
+        }
         // Lo que se MUESTRA no puede volver a filtrar la credencial que
         // acabamos de sacar del jsonb: se tapa dondequiera que haya quedado.
         const hide = connection?.redact ?? [];
@@ -990,7 +1071,9 @@ export class AutomationsService {
             });
             return {
                 request,
-                response: { status: res.status, content_type: res.contentType ?? '', body: res.body ?? '' },
+                // Si el destino devuelve lo que recibió (un eco), la respuesta
+                // no puede traer de vuelta la credencial de la conexión.
+                response: { status: res.status, content_type: res.contentType ?? '', body: redactValues(res.body ?? '', hide) },
                 error: null,
                 sample_record_id: sample.record?.id ?? null,
             };
@@ -1000,7 +1083,7 @@ export class AutomationsService {
             return {
                 request,
                 response: null,
-                error: err instanceof Error ? err.message : String(err),
+                error: redactValues(err instanceof Error ? err.message : String(err), hide),
                 sample_record_id: sample.record?.id ?? null,
             };
         }
@@ -1275,11 +1358,12 @@ export class AutomationsService {
      * v0.1.111 — capturas de prueba del webhook de una automatización
      * (más reciente primero). 404 si la automatización no es del tenant.
      */
-    async hookCaptures(tenantId: number, automationId: number, preview?: Record<string, unknown>): Promise<HookCapture[]> {
+    async hookCaptures(tenantId: number, automationId: number, preview?: Record<string, unknown>, viewer?: AclSubject): Promise<HookCapture[]> {
         const auto = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.findById(tx, tenantId, automationId),
         );
         if (!auto) throw notFound(automationId);
+        await this.assertSeesWholeList(tenantId, auto.listId, viewer);
         const out = await this.readHookCaptures(tenantId, automationId);
         // v0.1.399 — qué haría el disparador con cada dato (con la config que se
         // está editando, si viene; si no, la guardada).
@@ -1314,16 +1398,38 @@ export class AutomationsService {
         return out;
     }
 
+    /**
+     * El historial de corridas y los datos que llegaron a un webhook traen
+     * valores de CUALQUIER registro de la lista (cambios de campos, correos
+     * armados, respuestas): sólo los lee quien ve la lista entera —todos los
+     * registros y todos los campos—. Un admin siempre; un rol propio con
+     * «automatizaciones» pero con la lista recortada, no.
+     */
+    private async assertSeesWholeList(tenantId: number, listId: number, viewer?: AclSubject): Promise<void> {
+        if (!viewer || viewer.role === 'admin') return;
+        const list = await this.lists.get(tenantId, String(listId));
+        const perms = effectivePermissions(list.settings, viewer);
+        if (perms.view !== 'all' || perms.fields_hidden.length > 0) {
+            throw new ForbiddenException({
+                code: 'automation_list_forbidden',
+                message: 'El historial de esta automatización muestra datos de toda la lista y tu acceso a la lista es parcial. Pídele a un administrador que lo revise.',
+                data: { status: 403 },
+            });
+        }
+    }
+
     /** Runs de una automatización por id (sin contexto de lista — la ruta del fork). */
     async runsById(
         tenantId: number,
         automationId: number,
         opts: { cursor?: number; limit?: number },
+        viewer?: AclSubject,
     ): Promise<{ data: AutomationRun[]; meta: { next_cursor: string | null } }> {
         const auto = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.findById(tx, tenantId, automationId),
         );
         if (!auto) throw notFound(automationId);
+        await this.assertSeesWholeList(tenantId, auto.listId, viewer);
         const limit = Math.min(opts.limit ?? 50, 200);
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
             this.repo.listRuns(tx, tenantId, automationId, { cursor: opts.cursor, limit: limit + 1 }),
@@ -1364,6 +1470,30 @@ function toRun(row: AutomationRunRow, listId: number): AutomationRun {
         created_at: row.createdAt.toISOString(),
         resume_at: row.status === 'waiting' && row.resumeAt ? row.resumeAt.toISOString() : null,
     };
+}
+
+/** Las conexiones que nombra una automatización (acciones, ramas y disparador). */
+export function connectionIdsOf(actions: unknown, triggerConfig?: unknown): number[] {
+    const ids = new Set<number>();
+    const add = (raw: unknown): void => {
+        const id = Number(raw);
+        if (Number.isInteger(id) && id > 0) ids.add(id);
+    };
+    walkActions(actions, (action) => {
+        const cfg = action.config;
+        if (cfg !== null && typeof cfg === 'object') add((cfg as Record<string, unknown>).connection_id);
+    });
+    if (triggerConfig !== null && typeof triggerConfig === 'object') add((triggerConfig as Record<string, unknown>).connection_id);
+    return [...ids];
+}
+
+/** El mensaje de un error (también el de una excepción de Nest con `{ message }`). */
+function errorMessageOf(err: unknown): string {
+    const res = (err as { getResponse?: () => unknown } | null)?.getResponse?.();
+    if (res !== null && typeof res === 'object' && typeof (res as { message?: unknown }).message === 'string') {
+        return (res as { message: string }).message;
+    }
+    return err instanceof Error ? err.message : String(err);
 }
 
 /** v0.1.288 — quién hizo el cambio (para el historial de versiones). */
