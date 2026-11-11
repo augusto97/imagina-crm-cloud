@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { HttpException, HttpStatus, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import {
     FALLBACK_TIME_ZONE,
     addDaysYmd,
@@ -30,6 +30,30 @@ import { FilesService } from '../files/files.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { publicSurfaceOff } from '../billing/tenant-access';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
+import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-cache';
+import { PublicCacheService } from '../public-cache/public-cache.service';
+import { REDIS } from '../redis/redis.module';
+import { incrWithTtl, type IncrRedis } from '../redis/redis.util';
+
+/** Cuánto vale lo armado de una lista pública (config, campos, nombre, meta). */
+const CONFIG_CACHE_TTL_MS = 30_000;
+/** Cuánto vale una página de registros de las que ve todo el mundo. */
+const RECORDS_CACHE_TTL_MS = 15_000;
+/** Sólo se guardan las primeras páginas sin búsqueda (lo que pide cada visita). */
+const CACHED_PAGES = 20;
+/** Más allá de esta fila no se pagina: saltar miles de filas recorre la lista entera. */
+export const PUBLIC_LIST_MAX_OFFSET = 10_000;
+/** Con menos letras la búsqueda coincide con casi todo y recorre la lista igual. */
+export const PUBLIC_LIST_MIN_SEARCH = 2;
+/** Consultas a la base por minuto y por enlace (lo que sale de la caché no cuenta). */
+export const PUBLIC_LIST_QUERIES_PER_MINUTE = 240;
+
+const listCachePrefix = (token: string): string => `plist:${token}:`;
+
+type ListInfo =
+    | { ok: false; code: 'public_list_not_found' | 'public_list_disabled' }
+    | { ok: true; tenantId: number; listId: number; cfg: PublicListSettings; fieldRows: FieldRow[]; timeZone: string; name: string; description: string | null };
+
 
 /**
  * ¿El enlace ya venció? La fecha es un día calendario (`YYYY-MM-DD`) y vale
@@ -96,7 +120,13 @@ export class PublicListsService {
         private readonly lists: ListsService,
         private readonly files: FilesService,
         @Optional() private readonly timeZones?: TenantTimeZones,
-    ) {}
+        @Optional() cache?: PublicCacheService,
+        @Optional() @Inject(REDIS) private readonly redis?: IncrRedis,
+    ) {
+        this.pcache = cache ?? NO_PUBLIC_CACHE;
+    }
+
+    private readonly pcache: PublicCacheLike;
 
     // ─────────────────────────── Admin ───────────────────────────
 
@@ -192,54 +222,96 @@ export class PublicListsService {
         } else {
             await this.db.delete(publicLists).where(eq(publicLists.listId, list.id));
         }
+        // Lo guardado del enlace deja de valer YA (en todos los servidores):
+        // despublicar u ocultar un campo no espera a que venza la caché.
+        for (const t of new Set([current.token, next.token])) if (t) this.pcache.invalidatePrefix(listCachePrefix(t));
 
         return this.toAdmin(next, fieldRows);
     }
 
     // ─────────────────────────── Público ───────────────────────────
 
-    /** Resuelve el token público → (tenant, lista). Sin tenant scope. */
-    private async resolveToken(token: string): Promise<{ tenantId: number; listId: number }> {
-        const [row] = await this.db
-            .select({ tenantId: publicLists.tenantId, listId: publicLists.listId })
-            .from(publicLists)
-            .where(eq(publicLists.token, token))
-            .limit(1);
-        if (!row) throw new NotFoundException({ code: 'public_list_not_found', data: { status: 404 } });
-        // v0.1.338 (ADR-S87) — empresa pausada o plan sin «Enlaces públicos»:
-        // el mismo 404 opaco que un token desconocido (nada se borra).
-        if (await publicSurfaceOff(this.db, row.tenantId, 'public_sharing')) throw new NotFoundException({ code: 'public_list_not_found', data: { status: 404 } });
-        return row;
+    /**
+     * Todo lo que se arma igual para cada visita de un enlace (a quién
+     * pertenece, config, campos, nombre), guardado un rato y armado de a uno
+     * (ADR-S95): antes cada pedido público abría 3-4 transacciones sólo para
+     * esto. Lo que no existe también se guarda. La caducidad NO va aquí: se
+     * mira en cada pedido.
+     */
+    private info(token: string): Promise<ListInfo> {
+        return this.pcache.get(`${listCachePrefix(token)}cfg`, CONFIG_CACHE_TTL_MS, async (): Promise<ListInfo> => {
+            const [row] = await this.db
+                .select({ tenantId: publicLists.tenantId, listId: publicLists.listId })
+                .from(publicLists)
+                .where(eq(publicLists.token, token))
+                .limit(1);
+            if (!row) return { ok: false, code: 'public_list_not_found' };
+            // v0.1.338 (ADR-S87) — empresa pausada o plan sin «Enlaces públicos»:
+            // el mismo 404 opaco que un token desconocido (nada se borra).
+            if (await publicSurfaceOff(this.db, row.tenantId, 'public_sharing')) return { ok: false, code: 'public_list_not_found' };
+            const { tenantId, listId } = row;
+            return this.tenantDb.withTenant(tenantId, async (tx): Promise<ListInfo> => {
+                const [l] = await tx.select({ name: lists.name, settings: lists.settings }).from(lists).where(eq(lists.id, listId)).limit(1);
+                const rows = await tx.select().from(fields).where(eq(fields.listId, listId)).orderBy(fields.position);
+                const timeZone = this.timeZones ? await this.timeZones.orUtc(tenantId, tx) : FALLBACK_TIME_ZONE;
+                const cfg = canonicalPublicSettings(l?.settings?.public ?? {}, rows);
+                if (!cfg.enabled) return { ok: false, code: 'public_list_disabled' };
+                const rawDescription = (l?.settings as Record<string, unknown> | undefined)?.description;
+                return {
+                    ok: true,
+                    tenantId,
+                    listId,
+                    cfg,
+                    fieldRows: rows,
+                    timeZone,
+                    name: l?.name ?? 'Lista',
+                    description: typeof rawDescription === 'string' ? rawDescription : null,
+                };
+            });
+        });
+    }
+
+    private async liveInfo(token: string): Promise<Extract<ListInfo, { ok: true }>> {
+        const info = await this.info(token);
+        if (!info.ok) throw new NotFoundException({ code: info.code, data: { status: 404 } });
+        // Caducidad: vencido responde 404 igual que un token desconocido —
+        // a quien tenga el link viejo no se le confirma que existió.
+        if (info.cfg.expires_at !== null && isExpired(info.cfg.expires_at, resolveTimeZone(info.timeZone))) {
+            throw new NotFoundException({ code: 'public_list_expired', data: { status: 404 } });
+        }
+        return info;
     }
 
     /** Config pública (incluye allowed_domains) — para CSP. */
     async publicConfig(token: string): Promise<{ tenantId: number; listId: number; cfg: PublicListSettings; fieldRows: FieldRow[] }> {
-        const { tenantId, listId } = await this.resolveToken(token);
-        const { cfg, fieldRows, timeZone } = await this.tenantDb.withTenant(tenantId, async (tx) => {
-            const [l] = await tx.select({ settings: lists.settings }).from(lists).where(eq(lists.id, listId)).limit(1);
-            const rows = await tx.select().from(fields).where(eq(fields.listId, listId)).orderBy(fields.position);
-            const tz = this.timeZones ? await this.timeZones.orUtc(tenantId, tx) : FALLBACK_TIME_ZONE;
-            return { cfg: canonicalPublicSettings(l?.settings?.public ?? {}, rows), fieldRows: rows, timeZone: tz };
-        });
-        if (!cfg.enabled) {
-            throw new NotFoundException({ code: 'public_list_disabled', data: { status: 404 } });
-        }
-        // Caducidad: vencido responde 404 igual que un token desconocido —
-        // a quien tenga el link viejo no se le confirma que existió.
-        if (cfg.expires_at !== null && isExpired(cfg.expires_at, resolveTimeZone(timeZone))) {
-            throw new NotFoundException({ code: 'public_list_expired', data: { status: 404 } });
-        }
+        const { tenantId, listId, cfg, fieldRows } = await this.liveInfo(token);
         return { tenantId, listId, cfg, fieldRows };
     }
 
     /** Datos mínimos para servir la página HTML embebible (nombre + CSP). */
     async pageBootstrap(token: string): Promise<{ name: string; allowed_domains: string[] }> {
-        const { tenantId, listId, cfg } = await this.publicConfig(token);
-        const name = await this.tenantDb.withTenant(tenantId, async (tx) => {
-            const [l] = await tx.select({ name: lists.name }).from(lists).where(eq(lists.id, listId)).limit(1);
-            return l?.name ?? 'Lista';
-        });
-        return { name, allowed_domains: cfg.allowed_domains };
+        const info = await this.liveInfo(token);
+        return { name: info.name, allowed_domains: info.cfg.allowed_domains };
+    }
+
+    /**
+     * Tope de consultas a la base por enlace y por minuto (compartido entre
+     * servidores). Sólo cuenta lo que llega a la base; sin Redis no frena.
+     */
+    private async countQuery(token: string): Promise<void> {
+        if (!this.redis) return;
+        let n = 0;
+        try {
+            n = await incrWithTtl(this.redis, `plist:rl:${token}:${Math.floor(Date.now() / 60_000)}`, 90);
+        } catch {
+            return;
+        }
+        if (n > PUBLIC_LIST_QUERIES_PER_MINUTE) {
+            throw new HttpException(
+                { code: 'public_list_busy', message: 'Esta lista está recibiendo muchas consultas. Prueba de nuevo en un minuto.', data: { status: 429 } },
+                HttpStatus.TOO_MANY_REQUESTS,
+            );
+        }
     }
 
     /**
@@ -289,18 +361,16 @@ export class PublicListsService {
     }
 
     async getMeta(token: string): Promise<PublicListMeta> {
-        const { tenantId, listId, cfg, fieldRows } = await this.publicConfig(token);
+        const info = await this.liveInfo(token);
+        return this.pcache.get(`${listCachePrefix(token)}meta`, CONFIG_CACHE_TTL_MS, () => this.buildMeta(info));
+    }
+
+    private buildMeta(info: Extract<ListInfo, { ok: true }>): Promise<PublicListMeta> {
+        const { tenantId, listId, cfg, fieldRows } = info;
         return this.tenantDb.withTenant(tenantId, async (tx) => {
-            const [l] = await tx
-                .select({ name: lists.name, settings: lists.settings })
-                .from(lists)
-                .where(eq(lists.id, listId))
-                .limit(1);
+            const l = { name: info.name };
             const visible = this.visibleFields(cfg, fieldRows);
-            const description =
-                l && typeof (l.settings as Record<string, unknown>).description === 'string'
-                    ? ((l.settings as Record<string, unknown>).description as string)
-                    : null;
+            const description = info.description;
             // White-label del workspace dueño: color/nombre/logo (URL firmada
             // — la página pública no tiene sesión alguna).
             const [tenantRow] = await tx
@@ -320,7 +390,7 @@ export class PublicListsService {
             const sortSlug = cfg.default_sort_field_id !== null && visibleIds.has(cfg.default_sort_field_id) ? slugOf.get(cfg.default_sort_field_id) : undefined;
 
             return {
-                name: l?.name ?? 'Lista',
+                name: l.name,
                 description,
                 fields: visible.map(publicFieldMeta),
                 view_name: publishedView.name,
@@ -346,9 +416,35 @@ export class PublicListsService {
     }
 
     async getRecords(token: string, query: PublicRecordsQuery): Promise<PublicRecordsPage> {
-        const { tenantId, listId, cfg, fieldRows } = await this.publicConfig(token);
+        const info = await this.liveInfo(token);
+        const { cfg } = info;
         const limit = Math.min(query.limit ?? cfg.per_page, 100);
         const offset = query.cursor ?? 0;
+        // Saltar decenas de miles de filas recorre (y ordena) la lista entera
+        // en cada pedido: hasta ahí llega la paginación pública.
+        if (offset > PUBLIC_LIST_MAX_OFFSET) return { data: [], meta: { next_cursor: null } };
+        const term = cfg.search_enabled ? (query.search ?? '').trim() : '';
+        const search = term.length >= PUBLIC_LIST_MIN_SEARCH ? term : '';
+        const run = async (): Promise<PublicRecordsPage> => {
+            await this.countQuery(token);
+            return this.queryRecords(info, { limit, offset, search, sort: query.sort });
+        };
+        // Las primeras páginas sin búsqueda son lo que pide CADA visita: se
+        // guardan unos segundos. Lo demás (búsquedas, páginas profundas,
+        // tamaños raros) no se guarda —la clave la elegiría el visitante— pero
+        // pasa por el mismo tope de armados que el resto de lo público.
+        const cacheable = search === '' && limit === cfg.per_page && offset % limit === 0 && offset / limit < CACHED_PAGES && (query.sort ?? '').length <= 80;
+        if (!cacheable) return this.pcache.gate(run);
+        return this.pcache.get(`${listCachePrefix(token)}rec:${offset}:${query.sort ?? ''}`, RECORDS_CACHE_TTL_MS, run);
+    }
+
+    private queryRecords(
+        info: Extract<ListInfo, { ok: true }>,
+        q: { limit: number; offset: number; search: string; sort: string | undefined },
+    ): Promise<PublicRecordsPage> {
+        const { tenantId, listId, cfg, fieldRows } = info;
+        const { limit, offset } = q;
+        const query = { search: q.search, sort: q.sort };
 
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const visibleFields = this.visibleFields(cfg, fieldRows);
@@ -359,7 +455,7 @@ export class PublicListsService {
             const conds: SQL[] = [eq(records.listId, listId), isNull(records.deletedAt)];
             const viewCond = (await this.viewFilterSql(tx, tenantId, listId, cfg.view_id, fieldRows)).sql;
             if (viewCond) conds.push(viewCond);
-            if (cfg.search_enabled && query.search && query.search.trim() !== '') {
+            if (query.search !== '') {
                 const term = `%${query.search.trim().replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
                 const searchable = visibleFields.filter((f) => SEARCHABLE_TYPES.has(f.type));
                 const ors = searchable.map(
@@ -406,7 +502,8 @@ export class PublicListsService {
                 }
                 return { id: r.id, data: out };
             });
-            return { data, meta: { next_cursor: hasMore ? String(offset + limit) : null } };
+            const next = offset + limit;
+            return { data, meta: { next_cursor: hasMore && next <= PUBLIC_LIST_MAX_OFFSET ? String(next) : null } };
         });
     }
 
