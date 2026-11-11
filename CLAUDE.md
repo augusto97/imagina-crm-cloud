@@ -14005,6 +14005,98 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         página de la conexión con flujos faltantes, celular oscuro sin
         desborde).
 
+  - [x] **Auditoría de seguridad III: archivos, permisos por lista, credenciales
+        de conexiones, sesiones por dominio y límites (v0.1.404, ADR-S100,
+        pedido del usuario: "auditar, revisar y corregir cualquier
+        vulnerabilidad… lo interno y lo externo, las integraciones, lo que se
+        inserta en otras webs y las automatizaciones")**. Auditoría con el
+        método de la skill de Cloudflare (reconocimiento → 15 revisiones por
+        área → verificación independiente de cada hallazgo → corrección con
+        prueba de regresión): 33 hallazgos confirmados en la primera ola (4
+        altos, 22 medios, 7 bajos) y 9 más en la segunda. Ninguno crítico (no
+        se encontró lectura entre empresas ni ejecución de código).
+        (a) **Archivos**: adjuntar un archivo por su número exige poder verlo
+        (`FilesService.assertAttachable`, 400 `file_not_attachable`) en
+        registros, formularios, temas, agenda, ajustes de lista, tableros y
+        plantillas de documento; antes, referenciar el id de un archivo ajeno
+        dentro de la misma empresa lo volvía legible.
+        (b) **Permisos por lista**: las respuestas de crear/editar no devuelven
+        campos ocultos, escribirlos se rechaza (403 `field_hidden`), el
+        borrado en lote revisa el alcance antes de comparar, edición masiva,
+        «actualizar desde archivo», plantillas de registro, exportar (títulos
+        de vinculados → `#id` si no se pueden leer), campos con IA cuyos
+        insumos están ocultos, `GET /lists` y `/bootstrap` sin los ajustes
+        completos para quien no administra listas, y renombrar un campo
+        conserva su ocultamiento (`renameHiddenFieldSlug`). Los clientes del
+        portal no aparecen en el directorio de personas; un campo Persona sólo
+        acepta miembros.
+        (c) **Conexiones y automatizaciones**: la credencial de una conexión
+        sólo viaja al ORIGEN de la conexión (`assertConnectionOrigin`; la
+        migración 0117 completa la dirección base cuando todos sus usos
+        comparten origen); cambiar el servidor de una API personalizada exige
+        volver a escribir la credencial; las variables dentro de una URL se
+        codifican; una automatización sólo puede usar conexiones del equipo o
+        propias (nunca la del calendario de alguien); probadores, corridas y
+        capturas con el acceso de quien pregunta (403
+        `automation_list_forbidden` si no ve la lista entera); el MCP y el
+        asistente tapan secretos de las automatizaciones y sólo las muestran
+        con `manage_automations`; el conector SQL fija la IP validada; el
+        enlace vivo de un PDF lleva a quién lo emitió y deja de valer si esa
+        persona sale del equipo.
+        (d) **Sesiones y cuentas**: una sesión abierta en el dominio propio de
+        una empresa queda ATADA a esa empresa (`boundTenantId`: 403
+        `session_tenant_scope` en otra y nunca la consola de plataforma); una
+        cuenta registrada sin verificar no bloquea una invitación; los frenos
+        cuentan antes de verificar; tope de correos de invitación por
+        destinatario y por empresa; el enlace del portal sólo da «todas mis
+        cuentas» desde el dominio de la plataforma; `routePath` único para
+        decidir por ruta (rate limit, CSRF).
+        (e) **CSRF y sockets**: un pedido «same-site» exige que el Origin
+        coincida, las consolas del operador no aceptan cuerpos de formulario
+        (415), aprobar/negar el OAuth del MCP ya no está exento, y el
+        WebSocket revisa el Origin del handshake.
+        (f) **Lo público**: la demostración de «Compartir» (`imb_demo`) sólo
+        vale dentro de un marco de la propia app (antes, cualquiera podía
+        repartir el enlace real en modo demostración y nada se guardaba);
+        dominios permitidos de las listas públicas validados; una cita
+        «esperando el pago» no se reprograma ni se confirma por el campo de
+        estado sin permiso de decidir.
+        (g) **Límites**: las expresiones regulares de validación corren en un
+        motor propio con presupuesto de pasos (`pattern-matcher.ts`: el
+        analizador anterior dejaba pasar patrones explosivos), el HTML de un
+        correo entrante se convierte en una pasada (`html-scan.ts`), el lector
+        IMAP baja de a un correo con tope de bytes, tope de 60 widgets por
+        tablero y tablero público por la caché pública, cuota de IA atómica
+        (reservar → asentar), registro dinámico de clientes OAuth con tope,
+        PDF público con tope y caché de 2 min, límites por IP agrupando IPv6
+        por /64, y presupuesto del MCP (20 herramientas por pedido, 120/min
+        por token, 600/min por empresa → 429).
+        (h) **Operación**: restaurar una copia toma del `.env` SÓLO una lista
+        de variables conocidas (`deploy/snapshot-env-filter.sh`); una empresa
+        importada llega en prueba salvo servidor de confianza;
+        `memberships.joined_at` (migración 0118) para no avisar de lo anterior
+        al alta.
+        **Cambios que se notan**: una automatización con una conexión cuya URL
+        apunta a OTRO servidor falla con el motivo; una regla de validación
+        que el motor nuevo no puede correr rechaza ese valor; personas que ya
+        no están salen sin nombre; el MCP puede responder 429.
+        **Queda abierto (decisiones del usuario)**: el login en el dominio de
+        una empresa sigue recibiendo la contraseña en ese dominio (lo correcto
+        es entrar por el dominio de la plataforma y volver); los campos ocultos
+        siguen guardados por slug; sumar a alguien a una empresa no pide su
+        aceptación; firma de actualizaciones opcional; el agente de IA en modo
+        «hace los cambios» con correo habilitado puede ser inducido por el
+        texto de un registro (por validar). El informe completo queda fuera
+        del repositorio. Tests: `security-records-acl.spec` (12),
+        `security-connections.spec`, `security-acl-wave2.spec`,
+        `session-tenant-scope.spec`, `route-path.spec`, `mcp-budget.spec` y
+        casos en auth, miembros, portal, agenda, documentos, formularios y
+        shared — API 2334, front 859, shared 883 en verde — + E2E navegador
+        21/21 (login, tabla, realtime con el chequeo de origen, socket de otro
+        origen 403, POST de otro sitio 403, cuerpo de formulario en la consola
+        415, demostración sólo dentro de la app, formulario público sin
+        errores).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

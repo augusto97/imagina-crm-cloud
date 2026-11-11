@@ -2449,4 +2449,17 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
         audience: { roles: ['admin'] },
     },
+    {
+        key: 'v0.1.404-seguridad',
+        version: '0.1.404',
+        date: '2026-11-11',
+        kind: 'improvement',
+        title: 'Revisión de seguridad a fondo',
+        summary:
+            'Se revisó toda la app y se reforzaron los permisos por lista, los archivos, las conexiones de las automatizaciones y las sesiones. Si una automatización usa una conexión contra un servidor distinto al de esa conexión, ahora se detiene y te dice por qué.',
+        media: { illustration: 'cobro-candados' },
+        body: 'Qué puede cambiar para ti: la clave de una conexión sólo se envía al servidor de **esa** conexión; al cambiar el servidor de una API personalizada hay que escribir la clave de nuevo; y los campos ocultos para un rol ya no se pueden escribir desde ese rol. Si una automatización deja de correr, abre **Ajustes → Problemas**: ahí está el motivo.',
+        action: { label: 'Ver Problemas', href: '/settings?s=problemas' },
+        audience: { roles: ['admin'] },
+    },
 ];

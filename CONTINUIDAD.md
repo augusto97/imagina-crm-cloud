@@ -415,8 +415,23 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.403**
-(**los permisos de la clave de Whats a la vista** — la ventana de conexión
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.404**
+(**auditoría de seguridad III** — archivos por referencia, campos ocultos en
+toda respuesta, credenciales de conexiones atadas a su origen, sesiones atadas
+al dominio de la empresa, CSRF/sockets, límites y presupuestos; ADR-S100).
+**Hilos abiertos de la auditoría** (decisiones del usuario): login de dominios
+propios por el dominio de la plataforma; campos ocultos por id; aceptación al
+sumar a alguien a una empresa; firma de actualizaciones obligatoria y API
+escuchando sólo en 127.0.0.1; retención de corridas de automatizaciones;
+agente de IA con correo en modo «hace los cambios» (inyección por texto del
+registro, por validar). **Lote de rendimiento/estructura pendiente (v0.1.405)**:
+informes en `~/security-audit-skill/imagina-crm-cloud/run-1/agents/p0*/` (no
+están en el repo; si se pierden, se rehacen): conteo de registros bajo candado
+en cada alta, listas públicas sin caché, calendarios externos dentro del cupo
+público, `jobId` fijo que silencia sincronizaciones tras una falla, SMS doble
+entre nodos, arranque colgado sin Redis, apagado ordenado, `WORKERS=on|off`,
+índices que faltan, ErrorBoundary sin montar, CI sin el front, peso del bundle.
+Antes v0.1.403 (**los permisos de la clave de Whats a la vista** — la ventana de conexión
 y la página de la conexión listan los permisos por lo que habilitan y marcan
 cuáles tiene la clave; el MCP ve `{{whats.ejecucion_id}}` y las demás salidas
 de Whats en `connectors`). Antes v0.1.402
@@ -1828,6 +1843,19 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-11 · v0.1.404** — **Auditoría de seguridad III** (pedido del
+  usuario: usar la skill de auditoría de Cloudflare y corregir todo, más
+  rendimiento y estructura). 33 + 9 hallazgos confirmados, ninguno crítico;
+  corregidos con pruebas de regresión por seis frentes (auth, despliegue y
+  público, conexiones/automatizaciones, archivos y ACL, límites, segunda ola).
+  Detalle en `CLAUDE.md` §5 y ADR-S100. Los agentes de corrección de
+  rendimiento se cortaron por el límite semanal de uso: ese lote queda para
+  v0.1.405. Se ofreció al usuario revisar por el MCP (sólo lectura) qué
+  automatizaciones suyas usan una conexión contra otro servidor — **sin
+  aprobar todavía; no consultar producción sin su visto bueno**. Trampas: los
+  agentes en worktrees viven en `.claude/worktrees/` (excluido en
+  `.git/info/exclude`); el daemon de Docker hay que arrancarlo a mano
+  (`nohup dockerd &`) tras un reinicio del contenedor.
 - **2026-11-11 · v0.1.403** — **Los permisos de la clave de Whats, a la
   vista** (reporte del usuario: las instrucciones de conexión no decían que
   la clave necesita además `flows.view`, `flows.trigger`, `flows.run`,
