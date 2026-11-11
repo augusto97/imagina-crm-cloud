@@ -33,6 +33,7 @@ import {
     type WpLookups,
     type WpTerm,
 } from './wordpress/wp-map';
+import { releaseRedisLock } from '../redis/redis-lock';
 
 /**
  * Motor de sincronización con un sitio WordPress (v0.1.333, ADR-S83). Copia
@@ -170,8 +171,8 @@ export class SiteSyncEngine {
     }
 
     async release(syncId: number, token: string): Promise<void> {
-        const current = await this.redis.get(this.lockKey(syncId));
-        if (current === token) await this.redis.del(this.lockKey(syncId));
+        // Leer y borrar en un paso: entre el GET y el DEL otro nodo podía tomarlo.
+        await releaseRedisLock(this.redis, this.lockKey(syncId), token);
     }
 
     // ── Corrida ─────────────────────────────────────────────────────────────

@@ -220,6 +220,7 @@ describe('Importar suscripciones de Mercado Pago (v0.1.376)', () => {
     let collections: CollectionsService;
     let subs: SubscriptionsService;
     let importer: SubscriptionImportService;
+    let makeImporter: (redis: unknown) => SubscriptionImportService;
     let fieldsService: FieldsService;
     let listsService: ListsService;
     let dispatcher: CapturingDispatcher;
@@ -279,7 +280,9 @@ describe('Importar suscripciones de Mercado Pago (v0.1.376)', () => {
             chargeLog,
         );
         subs.onModuleInit();
-        importer = new SubscriptionImportService(tenantDb, pg.db, env, connectors, listsService, subs, audit, rt, fieldsService, chargeLog, undefined, undefined, moduleRef as never);
+        makeImporter = (redis) =>
+            new SubscriptionImportService(tenantDb, pg.db, env, connectors, listsService, subs, audit, rt, fieldsService, chargeLog, undefined, redis as never, moduleRef as never);
+        importer = makeImporter(undefined);
         importer.onModuleInit();
 
         const [t] = await pg.db.insert(tenants).values({ slug: 'acme', name: 'ACME', settings: { format: { timezone: 'America/Bogota' } } }).returning();
@@ -312,6 +315,61 @@ describe('Importar suscripciones de Mercado Pago (v0.1.376)', () => {
             await tx.delete(lists).where(eq(lists.tenantId, tenantId));
             await tx.delete(connections).where(eq(connections.tenantId, tenantId));
         });
+    });
+
+    it('la revisión periódica va primero a la que hace más tiempo que no se revisa (no por id) y su candado es de quien lo tomó', async () => {
+        fakeMercadoPago();
+        const [a, b, c] = [await connectMp(), await connectMp(), await connectMp()];
+        const now = new Date();
+        const setScan = (id: number, last: Date | null) =>
+            pg.pool.query(`UPDATE connections SET config = jsonb_set(coalesce(config, '{}'::jsonb), '{subscription_import}', $2::jsonb) WHERE id = $1`, [
+                id,
+                JSON.stringify({ mode: 'create', list_id: null, auto: true, last_scan_at: last ? last.toISOString() : null }),
+            ]);
+        await pg.pool.query(`UPDATE connections SET config = config #- '{subscription_import,auto}' WHERE id NOT IN ($1, $2, $3)`, [a, b, c]);
+        await setScan(a, new Date(now.getTime() - 31 * 60_000)); // la de id más bajo, revisada hace poco
+        await setScan(b, null); // nunca
+        await setScan(c, new Date(now.getTime() - 2 * 3600_000));
+        const order: number[] = [];
+        const spy = vi.spyOn(importer, 'scanConnection').mockImplementation(async (_t, id) => {
+            order.push(id);
+            await setScan(id, now);
+            return 0;
+        });
+        try {
+            // De a una por vuelta: antes salía siempre la de id más bajo.
+            await importer.scanAll(now, { limit: 1 });
+            await importer.scanAll(now, { limit: 1 });
+            await importer.scanAll(now, { limit: 1 });
+            expect(order).toEqual([b, c, a]);
+
+            // Con Redis: si el candado es de otro nodo no corre ni se lo borra; si Redis falla, tampoco corre.
+            const store = new Map<string, string>();
+            const fake = {
+                set: async (k: string, v: string) => (store.has(k) ? null : (store.set(k, v), 'OK')),
+                get: async (k: string) => store.get(k) ?? null,
+                del: async (k: string) => void store.delete(k),
+            };
+            const withRedis = makeImporter(fake);
+            const spy2 = vi.spyOn(withRedis, 'scanConnection').mockResolvedValue(0);
+            await setScan(a, null);
+            store.set('subimport:tick', 'otro-nodo');
+            await withRedis.scanAll(now);
+            expect(spy2).not.toHaveBeenCalled();
+            expect(store.get('subimport:tick')).toBe('otro-nodo');
+            store.clear();
+            await withRedis.scanAll(now);
+            expect(spy2).toHaveBeenCalledTimes(1);
+            expect(store.has('subimport:tick')).toBe(false);
+            fake.set = async () => {
+                throw new Error('Redis caído');
+            };
+            await withRedis.scanAll(now);
+            expect(spy2).toHaveBeenCalledTimes(1);
+        } finally {
+            spy.mockRestore();
+            await pg.pool.query(`UPDATE connections SET config = config #- '{subscription_import,auto}' WHERE id IN ($1, $2, $3)`, [a, b, c]);
+        }
     });
 
     async function connectMp(): Promise<number> {

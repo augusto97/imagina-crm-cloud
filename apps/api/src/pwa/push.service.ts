@@ -36,6 +36,7 @@ import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { PushKeysService } from './push-keys.service';
 import { encryptPushPayload, endpointHash, vapidAuthorization } from './web-push';
+import { createWorker } from '../redis/queue-runtime';
 
 /** Notificaciones push por persona y hora (como el correo: el resto queda en la campana). */
 export const PUSH_PER_HOUR = 20;
@@ -116,9 +117,9 @@ export class PushService implements OnModuleInit, OnApplicationShutdown {
             };
             this.queue = new Queue<PushJob>(QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de push con error: ${err.message}`));
-            this.worker = new Worker<PushJob>(QUEUE, async (job) => this.sendNotice(job.data), { connection: conn(), concurrency: 4 });
-            this.worker.on('failed', (job, err) => this.logger.warn(`Push (${job?.id ?? '?'}) falló: ${err.message}`));
-            this.worker.on('error', (err) => this.logger.warn(`Worker de push con error: ${err.message}`));
+            this.worker = createWorker<PushJob>(QUEUE, async (job) => this.sendNotice(job.data), { connection: conn(), concurrency: 4 });
+            this.worker?.on('failed', (job, err) => this.logger.warn(`Push (${job?.id ?? '?'}) falló: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de push con error: ${err.message}`));
         } catch (err) {
             this.logger.warn(`Cola de push deshabilitada (sin Redis): se envía en el acto. ${String(err)}`);
             this.queue = null;

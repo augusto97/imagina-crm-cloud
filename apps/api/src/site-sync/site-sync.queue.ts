@@ -4,6 +4,7 @@ import IORedis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import type { SiteSyncHookJob } from './site-realtime.service';
+import { addDedupedJob, createWorker, registerScheduler } from '../redis/queue-runtime';
 
 /**
  * Cola de la sincronización con sitios WordPress (v0.1.333, ADR-S83). Propia
@@ -51,13 +52,7 @@ export class SiteSyncQueue {
         if (!this.queue) return;
         const suffix = `${opts.full ? '-full' : ''}${opts.only?.length ? `-${[...opts.only].sort().join('_').replace(/[^a-z0-9_-]/gi, '_')}` : ''}`;
         const data: SiteSyncRunJob = { tenantId, syncId, ...opts };
-        this.queue
-            .add(RUN_JOB, data, {
-                jobId: `run-${syncId}${suffix}${delayMs > 0 ? '-retry' : ''}`,
-                delay: delayMs,
-                removeOnComplete: true,
-                removeOnFail: 100,
-            })
+        addDedupedJob(this.queue, RUN_JOB, data, { jobId: `run-${syncId}${suffix}${delayMs > 0 ? '-retry' : ''}`, delay: delayMs })
             .catch((err) => this.logger.error(`No se pudo encolar la sincronización del sitio #${syncId}: ${String(err)}`));
     }
 
@@ -144,16 +139,16 @@ export class SiteSyncQueueBootstrap implements OnModuleInit, OnApplicationShutdo
                 // Otra corrida la tenía tomada: se reintenta en un rato.
                 if (!ran) this.dispatcher.enqueueRun(data.tenantId, data.syncId, { full: data.full, only: data.only }, 30_000);
             };
-            this.worker = new Worker(SITE_SYNC_QUEUE, process, { connection: conn(), concurrency: 2, lockDuration: 120_000 });
-            this.worker.on('failed', (job, err) => this.logger.error(`Sincronización de sitio ${job?.id} falló: ${err.message}`));
-            this.worker.on('error', (err) => this.logger.warn(`Worker de sitios con error: ${err.message}`));
+            this.worker = createWorker(SITE_SYNC_QUEUE, process, { connection: conn(), concurrency: 2, lockDuration: 120_000 });
+            this.worker?.on('failed', (job, err) => this.logger.error(`Sincronización de sitio ${job?.id} falló: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de sitios con error: ${err.message}`));
             this.liveQueue = new Queue(SITE_SYNC_LIVE_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.liveQueue.on('error', (err) => this.logger.warn(`Cola de avisos de sitios con error: ${err.message}`));
-            this.liveWorker = new Worker(SITE_SYNC_LIVE_QUEUE, process, { connection: conn(), concurrency: 4, lockDuration: 120_000 });
-            this.liveWorker.on('failed', (job, err) => this.logger.error(`Aviso de sitio ${job?.id} falló: ${err.message}`));
-            this.liveWorker.on('error', (err) => this.logger.warn(`Worker de avisos de sitios con error: ${err.message}`));
+            this.liveWorker = createWorker(SITE_SYNC_LIVE_QUEUE, process, { connection: conn(), concurrency: 4, lockDuration: 120_000 });
+            this.liveWorker?.on('failed', (job, err) => this.logger.error(`Aviso de sitio ${job?.id} falló: ${err.message}`));
+            this.liveWorker?.on('error', (err) => this.logger.warn(`Worker de avisos de sitios con error: ${err.message}`));
             this.dispatcher.setQueue(this.queue, this.liveQueue);
-            await this.queue.upsertJobScheduler(TICK_JOB, { every: 60_000 }, { name: TICK_JOB, data: {} });
+            registerScheduler(this.queue, TICK_JOB, { every: 60_000 }, { name: TICK_JOB, data: {} }, this.logger);
             this.logger.log('Cola de sincronización con sitios lista');
         } catch (err) {
             this.logger.warn(`Sincronización con sitios deshabilitada (sin Redis): ${String(err)}`);

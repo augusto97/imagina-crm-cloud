@@ -158,6 +158,11 @@ import {
 } from './merge-tags';
 import { recordLinkPrefix, recordTokenValue } from '../qr/qr-runtime';
 import { lookupWebhookRecord, type WebhookLookup } from './webhook-record-lookup';
+import { claimJobUnit, noteJobUnit } from '../redis/queue-runtime';
+
+/** Lo que dice el historial de una corrida que un reinicio cortó a mitad. */
+export const INTERRUPTED_MESSAGE =
+    'El servidor se reinició mientras esta automatización corría. No se volvió a ejecutar para no repetir pasos ya hechos (correos, mensajes, registros): revisa hasta dónde llegó.';
 
 const SYSTEM_USER = 0;
 /** Lo que escribe una automatización lo escribe el sistema, con permisos de admin. */
@@ -1218,6 +1223,12 @@ export class AutomationEngine {
      * re-programa. Después, la condición de «continuar sólo si…».
      */
     async resumeRun(tenantId: number, runId: number): Promise<void> {
+        // Reanudación repetida tras un corte: los pasos que siguen a la espera
+        // ya habían empezado; no se repiten.
+        if (!(await this.firstTimeInJob(`resume:${runId}`))) {
+            this.logger.warn(`Corrida ${runId}: la reanudación se repitió tras un corte; no se vuelve a ejecutar.`);
+            return this.markInterrupted(tenantId, runId);
+        }
         const loaded = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [run] = await tx
                 .select()
@@ -2128,6 +2139,36 @@ export class AutomationEngine {
         for (const r of rows) ctx.teamNames.set(r.id, r.name);
     }
 
+    /** ¿Es la primera vez que el trabajo en curso llega a esta unidad? (ver `claimJobUnit`). */
+    async firstTimeInJob(unit: string): Promise<boolean> {
+        return (await claimJobUnit(this.redis, unit)).first;
+    }
+
+    /**
+     * La corrida ya había empezado en un intento anterior del mismo trabajo:
+     * no se repite. Si quedó «en curso», se cierra como fallida con el motivo
+     * (así se ve en el historial en vez de quedar colgada una hora).
+     */
+    private async skipRepeatedRun(tenantId: number, automationId: number, previous: string | null): Promise<number | null> {
+        const runId = previous && /^\d+$/.test(previous) ? Number(previous) : null;
+        this.logger.warn(`Automatización ${automationId}: el trabajo se repitió tras un corte; la corrida ${runId ?? '(sin abrir)'} no se vuelve a ejecutar.`);
+        if (runId === null) return null;
+        await this.markInterrupted(tenantId, runId);
+        return runId;
+    }
+
+    /** Cierra como fallida una corrida que un reinicio dejó «en curso». */
+    async markInterrupted(tenantId: number, runId: number): Promise<void> {
+        await this.tenantDb
+            .withTenant(tenantId, (tx) =>
+                tx
+                    .update(automationRuns)
+                    .set({ status: 'failed', error: INTERRUPTED_MESSAGE, finishedAt: new Date(), resumeAt: null })
+                    .where(and(eq(automationRuns.tenantId, tenantId), eq(automationRuns.id, runId), eq(automationRuns.status, 'running'))),
+            )
+            .catch((err: unknown) => this.logger.warn(`No se pudo cerrar la corrida ${runId}: ${errorText(err)}`));
+    }
+
     private async runOne(
         ctx: RunContext,
         auto: RunnableAutomation,
@@ -2146,12 +2187,20 @@ export class AutomationEngine {
         if (ctx.recordId !== null && [...ctx.fieldsBySlug.entries()].some(([slug, f]) => isDerivedForVariables(f.type) && !(ctx.slugToKey.get(slug)! in ctx.data))) {
             ctx.data = { ...ctx.data, ...(await this.derivedData(ctx.tenantId, ctx.listId, ctx.recordId, ctx)) };
         }
+        // El trabajo de la cola se repite si el servidor se cae a mitad (BullMQ
+        // lo da por colgado y lo vuelve a correr entero). Una corrida que ya
+        // había EMPEZADO en el intento anterior no se repite: sus correos,
+        // mensajes, cobros o registros podrían salir dos veces.
+        const unit = `run:${auto.id}:${ctx.recordId ?? 0}`;
+        const claim = await claimJobUnit(this.redis, unit);
+        if (!claim.first) return this.skipRepeatedRun(ctx.tenantId, auto.id, claim.previous);
         const startedAt = new Date();
         let runId: number | null = null;
         try {
             runId = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
                 this.automations.startRun(tx, { tenantId: ctx.tenantId, automationId: auto.id, recordId: ctx.recordId, startedAt }),
             );
+            if (runId !== null) await noteJobUnit(this.redis, unit, String(runId));
         } catch (err) {
             // La automatización se borró mientras se encolaba el evento.
             this.logger.warn(`No se pudo abrir la corrida de la automatización ${auto.id}: ${errorText(err)}`);

@@ -43,6 +43,7 @@ import { AgentProposalsService } from './agent-proposals.service';
 import { buildAgentSystemPrompt, buildAgentUserMessage, fieldsForModel, summarizeToolInput } from './agent-prompt';
 import { AgentToolbox, agentToolDefinitions, describeError, type AgentRunScope } from './agent-toolbox';
 import { AiAgentsService, type OwnerActor } from './ai-agents.service';
+import { createWorker } from '../redis/queue-runtime';
 
 export const AGENTS_QUEUE = 'ai-agents';
 
@@ -120,7 +121,7 @@ export class AgentRunnerService implements AgentHandler, OnModuleInit, OnApplica
             };
             this.queue = new Queue(AGENTS_QUEUE, { connection: conn(), defaultJobOptions: QUEUE_JOB_RETENTION });
             this.queue.on('error', (err) => this.logger.warn(`Cola de agentes con error: ${err.message}`));
-            this.worker = new Worker(
+            this.worker = createWorker(
                 AGENTS_QUEUE,
                 async (job) => {
                     const d = job.data as { tenantId: number; runId: number };
@@ -128,7 +129,7 @@ export class AgentRunnerService implements AgentHandler, OnModuleInit, OnApplica
                 },
                 { connection: conn(), concurrency: 3 },
             );
-            this.worker.on('error', (err) => this.logger.warn(`Worker de agentes con error: ${err.message}`));
+            this.worker?.on('error', (err) => this.logger.warn(`Worker de agentes con error: ${err.message}`));
         } catch (err) {
             this.logger.warn(`Agentes de IA en segundo plano deshabilitados (sin Redis): ${String(err)}`);
         }

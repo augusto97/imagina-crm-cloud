@@ -172,4 +172,31 @@ describe('AutomationDispatcher: sólo encola si la lista escucha el evento', () 
         expect(await redis.exists(`autoq:n:${B}`)).toBe(0);
         expect(await redis.ttl(`autoq:n:${A}`)).toBeGreaterThan(0);
     });
+
+    it('un turno que quedó contado de más se corrige cuando la cola está vacía (y no antes)', async () => {
+        const dispatcher = new AutomationDispatcher(undefined, pg.db, redis as never);
+        let pending = 3;
+        dispatcher.setQueue({
+            add: () => Promise.resolve(),
+            getJobCounts: async () => ({ prioritized: pending, waiting: 0, active: 0, delayed: 0, 'waiting-children': 0, paused: 0 }),
+        } as never);
+        const C = 900003;
+        for (let i = 0; i < 3; i++) dispatcher.dispatchWebhook({ tenantId: C, automationId: 1, payload: {} });
+        await new Promise((r) => setTimeout(r, 100));
+        // Sólo una avisa que terminó: las otras dos se "pierden" (trabajo colgado dos veces).
+        await dispatcher.release(C);
+        expect(await redis.get(`autoq:n:${C}`)).toBe('2');
+        // Con trabajo pendiente no se toca nada.
+        expect(await dispatcher.reconcileTurns()).toBe(0);
+        expect(await redis.get(`autoq:n:${C}`)).toBe('2');
+        // Cola vacía: el contador vuelve a cero y la próxima tarea entra primera.
+        pending = 0;
+        expect(await dispatcher.reconcileTurns()).toBeGreaterThanOrEqual(1);
+        expect(await redis.exists(`autoq:n:${C}`)).toBe(0);
+        const added: number[] = [];
+        dispatcher.setQueue({ add: (_: string, __: unknown, o: { priority?: number }) => (added.push(o.priority ?? 0), Promise.resolve()) } as never);
+        dispatcher.dispatchWebhook({ tenantId: C, automationId: 1, payload: {} });
+        await new Promise((r) => setTimeout(r, 100));
+        expect(added).toEqual([1]);
+    });
 });

@@ -60,6 +60,8 @@ const TRIGGERS_CACHE_TTL_S = 300;
 const FAIR_TTL_S = 3600;
 const MAX_PRIORITY = 2_097_152;
 const fairKey = (tenantId: number): string => `autoq:n:${tenantId}`;
+/** Empresas con contador de turno (para poder corregirlos sin recorrer Redis). */
+const FAIR_TENANTS_KEY = 'autoq:tenants';
 /** Baja el contador y lo borra al llegar a cero (nunca queda negativo). */
 const RELEASE_LUA = `local v = redis.call('DECR', KEYS[1]) if v <= 0 then redis.call('DEL', KEYS[1]) end return v`;
 const BASE_JOB = { removeOnComplete: 1000, removeOnFail: 1000 } as const;
@@ -379,11 +381,46 @@ export class AutomationDispatcher {
     private async takeTurn(tenantId: number): Promise<number | null> {
         if (!this.redis) return null;
         try {
-            const res = await this.redis.multi().incr(fairKey(tenantId)).expire(fairKey(tenantId), FAIR_TTL_S).exec();
+            const res = await this.redis.multi().incr(fairKey(tenantId)).expire(fairKey(tenantId), FAIR_TTL_S).sadd(FAIR_TENANTS_KEY, String(tenantId)).expire(FAIR_TENANTS_KEY, 7 * 86_400).exec();
             const n = Number(res?.[0]?.[1]);
             return Number.isFinite(n) && n > 0 ? Math.min(MAX_PRIORITY, n) : null;
         } catch {
             return null;
+        }
+    }
+
+    /**
+     * El contador de turnos sube al encolar y baja cuando el worker avisa que
+     * la tarea terminó. Si ese aviso se pierde (una tarea que BullMQ da por
+     * colgada dos veces, un trabajo borrado a mano, Redis que falla justo al
+     * liberar) el contador queda alto, y como su vencimiento se renueva con
+     * cada tarea nueva, una empresa con movimiento constante quedaba atrás de
+     * las demás para siempre por esa diferencia. Aquí se corrige con la
+     * verdad: si la cola no tiene NADA pendiente ni corriendo, todos los
+     * contadores valen cero. Devuelve cuántos se limpiaron.
+     */
+    async reconcileTurns(): Promise<number> {
+        const queue = this.queue;
+        if (!queue || !this.redis) return 0;
+        try {
+            const counts = await queue.getJobCounts('prioritized', 'waiting', 'active', 'delayed', 'waiting-children', 'paused');
+            if (Object.values(counts).some((n) => n > 0)) return 0;
+            const tenants = await this.redis.smembers(FAIR_TENANTS_KEY);
+            if (tenants.length === 0) return 0;
+            const pipe = this.redis.multi();
+            let stale = 0;
+            for (let i = 0; i < tenants.length; i += 500) {
+                const chunk = tenants.slice(i, i + 500);
+                const values = await this.redis.mget(...chunk.map((t) => fairKey(Number(t))));
+                stale += values.filter((v) => v !== null).length;
+                pipe.del(...chunk.map((t) => fairKey(Number(t))));
+            }
+            pipe.del(FAIR_TENANTS_KEY);
+            await pipe.exec();
+            return stale;
+        } catch (err) {
+            this.logger.warn(`No se pudieron revisar los turnos de la cola: ${String(err)}`);
+            return 0;
         }
     }
 
