@@ -2784,4 +2784,37 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.416-tienda-digital-servicios',
+        version: '0.1.416',
+        date: '2026-11-12',
+        kind: 'feature',
+        title: 'Vende archivos para descargar y servicios con cita',
+        summary:
+            'Tu tienda ya vende productos digitales (se descargan al pagar), servicios que se agendan en tu agenda y productos gratis. Tus clientes ven sus pedidos y descargas con su correo.',
+        media: {
+            slides: [
+                {
+                    title: 'Se paga y se descarga',
+                    text: 'Un curso, una guía o una plantilla: sin envío, y al pagar el enlace de descarga llega por correo. Tú decides cuántos días y cuántas veces.',
+                    illustration: 'tienda-pedido',
+                },
+                {
+                    title: 'Servicios con cita',
+                    text: 'Una asesoría o una clase lleva a tu agenda con el servicio ya elegido: tu cliente sólo escoge el día y la hora.',
+                    illustration: 'tienda-vitrina',
+                },
+            ],
+        },
+        body: [
+            'Abre tu tienda (**Configurar lista → Tienda**) y ve a **Catálogo → Productos digitales y servicios**.',
+            '',
+            '- Crea la columna **Tipo** (Físico, Digital o Servicio) y la de **archivos para descargar**.',
+            '- Elige cuántos días y cuántas veces se puede bajar cada archivo.',
+            '- Elige la **agenda** de los servicios y a qué servicio va cada producto.',
+            '- En la tienda, **Mis pedidos** le manda a tu cliente un enlace con sus pedidos y sus descargas.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

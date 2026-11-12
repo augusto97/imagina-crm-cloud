@@ -415,7 +415,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.415**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.416**
+(**productos digitales, servicios con la agenda, pedidos sin costo y «Mis
+pedidos», quinta de siete versiones** — una columna «Tipo» y una de archivos:
+lo digital no pide envío y se descarga al pagar (con días y veces de
+descarga), los servicios llevan a la agenda con el servicio ya elegido, los
+pedidos de $0 quedan pagados y «Mis pedidos» manda al correo un enlace con
+los pedidos y las descargas; addendum ADR-S103). Antes **v0.1.415**
 (**envíos por zona y cupones, cuarta de seis versiones** — zonas de envío con
 su costo y «gratis desde», aviso de cuánto falta para el envío gratis y
 cupones de porcentaje, monto fijo o envío gratis con fechas, usos, compra
@@ -712,14 +718,15 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   aceptadas las decisiones propuestas: catálogo = lista, primera versión sin
   pasarela, módulo `shop` sólo en planes pagos (0121 lo apaga en `trial`),
   suspensión por el operador, miniaturas con `sharp`, factura DIAN fuera,
-  `noindex` siempre (con Open Graph para compartir). **v0.1.412, v0.1.413,
-  v0.1.414 y v0.1.415 HECHAS** (catálogo, carrito y pedido sin pasarela; pago
-  en línea con el stock apartado y pago tardío; productos con variantes como
-  subtareas; envíos por zona y cupones: ADR-S103 y sus addendums). Falta
-  probar el pago en línea con cuentas de prueba reales en el servidor.
-  **Siguen, en orden**: v0.1.416 suscripción,
-  digital, servicio y «Mis pedidos» → v0.1.417 estadísticas, conversiones,
-  botones «Comprar» insertables, widget y asistente/MCP. El SEO (y el dominio
+  `noindex` siempre (con Open Graph para compartir). **v0.1.412 a v0.1.416
+  HECHAS** (catálogo, carrito y pedido sin pasarela; pago en línea con el
+  stock apartado y pago tardío; productos con variantes como subtareas;
+  envíos por zona y cupones; productos digitales, servicios con la agenda,
+  pedidos sin costo y «Mis pedidos»: ADR-S103 y sus addendums). Falta probar
+  el pago en línea con cuentas de prueba reales en el servidor. El plan pasó
+  de seis a siete versiones (las suscripciones van solas). **Siguen, en
+  orden**: v0.1.417 suscripciones desde la tienda → v0.1.418 estadísticas,
+  conversiones, botones «Comprar» insertables, widget y asistente/MCP. El SEO (y el dominio
   propio de la tienda) queda para cuando el usuario lo pida.
 - 2026-11-11 — **Conector completo de Whats** (el usuario adjuntó la
   documentación de la API v1 de Whats y aprobó la lista de acciones y
@@ -1916,6 +1923,25 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-12 · v0.1.416** — **Productos digitales, servicios, pedidos sin
+  costo y «Mis pedidos»** (quinta versión de la tienda; el plan pasa a siete:
+  suscripciones en v0.1.417 y estadísticas/conversiones/botones/widget/
+  asistente en v0.1.418). Editor → Catálogo → **«Productos digitales y
+  servicios»**: columna «Tipo» (Físico/Digital/Servicio) y columna de archivos
+  para descargar (se crean con un clic), días y veces de descarga, la agenda
+  de los servicios y a qué servicio va cada producto. Lo digital no pide
+  envío; al pagar, los enlaces llegan por correo y en la página del pedido
+  (migración 0123: contador por archivo con tope en paralelo, URL firmada de 5
+  min). Los servicios no van al carrito: «Agendar» abre la agenda con el
+  servicio ya elegido. Pedidos de $0: pagados al momento. **«Mis pedidos»**:
+  el correo recibe un enlace de 7 días con sus pedidos y descargas (misma
+  respuesta haya o no pedidos, frenos por IP y por correo). El E2E atrapó un
+  servicio sin quien lo atienda que llevaba a una agenda que no lo mostraba:
+  ahora la tienda usa el mismo criterio que la agenda. De paso, la página de
+  un pedido dice «Tu pedido» (repetía el número). Tests:
+  `shops-digital.spec` 5/5, shared +6 en `shop.test`, tienda 31/31 + E2E
+  40/40. Sigue v0.1.417 (suscripciones desde la tienda).
+
 - **2026-11-12 · v0.1.415** — **Envíos por zona y cupones** (cuarta de seis
   versiones). Pago y entrega: tiempo de entrega, «envío gratis desde» y
   **zonas** (costo, tiempo y «gratis desde» propios) en las entregas con
@@ -1932,7 +1958,7 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   se movía bajo el mouse; ahora los avisos salen al guardar. Tests:
   `shops-coupons.spec` 7/7, shared 22 en `shop.test`, tienda/cobros/plataforma
   73/73, front 913 + E2E 33/33 (escritorio y celular oscuro). Sigue v0.1.416
-  (suscripción, digital, servicio y «Mis pedidos»).
+  (digital, servicio y «Mis pedidos»).
 
 - **2026-11-12 · v0.1.414** — **Productos con variantes** (tercera de seis
   versiones). Editor → Catálogo → **Variantes**: hasta 3 campos (Talla, Color)

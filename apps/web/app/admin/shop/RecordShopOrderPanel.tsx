@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock3, Copy, CreditCard, ExternalLink, Loader2, PackageCheck, ShoppingBag } from 'lucide-react';
+import { CheckCircle2, Clock3, Copy, CreditCard, Download, ExternalLink, Loader2, Mail, PackageCheck, ShoppingBag } from 'lucide-react';
 import { formatShopMoney } from '@imagina-base/shared';
 
 import { usePlanModuleOff } from '@/components/PlanModuleNotice';
@@ -10,7 +10,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { formatDateTimeStr, getTenantFormat } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
-import { useMarkShopOrderPaid, useRecordShopOrder } from './useShops';
+import { useMarkShopOrderPaid, useRecordShopOrder, useResendShopDownloads } from './useShops';
 
 /**
  * v0.1.412 (ADR-S103) — En la ficha de un pedido de la tienda: cómo se pagó,
@@ -22,6 +22,7 @@ export function RecordShopOrderPanel({ listId, recordId, className }: { listId: 
     const isGuest = useIsGuest();
     const q = useRecordShopOrder(listId, recordId, !off && !isGuest);
     const mark = useMarkShopOrderPaid(listId, recordId);
+    const resend = useResendShopDownloads(listId, recordId);
     const confirm = useConfirm();
     const toast = useToast();
     const o = q.data;
@@ -69,6 +70,35 @@ export function RecordShopOrderPanel({ listId, recordId, className }: { listId: 
                                 <Copy className="imcrm-h-3 imcrm-w-3" />
                                 {__('Copiar link de pago')}
                             </button>
+                        </p>
+                    )}
+                    {o.downloads && (
+                        <p className="imcrm-mt-1 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-1 imcrm-text-[12px] imcrm-text-muted-foreground" data-testid="record-shop-downloads">
+                            <Download className="imcrm-h-3.5 imcrm-w-3.5" />
+                            <span>
+                                {o.downloads.files === 1 ? __('1 archivo para descargar') : sprintf(__('%d archivos para descargar'), o.downloads.files)}
+                                {' · '}
+                                {o.downloads.used === 1 ? __('1 descarga') : sprintf(__('%d descargas'), o.downloads.used)}
+                                {o.downloads.max !== null ? ` (${sprintf(__('hasta %d por archivo'), o.downloads.max)})` : ''}
+                                {o.downloads.until ? ` · ${sprintf(__('sirven hasta el %s'), formatDateTimeStr(o.downloads.until))}` : ` · ${__('aparecen al confirmarse el pago')}`}
+                            </span>
+                            {o.can_resend && (
+                                <button
+                                    type="button"
+                                    className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-font-medium imcrm-text-primary hover:imcrm-underline disabled:imcrm-opacity-60"
+                                    disabled={resend.isPending}
+                                    data-testid="record-shop-resend-downloads"
+                                    onClick={() =>
+                                        resend.mutate(undefined, {
+                                            onSuccess: () => toast.success(__('Le volvimos a mandar las descargas'), __('Le llega un correo con los enlaces.')),
+                                            onError: (e) => toast.error(__('No se pudo mandar'), e instanceof Error ? e.message : undefined),
+                                        })
+                                    }
+                                >
+                                    {resend.isPending ? <Loader2 className="imcrm-h-3 imcrm-w-3 imcrm-animate-spin" /> : <Mail className="imcrm-h-3 imcrm-w-3" />}
+                                    {__('Reenviar las descargas')}
+                                </button>
+                            )}
                         </p>
                     )}
                     {!o.pay_url && o.pay_provider && paid && (

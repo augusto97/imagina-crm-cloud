@@ -64,6 +64,8 @@ export const shopOrders = pgTable(
         /** v0.1.415 — El cupón usado (el código queda aunque el cupón se borre). */
         couponId: bigint('coupon_id', { mode: 'number' }),
         couponCode: varchar('coupon_code', { length: 40 }).notNull().default(''),
+        /** v0.1.416 — Descargas hechas por archivo: `{"<producto>:<archivo>": n}`. */
+        downloads: jsonb('downloads').$type<Record<string, number>>().notNull().default({}),
         expiresAt: timestamp('expires_at', { withTimezone: true }),
         paidAt: timestamp('paid_at', { withTimezone: true }),
         cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
@@ -74,6 +76,7 @@ export const shopOrders = pgTable(
         uniqueIndex('shop_orders_token_ux').on(t.token),
         index('shop_orders_shop_ix').on(t.tenantId, t.shopId, t.createdAt),
         index('shop_orders_record_ix').on(t.recordId),
+        // v0.1.416 — «Mis pedidos» (el índice de la migración 0123 es por lower(customer->>'email')).
     ],
 );
 export type ShopOrderRow = typeof shopOrders.$inferSelect;

@@ -1,18 +1,22 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import {
     CAPTCHA_PROVIDER_INFO,
     captchaCspSources,
+    createShopKindColumnSchema,
     createShopSchema,
     generateShopVariantsSchema,
+    publicShopMyOrdersRequestSchema,
     publicShopOrderSchema,
     publicShopQuoteSchema,
     shopCouponInputSchema,
     suspendShopSchema,
     updateShopSchema,
     type CreateShopInput,
+    type CreateShopKindColumnInput,
     type GenerateShopVariantsInput,
     type GenerateShopVariantsResult,
     type PublicShopMeta,
+    type PublicShopMyOrders,
     type PublicShopOrder,
     type PublicShopOrderInput,
     type PlatformShopDto,
@@ -35,6 +39,7 @@ import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { SuperadminGuard } from '../authz/superadmin.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
+import { can } from '../authz/can';
 import { useWebBuild } from '../common/web-build';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ENV, type Env } from '../config/env';
@@ -48,7 +53,7 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { shopImageWidth } from './shop-images.service';
 import { ShopCouponsService } from './shop-coupons.service';
 import { ShopOrdersService } from './shop-orders.service';
-import { loadShopClient, renderShopPage, shopNotFoundPage, shopPageCsp } from './shop-page';
+import { loadShopClient, renderShopPage, shopMessagePage, shopNotFoundPage, shopPageCsp } from './shop-page';
 import { ShopPublicService, type ShopPageInfo } from './shop-public.service';
 import { ShopVariantsService } from './shop-variants.service';
 import { ShopService } from './shop.service';
@@ -221,6 +226,27 @@ export class ShopsController {
         return dto;
     }
 
+    /**
+     * v0.1.416 — Crear la columna «Tipo de producto» o «Archivo para
+     * descargar» en el catálogo. Agrega una columna: además de armar tiendas
+     * hay que poder gestionar campos.
+     */
+    @Post(':id/kind-columns')
+    @RequireCapability('manage_lists')
+    async createKindColumn(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(createShopKindColumnSchema)) input: CreateShopKindColumnInput,
+    ): Promise<ShopDto> {
+        const tenantId = req.tenant!.tenantId;
+        if (!can({ role: req.tenant!.role, ...aclOf(req) }, 'manage_fields')) {
+            throw new ForbiddenException({ code: 'forbidden', message: 'Crear una columna requiere poder gestionar los campos.', data: { status: 403 } });
+        }
+        const dto = await this.shops.createKindColumn(tenantId, id, input.role);
+        await this.audit.log({ tenantId, userId: req.authUserId ?? null, action: 'shop.kind_column', targetType: 'shop', targetLabel: dto.name, meta: { shop_id: id, role: input.role } });
+        return dto;
+    }
+
     @Post(':id/regenerate')
     @RequireCapability('manage_lists')
     async regenerate(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<ShopDto> {
@@ -274,6 +300,18 @@ export class RecordShopOrderController {
         await this.records.checkUpdate(tenantId, actorOf(req), list, id, {});
         const out = await this.orders.markPaid(tenantId, req.authUserId!, id);
         await this.audit.log({ tenantId, userId: req.authUserId ?? null, action: 'shop.mark_paid', targetType: 'record', targetId: id, targetLabel: out.number, meta: { list } });
+        return { data: await this.orders.panel(tenantId, id) };
+    }
+
+    /** v0.1.416 — Volver a mandar el correo con las descargas a quien compró. */
+    @Post('resend-downloads')
+    @HttpCode(200)
+    @RequireCapability('edit_records', 'edit_own_records')
+    async resendDownloads(@Req() req: FastifyRequest, @Param('list') list: string, @Param('id', ParseIntPipe) id: number): Promise<{ data: ShopOrderPanelDto | null }> {
+        const tenantId = req.tenant!.tenantId;
+        await this.records.checkUpdate(tenantId, actorOf(req), list, id, {});
+        const out = await this.orders.resendDownloads(tenantId, id);
+        await this.audit.log({ tenantId, userId: req.authUserId ?? null, action: 'shop.resend_downloads', targetType: 'record', targetId: id, targetLabel: out.number, meta: { list } });
         return { data: await this.orders.panel(tenantId, id) };
     }
 }
@@ -395,6 +433,49 @@ export class PublicShopPageController {
         reply.redirect(url, 302);
     }
 
+    /**
+     * v0.1.416 — Bajar un archivo comprado: el token del pedido es la
+     * credencial. Lleva a una URL firmada de 5 minutos; si ya no se puede
+     * (tope de descargas, vencido, sin pagar), una página que lo dice.
+     */
+    @Get(':token/d/:order/:pid/:fid')
+    async download(
+        @Param('token') token: string,
+        @Param('order') order: string,
+        @Param('pid') pidRaw: string,
+        @Param('fid') fidRaw: string,
+        @Res() reply: FastifyReply,
+    ): Promise<void> {
+        const pid = Number(pidRaw);
+        const fid = Number(fidRaw);
+        reply.header('Cache-Control', 'no-store').header('Referrer-Policy', 'no-referrer').header('X-Robots-Tag', 'noindex');
+        if (!/^[A-Za-z0-9_-]{20,64}$/.test(order) || !Number.isSafeInteger(pid) || pid <= 0 || !Number.isSafeInteger(fid) || fid <= 0) {
+            return void this.missing(reply, 404);
+        }
+        let out: Awaited<ReturnType<ShopPublicService['download']>> = null;
+        try {
+            out = await this.publicSvc.download(token, order, pid, fid);
+        } catch (err) {
+            if (err instanceof PublicBusyError) return void this.missing(reply, 503);
+            throw err;
+        }
+        if (!out) return void this.missing(reply, 404);
+        if (out === 'limit' || out === 'unavailable') {
+            const back = `/api/v1/public/s/${token}?pedido=${order}`;
+            reply
+                .status(out === 'limit' ? 429 : 410)
+                .header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'")
+                .type('text/html; charset=utf-8')
+                .send(
+                    out === 'limit'
+                        ? shopMessagePage('Llegaste al tope de descargas', 'Ya bajaste este archivo las veces que permite la tienda. Si lo necesitas de nuevo, escríbele a la tienda.', back)
+                        : shopMessagePage('Esta descarga no está disponible', 'El pedido todavía no está pagado, se canceló o ya pasó el plazo para descargar. Si crees que es un error, escríbele a la tienda.', back),
+                );
+            return;
+        }
+        reply.redirect(out.url, 302);
+    }
+
     @Get(':token')
     async page(@Req() req: FastifyRequest, @Param('token') token: string, @Res() reply: FastifyReply): Promise<void> {
         let info: ShopPageInfo | null;
@@ -499,6 +580,33 @@ export class PublicShopApiController {
         const ua = req.headers['user-agent'];
         const out = await this.publicSvc.placeOrder(token, input, { ip: req.ip, userAgent: typeof ua === 'string' ? ua.slice(0, 400) : null });
         if (!out) throw notFound();
+        return out;
+    }
+
+    /**
+     * v0.1.416 — «Mis pedidos»: manda el enlace al correo si tiene pedidos en
+     * esta tienda. La respuesta es la misma en los dos casos.
+     */
+    @Post(':token/my-orders')
+    @HttpCode(202)
+    async requestMyOrders(
+        @Req() req: FastifyRequest,
+        @Param('token') token: string,
+        @Body(new ZodValidationPipe(publicShopMyOrdersRequestSchema)) input: z.infer<typeof publicShopMyOrdersRequestSchema>,
+        @Res({ passthrough: true }) reply: FastifyReply,
+    ): Promise<{ ok: true }> {
+        reply.header('Cache-Control', 'no-store');
+        if (input.website) return { ok: true }; // campo trampa: no se dice nada
+        const ok = await this.publicSvc.requestMyOrders(token, input.email, req.ip);
+        if (!ok) throw notFound();
+        return { ok: true };
+    }
+
+    @Get(':token/my-orders/:code')
+    async myOrders(@Param('token') token: string, @Param('code') code: string, @Res({ passthrough: true }) reply: FastifyReply): Promise<PublicShopMyOrders> {
+        reply.header('Cache-Control', 'no-store').header('X-Robots-Tag', 'noindex').header('Referrer-Policy', 'no-referrer');
+        const out = await this.publicSvc.myOrders(token, code);
+        if (!out) throw new NotFoundException({ code: 'my_orders_expired', message: 'Este enlace ya no sirve. Pide uno nuevo desde la tienda.', data: { status: 404 } });
         return out;
     }
 

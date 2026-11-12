@@ -14666,6 +14666,51 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         pedido con descuento y zona, `?cupon=` en el celular, quitar, el
         editor cuenta el uso).
 
+  - [x] **Tienda: productos digitales, servicios con la agenda, pedidos sin
+        costo y «Mis pedidos» (v0.1.416, addendum ADR-S103, quinta versión;
+        el plan pasó de seis a siete: las suscripciones van solas en v0.1.417
+        y las estadísticas/conversiones/botones/widget/asistente en v0.1.418)**.
+        (a) **Tipo de producto** (`config.kinds`, lectura tolerante): una
+        columna «Tipo» (selección o texto: Físico, Digital, Servicio) y una
+        columna Archivo con lo que se descarga; sin «Tipo», un producto con
+        archivos es digital. Editor → Catálogo → **«Productos digitales y
+        servicios»** (`data-tour="shop-kinds"`): sugiere las columnas por
+        nombre, las crea con un clic (`POST /shops/:id/kind-columns`,
+        `manage_fields`) sin dejar el editor «con cambios», días y veces que
+        se puede bajar cada archivo, la agenda de los servicios y a qué
+        servicio va cada producto. (b) **Digitales**: no piden entrega (un
+        carrito sólo digital salta la entrega y dice «Sin envío»); pagado el
+        pedido, los enlaces llegan en el correo y en la página del pedido;
+        `GET /public/s/:token/d/:order/:product/:file` revisa pagado, sin
+        cancelar, archivo de la línea (tomado al comprar) y vencimiento
+        (`download_days` desde el pago, 30 por defecto), suma con un UPDATE
+        condicional sobre `shop_orders.downloads` (migración 0123; dos clics a
+        la vez no pasan del tope `max_downloads`, 5 por defecto, → 429) y
+        redirige a una URL firmada de 5 min. «Reenviar las descargas» en la
+        ficha del pedido. (c) **Servicios**: no van al carrito; «Agendar»
+        lleva a la agenda con `?servicio=` (el elegido a mano o el de mismo
+        nombre) y la agenda empieza en «Elige el día y la hora». Sólo si la
+        agenda está publicada, en el plan y el servicio se muestra ahí (activo
+        y con alguien que lo atienda — **atrapado en el E2E**: un servicio sin
+        quien lo atienda llevaba a una agenda que no lo mostraba). (d)
+        **Pedidos sin costo** (total 0): pagados al momento, sin forma de pago.
+        (e) **«Mis pedidos»** (arriba y en el pie de la tienda): el correo
+        recibe un enlace de 7 días (Redis `shopmy:`) con sus pedidos de esa
+        tienda, estado y descargas; la respuesta es la misma haya o no
+        pedidos, con frenos por IP (429) y por correo (sin aviso). De paso, la
+        página de un pedido abierto por su enlace dice «Tu pedido» (repetía el
+        número). Ayuda: guía `shop`, Aprende → Tienda online (sección nueva) y
+        novedad con carrusel. Tests: `shops-digital.spec` (5: tipos y enlace a
+        la agenda, servicio sin quien lo atienda, pedido sólo digital, tope de
+        descargas en paralelo, correo y reenvío, vencimiento, pedido sin
+        costo, «Mis pedidos» con sus frenos y por tienda), `shop.test` +6 en
+        shared + E2E navegador 40/40 (editor con las columnas creadas, días y
+        veces guardados, servicio emparejado por nombre, «Agendar» con el
+        servicio elegido, carrito sin envío, pago marcado en la ficha,
+        descarga firmada, tope en el tercer intento, pedido sin costo, «Mis
+        pedidos» con lista, volver y enlace vencido, celular sin scroll
+        lateral, cero violaciones de CSP).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

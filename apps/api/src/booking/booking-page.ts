@@ -1372,8 +1372,15 @@ const CLIENT_JS = String.raw`
     }
     var svcs = meta.services || [];
     if (svcs.length === 1) { st.service = svcs[0].id; }
+    // v0.1.416 — Desde la tienda (o un enlace): el servicio ya viene elegido.
+    try {
+      var preId = new URLSearchParams(location.search).get('servicio');
+      var pre = preId ? serviceById(preId) : null;
+      if (pre) { st.service = pre.id; st.duration = pre.duration_min; st.staff = 'any'; }
+    } catch (e) {}
     var s = steps();
     st.step = s[0];
+    if (st.service && s[0] === 'service' && s.length > 1) st.step = s[1];
     render();
   }
 

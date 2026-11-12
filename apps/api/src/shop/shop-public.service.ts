@@ -1,6 +1,8 @@
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
 import {
     SHOP_MAX_PUBLIC_PRODUCTS,
+    SHOP_MY_ORDERS_DAYS,
     SHOP_PAYMENT_METHOD_LABELS,
     SHOP_TOKEN_RE,
     brandingSchema,
@@ -11,6 +13,7 @@ import {
     shopOnlinePayment,
     shopCurrencyDecimals,
     shopPurchasables,
+    shopServiceFor,
     shopShippingFor,
     shopWhatsappMessage,
     tenantFormatSchema,
@@ -18,6 +21,7 @@ import {
     type CaptchaProvider,
     type CollectionConnection,
     type PublicShopMeta,
+    type PublicShopMyOrders,
     type PublicShopOrder,
     type PublicShopOrderInput,
     type PublicShopPayment,
@@ -36,8 +40,9 @@ import { planModuleOff } from '../billing/plan-module-gate';
 import { CollectionsService } from '../collections/collections.service';
 import { rateKeyForIp } from '../common/client-ip';
 import { DataConsentService } from '../data-consent/data-consent.service';
-import { DRIZZLE, type Db } from '../db/client';
-import { lists, records, shops, tenants, type ShopRow } from '../db/schema';
+import { DRIZZLE, type Db, type Tx } from '../db/client';
+import { bookingPages, lists, records, shops, tenants, type ShopRow } from '../db/schema';
+import { readBookingConfig } from '../booking/booking-config';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
 import { CaptchaService } from '../forms/captcha.service';
@@ -210,6 +215,7 @@ export class ShopPublicService {
             numberFormat: format.success ? format.data.number_format : 'dot_comma',
             categories: built.categories,
             truncated: built.truncated,
+            downloadable: built.products.some((p) => p.downloadable),
             captcha: keys ? { provider: keys.provider, site_key: keys.siteKey } : null,
             consent: consent ? DataConsentService.toPublic(consent) : null,
             readOnly: access.state === 'read_only',
@@ -245,7 +251,9 @@ export class ShopPublicService {
                 .limit(1);
             if (!list || list.deletedAt !== null) return null;
             const fields = await this.fields.listByListIdWithinTx(tx, tenantId, listId);
-            const rf = resolveCatalogFields(fields, config.catalog, list.settings);
+            const rf = resolveCatalogFields(fields, config.catalog, list.settings, config.kinds);
+            // v0.1.416 — La agenda de los servicios (sólo si está publicada y el plan la incluye).
+            const agenda = await this.agendaFor(tx, tenantId, config);
             const rows = await tx
                 .select({ id: records.id, data: records.data, createdAt: records.createdAt })
                 .from(records)
@@ -287,7 +295,11 @@ export class ShopPublicService {
                 if (!p.active) continue;
                 const kids = children.get(r.id);
                 if (kids && kids.length > 0) p = attachVariants(p, kids, rf, attrs);
-                if (config.display.hide_sold_out && p.product.stock === 0) continue;
+                if (p.product.kind === 'service') {
+                    // Un servicio se agenda: el botón lleva a la agenda con el servicio elegido.
+                    const sid = agenda ? shopServiceFor(p.product, config.kinds.service_links, agenda.services) : null;
+                    p = { ...p, product: { ...p.product, book_url: agenda && sid ? `/api/v1/public/b/${agenda.token}?servicio=${encodeURIComponent(sid)}` : null } };
+                } else if (config.display.hide_sold_out && p.product.stock === 0) continue;
                 for (const [k, src] of p.images) images.set(k, src);
                 products.push(p.product);
             }
@@ -296,6 +308,31 @@ export class ShopPublicService {
             const categories = [...order.filter((c) => used.has(c)), ...[...used].filter((c) => !order.includes(c))];
             return { products: sortProducts(products, config.display.sort), images, categories, truncated: rows.length > SHOP_MAX_PUBLIC_PRODUCTS };
         });
+    }
+
+    /** v0.1.416 — La agenda de los servicios, si está publicada y el plan la incluye. */
+    private async agendaFor(tx: Tx, tenantId: number, config: ShopConfig): Promise<{ token: string; services: Array<{ id: string; name: string; active: boolean }> } | null> {
+        if (config.kinds.booking_page_id === null) return null;
+        const [page] = await tx
+            .select({ token: bookingPages.token, enabled: bookingPages.enabled, config: bookingPages.config, listDeleted: lists.deletedAt })
+            .from(bookingPages)
+            .innerJoin(lists, eq(lists.id, bookingPages.listId))
+            .where(and(eq(bookingPages.tenantId, tenantId), eq(bookingPages.id, config.kinds.booking_page_id)))
+            .limit(1);
+        if (!page || !page.enabled || page.listDeleted !== null) return null;
+        if (await planModuleOff(this.db, tenantId, 'booking')) return null;
+        // Sólo los servicios que la agenda muestra: activos y con alguien que los
+        // atienda (el mismo criterio de la página pública de la agenda).
+        const cfg = readBookingConfig(page.config);
+        const staff = cfg.staff.filter((x) => x.active && (x.kind === 'resource' || x.staff_user_id !== null));
+        return {
+            token: page.token,
+            services: cfg.services.map((sv) => ({
+                id: sv.id,
+                name: sv.name,
+                active: sv.active && staff.some((st) => st.services.length === 0 || st.services.includes(sv.id)),
+            })),
+        };
     }
 
     private buildMeta(
@@ -315,6 +352,8 @@ export class ShopPublicService {
             online: string | null;
             /** v0.1.415 — Hay cupones activos. */
             coupons: boolean;
+            /** v0.1.416 — Algún producto trae descargas. */
+            downloadable?: boolean;
         },
     ): PublicShopMeta {
         const p = config.payments;
@@ -367,6 +406,7 @@ export class ShopPublicService {
             captcha: o.captcha,
             data_consent: o.consent,
             coupons: o.coupons,
+            ...(o.downloadable ? { downloads: { days: config.kinds.download_days, max: config.kinds.max_downloads } } : {}),
             // ADR-S09: una empresa en solo lectura muestra el catálogo pero no recibe pedidos.
             closed: o.readOnly
                 ? 'La tienda no está recibiendo pedidos en este momento.'
@@ -409,6 +449,7 @@ export class ShopPublicService {
             numberFormat: format.success ? format.data.number_format : 'dot_comma',
             categories: built.categories,
             truncated: built.truncated,
+            downloadable: built.products.some((p) => p.downloadable),
             captcha: null,
             consent: consent ? DataConsentService.toPublic(consent) : null,
             readOnly: false,
@@ -577,6 +618,59 @@ export class ShopPublicService {
             });
         }
         return this.orders.publicOrder(info.tenantId, info.shop.id, token, orderToken, info.config);
+    }
+
+    /** v0.1.416 — Bajar un archivo de un pedido pagado (la tienda tiene que seguir abierta). */
+    async download(token: string, orderToken: string, productId: number, fileId: number): Promise<{ url: string } | 'limit' | 'unavailable' | null> {
+        const info = await this.cachedInfo(token);
+        if (!info) return null;
+        return this.orders.download(info.tenantId, info.shop.id, orderToken, productId, fileId, info.config);
+    }
+
+    /**
+     * v0.1.416 — «Mis pedidos»: si el correo tiene pedidos en esta tienda, le
+     * llega un enlace (7 días). La respuesta es la misma haya o no pedidos.
+     */
+    async requestMyOrders(token: string, email: string, ip: string): Promise<boolean> {
+        const info = await this.cachedInfo(token);
+        if (!info) return false;
+        if (!this.redis) throw new HttpException({ code: 'unavailable', message: 'No podemos mandar el enlace ahora. Intenta en un rato.', data: { status: 503 } }, HttpStatus.SERVICE_UNAVAILABLE);
+        const e = email.trim().toLowerCase();
+        try {
+            const now = Math.floor(Date.now() / 1000);
+            const byIp = await incrWithTtl(this.redis, `shoprl:my:ip:${Math.floor(now / 600)}:${rateKeyForIp(ip)}:${info.shop.id}`, 600);
+            if (byIp > 5) tooMany('Pediste muchos enlaces seguidos. Espera unos minutos y vuelve a intentar.');
+            const byMail = await incrWithTtl(this.redis, `shoprl:my:mail:${Math.floor(now / 3600)}:${info.shop.id}:${e}`, 3600);
+            if (byMail > 3) return true; // ya se mandaron varios: no se repite (y no se dice)
+        } catch (err) {
+            if (err instanceof HttpException) throw err;
+        }
+        if (!(await this.orders.hasOrders(info.tenantId, info.shop.id, e))) return true;
+        const code = randomBytes(24).toString('base64url');
+        await this.redis.set(`shopmy:${code}`, JSON.stringify({ t: info.tenantId, s: info.shop.id, e }), 'EX', SHOP_MY_ORDERS_DAYS * 86_400);
+        const base = await this.orders.publicBase(info.tenantId);
+        const ctx = { tenantId: info.tenantId, shop: info.shop, config: info.config, token, company: info.company, tenantSettings: info.tenantSettings };
+        void this.orders
+            .sendMyOrdersLink(ctx, e, `${base}/api/v1/public/s/${token}?mis-pedidos=${code}`, SHOP_MY_ORDERS_DAYS)
+            .catch((err: unknown) => this.logger.warn(`Tienda ${info.shop.id}: no salió el enlace de «Mis pedidos»: ${String(err)}`));
+        return true;
+    }
+
+    /** v0.1.416 — Los pedidos del enlace de «Mis pedidos» (sólo de ESTA tienda). */
+    async myOrders(token: string, code: string): Promise<PublicShopMyOrders | null> {
+        if (!/^[A-Za-z0-9_-]{20,64}$/.test(code) || !this.redis) return null;
+        const info = await this.cachedInfo(token);
+        if (!info) return null;
+        const raw = await this.redis.get(`shopmy:${code}`).catch(() => null);
+        if (!raw) return null;
+        let v: { t?: unknown; s?: unknown; e?: unknown };
+        try {
+            v = JSON.parse(raw) as { t?: unknown; s?: unknown; e?: unknown };
+        } catch {
+            return null;
+        }
+        if (v.t !== info.tenantId || v.s !== info.shop.id || typeof v.e !== 'string') return null;
+        return this.orders.myOrders(info.tenantId, info.shop.id, v.e);
     }
 
     /** Consultar al proveedor tiene costo: a lo sumo 40 consultas cada 10 minutos por IP y tienda. */

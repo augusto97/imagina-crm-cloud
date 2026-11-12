@@ -3,11 +3,15 @@ import {
     jsonbKeyForField,
     resolveTitleFieldId,
     SHOP_CATALOG_FIELD_TYPES,
+    SHOP_DOWNLOAD_FIELD_TYPES,
+    SHOP_KIND_FIELD_TYPES,
+    SHOP_MAX_DOWNLOAD_FILES,
     SHOP_MAX_IMAGES,
     SHOP_MAX_VARIANT_ATTRIBUTES,
     SHOP_MAX_VARIANTS,
     SHOP_VARIANT_ATTRIBUTE_TYPES,
     shopImageKeyForFile,
+    shopKindFromText,
     shopPurchasables,
     summarizeVariantProduct,
     type Field,
@@ -16,6 +20,8 @@ import {
     type PublicShopVariant,
     type ShopCartProduct,
     type ShopCatalogFields,
+    type ShopKindsConfig,
+    type ShopProductKind,
 } from '@imagina-base/shared';
 import type { ShopImageSource } from './shop-images.service';
 
@@ -31,10 +37,21 @@ import type { ShopImageSource } from './shop-images.service';
 
 export type CatalogRole = keyof ShopCatalogFields;
 
-export type ResolvedCatalog = Record<CatalogRole, Field | null>;
+/** v0.1.416 — Las columnas de los tipos de producto (null = no hay). */
+export interface ResolvedKinds {
+    kind: Field | null;
+    download: Field | null;
+}
+
+export type ResolvedCatalog = Record<CatalogRole, Field | null> & { kinds?: ResolvedKinds };
 
 /** Cada papel con su campo, sólo si existe y es de un tipo que sirve. */
-export function resolveCatalogFields(fields: readonly Field[], catalog: ShopCatalogFields, listSettings: Record<string, unknown> | null): ResolvedCatalog {
+export function resolveCatalogFields(
+    fields: readonly Field[],
+    catalog: ShopCatalogFields,
+    listSettings: Record<string, unknown> | null,
+    kinds?: Pick<ShopKindsConfig, 'kind_field' | 'download_field'>,
+): ResolvedCatalog {
     const byId = new Map(fields.map((f) => [f.id, f]));
     const pick = (role: CatalogRole, id: number | null): Field | null => {
         if (id === null) return null;
@@ -42,7 +59,15 @@ export function resolveCatalogFields(fields: readonly Field[], catalog: ShopCata
         return f && SHOP_CATALOG_FIELD_TYPES[role].includes(f.type) ? f : null;
     };
     const titleId = resolveTitleFieldId(fields as Field[], listSettings ?? {});
+    const kindOf = (id: number | null | undefined, types: readonly string[]): Field | null => {
+        if (id === null || id === undefined) return null;
+        const f = byId.get(id);
+        return f && types.includes(f.type) ? f : null;
+    };
     return {
+        ...(kinds
+            ? { kinds: { kind: kindOf(kinds.kind_field, SHOP_KIND_FIELD_TYPES), download: kindOf(kinds.download_field, SHOP_DOWNLOAD_FIELD_TYPES) } }
+            : {}),
         name: pick('name', catalog.name) ?? (titleId ? (byId.get(titleId) ?? null) : null),
         price: pick('price', catalog.price),
         compare_price: pick('compare_price', catalog.compare_price),
@@ -122,6 +147,40 @@ export interface CatalogProduct {
     images: Array<[string, ShopImageSource]>;
     /** El registro se vende (casilla «¿Se vende?» marcada o sin casilla). */
     active: boolean;
+    /** v0.1.416 — Los archivos para descargar (ids; nunca viajan a la página). */
+    downloads: number[];
+    /** v0.1.416 — El tipo salió de la columna «Tipo» (si no, se dedujo de los archivos). */
+    kindFromColumn: boolean;
+}
+
+/** v0.1.416 — Los ids de los archivos de un campo Archivo. */
+export function fileIdsOf(value: unknown, max = SHOP_MAX_DOWNLOAD_FILES): number[] {
+    const out: number[] = [];
+    if (!Array.isArray(value)) return out;
+    for (const raw of value) {
+        const id = Number(raw);
+        if (!Number.isSafeInteger(id) || id <= 0 || out.includes(id)) continue;
+        out.push(id);
+        if (out.length >= max) break;
+    }
+    return out;
+}
+
+/**
+ * v0.1.416 — El tipo del producto: lo que dice su «Tipo» (el valor de la
+ * opción, o su etiqueta, o el texto) y, si no dice nada que se entienda,
+ * digital cuando trae archivos para descargar y físico si no.
+ */
+export function productKind(rf: ResolvedCatalog, data: Record<string, unknown>, downloads: readonly number[]): ShopProductKind {
+    return kindFromColumn(rf, data) ?? (downloads.length > 0 ? 'digital' : 'physical');
+}
+
+function kindFromColumn(rf: ResolvedCatalog, data: Record<string, unknown>): ShopProductKind | null {
+    const field = rf.kinds?.kind ?? null;
+    if (!field) return null;
+    const v = data[jsonbKeyForField(field.id)];
+    const label = field.type === 'select' && typeof v === 'string' ? optionLabels(field).get(v) : undefined;
+    return shopKindFromText(v) ?? shopKindFromText(label);
 }
 
 function imageSources(field: Field | null, value: unknown): Array<[string, ShopImageSource]> {
@@ -154,8 +213,15 @@ export function productFromRow(row: CatalogRow, rf: ResolvedCatalog): CatalogPro
     const images = imageSources(rf.images, get(rf.images));
     const active = rf.active ? get(rf.active) === true : true;
     const created = row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt);
+    const downloads = rf.kinds?.download ? fileIdsOf(get(rf.kinds.download)) : [];
+    const fromColumn = kindFromColumn(rf, d);
+    const kind = fromColumn ?? (downloads.length > 0 ? 'digital' : 'physical');
     return {
+        downloads,
+        kindFromColumn: fromColumn !== null,
         product: {
+            kind,
+            ...(downloads.length > 0 ? { downloadable: true } : {}),
             id: row.id,
             title: name,
             price: price !== null && price >= 0 ? price : null,
@@ -206,6 +272,8 @@ interface RawVariant {
     stock: number | null;
     sku: string;
     images: Array<[string, ShopImageSource]>;
+    /** v0.1.416 — Sus archivos para descargar (vacío = los del producto). */
+    downloads: number[];
 }
 
 /** «M / Rojo»: los valores de los atributos; sin ninguno, el nombre de la subtarea. */
@@ -236,6 +304,7 @@ function readVariant(parent: PublicShopProduct, row: CatalogRow, rf: ResolvedCat
         stock: stockRaw === null ? null : Math.max(0, Math.floor(stockRaw)),
         sku: str(get(rf.sku), 80),
         images: imageSources(rf.images, get(rf.images)),
+        downloads: rf.kinds?.download ? fileIdsOf(get(rf.kinds.download)) : [],
     };
 }
 
@@ -284,7 +353,13 @@ export function attachVariants(parent: CatalogProduct, children: readonly Catalo
             images: r.images.map(([k]) => `img/${k}`),
         });
     }
-    return { ...parent, product: summarizeVariantProduct(parent.product, variants, options), images };
+    const summary = summarizeVariantProduct(parent.product, variants, options);
+    // v0.1.416 — Archivos en las variantes: el producto se descarga (si su «Tipo» no dice otra cosa).
+    if (raws.some((r) => r.downloads.length > 0)) {
+        summary.downloadable = true;
+        if (!parent.kindFromColumn) summary.kind = 'digital';
+    }
+    return { ...parent, product: summary, images };
 }
 
 export interface PurchasableRow extends CatalogRow {
@@ -299,6 +374,10 @@ export interface PurchasableItem {
     parentId: number | null;
     /** v0.1.415 — Las categorías del producto (las de su producto, en una variante): para los cupones. */
     categories: string[];
+    /** v0.1.416 — Qué es (el de su producto, en una variante). */
+    kind: ShopProductKind;
+    /** v0.1.416 — Lo que se descarga (los propios de la variante o los del producto). */
+    downloads: number[];
 }
 
 /**
@@ -321,13 +400,16 @@ export function purchasablesFromRows(
         if (r.parentId === null) {
             if (attrs !== null && withVariants.has(r.id)) continue;
             const p = productFromRow(r, rf);
-            if (!p.active) continue;
+            // v0.1.416 — Un servicio se agenda: no se compra en el carrito.
+            if (!p.active || p.product.kind === 'service') continue;
             out.set(r.id, {
                 data: r.data,
                 product: { id: r.id, title: p.product.title, price: p.product.price, stock: p.product.stock },
                 sku: p.product.sku,
                 parentId: null,
                 categories: p.product.categories,
+                kind: p.product.kind ?? 'physical',
+                downloads: p.downloads,
             });
             continue;
         }
@@ -335,15 +417,18 @@ export function purchasablesFromRows(
         const parentRow = parents.get(r.parentId);
         if (!parentRow) continue;
         const parent = productFromRow(parentRow, rf);
-        if (!parent.active) continue;
+        if (!parent.active || parent.product.kind === 'service') continue;
         const item = shopPurchasables([attachVariants(parent, [r], rf, attrs).product]).get(r.id);
         if (!item) continue;
+        const own = rf.kinds?.download ? fileIdsOf(r.data[jsonbKeyForField(rf.kinds.download.id)]) : [];
         out.set(r.id, {
             data: r.data,
             product: { id: r.id, title: item.title, price: item.price, stock: item.stock },
             sku: item.sku,
             parentId: parentRow.id,
             categories: parent.product.categories,
+            kind: item.product.kind ?? 'physical',
+            downloads: own.length > 0 ? own : parent.downloads,
         });
     }
     return out;

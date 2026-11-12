@@ -208,6 +208,27 @@ export function useRecordShopOrder(listId: number | string | undefined, recordId
     });
 }
 
+/** v0.1.416 — Crear la columna «Tipo de producto» o «Archivo para descargar» en el catálogo. */
+export function useCreateShopKindColumn(id: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (role: 'kind' | 'download') => (await api.post<ShopDto>(`/shops/${id}/kind-columns`, { role })).data,
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: shopKeys.options(id) });
+            void qc.invalidateQueries({ queryKey: ['fields'] });
+        },
+    });
+}
+
+/** v0.1.416 — Volver a mandar el correo con las descargas del pedido. */
+export function useResendShopDownloads(listId: number | string, recordId: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async () => (await api.post<ShopOrderPanelDto | null>(`/lists/${listId}/records/${recordId}/shop-order/resend-downloads`, {})).data,
+        onSuccess: (doc) => qc.setQueryData(shopKeys.order(Number(listId) || 0, recordId), doc),
+    });
+}
+
 export function useMarkShopOrderPaid(listId: number | string, recordId: number) {
     const qc = useQueryClient();
     return useMutation({

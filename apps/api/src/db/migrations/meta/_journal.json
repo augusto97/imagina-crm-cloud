@@ -862,6 +862,13 @@
       "when": 1784200002900,
       "tag": "0122_shop_coupons",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1784200003000,
+      "tag": "0123_shop_downloads",
+      "breakpoints": true
     }
   ]
 }

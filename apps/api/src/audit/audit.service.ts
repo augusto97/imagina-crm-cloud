@@ -51,6 +51,8 @@ export type AuditAction =
     | 'shop.regenerate_link'
     | 'shop.delete'
     | 'shop.mark_paid'
+    | 'shop.kind_column'
+    | 'shop.resend_downloads'
     | 'shop.variants_create'
     | 'shop.coupon_create'
     | 'shop.coupon_update'

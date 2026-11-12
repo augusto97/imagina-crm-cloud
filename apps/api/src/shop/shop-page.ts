@@ -93,6 +93,31 @@ img{display:block;max-width:100%}
 .s-noimg svg{width:44px;height:44px}
 .s-tag{position:absolute;left:10px;top:10px;padding:4px 9px;border-radius:999px;font-size:12px;font-weight:700;background:#fff;color:var(--s-text);box-shadow:0 2px 8px rgba(15,23,42,.12)}
 .s-tag.s-sale{background:#dc2626;color:#fff}
+.s-kind{position:absolute;left:10px;bottom:10px;display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:700;background:rgba(255,255,255,.95);color:#374151;box-shadow:0 2px 8px rgba(15,23,42,.12)}
+.s-kind svg{width:13px;height:13px}
+.s-kind-note{display:flex;align-items:flex-start;gap:8px;margin:12px 0 0;font-size:13.5px;color:#4b5563}
+.s-kind-note svg{width:17px;height:17px;flex:none;margin-top:1px;color:var(--s-accent)}
+.s-kind-box{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:12px;border:1px solid var(--s-line);background:#fff;font-size:14px;color:#374151}
+.s-kind-box svg{width:19px;height:19px;flex:none;color:var(--s-accent);margin-top:1px}
+a.s-add{display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}
+.s-add svg{width:17px;height:17px}
+.s-my-btn{display:inline-flex;align-items:center;gap:7px;height:42px;padding:0 14px;border-radius:999px;border:1px solid var(--s-line);background:#fff;color:var(--s-text);font-weight:600;cursor:pointer;flex:none}
+.s-my-btn svg{width:19px;height:19px}
+@media (max-width:640px){.s-my-btn{padding:0 11px}.s-my-btn .s-my-l{display:none}}
+.s-dl{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--s-line)}
+.s-dl:last-child{border-bottom:0;padding-bottom:0}
+.s-dl-ic{flex:none;width:38px;height:38px;border-radius:10px;background:#f5f3ff;color:#6d28d9;display:flex;align-items:center;justify-content:center}
+.s-dl-ic svg{width:20px;height:20px}
+.s-dl-t{flex:1;min-width:0}
+.s-dl-n{font-weight:650;overflow-wrap:anywhere;line-height:1.3}
+.s-dl-m{font-size:12.5px;color:var(--s-muted)}
+.s-dl-go{flex:none;display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 14px;border-radius:10px;background:var(--s-accent);color:var(--s-ink);font-weight:650;font-size:14px;text-decoration:none}
+.s-dl-go svg{width:16px;height:16px}
+.s-dl-off{flex:none;font-size:12.5px;color:var(--s-muted);font-weight:600}
+.s-myo{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px}
+.s-myo-t{flex:1;min-width:200px}
+.s-myo-n{font-weight:700}
+.s-myo-m{font-size:13px;color:var(--s-muted);margin-top:2px}
 .s-body{display:flex;flex-direction:column;gap:6px;padding:12px 14px 14px;flex:1}
 .s-title{margin:0;font-size:15px;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer;background:none;border:0;padding:0;text-align:left}
 .s-sku{font-size:12px;color:var(--s-muted)}
@@ -322,4 +347,13 @@ export function shopNotFoundPage(): string {
     return `<!doctype html><html lang="es"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex" /><title>Tienda no disponible</title>
 <style>body{margin:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:#f6f7f9;color:#111827;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}div{max-width:420px;text-align:center}h1{font-size:20px;margin:0 0 6px}p{color:#6b7280;margin:0}</style></head>
 <body><div><h1>Esta tienda no está disponible</h1><p>Puede que la dirección haya cambiado o que la tienda ya no esté abierta.</p></div></body></html>`;
+}
+
+/** v0.1.416 — Un aviso simple (una descarga que ya no sirve), sin scripts. Todo escapado. */
+export function shopMessagePage(title: string, text: string, back: string | null = null): string {
+    const esc = (v: string): string => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const link = back ? `<p style="margin-top:16px"><a href="${esc(back)}" style="color:#0e7490;font-weight:600">Volver a mi pedido</a></p>` : '';
+    return `<!doctype html><html lang="es"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex" /><title>${esc(title)}</title>
+<style>body{margin:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:#f6f7f9;color:#111827;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}div{max-width:440px;text-align:center}h1{font-size:20px;margin:0 0 6px}p{color:#6b7280;margin:0}</style></head>
+<body><div><h1>${esc(title)}</h1><p>${esc(text)}</p>${link}</div></body></html>`;
 }

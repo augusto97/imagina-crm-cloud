@@ -208,7 +208,22 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
     const body = (s: ShopSection): JSX.Element => {
         switch (s) {
             case 'catalog':
-                return <CatalogPanel shopId={shop.id} config={config} options={options} patch={patch} onCatalogChanged={() => setCatalogVersion((n) => n + 1)} />;
+                return (
+                    <CatalogPanel
+                        shopId={shop.id}
+                        config={config}
+                        options={options}
+                        patch={patch}
+                        onCatalogChanged={() => setCatalogVersion((n) => n + 1)}
+                        onKindColumn={(role, fieldId) => {
+                            // v0.1.416 — La columna ya quedó guardada en la tienda: no cuenta como cambio sin guardar.
+                            const key = role === 'kind' ? 'kind_field' : 'download_field';
+                            saved.current = { ...saved.current, config: { ...saved.current.config, kinds: { ...saved.current.config.kinds, [key]: fieldId } } };
+                            patch((c) => ({ ...c, kinds: { ...c.kinds, [key]: fieldId } }));
+                            setCatalogVersion((n) => n + 1);
+                        }}
+                    />
+                );
             case 'design':
                 return <DesignPanel config={config} options={options} patch={patch} />;
             case 'payment':

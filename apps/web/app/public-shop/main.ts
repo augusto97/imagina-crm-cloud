@@ -19,7 +19,7 @@
  * En el editor (vista previa) el catálogo y la configuración llegan por
  * `postMessage` y nada se envía: comprar muestra un aviso.
  */
-import type { PublicShopMeta, PublicShopOrder, PublicShopProduct, PublicShopQuote, PublicShopVariant, ShopCartResult, ShopCouponRule, ShopPaymentMethod, ShopPurchasable } from '@imagina-base/shared';
+import type { PublicShopMeta, PublicShopMyOrders, PublicShopOrder, PublicShopProduct, PublicShopQuote, PublicShopVariant, ShopCartResult, ShopCouponRule, ShopPaymentMethod, ShopPurchasable } from '@imagina-base/shared';
 import {
     SHOP_MAX_QTY,
     computeShopCart,
@@ -29,6 +29,7 @@ import {
     shopCouponProblemText,
     shopCurrencyDecimals,
     shopLineProblemText,
+    shopNeedsDelivery,
     shopOptionValueState,
     shopPurchasables,
     shopShippingFor,
@@ -59,6 +60,16 @@ const CART_KEY = `imb-shop-cart:${BOOT.token}`;
 const CUSTOMER_KEY = `imb-shop-customer:${BOOT.token}`;
 /** v0.1.415 — El cupón de la sesión (escrito o llegado por `?cupon=`). */
 const COUPON_KEY = `imb-shop-coupon:${BOOT.token}`;
+/** v0.1.416 — El enlace de «Mis pedidos» de esta pestaña (para volver a la lista). */
+const MY_KEY = `imb-shop-my:${BOOT.token}`;
+/** v0.1.416 — Dentro de un sitio (iframe): la agenda se abre en otra pestaña. */
+const EMBEDDED = ((): boolean => {
+    try {
+        return window.self !== window.top;
+    } catch {
+        return true;
+    }
+})();
 
 let meta: PublicShopMeta | null = BOOT.meta;
 let products: PublicShopProduct[] = BOOT.products ?? [];
@@ -92,6 +103,9 @@ const ICONS: Record<string, string> = {
     wa: 'M4 20l1.3-4A8 8 0 1 1 8.5 19zM9 9.5c0 3 2.5 5.5 5.5 5.5l1.5-1.5-2-1-1 1a4 4 0 0 1-2-2l1-1-1-2z',
     tag: 'M3.5 12.2V5a1.5 1.5 0 0 1 1.5-1.5h7.2l8.3 8.3-8.7 8.7zM8 8a1 1 0 1 0 0-.01',
     truck: 'M3 7h11v9H3zM14 10h4l3 3v3h-7M7 18.5a1.5 1.5 0 1 0 0-.01M17.5 18.5a1.5 1.5 0 1 0 0-.01',
+    download: 'M12 4v11M7.5 10.5L12 15l4.5-4.5M5 20h14',
+    calendar: 'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 10h16M8 3v4M16 3v4',
+    receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3',
 };
 
 function icon(name: keyof typeof ICONS): SVGSVGElement {
@@ -245,6 +259,36 @@ function hasVariants(p: PublicShopProduct): boolean {
     return !!p.variants && p.variants.length > 0;
 }
 
+/** v0.1.416 — Un servicio no va al carrito: se agenda. */
+function isService(p: { kind?: string }): boolean {
+    return p.kind === 'service';
+}
+
+/** v0.1.416 — ¿Todo el carrito se descarga? Entonces no hay entrega ni envío. */
+function digitalCart(): boolean {
+    return cart.size > 0 && !shopNeedsDelivery([...cart.keys()].map((product_id) => ({ product_id })), (id) => buyable.get(id)?.product.kind ?? null);
+}
+
+/** La agenda sólo se abre por su dirección de la app. */
+function bookUrl(p: PublicShopProduct): string | null {
+    return typeof p.book_url === 'string' && /^\/api\/v1\/public\/b\/[A-Za-z0-9_-]+\?servicio=[A-Za-z0-9_%-]+$/.test(p.book_url) ? p.book_url : null;
+}
+
+/** v0.1.416 — «Agendar»: lleva a la agenda con el servicio ya elegido. */
+function bookControl(p: PublicShopProduct, big = false): HTMLElement {
+    const url = bookUrl(p);
+    if (!url) return el('button', { type: 'button', cls: big ? 's-btn' : 's-add', disabled: true, text: 'Agenda no disponible', 'data-testid': 'shop-book' });
+    return el('a', { cls: big ? 's-btn' : 's-add', href: url, ...(EMBEDDED ? { target: '_blank', rel: 'noopener' } : {}), 'data-testid': 'shop-book' }, [icon('calendar'), 'Agendar']);
+}
+
+/** v0.1.416 — El texto de las descargas de la tienda («tienes 30 días y hasta 5 descargas por archivo»). */
+function downloadsText(): string {
+    const d = meta?.downloads;
+    if (!d) return 'Lo descargas apenas se confirme el pago.';
+    const days = d.days === 1 ? '1 día' : `${d.days} días`;
+    return `Lo descargas apenas se confirme el pago. Tienes ${days}${d.max !== null ? ` y hasta ${d.max === 1 ? '1 descarga' : `${d.max} descargas`} por archivo` : ''}.`;
+}
+
 /** v0.1.415 — Envío de la forma de entrega elegida (y su zona). */
 function shipFor(deliveryId: string | null, zoneId: string | null): ReturnType<typeof shopShippingFor> {
     return shopShippingFor(meta?.delivery.find((x) => x.id === deliveryId) ?? null, zoneId);
@@ -284,8 +328,13 @@ function sessionSet(key: string, value: string | null): void {
 
 // ───────────────────────────── Estado de la página ─────────────────────────────
 
-type View = 'catalog' | 'checkout' | 'order';
-type Overlay = { kind: 'product'; id: number; image: number; sel?: Array<string | null> } | { kind: 'cart' } | { kind: 'policies'; focus: 'terms' | 'returns' | 'seller' } | null;
+type View = 'catalog' | 'checkout' | 'order' | 'my';
+type Overlay =
+    | { kind: 'product'; id: number; image: number; sel?: Array<string | null> }
+    | { kind: 'cart' }
+    | { kind: 'policies'; focus: 'terms' | 'returns' | 'seller' }
+    | { kind: 'my' }
+    | null;
 
 let view: View = 'catalog';
 let overlay: Overlay = null;
@@ -331,7 +380,10 @@ function header(): HTMLElement {
     const btn = el('button', { cls: 's-cart-btn', type: 'button', 'data-testid': 'shop-cart-open' }, [icon('cart'), el('span', { cls: 's-cart-l', text: 'Carrito' }), el('span', { cls: 's-badge', text: '0' })]);
     btn.addEventListener('click', () => openOverlay({ kind: 'cart' }));
     cartButtons.push(btn);
-    return el('header', { cls: 's-top' }, [el('div', { cls: 's-top-in' }, [brand, btn])]);
+    // v0.1.416 — «Mis pedidos»: un enlace al correo con los pedidos y las descargas.
+    const my = el('button', { cls: 's-my-btn', type: 'button', 'data-testid': 'shop-my-open', 'aria-label': 'Mis pedidos' }, [icon('receipt'), el('span', { cls: 's-my-l', text: 'Mis pedidos' })]);
+    my.addEventListener('click', () => openMyOrders());
+    return el('header', { cls: 's-top' }, [el('div', { cls: 's-top-in' }, [brand, my, btn])]);
 }
 
 function footer(): HTMLElement {
@@ -353,6 +405,11 @@ function footer(): HTMLElement {
                 contact ? el('div', { text: contact }) : null,
             ]),
             el('div', { cls: 's-links' }, [
+                (() => {
+                    const b = el('button', { type: 'button', cls: 's-link', text: 'Mis pedidos y descargas' });
+                    b.addEventListener('click', () => openMyOrders());
+                    return b;
+                })(),
                 policyBtn('Envíos, cambios y devoluciones', 'returns'),
                 policyBtn('Términos y condiciones', 'terms'),
                 policyBtn('Quién vende', 'seller'),
@@ -381,7 +438,7 @@ function visibleProducts(): PublicShopProduct[] {
     const m = meta!;
     const q = fold(query.trim());
     let list = products.filter((p) => {
-        if (m.display.hide_sold_out && p.stock !== null && p.stock <= 0) return false;
+        if (m.display.hide_sold_out && !isService(p) && p.stock !== null && p.stock <= 0) return false;
         if (category && !p.categories.includes(category)) return false;
         if (q) {
             const hay = fold(`${p.title} ${p.description} ${p.sku} ${p.categories.join(' ')}`);
@@ -402,7 +459,7 @@ function visibleProducts(): PublicShopProduct[] {
 
 function stockText(p: PublicShopProduct): string | null {
     const d = meta!.display;
-    if (p.stock === null) return null;
+    if (p.stock === null || isService(p)) return null;
     if (p.stock <= 0) return 'Agotado';
     if (d.show_stock === 'always' || (d.show_stock === 'low' && p.stock <= d.low_stock_at)) {
         return p.stock === 1 ? 'Queda 1' : `Quedan ${p.stock}`;
@@ -479,18 +536,22 @@ function productCard(p: PublicShopProduct): HTMLElement {
     const media = el('button', { cls: 's-media', type: 'button', 'aria-label': `Ver ${p.title}` }, [
         img ? el('img', { src: imgUrl(img, 320), srcset: `${imgUrl(img, 320)} 320w, ${imgUrl(img, 640)} 640w`, sizes: '(max-width:640px) 50vw, 320px', alt: p.title, loading: 'lazy', decoding: 'async' }) : el('div', { cls: 's-noimg' }, [icon('image')]),
     ]);
-    if (soldOut(p)) media.append(el('span', { cls: 's-tag', text: 'Agotado' }));
+    const service = isService(p);
+    if (soldOut(p) && !service) media.append(el('span', { cls: 's-tag', text: 'Agotado' }));
     else if (p.price !== null && p.compare_price !== null && p.compare_price > p.price) {
         const off = Math.round((1 - p.price / p.compare_price) * 100);
         if (off >= 1) media.append(el('span', { cls: 's-tag s-sale', text: `−${off}%` }));
     }
+    // v0.1.416 — Qué tipo de producto es (lo físico no lleva marca).
+    if (service) media.append(el('span', { cls: 's-kind', 'data-testid': 'shop-kind' }, [icon('calendar'), 'Servicio']));
+    else if (p.kind === 'digital') media.append(el('span', { cls: 's-kind', 'data-testid': 'shop-kind' }, [icon('download'), 'Descarga digital']));
     media.addEventListener('click', () => openOverlay({ kind: 'product', id: p.id, image: 0 }));
     const title = el('button', { cls: 's-title', type: 'button', text: p.title });
     title.addEventListener('click', () => openOverlay({ kind: 'product', id: p.id, image: 0 }));
-    const variable = hasVariants(p);
+    const variable = hasVariants(p) && !service;
     const st = variable ? null : stockText(p);
-    const actions = el('div', {}, [variable ? chooseControl(p) : addControl(p)]);
-    const card = el('article', { cls: `s-card${soldOut(p) ? ' s-out' : ''}`, 'data-testid': 'shop-card', 'data-id': String(p.id) }, [
+    const actions = el('div', {}, [cardControl(p)]);
+    const card = el('article', { cls: `s-card${soldOut(p) && !service ? ' s-out' : ''}`, 'data-testid': 'shop-card', 'data-id': String(p.id) }, [
         media,
         el('div', { cls: 's-body' }, [title, d.show_sku && p.sku ? el('div', { cls: 's-sku', text: `Ref. ${p.sku}` }) : null, st && !soldOut(p) ? el('div', { cls: 's-stock', text: st }) : null, priceNode(p, 's-price', variable && priceFrom(p)), actions]),
     ]);
@@ -498,11 +559,16 @@ function productCard(p: PublicShopProduct): HTMLElement {
     return card;
 }
 
+function cardControl(p: PublicShopProduct): HTMLElement {
+    if (isService(p)) return bookControl(p);
+    return hasVariants(p) ? chooseControl(p) : addControl(p);
+}
+
 function paintCard(id: number): void {
     const c = cardEls.get(id);
     const p = byId.get(id);
     if (!c || !p) return;
-    c.actions.replaceChildren(hasVariants(p) ? chooseControl(p) : addControl(p));
+    c.actions.replaceChildren(cardControl(p));
 }
 
 function paintGrid(): void {
@@ -616,6 +682,7 @@ function renderOverlay(): void {
     let box: HTMLElement;
     if (overlay.kind === 'product') box = productSheet(overlay.id, overlay.image, overlay.sel);
     else if (overlay.kind === 'cart') box = cartSheet();
+    else if (overlay.kind === 'my') box = mySheet();
     else box = policiesSheet(overlay.focus);
     const keepFocus = ovRoot.contains(document.activeElement);
     // v0.1.414 — Redibujar la misma capa (elegir talla, sumar una unidad) no
@@ -693,7 +760,8 @@ function variantOptions(p: PublicShopProduct, sel: Array<string | null>, imageId
 function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>): HTMLElement {
     const p = byId.get(id);
     if (!p) return sheet('narrow', 'Producto', [el('p', { cls: 's-empty', text: 'Este producto ya no está disponible.' })], null, 'shop-product');
-    const variable = hasVariants(p);
+    const service = isService(p);
+    const variable = hasVariants(p) && !service;
     const sel = variable ? (selIn ?? initialSelection(p)) : [];
     const variant: PublicShopVariant | null = variable ? pickShopVariant(p, sel) : null;
     const imgs = variant && variant.images.length > 0 ? variant.images : p.images;
@@ -719,7 +787,11 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
     let priceEl: HTMLElement;
     let st: string | null;
     let sku = p.sku;
-    if (!variable) {
+    if (service) {
+        buy = bookControl(p, true);
+        priceEl = priceNode(p, 's-price s-d-price', priceFrom(p));
+        st = null;
+    } else if (!variable) {
         buy = addControl(p, true);
         priceEl = priceNode(p, 's-price s-d-price');
         st = stockText(p);
@@ -743,6 +815,11 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
         variable ? variantOptions(p, sel, idx) : null,
         st ? el('div', { cls: 's-stock', style: 'margin-top:10px', text: st }) : null,
         el('div', { style: 'margin-top:14px' }, [buy]),
+        service
+            ? el('p', { cls: 's-kind-note', 'data-testid': 'shop-kind-note' }, [icon('calendar'), bookUrl(p) ? 'Eliges el día y la hora en la agenda.' : 'La agenda de este servicio todavía no está disponible.'])
+            : p.kind === 'digital'
+              ? el('p', { cls: 's-kind-note', 'data-testid': 'shop-kind-note' }, [icon('download'), downloadsText()])
+              : null,
         n > 0 && !(variant && cart.has(variant.id)) ? el('p', { cls: 's-incart', style: 'margin:8px 0 0', text: n === 1 ? 'Tienes 1 de este producto en el carrito.' : `Tienes ${n} de este producto en el carrito.` }) : null,
         p.description ? el('p', { cls: 's-desc', text: p.description }) : null,
         p.categories.length > 0 ? el('div', { cls: 's-d-cats' }, p.categories.map((c) => el('span', { text: c }))) : null,
@@ -792,7 +869,7 @@ function cartSheet(): HTMLElement {
     else if (est.blocked) foot.push(el('div', { cls: 's-warn', text: 'Revisa los productos marcados antes de seguir.' }));
     const pendingCoupon = meta!.coupons ? sessionGet(COUPON_KEY) : null;
     if (pendingCoupon) foot.push(el('div', { cls: 's-free-hint', 'data-testid': 'shop-cart-coupon' }, [icon('tag'), el('span', { text: `Tu cupón ${pendingCoupon} se aplica al finalizar la compra.` })]));
-    foot.push(el('p', { cls: 's-line-p', style: 'margin:0 0 10px', text: 'El envío se calcula en el siguiente paso.' }));
+    foot.push(el('p', { cls: 's-line-p', style: 'margin:0 0 10px', text: digitalCart() ? 'Todo se descarga: no hay envío.' : 'El envío se calcula en el siguiente paso.' }));
     const go = actionButton(meta!.texts.checkout || 'Finalizar compra', () => {
         closeOverlay();
         goCheckout();
@@ -867,14 +944,28 @@ const co: CheckoutState = {
 let couponBox: HTMLElement | null = null;
 let zoneBox: HTMLElement | null = null;
 
+/** v0.1.416 — Con todo para descargar no hay forma de entrega ni zona. */
+function effDelivery(): string | null {
+    return digitalCart() ? null : co.deliveryId;
+}
+function effZone(): string | null {
+    return digitalCart() ? null : co.zoneId;
+}
+
 function quoteKey(): string {
-    return `${co.deliveryId ?? ''}|${co.zoneId ?? ''}|${co.couponRule?.code ?? ''}`;
+    return `${effDelivery() ?? ''}|${effZone() ?? ''}|${co.couponRule?.code ?? ''}`;
 }
 
 /** La cuenta que se muestra: la del servidor si es de este carrito, si no la estimación. */
 function current(): ShopCartResult {
     if (co.serverCart && co.serverKey === quoteKey() && sameCart(co.serverCart)) return co.serverCart;
-    return estimate(co.deliveryId, co.zoneId, co.couponRule);
+    return estimate(effDelivery(), effZone(), co.couponRule);
+}
+
+/** v0.1.416 — Un pedido sin costo (todo gratis) no pide forma de pago. */
+function isFree(): boolean {
+    const est = current();
+    return est.lines.length > 0 && !est.blocked && est.total === 0;
 }
 const inputs: Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement> = {};
 const errs: Record<string, HTMLElement> = {};
@@ -882,6 +973,10 @@ let summaryEl: HTMLElement | null = null;
 let alertEl: HTMLElement | null = null;
 let submitBtn: HTMLButtonElement | null = null;
 let addressBox: HTMLElement | null = null;
+let deliverySecEl: HTMLElement | null = null;
+let digitalNoteEl: HTMLElement | null = null;
+let paySecEl: HTMLElement | null = null;
+let freeNoteEl: HTMLElement | null = null;
 let termsCb: HTMLInputElement | null = null;
 let consentCb: HTMLInputElement | null = null;
 let hpInput: HTMLInputElement | null = null;
@@ -924,6 +1019,7 @@ function setErr(key: string, text: string): void {
 }
 
 function needsAddress(): boolean {
+    if (digitalCart()) return false;
     const d = meta?.delivery.find((x) => x.id === co.deliveryId);
     return d?.needs_address ?? false;
 }
@@ -980,6 +1076,12 @@ function checkoutView(): HTMLElement[] {
         field('city', 'Ciudad', { autocomplete: 'address-level2', required: true, wide: true }),
     ]);
     const deliverySec = el('section', { cls: 's-sec' }, [el('h3', { text: 'Entrega' }), deliveryOpts, zoneBox, addressBox]);
+    deliverySecEl = deliverySec;
+    // v0.1.416 — Todo para descargar: no se pide entrega ni dirección.
+    digitalNoteEl = el('section', { cls: 's-sec', 'data-testid': 'shop-digital-note' }, [
+        el('h3', { text: 'Entrega' }),
+        el('div', { cls: 's-kind-box' }, [icon('download'), el('span', { text: `Tu pedido se descarga: no hay envío. ${downloadsText()} Te mandamos los enlaces por correo.` })]),
+    ]);
     paintZones();
 
     const payOpts = el('div', { cls: 's-opts', role: 'radiogroup', 'aria-label': 'Forma de pago' });
@@ -997,6 +1099,11 @@ function checkoutView(): HTMLElement[] {
         );
     }
     const paySec = el('section', { cls: 's-sec' }, [el('h3', { text: 'Pago' }), payOpts]);
+    paySecEl = paySec;
+    freeNoteEl = el('section', { cls: 's-sec', 'data-testid': 'shop-free-note' }, [
+        el('h3', { text: 'Pago' }),
+        el('div', { cls: 's-kind-box' }, [icon('check'), el('span', { text: 'Este pedido no tiene costo: no hay nada que pagar.' })]),
+    ]);
 
     const notesSec = m.checkout.ask_notes ? el('section', { cls: 's-sec' }, [el('div', { cls: 's-fields' }, [field('notes', 'Notas para el pedido (opcional)', { textarea: true, wide: true })])]) : null;
 
@@ -1047,7 +1154,8 @@ function checkoutView(): HTMLElement[] {
     const hp = el('div', { cls: 's-hp', 'aria-hidden': 'true' }, [hpInput]);
     submitBtn = el('button', { type: 'submit', cls: 's-btn', 'data-testid': 'shop-place' });
 
-    const form = el('form', { novalidate: true }, [you, deliverySec, paySec, notesSec, hp]);
+    const form = el('form', { novalidate: true }, [you, deliverySec, digitalNoteEl, paySec, freeNoteEl, notesSec, hp]);
+    paintModes();
     form.addEventListener('submit', (e) => {
         e.preventDefault();
         void placeOrder();
@@ -1125,6 +1233,7 @@ function paintZones(): void {
 }
 
 function zoneMissing(): boolean {
+    if (digitalCart()) return false;
     return shipFor(co.deliveryId, co.zoneId).zone_required && !co.zoneId;
 }
 
@@ -1244,8 +1353,19 @@ function removeCoupon(): void {
     scheduleQuote(0);
 }
 
+/** v0.1.416 — Entrega (o descarga) y pago (o sin costo) según lo que hay en el carrito. */
+function paintModes(): void {
+    const digital = digitalCart();
+    if (deliverySecEl) deliverySecEl.hidden = digital;
+    if (digitalNoteEl) digitalNoteEl.hidden = !digital;
+    const free = isFree();
+    if (paySecEl) paySecEl.hidden = free;
+    if (freeNoteEl) freeNoteEl.hidden = !free;
+}
+
 function paintSummary(): void {
     if (!summaryEl || !meta) return;
+    paintModes();
     const est = current();
     const rows: HTMLElement[] = [];
     for (const l of est.lines) {
@@ -1264,11 +1384,12 @@ function paintSummary(): void {
             el('div', { cls: 's-disc', 'data-testid': 'shop-discount' }, [el('span', { text: `Descuento${est.coupon ? ` (${est.coupon.code})` : ''}` }), el('span', { text: `-${money(est.discount)}` })]),
         );
     }
-    const d = meta.delivery.find((x) => x.id === co.deliveryId);
+    const digital = digitalCart();
+    const d = digital ? undefined : meta.delivery.find((x) => x.id === co.deliveryId);
     const z = d?.zones.find((x) => x.id === co.zoneId);
-    const shipText = zoneMissing() ? 'Elige la zona' : est.shipping > 0 ? money(est.shipping) : 'Gratis';
-    rows.push(el('div', {}, [el('span', { text: d ? `Entrega · ${d.name}${z ? ` · ${z.name}` : ''}` : 'Entrega' }), el('span', { 'data-testid': 'shop-shipping', text: shipText })]));
-    if (est.free_shipping_missing !== null && !zoneMissing()) {
+    const shipText = digital ? 'Sin envío' : zoneMissing() ? 'Elige la zona' : est.shipping > 0 ? money(est.shipping) : 'Gratis';
+    rows.push(el('div', {}, [el('span', { text: digital ? 'Entrega · Descarga digital' : d ? `Entrega · ${d.name}${z ? ` · ${z.name}` : ''}` : 'Entrega' }), el('span', { 'data-testid': 'shop-shipping', text: shipText })]));
+    if (!digital && est.free_shipping_missing !== null && !zoneMissing()) {
         rows.push(el('div', { cls: 's-free-hint', 'data-testid': 'shop-free-hint' }, [icon('truck'), el('span', { text: `Te faltan ${money(est.free_shipping_missing)} para el envío gratis.` })]));
     }
     rows.push(el('div', { cls: 's-tot' }, [el('span', { text: 'Total' }), el('span', { 'data-testid': 'shop-total', text: money(est.total) })]));
@@ -1297,10 +1418,16 @@ function sameCart(c: ShopCartResult): boolean {
 function paintSubmit(): void {
     if (!submitBtn || !meta) return;
     const est = current();
-    const label =
-        co.payment === 'whatsapp' ? 'Confirmar y enviar por WhatsApp' : co.payment === 'online' ? `Ir a pagar · ${money(est.total)}` : `Hacer el pedido · ${money(est.total)}`;
-    submitBtn.replaceChildren(co.sending ? el('span', { cls: 's-spin', 'aria-hidden': 'true' }) : '', co.sending ? (co.payment === 'online' ? 'Preparando el pago…' : 'Enviando…') : label);
-    submitBtn.disabled = co.sending || est.blocked || est.below_minimum !== null || !co.payment || !co.deliveryId || !!meta.closed;
+    const free = isFree();
+    const label = free
+        ? 'Confirmar el pedido'
+        : co.payment === 'whatsapp'
+          ? 'Confirmar y enviar por WhatsApp'
+          : co.payment === 'online'
+            ? `Ir a pagar · ${money(est.total)}`
+            : `Hacer el pedido · ${money(est.total)}`;
+    submitBtn.replaceChildren(co.sending ? el('span', { cls: 's-spin', 'aria-hidden': 'true' }) : '', co.sending ? (co.payment === 'online' && !free ? 'Preparando el pago…' : 'Enviando…') : label);
+    submitBtn.disabled = co.sending || est.blocked || est.below_minimum !== null || (!free && !co.payment) || (!digitalCart() && !co.deliveryId) || !!meta.closed;
 }
 
 function scheduleQuote(delay = 400): void {
@@ -1313,8 +1440,8 @@ function scheduleQuote(delay = 400): void {
             method: 'POST',
             body: JSON.stringify({
                 lines: [...cart].map(([product_id, qty]) => ({ product_id, qty })),
-                delivery_id: co.deliveryId,
-                zone_id: co.zoneId,
+                delivery_id: effDelivery(),
+                zone_id: effZone(),
                 coupon: co.couponRule?.code,
             }),
         });
@@ -1475,11 +1602,12 @@ async function placeOrder(): Promise<void> {
         const body = {
             lines: [...cart].map(([product_id, qty]) => ({ product_id, qty })),
             customer,
-            delivery_id: co.deliveryId,
-            zone_id: co.zoneId,
+            delivery_id: effDelivery(),
+            zone_id: effZone(),
             // v0.1.415 — El cupón viaja sólo si descuenta algo en este carrito (el total que se ve es el que se cobra).
             coupon: co.couponRule && current().coupon ? co.couponRule.code : undefined,
-            payment_method: co.payment,
+            // v0.1.416 — Sin costo no se elige forma de pago (el servidor lo confirma con su cuenta).
+            payment_method: isFree() ? 'free' : co.payment,
             terms: termsCb ? termsCb.checked : true,
             consent: consentCb ? consentCb.checked : false,
             stamp: co.stamp ?? '',
@@ -1592,7 +1720,7 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
     kids.push(
         el('div', { cls: 's-ok', 'data-testid': 'shop-order' }, [
             opts.placed ? el('div', { cls: 's-ok-ic' }, [icon('check')]) : null,
-            el('h2', { text: opts.placed ? m.texts.success_title || '¡Recibimos tu pedido!' : `Pedido ${o.number}` }),
+            el('h2', { text: opts.placed ? m.texts.success_title || '¡Recibimos tu pedido!' : 'Tu pedido' }),
             opts.placed ? el('p', { text: m.texts.success_message }) : null,
             el('div', { cls: 's-num', 'data-testid': 'shop-order-number', text: o.number }),
         ]),
@@ -1612,7 +1740,11 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
             kids.push(
                 el('div', { cls: 's-note', 'data-testid': 'shop-paid', style: 'margin-top:18px;background:#f0fdf4;border-color:#bbf7d0;color:#166534' }, [
                     el('strong', { style: 'display:block;margin-bottom:2px', text: '¡Pago recibido!' }),
-                    o.pay_provider ? `Pagaste en línea con ${o.pay_provider}. Te avisamos cuando enviemos tu pedido.` : 'Te avisamos cuando enviemos tu pedido.',
+                    o.digital_only
+                        ? `${o.pay_provider ? `Pagaste en línea con ${o.pay_provider}. ` : ''}Ya puedes descargar tus archivos.`
+                        : o.pay_provider
+                          ? `Pagaste en línea con ${o.pay_provider}. Te avisamos cuando enviemos tu pedido.`
+                          : 'Te avisamos cuando enviemos tu pedido.',
                 ]),
             );
         }
@@ -1650,17 +1782,201 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
     if (o.payment_status !== 'pagado' && o.payment_method !== 'online' && o.payment_instructions) {
         kids.push(el('div', { cls: 's-note' }, [el('strong', { style: 'display:block;margin-bottom:4px', text: o.payment_label }), o.payment_instructions]));
     }
+    // v0.1.416 — Las descargas del pedido (con el pago confirmado).
+    if (o.downloads.length > 0 || o.downloads_note) kids.push(downloadsBox(o));
     const sum = el('div', { cls: 's-sum' }, [
         ...o.lines.map((l) => el('div', {}, [el('span', { text: `${l.qty} × ${l.title}` }), el('span', { text: fmt(l.subtotal) })])),
         el('div', { style: 'padding-top:6px;border-top:1px solid var(--s-line);margin-top:4px' }, [el('span', { text: 'Subtotal' }), el('span', { text: fmt(o.subtotal) })]),
         o.discount > 0 ? el('div', { cls: 's-disc' }, [el('span', { text: `Descuento${o.coupon_code ? ` (${o.coupon_code})` : ''}` }), el('span', { text: `-${fmt(o.discount)}` })]) : null,
-        el('div', {}, [el('span', { text: `Entrega · ${o.delivery}` }), el('span', { text: o.shipping > 0 ? fmt(o.shipping) : 'Gratis' })]),
-        el('div', { cls: 's-tot' }, [el('span', { text: 'Total' }), el('span', { text: fmt(o.total) })]),
+        o.digital_only
+            ? el('div', {}, [el('span', { text: 'Entrega · Descarga digital' }), el('span', { text: 'Sin envío' })])
+            : el('div', {}, [el('span', { text: `Entrega · ${o.delivery}` }), el('span', { text: o.shipping > 0 ? fmt(o.shipping) : 'Gratis' })]),
+        el('div', { cls: 's-tot' }, [el('span', { text: 'Total' }), el('span', { text: o.total > 0 ? fmt(o.total) : 'Sin costo' })]),
     ]);
     kids.push(el('div', { cls: 's-panel' }, [sum]));
     const where = [o.customer.address, o.customer.city].filter(Boolean).join(', ');
     kids.push(el('p', { cls: 's-line-p', style: 'margin:14px 0 0', text: `A nombre de ${o.customer.name}${where ? ` · ${where}` : ''}. Te enviamos el detalle a ${o.customer.email}.` }));
-    kids.push(el('div', { style: 'margin-top:20px' }, [actionButton('Seguir comprando', goCatalog, 's-btn s-ghost')]));
+    const myCode = sessionGet(MY_KEY);
+    kids.push(
+        el('div', { style: 'margin-top:20px;display:flex;flex-direction:column;gap:10px' }, [
+            myCode ? actionButton('Volver a mis pedidos', () => void showMyOrders(myCode), 's-btn s-ghost', 'shop-my-back') : null,
+            actionButton('Seguir comprando', goCatalog, 's-btn s-ghost'),
+        ]),
+    );
+    box.replaceChildren(...kids);
+    window.scrollTo({ top: 0 });
+}
+
+function longDate(iso: string): string {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function fileSize(n: number | null): string {
+    if (n === null || !Number.isFinite(n) || n <= 0) return '';
+    if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
+    return `${(n / (1024 * 1024)).toFixed(n < 10 * 1024 * 1024 ? 1 : 0).replace('.', ',')} MB`;
+}
+
+/** v0.1.416 — Los archivos del pedido: «Descargar» con el pago confirmado; si no, por qué. */
+function downloadsBox(o: PublicShopOrder): HTMLElement {
+    const rows = o.downloads.map((d) => {
+        const used = d.max !== null ? `Descargado ${d.used} de ${d.max} ${d.max === 1 ? 'vez' : 'veces'}` : d.used > 0 ? `Descargado ${d.used} ${d.used === 1 ? 'vez' : 'veces'}` : '';
+        const meta2 = [d.title !== d.name ? d.title : '', fileSize(d.size), used].filter(Boolean).join(' · ');
+        const go =
+            d.url && d.url.startsWith(`${PAGE}/d/`)
+                ? el('a', { cls: 's-dl-go', href: d.url, rel: 'nofollow', 'data-testid': 'shop-download' }, [icon('download'), 'Descargar'])
+                : el('span', { cls: 's-dl-off', text: d.max !== null && d.used >= d.max ? 'Sin descargas' : 'No disponible' });
+        return el('div', { cls: 's-dl', 'data-testid': 'shop-download-row' }, [
+            el('span', { cls: 's-dl-ic' }, [icon('download')]),
+            el('div', { cls: 's-dl-t' }, [el('div', { cls: 's-dl-n', text: d.name }), meta2 ? el('div', { cls: 's-dl-m', text: meta2 }) : null]),
+            go,
+        ]);
+    });
+    const until = !o.downloads_note && o.downloads_until ? longDate(o.downloads_until) : '';
+    return el('div', { cls: 's-panel', style: 'margin-top:18px', 'data-testid': 'shop-downloads' }, [
+        el('h3', { style: 'margin:0 0 4px;font-size:16px', text: 'Tus descargas' }),
+        o.downloads_note ? el('div', { cls: 's-note', style: 'margin:8px 0 4px', 'data-testid': 'shop-downloads-note', text: o.downloads_note }) : null,
+        until ? el('p', { cls: 's-line-p', style: 'margin:0 0 4px', text: `Disponibles hasta el ${until}. También te llegaron por correo.` }) : null,
+        ...rows,
+    ]);
+}
+
+// ───────────────────────────── «Mis pedidos» (v0.1.416) ─────────────────────────────
+
+const myReq = { sending: false, sent: false, error: '' };
+
+function openMyOrders(): void {
+    myReq.sent = false;
+    myReq.error = '';
+    openOverlay({ kind: 'my' });
+}
+
+/** Pedir el enlace: llega al correo sólo si tiene pedidos en esta tienda (la respuesta es la misma). */
+function mySheet(): HTMLElement {
+    if (myReq.sent) {
+        return sheet(
+            'narrow',
+            'Mis pedidos',
+            [
+                el('div', { cls: 's-ok', 'data-testid': 'shop-my-sent' }, [
+                    el('div', { cls: 's-ok-ic' }, [icon('check')]),
+                    el('h2', { text: 'Revisa tu correo' }),
+                    el('p', { text: 'Si ese correo tiene pedidos en esta tienda, te llegará un enlace en unos minutos para verlos con sus descargas. Revisa también la carpeta de spam.' }),
+                ]),
+            ],
+            [actionButton('Listo', closeOverlay, 's-btn s-ghost')],
+            'shop-my',
+        );
+    }
+    const input = el('input', { id: 'my_email', type: 'email', autocomplete: 'email', inputmode: 'email', 'data-testid': 'shop-my-email', 'data-k': 'my-email', 'aria-describedby': 'my_email_e' });
+    input.value = savedCustomer().email ?? '';
+    const hp = el('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off', 'aria-hidden': 'true' });
+    const err = el('div', { cls: 's-err', id: 'my_email_e', role: 'alert', hidden: !myReq.error, text: myReq.error });
+    const send = actionButton('Enviarme el enlace', () => void requestMy(input, hp), 's-btn', 'shop-my-send');
+    if (myReq.sending) {
+        send.disabled = true;
+        send.replaceChildren(el('span', { cls: 's-spin', 'aria-hidden': 'true' }), 'Enviando…');
+    }
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            void requestMy(input, hp);
+        }
+    });
+    return sheet(
+        'narrow',
+        'Mis pedidos',
+        [
+            el('p', { style: 'margin:0 0 14px;color:#374151', text: 'Escribe el correo con el que compraste y te mandamos un enlace para ver tus pedidos, cómo van y tus descargas.' }),
+            el('div', { cls: 's-f' }, [el('label', { for: 'my_email', text: 'Tu correo' }), input, err]),
+            el('div', { cls: 's-hp', 'aria-hidden': 'true' }, [hp]),
+        ],
+        [send],
+        'shop-my',
+    );
+}
+
+async function requestMy(input: HTMLInputElement, hp: HTMLInputElement): Promise<void> {
+    if (myReq.sending) return;
+    const email = input.value.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        myReq.error = 'Escribe un correo válido.';
+        renderOverlay();
+        return;
+    }
+    if (BOOT.preview) {
+        myReq.error = 'Es una vista previa: en la tienda publicada aquí llega el enlace al correo.';
+        renderOverlay();
+        return;
+    }
+    myReq.sending = true;
+    myReq.error = '';
+    renderOverlay();
+    const res = await api<{ ok: true }>('/my-orders', { method: 'POST', body: JSON.stringify({ email, website: hp.value }) });
+    myReq.sending = false;
+    if (res.ok) myReq.sent = true;
+    else myReq.error = res.error.message || (res.status === 429 ? 'Pediste muchos enlaces seguidos. Espera unos minutos.' : 'No pudimos mandar el enlace. Vuelve a intentar.');
+    if (overlay?.kind === 'my') renderOverlay();
+}
+
+/** La lista de pedidos del enlace del correo. */
+async function showMyOrders(code: string): Promise<void> {
+    view = 'my';
+    window.clearTimeout(payPoll);
+    if (location.search.includes('pedido=')) {
+        const url = new URL(location.href);
+        url.searchParams.delete('pedido');
+        history.replaceState(null, '', url.pathname + url.search);
+    }
+    const box = el('div', { cls: 's-wrap', style: 'max-width:720px;padding-top:28px' }, [el('p', { cls: 's-empty', text: 'Cargando tus pedidos…' })]);
+    paint([box]);
+    const res = await api<PublicShopMyOrders>(`/my-orders/${encodeURIComponent(code)}`);
+    if (!res.ok) {
+        sessionSet(MY_KEY, null);
+        box.replaceChildren(
+            el('div', { cls: 's-ok', 'data-testid': 'shop-my-expired' }, [el('h2', { text: 'Este enlace ya no sirve' }), el('p', { text: 'Los enlaces de «Mis pedidos» duran unos días. Pide uno nuevo y te llega al correo.' })]),
+            el('div', { style: 'margin-top:18px;display:flex;flex-direction:column;gap:10px' }, [actionButton('Pedir un enlace nuevo', openMyOrders, 's-btn'), actionButton('Ir a la tienda', goCatalog, 's-btn s-ghost')]),
+        );
+        return;
+    }
+    const data = res.data;
+    const m = meta!;
+    const kids: HTMLElement[] = [
+        el('div', { cls: 's-ok', style: 'text-align:left' }, [el('h2', { text: 'Tus pedidos' }), el('p', { style: 'margin:0', text: `Los pedidos de ${data.email} en esta tienda.` })]),
+    ];
+    if (data.orders.length === 0) kids.push(el('p', { cls: 's-empty', text: 'No encontramos pedidos con ese correo.' }));
+    const list = el('div', { style: 'display:flex;flex-direction:column;gap:10px;margin-top:16px', 'data-testid': 'shop-my-list' });
+    for (const o of data.orders) {
+        const fmt = (n: number): string => formatShopMoney(n, o.currency, m.number_format);
+        const go = actionButton('Ver pedido', () => {
+            const url = new URL(location.href);
+            url.searchParams.set('pedido', o.order_token);
+            history.replaceState(null, '', url.pathname + url.search);
+            void showOrder(o.order_token);
+        }, 's-btn s-ghost', 'shop-my-open-order');
+        go.style.width = 'auto';
+        go.style.height = '40px';
+        go.style.padding = '0 16px';
+        go.style.fontSize = '14px';
+        const facts = [longDate(o.created_at), o.items === 1 ? '1 producto' : `${o.items} productos`, o.downloads > 0 ? (o.downloads === 1 ? '1 descarga' : `${o.downloads} descargas`) : ''].filter(Boolean).join(' · ');
+        list.append(
+            el('div', { cls: 's-panel s-myo', 'data-testid': 'shop-my-order' }, [
+                el('div', { cls: 's-myo-t' }, [
+                    el('div', { cls: 's-myo-n' }, [o.number, el('span', { style: 'font-weight:600;margin-left:8px', text: o.total > 0 ? fmt(o.total) : 'Sin costo' })]),
+                    el('div', { cls: 's-myo-m', text: facts }),
+                    el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin-top:6px' }, [
+                        el('span', { cls: 's-status', text: o.status_label }),
+                        el('span', { cls: 's-status', style: 'background:#f3f4f6;color:#374151', text: `Pago: ${o.payment_status_label}` }),
+                    ]),
+                ]),
+                go,
+            ]),
+        );
+    }
+    kids.push(list);
+    kids.push(el('div', { style: 'margin-top:20px' }, [actionButton('Ir a la tienda', goCatalog, 's-btn s-ghost')]));
     box.replaceChildren(...kids);
     window.scrollTo({ top: 0 });
 }
@@ -1670,7 +1986,7 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
 function paint(main: HTMLElement[]): void {
     cartButtons.length = 0;
     mbar = null;
-    const wrap = view === 'order' ? el('div', {}, main) : el('div', { cls: 's-wrap' }, main);
+    const wrap = view === 'order' || view === 'my' ? el('div', {}, main) : el('div', { cls: 's-wrap' }, main);
     const kids: HTMLElement[] = [header(), el('main', {}, [wrap]), footer()];
     if (view === 'catalog') {
         const b = actionButton('', () => openOverlay({ kind: 'cart' }), 's-btn');
@@ -1720,6 +2036,18 @@ function render(): void {
         if (code && meta.coupons) {
             sessionSet(COUPON_KEY, code);
             window.setTimeout(() => toast(`Cupón ${code}: se aplica al finalizar la compra`), 300);
+        }
+    }
+    // v0.1.416 — `?mis-pedidos=<código>`: el enlace del correo (se guarda en la pestaña y se quita de la dirección).
+    const myCode = qs.get('mis-pedidos');
+    if (myCode !== null && !BOOT.preview) {
+        const url = new URL(location.href);
+        url.searchParams.delete('mis-pedidos');
+        history.replaceState(null, '', url.pathname + url.search);
+        if (/^[A-Za-z0-9_-]{20,64}$/.test(myCode)) {
+            sessionSet(MY_KEY, myCode);
+            void showMyOrders(myCode);
+            return;
         }
     }
     const pedido = qs.get('pedido');
