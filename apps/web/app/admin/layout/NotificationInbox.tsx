@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { AlarmClock, AtSign, Bell, Bot, CheckCheck, ClipboardCheck, ListChecks, MessageSquare, PenLine, Repeat, Reply, Scale, Settings2, Timer, TriangleAlert, UserPlus, Users, type LucideIcon } from 'lucide-react';
+import { AlarmClock, AtSign, Bell, Bot, CheckCheck, ClipboardCheck, ListChecks, MessageSquare, PenLine, Repeat, Reply, Scale, Settings2, ShoppingBag, Timer, TriangleAlert, UserPlus, Users, type LucideIcon } from 'lucide-react';
 import type { NotificationDto, NotificationKind } from '@imagina-base/shared';
 
 import { relativeTime } from '@/admin/activity/activityText';
@@ -28,6 +28,8 @@ const KIND_ICON: Record<NotificationKind, LucideIcon> = {
     agent: Bot,
     // v0.1.367 — una suscripción falló un cobro, venció o se canceló.
     subscription: Repeat,
+    // v0.1.412 — llegó un pedido de la tienda.
+    shop: ShoppingBag,
 };
 
 /** A dónde lleva cada aviso al abrirlo. */

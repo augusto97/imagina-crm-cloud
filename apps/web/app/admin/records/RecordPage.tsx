@@ -38,6 +38,7 @@ import { isCloseCancelled } from '@/admin/records/dependencies/closeGuard';
 import { RecordDependencies } from '@/admin/records/dependencies/RecordDependencies';
 import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
 import { RecordBookingPanel } from '@/admin/booking/RecordBookingPanel';
+import { RecordShopOrderPanel } from '@/admin/shop/RecordShopOrderPanel';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
 import { RecordChecklists } from '@/admin/records/checklists/RecordChecklists';
 import { SaveRecordAsTemplateButton } from '@/admin/records/templates/SaveRecordAsTemplateButton';
@@ -422,6 +423,7 @@ export function RecordPage(): JSX.Element {
                     {!isGuest && <RecordAgentProposals listId={listInfo.id} recordId={rec.id} />}
                     {!isGuest && <RecordApprovals listId={listInfo.id} recordId={rec.id} />}
                     {!isGuest && <RecordBookingPanel listId={listInfo.id} recordId={rec.id} />}
+                    {!isGuest && <RecordShopOrderPanel listId={listInfo.id} recordId={rec.id} />}
 
                     {/* Descripción rica (v0.1.133) — mismo componente que el
                         modal del registro. */}

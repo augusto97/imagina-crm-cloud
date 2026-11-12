@@ -146,6 +146,7 @@ export function DataConsentRecords(): JSX.Element {
                             <option value="form">{__('Formularios')}</option>
                             <option value="portal">{__('Portal del cliente')}</option>
                             <option value="booking">{__('Agenda de citas')}</option>
+                            <option value="shop">{__('Tienda')}</option>
                         </Select>
                     </label>
                     <label className="imcrm-space-y-1">

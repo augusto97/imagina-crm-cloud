@@ -123,6 +123,8 @@ import {
     formDrafts,
     formStats,
     contactWidgets,
+    shopOrders,
+    shops,
     widgetStats,
     dataConsents,
     dataConsentVersions,
@@ -495,6 +497,9 @@ export class PlatformService {
             // D5 — agenda de citas: las citas (atadas a registros) y sus páginas.
             await tx.delete(bookingAppointments).where(eq(bookingAppointments.tenantId, id));
             await tx.delete(bookingPages).where(eq(bookingPages.tenantId, id));
+            // v0.1.412 — tiendas y lo que saben de cada pedido.
+            await tx.delete(shopOrders).where(eq(shopOrders.tenantId, id));
+            await tx.delete(shops).where(eq(shops.tenantId, id));
             await tx.delete(records).where(eq(records.tenantId, id));
             await tx.delete(fields).where(eq(fields.tenantId, id));
             await tx.delete(listSlugHistory).where(eq(listSlugHistory.tenantId, id));

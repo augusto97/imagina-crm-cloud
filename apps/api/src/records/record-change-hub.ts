@@ -35,7 +35,7 @@ export interface RecordChange {
      * cita). La agenda avisa a quien atiende con su propio texto («Nueva
      * cita…»), así que los avisos genéricos («te asignó», «cambió») no salen.
      */
-    origin?: 'booking';
+    origin?: 'booking' | 'shop';
     /**
      * La lista y sus campos, cuando quien emite ya los tenía cargados (la
      * edición de una persona). Los oyentes los usan en vez de volver a leerlos:

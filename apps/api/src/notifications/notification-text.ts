@@ -81,6 +81,10 @@ export function notificationTitle(
             // v0.1.367 — las suscripciones arman su propio título (SubscriptionsService).
             out = `La suscripción de ${rec} cambió`;
             break;
+        case 'shop':
+            // v0.1.412 — los pedidos de la tienda arman su propio título.
+            out = `Pedido nuevo: ${rec}`;
+            break;
     }
     return out.length > MAX_TITLE ? `${out.slice(0, MAX_TITLE - 1)}…` : out;
 }

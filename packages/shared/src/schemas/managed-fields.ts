@@ -21,7 +21,7 @@ import { readSubscriptionFields, type SubscriptionFieldRole } from './subscripti
  * Una regla PURA sobre `lists.settings`: la usan el servidor (rechaza la
  * edición) y la interfaz (candado con el motivo).
  */
-export type ManagedFieldSource = 'helpdesk' | 'collections' | 'subscriptions' | 'subscription_import' | 'charge_log';
+export type ManagedFieldSource = 'helpdesk' | 'collections' | 'subscriptions' | 'subscription_import' | 'charge_log' | 'shop';
 
 export interface ManagedFieldLock {
     field_id: number;
@@ -71,6 +71,33 @@ export function chargeLogMarkerFor(sourceListId: number, fields: Record<string, 
     if (record === null && ids.length === 0) return null;
     return { list_id: sourceListId, record_field_id: record, field_ids: [...new Set(ids)] };
 }
+
+/**
+ * v0.1.412 (ADR-S103) — Marca que la tienda deja en sus listas de Pedidos y de
+ * Líneas de pedido: qué columnas escribe con cada compra (el total, el estado
+ * del pago, el precio congelado de cada línea). El «Estado del pedido» NO está:
+ * ese lo maneja el equipo. Varias tiendas pueden compartir las mismas listas.
+ */
+export const SHOP_LIST_MARKER_KEY = 'shop_orders_of';
+
+export interface ShopListMarker {
+    shop_ids: number[];
+    role: 'orders' | 'lines';
+    field_ids: number[];
+}
+
+export function readShopListMarker(settings: unknown): ShopListMarker | null {
+    const raw = (settings as Record<string, unknown> | null | undefined)?.[SHOP_LIST_MARKER_KEY];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const m = raw as Record<string, unknown>;
+    const id = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null);
+    const shopIds = Array.isArray(m.shop_ids) ? m.shop_ids.map(id).filter((v): v is number => v !== null) : [];
+    if (shopIds.length === 0) return null;
+    const ids = Array.isArray(m.field_ids) ? m.field_ids.map(id).filter((v): v is number => v !== null) : [];
+    return { shop_ids: [...new Set(shopIds)], role: m.role === 'lines' ? 'lines' : 'orders', field_ids: [...new Set(ids)] };
+}
+
+const SHOP_REASON = 'Lo escribe la tienda con cada pedido: no se edita a mano.';
 
 const PAYMENT_REASON = 'Lo escribe el pago (Mercado Pago, PayPal o Wompi) cuando llega el aviso: no se edita a mano.';
 const PAYMENT_LINK_REASON = 'Es el link de pago que creó la app: no se edita a mano. Para cobrar de nuevo, crea otro link en «Cobros».';
@@ -140,6 +167,10 @@ export function managedFieldLocks(listSettings: unknown): ManagedFieldLock[] {
         add(log.record_field_id, 'charge_log', 'Es el suscriptor de este cobro: no se cambia a mano.', CHARGE_LOG_FREE);
         for (const id of log.field_ids) add(id, 'charge_log', 'Lo escribe el registro de cobros de las suscripciones: no se edita a mano.', CHARGE_LOG_FREE);
     }
+
+    // v0.1.412 — lo que escribe la tienda en Pedidos y Líneas de pedido.
+    const shop = readShopListMarker(listSettings);
+    if (shop) for (const id of shop.field_ids) add(id, 'shop', SHOP_REASON, null);
     return out;
 }
 

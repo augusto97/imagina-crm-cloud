@@ -108,6 +108,8 @@ describe('H1 — manifiesto (puro)', () => {
             agent: false,
             // Una suscripción que falla un cobro: campana y correo, sin push.
             subscription: false,
+            // v0.1.412 — un pedido nuevo de la tienda: hay que despacharlo.
+            shop: true,
         });
         expect(readNotificationPrefs({ push: { update: true } }).push).toMatchObject({ update: true, mention: true });
     });

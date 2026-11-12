@@ -778,6 +778,17 @@ export class TrashService {
                     UPDATE lists SET settings = settings - 'subscription_charge_log_of'
                     WHERE tenant_id = ${tenantId} AND (settings -> 'subscription_charge_log_of' ->> 'list_id')::bigint IN (${idList})
                 `);
+                // v0.1.412 — las listas de pedidos de una tienda que se fue con su
+                // catálogo vuelven a ser comunes (la tienda se borra en cascada).
+                await tx.execute(sql`
+                    UPDATE lists SET settings = settings - 'shop_orders_of'
+                    WHERE tenant_id = ${tenantId} AND settings ? 'shop_orders_of'
+                      AND NOT EXISTS (
+                          SELECT 1 FROM shops s
+                          WHERE s.tenant_id = lists.tenant_id
+                            AND (lists.settings -> 'shop_orders_of' -> 'shop_ids') @> to_jsonb(s.id)
+                      )
+                `);
             } else if (type === 'field') {
                 const doomed = (
                     await tx.execute<{ id: number | string; list_id: number | string; type: string }>(sql`

@@ -1,4 +1,4 @@
-import { BookmarkPlus, CalendarClock, ClipboardCheck, ClipboardList, Columns3, FileText, Globe2, Inbox, Paintbrush, Settings2, ShieldCheck, Timer, type LucideIcon } from 'lucide-react';
+import { BookmarkPlus, CalendarClock, ClipboardCheck, ClipboardList, Columns3, FileText, Globe2, Inbox, Paintbrush, Settings2, ShieldCheck, ShoppingBag, Timer, type LucideIcon } from 'lucide-react';
 
 import { __ } from '@/lib/i18n';
 
@@ -23,6 +23,7 @@ export type ListSettingsSectionId =
     | 'documentos'
     | 'formularios'
     | 'agenda'
+    | 'tienda'
     | 'aprobaciones'
     | 'plantillas'
     | 'correo'
@@ -143,6 +144,16 @@ export const LIST_SETTINGS_SECTIONS: readonly ListSettingsSection[] = [
         description: __('Una página donde tus clientes eligen el servicio, quién los atiende, el día y la hora libres; cada cita llega como un registro.'),
     },
     {
+        // v0.1.412 (ADR-S103) — tienda pública: la lista es el catálogo.
+        id: 'tienda',
+        label: __('Tienda'),
+        group: 'intake',
+        short: __('Vende los registros como productos'),
+        icon: ShoppingBag,
+        title: __('Tienda'),
+        description: __('Una página donde tus clientes ven los productos de esta lista, arman su carrito y te hacen el pedido. Cada compra llega como un registro de Pedidos.'),
+    },
+    {
         // C5 — flujos de aprobación (pasos en serie, qué se pone al resolver).
         id: 'aprobaciones',
         label: __('Aprobaciones'),
@@ -200,7 +211,7 @@ export function listSettingsSection(id: ListSettingsSectionId): ListSettingsSect
 const NAV_ORDER: readonly ListSettingsSectionId[] = [
     'campos', 'general', 'apariencia',
     'permisos', 'compartir',
-    'formularios', 'agenda', 'correo',
+    'formularios', 'agenda', 'tienda', 'correo',
     'plantillas', 'aprobaciones', 'documentos', 'sla',
 ];
 

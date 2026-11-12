@@ -2651,4 +2651,41 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.412-tienda',
+        version: '0.1.412',
+        date: '2026-11-12',
+        kind: 'feature',
+        title: 'Vende los productos de una lista con tu tienda',
+        summary:
+            'Cualquier lista con productos puede tener su tienda: tus clientes ven el catálogo, arman el carrito y te hacen el pedido. Te pagan por WhatsApp, transferencia o contra entrega, y cada compra llega como un pedido con sus productos y el cliente.',
+        media: {
+            slides: [
+                {
+                    title: 'Tu lista, como una vitrina',
+                    text: 'Cada registro es un producto, con su foto, su precio y su categoría. Lo que cambias en la lista se ve en la tienda.',
+                    illustration: 'tienda-vitrina',
+                },
+                {
+                    title: 'Cada compra, un pedido',
+                    text: 'El pedido llega a la lista de Pedidos con sus productos y el cliente, y el stock se descuenta solo. Te avisa la campana.',
+                    illustration: 'tienda-vitrina',
+                },
+                {
+                    title: 'Pagado o cancelado, en un toque',
+                    text: 'Cuando te pagan, abre el pedido y toca «Marcar como pagado». Si lo cancelas, el stock vuelve a cada producto.',
+                    illustration: 'tienda-pedido',
+                },
+            ],
+        },
+        body: [
+            'Abre la lista de tus productos y ve a **Configurar lista → Tienda**.',
+            '',
+            '- **Crear la tienda** arma las listas de Pedidos, Líneas de pedido y Clientes, y un tablero de ventas.',
+            '- Elige qué campo es el precio, la foto y el stock, cómo te pagan y cómo entregas.',
+            '- Completa quién vende y las políticas, publícala y comparte el enlace, el código para tu sitio o el QR.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

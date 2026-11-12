@@ -723,7 +723,7 @@ export function imageMimeOf(b: Buffer): string | null {
     return null;
 }
 
-async function readCapped(stream: Readable, max: number): Promise<Buffer | null> {
+export async function readCapped(stream: Readable, max: number): Promise<Buffer | null> {
     const chunks: Buffer[] = [];
     let size = 0;
     for await (const chunk of stream) {

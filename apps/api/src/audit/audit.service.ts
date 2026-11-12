@@ -44,6 +44,15 @@ export type AuditAction =
     | 'widget.unpublish'
     | 'widget.regenerate_link'
     | 'widget.delete'
+    // v0.1.412 (ADR-S103) — tiendas (catálogo público de una lista).
+    | 'shop.create'
+    | 'shop.publish'
+    | 'shop.unpublish'
+    | 'shop.regenerate_link'
+    | 'shop.delete'
+    | 'shop.mark_paid'
+    | 'shop.suspend'
+    | 'shop.unsuspend'
     // v0.1.353 — aprobar o rechazar una cita por confirmar.
     | 'booking.approve'
     | 'booking.decline'

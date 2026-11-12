@@ -8698,3 +8698,94 @@ configuración vive en Redis `platform:network` (viaja en el snapshot de
 ADR-S20) y los demás servidores la releen cada minuto. Para probar en
 desarrollo: `scripts/dev/fake-cloudflare.mjs`. Guía del operador:
 `docs/runbook-public-traffic.md`.
+
+### ADR-S103 — Tienda desde una lista: catálogo público, carrito y pedido (v0.1.412)
+
+**Contexto.** El usuario pidió «algo tipo tienda para una lista… que genere un
+link o vista pública para que la gente pueda comprar esos productos», con
+productos simples, variables, de pago único y de suscripción. Se analizó a fondo
+antes de desarrollar y aprobó el plan en seis versiones, **sin la parte de SEO**
+(«por el momento no me interesa que salga en Google la tienda»):
+
+| Versión | Qué trae |
+|---|---|
+| v0.1.412 | Catálogo, carrito y pedido sin pasarela (WhatsApp, transferencia, contra entrega) |
+| v0.1.413 | Pago en línea (Mercado Pago, Wompi, PayPal) con vencimiento y pago tardío |
+| v0.1.414 | Productos variables (variantes como subtareas) |
+| v0.1.415 | Envíos por zona y cupones |
+| v0.1.416 | Suscripción, digital, servicio y «Mis pedidos» |
+| v0.1.417 | Estadísticas, conversiones, botones «Comprar» insertables, widget, asistente/MCP |
+
+Internamente el módulo se llama `shop` (`store` ya es WooCommerce, ADR-S24); la
+persona ve «Tienda».
+
+**Decisión.**
+1. **El catálogo ES una lista.** La tienda (`shops`, migración 0121, RLS) apunta
+   a una lista y a sus columnas por ID (`config.catalog`: título, precio, precio
+   antes, foto, descripción, categoría, stock, visible, orden). Renombrar una
+   columna no rompe nada (regla de oro nº 1). La configuración es un dato de
+   shared (`shopConfigSchema`, lectura tolerante por sección).
+2. **Los pedidos caen en listas COMUNES** armadas con el motor de plantillas
+   (`shop-pack.ts`): Pedidos (número automático `PED-0001`, estados con
+   colores, pago, totales, entrega, cliente), Líneas de pedido (producto,
+   cantidad, precio, subtotal) y Clientes (deduplicados por correo en
+   minúsculas), vinculadas entre sí, con kanban y el tablero «Ventas · tienda».
+   Sólo las columnas que escribe la tienda llevan candado: marca
+   `shop_orders_of` en la lista (`managedFieldLocks`, como los cobros de
+   ADR-S96). Lo demás es de la empresa.
+3. **El pedido nace en UNA transacción** (`ShopOrdersService.place`):
+   - bloquea los productos `FOR NO KEY UPDATE` en orden de id;
+   - **recalcula el carrito desde la base** con `computeShopCart` (shared, la
+     misma función de la página); si algo cambió (precio, stock, producto
+     oculto) responde 409 `shop_cart_changed` con el carrito nuevo;
+   - descuenta el stock y crea cliente, pedido, líneas y vínculos;
+   - guarda la fila de `shop_orders` con lo que se cobró y `stock_state`.
+
+   Después del commit: tiempo real, automatizaciones y un aviso `shop` (campana,
+   correo y push). Dos compradores por la última unidad: uno gana y el otro
+   recibe el carrito nuevo.
+4. **Cancelar devuelve el stock**: el `RecordChangeHub` avisa del cambio de
+   estado y `syncCancellation` lo devuelve (`stock_state: returned`); sacarlo de
+   «Cancelado» lo vuelve a tomar. «Marcar como pagado» (ficha del pedido, panel
+   `RecordShopOrderPanel`) pone el estado del pago y la fecha.
+5. **Página pública servida por el API** (`/api/v1/public/s/:token`), como los
+   formularios y la agenda:
+   - cacheada 30 s (`PublicCacheService`), CSP por hash y cliente IIFE propio
+     (`apps/web/app/public-shop/main.ts`, `vite.shop.config.ts`);
+   - la marca de la empresa y su formato de números;
+   - el pedido usa la información fresca (`freshInfo`), nunca la de la caché.
+
+   Anti-abuso:
+   - sello HMAC `shopstamp` (mínimo 3 s, máximo 6 h) y campo trampa;
+   - límites en Redis: IP 8 cada 10 min y 40 por día, tienda 600 por hora,
+     correo 6 por hora; cuentan también los intentos rechazados;
+   - captcha opcional (el de los formularios, ADR-S48) y la autorización de
+     datos de la empresa (ADR-S54).
+
+   Quien vende tiene que completar lo que pide la ley (razón social, NIT,
+   contacto, políticas de devolución y reversión) antes de publicar:
+   `shop_not_ready`.
+6. **Pago sin pasarela en esta versión**: WhatsApp (el número **nunca viaja a la
+   página**: `/api/v1/public/s/:token/wa/:order` responde 302 a `wa.me` con el
+   pedido armado), transferencia (con las instrucciones) y contra entrega.
+7. **Fotos en miniatura con `sharp`** (dependencia nueva, nativa):
+   - 160/320/640/1200 px en WebP;
+   - la dirección lleva la foto y el ancho, con caché de un año;
+   - sólo fotos que están HOY en un producto de esa tienda (no es un proxy);
+   - si el servidor no carga `sharp`, se sirve la original chica.
+8. **Sin SEO** (decisión del usuario): `noindex` siempre. Sí lleva las etiquetas
+   para compartir (Open Graph).
+9. **Módulo `shop` sólo en planes pagos**: la migración 0121 lo apaga en `trial`
+   por el riesgo de tiendas falsas en el dominio de la plataforma, y el
+   operador puede **suspender** una tienda desde la consola
+   (`/platform/shops`). Apagado, suspendido, empresa pausada o plan sin tienda
+   → el mismo 404 opaco.
+10. **Fuera de alcance**: factura electrónica DIAN.
+
+**Consecuencias.**
+- Migrar una empresa NO lleva las tiendas: el catálogo y los pedidos llegan
+  como listas comunes, sin la marca, y se avisa. Borrar la empresa borra
+  `shops` y `shop_orders`.
+- Quitar la tienda quita la marca de las listas, que quedan con todos sus datos.
+- Lo que dejan preparado las columnas de `shop_orders` para v0.1.413:
+  `payment_link_id`, `expires_at` y el índice de los que vencen.

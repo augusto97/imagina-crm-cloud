@@ -40,7 +40,7 @@ describe('menú agrupado de la configuración (v0.1.406)', () => {
     });
 
     it('lo que el rol o la lista no permiten no aparece, y un grupo vacío tampoco', () => {
-        const groups = groupedListSettingsSections((id) => id !== 'formularios' && id !== 'agenda' && id !== 'correo');
+        const groups = groupedListSettingsSections((id) => id !== 'formularios' && id !== 'agenda' && id !== 'correo' && id !== 'tienda');
         expect(groups.some((g) => g.id === 'intake')).toBe(false);
         expect(groups.flatMap((g) => g.sections.map((s) => s.id))).not.toContain('formularios');
     });

@@ -423,6 +423,36 @@ export class DataConsentService {
      * contrato que la de un formulario (se guarda ANTES que el registro y se
      * descarta si la cita no se crea); el origen es «Agenda «X»».
      */
+    /** v0.1.412 — La autorización dada al comprar en una tienda («Tienda «X»»). */
+    async recordShop(
+        tenantId: number,
+        input: Omit<FormConsentInput, 'formId' | 'formName'> & { shopName: string },
+    ): Promise<{ id: number; withdrawRef: string | null }> {
+        const ref = input.withdrawRef !== undefined ? input.withdrawRef : input.email ? newWithdrawRef() : null;
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .insert(dataConsents)
+                .values({
+                    tenantId,
+                    version: input.version,
+                    textHash: input.textHash,
+                    source: 'shop',
+                    sourceLabel: `Tienda «${input.shopName}»`.slice(0, 300),
+                    formId: null,
+                    listId: input.listId,
+                    recordId: input.recordId,
+                    subjectEmail: input.email?.slice(0, 320) ?? null,
+                    subjectName: input.name?.slice(0, 300) ?? null,
+                    acceptedAt: input.acceptedAt,
+                    ip: input.ip?.slice(0, 64) ?? null,
+                    userAgent: input.userAgent?.slice(0, 400) ?? null,
+                    withdrawRef: ref,
+                })
+                .returning({ id: dataConsents.id }),
+        );
+        return { id: row!.id, withdrawRef: ref };
+    }
+
     async recordBooking(
         tenantId: number,
         input: Omit<FormConsentInput, 'formId' | 'formName'> & { pageName: string },

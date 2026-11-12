@@ -1,0 +1,47 @@
+import type { LearnModuleMeta } from '../types';
+
+export const meta: LearnModuleMeta = {
+    id: 'tienda-online',
+    group: 'share',
+    order: 3.5,
+    title: 'Tienda online',
+    tagline: 'Vende los productos de una lista: tus clientes arman el carrito, hacen el pedido y te pagan por WhatsApp, transferencia o contra entrega.',
+    icon: 'ShoppingCart',
+    tone: 'amber',
+    hero: 'tienda-vitrina',
+    highlights: [
+        'Una página de tienda armada con los registros de una lista, sin programar',
+        'Carrito, entrega y forma de pago: WhatsApp, transferencia o contra entrega',
+        'Cada compra llega como un pedido con sus productos y el cliente',
+        'El stock se descuenta solo y vuelve si cancelas el pedido',
+        'Enlace, código para tu sitio web y código QR',
+    ],
+    articles: [
+        {
+            id: 'tienda-online-crear',
+            title: 'Crear tu tienda desde una lista de productos',
+            summary: 'Qué listas se crean, cómo se eligen el precio, la foto y el stock, y qué datos de quien vende pide la ley antes de publicar.',
+            minutes: 6,
+            level: 'basic',
+            keywords: 'tienda crear catalogo productos precio foto stock categoria vender ecommerce quien vende nit politicas devoluciones publicar',
+            needs: 'manage_lists',
+        },
+        {
+            id: 'tienda-online-comprar',
+            title: 'Cómo compran tus clientes: pago, entrega y avisos',
+            summary: 'El carrito, las formas de entrega, el pedido por WhatsApp, la transferencia y el pago contra entrega, y los avisos que recibes con cada pedido.',
+            minutes: 6,
+            level: 'basic',
+            keywords: 'carrito comprar pedido whatsapp transferencia contra entrega envio domicilio recoger compra minima correo confirmacion aviso campana',
+            needs: 'manage_lists',
+        },
+        {
+            id: 'tienda-online-pedidos',
+            title: 'Atender los pedidos: estado, pago y stock',
+            summary: 'Dónde caen los pedidos, qué columnas cuida la tienda, cómo marcar un pedido como pagado y qué pasa con el stock al cancelarlo.',
+            minutes: 5,
+            level: 'basic',
+            keywords: 'pedidos lineas clientes estado nuevo preparacion enviado entregado cancelado marcar pagado stock devolver tablero ventas',
+        },
+    ],
+};

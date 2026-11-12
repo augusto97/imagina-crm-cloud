@@ -415,7 +415,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.411**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.412**
+(**tienda desde una lista, primera de seis versiones** — el catálogo es una
+lista, la página pública con carrito, el pedido en una transacción con el stock
+recalculado desde la base, pago por WhatsApp, transferencia o contra entrega,
+pedidos/líneas/clientes en listas comunes con candado sólo en lo que escribe la
+tienda, cancelar devuelve el stock, fotos en miniatura con `sharp`, sin SEO,
+sólo planes pagos y suspensión desde la consola; ADR-S103). Antes **v0.1.411**
 (**el índice de automatizaciones de una lista rediseñado, con carpetas** — una
 fila compacta por automatización, buscador por nombre o por lo que hace,
 filtros Activas/Pausadas/Con fallas, agrupar por carpeta o disparador, ordenar,
@@ -683,6 +689,23 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-12 — **Tienda desde una lista** (pedido del usuario: «algo tipo
+  tienda para una lista… productos simples, variables, de pago único y de
+  suscripción; analízalo a fondo antes de desarrollar»). **DECIDIDO**: «Haz
+  todo como lo veas más conveniente, haz todos los pasos excepto el 3 (el de
+  SEO): por el momento no me interesa que la tienda salga en Google». Quedan
+  aceptadas las decisiones propuestas: catálogo = lista, primera versión sin
+  pasarela, módulo `shop` sólo en planes pagos (0121 lo apaga en `trial`),
+  suspensión por el operador, miniaturas con `sharp`, factura DIAN fuera,
+  `noindex` siempre (con Open Graph para compartir). **v0.1.412 HECHA**
+  (catálogo, carrito y pedido sin pasarela: ADR-S103). **Siguen, en orden**:
+  v0.1.413 pago en línea (Mercado Pago, Wompi, PayPal) con el stock apartado
+  `hold_minutes` y pago tardío (las columnas `payment_link_id`/`expires_at` de
+  `shop_orders` ya existen) → v0.1.414 productos variables (variantes como
+  subtareas) → v0.1.415 envíos por zona y cupones → v0.1.416 suscripción,
+  digital, servicio y «Mis pedidos» → v0.1.417 estadísticas, conversiones,
+  botones «Comprar» insertables, widget y asistente/MCP. El SEO (y el dominio
+  propio de la tienda) queda para cuando el usuario lo pida.
 - 2026-11-11 — **Conector completo de Whats** (el usuario adjuntó la
   documentación de la API v1 de Whats y aprobó la lista de acciones y
   disparadores). **v0.1.401 y v0.1.402 HECHAS** (acciones y disparadores:
@@ -1877,6 +1900,30 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-12 · v0.1.412** — **Tienda desde una lista: catálogo, carrito y
+  pedido** (primera de seis versiones; el usuario: «haz todos los pasos excepto
+  el 3», sin SEO). Configuración de la lista → **Tienda** crea la tienda
+  (`shops`, migración 0121, RLS) con las columnas del producto sugeridas, y un
+  editor a pantalla completa (Catálogo · Diseño · Pago · Compra · Quién vende ·
+  Pedidos · Publicar) con la página real de vista previa. Los pedidos caen en
+  tres listas comunes armadas con el motor de plantillas (Pedidos `PED-0001`,
+  Líneas, Clientes por correo) con kanban y tablero; sólo lo que escribe la
+  tienda lleva candado (`shop_orders_of`). El pedido nace en UNA transacción:
+  productos bloqueados, carrito recalculado desde la base (409
+  `shop_cart_changed`), stock descontado, `shop_orders` con lo cobrado; aviso
+  nuevo `shop` (campana, correo, push). Cancelar devuelve el stock; «Marcar como
+  pagado» en la ficha. Página pública por el API con caché de 30 s, CSP por
+  hash, sello + trampa, límites por IP/tienda/correo, captcha y autorización de
+  datos opcionales, y los datos de quien vende obligatorios antes de publicar.
+  Pago por WhatsApp (302 a `wa.me`, el número nunca viaja a la página),
+  transferencia o contra entrega. Fotos con `sharp` (dependencia nueva) en
+  160-1200 px WebP. `noindex` siempre; módulo sólo en planes pagos; el operador
+  suspende tiendas. Migrar una empresa no las lleva (se avisa). Ayuda: guía
+  `shop`, módulo **Tienda online** en Aprende (3 artículos, 2 ilustraciones) y
+  novedad. Tests: `shops.spec` 8/8, shared 898, front 913 + E2E 47/47 en
+  escritorio y celular oscuro; el E2E atrapó el botón de WhatsApp de la página
+  del pedido con una ruta rota. Sigue v0.1.413 (pago en línea).
 
 - **2026-11-11 · v0.1.411** — **Automatizaciones en carpetas: el índice de
   cada lista rediseñado** (pedido del usuario mientras salía v0.1.410: "la vista
