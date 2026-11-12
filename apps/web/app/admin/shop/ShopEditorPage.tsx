@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
-import { BarChart3, Code2, CreditCard, Megaphone, Eye, EyeOff, Loader2, Moon, Package, Palette, ReceiptText, Send, ShieldCheck, ShoppingBag, SlidersHorizontal, Sun, Ticket, UserRound, type LucideIcon } from 'lucide-react';
+import { BarChart3, Code2, CreditCard, LayoutGrid, Paintbrush, Megaphone, Eye, EyeOff, Loader2, Moon, Package, ReceiptText, Send, ShieldCheck, ShoppingBag, SlidersHorizontal, Sun, Ticket, UserRound, type LucideIcon } from 'lucide-react';
 import { readShopConfig, shopProblems, type ShopConfig, type ShopDto, type ShopOptions, type ShopProblem, type ShopSection } from '@imagina-base/shared';
 
 import {
@@ -36,6 +36,7 @@ import { demoVersion } from '../forms/EmbedDemo';
 import { ShareDialog, type ShareTab } from '../forms/ShareDialog';
 import { ShopBuyButtons } from './ShopBuyButtons';
 import { CatalogPanel, catalogNeedsDelivery, CheckoutPanel, DesignPanel, OrdersPanel, PaymentPanel, PublishPanel, SellerPanel } from './ShopPanels';
+import { StylePanel } from './ShopStylePanel';
 import { CouponsPanel } from './ShopCouponsPanel';
 import { ShopMeasurePanel } from './ShopMeasurePanel';
 import { ShopPreview } from './ShopPreview';
@@ -45,7 +46,8 @@ import { shopPublicUrl, useDeleteShop, useRegenerateShop, useShop, useShopCoupon
 
 const SECTION_ICON: Record<ShopSection, LucideIcon> = {
     catalog: Package,
-    design: Palette,
+    style: Paintbrush,
+    design: LayoutGrid,
     payment: CreditCard,
     checkout: ReceiptText,
     coupons: Ticket,
@@ -258,6 +260,8 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                         }}
                     />
                 );
+            case 'style':
+                return <StylePanel config={config} options={options} patch={patch} />;
             case 'design':
                 return <DesignPanel config={config} options={options} patch={patch} />;
             case 'payment':

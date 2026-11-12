@@ -1,11 +1,11 @@
-import { SHOP_PAYMENT_METHOD_LABELS, type ShopConfig, type ShopProblem, type ShopSection } from '@imagina-base/shared';
+import { SHOP_DESIGN_PRESETS, SHOP_PAYMENT_METHOD_LABELS, type ShopConfig, type ShopProblem, type ShopSection } from '@imagina-base/shared';
 
 /**
  * v0.1.412 (ADR-S103) — Lo PURO del editor de la tienda: las secciones, cómo
  * está cada una en palabras y la sección donde se arregla cada problema.
  */
 
-export const SHOP_EDITOR_SECTIONS: readonly ShopSection[] = ['catalog', 'design', 'payment', 'coupons', 'checkout', 'seller', 'orders', 'measure', 'publish'];
+export const SHOP_EDITOR_SECTIONS: readonly ShopSection[] = ['catalog', 'style', 'design', 'payment', 'coupons', 'checkout', 'seller', 'orders', 'measure', 'publish'];
 
 export const SHOP_SECTION_INFO: Record<ShopSection, { label: string; group: string; title: string; hint: string }> = {
     catalog: {
@@ -14,11 +14,17 @@ export const SHOP_SECTION_INFO: Record<ShopSection, { label: string; group: stri
         title: 'Productos',
         hint: 'Qué campo de la lista es el nombre, el precio, la foto y el stock de cada producto.',
     },
+    style: {
+        label: 'Estilo',
+        group: 'La tienda',
+        title: 'Estilo',
+        hint: 'Plantillas, colores y modo oscuro, letra, encabezado, portada y cómo se ven las tarjetas y los botones.',
+    },
     design: {
         label: 'Apariencia',
         group: 'La tienda',
         title: 'Apariencia',
-        hint: 'El título, el color, cómo se ven las tarjetas y en qué orden salen los productos.',
+        hint: 'Cuántos productos por fila, cómo se ven las fotos, el orden, el buscador y qué pasa al agregar al carrito.',
     },
     payment: {
         label: 'Pago y entrega',
@@ -81,8 +87,13 @@ export function shopSectionSummary(
             ].filter(Boolean);
             return [n, ...extra].join(' · ');
         }
+        case 'style': {
+            const preset = SHOP_DESIGN_PRESETS.find((p) => p.id === (config.design.preset ?? 'clasica'));
+            const mode = config.design.mode === 'dark' ? 'oscura' : config.design.mode === 'auto' ? 'clara u oscura' : 'clara';
+            return `${preset ? preset.label : 'Personalizado'} · ${mode}`;
+        }
         case 'design':
-            return `${config.display.columns} por fila · ${config.color ? 'color propio' : 'color de tu marca'}`;
+            return `${config.display.columns} por fila · ${config.display.after_add === 'checkout' ? 'agregar lleva al pago' : 'con carrito'}`;
         case 'payment': {
             const p = config.payments;
             const on = [

@@ -2984,4 +2984,38 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.422-estilo-tienda',
+        version: '0.1.422',
+        date: '2026-11-12',
+        kind: 'feature',
+        title: 'Tu tienda con tu estilo: plantillas, modo oscuro, letra, portada con foto y más',
+        summary:
+            'La tienda tiene una sección nueva, Estilo: elige una plantilla y cambia los colores, el modo claro u oscuro, la letra, el encabezado, la portada con una foto y cómo se ven las tarjetas y los botones.',
+        media: {
+            slides: [
+                {
+                    title: 'Seis plantillas para empezar',
+                    text: 'Clásica, Minimalista, Boutique, Moderna, Mercado y Noche. Tus productos, textos y fotos se conservan.',
+                    illustration: 'tienda-vitrina',
+                },
+                {
+                    title: 'Claro, oscuro o automático',
+                    text: 'Con «Automático», la tienda se ve clara u oscura según el celular de cada persona. En la vista previa puedes ver las dos.',
+                    illustration: 'tienda-vitrina',
+                },
+                {
+                    title: 'Encabezado, portada y tarjetas',
+                    text: 'El encabezado de tu color o con el logo al centro, una portada a lo ancho con tu foto, y tarjetas con borde, sombra o planas.',
+                    illustration: 'tienda-vitrina',
+                },
+            ],
+        },
+        body: [
+            '- Abre tu tienda (**Configurar lista → Tienda → Editar**) y ve a **Estilo**.',
+            '- El título y la descripción de la tienda ahora están en **Estilo → Portada**.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

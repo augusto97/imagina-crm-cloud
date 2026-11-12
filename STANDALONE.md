@@ -9118,3 +9118,35 @@ carrito, diseño, dominio propio con SEO).
 3. **Botón «Comprar» de un producto**: `shopCartLinkUrl` arma el enlace; con
    variantes se elige cuál (sin elegir, el enlace abre el producto).
 
+
+**Addendum v0.1.422 — El estilo de la tienda.**
+1. **`config.design`** (`shopDesignSchema`, `packages/shared/src/schemas/
+   shop-design.ts`), leído con tolerancia campo por campo: una tienda de antes
+   (o un campo raro) cae al estilo de siempre, sin migración. Plantilla,
+   modo (`light` | `dark` | `auto`), colores (fondo, tarjetas, texto,
+   encabezado), letra de textos y títulos, tamaño y grosor, esquinas,
+   tarjetas, alineación, botón, espacio, ancho, encabezado (estilo,
+   alineación, tamaño del logo, fijo), portada (estilo, foto, alto,
+   oscurecido, alineación, tamaño del título) y CSS propio.
+2. **Lo arma el servidor**: `buildShopDesignCss` devuelve las variables
+   (`--s-*`) y `shopDesignClasses` las clases del `<body>`; la estructura vive
+   en `SHOP_CSS` con esas variables (sin colores fijos) y cada variante es una
+   clase. El texto se lleva a contraste ≥ 4.5 contra las tarjetas; en modo
+   `auto` la versión oscura va en `@media (prefers-color-scheme: dark)` +
+   `:root[data-scheme=dark]` (la vista previa fuerza una u otra), como los
+   formularios (ADR-S94). Las fuentes son las de la app
+   (`selfHostedFontFaces`): nada se carga de terceros y la CSP no cambia.
+3. **Plantillas** (`SHOP_DESIGN_PRESETS`): sólo cambian el aspecto;
+   `applyShopDesignPreset` conserva la foto de la portada, el ancho, el tamaño
+   del logo y el CSS propio. No cambian cuántos productos por fila (eso es
+   Apariencia).
+4. **La foto de la portada** es un adjunto de la empresa (PNG, JPG, GIF, WebP
+   o AVIF; nunca SVG — 400 `invalid_image`) y, para quien no es admin, pasa
+   por `assertNewAttachable` (la regla de archivos de toda la app). Se sirve
+   por la ruta de fotos de la tienda a 1600 px; la vista previa usa una URL
+   firmada.
+5. **CSS propio**: sólo un administrador lo cambia (403
+   `custom_css_admin_only`); se guarda limpio (`sanitizePublicCss`) y se
+   vuelve a limpiar al servir.
+6. **El título y la descripción** de la tienda se editan en Estilo → Portada
+   (siguen en `config.texts`).
