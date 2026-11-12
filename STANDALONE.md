@@ -9096,3 +9096,25 @@ carrito, diseño, dominio propio con SEO).
    si todo es digital, servicio o suscripción, se publica sin ellas. Lo deducen
    igual el servidor (`hasPhysicalProducts`) y el editor
    (`catalogNeedsDelivery`).
+
+**Addendum v0.1.421 — Qué pasa al agregar al carrito.**
+1. **`display.after_add`** (`toast` | `drawer` | `cart` | `checkout`, default
+   `drawer`, `SHOP_AFTER_ADD`): lo decide la página pública después de que el
+   carrito aumentó (no en el «+» de una línea que ya estaba). `cart` es una
+   vista propia de la página (`view === 'cart'`), no una capa: el botón del
+   carrito de arriba y la barra del celular llevan ahí en ese modo.
+   `display.buy_now` (default sí) + `texts.buy_now` ponen «Comprar ahora» en
+   la ficha, salvo con `checkout`. La ficha elige cuántos antes de agregar
+   (estado de la capa, sin volver a contar la visita del producto).
+2. **Enlaces**: `?comprar=` (al pago) y `?agregar=` (al carrito) con
+   `parseShopCartParam` (shared, puro, sin zod): `12`, `12:2`, `12:2,15`,
+   `cantidad` para el primero, ids de producto o de variante, repetidos
+   sumados, tope de 20 productos y 999 unidades. La cantidad deja la línea en
+   al menos ese número (no la reemplaza ni vacía el resto del carrito). Lo
+   que no se compra directo abre su ficha (con opciones, servicio) o va a
+   suscribirse; el parámetro se quita de la dirección. Todo es del cliente:
+   el pedido sigue recalculándose en el servidor (ADR-S103), así un enlace no
+   puede cambiar precios ni saltarse el stock.
+3. **Botón «Comprar» de un producto**: `shopCartLinkUrl` arma el enlace; con
+   variantes se elige cuál (sin elegir, el enlace abre el producto).
+

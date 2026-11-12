@@ -415,8 +415,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.420**
-(**la Descripción se guarda con «Guardar cambios» y sirve como descripción del
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.421**
+(**qué pasa al agregar al carrito** — Apariencia → Al agregar al carrito: el
+carrito al costado con lo agregado marcado, un aviso, una página del carrito
+nueva o directo al pago; en la ficha se elige cuántos y está «Comprar ahora»;
+enlaces `?comprar=` / `?agregar=` que arman el carrito, y el botón «Comprar»
+de un producto que lo agrega y lleva al pago; addendum ADR-S103). Antes
+**v0.1.420** (**la Descripción se guarda con «Guardar cambios» y sirve como descripción del
 producto** — en el modal y la página del registro escribir en la Descripción
 activa «Guardar cambios» (antes se guardaba sola y el botón no reaccionaba);
 la tienda puede usar la descripción con formato del registro (títulos, listas,
@@ -425,7 +430,7 @@ digital, servicios o suscripciones se publica sin formas de entrega; addendum
 ADR-S103). **Plan acordado con el usuario para lo que sigue**: v0.1.421 qué
 pasa al agregar al carrito (aviso / abrir el carrito / ir al carrito / ir
 directo al pago, elegible) + enlace que agrega un producto y abre el pago
-(`?comprar=`) + mejoras visuales de la vitrina; v0.1.422 diseño de la tienda
+(`?comprar=`) + mejoras visuales de la vitrina (HECHO en v0.1.421); v0.1.422 diseño de la tienda
 (plantillas, colores, fuentes, encabezado, tarjetas, modo oscuro, CSS propio);
 v0.1.423 dominio propio SÓLO para la tienda, y sólo ahí se indexa en Google
 (páginas de producto, sitemap, canonical, datos estructurados). Antes
@@ -1959,6 +1964,22 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-12 · v0.1.421** — **Qué pasa al agregar al carrito y enlaces que
+  llevan al pago** (del mismo mensaje del usuario que v0.1.420: "agregar al
+  carrito no abre el carrito ni nada… debería poderse controlar… y un link
+  que redirija al producto ya agregado en el checkout"). Apariencia → **Al
+  agregar al carrito**: el carrito al costado (lo nuevo por defecto, con lo
+  agregado marcado), un aviso con «Ver carrito», una **página del carrito**
+  nueva o directo al pago. Ficha con cantidad antes de agregar y **Comprar
+  ahora**. Enlaces `?comprar=12:2` (al pago) y `?agregar=12` (al carrito), y
+  el botón «Comprar» de un producto con «Al hacer clic» (abrir el producto,
+  agregarlo y llevar al pago, o agregarlo al carrito) con cantidad y variante.
+  **Atrapado en el E2E**: las opciones de «Al hacer clic» se cortaban en el
+  panel angosto (pasaron a un desplegable) y las cuatro formas en dos
+  columnas quedaban apretadas (una columna). Tests: `shop.test` +3,
+  `embedCode.test` +2 + E2E 28/28 en escritorio y 28/28 en celular oscuro.
+  Siguen v0.1.422 (diseño de la tienda) y v0.1.423 (dominio propio con SEO).
 
 - **2026-11-12 · v0.1.420** — **La Descripción se guarda con «Guardar
   cambios» y sirve como descripción del producto** (reporte del usuario con

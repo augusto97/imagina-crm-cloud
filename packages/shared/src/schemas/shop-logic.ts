@@ -245,6 +245,56 @@ export function shopOnlinePayment(provider: string | null | undefined): { label:
 }
 
 /** v0.1.413 — Cuánto se aparta el stock mientras la persona paga en línea. */
+/**
+ * v0.1.421 — Qué pasa al agregar un producto al carrito: un aviso (y sigue
+ * mirando), se abre el carrito al costado, va a la página del carrito o va
+ * directo al pago.
+ */
+export const SHOP_AFTER_ADD = ['toast', 'drawer', 'cart', 'checkout'] as const;
+export type ShopAfterAdd = (typeof SHOP_AFTER_ADD)[number];
+export const SHOP_AFTER_ADD_LABELS: Record<ShopAfterAdd, string> = {
+    toast: 'Un aviso y sigue mirando',
+    drawer: 'Se abre el carrito al costado',
+    cart: 'Va a la página del carrito',
+    checkout: 'Va directo al pago',
+};
+
+/** v0.1.421 — Cuántos productos puede traer un enlace `?comprar=` / `?agregar=`. */
+export const SHOP_LINK_MAX_ITEMS = 20;
+
+/**
+ * v0.1.421 — Lee los productos de un enlace que arma el carrito:
+ * `?comprar=12`, `?comprar=12:2`, `?comprar=12:2,15` (id de producto o de
+ * variante, y cuántos). `cantidad` vale para el primero si no trae la suya.
+ * Repetidos se juntan; lo que no se entiende se ignora.
+ */
+export function parseShopCartParam(raw: string | null | undefined, qtyParam?: string | null): Array<{ id: number; qty: number }> {
+    if (typeof raw !== 'string' || raw.trim() === '') return [];
+    const fallback = Number(qtyParam);
+    const out = new Map<number, number>();
+    const parts = raw.split(',').slice(0, SHOP_LINK_MAX_ITEMS * 2);
+    parts.forEach((part, i) => {
+        const m = /^\s*(\d{1,15})(?:\s*[:x*]\s*(\d{1,4}))?\s*$/i.exec(part);
+        if (!m) return;
+        const id = Number(m[1]);
+        if (!Number.isSafeInteger(id) || id <= 0) return;
+        let qty = m[2] !== undefined ? Number(m[2]) : i === 0 && Number.isInteger(fallback) && fallback > 0 ? fallback : 1;
+        if (!Number.isInteger(qty) || qty <= 0) qty = 1;
+        if (!out.has(id) && out.size >= SHOP_LINK_MAX_ITEMS) return;
+        out.set(id, Math.min(SHOP_MAX_QTY, (out.get(id) ?? 0) + qty));
+    });
+    return [...out].map(([id, qty]) => ({ id, qty }));
+}
+
+/** v0.1.421 — El valor de `?comprar=` / `?agregar=` para esos productos. */
+export function shopCartParam(items: ReadonlyArray<{ id: number; qty: number }>): string {
+    return items
+        .filter((x) => Number.isSafeInteger(x.id) && x.id > 0)
+        .slice(0, SHOP_LINK_MAX_ITEMS)
+        .map((x) => (x.qty > 1 ? `${x.id}:${Math.min(SHOP_MAX_QTY, Math.floor(x.qty))}` : String(x.id)))
+        .join(',');
+}
+
 export const SHOP_HOLD_MINUTES_MIN = 10;
 export const SHOP_HOLD_MINUTES_MAX = 240;
 

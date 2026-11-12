@@ -39,6 +39,7 @@ import {
     computeShopCart,
     formatShopMoney,
     normalizeCouponCode,
+    parseShopCartParam,
     pickShopVariant,
     shopCouponProblemText,
     shopCurrencyDecimals,
@@ -204,12 +205,21 @@ function storageSet(key: string, value: string | null): void {
 }
 
 let toastTimer = 0;
-function toast(text: string): void {
+/** Un aviso abajo; con `action`, un botón (ej.: «Ver carrito»). */
+function toast(text: string, action?: { label: string; run: () => void }): void {
     document.querySelector('.s-toast')?.remove();
-    const t = el('div', { cls: 's-toast', role: 'status', text });
+    const t = el('div', { cls: 's-toast', role: 'status', 'data-testid': 'shop-toast' }, [el('span', { text })]);
+    if (action) {
+        const b = el('button', { type: 'button', cls: 's-toast-a', text: action.label, 'data-testid': 'shop-toast-action' });
+        b.addEventListener('click', () => {
+            t.remove();
+            action.run();
+        });
+        t.append(b);
+    }
     document.body.appendChild(t);
     window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(() => t.remove(), 2600);
+    toastTimer = window.setTimeout(() => t.remove(), action ? 4500 : 2600);
 }
 
 interface ApiErr {
@@ -530,7 +540,12 @@ function setQty(id: number, qty: number): void {
     paintCartButtons();
     const productId = item?.product.id ?? id;
     paintCard(productId);
-    if (overlay?.kind === 'cart') renderOverlay();
+    if (overlay?.kind === 'cart') {
+        // Un cambio en el carrito apaga el «Agregaste…» de recién.
+        if (overlay.flash !== undefined) overlay = { kind: 'cart' };
+        renderOverlay();
+    }
+    if (view === 'cart') paintCartPage();
     if (overlay?.kind === 'product' && overlay.id === productId) renderOverlay();
     if (view === 'checkout') paintSummary();
 }
@@ -650,10 +665,10 @@ function sessionSet(key: string, value: string | null): void {
 
 // ───────────────────────────── Estado de la página ─────────────────────────────
 
-type View = 'catalog' | 'checkout' | 'order' | 'my';
+type View = 'catalog' | 'cart' | 'checkout' | 'order' | 'my';
 type Overlay =
-    | { kind: 'product'; id: number; image: number; sel?: Array<string | null> }
-    | { kind: 'cart' }
+    | { kind: 'product'; id: number; image: number; sel?: Array<string | null>; pick?: number }
+    | { kind: 'cart'; flash?: number }
     | { kind: 'policies'; focus: 'terms' | 'returns' | 'seller' }
     | { kind: 'my' }
     | null;
@@ -701,7 +716,7 @@ function header(): HTMLElement {
     ]);
     brand.addEventListener('click', () => goCatalog());
     const btn = el('button', { cls: 's-cart-btn', type: 'button', 'data-testid': 'shop-cart-open' }, [icon('cart'), el('span', { cls: 's-cart-l', text: 'Carrito' }), el('span', { cls: 's-badge', text: '0' })]);
-    btn.addEventListener('click', () => openOverlay({ kind: 'cart' }));
+    btn.addEventListener('click', () => openCart());
     cartButtons.push(btn);
     // v0.1.416 — «Mis pedidos»: un enlace al correo con los pedidos y las descargas.
     const my = el('button', { cls: 's-my-btn', type: 'button', 'data-testid': 'shop-my-open', 'aria-label': 'Mis pedidos' }, [icon('receipt'), el('span', { cls: 's-my-l', text: 'Mis pedidos' })]);
@@ -831,11 +846,13 @@ function chooseControl(p: PublicShopProduct): HTMLElement {
     return el('div', { style: 'display:flex;flex-direction:column' }, [b, n > 0 ? el('span', { cls: 's-incart', style: 'margin-top:6px', text: n === 1 ? '1 en el carrito' : `${n} en el carrito` }) : null]);
 }
 
-function addControl(p: { id: number; title: string; price: number | null; stock: number | null }, big = false): HTMLElement {
+function addControl(p: { id: number; title: string; price: number | null; stock: number | null }, big = false, pick = 1): HTMLElement {
     const qty = cart.get(p.id) ?? 0;
     const m = meta!;
     if (qty === 0) {
         const unavailable = soldOut(p) || p.price === null || !!m.closed;
+        const cap = maxFor(p);
+        const n = Math.max(1, Math.min(pick, cap || 1));
         const b = el('button', {
             type: 'button',
             cls: big ? 's-btn' : 's-add',
@@ -845,17 +862,83 @@ function addControl(p: { id: number; title: string; price: number | null; stock:
             // Al agregar, el foco pasa al «+» que aparece en su lugar.
             'data-k': `plus-${p.id}`,
         });
-        b.addEventListener('click', () => {
-            setQty(p.id, 1);
-            toast(`Agregaste «${p.title}» al carrito.`);
-        });
-        return b;
+        b.addEventListener('click', () => addToCart(p.id, big ? n : 1));
+        if (!big || unavailable || cap <= 1) return b;
+        // v0.1.421 — En la ficha se elige cuántos antes de agregar.
+        const minus = el('button', { type: 'button', 'aria-label': 'Uno menos', text: '−', disabled: n <= 1, 'data-k': `pminus-${p.id}` });
+        minus.addEventListener('click', () => setPick(n - 1));
+        const plus = el('button', { type: 'button', 'aria-label': 'Uno más', text: '+', disabled: n >= cap, 'data-k': `pplus-${p.id}` });
+        plus.addEventListener('click', () => setPick(n + 1));
+        return el('div', { cls: 's-buyrow' }, [el('div', { cls: 's-step s-pick', 'data-testid': 'shop-pick' }, [minus, el('span', { 'aria-live': 'polite', 'aria-label': 'Cantidad', text: String(n) }), plus]), b]);
     }
     const minus = el('button', { type: 'button', 'aria-label': 'Quitar uno', text: '−', 'data-k': `minus-${p.id}` });
     minus.addEventListener('click', () => setQty(p.id, qty - 1));
     const plus = el('button', { type: 'button', 'aria-label': 'Agregar uno', text: '+', disabled: qty >= maxFor(p), 'data-k': `plus-${p.id}` });
     plus.addEventListener('click', () => setQty(p.id, qty + 1));
     return el('div', { cls: 's-step', 'data-testid': 'shop-step', ...(big ? { style: 'height:50px' } : {}) }, [minus, el('span', { 'aria-live': 'polite', text: String(qty) }), plus]);
+}
+
+/** v0.1.421 — Cuántos se eligieron en la ficha antes de agregar. */
+function setPick(n: number): void {
+    if (overlay?.kind !== 'product') return;
+    overlay = { ...overlay, pick: Math.max(1, Math.min(SHOP_MAX_QTY, n)) };
+    renderOverlay();
+}
+
+/** Agrega `n` unidades y hace lo que la tienda eligió para después. */
+function addToCart(id: number, n: number): void {
+    if (!buyable.has(id)) return;
+    const before = cart.get(id) ?? 0;
+    setQty(id, before + n);
+    if ((cart.get(id) ?? 0) > before) afterAdded(id);
+}
+
+function bumpCart(): void {
+    const els = [...cartButtons.map((b) => b.querySelector<HTMLElement>('.s-badge')), mbar?.querySelector<HTMLElement>('.s-btn') ?? null];
+    for (const x of els) {
+        if (!x) continue;
+        x.classList.remove('s-bump');
+        void x.offsetWidth;
+        x.classList.add('s-bump');
+    }
+}
+
+/**
+ * v0.1.421 — Qué pasa al agregar al carrito (Diseño → Al agregar al carrito):
+ * un aviso con «Ver carrito», el carrito al costado (con lo agregado
+ * marcado), la página del carrito o directo al pago.
+ */
+function afterAdded(id: number): void {
+    bumpCart();
+    const title = buyable.get(id)?.title ?? '';
+    switch (meta!.display.after_add) {
+        case 'toast':
+            toast(title ? `Agregaste «${title}» al carrito.` : 'Agregado al carrito.', { label: 'Ver carrito', run: () => openCart() });
+            return;
+        case 'cart':
+            if (overlay) closeOverlay();
+            goCart();
+            return;
+        case 'checkout':
+            if (overlay) closeOverlay();
+            goCheckout();
+            return;
+        default:
+            if (overlay) {
+                overlay = { kind: 'cart', flash: id };
+                renderOverlay();
+            } else openOverlay({ kind: 'cart', flash: id });
+    }
+}
+
+/** El carrito: la página (si la tienda la usa) o el cajón al costado. */
+function openCart(): void {
+    if (meta?.display.after_add === 'cart') {
+        if (overlay) closeOverlay();
+        goCart();
+        return;
+    }
+    openOverlay({ kind: 'cart' });
 }
 
 function productCard(p: PublicShopProduct): HTMLElement {
@@ -1024,8 +1107,8 @@ function renderOverlay(): void {
     const veil = el('div', { cls: 's-veil' });
     veil.addEventListener('click', closeOverlay);
     let box: HTMLElement;
-    if (overlay.kind === 'product') box = productSheet(overlay.id, overlay.image, overlay.sel);
-    else if (overlay.kind === 'cart') box = cartSheet();
+    if (overlay.kind === 'product') box = productSheet(overlay.id, overlay.image, overlay.sel, overlay.pick ?? 1);
+    else if (overlay.kind === 'cart') box = cartSheet(overlay.flash);
     else if (overlay.kind === 'my') box = mySheet();
     else box = policiesSheet(overlay.focus);
     const keepFocus = ovRoot.contains(document.activeElement);
@@ -1212,7 +1295,7 @@ function subscriptionNote(p: PublicShopProduct): string {
     return `Se cobra ${cadenceText(plan)} con débito automático. Autorizas tu tarjeta en ${providerName(plan.provider)} una sola vez y los cobros se hacen solos.`;
 }
 
-function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>): HTMLElement {
+function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>, pick = 1): HTMLElement {
     const p = byId.get(id);
     if (!p) return sheet('narrow', 'Producto', [el('p', { cls: 's-empty', text: 'Este producto ya no está disponible.' })], null, 'shop-product');
     const service = isService(p);
@@ -1251,7 +1334,7 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
         priceEl = priceNode(p, 's-price s-d-price');
         st = stockText(p);
     } else if (!variable) {
-        buy = addControl(p, true);
+        buy = addControl(p, true, pick);
         priceEl = priceNode(p, 's-price s-d-price');
         st = stockText(p);
     } else if (variant && isSubscription(p)) {
@@ -1263,7 +1346,7 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
         sku = variant.sku || p.sku;
     } else if (variant) {
         const item = buyable.get(variant.id)!;
-        buy = addControl(item, true);
+        buy = addControl(item, true, pick);
         priceEl = priceNode(variant, 's-price s-d-price');
         st = stockText({ ...p, stock: variant.stock });
         sku = variant.sku || p.sku;
@@ -1274,6 +1357,23 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
         st = null;
     }
     const n = variable ? inCart(p) : 0;
+    // v0.1.421 — «Comprar ahora»: lo agrega (si no está) y va directo al pago.
+    const buyId = service || isSubscription(p) ? null : variable ? (variant?.id ?? null) : p.id;
+    const buyItem = buyId !== null ? buyable.get(buyId) : undefined;
+    const d = meta!.display;
+    const buyNow =
+        buyItem && d.buy_now && d.after_add !== 'checkout' && !meta!.closed && !soldOut(buyItem) && buyItem.price !== null
+            ? actionButton(
+                  meta!.texts.buy_now || 'Comprar ahora',
+                  () => {
+                      if ((cart.get(buyItem.id) ?? 0) === 0) setQty(buyItem.id, Math.max(1, Math.min(pick, maxFor(buyItem) || 1)));
+                      closeOverlay();
+                      goCheckout();
+                  },
+                  's-btn s-ghost s-buynow',
+                  'shop-buy-now',
+              )
+            : null;
     const info = el('div', {}, [
         el('h3', { cls: 's-d-title', text: p.title }),
         meta!.display.show_sku && sku ? el('div', { cls: 's-sku', text: `Ref. ${sku}` }) : null,
@@ -1281,7 +1381,7 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
         isSubscription(p) && p.subscription ? el('div', { cls: 's-cad', text: cadenceText(p.subscription) }) : null,
         variable ? variantOptions(p, sel, idx) : null,
         st ? el('div', { cls: 's-stock', style: 'margin-top:10px', text: st }) : null,
-        el('div', { style: 'margin-top:14px' }, [buy]),
+        el('div', { style: 'margin-top:14px' }, [buy, buyNow]),
         service
             ? el('p', { cls: 's-kind-note', 'data-testid': 'shop-kind-note' }, [icon('calendar'), bookUrl(p) ? 'Eliges el día y la hora en la agenda.' : 'La agenda de este servicio todavía no está disponible.'])
             : p.kind === 'digital'
@@ -1294,7 +1394,7 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
         p.categories.length > 0 ? el('div', { cls: 's-d-cats' }, p.categories.map((c) => el('span', { text: c }))) : null,
     ]);
     const qty = isSubscription(p) ? 0 : variable ? n : (cart.get(p.id) ?? 0);
-    const foot = qty > 0 ? [actionButton('Ver carrito', () => openOverlay({ kind: 'cart' }), 's-btn s-ghost')] : null;
+    const foot = qty > 0 ? [actionButton('Ver carrito', () => openCart(), 's-btn s-ghost', 'shop-sheet-cart')] : null;
     // v0.1.420 — La descripción con formato va abajo, a lo ancho (títulos, tablas, imágenes).
     const rich = p.rich_description ? descriptionBlock(p) : null;
     const descSection = rich ? el('section', { cls: 's-d-desc' }, [el('h4', { cls: 's-d-desc-t', text: 'Descripción' }), rich]) : null;
@@ -1309,7 +1409,7 @@ function actionButton(label: string, onClick: () => void, cls = 's-btn', testid?
     return b;
 }
 
-function cartLine(line: ShopCartResult['lines'][number]): HTMLElement {
+function cartLine(line: ShopCartResult['lines'][number], flash?: number): HTMLElement {
     const p = buyable.get(line.product_id);
     const img = p?.images[0];
     const minus = el('button', { type: 'button', 'aria-label': 'Quitar uno', text: '−', 'data-k': `cminus-${line.product_id}` });
@@ -1319,7 +1419,7 @@ function cartLine(line: ShopCartResult['lines'][number]): HTMLElement {
     const rm = el('button', { type: 'button', cls: 's-rm', text: 'Quitar' });
     rm.addEventListener('click', () => setQty(line.product_id, 0));
     const problem = shopLineProblemText(line);
-    return el('div', { cls: 's-line', 'data-testid': 'shop-cart-line' }, [
+    return el('div', { cls: `s-line${flash === line.product_id ? ' s-flash' : ''}`, 'data-testid': 'shop-cart-line' }, [
         el('div', { cls: 's-line-img' }, [img ? el('img', { src: imgUrl(img, 160), alt: '' }) : el('div', { cls: 's-noimg' }, [icon('image')])]),
         el('div', {}, [
             el('div', { cls: 's-line-t', text: p?.title || line.title || 'Producto' }),
@@ -1331,26 +1431,61 @@ function cartLine(line: ShopCartResult['lines'][number]): HTMLElement {
     ]);
 }
 
-function cartSheet(): HTMLElement {
+/** El total del carrito y el botón para seguir (el cajón y la página del carrito). */
+function cartSummary(est: ShopCartResult): Node[] {
+    const out: Node[] = [];
+    out.push(el('div', { cls: 's-sum' }, [el('div', {}, [el('span', { text: 'Subtotal' }), el('strong', { text: money(est.subtotal), 'data-testid': 'shop-cart-subtotal' })])]));
+    if (est.below_minimum !== null) out.push(el('div', { cls: 's-warn', text: `La compra mínima es de ${money(meta!.checkout.min_order ?? 0)}: te faltan ${money(est.below_minimum)}.` }));
+    else if (est.blocked) out.push(el('div', { cls: 's-warn', text: 'Revisa los productos marcados antes de seguir.' }));
+    const pendingCoupon = meta!.coupons ? sessionGet(COUPON_KEY) : null;
+    if (pendingCoupon) out.push(el('div', { cls: 's-free-hint', 'data-testid': 'shop-cart-coupon' }, [icon('tag'), el('span', { text: `Tu cupón ${pendingCoupon} se aplica al finalizar la compra.` })]));
+    out.push(el('p', { cls: 's-line-p', style: 'margin:0 0 10px', text: digitalCart() ? 'Todo se descarga: no hay envío.' : 'El envío se calcula en el siguiente paso.' }));
+    const go = actionButton(meta!.texts.checkout || 'Finalizar compra', () => {
+        if (overlay) closeOverlay();
+        goCheckout();
+    }, 's-btn', 'shop-checkout');
+    go.disabled = est.blocked || est.below_minimum !== null || !!meta!.closed;
+    out.push(go);
+    return out;
+}
+
+function cartSheet(flash?: number): HTMLElement {
     const est = estimate(null);
     if (est.lines.length === 0) {
         return sheet('drawer', 'Tu carrito', [el('p', { cls: 's-empty', text: 'Tu carrito está vacío.' })], [actionButton('Ver productos', closeOverlay, 's-btn s-ghost')], 'shop-cart');
     }
-    const foot: Node[] = [];
-    const sum = el('div', { cls: 's-sum' }, [el('div', {}, [el('span', { text: 'Subtotal' }), el('strong', { text: money(est.subtotal) })])]);
-    foot.push(sum);
-    if (est.below_minimum !== null) foot.push(el('div', { cls: 's-warn', text: `La compra mínima es de ${money(meta!.checkout.min_order ?? 0)}: te faltan ${money(est.below_minimum)}.` }));
-    else if (est.blocked) foot.push(el('div', { cls: 's-warn', text: 'Revisa los productos marcados antes de seguir.' }));
-    const pendingCoupon = meta!.coupons ? sessionGet(COUPON_KEY) : null;
-    if (pendingCoupon) foot.push(el('div', { cls: 's-free-hint', 'data-testid': 'shop-cart-coupon' }, [icon('tag'), el('span', { text: `Tu cupón ${pendingCoupon} se aplica al finalizar la compra.` })]));
-    foot.push(el('p', { cls: 's-line-p', style: 'margin:0 0 10px', text: digitalCart() ? 'Todo se descarga: no hay envío.' : 'El envío se calcula en el siguiente paso.' }));
-    const go = actionButton(meta!.texts.checkout || 'Finalizar compra', () => {
-        closeOverlay();
-        goCheckout();
-    }, 's-btn', 'shop-checkout');
-    go.disabled = est.blocked || est.below_minimum !== null || !!meta!.closed;
-    foot.push(go);
-    return sheet('drawer', `Tu carrito (${cartCount()})`, est.lines.map(cartLine), foot, 'shop-cart');
+    const added = flash !== undefined ? buyable.get(flash) : undefined;
+    const body: Node[] = [];
+    if (added) body.push(el('div', { cls: 's-added', role: 'status', 'data-testid': 'shop-added' }, [icon('check'), el('span', { text: `Agregaste «${added.title}» al carrito` })]));
+    body.push(...est.lines.map((l) => cartLine(l, flash)));
+    const keep = actionButton('Seguir comprando', closeOverlay, 's-link s-keep', 'shop-keep-shopping');
+    return sheet('drawer', `Tu carrito (${cartCount()})`, body, [...cartSummary(est), keep], 'shop-cart');
+}
+
+// ───────────────────────────── La página del carrito (v0.1.421) ─────────────────────────────
+
+let cartPageEl: HTMLElement | null = null;
+
+function cartView(): HTMLElement[] {
+    cartPageEl = el('section', { cls: 's-cartpage', 'data-testid': 'shop-cart-page' });
+    paintCartPage();
+    return [cartPageEl];
+}
+
+function paintCartPage(): void {
+    if (!cartPageEl || view !== 'cart') return;
+    const est = estimate(null);
+    const back = el('button', { type: 'button', cls: 's-link s-back' }, [icon('back'), 'Seguir comprando']);
+    back.addEventListener('click', () => goCatalog());
+    const head = el('div', { cls: 's-cp-head' }, [el('h1', { text: est.lines.length > 0 ? `Tu carrito (${cartCount()})` : 'Tu carrito' }), back]);
+    if (est.lines.length === 0) {
+        cartPageEl.replaceChildren(head, el('div', { cls: 's-cp-empty' }, [el('p', { cls: 's-empty', text: 'Tu carrito está vacío.' }), actionButton('Ver productos', goCatalog, 's-btn s-ghost')]));
+        return;
+    }
+    cartPageEl.replaceChildren(
+        head,
+        el('div', { cls: 's-cp' }, [el('div', { cls: 's-cp-lines' }, est.lines.map((l) => cartLine(l))), el('aside', { cls: 's-cp-sum' }, cartSummary(est))]),
+    );
 }
 
 function policiesSheet(focus: 'terms' | 'returns' | 'seller'): HTMLElement {
@@ -2687,7 +2822,7 @@ function paint(main: HTMLElement[]): void {
     const wrap = view === 'order' || view === 'my' ? el('div', {}, main) : el('div', { cls: 's-wrap' }, main);
     const kids: HTMLElement[] = [header(), el('main', {}, [wrap]), footer()];
     if (view === 'catalog') {
-        const b = actionButton('', () => openOverlay({ kind: 'cart' }), 's-btn');
+        const b = actionButton('', () => openCart(), 's-btn');
         b.append(icon('cart'), el('span', { cls: 's-mbar-t' }));
         mbar = el('div', { cls: 's-mbar' }, [b]);
         kids.push(mbar);
@@ -2707,6 +2842,14 @@ function goCatalog(): void {
     }
     paint(catalogView());
     paintGrid();
+    window.scrollTo({ top: 0 });
+}
+
+/** v0.1.421 — La página del carrito. */
+function goCart(): void {
+    view = 'cart';
+    subscribingId = null;
+    paint(cartView());
     window.scrollTo({ top: 0 });
 }
 
@@ -2788,8 +2931,20 @@ function render(): void {
         return;
     }
     trackVisit();
+    // v0.1.421 — `?comprar=12:2,15` (lo agrega y va al pago) o `?agregar=…`
+    // (lo agrega y abre el carrito): un enlace desde un sitio, un anuncio o
+    // un botón «Comprar». Se quitan de la dirección: recargar no lo repite.
+    if ((qs.has('comprar') || qs.has('agregar')) && !BOOT.preview) {
+        const buying = qs.has('comprar');
+        const items = parseShopCartParam(qs.get(buying ? 'comprar' : 'agregar'), qs.get('cantidad'));
+        const url = new URL(location.href);
+        for (const k of ['comprar', 'agregar', 'cantidad']) url.searchParams.delete(k);
+        history.replaceState(null, '', url.pathname + url.search);
+        if (handleCartLink(items, buying)) return;
+    }
     if (view === 'checkout' && subscribingId !== null && subscribable.has(subscribingId)) goSubscribe(subscribingId);
     else if (view === 'checkout') goCheckout();
+    else if (view === 'cart') goCart();
     else goCatalog();
     // v0.1.419 — `?producto=<id>` (el botón «Comprar» de un producto, o su enlace):
     // la tienda abre ya en la ficha de ese producto. Se quita de la dirección
@@ -2801,6 +2956,62 @@ function render(): void {
         history.replaceState(null, '', url.pathname + url.search);
         if (Number.isInteger(wanted) && wanted > 0 && byId.has(wanted)) openOverlay({ kind: 'product', id: wanted, image: 0 });
     }
+}
+
+/**
+ * v0.1.421 — Arma el carrito con un enlace. Lo que se compra directo (un
+ * producto o una variante) queda con esa cantidad; un producto con opciones
+ * o un servicio abre su ficha; una suscripción va a suscribirse. Devuelve
+ * true si ya navegó.
+ */
+function handleCartLink(items: Array<{ id: number; qty: number }>, buying: boolean): boolean {
+    if (!meta || items.length === 0) return false;
+    let added = 0;
+    let lastAdded: number | null = null;
+    let open: number | null = null;
+    let subscribe: number | null = null;
+    const problems: string[] = [];
+    for (const { id, qty } of items) {
+        const item = buyable.get(id);
+        if (item) {
+            const cap = maxFor(item);
+            if (item.price === null || cap === 0) {
+                problems.push(`«${item.title}» está agotado.`);
+                continue;
+            }
+            setQty(id, Math.max(cart.get(id) ?? 0, Math.min(qty, cap)));
+            added++;
+            lastAdded = id;
+            continue;
+        }
+        const p = byId.get(id);
+        if (!p) {
+            problems.push('Uno de los productos del enlace ya no está en la tienda.');
+            continue;
+        }
+        if (isSubscription(p) && !hasVariants(p) && subscribable.has(p.id)) subscribe ??= p.id;
+        else open ??= p.id;
+    }
+    if (meta.closed) {
+        goCatalog();
+        return true;
+    }
+    if (problems.length > 0) window.setTimeout(() => toast(problems[0]!), 400);
+    if (added > 0 && buying) {
+        goCheckout();
+        return true;
+    }
+    if (subscribe !== null && added === 0 && buying) {
+        goSubscribe(subscribe);
+        return true;
+    }
+    goCatalog();
+    if (added > 0) {
+        bumpCart();
+        if (meta.display.after_add === 'cart') goCart();
+        else openOverlay({ kind: 'cart', ...(lastAdded !== null && added === 1 ? { flash: lastAdded } : {}) });
+    } else if (open !== null || subscribe !== null) openOverlay({ kind: 'product', id: (open ?? subscribe)!, image: 0 });
+    return true;
 }
 
 document.addEventListener('keydown', (e) => {
@@ -2841,6 +3052,7 @@ window.addEventListener('storage', (e) => {
     paintCartButtons();
     for (const id of cardEls.keys()) paintCard(id);
     if (overlay?.kind === 'cart') renderOverlay();
+    if (view === 'cart') paintCartPage();
     if (view === 'checkout') paintSummary();
 });
 

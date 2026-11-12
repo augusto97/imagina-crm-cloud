@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import {
     AlertTriangle,
+    Bell,
     CalendarDays,
     Download,
     ArrowDown,
@@ -17,17 +18,21 @@ import {
     LayoutDashboard,
     Loader2,
     MessageCircle,
+    PanelRight,
     Plus,
     QrCode,
     RefreshCw,
     Repeat,
     ShieldCheck,
+    ShoppingCart,
     Trash2,
     Truck,
     Wallet,
 } from 'lucide-react';
 import {
     COLLECTION_PROVIDER_LABEL,
+    SHOP_AFTER_ADD,
+    SHOP_AFTER_ADD_LABELS,
     SHOP_CATALOG_FIELD_TYPES,
     SHOP_CATALOG_ROLE_LABELS,
     SHOP_DOWNLOAD_FIELD_TYPES,
@@ -50,6 +55,7 @@ import {
     shopServiceFor,
     subscriptionFrequencyText,
     subscriptionPlanExtras,
+    type ShopAfterAdd,
     type ShopCatalogFields,
     type ShopConfig,
     type ShopDeliveryMethod,
@@ -618,6 +624,48 @@ export function CatalogPanel({
 
 // ── Apariencia ─────────────────────────────────────────────────────────
 
+const AFTER_ADD_INFO: Record<ShopAfterAdd, { icon: typeof Bell; hint: string }> = {
+    toast: { icon: Bell, hint: 'Sale un aviso con «Ver carrito» y la persona sigue viendo productos.' },
+    drawer: { icon: PanelRight, hint: 'El carrito se abre al costado con lo que agregó marcado. Recomendado.' },
+    cart: { icon: ShoppingCart, hint: 'Pasa a una página con el carrito completo y el total.' },
+    checkout: { icon: CreditCard, hint: 'Pasa directo a pagar: para tiendas de un producto o compras rápidas.' },
+};
+
+/** v0.1.421 — Qué pasa al agregar al carrito. */
+function AfterAddChoice({ value, onChange }: { value: ShopAfterAdd; onChange: (v: ShopAfterAdd) => void }): JSX.Element {
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" role="radiogroup" aria-label={__('Al agregar al carrito')} data-testid="shop-after-add">
+            {SHOP_AFTER_ADD.map((v) => {
+                const info = AFTER_ADD_INFO[v];
+                const Icon = info.icon;
+                const on = v === value;
+                return (
+                    <button
+                        key={v}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        onClick={() => onChange(v)}
+                        data-testid={`shop-after-add-${v}`}
+                        className={cn(
+                            'imcrm-flex imcrm-items-center imcrm-gap-2.5 imcrm-rounded-xl imcrm-border imcrm-px-3 imcrm-py-2.5 imcrm-text-left imcrm-transition-colors',
+                            on ? 'imcrm-border-primary imcrm-bg-primary/5 imcrm-ring-1 imcrm-ring-primary' : 'imcrm-border-border hover:imcrm-bg-muted/50',
+                        )}
+                    >
+                        <span className={cn('imcrm-flex imcrm-h-8 imcrm-w-8 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-lg', on ? 'imcrm-bg-primary imcrm-text-primary-foreground' : 'imcrm-bg-muted imcrm-text-muted-foreground')}>
+                            <Icon className="imcrm-h-4 imcrm-w-4" />
+                        </span>
+                        <span className="imcrm-min-w-0">
+                            <span className="imcrm-block imcrm-text-[13px] imcrm-font-medium">{__(SHOP_AFTER_ADD_LABELS[v])}</span>
+                            <span className="imcrm-mt-0.5 imcrm-block imcrm-text-[11.5px] imcrm-leading-snug imcrm-text-muted-foreground">{__(info.hint)}</span>
+                        </span>
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
 export function DesignPanel({ config, options, patch }: { config: ShopConfig; options: ShopOptions; patch: Patch }): JSX.Element {
     const d = config.display;
     const setD = (p: Partial<ShopConfig['display']>): void => patch((c) => ({ ...c, display: { ...c.display, ...p } }));
@@ -691,10 +739,34 @@ export function DesignPanel({ config, options, patch }: { config: ShopConfig; op
                 <SwitchRow label={__('Mostrar la referencia (SKU)')} checked={d.show_sku} onChange={(v) => setD({ show_sku: v })} />
                 <SwitchRow label={__('Ocultar los agotados')} hint={__('Si no, se ven apagados con «Agotado».')} checked={d.hide_sold_out} onChange={(v) => setD({ hide_sold_out: v })} />
             </SubSection>
+            <SubSection title={__('Al agregar al carrito')} hint={__('Qué ve la persona después de tocar «Agregar al carrito».')}>
+                <AfterAddChoice value={d.after_add} onChange={(after_add) => setD({ after_add })} />
+                {d.after_add === 'checkout' && config.texts.add_to_cart === 'Agregar al carrito' && (
+                    <p className="imcrm-text-[11.5px] imcrm-text-muted-foreground" data-testid="shop-after-add-hint">
+                        {__('Como va directo al pago, quizás quieras que el botón diga «Comprar».')}{' '}
+                        <button type="button" className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline" onClick={() => setT({ add_to_cart: 'Comprar' })}>
+                            {__('Cambiarlo')}
+                        </button>
+                    </p>
+                )}
+                <SwitchRow
+                    label={__('Botón «Comprar ahora» en el producto')}
+                    hint={d.after_add === 'checkout' ? __('No hace falta: agregar ya lleva al pago.') : __('Al lado de «Agregar al carrito»: lo agrega y va directo a pagar.')}
+                    checked={d.buy_now && d.after_add !== 'checkout'}
+                    disabled={d.after_add === 'checkout'}
+                    onChange={(v) => setD({ buy_now: v })}
+                    testId="shop-buy-now-toggle"
+                />
+            </SubSection>
             <SubSection title={__('Textos de los botones')}>
                 <Field label={__('Agregar al carrito')}>
-                    <Input value={config.texts.add_to_cart} maxLength={40} onChange={(e) => setT({ add_to_cart: e.target.value })} />
+                    <Input value={config.texts.add_to_cart} maxLength={40} onChange={(e) => setT({ add_to_cart: e.target.value })} data-testid="shop-text-add" />
                 </Field>
+                {d.buy_now && d.after_add !== 'checkout' && (
+                    <Field label={__('Comprar ahora')}>
+                        <Input value={config.texts.buy_now} maxLength={40} onChange={(e) => setT({ buy_now: e.target.value })} />
+                    </Field>
+                )}
                 <Field label={__('Finalizar compra')}>
                     <Input value={config.texts.checkout} maxLength={40} onChange={(e) => setT({ checkout: e.target.value })} />
                 </Field>

@@ -2955,4 +2955,33 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager', 'agent'] },
     },
+    {
+        key: 'v0.1.421-agregar-al-carrito',
+        version: '0.1.421',
+        date: '2026-11-12',
+        kind: 'feature',
+        title: 'Tú eliges qué pasa al agregar al carrito, y enlaces que llevan directo al pago',
+        summary:
+            'Al agregar un producto, tu tienda puede abrir el carrito al costado, mostrar un aviso, ir a la página del carrito o ir directo al pago. Y el botón «Comprar» de tu sitio puede dejar el producto en el carrito y llevar al pago.',
+        media: {
+            slides: [
+                {
+                    title: 'Qué pasa al agregar',
+                    text: 'En Apariencia → Al agregar al carrito: el carrito al costado con lo agregado marcado, un aviso, la página del carrito o directo al pago. En la ficha se elige cuántos y está «Comprar ahora».',
+                    illustration: 'tienda-vitrina',
+                },
+                {
+                    title: 'Un enlace que ya trae el producto',
+                    text: 'El botón «Comprar» de un producto puede agregarlo y llevar directo al pago (o al carrito), con la cantidad y la talla o el color que elijas. Sirve para tu sitio, un anuncio o un correo.',
+                    illustration: 'form-embed-side',
+                },
+            ],
+        },
+        body: [
+            '- Abre tu tienda (**Configurar lista → Tienda → Editar**) y ve a **Apariencia → Al agregar al carrito**.',
+            '- Para un enlace que deje el producto en el carrito, toca **Compartir → Insertar en tu sitio → Botón «Comprar» de un producto** y en **Al hacer clic** elige **Lo agrega y lleva directo al pago**.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

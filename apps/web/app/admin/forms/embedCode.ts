@@ -156,3 +156,23 @@ export function shopProductUrl(url: string, productId: number): string {
         return `${url}${url.includes('?') ? '&' : '?'}producto=${productId}`;
     }
 }
+
+/**
+ * v0.1.421 — Un enlace que arma el carrito: `?comprar=12:2` (lo agrega y va
+ * directo al pago) o `?agregar=12:2` (lo agrega y abre el carrito). El id es
+ * el del producto o el de una variante.
+ */
+export function shopCartLinkUrl(url: string, items: ReadonlyArray<{ id: number; qty: number }>, mode: 'buy' | 'add' = 'buy'): string {
+    const value = items
+        .filter((x) => Number.isSafeInteger(x.id) && x.id > 0)
+        .map((x) => (x.qty > 1 ? `${x.id}:${Math.floor(x.qty)}` : String(x.id)))
+        .join(',');
+    const key = mode === 'buy' ? 'comprar' : 'agregar';
+    try {
+        const u = new URL(url);
+        u.searchParams.set(key, value);
+        return u.toString().replace(/%3A/gi, ':').replace(/%2C/gi, ',');
+    } catch {
+        return `${url}${url.includes('?') ? '&' : '?'}${key}=${value}`;
+    }
+}

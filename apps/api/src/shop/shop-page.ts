@@ -298,6 +298,30 @@ a.s-add{display:flex;align-items:center;justify-content:center;gap:6px;text-deco
 .s-spin{width:18px;height:18px;border-radius:999px;border:2.5px solid currentColor;border-right-color:transparent;animation:s-rot .7s linear infinite}
 .s-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:60;background:#111827;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;box-shadow:0 10px 30px rgba(15,23,42,.3);animation:s-toast .18s ease both;max-width:calc(100% - 32px)}
 .s-captcha{margin:0 0 12px}
+.s-toast{display:flex;align-items:center;gap:14px}
+.s-toast-a{border:0;background:transparent;color:#fff;font-weight:750;font-size:14px;padding:0;cursor:pointer;text-decoration:underline;text-underline-offset:3px;white-space:nowrap}
+.s-buyrow{display:flex;gap:10px;align-items:stretch}
+.s-buyrow .s-pick{margin:0;width:132px;height:50px;flex:none}
+.s-buyrow .s-btn{flex:1;min-width:0}
+.s-buynow{margin-top:10px}
+.s-bump{animation:s-bump .5s ease}
+@keyframes s-bump{30%{transform:scale(1.3)}65%{transform:scale(.94)}100%{transform:scale(1)}}
+.s-added{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;background:#ecfdf5;color:#047857;font-weight:650;font-size:14px;margin:0 0 6px;animation:s-in .22s ease both}
+@keyframes s-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.s-added svg{width:18px;height:18px;flex:none}
+.s-line.s-flash{animation:s-flash 1.8s ease}
+@keyframes s-flash{0%,45%{background:#ecfdf5;box-shadow:-12px 0 0 #ecfdf5,12px 0 0 #ecfdf5}100%{background:transparent;box-shadow:none}}
+.s-keep{display:block;width:100%;text-align:center;margin:10px 0 0;font-size:14px}
+.s-cartpage{padding:4px 0 24px}
+.s-cp-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:6px 0 18px}
+.s-cp-head h1{margin:0;font-size:26px;letter-spacing:-.01em}
+.s-back{display:inline-flex;align-items:center;gap:6px;font-size:14.5px}
+.s-back svg{width:16px;height:16px}
+.s-cp{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:28px;align-items:start}
+.s-cp-lines{border-top:1px solid var(--s-line)}
+.s-cp-sum{position:sticky;top:84px;border:1px solid var(--s-line);border-radius:16px;padding:18px;background:#fff}
+.s-cp-empty{max-width:360px}
+@media (max-width:820px){.s-cp{grid-template-columns:1fr;gap:18px}.s-cp-sum{position:static}}
 .s-checkout{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(300px,1fr);gap:28px;align-items:start;padding-top:18px}
 .s-checkout h1{margin:6px 0 18px;font-size:26px}
 .s-panel{background:#fff;border-radius:16px;border:1px solid var(--s-line);padding:18px}
@@ -311,7 +335,7 @@ a.s-add{display:flex;align-items:center;justify-content:center;gap:6px;text-deco
 @keyframes s-rot{to{transform:rotate(360deg)}}
 @keyframes s-toast{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
 @media (max-width:640px){.s-toast{bottom:calc(86px + env(safe-area-inset-bottom))}}
-@media (prefers-reduced-motion:reduce){.s-veil,.s-sheet,.s-toast{animation:none}.s-card{transition:none}}
+@media (prefers-reduced-motion:reduce){.s-veil,.s-sheet,.s-toast,.s-bump,.s-added,.s-line.s-flash{animation:none}.s-card{transition:none}}
 `;
 
 export interface ShopPageOpts {
