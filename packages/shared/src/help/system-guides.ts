@@ -206,6 +206,7 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
             '- **Relación**: vincula con otra lista (las facturas de un cliente). Con **Buscar en relación** y **Resumen de relación** traes o sumas datos del otro lado.',
             '- **Fórmula** y **Calculado**: un valor que se calcula solo, como {Precio} × {Cantidad}.',
             '- **ID automático**: un número consecutivo, como TCK-0001.',
+            '- **Imagen**: fotos y logos (PNG, JPG, GIF, WebP o AVIF) que se ven como miniatura en la tabla, la ficha y las tarjetas.',
             '- **Archivo**, **Email**, **Teléfono**, **URL**, **Casilla**, **Botón** y **Campo con IA**.',
         ].join('\n'),
         tip: 'Un campo se puede convertir a otro tipo después, desde **Configurar lista → Campos**.',

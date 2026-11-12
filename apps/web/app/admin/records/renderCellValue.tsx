@@ -7,10 +7,8 @@ import { chipSoftStyle, type OptionColor } from '@/components/ui/color-picker';
 import { useWpUser } from '@/hooks/useWpUsers';
 import { useTeamDirectory } from '@/hooks/useTeams';
 import { TeamChip } from '@/components/fields/TeamChip';
-import { isPlainClick, openAttachmentsPreview } from '@/components/files/openAttachments';
-import { useAttachment } from '@/hooks/useAttachments';
+import { FileThumbStrip } from '@/components/files/FileThumbs';
 import { __ } from '@/lib/i18n';
-import { Paperclip } from 'lucide-react';
 import { formatFieldNumber } from '@/lib/fieldNumberFormat';
 import { asDisplayField } from '@/lib/fieldTypeCatalog';
 import { FormulaErrorBadge } from '@/components/fields/FormulaErrorBadge';
@@ -336,36 +334,12 @@ function UserCell({ id }: { id: number }): JSX.Element {
     );
 }
 
-export function FileCell({ ids }: { ids: number[] }): JSX.Element {
-    const id = ids[0]!;
-    const more = ids.length - 1;
-    const { data, isLoading } = useAttachment(id);
-    if (isLoading) return <span className="imcrm-text-muted-foreground">…</span>;
-    if (!data) return <span className="imcrm-text-muted-foreground">{__('Archivo no disponible')}</span>;
-    return (
-        <span className="imcrm-inline-flex imcrm-min-w-0 imcrm-max-w-full imcrm-items-center imcrm-gap-1.5">
-            <Paperclip className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
-            <a
-                href={data.url}
-                target="_blank"
-                rel="noreferrer"
-                className="imcrm-truncate imcrm-text-primary hover:imcrm-underline"
-                title={data.title}
-                data-testid="imcrm-file-link"
-                onClick={(e) => {
-                    e.stopPropagation();
-                    // v0.1.291 — un click abre el visor (con los demás del
-                    // campo para pasar con ←/→); Ctrl/⌘+click, otra pestaña.
-                    if (!isPlainClick(e)) return;
-                    e.preventDefault();
-                    void openAttachmentsPreview(ids, id);
-                }}
-            >
-                {data.title}
-            </a>
-            {more > 0 && <span className="imcrm-shrink-0 imcrm-text-xs imcrm-text-muted-foreground">+{more}</span>}
-        </span>
-    );
+/**
+ * v0.1.426 — Las imágenes como miniatura (antes el nombre del archivo), el
+ * resto con su nombre. Ver `FileThumbStrip`.
+ */
+export function FileCell({ ids, size = 'cell' }: { ids: number[]; size?: 'cell' | 'field' }): JSX.Element {
+    return <FileThumbStrip ids={ids} size={size} />;
 }
 
 /** ¿Casilla marcada? Tolera los textos «0»/«false»/«no» que escribían automatizaciones viejas. */

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AiFieldValue } from '../AiFieldValue';
 import { ExternalLink, Lock, Mail, Pencil, Phone } from 'lucide-react';
-import { formatPhone, isDataField, teamIdsOf } from '@imagina-base/shared';
+import { fileFieldOnlyImages, formatPhone, isDataField, teamIdsOf } from '@imagina-base/shared';
 
 import { Input } from '@/components/ui/input';
 import { RelationPicker } from '@/components/fields/RelationPicker';
@@ -12,7 +12,7 @@ import { UserPicker } from '@/components/ui/user-picker';
 import { DateCellEditor } from '@/admin/records/DateCellEditor';
 import { FileFieldControl } from '@/admin/records/FileFieldControl';
 import { maxFilesOf } from '@/admin/records/fileIds';
-import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
+import { fieldIconOf } from '@/lib/fieldTypeIcons';
 import { isImageUrlField } from '@/lib/imageProxy';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -106,7 +106,7 @@ export function CompactFieldRow({
 }: CompactFieldRowProps): JSX.Element {
     const [editing, setEditing] = useState(false);
     const property = variant === 'property';
-    const TypeIcon = fieldTypeIcon(field.type);
+    const TypeIcon = fieldIconOf(field);
 
     // Tipos que tienen control inline siempre visible (no necesitan
     // "click para editar"). Para user incluimos el UserPicker que
@@ -471,7 +471,7 @@ function InlineControl({
     }
 
     if (field.type === 'file') {
-        return <FileFieldControl id={id} value={value} onChange={onChange} maxFiles={maxFilesOf(field.config)} compact />;
+        return <FileFieldControl id={id} value={value} onChange={onChange} maxFiles={maxFilesOf(field.config)} onlyImages={fileFieldOnlyImages(field.config)} compact />;
     }
 
     if (field.type === 'relation') {

@@ -61,7 +61,7 @@ import { adminGallerySrc, adminImageSrc, GalleryBlockView, ImageBlockView } from
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useRelationPaths } from '@/hooks/useRelationPaths';
 import { blockStyleClass, blockStyleCss, readBlockStyle } from '@/lib/blockStyle';
-import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
+import { fieldIconOf } from '@/lib/fieldTypeIcons';
 import { __ } from '@/lib/i18n';
 import { useTheme } from '@/lib/theme';
 import { useIsGuest } from '@/lib/guest';
@@ -441,7 +441,7 @@ function FieldBlock({ block }: { block: LayoutBlock }): JSX.Element | null {
     const locked = ctx.lockedReasons[field.slug] ?? null;
     void locked;
     const editable = fieldEditable(ctx, field);
-    const Icon = fieldTypeIcon(field.type);
+    const Icon = fieldIconOf(field);
     const showLabel = c.label !== 'hidden';
     // Un botón de acción (escribir, llamar, abrir) sin dato no tiene nada que
     // hacer: en la ficha no se dibuja (en el editor sí, para poder elegirlo).
@@ -622,7 +622,7 @@ function ButtonPropRow({ field }: { field: FieldEntity }): JSX.Element | null {
 /** Un dato del registro, de sólo lectura (el portal muestra así lo no editable). */
 function ReadOnlyRow({ field }: { field: FieldEntity }): JSX.Element {
     const ctx = useLayoutCtx();
-    const Icon = fieldTypeIcon(field.type);
+    const Icon = fieldIconOf(field);
     return (
         <div className="imcrm-prop" data-readonly-field={field.slug}>
             <div className="imcrm-prop-row imcrm-px-2 imcrm-py-1.5">

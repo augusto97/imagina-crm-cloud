@@ -185,7 +185,14 @@ export const fieldConfigSchemas = {
     email: z.object({}),
     user: z.object({}),
     relation: z.object({ target_list_id: idSchema.optional() }),
-    file: z.object({ max_files: z.number().int().positive().optional() }),
+    /**
+     * v0.1.426 — `only_images`: el campo «Imagen» (sólo PNG/JPG/GIF/WebP/AVIF,
+     * con miniaturas). Ver field-types/file-images.ts.
+     */
+    file: z.object({
+        max_files: z.number().int().positive().optional(),
+        only_images: z.boolean().optional().catch(undefined),
+    }),
     computed: z.object({
         /** Operación del catálogo cerrado (ver field-types/computed.ts). */
         operation: z

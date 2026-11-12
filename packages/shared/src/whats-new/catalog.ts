@@ -3106,4 +3106,33 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.426-campo-imagen-miniaturas',
+        version: '0.1.426',
+        date: '2026-11-12',
+        kind: 'feature',
+        title: 'Campo «Imagen» y miniaturas de tus archivos',
+        summary:
+            'Las imágenes que subes a una lista ahora se ven como miniatura en la tabla, la ficha y las tarjetas, en vez del nombre del archivo. Y hay un campo nuevo, «Imagen», para fotos y logos: sólo acepta imágenes.',
+        media: {
+            slides: [
+                {
+                    title: 'Ves la foto, no el nombre',
+                    text: 'En la tabla, cada imagen sale como una miniatura; tócala para verla en grande. Los PDF y demás archivos se siguen viendo con su nombre.',
+                    illustration: 'ficha-archivos',
+                },
+                {
+                    title: 'Un campo sólo para imágenes',
+                    text: 'Crea un campo «Imagen» para la foto de un producto o el logo de un cliente: sólo acepta PNG, JPG, GIF, WebP o AVIF, y en la ficha las muestra en una cuadrícula.',
+                    illustration: 'lc-agregar-campo',
+                },
+            ],
+        },
+        body: [
+            '- Agrega una columna con el **+** de la tabla y elige **Imagen**.',
+            '- En un campo **Archivo** que ya tienes, marca **Sólo imágenes** en sus ajustes para convertirlo en un campo Imagen.',
+            '- Las miniaturas se cargan livianas: la imagen original sólo se descarga cuando la abres.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+    },
 ];

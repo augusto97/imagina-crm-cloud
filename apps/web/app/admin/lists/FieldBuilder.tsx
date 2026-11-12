@@ -51,11 +51,12 @@ import { useList, useUpdateList } from '@/hooks/useLists';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useContainerWidth } from '@/admin/dashboards/widgets/useContainerWidth';
 import { invalidateForList } from '@/hooks/useRecords';
-import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
+import { fieldIconOf, fieldTypeIcon } from '@/lib/fieldTypeIcons';
+import { IMAGE_FIELD_KIND, fieldKindOf, fieldKindPreset, fieldTypeLabel } from '@/lib/fieldTypeCatalog';
 import { formatDateStr } from '@/lib/tenantFormat';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import type { FieldEntity, FieldTypeSlug } from '@/types/field';
+import type { FieldEntity } from '@/types/field';
 
 import { FieldDialog } from './FieldDialog';
 import { FieldSettingsPanel } from './FieldSettingsPanel';
@@ -137,13 +138,15 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     const typeLabels = useMemo(() => {
         const map = new Map<string, string>();
         for (const t of types.data ?? []) map.set(t.slug, t.label);
+        // v0.1.426 — «Imagen» (archivo de sólo imágenes) se agrupa y filtra aparte.
+        map.set(IMAGE_FIELD_KIND, fieldTypeLabel(IMAGE_FIELD_KIND));
         return map;
     }, [types.data]);
 
     const all = useMemo(() => fields.data ?? [], [fields.data]);
     const term = search.trim().toLowerCase();
     const visible = all.filter((f) => {
-        if (typeFilter !== '' && f.type !== typeFilter) return false;
+        if (typeFilter !== '' && fieldKindOf(f) !== typeFilter) return false;
         if (term === '') return true;
         return f.label.toLowerCase().includes(term) || f.slug.toLowerCase().includes(term);
     });
@@ -151,7 +154,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     /** Tipos presentes en la lista con su contador, para la navegación. */
     const typeCounts = useMemo(() => {
         const map = new Map<string, number>();
-        for (const f of all) map.set(f.type, (map.get(f.type) ?? 0) + 1);
+        for (const f of all) map.set(fieldKindOf(f), (map.get(fieldKindOf(f)) ?? 0) + 1);
         return [...map.entries()];
     }, [all]);
 
@@ -159,9 +162,10 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
     const groups = useMemo(() => {
         const map = new Map<string, FieldEntity[]>();
         for (const f of visible) {
-            const arr = map.get(f.type);
+            const kind = fieldKindOf(f);
+            const arr = map.get(kind);
             if (arr) arr.push(f);
-            else map.set(f.type, [f]);
+            else map.set(kind, [f]);
         }
         return [...map.entries()];
     }, [visible]);
@@ -177,15 +181,19 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
         setDialogOpen(true);
     };
 
-    /** "+ Crear campo de <tipo>": alta directa con el tipo del grupo. */
-    const createOfType = async (type: FieldTypeSlug): Promise<void> => {
-        const label = sprintf(
-            /* translators: %s: nombre del tipo de campo */
-            __('%s nuevo'),
-            typeLabels.get(type) ?? type,
-        );
+    /** "+ Crear campo de <tipo>": alta directa con el tipo del grupo (`image` = archivo de sólo imágenes). */
+    const createOfType = async (kind: string): Promise<void> => {
+        const label =
+            kind === IMAGE_FIELD_KIND
+                ? __('Imagen nueva')
+                : sprintf(
+                      /* translators: %s: nombre del tipo de campo */
+                      __('%s nuevo'),
+                      typeLabels.get(kind) ?? kind,
+                  );
+        const preset = fieldKindPreset(kind);
         try {
-            const created = await createField.mutateAsync({ label, type });
+            const created = await createField.mutateAsync({ label, type: preset.type, config: preset.config });
             setSelectedId(created.id);
             toast.success(__('Campo creado'), label);
         } catch (err) {
@@ -474,7 +482,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
                                                     <button
                                                         type="button"
                                                         disabled={createField.isPending}
-                                                        onClick={() => void createOfType(type as FieldTypeSlug)}
+                                                        onClick={() => void createOfType(type)}
                                                         className="imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-1.5 imcrm-px-3 imcrm-py-2 imcrm-text-left imcrm-text-xs imcrm-text-muted-foreground hover:imcrm-bg-accent/40 hover:imcrm-text-foreground"
                                                     >
                                                         <Plus className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
@@ -679,7 +687,7 @@ function FieldRow({
     storeField = false,
     managedLock = null,
 }: FieldRowProps): JSX.Element {
-    const Icon = fieldTypeIcon(field.type);
+    const Icon = fieldIconOf(field);
     const rules = useStoreRules();
     const source = rules ? mirrorSourceName(rules.marker) : 'WooCommerce';
     return (

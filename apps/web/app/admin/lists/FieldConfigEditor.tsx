@@ -155,8 +155,43 @@ function TypeConfigEditor({
     if (type === 'team') {
         return <TeamFieldEditor config={config} onChange={onChange} />;
     }
-    // email/user/file: no requieren config extra.
+    // v0.1.426 — archivos: «Sólo imágenes» lo vuelve un campo «Imagen».
+    if (type === 'file') {
+        return <FileFieldEditor config={config} onChange={onChange} />;
+    }
+    // email/user: no requieren config extra.
     return null;
+}
+
+/**
+ * v0.1.426 — Campo de archivos: «Sólo imágenes» (el campo «Imagen»). Con la
+ * casilla, el selector sólo ofrece imágenes, el servidor rechaza lo que no lo
+ * es y en la tabla se ven como miniatura. Lo que el campo ya tenía guardado no
+ * se toca: un PDF viejo sigue ahí, sólo no se pueden sumar más.
+ */
+function FileFieldEditor({ config, onChange }: SubProps): JSX.Element {
+    const onlyImages = config.only_images === true;
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-3">
+            <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">
+                <input
+                    type="checkbox"
+                    checked={onlyImages}
+                    onChange={(e) => {
+                        const next = { ...config };
+                        if (e.target.checked) next.only_images = true;
+                        else delete next.only_images;
+                        onChange(next);
+                    }}
+                    data-testid="imcrm-file-only-images"
+                />
+                {__('Sólo imágenes')}
+            </label>
+            <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                {__('Acepta PNG, JPG, GIF, WebP o AVIF y las muestra como miniatura en la tabla, la ficha y las tarjetas. Los archivos que el campo ya tenía se conservan.')}
+            </p>
+        </div>
+    );
 }
 
 /**

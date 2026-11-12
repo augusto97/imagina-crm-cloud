@@ -246,6 +246,10 @@ const fieldSpec = z.object({
     highlight_overdue: z.boolean().optional().describe('date/datetime: pintar en rojo las fechas vencidas'),
     default_country: z.string().length(2).optional().describe('phone: país por defecto ISO-2 (CO, MX, AR…)'),
     multiple: z.boolean().optional().describe('team: admite varios equipos (por defecto, uno solo)'),
+    only_images: z
+        .boolean()
+        .optional()
+        .describe('file: campo «Imagen» — sólo acepta imágenes (PNG, JPG, GIF, WebP o AVIF) y las muestra como miniatura en la tabla y la ficha (fotos, logos)'),
     computed: z
         .object({
             operation: z.enum(['date_diff_months', 'date_diff_days', 'sum', 'product', 'subtract', 'divide', 'concat', 'abs']),
@@ -3836,6 +3840,10 @@ export class StructureTools implements AiProposalApplier {
             case 'team':
                 if (f.multiple) config.multiple = true;
                 break;
+            // v0.1.426 — campo «Imagen».
+            case 'file':
+                if (f.only_images) config.only_images = true;
+                break;
             case 'relation': {
                 if (!f.relation_to) throw new AiToolError(`El campo «${slug}» (relation) necesita relation_to (slug de la lista destino).`);
                 if (opts.packKeys.has(f.relation_to)) {
@@ -4898,6 +4906,11 @@ function describeFieldForModel(
     }
     if (f.type === 'time_tracked') {
         out.note = 'Sólo lectura: minutos registrados con el cronómetro o a mano en la ficha (se filtra, ordena y suma).';
+    }
+    // v0.1.426 — campo «Imagen» (file con only_images).
+    if (f.type === 'file' && cfg.only_images === true) {
+        out.only_images = true;
+        out.note = 'Imagen: sólo acepta imágenes (PNG, JPG, GIF, WebP o AVIF); se ven como miniatura.';
     }
     if (f.type === 'checklist_progress') {
         out.note = 'Sólo lectura: % de ítems de checklist hechos del registro (vacío si no tiene checklist; se filtra, ordena y promedia).';

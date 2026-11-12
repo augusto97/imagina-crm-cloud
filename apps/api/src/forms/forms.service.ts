@@ -76,6 +76,9 @@ import {
     addDaysYmd,
     formatEmailFieldValue,
     formFileAllowed,
+    fileFieldOnlyImages,
+    isImageFileMime,
+    onlyImagesMessage,
     resolveTimeZone,
     resolveTitleFieldId,
     zonedInstant,
@@ -1443,6 +1446,13 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         if (!allowed.ok) {
             part.file.resume();
             throw badRequest('file_type_not_allowed', allowed.reason);
+        }
+        // v0.1.426 — un campo «Imagen» sólo recibe imágenes (lo mismo exige el
+        // registro al guardarse: aquí se avisa antes de subirlo).
+        const target = fields.find((x) => x.id === item.field_id);
+        if (target && fileFieldOnlyImages(target.config) && !isImageFileMime(mime)) {
+            part.file.resume();
+            throw badRequest('file_type_not_allowed', onlyImagesMessage(target.label));
         }
         await this.enforce(UPLOAD_LIMITS, f.row.id, ip, 'archivos');
         await this.enforceBytes(f.row.id, ip);

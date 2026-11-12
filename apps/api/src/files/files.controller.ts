@@ -4,6 +4,7 @@ import {
     Delete,
     Get,
     HttpCode,
+    Optional,
     Param,
     ParseIntPipe,
     Post,
@@ -13,6 +14,7 @@ import {
     UseGuards,
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { fileThumbWidth } from '@imagina-base/shared';
 import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
@@ -21,6 +23,7 @@ import { AllowGuest } from '../tenancy/allow-guest.decorator';
 import { BillingService } from '../billing/billing.service';
 import { type FileActor, FilesService, type AttachmentDto, type OpenedFile } from './files.service';
 import { contentDispositionHeader, parseByteRange, safeDisposition } from './safe-content-type';
+import { ImageThumbsService, type ImageBytes } from './image-thumbs.service';
 import { aclOf } from '../tenancy/acl-of';
 
 /**
@@ -34,7 +37,11 @@ import { aclOf } from '../tenancy/acl-of';
  */
 @Controller('files')
 export class SignedFilesController {
-    constructor(private readonly files: FilesService) {}
+    constructor(
+        private readonly files: FilesService,
+        // v0.1.426 — miniaturas (`&w=`). Opcional: los specs arman el controlador a mano.
+        @Optional() private readonly thumbs?: ImageThumbsService,
+    ) {}
 
     /**
      * v0.1.291 — `preview=1`: la vista previa de adjuntos lo pide servido por
@@ -52,19 +59,51 @@ export class SignedFilesController {
         @Query('sig') sig?: string,
         @Query('preview') preview?: string,
         @Query('dl') dl?: string,
+        @Query('w') w?: string,
     ): Promise<void> {
         const expSec = Number(exp ?? 0);
+        const tenantId = Number(tenant ?? 0);
         const opts = { proxy: preview === '1', download: dl === '1' };
-        const file = await this.files.openSigned(id, Number(tenant ?? 0), expSec, String(sig ?? ''), opts);
         // v0.1.253 — la URL firmada es inmutable hasta que vence (la firma
         // cubre id + exp): el navegador la puede guardar hasta entonces. Sin
         // esto, el logo del workspace se volvía a bajar en cada pantalla.
         const ttl = Math.max(0, Math.min(86_400, Math.floor(expSec - Date.now() / 1000)));
-        await streamFile(file, reply, ttl > 0 ? `private, max-age=${ttl}, immutable` : undefined, {
+        const cacheControl = ttl > 0 ? `private, max-age=${ttl}, immutable` : undefined;
+        // v0.1.426 — `w`: la miniatura (WebP al ancho pedido) de una IMAGEN.
+        // Un ancho fuera de la lista, o un archivo que no es una imagen que se
+        // pueda achicar (PDF, SVG…), se ignora: va el original como siempre.
+        const width = opts.download ? null : fileThumbWidth(w);
+        if (width !== null && this.thumbs) {
+            this.files.assertSigned(id, tenantId, expSec, String(sig ?? ''));
+            const thumb = await this.thumbs.attachmentThumb(tenantId, id, width);
+            if (thumb) {
+                sendImage(reply, thumb, cacheControl);
+                return;
+            }
+        }
+        const file = await this.files.openSigned(id, tenantId, expSec, String(sig ?? ''), opts);
+        await streamFile(file, reply, cacheControl, {
             range: req.headers.range,
             download: opts.download,
         });
     }
+}
+
+/**
+ * v0.1.426 — Una imagen ya en memoria (una miniatura). El tipo sale de los
+ * bytes (WebP, o una imagen chica sin achicar), nunca SVG: se sirve inline con
+ * las mismas barreras que cualquier archivo (`nosniff` + CSP `sandbox`).
+ */
+export function sendImage(reply: FastifyReply, img: ImageBytes, cacheControl?: string): void {
+    reply.raw.writeHead(200, {
+        'content-type': img.mime,
+        'content-length': String(img.bytes.length),
+        'content-disposition': 'inline',
+        'x-content-type-options': 'nosniff',
+        'content-security-policy': "sandbox; default-src 'none'",
+        ...(cacheControl ? { 'cache-control': cacheControl } : {}),
+    });
+    reply.raw.end(img.bytes);
 }
 
 /**

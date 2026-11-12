@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils';
 import { CAP, useCan } from '@/lib/permissions';
 
 import { formatNumber } from '@/lib/tenantFormat';
-import { fieldTypeLabel } from '@/lib/fieldTypeCatalog';
+import { fieldTypeLabel, fieldTypeLabelOf } from '@/lib/fieldTypeCatalog';
 
 import { SheetChooser, XlsxNotesBanner } from './import/SheetChooser';
 import {
@@ -620,7 +620,7 @@ function MapStep({
                                 key={f.slug}
                                 className="imcrm-rounded imcrm-border imcrm-border-warning/40 imcrm-bg-card imcrm-px-1.5 imcrm-py-0.5"
                             >
-                                {f.label} <span className="imcrm-text-muted-foreground">({fieldTypeLabel(f.type)})</span>
+                                {f.label} <span className="imcrm-text-muted-foreground">({fieldTypeLabelOf(f)})</span>
                             </li>
                         ))}
                     </ul>
@@ -664,7 +664,7 @@ function MapStep({
                                             <optgroup label={__('Campos existentes')}>
                                                 {preview.fields.map((f) => (
                                                     <option key={f.id} value={f.slug}>
-                                                        {f.label} ({fieldTypeLabel(f.type)})
+                                                        {f.label} ({fieldTypeLabelOf(f)})
                                                     </option>
                                                 ))}
                                             </optgroup>
@@ -850,7 +850,7 @@ function DoneStep({ result }: { result: RunResponse }): JSX.Element {
                                 key={f.slug}
                                 className="imcrm-rounded imcrm-border imcrm-border-primary/30 imcrm-bg-card imcrm-px-1.5 imcrm-py-0.5 imcrm-text-foreground"
                             >
-                                {f.label} <span className="imcrm-text-muted-foreground">({fieldTypeLabel(f.type)})</span>
+                                {f.label} <span className="imcrm-text-muted-foreground">({fieldTypeLabelOf(f)})</span>
                             </li>
                         ))}
                     </ul>

@@ -31,7 +31,7 @@ import {
 import { DEFAULT_PUBLIC_THEME, formPaymentActive, formSubscriptionActive, type FormConfig, type FormItem, type PublicTheme } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
-import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
+import { fieldIconOf } from '@/lib/fieldTypeIcons';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -82,7 +82,7 @@ export function itemIcon(item: FormItem, fieldsById: Map<number, FieldEntity>): 
     if (item.type === 'page_break') return SeparatorHorizontal;
     if (item.type === 'image') return ImageIcon;
     if (item.type === 'matrix') return Grid3x3;
-    return fieldTypeIcon(fieldsById.get(item.field_id)?.type ?? 'text') as LucideIcon;
+    return fieldIconOf(fieldsById.get(item.field_id) ?? { type: 'text' }) as LucideIcon;
 }
 
 interface Props {
@@ -353,7 +353,7 @@ function AddCatalog(p: Props & { onBack: () => void }): JSX.Element {
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Ya están todos los campos que se pueden preguntar.')}</p>
                 ) : (
                     available.map((f) => {
-                        const Icon = fieldTypeIcon(f.type);
+                        const Icon = fieldIconOf(f);
                         return (
                             <button
                                 key={f.id}

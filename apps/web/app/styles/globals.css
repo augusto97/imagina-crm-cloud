@@ -1055,6 +1055,21 @@ body.imcrm-template-editor-fullscreen .imcrm-template-editor-root {
 }
 
 /*
+ * v0.1.426 — Miniaturas de los archivos en la celda (FileThumbStrip). Miden
+ * el alto de la línea de la fila para no agrandarla: la tabla virtualizada
+ * mide UNA fila y asume las demás iguales.
+ */
+.imcrm-file-thumb {
+    width: 24px;
+    height: 24px;
+    flex: none;
+}
+.imcrm-records-table.imcrm-density-compact .imcrm-file-thumb {
+    width: 18px;
+    height: 18px;
+}
+
+/*
  * Tamaño de letra de la tabla (v0.1.141). Va de la mano con la densidad:
  * no tenía sentido poder apretar las filas y no poder achicar o agrandar
  * el texto. `md` es el tamaño histórico de la lista (14px).

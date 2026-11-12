@@ -14,6 +14,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import type { SavedViewEntity } from '@/types/view';
+import { fieldTypeLabelOf } from '@/lib/fieldTypeCatalog';
 
 import { extractFieldOptions } from '../fieldOptions';
 import { FieldChecklist, requirableFields } from './kanban/KanbanColumnSettingsDialog';
@@ -301,7 +302,7 @@ export function EditKanbanViewDialog({ listId, view, open, onOpenChange }: EditK
                                     <option value="">{__('Sin portada')}</option>
                                     {coverCandidates.map((f) => (
                                         <option key={f.id} value={f.id}>
-                                            {f.label}
+                                            {f.label} ({fieldTypeLabelOf(f)})
                                         </option>
                                     ))}
                                 </Select>

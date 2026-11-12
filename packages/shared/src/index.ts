@@ -85,6 +85,7 @@ export * from './field-types/button';
 export * from './field-types/computed';
 export * from './formula';
 export * from './field-types/phone';
+export * from './field-types/file-images';
 export * from './field-types/duration';
 export * from './field-types/search';
 export * from './field-types/restore';

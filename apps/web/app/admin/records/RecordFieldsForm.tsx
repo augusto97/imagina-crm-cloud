@@ -1,4 +1,4 @@
-import { teamIdsOf } from '@imagina-base/shared';
+import { fileFieldOnlyImages, teamIdsOf } from '@imagina-base/shared';
 import { AiFieldValue } from './AiFieldValue';
 
 import { DurationControl } from '@/components/fields/DurationControl';
@@ -359,7 +359,7 @@ function FieldInput({ listId, recordId, field, value, onChange, error }: FieldIn
         case 'file':
             // Subcomponente dedicado: llama useAttachments incondicionalmente
             // (rules-of-hooks — aquí estamos dentro de un switch).
-            control = <FileFieldControl id={id} value={value} onChange={onChange} maxFiles={maxFilesOf(field.config)} />;
+            control = <FileFieldControl id={id} value={value} onChange={onChange} maxFiles={maxFilesOf(field.config)} onlyImages={fileFieldOnlyImages(field.config)} />;
             break;
         case 'relation':
             control = <RelationPicker id={id} field={field} value={value} onChange={(ids) => onChange(ids)} />;

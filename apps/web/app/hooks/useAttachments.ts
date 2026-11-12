@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
 
@@ -14,6 +14,11 @@ export interface AttachmentDto {
     id: number;
     /** Ruta de descarga inline, ej. `/api/v1/files/7/download`. */
     url: string;
+    /**
+     * v0.1.426 — sólo imágenes: la misma URL firmada con `&w=320`; el servidor
+     * la entrega achicada en WebP (ver `lib/fileThumbs`).
+     */
+    thumb_url?: string;
     title: string;
     mime_type: string;
     size_bytes: number;
@@ -23,6 +28,7 @@ export interface AttachmentDto {
 export interface ResolvedAttachment {
     id: number;
     url: string;
+    /** v0.1.426 — miniatura (sólo imágenes; nunca SVG). Cambiar el ancho con `withThumbWidth`. */
     thumbUrl?: string;
     title: string;
     mimeType: string;
@@ -34,7 +40,7 @@ function toResolved(dto: AttachmentDto): ResolvedAttachment {
     return {
         id: dto.id,
         url: dto.url,
-        thumbUrl: dto.mime_type.startsWith('image/') ? dto.url : undefined,
+        thumbUrl: dto.thumb_url,
         title: dto.title,
         mimeType: dto.mime_type,
         sizeBytes: dto.size_bytes,
@@ -96,6 +102,24 @@ export function useAttachment(id: number | null) {
     });
 }
 
+/**
+ * v0.1.426 — Varios archivos por id, cada uno con la MISMA caché que
+ * `useAttachment`: las celdas de una tabla (una por fila) siguen viajando
+ * juntas en un solo `GET /files?ids=` (regla de oro nº 8), cosa que
+ * `useAttachments` (una consulta por conjunto de ids) no hace.
+ */
+export function useAttachmentList(ids: readonly number[]): Array<{ id: number; data: ResolvedAttachment | null | undefined; isLoading: boolean }> {
+    const results = useQueries({
+        queries: ids.map((id) => ({
+            queryKey: ['imcrm', 'attachment', id],
+            queryFn: () => loadAttachment(id),
+            enabled: id > 0,
+            staleTime: 5 * 60_000,
+        })),
+    });
+    return ids.map((id, i) => ({ id, data: results[i]?.data, isLoading: results[i]?.isLoading ?? false }));
+}
+
 export function useAttachments(ids: number[]) {
     // Dedupe + sort para que el queryKey sea estable.
     const dedupedIds = Array.from(new Set(ids.filter((id) => id > 0))).sort((a, b) => a - b);
@@ -107,19 +131,7 @@ export function useAttachments(ids: number[]) {
                 query: { ids: dedupedIds.join(',') },
             });
             const map = new Map<number, ResolvedAttachment>();
-            for (const dto of res.data) {
-                map.set(dto.id, {
-                    id: dto.id,
-                    url: dto.url,
-                    // Sin thumbnails dedicados aún: para imágenes el propio
-                    // download inline sirve de thumb; para el resto, undefined
-                    // → los consumidores caen a su placeholder/icono.
-                    thumbUrl: dto.mime_type.startsWith('image/') ? dto.url : undefined,
-                    title: dto.title,
-                    mimeType: dto.mime_type,
-                    sizeBytes: dto.size_bytes,
-                });
-            }
+            for (const dto of res.data) map.set(dto.id, toResolved(dto));
             return map;
         },
         enabled: dedupedIds.length > 0,

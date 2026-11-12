@@ -5,7 +5,7 @@ import { FieldHistoryButton } from '@/admin/records/history/FieldHistory';
 import { RecordTitleInput } from '@/admin/records/RecordTitleInput';
 import { renderCellValue } from '@/admin/records/renderCellValue';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
+import { fieldIconOf } from '@/lib/fieldTypeIcons';
 import { __, sprintf } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
@@ -91,7 +91,7 @@ export function LayoutHeader({ header }: { header: HeaderSpec }): JSX.Element {
                                 {subtitle
                                     .filter((f) => !isEmpty(ctx.values[f.slug]))
                                     .map((f) => {
-                                        const Icon = fieldTypeIcon(f.type);
+                                        const Icon = fieldIconOf(f);
                                         return (
                                             <span key={f.id} className="imcrm-inline-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5" title={f.label}>
                                                 <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-opacity-70" aria-hidden />
@@ -133,7 +133,7 @@ export function LayoutHeader({ header }: { header: HeaderSpec }): JSX.Element {
  */
 function HeaderChip({ field }: { field: FieldEntity }): JSX.Element {
     const ctx = useLayoutCtx();
-    const Icon = fieldTypeIcon(field.type);
+    const Icon = fieldIconOf(field);
     const value = ctx.values[field.slug];
     const editable = fieldEditable(ctx, field);
     const inner = (

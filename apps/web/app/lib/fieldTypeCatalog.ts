@@ -1,4 +1,4 @@
-import { APPROVAL_FIELD_OPTIONS } from '@imagina-base/shared';
+import { APPROVAL_FIELD_OPTIONS, fileFieldOnlyImages } from '@imagina-base/shared';
 import type { FieldTypeMeta, FieldTypeSlug, FormulaInfo } from '@/types/field';
 
 /**
@@ -47,7 +47,7 @@ const ENTRIES: CatalogEntry[] = [
     // C1 — Equipos.
     { slug: 'team', label: 'Equipo', description: 'Uno o varios equipos de la empresa (Ventas, Soporte…).', supportsUnique: false },
     { slug: 'relation', label: 'Relación', description: 'Vincula registros de otra lista.', supportsUnique: false },
-    { slug: 'file', label: 'Archivo', description: 'Archivos adjuntos al registro.', supportsUnique: false },
+    { slug: 'file', label: 'Archivo', description: 'Documentos y archivos adjuntos al registro (PDF, Excel, fotos…).', supportsUnique: false },
     { slug: 'rating', label: 'Calificación', description: 'Estrellas (de 1 a 10).', supportsUnique: false },
     { slug: 'percent', label: 'Porcentaje', description: 'Avance de 0 a 100 con barra.', supportsUnique: false },
     { slug: 'duration', label: 'Duración', description: 'Tiempo en horas y minutos.', supportsUnique: false },
@@ -168,7 +168,33 @@ export const FIELD_TYPE_CATALOG: FieldTypeMeta[] = ENTRIES.map((e) => ({
 
 /** El nombre del tipo de campo como lo ve la persona («Casilla», no `checkbox`). */
 export function fieldTypeLabel(type: string): string {
+    if (type === IMAGE_FIELD_KIND) return IMAGE_FIELD_LABEL;
     return FIELD_TYPE_CATALOG.find((t) => t.slug === type)?.label ?? type;
+}
+
+/**
+ * v0.1.426 — «Imagen» no es un tipo: es un campo `file` con
+ * `config.only_images` (ver shared/field-types/file-images.ts). Donde la UI
+ * nombra, agrupa o filtra campos por su tipo, usa la «clase» del campo
+ * (`fieldKindOf`): `image` para esos, el tipo para el resto.
+ */
+export const IMAGE_FIELD_KIND = 'image';
+const IMAGE_FIELD_LABEL = 'Imagen';
+const IMAGE_FIELD_DESCRIPTION = 'Fotos y logos: se ven como miniatura en la tabla, la ficha y las tarjetas.';
+
+export function fieldKindOf(field: { type: string; config?: unknown }): string {
+    return field.type === 'file' && fileFieldOnlyImages(field.config) ? IMAGE_FIELD_KIND : field.type;
+}
+
+/** El nombre del tipo de UN campo («Imagen» para un campo de archivos de sólo imágenes). */
+export function fieldTypeLabelOf(field: { type: string; config?: unknown }): string {
+    return fieldTypeLabel(fieldKindOf(field));
+}
+
+/** Con qué tipo y config se crea un campo de esta clase (`image` → archivo con `only_images`). */
+export function fieldKindPreset(kind: string): { type: FieldTypeSlug; config: Record<string, unknown> } {
+    if (kind === IMAGE_FIELD_KIND) return { type: 'file', config: { only_images: true } };
+    return { type: kind as FieldTypeSlug, config: {} };
 }
 
 /**
@@ -178,26 +204,45 @@ export function fieldTypeLabel(type: string): string {
  * Builder y modal de la tabla) siempre listen los mismos tipos.
  */
 export interface FieldTypeOption {
+    /**
+     * Identidad de la opción en el catálogo: el tipo, o `image` para el campo
+     * «Imagen» (que se crea como `file` con `config`).
+     */
+    key: string;
     type: FieldTypeSlug;
     label: string;
     description: string;
+    /** Config con la que nace (sólo «Imagen»: `{ only_images: true }`). */
+    config?: Record<string, unknown>;
 }
 
 /**
  * Los tipos que se eligen el 90% de las veces — la sección "Populares" del
  * panel de campos (v0.1.160). El resto sigue estando, una sección más abajo.
  */
-export const POPULAR_FIELD_TYPES: readonly FieldTypeSlug[] = [
+export const POPULAR_FIELD_TYPES: readonly string[] = [
     'select',
     'text',
     'date',
     'long_text',
     'number',
     'multi_select',
+    // v0.1.426 — fotos y logos: se buscaba y no se encontraba («sólo hay Archivo»).
+    'image',
 ];
 
-export const FIELD_TYPE_OPTIONS: FieldTypeOption[] = ENTRIES.map((e) => ({
-    type: e.slug,
-    label: e.label,
-    description: e.description,
-}));
+export const FIELD_TYPE_OPTIONS: FieldTypeOption[] = ENTRIES.flatMap((e): FieldTypeOption[] => {
+    const option: FieldTypeOption = { key: e.slug, type: e.slug, label: e.label, description: e.description };
+    // v0.1.426 — «Imagen» va justo antes de «Archivo»: es lo que se busca para fotos.
+    if (e.slug !== 'file') return [option];
+    return [
+        { key: IMAGE_FIELD_KIND, type: 'file', label: IMAGE_FIELD_LABEL, description: IMAGE_FIELD_DESCRIPTION, config: { only_images: true } },
+        option,
+    ];
+});
+
+/** La opción del catálogo que corresponde a un campo (o a un tipo + config). */
+export function fieldTypeOptionOf(field: { type: string; config?: unknown }): FieldTypeOption | undefined {
+    const kind = fieldKindOf(field);
+    return FIELD_TYPE_OPTIONS.find((o) => o.key === kind);
+}

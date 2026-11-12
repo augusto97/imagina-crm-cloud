@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, ChevronDown, Plus, X } from 'lucide-react';
 
 import { HexInput } from '@/admin/template-editor-core/BlockStyleEditor';
 import { Select } from '@/components/ui/select';
-import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
+import { fieldIconOf } from '@/lib/fieldTypeIcons';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -158,7 +158,7 @@ export function FieldChecklist({
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
             {chosen.length === 0 && <p className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Ninguno elegido.')}</p>}
             {chosen.map((f, i) => {
-                const Icon = fieldTypeIcon(f.type);
+                const Icon = fieldIconOf(f);
                 return (
                     <div key={f.id} className="imcrm-group imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-background imcrm-px-2 imcrm-py-1">
                         <Icon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />

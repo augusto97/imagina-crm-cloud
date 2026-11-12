@@ -32,6 +32,7 @@ import {
 import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import { useAttachments } from '@/hooks/useAttachments';
+import { withThumbWidth } from '@/lib/fileThumbs';
 import { useEventCallback } from '@/hooks/useEventCallback';
 import { useKanbanBundle } from '@/hooks/useKanbanBundle';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
@@ -247,7 +248,8 @@ export function KanbanView({
         if (coverField.type === 'url') return proxiedImageUrl(record.fields[coverField.slug]);
         const id = attachmentId(record.fields[coverField.slug]);
         const a = id !== null ? attachments.data?.get(id) : undefined;
-        return a?.thumbUrl ?? null;
+        // v0.1.426 — achicada en el servidor (las tarjetas miden ~270 px).
+        return a?.thumbUrl !== undefined ? withThumbWidth(a.thumbUrl, 640) : null;
     };
 
     // Dónde está cada tarjeta (para el arrastre y el «Mover a…»).

@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react';
-import { FileText, Loader2, Paperclip, Upload, X } from 'lucide-react';
+import { IMAGE_FILE_ACCEPT, IMAGE_FILE_KINDS_LABEL, isImageFileMime } from '@imagina-base/shared';
+import { FileText, ImagePlus, Loader2, Paperclip, Upload, X } from 'lucide-react';
 
 import { openFilePreview } from '@/components/files/filePreview';
 import { isPlainClick, toPreviewFile } from '@/components/files/openAttachments';
 import { useAttachments, type AttachmentDto, type ResolvedAttachment } from '@/hooks/useAttachments';
 import { getBootData } from '@/lib/boot';
+import { thumbSources } from '@/lib/fileThumbs';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
@@ -48,6 +50,12 @@ interface FileFieldControlProps {
     maxFiles?: number;
     /** Fila densa de la ficha (sin la caja punteada grande). */
     compact?: boolean;
+    /**
+     * v0.1.426 — campo «Imagen» (`config.only_images`): el selector sólo
+     * ofrece imágenes, lo que no lo es se rechaza antes de subirlo y los
+     * archivos se ven como una grilla de miniaturas.
+     */
+    onlyImages?: boolean;
 }
 
 /**
@@ -60,7 +68,7 @@ interface FileFieldControlProps {
  * import. Ahora: muestra todos con su nombre y enlace, agrega uno o varios
  * (botón o ARRASTRANDO encima), quita de a uno y respeta `max_files`.
  */
-export function FileFieldControl({ id, value, onChange, maxFiles, compact = false }: FileFieldControlProps): JSX.Element {
+export function FileFieldControl({ id, value, onChange, maxFiles, compact = false, onlyImages = false }: FileFieldControlProps): JSX.Element {
     const ids = normalizeFileIds(value);
     const idsRef = useRef(ids);
     idsRef.current = ids;
@@ -72,9 +80,19 @@ export function FileFieldControl({ id, value, onChange, maxFiles, compact = fals
     const max = maxFiles !== undefined && maxFiles > 0 ? maxFiles : null;
     const full = max !== null && ids.length >= max;
 
-    const uploadMany = async (files: File[]): Promise<void> => {
-        if (files.length === 0) return;
+    const uploadMany = async (picked: File[]): Promise<void> => {
+        if (picked.length === 0) return;
         setUploadError(null);
+        // v0.1.426 — un campo «Imagen» no sube lo que no es una imagen (el
+        // servidor igual lo rechaza al guardar: aquí se avisa antes).
+        const files = onlyImages ? picked.filter((f) => isImageFileMime(f.type)) : picked;
+        if (files.length < picked.length) {
+            setUploadError(sprintf(/* translators: %s: formatos de imagen */ __('Sólo se pueden subir imágenes (%s).'), IMAGE_FILE_KINDS_LABEL));
+            if (files.length === 0) {
+                if (inputRef.current) inputRef.current.value = '';
+                return;
+            }
+        }
         const room = max === null ? files.length : max - idsRef.current.length - busy;
         if (room <= 0) {
             setUploadError(sprintf(/* translators: %d: max files */ __('El campo admite como máximo %d archivos.'), max ?? 0));
@@ -104,6 +122,14 @@ export function FileFieldControl({ id, value, onChange, maxFiles, compact = fals
         onChange(idsRef.current.filter((x) => x !== fileId));
     };
 
+    const preview = (e: React.MouseEvent, fileId: number): void => {
+        // v0.1.291 — un click abre el visor; Ctrl/⌘+click, otra pestaña.
+        if (!isPlainClick(e)) return;
+        e.preventDefault();
+        const all = ids.map((x) => attachments.data?.get(x)).filter((a): a is ResolvedAttachment => a !== undefined);
+        openFilePreview(all.map(toPreviewFile), Math.max(0, all.findIndex((a) => a.id === fileId)));
+    };
+
     return (
         <div
             className={cn(
@@ -128,7 +154,65 @@ export function FileFieldControl({ id, value, onChange, maxFiles, compact = fals
                 void uploadMany(Array.from(e.dataTransfer.files));
             }}
         >
-            {ids.length > 0 && (
+            {ids.length > 0 && onlyImages && (
+                <ul
+                    className={cn(
+                        'imcrm-grid imcrm-gap-2',
+                        compact ? 'imcrm-grid-cols-[repeat(auto-fill,minmax(56px,1fr))]' : 'imcrm-grid-cols-[repeat(auto-fill,minmax(88px,1fr))]',
+                    )}
+                    data-testid="imcrm-image-grid"
+                >
+                    {ids.map((fileId) => {
+                        const resolved = attachments.data?.get(fileId) ?? null;
+                        const name = resolved?.title ?? sprintf(/* translators: %d: file id */ __('Archivo #%d'), fileId);
+                        return (
+                            <li key={fileId} className="imcrm-group imcrm-relative imcrm-aspect-square" data-testid="imcrm-file-item">
+                                {resolved !== null ? (
+                                    <a
+                                        href={resolved.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        title={name}
+                                        className="imcrm-block imcrm-h-full imcrm-w-full imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-muted"
+                                        data-testid="imcrm-file-link"
+                                        onClick={(e) => preview(e, fileId)}
+                                    >
+                                        {resolved.thumbUrl !== undefined ? (
+                                            <img
+                                                {...thumbSources(resolved.thumbUrl, 160, 320)}
+                                                alt={name}
+                                                decoding="async"
+                                                draggable={false}
+                                                className="imcrm-h-full imcrm-w-full imcrm-object-cover"
+                                                data-testid="imcrm-file-thumb"
+                                            />
+                                        ) : (
+                                            // Un archivo viejo que no es imagen (el campo pasó a «sólo imágenes» después).
+                                            <span className="imcrm-flex imcrm-h-full imcrm-w-full imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-1 imcrm-p-1 imcrm-text-center imcrm-text-[11px] imcrm-text-muted-foreground">
+                                                <FileText className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                                                <span className="imcrm-line-clamp-2 imcrm-break-all">{name}</span>
+                                            </span>
+                                        )}
+                                    </a>
+                                ) : (
+                                    <span className="imcrm-block imcrm-h-full imcrm-w-full imcrm-animate-pulse imcrm-rounded-md imcrm-bg-muted" />
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => remove(fileId)}
+                                    aria-label={sprintf(/* translators: %s: file name */ __('Quitar «%s»'), name)}
+                                    title={__('Quitar')}
+                                    className="imcrm-absolute imcrm-right-1 imcrm-top-1 imcrm-inline-flex imcrm-h-6 imcrm-w-6 imcrm-items-center imcrm-justify-center imcrm-rounded-full imcrm-bg-background/90 imcrm-text-muted-foreground imcrm-shadow-imcrm-sm imcrm-ring-1 imcrm-ring-border imcrm-transition-opacity hover:imcrm-text-destructive focus-visible:imcrm-opacity-100 sm:imcrm-opacity-0 sm:group-hover:imcrm-opacity-100"
+                                >
+                                    <X className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                                </button>
+                            </li>
+                        );
+                    })}
+                </ul>
+            )}
+
+            {ids.length > 0 && !onlyImages && (
                 <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                     {ids.map((fileId) => {
                         const resolved = attachments.data?.get(fileId) ?? null;
@@ -139,7 +223,19 @@ export function FileFieldControl({ id, value, onChange, maxFiles, compact = fals
                                 className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2.5 imcrm-py-1.5 imcrm-text-sm"
                                 data-testid="imcrm-file-item"
                             >
-                                <FileText className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
+                                {/* v0.1.426 — una imagen se reconoce por su miniatura, no por un ícono. */}
+                                {resolved?.thumbUrl !== undefined ? (
+                                    <img
+                                        {...thumbSources(resolved.thumbUrl, 96, 160)}
+                                        alt=""
+                                        aria-hidden
+                                        decoding="async"
+                                        className="imcrm-h-7 imcrm-w-7 imcrm-shrink-0 imcrm-rounded imcrm-border imcrm-border-border imcrm-bg-muted imcrm-object-cover"
+                                        data-testid="imcrm-file-thumb"
+                                    />
+                                ) : (
+                                    <FileText className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
+                                )}
                                 {resolved !== null ? (
                                     <a
                                         href={resolved.url}
@@ -147,13 +243,7 @@ export function FileFieldControl({ id, value, onChange, maxFiles, compact = fals
                                         rel="noopener noreferrer"
                                         className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-font-medium imcrm-text-primary hover:imcrm-underline"
                                         data-testid="imcrm-file-link"
-                                        onClick={(e) => {
-                                            // v0.1.291 — un click abre el visor; Ctrl/⌘+click, otra pestaña.
-                                            if (!isPlainClick(e)) return;
-                                            e.preventDefault();
-                                            const all = ids.map((x) => attachments.data?.get(x)).filter((a): a is ResolvedAttachment => a !== undefined);
-                                            openFilePreview(all.map(toPreviewFile), Math.max(0, all.findIndex((a) => a.id === fileId)));
-                                        }}
+                                        onClick={(e) => preview(e, fileId)}
                                     >
                                         {name}
                                     </a>
@@ -188,10 +278,22 @@ export function FileFieldControl({ id, value, onChange, maxFiles, compact = fals
                         disabled={busy > 0}
                         className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-input imcrm-bg-background imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium imcrm-text-foreground hover:imcrm-bg-accent disabled:imcrm-opacity-60"
                     >
-                        {ids.length === 0 ? <Upload className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden /> : <Paperclip className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />}
-                        {ids.length === 0 ? __('Subir archivo') : __('Agregar otro')}
+                        {onlyImages ? (
+                            <ImagePlus className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                        ) : ids.length === 0 ? (
+                            <Upload className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                        ) : (
+                            <Paperclip className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                        )}
+                        {onlyImages
+                            ? ids.length === 0
+                                ? __('Subir imagen')
+                                : __('Agregar otra')
+                            : ids.length === 0
+                              ? __('Subir archivo')
+                              : __('Agregar otro')}
                     </button>
-                    <span>{__('o arrástralo aquí')}</span>
+                    <span>{onlyImages ? __('o arrástrala aquí') : __('o arrástralo aquí')}</span>
                     {busy > 0 && (
                         <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1">
                             <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" aria-hidden />
@@ -203,6 +305,7 @@ export function FileFieldControl({ id, value, onChange, maxFiles, compact = fals
                         ref={inputRef}
                         type="file"
                         multiple={max === null || max - ids.length > 1}
+                        accept={onlyImages ? IMAGE_FILE_ACCEPT : undefined}
                         hidden
                         onChange={(e) => void uploadMany(Array.from(e.target.files ?? []))}
                     />
@@ -210,7 +313,9 @@ export function FileFieldControl({ id, value, onChange, maxFiles, compact = fals
             )}
             {full && max !== null && (
                 <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                    {sprintf(/* translators: %d: max files */ __('Máximo %d archivos: quita uno para subir otro.'), max)}
+                    {onlyImages
+                        ? sprintf(/* translators: %d: max images */ __('Máximo %d imágenes: quita una para subir otra.'), max)
+                        : sprintf(/* translators: %d: max files */ __('Máximo %d archivos: quita uno para subir otro.'), max)}
                 </span>
             )}
             {uploadError !== null && <span className="imcrm-text-xs imcrm-text-destructive">{uploadError}</span>}
