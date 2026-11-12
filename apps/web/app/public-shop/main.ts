@@ -897,8 +897,9 @@ function sameCart(c: ShopCartResult): boolean {
 function paintSubmit(): void {
     if (!submitBtn || !meta) return;
     const est = estimate(co.deliveryId);
-    const label = co.payment === 'whatsapp' ? 'Confirmar y enviar por WhatsApp' : `Hacer el pedido · ${money(est.total)}`;
-    submitBtn.replaceChildren(co.sending ? el('span', { cls: 's-spin', 'aria-hidden': 'true' }) : '', co.sending ? 'Enviando…' : label);
+    const label =
+        co.payment === 'whatsapp' ? 'Confirmar y enviar por WhatsApp' : co.payment === 'online' ? `Ir a pagar · ${money(est.total)}` : `Hacer el pedido · ${money(est.total)}`;
+    submitBtn.replaceChildren(co.sending ? el('span', { cls: 's-spin', 'aria-hidden': 'true' }) : '', co.sending ? (co.payment === 'online' ? 'Preparando el pago…' : 'Enviando…') : label);
     submitBtn.disabled = co.sending || est.blocked || est.below_minimum !== null || !co.payment || !co.deliveryId || !!meta.closed;
 }
 
@@ -1064,7 +1065,10 @@ async function placeOrder(): Promise<void> {
             website: hpInput?.value ?? '',
             origin: { page: location.href.slice(0, 2000), referrer: document.referrer.slice(0, 2000) },
         };
-        const res = await api<{ order_token: string; number: string; total: number; payment_method: ShopPaymentMethod; whatsapp_path: string | null }>('/orders', { method: 'POST', body: JSON.stringify(body) });
+        const res = await api<{ order_token: string; number: string; total: number; payment_method: ShopPaymentMethod; whatsapp_path: string | null; pay_url: string | null }>('/orders', {
+            method: 'POST',
+            body: JSON.stringify(body),
+        });
         if (!res.ok) {
             if (meta.captcha) resetCaptcha();
             const e = res.error;
@@ -1093,6 +1097,22 @@ async function placeOrder(): Promise<void> {
         const url = new URL(location.href);
         url.searchParams.set('pedido', res.data.order_token);
         history.replaceState(null, '', url.pathname + url.search);
+        // v0.1.413 — Pago en línea: directo a pagar (al volver, la página muestra cómo quedó).
+        const payUrl = safePayUrl(res.data.pay_url);
+        if (payUrl) {
+            paint([
+                el('div', { cls: 's-wrap', style: 'max-width:640px;padding-top:28px' }, [
+                    el('div', { cls: 's-ok', 'data-testid': 'shop-going-to-pay' }, [
+                        el('span', { cls: 's-spin', 'aria-hidden': 'true' }),
+                        el('h2', { text: 'Te llevamos a pagar…' }),
+                        el('p', { text: `Tu pedido ${res.data.number} quedó apartado mientras pagas.` }),
+                        el('a', { cls: 's-btn', href: payUrl, 'data-testid': 'shop-pay-now' }, ['Ir a pagar']),
+                    ]),
+                ]),
+            ]);
+            location.assign(payUrl);
+            return;
+        }
         await showOrder(res.data.order_token, { placed: true, whatsappPath: res.data.whatsapp_path });
     } finally {
         co.sending = false;
@@ -1102,11 +1122,29 @@ async function placeOrder(): Promise<void> {
 
 // ───────────────────────────── Estado del pedido ─────────────────────────────
 
-async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappPath?: string | null } = {}): Promise<void> {
+/** v0.1.413 — Al volver de pagar en línea, se pregunta cómo quedó el pago (hasta 2 minutos). */
+let payPoll = 0;
+let payPollUntil = 0;
+
+/** El link de pago lo arma el servidor con lo que devolvió el proveedor: sólo una dirección web. */
+function safePayUrl(u: string | null | undefined): string | null {
+    return typeof u === 'string' && /^https?:\/\/[^\s"<>]+$/i.test(u) ? u : null;
+}
+
+function clockTime(iso: string): string {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString('es', { hour: 'numeric', minute: '2-digit' });
+}
+
+async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappPath?: string | null; returned?: boolean; polling?: boolean } = {}): Promise<void> {
     view = 'order';
+    window.clearTimeout(payPoll);
     const box = el('div', { cls: 's-wrap', style: 'max-width:640px;padding-top:28px' }, [el('p', { cls: 's-empty', text: 'Cargando tu pedido…' })]);
-    paint([box]);
-    const res = await api<PublicShopOrder>(`/orders/${encodeURIComponent(orderToken)}`);
+    if (!opts.polling) paint([box]);
+    if (opts.returned && !opts.polling) payPollUntil = Date.now() + 120_000;
+    const res = await api<PublicShopOrder>(`/orders/${encodeURIComponent(orderToken)}${opts.returned ? '?refresh=1' : ''}`);
+    if (opts.polling) paint([box]);
     if (!res.ok) {
         box.replaceChildren(el('div', { cls: 's-ok' }, [el('h2', { text: 'No encontramos ese pedido' }), el('p', { text: 'Revisa el enlace que te llegó por correo.' })]), el('div', { style: 'margin-top:18px' }, [actionButton('Ir a la tienda', goCatalog, 's-btn s-ghost')]));
         return;
@@ -1123,6 +1161,41 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
             el('div', { cls: 's-num', 'data-testid': 'shop-order-number', text: o.number }),
         ]),
     );
+    // v0.1.413 — El pago en línea: pagar ahora, esperando la confirmación o qué pasó.
+    if (o.payment_method === 'online') {
+        const waiting = o.payment_status === 'pendiente' && o.status !== 'cancelado';
+        if (waiting && opts.returned && Date.now() < payPollUntil) {
+            kids.push(
+                el('div', { cls: 's-note', 'data-testid': 'shop-pay-waiting', style: 'margin-top:18px;display:flex;gap:10px;align-items:center' }, [
+                    el('span', { cls: 's-spin', 'aria-hidden': 'true' }),
+                    el('span', { text: 'Estamos confirmando tu pago. Esto toma unos segundos.' }),
+                ]),
+            );
+            payPoll = window.setTimeout(() => void showOrder(orderToken, { returned: true, polling: true }), 4000);
+        } else if (o.payment_status === 'pagado' && o.status !== 'cancelado') {
+            kids.push(
+                el('div', { cls: 's-note', 'data-testid': 'shop-paid', style: 'margin-top:18px;background:#f0fdf4;border-color:#bbf7d0;color:#166534' }, [
+                    el('strong', { style: 'display:block;margin-bottom:2px', text: '¡Pago recibido!' }),
+                    o.pay_provider ? `Pagaste en línea con ${o.pay_provider}. Te avisamos cuando enviemos tu pedido.` : 'Te avisamos cuando enviemos tu pedido.',
+                ]),
+            );
+        }
+        const orderPayUrl = safePayUrl(o.pay_url);
+        if (orderPayUrl) {
+            const until = o.pay_until ? clockTime(o.pay_until) : '';
+            kids.push(
+                el('div', { style: 'margin:18px 0 0' }, [
+                    el('a', { cls: 's-btn', href: orderPayUrl, 'data-testid': 'shop-pay-now' }, [o.pay_provider ? `Pagar con ${o.pay_provider}` : 'Pagar ahora']),
+                    until
+                        ? el('p', { cls: 's-line-p', style: 'margin:8px 0 0;text-align:center', text: `Tu pedido queda apartado hasta las ${until}. Si no pagas a tiempo, se cancela.` })
+                        : null,
+                ]),
+            );
+        }
+        if (o.payment_note && !(waiting && opts.returned && Date.now() < payPollUntil)) {
+            kids.push(el('div', { cls: 's-note', 'data-testid': 'shop-pay-note', style: 'margin-top:18px', text: o.payment_note }));
+        }
+    }
     const wa = o.whatsapp_url ?? (opts.whatsappPath ?? null);
     if (wa && o.payment_method === 'whatsapp') {
         kids.push(
@@ -1138,7 +1211,7 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
             el('span', { cls: 's-status', style: 'background:#f3f4f6;color:#374151', text: `Pago: ${o.payment_status_label}` }),
         ]),
     );
-    if (o.payment_status !== 'pagado' && o.payment_instructions) {
+    if (o.payment_status !== 'pagado' && o.payment_method !== 'online' && o.payment_instructions) {
         kids.push(el('div', { cls: 's-note' }, [el('strong', { style: 'display:block;margin-bottom:4px', text: o.payment_label }), o.payment_instructions]));
     }
     const sum = el('div', { cls: 's-sum' }, [
@@ -1174,6 +1247,7 @@ function paint(main: HTMLElement[]): void {
 
 function goCatalog(): void {
     view = 'catalog';
+    window.clearTimeout(payPoll);
     if (location.search.includes('pedido=')) {
         const url = new URL(location.href);
         url.searchParams.delete('pedido');
@@ -1199,9 +1273,17 @@ function render(): void {
     applyTheme();
     indexProducts();
     sort = meta.display.sort;
-    const pedido = new URLSearchParams(location.search).get('pedido');
+    const qs = new URLSearchParams(location.search);
+    const pedido = qs.get('pedido');
     if (pedido && /^[A-Za-z0-9_-]{20,64}$/.test(pedido) && !BOOT.preview) {
-        void showOrder(pedido);
+        // v0.1.413 — `?pago=1`: volvió de pagar en línea (se quita para que recargar no vuelva a esperar).
+        const returned = qs.has('pago');
+        if (returned) {
+            const url = new URL(location.href);
+            url.searchParams.delete('pago');
+            history.replaceState(null, '', url.pathname + url.search);
+        }
+        void showOrder(pedido, { returned });
         return;
     }
     if (view === 'checkout') goCheckout();

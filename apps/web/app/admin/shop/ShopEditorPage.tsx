@@ -207,7 +207,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
             case 'design':
                 return <DesignPanel config={config} options={options} patch={patch} />;
             case 'payment':
-                return <PaymentPanel config={config} patch={patch} />;
+                return <PaymentPanel config={config} options={options} patch={patch} />;
             case 'checkout':
                 return <CheckoutPanel config={config} options={options} patch={patch} />;
             case 'seller':

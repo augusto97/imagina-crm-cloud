@@ -392,18 +392,25 @@ export class PublicShopApiController {
         @Req() req: FastifyRequest,
         @Param('token') token: string,
         @Body(new ZodValidationPipe(publicShopOrderSchema)) input: PublicShopOrderInput,
-    ): Promise<{ order_token: string; number: string; total: number; payment_method: string; whatsapp_path: string | null }> {
+    ): Promise<{ order_token: string; number: string; total: number; payment_method: string; whatsapp_path: string | null; pay_url: string | null }> {
         const ua = req.headers['user-agent'];
         const out = await this.publicSvc.placeOrder(token, input, { ip: req.ip, userAgent: typeof ua === 'string' ? ua.slice(0, 400) : null });
         if (!out) throw notFound();
         return out;
     }
 
+    /** v0.1.413 — Con `?refresh=1` (al volver de pagar en línea) se le pregunta al proveedor cómo va el pago. */
     @Get(':token/orders/:order')
-    async order(@Param('token') token: string, @Param('order') order: string, @Res({ passthrough: true }) reply: FastifyReply): Promise<PublicShopOrder> {
+    async order(
+        @Req() req: FastifyRequest,
+        @Param('token') token: string,
+        @Param('order') order: string,
+        @Query('refresh') refresh: string | undefined,
+        @Res({ passthrough: true }) reply: FastifyReply,
+    ): Promise<PublicShopOrder> {
         reply.header('Cache-Control', 'no-store').header('X-Robots-Tag', 'noindex');
         if (!/^[A-Za-z0-9_-]{20,64}$/.test(order)) throw notFound();
-        const out = await this.publicSvc.order(token, order);
+        const out = await this.publicSvc.order(token, order, { refresh: refresh === '1', ip: req.ip });
         if (!out) throw notFound();
         return out;
     }

@@ -104,16 +104,27 @@ export const articles: LearnArticle[] = [
             {
                 t: 'cards',
                 items: [
+                    { icon: 'CreditCard', title: 'Pago en línea', md: 'Con tarjeta, PSE, Nequi o PayPal, con la cuenta de **Mercado Pago**, **Wompi** o **PayPal** de tu empresa (la misma de los links de pago). Al hacer el pedido lo llevamos a pagar y, cuando paga, el pedido queda **pagado solo**.', tone: 'violet' },
                     { icon: 'MessageCircle', title: 'Pedido por WhatsApp', md: 'El pedido queda guardado y tu cliente lo manda a tu WhatsApp ya escrito (productos, total, entrega y su dirección). Tu número nunca aparece en la página: sale sólo al tocar el botón.', tone: 'mint' },
                     { icon: 'Building2', title: 'Transferencia', md: 'Al terminar ve los datos de tu cuenta (los escribes tú en **Pago y entrega**) y el número de su pedido para el comprobante.', tone: 'blue' },
                     { icon: 'Wallet', title: 'Contra entrega', md: 'Paga cuando recibe. Escribe las instrucciones (efectivo, datáfono…) para que sepa qué esperar.', tone: 'amber' },
                 ],
             },
+            { t: 'h', text: 'Cómo funciona el pago en línea' },
+            {
+                t: 'steps',
+                items: [
+                    'En **Pago y entrega**, activa **Pago en línea** y elige la cuenta de cobro del equipo. Si no tienes ninguna, conéctala en **Ajustes → Integraciones**.',
+                    'Elige **cuánto tiempo tiene para pagar** (30 minutos, por defecto). Mientras tanto, el stock queda apartado para ese pedido.',
+                    'Tu cliente hace el pedido y lo llevamos a pagar. Si cierra la página, le llega un correo con el botón **Pagar mi pedido**.',
+                    'Cuando paga, el pedido queda **Pagado**, a ti te llega el aviso y a tu cliente la confirmación. Si no paga a tiempo, el pedido se cancela solo y el stock vuelve a la tienda.',
+                ],
+            },
             {
                 t: 'callout',
                 tone: 'info',
-                title: 'Pago en línea',
-                md: 'El cobro con tarjeta o PSE desde la tienda llega en una próxima versión, con las mismas cuentas de **Mercado Pago**, **Wompi** o **PayPal** que ya conectas para los links de pago.',
+                title: 'Si el pago llega tarde',
+                md: 'Si tu cliente paga después del plazo y todavía queda stock, el pedido se reactiva solo. Si ya no queda, el pedido sigue cancelado pero pagado, y te llega un aviso para conseguir el producto o devolver el dinero. Wompi sólo cobra en pesos colombianos y PayPal no cobra en pesos: la tienda te avisa si la moneda no corresponde.',
             },
             { t: 'h', text: 'Formas de entrega' },
             {

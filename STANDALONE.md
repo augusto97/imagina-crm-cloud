@@ -8789,3 +8789,40 @@ persona ve «Tienda».
 - Quitar la tienda quita la marca de las listas, que quedan con todos sus datos.
 - Lo que dejan preparado las columnas de `shop_orders` para v0.1.413:
   `payment_link_id`, `expires_at` y el índice de los que vencen.
+
+**Addendum v0.1.413 — Pago en línea.**
+1. **Con la cuenta de cobro del equipo** (ADR-S31: Mercado Pago, Wompi o
+   PayPal): `payments.online {enabled, connection_id, hold_minutes 10-240}`.
+   Sólo conexiones del EQUIPO (`teamConnections`); una privada o ajena se
+   descarta al guardar y la tienda no se publica sin cuenta. La moneda de la
+   tienda tiene que ser una que la cuenta acepte (`collectionCurrencyError`:
+   Wompi sólo COP, PayPal nunca COP) o es un problema de publicación.
+2. **El pedido aparta el stock con un plazo**: nace con `expires_at = ahora +
+   hold_minutes` y el stock tomado, en la misma transacción de siempre.
+   Después del commit, `CollectionsService.createForShop` crea el link (monto
+   del servidor, vence con el pedido, vuelve a `?pedido=…&pago=1`). Si el
+   proveedor no responde: el pedido se cancela en el acto (stock de vuelta),
+   se abre un Problema `shop-pay:<tienda>` (se cierra solo con el próximo link
+   bueno) y la persona recibe 503 `shop_payment_unavailable`.
+3. **Un carrito abandonado no es una venta**: al equipo no le llega nada hasta
+   que entra el pago; a quien compra le llega «Completa el pago de tu pedido»
+   con el botón para pagar (la página del pedido lo ofrece mientras siga a
+   tiempo).
+4. **Dar por pagado (`settlePaid`, idempotente, con la fila bloqueada)**: lo
+   llaman SÓLO caminos verificados — el aviso del proveedor (`onLinkPaid`, el
+   pago se RELEE), la página al volver del checkout (`linkState(refresh)`,
+   con freno por IP) y el barrido. Tres resultados: `paid`; `reopened` (había
+   vencido y el stock todavía alcanza: se vuelve a tomar y el pedido revive en
+   «Nuevo»); `late` (sin stock, o cancelado por el equipo: queda cancelado y
+   pagado, y el equipo recibe el aviso para conseguir el producto o devolver
+   el dinero).
+5. **Vencer**: un barrido cada minuto (`ShopTasksService`, cola `shop-tasks`,
+   respeta `WORKERS`) toma los pedidos en línea pendientes con `expires_at`
+   vencido por la conexión base, PRIMERO le pregunta al proveedor (el aviso
+   puede no haber llegado) y si no está pagado los cancela: stock de vuelta,
+   «Cancelado · No se pagó», link vencido. Marcar pagado a mano o cancelar
+   desde el equipo también vencen el link.
+6. **En el http de desarrollo** las pasarelas no reciben la vuelta automática
+   ni la URL de avisos (sólo con https); la prueba de la API las verifica con
+   https.
+

@@ -7,6 +7,7 @@ import {
     Banknote,
     Check,
     Copy,
+    CreditCard,
     ExternalLink,
     Home,
     LayoutDashboard,
@@ -20,6 +21,7 @@ import {
     Wallet,
 } from 'lucide-react';
 import {
+    COLLECTION_PROVIDER_LABEL,
     SHOP_CATALOG_FIELD_TYPES,
     SHOP_CATALOG_ROLE_LABELS,
     SHOP_COD_DEFAULT,
@@ -30,6 +32,7 @@ import {
     SHOP_SORTS,
     SHOP_SORT_LABELS,
     SHOP_TRANSFER_DEFAULT,
+    collectionCurrencyError,
     newShopItemId,
     type ShopCatalogFields,
     type ShopConfig,
@@ -321,14 +324,88 @@ function DeliveryRow({ d, index, count, onChange, onMove, onRemove }: { d: ShopD
     );
 }
 
-export function PaymentPanel({ config, patch }: { config: ShopConfig; patch: Patch }): JSX.Element {
+/** Cuánto queda apartado el stock mientras quien compra paga en línea. */
+const SHOP_HOLD_OPTIONS = [10, 15, 20, 30, 45, 60, 90, 120, 180, 240];
+
+function holdLabel(m: number): string {
+    if (m < 60) return sprintf(__('%d minutos'), m);
+    const h = m / 60;
+    return h === 1 ? __('1 hora') : Number.isInteger(h) ? sprintf(__('%d horas'), h) : sprintf(__('%d minutos'), m);
+}
+
+/** «PayPal · Prueba (sandbox)» ya dice el proveedor: no se repite. */
+function connectionLabel(name: string, provider: string, test: boolean): string {
+    const lower = name.toLowerCase();
+    let label = lower.includes(provider.toLowerCase()) ? name : `${name} · ${provider}`;
+    if (test && !lower.includes('prueba')) label += ` (${__('prueba')})`;
+    return label;
+}
+
+export function PaymentPanel({ config, options, patch }: { config: ShopConfig; options: ShopOptions; patch: Patch }): JSX.Element {
     const p = config.payments;
     const setP = <K extends keyof ShopConfig['payments']>(k: K, v: Partial<ShopConfig['payments'][K]>): void =>
         patch((c) => ({ ...c, payments: { ...c.payments, [k]: { ...c.payments[k], ...v } } }));
     const setDelivery = (fn: (d: ShopDeliveryMethod[]) => ShopDeliveryMethod[]): void => patch((c) => ({ ...c, delivery: fn(c.delivery) }));
+    const team = options.payment_connections ?? [];
+    const conn = team.find((c) => c.id === p.online.connection_id) ?? null;
+    const currencyProblem = conn ? collectionCurrencyError(conn.provider, config.currency) : null;
+    const holds = SHOP_HOLD_OPTIONS.includes(p.online.hold_minutes) ? SHOP_HOLD_OPTIONS : [...SHOP_HOLD_OPTIONS, p.online.hold_minutes].sort((a, b) => a - b);
     return (
         <PanelBody testId="shop-payment">
-            <SubSection title={__('Cómo te pagan')} hint={__('Puedes activar varias: quien compra elige una. El pago en línea con tarjeta llega en la próxima versión.')}>
+            <SubSection title={__('Cómo te pagan')} hint={__('Puedes activar varias: quien compra elige una.')}>
+                <SwitchRow
+                    boxed
+                    icon={CreditCard}
+                    label={__('Pago en línea')}
+                    hint={__('Con tarjeta, PSE, Nequi o PayPal, con la cuenta de cobro de la empresa: el dinero llega a esa cuenta y el pedido queda pagado solo.')}
+                    checked={p.online.enabled}
+                    onChange={(enabled) =>
+                        setP('online', { enabled, ...(enabled && p.online.connection_id === null && team.length === 1 ? { connection_id: team[0]!.id } : {}) })
+                    }
+                    testId="shop-pay-online"
+                >
+                    {team.length === 0 ? (
+                        <p className="imcrm-text-[12px] imcrm-leading-snug imcrm-text-amber-700 dark:imcrm-text-amber-300" data-testid="shop-online-no-connection">
+                            {__('No hay una cuenta de cobro del equipo (Mercado Pago, Wompi o PayPal).')}{' '}
+                            <Link to="/settings?s=conectores" className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline">
+                                {__('Conéctala en Ajustes → Integraciones')}
+                            </Link>
+                        </p>
+                    ) : (
+                        <Field label={__('Con qué cuenta se cobra')} hint={__('Sólo las cuentas del equipo. Una cuenta privada de alguien no aparece aquí.')}>
+                            <Select
+                                value={p.online.connection_id ?? ''}
+                                onChange={(e) => setP('online', { connection_id: e.target.value ? Number(e.target.value) : null })}
+                                data-testid="shop-online-connection"
+                            >
+                                <option value="">{__('Elige una cuenta…')}</option>
+                                {team.map((c) => (
+                                    <option key={c.id} value={c.id}>
+                                        {connectionLabel(c.name, COLLECTION_PROVIDER_LABEL[c.provider], c.test_mode)}
+                                    </option>
+                                ))}
+                            </Select>
+                        </Field>
+                    )}
+                    {currencyProblem && (
+                        <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[12px] imcrm-leading-snug imcrm-text-destructive" data-testid="shop-online-currency">
+                            <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                            {sprintf(__('%s Cambia la moneda en Catálogo o elige otra cuenta.'), currencyProblem)}
+                        </p>
+                    )}
+                    <Field
+                        label={__('Cuánto tiempo tiene para pagar')}
+                        hint={__('Mientras tanto el stock queda apartado. Si no paga a tiempo, el pedido se cancela solo y el stock vuelve. Si el pago llega tarde y queda stock, el pedido se reactiva.')}
+                    >
+                        <Select value={p.online.hold_minutes} onChange={(e) => setP('online', { hold_minutes: Number(e.target.value) })} data-testid="shop-online-hold">
+                            {holds.map((m) => (
+                                <option key={m} value={m}>
+                                    {holdLabel(m)}
+                                </option>
+                            ))}
+                        </Select>
+                    </Field>
+                </SwitchRow>
                 <SwitchRow
                     boxed
                     icon={MessageCircle}

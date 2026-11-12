@@ -415,7 +415,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.412**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.413**
+(**la tienda cobra en línea, segunda de seis versiones** — pago con la cuenta
+de Mercado Pago, Wompi o PayPal del equipo, el stock apartado el tiempo elegido,
+el pedido pagado solo al entrar el pago, barrido que cancela lo que no se pagó y
+devuelve el stock, y pago tardío que revive el pedido si el stock alcanza;
+addendum ADR-S103). Antes **v0.1.412**
 (**tienda desde una lista, primera de seis versiones** — el catálogo es una
 lista, la página pública con carrito, el pedido en una transacción con el stock
 recalculado desde la base, pago por WhatsApp, transferencia o contra entrega,
@@ -697,11 +702,11 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   aceptadas las decisiones propuestas: catálogo = lista, primera versión sin
   pasarela, módulo `shop` sólo en planes pagos (0121 lo apaga en `trial`),
   suspensión por el operador, miniaturas con `sharp`, factura DIAN fuera,
-  `noindex` siempre (con Open Graph para compartir). **v0.1.412 HECHA**
-  (catálogo, carrito y pedido sin pasarela: ADR-S103). **Siguen, en orden**:
-  v0.1.413 pago en línea (Mercado Pago, Wompi, PayPal) con el stock apartado
-  `hold_minutes` y pago tardío (las columnas `payment_link_id`/`expires_at` de
-  `shop_orders` ya existen) → v0.1.414 productos variables (variantes como
+  `noindex` siempre (con Open Graph para compartir). **v0.1.412 y v0.1.413
+  HECHAS** (catálogo, carrito y pedido sin pasarela; pago en línea con el stock
+  apartado y pago tardío: ADR-S103 y su addendum). Falta probar el pago en línea
+  con cuentas de prueba reales en el servidor. **Siguen, en orden**:
+  v0.1.414 productos variables (variantes como
   subtareas) → v0.1.415 envíos por zona y cupones → v0.1.416 suscripción,
   digital, servicio y «Mis pedidos» → v0.1.417 estadísticas, conversiones,
   botones «Comprar» insertables, widget y asistente/MCP. El SEO (y el dominio
@@ -1900,6 +1905,27 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-12 · v0.1.413** — **La tienda cobra en línea** (segunda de seis
+  versiones). Editor → Pago y entrega → **«Pago en línea»**: la cuenta de
+  Mercado Pago, Wompi o PayPal del EQUIPO (se elige sola si hay una; una
+  privada se descarta), cuánto tiempo tiene para pagar (30 min por defecto) y
+  aviso si la moneda no la acepta. El pedido aparta el stock con `expires_at`,
+  el link nace después del commit (`createForShop`) y la persona va directo a
+  pagar; si cierra el checkout le llega «Completa el pago» con el botón. Al
+  equipo no le llega nada hasta que entra el pago. `settlePaid` (sólo desde el
+  aviso releído, la vuelta del checkout que pregunta al proveedor o el barrido)
+  da por pagado una vez; el barrido cada minuto (`shop-tasks`) pregunta al
+  proveedor antes de cancelar; pago tardío → revive si el stock alcanza o
+  queda cancelado+pagado con aviso al equipo. Proveedor caído → pedido
+  cancelado en el acto, 503 y un Problema (fuente nueva `shop`). La ficha del
+  pedido dice «Esperando el pago en línea… hasta» con «Copiar link de pago».
+  Sin migración. Tests: `shops-online.spec` 7/7, `shops.spec` 8/8,
+  cobros/agenda/problemas 41/41, shared 899, front 913 + E2E 41/41 contra el
+  Mercado Pago simulado (escritorio y celular oscuro). En http de desarrollo
+  las pasarelas no reciben la vuelta ni la URL de avisos (sólo https): el E2E
+  simula ambas. Falta la prueba con cuentas reales. Sigue v0.1.414
+  (productos variables).
 
 - **2026-11-12 · v0.1.412** — **Tienda desde una lista: catálogo, carrito y
   pedido** (primera de seis versiones; el usuario: «haz todos los pasos excepto

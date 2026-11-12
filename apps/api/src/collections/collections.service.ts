@@ -519,6 +519,62 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
     }
 
     /**
+     * v0.1.413 (ADR-S103) — La tienda cobra en línea: el link del pedido que se
+     * acaba de crear, con la cuenta de cobro DEL EQUIPO elegida en la tienda,
+     * el total que calculó el servidor, hasta cuándo se aparta el stock y
+     * adónde vuelve quien compra. Lanza `CollectionError` si no se puede.
+     */
+    async createForShop(
+        tenantId: number,
+        opts: {
+            shopId: number;
+            connectionId: number;
+            listId: number;
+            recordId: number;
+            title: string;
+            amount: number;
+            currency: string;
+            payerEmail: string | null;
+            expiresAt: Date;
+            returnUrlFor: (reference: string) => string | null;
+        },
+    ): Promise<{ id: number; url: string; amount: number; currency: string; reference: string; provider: string }> {
+        if (await planModuleOff(this.db, tenantId, 'integrations')) {
+            throw new CollectionError('El plan de la empresa no incluye los cobros por integraciones.');
+        }
+        const team = await this.teamConnections(tenantId);
+        if (!team.some((c) => c.id === opts.connectionId)) {
+            throw new CollectionError('La cuenta de cobro de la tienda ya no existe o no es del equipo.');
+        }
+        const created = await this.tenantDb.withTenant(tenantId, (tx) =>
+            this.createLinkInTx(tx, tenantId, {
+                connectionId: opts.connectionId,
+                listId: opts.listId,
+                recordId: opts.recordId,
+                title: opts.title,
+                amount: opts.amount,
+                currency: opts.currency,
+                payerEmail: opts.payerEmail,
+                expiresDays: null,
+                expiresAt: opts.expiresAt,
+                userId: null,
+                returnUrlFor: opts.returnUrlFor,
+            }),
+        );
+        this.afterWrite(tenantId, created.write);
+        await this.audit.log({
+            tenantId,
+            userId: null,
+            action: 'payment_link.create',
+            targetType: 'record',
+            targetId: opts.recordId,
+            targetLabel: created.link.title,
+            meta: { provider: created.link.provider, amount: created.link.amount, currency: created.link.currency, list_id: opts.listId, via: 'shop', shop_id: opts.shopId },
+        });
+        return { id: created.link.id, url: created.link.url, amount: created.link.amount, currency: created.link.currency, reference: created.reference, provider: created.link.provider };
+    }
+
+    /**
      * v0.1.387 — Cómo está el link de una cita. Con `refresh`, si sigue
      * pendiente se le pregunta al proveedor (a lo sumo cada 15 s): el aviso a
      * veces llega después que la persona, o no llega.
@@ -557,6 +613,15 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
      * que llegue igual queda registrado y la agenda lo resuelve.
      */
     async expireForBooking(tenantId: number, linkId: number): Promise<void> {
+        await this.expireLink(tenantId, linkId, 'Venció el tiempo para pagar la cita.');
+    }
+
+    /**
+     * v0.1.413 — Un link pendiente que ya no se debe pagar (venció el tiempo de
+     * la tienda o de la agenda, o el pedido se canceló o se pagó por otro
+     * medio) pasa a «Vencido»; en Wompi además se desactiva.
+     */
+    async expireLink(tenantId: number, linkId: number, note: string): Promise<void> {
         const link = await this.tenantDb.withTenant(tenantId, async (tx) => (await tx.select().from(paymentLinks).where(and(eq(paymentLinks.tenantId, tenantId), eq(paymentLinks.id, linkId))).limit(1))[0]);
         if (!link || link.status !== 'pending') return;
         if (link.provider === 'wompi' && link.connectionId) {
@@ -574,7 +639,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         const out = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [updated] = await tx
                 .update(paymentLinks)
-                .set({ status: 'expired', updatedAt: new Date(), note: 'Venció el tiempo para pagar la cita.' })
+                .set({ status: 'expired', updatedAt: new Date(), note: note.slice(0, 500) })
                 .where(and(eq(paymentLinks.tenantId, tenantId), eq(paymentLinks.id, linkId), eq(paymentLinks.status, 'pending')))
                 .returning();
             if (!updated) return null;

@@ -5,6 +5,7 @@ import {
     SHOP_CATALOG_FIELD_TYPES,
     SHOP_ITEM_ID_RE,
     SHOP_LIST_MARKER_KEY,
+    collectionCurrencyError,
     defaultShopConfig,
     newShopItemId,
     readMirrorListMarker,
@@ -13,6 +14,7 @@ import {
     resolveTitleFieldId,
     shopProblems,
     suggestShopCatalog,
+    type CollectionConnection,
     type CreateShopInput,
     type PlatformShopDto,
     type ShopCatalogFields,
@@ -26,6 +28,7 @@ import {
 import { and, asc, count, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { lists, memberships, records, shopOrders, shops, tenants, users, type ShopRow } from '../db/schema';
+import { CollectionsService } from '../collections/collections.service';
 import { DomainsService } from '../domains/domains.service';
 import { FieldsService } from '../fields/fields.service';
 import { staffRoleSql } from '../helpdesk/staff-roles';
@@ -71,8 +74,16 @@ export class ShopService {
         @Optional() private readonly moduleRef?: ModuleRef,
         @Optional() private readonly network?: PlatformNetworkService,
         @Optional() private readonly domains?: DomainsService,
+        // v0.1.413 — las cuentas de cobro del equipo para el pago en línea.
+        @Optional() private readonly collections?: CollectionsService,
     ) {
         this.pcache = cache ?? NO_PUBLIC_CACHE;
+    }
+
+    /** v0.1.413 — Las cuentas de cobro del equipo (Mercado Pago, Wompi, PayPal). Se leen ANTES de abrir la transacción. */
+    private async payTeam(tenantId: number): Promise<CollectionConnection[]> {
+        if (!this.collections) return [];
+        return this.collections.teamConnections(tenantId).catch(() => []);
     }
 
     private get blueprints(): BlueprintService {
@@ -116,6 +127,7 @@ export class ShopService {
     }
 
     async options(tenantId: number, id: number): Promise<ShopOptions> {
+        const team = await this.payTeam(tenantId);
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const row = await this.load(tx, tenantId, id);
             const list = await this.lists.getWithinTx(tx, tenantId, String(row.listId));
@@ -153,6 +165,7 @@ export class ShopService {
                     const lid = readShopConfig(o.config).orders.list_id;
                     return { id: o.id, name: o.name, orders_list_name: lid !== null ? (names.get(lid) ?? null) : null };
                 }),
+                payment_connections: team.map((c) => ({ id: c.id, name: c.name, provider: c.provider, test_mode: c.test_mode })),
             };
         });
     }
@@ -220,10 +233,11 @@ export class ShopService {
     // ─────────────────────────── Cambios ───────────────────────────
 
     async update(tenantId: number, id: number, input: UpdateShopInput): Promise<{ dto: ShopDto; before: ShopRow; after: ShopRow }> {
+        const team = await this.payTeam(tenantId);
         const res = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const row = await this.load(tx, tenantId, id, true);
             const saved = readShopConfig(row.config);
-            const config = input.config !== undefined ? await this.cleanConfig(tx, tenantId, row, input.config, saved) : saved;
+            const config = input.config !== undefined ? await this.cleanConfig(tx, tenantId, row, input.config, saved, team) : saved;
             const enabled = input.enabled ?? row.enabled;
             if (enabled && !row.enabled && row.suspendedAt) {
                 throw new ForbiddenException({
@@ -233,7 +247,7 @@ export class ShopService {
                 });
             }
             if (enabled) {
-                const problems = await this.problemsFor(tx, tenantId, row.listId, config);
+                const problems = await this.problemsFor(tx, tenantId, row.listId, config, team);
                 if (problems.length > 0) {
                     throw new ShopNotReadyError({
                         code: 'shop_not_ready',
@@ -328,8 +342,12 @@ export class ShopService {
     }
 
     /** Valida lo que manda el editor. `orders` nunca se toma del navegador. */
-    private async cleanConfig(tx: Tx, tenantId: number, row: ShopRow, raw: Record<string, unknown>, saved: ShopConfig): Promise<ShopConfig> {
+    private async cleanConfig(tx: Tx, tenantId: number, row: ShopRow, raw: Record<string, unknown>, saved: ShopConfig, team: CollectionConnection[]): Promise<ShopConfig> {
         const next = readShopConfig({ ...raw, orders: saved.orders });
+        // v0.1.413 — Sólo una cuenta de cobro DEL EQUIPO: la tienda no es de nadie en particular.
+        if (next.payments.online.connection_id !== null && !team.some((c) => c.id === next.payments.online.connection_id)) {
+            next.payments.online = { ...next.payments.online, connection_id: null };
+        }
         const fields = await this.fields.listByListIdWithinTx(tx, tenantId, row.listId);
         const byId = new Map(fields.map((f) => [f.id, f]));
         const catalog: ShopCatalogFields = { ...next.catalog };
@@ -363,13 +381,16 @@ export class ShopService {
         return next;
     }
 
-    private async problemsFor(tx: Tx, tenantId: number, listId: number, config: ShopConfig): Promise<ShopProblem[]> {
+    private async problemsFor(tx: Tx, tenantId: number, listId: number, config: ShopConfig, team: CollectionConnection[]): Promise<ShopProblem[]> {
         const fields = await this.fields.listByListIdWithinTx(tx, tenantId, listId);
         const price = config.catalog.price ? fields.find((f) => f.id === config.catalog.price) : undefined;
         const ordersOk = await this.ordersListsAlive(tx, tenantId, config.orders);
+        const conn = team.find((c) => c.id === config.payments.online.connection_id) ?? null;
         return shopProblems(config, {
             hasOrdersLists: ordersOk,
             priceFieldOk: !!price && SHOP_CATALOG_FIELD_TYPES.price.includes(price.type),
+            onlineConnectionOk: conn !== null,
+            onlineCurrencyError: conn ? collectionCurrencyError(conn.provider, config.currency) : null,
         });
     }
 
@@ -432,8 +453,9 @@ export class ShopService {
     private async toDto(tenantId: number, row: ShopRow): Promise<ShopDto> {
         const config = readShopConfig(row.config);
         const embed = await this.embedOrigin(tenantId);
+        const team = await this.payTeam(tenantId);
         return this.tenantDb.withTenant(tenantId, async (tx) => {
-            const problems = await this.problemsFor(tx, tenantId, row.listId, config);
+            const problems = await this.problemsFor(tx, tenantId, row.listId, config, team);
             let orders: ShopOrdersLists | null = null;
             if (config.orders.list_id !== null) {
                 const [l] = await tx

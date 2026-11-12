@@ -4,13 +4,16 @@ import {
     SHOP_PAYMENT_METHOD_LABELS,
     SHOP_TOKEN_RE,
     brandingSchema,
+    collectionCurrencyError,
     computeShopCart,
     formatShopMoney,
     readShopConfig,
+    shopOnlinePayment,
     shopWhatsappMessage,
     tenantFormatSchema,
     whatsappLink,
     type CaptchaProvider,
+    type CollectionConnection,
     type PublicShopMeta,
     type PublicShopOrder,
     type PublicShopOrderInput,
@@ -26,6 +29,7 @@ import { and, asc, eq, isNull } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { accessColumns, accessOf } from '../billing/tenant-access';
 import { planModuleOff } from '../billing/plan-module-gate';
+import { CollectionsService } from '../collections/collections.service';
 import { rateKeyForIp } from '../common/client-ip';
 import { DataConsentService } from '../data-consent/data-consent.service';
 import { DRIZZLE, type Db } from '../db/client';
@@ -78,6 +82,8 @@ export interface ShopPageInfo {
     images: Map<string, ShopImageSource>;
     allowedDomains: string[];
     captchaProvider: CaptchaProvider | null;
+    /** v0.1.413 — La cuenta de cobro del pago en línea (null = no se ofrece). */
+    onlineConnectionId: number | null;
 }
 
 function badRequest(code: string, message: string, extra: Record<string, unknown> = {}): never {
@@ -124,8 +130,24 @@ export class ShopPublicService {
         @Optional() @Inject(REDIS) private readonly redis?: Redis,
         @Optional() private readonly captcha?: CaptchaService,
         @Optional() private readonly dataConsent?: DataConsentService,
+        // v0.1.413 — el pago en línea con la cuenta de cobro del equipo.
+        @Optional() private readonly collections?: CollectionsService,
     ) {
         this.pcache = cache ?? NO_PUBLIC_CACHE;
+    }
+
+    /**
+     * v0.1.413 — La cuenta de cobro del pago en línea, si está encendido y
+     * sirve (del equipo, con el módulo de integraciones y en una moneda que el
+     * proveedor acepta). Si no, la tienda simplemente no lo ofrece.
+     */
+    private async onlineConnection(tenantId: number, config: ShopConfig): Promise<CollectionConnection | null> {
+        const o = config.payments.online;
+        if (!o.enabled || o.connection_id === null || !this.collections) return null;
+        const team = await this.collections.teamConnections(tenantId).catch(() => [] as CollectionConnection[]);
+        const conn = team.find((c) => c.id === o.connection_id) ?? null;
+        if (!conn || collectionCurrencyError(conn.provider, config.currency) !== null) return null;
+        return conn;
     }
 
     cachedInfo(token: string): Promise<ShopPageInfo | null> {
@@ -164,8 +186,10 @@ export class ShopPublicService {
 
         const keys = config.checkout.captcha && this.captcha ? await this.captcha.resolve(tenantId, settings) : null;
         const consent = this.dataConsent ? await this.dataConsent.active(tenantId, settings) : null;
+        const online = await this.onlineConnection(tenantId, config);
         const title = config.texts.title || hit.shop.name;
         const meta = this.buildMeta(config, {
+            online: online ? online.provider : null,
             title,
             company,
             logoUrl: config.show_logo && b.logo_file_id ? this.files.signedUrl(tenantId, b.logo_file_id, 24 * 3600) : null,
@@ -190,6 +214,7 @@ export class ShopPublicService {
             images: built.images,
             allowedDomains: config.allowed_domains,
             captchaProvider: keys?.provider ?? null,
+            onlineConnectionId: online?.id ?? null,
         };
     }
 
@@ -243,6 +268,8 @@ export class ShopPublicService {
             captcha: PublicShopMeta['captcha'];
             consent: PublicShopMeta['data_consent'];
             readOnly: boolean;
+            /** v0.1.413 — El proveedor del pago en línea (null = no se ofrece). */
+            online: string | null;
         },
     ): PublicShopMeta {
         const p = config.payments;
@@ -250,6 +277,11 @@ export class ShopPublicService {
         const add = (method: ShopPaymentMethod, on: boolean): void => {
             if (on) payments.push({ method, label: SHOP_PAYMENT_METHOD_LABELS[method], instructions: paymentInstructions(config, method) });
         };
+        // El pago en línea va primero: es el que la persona termina en el momento.
+        if (o.online) {
+            const t = shopOnlinePayment(o.online);
+            payments.push({ method: 'online', label: t.label, instructions: t.instructions });
+        }
         add('whatsapp', p.whatsapp.enabled && p.whatsapp.phone !== '');
         add('transfer', p.transfer.enabled);
         add('cod', p.cod.enabled);
@@ -307,7 +339,9 @@ export class ShopPublicService {
         };
         const products = built.products.map((p) => ({ ...p, images: p.images.map((i) => url(i.replace(/^img\//, ''))).filter((x): x is string => !!x) }));
         const consent = this.dataConsent ? await this.dataConsent.active(tenantId, settings) : null;
+        const online = await this.onlineConnection(tenantId, config);
         const meta = this.buildMeta(config, {
+            online: online ? online.provider : null,
             title: config.texts.title || shop.name,
             company: b.app_name || t?.name || '',
             logoUrl: config.show_logo && b.logo_file_id ? this.files.signedUrl(tenantId, b.logo_file_id, 3600) : null,
@@ -363,7 +397,7 @@ export class ShopPublicService {
         token: string,
         input: PublicShopOrderInput,
         meta: { ip: string; userAgent: string | null },
-    ): Promise<{ order_token: string; number: string; total: number; payment_method: ShopPaymentMethod; whatsapp_path: string | null } | null> {
+    ): Promise<{ order_token: string; number: string; total: number; payment_method: ShopPaymentMethod; whatsapp_path: string | null; pay_url: string | null } | null> {
         const info = await this.freshInfo(token);
         if (!info) return null;
         if (input.website && input.website.trim() !== '') badRequest('shop_stale', 'La página de la tienda venció: recárgala y vuelve a intentar.');
@@ -398,6 +432,7 @@ export class ShopPublicService {
             token,
             company: info.company,
             tenantSettings: info.tenantSettings,
+            onlineConnectionId: info.onlineConnectionId,
         };
         try {
             const placed = await this.orders.place(resolved, input);
@@ -407,17 +442,46 @@ export class ShopPublicService {
             }
             // El stock cambió: la página que se guarda vuelve a leerlo.
             this.pcache.invalidate(shopCacheKey(token));
-            return { order_token: placed.order_token, number: placed.number, total: placed.cart.total, payment_method: placed.payment_method, whatsapp_path: placed.whatsapp_path };
+            return {
+                order_token: placed.order_token,
+                number: placed.number,
+                total: placed.cart.total,
+                payment_method: placed.payment_method,
+                whatsapp_path: placed.whatsapp_path,
+                pay_url: placed.pay_url,
+            };
         } catch (err) {
             if (evidence && this.dataConsent) await this.dataConsent.discard(info.tenantId, evidence.id);
             throw err;
         }
     }
 
-    async order(token: string, orderToken: string): Promise<PublicShopOrder | null> {
+    /**
+     * El pedido como lo ve quien compró. v0.1.413 — Con `refresh` (la página
+     * pregunta cada pocos segundos al volver de pagar), si el pago en línea
+     * sigue pendiente se le pregunta al proveedor: el aviso a veces llega
+     * después que la persona, o no llega.
+     */
+    async order(token: string, orderToken: string, opts: { refresh?: boolean; ip?: string } = {}): Promise<PublicShopOrder | null> {
         const info = await this.cachedInfo(token);
         if (!info) return null;
+        if (opts.refresh && (await this.pollAllowed(info.shop.id, opts.ip ?? ''))) {
+            await this.orders.refreshPayment(info.tenantId, info.shop.id, orderToken).catch((err: unknown) => {
+                this.logger.warn(`Tienda ${info.shop.id}: no se pudo consultar el pago del pedido: ${String(err)}`);
+            });
+        }
         return this.orders.publicOrder(info.tenantId, info.shop.id, token, orderToken, info.config);
+    }
+
+    /** Consultar al proveedor tiene costo: a lo sumo 40 consultas cada 10 minutos por IP y tienda. */
+    private async pollAllowed(shopId: number, ip: string): Promise<boolean> {
+        if (!this.redis) return true;
+        try {
+            const n = await incrWithTtl(this.redis, `shoprl:poll:${Math.floor(Date.now() / 600_000)}:${rateKeyForIp(ip)}:${shopId}`, 600);
+            return n <= 40;
+        } catch {
+            return true;
+        }
     }
 
     /** Adónde lleva «Enviar por WhatsApp»: el número nunca viaja a la página. */

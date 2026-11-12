@@ -11,6 +11,7 @@ import { RelationsRepository } from '../records/relations.repository';
 import { ShopImagesService } from './shop-images.service';
 import { ShopOrdersService } from './shop-orders.service';
 import { ShopPublicService } from './shop-public.service';
+import { ShopTasksService } from './shop-tasks.service';
 import { PlatformShopsController, PublicShopApiController, PublicShopPageController, RecordShopOrderController, ShopsController } from './shop.controller';
 import { ShopService } from './shop.service';
 
@@ -21,7 +22,7 @@ import { ShopService } from './shop.service';
 @Module({
     imports: [AuthModule, ActivityModule, DomainsModule, FieldsModule, FilesModule, ListsModule, RecordsModule],
     controllers: [ShopsController, RecordShopOrderController, PlatformShopsController, PublicShopPageController, PublicShopApiController],
-    providers: [ShopService, ShopPublicService, ShopOrdersService, ShopImagesService, RelationsRepository, SuperadminGuard],
+    providers: [ShopService, ShopPublicService, ShopOrdersService, ShopImagesService, ShopTasksService, RelationsRepository, SuperadminGuard],
     exports: [ShopService, ShopOrdersService],
 })
 export class ShopModule {}

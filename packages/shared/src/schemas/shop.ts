@@ -327,6 +327,8 @@ export interface ShopOptions {
     products_count: number;
     /** Otras tiendas de la empresa cuyas listas de pedidos se pueden reusar. */
     other_shops: Array<{ id: number; name: string; orders_list_name: string | null }>;
+    /** v0.1.413 — Las cuentas de cobro del equipo (Mercado Pago, Wompi, PayPal) para el pago en línea. */
+    payment_connections: Array<{ id: number; name: string; provider: 'mercadopago' | 'wompi' | 'paypal'; test_mode: boolean }>;
 }
 
 /** El pedido de un registro de «Pedidos», para el panel de la ficha. */
@@ -345,6 +347,10 @@ export interface ShopOrderPanelDto {
     cancelled: boolean;
     public_url: string | null;
     created_at: string;
+    /** v0.1.413 — El pago en línea: el link, hasta cuándo y con quién. */
+    pay_url: string | null;
+    pay_until: string | null;
+    pay_provider: string | null;
 }
 
 /** Plataforma → Empresas: las tiendas de una empresa, para suspender una que se usa mal. */
@@ -423,7 +429,7 @@ export interface ShopProblem {
  */
 export function shopProblems(
     config: ShopConfig,
-    ctx: { hasOrdersLists: boolean; priceFieldOk: boolean; onlineConnectionOk?: boolean },
+    ctx: { hasOrdersLists: boolean; priceFieldOk: boolean; onlineConnectionOk?: boolean; onlineCurrencyError?: string | null },
 ): ShopProblem[] {
     const out: ShopProblem[] = [];
     if (!config.catalog.price || !ctx.priceFieldOk) out.push({ section: 'catalog', text: 'Elige el campo del precio de los productos.' });
@@ -439,6 +445,8 @@ export function shopProblems(
     }
     if (p.online.enabled && (!p.online.connection_id || ctx.onlineConnectionOk === false)) {
         out.push({ section: 'payment', text: 'Elige la cuenta de cobro para el pago en línea.' });
+    } else if (p.online.enabled && ctx.onlineCurrencyError) {
+        out.push({ section: 'payment', text: ctx.onlineCurrencyError });
     }
     if (!config.delivery.some((d) => d.active && d.name.trim() !== '')) {
         out.push({ section: 'payment', text: 'Agrega al menos una forma de entrega.' });

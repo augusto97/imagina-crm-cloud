@@ -19,6 +19,12 @@ export interface ShopOrderEmailInput {
     delivery: string;
     paymentLabel: string;
     paymentInstructions: string;
+    /**
+     * v0.1.413 — Qué correo es: `placed` el pedido (pago por fuera),
+     * `awaiting` el pedido en línea que todavía no se pagó (el botón lleva a
+     * pagar) y `paid` cuando entra el pago en línea.
+     */
+    stage?: 'placed' | 'awaiting' | 'paid';
     orderUrl: string | null;
     sellerLine: string;
 }
@@ -41,7 +47,12 @@ export function shopOrderEmail(o: ShopOrderEmailInput): ShopOrderEmail {
     const color = safeColor(o.brand.color);
     const ink = inkOn(color);
     const name = o.brand.name.trim() || o.shopName;
-    const subject = `Recibimos tu pedido ${o.number}`.slice(0, 200);
+    const stage = o.stage ?? 'placed';
+    const subject = (
+        stage === 'paid' ? `Recibimos el pago de tu pedido ${o.number}` : stage === 'awaiting' ? `Completa el pago de tu pedido ${o.number}` : `Recibimos tu pedido ${o.number}`
+    ).slice(0, 200);
+    const intro = stage === 'paid' ? 'Recibimos el pago de tu pedido' : stage === 'awaiting' ? 'Apartamos tu pedido' : 'Recibimos tu pedido';
+    const buttonLabel = stage === 'awaiting' ? 'Pagar mi pedido' : 'Ver mi pedido';
     const logo = o.brand.logoUrl
         ? `<img src="${e(o.brand.logoUrl)}" alt="${e(name)}" style="max-height:48px;max-width:200px;display:block;margin:0 auto 12px;border:0">`
         : '';
@@ -57,7 +68,7 @@ export function shopOrderEmail(o: ShopOrderEmailInput): ShopOrderEmail {
         `<tr><td style="padding:8px 0;font-weight:700;font-size:16px">Total</td><td style="padding:8px 0;text-align:right;font-weight:700;font-size:16px">${e(o.total)}</td></tr>`,
     ].join('');
     const button = o.orderUrl
-        ? `<p style="margin:20px 0 6px;text-align:center"><a href="${e(o.orderUrl)}" style="display:inline-block;background:${color};color:${ink};text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px">Ver mi pedido</a></p>`
+        ? `<p style="margin:20px 0 6px;text-align:center"><a href="${e(o.orderUrl)}" style="display:inline-block;background:${color};color:${ink};text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px">${buttonLabel}</a></p>`
         : '';
     const html = `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${e(subject)}</title></head>
@@ -68,7 +79,7 @@ export function shopOrderEmail(o: ShopOrderEmailInput): ShopOrderEmail {
 <tr><td style="padding:28px 28px 8px;text-align:center">${logo}<div style="font-size:18px;font-weight:600">${e(name)}</div></td></tr>
 <tr><td style="padding:8px 28px 4px;font-size:15px;line-height:1.55">
 <p style="margin:0 0 6px;font-size:20px;font-weight:700">¡Gracias, ${e(o.customerName.split(/\s+/)[0] ?? o.customerName)}!</p>
-<p style="margin:0 0 16px;color:#4b5563">Recibimos tu pedido <strong>${e(o.number)}</strong>.</p>
+<p style="margin:0 0 16px;color:#4b5563">${intro} <strong>${e(o.number)}</strong>.</p>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px">${rows}${totals}</table>
 <div style="margin:18px 0 0;padding:14px 16px;background:#f8fafc;border:1px solid #eef0f3;border-radius:10px">
 <p style="margin:0 0 8px;font-weight:600">${e(o.paymentLabel)}</p>
@@ -81,7 +92,7 @@ ${button}
 </body></html>`;
     const text = [
         `¡Gracias, ${o.customerName}!`,
-        `Recibimos tu pedido ${o.number}.`,
+        `${intro} ${o.number}.`,
         '',
         ...o.lines.map((l) => `${l.qty} × ${l.title} — ${l.subtotal}`),
         '',
@@ -91,7 +102,7 @@ ${button}
         '',
         o.paymentLabel,
         o.paymentInstructions,
-        ...(o.orderUrl ? ['', `Ver tu pedido: ${o.orderUrl}`] : []),
+        ...(o.orderUrl ? ['', `${stage === 'awaiting' ? 'Paga tu pedido' : 'Ver tu pedido'}: ${o.orderUrl}`] : []),
         '',
         o.sellerLine,
     ].join('\n');
