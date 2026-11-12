@@ -116,6 +116,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | D4 · SMS (Twilio, Infobip o proveedor local) | medio · S | |
 | D8 · Encuesta NPS / satisfacción de un clic | medio · S-M | **En parte hecho en v0.1.355**: los formularios tienen la escala NPS (0 a 10) y la matriz para calificar varios aspectos. Queda responder con un clic desde el correo (cada número es un enlace). |
 | D9 · Seguimientos 1 a 1 desde una vista | medio · M | Choca con ADR-S18: sólo con correo propio y con límites. |
+| D10 · Tienda desde una lista (catálogo público, carrito y pago con Mercado Pago, Wompi o PayPal; productos simples, variables, de suscripción, digitales y servicios) | alto (comercio) · XL (~6 versiones) | **Analizada el 2026-11-12, esperando decisiones del usuario** (ver CONTINUIDAD §10). Reusa cobros (ADR-S31), suscripciones (ADR-S96), páginas públicas y caché (ADR-S95), temas (ADR-S94) y el modelo de variantes como subtareas de WooCommerce. |
 
 ### E. Automatizaciones
 | Idea | Valor · esfuerzo | Nota |

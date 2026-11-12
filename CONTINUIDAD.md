@@ -683,6 +683,24 @@ v0.1.352 formularios y agenda insertados que aguantan mucho tráfico, ADR-S95,
 y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 
 **Hilos abiertos (lo último que se habló)**
+- 2026-11-12 — **Tienda desde una lista** (pedido del usuario: «algo tipo
+  tienda para una lista… que genere un link o vista pública… productos simples,
+  variables, de pago único y de suscripción; analízalo a fondo antes de
+  desarrollar»). **Analizado, ESPERANDO las decisiones del usuario** (no se
+  empezó a desarrollar). Propuesta: el catálogo ES una lista (variantes como
+  subtareas, como el pack de WooCommerce v5), pedidos + líneas + clientes en
+  listas vinculadas, el pago por los links de cobro de ADR-S31 (`onLinkPaid`)
+  y las suscripciones de ADR-S96 (nunca mezcladas en un carrito), reserva de
+  stock con vencimiento (como «esperando el pago» de la agenda), página pública
+  servida por el API con el motor de temas y la caché pública. Plan en ~6
+  versiones: catálogo + carrito + pedido sin pasarela (WhatsApp/transferencia)
+  → pago en línea con reserva de stock → variantes → envíos y cupones →
+  suscripción, digital y servicio → SEO/dominio propio, estadísticas e insertar.
+  Decisiones pedidas: catálogo = lista, primera versión sin pasarela, SEO sólo
+  con dominio propio, módulo «Tienda» sólo en planes pagos (riesgo de tiendas
+  falsas en el dominio de la plataforma), miniaturas de imágenes en el servidor
+  (dependencia nueva), factura electrónica DIAN fuera. Idea D10 en
+  `docs/ideas.md`.
 - 2026-11-11 — **Conector completo de Whats** (el usuario adjuntó la
   documentación de la API v1 de Whats y aprobó la lista de acciones y
   disparadores). **v0.1.401 y v0.1.402 HECHAS** (acciones y disparadores:
