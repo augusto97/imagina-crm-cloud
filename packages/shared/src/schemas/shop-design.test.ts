@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { contrastRatio } from './public-theme-css';
 import {
+    SHOP_CHECKOUT_LAYOUTS,
+    SHOP_CHECKOUT_LAYOUT_HINTS,
+    SHOP_CHECKOUT_LAYOUT_LABELS,
     SHOP_DESIGN_PRESETS,
     SHOP_PRODUCT_LAYOUTS,
     SHOP_PRODUCT_LAYOUT_HINTS,
@@ -134,6 +137,51 @@ describe('v0.1.424 — la ficha del producto', () => {
         for (const l of SHOP_PRODUCT_LAYOUTS) {
             expect(SHOP_PRODUCT_LAYOUT_LABELS[l].length).toBeGreaterThan(3);
             expect(SHOP_PRODUCT_LAYOUT_HINTS[l].length).toBeGreaterThan(10);
+        }
+    });
+});
+
+describe('v0.1.425 — el pago', () => {
+    it('sin elegir nada (tiendas de antes) es el clásico', () => {
+        const c = readShopConfig({});
+        expect(c.design.checkout).toEqual({ layout: 'classic', header: 'minimal', labels: 'above', thumbnails: true, summary_open: false, trust: true, summary_color: null });
+    });
+
+    it('se lee con tolerancia campo por campo', () => {
+        const d = readShopDesign({ checkout: { layout: 'carrusel', header: 'store', labels: 'flotando', thumbnails: false, summary_open: 'sí', summary_color: 'rojo' } });
+        expect(d.checkout.layout).toBe('classic');
+        expect(d.checkout.header).toBe('store');
+        expect(d.checkout.labels).toBe('above');
+        expect(d.checkout.thumbnails).toBe(false);
+        expect(d.checkout.summary_open).toBe(false);
+        expect(d.checkout.summary_color).toBeNull();
+        for (const layout of SHOP_CHECKOUT_LAYOUTS) expect(readShopDesign({ checkout: { layout } }).checkout.layout).toBe(layout);
+    });
+
+    it('aplicar una plantilla de estilo no cambia el pago', () => {
+        const current = readShopDesign({ checkout: { layout: 'steps', labels: 'inside', summary_color: '#fdf2e9' } });
+        for (const p of SHOP_DESIGN_PRESETS) expect(applyShopDesignPreset(current, p.id).checkout).toEqual(current.checkout);
+    });
+
+    it('el fondo del resumen: un gris suave, o el elegido con texto que se lee', () => {
+        const base = buildShopDesignCss(defaultShopDesign(), '#0e7490');
+        const side = varOf(base, '--s-cx-side')!;
+        expect(side).toMatch(/^#[0-9a-f]{6}$/i);
+        expect(side.toLowerCase()).not.toBe('#ffffff');
+        const dark = buildShopDesignCss(readShopDesign({ checkout: { summary_color: '#1e293b' } }), '#0e7490');
+        expect(varOf(dark, '--s-cx-side')).toBe('#1e293b');
+        expect(contrastRatio(varOf(dark, '--s-cx-ink')!, '#1e293b')).toBeGreaterThanOrEqual(4.5);
+        // En «automático», el color elegido es el de la versión clara: la oscura usa la suya.
+        const auto = buildShopDesignCss(readShopDesign({ mode: 'auto', checkout: { summary_color: '#fdf2e9' } }), '#0e7490');
+        const darkPart = auto.slice(auto.indexOf('prefers-color-scheme'));
+        expect(varOf(auto, '--s-cx-side')).toBe('#fdf2e9');
+        expect(varOf(darkPart, '--s-cx-side')).not.toBe('#fdf2e9');
+    });
+
+    it('cada diseño tiene su nombre y su explicación', () => {
+        for (const l of SHOP_CHECKOUT_LAYOUTS) {
+            expect(SHOP_CHECKOUT_LAYOUT_LABELS[l].length).toBeGreaterThan(3);
+            expect(SHOP_CHECKOUT_LAYOUT_HINTS[l].length).toBeGreaterThan(10);
         }
     });
 });

@@ -2,6 +2,9 @@ import { useMemo } from 'react';
 import { Check, Code2, Moon, RotateCcw, Sun, SunMoon } from 'lucide-react';
 import {
     SHOP_CARD_LABELS,
+    SHOP_CHECKOUT_LAYOUTS,
+    SHOP_CHECKOUT_LAYOUT_HINTS,
+    SHOP_CHECKOUT_LAYOUT_LABELS,
     SHOP_CORNER_LABELS,
     SHOP_CUSTOM_CSS_MAX,
     SHOP_DESIGN_PRESETS,
@@ -18,6 +21,7 @@ import {
     type ShopDesign,
     type ShopDesignPreset,
     type ShopOptions,
+    type ShopCheckoutLayout,
     type ShopProductLayout,
 } from '@imagina-base/shared';
 
@@ -63,6 +67,10 @@ export function StylePanel({
     const setProduct = (p: Partial<ShopDesign['product']>): void => {
         patch((c) => ({ ...c, design: { ...c.design, product: { ...c.design.product, ...p } } }));
         onPreview?.('product');
+    };
+    const setCheckout = (p: Partial<ShopDesign['checkout']>): void => {
+        patch((c) => ({ ...c, design: { ...c.design, checkout: { ...c.design.checkout, ...p } } }));
+        onPreview?.('checkout');
     };
     const setT = (p: Partial<ShopConfig['texts']>): void => patch((c) => ({ ...c, texts: { ...c.texts, ...p } }));
     const cssCheck = useMemo(() => sanitizePublicCss(d.custom_css), [d.custom_css]);
@@ -313,6 +321,79 @@ export function StylePanel({
                 />
             </SubSection>
 
+            <SubSection
+                title={__('Pago')}
+                hint={__('La página donde se escriben los datos, se elige la entrega y se paga. Los nuevos se ven limpios, con el pedido y sus fotos aparte.')}
+                tour="shop-style-checkout"
+                testId="shop-style-checkout"
+            >
+                <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2" role="radiogroup" aria-label={__('Diseño del pago')}>
+                    {SHOP_CHECKOUT_LAYOUTS.map((k) => (
+                        <CheckoutCard key={k} layout={k} accent={accent} active={d.checkout.layout === k} onClick={() => setCheckout({ layout: k })} />
+                    ))}
+                </div>
+                <p className="imcrm-text-[11.5px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="shop-checkout-layout-hint">
+                    {__(SHOP_CHECKOUT_LAYOUT_HINTS[d.checkout.layout])}
+                </p>
+                {onPreview && (
+                    <button type="button" className="imcrm-self-start imcrm-text-[12px] imcrm-font-medium imcrm-text-primary hover:imcrm-underline" onClick={() => onPreview('checkout')} data-testid="shop-checkout-see">
+                        {__('Ver el pago en la vista previa')}
+                    </button>
+                )}
+                {d.checkout.layout !== 'classic' && (
+                    <Field label={__('Arriba del pago')}>
+                        <Segmented
+                            value={d.checkout.header}
+                            onChange={(header) => setCheckout({ header })}
+                            options={[
+                                ['minimal', __('Sólo el logo')],
+                                ['store', __('El encabezado de la tienda')],
+                            ]}
+                            testId="shop-checkout-header"
+                        />
+                    </Field>
+                )}
+                <Field label={__('Nombres de los campos')} hint={__('Adentro del campo se ve más limpio: el nombre se achica al escribir.')}>
+                    <Segmented
+                        value={d.checkout.labels}
+                        onChange={(labels) => setCheckout({ labels })}
+                        options={[
+                            ['above', __('Arriba del campo')],
+                            ['inside', __('Adentro del campo')],
+                        ]}
+                        testId="shop-checkout-labels"
+                    />
+                </Field>
+                {d.checkout.layout !== 'classic' && (
+                    <>
+                        <SwitchRow
+                            label={__('Fotos de los productos en el resumen')}
+                            hint={__('Cada producto con su foto y la cantidad encima.')}
+                            checked={d.checkout.thumbnails}
+                            onChange={(thumbnails) => setCheckout({ thumbnails })}
+                            testId="shop-checkout-thumbs"
+                        />
+                        <SwitchRow
+                            label={__('En el celular, el resumen abierto')}
+                            hint={__('Si no, arriba queda una barra con el total que lo despliega.')}
+                            checked={d.checkout.summary_open}
+                            onChange={(summary_open) => setCheckout({ summary_open })}
+                            testId="shop-checkout-open"
+                        />
+                        <SwitchRow
+                            label={__('«Compra segura» bajo el botón de pagar')}
+                            hint={__('Un candado y «tus datos viajan cifrados».')}
+                            checked={d.checkout.trust}
+                            onChange={(trust) => setCheckout({ trust })}
+                            testId="shop-checkout-trust"
+                        />
+                        <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2" data-testid="shop-checkout-summary-color">
+                            <ColorField label={__('Fondo del resumen')} value={d.checkout.summary_color} onChange={(summary_color) => setCheckout({ summary_color })} placeholder={darkBase ? '#1f232b' : '#f5f6f7'} />
+                        </div>
+                    </>
+                )}
+            </SubSection>
+
             <SubSection title={__('CSS propio')} hint={__('Para retoques finos. No se permite cargar nada de afuera (url, @import).')} tour="shop-style-css">
                 {isAdmin ? (
                     <>
@@ -429,6 +510,89 @@ function LayoutCard({ layout, accent, active, onClick }: { layout: ShopProductLa
     );
 }
 
+/** v0.1.425 — El dibujo de cada diseño del pago. */
+function CheckoutCard({ layout, accent, active, onClick }: { layout: ShopCheckoutLayout; accent: string; active: boolean; onClick: () => void }): JSX.Element {
+    const line = (w: string, strong = false): JSX.Element => <span className={cn('imcrm-block imcrm-h-[3px] imcrm-rounded-full', strong ? 'imcrm-bg-zinc-500' : 'imcrm-bg-zinc-300 dark:imcrm-bg-zinc-600')} style={{ width: w }} />;
+    const input = <span className="imcrm-block imcrm-h-[6px] imcrm-w-full imcrm-rounded-[2px] imcrm-border imcrm-border-zinc-300 dark:imcrm-border-zinc-600" />;
+    const btn = <span className="imcrm-block imcrm-h-[6px] imcrm-w-full imcrm-rounded-[2px]" style={{ background: accent }} />;
+    const item = (
+        <span className="imcrm-flex imcrm-items-center imcrm-gap-[3px]">
+            <span className="imcrm-h-[9px] imcrm-w-[9px] imcrm-flex-none imcrm-rounded-[2px] imcrm-bg-zinc-300 dark:imcrm-bg-zinc-600" />
+            {line('70%')}
+        </span>
+    );
+    const form = (
+        <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-[3px]">
+            {line('40%', true)}
+            {input}
+            {input}
+            {layout === 'steps' ? null : input}
+            {btn}
+        </span>
+    );
+    const drawing: JSX.Element =
+        layout === 'classic' ? (
+            <span className="imcrm-flex imcrm-h-full imcrm-w-full imcrm-gap-[5px]">
+                {form}
+                <span className="imcrm-flex imcrm-w-[38%] imcrm-flex-col imcrm-gap-[3px] imcrm-self-start imcrm-rounded-[3px] imcrm-border imcrm-border-zinc-300 imcrm-p-[3px] dark:imcrm-border-zinc-600">
+                    {line('60%', true)}
+                    {line('90%')}
+                    {line('90%')}
+                    {btn}
+                </span>
+            </span>
+        ) : layout === 'single' ? (
+            <span className="imcrm-mx-auto imcrm-flex imcrm-h-full imcrm-w-[56%] imcrm-flex-col imcrm-gap-[3px]">
+                <span className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-rounded-[2px] imcrm-bg-zinc-200 imcrm-px-[3px] imcrm-py-[2px] dark:imcrm-bg-zinc-700">
+                    {line('45%')}
+                    {line('20%', true)}
+                </span>
+                {input}
+                {input}
+                {input}
+                {btn}
+            </span>
+        ) : (
+            <span className="imcrm-flex imcrm-h-full imcrm-w-full imcrm-gap-[5px]">
+                <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-[3px]">
+                    {layout === 'steps' && (
+                        <span className="imcrm-flex imcrm-gap-[2px]">
+                            {line('22%', true)}
+                            {line('22%')}
+                            {line('22%')}
+                        </span>
+                    )}
+                    {form}
+                </span>
+                <span className="-imcrm-my-[7px] -imcrm-mr-[7px] imcrm-flex imcrm-w-[42%] imcrm-flex-col imcrm-gap-[4px] imcrm-bg-zinc-100 imcrm-p-[7px] dark:imcrm-bg-zinc-800">
+                    {item}
+                    {item}
+                    {line('100%')}
+                    {line('60%', true)}
+                </span>
+            </span>
+        );
+    return (
+        <button
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={onClick}
+            className={cn(
+                'imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-lg imcrm-border imcrm-p-1.5 imcrm-text-left imcrm-transition-colors',
+                active ? 'imcrm-border-primary imcrm-ring-1 imcrm-ring-primary' : 'imcrm-border-border hover:imcrm-border-foreground/30',
+            )}
+            data-testid={`shop-checkout-layout-${layout}`}
+        >
+            <span className="imcrm-flex imcrm-h-[58px] imcrm-items-stretch imcrm-overflow-hidden imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-background imcrm-p-[7px]">{drawing}</span>
+            <span className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-1 imcrm-px-0.5 imcrm-text-[11.5px] imcrm-font-medium">
+                {__(SHOP_CHECKOUT_LAYOUT_LABELS[layout])}
+                {active && <Check className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-primary" aria-hidden />}
+            </span>
+        </button>
+    );
+}
+
 const CSS_CLASSES: ReadonlyArray<readonly [string, string]> = [
     ['.s-top', 'El encabezado'],
     ['.s-hero', 'La portada (título y descripción)'],
@@ -440,6 +604,8 @@ const CSS_CLASSES: ReadonlyArray<readonly [string, string]> = [
     ['.s-pd', 'La ficha del producto'],
     ['.s-d-sum', 'La descripción corta en la ficha'],
     ['.s-btn', 'Los botones grandes (pagar, finalizar)'],
+    ['.s-cx', 'El pago (estilos nuevos)'],
+    ['.s-cx-side', 'El resumen del pedido en el pago'],
     ['.s-foot', 'El pie de la página'],
 ];
 

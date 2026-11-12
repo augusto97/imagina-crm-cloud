@@ -285,6 +285,8 @@ describe('v0.1.420 — tienda: descripción con formato y digitales sin entrega 
         expect(info!.products.find((p) => p.id === product.asesoria)!.summary).toBe('Clases en vivo con certificado.');
         expect(info!.products.find((p) => p.id === product.curso)!.summary).toBeUndefined();
         expect(info!.meta.design?.product).toMatchObject({ layout: 'wide', image_ratio: 'square', image_fit: 'contain' });
+        // v0.1.425 — El pago viaja igual (sin elegir: el clásico).
+        expect(info!.meta.design?.checkout).toMatchObject({ layout: 'classic', labels: 'above', thumbnails: true });
         // Una columna que no es de texto no se acepta como descripción corta.
         await expect(shopsSvc.update(tenantId, shopId, { config: { ...dto.config, catalog: { ...dto.config.catalog, summary: f.precio!.id } } as never })).rejects.toThrow('no sirve para ese papel');
         await shopsSvc.update(tenantId, shopId, { config: dto.config as never });

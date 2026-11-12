@@ -9230,3 +9230,30 @@ tienda.**
    cargar y se recuerda por imagen) para que las flechas y la etiqueta queden
    sobre la foto, sin franjas. La pantalla completa no usa la animación del
    modal (que desplaza con `transform`).
+
+**Addendum v0.1.425 — Los estilos del pago de la tienda.**
+
+1. **Modelo** en `config.design.checkout` (`shopDesignCheckoutSchema`, lectura
+   tolerante campo por campo, sin migración: lo de antes es el clásico):
+   `layout` (`classic` | `split` | `steps` | `single`), `header`
+   (`minimal` | `store`), `labels` (`above` | `inside`), `thumbnails`,
+   `summary_open`, `trust` y `summary_color` (hex o null). Viaja en
+   `meta.design.checkout`; aplicar una plantilla de estilo no lo cambia.
+2. **El clásico no cambia**: el resto de los diseños se arma en el cliente
+   (`cxFrame` en `public-shop/main.ts`) con los MISMOS bloques del formulario
+   (datos, entrega, pago, notas, cupón, términos, captcha): sólo cambia dónde
+   se ponen. Así lo que valida el servidor y la vista previa del editor es lo
+   mismo en los cuatro.
+3. **Clases propias `.s-cx-*`**: `.s-step` ya era el selector de cantidad
+   (regla del addendum v0.1.424: una clase, una regla base). El fondo de la
+   columna del pedido (`--s-cx-side` y su tinta, borde y miniatura) lo calcula
+   `buildShopDesignCss` con el contraste asegurado (≥ 4.5); en «automático» el
+   color elegido es el de la versión clara y la oscura usa su gris.
+4. **Por pasos**: cada paso valida sólo sus campos (`validate(only)`), lo ya
+   llenado queda en un resumen con «Cambiar», el captcha se monta recién en el
+   paso del pago y, al enviar, si algo falta se vuelve al paso que lo tiene.
+   En la vista previa del editor se avanza sin validar.
+5. **Nombres adentro del campo** (`s-lbl-in`): la etiqueta se achica con
+   `:focus-within`, una clase `s-has` que pone el cliente al escribir,
+   `:has(select)` y el autocompletado del navegador; vale también en el
+   clásico.

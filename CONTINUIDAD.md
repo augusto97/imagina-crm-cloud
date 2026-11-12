@@ -415,7 +415,14 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.424**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.425**
+(**cuatro diseños para la página de pago de la tienda** — Estilo → Pago:
+clásico (el de siempre), dos columnas (el pedido con sus fotos en una columna
+aparte, como las tiendas más conocidas), por pasos (datos → entrega → pago con
+lo ya llenado a la vista y «Cambiar») y una columna (el pedido desplegable
+arriba); encabezado con sólo el logo o el de la tienda, nombres de los campos
+adentro, fotos en el resumen, resumen abierto en el celular, «Compra segura» y
+el color del resumen; addendum ADR-S103). Antes **v0.1.424**
 (**la ficha del producto con cinco diseños, descripción corta y la casilla de
 los términos arreglada** — Estilo → Ficha del producto: clásica, descripción
 abajo, foto arriba, compacta o pantalla completa; forma de la foto; «cómo se
@@ -1991,6 +1998,29 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-12 · v0.1.425** — **Cuatro diseños para la página de pago de la
+  tienda** (mensaje del usuario: "también crea varios estilos del checkout, me
+  gustan los estilos de checkout como el de chopify"; en el mismo mensaje pidió
+  el campo Imagen con miniaturas, que va en v0.1.426). Estilo → **Pago**:
+  **Clásico** (el de siempre, sin cambios), **Dos columnas** (página limpia con
+  sólo el logo arriba, el formulario a la izquierda y el pedido con las fotos y
+  la cantidad encima en una columna gris a la derecha; en el celular, una barra
+  arriba con el total que despliega el pedido), **Por pasos** (datos → entrega
+  → pago, con migas, lo ya llenado en un resumen con «Cambiar», validación por
+  paso y, al enviar, vuelta al paso que tiene lo que falta) y **Una columna**
+  (angosta, con secciones numeradas). Ajustes: arriba del pago (sólo el logo o
+  el encabezado de la tienda), nombres de los campos arriba o **adentro** (se
+  achican al escribir; vale también en el clásico), fotos en el resumen,
+  resumen abierto en el celular, «Compra segura» bajo el botón y el color del
+  resumen (con el contraste corregido). La vista previa del editor recorre el
+  pago sin validar. Sin migración (`config.design.checkout`, lectura
+  tolerante). Clases `.s-cx-*` (`.s-step` ya era el selector de cantidad).
+  Tests: 5 en `shop-design.test` (shared), aserción en
+  `shops-description.spec` — specs de tienda 15/15 — + E2E navegador 46/46 en
+  escritorio, celular y modo oscuro (los cuatro diseños, pasos con validación y
+  «Cambiar», pedido hecho, opciones, editor). Regla 10: novedad con
+  ilustraciones existentes, sin capturas nuevas.
 
 - **2026-11-12 · v0.1.424** — **La ficha del producto con cinco diseños,
   descripción corta y la casilla de los términos arreglada** (mensaje del

@@ -31,6 +31,7 @@ import type {
     PublicShopVariant,
     ShopCartResult,
     ShopCouponRule,
+    ShopDesignCheckout,
     ShopPaymentMethod,
     ShopPurchasable,
 } from '@imagina-base/shared';
@@ -146,6 +147,11 @@ const ICONS: Record<string, string> = {
     calendar: 'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 10h16M8 3v4M16 3v4',
     receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3',
     repeat: 'M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4',
+    // v0.1.425 — El pago.
+    lock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3',
+    chev: 'M6 9l6 6 6-6',
+    next: 'M9 6l6 6-6 6',
+    bag: 'M5 8h14l-1 12H6zM9 8V6.5a3 3 0 0 1 6 0V8',
 };
 
 function icon(name: keyof typeof ICONS): SVGSVGElement {
@@ -1867,6 +1873,263 @@ let captchaToken: string | null = null;
 let captchaWidget: unknown = null;
 let quoteTimer = 0;
 
+// ───────────────────────────── v0.1.425 — Estilos del pago ─────────────────────────────
+//
+// «Clásico» es el de siempre (no cambia nada). «Dos columnas», «Por pasos» y
+// «Una columna» son páginas limpias: el formulario por un lado y el pedido con
+// sus fotos por otro (en el celular, una barra que se despliega arriba).
+
+const CO_DEFAULT: ShopDesignCheckout = { layout: 'classic', header: 'minimal', labels: 'above', thumbnails: true, summary_open: false, trust: true, summary_color: null };
+function coCfg(): ShopDesignCheckout {
+    return { ...CO_DEFAULT, ...(meta?.design?.checkout ?? {}) };
+}
+
+type CxStepId = 'you' | 'delivery' | 'pay';
+interface CxStep {
+    id: CxStepId;
+    crumb: string;
+    box: HTMLElement;
+}
+/** ¿El pago de ahora usa un estilo nuevo? (lo arma `cxFrame`; `paint` lo lee). */
+let cxActive = false;
+/** Sin el encabezado de la tienda (sólo el logo). */
+let cxBare = false;
+/** Las líneas del pedido con sus fotos (en los estilos nuevos). */
+let cxItemsEl: HTMLElement | null = null;
+/** El total en la barra del resumen (celular y «Una columna»). */
+let cxToggleTotal: HTMLElement | null = null;
+let cxSteps: CxStep[] = [];
+let cxStep = 0;
+let cxCrumbs: HTMLElement | null = null;
+let cxReview: HTMLElement | null = null;
+/** El anti-robots de «Por pasos» se monta al llegar al pago (en un paso oculto no se dibuja). */
+let cxCaptchaPending = false;
+/** Lo que valida cada paso antes de seguir. */
+const CX_STEP_KEYS: Record<CxStepId, readonly string[]> = { you: ['name', 'email', 'phone', 'document'], delivery: ['zone', 'address', 'city'], pay: [] };
+
+function cxReset(): void {
+    cxActive = false;
+    cxBare = false;
+    cxItemsEl = null;
+    cxToggleTotal = null;
+    cxSteps = [];
+    cxStep = 0;
+    cxCrumbs = null;
+    cxReview = null;
+    cxCaptchaPending = false;
+}
+
+/** El encabezado del pago: el logo (lleva al inicio) y la bolsa (vuelve al carrito o a la tienda). */
+function cxHead(home: { label: string; go: () => void }): HTMLElement {
+    const m = meta!;
+    const brand = el('button', { cls: 's-cx-brand', type: 'button', 'aria-label': 'Ir al inicio de la tienda' }, [
+        m.logo_url ? el('img', { src: m.logo_url, alt: m.company || m.title }) : null,
+        !m.logo_url || m.title ? el('span', { text: m.title || m.company }) : null,
+    ]);
+    brand.addEventListener('click', () => goCatalog());
+    const bag = el('button', { cls: 's-cx-bag', type: 'button', 'aria-label': home.label, title: home.label, 'data-testid': 'shop-cx-bag' }, [icon('bag')]);
+    bag.addEventListener('click', home.go);
+    // Las dos mitades siguen a las columnas de abajo: el logo sobre el formulario y la bolsa sobre el resumen.
+    return el('header', { cls: 's-cx-head' }, [el('div', { cls: 's-cx-head-in' }, [el('div', { cls: 's-cx-head-l' }, [brand]), el('div', { cls: 's-cx-head-r' }, [bag])])]);
+}
+
+/** Una línea del pedido: la foto con la cantidad encima, el nombre, la opción y el subtotal. */
+function cxItem(p: ShopPurchasable | undefined, fallback: string, qty: number, amount: string, extra: string, problem: string | null): HTMLElement {
+    const thumbs = coCfg().thumbnails;
+    const img = p?.images[0];
+    const name = p?.variant ? p.product.title : p?.title || fallback;
+    const variant = p?.variant?.label ?? '';
+    return el('div', { cls: 's-cx-item', 'data-testid': 'shop-cx-item' }, [
+        thumbs
+            ? el('div', { cls: 's-cx-thumb' }, [
+                  img ? el('img', { src: imgUrl(img, 160), alt: '' }) : el('div', { cls: 's-noimg' }, [icon('image')]),
+                  el('span', { cls: 's-cx-qty', 'data-testid': 'shop-cx-qty', 'aria-label': `Cantidad: ${qty}`, text: String(qty) }),
+              ])
+            : null,
+        el('div', { cls: 's-cx-it' }, [
+            el('div', { cls: 's-cx-it-n', text: thumbs ? name : `${qty} × ${name}` }),
+            variant ? el('div', { cls: 's-cx-it-v', text: variant }) : null,
+            extra ? el('div', { cls: 's-cx-it-v', text: extra }) : null,
+            problem ? el('div', { cls: 's-line-err', text: problem }) : null,
+        ]),
+        el('div', { cls: 's-cx-it-p', text: amount }),
+    ]);
+}
+
+/** Términos, cambios y quién vende, al pie del pago (sin el pie de la tienda). */
+function cxFoot(): HTMLElement {
+    const b = (label: string, focus: 'terms' | 'returns' | 'seller'): HTMLElement => {
+        const x = el('button', { type: 'button', cls: 's-link', text: label });
+        x.addEventListener('click', () => openOverlay({ kind: 'policies', focus }));
+        return x;
+    };
+    return el('nav', { cls: 's-cx-foot', 'aria-label': 'Políticas de la tienda' }, [b('Términos y condiciones', 'terms'), b('Cambios y devoluciones', 'returns'), b('Quién vende', 'seller')]);
+}
+
+interface CxParts {
+    testid: string;
+    title: string;
+    home: { label: string; go: () => void };
+    /** Las secciones de cada paso (en «Dos columnas» y «Una columna» van todas seguidas). */
+    steps: Array<{ id: CxStepId; crumb: string; nodes: Array<HTMLElement | null> }>;
+    form: HTMLFormElement;
+    /** Avisos, términos, el botón de pagar y quién vende: al final (en «Por pasos», en el último paso). */
+    tail: Array<HTMLElement | null>;
+    /** El pedido: las líneas con fotos, el cupón y los totales. */
+    side: Array<HTMLElement | null>;
+}
+
+/** Arma el pago con el estilo elegido (no el clásico). */
+function cxFrame(parts: CxParts): HTMLElement {
+    const cfg = coCfg();
+    const layout = cfg.layout;
+    cxActive = true;
+    cxBare = cfg.header === 'minimal';
+    const closed = meta!.closed ? el('div', { cls: 's-closed', text: meta!.closed }) : null;
+
+    // El resumen: en la computadora a un lado; en el celular (y en «Una columna»), una barra que se despliega.
+    const wide = typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 1000px)').matches;
+    const open = cfg.summary_open || (layout === 'single' && wide);
+    cxToggleTotal = el('span', { cls: 's-cx-toggle-t', 'data-testid': 'shop-cx-toggle-total' });
+    const lbl = el('span', { text: open ? 'Ocultar el resumen del pedido' : 'Ver el resumen del pedido' });
+    const chev = icon('chev');
+    chev.classList.add('s-cx-chev');
+    const toggle = el('button', { type: 'button', cls: 's-cx-toggle', 'aria-expanded': open ? 'true' : 'false', 'aria-controls': 'cx_sum', 'data-testid': 'shop-cx-toggle' }, [icon('cart'), lbl, chev, cxToggleTotal]);
+    const side = el('aside', { cls: `s-cx-side${open ? ' s-cx-open' : ''}`, 'aria-label': 'Resumen del pedido', 'data-testid': 'shop-cx-side' }, [toggle, el('div', { cls: 's-cx-side-in', id: 'cx_sum' }, parts.side)]);
+    toggle.addEventListener('click', () => {
+        const now = !side.classList.contains('s-cx-open');
+        side.classList.toggle('s-cx-open', now);
+        toggle.setAttribute('aria-expanded', now ? 'true' : 'false');
+        lbl.textContent = now ? 'Ocultar el resumen del pedido' : 'Ver el resumen del pedido';
+    });
+
+    const back = el('button', { type: 'button', cls: 's-link s-cx-back', 'data-testid': 'shop-cx-back' }, [icon('back'), parts.home.label]);
+    back.addEventListener('click', parts.home.go);
+    // «Compra segura» va justo debajo del botón de pagar.
+    const trust = cfg.trust ? el('p', { cls: 's-cx-trust', 'data-testid': 'shop-cx-trust' }, [icon('lock'), el('span', { text: 'Compra segura: tus datos viajan cifrados.' })]) : null;
+    const at = submitBtn ? parts.tail.indexOf(submitBtn) : -1;
+    const tail = at >= 0 ? [...parts.tail.slice(0, at + 1), trust, ...parts.tail.slice(at + 1)] : [...parts.tail, trust];
+    const pay = el('div', { cls: 's-cx-pay' }, tail);
+
+    let mainNodes: Array<HTMLElement | null>;
+    if (layout === 'steps') {
+        cxCrumbs = el('nav', { cls: 's-cx-crumbs', 'aria-label': 'Pasos de la compra', 'data-testid': 'shop-cx-crumbs' });
+        cxReview = el('div', { cls: 's-cx-review', 'data-testid': 'shop-cx-review', hidden: true });
+        cxSteps = parts.steps.map((st, i) => {
+            const last = i === parts.steps.length - 1;
+            const box = el('div', { cls: 's-cx-stepbox', 'data-step': st.id, 'data-testid': `shop-cx-step-${st.id}` }, st.nodes);
+            const prev = i === 0 ? null : parts.steps[i - 1]!;
+            const backLbl = prev ? (prev.id === 'you' ? 'Volver a tus datos' : 'Volver a la entrega') : parts.home.label;
+            const backBtn = el('button', { type: 'button', cls: 's-link s-cx-back', 'data-testid': `shop-cx-prev-${st.id}` }, [icon('back'), backLbl]);
+            backBtn.addEventListener('click', () => (i === 0 ? parts.home.go() : cxGo(i - 1)));
+            if (last) {
+                box.append(pay, el('div', { cls: 's-cx-nav s-cx-nav-end' }, [backBtn]));
+            } else {
+                const next = parts.steps[i + 1]!;
+                const go = actionButton(next.id === 'pay' ? 'Continuar con el pago' : 'Continuar con la entrega', () => cxNext(i), 's-btn', `shop-cx-next-${st.id}`);
+                box.append(el('div', { cls: 's-cx-nav' }, [backBtn, go]));
+            }
+            parts.form.append(box);
+            return { id: st.id, crumb: st.crumb, box };
+        });
+        mainNodes = [cxCrumbs, closed, cxReview, parts.form];
+    } else {
+        for (const st of parts.steps) for (const n of st.nodes) if (n) parts.form.append(n);
+        mainNodes = layout === 'single' ? [closed, parts.form, pay] : [back, closed, parts.form, pay];
+    }
+    const foot = cxBare ? cxFoot() : null;
+    const cls = `s-cx s-cx-${layout}${cfg.labels === 'inside' ? ' s-lbl-in' : ''}${cxBare ? '' : ' s-cx-hstore'}`;
+    const head = cxBare ? cxHead(parts.home) : null;
+    if (layout === 'single') {
+        return el('div', { cls, 'data-testid': parts.testid }, [
+            head,
+            el('div', { cls: 's-cx-one' }, [el('div', { cls: 's-cx-one-top' }, [back, el('h1', { cls: 's-cx-title', text: parts.title })]), side, el('div', { cls: 's-cx-card' }, mainNodes), foot]),
+        ]);
+    }
+    return el('div', { cls, 'data-testid': parts.testid }, [
+        head,
+        el('div', { cls: 's-cx-grid' }, [el('div', { cls: 's-cx-main' }, [el('div', { cls: 's-cx-main-in' }, [el('h1', { cls: 's-sr', text: parts.title }), ...mainNodes, foot])]), side]),
+    ]);
+}
+
+/** «Por pasos»: mostrar un paso (y lo ya llenado arriba). */
+function cxGo(i: number): void {
+    if (cxSteps.length === 0) return;
+    cxStep = Math.max(0, Math.min(i, cxSteps.length - 1));
+    paintCxSteps();
+    window.scrollTo({ top: 0 });
+}
+
+/** «Por pasos»: seguir si lo de este paso está bien (en la vista previa, siempre). */
+function cxNext(i: number): void {
+    const st = cxSteps[i];
+    if (!st) return;
+    if (!BOOT.preview && !validate(new Set(CX_STEP_KEYS[st.id]))) return;
+    cxGo(i + 1);
+}
+
+/** Si lo que falta está en otro paso, ir ahí (al pagar se revisa todo). */
+function cxReveal(node: Element | null): void {
+    if (!node || cxSteps.length === 0) return;
+    const i = cxSteps.findIndex((s) => s.box.contains(node));
+    if (i >= 0 && i !== cxStep) {
+        cxStep = i;
+        paintCxSteps();
+    }
+}
+
+function paintCxSteps(): void {
+    if (cxSteps.length === 0) return;
+    cxSteps.forEach((s, i) => {
+        s.box.hidden = i !== cxStep;
+    });
+    if (cxCaptchaPending && captchaBox && cxSteps[cxStep]?.box.contains(captchaBox)) {
+        cxCaptchaPending = false;
+        mountCaptcha();
+    }
+    if (cxCrumbs) {
+        const kids: Node[] = [];
+        const first = el('button', { type: 'button', text: subscribingId !== null ? 'Tienda' : 'Carrito' });
+        first.addEventListener('click', subscribingId !== null ? goCatalog : goCart);
+        kids.push(first);
+        cxSteps.forEach((s, i) => {
+            kids.push(icon('next'));
+            if (i < cxStep) {
+                const b = el('button', { type: 'button', text: s.crumb, 'data-testid': `shop-cx-crumb-${s.id}` });
+                b.addEventListener('click', () => cxGo(i));
+                kids.push(b);
+            } else kids.push(el('span', { text: s.crumb, 'aria-current': i === cxStep ? 'step' : undefined, 'data-testid': `shop-cx-crumb-${s.id}` }));
+        });
+        cxCrumbs.replaceChildren(...kids);
+    }
+    if (cxReview) {
+        const rows: HTMLElement[] = [];
+        const v = (k: string): string => (inputs[k]?.value ?? '').trim();
+        cxSteps.forEach((s, i) => {
+            if (i >= cxStep || s.id === 'pay') return;
+            let label = '';
+            let value = '';
+            if (s.id === 'you') {
+                label = 'Contacto';
+                value = [v('name'), v('email'), v('phone')].filter(Boolean).join(' · ');
+            } else if (subscribingId !== null) {
+                label = 'Enviar a';
+                value = [v('address'), v('city')].filter(Boolean).join(', ');
+            } else {
+                const d = meta?.delivery.find((x) => x.id === co.deliveryId);
+                const z = d?.zones.find((x) => x.id === co.zoneId);
+                label = 'Entrega';
+                value = [d ? `${d.name}${z ? ` · ${z.name}` : ''}` : '', needsAddress() ? [v('address'), v('city')].filter(Boolean).join(', ') : ''].filter(Boolean).join(' — ');
+            }
+            const change = el('button', { type: 'button', cls: 's-link', text: 'Cambiar', 'data-testid': `shop-cx-change-${s.id}` });
+            change.addEventListener('click', () => cxGo(i));
+            rows.push(el('div', { cls: 's-cx-rv' }, [el('span', { cls: 's-cx-rv-l', text: label }), el('span', { cls: 's-cx-rv-v', text: value || '—' }), change]));
+        });
+        cxReview.replaceChildren(...rows);
+        cxReview.hidden = rows.length === 0;
+    }
+}
+
 function savedCustomer(): Record<string, string> {
     try {
         const raw = storageGet(CUSTOMER_KEY);
@@ -1887,7 +2150,15 @@ function field(key: string, label: string, opts: { type?: string; autocomplete?:
     inputs[key] = input;
     const err = el('div', { cls: 's-err', id: `${id}_e`, role: 'alert', hidden: true });
     errs[key] = err;
-    return el('div', { cls: `s-f${opts.wide ? ' s-wide' : ''}` }, [el('label', { for: id, text: opts.required ? `${label} *` : label }), input, err]);
+    const wrap = el('div', { cls: `s-f${opts.wide ? ' s-wide' : ''}` }, [el('label', { for: id, text: opts.required ? `${label} *` : label }), input, err]);
+    // v0.1.425 — Con los nombres adentro del campo, se achican cuando ya hay algo escrito.
+    const sync = (): void => {
+        wrap.classList.toggle('s-has', input.value !== '');
+    };
+    input.addEventListener('input', sync);
+    input.addEventListener('change', sync);
+    sync();
+    return wrap;
 }
 
 function setErr(key: string, text: string): void {
@@ -1962,6 +2233,7 @@ function legalBlock(): HTMLElement[] {
  */
 function subscribeView(): HTMLElement[] {
     const m = meta!;
+    cxReset();
     for (const k of Object.keys(inputs)) delete inputs[k];
     deliverySecEl = null;
     digitalNoteEl = null;
@@ -2013,31 +2285,53 @@ function subscribeView(): HTMLElement[] {
     hpInput = el('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off', 'aria-hidden': 'true' });
     const hp = el('div', { cls: 's-hp', 'aria-hidden': 'true' }, [hpInput]);
     submitBtn = el('button', { type: 'submit', cls: 's-btn', 'data-testid': 'shop-place' });
-    const form = el('form', { novalidate: true }, [you, addrSec, paySec, notesSec, hp]);
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        void placeOrder();
-    });
     submitBtn.addEventListener('click', (e) => {
         e.preventDefault();
         void placeOrder();
     });
-    const aside = el('aside', { cls: 's-panel s-co-aside' }, [
-        el('h3', { text: 'Resumen' }),
-        summaryEl,
-        alertEl,
-        ...legal,
-        submitBtn,
-        el('p', { cls: 's-line-p', style: 'margin:10px 0 0;text-align:center', text: `Vende: ${m.seller.legal_name || m.company}` }),
-    ]);
-    const layout = el('div', { cls: 's-checkout', 'data-testid': 'shop-subscribe-view' }, [
-        el('div', {}, [back, el('h1', { text: 'Suscribirme' }), m.closed ? el('div', { cls: 's-closed', text: m.closed }) : null, form]),
-        aside,
-    ]);
+    const seller = el('p', { cls: 's-line-p', style: 'margin:10px 0 0;text-align:center', text: `Vende: ${m.seller.legal_name || m.company}` });
+    let layout: HTMLElement;
+    if (coCfg().layout !== 'classic') {
+        cxItemsEl = el('div', { cls: 's-cx-items', 'data-testid': 'shop-cx-items' });
+        const form = el('form', { novalidate: true, cls: 's-cx-form' }, [hp]);
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            void placeOrder();
+        });
+        layout = cxFrame({
+            testid: 'shop-subscribe-view',
+            title: 'Suscribirme',
+            home: { label: 'Volver a la tienda', go: goCatalog },
+            steps: addrSec
+                ? [
+                      { id: 'you', crumb: 'Datos', nodes: [you] },
+                      { id: 'delivery', crumb: 'Entrega', nodes: [addrSec] },
+                      { id: 'pay', crumb: 'Pago', nodes: [paySec, notesSec] },
+                  ]
+                : [
+                      { id: 'you', crumb: 'Datos', nodes: [you] },
+                      { id: 'pay', crumb: 'Pago', nodes: [paySec, notesSec] },
+                  ],
+            form,
+            tail: [alertEl, ...legal, submitBtn, seller],
+            side: [cxItemsEl, summaryEl],
+        });
+    } else {
+        const form = el('form', { novalidate: true }, [you, addrSec, paySec, notesSec, hp]);
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            void placeOrder();
+        });
+        const aside = el('aside', { cls: 's-panel s-co-aside' }, [el('h3', { text: 'Resumen' }), summaryEl, alertEl, ...legal, submitBtn, seller]);
+        layout = el('div', { cls: `s-checkout${coCfg().labels === 'inside' ? ' s-lbl-in' : ''}`, 'data-testid': 'shop-subscribe-view' }, [
+            el('div', {}, [back, el('h1', { text: 'Suscribirme' }), m.closed ? el('div', { cls: 's-closed', text: m.closed }) : null, form]),
+            aside,
+        ]);
+    }
     paintSubSummary();
     paintSubmit();
     ensureStamp();
-    if (captchaBox) mountCaptcha();
+    startCxCaptcha();
     return [layout];
 }
 
@@ -2049,15 +2343,17 @@ function paintSubSummary(): void {
     if (!item || !plan) return;
     const price = item.price ?? 0;
     const freq = subscriptionFrequencyText(plan.frequency, plan.frequency_type);
-    const rows: HTMLElement[] = [
-        el('div', {}, [el('span', { text: item.title }), el('span', { text: money(price) })]),
-        el('div', {}, [el('span', { text: 'Se cobra' }), el('span', { 'data-testid': 'shop-sub-frequency', text: freq })]),
-    ];
+    const rows: HTMLElement[] = [];
+    // v0.1.425 — En los estilos nuevos el producto va con su foto (arriba de los totales).
+    if (cxItemsEl) cxItemsEl.replaceChildren(cxItem(item, item.title, 1, money(price), '', null));
+    else rows.push(el('div', {}, [el('span', { text: item.title }), el('span', { text: money(price) })]));
+    rows.push(el('div', {}, [el('span', { text: 'Se cobra' }), el('span', { 'data-testid': 'shop-sub-frequency', text: freq })]));
     if (plan.trial_days > 0) rows.push(el('div', {}, [el('span', { text: 'Prueba gratis' }), el('span', { text: plan.trial_days === 1 ? '1 día' : `${plan.trial_days} días` })]));
     if (plan.cycles !== null && plan.cycles > 0) rows.push(el('div', {}, [el('span', { text: 'Cobros' }), el('span', { text: String(plan.cycles) })]));
     rows.push(el('div', {}, [el('span', { text: 'Con' }), el('span', { text: providerName(plan.provider) })]));
     rows.push(el('div', { cls: 's-tot' }, [el('span', { text: `Total ${freq}` }), el('span', { 'data-testid': 'shop-total', text: money(price) })]));
     summaryEl.replaceChildren(...rows);
+    if (cxToggleTotal) cxToggleTotal.textContent = money(price);
     if (alertEl) {
         const warn = soldOut(item) ? 'Ya no quedan cupos para esta suscripción.' : item.price === null ? 'Esta suscripción no tiene precio.' : '';
         if (warn) {
@@ -2069,6 +2365,7 @@ function paintSubSummary(): void {
 
 function checkoutView(): HTMLElement[] {
     const m = meta!;
+    cxReset();
     for (const k of Object.keys(inputs)) delete inputs[k];
     if (!co.deliveryId || !m.delivery.some((d) => d.id === co.deliveryId)) co.deliveryId = m.delivery[0]?.id ?? null;
     if (!co.payment || !m.payments.some((p) => p.method === co.payment)) co.payment = m.payments[0]?.method ?? null;
@@ -2156,32 +2453,56 @@ function checkoutView(): HTMLElement[] {
     hpInput = el('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off', 'aria-hidden': 'true' });
     const hp = el('div', { cls: 's-hp', 'aria-hidden': 'true' }, [hpInput]);
     submitBtn = el('button', { type: 'submit', cls: 's-btn', 'data-testid': 'shop-place' });
-
-    const form = el('form', { novalidate: true }, [you, deliverySec, digitalNoteEl, paySec, freeNoteEl, notesSec, hp]);
-    paintModes();
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        void placeOrder();
-    });
     couponBox = m.coupons ? el('div', { cls: 's-coupon', 'data-testid': 'shop-coupon-box' }) : null;
-    const aside = el('aside', { cls: 's-panel s-co-aside' }, [
-        el('h3', { text: 'Resumen' }),
-        summaryEl,
-        couponBox,
-        alertEl,
-        ...legal,
-        submitBtn,
-        el('p', { cls: 's-line-p', style: 'margin:10px 0 0;text-align:center', text: `Vende: ${m.seller.legal_name || m.company}` }),
-    ]);
     submitBtn.addEventListener('click', (e) => {
         e.preventDefault();
         void placeOrder();
     });
+    const seller = el('p', { cls: 's-line-p', style: 'margin:10px 0 0;text-align:center', text: `Vende: ${m.seller.legal_name || m.company}` });
 
-    const layout = el('div', { cls: 's-checkout', 'data-testid': 'shop-checkout-view' }, [
-        el('div', {}, [back, el('h1', { text: 'Finalizar compra' }), m.closed ? el('div', { cls: 's-closed', text: m.closed }) : null, form]),
-        aside,
-    ]);
+    let layout: HTMLElement;
+    if (coCfg().layout !== 'classic') {
+        // v0.1.425 — Los estilos nuevos: el pedido con sus fotos aparte y el cupón a la vista.
+        cxItemsEl = el('div', { cls: 's-cx-items', 'data-testid': 'shop-cx-items' });
+        if (couponBox) couponOpen = true;
+        const form = el('form', { novalidate: true, cls: 's-cx-form' }, [hp]);
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            void placeOrder();
+        });
+        const steps: CxParts['steps'] = digitalCart()
+            ? [
+                  { id: 'you', crumb: 'Datos', nodes: [you] },
+                  { id: 'pay', crumb: 'Pago', nodes: [deliverySec, digitalNoteEl, paySec, freeNoteEl, notesSec] },
+              ]
+            : [
+                  { id: 'you', crumb: 'Datos', nodes: [you] },
+                  { id: 'delivery', crumb: 'Entrega', nodes: [deliverySec, digitalNoteEl] },
+                  { id: 'pay', crumb: 'Pago', nodes: [paySec, freeNoteEl, notesSec] },
+              ];
+        layout = cxFrame({
+            testid: 'shop-checkout-view',
+            title: 'Finalizar compra',
+            home: { label: 'Volver al carrito', go: goCart },
+            steps,
+            form,
+            tail: [alertEl, ...legal, submitBtn, seller],
+            side: [cxItemsEl, couponBox, summaryEl],
+        });
+        paintModes();
+    } else {
+        const form = el('form', { novalidate: true }, [you, deliverySec, digitalNoteEl, paySec, freeNoteEl, notesSec, hp]);
+        paintModes();
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            void placeOrder();
+        });
+        const aside = el('aside', { cls: 's-panel s-co-aside' }, [el('h3', { text: 'Resumen' }), summaryEl, couponBox, alertEl, ...legal, submitBtn, seller]);
+        layout = el('div', { cls: `s-checkout${coCfg().labels === 'inside' ? ' s-lbl-in' : ''}`, 'data-testid': 'shop-checkout-view' }, [
+            el('div', {}, [back, el('h1', { text: 'Finalizar compra' }), m.closed ? el('div', { cls: 's-closed', text: m.closed }) : null, form]),
+            aside,
+        ]);
+    }
     paintCoupon();
     paintSummary();
     paintSubmit();
@@ -2190,8 +2511,16 @@ function checkoutView(): HTMLElement[] {
     if (m.coupons && pending && !co.couponRule && !BOOT.preview) void applyCoupon(pending, true);
     else scheduleQuote(0);
     ensureStamp();
-    if (captchaBox) mountCaptcha();
+    startCxCaptcha();
     return [layout];
+}
+
+/** El anti-robots: ya, o (en «Por pasos») cuando se llega al paso del pago. */
+function startCxCaptcha(): void {
+    if (cxSteps.length > 0) {
+        cxCaptchaPending = !!captchaBox;
+        paintCxSteps();
+    } else if (captchaBox) mountCaptcha();
 }
 
 /** v0.1.415 — La zona de envío: sólo si la forma de entrega elegida tiene zonas. */
@@ -2376,9 +2705,15 @@ function paintSummary(): void {
     paintModes();
     const est = current();
     const rows: HTMLElement[] = [];
+    const items: HTMLElement[] = [];
     for (const l of est.lines) {
         const p = buyable.get(l.product_id);
         const problem = shopLineProblemText(l);
+        // v0.1.425 — En los estilos nuevos cada línea va con su foto y la cantidad encima.
+        if (cxItemsEl) {
+            items.push(cxItem(p, l.title || 'Producto', l.qty, money(l.subtotal), l.qty > 1 ? `${money(l.unit_price)} c/u` : '', problem));
+            continue;
+        }
         rows.push(
             el('div', {}, [
                 el('span', {}, [`${l.qty} × ${p?.title || l.title || 'Producto'}`, problem ? el('span', { cls: 's-line-err', style: 'display:block', text: problem }) : null]),
@@ -2386,7 +2721,8 @@ function paintSummary(): void {
             ]),
         );
     }
-    rows.push(el('div', { style: 'padding-top:6px;border-top:1px solid var(--s-line);margin-top:4px' }, [el('span', { text: 'Subtotal' }), el('span', { text: money(est.subtotal) })]));
+    if (cxItemsEl) cxItemsEl.replaceChildren(...items);
+    rows.push(el('div', cxItemsEl ? {} : { style: 'padding-top:6px;border-top:1px solid var(--s-line);margin-top:4px' }, [el('span', { text: 'Subtotal' }), el('span', { text: money(est.subtotal) })]));
     if (est.discount > 0) {
         rows.push(
             el('div', { cls: 's-disc', 'data-testid': 'shop-discount' }, [el('span', { text: `Descuento${est.coupon ? ` (${est.coupon.code})` : ''}` }), el('span', { text: `-${money(est.discount)}` })]),
@@ -2400,8 +2736,16 @@ function paintSummary(): void {
     if (!digital && est.free_shipping_missing !== null && !zoneMissing()) {
         rows.push(el('div', { cls: 's-free-hint', 'data-testid': 'shop-free-hint' }, [icon('truck'), el('span', { text: `Te faltan ${money(est.free_shipping_missing)} para el envío gratis.` })]));
     }
-    rows.push(el('div', { cls: 's-tot' }, [el('span', { text: 'Total' }), el('span', { 'data-testid': 'shop-total', text: money(est.total) })]));
+    rows.push(
+        el('div', { cls: 's-tot' }, [
+            el('span', { text: 'Total' }),
+            cxItemsEl
+                ? el('span', { cls: 's-cx-total' }, [el('small', { text: meta.currency }), el('span', { 'data-testid': 'shop-total', text: money(est.total) })])
+                : el('span', { 'data-testid': 'shop-total', text: money(est.total) }),
+        ]),
+    );
     summaryEl.replaceChildren(...rows);
+    if (cxToggleTotal) cxToggleTotal.textContent = money(est.total);
     if (co.couponRule) paintCoupon();
     if (alertEl) {
         let warn = '';
@@ -2557,14 +2901,17 @@ function showServerAlert(text: string): void {
     alertEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
-function validate(): boolean {
+/** Revisa lo escrito. `only` (v0.1.425, «Por pasos»): sólo esos campos (sin términos ni anti-robots). */
+function validate(only?: ReadonlySet<string>): boolean {
     const m = meta!;
     let firstBad: HTMLElement | null = null;
+    const want = (key: string): boolean => !only || only.has(key);
     const bad = (key: string, text: string): void => {
+        if (!want(key)) return;
         setErr(key, text);
         if (!firstBad) firstBad = inputs[key] ?? errs[key] ?? null;
     };
-    for (const k of Object.keys(errs)) setErr(k, '');
+    for (const k of Object.keys(errs)) if (want(k)) setErr(k, '');
     const v = (k: string): string => (inputs[k]?.value ?? '').trim();
     if (!v('name')) bad('name', 'Escribe tu nombre.');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v('email'))) bad('email', 'Escribe un correo válido.');
@@ -2577,10 +2924,13 @@ function validate(): boolean {
     if (termsCb && !termsCb.checked) bad('terms', 'Para comprar, acepta los términos y condiciones.');
     if (consentCb && !consentCb.checked) bad('consent', 'Para comprar, acepta la autorización para el tratamiento de tus datos.');
     if (firstBad) {
+        // v0.1.425 — Si lo que falta está en otro paso, se vuelve a ese paso.
+        cxReveal(firstBad);
         (firstBad as HTMLElement).focus?.();
         (firstBad as HTMLElement).scrollIntoView?.({ block: 'center', behavior: 'smooth' });
         return false;
     }
+    if (only) return true;
     if (m.captcha && !captchaToken) {
         showServerAlert('Completa la verificación anti-robots.');
         return false;
@@ -3086,7 +3436,14 @@ async function showMyOrders(code: string): Promise<void> {
 function paint(main: HTMLElement[]): void {
     cartButtons.length = 0;
     mbar = null;
-    const wrap = view === 'order' || view === 'my' ? el('div', {}, main) : el('div', { cls: 's-wrap' }, main);
+    // v0.1.425 — Un pago con estilo nuevo ocupa toda la página (y, con «sólo el logo», sin el encabezado de la tienda).
+    const cx = view === 'checkout' && cxActive;
+    if (cx && cxBare) {
+        app.replaceChildren(el('main', {}, main));
+        paintCartButtons();
+        return;
+    }
+    const wrap = view === 'order' || view === 'my' || cx ? el('div', {}, main) : el('div', { cls: 's-wrap' }, main);
     const kids: HTMLElement[] = [header(), el('main', {}, [wrap]), footer()];
     if (view === 'catalog') {
         const b = actionButton('', () => openCart(), 's-btn');

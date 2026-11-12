@@ -3077,4 +3077,33 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.425-tienda-estilos-pago',
+        version: '0.1.425',
+        date: '2026-11-12',
+        kind: 'improvement',
+        title: 'Cuatro diseños para la página de pago de tu tienda',
+        summary:
+            'Elige cómo se ve la página donde tu cliente paga: clásica, en dos columnas con el pedido y sus fotos aparte, por pasos o en una sola columna. También puedes poner los nombres de los campos adentro, mostrar «Compra segura» y elegir el color del resumen.',
+        media: {
+            slides: [
+                {
+                    title: 'Un pago limpio, en dos columnas',
+                    text: 'El formulario a la izquierda y el pedido con las fotos de los productos a la derecha. En el celular, el pedido queda arriba en una barra con el total.',
+                    illustration: 'tienda-pedido',
+                },
+                {
+                    title: 'De a un paso',
+                    text: '«Por pasos» pide primero los datos, después la entrega y al final el pago. Lo ya llenado queda arriba con «Cambiar» para corregirlo.',
+                    illustration: 'tienda-vitrina',
+                },
+            ],
+        },
+        body: [
+            '- Abre tu tienda (**Configurar lista → Tienda → Editar**) y ve a **Estilo → Pago**.',
+            '- Toca **Ver el pago en la vista previa** para recorrerlo sin hacer ningún pedido.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];
