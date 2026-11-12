@@ -14711,6 +14711,74 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         pedidos» con lista, volver y enlace vencido, celular sin scroll
         lateral, cero violaciones de CSP).
 
+  - [x] **Tienda: suscripciones (v0.1.417, addendum ADR-S103, sexta de
+        siete versiones)**: un producto de la tienda se vende como
+        **suscripción** (una caja mensual, una membresía, una mensualidad) y se
+        cobra con el débito automático de ADR-S96, con la cuenta de Mercado
+        Pago o PayPal de la empresa. (a) **Tipo «Suscripción»**
+        (`SHOP_PRODUCT_KINDS`, opción nueva de la columna «Tipo» con su color;
+        `shopKindFromText` reconoce suscripción, membresía, mensualidad,
+        recurrente y débito automático antes que lo digital). (b) **El plan del
+        producto** (`shopPlanFor`, shared, puro, el MISMO en la página y en el
+        servidor): el elegido a mano en `config.kinds.subscription_links`
+        (producto → plan, lectura tolerante, tope 300) o el plan con el MISMO
+        nombre (sin tildes ni mayúsculas), y sólo planes activos de una cuenta
+        del equipo en la moneda de la tienda (`SubscriptionsService.shopPlans`);
+        una variante usa el de su producto. Se cobra el PRECIO DEL PRODUCTO
+        cada período (el valor va en línea en la suscripción, como en ADR-S96);
+        el plan pone cada cuánto, los días gratis, las cuotas y el proveedor.
+        Sin plan, la tarjeta dice «No disponible» y el pedido se rechaza
+        (`shop_subscription`). (c) **Página pública**: marca «Suscripción»,
+        «cada mes · 7 días gratis» bajo el precio, botón **«Suscribirme»** (no
+        va al carrito: `shopPurchasables` las deja fuera salvo con
+        `{subscriptions: true}`; con variantes, «Elegir opción» y la hoja con
+        «Suscribirme») y una pantalla **«Suscribirme»** propia: tus datos, la
+        dirección sólo si la tienda lo pide (`subscription_address`, «Pedir la
+        dirección de entrega al suscribirse»), el aviso del débito automático y
+        un resumen con «Se cobra», «Prueba gratis», «Cobros», «Con» y «Total
+        cada mes»; sin cupón, entrega ni formas de pago. El stock son los
+        CUPOS: en 0 dice «Sin cupos» y una suscripción no lo descuenta.
+        (d) **El pedido** (`payment_method: 'subscription'`, una línea, una
+        unidad, sin cupón, sin stock tomado; «Suscripción» o «Suscripción · con
+        envío» como entrega): nace en la transacción de siempre y DESPUÉS del
+        commit `SubscriptionsService.createForShop` crea la suscripción
+        vinculada al registro del pedido con la vuelta a `?pedido=…&suscripcion=1`
+        y guarda `shop_orders.subscription_id` (migración 0124, FK con
+        `ON DELETE SET NULL`). Si el proveedor falla, el pedido se cancela
+        (`expireOrder`), 503 `shop_payment_unavailable` y un Problema
+        `shop-sub:<tienda>` que se cierra solo. La persona va directo a
+        autorizar la tarjeta y le llega «Activa tu suscripción» con el botón
+        para terminar. (e) **Pagado al autorizar**: un sink de eventos de
+        `SubscriptionsService` (`registerEventSink`) avisa a la tienda y, con
+        `activated` o `charged`, `settlePaid` deja el pedido pagado una vez,
+        con el aviso «Suscripción nueva» al equipo y «Tu suscripción quedó
+        activa» a quien se suscribió; al volver, la página consulta al
+        proveedor (`shopOrderSubscription(…, {returning: true})`, a lo sumo
+        cada 2 s) y pasa sola de «Estamos confirmando…» a «¡Tu suscripción
+        está activa!» con cuánto, cada cuánto y el próximo cobro (o
+        «Falta activar tu suscripción» con el botón, un cobro rechazado en
+        ámbar, cancelada). Activarse con el pedido ya cancelado avisa al equipo
+        para cancelarla. «Marcar como pagado» no se ofrece ni se acepta
+        (`shop_subscription_paid`). Los cobros siguientes viven en la sección
+        Suscripción de la ficha (pausar, cambiar el valor, cancelar, ADR-S96).
+        (f) «Mis pedidos» dice «Suscripción cada mes · Al día». (g) Editor →
+        Productos → **Tipos de producto**: conteo de suscripciones, una fila
+        por producto de suscripción con su precio y el plan
+        («El del mismo nombre: …» o «Sin plan (elige uno)»), aviso sin planes
+        con el enlace a Cobros y la casilla de la dirección; el resumen del
+        menú dice «con suscripciones». Ayuda: guía `shop`, Aprende → Tienda
+        online (fila «Suscripción» y una pregunta), novedad con carrusel; de
+        paso, la ayuda llamaba «Productos digitales y servicios» a la sección
+        que se llama «Tipos de producto». Tests: `shops-subscriptions.spec`
+        (6: opciones y planes del catálogo, pedido sin tocar el stock con el
+        precio y la vuelta, pagado una vez al autorizar con sus correos,
+        consulta al volver, rechazos, Mercado Pago caído), `shop.test` +4 en
+        shared + E2E navegador 37/37 contra el Mercado Pago simulado (plan por
+        nombre y elegido, «Suscribirme», dirección pedida, Mercado Pago con el
+        precio y la vuelta, stock intacto, autorizar → activa y pagado, carrito
+        normal intacto, ficha sin «Marcar como pagado», celular sin scroll
+        lateral, cero violaciones de CSP).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

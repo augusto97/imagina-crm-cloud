@@ -51,6 +51,7 @@ import {
     type UpdateSubscriptionPlanInput,
     type PublicFormPlan,
     type PublicFormSubscriptionStatus,
+    type PublicShopOrderSubscription,
     type PortalSubscription,
 } from '@imagina-base/shared';
 import { randomBytes } from 'node:crypto';
@@ -231,6 +232,11 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
      * el panel de Mercado Pago): si la conexión trae las nuevas solas, la importa.
      */
     private importSink: ((tenantId: number, connectionId: number, preapprovalId: string) => Promise<boolean>) | null = null;
+    /**
+     * v0.1.417 — Quien quiere enterarse de los eventos de una suscripción (la
+     * tienda: el pedido queda pagado cuando la persona autoriza la tarjeta).
+     */
+    private eventSinks: Array<(tenantId: number, sub: { id: number; status: string; listId: number | null; recordId: number | null }, events: SubscriptionEvent[]) => Promise<void>> = [];
 
     constructor(
         private readonly tenantDb: TenantDb,
@@ -270,6 +276,11 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
     /** v0.1.376 — El importador se anota aquí (evita una dependencia circular). */
     registerImportSink(fn: (tenantId: number, connectionId: number, preapprovalId: string) => Promise<boolean>): void {
         this.importSink = fn;
+    }
+
+    /** v0.1.417 — La tienda se anota aquí (evita una dependencia circular). */
+    registerEventSink(fn: (tenantId: number, sub: { id: number; status: string; listId: number | null; recordId: number | null }, events: SubscriptionEvent[]) => Promise<void>): void {
+        this.eventSinks.push(fn);
     }
 
     private async tryImport(tenantId: number, connectionId: number, preapprovalId: string): Promise<boolean> {
@@ -1282,6 +1293,13 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
                 .syncSubscription(tenantId, out.sub.id, { automations: !quiet })
                 .catch((err) => this.logger.warn(`Registro de cobros falló: ${String(err)}`));
         }
+        if (!quiet && out.events.length > 0) {
+            for (const sink of this.eventSinks) {
+                await sink(tenantId, { id: out.sub.id, status: out.sub.status, listId: out.sub.listId, recordId: out.sub.recordId }, out.events.map((e) => e.event)).catch((err: unknown) =>
+                    this.logger.warn(`Suscripción ${out.sub.id}: el aviso a la tienda falló: ${String(err)}`),
+                );
+            }
+        }
         if (quiet || out.events.length === 0 || out.sub.listId === null || out.sub.recordId === null) return;
         const listId = out.sub.listId;
         const recordId = out.sub.recordId;
@@ -1640,6 +1658,118 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         // Todavía sin autorizar: el mismo link sirve para terminar.
         const url = state === 'pending' && row.url && /^https?:\/\//.test(row.url) ? row.url : null;
         return { state, plan: pub.title, amount: pub.amount, currency: pub.currency, frequency: pub.frequency, frequency_type: pub.frequencyType, url, provider: pub.provider };
+    }
+
+    // ── Tienda (v0.1.417) ───────────────────────────────────────────────
+
+    /**
+     * Los planes que se pueden vender desde una tienda: activos y de una
+     * conexión de Mercado Pago o PayPal DEL EQUIPO (el mismo criterio de los
+     * formularios), por nombre.
+     */
+    async shopPlans(tenantId: number): Promise<PublicFormPlan[]> {
+        const team = new Set((await this.collections.teamConnections(tenantId)).filter((c) => isSubscriptionProvider(c.provider)).map((c) => c.id));
+        if (team.size === 0) return [];
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: subscriptionPlans.id, active: subscriptionPlans.active, connectionId: subscriptionPlans.connectionId })
+                .from(subscriptionPlans)
+                .where(eq(subscriptionPlans.tenantId, tenantId))
+                .orderBy(asc(subscriptionPlans.name), asc(subscriptionPlans.id))
+                .limit(500),
+        );
+        const ids = rows.filter((r) => r.active && r.connectionId !== null && team.has(r.connectionId)).map((r) => r.id);
+        return this.formPlans(tenantId, ids);
+    }
+
+    /**
+     * Suscribir desde la tienda: el pedido ya existe y la suscripción queda en
+     * SU registro (así un cliente puede tener varias). El precio de cada
+     * período es el del producto (el plan pone la frecuencia, los días gratis
+     * y los cobros). Al volver del proveedor, la persona llega a su pedido.
+     */
+    async createForShop(
+        tenantId: number,
+        opts: { planId: number; listId: number; recordId: number; payerEmail: string; amount: number; title: string; backUrlFor: (reference: string) => string },
+    ): Promise<{ id: number; url: string; provider: SubscriptionProvider }> {
+        const [plan] = await this.formPlans(tenantId, [opts.planId]);
+        if (!plan) throw new SubscriptionError('Ese plan ya no está disponible.');
+        const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [row] = await tx
+                .select()
+                .from(subscriptionPlans)
+                .where(and(eq(subscriptionPlans.tenantId, tenantId), eq(subscriptionPlans.id, opts.planId)))
+                .limit(1);
+            if (!row) throw new SubscriptionError('Ese plan ya no está disponible.');
+            return this.createInTx(tx, tenantId, {
+                plan: row,
+                listId: opts.listId,
+                recordId: opts.recordId,
+                payerEmail: opts.payerEmail,
+                amount: opts.amount > 0 ? opts.amount : null,
+                startDate: null,
+                title: opts.title,
+                userId: null,
+                backUrlFor: opts.backUrlFor,
+            });
+        });
+        this.afterWrite(tenantId, result.write);
+        if (!result.sub.url) throw new SubscriptionError(`${providerName(result.sub.provider)} no devolvió el link para autorizar el pago.`);
+        return { id: result.sub.id, url: result.sub.url, provider: result.sub.provider };
+    }
+
+    /**
+     * La suscripción de un pedido de la tienda, como la ve quien compró. Con
+     * `returning` (recién vuelve del proveedor) se pregunta enseguida.
+     */
+    async shopOrderSubscription(tenantId: number, subscriptionId: number, opts: { returning?: boolean; sync?: boolean } = {}): Promise<PublicShopOrderSubscription | null> {
+        const [row] = await this.db
+            .select({ reference: subscriptions.reference })
+            .from(subscriptions)
+            .where(and(eq(subscriptions.tenantId, tenantId), eq(subscriptions.id, subscriptionId)))
+            .limit(1);
+        if (!row) return null;
+        // Sincroniza si sigue pendiente (lo mismo que la página de vuelta).
+        if (opts.sync !== false) await this.publicStatus(row.reference, { returning: opts.returning === true });
+        const [sub] = await this.db.select().from(subscriptions).where(and(eq(subscriptions.tenantId, tenantId), eq(subscriptions.id, subscriptionId))).limit(1);
+        if (!sub) return null;
+        const status = sub.status as SubscriptionStatus;
+        const state: PublicShopOrderSubscription['state'] =
+            status === 'pending'
+                ? 'pending'
+                : status === 'cancelled' || status === 'finished'
+                  ? 'cancelled'
+                  : status === 'retrying' || status === 'past_due' || status === 'expired'
+                    ? 'failed'
+                    : 'active';
+        const [planRow] = sub.planId
+            ? await this.db.select({ trialDays: subscriptionPlans.trialDays }).from(subscriptionPlans).where(eq(subscriptionPlans.id, sub.planId)).limit(1)
+            : [];
+        return {
+            state,
+            label: SUBSCRIPTION_STATUS_OPTIONS[status]?.label ?? status,
+            amount: Number(sub.amount),
+            currency: sub.currency,
+            frequency: sub.frequency,
+            frequency_type: sub.frequencyType as SubscriptionFrequencyType,
+            trial_days: planRow?.trialDays ?? 0,
+            cycles: sub.cycles,
+            url: status === 'pending' && sub.url && /^https?:\/\//.test(sub.url) ? sub.url : null,
+            provider: isSubscriptionProvider(sub.provider) ? sub.provider : 'mercadopago',
+            next_charge: sub.nextChargeAt ? sub.nextChargeAt.toISOString().slice(0, 10) : null,
+        };
+    }
+
+    /** v0.1.417 — Las suscripciones de varios pedidos, para «Mis pedidos» (estado sin consultar al proveedor). */
+    async shopOrderSubscriptionsBrief(tenantId: number, ids: readonly number[]): Promise<Map<number, { status: SubscriptionStatus; frequency: number; frequency_type: SubscriptionFrequencyType }>> {
+        const out = new Map<number, { status: SubscriptionStatus; frequency: number; frequency_type: SubscriptionFrequencyType }>();
+        if (ids.length === 0) return out;
+        const rows = await this.db
+            .select({ id: subscriptions.id, status: subscriptions.status, frequency: subscriptions.frequency, frequencyType: subscriptions.frequencyType })
+            .from(subscriptions)
+            .where(and(eq(subscriptions.tenantId, tenantId), inArray(subscriptions.id, [...ids])));
+        for (const r of rows) out.set(r.id, { status: r.status as SubscriptionStatus, frequency: r.frequency, frequency_type: r.frequencyType as SubscriptionFrequencyType });
+        return out;
     }
 
     // ── Portal del cliente (v0.1.368) ───────────────────────────────────

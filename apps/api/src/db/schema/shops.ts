@@ -61,6 +61,8 @@ export const shopOrders = pgTable(
         statusFieldId: bigint('status_field_id', { mode: 'number' }),
         stockState: varchar('stock_state', { length: 12 }).notNull().default('none'),
         paymentLinkId: bigint('payment_link_id', { mode: 'number' }),
+        /** v0.1.417 — Un pedido de suscripción: su débito automático (FK con ON DELETE SET NULL, migración 0124). */
+        subscriptionId: bigint('subscription_id', { mode: 'number' }),
         /** v0.1.415 — El cupón usado (el código queda aunque el cupón se borre). */
         couponId: bigint('coupon_id', { mode: 'number' }),
         couponCode: varchar('coupon_code', { length: 40 }).notNull().default(''),

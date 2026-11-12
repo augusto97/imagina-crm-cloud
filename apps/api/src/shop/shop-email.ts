@@ -27,7 +27,9 @@ export interface ShopOrderEmailInput {
      * `awaiting` el pedido en línea que todavía no se pagó (el botón lleva a
      * pagar) y `paid` cuando entra el pago en línea.
      */
-    stage?: 'placed' | 'awaiting' | 'paid';
+    stage?: 'placed' | 'awaiting' | 'paid' | 'subscribed';
+    /** v0.1.417 — Un pedido de suscripción (el botón lleva a autorizar el débito). */
+    subscription?: boolean;
     /** v0.1.416 — Los archivos para descargar (con el pedido pagado). */
     downloads?: Array<{ title: string; name: string; url: string }>;
     /** v0.1.416 — Cuándo llegan o hasta cuándo sirven las descargas. */
@@ -55,11 +57,29 @@ export function shopOrderEmail(o: ShopOrderEmailInput): ShopOrderEmail {
     const ink = inkOn(color);
     const name = o.brand.name.trim() || o.shopName;
     const stage = o.stage ?? 'placed';
+    const sub = o.subscription === true;
     const subject = (
-        stage === 'paid' ? `Recibimos el pago de tu pedido ${o.number}` : stage === 'awaiting' ? `Completa el pago de tu pedido ${o.number}` : `Recibimos tu pedido ${o.number}`
+        stage === 'subscribed'
+            ? `Tu suscripción quedó activa · ${o.number}`
+            : stage === 'paid'
+              ? `Recibimos el pago de tu pedido ${o.number}`
+              : stage === 'awaiting'
+                ? sub
+                    ? `Activa tu suscripción · ${o.number}`
+                    : `Completa el pago de tu pedido ${o.number}`
+                : `Recibimos tu pedido ${o.number}`
     ).slice(0, 200);
-    const intro = stage === 'paid' ? 'Recibimos el pago de tu pedido' : stage === 'awaiting' ? 'Apartamos tu pedido' : 'Recibimos tu pedido';
-    const buttonLabel = stage === 'awaiting' ? 'Pagar mi pedido' : 'Ver mi pedido';
+    const intro =
+        stage === 'subscribed'
+            ? 'Tu suscripción quedó activa con el pedido'
+            : stage === 'paid'
+              ? 'Recibimos el pago de tu pedido'
+              : stage === 'awaiting'
+                ? sub
+                    ? 'Recibimos tu suscripción'
+                    : 'Apartamos tu pedido'
+                : 'Recibimos tu pedido';
+    const buttonLabel = stage === 'awaiting' ? (sub ? 'Activar mi suscripción' : 'Pagar mi pedido') : 'Ver mi pedido';
     const logo = o.brand.logoUrl
         ? `<img src="${e(o.brand.logoUrl)}" alt="${e(name)}" style="max-height:48px;max-width:200px;display:block;margin:0 auto 12px;border:0">`
         : '';
@@ -70,12 +90,12 @@ export function shopOrderEmail(o: ShopOrderEmailInput): ShopOrderEmail {
         )
         .join('');
     const totals = [
-        `<tr><td style="padding:6px 0;color:#6b7280">Subtotal</td><td style="padding:6px 0;text-align:right">${e(o.subtotal)}</td></tr>`,
+        sub ? '' : `<tr><td style="padding:6px 0;color:#6b7280">Subtotal</td><td style="padding:6px 0;text-align:right">${e(o.subtotal)}</td></tr>`,
         o.discount
             ? `<tr><td style="padding:6px 0;color:#15803d">Descuento${o.couponCode ? ` · ${e(o.couponCode)}` : ''}</td><td style="padding:6px 0;text-align:right;color:#15803d">${e(o.discount)}</td></tr>`
             : '',
-        `<tr><td style="padding:6px 0;color:#6b7280">Entrega · ${e(o.delivery)}</td><td style="padding:6px 0;text-align:right">${e(o.shipping ?? 'Sin costo')}</td></tr>`,
-        `<tr><td style="padding:8px 0;font-weight:700;font-size:16px">Total</td><td style="padding:8px 0;text-align:right;font-weight:700;font-size:16px">${e(o.total)}</td></tr>`,
+        sub ? '' : `<tr><td style="padding:6px 0;color:#6b7280">Entrega · ${e(o.delivery)}</td><td style="padding:6px 0;text-align:right">${e(o.shipping ?? 'Sin costo')}</td></tr>`,
+        `<tr><td style="padding:8px 0;font-weight:700;font-size:16px">${sub ? 'Cada período' : 'Total'}</td><td style="padding:8px 0;text-align:right;font-weight:700;font-size:16px">${e(o.total)}</td></tr>`,
     ].join('');
     const downloads = o.downloads ?? [];
     const dlBlock =
@@ -121,16 +141,16 @@ ${button}
         '',
         ...o.lines.map((l) => `${l.qty} × ${l.title} — ${l.subtotal}`),
         '',
-        `Subtotal: ${o.subtotal}`,
+        ...(sub ? [] : [`Subtotal: ${o.subtotal}`]),
         ...(o.discount ? [`Descuento${o.couponCode ? ` (${o.couponCode})` : ''}: ${o.discount}`] : []),
-        `Entrega (${o.delivery}): ${o.shipping ?? 'Sin costo'}`,
-        `Total: ${o.total}`,
+        ...(sub ? [] : [`Entrega (${o.delivery}): ${o.shipping ?? 'Sin costo'}`]),
+        `${sub ? 'Cada período' : 'Total'}: ${o.total}`,
         '',
         o.paymentLabel,
         o.paymentInstructions,
         ...(downloads.length > 0 ? ['', 'Tus descargas:', ...downloads.map((d) => `${d.name} (${d.title}): ${d.url}`)] : []),
         ...(o.downloadsNote ? [o.downloadsNote] : []),
-        ...(o.orderUrl ? ['', `${stage === 'awaiting' ? 'Paga tu pedido' : 'Ver tu pedido'}: ${o.orderUrl}`] : []),
+        ...(o.orderUrl ? ['', `${stage === 'awaiting' ? (sub ? 'Activa tu suscripción' : 'Paga tu pedido') : 'Ver tu pedido'}: ${o.orderUrl}`] : []),
         '',
         o.sellerLine,
     ].join('\n');

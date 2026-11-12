@@ -415,7 +415,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.416**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.417**
+(**suscripciones desde la tienda, sexta de siete versiones** — un producto de
+tipo «Suscripción» lleva el botón «Suscribirme» y se cobra con el débito
+automático de Mercado Pago o PayPal con el plan del mismo nombre (o el
+elegido); el pedido queda pagado cuando la persona autoriza la tarjeta y los
+cobros siguientes viven en la sección Suscripción de la ficha; addendum
+ADR-S103). Antes **v0.1.416**
 (**productos digitales, servicios con la agenda, pedidos sin costo y «Mis
 pedidos», quinta de siete versiones** — una columna «Tipo» y una de archivos:
 lo digital no pide envío y se descarga al pagar (con días y veces de
@@ -718,15 +724,16 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   aceptadas las decisiones propuestas: catálogo = lista, primera versión sin
   pasarela, módulo `shop` sólo en planes pagos (0121 lo apaga en `trial`),
   suspensión por el operador, miniaturas con `sharp`, factura DIAN fuera,
-  `noindex` siempre (con Open Graph para compartir). **v0.1.412 a v0.1.416
+  `noindex` siempre (con Open Graph para compartir). **v0.1.412 a v0.1.417
   HECHAS** (catálogo, carrito y pedido sin pasarela; pago en línea con el
   stock apartado y pago tardío; productos con variantes como subtareas;
   envíos por zona y cupones; productos digitales, servicios con la agenda,
-  pedidos sin costo y «Mis pedidos»: ADR-S103 y sus addendums). Falta probar
-  el pago en línea con cuentas de prueba reales en el servidor. El plan pasó
-  de seis a siete versiones (las suscripciones van solas). **Siguen, en
-  orden**: v0.1.417 suscripciones desde la tienda → v0.1.418 estadísticas,
-  conversiones, botones «Comprar» insertables, widget y asistente/MCP. El SEO (y el dominio
+  pedidos sin costo y «Mis pedidos»; suscripciones con débito automático:
+  ADR-S103 y sus addendums). Falta probar el pago en línea y las
+  suscripciones con cuentas de prueba reales en el servidor. El plan pasó de
+  seis a siete versiones (las suscripciones van solas). **Sigue**: v0.1.418
+  estadísticas, conversiones, botones «Comprar» insertables, widget y
+  asistente/MCP. El SEO (y el dominio
   propio de la tienda) queda para cuando el usuario lo pida.
 - 2026-11-11 — **Conector completo de Whats** (el usuario adjuntó la
   documentación de la API v1 de Whats y aprobó la lista de acciones y
@@ -1922,6 +1929,26 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-12 · v0.1.417** — **Suscripciones desde la tienda** (sexta de
+  siete versiones). La columna «Tipo» suma **Suscripción**: el producto lleva
+  «Suscribirme» (no va al carrito) y se cobra con el débito automático de
+  ADR-S96 usando el plan del mismo nombre o el elegido en Productos → Tipos de
+  producto (sólo planes activos de una cuenta del equipo y en la moneda de la
+  tienda; se cobra el precio del producto). Pantalla propia «Suscribirme» con
+  el resumen (cada cuánto, días gratis, cobros, con quién) y la dirección
+  opcional; el stock son los cupos. El pedido nace sin tocar el stock, la
+  suscripción se crea después del commit (migración 0124:
+  `shop_orders.subscription_id`) y el pedido queda pagado cuando el proveedor
+  avisa que se autorizó (sink de eventos de `SubscriptionsService`), con
+  «¡Tu suscripción está activa!» en la página del pedido. Si el proveedor
+  falla, el pedido se cancela y se abre un Problema. El E2E atrapó que la
+  base de desarrollo no tenía la migración (500 al pedir): hay que correr
+  `pnpm db:migrate` tras cada migración nueva (ya anotado). De paso, la ayuda
+  llamaba «Productos digitales y servicios» a la sección «Tipos de producto».
+  Tests: `shops-subscriptions.spec` 6/6, shared +4 en `shop.test` + E2E 37/37.
+  Sigue v0.1.418 (estadísticas, conversiones, botones insertables, widget y
+  asistente/MCP).
 
 - **2026-11-12 · v0.1.416** — **Productos digitales, servicios, pedidos sin
   costo y «Mis pedidos»** (quinta versión de la tienda; el plan pasa a siete:

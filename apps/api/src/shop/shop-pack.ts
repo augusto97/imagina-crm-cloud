@@ -137,7 +137,7 @@ export function shopPackBlueprint(input: ShopPackInput): ListBlueprint {
     const symbol = input.currency === 'USD' ? 'US$' : '$';
     const statusOpts = SHOP_ORDER_STATUSES.map((s) => opt(s, SHOP_ORDER_STATUS_LABELS[s], SHOP_ORDER_STATUS_COLORS[s]));
     const payOpts = SHOP_PAYMENT_STATUSES.map((s) => opt(s, SHOP_PAYMENT_STATUS_LABELS[s], SHOP_PAYMENT_STATUS_COLORS[s]));
-    const methodColors: Record<string, string> = { whatsapp: '#16a34a', transfer: '#2563eb', cod: '#d97706', online: '#7c3aed', free: '#0d9488' };
+    const methodColors: Record<string, string> = { whatsapp: '#16a34a', transfer: '#2563eb', cod: '#d97706', online: '#7c3aed', free: '#0d9488', subscription: '#db2777' };
     const methodOpts = SHOP_PAYMENT_METHODS.map((m) => opt(m, SHOP_PAYMENT_METHOD_LABELS[m], methodColors[m] ?? '#6b7280'));
     const notCancelled = { type: 'condition', field_id: ref(ORDER_SLUG.status), op: 'neq', value: 'cancelado' };
     const valid = { type: 'group', logic: 'and', children: [notCancelled] };

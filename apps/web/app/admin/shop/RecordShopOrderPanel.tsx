@@ -101,6 +101,14 @@ export function RecordShopOrderPanel({ listId, recordId, className }: { listId: 
                             )}
                         </p>
                     )}
+                    {o.payment_method === 'subscription' && (
+                        <p className="imcrm-mt-1 imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-[12px] imcrm-text-muted-foreground" data-testid="record-shop-subscription-note">
+                            <CreditCard className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {paid
+                                ? __('Suscripción activa: los cobros siguientes se ven en la sección Suscripción.')
+                                : __('Suscripción: queda pagado solo cuando el cliente autoriza el débito automático.')}
+                        </p>
+                    )}
                     {!o.pay_url && o.pay_provider && paid && (
                         <p className="imcrm-mt-1 imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-[12px] imcrm-text-muted-foreground">
                             <CreditCard className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -117,7 +125,7 @@ export function RecordShopOrderPanel({ listId, recordId, className }: { listId: 
                             </a>
                         </Button>
                     )}
-                    {!paid && !o.cancelled && (
+                    {!paid && !o.cancelled && o.payment_method !== 'subscription' && (
                         <Button
                             size="sm"
                             className="imcrm-h-8 imcrm-gap-1.5"

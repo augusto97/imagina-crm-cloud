@@ -8935,3 +8935,50 @@ persona ve «Tienda».
 6. La página del pedido abierta con su enlace dice «Tu pedido» (antes repetía
    el número en el título y en la etiqueta).
 
+**Addendum v0.1.417 — Suscripciones desde la tienda.**
+1. **Tipo «Suscripción»** (`SHOP_PRODUCT_KINDS`): la columna «Tipo» suma la
+   opción (`shopKindFromText` reconoce suscripción, membresía, mensualidad,
+   recurrente y débito automático). No va al carrito: `shopPurchasables` deja
+   fuera las suscripciones salvo con `{ subscriptions: true }`, que devuelve
+   SÓLO ellas (con sus variantes).
+2. **El plan** (`shopPlanFor`, puro, el mismo en la página y en el servidor):
+   el elegido en `config.kinds.subscription_links` (producto → plan, lectura
+   tolerante) o el plan con el mismo nombre sin tildes ni mayúsculas; sólo
+   cuentan los planes activos de una conexión del EQUIPO (ADR-S96,
+   `SubscriptionsService.shopPlans`) en la moneda de la tienda, y una variante
+   usa el de su producto. El plan pone la forma (cada cuánto, días gratis,
+   cuotas, proveedor); el VALOR que se cobra es el precio del producto, en
+   línea en la suscripción (como en ADR-S96). Sin plan, el producto no se
+   puede suscribir (400 `shop_subscription`; la tarjeta dice «No
+   disponible»).
+3. **El pedido de suscripción** (`payment_method: 'subscription'`): de a un
+   producto, una unidad, sin cupón ni forma de entrega (la dirección sólo con
+   `kinds.subscription_address`), sin descontar stock — el stock son los
+   cupos: en 0 no se aceptan más. Nace en la transacción de siempre (número,
+   registro, líneas, cliente) y DESPUÉS del commit
+   `SubscriptionsService.createForShop` crea la suscripción ligada al registro
+   del pedido (`ibs_…`, valor = total, vuelta a `?pedido=<token>&suscripcion=1`)
+   y se guarda en `shop_orders.subscription_id` (migración 0124, FK
+   `ON DELETE SET NULL` + índice parcial). Si el proveedor no responde, el
+   pedido se cancela, 503 `shop_payment_unavailable` y un Problema
+   `shop-sub:<tienda>` que se cierra solo al siguiente que funciona. No vence:
+   queda pendiente hasta que la persona autoriza la tarjeta.
+4. **Pagado al autorizar**: `SubscriptionsService.registerEventSink` avisa los
+   eventos (los mismos del disparador «Cuando cambia una suscripción») y la
+   tienda, con `activated` o `charged`, llama a `settlePaid` (idempotente con
+   la fila bloqueada): el pedido queda pagado, el equipo recibe «Suscripción
+   nueva» y quien se suscribió «Tu suscripción quedó activa». La página del
+   pedido al volver consulta al proveedor (`shopOrderSubscription(…,
+   { returning: true })`, a lo sumo cada 2 s por suscripción). Si se activa
+   con el pedido ya cancelado, el equipo recibe un aviso para cancelarla.
+   «Marcar como pagado» no se acepta en un pedido de suscripción
+   (`shop_subscription_paid`). Los cobros siguientes no crean pedidos: viven
+   en la suscripción del registro del pedido (ADR-S96).
+5. La página pública, «Mis pedidos» y el correo dicen cuánto, cada cuánto, la
+   prueba gratis, las cuotas y el estado («Al día», «Reintentando el cobro»);
+   el estado de la suscripción se lee sin llamar al proveedor salvo al
+   volver.
+6. Editor → Productos → Tipos de producto: una fila por producto de
+   suscripción con su plan («El del mismo nombre» o «Sin plan») y la casilla
+   de la dirección.
+
