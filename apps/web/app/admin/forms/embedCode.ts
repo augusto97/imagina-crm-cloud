@@ -28,7 +28,8 @@ export interface EmbedTarget {
     origin: string;
     /** Nombre (para el `title` del marco y de la ventana). */
     title: string;
-    kind: 'form' | 'booking';
+    /** v0.1.419 — también la tienda (`/public/s/…`). */
+    kind: 'form' | 'booking' | 'shop';
 }
 
 export interface EmbedOptions {
@@ -52,6 +53,7 @@ const attr = (v: string): string => v.replace(/[&"<>]/g, (c) => ({ '&': '&amp;',
 
 /** Texto del botón por defecto. */
 export function defaultEmbedLabel(kind: EmbedTarget['kind']): string {
+    if (kind === 'shop') return 'Ver la tienda';
     return kind === 'booking' ? 'Agenda tu cita' : 'Escríbenos';
 }
 
@@ -108,9 +110,12 @@ export function embedCode(t: EmbedTarget, mode: EmbedMode, opts: EmbedOptions): 
             `${opts.open === 'side' || opts.open === 'full' ? ` data-imagina-open="${opts.open}"` : ''} async></script>`
         );
     }
-    const height = t.kind === 'booking' ? 720 : 640;
+    // La tienda tiene su propio scroll (catálogo, carrito, compra): va con un
+    // alto fijo y con permiso para los pagos con tarjeta del navegador.
+    const height = t.kind === 'shop' ? 900 : t.kind === 'booking' ? 720 : 640;
+    const allow = t.kind === 'shop' ? ' allow="payment"' : '';
     return (
-        `<iframe src="${t.url}" title="${title}" data-imagina-form style="width:100%;height:${height}px;border:0" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>\n` +
+        `<iframe src="${t.url}" title="${title}" data-imagina-form style="width:100%;height:${height}px;border:0" loading="lazy"${allow} referrerpolicy="no-referrer-when-downgrade"></iframe>\n` +
         `<script src="${script}" async></script>`
     );
 }
@@ -135,5 +140,19 @@ export function qrTargetUrl(url: string): string {
         return u.toString();
     } catch {
         return url;
+    }
+}
+
+/**
+ * v0.1.419 — La dirección de la tienda abierta directo en un producto
+ * (`?producto=<id>`): la usan los botones «Comprar» y el enlace al producto.
+ */
+export function shopProductUrl(url: string, productId: number): string {
+    try {
+        const u = new URL(url);
+        u.searchParams.set('producto', String(productId));
+        return u.toString();
+    } catch {
+        return `${url}${url.includes('?') ? '&' : '?'}producto=${productId}`;
     }
 }

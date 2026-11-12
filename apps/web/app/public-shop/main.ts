@@ -53,6 +53,7 @@ import { formStatSource } from '@imagina-base/shared/src/schemas/form-stats-logi
 import { attributionFromSearch, cleanAttribution, type AttributionData } from '@imagina-base/shared/src/schemas/conversion-logic';
 import type { ShopStatDevice, ShopStatEvent } from '@imagina-base/shared/src/schemas/shop-stats-logic';
 import type { PublicDirectTags } from '@imagina-base/shared/src/schemas/conversion-logic';
+import { isDemoFrame } from '../public-form/demoGate';
 
 interface Boot {
     token: string;
@@ -72,9 +73,19 @@ const BOOT: Boot = (() => {
     }
 })();
 
+/**
+ * v0.1.419 — La demostración de «Compartir» (dentro de la app): la tienda real,
+ * que se usa como de verdad, pero no hace pedidos, no cuenta visitas ni avisa
+ * conversiones. Sólo vale metida en un marco de la propia app (`isDemoFrame`).
+ */
+const DEMO = !BOOT.preview && isDemoFrame(window);
+/** Nada se envía ni se cuenta: la vista previa del editor y la demostración. */
+const DRY = BOOT.preview || DEMO;
+
 const API = `/api/v1/public/shops/${encodeURIComponent(BOOT.token)}`;
 const PAGE = `/api/v1/public/s/${encodeURIComponent(BOOT.token)}`;
-const CART_KEY = `imb-shop-cart:${BOOT.token}`;
+// La demostración no toca el carrito de verdad de este navegador.
+const CART_KEY = `imb-shop-cart:${BOOT.token}${DEMO ? ':demo' : ''}`;
 const CUSTOMER_KEY = `imb-shop-customer:${BOOT.token}`;
 /** v0.1.415 — El cupón de la sesión (escrito o llegado por `?cupon=`). */
 const COUPON_KEY = `imb-shop-coupon:${BOOT.token}`;
@@ -234,7 +245,7 @@ let hostAttribution: AttributionData | null = null;
 let hostOrigin: string | null = null;
 const conversionAcks = new Set<string>();
 const contextWaiters: Array<() => void> = [];
-if (EMBEDDED && !BOOT.preview) {
+if (EMBEDDED && !DRY) {
     window.addEventListener('message', (e: MessageEvent) => {
         if (e.source !== window.parent) return;
         const d = e.data as { type?: string; attribution?: unknown; ref?: string } | null;
@@ -278,7 +289,7 @@ function attributionNow(): AttributionData {
 
 /** Espera (un rato corto) a que el sitio diga de dónde vino la persona. */
 function whenContext(ms: number): Promise<void> {
-    if (!EMBEDDED || BOOT.preview || hostAttribution !== null) return Promise.resolve();
+    if (!EMBEDDED || DRY || hostAttribution !== null) return Promise.resolve();
     return new Promise((ok) => {
         const t = window.setTimeout(ok, ms);
         contextWaiters.push(() => {
@@ -330,7 +341,7 @@ function flushStats(beacon = false): void {
 }
 
 function stat(e: ShopStatEvent): void {
-    if (BOOT.preview) return;
+    if (DRY) return;
     statQueue.push(e);
     if (statQueue.length >= 20) flushStats();
     else if (statTimer === null) statTimer = window.setTimeout(() => flushStats(), 1500);
@@ -344,25 +355,25 @@ function deviceKind(): ShopStatDevice {
 
 /** Una visita a la tienda (una por pestaña). */
 function trackVisit(): void {
-    if (BOOT.preview || !meta || !onceThisVisit('v')) return;
+    if (DRY || !meta || !onceThisVisit('v')) return;
     void whenContext(700).then(() => stat({ kind: 'view', src: sourceKey(), dev: deviceKind() }));
 }
 
 /** Abrió la ficha de un producto (una vez por producto y visita). */
 function trackProduct(productId: number): void {
-    if (BOOT.preview || !onceThisVisit(`p${productId}`)) return;
+    if (DRY || !onceThisVisit(`p${productId}`)) return;
     stat({ kind: 'product', item: productId, first: onceThisVisit('pv') });
 }
 
 /** Agregó un producto al carrito (una vez por producto y visita). */
 function trackAdd(productId: number): void {
-    if (BOOT.preview || !onceThisVisit(`a${productId}`)) return;
+    if (DRY || !onceThisVisit(`a${productId}`)) return;
     stat({ kind: 'add', item: productId, first: onceThisVisit('av') });
 }
 
 /** Empezó la compra o la suscripción (una vez por visita). */
 function trackCheckout(): void {
-    if (BOOT.preview || !onceThisVisit('c')) return;
+    if (DRY || !onceThisVisit('c')) return;
     stat({ kind: 'checkout' });
 }
 
@@ -387,7 +398,7 @@ interface DirectPixels {
 }
 const conversionCfg = BOOT.meta?.conversion ?? null;
 let directPixels: DirectPixels | null = null;
-if (!EMBEDDED && !BOOT.preview && conversionCfg?.direct) {
+if (!EMBEDDED && !DRY && conversionCfg?.direct) {
     const p = (window as unknown as { imbPixels?: DirectPixels }).imbPixels;
     if (p && typeof p.start === 'function' && typeof p.shop === 'function' && p.start(conversionCfg.direct)) directPixels = p;
 }
@@ -420,7 +431,7 @@ function ecoItem(id: number, qty: number): EcommerceItem | null {
  */
 function ecommerce(action: EcommerceAction, data: { value: number | null; items: EcommerceItem[]; transaction_id?: string; shipping?: number; coupon?: string | null; user_data?: unknown }, done?: () => void): void {
     const finish = (): void => done?.();
-    if (BOOT.preview || !meta) return finish();
+    if (DRY || !meta) return finish();
     const ev = {
         kind: 'shop',
         action,
@@ -467,7 +478,7 @@ function trackPurchase(c: NonNullable<PublicShopOrder['conversion']>): void {
     ecommerce('purchase', { value: c.value, items: c.items as EcommerceItem[], transaction_id: c.transaction_id, shipping: c.shipping, coupon: c.coupon, user_data: c.user_data ?? null });
 }
 
-if (!BOOT.preview) {
+if (!DRY) {
     window.addEventListener('pagehide', () => flushStats(true));
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') flushStats(true);
@@ -1425,7 +1436,7 @@ function legalBlock(): HTMLElement[] {
         );
     }
     captchaBox = null;
-    if (m.captcha && !BOOT.preview) {
+    if (m.captcha && !DRY) {
         captchaBox = el('div', { cls: 's-captcha' });
         legal.push(captchaBox);
     }
@@ -1958,7 +1969,7 @@ function scheduleQuote(delay = 400): void {
 }
 
 function ensureStamp(): void {
-    if (BOOT.preview || co.stamp) return;
+    if (DRY || co.stamp) return;
     void api<{ stamp: string }>('/stamp').then((r) => {
         if (r.ok) {
             co.stamp = r.data.stamp;
@@ -2077,6 +2088,10 @@ async function placeOrder(): Promise<void> {
     }
     if (BOOT.preview) {
         showServerAlert('Es una vista previa: en la tienda publicada aquí se hace el pedido.');
+        return;
+    }
+    if (DEMO) {
+        showServerAlert('Es una demostración: en tu sitio, aquí se hace el pedido. No se hizo ningún pedido.');
         return;
     }
     if (!validate()) return;
@@ -2477,8 +2492,8 @@ async function requestMy(input: HTMLInputElement, hp: HTMLInputElement): Promise
         renderOverlay();
         return;
     }
-    if (BOOT.preview) {
-        myReq.error = 'Es una vista previa: en la tienda publicada aquí llega el enlace al correo.';
+    if (DRY) {
+        myReq.error = BOOT.preview ? 'Es una vista previa: en la tienda publicada aquí llega el enlace al correo.' : 'Es una demostración: en tu sitio, aquí llega el enlace al correo.';
         renderOverlay();
         return;
     }
@@ -2638,7 +2653,7 @@ function render(): void {
     }
     // v0.1.416 — `?mis-pedidos=<código>`: el enlace del correo (se guarda en la pestaña y se quita de la dirección).
     const myCode = qs.get('mis-pedidos');
-    if (myCode !== null && !BOOT.preview) {
+    if (myCode !== null && !DRY) {
         const url = new URL(location.href);
         url.searchParams.delete('mis-pedidos');
         history.replaceState(null, '', url.pathname + url.search);
@@ -2649,7 +2664,7 @@ function render(): void {
         }
     }
     const pedido = qs.get('pedido');
-    if (pedido && /^[A-Za-z0-9_-]{20,64}$/.test(pedido) && !BOOT.preview) {
+    if (pedido && /^[A-Za-z0-9_-]{20,64}$/.test(pedido) && !DRY) {
         // v0.1.413 — `?pago=1`: volvió de pagar en línea (se quita para que recargar no vuelva a esperar).
         // v0.1.417 — `?suscripcion=1`: volvió de autorizar la tarjeta de una suscripción.
         const returned = qs.has('pago') || qs.has('suscripcion');
@@ -2666,6 +2681,16 @@ function render(): void {
     if (view === 'checkout' && subscribingId !== null && subscribable.has(subscribingId)) goSubscribe(subscribingId);
     else if (view === 'checkout') goCheckout();
     else goCatalog();
+    // v0.1.419 — `?producto=<id>` (el botón «Comprar» de un producto, o su enlace):
+    // la tienda abre ya en la ficha de ese producto. Se quita de la dirección
+    // para que cerrar la ficha y recargar no la vuelva a abrir.
+    const wanted = Number(qs.get('producto'));
+    if (qs.has('producto') && !BOOT.preview) {
+        const url = new URL(location.href);
+        url.searchParams.delete('producto');
+        history.replaceState(null, '', url.pathname + url.search);
+        if (Number.isInteger(wanted) && wanted > 0 && byId.has(wanted)) openOverlay({ kind: 'product', id: wanted, image: 0 });
+    }
 }
 
 document.addEventListener('keydown', (e) => {
@@ -2690,6 +2715,14 @@ document.addEventListener('keydown', (e) => {
         }
     }
 });
+
+// v0.1.419 — En la ventana o el panel de un sitio (embed.js): Escape con nada
+// abierto adentro cierra la ventana, igual que la X.
+if (window.self !== window.top && window.name === 'imagina-popup') {
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !e.defaultPrevented) parent.postMessage({ type: 'imb-popup-close' }, '*');
+    });
+}
 
 // Otra pestaña cambió el carrito: se sigue el mismo.
 window.addEventListener('storage', (e) => {

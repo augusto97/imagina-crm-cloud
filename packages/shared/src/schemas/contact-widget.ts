@@ -35,7 +35,8 @@ declare const URL: { new (input: string): { protocol: string; href: string } };
  * redirección a WhatsApp, el envío del formulario) y el editor.
  */
 
-export const WIDGET_BUTTON_TYPES = ['whatsapp', 'form', 'booking', 'call', 'email', 'link'] as const;
+/** v0.1.419 — `shop`: abre la tienda de la empresa (ADR-S103) dentro del panel. */
+export const WIDGET_BUTTON_TYPES = ['whatsapp', 'form', 'booking', 'call', 'email', 'link', 'shop'] as const;
 export type WidgetButtonType = (typeof WIDGET_BUTTON_TYPES)[number];
 
 export const WIDGET_ICONS = ['whatsapp', 'chat', 'form', 'calendar', 'phone', 'mail', 'link', 'help', 'cart', 'info', 'star', 'pin'] as const;
@@ -119,6 +120,8 @@ export const widgetButtonSchema = z.object({
     form_id: refId.nullable().catch(null).default(null),
     /** Agenda: cuál página de citas se abre en el panel. */
     booking_page_id: refId.nullable().catch(null).default(null),
+    /** v0.1.419 — Tienda: cuál tienda se abre en el panel. */
+    shop_id: refId.nullable().catch(null).default(null),
     /** Correo: a quién y con qué asunto. */
     email: z.string().trim().max(200).catch('').default(''),
     subject: z.string().trim().max(200).catch('').default(''),
@@ -381,7 +384,8 @@ export const WIDGET_TYPE_INFO: Record<WidgetButtonType, { label: string; icon: W
     booking: { label: 'Agendar una cita', icon: 'calendar', color: null, hint: 'Abre tu agenda de citas dentro del panel.' },
     call: { label: 'Llamar', icon: 'phone', color: null, hint: 'Llama a tu número (en el celular, directo).' },
     email: { label: 'Correo', icon: 'mail', color: null, hint: 'Abre el correo de la persona con tu dirección.' },
-    link: { label: 'Abrir', icon: 'link', color: null, hint: 'Lleva a cualquier página (catálogo, tienda, preguntas).' },
+    link: { label: 'Abrir', icon: 'link', color: null, hint: 'Lleva a cualquier página (catálogo, preguntas, tu blog).' },
+    shop: { label: 'Ver la tienda', icon: 'cart', color: null, hint: 'Abre tu tienda dentro del panel: los productos, el carrito y el pago.' },
 };
 
 export function widgetButtonLabel(b: Pick<WidgetButton, 'type' | 'label'>): string {
@@ -491,7 +495,7 @@ export interface WidgetProblem {
  */
 export function widgetProblems(
     config: ContactWidgetConfig,
-    refs: { forms: ReadonlyMap<number, WidgetTargetRef>; bookings: ReadonlyMap<number, WidgetTargetRef> },
+    refs: { forms: ReadonlyMap<number, WidgetTargetRef>; bookings: ReadonlyMap<number, WidgetTargetRef>; shops?: ReadonlyMap<number, WidgetTargetRef> },
 ): WidgetProblem[] {
     const out: WidgetProblem[] = [];
     if (config.buttons.length === 0) out.push({ button_id: null, message: 'Agrega al menos un botón.' });
@@ -547,6 +551,16 @@ export function widgetProblems(
             case 'link':
                 if (!widgetLinkUrl(b.url)) p(`${name}: el enlace tiene que empezar con https://.`);
                 break;
+            case 'shop': {
+                if (b.shop_id === null) {
+                    p(`${name}: elige la tienda que se abre.`);
+                    break;
+                }
+                const ref = refs.shops?.get(b.shop_id);
+                if (!ref) p(`${name}: la tienda ya no existe.`);
+                else if (!ref.enabled) p(`${name}: la tienda «${ref.name}» no está publicada.`);
+                break;
+            }
         }
     }
     return out;
@@ -612,9 +626,17 @@ export interface WidgetBookingOption extends WidgetTargetRef {
     public_path: string;
 }
 
+/** v0.1.419 — Una tienda que puede abrir el botón «Ver la tienda». */
+export interface WidgetShopOption extends WidgetTargetRef {
+    list_name: string;
+    public_path: string;
+}
+
 export interface ContactWidgetOptions {
     forms: WidgetFormOption[];
     bookings: WidgetBookingOption[];
+    /** v0.1.419 — Las tiendas (vacío si el plan no incluye la tienda). */
+    shops?: WidgetShopOption[];
     /** El color de la marca (lo que usa el widget sin color propio). */
     brand_color: string;
     company: string;
@@ -699,6 +721,8 @@ export function buildPublicWidgetButton(
         /** La página PUBLICADA de un formulario o una agenda; null = no existe o no está publicada. */
         formPath: (formId: number) => string | null;
         bookingPath: (pageId: number) => string | null;
+        /** v0.1.419 — La tienda PUBLICADA (y que el plan incluye); null = no se puede abrir. */
+        shopPath?: (shopId: number) => string | null;
         lenient?: boolean;
     },
 ): PublicWidgetButton | null {
@@ -743,6 +767,10 @@ export function buildPublicWidgetButton(
         case 'link': {
             const href = widgetLinkUrl(b.url);
             return href ? { ...base, href, target: b.new_tab ? '_blank' : '_top' } : empty;
+        }
+        case 'shop': {
+            const path = b.shop_id !== null ? (ctx.shopPath?.(b.shop_id) ?? null) : null;
+            return path ? { ...base, frame: path } : empty;
         }
     }
 }

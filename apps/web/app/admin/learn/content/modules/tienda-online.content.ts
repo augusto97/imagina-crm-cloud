@@ -124,8 +124,38 @@ export const articles: LearnArticle[] = [
                 items: [
                     'En la sección **Publicar**, mira **Lo que falta para publicarla**: cada punto te lleva a donde se arregla.',
                     'Toca **Publicar**. Desde ese momento cualquiera con el enlace puede comprar.',
-                    'Copia el enlace para mandarlo por WhatsApp o redes, el **código para tu sitio web** (la tienda se ve dentro de una página tuya) o descarga el **código QR** para imprimirlo.',
+                    'Toca **Compartir** (arriba del editor). En **Enlace y QR** copias el enlace, lo mandas por WhatsApp o correo, o descargas el **código QR** para imprimirlo.',
                 ],
+            },
+            { t: 'h', text: 'Vender en tu sitio web' },
+            { t: 'anim', key: 'form-embed-side', caption: 'La tienda se abre en un panel al costado de tu página: tu cliente compra sin salir de tu sitio.' },
+            {
+                t: 'p',
+                md: 'En **Compartir → Insertar en tu sitio** eliges cómo aparece la tienda en tu página web. La vista previa de la derecha la muestra funcionando (puedes navegarla y llenar el carrito; ahí no se hace ningún pedido).',
+            },
+            {
+                t: 'settings',
+                title: 'Cómo va en tu sitio',
+                rows: [
+                    { name: 'En la página', what: 'La tienda completa dentro del contenido de tu página, con su propio scroll.', tip: 'Ocupa 900 px de alto; lo cambias en el código.' },
+                    { name: 'Ventana al hacer clic', what: 'Un botón (por ejemplo «Ver la tienda») la abre en una ventana grande al centro, en un panel desde un costado o a pantalla completa, con una barra con el nombre y la X para cerrar.', tip: 'Escape también la cierra.' },
+                    { name: 'Botón flotante', what: 'Fijo en una esquina de todas las páginas donde lo pegues, como el de un chat.' },
+                ],
+            },
+            {
+                t: 'steps',
+                items: [
+                    'Elige la forma, el texto y el color del botón, y toca **Copiar código**.',
+                    'Pégalo en tu sitio (en WordPress, en un bloque «HTML personalizado»).',
+                    'Para un producto en particular, abre **Botón «Comprar» de un producto**, elige el producto y copia su código: el botón abre la tienda directo en ese producto. Ponlo al lado de su foto o su precio.',
+                    'Si tienes un **widget de contacto**, súmale el botón **Ver la tienda**: la tienda se abre dentro del panel del widget.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'El enlace directo a un producto',
+                md: 'Al enlace de la tienda agrégale `?producto=` y el número del producto (lo ves en **Botón «Comprar» de un producto → Enlace directo al producto**). Sirve para una publicación en redes o un correo: quien lo abre cae en ese producto.',
             },
             {
                 t: 'example',
@@ -135,7 +165,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: '¿Google muestra mi tienda?', a: 'No por ahora: la página no aparece en los buscadores. La compartes tú con el enlace, el código para tu sitio o el QR.' },
+                    { q: '¿Google muestra mi tienda?', a: 'No por ahora: la página no aparece en los buscadores. La compartes tú con el enlace, insertándola en tu sitio web o con el QR.' },
                     { q: '¿Puedo usar el color de mi marca?', a: 'Sí. En **Apariencia** usa el color de tu marca o eliges otro, el título, la descripción y cómo se ven las tarjetas.' },
                     { q: '¿Puedo vender un producto con variantes y otros sin ellas?', a: 'Sí. Un producto sin subtareas se vende como siempre; uno con variantes pide elegir la opción antes de agregarlo al carrito.' },
                     { q: '¿Qué pasa si borro la tienda?', a: 'Se apaga la página. Los pedidos, las líneas y los clientes quedan en sus listas, como listas comunes.' },
@@ -251,7 +281,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: '¿Puedo poner la tienda dentro de mi sitio web?', a: 'Sí. En **Publicar** copia el código para tu sitio y pégalo en una página. En **Sitios que pueden insertarla** eliges en qué sitios se puede mostrar.' },
+                    { q: '¿Puedo poner la tienda dentro de mi sitio web?', a: 'Sí. En **Compartir → Insertar en tu sitio** eliges si va dentro de la página, en una ventana o panel al tocar un botón, o con un botón flotante, y copias el código. En **Sitios que pueden insertarla** eliges en qué sitios se puede mostrar.' },
                     { q: '¿Qué ve mi cliente después de comprar?', a: 'Una página con su pedido: el número, los productos, el total, cómo pagar y el estado, que se actualiza cuando lo cambias en la lista.' },
                 ],
             },

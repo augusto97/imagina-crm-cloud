@@ -440,8 +440,12 @@ export function remapFormConfig(config: Record<string, unknown>, fieldTypeByOldI
 export function remapWidgetConfig(config: Record<string, unknown>, maps: IdMaps): Record<string, unknown> {
     const out = remapJson(config, maps) as Record<string, unknown>;
     if (!Array.isArray(out.buttons)) return out;
-    out.buttons = (out.buttons as unknown[]).map((b) => {
-        if (!b || typeof b !== 'object' || !Array.isArray((b as { advisors?: unknown }).advisors)) return b;
+    out.buttons = (out.buttons as unknown[]).map((raw) => {
+        if (!raw || typeof raw !== 'object') return raw;
+        // v0.1.419 — Las tiendas no viajan al migrar una empresa: el botón
+        // «Ver la tienda» queda sin tienda (el editor pide elegirla de nuevo).
+        const b = 'shop_id' in raw ? { ...(raw as Record<string, unknown>), shop_id: null } : raw;
+        if (!Array.isArray((b as { advisors?: unknown }).advisors)) return b;
         const btn = b as { advisors: unknown[] };
         return {
             ...btn,

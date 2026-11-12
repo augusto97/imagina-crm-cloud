@@ -36,10 +36,12 @@ export const PREVIEW_HOST = { url: 'https://tusitio.com/planes', title: 'Planes 
 function refMaps(options: ContactWidgetOptions): {
     forms: Map<number, WidgetTargetRef>;
     bookings: Map<number, WidgetTargetRef>;
+    shops: Map<number, WidgetTargetRef>;
 } {
     return {
         forms: new Map(options.forms.map((f) => [f.id, f])),
         bookings: new Map(options.bookings.map((b) => [b.id, b])),
+        shops: new Map((options.shops ?? []).map((s) => [s.id, s])),
     };
 }
 
@@ -55,6 +57,7 @@ export function editorProblems(config: ContactWidgetConfig, options: ContactWidg
 export function previewMeta(config: ContactWidgetConfig, options: ContactWidgetOptions): PublicWidgetMeta {
     const forms = new Map(options.forms.map((f) => [f.id, f]));
     const bookings = new Map(options.bookings.map((b) => [b.id, b]));
+    const shops = new Map((options.shops ?? []).map((s) => [s.id, s]));
     const accent = options.brand_color;
     const buttons = config.buttons
         .map((b) =>
@@ -68,6 +71,10 @@ export function previewMeta(config: ContactWidgetConfig, options: ContactWidgetO
                 bookingPath: (id) => {
                     const p = bookings.get(id);
                     return p && p.enabled ? p.public_path : null;
+                },
+                shopPath: (id) => {
+                    const sh = shops.get(id);
+                    return sh && sh.enabled ? sh.public_path : null;
                 },
                 lenient: true,
             }),
@@ -119,6 +126,7 @@ export function newButton(
     const id = newWidgetButtonId(config.buttons.map((b) => b.id));
     const firstForm = options.forms.find((f) => f.enabled) ?? options.forms[0];
     const firstBooking = options.bookings.find((b) => b.enabled) ?? options.bookings[0];
+    const firstShop = (options.shops ?? []).find((s) => s.enabled) ?? options.shops?.[0];
     const phone = config.buttons.find((b) => (b.type === 'whatsapp' || b.type === 'call') && b.phone)?.phone ?? '';
     return widgetButtonSchema.parse({
         id,
@@ -127,6 +135,7 @@ export function newButton(
         message: type === 'whatsapp' ? 'Hola, vengo de {{pagina}}.' : '',
         form_id: type === 'form' ? firstForm?.id ?? null : null,
         booking_page_id: type === 'booking' ? firstBooking?.id ?? null : null,
+        shop_id: type === 'shop' ? firstShop?.id ?? null : null,
     });
 }
 

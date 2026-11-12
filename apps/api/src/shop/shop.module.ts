@@ -17,6 +17,7 @@ import { ShopVariantsService } from './shop-variants.service';
 import { PlatformShopsController, PublicShopApiController, PublicShopPageController, RecordShopOrderController, ShopsController } from './shop.controller';
 import { ShopService } from './shop.service';
 import { ShopStatsService } from './shop-stats.service';
+import { ShopAiTools } from './shop-ai-tools';
 
 /**
  * v0.1.412 (ADR-S103) — Tienda desde una lista: catálogo público, carrito y
@@ -25,7 +26,7 @@ import { ShopStatsService } from './shop-stats.service';
 @Module({
     imports: [AuthModule, ActivityModule, DomainsModule, FieldsModule, FilesModule, ListsModule, RecordsModule],
     controllers: [ShopsController, RecordShopOrderController, PlatformShopsController, PublicShopPageController, PublicShopApiController],
-    providers: [ShopService, ShopPublicService, ShopOrdersService, ShopImagesService, ShopTasksService, ShopVariantsService, ShopCouponsService, ShopStatsService, RelationsRepository, SuperadminGuard],
+    providers: [ShopService, ShopPublicService, ShopOrdersService, ShopImagesService, ShopTasksService, ShopVariantsService, ShopCouponsService, ShopStatsService, ShopAiTools, RelationsRepository, SuperadminGuard],
     exports: [ShopService, ShopOrdersService],
 })
 export class ShopModule {}

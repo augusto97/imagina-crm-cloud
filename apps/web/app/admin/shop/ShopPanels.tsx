@@ -8,6 +8,7 @@ import {
     ArrowUp,
     Banknote,
     Check,
+    Code2,
     Copy,
     CreditCard,
     ExternalLink,
@@ -17,6 +18,7 @@ import {
     Loader2,
     MessageCircle,
     Plus,
+    QrCode,
     RefreshCw,
     Repeat,
     ShieldCheck,
@@ -66,13 +68,11 @@ import { __, sprintf } from '@/lib/i18n';
 import { getTenantFormat } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
-import { DomainChips } from '../forms/DomainChips';
-import { PublicQrCard } from '../forms/PublicQrCard';
 import { ColorChoice } from '../widgets/WidgetButtonEditor';
 import { PanelBody, SubSection, Switch, SwitchRow } from '../widgets/widgetUi';
 import { ShopVariantsSheet } from './ShopVariantsSheet';
 import { useCreateShopKindColumn } from './useShops';
-import { SHOP_SECTION_INFO, shopEmbedCode } from './shopEditor';
+import { SHOP_SECTION_INFO } from './shopEditor';
 
 type Patch = (fn: (c: ShopConfig) => ShopConfig) => void;
 
@@ -1147,8 +1147,7 @@ export function PublishPanel({
     problems,
     onTogglePublish,
     onFix,
-    domains,
-    onDomains,
+    onShare,
     onRegenerate,
     regenerating,
     onDelete,
@@ -1161,8 +1160,8 @@ export function PublishPanel({
     problems: ShopProblem[];
     onTogglePublish: () => void;
     onFix: (p: ShopProblem) => void;
-    domains: string[];
-    onDomains: (v: string[]) => void;
+    /** v0.1.419 — Abre «Compartir» (el enlace y el QR, o insertar en tu sitio). */
+    onShare: (tab: 'link' | 'embed' | 'qr') => void;
     onRegenerate: () => void;
     regenerating: boolean;
     onDelete: () => void;
@@ -1175,7 +1174,6 @@ export function PublishPanel({
             () => toast.error(__('No se pudo copiar')),
         );
     };
-    const code = shopEmbedCode(url, shop.name);
     return (
         <PanelBody testId="shop-publish">
             {shop.suspended && (
@@ -1229,19 +1227,17 @@ export function PublishPanel({
                     </Button>
                 </div>
             </SubSection>
-            <PublicQrCard url={url} name={shop.name} kind="shop" />
-            <SubSection title={__('Insertar en tu sitio web')} hint={__('Pega este código en una página de tu sitio (WordPress: bloque «HTML personalizado»). La tienda se ve completa dentro de esa página.')}>
-                <div className="imcrm-relative">
-                    <pre className="imcrm-max-h-28 imcrm-overflow-auto imcrm-whitespace-pre-wrap imcrm-break-all imcrm-rounded-lg imcrm-bg-muted imcrm-p-3 imcrm-pr-10 imcrm-font-mono imcrm-text-[11.5px]" data-testid="shop-embed-code">
-                        {code}
-                    </pre>
-                    <Button variant="ghost" size="icon" className="imcrm-absolute imcrm-right-1 imcrm-top-1 imcrm-h-7 imcrm-w-7" onClick={() => copy(code, __('Código copiado'))} aria-label={__('Copiar el código')}>
-                        <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
+            <SubSection title={__('Compartir e insertar')} hint={__('El código QR para imprimir, y el código para ponerla en tu sitio web: dentro de una página, en una ventana al tocar un botón o con un botón flotante. También botones «Comprar» de cada producto.')}>
+                <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-2 sm:imcrm-grid-cols-2">
+                    <Button variant="outline" size="sm" className="imcrm-justify-start imcrm-gap-1.5" onClick={() => onShare('qr')} data-testid="shop-open-qr">
+                        <QrCode className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Código QR')}
+                    </Button>
+                    <Button variant="outline" size="sm" className="imcrm-justify-start imcrm-gap-1.5" onClick={() => onShare('embed')} data-testid="shop-open-embed">
+                        <Code2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Insertar en tu sitio')}
                     </Button>
                 </div>
-                <Field label={__('Sitios que pueden insertarla')} hint={__('Vacío = cualquier sitio. Escribe el dominio (ej.: tutienda.com) y Enter.')}>
-                    <DomainChips value={domains} onChange={onDomains} testId="shop-domains" autoFocus={false} max={20} />
-                </Field>
             </SubSection>
             <SubSection title={__('Zona de cuidado')}>
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">

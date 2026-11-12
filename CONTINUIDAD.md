@@ -415,7 +415,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.418**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.419**
+(**vender en más lugares, la última de las ocho versiones de la tienda** —
+«Compartir» de la tienda en la misma ventana de formularios y agenda (enlace,
+QR e insertar con demostración en vivo); la tienda en un sitio como ventana
+grande, panel o pantalla completa con su barra y la X; botón «Comprar» de un
+producto que abre la tienda en ese producto (`?producto=`); botón «Ver la
+tienda» en el widget de contacto; la tienda en `get_list_schema` y
+`get_shop_stats` para el asistente y el MCP; Escape cierra la ventana también
+desde adentro; addendum ADR-S103). Antes **v0.1.418**
 (**estadísticas y conversiones de la tienda, séptima de ocho versiones** — modo
 «Estadísticas» del editor con visitas, pedidos, ventas, conversión, embudo de
 la visita al pago, productos y orígenes; «Medir conversiones» con los eventos
@@ -738,12 +746,12 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   ADR-S103 y sus addendums). Falta probar el pago en línea y las
   suscripciones con cuentas de prueba reales en el servidor. El plan pasó de
   seis a ocho versiones (las suscripciones van solas y la última se partió en
-  medir y vender en más lugares). **v0.1.418 HECHA** (estadísticas y
-  conversiones con el origen de cada pedido). **Sigue**: v0.1.419 — insertar
-  la tienda como ventana, panel o pantalla completa, botones «Comprar» de un
-  producto para pegar en un sitio, un botón «Tienda» en el widget de contacto
-  y la tienda en el asistente/MCP. El SEO (y el dominio
-  propio de la tienda) queda para cuando el usuario lo pida.
+  medir y vender en más lugares). **v0.1.418 y v0.1.419 HECHAS**
+  (estadísticas y conversiones con el origen de cada pedido; vender en más
+  lugares: insertar como ventana/panel/pantalla completa, botón «Comprar» por
+  producto, botón «Ver la tienda» del widget y la tienda en el asistente/MCP).
+  **El plan de la tienda quedó COMPLETO.** El SEO (y el dominio propio de la
+  tienda) queda para cuando el usuario lo pida.
 - 2026-11-11 — **Conector completo de Whats** (el usuario adjuntó la
   documentación de la API v1 de Whats y aprobó la lista de acciones y
   disparadores). **v0.1.401 y v0.1.402 HECHAS** (acciones y disparadores:
@@ -1938,6 +1946,27 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-12 · v0.1.419** — **Vender en más lugares** (la última de las
+  ocho versiones de la tienda: el plan quedó completo). **Compartir** de la
+  tienda en la misma ventana de formularios y agenda: Enlace y QR, e Insertar
+  en tu sitio con la demostración en vivo (la página real en modo
+  demostración: no hace pedidos ni suma estadísticas). En un sitio, la tienda
+  se abre en una ventana grande, un panel de hasta 560 px o a pantalla
+  completa, con una barra con el título y la X (una X flotante tapaba el
+  carrito); dentro de la página, 900 px y `allow="payment"`. **Botón «Comprar»
+  de un producto** (`?producto=` abre su hoja y limpia la dirección). Widget de
+  contacto: botón **«Ver la tienda»** (sólo tiendas publicadas de la empresa y
+  del plan; el contacto del widget cuenta la compra, no los pasos; migrar una
+  empresa lo deja sin tienda). Asistente/MCP: la tienda en `get_list_schema` y
+  `get_shop_stats`. **Atrapado en el E2E**: Escape dentro de la ventana de un
+  sitio no la cerraba (el foco queda en el marco y `embed.js` escucha el
+  sitio); ahora la tienda y el formulario avisan `imb-popup-close`. Tests:
+  `contact-widgets` +1, `shops-stats` +1, `embedCode` +3, shared +2 — E2E
+  30/30 (Compartir, demostración, botón «Comprar», sitio de otro origen con
+  el `embed.js` real, widget, celular oscuro) y MCP real 5/5. Falta probar con
+  cuentas reales de Mercado Pago/PayPal en el servidor (pago en línea y
+  suscripciones).
 
 - **2026-11-12 · v0.1.418** — **Estadísticas y conversiones de la tienda**
   (séptima de ocho versiones: la última se partió en «medir» y «vender en más

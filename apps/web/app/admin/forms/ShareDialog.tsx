@@ -52,10 +52,12 @@ export function ShareDialog({
     onTab,
     formId,
     embedOrigin,
+    embedExtra,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    kind: 'form' | 'booking';
+    /** v0.1.419 — también la tienda. */
+    kind: 'form' | 'booking' | 'shop';
     /** El título público (o el nombre interno si no tiene). */
     name: string;
     url: string;
@@ -69,7 +71,8 @@ export function ShareDialog({
     /** Lo que falta para poder publicar (la agenda). */
     publishProblems?: string[];
     accent: string;
-    bare: { value: boolean; onChange: (bare: boolean) => void; unsaved: boolean };
+    /** «Con su tarjeta» o «Sin marco» (formularios y agenda; la tienda no lo tiene). */
+    bare?: { value: boolean; onChange: (bare: boolean) => void; unsaved: boolean };
     domains: { value: string[]; onChange: (v: string[]) => void; unsaved: boolean };
     dirty: boolean;
     onSave?: () => void;
@@ -80,10 +83,12 @@ export function ShareDialog({
     formId?: number;
     /** v0.1.409 (ADR-S102) — la dirección rápida (por Cloudflare) que mandó el servidor. */
     embedOrigin?: string | null;
+    /** v0.1.419 — Lo que va debajo del código en «Insertar» (la tienda: los botones «Comprar»). */
+    embedExtra?: ReactNode;
 }): JSX.Element {
     const codeOrigin = useEmbedOrigin(embedOrigin);
     const isForm = kind === 'form';
-    const prefix = isForm ? 'form' : 'booking';
+    const prefix = kind;
     const view: 'link' | 'embed' = tab === 'embed' ? 'embed' : 'link';
     const TABS: Array<{ id: 'link' | 'embed'; label: string; icon: LucideIcon }> = [
         { id: 'link', label: __('Enlace y QR'), icon: Link2 },
@@ -101,7 +106,7 @@ export function ShareDialog({
                     <header className="imcrm-flex imcrm-shrink-0 imcrm-flex-col imcrm-gap-3 imcrm-border-b imcrm-border-border imcrm-px-4 imcrm-pb-3 imcrm-pt-3.5 sm:imcrm-px-5">
                         <div className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-2 imcrm-pr-9">
                             <RDialog.Title className="imcrm-min-w-0 imcrm-truncate imcrm-text-base imcrm-font-semibold">
-                                {isForm ? __('Compartir el formulario') : __('Compartir la agenda')}
+                                {isForm ? __('Compartir el formulario') : kind === 'shop' ? __('Compartir la tienda') : __('Compartir la agenda')}
                             </RDialog.Title>
                             <StatusPill published={published} isForm={isForm} prefix={prefix} />
                         </div>
@@ -154,6 +159,7 @@ export function ShareDialog({
                                     demo={{ path, version, published, dirty, onPublish, onSave, busy: publishBusy }}
                                     extra={
                                         <>
+                                            {embedExtra}
                                             <DomainsSection kind={kind} domains={domains} testId={`${prefix}-domains`} />
                                             {isForm && formId !== undefined && <WidgetFromFormCard formId={formId} name={name} />}
                                         </>
@@ -253,7 +259,7 @@ function LinkView({
     highlightQr,
     onRegenerate,
 }: {
-    kind: 'form' | 'booking';
+    kind: 'form' | 'booking' | 'shop';
     url: string;
     name: string;
     testId: string;
@@ -291,7 +297,9 @@ function LinkView({
                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
                     {kind === 'booking'
                         ? __('Quien lo abra elige su horario y agenda; cada cita crea un registro en la lista.')
-                        : __('Quien lo abra puede responderlo; cada respuesta crea un registro en la lista.')}
+                        : kind === 'shop'
+                          ? __('Quien lo abra ve tus productos y puede comprar; cada pedido llega a la lista de pedidos.')
+                          : __('Quien lo abra puede responderlo; cada respuesta crea un registro en la lista.')}
                 </p>
             </section>
 
@@ -333,7 +341,7 @@ function LinkView({
                         size="sm"
                         className="imcrm-h-8 imcrm-gap-1.5 imcrm-text-xs"
                         onClick={onRegenerate}
-                        data-testid={kind === 'booking' ? 'booking-regenerate' : 'form-regenerate'}
+                        data-testid={`${kind}-regenerate`}
                     >
                         <RefreshCw className="imcrm-h-3.5 imcrm-w-3.5" />
                         {__('Cambiar la dirección')}
@@ -385,7 +393,7 @@ function ShareAction({
 }
 
 /** Los sitios que pueden insertarlo: plegados, porque casi nadie los necesita. */
-function DomainsSection({ kind, domains, testId }: { kind: 'form' | 'booking'; domains: { value: string[]; onChange: (v: string[]) => void; unsaved: boolean }; testId: string }): JSX.Element {
+function DomainsSection({ kind, domains, testId }: { kind: 'form' | 'booking' | 'shop'; domains: { value: string[]; onChange: (v: string[]) => void; unsaved: boolean }; testId: string }): JSX.Element {
     const [open, setOpen] = useState(false);
     const n = domains.value.length;
     return (
@@ -398,7 +406,7 @@ function DomainsSection({ kind, domains, testId }: { kind: 'form' | 'booking'; d
                 data-testid={`${testId}-toggle`}
             >
                 <ShieldCheck className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" />
-                <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-text-sm imcrm-font-medium">{__('Sitios que pueden insertarlo')}</span>
+                <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-text-sm imcrm-font-medium">{kind === 'shop' ? __('Sitios que pueden insertarla') : __('Sitios que pueden insertarlo')}</span>
                 <span className="imcrm-shrink-0 imcrm-text-xs imcrm-text-muted-foreground">
                     {n === 0 ? __('Cualquiera') : n === 1 ? __('1 sitio') : __('%d sitios').replace('%d', String(n))}
                 </span>
@@ -420,6 +428,8 @@ function DomainsSection({ kind, domains, testId }: { kind: 'form' | 'booking'; d
                     <p className="imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground" data-testid="embed-test-hint">
                         {kind === 'booking'
                             ? __('Para probarla de verdad, pégala en una página de tu sitio: las páginas para probar HTML en línea la muestran dentro de un marco protegido donde ningún navegador deja cargar una agenda de otro sitio.')
+                            : kind === 'shop'
+                              ? __('Para probarla de verdad, pégala en una página de tu sitio: las páginas para probar HTML en línea la muestran dentro de un marco protegido donde ningún navegador deja cargar una tienda de otro sitio.')
                             : __('Para probarlo de verdad, pégalo en una página de tu sitio: las páginas para probar HTML en línea lo muestran dentro de un marco protegido donde ningún navegador deja cargar un formulario de otro sitio.')}
                     </p>
                 </div>

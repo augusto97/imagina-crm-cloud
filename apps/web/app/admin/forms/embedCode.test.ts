@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buttonInk, defaultEmbedLabel, embedCode, embedPopupAttribute, qrTargetUrl, safeHex, withEmbedOrigin, type EmbedTarget } from './embedCode';
+import { buttonInk, defaultEmbedLabel, embedCode, embedPopupAttribute, qrTargetUrl, safeHex, shopProductUrl, withEmbedOrigin, type EmbedTarget } from './embedCode';
 
 const target: EmbedTarget = {
     url: 'https://app.acme.co/api/v1/public/f/abc123',
@@ -81,5 +81,36 @@ describe('v0.1.352 — código para insertar', () => {
         );
         // Sin dirección rápida, nada cambia.
         expect(withEmbedOrigin(target, null)).toBe(target);
+    });
+});
+
+describe('v0.1.419 — la tienda en tu sitio', () => {
+    const shop: EmbedTarget = { url: 'https://app.acme.co/api/v1/public/s/tk123', origin: 'https://app.acme.co', title: 'Café "Aurora" <x>', kind: 'shop' };
+
+    it('en la página: alto fijo de 900 px, con permiso de pago y sin colar etiquetas', () => {
+        const code = embedCode(shop, 'inline', { label: '', color: '#0e7490', position: 'right' });
+        expect(code).toContain('height:900px');
+        expect(code).toContain('allow="payment"');
+        expect(code).toContain('title="Café &quot;Aurora&quot; &lt;x&gt;"');
+        expect(code).toContain('<script src="https://app.acme.co/api/v1/public/f/embed.js" async></script>');
+        // Los formularios no llevan el permiso de pago.
+        expect(embedCode(target, 'inline', { label: '', color: '', position: 'right' })).not.toContain('allow="payment"');
+    });
+
+    it('el botón dice «Ver la tienda» y abre la tienda (también en panel o pantalla completa)', () => {
+        expect(defaultEmbedLabel('shop')).toBe('Ver la tienda');
+        const code = embedCode(shop, 'popup', { label: '', color: '#0e7490', position: 'left', open: 'side' });
+        expect(code).toContain('data-imagina-popup="https://app.acme.co/api/v1/public/s/tk123"');
+        expect(code).toContain('data-imagina-open="side" data-imagina-side="left"');
+        expect(code).toContain('>Ver la tienda</button>');
+    });
+
+    it('el botón «Comprar» de un producto abre la tienda en ese producto', () => {
+        expect(shopProductUrl(shop.url, 42)).toBe('https://app.acme.co/api/v1/public/s/tk123?producto=42');
+        expect(shopProductUrl('https://app.acme.co/api/v1/public/s/tk123?utm_source=web', 7)).toBe('https://app.acme.co/api/v1/public/s/tk123?utm_source=web&producto=7');
+        const buy = embedCode(withEmbedOrigin({ ...shop, url: shopProductUrl(shop.url, 42) }, 'https://w.acme.co'), 'popup', { label: 'Comprar', color: '#111111', position: 'right', open: 'full' });
+        expect(buy).toContain('data-imagina-popup="https://w.acme.co/api/v1/public/s/tk123?producto=42"');
+        expect(buy).toContain('data-imagina-open="full"');
+        expect(buy).toContain('<script src="https://w.acme.co/api/v1/public/f/embed.js" async></script>');
     });
 });

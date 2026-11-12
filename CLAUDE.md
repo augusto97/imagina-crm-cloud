@@ -14834,6 +14834,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         dominios reales y cero violaciones de CSP; celular oscuro).
 
 
+  - [x] **Tienda: vender en más lugares (v0.1.419, addendum ADR-S103, la
+        última de las ocho versiones de la tienda: el plan quedó completo)**.
+        (a) **«Compartir» de la tienda** con la MISMA ventana de formularios y
+        agenda (`ShareDialog`, `kind: 'shop'`): **Enlace y QR** (enlace directo
+        por la app, WhatsApp, correo, QR) e **Insertar en tu sitio** con los tres
+        modos de `embed.js` y su **demostración en vivo** —la página real con
+        `imb_demo=1` sólo dentro de un marco de la app (`isDemoFrame`): sin
+        estadísticas, etiquetas, sello ni captcha, carrito aparte y «hacer el
+        pedido» no crea nada—. Se abre con el botón **Compartir** de arriba
+        (`data-tour="shop-share"`) o desde Publicar, que dejó sus bloques de
+        código y QR. (b) **`embed.js` para la tienda** (`isShop` por la ruta
+        `/public/s/`): ventana de `min(1100px,100%)` × `calc(100vh - 32px)`,
+        panel de hasta 560 px y pantalla completa, siempre con una barra de
+        48 px con el título y la X (una X flotante tapaba el carrito); dentro de
+        la página, alto fijo de 900 px y `allow="payment"`. (c) **Botón «Comprar»
+        de un producto** (`ShopBuyButtons`, `data-tour="shop-buy-buttons"`):
+        busca el producto, arma el botón (ventana, panel o completa; texto y
+        color) y el enlace directo con `?producto=<id>` (`shopProductUrl`); la
+        tienda abre la hoja de ese producto al cargar y limpia la dirección.
+        (d) **Widget de contacto: botón «Ver la tienda»** (`type: 'shop'`,
+        `shop_id`): sólo tiendas de la empresa, publicadas, sin suspender y de
+        una lista viva (una ajena se descarta al guardar, una sin publicar es un
+        problema, sin el módulo del plan el botón no sale); se abre en el panel
+        del widget; el contacto del widget cuenta la COMPRA, no los pasos;
+        migrar una empresa deja `shop_id` en null. (e) **Asistente y MCP**
+        (`ShopAiTools`): `get_list_schema` suma `shops` (rol catálogo/pedidos/
+        líneas/clientes, publicada, moneda, pagos, entregas y cómo enlazar un
+        producto) para quien administra listas, y `get_shop_stats` (lectura)
+        devuelve totales, embudo, productos, orígenes y dispositivos.
+        (f) **Atrapado en el E2E**: Escape dentro de la ventana de un sitio no
+        la cerraba (el foco queda en el marco y `embed.js` escucha el sitio):
+        la tienda y el formulario avisan `imb-popup-close` con nada abierto
+        adentro y `embed.js` la cierra si ese marco es la ventana abierta (la
+        demostración escucha lo mismo). Ayuda: paso 8 de la guía `shop`,
+        sección «Vender en tu sitio web» en Aprende → Tienda online con la
+        ilustración `form-embed-side`, `docs/mcp.md` y novedad con carrusel;
+        D10 de `docs/ideas.md` pasa a «aparecer en Google y dominio propio»
+        (pospuesto por el usuario). Tests: `contact-widgets.spec` +1 (opciones,
+        ajena, sin publicar, plan, suspendida), `shops-stats.spec` +1
+        (`get_list_schema` por rol, agente sin tienda, `get_shop_stats` y tienda
+        inexistente), `embedCode.test` +3, shared +2 — API de tienda/widget/
+        formularios/MCP 178/178, front 917, shared 929 — + E2E navegador 30/30
+        (Compartir, demostración en la página/panel/completa/flotante sin
+        pedidos, botón «Comprar» y `?producto=`, sitio de otro origen con el
+        `embed.js` real en ventana/panel/completa y Escape, widget con la tienda
+        adentro, celular oscuro sin desborde) y MCP real por HTTP 5/5.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

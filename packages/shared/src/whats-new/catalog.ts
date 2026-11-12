@@ -2887,4 +2887,42 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.419-tienda-en-tu-sitio',
+        version: '0.1.419',
+        date: '2026-11-12',
+        kind: 'feature',
+        title: 'Vende desde tu sitio web: la tienda en una ventana, un panel o un botón «Comprar»',
+        summary:
+            'Pon tu tienda en tu página web como mejor te quede: dentro de la página, en una ventana o un panel al tocar un botón, o con un botón «Comprar» al lado de cada producto. También en tu widget de contacto.',
+        media: {
+            slides: [
+                {
+                    title: 'Como mejor te quede',
+                    text: 'Dentro de tu página, en una ventana al centro, en un panel desde un costado o a pantalla completa. La vista previa te la muestra funcionando antes de copiar el código.',
+                    illustration: 'form-embed-side',
+                },
+                {
+                    title: 'Un botón «Comprar» por producto',
+                    text: 'Al lado de la foto o el precio de un producto en tu sitio: abre la tienda directo en ese producto, lista para agregarlo al carrito.',
+                    illustration: 'embed-popup',
+                },
+                {
+                    title: 'En tu widget de contacto',
+                    text: 'Súmale el botón Ver la tienda: tus visitantes compran sin salir del panel del widget.',
+                    illustration: 'widget-contacto',
+                },
+            ],
+        },
+        body: [
+            'Abre tu tienda (**Configurar lista → Tienda → Editar**) y toca **Compartir**.',
+            '',
+            '- En **Enlace y QR** copias el enlace, lo mandas por WhatsApp o descargas el QR.',
+            '- En **Insertar en tu sitio** eliges cómo va en tu página y copias el código.',
+            '- Debajo, **Botón «Comprar» de un producto** arma el botón de un producto en particular.',
+            '- En tu widget de contacto, agrega el botón **Ver la tienda**.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

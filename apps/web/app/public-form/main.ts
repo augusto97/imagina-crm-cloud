@@ -67,6 +67,14 @@ try {
 /** v0.1.394 (ADR-S99) — Abierto en el panel de un widget de contacto (como una ventana: sin «Sin marco»). */
 const inWidget = embedded && window.name === 'imagina-widget';
 const inPopup = embedded && (window.name === 'imagina-popup' || inWidget);
+
+// v0.1.419 — En la ventana o el panel de un sitio (embed.js): Escape con nada
+// abierto adentro (una lista, un selector) cierra la ventana, igual que la X.
+if (embedded && window.name === 'imagina-popup') {
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !e.defaultPrevented) parent.postMessage({ type: 'imb-popup-close' }, '*');
+    });
+}
 /**
  * v0.1.381 — La demostración de «Compartir» (dentro de la app): el formulario
  * se ve y se usa como de verdad, pero nada se envía, no cuenta en las
