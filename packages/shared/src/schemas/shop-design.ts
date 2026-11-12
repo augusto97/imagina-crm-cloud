@@ -76,6 +76,48 @@ export const shopDesignColorsSchema = z.object({
 });
 export type ShopDesignColors = z.infer<typeof shopDesignColorsSchema>;
 
+/**
+ * v0.1.424 — La FICHA del producto (lo que se abre al tocar un producto):
+ * cómo se acomodan la foto, los datos, la compra y la descripción.
+ */
+export const SHOP_PRODUCT_LAYOUTS = ['classic', 'wide', 'stacked', 'compact', 'full'] as const;
+export type ShopProductLayout = (typeof SHOP_PRODUCT_LAYOUTS)[number];
+export const SHOP_PRODUCT_LAYOUT_LABELS: Record<ShopProductLayout, string> = {
+    classic: 'Clásica',
+    wide: 'Descripción abajo',
+    stacked: 'Foto arriba',
+    compact: 'Compacta',
+    full: 'Pantalla completa',
+};
+export const SHOP_PRODUCT_LAYOUT_HINTS: Record<ShopProductLayout, string> = {
+    classic: 'Las fotos a la izquierda (quedan a la vista al bajar) y todo lo demás a la derecha.',
+    wide: 'Foto y compra arriba, lado a lado; la descripción completa abajo, a todo el ancho.',
+    stacked: 'Una sola columna: la foto grande arriba y todo lo demás debajo.',
+    compact: 'Una ventana angosta con la foto chica junto al nombre. Para servicios o un menú.',
+    full: 'Como la clásica, pero ocupa toda la pantalla, como una página del producto.',
+};
+export const SHOP_PRODUCT_IMAGE_RATIOS = ['auto', 'square', 'portrait', 'landscape'] as const;
+export type ShopProductImageRatio = (typeof SHOP_PRODUCT_IMAGE_RATIOS)[number];
+export const SHOP_PRODUCT_IMAGE_RATIO_LABELS: Record<ShopProductImageRatio, string> = {
+    auto: 'Como es la foto',
+    square: 'Cuadrada',
+    portrait: 'Vertical',
+    landscape: 'Horizontal',
+};
+
+export const shopDesignProductSchema = z.object({
+    layout: z.enum(SHOP_PRODUCT_LAYOUTS).catch('classic').default('classic'),
+    /** El recuadro de la foto grande («auto» = la proporción de la foto, sin bandas). */
+    image_ratio: z.enum(SHOP_PRODUCT_IMAGE_RATIOS).catch('auto').default('auto'),
+    /** Con un recuadro fijo: la foto lo llena (recortada) o entra completa. */
+    image_fit: z.enum(['cover', 'contain']).catch('contain').default('contain'),
+    /** Cómo se entrega (envío, recoger, descarga…) junto al botón de comprar. */
+    show_delivery: z.boolean().catch(true).default(true),
+    /** En el celular, el precio y el botón quedan fijos abajo al bajar. */
+    sticky_bar: z.boolean().catch(true).default(true),
+});
+export type ShopDesignProduct = z.infer<typeof shopDesignProductSchema>;
+
 export const shopDesignSchema = z.object({
     /** La plantilla de la que se partió (sólo para marcarla en el editor). */
     preset: z.string().max(40).nullable().catch(null).default(null),
@@ -97,6 +139,8 @@ export const shopDesignSchema = z.object({
     width: z.enum(SHOP_WIDTHS).catch('normal').default('normal'),
     header: shopDesignHeaderSchema.catch(() => shopDesignHeaderSchema.parse({})).default({}),
     hero: shopDesignHeroSchema.catch(() => shopDesignHeroSchema.parse({})).default({}),
+    /** v0.1.424 — La ficha del producto. */
+    product: shopDesignProductSchema.catch(() => shopDesignProductSchema.parse({})).default({}),
     /** CSS propio (sólo lo cambia un administrador; se guarda limpio). */
     custom_css: z.string().max(SHOP_CUSTOM_CSS_MAX).catch('').default(''),
 });
@@ -119,7 +163,7 @@ export interface ShopDesignPreset {
     label: string;
     description: string;
     /** Lo que cambia la plantilla (el resto queda como por defecto). */
-    design: Partial<Omit<ShopDesign, 'header' | 'hero' | 'colors' | 'custom_css' | 'preset'>> & {
+    design: Partial<Omit<ShopDesign, 'header' | 'hero' | 'colors' | 'custom_css' | 'preset' | 'product'>> & {
         colors: ShopDesignColors;
         header?: Partial<ShopDesignHeader>;
         hero?: Partial<Omit<ShopDesignHero, 'image_file_id'>>;
@@ -225,6 +269,8 @@ export function applyShopDesignPreset(current: ShopDesign, presetId: string): Sh
         header: { ...base.header, logo_size: current.header.logo_size, ...(p.design.header ?? {}) },
         hero: { ...base.hero, ...(p.design.hero ?? {}), image_file_id: current.hero.image_file_id },
         custom_css: current.custom_css,
+        // v0.1.424 — La ficha del producto no la cambia una plantilla.
+        product: current.product,
         preset: p.id,
     });
 }

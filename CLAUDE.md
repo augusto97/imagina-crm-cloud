@@ -15052,6 +15052,52 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         probaron con los binarios reales (no se pudieron instalar en el
         entorno).
 
+  - [x] **La ficha del producto con cinco diseños, descripción corta y la
+        casilla de los términos arreglada (v0.1.424, addendum ADR-S103,
+        reporte del usuario con capturas: "mira como sale esto de los
+        términos… no hay descripción corta, la ficha se ve rara, también
+        debería haber varios diseños de la ficha de producto")**. (a) **La
+        casilla de los términos** salía con el texto aplastado (y el captcha
+        encima): en v0.1.420 el cuadrito de las tareas de la descripción con
+        formato se llamó `.s-check`, la clase de las casillas del pago, y su
+        `width:17px; flex:none` dejó la etiqueta en 17 px. Renombrado a
+        `.s-task-box`; en el barrido salieron `.s-opts` de las variantes
+        (→ `.s-vopts`), `.s-back` y `.s-toast` repetidos (fusionados) y la
+        descripción corta que iba a usar `.s-sum`, la clase del resumen del
+        carrito (→ `.s-card-sum`). Prueba nueva `shop-page-css.spec`: la regla
+        base de cada clase va una sola vez (falla con el código anterior).
+        (b) **Descripción corta**: papel nuevo `summary` en Productos (texto o
+        texto largo; se reconoce por «Descripción corta», «Resumen»,
+        «Extracto», «Subtítulo»…) que sale en la tarjeta (dos renglones,
+        ocultable en Apariencia → «Descripción corta en las tarjetas»), arriba
+        en la ficha, en el buscador y como descripción para Google en el
+        dominio propio. (c) **La ficha rediseñada** (`config.design.product`,
+        sin migración: lo de antes es la clásica): el nombre una sola vez
+        (antes salía en la barra y en el cuerpo), botón principal con el color
+        de la tienda y «Comprar ahora» con contorno (antes grises), galería con
+        flechas, contador y miniaturas, la foto sin franjas (con «como es la
+        foto» el recuadro toma la proporción de la imagen), «Cómo se entrega»
+        junto al botón, «Tienes N en el carrito · Ver carrito», la X flotante,
+        y **Estilo → Ficha del producto** con cinco diseños con dibujo
+        (Clásica, Descripción abajo, Foto arriba, Compacta, Pantalla
+        completa), la forma de la foto (como es, cuadrada, vertical,
+        horizontal; completa o recortada), «Cómo se entrega» y la **barra de
+        compra fija en el celular** (precio + botón). Elegir un diseño abre un
+        producto en la vista previa (pestaña nueva «Producto», que también
+        mantiene la ficha abierta al cambiar). **Atrapado en el E2E**: la
+        pantalla completa quedaba corrida arriba a la izquierda (la animación
+        del modal aplica `translate(-50%,-50%)`) y en el celular la ficha
+        quedaba 32 px más angosta (el ancho del escritorio le ganaba). Ayuda:
+        guía `shop` y Aprende → Tienda online («Cómo se ve un producto al
+        abrirlo» y la descripción corta) y novedad con ilustraciones que ya
+        existían. Tests: `shop-page-css.spec` (2), caso nuevo en
+        `shops-description.spec` (descripción corta en el catálogo y el
+        diseño en `meta`), shared +8 — shared 957, front 918 — + E2E navegador
+        52/52 (descripción corta en tarjeta, ficha y buscador; un solo título;
+        galería; botón con el color y contorno; los cinco diseños medidos;
+        foto cuadrada recortada; términos legibles en escritorio y celular;
+        barra fija; modo oscuro; editor con la vista previa en «Producto»).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -5,6 +5,7 @@ import type { PublicDataConsent } from './data-consent';
 import type { PublicFormCaptcha } from './form';
 import type { FieldType } from './field';
 import type { ShopCatalogFields, ShopCheckout, ShopCustomer, ShopDisplay, ShopPolicies, ShopSeller, ShopTexts } from './shop';
+import type { ShopDesignProduct } from './shop-design';
 import type { TenantFormat } from './tenant';
 
 /**
@@ -343,6 +344,7 @@ export const SHOP_CATALOG_FIELD_TYPES: Record<keyof ShopCatalogFields, readonly 
     compare_price: ['currency', 'number'],
     images: ['file', 'url'],
     description: ['long_text', 'text'],
+    summary: ['text', 'long_text'],
     category: ['select', 'multi_select', 'text'],
     stock: ['number'],
     sku: ['text', 'autonumber'],
@@ -355,6 +357,7 @@ export const SHOP_CATALOG_ROLE_LABELS: Record<keyof ShopCatalogFields, string> =
     compare_price: 'Precio antes (tachado)',
     images: 'Fotos',
     description: 'Descripción',
+    summary: 'Descripción corta',
     category: 'Categoría',
     stock: 'Unidades disponibles',
     sku: 'Referencia (SKU)',
@@ -376,6 +379,7 @@ const ROLE_WORDS: Record<keyof ShopCatalogFields, string[]> = {
     compare_price: ['precio antes', 'antes', 'precio anterior', 'precio regular', 'precio normal', 'compare', 'precio lista'],
     images: ['foto', 'fotos', 'imagen', 'imagenes', 'image', 'images', 'galeria', 'portada'],
     description: ['descripcion', 'detalle', 'detalles', 'description', 'caracteristicas'],
+    summary: ['descripcion corta', 'resumen', 'extracto', 'subtitulo', 'bajada', 'descripcion breve', 'short description', 'excerpt', 'frase'],
     category: ['categoria', 'categorias', 'category', 'tipo', 'linea', 'coleccion'],
     stock: ['stock', 'inventario', 'existencias', 'disponibles', 'unidades', 'cantidad', 'disponible'],
     sku: ['sku', 'referencia', 'codigo', 'ref', 'codigo de barras'],
@@ -396,6 +400,7 @@ export function suggestShopCatalog(
         compare_price: null,
         images: null,
         description: null,
+        summary: null,
         category: null,
         stock: null,
         sku: null,
@@ -413,7 +418,7 @@ export function suggestShopCatalog(
         }
         return best;
     };
-    const order: (keyof ShopCatalogFields)[] = ['compare_price', 'price', 'stock', 'sku', 'images', 'category', 'active', 'description', 'name'];
+    const order: (keyof ShopCatalogFields)[] = ['compare_price', 'price', 'stock', 'sku', 'images', 'category', 'active', 'summary', 'description', 'name'];
     for (const role of order) {
         const types = SHOP_CATALOG_FIELD_TYPES[role];
         let pick: { id: number; s: number } | null = null;
@@ -421,7 +426,7 @@ export function suggestShopCatalog(
             if (used.has(f.id) || !types.includes(f.type)) continue;
             const s = score(role, f) + (role === 'name' && f.is_primary ? 4 : 0);
             // El «precio antes» sólo por nombre; el resto también por tipo (con desempate por nombre).
-            if (s === 0 && (role === 'compare_price' || role === 'active' || role === 'stock' || role === 'sku' || role === 'description' || role === 'category')) continue;
+            if (s === 0 && (role === 'compare_price' || role === 'active' || role === 'stock' || role === 'sku' || role === 'description' || role === 'summary' || role === 'category')) continue;
             if (!pick || s > pick.s) pick = { id: f.id, s };
         }
         if (pick) {
@@ -510,6 +515,8 @@ export interface PublicShopProduct {
     rich_description?: boolean;
     /** v0.1.420 — En la vista previa del editor el documento viene incluido. */
     description_doc?: RichNode | null;
+    /** v0.1.424 — La descripción corta (sin ella, no viaja). */
+    summary?: string;
     categories: string[];
     /** null = sin límite (o la tienda no controla stock). */
     stock: number | null;
@@ -1132,6 +1139,8 @@ export interface ShopDesignView {
     hero_image: string | null;
     /** Sigue el modo del dispositivo (la vista previa ofrece claro/oscuro). */
     auto: boolean;
+    /** v0.1.424 — Cómo se arma la ficha del producto (sin el dato: la clásica). */
+    product?: ShopDesignProduct;
 }
 
 // ── Conversiones (v0.1.418) ─────────────────────────────────────────────

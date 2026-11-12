@@ -143,13 +143,14 @@ function MoneyInput({ value, onChange, testId, placeholder }: { value: number | 
 
 // ── Productos ──────────────────────────────────────────────────────────
 
-const ROLE_ORDER: Array<keyof ShopCatalogFields> = ['name', 'price', 'compare_price', 'images', 'description', 'category', 'stock', 'sku', 'active'];
+const ROLE_ORDER: Array<keyof ShopCatalogFields> = ['name', 'price', 'compare_price', 'images', 'summary', 'description', 'category', 'stock', 'sku', 'active'];
 
 const ROLE_HINT: Partial<Record<keyof ShopCatalogFields, string>> = {
     name: 'Si no eliges uno, se usa el título de cada registro.',
     price: 'Un campo de moneda o número. Sin precio, el producto no se puede comprar.',
     compare_price: 'Opcional: si es mayor que el precio, se muestra tachado con el descuento.',
     images: 'Un campo de archivos (fotos subidas) o un enlace mostrado como imagen.',
+    summary: 'Opcional: una o dos frases junto al precio (y en las tarjetas). También es lo que muestra Google del producto.',
     category: 'Arma los filtros de categoría de la tienda.',
     stock: 'Un número: cada venta lo descuenta y cancelar un pedido lo devuelve. Vacío en un producto = sin límite.',
     active: 'Una casilla: sólo se venden los marcados. Sin elegirla, se venden todos.',
@@ -724,6 +725,14 @@ export function DesignPanel({ config, patch }: { config: ShopConfig; options?: S
                 )}
                 <SwitchRow label={__('Buscador')} checked={d.show_search} onChange={(v) => setD({ show_search: v })} />
                 <SwitchRow label={__('Filtros por categoría')} hint={__('Salen del campo de categoría de los productos.')} checked={d.show_categories} onChange={(v) => setD({ show_categories: v })} />
+                <SwitchRow
+                    label={__('Descripción corta en las tarjetas')}
+                    hint={config.catalog.summary === null ? __('Elige la columna de la descripción corta en Productos.') : __('Dos renglones bajo el nombre.')}
+                    checked={d.show_summary}
+                    disabled={config.catalog.summary === null}
+                    onChange={(v) => setD({ show_summary: v })}
+                    testId="shop-show-summary"
+                />
                 <SwitchRow label={__('Mostrar la referencia (SKU)')} checked={d.show_sku} onChange={(v) => setD({ show_sku: v })} />
                 <SwitchRow label={__('Ocultar los agotados')} hint={__('Si no, se ven apagados con «Agotado».')} checked={d.hide_sold_out} onChange={(v) => setD({ hide_sold_out: v })} />
             </SubSection>

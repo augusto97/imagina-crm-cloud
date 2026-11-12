@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Monitor, Moon, ShoppingCart, Smartphone, Store, Sun } from 'lucide-react';
+import { Loader2, Monitor, Moon, Package, ShoppingCart, Smartphone, Store, Sun } from 'lucide-react';
 import type { ShopConfig } from '@imagina-base/shared';
 
 import { IconToggleGroup, PreviewToolbar } from '@/admin/builder/BuilderShell';
@@ -9,7 +9,8 @@ import { cn } from '@/lib/utils';
 import { fetchShopPreview } from './useShops';
 
 type Device = 'desktop' | 'mobile';
-type View = 'catalog' | 'checkout';
+/** v0.1.424 — «Producto»: la ficha del primer producto abierta (para ver su diseño). */
+type View = 'catalog' | 'product' | 'checkout';
 
 /**
  * v0.1.412 (ADR-S103) — La vista previa del editor: la página REAL de la
@@ -17,13 +18,29 @@ type View = 'catalog' | 'checkout';
  * catálogo lo arma el servidor (con las fotos por URL firmada) y llega al
  * marco por `postMessage`; nada se envía desde ahí.
  */
-export function ShopPreview({ shopId, config, compact, version = 0 }: { shopId: number; config: ShopConfig; compact?: boolean; version?: number }): JSX.Element {
+export function ShopPreview({
+    shopId,
+    config,
+    compact,
+    version = 0,
+    focus,
+}: {
+    shopId: number;
+    config: ShopConfig;
+    compact?: boolean;
+    version?: number;
+    /** v0.1.424 — Pedir una pantalla desde el panel (ej.: la ficha al elegir su diseño). `n` cambia en cada pedido. */
+    focus?: { view: View; n: number } | null;
+}): JSX.Element {
     const frame = useRef<HTMLIFrameElement>(null);
     const [ready, setReady] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [device, setDevice] = useState<Device>(compact ? 'mobile' : 'desktop');
     const [view, setView] = useState<View>('catalog');
+    useEffect(() => {
+        if (focus) setView(focus.view);
+    }, [focus]);
     // v0.1.422 — Con el modo «Automático», ver la tienda clara u oscura.
     const [scheme, setScheme] = useState<'light' | 'dark'>('light');
     const auto = config.design.mode === 'auto';
@@ -84,6 +101,7 @@ export function ShopPreview({ shopId, config, compact, version = 0 }: { shopId: 
                     onChange={setView}
                     options={[
                         { id: 'catalog', label: __('Catálogo'), icon: Store, testId: 'shop-preview-catalog', showLabel: !compact },
+                        { id: 'product', label: __('Producto'), icon: Package, testId: 'shop-preview-product', showLabel: !compact },
                         { id: 'checkout', label: __('Compra'), icon: ShoppingCart, testId: 'shop-preview-checkout', showLabel: !compact },
                     ]}
                 />

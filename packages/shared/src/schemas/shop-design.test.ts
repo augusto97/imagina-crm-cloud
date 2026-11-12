@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { contrastRatio } from './public-theme-css';
 import {
     SHOP_DESIGN_PRESETS,
+    SHOP_PRODUCT_LAYOUTS,
+    SHOP_PRODUCT_LAYOUT_HINTS,
+    SHOP_PRODUCT_LAYOUT_LABELS,
     applyShopDesignPreset,
     buildShopDesignCss,
     defaultShopDesign,
@@ -100,5 +103,37 @@ describe('v0.1.422 — el estilo de la tienda', () => {
         expect(shopDesignFileIds(d)).toEqual([]);
         expect(shopDesignFileIds({ ...d, hero: { ...d.hero, style: 'banner' } })).toEqual([9]);
         expect(shopDesignClasses({ ...d, hero: { ...d.hero, style: 'banner' } })).toContain('s-hero-img');
+    });
+});
+
+describe('v0.1.424 — la ficha del producto', () => {
+    it('sin elegir nada (tiendas de antes) es la clásica, con la foto como es', () => {
+        const c = readShopConfig({});
+        expect(c.design.product).toEqual({ layout: 'classic', image_ratio: 'auto', image_fit: 'contain', show_delivery: true, sticky_bar: true });
+    });
+
+    it('se lee con tolerancia: lo que no existe vuelve a lo de siempre, lo demás se conserva', () => {
+        const d = readShopDesign({ product: { layout: 'gigante', image_ratio: 'square', image_fit: 'estirar', show_delivery: 'no', sticky_bar: false } });
+        expect(d.product.layout).toBe('classic');
+        expect(d.product.image_ratio).toBe('square');
+        expect(d.product.image_fit).toBe('contain');
+        expect(d.product.show_delivery).toBe(true);
+        expect(d.product.sticky_bar).toBe(false);
+        for (const layout of SHOP_PRODUCT_LAYOUTS) expect(readShopDesign({ product: { layout } }).product.layout).toBe(layout);
+    });
+
+    it('aplicar una plantilla de estilo no cambia el diseño de la ficha', () => {
+        const current = readShopDesign({ product: { layout: 'wide', image_ratio: 'portrait', image_fit: 'cover' } });
+        for (const p of SHOP_DESIGN_PRESETS) {
+            const next = applyShopDesignPreset(current, p.id);
+            expect(next.product).toEqual(current.product);
+        }
+    });
+
+    it('cada diseño tiene su nombre y su explicación', () => {
+        for (const l of SHOP_PRODUCT_LAYOUTS) {
+            expect(SHOP_PRODUCT_LAYOUT_LABELS[l].length).toBeGreaterThan(3);
+            expect(SHOP_PRODUCT_LAYOUT_HINTS[l].length).toBeGreaterThan(10);
+        }
     });
 });

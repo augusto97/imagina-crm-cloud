@@ -9203,3 +9203,30 @@ en la dirección de la plataforma) sigue con `noindex` (ADR-S81).
 7. **Editor**: sección «Dominio y Google» (tarjeta del dominio compartida con
    Ajustes → Marca, `DomainPanel` con `shop`; «Aparecer en Google» con el
    interruptor, título, descripción y la vista previa del resultado).
+
+**Addendum v0.1.424 — La ficha del producto y una regla para el CSS de la
+tienda.**
+
+1. **Una clase, una regla base.** La página pública de la tienda es un solo
+   bloque de CSS (`SHOP_CSS`) con clases cortas (`.s-*`). En v0.1.420 el
+   cuadrito de las tareas de la descripción con formato se llamó `.s-check`,
+   que ya era la etiqueta de las casillas del pago: su `width:17px` dejó la
+   etiqueta de los términos en 17 px. Regla: la regla base de cada clase
+   (la clase sola, fuera de un `@media`) va **una vez**; los ajustes van en un
+   `@media` o con un selector más específico. Lo vigila
+   `apps/api/test/shop-page-css.spec.ts`. Al nombrar una clase nueva,
+   buscarla antes en `SHOP_CSS` y en `public-shop/main.ts`.
+2. **Descripción corta**: papel `summary` del catálogo (texto o texto largo,
+   hasta 600 caracteres en el catálogo público). Sale en la tarjeta
+   (`display.show_summary`), arriba en la ficha, en el buscador y es lo
+   primero que se usa como descripción para Google en el dominio propio.
+3. **Diseño de la ficha** en `config.design.product` (lectura tolerante,
+   sin migración: lo de antes es la clásica): `layout`
+   (`classic` | `wide` | `stacked` | `compact` | `full`), `image_ratio`
+   (`auto` | `square` | `portrait` | `landscape`), `image_fit`
+   (`contain` | `cover`), `show_delivery` y `sticky_bar`. Viaja en
+   `meta.design.product`; aplicar una plantilla de estilo no lo cambia. Con
+   «como es la foto» el recuadro toma la proporción de la imagen (se mide al
+   cargar y se recuerda por imagen) para que las flechas y la etiqueta queden
+   sobre la foto, sin franjas. La pantalla completa no usa la animación del
+   modal (que desplaza con `transform`).
