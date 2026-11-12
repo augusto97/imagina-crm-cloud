@@ -415,7 +415,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.417**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.418**
+(**estadísticas y conversiones de la tienda, séptima de ocho versiones** — modo
+«Estadísticas» del editor con visitas, pedidos, ventas, conversión, embudo de
+la visita al pago, productos y orígenes; «Medir conversiones» con los eventos
+de comercio electrónico de Google para Tag Manager, la etiqueta de Google Ads,
+el píxel de Meta y las etiquetas del enlace directo; cada pedido guarda de
+dónde llegó; addendum ADR-S103). Antes **v0.1.417**
 (**suscripciones desde la tienda, sexta de siete versiones** — un producto de
 tipo «Suscripción» lleva el botón «Suscribirme» y se cobra con el débito
 automático de Mercado Pago o PayPal con el plan del mismo nombre (o el
@@ -731,9 +737,12 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   pedidos sin costo y «Mis pedidos»; suscripciones con débito automático:
   ADR-S103 y sus addendums). Falta probar el pago en línea y las
   suscripciones con cuentas de prueba reales en el servidor. El plan pasó de
-  seis a siete versiones (las suscripciones van solas). **Sigue**: v0.1.418
-  estadísticas, conversiones, botones «Comprar» insertables, widget y
-  asistente/MCP. El SEO (y el dominio
+  seis a ocho versiones (las suscripciones van solas y la última se partió en
+  medir y vender en más lugares). **v0.1.418 HECHA** (estadísticas y
+  conversiones con el origen de cada pedido). **Sigue**: v0.1.419 — insertar
+  la tienda como ventana, panel o pantalla completa, botones «Comprar» de un
+  producto para pegar en un sitio, un botón «Tienda» en el widget de contacto
+  y la tienda en el asistente/MCP. El SEO (y el dominio
   propio de la tienda) queda para cuando el usuario lo pida.
 - 2026-11-11 — **Conector completo de Whats** (el usuario adjuntó la
   documentación de la API v1 de Whats y aprobó la lista de acciones y
@@ -1929,6 +1938,27 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-12 · v0.1.418** — **Estadísticas y conversiones de la tienda**
+  (séptima de ocho versiones: la última se partió en «medir» y «vender en más
+  lugares»). Modo **Estadísticas** del editor: visitas, pedidos, ventas y
+  conversión de 7/30/90 días, día por día, de la visita al pago, productos y
+  de dónde llegan. La página suma contadores en Redis (`shop_stats`, migración
+  0125, sin datos de personas) y los pedidos se cuentan de `shop_orders`.
+  Sección **Medir conversiones**: insertada, la tienda le avisa al sitio cada
+  paso (`view_item`, `add_to_cart`, `begin_checkout`, `purchase` en el
+  `dataLayer`, etiqueta de Google Ads, píxel de Meta, evento `imagina:shop`) y
+  en el enlace directo carga las etiquetas por ID; la compra sale con el pedido
+  hecho (pagado si es en línea), una sola vez. Cada pedido guarda de dónde
+  llegó (ficha + columnas «Llegó desde» y «Campaña»; botón para tiendas de
+  antes). **Atrapado en el camino**: los productos de lo todavía no volcado
+  salían sin nombre en el resumen; en el celular, cambiar de sección por la
+  dirección dejaba la pestaña de Estadísticas; un teléfono sin indicativo no
+  iba en las conversiones mejoradas (ahora toma el del país de la moneda).
+  Tests: `shops-stats.spec` 5/5, shared +7, front + E2E 40/40 (sitio de otro
+  origen con GTM/gtag/fbq simulados, enlace directo con las etiquetas sin
+  violaciones de CSP, celular oscuro). Sigue v0.1.419 (insertar y vender en
+  más lugares).
 
 - **2026-11-12 · v0.1.417** — **Suscripciones desde la tienda** (sexta de
   siete versiones). La columna «Tipo» suma **Suscripción**: el producto lleva

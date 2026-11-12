@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
-import { Code2, CreditCard, Eye, EyeOff, Loader2, Moon, Package, Palette, ReceiptText, Send, ShieldCheck, ShoppingBag, SlidersHorizontal, Sun, Ticket, UserRound, type LucideIcon } from 'lucide-react';
+import { BarChart3, Code2, CreditCard, Megaphone, Eye, EyeOff, Loader2, Moon, Package, Palette, ReceiptText, Send, ShieldCheck, ShoppingBag, SlidersHorizontal, Sun, Ticket, UserRound, type LucideIcon } from 'lucide-react';
 import { readShopConfig, shopProblems, type ShopConfig, type ShopDto, type ShopOptions, type ShopProblem, type ShopSection } from '@imagina-base/shared';
 
 import {
     BuilderMobileNav,
     BuilderMobileTopBar,
+    BuilderModeSwitch,
     BuilderTopBar,
     InlineName,
     MobileBackBar,
@@ -13,8 +14,10 @@ import {
     PanelHeader,
     PublishSwitch,
     SaveButton,
+    SettingsCard,
     SettingsMobileIndex,
     SettingsNav,
+    SettingsPageHeader,
     type BuilderMode,
     type MenuAction,
     type SettingsNavItem,
@@ -32,8 +35,10 @@ import { cn } from '@/lib/utils';
 import { useEmbedOrigin } from '../forms/useEmbedOrigin';
 import { CatalogPanel, CheckoutPanel, DesignPanel, OrdersPanel, PaymentPanel, PublishPanel, SellerPanel } from './ShopPanels';
 import { CouponsPanel } from './ShopCouponsPanel';
+import { ShopMeasurePanel } from './ShopMeasurePanel';
 import { ShopPreview } from './ShopPreview';
-import { SHOP_EDITOR_SECTIONS, SHOP_SECTION_INFO, sameShopConfig, sectionsWithProblems, shopEditorSection, shopSectionSummary } from './shopEditor';
+import { ShopStatsPanel } from './ShopStatsPanel';
+import { SHOP_EDITOR_SECTIONS, SHOP_SECTION_INFO, sameShopConfig, sectionsWithProblems, shopEditorLocation, shopSectionSummary, type ShopEditorMode } from './shopEditor';
 import { shopPublicUrl, useDeleteShop, useRegenerateShop, useShop, useShopCoupons, useShopOptions, useUpdateShop } from './useShops';
 
 const SECTION_ICON: Record<ShopSection, LucideIcon> = {
@@ -44,6 +49,7 @@ const SECTION_ICON: Record<ShopSection, LucideIcon> = {
     coupons: Ticket,
     seller: ShieldCheck,
     orders: UserRound,
+    measure: Megaphone,
     publish: Code2,
 };
 
@@ -106,13 +112,20 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
     const narrow = useMediaQuery('(max-width: 1023px)');
     const wide = useMediaQuery('(min-width: 1280px)');
 
+    // La sección y el modo viven en la dirección (`?t=`, `?t=stats`): se pueden enlazar.
     const [params, setParams] = useSearchParams();
-    const section = shopEditorSection(params.get('t'));
-    const go = (s: ShopSection): void => {
+    const loc = shopEditorLocation(params.get('t'));
+    const mode = loc.mode;
+    const section = loc.section;
+    const go = (s: ShopSection | 'stats'): void => {
         const p = new URLSearchParams(params);
         p.set('t', s);
         setParams(p, { replace: true });
     };
+    // Al volver de las estadísticas se abre la última sección que se editaba.
+    const lastSection = useRef<ShopSection>(section);
+    if (mode === 'edit') lastSection.current = section;
+    const setMode = (m: ShopEditorMode): void => go(m === 'stats' ? 'stats' : lastSection.current);
 
     const [name, setName] = useState(shop.name);
     const [config, setConfig] = useState<ShopConfig>(() => readShopConfig(shop.config));
@@ -185,15 +198,27 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
         return () => window.removeEventListener('keydown', onKey);
     }, []);
 
-    const [mobileTab, setMobileTab] = useState<'edit' | 'preview'>('edit');
+    const [mobileTab, setMobileTab] = useState<'edit' | 'preview' | 'stats'>(mode === 'stats' ? 'stats' : 'edit');
     // v0.1.414 — Crear variantes cambia el catálogo: la vista previa se vuelve a pedir.
     const [catalogVersion, setCatalogVersion] = useState(0);
-    const [mobileSection, setMobileSection] = useState<ShopSection | null>(params.get('t') ? section : null);
+    const [mobileSection, setMobileSection] = useState<ShopSection | null>(params.get('t') && mode === 'edit' ? section : null);
     const openSection = (s: ShopSection): void => {
         go(s);
         setMobileTab('edit');
         setMobileSection(s);
     };
+    // v0.1.418 — Un enlace que cambia `?t=` con el editor ya abierto (la ayuda,
+    // «Ir ahí», el botón atrás) también mueve la pestaña del celular: si no, se
+    // quedaba en Estadísticas aunque la dirección pidiera una sección.
+    const rawT = params.get('t');
+    useEffect(() => {
+        if (mode === 'stats') {
+            setMobileTab('stats');
+            return;
+        }
+        setMobileTab((t) => (t === 'stats' ? 'edit' : t));
+        if (rawT) setMobileSection(section);
+    }, [mode, rawT, section]);
 
     const patch = (fn: (c: ShopConfig) => ShopConfig): void => setConfig(fn);
     const navItems: Array<SettingsNavItem<ShopSection>> = SHOP_EDITOR_SECTIONS.map((s) => ({
@@ -236,6 +261,8 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                 return <SellerPanel config={config} patch={patch} />;
             case 'orders':
                 return <OrdersPanel shop={live} />;
+            case 'measure':
+                return <ShopMeasurePanel shop={live} config={config} patch={patch} />;
             case 'publish':
                 return (
                     <PublishPanel
@@ -282,14 +309,30 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
         <PanelHeader icon={mobile ? undefined : SECTION_ICON[s]} title={__(SHOP_SECTION_INFO[s].title)} subtitle={__(SHOP_SECTION_INFO[s].hint)} testId="shop-panel-header" />
     );
 
+    const stats = (
+        <div className="imcrm-mx-auto imcrm-flex imcrm-w-full imcrm-max-w-[1000px] imcrm-flex-col imcrm-gap-5 imcrm-px-4 imcrm-py-5 sm:imcrm-px-8 sm:imcrm-py-8" data-testid="shop-stats-page">
+            <SettingsPageHeader
+                icon={BarChart3}
+                title={__('Estadísticas')}
+                hint={__('Cuántos visitan la tienda, qué productos miran y compran, cuánto vendes y de dónde llegan los que compran. Las visitas son conteos: nunca datos de una persona.')}
+            />
+            <SettingsCard>
+                <div className="imcrm-p-4 sm:imcrm-p-5">
+                    <ShopStatsPanel shopId={shop.id} />
+                </div>
+            </SettingsCard>
+        </div>
+    );
+
     const nameInput = <InlineName value={name} onChange={setName} label={__('Nombre de la tienda')} testId="shop-name" />;
     const themeAction: MenuAction = { label: appTheme.resolved === 'dark' ? __('Modo claro') : __('Modo oscuro'), icon: appTheme.resolved === 'dark' ? Sun : Moon, onSelect: appTheme.toggle };
     const saveButton = <SaveButton dirty={dirty} busy={update.isPending && enabledView === null} onClick={() => save()} testId="shop-save" />;
 
     if (narrow) {
-        const items: Array<BuilderMode<'edit' | 'preview'>> = [
+        const items: Array<BuilderMode<'edit' | 'preview' | 'stats'>> = [
             { id: 'edit', label: __('Editar'), icon: SlidersHorizontal, problem: problems.length > 0, testId: 'shop-tab-edit' },
             { id: 'preview', label: __('Vista previa'), icon: Eye, testId: 'shop-tab-preview' },
+            { id: 'stats', label: __('Estadísticas'), icon: BarChart3, testId: 'shop-tab-stats' },
         ];
         return (
             <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col">
@@ -342,11 +385,25 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                             <ShopPreview shopId={shop.id} config={config} version={catalogVersion} compact />
                         </div>
                     )}
+                    {mobileTab === 'stats' && stats}
                 </div>
-                <BuilderMobileNav items={items} value={mobileTab} onChange={setMobileTab} />
+                <BuilderMobileNav
+                    items={items}
+                    value={mobileTab}
+                    onChange={(v) => {
+                        setMobileTab(v);
+                        if (v === 'stats') setMode('stats');
+                        else if (mode === 'stats') setMode('edit');
+                    }}
+                />
             </div>
         );
     }
+
+    const modes: Array<BuilderMode<ShopEditorMode>> = [
+        { id: 'edit', label: __('Editar'), icon: SlidersHorizontal, problem: problems.length > 0, testId: 'shop-tab-edit' },
+        { id: 'stats', label: __('Estadísticas'), icon: BarChart3, testId: 'shop-tab-stats', tour: 'shop-stats-mode' },
+    ];
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col">
@@ -355,7 +412,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                 kindLabel={__('Tienda')}
                 onClose={() => void close()}
                 name={nameInput}
-                modes={null}
+                modes={<BuilderModeSwitch modes={modes} value={mode} onChange={setMode} />}
                 actions={
                     <>
                         {wide ? <ThemeToggle compact /> : <MoreMenu testId="shop-more" actions={[themeAction]} />}
@@ -363,7 +420,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                         <Button
                             variant="outline"
                             size="sm"
-                            className={cn('imcrm-ml-1 imcrm-gap-1.5', section === 'publish' && 'imcrm-border-primary/40 imcrm-text-primary')}
+                            className={cn('imcrm-ml-1 imcrm-gap-1.5', mode === 'edit' && section === 'publish' && 'imcrm-border-primary/40 imcrm-text-primary')}
                             onClick={() => openSection('publish')}
                             data-testid="shop-share"
                             title={__('Compartir la tienda')}
@@ -375,18 +432,22 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                     </>
                 }
             />
-            <div className={cn('imcrm-grid imcrm-min-h-0 imcrm-flex-1', wide ? 'imcrm-grid-cols-[240px_420px_minmax(0,1fr)]' : 'imcrm-grid-cols-[220px_380px_minmax(0,1fr)]')}>
-                <aside className="imcrm-min-h-0 imcrm-overflow-y-auto imcrm-border-r imcrm-border-border imcrm-bg-card" data-testid="shop-sections">
-                    <SettingsNav items={navItems} active={section} onPick={(s) => openSection(s)} label={__('Secciones de la tienda')} dense />
-                </aside>
-                <aside className="imcrm-min-h-0 imcrm-overflow-y-auto imcrm-border-r imcrm-border-border imcrm-bg-card" data-testid="shop-section">
-                    {header(section)}
-                    {body(section)}
-                </aside>
-                <div className="imcrm-min-h-0 imcrm-min-w-0">
-                    <ShopPreview shopId={shop.id} config={config} version={catalogVersion} />
+            {mode === 'stats' ? (
+                <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-y-auto imcrm-bg-canvas">{stats}</div>
+            ) : (
+                <div className={cn('imcrm-grid imcrm-min-h-0 imcrm-flex-1', wide ? 'imcrm-grid-cols-[240px_420px_minmax(0,1fr)]' : 'imcrm-grid-cols-[220px_380px_minmax(0,1fr)]')}>
+                    <aside className="imcrm-min-h-0 imcrm-overflow-y-auto imcrm-border-r imcrm-border-border imcrm-bg-card" data-testid="shop-sections">
+                        <SettingsNav items={navItems} active={section} onPick={(s) => openSection(s)} label={__('Secciones de la tienda')} dense />
+                    </aside>
+                    <aside className="imcrm-min-h-0 imcrm-overflow-y-auto imcrm-border-r imcrm-border-border imcrm-bg-card" data-testid="shop-section">
+                        {header(section)}
+                        {body(section)}
+                    </aside>
+                    <div className="imcrm-min-h-0 imcrm-min-w-0">
+                        <ShopPreview shopId={shop.id} config={config} version={catalogVersion} />
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     );
 }

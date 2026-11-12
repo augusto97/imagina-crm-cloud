@@ -5,7 +5,7 @@ import { SHOP_PAYMENT_METHOD_LABELS, type ShopConfig, type ShopProblem, type Sho
  * está cada una en palabras y la sección donde se arregla cada problema.
  */
 
-export const SHOP_EDITOR_SECTIONS: readonly ShopSection[] = ['catalog', 'design', 'payment', 'coupons', 'checkout', 'seller', 'orders', 'publish'];
+export const SHOP_EDITOR_SECTIONS: readonly ShopSection[] = ['catalog', 'design', 'payment', 'coupons', 'checkout', 'seller', 'orders', 'measure', 'publish'];
 
 export const SHOP_SECTION_INFO: Record<ShopSection, { label: string; group: string; title: string; hint: string }> = {
     catalog: {
@@ -49,6 +49,12 @@ export const SHOP_SECTION_INFO: Record<ShopSection, { label: string; group: stri
         group: 'Publicar',
         title: 'Dónde caen los pedidos',
         hint: 'Cada compra llega como un registro de Pedidos, con sus productos y el cliente.',
+    },
+    measure: {
+        label: 'Medir conversiones',
+        group: 'Publicar',
+        title: 'Medir conversiones',
+        hint: 'Que Google Ads, Meta y Tag Manager vean cada compra, y de dónde llegó cada pedido.',
     },
     publish: {
         label: 'Publicar',
@@ -97,6 +103,11 @@ export function shopSectionSummary(
             return config.seller.legal_name || 'Falta quién vende';
         case 'orders':
             return ctx.ordersListName ?? 'Sin lista de pedidos';
+        case 'measure': {
+            const c = config.conversion;
+            const on = [c.google_ads ? 'Google Ads' : '', c.meta_event ? 'Meta' : '', c.direct_tags ? 'enlace directo' : ''].filter(Boolean);
+            return on.length > 0 ? on.join(', ') : 'Tag Manager';
+        }
         case 'publish':
             return ctx.enabled ? 'Publicada' : 'Sin publicar';
     }
@@ -109,6 +120,15 @@ export function sectionsWithProblems(problems: readonly ShopProblem[]): Set<Shop
 /** `?t=` → sección (lo desconocido cae en Productos). */
 export function shopEditorSection(raw: string | null): ShopSection {
     return SHOP_EDITOR_SECTIONS.includes(raw as ShopSection) ? (raw as ShopSection) : 'catalog';
+}
+
+/** v0.1.418 — Los dos modos del editor: editar la tienda o ver cómo vende. */
+export type ShopEditorMode = 'edit' | 'stats';
+
+/** `?t=stats` abre las estadísticas; cualquier otra cosa, una sección. */
+export function shopEditorLocation(raw: string | null): { mode: ShopEditorMode; section: ShopSection } {
+    if (raw === 'stats') return { mode: 'stats', section: 'catalog' };
+    return { mode: 'edit', section: shopEditorSection(raw) };
 }
 
 /** Dos configuraciones iguales (para «sin cambios»): las claves de un objeto en orden. */
@@ -128,9 +148,21 @@ function stable(v: unknown): string {
 }
 
 /** El código para insertar la tienda entera en una página del sitio. */
+/**
+ * El código para insertar la tienda en un sitio. v0.1.418 — con el script de
+ * inserción: la tienda le pasa al sitio cada paso de la compra (Tag Manager,
+ * Google Ads, Meta) y recibe de dónde llegó la persona.
+ */
 export function shopEmbedCode(url: string, title: string): string {
     const safe = title.replace(/["<>&]/g, '');
-    return `<iframe src="${url}" title="${safe || 'Tienda'}" style="width:100%;min-height:900px;border:0" loading="lazy"></iframe>`;
+    let origin = '';
+    try {
+        origin = new URL(url).origin;
+    } catch {
+        origin = '';
+    }
+    const frame = `<iframe src="${url}" title="${safe || 'Tienda'}" data-imagina-form style="width:100%;min-height:900px;border:0" loading="lazy" allow="payment" referrerpolicy="no-referrer-when-downgrade"></iframe>`;
+    return origin ? `${frame}\n<script src="${origin}/api/v1/public/f/embed.js" async></script>` : frame;
 }
 
 /** Un número de teléfono tal como lo escribe la gente → E.164 (`+57 300 111 2233` → `+573001112233`). */

@@ -12,6 +12,7 @@ import {
     SHOP_LIST_MARKER_KEY,
     collectionCurrencyError,
     defaultShopConfig,
+    jsonbKeyForField,
     newShopItemId,
     readMirrorListMarker,
     readShopConfig,
@@ -211,6 +212,18 @@ export class ShopService {
                 categories: await this.catalogCategories(tx, tenantId, row, fields),
                 ...(await this.kindOptions(tx, tenantId, row, fields, list.settings, plans)),
             };
+        });
+    }
+
+    /** v0.1.418 — Lo que necesita el resumen de estadísticas: la moneda y la columna del nombre de los productos. */
+    async statsTarget(tenantId: number, id: number): Promise<{ currency: string; titleKey: string | null }> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const row = await this.load(tx, tenantId, id);
+            const config = readShopConfig(row.config);
+            const list = await this.lists.getWithinTx(tx, tenantId, String(row.listId));
+            const fields = await this.fields.listByListIdWithinTx(tx, tenantId, row.listId);
+            const rf = resolveCatalogFields(fields, config.catalog, list.settings, config.kinds);
+            return { currency: config.currency, titleKey: rf.name ? jsonbKeyForField(rf.name.id) : null };
         });
     }
 
@@ -610,12 +623,12 @@ export class ShopService {
      * tipo; si no, las crea. Todas las tiendas que escriben en esa lista
      * quedan con ellas (y con su candado).
      */
-    async ensureOrderColumns(tenantId: number, shopId: number): Promise<void> {
+    async ensureOrderColumns(tenantId: number, shopId: number, group: 'coupons' | 'origin' = 'coupons'): Promise<void> {
         const row = await this.row(tenantId, shopId);
         const config = readShopConfig(row.config);
         const listId = config.orders.list_id;
         if (listId === null) return;
-        const missing = LATER_ORDER_COLUMNS.filter((c) => typeof config.orders.fields[c.role] !== 'number');
+        const missing = LATER_ORDER_COLUMNS.filter((c) => c.group === group && typeof config.orders.fields[c.role] !== 'number');
         if (missing.length === 0) return;
         const current = await this.tenantDb.withTenant(tenantId, (tx) => this.fields.listByListIdWithinTx(tx, tenantId, listId));
         const found: Record<string, number> = {};

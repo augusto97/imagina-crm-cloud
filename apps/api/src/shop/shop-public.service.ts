@@ -21,6 +21,7 @@ import {
     whatsappLink,
     type CaptchaProvider,
     type CollectionConnection,
+    type PublicShopConversion,
     type PublicShopMeta,
     type PublicShopMyOrders,
     type PublicShopOrder,
@@ -29,6 +30,7 @@ import {
     type PublicShopProduct,
     type PublicShopQuote,
     type ShopCartLineInput,
+    type ShopStatEvent,
     type ShopConfig,
     type ShopCouponRule,
     type ShopOrderLineSnapshot,
@@ -47,9 +49,11 @@ import { readBookingConfig } from '../booking/booking-config';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
 import { CaptchaService } from '../forms/captcha.service';
+import { directTags } from '../forms/form-conversion';
 import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-cache';
 import { PublicCacheService } from '../public-cache/public-cache.service';
 import { REDIS } from '../redis/redis.module';
+import { ShopStatsService } from './shop-stats.service';
 import { incrWithTtl } from '../redis/redis.util';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { attachVariants, categoryOrder, productFromRow, resolveCatalogFields, resolveVariantAttributes, type CatalogRow } from './shop-catalog';
@@ -149,6 +153,8 @@ export class ShopPublicService {
         @Optional() private readonly collections?: CollectionsService,
         // v0.1.415 — cupones.
         @Optional() private readonly coupons?: ShopCouponsService,
+        // v0.1.418 — estadísticas.
+        @Optional() private readonly stats?: ShopStatsService,
     ) {
         this.pcache = cache ?? NO_PUBLIC_CACHE;
     }
@@ -428,6 +434,7 @@ export class ShopPublicService {
             coupons: o.coupons,
             ...(o.downloadable ? { downloads: { days: config.kinds.download_days, max: config.kinds.max_downloads } } : {}),
             ...(o.subscribable ? { subscriptions: { address: config.kinds.subscription_address } } : {}),
+            conversion: shopPublicConversion(config.conversion),
             // ADR-S09: una empresa en solo lectura muestra el catálogo pero no recibe pedidos.
             closed: o.readOnly
                 ? 'La tienda no está recibiendo pedidos en este momento.'
@@ -490,6 +497,21 @@ export class ShopPublicService {
     }
 
     // ─────────────────────────── Comprar ───────────────────────────
+
+    /**
+     * v0.1.418 — Los eventos de estadísticas que manda la página (visitas,
+     * productos, carrito, compra). Sólo cuentan los productos que la tienda
+     * vende hoy. false = la tienda no existe o no está publicada.
+     */
+    async recordStats(token: string, events: readonly ShopStatEvent[], ip: string): Promise<boolean> {
+        const info = await this.cachedInfo(token);
+        if (!info) return false;
+        if (!this.stats) return true;
+        const ids = new Set(info.products.map((p) => p.id));
+        const timeZone = await this.stats.timeZone(info.tenantId);
+        await this.stats.record({ tenantId: info.tenantId, shopId: info.shop.id, timeZone }, ip, events, ids);
+        return true;
+    }
 
     async stamp(token: string): Promise<string | null> {
         const info = await this.cachedInfo(token);
@@ -766,4 +788,15 @@ export class ShopPublicService {
         }
         badRequest('captcha_failed', verdict.reason === 'reused' ? 'La verificación ya se usó. Complétala de nuevo.' : 'Completa la verificación para comprar.');
     }
+}
+
+/**
+ * v0.1.418 — Lo que la página necesita para medir: la etiqueta de Google Ads
+ * de la compra, si se avisa al píxel de Meta y las etiquetas del enlace
+ * directo. null = sólo los eventos para Tag Manager (salen siempre).
+ */
+export function shopPublicConversion(c: ShopConfig['conversion']): PublicShopConversion | null {
+    const direct = directTags(c);
+    if (!c.google_ads && !c.meta_event && !direct) return null;
+    return { google_ads: c.google_ads, meta_event: c.meta_event, direct };
 }

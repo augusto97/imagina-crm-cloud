@@ -1,4 +1,5 @@
 import { groupNumberPlain } from './shop-number';
+import type { PublicDirectTags } from './conversion-logic';
 import type { PublicDataConsent } from './data-consent';
 import type { PublicFormCaptcha } from './form';
 import type { FieldType } from './field';
@@ -1023,10 +1024,61 @@ export interface PublicShopMeta {
     downloads?: { days: number; max: number | null };
     /** v0.1.417 — Hay suscripciones: si piden dirección (una caja que llega cada mes). */
     subscriptions?: { address: boolean };
+    /** v0.1.418 — Medir conversiones (null = sólo los eventos para Tag Manager). */
+    conversion?: PublicShopConversion | null;
     /** null = recibe pedidos; si no, el motivo de cerrada. */
     closed: string | null;
     /** Hay más productos que los que muestra la página. */
     truncated: boolean;
+}
+
+// ── Conversiones (v0.1.418) ─────────────────────────────────────────────
+
+/** Los pasos de la compra que se le avisan al sitio (nombres de comercio electrónico de Google). */
+export const SHOP_ECOMMERCE_ACTIONS = ['view_item', 'add_to_cart', 'begin_checkout', 'purchase'] as const;
+export type ShopEcommerceAction = (typeof SHOP_ECOMMERCE_ACTIONS)[number];
+
+/** El evento estándar del píxel de Meta para cada paso. */
+export const SHOP_META_EVENTS: Record<ShopEcommerceAction, string> = {
+    view_item: 'ViewContent',
+    add_to_cart: 'AddToCart',
+    begin_checkout: 'InitiateCheckout',
+    purchase: 'Purchase',
+};
+
+/** El evento del navegador que se dispara en el sitio en cada paso (`event.detail.action`). */
+export const SHOP_DOM_EVENT = 'imagina:shop';
+
+/** Lo que la página pública necesita para avisarle al sitio. */
+export interface PublicShopConversion {
+    google_ads: string | null;
+    meta_event: boolean;
+    /** Las etiquetas del enlace directo (null = no carga ninguna). */
+    direct: PublicDirectTags | null;
+}
+
+/** Un producto en un evento de comercio electrónico. */
+export interface ShopEcommerceItem {
+    item_id: string;
+    item_name: string;
+    price: number;
+    quantity: number;
+    /** La variante («M / Rojo»), si la tiene. */
+    item_variant?: string;
+    item_category?: string;
+}
+
+/** La compra, para el evento `purchase` (lo arma el servidor con el pedido). */
+export interface ShopPurchaseConversion {
+    /** El número del pedido (`PED-0042`): Google y Meta no cuentan dos veces el mismo. */
+    transaction_id: string;
+    value: number;
+    currency: string;
+    shipping: number;
+    coupon: string | null;
+    items: ShopEcommerceItem[];
+    /** Conversiones mejoradas (sólo si la tienda lo activó). */
+    user_data?: { email?: string; phone_number?: string } | null;
 }
 
 /** El estado de un pedido como lo ve quien compró (página del pedido). */
@@ -1071,6 +1123,11 @@ export interface PublicShopOrder {
     downloads_until: string | null;
     /** v0.1.416 — El pedido no se envía (todo se descarga). */
     digital_only: boolean;
+    /**
+     * v0.1.418 — La compra para medirla (null mientras no cuente: un pago en
+     * línea sin pagar, un pedido cancelado). La página la avisa una vez.
+     */
+    conversion?: ShopPurchaseConversion | null;
 }
 
 /** v0.1.417 — La suscripción de un pedido, como la ve quien compró. */
@@ -1129,4 +1186,86 @@ export interface PublicShopMyOrders {
         /** `?pedido=<token>` de esta tienda. */
         order_token: string;
     }>;
+}
+
+/**
+ * v0.1.418 — El indicativo de los países con moneda propia (Google pide el
+ * teléfono con «+» para las conversiones mejoradas). Las monedas que comparten
+ * varios países (USD, EUR) no adivinan nada.
+ */
+const SHOP_CURRENCY_DIAL: Readonly<Record<string, string>> = {
+    COP: '57',
+    MXN: '52',
+    CLP: '56',
+    PEN: '51',
+    ARS: '54',
+    UYU: '598',
+    PYG: '595',
+    BOB: '591',
+    BRL: '55',
+    GTQ: '502',
+    CRC: '506',
+    HNL: '504',
+    NIO: '505',
+    VES: '58',
+};
+
+/**
+ * El teléfono de quien compra en E.164, o '' si no se puede saber. Uno escrito
+ * sin indicativo («300 111 2233») toma el del país de la moneda de la tienda;
+ * sin un país claro no se manda (mejor nada que un número equivocado).
+ */
+export function shopE164Phone(raw: string, currency: string): string {
+    let s = raw.replace(/[^\d+]/g, '');
+    if (s.startsWith('00')) s = `+${s.slice(2)}`;
+    if (!s.startsWith('+')) {
+        const dial = SHOP_CURRENCY_DIAL[currency.toUpperCase()];
+        if (!dial || s === '') return '';
+        // Con el indicativo ya escrito (sin el «+»), o el número local sin el 0 de tronco.
+        s = s.length > 10 && s.startsWith(dial) ? `+${s}` : `+${dial}${s.replace(/^0+/, '')}`;
+    }
+    return /^\+\d{8,15}$/.test(s) ? s : '';
+}
+
+/**
+ * v0.1.418 — La compra de un pedido para medirla (`purchase`). Puro: lo usa
+ * el servidor al devolver el pedido y lo prueban los tests. El producto de
+ * una variante se informa con el id del PRODUCTO (así se suma con el mismo
+ * producto comprado en otra talla) y la variante en `item_variant`.
+ */
+export function shopPurchaseConversion(o: {
+    number: string;
+    total: number;
+    currency: string;
+    shipping: number;
+    couponCode: string;
+    lines: readonly ShopOrderLineSnapshot[];
+    customer: { email?: string; phone?: string };
+    shareContact: boolean;
+}): ShopPurchaseConversion {
+    const items: ShopEcommerceItem[] = o.lines.map((l) => {
+        const variant = l.parent_id ? l.title.split(' · ').slice(1).join(' · ').trim() : '';
+        const name = variant ? l.title.slice(0, l.title.length - variant.length - 3).trim() : l.title;
+        return {
+            item_id: String(l.parent_id ?? l.product_id),
+            item_name: name.slice(0, 120),
+            price: l.unit_price,
+            quantity: l.qty,
+            ...(variant ? { item_variant: variant.slice(0, 120) } : {}),
+        };
+    });
+    const out: ShopPurchaseConversion = {
+        transaction_id: o.number,
+        value: o.total,
+        currency: o.currency,
+        shipping: o.shipping,
+        coupon: o.couponCode.trim() || null,
+        items,
+    };
+    if (o.shareContact) {
+        const email = (o.customer.email ?? '').trim().toLowerCase();
+        const phone = shopE164Phone(o.customer.phone ?? '', o.currency);
+        if (email || phone) out.user_data = { ...(email ? { email } : {}), ...(phone ? { phone_number: phone } : {}) };
+    }
+    return out;
 }

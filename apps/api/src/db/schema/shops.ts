@@ -1,4 +1,4 @@
-import { bigint, boolean, date, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
+import { bigint, boolean, date, index, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
 import { lists } from './lists';
 import { records } from './records';
 import { tenants } from './tenants';
@@ -116,3 +116,24 @@ export const shopCoupons = pgTable(
     (t) => [uniqueIndex('shop_coupons_code_ux').on(t.shopId, t.code), index('shop_coupons_tenant_ix').on(t.tenantId)],
 );
 export type ShopCouponRow = typeof shopCoupons.$inferSelect;
+
+/**
+ * v0.1.418 — Estadísticas de la tienda: contadores por día de lo que pasa en
+ * la página (visitas, productos, carrito, compra). Se suman en Redis y se
+ * vuelcan aquí; los pedidos se cuentan de `shop_orders`.
+ */
+export const shopStats = pgTable(
+    'shop_stats',
+    {
+        tenantId: bigint('tenant_id', { mode: 'number' })
+            .notNull()
+            .references(() => tenants.id, { onDelete: 'cascade' }),
+        shopId: bigint('shop_id', { mode: 'number' })
+            .notNull()
+            .references(() => shops.id, { onDelete: 'cascade' }),
+        day: date('day', { mode: 'string' }).notNull(),
+        counts: jsonb('counts').$type<Record<string, number>>().notNull().default({}),
+        updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (t) => [primaryKey({ columns: [t.shopId, t.day] }), index('shop_stats_tenant_ix').on(t.tenantId, t.shopId, t.day)],
+);

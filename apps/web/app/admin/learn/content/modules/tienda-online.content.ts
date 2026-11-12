@@ -310,7 +310,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: '¿Dónde veo cuánto vendí?', a: 'En el tablero de ventas que se creó con la tienda: pedidos, total vendido y lo que falta cobrar.' },
+                    { q: '¿Dónde veo cuánto vendí?', a: 'En **Estadísticas**, arriba del editor de la tienda: visitas, pedidos, ventas y de dónde llegan. También en el tablero de ventas que se creó con la tienda.' },
                     { q: '¿Puedo agregar columnas a Pedidos?', a: 'Sí: la guía de envío, el repartidor, una nota interna. Son tuyas y nunca las toca la tienda.' },
                 ],
             },
@@ -319,6 +319,84 @@ export const articles: LearnArticle[] = [
                 items: [
                     { label: 'Ir a mis listas', to: '/lists' },
                     { label: 'Crear la tienda', article: 'tienda-online-crear' },
+                ],
+            },
+        ],
+    },
+    {
+        id: 'tienda-online-medir',
+        route: '/lists',
+        related: ['tienda-online-pedidos', 'tienda-online-comprar', 'formularios-medir-conversiones'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'En el editor de la tienda, arriba, toca **Estadísticas**. Ves los últimos 7, 30 o 90 días: cuántas **visitas** tuvo la tienda, cuántos **pedidos** y cuántos se pagaron, cuánto **vendiste** y la **conversión** (las visitas que terminaron en un pedido pagado).',
+            },
+            { t: 'anim', key: 'tienda-medir', caption: 'Visitas, pedidos y ventas del mes, de la visita al pago y la campaña que más compras trae.' },
+            { t: 'h', text: 'Qué te dicen las estadísticas' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Día por día', what: 'Las visitas y los pedidos de cada día. Pasa el dedo o el mouse por un día para ver también lo que vendiste.' },
+                    {
+                        name: 'De la visita al pago',
+                        what: 'Cuántas visitas abren un producto, lo agregan al carrito, empiezan la compra, hacen el pedido y lo pagan.',
+                        tip: 'Si muchas abren productos pero pocas los agregan, revisa precios y fotos. Si muchas empiezan la compra y no la terminan, revisa los datos que pides y las formas de pago.',
+                    },
+                    { name: 'Productos', what: 'Los que más venden, con las unidades y el dinero, y cuántas veces los abren y los agregan al carrito.' },
+                    { name: 'De dónde llegan', what: 'La campaña (por el «utm_source» del enlace), el sitio desde donde llegaron o «Directo», con sus visitas, pedidos y ventas.' },
+                    { name: 'Desde qué dispositivo', what: 'Celular, tableta o computador.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Son conteos, no personas',
+                md: 'Las visitas se cuentan como números por día: no se guarda la dirección IP ni nada de quien visita. Los pedidos y las ventas salen de los pedidos de verdad, así que también ves lo vendido antes de esta función.',
+            },
+            { t: 'h', text: 'Medir tus anuncios en Google Ads y Meta' },
+            {
+                t: 'p',
+                md: 'Si la tienda está **insertada en tu sitio** (con el código de **Publicar**), le avisa a tu sitio cada paso de la compra. **Google Tag Manager** los entiende sin configurar nada: son los eventos de comercio electrónico de Google (`view_item`, `add_to_cart`, `begin_checkout` y `purchase`), con los productos, el valor, la moneda y el número del pedido.',
+            },
+            {
+                t: 'steps',
+                items: [
+                    'En el editor de la tienda, entra a **Medir conversiones**.',
+                    'Si usas Tag Manager, arma tus etiquetas con esos eventos (copia su nombre con un clic). La compra trae el número del pedido: Google y Meta no la cuentan dos veces.',
+                    'Sin Tag Manager, pega el fragmento de tu conversión de compra de Google Ads (el que tiene «send_to») y activa **Avisar al píxel de Meta de tu sitio** si lo tienes: se registran ViewContent, AddToCart, InitiateCheckout y Purchase.',
+                    'Si el anuncio lleva **directo al enlace de la tienda**, activa **Cargar mis etiquetas en el enlace directo** y pega el ID de Google Analytics (G-…) y el del píxel de Meta. Puedes mostrar un aviso de cookies al pie.',
+                    'Toca **Guardar**.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'warn',
+                title: 'Cuándo cuenta la compra',
+                md: 'Con transferencia, WhatsApp o contra entrega, cuando se hace el pedido. Con pago en línea o una suscripción, cuando se paga. Un pedido cancelado no cuenta, y recargar la página del pedido no la cuenta otra vez. **Conversiones mejoradas** manda también el correo y el teléfono (cifrados por Google): actívalo sólo si tu política de datos lo contempla.',
+            },
+            { t: 'h', text: 'De dónde llegó cada pedido' },
+            {
+                t: 'p',
+                md: 'Cada pedido guarda la campaña y el anuncio por el que llegó tu cliente. En la ficha del pedido lo ves arriba («Llegó desde: Campaña: google · Campaña: navidad · anuncio de Google») y la lista de **Pedidos** tiene las columnas **Llegó desde** y **Campaña** para filtrar, agrupar y armar tableros. Una tienda creada antes de esta función las agrega con el botón de **Medir conversiones**.',
+            },
+            {
+                t: 'example',
+                title: 'Una tostadora de café con campañas de temporada',
+                md: 'Comparte la tienda con `?utm_source=google&utm_campaign=navidad` en sus anuncios. En **Estadísticas** ve que «Campaña: google» trajo 64 pedidos este mes, y en **Pedidos** agrupa por **Campaña** para saber cuánto vendió la de Navidad.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Necesito pegar algo en mi sitio además del código de la tienda?', a: 'No. El mismo código (el iframe y el script) manda los eventos a tu sitio. Lo que necesitas en tu sitio es tu propia etiqueta de Google o Tag Manager y, si lo usas, el píxel de Meta.' },
+                    { q: '¿Por qué una visita no aparece al instante?', a: 'Aparece en segundos en Estadísticas. Los números se juntan y se guardan cada pocos minutos, para no cargar el servidor con cada visita.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'Atender los pedidos', article: 'tienda-online-pedidos' },
                 ],
             },
         ],
