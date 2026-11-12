@@ -6,6 +6,7 @@ import {
     missingVariantCombos,
     normalizeCouponCode,
     parseShopCartParam,
+    parseShopProductPath,
     pickShopVariant,
     readShopConfig,
     shopCouponEligible,
@@ -18,6 +19,8 @@ import {
     shopKindFromText,
     shopNeedsDelivery,
     shopPlanFor,
+    shopProductPath,
+    shopProductSlug,
     shopServiceFor,
     shopShippingFor,
     shopVariantPriceRange,
@@ -512,5 +515,33 @@ describe('v0.1.421 — qué pasa al agregar y el enlace que arma el carrito', ()
     it('arma el valor del enlace', () => {
         expect(shopCartParam([{ id: 12, qty: 2 }, { id: 15, qty: 1 }, { id: -1, qty: 1 }])).toBe('12:2,15');
         expect(parseShopCartParam(shopCartParam([{ id: 7, qty: 4 }]))).toEqual([{ id: 7, qty: 4 }]);
+    });
+});
+
+describe('v0.1.423 — direcciones de producto en el dominio propio', () => {
+    it('el nombre pasa a una dirección limpia que termina en el id', () => {
+        expect(shopProductSlug('Camiseta azul', 12)).toBe('camiseta-azul-12');
+        expect(shopProductSlug('Gorra «Ñandú» & Co', 3)).toBe('gorra-nandu-co-3');
+        expect(shopProductSlug('  Café   Orgánico 500g  ', 7)).toBe('cafe-organico-500g-7');
+        expect(shopProductSlug('¡¡!!', 9)).toBe('9');
+        expect(shopProductSlug('x'.repeat(200), 4)).toBe(`${'x'.repeat(60)}-4`);
+        expect(shopProductPath('Pack 12', 7)).toBe('/p/pack-12-7');
+    });
+
+    it('de la dirección sale el id, aunque el nombre cambie o falte', () => {
+        expect(parseShopProductPath('/p/camiseta-azul-12')).toBe(12);
+        expect(parseShopProductPath('/p/pack-12-7')).toBe(7);
+        expect(parseShopProductPath('/p/12')).toBe(12);
+        expect(parseShopProductPath('/p/otro-nombre-12/')).toBe(12);
+        expect(parseShopProductPath('/p/camiseta')).toBeNull();
+        expect(parseShopProductPath('/p/camiseta-0')).toBeNull();
+        expect(parseShopProductPath('/x/camiseta-12')).toBeNull();
+        expect(parseShopProductPath('/p/12/otra')).toBeNull();
+        expect(parseShopProductPath('/p/1234567890123456')).toBeNull();
+    });
+
+    it('Google: se deja indexar por defecto, y un valor raro no rompe la configuración', () => {
+        expect(readShopConfig({}).seo).toEqual({ index: true, title: '', description: '' });
+        expect(readShopConfig({ seo: { index: false, title: 'x'.repeat(300), description: 42 } }).seo).toEqual({ index: false, title: '', description: '' });
     });
 });

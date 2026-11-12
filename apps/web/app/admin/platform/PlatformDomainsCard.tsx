@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, CircleCheck, Copy, Globe, Hourglass, Loader2, RefreshCw, Trash2, Wrench } from 'lucide-react';
-import type { DomainKind, PlatformDomain, PlatformDomains, RetiredDomain } from '@imagina-base/shared';
+import { Check, CircleCheck, Copy, Globe, Hourglass, Loader2, RefreshCw, ShoppingBag, Trash2, Wrench } from 'lucide-react';
+import type { PlatformDomain, PlatformDomainKind, PlatformDomains, RetiredDomain } from '@imagina-base/shared';
 
 import { api } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
@@ -56,6 +56,7 @@ function TenantDomains(): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="platform-domains">
             <HowToCard target={data.target} />
+            {data.site_routing !== null && <SiteRoutingCard state={data.site_routing} onRecheck={() => void q.refetch()} checking={q.isFetching} />}
 
             <Card>
                 <CardHeader>
@@ -169,25 +170,29 @@ function DomainList({ rows, testId }: { rows: PlatformDomain[]; testId: string }
     return (
         <ul className="imcrm-divide-y imcrm-divide-border" data-testid={testId}>
             {rows.map((d) => (
-                <DomainRow key={`${d.tenant_id}-${d.kind}-${d.domain}`} row={d} />
+                <DomainRow key={`${d.tenant_id}-${d.kind}-${d.shop_id ?? 0}-${d.domain}`} row={d} />
             ))}
         </ul>
     );
 }
 
-const KIND_LABEL: Record<DomainKind, string> = { app: 'Equipo', portal: 'Portal de clientes' };
+const KIND_LABEL: Record<PlatformDomainKind, string> = { app: 'Equipo', portal: 'Portal de clientes', shop: 'Tienda' };
+
+function kindText(row: PlatformDomain): string {
+    return row.kind === 'shop' && row.shop_name ? `${__('Tienda')} «${row.shop_name}»` : __(KIND_LABEL[row.kind]);
+}
 
 function DomainRow({ row }: { row: PlatformDomain }): JSX.Element {
     const qc = useQueryClient();
     const check = useMutation({
-        mutationFn: () => api.platformDomainCheck(row.tenant_id, row.kind),
+        mutationFn: () => api.platformDomainCheck(row.tenant_id, row.kind, row.shop_id),
         onSuccess: (fresh) => {
             qc.setQueryData<PlatformDomains>(KEY, (prev) =>
                 prev
                     ? {
                           ...prev,
                           domains: prev.domains.map((d) =>
-                              d.tenant_id === fresh.tenant_id && d.kind === fresh.kind && d.state === fresh.state ? fresh : d,
+                              d.tenant_id === fresh.tenant_id && d.kind === fresh.kind && d.shop_id === fresh.shop_id && d.state === fresh.state ? fresh : d,
                           ),
                       }
                     : prev,
@@ -199,7 +204,7 @@ function DomainRow({ row }: { row: PlatformDomain }): JSX.Element {
             <div className="imcrm-min-w-0 imcrm-flex-1">
                 <p className="imcrm-truncate imcrm-font-mono imcrm-text-sm">{row.domain}</p>
                 <p className="imcrm-truncate imcrm-text-xs imcrm-text-muted-foreground">
-                    {row.tenant_name} · {__(KIND_LABEL[row.kind])}
+                    {row.tenant_name} · {kindText(row)}
                 </p>
             </div>
             <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5">
@@ -218,6 +223,89 @@ function DomainRow({ row }: { row: PlatformDomain }): JSX.Element {
                 )}
             </div>
         </li>
+    );
+}
+
+/**
+ * v0.1.423 — Lo que las tiendas con dominio propio necesitan del servidor web,
+ * UNA vez por servidor: que le pase a la app `/`, `/p/…`, `/sitemap.xml`,
+ * `/robots.txt` y `/_imagina/site` (si no es una tienda, la app contesta 404 y
+ * el servidor web sigue sirviendo la app como siempre).
+ */
+export const SITE_ROUTING_NGINX = `# Tiendas con dominio propio (v0.1.423): estas rutas las responde la app.
+# Si no es el dominio de una tienda, contesta 404 y se sirve la app como siempre.
+location = / {
+    proxy_pass http://127.0.0.1:3001;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_intercept_errors on;
+    error_page 404 502 503 504 = /cloud/index.html;
+}
+location ~ ^/(?:p/|sitemap\\.xml$|robots\\.txt$|_imagina/) {
+    proxy_pass http://127.0.0.1:3001;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_intercept_errors on;
+    error_page 404 502 503 504 = /cloud/index.html;
+}`;
+
+function SiteRoutingCard({ state, onRecheck, checking }: { state: 'ok' | 'missing' | 'unknown'; onRecheck: () => void; checking: boolean }): JSX.Element {
+    return (
+        <Card className={state === 'ok' ? undefined : 'imcrm-border-warning/40'} data-testid="site-routing">
+            <CardHeader>
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-start imcrm-justify-between imcrm-gap-2">
+                    <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
+                        <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
+                            <ShoppingBag className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                        </span>
+                        <div>
+                            <CardTitle className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                                {__('Tiendas con dominio propio')}
+                                <Badge dot variant={state === 'ok' ? 'success' : 'warning'} data-testid="site-routing-state">
+                                    {state === 'ok' ? __('Listo en este servidor') : state === 'missing' ? __('Falta un paso en el servidor') : __('No se pudo comprobar')}
+                                </Badge>
+                            </CardTitle>
+                            <CardDescription>
+                                {state === 'ok'
+                                    ? __('El servidor ya le pasa a la app las páginas de las tiendas (inicio, productos y mapa del sitio). Cada dominio nuevo de una tienda sólo necesita su alias y el certificado.')
+                                    : __('Además del alias y el certificado, el servidor tiene que pasarle a la app las páginas de las tiendas. Es un paso único por servidor: mientras falte, el dominio abre la tienda por la dirección de la plataforma y Google no la indexa.')}
+                            </CardDescription>
+                        </div>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={onRecheck} disabled={checking}>
+                        <RefreshCw className={checking ? 'imcrm-h-4 imcrm-w-4 imcrm-animate-spin' : 'imcrm-h-4 imcrm-w-4'} />
+                        {__('Comprobar')}
+                    </Button>
+                </div>
+            </CardHeader>
+            {state !== 'ok' && (
+                <CardContent className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-pt-0 imcrm-text-sm">
+                    <ol className="imcrm-flex imcrm-list-decimal imcrm-flex-col imcrm-gap-1.5 imcrm-pl-5">
+                        <li>{__('En ServerAvatar, abre la aplicación de Imagina Base → «Nginx Config».')}</li>
+                        <li>{__('Pega estas dos reglas ANTES de la regla «location /» y guarda.')}</li>
+                        <li>{__('Toca «Comprobar». Con Caddy no hace falta: viene en el Caddyfile del release (cópialo de nuevo si lo armaste antes).')}</li>
+                    </ol>
+                    <div className="imcrm-relative">
+                        <pre className="imcrm-max-h-72 imcrm-overflow-auto imcrm-rounded-md imcrm-bg-muted imcrm-p-3 imcrm-text-xs" data-testid="site-routing-snippet">
+                            {SITE_ROUTING_NGINX}
+                        </pre>
+                        <div className="imcrm-absolute imcrm-right-2 imcrm-top-2">
+                            <CopyButton text={SITE_ROUTING_NGINX} label={__('Copiar')} />
+                        </div>
+                    </div>
+                </CardContent>
+            )}
+        </Card>
     );
 }
 

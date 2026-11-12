@@ -60,6 +60,23 @@
         }
     }
 
+    # v0.1.423 — Tiendas con dominio propio (ADR-S103): `/`, `/p/…`,
+    # `/sitemap.xml`, `/robots.txt` y `/_imagina/site` los responde la app. En
+    # el dominio de una tienda es la tienda (lo único que se deja indexar); en
+    # cualquier otro host contesta 404 y aquí se sirve el SPA como siempre.
+    @site path / /p/* /sitemap.xml /robots.txt /_imagina/*
+    handle @site {
+        reverse_proxy 127.0.0.1:3001 {
+            header_up X-Forwarded-Host {host}
+            @notsite status 404 502 503 504
+            handle_response @notsite {
+                root * /opt/imagina-base/current/web
+                rewrite * /cloud/index.html
+                file_server
+            }
+        }
+    }
+
     # Raíz = el SPA del release activo (layout de releases atómicos, ADR-S13):
     # `current` es un symlink al release vivo; un update lo cambia y Caddy sirve
     # el SPA nuevo al instante (sigue el symlink en cada request). Ambos builds
@@ -99,14 +116,16 @@
     #     descripción sabe embeber (la lista vive en `EMBED_FRAME_HOSTS`
     #     de packages/shared — si se agrega uno allá, va también aquí).
     # Por eso el matcher excluye el API.
+    # v0.1.423 — con `?` sólo se ponen si la respuesta no trae las suyas: la
+    # tienda en su dominio (que pasa por `@site`) manda su propia CSP.
     @spa not path /api/* /.well-known/oauth-*
     header @spa {
-        X-Frame-Options "SAMEORIGIN"
+        ?X-Frame-Options "SAMEORIGIN"
         # CSP (v0.1.113) — defensa en profundidad; ver deploy/nginx.conf para
         # el detalle de por qué cada directiva es como es (inline de scripts
         # por el pre-pintado del tema, inline de estilos por Radix y el
         # page-builder, data:/blob: por los previews de imágenes).
-        Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.loom.com https://www.figma.com https://drive.google.com https://docs.google.com; object-src 'none'; base-uri 'self'; form-action 'self'"
+        ?Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'self'; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com https://www.loom.com https://www.figma.com https://drive.google.com https://docs.google.com; object-src 'none'; base-uri 'self'; form-action 'self'"
     }
 }
 

@@ -9,15 +9,18 @@ import {
     type DomainKind,
     type DomainVerifyResult,
     type PlatformDomain,
+    type PlatformDomainKind,
     type PlatformDomains,
     type PublicBoot,
     type RetiredDomain,
+    type SiteProbe,
+    siteProbeSchema,
     type TenantDomain,
 } from '@imagina-base/shared';
 import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
-import { tenants } from '../db/schema';
+import { shops, tenants } from '../db/schema';
 import { FilesService } from '../files/files.service';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { REDIS } from '../redis/redis.module';
@@ -40,6 +43,14 @@ import { planModuleOff } from '../billing/plan-module-gate';
  */
 /** El tenant del Host (el boot público le suma la marca de la plataforma). */
 export type HostBoot = Pick<PublicBoot, 'tenant'>;
+
+/** v0.1.423 — La tienda que se atiende en un dominio propio. */
+export interface ShopHost {
+    shopId: number;
+    tenantId: number;
+    token: string;
+    domain: string;
+}
 
 @Injectable()
 export class DomainsService {
@@ -163,7 +174,10 @@ export class DomainsService {
             .from(tenants)
             .where(or(eq(tenants.customDomain, host), eq(tenants.portalDomain, host)))
             .limit(1);
-        return row !== undefined;
+        if (row) return true;
+        // v0.1.423 — el dominio de una tienda también lo controla la empresa.
+        const [shop] = await this.db.select({ id: shops.id }).from(shops).where(eq(shops.customDomain, host)).limit(1);
+        return shop !== undefined;
     }
 
     /**
@@ -176,7 +190,211 @@ export class DomainsService {
         if (!host) return false;
         if (host === this.targetHost() || host === this.baseDomain()) return true;
         const resolved = await this.resolveHost(host);
-        return resolved.tenant !== null;
+        if (resolved.tenant !== null) return true;
+        return (await this.resolveShopHost(host)) !== null;
+    }
+
+    // ── v0.1.423: el dominio propio de una TIENDA ───────────────────────────
+
+    /**
+     * Host → la tienda que se atiende ahí (sin sesión). Sólo una tienda
+     * publicada, sin suspender, de una empresa viva cuyo plan incluye la
+     * tienda y el dominio propio. `null` = no es el dominio de ninguna tienda.
+     */
+    async resolveShopHost(rawHost: string | undefined): Promise<ShopHost | null> {
+        const host = this.normalizeHost(rawHost);
+        if (!host || host === this.targetHost() || host === this.baseDomain()) return null;
+        const [row] = await this.db
+            .select({
+                id: shops.id,
+                tenantId: shops.tenantId,
+                token: shops.token,
+                enabled: shops.enabled,
+                suspendedAt: shops.suspendedAt,
+                archivedAt: tenants.archivedAt,
+            })
+            .from(shops)
+            .innerJoin(tenants, eq(tenants.id, shops.tenantId))
+            .where(eq(shops.customDomain, host))
+            .limit(1);
+        if (!row || !row.enabled || row.suspendedAt !== null || row.archivedAt !== null) return null;
+        if ((await planModuleOff(this.db, row.tenantId, 'custom_domain')) || (await planModuleOff(this.db, row.tenantId, 'shop'))) return null;
+        return { shopId: row.id, tenantId: row.tenantId, token: row.token, domain: host };
+    }
+
+    private async shopRow(tenantId: number, shopId: number) {
+        const [row] = await this.db
+            .select({ id: shops.id, name: shops.name, domain: shops.customDomain, settings: shops.settings })
+            .from(shops)
+            .where(and(eq(shops.id, shopId), eq(shops.tenantId, tenantId)))
+            .limit(1);
+        return row ?? null;
+    }
+
+    /** Estado del dominio de una tienda (la misma forma que el de la empresa). */
+    async getForShop(tenantId: number, shopId: number): Promise<TenantDomain | null> {
+        const row = await this.shopRow(tenantId, shopId);
+        if (!row) return null;
+        const claim = readClaim(row.settings, 'app');
+        return {
+            domain: row.domain ?? null,
+            base_domain: null,
+            subdomain: null,
+            target: this.targetHost(),
+            pending: claim ? { domain: claim.domain, txt_name: txtName(claim.domain), txt_value: txtValue(claim.token) } : null,
+        };
+    }
+
+    /**
+     * Pide un dominio para la tienda. Como el de la empresa (SEC-32): queda
+     * PENDIENTE hasta que aparezca el TXT. No puede ser el dominio del equipo
+     * ni el del portal de la misma empresa.
+     */
+    async setShop(tenantId: number, shopId: number, rawDomain: string): Promise<TenantDomain | null> {
+        const { domain } = customDomainInputSchema.parse({ domain: rawDomain });
+        const base = this.baseDomain();
+        if (domain === this.targetHost() || (base && (domain === base || domain.endsWith(`.${base}`)))) {
+            throw new BadRequestException({
+                code: 'domain_reserved',
+                message: `Ese dominio es de la plataforma. Usa uno TUYO (por ejemplo tienda.tuempresa.com).`,
+                data: { status: 400 },
+            });
+        }
+        const row = await this.shopRow(tenantId, shopId);
+        if (!row) return null;
+        const [tenant] = await this.db
+            .select({ app: tenants.customDomain, portal: tenants.portalDomain, settings: tenants.settings })
+            .from(tenants)
+            .where(eq(tenants.id, tenantId))
+            .limit(1);
+        const taken = [tenant?.app, tenant?.portal, readClaim(tenant?.settings, 'app')?.domain, readClaim(tenant?.settings, 'portal')?.domain];
+        const siblings = await this.db
+            .select({ id: shops.id, domain: shops.customDomain, settings: shops.settings })
+            .from(shops)
+            .where(and(eq(shops.tenantId, tenantId), ne(shops.id, shopId)));
+        if (siblings.some((r) => r.domain === domain || readClaim(r.settings, 'app')?.domain === domain)) {
+            throw new BadRequestException({
+                code: 'domain_in_use_other_kind',
+                message: 'Ese dominio ya es el de otra de tus tiendas. Cada tienda necesita el suyo.',
+                data: { status: 400 },
+            });
+        }
+        if (taken.includes(domain)) {
+            throw new BadRequestException({
+                code: 'domain_in_use_other_kind',
+                message: 'Ese dominio ya es el de tu equipo o el del portal de tus clientes. La tienda necesita uno distinto (por ejemplo tienda.tuempresa.com).',
+                data: { status: 400 },
+            });
+        }
+        if (row.domain === domain) return this.getForShop(tenantId, shopId);
+        const current = readClaim(row.settings, 'app');
+        const token = current?.domain === domain ? current.token : randomBytes(16).toString('hex');
+        const settings = { ...(row.settings ?? {}), [claimKey('app')]: { domain, token, requested_at: new Date().toISOString() } };
+        await this.db.update(shops).set({ settings, updatedAt: new Date() }).where(and(eq(shops.id, shopId), eq(shops.tenantId, tenantId)));
+        return this.getForShop(tenantId, shopId);
+    }
+
+    /** Busca el TXT; si está, el dominio pasa a la tienda (y deja de ser de cualquier otra). */
+    async verifyShop(tenantId: number, shopId: number): Promise<DomainVerifyResult | null> {
+        const row = await this.shopRow(tenantId, shopId);
+        if (!row) return null;
+        const claim = readClaim(row.settings, 'app');
+        const state = async () => (await this.getForShop(tenantId, shopId))!;
+        if (!claim) return { verified: false, status: 'missing', domain: await state() };
+        let values: string[];
+        try {
+            values = (await this.resolveTxt(txtName(claim.domain))).map((chunks) => chunks.join(''));
+        } catch (err) {
+            const code = (err as NodeJS.ErrnoException).code;
+            return { verified: false, status: code === 'ENOTFOUND' || code === 'ENODATA' ? 'missing' : 'unknown', domain: await state() };
+        }
+        if (!values.includes(txtValue(claim.token))) {
+            const status = values.some((v) => v.startsWith('imagina-verify=')) ? 'mismatch' : 'missing';
+            return { verified: false, status, domain: await state() };
+        }
+        await this.db.transaction(async (tx) => {
+            // Quien probó ser dueño se lo lleva, sea donde fuere que estaba.
+            await tx.update(tenants).set({ customDomain: null, updatedAt: new Date() }).where(eq(tenants.customDomain, claim.domain));
+            await tx.update(tenants).set({ portalDomain: null, updatedAt: new Date() }).where(eq(tenants.portalDomain, claim.domain));
+            await tx.update(shops).set({ customDomain: null, updatedAt: new Date() }).where(and(eq(shops.customDomain, claim.domain), ne(shops.id, shopId)));
+            const settings = { ...(row.settings ?? {}) } as Record<string, unknown>;
+            delete settings[claimKey('app')];
+            await tx.update(shops).set({ customDomain: claim.domain, settings, updatedAt: new Date() }).where(eq(shops.id, shopId));
+        });
+        await this.redis?.hdel(RETIRED_KEY, claim.domain).catch(() => undefined);
+        await this.forgetShopServing(shopId, claim.domain);
+        await this.notifyOperators({ type: 'verified', tenantId, kind: 'shop', shopName: row.name, domain: claim.domain });
+        return { verified: true, status: 'ok', domain: await state() };
+    }
+
+    /** Quita el dominio de la tienda y el pedido pendiente (la dirección de la plataforma sigue). */
+    async clearShop(tenantId: number, shopId: number): Promise<TenantDomain | null> {
+        const row = await this.shopRow(tenantId, shopId);
+        if (!row) return null;
+        const settings = { ...(row.settings ?? {}) } as Record<string, unknown>;
+        delete settings[claimKey('app')];
+        await this.db.update(shops).set({ customDomain: null, settings, updatedAt: new Date() }).where(and(eq(shops.id, shopId), eq(shops.tenantId, tenantId)));
+        if (row.domain) {
+            await this.forgetShopServing(shopId, row.domain);
+            const [tenant] = await this.db.select({ name: tenants.name }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+            await this.retire(row.domain, tenant?.name ?? row.name);
+            await this.notifyOperators({ type: 'removed', tenantId, kind: 'shop', shopName: row.name, domain: row.domain });
+        }
+        return this.getForShop(tenantId, shopId);
+    }
+
+    /**
+     * ¿El dominio llega a ESTA plataforma y el servidor web ya manda al API lo
+     * que no es un archivo? `/_imagina/site` por el propio dominio tiene que
+     * contestar con el id de la tienda. Inyectable para los tests.
+     */
+    probeShopServing: (shopId: number, domain: string) => Promise<boolean> = async (shopId, domain) => {
+        const probe = await this.probeSite(`https://${domain}`);
+        return probe?.shop_id === shopId;
+    };
+
+    /**
+     * El sondeo de `/_imagina/site` (null = no contestó el API: no hay
+     * dominio, no hay certificado o el servidor web todavía manda todo al SPA).
+     */
+    probeSite: (origin: string) => Promise<SiteProbe | null> = async (origin) => {
+        try {
+            const res = await safeWebhookFetch(`${origin.replace(/\/$/, '')}/_imagina/site`, { method: 'GET', timeoutMs: 4000, captureBody: true });
+            if (res.status !== 200 || !res.body) return null;
+            const parsed = siteProbeSchema.safeParse(JSON.parse(res.body));
+            return parsed.success ? parsed.data : null;
+        } catch {
+            return null;
+        }
+    };
+
+    async isShopServing(shopId: number, domain: string): Promise<boolean> {
+        const key = `domserve:shop:${shopId}:${domain}`;
+        const cached = await this.redis?.get(key).catch(() => null);
+        if (cached === '1' || cached === '0') return cached === '1';
+        const ok = await this.probeShopServing(shopId, domain);
+        await this.redis?.set(key, ok ? '1' : '0', 'EX', ok ? 600 : 120).catch(() => undefined);
+        return ok;
+    }
+
+    async forgetShopServing(shopId: number, domain: string | null | undefined): Promise<void> {
+        if (domain) await this.redis?.del(`domserve:shop:${shopId}:${domain}`).catch(() => undefined);
+    }
+
+    /** Apuntamiento en vivo + si ya responde (sin caché). */
+    async shopDnsReport(tenantId: number, shopId: number): Promise<DomainDnsReport | null> {
+        const state = await this.getForShop(tenantId, shopId);
+        if (!state) return null;
+        const report = await this.dnsRecord(state);
+        if (!report || !state.domain || state.pending) return report;
+        await this.forgetShopServing(shopId, state.domain);
+        return { ...report, serving: (await this.isShopServing(shopId, state.domain)) ? 'ok' : 'no' };
+    }
+
+    /** La dirección pública de la tienda: su dominio si ya responde. */
+    async shopSiteUrl(shopId: number, domain: string | null): Promise<string | null> {
+        if (!domain) return null;
+        return (await this.isShopServing(shopId, domain)) ? `https://${domain}` : null;
     }
 
     /**
@@ -257,6 +475,18 @@ export class DomainsService {
                 data: { status: 400 },
             });
         }
+        // v0.1.423 — tampoco el de una tienda de la misma empresa.
+        const shopRows = await this.db
+            .select({ domain: shops.customDomain, settings: shops.settings })
+            .from(shops)
+            .where(eq(shops.tenantId, tenantId));
+        if (shopRows.some((r) => r.domain === domain || readClaim(r.settings, 'app')?.domain === domain)) {
+            throw new BadRequestException({
+                code: 'domain_in_use_other_kind',
+                message: 'Ese dominio ya es el de una de tus tiendas. Usa uno distinto.',
+                data: { status: 400 },
+            });
+        }
         if ((kind === 'portal' ? row?.portal : row?.app) === domain) return this.getForTenant(tenantId, kind);
         const current = readClaim(row?.settings, kind);
         // Pedir el MISMO dominio otra vez conserva el código (el cliente ya
@@ -305,6 +535,8 @@ export class DomainsService {
                 .update(tenants)
                 .set({ portalDomain: null, updatedAt: new Date() })
                 .where(and(eq(tenants.portalDomain, claim.domain), ne(tenants.id, tenantId)));
+            // v0.1.423 — y si era el dominio de una tienda, deja de serlo.
+            await tx.update(shops).set({ customDomain: null, updatedAt: new Date() }).where(eq(shops.customDomain, claim.domain));
             const settings = { ...(row?.settings ?? {}) } as Record<string, unknown>;
             delete settings[claimKey(kind)];
             await tx
@@ -512,7 +744,7 @@ export class DomainsService {
             for (const kind of ['app', 'portal'] as const) {
                 const verified = kind === 'portal' ? row.portal : row.app;
                 const claim = readClaim(row.settings, kind);
-                const base = { tenant_id: row.id, tenant_name: row.name, tenant_slug: row.slug, kind };
+                const base = { tenant_id: row.id, tenant_name: row.name, tenant_slug: row.slug, kind, shop_id: null, shop_name: null };
                 if (verified) pending.push({ ...base, domain: verified, state: 'verified', requested_at: null });
                 // Un pedido de cambio convive con el verificado (la empresa quiere
                 // pasarse a otro dominio): se listan los dos.
@@ -521,16 +753,94 @@ export class DomainsService {
                 }
             }
         }
+        // v0.1.423 — los dominios de las tiendas.
+        const shopRows = await this.db
+            .select({
+                id: shops.id,
+                name: shops.name,
+                domain: shops.customDomain,
+                settings: shops.settings,
+                tenantId: tenants.id,
+                tenantName: tenants.name,
+                tenantSlug: tenants.slug,
+            })
+            .from(shops)
+            .innerJoin(tenants, eq(tenants.id, shops.tenantId))
+            .where(
+                and(
+                    isNull(tenants.archivedAt),
+                    or(sql`${shops.customDomain} IS NOT NULL`, sql`${shops.settings} ? 'domain_claim'`),
+                ),
+            )
+            .orderBy(tenants.name, shops.name);
+        for (const row of shopRows) pending.push(...shopPlatformEntries(row));
         const domains = await mapLimit(pending, 5, (entry) => this.withLiveState(entry, false));
-        return { target: this.targetHost(), domains, retired: await this.listRetired() };
+        const hasShops = domains.some((d) => d.kind === 'shop' && d.state === 'verified');
+        return {
+            target: this.targetHost(),
+            domains,
+            retired: await this.listRetired(),
+            site_routing: hasShops ? await this.siteRouting() : null,
+        };
     }
 
     /** Re-comprueba UN dominio sin caché (botón "Comprobar" de la consola). */
-    async checkForPlatform(tenantId: number, kind: DomainKind): Promise<PlatformDomain | null> {
+    async checkForPlatform(tenantId: number, kind: PlatformDomainKind, shopId?: number): Promise<PlatformDomain | null> {
+        if (kind === 'shop') {
+            if (!shopId) return null;
+            const [row] = await this.db
+                .select({
+                    id: shops.id,
+                    name: shops.name,
+                    domain: shops.customDomain,
+                    settings: shops.settings,
+                    tenantId: tenants.id,
+                    tenantName: tenants.name,
+                    tenantSlug: tenants.slug,
+                })
+                .from(shops)
+                .innerJoin(tenants, eq(tenants.id, shops.tenantId))
+                .where(and(eq(shops.id, shopId), eq(shops.tenantId, tenantId)))
+                .limit(1);
+            const entry = row ? shopPlatformEntries(row)[0] : undefined;
+            return entry ? this.withLiveState(entry, true) : null;
+        }
         const list = await this.listForPlatformTenant(tenantId, kind);
         if (!list) return null;
         return this.withLiveState(list, true);
     }
+
+    /**
+     * v0.1.423 — ¿El servidor web ya le pasa a la app lo que no es un archivo
+     * (`/`, `/p/…`, `/sitemap.xml`)? Es el paso ÚNICO por servidor que
+     * necesitan las tiendas con dominio propio. Se pregunta por la dirección
+     * de la plataforma: si contesta el API, está hecho; si contesta la app
+     * (HTML), falta. `unknown` = no se pudo preguntar.
+     */
+    async siteRouting(): Promise<'ok' | 'missing' | 'unknown'> {
+        const key = 'domsite:routing';
+        const cached = await this.redis?.get(key).catch(() => null);
+        if (cached === 'ok' || cached === 'missing') return cached;
+        const probe = await this.probeSite(this.env.APP_BASE_URL);
+        let state: 'ok' | 'missing' | 'unknown';
+        if (probe) state = 'ok';
+        else {
+            // ¿Responde algo? Una página (la app) = falta el paso; nada = no se sabe.
+            state = (await this.probeReachable(this.env.APP_BASE_URL)) ? 'missing' : 'unknown';
+        }
+        if (state !== 'unknown') await this.redis?.set(key, state, 'EX', state === 'ok' ? 600 : 60).catch(() => undefined);
+        return state;
+    }
+
+    /** ¿La dirección contesta algo (aunque sea la app)? Inyectable en los tests. */
+    probeReachable: (origin: string) => Promise<boolean> = async (origin) => {
+        try {
+            const res = await safeWebhookFetch(`${origin.replace(/\/$/, '')}/_imagina/site`, { method: 'GET', timeoutMs: 4000 });
+            return res.status > 0 && res.status < 500;
+        } catch {
+            return false;
+        }
+    };
 
     private async listForPlatformTenant(
         tenantId: number,
@@ -542,18 +852,26 @@ export class DomainsService {
             .where(eq(tenants.id, tenantId))
             .limit(1);
         if (!row) return null;
-        const base = { tenant_id: tenantId, tenant_name: row.name, tenant_slug: row.slug, kind };
+        const base = { tenant_id: tenantId, tenant_name: row.name, tenant_slug: row.slug, kind, shop_id: null, shop_name: null };
         if (row.domain) return { ...base, domain: row.domain, state: 'verified', requested_at: null };
         const claim = readClaim(row.settings, kind);
         return claim ? { ...base, domain: claim.domain, state: 'pending', requested_at: claim.requested_at || null } : null;
     }
 
     private async withLiveState(entry: Omit<PlatformDomain, 'dns' | 'serving'>, fresh: boolean): Promise<PlatformDomain> {
-        if (fresh) await this.forgetServing(entry.tenant_id, entry.domain);
-        const [dns, serving] = await Promise.all([
-            this.pointing(entry.domain).catch(() => null),
-            entry.state === 'verified' ? this.isServing(entry.tenant_id, entry.domain) : Promise.resolve(null),
-        ]);
+        const shopId = entry.kind === 'shop' ? entry.shop_id : null;
+        if (fresh) {
+            if (shopId) await this.forgetShopServing(shopId, entry.domain);
+            else await this.forgetServing(entry.tenant_id, entry.domain);
+            if (shopId) await this.redis?.del('domsite:routing').catch(() => undefined);
+        }
+        const servingCheck =
+            entry.state !== 'verified'
+                ? Promise.resolve(null)
+                : shopId
+                  ? this.isShopServing(shopId, entry.domain)
+                  : this.isServing(entry.tenant_id, entry.domain);
+        const [dns, serving] = await Promise.all([this.pointing(entry.domain).catch(() => null), servingCheck]);
         return { ...entry, dns, serving: serving === null ? null : serving ? 'ok' : 'no' };
     }
 
@@ -622,6 +940,24 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
         }
     });
     await Promise.all(workers);
+    return out;
+}
+
+/** v0.1.423 — Las filas de la consola de UNA tienda (verificado y/o pedido). */
+function shopPlatformEntries(row: {
+    id: number;
+    name: string;
+    domain: string | null;
+    settings: unknown;
+    tenantId: number;
+    tenantName: string;
+    tenantSlug: string;
+}): Array<Omit<PlatformDomain, 'dns' | 'serving'>> {
+    const base = { tenant_id: row.tenantId, tenant_name: row.tenantName, tenant_slug: row.tenantSlug, kind: 'shop' as const, shop_id: row.id, shop_name: row.name };
+    const out: Array<Omit<PlatformDomain, 'dns' | 'serving'>> = [];
+    if (row.domain) out.push({ ...base, domain: row.domain, state: 'verified', requested_at: null });
+    const claim = readClaim(row.settings, 'app');
+    if (claim && claim.domain !== row.domain) out.push({ ...base, domain: claim.domain, state: 'pending', requested_at: claim.requested_at || null });
     return out;
 }
 

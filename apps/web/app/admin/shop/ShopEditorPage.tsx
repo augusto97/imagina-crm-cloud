@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
-import { BarChart3, Code2, CreditCard, LayoutGrid, Paintbrush, Megaphone, Eye, EyeOff, Loader2, Moon, Package, ReceiptText, Send, ShieldCheck, ShoppingBag, SlidersHorizontal, Sun, Ticket, UserRound, type LucideIcon } from 'lucide-react';
+import { BarChart3, Code2, CreditCard, Globe, LayoutGrid, Paintbrush, Megaphone, Eye, EyeOff, Loader2, Moon, Package, ReceiptText, Send, ShieldCheck, ShoppingBag, SlidersHorizontal, Sun, Ticket, UserRound, type LucideIcon } from 'lucide-react';
 import { readShopConfig, shopProblems, type ShopConfig, type ShopDto, type ShopOptions, type ShopProblem, type ShopSection } from '@imagina-base/shared';
 
 import {
@@ -38,6 +38,7 @@ import { ShopBuyButtons } from './ShopBuyButtons';
 import { CatalogPanel, catalogNeedsDelivery, CheckoutPanel, DesignPanel, OrdersPanel, PaymentPanel, PublishPanel, SellerPanel } from './ShopPanels';
 import { StylePanel } from './ShopStylePanel';
 import { CouponsPanel } from './ShopCouponsPanel';
+import { ShopDomainPanel } from './ShopDomainPanel';
 import { ShopMeasurePanel } from './ShopMeasurePanel';
 import { ShopPreview } from './ShopPreview';
 import { ShopStatsPanel } from './ShopStatsPanel';
@@ -54,6 +55,7 @@ const SECTION_ICON: Record<ShopSection, LucideIcon> = {
     seller: ShieldCheck,
     orders: UserRound,
     measure: Megaphone,
+    domain: Globe,
     publish: Code2,
 };
 
@@ -141,7 +143,9 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
     const dirty = name.trim() !== saved.current.name || !sameShopConfig(config, saved.current.config);
     const { confirmLeave } = useUnsavedChangesGuard(dirty);
 
-    const live = update.data ?? regenerate.data ?? shop;
+    // v0.1.423 — El dominio cambia por su propia tarjeta (no por «Guardar»): sale
+    // siempre de la consulta de la tienda, que se vuelve a pedir al tocarlo.
+    const live: ShopDto = { ...(update.data ?? regenerate.data ?? shop), custom_domain: shop.custom_domain ?? null, site_url: shop.site_url ?? null };
     const coupons = useShopCoupons(shop.id);
     const priceField = options.fields.find((f) => f.id === config.catalog.price);
     const problems: ShopProblem[] = useMemo(
@@ -159,7 +163,8 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
     const enabled = enabledView ?? live.enabled;
     // v0.1.419 — El enlace directo sale de la app (como el de los formularios);
     // el código para insertar toma la dirección rápida dentro de «Compartir».
-    const url = shopPublicUrl(live);
+    // v0.1.423 — Con dominio propio que ya abre la tienda, se comparte ése.
+    const url = live.site_url ? `${live.site_url}/` : shopPublicUrl(live);
     const [share, setShare] = useState<ShareTab | null>(null);
 
     const save = (extra?: { enabled?: boolean }): void => {
@@ -237,7 +242,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
         label: __(SHOP_SECTION_INFO[s].label),
         icon: SECTION_ICON[s],
         group: __(SHOP_SECTION_INFO[s].group),
-        summary: __(shopSectionSummary(s, config, { enabled, productsCount: options.products_count, ordersListName: live.orders?.list_name ?? null, couponsActive: coupons.data ? coupons.data.filter((c) => c.active).length : null })),
+        summary: __(shopSectionSummary(s, config, { enabled, productsCount: options.products_count, ordersListName: live.orders?.list_name ?? null, couponsActive: coupons.data ? coupons.data.filter((c) => c.active).length : null, customDomain: live.custom_domain ?? null, siteUrl: live.site_url ?? null })),
         problem: problemSections.has(s),
     }));
 
@@ -276,6 +281,8 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                 return <OrdersPanel shop={live} />;
             case 'measure':
                 return <ShopMeasurePanel shop={live} config={config} patch={patch} />;
+            case 'domain':
+                return <ShopDomainPanel shop={live} config={config} patch={patch} />;
             case 'publish':
                 return (
                     <PublishPanel

@@ -14999,6 +14999,59 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `shops-design.spec` (4) — shared 946, front 917 — + E2E navegador
         24/24 en escritorio y 24/24 en celular oscuro, y v0.1.421 28/28.
 
+  - [x] **La tienda en su propio dominio, y sólo ahí en Google (v0.1.423,
+        addendum ADR-S103, del mismo pedido del usuario: "dominio propio para
+        la tienda ahora sí lo veo interesante, pero sólo para la tienda, y ahí
+        con dominio propio sí se podría indexar en Google")**: sección nueva
+        **Dominio y Google** en el editor de la tienda. (a) **El dominio**
+        (`shops.custom_domain`, migración 0126; pedido en
+        `shops.settings.domain_claim`) con el ciclo de ADR-S17/SEC-32: se
+        pide, queda pendiente, el TXT `_imagina-verify.<dominio>` lo activa
+        (quien prueba ser dueño se lo lleva) y el CNAME lo apunta; no se repite
+        con el equipo, el portal ni otra tienda de la empresa; sólo un
+        administrador; el plan tiene que incluir `custom_domain` y `shop`.
+        Endpoints `/shops/:id/domain` (+ `verify`, `dns`), bitácora
+        `shop.domain_change`/`shop.domain_verified`, correo al operador y fila
+        de tipo «Tienda» en Plataforma → Dominios. La tarjeta es la misma de
+        Ajustes → Marca (`DomainPanel` con `shop`, compacta dentro del panel).
+        (b) **Host → tienda** (`resolveShopHost`: publicada, sin suspender,
+        empresa sin archivar, con el plan; en la caché pública 30 s) y **rutas
+        en la raíz** fuera de Nest (`ShopSiteService` + `shop-site.routes.ts`):
+        `/`, `/p/<nombre>-<id>` (otra forma del nombre → 301 a la canónica con
+        la consulta; no está → 410), `/sitemap.xml`, `/robots.txt` y el sondeo
+        `/_imagina/site`; en cualquier otro host 404 y el servidor web sirve la
+        app (nginx `error_page`, Caddy `handle_response`). (c) **Lo que lee
+        Google** (`siteHeadFor`, puro): título y descripción
+        (`config.seo`: interruptor, título ≤70, descripción ≤200; vacíos = los
+        de la tienda), canónica, Open Graph/Twitter, JSON-LD (`OnlineStore`,
+        `WebSite`, `Product` con `Offer`/`AggregateOffer`, precio, moneda,
+        stock, SKU, categoría, `BreadcrumbList`) y el contenido en HTML que el
+        cliente reemplaza al montar; apagado → `noindex, nofollow` y sin mapa
+        del sitio; las fotos pedidas por el dominio llevan `X-Robots-Tag: all`.
+        El cliente en **modo sitio** empuja `/p/…` al historial (atrás vuelve)
+        y las tarjetas son enlaces reales. (d) **Los enlaces salen por el
+        dominio sólo si ya abre ESA tienda** (`/_imagina/site` por el dominio
+        contesta su id; 10 min en caché): `site_url` en el DTO, Compartir, los
+        correos de los pedidos y «Mis pedidos». (e) **Paso del operador UNA
+        vez por servidor**: dos `location` en nginx/ServerAvatar (o recopiar el
+        Caddyfile); la consola los muestra para copiar y dice si faltan
+        (`site_routing`), y `docs/runbook-custom-domains.md` lo explica. El
+        dominio de una tienda sin ese paso abre la tienda pero redirige a la
+        dirección de siempre. (f) Ayuda: guía `shop-domain`, sección «Tu
+        dominio y Google» en Aprende → Tienda online (la pregunta «¿Google
+        muestra mi tienda?» decía que no), novedad con carrusel. Tests:
+        `shops-domain.spec` (7: ciclo y conflictos, inicio/producto/301/410/
+        mapa/robots/sondeo, otro host, SEO apagado, plan y tienda apagada,
+        enlaces sólo si responde, quitar), `shop.test` +3 en shared,
+        `shopEditor.test` +1 — E2E navegador 34/34 con `tienda.test` mapeado a
+        la API y el build de producción (montaje, canónica, JSON-LD, historial,
+        301, 410, mapa, carrito, celular, editor con vista previa de Google y
+        guardado que pasa a `noindex`, pedido/rechazo/TXT/quitar en otra
+        tienda, bitácora, consola, celular oscuro; cero violaciones de CSP).
+        **Límite de la verificación**: las reglas de nginx y Caddy no se
+        probaron con los binarios reales (no se pudieron instalar en el
+        entorno).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

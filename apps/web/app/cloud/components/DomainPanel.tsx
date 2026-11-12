@@ -29,6 +29,9 @@ function saveErrorText(e: unknown): string {
         if (e.code === 'domain_taken') {
             return 'Ese dominio ya está en uso por otra empresa.';
         }
+        if (e.code === 'admin_only') {
+            return 'El dominio lo configura un administrador de la empresa.';
+        }
         return e.message;
     }
     return 'No se pudo guardar el dominio.';
@@ -49,13 +52,38 @@ function saveErrorText(e: unknown): string {
  * empresa —el cliente nunca ve el login del equipo— y los enlaces de acceso
  * salen por él. Mismo ciclo que el del equipo: pedido → TXT → CNAME.
  */
-export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.Element | null {
+export function DomainPanel({
+    kind = 'app',
+    shop = null,
+    onChanged,
+}: {
+    kind?: DomainKind;
+    /** v0.1.423 — El dominio de una TIENDA (Editor de la tienda → Dominio y Google). */
+    shop?: { id: number; name: string } | null;
+    onChanged?: () => void;
+} = {}): JSX.Element | null {
     const qc = useQueryClient();
     const tenantId = useSession((s) => s.activeTenantId);
-    const isPortal = kind === 'portal';
+    const isPortal = kind === 'portal' && !shop;
+    const scope = shop ? `shop-${shop.id}` : kind;
+    const src = shop
+        ? {
+              get: () => api.shopDomainGet(shop.id),
+              set: (domain: string) => api.shopDomainSet(shop.id, { domain }),
+              clear: () => api.shopDomainClear(shop.id),
+              verify: () => api.shopDomainVerify(shop.id),
+              dns: () => api.shopDomainDns(shop.id),
+          }
+        : {
+              get: () => api.tenantDomainGet(kind),
+              set: (domain: string) => api.tenantDomainSet({ domain }, kind),
+              clear: () => api.tenantDomainClear(kind),
+              verify: () => api.tenantDomainVerify(kind),
+              dns: () => api.tenantDomainDns(kind),
+          };
     const domainQ = useQuery({
-        queryKey: ['tenant-domain', kind, tenantId],
-        queryFn: () => api.tenantDomainGet(kind),
+        queryKey: ['tenant-domain', scope, tenantId],
+        queryFn: src.get,
         retry: false,
     });
 
@@ -69,13 +97,14 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
     }, [domainQ.data]);
 
     const invalidate = (): void => {
-        void qc.invalidateQueries({ queryKey: ['tenant-domain', kind, tenantId] });
+        void qc.invalidateQueries({ queryKey: ['tenant-domain', scope, tenantId] });
         // El reporte DNS quedó atado al dominio anterior: se descarta.
-        qc.removeQueries({ queryKey: ['tenant-domain-dns', kind, tenantId] });
+        qc.removeQueries({ queryKey: ['tenant-domain-dns', scope, tenantId] });
+        onChanged?.();
     };
 
     const save = useMutation({
-        mutationFn: (domain: string) => api.tenantDomainSet({ domain }, kind),
+        mutationFn: (domain: string) => src.set(domain),
         onSuccess: () => {
             setNotice({
                 kind: 'ok',
@@ -87,14 +116,16 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
     });
 
     const clear = useMutation({
-        mutationFn: () => api.tenantDomainClear(kind),
+        mutationFn: () => src.clear(),
         onSuccess: () => {
             setDomainInput('');
             setNotice({
                 kind: 'ok',
-                text: isPortal
-                    ? 'Dominio quitado: los enlaces del portal vuelven a salir por el dominio del equipo o el de la plataforma.'
-                    : 'Dominio quitado: la app vuelve a las URLs de la plataforma.',
+                text: shop
+                    ? 'Dominio quitado: la tienda sigue abriendo por la dirección de la plataforma (que no aparece en Google).'
+                    : isPortal
+                      ? 'Dominio quitado: los enlaces del portal vuelven a salir por el dominio del equipo o el de la plataforma.'
+                      : 'Dominio quitado: la app vuelve a las URLs de la plataforma.',
             });
             invalidate();
         },
@@ -105,7 +136,7 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
     // SEC-32 (v0.1.228): el dominio pedido se activa recién cuando aparece el
     // TXT con el código de esta empresa (prueba de que el dominio es suyo).
     const verify = useMutation({
-        mutationFn: () => api.tenantDomainVerify(kind),
+        mutationFn: () => src.verify(),
         onSuccess: (r) => {
             if (r.verified) {
                 setNotice({ kind: 'ok', text: `¡Listo! ${r.domain.domain} quedó verificado y activo.` });
@@ -128,8 +159,8 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
     });
 
     const dnsQ = useQuery({
-        queryKey: ['tenant-domain-dns', kind, tenantId],
-        queryFn: () => api.tenantDomainDns(kind),
+        queryKey: ['tenant-domain-dns', scope, tenantId],
+        queryFn: src.dns,
         enabled: false,
         retry: false,
     });
@@ -175,7 +206,13 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
     const dnsMeta = report ? DNS_STATUS_META[report.status] : null;
 
     return (
-        <Card data-tour={isPortal ? 'branding-portal-domain' : 'branding-domain'}>
+        <Card
+            data-tour={shop ? 'shop-domain-card' : isPortal ? 'branding-portal-domain' : 'branding-domain'}
+            data-testid={shop ? 'shop-domain-card' : undefined}
+            // En el editor de la tienda va dentro de un panel que ya lo explica: sin cabecera ni borde.
+            className={shop ? 'imcrm-border-0 imcrm-bg-transparent imcrm-shadow-none' : undefined}
+        >
+            {!shop && (
             <CardHeader>
                 <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
                     <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
@@ -195,9 +232,10 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
                     </div>
                 </div>
             </CardHeader>
-            <CardContent className="imcrm-space-y-4 imcrm-pt-0">
+            )}
+            <CardContent className={shop ? 'imcrm-space-y-4 imcrm-p-0' : 'imcrm-space-y-4 imcrm-pt-0'}>
                 {/* Subdominio automático de la plataforma (si el operador lo habilitó). */}
-                {!isPortal && d.base_domain && d.subdomain && (
+                {!isPortal && !shop && d.base_domain && d.subdomain && (
                     <div className="imcrm-space-y-1 imcrm-rounded-md imcrm-bg-muted/60 imcrm-p-3">
                         <div className="imcrm-text-sm imcrm-font-medium">Subdominio incluido</div>
                         <p className="imcrm-text-xs imcrm-text-muted-foreground">
@@ -225,13 +263,13 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
                 <form onSubmit={submit} className="imcrm-space-y-2">
                     <label className="imcrm-block imcrm-space-y-1">
                         <span className="imcrm-text-xs imcrm-text-muted-foreground">
-                            {isPortal ? 'Dominio para tus clientes' : 'Dominio propio'}
+                            {shop ? 'Dominio para la tienda' : isPortal ? 'Dominio para tus clientes' : 'Dominio propio'}
                         </span>
                         <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
                             <Input
                                 value={domainInput}
                                 onChange={(e) => setDomainInput(e.target.value)}
-                                placeholder={isPortal ? 'clientes.tuempresa.com' : 'crm.tuempresa.com'}
+                                placeholder={shop ? 'tienda.tuempresa.com' : isPortal ? 'clientes.tuempresa.com' : 'crm.tuempresa.com'}
                                 spellCheck={false}
                                 autoComplete="off"
                                 className="imcrm-max-w-xs imcrm-font-mono"
@@ -297,7 +335,7 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
                             <Button
                                 type="button"
                                 size="sm"
-                                data-testid={isPortal ? 'portal-domain-verify' : 'domain-verify'}
+                                data-testid={shop ? 'shop-domain-verify' : isPortal ? 'portal-domain-verify' : 'domain-verify'}
                                 onClick={() => verify.mutate()}
                                 disabled={busy}
                             >
@@ -323,7 +361,7 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
                                     <div className="imcrm-text-xs imcrm-text-muted-foreground">Valor</div>
                                     <div className="imcrm-flex imcrm-items-start imcrm-gap-1.5">
                                         <code
-                                            data-testid={isPortal ? 'portal-domain-txt-value' : 'domain-txt-value'}
+                                            data-testid={shop ? 'shop-domain-txt-value' : isPortal ? 'portal-domain-txt-value' : 'domain-txt-value'}
                                             className="imcrm-min-w-0 imcrm-flex-1 imcrm-break-all imcrm-rounded imcrm-bg-muted imcrm-px-1.5 imcrm-py-0.5 imcrm-font-mono imcrm-text-xs"
                                         >
                                             {d.pending.txt_value}
@@ -399,9 +437,11 @@ export function DomainPanel({ kind = 'app' }: { kind?: DomainKind } = {}): JSX.E
                             </div>
                             {report?.serving === 'ok' && (
                                 <p className="imcrm-text-xs imcrm-text-emerald-700 dark:imcrm-text-emerald-400">
-                                    {isPortal
-                                        ? 'El dominio responde: tus clientes ya entran por aquí y los enlaces de acceso salen por este dominio.'
-                                        : 'El dominio responde: tu equipo ya puede entrar por aquí.'}
+                                    {shop
+                                        ? 'El dominio responde: tu tienda ya abre aquí y los enlaces de los pedidos salen por este dominio.'
+                                        : isPortal
+                                          ? 'El dominio responde: tus clientes ya entran por aquí y los enlaces de acceso salen por este dominio.'
+                                          : 'El dominio responde: tu equipo ya puede entrar por aquí.'}
                                 </p>
                             )}
                             {report?.serving === 'no' && (

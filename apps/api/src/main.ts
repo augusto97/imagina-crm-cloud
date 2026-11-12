@@ -12,6 +12,8 @@ import { ApiExceptionFilter } from './common/http-exception.filter';
 import { registerRequestInputHooks } from './common/request-input';
 import { isHealthProbe, rateLimitMaxFor } from './common/rate-limit-policy';
 import { routePath } from './common/route-path';
+import { registerShopSiteRoutes } from './shop/shop-site.routes';
+import { ShopSiteService } from './shop/shop-site.service';
 import { rateKeyForIp } from './common/client-ip';
 import { FILE_IMPORT_CONTENT_TYPE } from '@imagina-base/shared';
 import { loadEnv } from './config/env';
@@ -205,6 +207,12 @@ async function bootstrap(): Promise<void> {
         ],
     });
     app.useGlobalFilters(new ApiExceptionFilter());
+
+    // v0.1.423 — La tienda en SU dominio (ADR-S103): `/`, `/p/…`,
+    // `/sitemap.xml`, `/robots.txt` y `/_imagina/site`. Fuera del prefijo del
+    // API: el servidor web se los pasa a la app y, si no es el dominio de una
+    // tienda, la app contesta 404 y el servidor web sirve el SPA.
+    registerShopSiteRoutes(fastify, app.get(ShopSiteService));
 
     // Socket.io con Redis adapter (realtime multi-nodo — STANDALONE §12).
     const ioAdapter = new RedisIoAdapter(app);

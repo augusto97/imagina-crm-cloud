@@ -31,6 +31,13 @@ export type CustomDomainInput = z.infer<typeof customDomainInputSchema>;
 export const domainKindSchema = z.enum(['app', 'portal']);
 export type DomainKind = z.infer<typeof domainKindSchema>;
 
+/**
+ * v0.1.423 — En la consola de la plataforma también figuran los dominios de
+ * las TIENDAS (uno por tienda, en `shops.custom_domain`).
+ */
+export const platformDomainKindSchema = z.enum(['app', 'portal', 'shop']);
+export type PlatformDomainKind = z.infer<typeof platformDomainKindSchema>;
+
 /** Estado del dominio del workspace + datos para armar las instrucciones. */
 export const tenantDomainSchema = z.object({
     /** Dominio propio configurado (null = sin dominio propio). */
@@ -95,7 +102,10 @@ export const platformDomainSchema = z.object({
     tenant_id: z.number().int(),
     tenant_name: z.string(),
     tenant_slug: z.string(),
-    kind: domainKindSchema,
+    kind: platformDomainKindSchema,
+    /** v0.1.423 — La tienda, si es el dominio de una tienda. */
+    shop_id: z.number().int().nullable().default(null),
+    shop_name: z.string().nullable().default(null),
     domain: z.string(),
     /** pending = esperando el TXT de verificación; verified = es de la empresa. */
     state: z.enum(['pending', 'verified']),
@@ -120,13 +130,32 @@ export const platformDomainsSchema = z.object({
     target: z.string(),
     domains: z.array(platformDomainSchema),
     retired: z.array(retiredDomainSchema),
+    /**
+     * v0.1.423 — Con tiendas en su dominio: ¿el servidor web ya le pasa a la
+     * app lo que no es un archivo (paso único por servidor)? `null` = no hay
+     * tiendas con dominio, no hace falta.
+     */
+    site_routing: z.enum(['ok', 'missing', 'unknown']).nullable().default(null),
 });
 export type PlatformDomains = z.infer<typeof platformDomainsSchema>;
 
 export const platformDomainCheckSchema = z.object({
     tenant_id: z.number().int().positive(),
-    kind: domainKindSchema,
+    kind: platformDomainKindSchema,
+    shop_id: z.number().int().positive().optional(),
 });
+
+/**
+ * v0.1.423 — ¿El servidor web ya manda al API lo que no es un archivo (el
+ * paso único para servir tiendas en su dominio)? Se sabe pidiendo
+ * `/_imagina/site` por el dominio de la plataforma: sin ese paso contesta el
+ * SPA (HTML), con él contesta el API (JSON).
+ */
+export const siteProbeSchema = z.object({
+    ok: z.literal(true),
+    shop_id: z.number().int().nullable(),
+});
+export type SiteProbe = z.infer<typeof siteProbeSchema>;
 
 /**
  * Boot público SIN sesión: el front lo llama con el Host de la URL para
@@ -157,5 +186,11 @@ export const publicBootSchema = z.object({
      * de una empresa no se usa (white-label); viaja igual porque es pública.
      */
     platform: platformBrandSchema.default({}),
+    /**
+     * v0.1.423 — El dominio es el de una TIENDA: la app del equipo nunca se
+     * abre ahí. Si el servidor web todavía manda ese dominio al SPA, el SPA va
+     * a la página de la tienda por esta ruta.
+     */
+    shop: z.object({ path: z.string() }).nullable().default(null),
 });
 export type PublicBoot = z.infer<typeof publicBootSchema>;

@@ -174,6 +174,12 @@ uno que ya no apunta aquí, la renovación automática falla para todos.
 Con muchas empresas usando dominio propio conviene pasar a Caddy (cero pasos por
 empresa, un certificado por dominio).
 
+**Tiendas con dominio propio (v0.1.423)**: además, UNA sola vez, pega los dos
+`location` de `docs/runbook-custom-domains.md` → «Tiendas con dominio propio»
+(también en **Plataforma → Dominios**, con un botón para copiarlos). Sin ellos,
+el dominio de una tienda abre la tienda pero sin direcciones por producto ni
+nada para Google.
+
 ## Alternativas / notas
 
 - **Instalar compilando en el server (en vez del bundle):** necesitas

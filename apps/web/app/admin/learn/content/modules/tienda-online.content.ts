@@ -198,6 +198,27 @@ export const articles: LearnArticle[] = [
                 title: 'Enlaces que arman el carrito',
                 md: 'El mismo **Botón «Comprar» de un producto** te da el enlace para una publicación, un anuncio o un correo. Con **abre la tienda en el producto** el enlace termina en `?producto=` y el número; con **lo agrega y lleva al pago**, en `?comprar=` y el número (`:2` para dos unidades); con **lo agrega y abre el carrito**, en `?agregar=`. Quien lo abre ya tiene el producto en el carrito.',
             },
+            { t: 'h', text: 'Tu dominio y Google' },
+            { t: 'anim', key: 'portal-domain', caption: 'Tu tienda en tu dominio: lo pides, pruebas que es tuyo y lo apuntas a la app.' },
+            {
+                t: 'p',
+                md: 'En **Dominio y Google** pones la tienda en tu propio dominio (por ejemplo **tienda.tuempresa.com**). Ahí cada producto tiene su dirección con su nombre, la tienda le cuenta a Google el precio y si hay stock, y al compartir el enlace en WhatsApp se ve la foto. Lo configura un administrador de la empresa.',
+            },
+            {
+                t: 'steps',
+                items: [
+                    'Escribe el dominio y toca **Guardar**: queda pendiente.',
+                    'En el panel de tu dominio crea el registro **TXT** que te muestra la app y toca **Verificar propiedad**.',
+                    'Crea el **CNAME** hacia la dirección que te indica y toca **Comprobar apuntamiento**. Cuando diga **El dominio responde**, la tienda ya abre ahí y los enlaces de los pedidos salen por tu dominio.',
+                    'En **Aparecer en Google** elige el título y la descripción que muestra Google (la vista previa te enseña cómo se ve). Después agrega tu dominio en **Google Search Console** y envía **tu-dominio/sitemap.xml**.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Sólo tu dominio aparece en Google',
+                md: 'La dirección de la plataforma (la del enlace de siempre) nunca se muestra en buscadores, y sigue funcionando aunque pongas tu dominio. Si apagas **Dejar que Google muestre la tienda**, la tienda abre igual en tu dominio pero Google no la lista.',
+            },
             {
                 t: 'example',
                 title: 'Una tostadora de café en Manizales',
@@ -206,7 +227,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: '¿Google muestra mi tienda?', a: 'No por ahora: la página no aparece en los buscadores. La compartes tú con el enlace, insertándola en tu sitio web o con el QR.' },
+                    { q: '¿Google muestra mi tienda?', a: 'Sólo si la pones en tu propio dominio (**Dominio y Google**): ahí cada producto tiene su dirección y Google la puede mostrar. La dirección de la plataforma nunca aparece en los buscadores.' },
                     { q: '¿Puedo usar el color de mi marca?', a: 'Sí. En **Estilo → Colores** la tienda usa el color de tu marca o el que elijas, y ahí mismo cambias el fondo, las tarjetas y el texto.' },
                     { q: '¿La tienda se ve oscura en los celulares en modo oscuro?', a: 'Sólo si eliges el modo **Oscuro** o **Automático** en **Estilo**. Con **Claro** se ve siempre clara.' },
                     { q: '¿Puedo vender un producto con variantes y otros sin ellas?', a: 'Sí. Un producto sin subtareas se vende como siempre; uno con variantes pide elegir la opción antes de agregarlo al carrito.' },

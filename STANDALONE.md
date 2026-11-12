@@ -9150,3 +9150,56 @@ carrito, diseño, dominio propio con SEO).
    vuelve a limpiar al servir.
 6. **El título y la descripción** de la tienda se editan en Estilo → Portada
    (siguen en `config.texts`).
+
+**Addendum v0.1.423 — La tienda en su propio dominio, y sólo ahí en Google.**
+Decisión del usuario: dominio propio "sólo para la tienda, y ahí con dominio
+propio sí se podría indexar en Google". Todo lo demás de la app (y la tienda
+en la dirección de la plataforma) sigue con `noindex` (ADR-S81).
+1. **Modelo**: `shops.custom_domain` (migración 0126, índice único parcial) y
+   el pedido pendiente en `shops.settings.domain_claim` — el MISMO ciclo de
+   ADR-S17/SEC-32: se pide, queda pendiente, el TXT
+   `_imagina-verify.<dominio>` lo activa y quien prueba ser dueño se lo lleva
+   (de otra empresa, del equipo o del portal). Un dominio no se repite entre
+   el equipo, el portal y las tiendas de la misma empresa, y nunca es el de
+   la plataforma. Sólo un administrador lo pide, verifica o quita; el plan
+   tiene que incluir `custom_domain` y `shop`. Endpoints
+   `GET/PATCH/DELETE /shops/:id/domain`, `POST …/domain/verify`,
+   `GET …/domain/dns` (bitácora `shop.domain_change`/`shop.domain_verified`);
+   el operador lo ve en Plataforma → Dominios como tipo «Tienda» y recibe los
+   mismos correos de ADR-S28.
+2. **Host → tienda** (`DomainsService.resolveShopHost`, conexión base): sólo
+   tiendas publicadas, sin suspender, de empresas sin archivar y con el plan.
+   Se guarda en la caché pública (`shophost:<host>`, 30 s; 15 s lo que no es).
+3. **Rutas en la raíz**, fuera del prefijo de Nest (`shop-site.routes.ts` →
+   `ShopSiteService`): `/` (inicio), `/p/<nombre>-<id>` (producto; otra forma
+   del nombre → 301 a la canónica con la consulta; no está → 410),
+   `/sitemap.xml` (410 si la tienda no se deja indexar), `/robots.txt` (en un
+   host que no es de una tienda, el de la plataforma) y `/_imagina/site` (el
+   sondeo: `{ok, shop_id}`). En cualquier otro host `/`, `/p/…` y
+   `/sitemap.xml` responden 404 al instante y el servidor web sirve la app
+   (nginx `error_page`, Caddy `handle_response`): es un paso UNA vez por
+   servidor (runbook de dominios), que la consola comprueba
+   (`site_routing`: pide `/_imagina/site` por `APP_BASE_URL`).
+4. **Lo que lee Google** (`siteHeadFor`, puro): título y descripción
+   (`config.seo` — título ≤70, descripción ≤200, vacíos = los de la tienda),
+   canónica, Open Graph y Twitter, JSON-LD (`OnlineStore`, `WebSite`,
+   `Product` con `Offer`/`AggregateOffer`, precio, moneda, disponibilidad,
+   SKU y categoría, `BreadcrumbList`) y el contenido en HTML (nombres, precios
+   y enlaces) dentro de `#app`, que el cliente reemplaza al montar.
+   `config.seo.index` apagado → `noindex, nofollow` y sin mapa del sitio. Las
+   fotos pedidas por el dominio de una tienda indexable llevan
+   `X-Robots-Tag: all`.
+5. **El cliente en modo sitio**: abrir un producto empuja `/p/…` al historial
+   (atrás vuelve al inicio), las tarjetas son enlaces reales y la CSP es la de
+   la tienda (con las etiquetas del enlace directo si las tiene, acotadas a
+   `/api/v1/public/` de ese origen).
+6. **Los enlaces salen por el dominio sólo si ya abre ESA tienda**
+   (`shopSiteUrl`: `/_imagina/site` por el dominio tiene que contestar con su
+   id; 10 min en caché si responde, 2 si no): el DTO trae `site_url`,
+   Compartir lo usa como enlace directo, y los correos de los pedidos y de
+   «Mis pedidos» salen por ahí. Si no responde, la dirección de la plataforma
+   como siempre. El código para insertar sigue saliendo de la app (o de la
+   dirección rápida, ADR-S102).
+7. **Editor**: sección «Dominio y Google» (tarjeta del dominio compartida con
+   Ajustes → Marca, `DomainPanel` con `shop`; «Aparecer en Google» con el
+   interruptor, título, descripción y la vista previa del resultado).

@@ -32,7 +32,7 @@ export class PlatformDomainsController {
     async check(
         @Body(new ZodValidationPipe(platformDomainCheckSchema)) body: z.infer<typeof platformDomainCheckSchema>,
     ): Promise<PlatformDomain> {
-        const entry = await this.domains.checkForPlatform(body.tenant_id, body.kind);
+        const entry = await this.domains.checkForPlatform(body.tenant_id, body.kind, body.shop_id);
         if (!entry) {
             throw new NotFoundException({ code: 'domain_not_found', message: 'Esa empresa no tiene ese dominio', data: { status: 404 } });
         }

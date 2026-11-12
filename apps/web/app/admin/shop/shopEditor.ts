@@ -5,7 +5,7 @@ import { SHOP_DESIGN_PRESETS, SHOP_PAYMENT_METHOD_LABELS, type ShopConfig, type 
  * está cada una en palabras y la sección donde se arregla cada problema.
  */
 
-export const SHOP_EDITOR_SECTIONS: readonly ShopSection[] = ['catalog', 'style', 'design', 'payment', 'coupons', 'checkout', 'seller', 'orders', 'measure', 'publish'];
+export const SHOP_EDITOR_SECTIONS: readonly ShopSection[] = ['catalog', 'style', 'design', 'payment', 'coupons', 'checkout', 'seller', 'orders', 'measure', 'domain', 'publish'];
 
 export const SHOP_SECTION_INFO: Record<ShopSection, { label: string; group: string; title: string; hint: string }> = {
     catalog: {
@@ -62,6 +62,12 @@ export const SHOP_SECTION_INFO: Record<ShopSection, { label: string; group: stri
         title: 'Medir conversiones',
         hint: 'Que Google Ads, Meta y Tag Manager vean cada compra, y de dónde llegó cada pedido.',
     },
+    domain: {
+        label: 'Dominio y Google',
+        group: 'Publicar',
+        title: 'Dominio propio y Google',
+        hint: 'Tu tienda en tu propio dominio (tienda.tuempresa.com), con una dirección por producto y lista para aparecer en Google.',
+    },
     publish: {
         label: 'Publicar',
         group: 'Publicar',
@@ -74,7 +80,7 @@ export const SHOP_SECTION_INFO: Record<ShopSection, { label: string; group: stri
 export function shopSectionSummary(
     s: ShopSection,
     config: ShopConfig,
-    ctx: { enabled: boolean; productsCount: number; ordersListName: string | null; couponsActive?: number | null },
+    ctx: { enabled: boolean; productsCount: number; ordersListName: string | null; couponsActive?: number | null; customDomain?: string | null; siteUrl?: string | null },
 ): string {
     switch (s) {
         case 'catalog': {
@@ -119,6 +125,10 @@ export function shopSectionSummary(
             const on = [c.google_ads ? 'Google Ads' : '', c.meta_event ? 'Meta' : '', c.direct_tags ? 'enlace directo' : ''].filter(Boolean);
             return on.length > 0 ? on.join(', ') : 'Tag Manager';
         }
+        case 'domain':
+            if (!ctx.customDomain) return 'Sin dominio propio';
+            if (!ctx.siteUrl) return `${ctx.customDomain} · falta que abra`;
+            return `${ctx.customDomain} · ${config.seo.index ? 'en Google' : 'fuera de Google'}`;
         case 'publish':
             return ctx.enabled ? 'Publicada' : 'Sin publicar';
     }

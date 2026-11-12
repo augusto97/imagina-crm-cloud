@@ -3018,4 +3018,33 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.423-tienda-dominio-google',
+        version: '0.1.423',
+        date: '2026-11-12',
+        kind: 'feature',
+        title: 'Tu tienda en tu propio dominio, lista para aparecer en Google',
+        summary:
+            'Pon tu tienda en tu dominio (por ejemplo tienda.tuempresa.com): cada producto tiene su propia dirección, la tienda trae lo que Google necesita para mostrarla y los enlaces de los pedidos salen por tu dominio.',
+        media: {
+            slides: [
+                {
+                    title: 'Tu dominio, en tres pasos',
+                    text: 'Escribe el dominio, crea el registro TXT para probar que es tuyo y apúntalo con un CNAME. La app te dice cuándo ya responde.',
+                    illustration: 'portal-domain',
+                },
+                {
+                    title: 'Lista para Google',
+                    text: 'Una dirección por producto con su nombre, el precio y si hay stock para Google, mapa del sitio y la vista al compartir en WhatsApp. Eliges el título y la descripción que muestra Google.',
+                    illustration: 'tienda-vitrina',
+                },
+            ],
+        },
+        body: [
+            '- Abre tu tienda (**Configurar lista → Tienda → Editar**) y ve a **Dominio y Google**. El dominio lo configura un administrador de la empresa.',
+            '- Sólo la tienda en tu propio dominio aparece en Google: la dirección de la plataforma nunca se muestra en buscadores.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

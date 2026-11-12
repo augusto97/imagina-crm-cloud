@@ -415,8 +415,18 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.422**
-(**la tienda con su estilo** — sección nueva «Estilo» en el editor de la
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.423**
+(**la tienda en su propio dominio, y sólo ahí en Google** — sección
+«Dominio y Google» en el editor de la tienda: se pide el dominio, se prueba
+con un TXT y se apunta con un CNAME (el mismo ciclo del dominio de la
+empresa); en su dominio la tienda tiene una dirección por producto
+(`/p/<nombre>-<id>`), mapa del sitio, robots.txt, datos de producto para
+Google, vista al compartir y el contenido en HTML; título y descripción para
+Google elegibles; los enlaces de los pedidos salen por el dominio sólo si ya
+abre la tienda. **Paso UNA vez por servidor**: pegar los dos `location` de
+`docs/runbook-custom-domains.md` en ServerAvatar (o recopiar el Caddyfile);
+la consola de Plataforma → Dominios dice si falta. Addendum ADR-S103). Antes
+**v0.1.422** (**la tienda con su estilo** — sección nueva «Estilo» en el editor de la
 tienda: seis plantillas, modo claro / oscuro / automático (con la vista
 previa para ver las dos), colores de fondo, tarjetas y texto (el texto se
 corrige solo si no se lee), letra de textos y títulos, encabezado (blanco, de
@@ -1973,6 +1983,32 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-12 · v0.1.423** — **La tienda en su propio dominio, y sólo ahí en
+  Google** (del mismo mensaje del usuario: "dominio propio para la tienda
+  ahora sí lo veo interesante, pero sólo para la tienda, y ahí con dominio
+  propio sí se podría indexar en Google"). `shops.custom_domain` (migración
+  0126) con el ciclo de ADR-S17 (pedido → TXT → activo; quien prueba ser
+  dueño se lo lleva; no se repite con el equipo, el portal ni otra tienda;
+  sólo admin; plan con `custom_domain` y `shop`). Rutas en la raíz fuera de
+  Nest (`ShopSiteService`): `/`, `/p/<nombre>-<id>` (301 a la canónica, 410 si
+  no está), `/sitemap.xml`, `/robots.txt` y el sondeo `/_imagina/site`; en
+  otro host 404 y el servidor web sirve la app. Cabecera para Google
+  (`siteHeadFor`: título/descripción de `config.seo`, canónica, OG, JSON-LD
+  de tienda/producto/migas, HTML visible) y modo sitio en el cliente (`/p/…`
+  en el historial). Los enlaces (Compartir, correos de pedidos y «Mis
+  pedidos») salen por el dominio sólo si `/_imagina/site` contesta con ESA
+  tienda. Editor: sección **Dominio y Google** (`ShopDomainPanel`, reusa
+  `DomainPanel`); consola: tipo «Tienda» en Dominios + tarjeta «Tiendas con
+  dominio propio» con el estado del paso del servidor y los `location` para
+  copiar. **Paso del operador, UNA vez**: pegar los dos `location` de
+  `docs/runbook-custom-domains.md` en ServerAvatar (la auto-actualización no
+  toca nginx); sin eso la tienda abre en su dominio pero redirige a la
+  dirección de siempre. **Límite de la verificación**: las reglas de nginx y
+  Caddy no se validaron con los binarios reales (no se pudieron instalar en el
+  entorno); sí la lógica del API y el cliente. Tests: `shops-domain.spec` (7),
+  `shop.test` +3 en shared, `shopEditor.test` +1, E2E navegador (ver CLAUDE.md
+  §5). Con esto queda completo el pedido de ese mensaje (v0.1.420 a v0.1.423).
 
 - **2026-11-12 · v0.1.422** — **La tienda con su estilo** (del mismo mensaje
   del usuario: "tampoco veo casi estilos de la tienda o ajustes"). Sección

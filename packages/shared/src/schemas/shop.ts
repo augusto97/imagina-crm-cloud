@@ -341,6 +341,22 @@ export const shopConversionSchema = z.object({
 });
 export type ShopConversion = z.infer<typeof shopConversionSchema>;
 
+/**
+ * v0.1.423 — Cómo aparece la tienda en Google. Sólo cuenta con un dominio
+ * propio: en la dirección de la plataforma la tienda nunca se indexa.
+ */
+export const SHOP_SEO_TITLE_MAX = 70;
+export const SHOP_SEO_DESCRIPTION_MAX = 200;
+export const shopSeoSchema = z.object({
+    /** Dejar que Google la muestre (con dominio propio). */
+    index: z.boolean().catch(true).default(true),
+    /** Vacío = el título de la tienda. */
+    title: z.string().trim().max(SHOP_SEO_TITLE_MAX).catch('').default(''),
+    /** Vacío = la descripción de la tienda. */
+    description: z.string().trim().max(SHOP_SEO_DESCRIPTION_MAX).catch('').default(''),
+});
+export type ShopSeo = z.infer<typeof shopSeoSchema>;
+
 export const shopConfigSchema = z.object({
     currency: z
         .string()
@@ -375,6 +391,8 @@ export const shopConfigSchema = z.object({
     orders: shopOrdersMapSchema.catch(() => shopOrdersMapSchema.parse({})).default({}),
     /** v0.1.418 — Medir conversiones. */
     conversion: shopConversionSchema.catch(() => shopConversionSchema.parse({})).default({}),
+    /** v0.1.423 — Cómo aparece en Google (sólo con dominio propio). */
+    seo: shopSeoSchema.catch(() => shopSeoSchema.parse({})).default({}),
 });
 export type ShopConfig = z.infer<typeof shopConfigSchema>;
 
@@ -465,6 +483,10 @@ export interface ShopDto {
     orders_count: number;
     /** v0.1.409 — De dónde sale el código para pegar (null = el dominio de la app). */
     embed_origin?: string | null;
+    /** v0.1.423 — Dominio propio VERIFICADO (null = sin dominio). */
+    custom_domain?: string | null;
+    /** v0.1.423 — `https://dominio` cuando ya abre la tienda (para compartir); null = todavía no. */
+    site_url?: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -720,7 +742,7 @@ export const publicShopQuoteSchema = z.object({
 
 // ── Lo que falta para publicar ──────────────────────────────────────────
 
-export type ShopSection = 'catalog' | 'style' | 'orders' | 'payment' | 'coupons' | 'checkout' | 'seller' | 'design' | 'publish' | 'measure';
+export type ShopSection = 'catalog' | 'style' | 'orders' | 'payment' | 'coupons' | 'checkout' | 'seller' | 'design' | 'publish' | 'measure' | 'domain';
 
 export interface ShopProblem {
     section: ShopSection;

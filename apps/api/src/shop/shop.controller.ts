@@ -1,9 +1,9 @@
 import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import {
     CAPTCHA_PROVIDER_INFO,
-    captchaCspSources,
     createShopKindColumnSchema,
     createShopSchema,
+    customDomainInputSchema,
     generateShopVariantsSchema,
     publicShopMyOrdersRequestSchema,
     publicShopOrderSchema,
@@ -15,6 +15,10 @@ import {
     updateShopSchema,
     type CreateShopInput,
     type CreateShopKindColumnInput,
+    type CustomDomainInput,
+    type DomainDnsReport,
+    type DomainVerifyResult,
+    type TenantDomain,
     type GenerateShopVariantsInput,
     type GenerateShopVariantsResult,
     type PublicShopMeta,
@@ -44,23 +48,26 @@ import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { SuperadminGuard } from '../authz/superadmin.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { can } from '../authz/can';
-import { useWebBuild } from '../common/web-build';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { ENV, type Env } from '../config/env';
 import { directTagsCsp, pageOrigin } from '../forms/direct-tags';
-import { inlineScriptHash, newNonce, type PageCspTags } from '../forms/form-page';
+import { newNonce, type PageCspTags } from '../forms/form-page';
 import { PublicBusyError } from '../public-cache/public-cache';
 import { precompress, sendPrecompressed, type Precompressed } from '../public-cache/public-send';
 import { RecordsService, type Actor } from '../records/records.service';
+import { DomainsService } from '../domains/domains.service';
+import { assertPlanModule } from '../billing/plan-module-gate';
+import { DRIZZLE, type Db } from '../db/client';
 import { aclOf } from '../tenancy/acl-of';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { shopImageWidth } from './shop-images.service';
 import { ShopCouponsService } from './shop-coupons.service';
 import { ShopOrdersService } from './shop-orders.service';
-import { loadShopClient, renderShopPage, shopMessagePage, shopNotFoundPage, shopPageCsp } from './shop-page';
+import { renderShopPage, shopMessagePage, shopNotFoundPage, shopPageCsp } from './shop-page';
 import { ShopPublicService, type ShopPageInfo } from './shop-public.service';
 import { ShopVariantsService } from './shop-variants.service';
+import { ShopPageAssets } from './shop-page-assets';
+import { ShopSiteService } from './shop-site.service';
 import { ShopService, type ShopActor } from './shop.service';
 import { ShopStatsService } from './shop-stats.service';
 
@@ -80,7 +87,79 @@ export class ShopsController {
         private readonly variants: ShopVariantsService,
         private readonly couponsSvc: ShopCouponsService,
         private readonly statsSvc: ShopStatsService,
+        private readonly domains: DomainsService,
+        private readonly site: ShopSiteService,
+        @Inject(DRIZZLE) private readonly db: Db,
     ) {}
+
+    // ── v0.1.423: el dominio propio de la tienda (y ahí sí, en Google) ──────
+
+    @Get(':id/domain')
+    @RequireCapability('manage_lists')
+    async getDomain(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<TenantDomain> {
+        const out = await this.domains.getForShop(req.tenant!.tenantId, id);
+        if (!out) throw shopNotFound();
+        return out;
+    }
+
+    /** Pedir un dominio: queda pendiente hasta el TXT (SEC-32). Sólo un administrador. */
+    @Patch(':id/domain')
+    @RequireCapability('manage_lists')
+    async setDomain(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(customDomainInputSchema)) input: CustomDomainInput,
+    ): Promise<TenantDomain> {
+        const tenantId = this.assertDomainAdmin(req);
+        await assertPlanModule(this.db, tenantId, 'custom_domain');
+        const out = await this.domains.setShop(tenantId, id, input.domain);
+        if (!out) throw shopNotFound();
+        await this.audit.log({ tenantId, userId: req.authUserId ?? null, action: 'shop.domain_change', targetType: 'shop', targetLabel: input.domain, meta: { shop_id: id } });
+        return out;
+    }
+
+    @Post(':id/domain/verify')
+    @HttpCode(200)
+    @RequireCapability('manage_lists')
+    async verifyDomain(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<DomainVerifyResult> {
+        const tenantId = this.assertDomainAdmin(req);
+        await assertPlanModule(this.db, tenantId, 'custom_domain');
+        const out = await this.domains.verifyShop(tenantId, id);
+        if (!out) throw shopNotFound();
+        if (out.verified) {
+            await this.audit.log({ tenantId, userId: req.authUserId ?? null, action: 'shop.domain_verified', targetType: 'shop', targetLabel: out.domain.domain ?? '', meta: { shop_id: id } });
+            this.site.forget(out.domain.domain);
+        }
+        return out;
+    }
+
+    @Delete(':id/domain')
+    @RequireCapability('manage_lists')
+    async clearDomain(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<TenantDomain> {
+        const tenantId = this.assertDomainAdmin(req);
+        const before = await this.domains.getForShop(tenantId, id);
+        const out = await this.domains.clearShop(tenantId, id);
+        if (!out) throw shopNotFound();
+        await this.audit.log({ tenantId, userId: req.authUserId ?? null, action: 'shop.domain_change', targetType: 'shop', targetLabel: '(sin dominio propio)', meta: { shop_id: id } });
+        this.site.forget(before?.domain);
+        return out;
+    }
+
+    /** CNAME en vivo + si el dominio ya abre la tienda. 404 sin dominio. */
+    @Get(':id/domain/dns')
+    @RequireCapability('manage_lists')
+    async domainDns(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<DomainDnsReport> {
+        const out = await this.domains.shopDnsReport(req.tenant!.tenantId, id);
+        if (!out) throw new NotFoundException({ code: 'domain_not_configured', message: 'Esta tienda todavía no tiene un dominio propio.', data: { status: 404 } });
+        return out;
+    }
+
+    private assertDomainAdmin(req: FastifyRequest): number {
+        if (req.tenant!.role !== 'admin') {
+            throw new ForbiddenException({ code: 'admin_only', message: 'El dominio de la tienda lo configura un administrador de la empresa.', data: { status: 403 } });
+        }
+        return req.tenant!.tenantId;
+    }
 
     @Get()
     @RequireCapability('manage_lists')
@@ -296,6 +375,10 @@ export class ShopsController {
     @RequireCapability('manage_lists')
     async remove(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<void> {
         const tenantId = req.tenant!.tenantId;
+        // v0.1.423 — su dominio queda para sacar del servidor (y la consola avisa).
+        const before = await this.domains.getForShop(tenantId, id);
+        await this.domains.clearShop(tenantId, id);
+        this.site.forget(before?.domain);
         const row = await this.shops.remove(tenantId, id);
         await this.audit.log({ tenantId, userId: req.authUserId ?? null, action: 'shop.delete', targetType: 'shop', targetLabel: row.name, meta: { shop_id: id } });
     }
@@ -401,6 +484,10 @@ function actorOf(req: FastifyRequest): Actor {
     return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }
 
+function shopNotFound(): NotFoundException {
+    return new NotFoundException({ code: 'shop_not_found', message: 'Esa tienda no existe.', data: { status: 404 } });
+}
+
 const CAPTCHA_SCRIPTS = Object.fromEntries(Object.entries(CAPTCHA_PROVIDER_INFO).map(([k, v]) => [k, v.script_url])) as Record<string, string>;
 
 /**
@@ -410,12 +497,11 @@ const CAPTCHA_SCRIPTS = Object.fromEntries(Object.entries(CAPTCHA_PROVIDER_INFO)
 @Controller('public/s')
 export class PublicShopPageController {
     private readonly rendered = new WeakMap<ShopPageInfo, { body: Precompressed; csp: string }>();
-    private hashFor: string | null = null;
-    private hash = '';
 
     constructor(
         private readonly publicSvc: ShopPublicService,
-        @Inject(ENV) private readonly env: Env,
+        private readonly assets: ShopPageAssets,
+        private readonly site: ShopSiteService,
     ) {}
 
     /** La vista previa del editor: arranca vacía y el catálogo llega por postMessage. */
@@ -434,7 +520,7 @@ export class PublicShopPageController {
 
     /** Una foto del catálogo al ancho pedido (160, 320, 640, 1200 o 1600). No cambia: se guarda un año. */
     @Get(':token/img/:key/:w')
-    async image(@Param('token') token: string, @Param('key') key: string, @Param('w') w: string, @Res() reply: FastifyReply): Promise<void> {
+    async image(@Req() req: FastifyRequest, @Param('token') token: string, @Param('key') key: string, @Param('w') w: string, @Res() reply: FastifyReply): Promise<void> {
         const width = shopImageWidth(w);
         let img = null;
         if (width) {
@@ -444,7 +530,10 @@ export class PublicShopPageController {
                 if (!(err instanceof PublicBusyError)) throw err;
             }
         }
-        reply.header('X-Content-Type-Options', 'nosniff').header('X-Robots-Tag', 'noindex');
+        // v0.1.423 — Pedida por el dominio propio de la tienda (y la tienda se deja
+        // mostrar en Google): la foto también, para que aparezca con el producto.
+        const indexable = img ? await this.site.indexableImageHost(req.host, token).catch(() => false) : false;
+        reply.header('X-Content-Type-Options', 'nosniff').header('X-Robots-Tag', indexable ? 'all' : 'noindex');
         if (!img) {
             reply.status(404).header('Cache-Control', 'public, max-age=60').send();
             return;
@@ -567,14 +656,7 @@ export class PublicShopPageController {
     }
 
     private csp(info: ShopPageInfo, client: string | null, tags: PageCspTags | null): string {
-        const c = captchaCspSources(info.captchaProvider);
-        return shopPageCsp(client === null ? '' : `'${this.clientHash(client)}'`, info.allowedDomains, {
-            dev: client === null,
-            captchaScript: c.script,
-            captchaFrame: c.frame,
-            captchaConnect: c.connect,
-            tags,
-        });
+        return this.assets.csp(info, client, tags);
     }
 
     private page_(info: ShopPageInfo, client: string | null): { body: Precompressed; csp: string } {
@@ -586,18 +668,8 @@ export class PublicShopPageController {
         return out;
     }
 
-    /** El compilado (null = desarrollo, módulo de vite; undefined = producción sin el build). */
     private client(): string | null | undefined {
-        if (!useWebBuild(this.env)) return null;
-        return loadShopClient(this.env.WEB_DIST_DIR) ?? undefined;
-    }
-
-    private clientHash(client: string): string {
-        if (this.hashFor !== client) {
-            this.hashFor = client;
-            this.hash = inlineScriptHash(client);
-        }
-        return this.hash;
+        return this.assets.client();
     }
 
     private missing(reply: FastifyReply, status: 404 | 503): void {

@@ -199,6 +199,19 @@ export class ShopOrdersService implements OnModuleInit {
         return this.base(tenantId);
     }
 
+    /**
+     * v0.1.423 — La página de la tienda para los enlaces que salen (el pedido,
+     * «Mis pedidos»): su dominio propio si ya responde; si no, la dirección de
+     * la tienda en la plataforma (que funciona siempre).
+     */
+    async shopPageUrl(tenantId: number, shop: { id: number; token: string; customDomain?: string | null } | null, token: string): Promise<string> {
+        if (shop?.customDomain && this.domains) {
+            const site = await this.domains.shopSiteUrl(shop.id, shop.customDomain).catch(() => null);
+            if (site) return `${site}/`;
+        }
+        return `${await this.base(tenantId)}/api/v1/public/s/${token}`;
+    }
+
     private async base(tenantId: number): Promise<string> {
         if (this.domains) {
             try {
@@ -250,9 +263,8 @@ export class ShopOrdersService implements OnModuleInit {
         const fmt = tenantFormatSchema.safeParse(s.tenantSettings.format ?? {});
         const numberFormat = fmt.success ? fmt.data.number_format : 'dot_comma';
         const money = (n: number): string => formatShopMoney(n, currency, numberFormat);
-        const base = await this.base(tenantId);
         const orderToken = newOrderToken();
-        const orderUrl = `${base}/api/v1/public/s/${s.token}?pedido=${orderToken}`;
+        const orderUrl = `${await this.shopPageUrl(tenantId, shop, s.token)}?pedido=${orderToken}`;
         // v0.1.416 — «Sin costo» como opción de la columna del método (tiendas de antes).
         if (input.payment_method === 'free' || input.payment_method === 'subscription') await this.ensureMethodOption(tenantId, config, input.payment_method).catch(() => undefined);
 
@@ -1061,7 +1073,7 @@ export class ShopOrdersService implements OnModuleInit {
             totals: { subtotal: row.subtotal, shipping: row.shipping, total: row.total, discount: row.discount, coupon: row.couponCode },
             delivery: (row.delivery as { name?: string }).name ?? '',
             method: row.paymentMethod as ShopPaymentMethod,
-            orderUrl: `${base}/api/v1/public/s/${ctx.token}?pedido=${row.token}`,
+            orderUrl: `${await this.shopPageUrl(tenantId, ctx.shop, ctx.token)}?pedido=${row.token}`,
             money,
             provider: link?.provider ?? null,
             ...(row.paymentMethod === 'subscription' ? { subscription: await this.subscriptionText(tenantId, row.token, money) } : {}),
@@ -1280,12 +1292,11 @@ export class ShopOrdersService implements OnModuleInit {
         const res = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [row] = await tx.select().from(shopOrders).where(and(eq(shopOrders.tenantId, tenantId), eq(shopOrders.recordId, recordId))).limit(1);
             if (!row) return null;
-            const [shop] = row.shopId ? await tx.select({ name: shops.name, token: shops.token }).from(shops).where(and(eq(shops.tenantId, tenantId), eq(shops.id, row.shopId))).limit(1) : [];
+            const [shop] = row.shopId ? await tx.select({ id: shops.id, name: shops.name, token: shops.token, customDomain: shops.customDomain }).from(shops).where(and(eq(shops.tenantId, tenantId), eq(shops.id, row.shopId))).limit(1) : [];
             return { row, shop: shop ?? null };
         });
         if (!res) return null;
         const { row, shop } = res;
-        const base = await this.base(tenantId);
         return {
             shop_id: row.shopId,
             shop_name: shop?.name ?? 'Tienda eliminada',
@@ -1299,7 +1310,7 @@ export class ShopOrdersService implements OnModuleInit {
             stock_state: (row.stockState as ShopOrderPanelDto['stock_state']) ?? 'none',
             paid_at: row.paidAt ? row.paidAt.toISOString() : null,
             cancelled: row.cancelledAt !== null,
-            public_url: shop ? `${base}/api/v1/public/s/${shop.token}?pedido=${row.token}` : null,
+            public_url: shop ? `${await this.shopPageUrl(tenantId, shop, shop.token)}?pedido=${row.token}` : null,
             created_at: row.createdAt.toISOString(),
             ...(await this.panelOnline(tenantId, row)),
             ...(await this.panelDownloads(tenantId, row)),

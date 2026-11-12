@@ -25,6 +25,8 @@ export const shops = pgTable(
         settings: jsonb('settings').$type<Record<string, unknown>>().notNull(),
         suspendedAt: timestamp('suspended_at', { withTimezone: true }),
         suspendedReason: text('suspended_reason'),
+        /** v0.1.423 — Dominio propio VERIFICADO (el pedido vive en `settings.domain_claim`). */
+        customDomain: varchar('custom_domain', { length: 253 }),
         createdBy: bigint('created_by', { mode: 'number' }),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

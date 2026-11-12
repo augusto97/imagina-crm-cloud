@@ -28,6 +28,17 @@ describe('editor de la tienda (v0.1.412)', () => {
         expect(shopSectionSummary('measure', measured, ctx)).toBe('Google Ads, Meta');
     });
 
+    it('v0.1.423 — «Dominio y Google» dice en qué está el dominio', () => {
+        const c = defaultShopConfig();
+        const ctx = { enabled: true, productsCount: 1, ordersListName: null };
+        expect(shopSectionSummary('domain', c, ctx)).toBe('Sin dominio propio');
+        expect(shopSectionSummary('domain', c, { ...ctx, customDomain: 'tienda.acme.co' })).toBe('tienda.acme.co · falta que abra');
+        expect(shopSectionSummary('domain', c, { ...ctx, customDomain: 'tienda.acme.co', siteUrl: 'https://tienda.acme.co' })).toBe('tienda.acme.co · en Google');
+        const hidden = { ...c, seo: { ...c.seo, index: false } };
+        expect(shopSectionSummary('domain', hidden, { ...ctx, customDomain: 'tienda.acme.co', siteUrl: 'https://tienda.acme.co' })).toBe('tienda.acme.co · fuera de Google');
+        expect(shopEditorSection('domain')).toBe('domain');
+    });
+
     it('lo que falta para publicar se marca en su sección', () => {
         const c = defaultShopConfig();
         const problems = shopProblems(c, { hasOrdersLists: true, priceFieldOk: false });

@@ -52,6 +52,8 @@ export type AuditAction =
     | 'shop.delete'
     | 'shop.mark_paid'
     | 'shop.kind_column'
+    | 'shop.domain_change'
+    | 'shop.domain_verified'
     | 'shop.origin_columns'
     | 'shop.resend_downloads'
     | 'shop.variants_create'
