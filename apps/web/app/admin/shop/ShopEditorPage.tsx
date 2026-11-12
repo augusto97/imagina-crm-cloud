@@ -183,6 +183,8 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
     }, []);
 
     const [mobileTab, setMobileTab] = useState<'edit' | 'preview'>('edit');
+    // v0.1.414 — Crear variantes cambia el catálogo: la vista previa se vuelve a pedir.
+    const [catalogVersion, setCatalogVersion] = useState(0);
     const [mobileSection, setMobileSection] = useState<ShopSection | null>(params.get('t') ? section : null);
     const openSection = (s: ShopSection): void => {
         go(s);
@@ -203,7 +205,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
     const body = (s: ShopSection): JSX.Element => {
         switch (s) {
             case 'catalog':
-                return <CatalogPanel config={config} options={options} patch={patch} />;
+                return <CatalogPanel shopId={shop.id} config={config} options={options} patch={patch} onCatalogChanged={() => setCatalogVersion((n) => n + 1)} />;
             case 'design':
                 return <DesignPanel config={config} options={options} patch={patch} />;
             case 'payment':
@@ -317,7 +319,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                         ))}
                     {mobileTab === 'preview' && (
                         <div className="imcrm-h-full">
-                            <ShopPreview shopId={shop.id} config={config} compact />
+                            <ShopPreview shopId={shop.id} config={config} version={catalogVersion} compact />
                         </div>
                     )}
                 </div>
@@ -362,7 +364,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                     {body(section)}
                 </aside>
                 <div className="imcrm-min-h-0 imcrm-min-w-0">
-                    <ShopPreview shopId={shop.id} config={config} />
+                    <ShopPreview shopId={shop.id} config={config} version={catalogVersion} />
                 </div>
             </div>
         </div>

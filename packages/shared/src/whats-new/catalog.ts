@@ -2720,4 +2720,36 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.414-tienda-variantes',
+        version: '0.1.414',
+        date: '2026-11-12',
+        kind: 'feature',
+        title: 'Productos con tallas, colores y más opciones',
+        summary:
+            'Tu tienda ya vende productos con variantes: tu cliente elige talla y color, y cada combinación tiene su propio precio, stock, referencia y foto.',
+        media: {
+            slides: [
+                {
+                    title: 'Cada combinación, una subtarea',
+                    text: 'La «Camiseta» queda en tu lista y cada variante («M / Rojo») es una subtarea suya, con su precio y su stock.',
+                    illustration: 'tienda-vitrina',
+                },
+                {
+                    title: 'Tu cliente elige y compra',
+                    text: 'En la tienda elige la talla y el color; lo agotado se ve tachado y el stock se descuenta de la variante que compró.',
+                    illustration: 'tienda-pedido',
+                },
+            ],
+        },
+        body: [
+            'Abre tu tienda (**Configurar lista → Tienda**) y ve a **Catálogo → Variantes**.',
+            '',
+            '- Activa **Productos con variantes** y elige los campos de la variante, como «Talla» y «Color».',
+            '- Toca **Crear variantes de un producto**: marca las tallas y los colores y se crean todas las combinaciones de una vez.',
+            '- Lo que una variante deja vacío lo toma del producto: el precio y la foto, por ejemplo.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

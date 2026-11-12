@@ -17,7 +17,7 @@ type View = 'catalog' | 'checkout';
  * catálogo lo arma el servidor (con las fotos por URL firmada) y llega al
  * marco por `postMessage`; nada se envía desde ahí.
  */
-export function ShopPreview({ shopId, config, compact }: { shopId: number; config: ShopConfig; compact?: boolean }): JSX.Element {
+export function ShopPreview({ shopId, config, compact, version = 0 }: { shopId: number; config: ShopConfig; compact?: boolean; version?: number }): JSX.Element {
     const frame = useRef<HTMLIFrameElement>(null);
     const [ready, setReady] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -57,7 +57,7 @@ export function ShopPreview({ shopId, config, compact }: { shopId: number; confi
         }, 350);
         return () => window.clearTimeout(t);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [shopId, config]);
+    }, [shopId, config, version]);
 
     const post = (): void => {
         const w = frame.current?.contentWindow;

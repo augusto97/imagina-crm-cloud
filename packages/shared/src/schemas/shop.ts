@@ -4,6 +4,7 @@ import {
     SHOP_MAX_DELIVERY_METHODS,
     SHOP_MAX_LINES,
     SHOP_MAX_QTY,
+    SHOP_MAX_VARIANT_ATTRIBUTES,
     SHOP_PAYMENT_METHODS,
     SHOP_WHATSAPP_DEFAULT_INTRO,
     shopWhatsappPhoneOk,
@@ -51,6 +52,21 @@ export const shopCatalogFieldsSchema = z.object({
     active: nullableRef,
 });
 export type ShopCatalogFields = z.infer<typeof shopCatalogFieldsSchema>;
+
+/**
+ * v0.1.414 — Productos con variantes (talla, color…). Cada variante es una
+ * SUBTAREA del producto en la misma lista: tiene su propio precio (vacío = el
+ * del producto), su stock, su referencia y sus fotos (vacías = las del
+ * producto). Los atributos son campos de la lista (selección o texto) que
+ * distinguen una variante de otra; sin atributos, la opción es el nombre de
+ * la subtarea.
+ */
+export const shopVariantsSchema = z.object({
+    enabled: z.boolean().catch(false).default(false),
+    /** Hasta 3 campos por ID, en el orden en que se eligen (Talla, Color…). */
+    attributes: z.array(refId).max(SHOP_MAX_VARIANT_ATTRIBUTES).catch([]).default([]),
+});
+export type ShopVariantsConfig = z.infer<typeof shopVariantsSchema>;
 
 export const shopDeliveryMethodSchema = z.object({
     id: z.string().regex(SHOP_ITEM_ID_RE),
@@ -201,6 +217,7 @@ export const shopConfigSchema = z.object({
         .catch('COP')
         .default('COP'),
     catalog: shopCatalogFieldsSchema.catch(() => shopCatalogFieldsSchema.parse({})).default({}),
+    variants: shopVariantsSchema.catch(() => shopVariantsSchema.parse({})).default({}),
     delivery: z.array(shopDeliveryMethodSchema).max(SHOP_MAX_DELIVERY_METHODS).catch([]).default([]),
     payments: shopPaymentsSchema.catch(() => shopPaymentsSchema.parse({})).default({}),
     checkout: shopCheckoutSchema.catch(() => shopCheckoutSchema.parse({})).default({}),
@@ -329,6 +346,53 @@ export interface ShopOptions {
     other_shops: Array<{ id: number; name: string; orders_list_name: string | null }>;
     /** v0.1.413 — Las cuentas de cobro del equipo (Mercado Pago, Wompi, PayPal) para el pago en línea. */
     payment_connections: Array<{ id: number; name: string; provider: 'mercadopago' | 'wompi' | 'paypal'; test_mode: boolean }>;
+}
+
+// ── v0.1.414: el generador de variantes del editor ─────────────────────
+
+/** Un producto del catálogo para elegir a cuál crearle variantes. */
+export interface ShopVariantProductDto {
+    id: number;
+    title: string;
+    price: number | null;
+    /** Cuántas variantes (subtareas) tiene hoy. */
+    variants: number;
+}
+
+export interface ShopVariantAttributeDto {
+    field_id: number;
+    label: string;
+    type: 'select' | 'text';
+    /** Las opciones del campo (selección) o los valores ya usados en las variantes (texto). */
+    values: string[];
+}
+
+export interface ShopProductVariantsDto {
+    product: { id: number; title: string; price: number | null; stock: number | null; sku: string };
+    attributes: ShopVariantAttributeDto[];
+    variants: Array<{ id: number; label: string; values: string[]; price: number | null; stock: number | null; sku: string }>;
+}
+
+export const generateShopVariantsSchema = z.object({
+    /** Los atributos (en el orden del editor, aunque todavía no se hayan guardado). */
+    attributes: z.array(refId).min(1).max(SHOP_MAX_VARIANT_ATTRIBUTES),
+    /** Los valores elegidos para cada atributo (por etiqueta). */
+    values: z.array(z.array(z.string().trim().min(1).max(80)).min(1).max(40)).min(1).max(SHOP_MAX_VARIANT_ATTRIBUTES),
+    /** Precio de las variantes nuevas (vacío = el del producto). */
+    price: z.number().min(0).max(1_000_000_000).nullable().optional(),
+    /** Stock inicial (vacío = sin límite o lo cargas después). */
+    stock: z.number().int().min(0).max(10_000_000).nullable().optional(),
+});
+export type GenerateShopVariantsInput = z.infer<typeof generateShopVariantsSchema>;
+
+export interface GenerateShopVariantsResult {
+    created: number;
+    /** Combinaciones que el producto ya tenía. */
+    existing: number;
+    /** Había más combinaciones que el tope de una vez. */
+    truncated: boolean;
+    /** Si algo cortó la creación a la mitad (límite del plan, permisos). */
+    error: string | null;
 }
 
 /** El pedido de un registro de «Pedidos», para el panel de la ficha. */

@@ -25,6 +25,14 @@ export const SHOP_MAX_QTY = 999;
 export const SHOP_MAX_DELIVERY_METHODS = 10;
 /** Fotos por producto que se muestran. */
 export const SHOP_MAX_IMAGES = 8;
+/** v0.1.414 — Atributos que distinguen las variantes (talla, color, material). */
+export const SHOP_MAX_VARIANT_ATTRIBUTES = 3;
+/** v0.1.414 — Variantes por producto que muestra la tienda (las demás no se venden). */
+export const SHOP_MAX_VARIANTS = 60;
+/** v0.1.414 — Variantes que crea el generador de una vez. */
+export const SHOP_MAX_GENERATED_VARIANTS = 60;
+/** Los tipos de campo que sirven como atributo de una variante. */
+export const SHOP_VARIANT_ATTRIBUTE_TYPES = ['select', 'text'] as const;
 /** Anchos de las miniaturas que sirve la tienda. */
 export const SHOP_IMAGE_WIDTHS = [160, 320, 640, 1200] as const;
 export type ShopImageWidth = (typeof SHOP_IMAGE_WIDTHS)[number];
@@ -252,6 +260,204 @@ export interface PublicShopProduct {
     sku: string;
     /** `created_at` para ordenar por lo más nuevo. */
     created_at: string;
+    /**
+     * v0.1.414 — Las variantes (talla, color…). Con variantes el producto no se
+     * compra directamente: se elige una. El precio del producto es el más bajo
+     * de sus variantes y el stock, la suma (null si alguna no tiene límite).
+     */
+    variants?: PublicShopVariant[];
+    /** v0.1.414 — Los atributos y sus valores, en orden, para elegir la variante. */
+    options?: PublicShopOption[];
+}
+
+/** v0.1.414 — Una variante como la ve la tienda pública. */
+export interface PublicShopVariant {
+    id: number;
+    /** «M / Rojo»: lo que se ve en el carrito y en el pedido. */
+    label: string;
+    /** Un valor por atributo, alineado con `options` del producto. */
+    values: string[];
+    price: number | null;
+    compare_price: number | null;
+    stock: number | null;
+    sku: string;
+    /** Sus fotos (vacío = las del producto). */
+    images: string[];
+}
+
+export interface PublicShopOption {
+    name: string;
+    values: string[];
+}
+
+/** Lo que se compra: un producto simple o una variante (con su producto). */
+export interface ShopPurchasable extends ShopCartProduct {
+    product: PublicShopProduct;
+    variant: PublicShopVariant | null;
+    images: string[];
+    sku: string;
+}
+
+/** «Camiseta · M / Rojo»: el nombre de una variante en el carrito y el pedido. */
+export function shopVariantTitle(productTitle: string, label: string): string {
+    return label ? `${productTitle} · ${label}`.slice(0, 250) : productTitle;
+}
+
+/**
+ * Lo que se puede poner en el carrito, por id: los productos sin variantes y
+ * cada variante (un producto CON variantes no se compra directamente). La usan
+ * la página (estimación) y el servidor (la cuenta del carrito).
+ */
+export function shopPurchasables(products: readonly PublicShopProduct[]): Map<number, ShopPurchasable> {
+    const out = new Map<number, ShopPurchasable>();
+    for (const p of products) {
+        if (p.variants && p.variants.length > 0) {
+            for (const v of p.variants) {
+                out.set(v.id, {
+                    id: v.id,
+                    title: shopVariantTitle(p.title, v.label),
+                    price: v.price,
+                    stock: v.stock,
+                    product: p,
+                    variant: v,
+                    images: v.images.length > 0 ? v.images : p.images,
+                    sku: v.sku || p.sku,
+                });
+            }
+            continue;
+        }
+        out.set(p.id, { id: p.id, title: p.title, price: p.price, stock: p.stock, product: p, variant: null, images: p.images, sku: p.sku });
+    }
+    return out;
+}
+
+/** La variante que corresponde a lo elegido (un valor por atributo; null = sin elegir). */
+export function pickShopVariant(p: PublicShopProduct, selected: readonly (string | null)[]): PublicShopVariant | null {
+    const opts = p.options ?? [];
+    if (!p.variants || opts.length === 0) return null;
+    for (let i = 0; i < opts.length; i++) if (!selected[i]) return null;
+    return p.variants.find((v) => opts.every((_, i) => v.values[i] === selected[i])) ?? null;
+}
+
+/**
+ * Cómo se ve un valor de un atributo dado lo ya elegido en los OTROS: si no
+ * hay ninguna variante con esa combinación (`none`), si todas están agotadas
+ * (`sold_out`) o si se puede comprar (`ok`).
+ */
+export function shopOptionValueState(p: PublicShopProduct, selected: readonly (string | null)[], optIdx: number, value: string): 'ok' | 'sold_out' | 'none' {
+    const opts = p.options ?? [];
+    let any = false;
+    for (const v of p.variants ?? []) {
+        if (v.values[optIdx] !== value) continue;
+        let match = true;
+        for (let i = 0; i < opts.length; i++) {
+            if (i === optIdx) continue;
+            const s = selected[i];
+            if (s && v.values[i] !== s) {
+                match = false;
+                break;
+            }
+        }
+        if (!match) continue;
+        any = true;
+        if (v.price !== null && (v.stock === null || v.stock > 0)) return 'ok';
+    }
+    return any ? 'sold_out' : 'none';
+}
+
+/** El rango de precios de las variantes (null = sin variantes con precio). */
+export function shopVariantPriceRange(p: PublicShopProduct): { min: number; max: number } | null {
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    for (const v of p.variants ?? []) {
+        if (v.price === null) continue;
+        min = Math.min(min, v.price);
+        max = Math.max(max, v.price);
+    }
+    return Number.isFinite(min) ? { min, max } : null;
+}
+
+/**
+ * El producto visto desde sus variantes: precio = el más bajo (con su «antes»),
+ * stock = la suma (null si alguna no tiene límite o la tienda no controla
+ * stock) y, sin fotos propias, las de la primera variante que tenga.
+ */
+export function summarizeVariantProduct(p: PublicShopProduct, variants: PublicShopVariant[], options: PublicShopOption[]): PublicShopProduct {
+    if (variants.length === 0) return { ...p, variants: undefined, options: undefined };
+    let cheapest: PublicShopVariant | null = null;
+    for (const v of variants) if (v.price !== null && (cheapest === null || v.price < (cheapest.price ?? Infinity))) cheapest = v;
+    let stock: number | null = 0;
+    for (const v of variants) {
+        if (v.stock === null) {
+            stock = null;
+            break;
+        }
+        stock += Math.max(0, v.stock);
+    }
+    const images = p.images.length > 0 ? p.images : (variants.find((v) => v.images.length > 0)?.images ?? []);
+    return {
+        ...p,
+        price: cheapest?.price ?? null,
+        compare_price: cheapest && cheapest.compare_price !== null && cheapest.price !== null && cheapest.compare_price > cheapest.price ? cheapest.compare_price : null,
+        stock,
+        images,
+        variants,
+        options,
+    };
+}
+
+function foldValue(s: string): string {
+    return s
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+}
+
+/**
+ * v0.1.414 — Las combinaciones que faltan: todas las de los valores elegidos
+ * (Talla × Color) menos las que el producto ya tiene. Compara sin tildes ni
+ * mayúsculas. Tope `SHOP_MAX_GENERATED_VARIANTS`.
+ */
+export function missingVariantCombos(
+    chosen: readonly (readonly string[])[],
+    existing: readonly (readonly string[])[],
+): { combos: string[][]; existing: number; truncated: boolean } {
+    const clean = chosen.map((vals) => {
+        const seen = new Set<string>();
+        const out: string[] = [];
+        for (const raw of vals) {
+            const v = String(raw ?? '').trim().slice(0, 80);
+            const k = foldValue(v);
+            if (!v || seen.has(k)) continue;
+            seen.add(k);
+            out.push(v);
+        }
+        return out;
+    });
+    if (clean.length === 0 || clean.some((v) => v.length === 0)) return { combos: [], existing: 0, truncated: false };
+    const have = new Set(existing.map((vals) => vals.map((v) => foldValue(String(v ?? ''))).join('\u0001')));
+    const combos: string[][] = [];
+    let found = 0;
+    let truncated = false;
+    const walk = (i: number, acc: string[]): void => {
+        if (truncated) return;
+        if (i === clean.length) {
+            if (have.has(acc.map(foldValue).join('\u0001'))) {
+                found++;
+                return;
+            }
+            if (combos.length >= SHOP_MAX_GENERATED_VARIANTS) {
+                truncated = true;
+                return;
+            }
+            combos.push([...acc]);
+            return;
+        }
+        for (const v of clean[i]!) walk(i + 1, [...acc, v]);
+    };
+    walk(0, []);
+    return { combos, existing: found, truncated };
 }
 
 export interface ShopCartLineInput {
@@ -379,6 +585,8 @@ export interface ShopOrderLineSnapshot {
     subtotal: number;
     /** Si la línea descontó stock (para devolverlo al cancelar). */
     stock_taken: boolean;
+    /** v0.1.414 — Con una variante: el producto al que pertenece (`product_id` es la variante). */
+    parent_id?: number | null;
 }
 
 /** El mensaje de WhatsApp de un pedido (lo arma el servidor: el número nunca viaja a la página). */

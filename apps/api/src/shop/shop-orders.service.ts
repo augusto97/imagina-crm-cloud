@@ -16,7 +16,6 @@ import {
     type Field,
     type PublicShopOrder,
     type PublicShopOrderInput,
-    type ShopCartProduct,
     type ShopCartResult,
     type ShopConfig,
     type ShopOrderLineSnapshot,
@@ -45,7 +44,7 @@ import { RecordChangeHub, type RecordChange } from '../records/record-change-hub
 import { RecordsRepository } from '../records/records.repository';
 import { RelationsRepository } from '../records/relations.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
-import { productFromRow, resolveCatalogFields } from './shop-catalog';
+import { purchasablesFromRows, resolveCatalogFields, resolveVariantAttributes, type PurchasableRow, type ResolvedCatalog } from './shop-catalog';
 import { shopOrderEmail } from './shop-email';
 import type { CustomerRole, LineRole, OrderRole } from './shop-pack';
 
@@ -222,20 +221,24 @@ export class ShopOrdersService implements OnModuleInit {
             const rf = resolveCatalogFields(catalogFields, config.catalog, catalogList?.settings ?? {});
             if (!rf.price) badRequest('shop_closed', 'Esta tienda no está recibiendo pedidos ahora.');
 
-            // 1) Los productos, bloqueados y leídos de la base.
+            // 1) Los productos (o variantes), bloqueados y leídos de la base.
             const ids = [...new Set(input.lines.map((l) => l.product_id))].sort((a, b) => a - b);
+            const variantsOn = config.variants.enabled;
             const rows = await tx
-                .select({ id: records.id, data: records.data, createdAt: records.createdAt })
+                .select({ id: records.id, data: records.data, createdAt: records.createdAt, parentId: records.parentId })
                 .from(records)
-                .where(and(eq(records.tenantId, tenantId), eq(records.listId, shop.listId), inArray(records.id, ids), isNull(records.deletedAt), isNull(records.parentId)))
+                .where(
+                    and(
+                        eq(records.tenantId, tenantId),
+                        eq(records.listId, shop.listId),
+                        inArray(records.id, ids),
+                        isNull(records.deletedAt),
+                        ...(variantsOn ? [] : [isNull(records.parentId)]),
+                    ),
+                )
                 .orderBy(asc(records.id))
                 .for('no key update');
-            const byId = new Map<number, { data: Record<string, unknown>; product: ShopCartProduct; sku: string }>();
-            for (const r of rows) {
-                const p = productFromRow({ id: r.id, data: r.data as Record<string, unknown>, createdAt: r.createdAt }, rf);
-                if (!p.active) continue;
-                byId.set(r.id, { data: r.data as Record<string, unknown>, product: { id: r.id, title: p.product.title, price: p.product.price, stock: p.product.stock }, sku: p.product.sku });
-            }
+            const byId = await this.purchasableRows(tx, tenantId, shop.listId, rows, rf, variantsOn ? resolveVariantAttributes(catalogFields, config.variants.attributes) : null);
             const cart = computeShopCart(input.lines, new Map([...byId].map(([k, v]) => [k, v.product])), {
                 shipping: delivery!.price,
                 minOrder: config.checkout.min_order,
@@ -271,7 +274,7 @@ export class ShopOrdersService implements OnModuleInit {
                         tookStock = true;
                     }
                 }
-                lines.push({ product_id: l.product_id, title: l.title, sku: p.sku, qty: l.qty, unit_price: l.unit_price, subtotal: l.subtotal, stock_taken: taken });
+                lines.push({ product_id: l.product_id, title: l.title, sku: p.sku, qty: l.qty, unit_price: l.unit_price, subtotal: l.subtotal, stock_taken: taken, parent_id: p.parentId });
             }
 
             // 4) El cliente: por su correo en «Clientes de la tienda».
@@ -1001,6 +1004,48 @@ export class ShopOrdersService implements OnModuleInit {
             }).catch((err: unknown) => this.logger.warn(`Tienda ${ctx.shop.id}: no salió el correo del pago ${out.row.number}: ${String(err)}`));
         }
         return out.outcome;
+    }
+
+    /**
+     * v0.1.414 — Lo que se puede comprar de las filas pedidas: un producto sin
+     * variantes, o una variante (subtarea) de un producto que se vende. Un
+     * producto CON variantes no se compra directamente (se elige una).
+     */
+    private async purchasableRows(
+        tx: Tx,
+        tenantId: number,
+        listId: number,
+        rows: PurchasableRow[],
+        rf: ResolvedCatalog,
+        attrs: Field[] | null,
+    ): Promise<ReturnType<typeof purchasablesFromRows>> {
+        const parents = new Map<number, PurchasableRow>();
+        const withVariants = new Set<number>();
+        if (attrs !== null) {
+            const parentIds = [...new Set(rows.map((r) => r.parentId).filter((x): x is number => x !== null))];
+            if (parentIds.length > 0) {
+                const ps = await tx
+                    .select({ id: records.id, data: records.data, createdAt: records.createdAt, parentId: records.parentId })
+                    .from(records)
+                    .where(and(eq(records.tenantId, tenantId), eq(records.listId, listId), inArray(records.id, parentIds), isNull(records.deletedAt), isNull(records.parentId)));
+                for (const p of ps) parents.set(p.id, { ...p, data: p.data as Record<string, unknown> });
+            }
+            const topIds = rows.filter((r) => r.parentId === null).map((r) => r.id);
+            if (topIds.length > 0) {
+                const kids = await tx
+                    .selectDistinct({ parentId: records.parentId })
+                    .from(records)
+                    .where(and(eq(records.tenantId, tenantId), eq(records.listId, listId), inArray(records.parentId, topIds), isNull(records.deletedAt)));
+                for (const k of kids) if (k.parentId !== null) withVariants.add(k.parentId);
+            }
+        }
+        return purchasablesFromRows(
+            rows.map((r) => ({ ...r, data: r.data as Record<string, unknown> })),
+            parents,
+            withVariants,
+            rf,
+            attrs,
+        );
     }
 
     /** ¿Alcanza el stock de hoy para volver a tomar lo que devolvió el pedido? (con los productos bloqueados) */

@@ -19,8 +19,17 @@
  * En el editor (vista previa) el catálogo y la configuración llegan por
  * `postMessage` y nada se envía: comprar muestra un aviso.
  */
-import type { PublicShopMeta, PublicShopOrder, PublicShopProduct, ShopCartResult, ShopPaymentMethod } from '@imagina-base/shared';
-import { SHOP_MAX_QTY, computeShopCart, formatShopMoney, shopLineProblemText } from '@imagina-base/shared/src/schemas/shop-logic';
+import type { PublicShopMeta, PublicShopOrder, PublicShopProduct, PublicShopVariant, ShopCartResult, ShopPaymentMethod, ShopPurchasable } from '@imagina-base/shared';
+import {
+    SHOP_MAX_QTY,
+    computeShopCart,
+    formatShopMoney,
+    pickShopVariant,
+    shopLineProblemText,
+    shopOptionValueState,
+    shopPurchasables,
+    shopVariantPriceRange,
+} from '@imagina-base/shared/src/schemas/shop-logic';
 
 interface Boot {
     token: string;
@@ -48,6 +57,8 @@ const CUSTOMER_KEY = `imb-shop-customer:${BOOT.token}`;
 let meta: PublicShopMeta | null = BOOT.meta;
 let products: PublicShopProduct[] = BOOT.products ?? [];
 let byId = new Map<number, PublicShopProduct>();
+/** v0.1.414 — Lo que se pone en el carrito: productos simples y variantes. */
+let buyable = new Map<number, ShopPurchasable>();
 
 // ───────────────────────────── Utilidades ─────────────────────────────
 
@@ -195,31 +206,42 @@ function cartCount(): number {
     return n;
 }
 
-function maxFor(p: PublicShopProduct): number {
+function maxFor(p: { stock: number | null }): number {
     return p.stock === null ? SHOP_MAX_QTY : Math.max(0, Math.min(SHOP_MAX_QTY, Math.floor(p.stock)));
 }
 
 function setQty(id: number, qty: number): void {
-    const p = byId.get(id);
-    const cap = p ? maxFor(p) : SHOP_MAX_QTY;
+    const item = buyable.get(id);
+    const cap = item ? maxFor(item) : SHOP_MAX_QTY;
     const next = Math.max(0, Math.min(cap, Math.floor(qty)));
     if (next === 0) cart.delete(id);
     else cart.set(id, next);
     saveCart();
     paintCartButtons();
-    paintCard(id);
+    const productId = item?.product.id ?? id;
+    paintCard(productId);
     if (overlay?.kind === 'cart') renderOverlay();
-    if (overlay?.kind === 'product' && overlay.id === id) renderOverlay();
+    if (overlay?.kind === 'product' && overlay.id === productId) renderOverlay();
     if (view === 'checkout') paintSummary();
 }
 
+/** Cuántas unidades de un producto (todas sus variantes) hay en el carrito. */
+function inCart(p: PublicShopProduct): number {
+    if (!p.variants || p.variants.length === 0) return cart.get(p.id) ?? 0;
+    let n = 0;
+    for (const v of p.variants) n += cart.get(v.id) ?? 0;
+    return n;
+}
+
+function hasVariants(p: PublicShopProduct): boolean {
+    return !!p.variants && p.variants.length > 0;
+}
+
 function estimate(deliveryId: string | null): ShopCartResult {
-    const map = new Map<number, { id: number; title: string; price: number | null; stock: number | null }>();
-    for (const p of products) map.set(p.id, { id: p.id, title: p.title, price: p.price, stock: p.stock });
     const d = meta?.delivery.find((x) => x.id === deliveryId);
     return computeShopCart(
         [...cart].map(([product_id, qty]) => ({ product_id, qty })),
-        map,
+        buyable,
         { shipping: d?.price ?? 0, minOrder: meta?.checkout.min_order ?? null },
     );
 }
@@ -227,7 +249,7 @@ function estimate(deliveryId: string | null): ShopCartResult {
 // ───────────────────────────── Estado de la página ─────────────────────────────
 
 type View = 'catalog' | 'checkout' | 'order';
-type Overlay = { kind: 'product'; id: number; image: number } | { kind: 'cart' } | { kind: 'policies'; focus: 'terms' | 'returns' | 'seller' } | null;
+type Overlay = { kind: 'product'; id: number; image: number; sel?: Array<string | null> } | { kind: 'cart' } | { kind: 'policies'; focus: 'terms' | 'returns' | 'seller' } | null;
 
 let view: View = 'catalog';
 let overlay: Overlay = null;
@@ -256,8 +278,9 @@ function applyTheme(): void {
 
 function indexProducts(): void {
     byId = new Map(products.map((p) => [p.id, p]));
+    buyable = shopPurchasables(products);
     // Lo que ya no está en la tienda sale del carrito (al cargar la página).
-    for (const id of [...cart.keys()]) if (!byId.has(id)) cart.delete(id);
+    for (const id of [...cart.keys()]) if (!buyable.has(id)) cart.delete(id);
 }
 
 // ───────────────────────────── Encabezado y pie ─────────────────────────────
@@ -351,9 +374,10 @@ function stockText(p: PublicShopProduct): string | null {
     return null;
 }
 
-function priceNode(p: PublicShopProduct, cls = 's-price'): HTMLElement {
+function priceNode(p: { price: number | null; compare_price: number | null }, cls = 's-price', from = false): HTMLElement {
     const kids: HTMLElement[] = [];
     if (p.price === null) kids.push(el('span', { cls: 's-was', text: 'Sin precio' }));
+    else if (from) kids.push(el('span', { cls: 's-now', text: `Desde ${money(p.price)}` }));
     else {
         kids.push(el('span', { cls: 's-now', text: money(p.price) }));
         if (p.compare_price !== null && p.compare_price > p.price) kids.push(el('span', { cls: 's-was', text: money(p.compare_price), 'aria-label': `Antes ${money(p.compare_price)}` }));
@@ -361,11 +385,32 @@ function priceNode(p: PublicShopProduct, cls = 's-price'): HTMLElement {
     return el('div', { cls }, kids);
 }
 
-function soldOut(p: PublicShopProduct): boolean {
+function soldOut(p: { stock: number | null }): boolean {
     return p.stock !== null && p.stock <= 0;
 }
 
-function addControl(p: PublicShopProduct, big = false): HTMLElement {
+/** Con variantes, el precio de la tarjeta dice «Desde» si no todas cuestan lo mismo. */
+function priceFrom(p: PublicShopProduct): boolean {
+    const r = shopVariantPriceRange(p);
+    return !!r && r.min < r.max;
+}
+
+/** La tarjeta de un producto con variantes: se elige en la ficha. */
+function chooseControl(p: PublicShopProduct): HTMLElement {
+    const m = meta!;
+    const n = inCart(p);
+    const b = el('button', {
+        type: 'button',
+        cls: 's-add',
+        disabled: soldOut(p) || p.price === null || !!m.closed,
+        text: soldOut(p) ? 'Agotado' : p.price === null ? 'No disponible' : 'Elegir opción',
+        'data-testid': 'shop-choose',
+    });
+    b.addEventListener('click', () => openOverlay({ kind: 'product', id: p.id, image: 0 }));
+    return el('div', { style: 'display:flex;flex-direction:column' }, [b, n > 0 ? el('span', { cls: 's-incart', style: 'margin-top:6px', text: n === 1 ? '1 en el carrito' : `${n} en el carrito` }) : null]);
+}
+
+function addControl(p: { id: number; title: string; price: number | null; stock: number | null }, big = false): HTMLElement {
     const qty = cart.get(p.id) ?? 0;
     const m = meta!;
     if (qty === 0) {
@@ -376,6 +421,8 @@ function addControl(p: PublicShopProduct, big = false): HTMLElement {
             disabled: unavailable,
             text: soldOut(p) ? 'Agotado' : p.price === null ? 'No disponible' : m.texts.add_to_cart || 'Agregar al carrito',
             'data-testid': 'shop-add',
+            // Al agregar, el foco pasa al «+» que aparece en su lugar.
+            'data-k': `plus-${p.id}`,
         });
         b.addEventListener('click', () => {
             setQty(p.id, 1);
@@ -383,9 +430,9 @@ function addControl(p: PublicShopProduct, big = false): HTMLElement {
         });
         return b;
     }
-    const minus = el('button', { type: 'button', 'aria-label': 'Quitar uno', text: '−' });
+    const minus = el('button', { type: 'button', 'aria-label': 'Quitar uno', text: '−', 'data-k': `minus-${p.id}` });
     minus.addEventListener('click', () => setQty(p.id, qty - 1));
-    const plus = el('button', { type: 'button', 'aria-label': 'Agregar uno', text: '+', disabled: qty >= maxFor(p) });
+    const plus = el('button', { type: 'button', 'aria-label': 'Agregar uno', text: '+', disabled: qty >= maxFor(p), 'data-k': `plus-${p.id}` });
     plus.addEventListener('click', () => setQty(p.id, qty + 1));
     return el('div', { cls: 's-step', 'data-testid': 'shop-step', ...(big ? { style: 'height:50px' } : {}) }, [minus, el('span', { 'aria-live': 'polite', text: String(qty) }), plus]);
 }
@@ -404,11 +451,12 @@ function productCard(p: PublicShopProduct): HTMLElement {
     media.addEventListener('click', () => openOverlay({ kind: 'product', id: p.id, image: 0 }));
     const title = el('button', { cls: 's-title', type: 'button', text: p.title });
     title.addEventListener('click', () => openOverlay({ kind: 'product', id: p.id, image: 0 }));
-    const st = stockText(p);
-    const actions = el('div', {}, [addControl(p)]);
+    const variable = hasVariants(p);
+    const st = variable ? null : stockText(p);
+    const actions = el('div', {}, [variable ? chooseControl(p) : addControl(p)]);
     const card = el('article', { cls: `s-card${soldOut(p) ? ' s-out' : ''}`, 'data-testid': 'shop-card', 'data-id': String(p.id) }, [
         media,
-        el('div', { cls: 's-body' }, [title, d.show_sku && p.sku ? el('div', { cls: 's-sku', text: `Ref. ${p.sku}` }) : null, st && !soldOut(p) ? el('div', { cls: 's-stock', text: st }) : null, priceNode(p), actions]),
+        el('div', { cls: 's-body' }, [title, d.show_sku && p.sku ? el('div', { cls: 's-sku', text: `Ref. ${p.sku}` }) : null, st && !soldOut(p) ? el('div', { cls: 's-stock', text: st }) : null, priceNode(p, 's-price', variable && priceFrom(p)), actions]),
     ]);
     cardEls.set(p.id, { card, actions });
     return card;
@@ -418,7 +466,7 @@ function paintCard(id: number): void {
     const c = cardEls.get(id);
     const p = byId.get(id);
     if (!c || !p) return;
-    c.actions.replaceChildren(addControl(p));
+    c.actions.replaceChildren(hasVariants(p) ? chooseControl(p) : addControl(p));
 }
 
 function paintGrid(): void {
@@ -530,22 +578,92 @@ function renderOverlay(): void {
     const veil = el('div', { cls: 's-veil' });
     veil.addEventListener('click', closeOverlay);
     let box: HTMLElement;
-    if (overlay.kind === 'product') box = productSheet(overlay.id, overlay.image);
+    if (overlay.kind === 'product') box = productSheet(overlay.id, overlay.image, overlay.sel);
     else if (overlay.kind === 'cart') box = cartSheet();
     else box = policiesSheet(overlay.focus);
     const keepFocus = ovRoot.contains(document.activeElement);
+    // v0.1.414 — Redibujar la misma capa (elegir talla, sumar una unidad) no
+    // repite la animación de entrada, conserva el scroll y deja el foco donde estaba.
+    const prev = ovRoot.querySelector<HTMLElement>('.s-sheet');
+    const same = prev !== null && prev.dataset.testid === box.dataset.testid;
+    const scroll = same ? (prev.querySelector<HTMLElement>('.s-sb')?.scrollTop ?? 0) : 0;
+    const focusKey = keepFocus ? ((document.activeElement as HTMLElement | null)?.dataset.k ?? null) : null;
+    if (same) {
+        veil.classList.add('s-still');
+        box.classList.add('s-still');
+    }
     ovRoot.replaceChildren(veil, box);
     document.body.style.overflow = 'hidden';
     paintCartButtons();
-    if (!keepFocus) (box.querySelector('.s-x') as HTMLElement | null)?.focus();
+    if (same) {
+        const sb = box.querySelector<HTMLElement>('.s-sb');
+        if (sb) sb.scrollTop = scroll;
+    }
+    const again = focusKey ? box.querySelector<HTMLElement>(`[data-k="${CSS.escape(focusKey)}"]`) : null;
+    if (again) again.focus();
+    else if (!keepFocus || (same && !box.contains(document.activeElement))) (box.querySelector('.s-x') as HTMLElement | null)?.focus();
 }
 
-function productSheet(id: number, imageIdx: number): HTMLElement {
+/** Lo elegido de cada atributo; si un atributo tiene un solo valor (o hay una sola variante), ya viene elegido. */
+function initialSelection(p: PublicShopProduct): Array<string | null> {
+    const opts = p.options ?? [];
+    const variants = p.variants ?? [];
+    if (variants.length === 1) return [...variants[0]!.values];
+    return opts.map((o) => (o.values.length === 1 ? o.values[0]! : null));
+}
+
+function variantOptions(p: PublicShopProduct, sel: Array<string | null>, imageIdx: number): HTMLElement {
+    const opts = p.options ?? [];
+    return el(
+        'div',
+        { cls: 's-opts', 'data-testid': 'shop-options' },
+        opts.map((o, i) =>
+            el('div', { role: 'group', 'aria-label': o.name }, [
+                el('p', { cls: 's-opt-l' }, [`${o.name}: `, el('b', { text: sel[i] ?? 'elige una' })]),
+                el(
+                    'div',
+                    { cls: 's-optvs' },
+                    o.values.map((v) => {
+                        const state = shopOptionValueState(p, sel, i, v);
+                        const on = sel[i] === v;
+                        const b = el('button', {
+                            type: 'button',
+                            cls: `s-optv${state === 'sold_out' ? ' s-off' : ''}`,
+                            'aria-pressed': on ? 'true' : 'false',
+                            disabled: state === 'none' && !on,
+                            'aria-label': state === 'sold_out' ? `${v} (agotado)` : v,
+                            text: v,
+                            'data-testid': 'shop-option',
+                            'data-k': `opt-${i}-${v}`,
+                        });
+                        b.addEventListener('click', () => {
+                            const next = [...sel];
+                            next[i] = on ? null : v;
+                            // Si con lo nuevo otro atributo quedó en una combinación que no existe, se suelta.
+                            for (let j = 0; j < next.length; j++) {
+                                if (j === i || !next[j]) continue;
+                                if (shopOptionValueState(p, next, j, next[j]!) === 'none') next[j] = null;
+                            }
+                            openOverlay({ kind: 'product', id: p.id, image: imageIdx, sel: next });
+                        });
+                        return b;
+                    }),
+                ),
+            ]),
+        ),
+    );
+}
+
+function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>): HTMLElement {
     const p = byId.get(id);
     if (!p) return sheet('narrow', 'Producto', [el('p', { cls: 's-empty', text: 'Este producto ya no está disponible.' })], null, 'shop-product');
-    const imgs = p.images;
+    const variable = hasVariants(p);
+    const sel = variable ? (selIn ?? initialSelection(p)) : [];
+    const variant: PublicShopVariant | null = variable ? pickShopVariant(p, sel) : null;
+    const imgs = variant && variant.images.length > 0 ? variant.images : p.images;
+    const idx = Math.min(imageIdx, Math.max(0, imgs.length - 1));
     const main = el('div', { cls: 's-gal-main' }, [
-        imgs[imageIdx] ? el('img', { src: imgUrl(imgs[imageIdx]!, 1200), alt: p.title, decoding: 'async' }) : el('div', { cls: 's-noimg' }, [icon('image')]),
+        imgs[idx] ? el('img', { src: imgUrl(imgs[idx]!, 1200), alt: p.title, decoding: 'async' }) : el('div', { cls: 's-noimg' }, [icon('image')]),
     ]);
     const gallery = el('div', {}, [main]);
     if (imgs.length > 1) {
@@ -554,24 +672,46 @@ function productSheet(id: number, imageIdx: number): HTMLElement {
                 'div',
                 { cls: 's-thumbs' },
                 imgs.map((src, i) => {
-                    const b = el('button', { type: 'button', cls: 's-thumb', 'aria-label': `Foto ${i + 1}`, 'aria-pressed': i === imageIdx ? 'true' : 'false' }, [el('img', { src: imgUrl(src, 160), alt: '' })]);
-                    b.addEventListener('click', () => openOverlay({ kind: 'product', id, image: i }));
+                    const b = el('button', { type: 'button', cls: 's-thumb', 'aria-label': `Foto ${i + 1}`, 'aria-pressed': i === idx ? 'true' : 'false' }, [el('img', { src: imgUrl(src, 160), alt: '' })]);
+                    b.addEventListener('click', () => openOverlay({ kind: 'product', id, image: i, ...(variable ? { sel } : {}) }));
                     return b;
                 }),
             ),
         );
     }
-    const st = stockText(p);
+    let buy: HTMLElement;
+    let priceEl: HTMLElement;
+    let st: string | null;
+    let sku = p.sku;
+    if (!variable) {
+        buy = addControl(p, true);
+        priceEl = priceNode(p, 's-price s-d-price');
+        st = stockText(p);
+    } else if (variant) {
+        const item = buyable.get(variant.id)!;
+        buy = addControl(item, true);
+        priceEl = priceNode(variant, 's-price s-d-price');
+        st = stockText({ ...p, stock: variant.stock });
+        sku = variant.sku || p.sku;
+    } else {
+        const missing = (p.options ?? []).filter((_, i) => !sel[i]).map((o) => o.name.toLowerCase());
+        buy = el('button', { type: 'button', cls: 's-btn', disabled: true, text: missing.length > 0 ? `Elige ${missing.join(' y ')}` : 'Esa combinación no está disponible', 'data-testid': 'shop-add' });
+        priceEl = priceNode(p, 's-price s-d-price', priceFrom(p));
+        st = null;
+    }
+    const n = variable ? inCart(p) : 0;
     const info = el('div', {}, [
         el('h3', { cls: 's-d-title', text: p.title }),
-        meta!.display.show_sku && p.sku ? el('div', { cls: 's-sku', text: `Ref. ${p.sku}` }) : null,
-        priceNode(p, 's-price s-d-price'),
-        st ? el('div', { cls: 's-stock', style: 'margin-top:6px', text: st }) : null,
-        el('div', { style: 'margin-top:14px' }, [addControl(p, true)]),
+        meta!.display.show_sku && sku ? el('div', { cls: 's-sku', text: `Ref. ${sku}` }) : null,
+        priceEl,
+        variable ? variantOptions(p, sel, idx) : null,
+        st ? el('div', { cls: 's-stock', style: 'margin-top:10px', text: st }) : null,
+        el('div', { style: 'margin-top:14px' }, [buy]),
+        n > 0 && !(variant && cart.has(variant.id)) ? el('p', { cls: 's-incart', style: 'margin:8px 0 0', text: n === 1 ? 'Tienes 1 de este producto en el carrito.' : `Tienes ${n} de este producto en el carrito.` }) : null,
         p.description ? el('p', { cls: 's-desc', text: p.description }) : null,
         p.categories.length > 0 ? el('div', { cls: 's-d-cats' }, p.categories.map((c) => el('span', { text: c }))) : null,
     ]);
-    const qty = cart.get(p.id) ?? 0;
+    const qty = variable ? n : (cart.get(p.id) ?? 0);
     const foot = qty > 0 ? [actionButton('Ver carrito', () => openOverlay({ kind: 'cart' }), 's-btn s-ghost')] : null;
     return sheet('modal', p.title, [el('div', { cls: 's-detail' }, [gallery, info])], foot, 'shop-product');
 }
@@ -583,11 +723,11 @@ function actionButton(label: string, onClick: () => void, cls = 's-btn', testid?
 }
 
 function cartLine(line: ShopCartResult['lines'][number]): HTMLElement {
-    const p = byId.get(line.product_id);
+    const p = buyable.get(line.product_id);
     const img = p?.images[0];
-    const minus = el('button', { type: 'button', 'aria-label': 'Quitar uno', text: '−' });
+    const minus = el('button', { type: 'button', 'aria-label': 'Quitar uno', text: '−', 'data-k': `cminus-${line.product_id}` });
     minus.addEventListener('click', () => setQty(line.product_id, line.qty - 1));
-    const plus = el('button', { type: 'button', 'aria-label': 'Agregar uno', text: '+', disabled: !p || line.qty >= maxFor(p) });
+    const plus = el('button', { type: 'button', 'aria-label': 'Agregar uno', text: '+', disabled: !p || line.qty >= maxFor(p), 'data-k': `cplus-${line.product_id}` });
     plus.addEventListener('click', () => setQty(line.product_id, line.qty + 1));
     const rm = el('button', { type: 'button', cls: 's-rm', text: 'Quitar' });
     rm.addEventListener('click', () => setQty(line.product_id, 0));
@@ -860,7 +1000,7 @@ function paintSummary(): void {
     const est = co.serverCart && sameCart(co.serverCart) ? co.serverCart : estimate(co.deliveryId);
     const rows: HTMLElement[] = [];
     for (const l of est.lines) {
-        const p = byId.get(l.product_id);
+        const p = buyable.get(l.product_id);
         const problem = shopLineProblemText(l);
         rows.push(
             el('div', {}, [
@@ -1331,7 +1471,8 @@ if (BOOT.preview) {
         if (!d || d.type !== 'imb-shop-preview' || !d.meta) return;
         meta = d.meta;
         products = d.products ?? [];
-        if (d.view === 'checkout' && cart.size === 0 && products[0]) cart.set(products[0].id, 1);
+        const first = [...shopPurchasables(products).keys()][0];
+        if (d.view === 'checkout' && cart.size === 0 && first !== undefined) cart.set(first, 1);
         if (d.view) view = d.view;
         overlay = null;
         ovRoot.replaceChildren();
