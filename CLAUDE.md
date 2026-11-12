@@ -15098,6 +15098,38 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         foto cuadrada recortada; términos legibles en escritorio y celular;
         barra fija; modo oscuro; editor con la vista previa en «Producto»).
 
+  - [x] **Cuatro diseños para la página de pago (v0.1.425, addendum ADR-S103,
+        pedido del usuario: "también crea varios estilos del checkout, me
+        gustan los estilos de checkout como el de chopify")**: sección nueva
+        **Estilo → Pago** en el editor de la tienda
+        (`config.design.checkout`, `shopDesignCheckoutSchema`, lectura
+        tolerante, sin migración: lo de antes es el clásico). (a) **Clásico**
+        sin cambios; **Dos columnas** (página limpia con sólo el logo, el
+        formulario a la izquierda y el pedido con las fotos y la cantidad
+        encima en una columna aparte; en el celular una barra arriba con el
+        total que lo despliega); **Por pasos** (datos → entrega → pago, con
+        migas, lo ya llenado en un resumen con «Cambiar», cada paso valida sólo
+        lo suyo con `validate(only)`, el captcha recién en el pago y, al
+        enviar, vuelta al paso con lo que falta; en la vista previa se avanza
+        sin validar); **Una columna** (angosta, el pedido arriba y secciones
+        numeradas). Se arman en el cliente (`cxFrame` en
+        `public-shop/main.ts`) con los MISMOS bloques del formulario. (b)
+        **Ajustes**: arriba del pago (sólo el logo o el encabezado de la
+        tienda), nombres de los campos arriba o **adentro** (`s-lbl-in`: se
+        achican con el foco, al escribir —`s-has`— o con el autocompletado;
+        vale también en el clásico), fotos de los productos en el resumen,
+        resumen abierto en el celular, «Compra segura» bajo el botón de pagar
+        y el color del resumen (`--s-cx-side` con tinta de contraste ≥ 4.5;
+        en «automático» la versión oscura usa su gris). (c) Clases `.s-cx-*`
+        (`.s-step` ya era el selector de cantidad: la regla de v0.1.424).
+        El editor tiene dibujos de los cuatro diseños y «Ver el pago en la
+        vista previa». Ayuda: guía `shop`, sección «Cómo se ve el pago» en
+        Aprende → Tienda online y novedad con carrusel (ilustraciones que ya
+        existían). Tests: 5 en `shop-design.test` (shared), aserción en
+        `shops-description.spec` — specs de tienda 15/15 — + E2E navegador
+        46/46 en escritorio, celular y oscuro (los cuatro diseños, pasos con
+        validación y «Cambiar», pedido hecho, opciones, editor).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

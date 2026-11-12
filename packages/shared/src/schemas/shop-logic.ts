@@ -5,7 +5,7 @@ import type { PublicDataConsent } from './data-consent';
 import type { PublicFormCaptcha } from './form';
 import type { FieldType } from './field';
 import type { ShopCatalogFields, ShopCheckout, ShopCustomer, ShopDisplay, ShopPolicies, ShopSeller, ShopTexts } from './shop';
-import type { ShopDesignProduct } from './shop-design';
+import type { ShopDesignCheckout, ShopDesignProduct } from './shop-design';
 import type { TenantFormat } from './tenant';
 
 /**
@@ -1141,6 +1141,8 @@ export interface ShopDesignView {
     auto: boolean;
     /** v0.1.424 — Cómo se arma la ficha del producto (sin el dato: la clásica). */
     product?: ShopDesignProduct;
+    /** v0.1.425 — Cómo se arma el pago (sin el dato: el clásico). */
+    checkout?: ShopDesignCheckout;
 }
 
 // ── Conversiones (v0.1.418) ─────────────────────────────────────────────

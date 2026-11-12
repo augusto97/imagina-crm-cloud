@@ -118,6 +118,46 @@ export const shopDesignProductSchema = z.object({
 });
 export type ShopDesignProduct = z.infer<typeof shopDesignProductSchema>;
 
+/**
+ * v0.1.425 — El PAGO (finalizar compra): cómo se acomodan los datos, la
+ * entrega, el pago y el resumen del pedido. «Clásico» es el de siempre (no
+ * cambia nada); los demás son páginas limpias con el pedido y sus fotos.
+ */
+export const SHOP_CHECKOUT_LAYOUTS = ['classic', 'split', 'steps', 'single'] as const;
+export type ShopCheckoutLayout = (typeof SHOP_CHECKOUT_LAYOUTS)[number];
+export const SHOP_CHECKOUT_LAYOUT_LABELS: Record<ShopCheckoutLayout, string> = {
+    classic: 'Clásico',
+    split: 'Dos columnas',
+    steps: 'Por pasos',
+    single: 'Una columna',
+};
+export const SHOP_CHECKOUT_LAYOUT_HINTS: Record<ShopCheckoutLayout, string> = {
+    classic: 'El de siempre: el formulario a la izquierda y el resumen en una tarjeta a la derecha, con el encabezado de la tienda.',
+    split: 'Una página limpia, como en las tiendas más conocidas: el formulario a la izquierda y el pedido con sus fotos en una columna aparte a la derecha.',
+    steps: 'Como «Dos columnas», pero de a un paso: tus datos, la entrega y el pago, con lo ya llenado a la vista.',
+    single: 'Todo en una columna angosta: el pedido arriba (se despliega) y después los datos y el pago. Muy cómodo en el celular.',
+};
+export const SHOP_CHECKOUT_HEADERS = ['minimal', 'store'] as const;
+export const SHOP_CHECKOUT_LABEL_STYLES = ['above', 'inside'] as const;
+export type ShopCheckoutLabelStyle = (typeof SHOP_CHECKOUT_LABEL_STYLES)[number];
+
+export const shopDesignCheckoutSchema = z.object({
+    layout: z.enum(SHOP_CHECKOUT_LAYOUTS).catch('classic').default('classic'),
+    /** Arriba del pago (salvo en el clásico): sólo el logo, o el encabezado de la tienda. */
+    header: z.enum(SHOP_CHECKOUT_HEADERS).catch('minimal').default('minimal'),
+    /** Los nombres de los campos: arriba, o adentro (se achican al escribir). */
+    labels: z.enum(SHOP_CHECKOUT_LABEL_STYLES).catch('above').default('above'),
+    /** Las fotos de los productos en el resumen (salvo en el clásico). */
+    thumbnails: z.boolean().catch(true).default(true),
+    /** En el celular, el resumen del pedido arranca abierto. */
+    summary_open: z.boolean().catch(false).default(false),
+    /** «Pago seguro» con un candado bajo el botón de pagar (salvo en el clásico). */
+    trust: z.boolean().catch(true).default(true),
+    /** El fondo de la columna del pedido (null = un gris suave). */
+    summary_color: nullableHex,
+});
+export type ShopDesignCheckout = z.infer<typeof shopDesignCheckoutSchema>;
+
 export const shopDesignSchema = z.object({
     /** La plantilla de la que se partió (sólo para marcarla en el editor). */
     preset: z.string().max(40).nullable().catch(null).default(null),
@@ -141,6 +181,8 @@ export const shopDesignSchema = z.object({
     hero: shopDesignHeroSchema.catch(() => shopDesignHeroSchema.parse({})).default({}),
     /** v0.1.424 — La ficha del producto. */
     product: shopDesignProductSchema.catch(() => shopDesignProductSchema.parse({})).default({}),
+    /** v0.1.425 — El pago. */
+    checkout: shopDesignCheckoutSchema.catch(() => shopDesignCheckoutSchema.parse({})).default({}),
     /** CSS propio (sólo lo cambia un administrador; se guarda limpio). */
     custom_css: z.string().max(SHOP_CUSTOM_CSS_MAX).catch('').default(''),
 });
@@ -163,7 +205,7 @@ export interface ShopDesignPreset {
     label: string;
     description: string;
     /** Lo que cambia la plantilla (el resto queda como por defecto). */
-    design: Partial<Omit<ShopDesign, 'header' | 'hero' | 'colors' | 'custom_css' | 'preset' | 'product'>> & {
+    design: Partial<Omit<ShopDesign, 'header' | 'hero' | 'colors' | 'custom_css' | 'preset' | 'product' | 'checkout'>> & {
         colors: ShopDesignColors;
         header?: Partial<ShopDesignHeader>;
         hero?: Partial<Omit<ShopDesignHero, 'image_file_id'>>;
@@ -271,6 +313,8 @@ export function applyShopDesignPreset(current: ShopDesign, presetId: string): Sh
         custom_css: current.custom_css,
         // v0.1.424 — La ficha del producto no la cambia una plantilla.
         product: current.product,
+        // v0.1.425 — El pago tampoco.
+        checkout: current.checkout,
         preset: p.id,
     });
 }
@@ -362,6 +406,18 @@ function colorVars(d: ShopDesign, p: Palette, accent: string): string {
     }
     // La portada sin foto: el color de la tienda en degradé.
     v.push(['--s-hero-bg', `linear-gradient(135deg,${a},${mixHex(a, p.dark ? '#000000' : '#0b1220', 0.3)})`], ['--s-hero-ink', inkOnColor(a)]);
+    // v0.1.425 — La columna del pedido en el pago: el color elegido (sólo en
+    // la versión clara de «automático») o un gris apenas distinto del fondo.
+    const chosen = d.checkout.summary_color && !(d.mode === 'auto' && p.dark) ? d.checkout.summary_color : null;
+    const side = chosen ?? mixHex(p.text, p.card, p.dark ? 0.93 : 0.965);
+    const sideInk = contrastRatio(p.text, side) >= 4.5 ? p.text : inkOnColor(side) === '#ffffff' ? '#f3f4f6' : '#111827';
+    v.push(
+        ['--s-cx-side', side],
+        ['--s-cx-ink', sideInk],
+        ['--s-cx-muted', mixHex(sideInk, side, 0.4)],
+        ['--s-cx-line', mixHex(sideInk, side, p.dark ? 0.8 : 0.86)],
+        ['--s-cx-thumb', mixHex(sideInk, side, 0.92)],
+    );
     return v.map(([k, x]) => `${k}:${x}`).join(';');
 }
 

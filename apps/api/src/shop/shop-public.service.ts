@@ -486,6 +486,7 @@ export class ShopPublicService {
                 hero_image: o.heroImage,
                 auto: config.design.mode === 'auto',
                 product: config.design.product,
+                checkout: config.design.checkout,
             },
         };
     }

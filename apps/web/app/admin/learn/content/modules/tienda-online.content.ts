@@ -158,6 +158,27 @@ export const articles: LearnArticle[] = [
                     { name: 'Barra de compra fija en el celular', what: 'Al bajar por la ficha en el celular, el precio y el botón quedan siempre abajo.' },
                 ],
             },
+            { t: 'h', text: 'Cómo se ve el pago' },
+            {
+                t: 'p',
+                md: 'En **Estilo → Pago** eliges cómo se ve la página donde tu cliente escribe sus datos, elige la entrega y paga. Toca **Ver el pago en la vista previa** para recorrerla con productos de ejemplo (ahí no se hace ningún pedido).',
+            },
+            {
+                t: 'settings',
+                title: 'Pago',
+                rows: [
+                    { name: 'Clásico', what: 'El de siempre: el formulario a la izquierda y el resumen en una tarjeta a la derecha, con el encabezado de la tienda.', tip: 'Es el que viene elegido.' },
+                    { name: 'Dos columnas', what: 'Una página limpia: el formulario a la izquierda y el pedido con las fotos de los productos en una columna aparte, a la derecha.', tip: 'El más usado por las tiendas en línea.' },
+                    { name: 'Por pasos', what: 'Como «Dos columnas», pero de a un paso: tus datos, la entrega y el pago. Lo ya llenado queda arriba con «Cambiar» para corregirlo.', tip: 'Ayuda cuando pides muchos datos.' },
+                    { name: 'Una columna', what: 'Todo en una columna angosta: el pedido arriba (se despliega) y después los datos y el pago, en secciones numeradas.', tip: 'Muy cómodo en el celular.' },
+                    { name: 'Arriba del pago', what: 'Sólo el logo (para que nada distraiga) o el encabezado completo de la tienda.' },
+                    { name: 'Nombres de los campos', what: 'Arriba del campo, o adentro: el nombre se achica al escribir y la página se ve más limpia.' },
+                    { name: 'Fotos de los productos en el resumen', what: 'Cada producto con su foto y la cantidad encima.' },
+                    { name: 'En el celular, el resumen abierto', what: 'Si está apagado, arriba queda una barra con el total que lo despliega.' },
+                    { name: '«Compra segura»', what: 'Un candado bajo el botón de pagar con «tus datos viajan cifrados».' },
+                    { name: 'Fondo del resumen', what: 'El color de la columna del pedido. Si no eliges uno, es un gris suave; si el texto no se lee sobre el que elijas, se corrige solo.' },
+                ],
+            },
             { t: 'h', text: 'Qué pasa al agregar al carrito' },
             {
                 t: 'p',
