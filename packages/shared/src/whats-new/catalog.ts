@@ -2807,12 +2807,45 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
             ],
         },
         body: [
-            'Abre tu tienda (**Configurar lista → Tienda**) y ve a **Catálogo → Productos digitales y servicios**.',
+            'Abre tu tienda (**Configurar lista → Tienda**) y ve a **Productos → Tipos de producto**.',
             '',
             '- Crea la columna **Tipo** (Físico, Digital o Servicio) y la de **archivos para descargar**.',
             '- Elige cuántos días y cuántas veces se puede bajar cada archivo.',
             '- Elige la **agenda** de los servicios y a qué servicio va cada producto.',
             '- En la tienda, **Mis pedidos** le manda a tu cliente un enlace con sus pedidos y sus descargas.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
+    {
+        key: 'v0.1.417-tienda-suscripciones',
+        version: '0.1.417',
+        date: '2026-11-12',
+        kind: 'feature',
+        title: 'Vende suscripciones desde tu tienda',
+        summary:
+            'Una caja mensual, una membresía o una mensualidad: tu cliente toca «Suscribirme», autoriza su tarjeta una vez y los cobros se hacen solos.',
+        media: {
+            slides: [
+                {
+                    title: 'Suscribirme',
+                    text: 'Cada producto de suscripción dice cuánto y cada cuánto se cobra, y si tiene días gratis. No va al carrito: se contrata solo.',
+                    illustration: 'tienda-vitrina',
+                },
+                {
+                    title: 'Se paga solo',
+                    text: 'Se cobra con el plan de Mercado Pago o PayPal de tu empresa. El pedido queda pagado cuando tu cliente autoriza la tarjeta y los cobros siguientes los ves en la suscripción.',
+                    illustration: 'cobro-suscripcion',
+                },
+            ],
+        },
+        body: [
+            'Abre tu tienda (**Configurar lista → Tienda**) y ve a **Productos → Tipos de producto**.',
+            '',
+            '- En la columna **Tipo**, marca tus productos como **Suscripción**.',
+            '- Cada uno usa el plan de suscripción que se llame igual; si no, elige el plan en la lista.',
+            '- Si mandas algo cada mes, activa **Pedir la dirección**.',
+            '- Los planes se crean en **Ajustes → Integraciones → Cobros** de tu cuenta de Mercado Pago o PayPal.',
         ].join('\n'),
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },

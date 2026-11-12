@@ -15,6 +15,7 @@ import {
     shopPurchasables,
     shopKindFromText,
     shopNeedsDelivery,
+    shopPlanFor,
     shopServiceFor,
     shopShippingFor,
     shopVariantPriceRange,
@@ -434,5 +435,48 @@ describe('v0.1.416 — tipos de producto', () => {
         expect(c.kinds.max_downloads).toBe(5);
         expect(c.kinds.service_links).toEqual({ '12': 'svcok' });
         expect(readShopConfig({ kinds: { max_downloads: null } }).kinds.max_downloads).toBeNull();
+    });
+});
+
+describe('v0.1.417 — suscripciones', () => {
+    const p = (id: number, kind?: PublicShopProduct['kind'], variants?: PublicShopVariant[]): PublicShopProduct =>
+        ({ id, title: `P${id}`, description: '', price: 1000, compare_price: null, stock: null, images: [], categories: [], sku: '', created_at: '', ...(kind ? { kind } : {}), ...(variants ? { variants } : {}) }) as PublicShopProduct;
+
+    it('reconoce el tipo suscripción antes que los demás', () => {
+        expect(shopKindFromText('Suscripción')).toBe('subscription');
+        expect(shopKindFromText('Membresía mensual')).toBe('subscription');
+        expect(shopKindFromText('Mensualidad')).toBe('subscription');
+        expect(shopKindFromText('Curso por suscripción')).toBe('subscription');
+        expect(shopKindFromText('subscription')).toBe('subscription');
+        expect(shopKindFromText('Curso virtual')).toBe('digital');
+    });
+
+    it('elige el plan del producto: el elegido (si sirve) o el del mismo nombre, en la moneda de la tienda', () => {
+        const plans = [
+            { id: 1, name: 'Club del café', currency: 'COP' },
+            { id: 2, name: 'Plan Pro', currency: 'USD' },
+            { id: 3, name: 'Caja mensual', currency: 'COP' },
+        ];
+        expect(shopPlanFor({ id: 10, title: 'Club del Cafe' }, {}, plans, 'COP')).toBe(1);
+        expect(shopPlanFor({ id: 10, title: 'Club del café' }, { '10': 3 }, plans, 'COP')).toBe(3);
+        // Un plan elegido en otra moneda no sirve: cae al del mismo nombre.
+        expect(shopPlanFor({ id: 10, title: 'Club del café' }, { '10': 2 }, plans, 'COP')).toBe(1);
+        expect(shopPlanFor({ id: 11, title: 'Plan Pro' }, {}, plans, 'COP')).toBeNull();
+        expect(shopPlanFor({ id: 11, title: 'Plan Pro' }, {}, plans, 'usd')).toBe(2);
+        expect(shopPlanFor({ id: 12, title: 'Otra cosa' }, {}, plans, 'COP')).toBeNull();
+    });
+
+    it('las suscripciones no van al carrito; con `subscriptions` se listan sólo ellas (y sus variantes)', () => {
+        const v = (id: number): PublicShopVariant => ({ id, label: `V${id}`, values: [`V${id}`], price: 2000, compare_price: null, stock: null, sku: '', images: [] });
+        const list = [p(1), p(2, 'subscription'), p(3, 'service'), p(4, 'subscription', [v(41), v(42)])];
+        expect([...shopPurchasables(list).keys()]).toEqual([1]);
+        expect([...shopPurchasables(list, { subscriptions: true }).keys()]).toEqual([2, 41, 42]);
+    });
+
+    it('lee los planes elegidos con tolerancia', () => {
+        const c = readShopConfig({ kinds: { subscription_links: { '5': 7, x: 3, '6': 'a', '7': -1, '8': 2.5 }, subscription_address: 'si' } });
+        expect(c.kinds.subscription_links).toEqual({ '5': 7 });
+        expect(c.kinds.subscription_address).toBe(false);
+        expect(readShopConfig({ kinds: { subscription_address: true } }).kinds.subscription_address).toBe(true);
     });
 });

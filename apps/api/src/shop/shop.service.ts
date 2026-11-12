@@ -19,6 +19,7 @@ import {
     resolveTitleFieldId,
     shopCurrencyDecimals,
     shopProblems,
+    shopPlanFor,
     shopServiceFor,
     suggestShopCatalog,
     suggestShopKindFields,
@@ -33,10 +34,12 @@ import {
     type ShopOptions,
     type ShopOrdersLists,
     type ShopProblem,
+    type ShopSubscriptionPlanOption,
     type UpdateShopInput,
 } from '@imagina-base/shared';
 import { and, asc, count, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { bookingPages, lists, memberships, records, shopOrders, shops, tenants, users, type ShopRow } from '../db/schema';
 import { readBookingConfig } from '../booking/booking-config';
 import { CollectionsService } from '../collections/collections.service';
@@ -98,6 +101,32 @@ export class ShopService {
         return this.collections.teamConnections(tenantId).catch(() => []);
     }
 
+    /**
+     * v0.1.417 — Los planes de suscripción que se pueden vender (activos y de
+     * una cuenta del equipo). Por el módulo para no armar un ciclo de imports.
+     */
+    async subscriptionPlans(tenantId: number): Promise<ShopSubscriptionPlanOption[]> {
+        let svc: SubscriptionsService | undefined;
+        try {
+            svc = this.moduleRef?.get(SubscriptionsService, { strict: false });
+        } catch {
+            svc = undefined;
+        }
+        if (!svc || typeof svc.shopPlans !== 'function') return [];
+        const plans = await svc.shopPlans(tenantId).catch(() => []);
+        return plans.map((p) => ({
+            id: p.id,
+            name: p.name,
+            currency: p.currency,
+            amount: p.amount,
+            frequency: p.frequency,
+            frequency_type: p.frequency_type,
+            trial_days: p.trial_days,
+            cycles: p.cycles,
+            provider: p.provider ?? 'mercadopago',
+        }));
+    }
+
     private get blueprints(): BlueprintService {
         const svc = this.moduleRef?.get(BlueprintService, { strict: false });
         if (!svc) throw new Error('BlueprintService no disponible');
@@ -140,6 +169,7 @@ export class ShopService {
 
     async options(tenantId: number, id: number): Promise<ShopOptions> {
         const team = await this.payTeam(tenantId);
+        const plans = await this.subscriptionPlans(tenantId);
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const row = await this.load(tx, tenantId, id);
             const list = await this.lists.getWithinTx(tx, tenantId, String(row.listId));
@@ -179,7 +209,7 @@ export class ShopService {
                 }),
                 payment_connections: team.map((c) => ({ id: c.id, name: c.name, provider: c.provider, test_mode: c.test_mode })),
                 categories: await this.catalogCategories(tx, tenantId, row, fields),
-                ...(await this.kindOptions(tx, tenantId, row, fields, list.settings)),
+                ...(await this.kindOptions(tx, tenantId, row, fields, list.settings, plans)),
             };
         });
     }
@@ -212,13 +242,16 @@ export class ShopService {
         row: ShopRow,
         fields: Field[],
         listSettings: Record<string, unknown> | null,
-    ): Promise<Pick<ShopOptions, 'booking_pages' | 'service_products' | 'kind_counts'>> {
+        plans: ShopSubscriptionPlanOption[],
+    ): Promise<Pick<ShopOptions, 'booking_pages' | 'service_products' | 'kind_counts' | 'subscription_plans' | 'subscription_products'>> {
         const config = readShopConfig(row.config);
         const pages = await this.bookingOptions(tx, tenantId);
         const rf = resolveCatalogFields(fields, config.catalog, listSettings, config.kinds);
-        const counts = { physical: 0, digital: 0, service: 0, downloadable: 0 };
+        const counts = { physical: 0, digital: 0, service: 0, subscription: 0, downloadable: 0 };
         const services: ShopOptions['service_products'] = [];
-        if (!rf.kinds?.kind && !rf.kinds?.download) return { booking_pages: pages, service_products: services, kind_counts: counts };
+        const subs: ShopOptions['subscription_products'] = [];
+        const done = () => ({ booking_pages: pages, service_products: services, kind_counts: counts, subscription_plans: plans, subscription_products: subs });
+        if (!rf.kinds?.kind && !rf.kinds?.download) return done();
         const page = pages.find((p) => p.id === config.kinds.booking_page_id) ?? null;
         const rows = await tx
             .select({ id: records.id, data: records.data, createdAt: records.createdAt })
@@ -239,8 +272,17 @@ export class ShopService {
                     resolved: page ? shopServiceFor({ id: r.id, title: p.product.title }, config.kinds.service_links, page.services) : null,
                 });
             }
+            if (kind === 'subscription' && subs.length < 200) {
+                subs.push({
+                    id: r.id,
+                    title: p.product.title,
+                    price: p.product.price,
+                    linked: config.kinds.subscription_links[String(r.id)] ?? null,
+                    resolved: shopPlanFor({ id: r.id, title: p.product.title }, config.kinds.subscription_links, plans, config.currency),
+                });
+            }
         }
-        return { booking_pages: pages, service_products: services, kind_counts: counts };
+        return done();
     }
 
     /**

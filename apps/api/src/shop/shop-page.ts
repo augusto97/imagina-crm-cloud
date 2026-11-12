@@ -125,6 +125,8 @@ a.s-add{display:flex;align-items:center;justify-content:center;gap:6px;text-deco
 .s-now{font-weight:750;font-size:17px}
 .s-was{color:var(--s-muted);text-decoration:line-through;font-size:13.5px}
 .s-stock{font-size:12.5px;color:#b45309;font-weight:600}
+.s-cad{font-size:12.5px;color:var(--s-muted);margin-top:-2px}
+.s-d-price+.s-cad{margin-top:4px;font-size:13.5px}
 .s-add{margin-top:8px;height:40px;border-radius:10px;border:0;background:var(--s-accent);color:var(--s-ink);font-weight:650;cursor:pointer}
 .s-add:disabled{background:#e5e7eb;color:#6b7280;cursor:not-allowed}
 .s-step{display:flex;align-items:center;justify-content:space-between;margin-top:8px;height:40px;border-radius:10px;border:1px solid var(--s-line);background:#fff;overflow:hidden}

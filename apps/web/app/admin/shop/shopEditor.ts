@@ -71,6 +71,7 @@ export function shopSectionSummary(
                 config.variants.enabled ? 'con variantes' : '',
                 config.kinds.download_field !== null ? 'con descargas' : '',
                 config.kinds.booking_page_id !== null ? 'con servicios' : '',
+                Object.keys(config.kinds.subscription_links).length > 0 ? 'con suscripciones' : '',
             ].filter(Boolean);
             return [n, ...extra].join(' · ');
         }

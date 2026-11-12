@@ -5,6 +5,7 @@ import {
     SHOP_ORDER_STATUS_LABELS,
     SHOP_PAYMENT_METHOD_LABELS,
     SHOP_PAYMENT_STATUS_LABELS,
+    SUBSCRIPTION_STATUS_OPTIONS,
     brandingSchema,
     computeShopCart,
     shopCouponProblemText,
@@ -16,6 +17,9 @@ import {
     readShopConfig,
     readShopListMarker,
     shopOnlinePayment,
+    shopPlanFor,
+    subscriptionFrequencyText,
+    subscriptionPlanExtras,
     tenantFormatSchema,
     validateFieldValue,
     type Field,
@@ -52,7 +56,8 @@ import { RecordChangeHub, type RecordChange } from '../records/record-change-hub
 import { RecordsRepository } from '../records/records.repository';
 import { RelationsRepository } from '../records/relations.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
-import { purchasablesFromRows, resolveCatalogFields, resolveVariantAttributes, type PurchasableRow, type ResolvedCatalog } from './shop-catalog';
+import { productFromRow, purchasablesFromRows, resolveCatalogFields, resolveVariantAttributes, type PurchasableRow, type ResolvedCatalog } from './shop-catalog';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { shopMyOrdersEmail, shopOrderEmail } from './shop-email';
 import type { CustomerRole, LineRole, OrderRole } from './shop-pack';
 
@@ -108,11 +113,11 @@ function holdText(m: number): string {
 }
 
 export class ShopPaymentUnavailableError extends HttpException {
-    constructor() {
+    constructor(message = 'No pudimos preparar el pago en línea. Intenta de nuevo en un momento o elige otra forma de pago.') {
         super(
             {
                 code: 'shop_payment_unavailable',
-                message: 'No pudimos preparar el pago en línea. Intenta de nuevo en un momento o elige otra forma de pago.',
+                message,
                 data: { status: 503 },
             },
             HttpStatus.SERVICE_UNAVAILABLE,
@@ -173,10 +178,14 @@ export class ShopOrdersService implements OnModuleInit {
         @Optional() @Inject(DRIZZLE) private readonly db?: Db,
         // v0.1.415 — cupones (se validan y se cuentan dentro del pedido).
         @Optional() private readonly coupons?: ShopCouponsService,
+        // v0.1.417 — suscripciones (débito automático) desde la tienda.
+        @Optional() readonly subscriptions?: SubscriptionsService,
     ) {}
 
     onModuleInit(): void {
         this.changes?.subscribe((c) => this.onRecordChange(c));
+        // v0.1.417 — la persona autorizó la tarjeta: el pedido queda pagado.
+        this.subscriptions?.registerEventSink((tenantId, sub, events) => this.onSubscriptionEvent(tenantId, sub.id, events));
         // v0.1.413 — llegó el pago de un link: si es de un pedido, se da por pagado.
         this.collections?.onLinkPaid((e) => this.onLinkPaid(e.tenantId, e.linkId));
     }
@@ -216,8 +225,18 @@ export class ShopOrdersService implements OnModuleInit {
             online: config.payments.online.enabled && (s.onlineConnectionId ?? null) !== null && !!this.collections,
             // v0.1.416 — Sólo vale si el carrito sale en cero (se comprueba con la cuenta).
             free: true,
+            // v0.1.417 — Un producto de suscripción con su plan (se comprueba abajo).
+            subscription: !!this.subscriptions,
         };
         if (!enabled[input.payment_method]) badRequest('shop_payment', 'Elige una forma de pago.');
+        // v0.1.417 — Suscribirse es de a un producto, sin cupón.
+        const subscribing = input.payment_method === 'subscription';
+        if (subscribing) {
+            if (input.lines.length !== 1) badRequest('shop_subscription', 'Las suscripciones se contratan de a una.');
+            if (input.coupon && input.coupon.trim() !== '') badRequest('shop_coupon', 'Los cupones no aplican a las suscripciones.');
+        }
+        const subPlans = subscribing ? await this.subscriptions!.shopPlans(tenantId).catch(() => []) : [];
+        const orderLines = subscribing ? [{ product_id: input.lines[0]!.product_id, qty: 1 }] : input.lines;
         const c = input.customer;
         if (config.checkout.ask_document === 'required' && !c.document.trim()) badRequest('shop_document', 'Escribe tu número de documento.');
         if (config.checkout.require_terms && input.terms !== true) badRequest('shop_terms', 'Para comprar, acepta los términos y condiciones.');
@@ -231,7 +250,7 @@ export class ShopOrdersService implements OnModuleInit {
         const orderToken = newOrderToken();
         const orderUrl = `${base}/api/v1/public/s/${s.token}?pedido=${orderToken}`;
         // v0.1.416 — «Sin costo» como opción de la columna del método (tiendas de antes).
-        if (input.payment_method === 'free') await this.ensureFreeOption(tenantId, config).catch(() => undefined);
+        if (input.payment_method === 'free' || input.payment_method === 'subscription') await this.ensureMethodOption(tenantId, config, input.payment_method).catch(() => undefined);
 
         const touched: Touched[] = [];
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
@@ -241,7 +260,7 @@ export class ShopOrdersService implements OnModuleInit {
             if (!rf.price) badRequest('shop_closed', 'Esta tienda no está recibiendo pedidos ahora.');
 
             // 1) Los productos (o variantes), bloqueados y leídos de la base.
-            const ids = [...new Set(input.lines.map((l) => l.product_id))].sort((a, b) => a - b);
+            const ids = [...new Set(orderLines.map((l) => l.product_id))].sort((a, b) => a - b);
             const variantsOn = config.variants.enabled;
             const rows = await tx
                 .select({ id: records.id, data: records.data, createdAt: records.createdAt, parentId: records.parentId })
@@ -257,16 +276,46 @@ export class ShopOrdersService implements OnModuleInit {
                 )
                 .orderBy(asc(records.id))
                 .for('no key update');
-            const byId = await this.purchasableRows(tx, tenantId, shop.listId, rows, rf, variantsOn ? resolveVariantAttributes(catalogFields, config.variants.attributes) : null);
+            const byId = await this.purchasableRows(tx, tenantId, shop.listId, rows, rf, variantsOn ? resolveVariantAttributes(catalogFields, config.variants.attributes) : null, {
+                subscriptions: subscribing,
+            });
+            // v0.1.417 — El plan del producto de suscripción (el de su producto si es una variante).
+            let planId: number | null = null;
+            if (subscribing) {
+                const item = byId.get(orderLines[0]!.product_id);
+                if (item) {
+                    const baseId = item.parentId ?? orderLines[0]!.product_id;
+                    let baseTitle = item.product.title;
+                    if (item.parentId !== null) {
+                        const [parent] = await tx
+                            .select({ id: records.id, data: records.data, createdAt: records.createdAt })
+                            .from(records)
+                            .where(and(eq(records.tenantId, tenantId), eq(records.id, item.parentId)))
+                            .limit(1);
+                        if (parent) baseTitle = productFromRow({ id: parent.id, data: parent.data as Record<string, unknown>, createdAt: parent.createdAt }, rf).product.title;
+                    }
+                    planId = shopPlanFor({ id: baseId, title: baseTitle }, config.kinds.subscription_links, subPlans, currency);
+                    if (planId === null) badRequest('shop_subscription', 'Este producto no se puede suscribir ahora. Escríbenos para contratarlo.');
+                }
+                if (config.kinds.subscription_address && (!c.address.trim() || !c.city.trim())) badRequest('shop_address', 'Escribe la dirección y la ciudad de entrega.');
+            }
             // v0.1.416 — ¿Algo se envía o se recoge? Un carrito de descargables no pide entrega.
-            const needsDelivery = shopNeedsDelivery(input.lines, (id) => byId.get(id)?.kind);
+            const needsDelivery = !subscribing && shopNeedsDelivery(orderLines, (id) => byId.get(id)?.kind);
             if (needsDelivery) {
                 if (!delivery) badRequest('shop_delivery', 'Elige cómo quieres recibir tu pedido.');
                 if (zones.length > 0 && !zone) badRequest('shop_zone', 'Elige a dónde enviamos tu pedido.');
                 if (delivery!.needs_address && (!c.address.trim() || !c.city.trim())) badRequest('shop_address', 'Escribe la dirección y la ciudad de entrega.');
             }
             const ship = needsDelivery ? shopShippingFor({ price: delivery!.price, free_over: delivery!.free_over, zones }, zone?.id ?? null) : { price: 0, free_over: null };
-            const deliveryLabel = needsDelivery ? (zone ? `${delivery!.name} · ${zone.name}` : delivery!.name) : 'Descarga digital';
+            const deliveryLabel = subscribing
+                ? config.kinds.subscription_address
+                    ? 'Suscripción · con envío'
+                    : 'Suscripción'
+                : needsDelivery
+                  ? zone
+                      ? `${delivery!.name} · ${zone.name}`
+                      : delivery!.name
+                  : 'Descarga digital';
             // v0.1.415 — El cupón: la fila se bloquea antes de contar sus usos.
             let coupon: ResolvedCoupon | null = null;
             if (input.coupon && input.coupon.trim() !== '') {
@@ -276,10 +325,10 @@ export class ShopOrdersService implements OnModuleInit {
                 if (!r.ok) badRequest('shop_coupon', r.message);
                 coupon = r.coupon;
             }
-            const cart = computeShopCart(input.lines, new Map([...byId].map(([k, v]) => [k, v.product])), {
+            const cart = computeShopCart(orderLines, new Map([...byId].map(([k, v]) => [k, v.product])), {
                 shipping: ship.price,
                 freeOver: ship.free_over,
-                minOrder: config.checkout.min_order,
+                minOrder: subscribing ? null : config.checkout.min_order,
                 coupon: coupon?.rule ?? null,
                 decimals: shopCurrencyDecimals(currency),
             });
@@ -296,7 +345,9 @@ export class ShopOrdersService implements OnModuleInit {
             if (coupon && cart.coupon_problem) badRequest('shop_coupon', shopCouponProblemText(cart.coupon_problem, coupon.rule, money));
             // v0.1.416 — Un pedido en cero no se paga: queda pagado al hacerlo.
             if (input.payment_method === 'free' && cart.total > 0) badRequest('shop_payment', 'Elige una forma de pago.');
-            const method: ShopPaymentMethod = cart.total === 0 ? 'free' : input.payment_method;
+            // v0.1.417 — Una suscripción en cero no tiene qué cobrar cada período.
+            if (subscribing && cart.total <= 0) badRequest('shop_subscription', 'Este producto no tiene precio: no se puede suscribir.');
+            const method: ShopPaymentMethod = subscribing ? 'subscription' : cart.total === 0 ? 'free' : input.payment_method;
             // v0.1.413 — Pago en línea: el stock queda apartado mientras la persona paga.
             const holdUntil = method === 'online' ? new Date(Date.now() + config.payments.online.hold_minutes * 60_000) : null;
             const paidNow = method === 'free' ? new Date() : null;
@@ -310,7 +361,8 @@ export class ShopOrdersService implements OnModuleInit {
             for (const l of cart.lines) {
                 const p = byId.get(l.product_id)!;
                 let taken = false;
-                if (rf.stock && p.product.stock !== null) {
+                // v0.1.417 — Una suscripción no descuenta stock (en 0 se cierran las inscripciones).
+                if (!subscribing && rf.stock && p.product.stock !== null) {
                     const key = jsonbKeyForField(rf.stock.id);
                     const next = { ...p.data, [key]: Math.max(0, p.product.stock - l.qty) };
                     const updated = await this.recordsRepo.updateData(tx, tenantId, shop.listId, l.product_id, next, 0);
@@ -423,7 +475,7 @@ export class ShopOrdersService implements OnModuleInit {
                 customer: { name: c.name, email: c.email, phone: c.phone, document: c.document, address: c.address, city: c.city, notes: c.notes },
                 delivery: needsDelivery
                     ? { id: delivery!.id, name: deliveryLabel, needs_address: delivery!.needs_address, ...(zone ? { zone_id: zone.id, zone_name: zone.name } : {}) }
-                    : { id: null, name: deliveryLabel, needs_address: false, digital: true },
+                    : { id: null, name: deliveryLabel, needs_address: subscribing && config.kinds.subscription_address, ...(subscribing ? { subscription: true } : { digital: true }) },
                 origin: { page: input.origin?.page?.slice(0, 500) ?? null, referrer: input.origin?.referrer?.slice(0, 500) ?? null },
                 catalogListId: shop.listId,
                 stockFieldId: tookStock && rf.stock ? rf.stock.id : null,
@@ -431,7 +483,7 @@ export class ShopOrdersService implements OnModuleInit {
                 stockState: tookStock ? 'taken' : 'none',
                 expiresAt: holdUntil,
             });
-            return { cart, number, recordId: inserted.id, orderListId: o.list_id!, lines, method, holdUntil, deliveryLabel };
+            return { cart, number, recordId: inserted.id, orderListId: o.list_id!, lines, method, holdUntil, deliveryLabel, planId };
         });
         const method = result.method;
         const holdUntil = result.holdUntil;
@@ -442,6 +494,47 @@ export class ShopOrdersService implements OnModuleInit {
         // se puede, el pedido se cancela en el acto (vuelve el stock) y la
         // persona elige otra forma de pago.
         let payUrl: string | null = null;
+        // v0.1.417 — Suscripción: el débito automático se arma DESPUÉS del commit
+        // (es una llamada al proveedor). Si no se puede, el pedido se cancela.
+        if (method === 'subscription') {
+            try {
+                const product = result.lines[0]!;
+                const sub = await this.subscriptions!.createForShop(tenantId, {
+                    planId: result.planId!,
+                    listId: result.orderListId,
+                    recordId: result.recordId,
+                    payerEmail: c.email,
+                    amount: result.cart.total,
+                    title: `${product.title} · ${result.number}`.slice(0, 200),
+                    backUrlFor: () => `${orderUrl}&suscripcion=1`,
+                });
+                payUrl = sub.url;
+                await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx
+                        .update(shopOrders)
+                        .set({ subscriptionId: sub.id, updatedAt: new Date() })
+                        .where(and(eq(shopOrders.tenantId, tenantId), eq(shopOrders.token, orderToken))),
+                );
+                this.incidents?.resolve(tenantId, `shop-sub:${shop.id}`);
+            } catch (err) {
+                const reason = err instanceof Error ? err.message : String(err);
+                this.logger.warn(`Tienda ${shop.id}: no se pudo preparar la suscripción del pedido ${result.number}: ${reason}`);
+                this.incidents?.report({
+                    tenantId,
+                    key: `shop-sub:${shop.id}`,
+                    source: 'shop',
+                    sourceId: shop.id,
+                    listId: shop.listId,
+                    ownerId: shop.createdBy,
+                    title: `La tienda «${shop.name}» no puede crear suscripciones`,
+                    message: `Alguien intentó suscribirse y no se pudo preparar el débito automático: ${reason} Revisa el plan del producto y la cuenta de cobro (Ajustes → Integraciones → Cobros).`,
+                });
+                for (const listId of new Set(touched.map((t) => t.listId))) this.realtime.records(tenantId, listId);
+                const row = await this.findByToken(tenantId, orderToken);
+                if (row) await this.expireOrder(tenantId, row.id, 'No se pudo preparar la suscripción.').catch(() => undefined);
+                throw new ShopPaymentUnavailableError('No pudimos preparar la suscripción. Intenta de nuevo en un momento.');
+            }
+        }
         if (method === 'online') {
             try {
                 const link = await this.collections!.createForShop(tenantId, {
@@ -499,6 +592,24 @@ export class ShopOrdersService implements OnModuleInit {
         // El pago en línea avisa al equipo cuando entra el pago: un carrito
         // abandonado en el checkout no es una venta. A quien compra sí le
         // llega el enlace de su pedido, por si cierra el checkout sin pagar.
+        // v0.1.417 — Lo mismo con la suscripción: el aviso sale al autorizarla.
+        if (method === 'subscription') {
+            if (config.checkout.send_confirmation) {
+                void this.sendConfirmation(s, {
+                    kind: 'awaiting',
+                    number: result.number,
+                    customer: c,
+                    lines: result.lines,
+                    totals: { subtotal: result.cart.subtotal, shipping: 0, total: result.cart.total },
+                    delivery: deliveryLabel,
+                    method,
+                    orderUrl,
+                    money,
+                    subscription: await this.subscriptionText(tenantId, orderToken, money),
+                }).catch((err: unknown) => this.logger.warn(`Tienda ${shop.id}: no salió el correo del pedido ${result.number}: ${String(err)}`));
+            }
+            return { order_token: orderToken, number: result.number, cart: result.cart, payment_method: method, whatsapp_path: null, pay_url: payUrl };
+        }
         if (method === 'online') {
             if (config.checkout.send_confirmation) {
                 void this.sendConfirmation(s, {
@@ -553,6 +664,34 @@ export class ShopOrdersService implements OnModuleInit {
             whatsapp_path: method === 'whatsapp' ? `/api/v1/public/s/${s.token}/wa/${orderToken}` : null,
             pay_url: null,
         };
+    }
+
+    /** v0.1.417 — «$ 80.000 cada mes · 7 días gratis · 12 cobros» (sin consultar al proveedor). */
+    private async subscriptionText(tenantId: number, orderToken: string, money: (n: number) => string): Promise<string | null> {
+        const row = await this.findByToken(tenantId, orderToken);
+        if (!row?.subscriptionId || !this.subscriptions) return null;
+        const sub = await this.subscriptions.shopOrderSubscription(tenantId, row.subscriptionId, { sync: false }).catch(() => null);
+        if (!sub) return null;
+        const extras = subscriptionPlanExtras({ trial_days: sub.trial_days, cycles: sub.cycles });
+        return `${money(sub.amount)} ${subscriptionFrequencyText(sub.frequency, sub.frequency_type)}${extras ? ` · ${extras}` : ''}`;
+    }
+
+    /**
+     * v0.1.417 — Un evento de la suscripción de un pedido: al activarse (la
+     * persona autorizó la tarjeta) el pedido queda pagado, el equipo se entera
+     * y a quien se suscribió le llega «Tu suscripción quedó activa».
+     */
+    private async onSubscriptionEvent(tenantId: number, subscriptionId: number, events: readonly string[]): Promise<void> {
+        if (!events.includes('activated') && !events.includes('charged')) return;
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: shopOrders.id, paymentStatus: shopOrders.paymentStatus })
+                .from(shopOrders)
+                .where(and(eq(shopOrders.tenantId, tenantId), eq(shopOrders.subscriptionId, subscriptionId)))
+                .limit(1),
+        );
+        if (!row || row.paymentStatus === 'pagado') return;
+        await this.settlePaid(tenantId, row.id);
     }
 
     /** A quién del equipo le llega el aviso de un pedido (vacío = quien creó la tienda). */
@@ -637,6 +776,8 @@ export class ShopOrdersService implements OnModuleInit {
             downloads?: Array<{ title: string; name: string; url: string }>;
             /** v0.1.416 — Cuándo llegan o hasta cuándo sirven las descargas. */
             downloadsNote?: string;
+            /** v0.1.417 — Un pedido de suscripción: «$ 80.000 cada mes · 7 días gratis». */
+            subscription?: string | null;
         },
     ): Promise<void> {
         if (!this.mail) return;
@@ -659,14 +800,23 @@ export class ShopOrdersService implements OnModuleInit {
             paymentLabel:
                 o.method === 'free'
                     ? 'Sin costo'
-                    : paid
+                    : o.method === 'subscription'
+                      ? paid
+                          ? 'Suscripción activa · débito automático'
+                          : 'Suscripción · débito automático'
+                      : paid
                       ? o.method === 'online'
                           ? providerLabel
                               ? `Pagado en línea · ${providerLabel}`
                               : 'Pagado en línea'
                           : `Pagado · ${SHOP_PAYMENT_METHOD_LABELS[o.method]}`
                       : SHOP_PAYMENT_METHOD_LABELS[o.method],
-            paymentInstructions: paid
+            paymentInstructions:
+                o.method === 'subscription'
+                    ? paid
+                        ? `Tu suscripción quedó activa${o.subscription ? `: ${o.subscription}` : ''}. Los cobros se hacen solos con la tarjeta que autorizaste; en la página de tu pedido ves cómo va.`
+                        : `${o.subscription ? `Se cobra ${o.subscription}. ` : ''}Para activarla, autoriza el débito automático con tu tarjeta (el botón te lleva). Si cerraste esa página, el botón de este correo te deja terminar.`
+                    : paid
                 ? o.method === 'free'
                     ? 'Tu pedido no tiene costo.'
                     : o.lines.every((l) => (l.kind ?? 'physical') !== 'physical')
@@ -675,7 +825,8 @@ export class ShopOrdersService implements OnModuleInit {
                 : o.kind === 'awaiting'
                   ? `Tienes ${holdText(o.holdMinutes ?? 30)} para pagarlo. Si no se paga a tiempo, el pedido se cancela solo y los productos vuelven a la tienda.`
                   : paymentInstructions(s.config, o.method),
-            stage: o.kind,
+            stage: o.method === 'subscription' && paid ? 'subscribed' : o.kind,
+            subscription: o.method === 'subscription',
             downloads: o.downloads ?? [],
             downloadsNote: o.downloadsNote ?? null,
             orderUrl: o.orderUrl,
@@ -738,7 +889,21 @@ export class ShopOrdersService implements OnModuleInit {
             ...(await this.onlinePart(tenantId, row, status)),
             ...(await this.downloadsPart(tenantId, row, config, `/api/v1/public/s/${shopToken}`)),
             digital_only: (row.delivery as { digital?: unknown }).digital === true,
+            ...(await this.subscriptionPart(tenantId, row, status)),
         };
+    }
+
+    /**
+     * v0.1.417 — La suscripción de un pedido: cómo va, el link para terminar
+     * de autorizarla (mientras falta) y qué pasó si el pedido se canceló.
+     */
+    private async subscriptionPart(tenantId: number, row: ShopOrderRow, status: ShopOrderStatus): Promise<Pick<PublicShopOrder, 'subscription'> & Partial<Pick<PublicShopOrder, 'payment_note'>>> {
+        if (row.paymentMethod !== 'subscription') return {};
+        const sub = row.subscriptionId && this.subscriptions ? await this.subscriptions.shopOrderSubscription(tenantId, row.subscriptionId, { sync: false }).catch(() => null) : null;
+        if (!sub) return { subscription: null, payment_note: status === 'cancelado' ? 'El pedido se canceló.' : null };
+        // Un pedido cancelado no ofrece terminar de autorizar.
+        const out = status === 'cancelado' && sub.state === 'pending' ? { ...sub, url: null } : sub;
+        return { subscription: out };
     }
 
     // ─────────────────────────── Descargas (v0.1.416) ───────────────────────────
@@ -873,6 +1038,7 @@ export class ShopOrdersService implements OnModuleInit {
             orderUrl: `${base}/api/v1/public/s/${ctx.token}?pedido=${row.token}`,
             money,
             provider: link?.provider ?? null,
+            ...(row.paymentMethod === 'subscription' ? { subscription: await this.subscriptionText(tenantId, row.token, money) } : {}),
             downloads: part.downloads.filter((d) => d.url).map((d) => ({ title: d.title, name: d.name, url: d.url! })),
             ...(part.downloads.length > 0
                 ? {
@@ -936,6 +1102,9 @@ export class ShopOrdersService implements OnModuleInit {
               )
             : [];
         const dataOf = new Map(recs.map((r) => [r.id, r.data as Record<string, unknown>]));
+        // v0.1.417 — Las suscripciones de esos pedidos (sin consultar al proveedor).
+        const subIds = rows.map((r) => r.subscriptionId).filter((x): x is number => typeof x === 'number');
+        const subs = subIds.length > 0 && this.subscriptions ? await this.subscriptions.shopOrderSubscriptionsBrief(tenantId, subIds).catch(() => new Map()) : new Map();
         return {
             email: email.toLowerCase(),
             orders: rows.map((r) => {
@@ -958,6 +1127,12 @@ export class ShopOrdersService implements OnModuleInit {
                     currency: r.currency,
                     items: lines.reduce((n, l) => n + l.qty, 0),
                     downloads: this.downloadFiles(r).length,
+                    subscription: (() => {
+                        const sb = r.subscriptionId ? subs.get(r.subscriptionId) : undefined;
+                        if (!sb) return r.paymentMethod === 'subscription' ? 'Suscripción' : null;
+                        const freq = subscriptionFrequencyText(sb.frequency, sb.frequency_type);
+                        return `Suscripción ${freq} · ${SUBSCRIPTION_STATUS_OPTIONS[sb.status as keyof typeof SUBSCRIPTION_STATUS_OPTIONS]?.label ?? sb.status}`;
+                    })(),
                     order_token: r.token,
                 };
             }),
@@ -988,21 +1163,28 @@ export class ShopOrdersService implements OnModuleInit {
         });
     }
 
-    /** Agrega «Sin costo» a la columna del método de pago (las tiendas de antes no la traían). */
-    private freeOptionReady = new Set<string>();
-    private async ensureFreeOption(tenantId: number, config: ShopConfig): Promise<void> {
+    /**
+     * Agrega «Sin costo» (v0.1.416) o «Suscripción» (v0.1.417) a la columna del
+     * método de pago (las tiendas de antes no las traían).
+     */
+    private methodOptionReady = new Set<string>();
+    private async ensureMethodOption(tenantId: number, config: ShopConfig, method: 'free' | 'subscription'): Promise<void> {
         const listId = config.orders.list_id;
         const fid = config.orders.fields.payment_method;
         if (!listId || typeof fid !== 'number') return;
-        const key = `${tenantId}:${fid}`;
-        if (this.freeOptionReady.has(key)) return;
+        const key = `${tenantId}:${fid}:${method}`;
+        if (this.methodOptionReady.has(key)) return;
         const field = (await this.fields.listByListId(tenantId, listId)).find((f) => f.id === fid);
         if (!field || field.type !== 'select') return;
         const opts = (field.config as { options?: Array<{ value?: unknown }> }).options ?? [];
-        if (!opts.some((op) => op.value === 'free')) {
-            await this.fields.appendOption(tenantId, String(listId), String(fid), { value: 'free', label: SHOP_PAYMENT_METHOD_LABELS.free, color: '#0d9488' });
+        if (!opts.some((op) => op.value === method)) {
+            await this.fields.appendOption(tenantId, String(listId), String(fid), {
+                value: method,
+                label: SHOP_PAYMENT_METHOD_LABELS[method],
+                color: method === 'free' ? '#0d9488' : '#db2777',
+            });
         }
-        this.freeOptionReady.add(key);
+        this.methodOptionReady.add(key);
     }
 
     /**
@@ -1134,6 +1316,8 @@ export class ShopOrdersService implements OnModuleInit {
                 .for('update');
             if (!row) throw new NotFoundException({ code: 'shop_order_not_found', message: 'Ese registro no es un pedido de la tienda.', data: { status: 404 } });
             if (row.paymentStatus === 'pagado') return { row, changed: null };
+            // v0.1.417 — Una suscripción queda pagada sola cuando se autoriza el débito.
+            if (row.paymentMethod === 'subscription') badRequest('shop_subscription_paid', 'Este pedido es una suscripción: queda pagado solo cuando el cliente autoriza el débito automático.');
             const now = new Date();
             await tx.update(shopOrders).set({ paymentStatus: 'pagado', paidAt: now, updatedAt: now }).where(eq(shopOrders.id, row.id));
             const [rec] = await tx.select({ listId: records.listId, data: records.data }).from(records).where(and(eq(records.tenantId, tenantId), eq(records.id, recordId), isNull(records.deletedAt))).limit(1).for('no key update');
@@ -1267,6 +1451,12 @@ export class ShopOrdersService implements OnModuleInit {
      */
     async refreshPayment(tenantId: number, shopId: number, orderToken: string): Promise<void> {
         const row = await this.findByToken(tenantId, orderToken);
+        // v0.1.417 — Suscripción: se pregunta al proveedor y, si ya se activó, el
+        // aviso de la suscripción deja el pedido pagado en el acto.
+        if (row && row.shopId === shopId && row.paymentMethod === 'subscription' && row.paymentStatus === 'pendiente' && row.subscriptionId && this.subscriptions) {
+            await this.subscriptions.shopOrderSubscription(tenantId, row.subscriptionId, { returning: true });
+            return;
+        }
         if (!row || row.shopId !== shopId || row.paymentMethod !== 'online' || row.paymentStatus !== 'pendiente' || !row.paymentLinkId || !this.collections) return;
         const st = await this.collections.linkState(tenantId, row.paymentLinkId, { refresh: true });
         if (st?.status === 'approved') await this.settlePaid(tenantId, row.id);
@@ -1349,6 +1539,35 @@ export class ShopOrdersService implements OnModuleInit {
         const customer = out.row.customer as Record<string, string>;
         const orderList = ctx.config.orders.list_id ?? ctx.shop.listId;
         const recordId = out.row.recordId ?? 0;
+        const isSub = out.row.paymentMethod === 'subscription';
+        if (out.outcome === 'late' && isSub) {
+            this.notify?.emit({
+                type: 'shop',
+                tenantId,
+                listId: orderList,
+                recordId,
+                userIds: this.notifyIds(ctx.config, ctx.shop),
+                title: `Se activó la suscripción de ${out.row.number}, pero el pedido estaba cancelado`.slice(0, 200),
+                body: `${customer.name ?? 'El cliente'} autorizó el débito automático. Si no la vas a atender, cancélala desde la ficha del pedido (sección Suscripción).`,
+            });
+            return out.outcome;
+        }
+        if (isSub) {
+            const text = await this.subscriptionText(tenantId, out.row.token, money);
+            this.notify?.emit({
+                type: 'shop',
+                tenantId,
+                listId: orderList,
+                recordId,
+                userIds: this.notifyIds(ctx.config, ctx.shop),
+                title: `Suscripción nueva ${out.row.number} · ${text ?? money(out.row.total)}`.slice(0, 200),
+                body: `${customer.name ?? ''} · autorizó el débito automático · ${(out.row.lines as ShopOrderLineSnapshot[])[0]?.title ?? ''}`.slice(0, 300),
+            });
+            if (ctx.config.checkout.send_confirmation && customer.email) {
+                void this.sendPaidEmail(tenantId, out.row.token).catch((err: unknown) => this.logger.warn(`Tienda ${ctx.shop.id}: no salió el correo de la suscripción ${out.row.number}: ${String(err)}`));
+            }
+            return out.outcome;
+        }
         if (out.outcome === 'late') {
             this.notify?.emit({
                 type: 'shop',
@@ -1392,6 +1611,7 @@ export class ShopOrdersService implements OnModuleInit {
         rows: PurchasableRow[],
         rf: ResolvedCatalog,
         attrs: Field[] | null,
+        opts: { subscriptions?: boolean } = {},
     ): Promise<ReturnType<typeof purchasablesFromRows>> {
         const parents = new Map<number, PurchasableRow>();
         const withVariants = new Set<number>();
@@ -1419,6 +1639,7 @@ export class ShopOrdersService implements OnModuleInit {
             withVariants,
             rf,
             attrs,
+            opts,
         );
     }
 

@@ -78,6 +78,8 @@ export type ShopVariantsConfig = z.infer<typeof shopVariantsSchema>;
  * «Tipo» lo dice o, sin columna «Tipo», si trae archivos para descargar; los
  * digitales no piden entrega y, al pagar, quien compró recibe los enlaces de
  * descarga. Un servicio no va al carrito: el botón lleva a la agenda.
+ * v0.1.417 — Una suscripción tampoco va al carrito: «Suscribirme» la contrata
+ * con un plan de débito automático (Mercado Pago o PayPal de la empresa).
  */
 const BOOKING_SERVICE_ID_RE = /^[a-z0-9]{4,24}$/;
 export const SHOP_MAX_SERVICE_LINKS = 300;
@@ -107,6 +109,23 @@ export const shopKindsSchema = z.object({
             }
             return out;
         }),
+    /** v0.1.417 — Producto (id) → plan de suscripción (id). Sin elección: el plan con el mismo nombre. */
+    subscription_links: z
+        .record(z.string(), z.unknown())
+        .catch({})
+        .default({})
+        .transform((raw) => {
+            const out: Record<string, number> = {};
+            let n = 0;
+            for (const [k, v] of Object.entries(raw)) {
+                if (!/^[1-9]\d{0,14}$/.test(k) || typeof v !== 'number' || !Number.isInteger(v) || v <= 0) continue;
+                out[k] = v;
+                if (++n >= SHOP_MAX_SERVICE_LINKS) break;
+            }
+            return out;
+        }),
+    /** v0.1.417 — Pedir dirección y ciudad al suscribirse (una caja que llega cada mes). */
+    subscription_address: z.boolean().catch(false).default(false),
 });
 export type ShopKindsConfig = z.infer<typeof shopKindsSchema>;
 
@@ -437,7 +456,35 @@ export interface ShopOptions {
     /** v0.1.416 — Los productos de tipo servicio, con el servicio de la agenda que les toca. */
     service_products: ShopServiceProductDto[];
     /** v0.1.416 — Cuántos productos de cada tipo hay (con la configuración guardada). */
-    kind_counts: { physical: number; digital: number; service: number; downloadable: number };
+    kind_counts: { physical: number; digital: number; service: number; subscription: number; downloadable: number };
+    /** v0.1.417 — Los planes de suscripción que se pueden vender (activos y con una cuenta del equipo). */
+    subscription_plans: ShopSubscriptionPlanOption[];
+    /** v0.1.417 — Los productos de tipo suscripción, con el plan que les toca. */
+    subscription_products: ShopSubscriptionProductDto[];
+}
+
+/** v0.1.417 — Un plan de suscripción para los productos de la tienda. */
+export interface ShopSubscriptionPlanOption {
+    id: number;
+    name: string;
+    currency: string;
+    amount: number;
+    frequency: number;
+    frequency_type: 'months' | 'days';
+    trial_days: number;
+    cycles: number | null;
+    provider: 'mercadopago' | 'paypal';
+}
+
+/** v0.1.417 — Un producto de tipo suscripción y el plan que le toca. */
+export interface ShopSubscriptionProductDto {
+    id: number;
+    title: string;
+    price: number | null;
+    /** El plan elegido a mano (null = se busca por el nombre). */
+    linked: number | null;
+    /** El plan que se usa (elegido o por el nombre, en la moneda de la tienda; null = ninguno). */
+    resolved: number | null;
 }
 
 /** v0.1.416 — Una agenda de la empresa para los servicios de la tienda. */

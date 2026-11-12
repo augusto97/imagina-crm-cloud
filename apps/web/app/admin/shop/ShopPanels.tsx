@@ -18,6 +18,7 @@ import {
     MessageCircle,
     Plus,
     RefreshCw,
+    Repeat,
     ShieldCheck,
     Trash2,
     Truck,
@@ -41,8 +42,12 @@ import {
     SHOP_TRANSFER_DEFAULT,
     SHOP_VARIANT_ATTRIBUTE_TYPES,
     collectionCurrencyError,
+    formatShopMoney,
     newShopItemId,
+    shopPlanFor,
     shopServiceFor,
+    subscriptionFrequencyText,
+    subscriptionPlanExtras,
     type ShopCatalogFields,
     type ShopConfig,
     type ShopDeliveryMethod,
@@ -58,6 +63,7 @@ import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/toast';
 import { __, sprintf } from '@/lib/i18n';
+import { getTenantFormat } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
 import { DomainChips } from '../forms/DomainChips';
@@ -261,11 +267,19 @@ function KindsSection({
         counts.physical > 0 ? (counts.physical === 1 ? __('1 físico') : sprintf(__('%d físicos'), counts.physical)) : '',
         counts.digital > 0 ? (counts.digital === 1 ? __('1 digital') : sprintf(__('%d digitales'), counts.digital)) : '',
         counts.service > 0 ? (counts.service === 1 ? __('1 servicio') : sprintf(__('%d servicios'), counts.service)) : '',
+        counts.subscription > 0 ? (counts.subscription === 1 ? __('1 suscripción') : sprintf(__('%d suscripciones'), counts.subscription)) : '',
     ].filter(Boolean);
+    // v0.1.417 — Los planes que sirven: los de la moneda de la tienda.
+    const plans = options.subscription_plans.filter((pl) => pl.currency.toUpperCase() === config.currency.toUpperCase());
+    const otherCurrency = options.subscription_plans.length - plans.length;
+    const fmtPlan = (pl: (typeof plans)[number]): string => {
+        const extras = subscriptionPlanExtras({ trial_days: pl.trial_days, cycles: pl.cycles });
+        return `${subscriptionFrequencyText(pl.frequency, pl.frequency_type)}${extras ? ` · ${extras}` : ''} · ${pl.provider === 'paypal' ? 'PayPal' : 'Mercado Pago'}`;
+    };
     return (
         <SubSection
             title={__('Tipos de producto')}
-            hint={__('Además de productos físicos, puedes vender descargas (un PDF, una plantilla, un curso) y servicios que se agendan.')}
+            hint={__('Además de productos físicos, puedes vender descargas (un PDF, una plantilla, un curso), servicios que se agendan y suscripciones que se cobran solas cada mes.')}
             testId="shop-kinds"
             tour="shop-kinds"
         >
@@ -273,7 +287,7 @@ function KindsSection({
             <Field
                 label={__('Columna con el tipo')}
                 htmlFor="shop-kind-field"
-                hint={__('Una selección con Físico, Digital y Servicio. Sin columna, todo es físico salvo lo que tenga un archivo para descargar.')}
+                hint={__('Una selección con Físico, Digital, Servicio y Suscripción. Sin columna, todo es físico salvo lo que tenga un archivo para descargar.')}
             >
                 <Select id="shop-kind-field" value={k.kind_field === null ? '' : String(k.kind_field)} onChange={(e) => setK({ kind_field: e.target.value === '' ? null : Number(e.target.value) })} data-testid="shop-kind-field">
                     <option value="">{__('Ninguna')}</option>
@@ -412,6 +426,85 @@ function KindsSection({
                             </div>
                         );
                     })}
+                </div>
+            )}
+            {(counts.subscription > 0 || options.subscription_products.length > 0) && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="shop-subscription-links">
+                    <p className="imcrm-text-[12px] imcrm-font-medium">{__('Qué plan de suscripción usa cada producto')}</p>
+                    <p className="imcrm-text-[11.5px] imcrm-leading-snug imcrm-text-muted-foreground">
+                        {__('Una suscripción no va al carrito: «Suscribirme» la contrata y se cobra sola con débito automático. Lo que se cobra cada período es el precio del producto; del plan salen cada cuánto, los días gratis y la cantidad de cobros.')}
+                    </p>
+                    {plans.length === 0 && (
+                        <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11.5px] imcrm-text-amber-700 dark:imcrm-text-amber-400" data-testid="shop-subscription-no-plans">
+                            <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                            <span>
+                                {otherCurrency > 0
+                                    ? sprintf(__('Tus planes de suscripción no están en %s, la moneda de la tienda.'), config.currency)
+                                    : __('No tienes planes de suscripción activos de una cuenta de Mercado Pago o PayPal del equipo.')}{' '}
+                                <Link to="/settings?s=conectores" className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline">
+                                    {__('Créalos en Ajustes → Integraciones → Cobros')}
+                                </Link>
+                            </span>
+                        </p>
+                    )}
+                    {options.subscription_products.map((sp) => {
+                        const linked = k.subscription_links[String(sp.id)] ?? null;
+                        const resolved = shopPlanFor({ id: sp.id, title: sp.title }, k.subscription_links, plans, config.currency);
+                        const plan = plans.find((pl) => pl.id === resolved) ?? null;
+                        const byName = linked === null && plan ? plan.name : null;
+                        return (
+                            <div
+                                key={sp.id}
+                                className="imcrm-grid imcrm-grid-cols-1 imcrm-items-center imcrm-gap-1.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-2 sm:imcrm-grid-cols-[1fr_1fr]"
+                                data-testid="shop-subscription-row"
+                            >
+                                <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-col">
+                                    <span className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-[12.5px]">
+                                        <Repeat className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
+                                        <span className="imcrm-truncate">{sp.title || `#${sp.id}`}</span>
+                                    </span>
+                                    <span className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                                        {sp.price === null ? __('Sin precio') : formatShopMoney(sp.price, config.currency, getTenantFormat().number_format)}
+                                        {plan ? ` ${fmtPlan(plan)}` : ''}
+                                    </span>
+                                </span>
+                                <Select
+                                    value={linked === null ? '' : String(linked)}
+                                    aria-label={sprintf(__('Plan de «%s»'), sp.title)}
+                                    onChange={(e) =>
+                                        patch((c) => {
+                                            const links = { ...c.kinds.subscription_links };
+                                            if (e.target.value === '') delete links[String(sp.id)];
+                                            else links[String(sp.id)] = Number(e.target.value);
+                                            return { ...c, kinds: { ...c.kinds, subscription_links: links } };
+                                        })
+                                    }
+                                    className={cn(!plan && 'imcrm-border-amber-500/60')}
+                                    data-testid="shop-subscription-link"
+                                >
+                                    <option value="">{byName ? sprintf(__('El del mismo nombre: %s'), byName) : __('Sin plan (elige uno)')}</option>
+                                    {plans.map((pl) => (
+                                        <option key={pl.id} value={pl.id}>
+                                            {pl.name}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </div>
+                        );
+                    })}
+                    <label className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-[12.5px]">
+                        <input
+                            type="checkbox"
+                            className="imcrm-mt-0.5 imcrm-accent-[hsl(var(--imcrm-primary))]"
+                            checked={k.subscription_address}
+                            onChange={(e) => setK({ subscription_address: e.target.checked })}
+                            data-testid="shop-subscription-address"
+                        />
+                        <span>
+                            {__('Pedir la dirección de entrega al suscribirse')}
+                            <span className="imcrm-block imcrm-text-[11.5px] imcrm-text-muted-foreground">{__('Para una caja o un producto que llega cada período.')}</span>
+                        </span>
+                    </label>
                 </div>
             )}
         </SubSection>

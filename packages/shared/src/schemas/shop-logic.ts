@@ -98,11 +98,15 @@ export const SHOP_PAYMENT_STATUS_COLORS: Record<ShopPaymentStatus, string> = {
 };
 
 /**
+ * `subscription` (v0.1.417): el producto se paga con débito automático
+ * (Mercado Pago o PayPal de la empresa); el pedido queda pagado cuando la
+ * persona autoriza su tarjeta.
+ *
  * `free` (v0.1.416): un pedido de total cero (un descargable gratis, un cupón
  * del 100 %) no se paga: queda pagado al hacerlo. Nunca se elige; lo decide el
  * servidor con la cuenta del carrito.
  */
-export const SHOP_PAYMENT_METHODS = ['whatsapp', 'transfer', 'cod', 'online', 'free'] as const;
+export const SHOP_PAYMENT_METHODS = ['whatsapp', 'transfer', 'cod', 'online', 'free', 'subscription'] as const;
 export type ShopPaymentMethod = (typeof SHOP_PAYMENT_METHODS)[number];
 export const SHOP_PAYMENT_METHOD_LABELS: Record<ShopPaymentMethod, string> = {
     whatsapp: 'Pedido por WhatsApp',
@@ -110,6 +114,7 @@ export const SHOP_PAYMENT_METHOD_LABELS: Record<ShopPaymentMethod, string> = {
     cod: 'Contra entrega',
     online: 'Pago en línea',
     free: 'Sin costo',
+    subscription: 'Suscripción (débito automático)',
 };
 
 // ── v0.1.416: tipos de producto ─────────────────────────────────────────
@@ -117,20 +122,23 @@ export const SHOP_PAYMENT_METHOD_LABELS: Record<ShopPaymentMethod, string> = {
 /**
  * Qué es cada producto. `physical` se envía o se recoge; `digital` se
  * descarga (no pide entrega); `service` se agenda en la agenda de la empresa
- * (no va al carrito).
+ * (no va al carrito); `subscription` (v0.1.417) se paga cada mes (o cada
+ * período del plan) con débito automático (no va al carrito).
  */
-export const SHOP_PRODUCT_KINDS = ['physical', 'digital', 'service'] as const;
+export const SHOP_PRODUCT_KINDS = ['physical', 'digital', 'service', 'subscription'] as const;
 export type ShopProductKind = (typeof SHOP_PRODUCT_KINDS)[number];
 export const SHOP_PRODUCT_KIND_LABELS: Record<ShopProductKind, string> = {
     physical: 'Físico',
     digital: 'Digital (se descarga)',
     service: 'Servicio (se agenda)',
+    subscription: 'Suscripción (se cobra cada período)',
 };
 /** Las opciones de la columna «Tipo de producto» que crea la tienda. */
 export const SHOP_KIND_OPTIONS: ReadonlyArray<{ value: ShopProductKind; label: string; color: string }> = [
     { value: 'physical', label: 'Físico', color: '#2563eb' },
     { value: 'digital', label: 'Digital', color: '#7c3aed' },
     { value: 'service', label: 'Servicio', color: '#0d9488' },
+    { value: 'subscription', label: 'Suscripción', color: '#db2777' },
 ];
 /** Archivos que se descargan por producto. */
 export const SHOP_MAX_DOWNLOAD_FILES = 10;
@@ -153,14 +161,17 @@ function foldKind(s: string): string {
  * El tipo de un producto según el valor de la columna «Tipo» (la etiqueta de
  * la opción o el texto). Tolerante: «Digital», «Descargable», «E-book»,
  * «Curso virtual» son digitales; «Servicio», «Cita», «Sesión», «Asesoría» se
- * agendan; «Físico», «Producto» se envían. Lo que no se entiende → null (lo
+ * agendan; «Suscripción», «Membresía», «Mensualidad» se cobran cada período;
+ * «Físico», «Producto» se envían. Lo que no se entiende → null (lo
  * decide quien llama: con archivo para descargar es digital; si no, físico).
  */
 export function shopKindFromText(raw: unknown): ShopProductKind | null {
     if (typeof raw !== 'string') return null;
     const t = foldKind(raw);
     if (!t) return null;
-    if (t === 'physical' || t === 'digital' || t === 'service') return t;
+    if (t === 'physical' || t === 'digital' || t === 'service' || t === 'subscription') return t;
+    // v0.1.417 — Antes que lo demás: «Curso por suscripción» se cobra cada mes.
+    if (/(suscrip|subscrip|membres|mensualidad|recurrente|debito automatico)/.test(t)) return 'subscription';
     if (/(digital|descarga|virtual|archivo|ebook|e-book|pdf|curso|plantilla|licencia)/.test(t)) return 'digital';
     if (/(servicio|cita|reserva|agenda|sesion|consulta|asesoria|clase)/.test(t)) return 'service';
     if (/(fisic|producto|envio|mercancia)/.test(t)) return 'physical';
@@ -182,6 +193,26 @@ export function shopServiceFor(
     const t = foldKind(product.title).replace(/\s+/g, ' ');
     if (!t) return null;
     return services.find((s) => s.active && foldKind(s.name).replace(/\s+/g, ' ') === t)?.id ?? null;
+}
+
+/**
+ * v0.1.417 — El plan de suscripción que le toca a un producto de tipo
+ * suscripción: el elegido a mano (si sigue disponible) o el que se llama igual
+ * (sin tildes ni mayúsculas). Sólo cuenta un plan en la moneda de la tienda.
+ * null = ninguno (el producto no se puede suscribir ahora).
+ */
+export function shopPlanFor(
+    product: { id: number; title: string },
+    links: Readonly<Record<string, number>>,
+    plans: ReadonlyArray<{ id: number; name: string; currency: string }>,
+    currency: string,
+): number | null {
+    const ok = plans.filter((p) => p.currency.toUpperCase() === currency.toUpperCase());
+    const linked = links[String(product.id)];
+    if (linked && ok.some((p) => p.id === linked)) return linked;
+    const t = foldKind(product.title).replace(/\s+/g, ' ');
+    if (!t) return null;
+    return ok.find((p) => foldKind(p.name).replace(/\s+/g, ' ') === t)?.id ?? null;
 }
 
 /**
@@ -412,6 +443,22 @@ export interface PublicShopProduct {
      * apagada o no tiene ese servicio).
      */
     book_url?: string | null;
+    /**
+     * v0.1.417 — Una suscripción: cada cuánto se cobra y con qué. null = no se
+     * puede suscribir ahora (no tiene un plan disponible en la moneda de la
+     * tienda). El precio que se cobra cada período es el del producto.
+     */
+    subscription?: PublicShopSubscriptionPlan | null;
+}
+
+/** v0.1.417 — El plan de un producto de suscripción, como lo ve la tienda. */
+export interface PublicShopSubscriptionPlan {
+    frequency: number;
+    frequency_type: 'months' | 'days';
+    trial_days: number;
+    /** null = hasta que se cancele. */
+    cycles: number | null;
+    provider: 'mercadopago' | 'paypal';
 }
 
 /** v0.1.414 — Una variante como la ve la tienda pública. */
@@ -452,11 +499,13 @@ export function shopVariantTitle(productTitle: string, label: string): string {
  * cada variante (un producto CON variantes no se compra directamente). La usan
  * la página (estimación) y el servidor (la cuenta del carrito).
  */
-export function shopPurchasables(products: readonly PublicShopProduct[]): Map<number, ShopPurchasable> {
+export function shopPurchasables(products: readonly PublicShopProduct[], opts: { subscriptions?: boolean } = {}): Map<number, ShopPurchasable> {
     const out = new Map<number, ShopPurchasable>();
     for (const p of products) {
         // v0.1.416 — Un servicio no va al carrito: se agenda.
         if (p.kind === 'service') continue;
+        // v0.1.417 — Una suscripción tampoco: se contrata sola (con `subscriptions`, sólo ellas).
+        if ((p.kind === 'subscription') !== (opts.subscriptions === true)) continue;
         if (p.variants && p.variants.length > 0) {
             for (const v of p.variants) {
                 out.set(v.id, {
@@ -972,6 +1021,8 @@ export interface PublicShopMeta {
     coupons?: boolean;
     /** v0.1.416 — Los descargables: cuántos días sirve el enlace y cuántas veces se baja cada archivo (null = sin límite). */
     downloads?: { days: number; max: number | null };
+    /** v0.1.417 — Hay suscripciones: si piden dirección (una caja que llega cada mes). */
+    subscriptions?: { address: boolean };
     /** null = recibe pedidos; si no, el motivo de cerrada. */
     closed: string | null;
     /** Hay más productos que los que muestra la página. */
@@ -1008,6 +1059,8 @@ export interface PublicShopOrder {
     pay_until: string | null;
     /** v0.1.413 — Con qué se paga en línea («Mercado Pago», «Wompi», «PayPal»). */
     pay_provider: string | null;
+    /** v0.1.417 — Un pedido de suscripción: cómo va el débito automático. */
+    subscription?: PublicShopOrderSubscription | null;
     /** v0.1.413 — Lo que la persona tiene que saber del pago (se canceló por no pagar, llegó tarde…). */
     payment_note: string | null;
     /** v0.1.416 — Lo que se descarga (vacío si el pedido no trae descargables). */
@@ -1018,6 +1071,25 @@ export interface PublicShopOrder {
     downloads_until: string | null;
     /** v0.1.416 — El pedido no se envía (todo se descarga). */
     digital_only: boolean;
+}
+
+/** v0.1.417 — La suscripción de un pedido, como la ve quien compró. */
+export interface PublicShopOrderSubscription {
+    /** `pending` = falta autorizar la tarjeta; `active` = al día; `failed` = un cobro no pasó; `cancelled` = terminó. */
+    state: 'pending' | 'active' | 'failed' | 'cancelled';
+    /** El estado en palabras («Al día», «Reintentando el cobro»). */
+    label: string;
+    amount: number;
+    currency: string;
+    frequency: number;
+    frequency_type: 'months' | 'days';
+    trial_days: number;
+    cycles: number | null;
+    /** Adónde ir a autorizar la tarjeta (sólo mientras falta). */
+    url: string | null;
+    provider: 'mercadopago' | 'paypal';
+    /** El próximo cobro (AAAA-MM-DD; null si no hay). */
+    next_charge: string | null;
 }
 
 /** v0.1.416 — Un archivo de un pedido, como lo ve quien compró. */
@@ -1052,6 +1124,8 @@ export interface PublicShopMyOrders {
         items: number;
         /** Cuántos archivos para descargar trae. */
         downloads: number;
+        /** v0.1.417 — Un pedido de suscripción: «Cada mes · Al día» (null si no es suscripción). */
+        subscription?: string | null;
         /** `?pedido=<token>` de esta tienda. */
         order_token: string;
     }>;

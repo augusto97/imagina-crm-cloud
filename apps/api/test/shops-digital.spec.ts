@@ -305,7 +305,7 @@ describe('v0.1.416 — tienda: descargas, servicios y «Mis pedidos» (Postgres 
         // Nadie lo atiende: la agenda no lo muestra, así que la tienda tampoco lleva ahí.
         expect(byId.get(product.sin_quien!)!.book_url).toBeNull();
         expect(info!.meta.downloads).toEqual({ days: 30, max: 2 });
-        expect(SHOP_KIND_OPTIONS.map((o) => o.value)).toEqual(['physical', 'digital', 'service']);
+        expect(SHOP_KIND_OPTIONS.map((o) => o.value)).toEqual(['physical', 'digital', 'service', 'subscription']);
 
         // Un servicio no se compra por el carrito.
         await expect(place({ lines: [{ product_id: product.asesoria!, qty: 1 }] })).rejects.toBeTruthy();

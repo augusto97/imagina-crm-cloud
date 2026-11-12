@@ -9,6 +9,9 @@ describe('editor de la tienda (v0.1.412)', () => {
         const ctx = { enabled: false, productsCount: 1, ordersListName: 'Pedidos · Tienda' };
         expect(shopSectionSummary('catalog', c, ctx)).toBe('1 producto');
         expect(shopSectionSummary('catalog', c, { ...ctx, productsCount: 12 })).toBe('12 productos');
+        // v0.1.417 — Con algún producto atado a un plan, dice que vende suscripciones.
+        const withSubs = { ...c, kinds: { ...c.kinds, subscription_links: { '5': 9 } } };
+        expect(shopSectionSummary('catalog', withSubs, ctx)).toBe('1 producto · con suscripciones');
         expect(shopSectionSummary('payment', c, ctx)).toBe('Sin forma de pago · 2 entregas');
         c.payments.transfer.enabled = true;
         c.payments.cod.enabled = true;

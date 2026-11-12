@@ -19,7 +19,20 @@
  * En el editor (vista previa) el catálogo y la configuración llegan por
  * `postMessage` y nada se envía: comprar muestra un aviso.
  */
-import type { PublicShopMeta, PublicShopMyOrders, PublicShopOrder, PublicShopProduct, PublicShopQuote, PublicShopVariant, ShopCartResult, ShopCouponRule, ShopPaymentMethod, ShopPurchasable } from '@imagina-base/shared';
+import type {
+    PublicShopMeta,
+    PublicShopMyOrders,
+    PublicShopOrder,
+    PublicShopOrderSubscription,
+    PublicShopProduct,
+    PublicShopQuote,
+    PublicShopSubscriptionPlan,
+    PublicShopVariant,
+    ShopCartResult,
+    ShopCouponRule,
+    ShopPaymentMethod,
+    ShopPurchasable,
+} from '@imagina-base/shared';
 import {
     SHOP_MAX_QTY,
     computeShopCart,
@@ -35,6 +48,7 @@ import {
     shopShippingFor,
     shopVariantPriceRange,
 } from '@imagina-base/shared/src/schemas/shop-logic';
+import { subscriptionFrequencyText, subscriptionPlanExtras } from '@imagina-base/shared/src/schemas/form-logic';
 
 interface Boot {
     token: string;
@@ -76,6 +90,8 @@ let products: PublicShopProduct[] = BOOT.products ?? [];
 let byId = new Map<number, PublicShopProduct>();
 /** v0.1.414 — Lo que se pone en el carrito: productos simples y variantes. */
 let buyable = new Map<number, ShopPurchasable>();
+/** v0.1.417 — Lo que se contrata como suscripción (productos y variantes; no va al carrito). */
+let subscribable = new Map<number, ShopPurchasable>();
 
 // ───────────────────────────── Utilidades ─────────────────────────────
 
@@ -106,6 +122,7 @@ const ICONS: Record<string, string> = {
     download: 'M12 4v11M7.5 10.5L12 15l4.5-4.5M5 20h14',
     calendar: 'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 10h16M8 3v4M16 3v4',
     receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3',
+    repeat: 'M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4',
 };
 
 function icon(name: keyof typeof ICONS): SVGSVGElement {
@@ -281,6 +298,40 @@ function bookControl(p: PublicShopProduct, big = false): HTMLElement {
     return el('a', { cls: big ? 's-btn' : 's-add', href: url, ...(EMBEDDED ? { target: '_blank', rel: 'noopener' } : {}), 'data-testid': 'shop-book' }, [icon('calendar'), 'Agendar']);
 }
 
+/** v0.1.417 — Una suscripción no va al carrito: se contrata sola (débito automático). */
+function isSubscription(p: { kind?: string }): boolean {
+    return p.kind === 'subscription';
+}
+
+/** v0.1.417 — Con qué se autoriza la tarjeta. */
+function providerName(p: 'mercadopago' | 'paypal'): string {
+    return p === 'paypal' ? 'PayPal' : 'Mercado Pago';
+}
+
+/** v0.1.417 — «cada mes · 7 días gratis · 12 cobros». */
+function cadenceText(plan: Pick<PublicShopSubscriptionPlan, 'frequency' | 'frequency_type' | 'trial_days' | 'cycles'>): string {
+    const extras = subscriptionPlanExtras({ trial_days: plan.trial_days, cycles: plan.cycles });
+    return `${subscriptionFrequencyText(plan.frequency, plan.frequency_type)}${extras ? ` · ${extras}` : ''}`;
+}
+
+/** v0.1.417 — «Suscribirme»: lleva a sus datos y de ahí a autorizar la tarjeta. */
+function subscribeControl(p: PublicShopProduct, item: { id: number; price: number | null; stock: number | null } = p, big = false): HTMLElement {
+    const m = meta!;
+    const off = !p.subscription || item.price === null || soldOut(item) || !!m.closed;
+    const b = el('button', {
+        type: 'button',
+        cls: big ? 's-btn' : 's-add',
+        disabled: off,
+        text: soldOut(item) ? 'Sin cupos' : !p.subscription || item.price === null ? 'No disponible' : 'Suscribirme',
+        'data-testid': 'shop-subscribe',
+    });
+    b.addEventListener('click', () => {
+        if (overlay) closeOverlay();
+        goSubscribe(item.id);
+    });
+    return b;
+}
+
 /** v0.1.416 — El texto de las descargas de la tienda («tienes 30 días y hasta 5 descargas por archivo»). */
 function downloadsText(): string {
     const d = meta?.downloads;
@@ -364,6 +415,7 @@ function applyTheme(): void {
 function indexProducts(): void {
     byId = new Map(products.map((p) => [p.id, p]));
     buyable = shopPurchasables(products);
+    subscribable = shopPurchasables(products, { subscriptions: true });
     // Lo que ya no está en la tienda sale del carrito (al cargar la página).
     for (const id of [...cart.keys()]) if (!buyable.has(id)) cart.delete(id);
 }
@@ -460,8 +512,11 @@ function visibleProducts(): PublicShopProduct[] {
 function stockText(p: PublicShopProduct): string | null {
     const d = meta!.display;
     if (p.stock === null || isService(p)) return null;
-    if (p.stock <= 0) return 'Agotado';
+    // v0.1.417 — En una suscripción el stock son los cupos.
+    const sub = isSubscription(p);
+    if (p.stock <= 0) return sub ? 'Sin cupos' : 'Agotado';
     if (d.show_stock === 'always' || (d.show_stock === 'low' && p.stock <= d.low_stock_at)) {
+        if (sub) return p.stock === 1 ? 'Queda 1 cupo' : `Quedan ${p.stock} cupos`;
         return p.stock === 1 ? 'Queda 1' : `Quedan ${p.stock}`;
     }
     return null;
@@ -495,8 +550,8 @@ function chooseControl(p: PublicShopProduct): HTMLElement {
     const b = el('button', {
         type: 'button',
         cls: 's-add',
-        disabled: soldOut(p) || p.price === null || !!m.closed,
-        text: soldOut(p) ? 'Agotado' : p.price === null ? 'No disponible' : 'Elegir opción',
+        disabled: soldOut(p) || p.price === null || !!m.closed || (isSubscription(p) && !p.subscription),
+        text: soldOut(p) ? (isSubscription(p) ? 'Sin cupos' : 'Agotado') : p.price === null || (isSubscription(p) && !p.subscription) ? 'No disponible' : 'Elegir opción',
         'data-testid': 'shop-choose',
     });
     b.addEventListener('click', () => openOverlay({ kind: 'product', id: p.id, image: 0 }));
@@ -537,7 +592,7 @@ function productCard(p: PublicShopProduct): HTMLElement {
         img ? el('img', { src: imgUrl(img, 320), srcset: `${imgUrl(img, 320)} 320w, ${imgUrl(img, 640)} 640w`, sizes: '(max-width:640px) 50vw, 320px', alt: p.title, loading: 'lazy', decoding: 'async' }) : el('div', { cls: 's-noimg' }, [icon('image')]),
     ]);
     const service = isService(p);
-    if (soldOut(p) && !service) media.append(el('span', { cls: 's-tag', text: 'Agotado' }));
+    if (soldOut(p) && !service) media.append(el('span', { cls: 's-tag', text: isSubscription(p) ? 'Sin cupos' : 'Agotado' }));
     else if (p.price !== null && p.compare_price !== null && p.compare_price > p.price) {
         const off = Math.round((1 - p.price / p.compare_price) * 100);
         if (off >= 1) media.append(el('span', { cls: 's-tag s-sale', text: `−${off}%` }));
@@ -545,6 +600,7 @@ function productCard(p: PublicShopProduct): HTMLElement {
     // v0.1.416 — Qué tipo de producto es (lo físico no lleva marca).
     if (service) media.append(el('span', { cls: 's-kind', 'data-testid': 'shop-kind' }, [icon('calendar'), 'Servicio']));
     else if (p.kind === 'digital') media.append(el('span', { cls: 's-kind', 'data-testid': 'shop-kind' }, [icon('download'), 'Descarga digital']));
+    else if (isSubscription(p)) media.append(el('span', { cls: 's-kind', 'data-testid': 'shop-kind' }, [icon('repeat'), 'Suscripción']));
     media.addEventListener('click', () => openOverlay({ kind: 'product', id: p.id, image: 0 }));
     const title = el('button', { cls: 's-title', type: 'button', text: p.title });
     title.addEventListener('click', () => openOverlay({ kind: 'product', id: p.id, image: 0 }));
@@ -553,7 +609,15 @@ function productCard(p: PublicShopProduct): HTMLElement {
     const actions = el('div', {}, [cardControl(p)]);
     const card = el('article', { cls: `s-card${soldOut(p) && !service ? ' s-out' : ''}`, 'data-testid': 'shop-card', 'data-id': String(p.id) }, [
         media,
-        el('div', { cls: 's-body' }, [title, d.show_sku && p.sku ? el('div', { cls: 's-sku', text: `Ref. ${p.sku}` }) : null, st && !soldOut(p) ? el('div', { cls: 's-stock', text: st }) : null, priceNode(p, 's-price', variable && priceFrom(p)), actions]),
+        el('div', { cls: 's-body' }, [
+            title,
+            d.show_sku && p.sku ? el('div', { cls: 's-sku', text: `Ref. ${p.sku}` }) : null,
+            st && !soldOut(p) ? el('div', { cls: 's-stock', text: st }) : null,
+            priceNode(p, 's-price', variable && priceFrom(p)),
+            // v0.1.417 — Cada cuánto se cobra la suscripción.
+            isSubscription(p) && p.subscription ? el('div', { cls: 's-cad', 'data-testid': 'shop-cadence', text: cadenceText(p.subscription) }) : null,
+            actions,
+        ]),
     ]);
     cardEls.set(p.id, { card, actions });
     return card;
@@ -561,6 +625,8 @@ function productCard(p: PublicShopProduct): HTMLElement {
 
 function cardControl(p: PublicShopProduct): HTMLElement {
     if (isService(p)) return bookControl(p);
+    // v0.1.417 — Una suscripción con variantes se elige en la ficha.
+    if (isSubscription(p)) return hasVariants(p) ? chooseControl(p) : subscribeControl(p);
     return hasVariants(p) ? chooseControl(p) : addControl(p);
 }
 
@@ -757,6 +823,13 @@ function variantOptions(p: PublicShopProduct, sel: Array<string | null>, imageId
     );
 }
 
+/** v0.1.417 — Lo que dice la ficha de una suscripción. */
+function subscriptionNote(p: PublicShopProduct): string {
+    const plan = p.subscription;
+    if (!plan) return 'Esta suscripción todavía no está disponible. Escríbenos para contratarla.';
+    return `Se cobra ${cadenceText(plan)} con débito automático. Autorizas tu tarjeta en ${providerName(plan.provider)} una sola vez y los cobros se hacen solos.`;
+}
+
 function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>): HTMLElement {
     const p = byId.get(id);
     if (!p) return sheet('narrow', 'Producto', [el('p', { cls: 's-empty', text: 'Este producto ya no está disponible.' })], null, 'shop-product');
@@ -791,10 +864,21 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
         buy = bookControl(p, true);
         priceEl = priceNode(p, 's-price s-d-price', priceFrom(p));
         st = null;
+    } else if (!variable && isSubscription(p)) {
+        buy = subscribeControl(p, p, true);
+        priceEl = priceNode(p, 's-price s-d-price');
+        st = stockText(p);
     } else if (!variable) {
         buy = addControl(p, true);
         priceEl = priceNode(p, 's-price s-d-price');
         st = stockText(p);
+    } else if (variant && isSubscription(p)) {
+        // v0.1.417 — La variante elegida de una suscripción (con su precio).
+        const item = subscribable.get(variant.id) ?? { id: variant.id, price: variant.price, stock: variant.stock };
+        buy = subscribeControl(p, item, true);
+        priceEl = priceNode(variant, 's-price s-d-price');
+        st = stockText({ ...p, stock: variant.stock });
+        sku = variant.sku || p.sku;
     } else if (variant) {
         const item = buyable.get(variant.id)!;
         buy = addControl(item, true);
@@ -812,6 +896,7 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
         el('h3', { cls: 's-d-title', text: p.title }),
         meta!.display.show_sku && sku ? el('div', { cls: 's-sku', text: `Ref. ${sku}` }) : null,
         priceEl,
+        isSubscription(p) && p.subscription ? el('div', { cls: 's-cad', text: cadenceText(p.subscription) }) : null,
         variable ? variantOptions(p, sel, idx) : null,
         st ? el('div', { cls: 's-stock', style: 'margin-top:10px', text: st }) : null,
         el('div', { style: 'margin-top:14px' }, [buy]),
@@ -819,12 +904,14 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
             ? el('p', { cls: 's-kind-note', 'data-testid': 'shop-kind-note' }, [icon('calendar'), bookUrl(p) ? 'Eliges el día y la hora en la agenda.' : 'La agenda de este servicio todavía no está disponible.'])
             : p.kind === 'digital'
               ? el('p', { cls: 's-kind-note', 'data-testid': 'shop-kind-note' }, [icon('download'), downloadsText()])
-              : null,
+              : isSubscription(p)
+                ? el('p', { cls: 's-kind-note', 'data-testid': 'shop-kind-note' }, [icon('repeat'), subscriptionNote(p)])
+                : null,
         n > 0 && !(variant && cart.has(variant.id)) ? el('p', { cls: 's-incart', style: 'margin:8px 0 0', text: n === 1 ? 'Tienes 1 de este producto en el carrito.' : `Tienes ${n} de este producto en el carrito.` }) : null,
         p.description ? el('p', { cls: 's-desc', text: p.description }) : null,
         p.categories.length > 0 ? el('div', { cls: 's-d-cats' }, p.categories.map((c) => el('span', { text: c }))) : null,
     ]);
-    const qty = variable ? n : (cart.get(p.id) ?? 0);
+    const qty = isSubscription(p) ? 0 : variable ? n : (cart.get(p.id) ?? 0);
     const foot = qty > 0 ? [actionButton('Ver carrito', () => openOverlay({ kind: 'cart' }), 's-btn s-ghost')] : null;
     return sheet('modal', p.title, [el('div', { cls: 's-detail' }, [gallery, info])], foot, 'shop-product');
 }
@@ -943,6 +1030,12 @@ const co: CheckoutState = {
 };
 let couponBox: HTMLElement | null = null;
 let zoneBox: HTMLElement | null = null;
+/** v0.1.417 — Lo que se está suscribiendo (producto o variante); null = una compra normal. */
+let subscribingId: number | null = null;
+
+function subscribeTarget(): ShopPurchasable | null {
+    return subscribingId !== null ? (subscribable.get(subscribingId) ?? null) : null;
+}
 
 /** v0.1.416 — Con todo para descargar no hay forma de entrega ni zona. */
 function effDelivery(): string | null {
@@ -1019,9 +1112,170 @@ function setErr(key: string, text: string): void {
 }
 
 function needsAddress(): boolean {
+    // v0.1.417 — Una suscripción pide dirección sólo si la tienda lo pide (una caja que llega cada período).
+    if (subscribingId !== null) return !!meta?.subscriptions?.address;
     if (digitalCart()) return false;
     const d = meta?.delivery.find((x) => x.id === co.deliveryId);
     return d?.needs_address ?? false;
+}
+
+/** Términos, autorización de datos y anti-robots: lo mismo en una compra y en una suscripción. */
+function legalBlock(): HTMLElement[] {
+    const m = meta!;
+    const legal: HTMLElement[] = [];
+    termsCb = null;
+    consentCb = null;
+    if (m.checkout.require_terms) {
+        termsCb = el('input', { type: 'checkbox', id: 'c_terms', 'data-testid': 'shop-terms' });
+        const link = el('button', { type: 'button', cls: 's-link', text: 'los términos y condiciones' });
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            openOverlay({ kind: 'policies', focus: 'terms' });
+        });
+        termsCb.addEventListener('change', () => setErr('terms', ''));
+        errs.terms = el('div', { cls: 's-line-err', role: 'alert', hidden: true });
+        legal.push(el('label', { cls: 's-check', for: 'c_terms' }, [termsCb, el('span', {}, ['Acepto ', link, ' y la política de cambios y devoluciones.'])]), errs.terms);
+    }
+    if (m.data_consent) {
+        const dc = m.data_consent;
+        consentCb = el('input', { type: 'checkbox', id: 'c_consent', 'data-testid': 'shop-consent' });
+        consentCb.addEventListener('change', () => setErr('consent', ''));
+        const full = el('div', { cls: 's-note', hidden: true, text: dc.text });
+        const toggle = el('button', { type: 'button', cls: 's-link', text: 'Ver la autorización completa', 'aria-expanded': 'false' });
+        toggle.addEventListener('click', () => {
+            full.hidden = !full.hidden;
+            toggle.setAttribute('aria-expanded', full.hidden ? 'false' : 'true');
+            toggle.textContent = full.hidden ? 'Ver la autorización completa' : 'Ocultar la autorización';
+        });
+        errs.consent = el('div', { cls: 's-line-err', role: 'alert', hidden: true });
+        legal.push(
+            el('label', { cls: 's-check', for: 'c_consent' }, [consentCb, el('span', { text: dc.label })]),
+            el('div', { style: 'margin:-4px 0 10px 27px;display:flex;gap:12px;flex-wrap:wrap' }, [
+                toggle,
+                dc.policy_url && /^https:\/\//i.test(dc.policy_url) ? el('a', { href: dc.policy_url, target: '_blank', rel: 'noopener noreferrer', text: 'Política de tratamiento de datos' }) : null,
+            ]),
+            full,
+            errs.consent,
+        );
+    }
+    captchaBox = null;
+    if (m.captcha && !BOOT.preview) {
+        captchaBox = el('div', { cls: 's-captcha' });
+        legal.push(captchaBox);
+    }
+    return legal;
+}
+
+/**
+ * v0.1.417 — Suscribirse a un producto: los datos de quien se suscribe (y la
+ * dirección si la tienda la pide), cuánto y cada cuánto se cobra, y de ahí a
+ * Mercado Pago o PayPal a autorizar la tarjeta. Sin carrito, cupón ni envío.
+ */
+function subscribeView(): HTMLElement[] {
+    const m = meta!;
+    for (const k of Object.keys(inputs)) delete inputs[k];
+    deliverySecEl = null;
+    digitalNoteEl = null;
+    paySecEl = null;
+    freeNoteEl = null;
+    couponBox = null;
+    zoneBox = null;
+    const back = el('button', { type: 'button', cls: 's-back' }, [icon('back'), 'Volver a la tienda']);
+    back.addEventListener('click', goCatalog);
+    const item = subscribeTarget();
+    const plan = item?.product.subscription ?? null;
+    if (!item || !plan) {
+        summaryEl = null;
+        submitBtn = null;
+        return [el('div', { 'data-testid': 'shop-subscribe-view' }, [back, el('h1', { text: 'Suscribirme' }), el('p', { cls: 's-empty', text: 'Esta suscripción ya no está disponible. Escríbenos para contratarla.' })])];
+    }
+    const you = el('section', { cls: 's-sec' }, [
+        el('h3', { text: 'Tus datos' }),
+        el('div', { cls: 's-fields' }, [
+            field('name', 'Nombre completo', { autocomplete: 'name', required: true, wide: true }),
+            field('email', 'Correo', { type: 'email', autocomplete: 'email', required: true }),
+            field('phone', 'Celular', { type: 'tel', autocomplete: 'tel', inputmode: 'tel' }),
+            m.checkout.ask_document !== 'hidden' ? field('document', 'Cédula o NIT', { required: m.checkout.ask_document === 'required', inputmode: 'numeric' }) : null,
+        ].filter((x): x is HTMLElement => x !== null)),
+    ]);
+    addressBox = null;
+    const addrSec = m.subscriptions?.address
+        ? el('section', { cls: 's-sec', 'data-testid': 'shop-sub-address' }, [
+              el('h3', { text: '¿A dónde te lo enviamos?' }),
+              el('p', { cls: 's-line-p', style: 'margin:-4px 0 10px', text: 'Cada envío de tu suscripción llega a esta dirección.' }),
+              el('div', { cls: 's-fields' }, [
+                  field('address', 'Dirección', { autocomplete: 'street-address', required: true, wide: true }),
+                  field('city', 'Ciudad', { autocomplete: 'address-level2', required: true, wide: true }),
+              ]),
+          ])
+        : null;
+    const trial = plan.trial_days > 0 ? ` El primer cobro llega cuando ${plan.trial_days === 1 ? 'termina el día gratis' : `terminan los ${plan.trial_days} días gratis`}.` : '';
+    const paySec = el('section', { cls: 's-sec', 'data-testid': 'shop-sub-pay' }, [
+        el('h3', { text: 'Pago' }),
+        el('div', { cls: 's-kind-box' }, [
+            icon('repeat'),
+            el('span', { text: `Se cobra ${money(item.price ?? 0)} ${cadenceText(plan)} con débito automático. Al continuar te llevamos a ${providerName(plan.provider)} para autorizar tu tarjeta una sola vez.${trial}` }),
+        ]),
+    ]);
+    const notesSec = m.checkout.ask_notes ? el('section', { cls: 's-sec' }, [el('div', { cls: 's-fields' }, [field('notes', 'Notas (opcional)', { textarea: true, wide: true })])]) : null;
+    summaryEl = el('div', { cls: 's-sum', 'data-testid': 'shop-summary' });
+    alertEl = el('div', { cls: 's-warn', role: 'alert', hidden: true });
+    const legal = legalBlock();
+    hpInput = el('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off', 'aria-hidden': 'true' });
+    const hp = el('div', { cls: 's-hp', 'aria-hidden': 'true' }, [hpInput]);
+    submitBtn = el('button', { type: 'submit', cls: 's-btn', 'data-testid': 'shop-place' });
+    const form = el('form', { novalidate: true }, [you, addrSec, paySec, notesSec, hp]);
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        void placeOrder();
+    });
+    submitBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        void placeOrder();
+    });
+    const aside = el('aside', { cls: 's-panel s-co-aside' }, [
+        el('h3', { text: 'Resumen' }),
+        summaryEl,
+        alertEl,
+        ...legal,
+        submitBtn,
+        el('p', { cls: 's-line-p', style: 'margin:10px 0 0;text-align:center', text: `Vende: ${m.seller.legal_name || m.company}` }),
+    ]);
+    const layout = el('div', { cls: 's-checkout', 'data-testid': 'shop-subscribe-view' }, [
+        el('div', {}, [back, el('h1', { text: 'Suscribirme' }), m.closed ? el('div', { cls: 's-closed', text: m.closed }) : null, form]),
+        aside,
+    ]);
+    paintSubSummary();
+    paintSubmit();
+    ensureStamp();
+    if (captchaBox) mountCaptcha();
+    return [layout];
+}
+
+/** v0.1.417 — El resumen de una suscripción: qué, cuánto y cada cuánto. */
+function paintSubSummary(): void {
+    if (!summaryEl || !meta) return;
+    const item = subscribeTarget();
+    const plan = item?.product.subscription ?? null;
+    if (!item || !plan) return;
+    const price = item.price ?? 0;
+    const freq = subscriptionFrequencyText(plan.frequency, plan.frequency_type);
+    const rows: HTMLElement[] = [
+        el('div', {}, [el('span', { text: item.title }), el('span', { text: money(price) })]),
+        el('div', {}, [el('span', { text: 'Se cobra' }), el('span', { 'data-testid': 'shop-sub-frequency', text: freq })]),
+    ];
+    if (plan.trial_days > 0) rows.push(el('div', {}, [el('span', { text: 'Prueba gratis' }), el('span', { text: plan.trial_days === 1 ? '1 día' : `${plan.trial_days} días` })]));
+    if (plan.cycles !== null && plan.cycles > 0) rows.push(el('div', {}, [el('span', { text: 'Cobros' }), el('span', { text: String(plan.cycles) })]));
+    rows.push(el('div', {}, [el('span', { text: 'Con' }), el('span', { text: providerName(plan.provider) })]));
+    rows.push(el('div', { cls: 's-tot' }, [el('span', { text: `Total ${freq}` }), el('span', { 'data-testid': 'shop-total', text: money(price) })]));
+    summaryEl.replaceChildren(...rows);
+    if (alertEl) {
+        const warn = soldOut(item) ? 'Ya no quedan cupos para esta suscripción.' : item.price === null ? 'Esta suscripción no tiene precio.' : '';
+        if (warn) {
+            alertEl.textContent = warn;
+            alertEl.hidden = false;
+        } else if (alertEl.dataset.kind !== 'server') alertEl.hidden = true;
+    }
 }
 
 function checkoutView(): HTMLElement[] {
@@ -1109,47 +1363,7 @@ function checkoutView(): HTMLElement[] {
 
     summaryEl = el('div', { cls: 's-sum', 'data-testid': 'shop-summary' });
     alertEl = el('div', { cls: 's-warn', role: 'alert', hidden: true });
-    const legal: HTMLElement[] = [];
-    termsCb = null;
-    consentCb = null;
-    if (m.checkout.require_terms) {
-        termsCb = el('input', { type: 'checkbox', id: 'c_terms', 'data-testid': 'shop-terms' });
-        const link = el('button', { type: 'button', cls: 's-link', text: 'los términos y condiciones' });
-        link.addEventListener('click', (e) => {
-            e.preventDefault();
-            openOverlay({ kind: 'policies', focus: 'terms' });
-        });
-        termsCb.addEventListener('change', () => setErr('terms', ''));
-        errs.terms = el('div', { cls: 's-line-err', role: 'alert', hidden: true });
-        legal.push(el('label', { cls: 's-check', for: 'c_terms' }, [termsCb, el('span', {}, ['Acepto ', link, ' y la política de cambios y devoluciones.'])]), errs.terms);
-    }
-    if (m.data_consent) {
-        const dc = m.data_consent;
-        consentCb = el('input', { type: 'checkbox', id: 'c_consent', 'data-testid': 'shop-consent' });
-        consentCb.addEventListener('change', () => setErr('consent', ''));
-        const full = el('div', { cls: 's-note', hidden: true, text: dc.text });
-        const toggle = el('button', { type: 'button', cls: 's-link', text: 'Ver la autorización completa', 'aria-expanded': 'false' });
-        toggle.addEventListener('click', () => {
-            full.hidden = !full.hidden;
-            toggle.setAttribute('aria-expanded', full.hidden ? 'false' : 'true');
-            toggle.textContent = full.hidden ? 'Ver la autorización completa' : 'Ocultar la autorización';
-        });
-        errs.consent = el('div', { cls: 's-line-err', role: 'alert', hidden: true });
-        legal.push(
-            el('label', { cls: 's-check', for: 'c_consent' }, [consentCb, el('span', { text: dc.label })]),
-            el('div', { style: 'margin:-4px 0 10px 27px;display:flex;gap:12px;flex-wrap:wrap' }, [
-                toggle,
-                dc.policy_url && /^https:\/\//i.test(dc.policy_url) ? el('a', { href: dc.policy_url, target: '_blank', rel: 'noopener noreferrer', text: 'Política de tratamiento de datos' }) : null,
-            ]),
-            full,
-            errs.consent,
-        );
-    }
-    captchaBox = null;
-    if (m.captcha && !BOOT.preview) {
-        captchaBox = el('div', { cls: 's-captcha' });
-        legal.push(captchaBox);
-    }
+    const legal = legalBlock();
     hpInput = el('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off', 'aria-hidden': 'true' });
     const hp = el('div', { cls: 's-hp', 'aria-hidden': 'true' }, [hpInput]);
     submitBtn = el('button', { type: 'submit', cls: 's-btn', 'data-testid': 'shop-place' });
@@ -1233,7 +1447,7 @@ function paintZones(): void {
 }
 
 function zoneMissing(): boolean {
-    if (digitalCart()) return false;
+    if (subscribingId !== null || digitalCart()) return false;
     return shipFor(co.deliveryId, co.zoneId).zone_required && !co.zoneId;
 }
 
@@ -1355,6 +1569,7 @@ function removeCoupon(): void {
 
 /** v0.1.416 — Entrega (o descarga) y pago (o sin costo) según lo que hay en el carrito. */
 function paintModes(): void {
+    if (subscribingId !== null) return;
     const digital = digitalCart();
     if (deliverySecEl) deliverySecEl.hidden = digital;
     if (digitalNoteEl) digitalNoteEl.hidden = !digital;
@@ -1365,6 +1580,10 @@ function paintModes(): void {
 
 function paintSummary(): void {
     if (!summaryEl || !meta) return;
+    if (subscribingId !== null) {
+        paintSubSummary();
+        return;
+    }
     paintModes();
     const est = current();
     const rows: HTMLElement[] = [];
@@ -1417,6 +1636,14 @@ function sameCart(c: ShopCartResult): boolean {
 
 function paintSubmit(): void {
     if (!submitBtn || !meta) return;
+    if (subscribingId !== null) {
+        const item = subscribeTarget();
+        const plan = item?.product.subscription ?? null;
+        const label = item && plan && item.price !== null ? `Suscribirme · ${money(item.price)} ${subscriptionFrequencyText(plan.frequency, plan.frequency_type)}` : 'Suscribirme';
+        submitBtn.replaceChildren(co.sending ? el('span', { cls: 's-spin', 'aria-hidden': 'true' }) : '', co.sending ? 'Preparando la suscripción…' : label);
+        submitBtn.disabled = co.sending || !item || !plan || item.price === null || soldOut(item) || !!meta.closed;
+        return;
+    }
     const est = current();
     const free = isFree();
     const label = free
@@ -1431,7 +1658,7 @@ function paintSubmit(): void {
 }
 
 function scheduleQuote(delay = 400): void {
-    if (BOOT.preview) return;
+    if (BOOT.preview || subscribingId !== null) return;
     window.clearTimeout(quoteTimer);
     quoteTimer = window.setTimeout(async () => {
         if (cart.size === 0) return;
@@ -1574,6 +1801,10 @@ function validate(): boolean {
 
 async function placeOrder(): Promise<void> {
     if (!meta || co.sending) return;
+    // v0.1.417 — Suscribirse: un solo producto, sin carrito ni cupón.
+    const subItem = subscribeTarget();
+    const subscribing = subscribingId !== null;
+    if (subscribing && !subItem) return;
     if (alertEl) {
         alertEl.dataset.kind = '';
         alertEl.hidden = true;
@@ -1600,14 +1831,14 @@ async function placeOrder(): Promise<void> {
         const customer = { name: v('name'), email: v('email').toLowerCase(), phone: v('phone'), document: v('document'), address: needsAddress() ? v('address') : '', city: needsAddress() ? v('city') : '', notes: v('notes') };
         storageSet(CUSTOMER_KEY, JSON.stringify({ name: customer.name, email: customer.email, phone: customer.phone, document: customer.document, address: customer.address, city: customer.city }));
         const body = {
-            lines: [...cart].map(([product_id, qty]) => ({ product_id, qty })),
+            lines: subscribing ? [{ product_id: subItem!.id, qty: 1 }] : [...cart].map(([product_id, qty]) => ({ product_id, qty })),
             customer,
-            delivery_id: effDelivery(),
-            zone_id: effZone(),
+            delivery_id: subscribing ? null : effDelivery(),
+            zone_id: subscribing ? null : effZone(),
             // v0.1.415 — El cupón viaja sólo si descuenta algo en este carrito (el total que se ve es el que se cobra).
-            coupon: co.couponRule && current().coupon ? co.couponRule.code : undefined,
+            coupon: !subscribing && co.couponRule && current().coupon ? co.couponRule.code : undefined,
             // v0.1.416 — Sin costo no se elige forma de pago (el servidor lo confirma con su cuenta).
-            payment_method: isFree() ? 'free' : co.payment,
+            payment_method: subscribing ? 'subscription' : isFree() ? 'free' : co.payment,
             terms: termsCb ? termsCb.checked : true,
             consent: consentCb ? consentCb.checked : false,
             stamp: co.stamp ?? '',
@@ -1622,6 +1853,12 @@ async function placeOrder(): Promise<void> {
         if (!res.ok) {
             if (meta.captcha) resetCaptcha();
             const e = res.error;
+            if (subscribing && (e.code === 'shop_cart_changed' || e.code === 'shop_subscription')) {
+                const line = e.data?.cart?.lines?.[0];
+                const why = line ? shopLineProblemText(line) : '';
+                showServerAlert(why ? `${why} No se pudo hacer la suscripción.` : e.message || 'No se pudo hacer la suscripción. Vuelve a intentar.');
+                return;
+            }
             if (e.code === 'shop_cart_changed' && e.data?.cart) {
                 co.serverCart = e.data.cart;
                 for (const l of e.data.cart.lines) {
@@ -1651,18 +1888,37 @@ async function placeOrder(): Promise<void> {
             showServerAlert(e.message || (res.status === 429 ? 'Hiciste muchos pedidos seguidos. Espera unos minutos y vuelve a intentar.' : 'No pudimos hacer el pedido. Vuelve a intentar.'));
             return;
         }
-        cart.clear();
-        saveCart();
-        paintCartButtons();
-        co.couponRule = null;
-        co.couponError = null;
-        couponOpen = false;
-        sessionSet(COUPON_KEY, null);
+        if (!subscribing) {
+            cart.clear();
+            saveCart();
+            paintCartButtons();
+            co.couponRule = null;
+            co.couponError = null;
+            couponOpen = false;
+            sessionSet(COUPON_KEY, null);
+        }
         const url = new URL(location.href);
         url.searchParams.set('pedido', res.data.order_token);
         history.replaceState(null, '', url.pathname + url.search);
         // v0.1.413 — Pago en línea: directo a pagar (al volver, la página muestra cómo quedó).
         const payUrl = safePayUrl(res.data.pay_url);
+        if (payUrl && subscribing) {
+            // v0.1.417 — A autorizar la tarjeta (al volver, la página muestra cómo quedó).
+            const prov = subItem!.product.subscription ? providerName(subItem!.product.subscription.provider) : 'el medio de pago';
+            subscribingId = null;
+            paint([
+                el('div', { cls: 's-wrap', style: 'max-width:640px;padding-top:28px' }, [
+                    el('div', { cls: 's-ok', 'data-testid': 'shop-going-to-pay' }, [
+                        el('span', { cls: 's-spin', 'aria-hidden': 'true' }),
+                        el('h2', { text: `Te llevamos a ${prov}…` }),
+                        el('p', { text: `Autoriza tu tarjeta para activar tu suscripción (${res.data.number}).` }),
+                        el('a', { cls: 's-btn', href: payUrl, 'data-testid': 'shop-pay-now' }, ['Activar mi suscripción']),
+                    ]),
+                ]),
+            ]);
+            location.assign(payUrl);
+            return;
+        }
         if (payUrl) {
             paint([
                 el('div', { cls: 's-wrap', style: 'max-width:640px;padding-top:28px' }, [
@@ -1677,6 +1933,7 @@ async function placeOrder(): Promise<void> {
             location.assign(payUrl);
             return;
         }
+        subscribingId = null;
         await showOrder(res.data.order_token, { placed: true, whatsappPath: res.data.whatsapp_path });
     } finally {
         co.sending = false;
@@ -1764,6 +2021,21 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
             kids.push(el('div', { cls: 's-note', 'data-testid': 'shop-pay-note', style: 'margin-top:18px', text: o.payment_note }));
         }
     }
+    // v0.1.417 — La suscripción: activarla, esperando la confirmación o cómo va.
+    if (o.payment_method === 'subscription') {
+        const sub = o.subscription ?? null;
+        const confirming = !!sub && sub.state === 'pending' && o.status !== 'cancelado' && !!opts.returned && Date.now() < payPollUntil;
+        if (confirming) {
+            kids.push(
+                el('div', { cls: 's-note', 'data-testid': 'shop-sub-waiting', style: 'margin-top:18px;display:flex;gap:10px;align-items:center' }, [
+                    el('span', { cls: 's-spin', 'aria-hidden': 'true' }),
+                    el('span', { text: 'Estamos confirmando tu suscripción. Esto toma unos segundos.' }),
+                ]),
+            );
+            payPoll = window.setTimeout(() => void showOrder(orderToken, { returned: true, polling: true }), 4000);
+        } else if (sub) kids.push(subscriptionBox(sub, fmt));
+        if (o.payment_note && !confirming) kids.push(el('div', { cls: 's-note', 'data-testid': 'shop-pay-note', style: 'margin-top:18px', text: o.payment_note }));
+    }
     const wa = o.whatsapp_url ?? (opts.whatsappPath ?? null);
     if (wa && o.payment_method === 'whatsapp') {
         kids.push(
@@ -1779,20 +2051,28 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
             el('span', { cls: 's-status', style: 'background:#f3f4f6;color:#374151', text: `Pago: ${o.payment_status_label}` }),
         ]),
     );
-    if (o.payment_status !== 'pagado' && o.payment_method !== 'online' && o.payment_instructions) {
+    if (o.payment_status !== 'pagado' && o.payment_method !== 'online' && o.payment_method !== 'subscription' && o.payment_instructions) {
         kids.push(el('div', { cls: 's-note' }, [el('strong', { style: 'display:block;margin-bottom:4px', text: o.payment_label }), o.payment_instructions]));
     }
     // v0.1.416 — Las descargas del pedido (con el pago confirmado).
     if (o.downloads.length > 0 || o.downloads_note) kids.push(downloadsBox(o));
-    const sum = el('div', { cls: 's-sum' }, [
-        ...o.lines.map((l) => el('div', {}, [el('span', { text: `${l.qty} × ${l.title}` }), el('span', { text: fmt(l.subtotal) })])),
-        el('div', { style: 'padding-top:6px;border-top:1px solid var(--s-line);margin-top:4px' }, [el('span', { text: 'Subtotal' }), el('span', { text: fmt(o.subtotal) })]),
-        o.discount > 0 ? el('div', { cls: 's-disc' }, [el('span', { text: `Descuento${o.coupon_code ? ` (${o.coupon_code})` : ''}` }), el('span', { text: `-${fmt(o.discount)}` })]) : null,
-        o.digital_only
-            ? el('div', {}, [el('span', { text: 'Entrega · Descarga digital' }), el('span', { text: 'Sin envío' })])
-            : el('div', {}, [el('span', { text: `Entrega · ${o.delivery}` }), el('span', { text: o.shipping > 0 ? fmt(o.shipping) : 'Gratis' })]),
-        el('div', { cls: 's-tot' }, [el('span', { text: 'Total' }), el('span', { text: o.total > 0 ? fmt(o.total) : 'Sin costo' })]),
-    ]);
+    // v0.1.417 — Una suscripción: lo que se cobra cada período (sin subtotal ni envío).
+    const subFreq = o.payment_method === 'subscription' && o.subscription ? subscriptionFrequencyText(o.subscription.frequency, o.subscription.frequency_type) : null;
+    const sum = subFreq
+        ? el('div', { cls: 's-sum' }, [
+              ...o.lines.map((l) => el('div', {}, [el('span', { text: l.title }), el('span', { text: fmt(l.subtotal) })])),
+              el('div', { style: 'padding-top:6px;border-top:1px solid var(--s-line);margin-top:4px' }, [el('span', { text: 'Se cobra' }), el('span', { text: subFreq })]),
+              el('div', { cls: 's-tot' }, [el('span', { text: `Total ${subFreq}` }), el('span', { text: fmt(o.total) })]),
+          ])
+        : el('div', { cls: 's-sum' }, [
+              ...o.lines.map((l) => el('div', {}, [el('span', { text: `${l.qty} × ${l.title}` }), el('span', { text: fmt(l.subtotal) })])),
+              el('div', { style: 'padding-top:6px;border-top:1px solid var(--s-line);margin-top:4px' }, [el('span', { text: 'Subtotal' }), el('span', { text: fmt(o.subtotal) })]),
+              o.discount > 0 ? el('div', { cls: 's-disc' }, [el('span', { text: `Descuento${o.coupon_code ? ` (${o.coupon_code})` : ''}` }), el('span', { text: `-${fmt(o.discount)}` })]) : null,
+              o.digital_only
+                  ? el('div', {}, [el('span', { text: 'Entrega · Descarga digital' }), el('span', { text: 'Sin envío' })])
+                  : el('div', {}, [el('span', { text: `Entrega · ${o.delivery}` }), el('span', { text: o.shipping > 0 ? fmt(o.shipping) : 'Gratis' })]),
+              el('div', { cls: 's-tot' }, [el('span', { text: 'Total' }), el('span', { text: o.total > 0 ? fmt(o.total) : 'Sin costo' })]),
+          ]);
     kids.push(el('div', { cls: 's-panel' }, [sum]));
     const where = [o.customer.address, o.customer.city].filter(Boolean).join(', ');
     kids.push(el('p', { cls: 's-line-p', style: 'margin:14px 0 0', text: `A nombre de ${o.customer.name}${where ? ` · ${where}` : ''}. Te enviamos el detalle a ${o.customer.email}.` }));
@@ -1805,6 +2085,29 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
     );
     box.replaceChildren(...kids);
     window.scrollTo({ top: 0 });
+}
+
+/** v0.1.417 — Cómo va la suscripción de un pedido. */
+function subscriptionBox(sub: PublicShopOrderSubscription, fmt: (n: number) => string): HTMLElement {
+    const prov = providerName(sub.provider);
+    const charge = `${fmt(sub.amount)} ${cadenceText(sub)}`;
+    const box = (style: string, title: string, text: string, extra: HTMLElement | null = null): HTMLElement =>
+        el('div', { cls: 's-note', 'data-testid': 'shop-subscription', 'data-state': sub.state, style: `margin-top:18px;${style}` }, [el('strong', { style: 'display:block;margin-bottom:2px', text: title }), text, extra]);
+    if (sub.state === 'active') {
+        const next = sub.next_charge ? longDate(`${sub.next_charge}T12:00:00`) : '';
+        return box('background:#f0fdf4;border-color:#bbf7d0;color:#166534', '¡Tu suscripción está activa!', `Se cobra ${charge} con tu tarjeta en ${prov}.${next ? ` Próximo cobro: ${next}.` : ''}`);
+    }
+    if (sub.state === 'failed') {
+        return box('background:#fffbeb;border-color:#fde68a;color:#92400e', sub.label || 'Un cobro no pasó', `No pudimos hacer el último cobro de ${charge} con tu tarjeta. ${prov} lo vuelve a intentar; si cambiaste de tarjeta, escríbenos.`);
+    }
+    if (sub.state === 'cancelled') return box('', sub.label || 'Suscripción terminada', 'Esta suscripción ya no se cobra.');
+    const url = safePayUrl(sub.url);
+    return box(
+        '',
+        'Falta activar tu suscripción',
+        `Se cobra ${charge}. Autoriza tu tarjeta en ${prov} una sola vez para que empiece.`,
+        url ? el('div', { style: 'margin-top:12px' }, [el('a', { cls: 's-btn', href: url, 'data-testid': 'shop-sub-activate' }, ['Activar mi suscripción'])]) : null,
+    );
 }
 
 function longDate(iso: string): string {
@@ -1969,6 +2272,8 @@ async function showMyOrders(code: string): Promise<void> {
                     el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin-top:6px' }, [
                         el('span', { cls: 's-status', text: o.status_label }),
                         el('span', { cls: 's-status', style: 'background:#f3f4f6;color:#374151', text: `Pago: ${o.payment_status_label}` }),
+                        // v0.1.417 — «Suscripción cada mes · Al día».
+                        o.subscription ? el('span', { cls: 's-status', style: 'background:#fdf2f8;color:#9d174d', 'data-testid': 'shop-my-subscription', text: o.subscription }) : null,
                     ]),
                 ]),
                 go,
@@ -2000,6 +2305,7 @@ function paint(main: HTMLElement[]): void {
 
 function goCatalog(): void {
     view = 'catalog';
+    subscribingId = null;
     window.clearTimeout(payPoll);
     if (location.search.includes('pedido=')) {
         const url = new URL(location.href);
@@ -2013,8 +2319,22 @@ function goCatalog(): void {
 
 function goCheckout(): void {
     view = 'checkout';
+    subscribingId = null;
     co.serverCart = null;
     paint(checkoutView());
+    window.scrollTo({ top: 0 });
+}
+
+/** v0.1.417 — Suscribirse a un producto (o a una de sus variantes). */
+function goSubscribe(id: number): void {
+    view = 'checkout';
+    subscribingId = id;
+    co.serverCart = null;
+    if (alertEl) {
+        alertEl.dataset.kind = '';
+        alertEl.hidden = true;
+    }
+    paint(subscribeView());
     window.scrollTo({ top: 0 });
 }
 
@@ -2053,16 +2373,19 @@ function render(): void {
     const pedido = qs.get('pedido');
     if (pedido && /^[A-Za-z0-9_-]{20,64}$/.test(pedido) && !BOOT.preview) {
         // v0.1.413 — `?pago=1`: volvió de pagar en línea (se quita para que recargar no vuelva a esperar).
-        const returned = qs.has('pago');
+        // v0.1.417 — `?suscripcion=1`: volvió de autorizar la tarjeta de una suscripción.
+        const returned = qs.has('pago') || qs.has('suscripcion');
         if (returned) {
             const url = new URL(location.href);
             url.searchParams.delete('pago');
+            url.searchParams.delete('suscripcion');
             history.replaceState(null, '', url.pathname + url.search);
         }
         void showOrder(pedido, { returned });
         return;
     }
-    if (view === 'checkout') goCheckout();
+    if (view === 'checkout' && subscribingId !== null && subscribable.has(subscribingId)) goSubscribe(subscribingId);
+    else if (view === 'checkout') goCheckout();
     else goCatalog();
 }
 

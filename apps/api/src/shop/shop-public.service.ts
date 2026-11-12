@@ -13,6 +13,7 @@ import {
     shopOnlinePayment,
     shopCurrencyDecimals,
     shopPurchasables,
+    shopPlanFor,
     shopServiceFor,
     shopShippingFor,
     shopWhatsappMessage,
@@ -216,6 +217,7 @@ export class ShopPublicService {
             categories: built.categories,
             truncated: built.truncated,
             downloadable: built.products.some((p) => p.downloadable),
+            subscribable: built.products.some((p) => p.kind === 'subscription' && p.subscription),
             captcha: keys ? { provider: keys.provider, site_key: keys.siteKey } : null,
             consent: consent ? DataConsentService.toPublic(consent) : null,
             readOnly: access.state === 'read_only',
@@ -243,6 +245,8 @@ export class ShopPublicService {
         listId: number,
         config: ShopConfig,
     ): Promise<{ products: PublicShopProduct[]; images: Map<string, ShopImageSource>; categories: string[]; truncated: boolean } | null> {
+        // v0.1.417 — Los planes de suscripción que se pueden vender (del equipo, activos).
+        const plans = this.orders.subscriptions ? await this.orders.subscriptions.shopPlans(tenantId).catch(() => []) : [];
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const [list] = await tx
                 .select({ settings: lists.settings, deletedAt: lists.deletedAt })
@@ -299,6 +303,20 @@ export class ShopPublicService {
                     // Un servicio se agenda: el botón lleva a la agenda con el servicio elegido.
                     const sid = agenda ? shopServiceFor(p.product, config.kinds.service_links, agenda.services) : null;
                     p = { ...p, product: { ...p.product, book_url: agenda && sid ? `/api/v1/public/b/${agenda.token}?servicio=${encodeURIComponent(sid)}` : null } };
+                } else if (p.product.kind === 'subscription') {
+                    // Una suscripción se contrata sola, con el plan que le toca.
+                    const pid = shopPlanFor(p.product, config.kinds.subscription_links, plans, config.currency);
+                    const plan = pid !== null ? plans.find((x) => x.id === pid) : undefined;
+                    p = {
+                        ...p,
+                        product: {
+                            ...p.product,
+                            subscription: plan
+                                ? { frequency: plan.frequency, frequency_type: plan.frequency_type, trial_days: plan.trial_days, cycles: plan.cycles, provider: plan.provider ?? 'mercadopago' }
+                                : null,
+                        },
+                    };
+                    if (config.display.hide_sold_out && p.product.stock === 0) continue;
                 } else if (config.display.hide_sold_out && p.product.stock === 0) continue;
                 for (const [k, src] of p.images) images.set(k, src);
                 products.push(p.product);
@@ -354,6 +372,8 @@ export class ShopPublicService {
             coupons: boolean;
             /** v0.1.416 — Algún producto trae descargas. */
             downloadable?: boolean;
+            /** v0.1.417 — Hay productos de suscripción que se pueden contratar. */
+            subscribable?: boolean;
         },
     ): PublicShopMeta {
         const p = config.payments;
@@ -407,6 +427,7 @@ export class ShopPublicService {
             data_consent: o.consent,
             coupons: o.coupons,
             ...(o.downloadable ? { downloads: { days: config.kinds.download_days, max: config.kinds.max_downloads } } : {}),
+            ...(o.subscribable ? { subscriptions: { address: config.kinds.subscription_address } } : {}),
             // ADR-S09: una empresa en solo lectura muestra el catálogo pero no recibe pedidos.
             closed: o.readOnly
                 ? 'La tienda no está recibiendo pedidos en este momento.'
@@ -450,6 +471,7 @@ export class ShopPublicService {
             categories: built.categories,
             truncated: built.truncated,
             downloadable: built.products.some((p) => p.downloadable),
+            subscribable: built.products.some((p) => p.kind === 'subscription' && p.subscription),
             captcha: null,
             consent: consent ? DataConsentService.toPublic(consent) : null,
             readOnly: false,

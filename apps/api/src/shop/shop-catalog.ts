@@ -394,14 +394,17 @@ export function purchasablesFromRows(
     withVariants: ReadonlySet<number>,
     rf: ResolvedCatalog,
     attrs: readonly Field[] | null,
+    opts: { subscriptions?: boolean } = {},
 ): Map<number, PurchasableItem> {
     const out = new Map<number, PurchasableItem>();
+    // v0.1.417 — Una suscripción no va al carrito; con `subscriptions`, sólo ellas.
+    const wrongKind = (k: ShopProductKind | undefined): boolean => k === 'service' || (k === 'subscription') !== (opts.subscriptions === true);
     for (const r of rows) {
         if (r.parentId === null) {
             if (attrs !== null && withVariants.has(r.id)) continue;
             const p = productFromRow(r, rf);
             // v0.1.416 — Un servicio se agenda: no se compra en el carrito.
-            if (!p.active || p.product.kind === 'service') continue;
+            if (!p.active || wrongKind(p.product.kind)) continue;
             out.set(r.id, {
                 data: r.data,
                 product: { id: r.id, title: p.product.title, price: p.product.price, stock: p.product.stock },
@@ -417,8 +420,8 @@ export function purchasablesFromRows(
         const parentRow = parents.get(r.parentId);
         if (!parentRow) continue;
         const parent = productFromRow(parentRow, rf);
-        if (!parent.active || parent.product.kind === 'service') continue;
-        const item = shopPurchasables([attachVariants(parent, [r], rf, attrs).product]).get(r.id);
+        if (!parent.active || wrongKind(parent.product.kind)) continue;
+        const item = shopPurchasables([attachVariants(parent, [r], rf, attrs).product], opts).get(r.id);
         if (!item) continue;
         const own = rf.kinds?.download ? fileIdsOf(r.data[jsonbKeyForField(rf.kinds.download.id)]) : [];
         out.set(r.id, {
