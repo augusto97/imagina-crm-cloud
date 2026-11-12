@@ -521,6 +521,9 @@ export const FORM_EMBED_JS = String.raw`(function () {
         f.style.height = Math.ceil(d.height) + 'px';
       } else if (d.type === 'imb-form-redirect' && typeof d.url === 'string' && /^https:\/\//i.test(d.url)) {
         window.location.href = d.url;
+      } else if (d.type === 'imb-popup-close') {
+        // Escape dentro de la ventana (con nada abierto adentro): se cierra.
+        if (open && open.p.frame === f) close();
       } else if (d.type === 'imb-form-submitted') {
         if (f.getAttribute('data-imagina-popup-frame') !== null) { f.setAttribute('data-imagina-done', ''); return; }
         var r = f.getBoundingClientRect();
@@ -546,8 +549,28 @@ export const FORM_EMBED_JS = String.raw`(function () {
   function styleOf(raw) { return raw === 'side' || raw === 'full' ? raw : 'window'; }
   function sideOf(raw) { return raw === 'left' ? 'left' : 'right'; }
 
+  // v0.1.419 — La tienda es una página entera (catálogo, carrito, compra) con
+  // su propio scroll: la ventana es ancha y alta, y lleva una barra con el
+  // título y la X (encima del encabezado de la tienda taparía el carrito).
+  function isShop(url) {
+    try { return /^\/api\/v1\/public\/s\//.test(new URL(url).pathname); } catch (e) { return false; }
+  }
+
   function layout(p) {
     var s = small();
+    if (p.shop) {
+      if (p.style === 'full') {
+        css(p.overlay, { padding: '0', alignItems: 'stretch', justifyContent: 'center' });
+        css(p.panel, { width: '100%', height: '100%', maxHeight: '100%', borderRadius: '0' });
+      } else if (p.style === 'side') {
+        css(p.overlay, { padding: '0', alignItems: 'stretch', justifyContent: p.side === 'left' ? 'flex-start' : 'flex-end' });
+        css(p.panel, { width: s ? '100%' : 'min(560px, 100%)', height: '100%', maxHeight: '100%', borderRadius: '0' });
+      } else {
+        css(p.overlay, { padding: s ? '0' : '16px', alignItems: 'center', justifyContent: 'center' });
+        css(p.panel, { width: s ? '100%' : 'min(1100px, 100%)', height: s ? '100%' : 'calc(100vh - 32px)', maxHeight: '100%', borderRadius: s ? '0' : '14px' });
+      }
+      return;
+    }
     if (p.style === 'full') {
       css(p.overlay, { padding: '0', alignItems: 'stretch', justifyContent: 'center' });
       css(p.panel, { width: '100%', height: '100%', maxHeight: '100%', borderRadius: '0' });
@@ -595,11 +618,16 @@ export const FORM_EMBED_JS = String.raw`(function () {
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
     overlay.setAttribute('aria-label', title || 'Formulario');
+    var shop = isShop(url);
     var panel = css(document.createElement('div'), {
-      position: 'relative', background: '#fff', overflowY: 'auto',
+      position: 'relative', background: '#fff', overflowY: shop ? 'hidden' : 'auto',
       boxShadow: '0 24px 60px rgba(15,23,42,.35)', WebkitOverflowScrolling: 'touch'
     });
-    var x = css(document.createElement('button'), {
+    var x = css(document.createElement('button'), shop ? {
+      width: '36px', height: '36px', borderRadius: '999px', border: '0', cursor: 'pointer', flex: '0 0 auto',
+      background: 'transparent', color: '#1d2330', padding: '0',
+      font: '600 22px/36px -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif'
+    } : {
       position: 'sticky', top: '8px', float: 'right', marginRight: '8px', marginTop: '8px', zIndex: '2',
       width: '36px', height: '36px', borderRadius: '999px', border: '0', cursor: 'pointer',
       background: 'rgba(255,255,255,.92)', boxShadow: '0 1px 4px rgba(15,23,42,.25)', color: '#1d2330',
@@ -609,6 +637,20 @@ export const FORM_EMBED_JS = String.raw`(function () {
     x.setAttribute('aria-label', 'Cerrar');
     x.textContent = '×';
     x.addEventListener('click', close);
+    var bar = null;
+    if (shop) {
+      bar = css(document.createElement('div'), {
+        height: '48px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: '8px',
+        padding: '0 6px 0 16px', borderBottom: '1px solid #e5e7eb', background: '#fff', color: '#111827'
+      });
+      var name = css(document.createElement('span'), {
+        flex: '1 1 auto', minWidth: '0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+        font: '600 14px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif'
+      });
+      name.textContent = title || 'Tienda';
+      bar.appendChild(name);
+      bar.appendChild(x);
+    }
     var f = document.createElement('iframe');
     f.src = url;
     f.title = title || 'Formulario';
@@ -617,14 +659,14 @@ export const FORM_EMBED_JS = String.raw`(function () {
     // v0.1.369 — El marco sabe que es una ventana: ahí «Sin marco» no aplica.
     f.name = 'imagina-popup';
     f.setAttribute('allow', 'payment');
-    css(f, { width: '100%', height: '560px', border: '0', display: 'block', background: 'transparent' });
+    css(f, { width: '100%', height: shop ? 'calc(100% - 48px)' : '560px', border: '0', display: 'block', background: 'transparent' });
     // De lado o a pantalla completa, el formulario llena el alto disponible.
-    if (style !== 'window') f.style.minHeight = '100%';
-    panel.appendChild(x);
+    if (style !== 'window' && !shop) f.style.minHeight = '100%';
+    panel.appendChild(bar || x);
     panel.appendChild(f);
     overlay.appendChild(panel);
     overlay.addEventListener('mousedown', function (e) { if (e.target === overlay) close(); });
-    p = { overlay: overlay, panel: panel, frame: f, close: x, style: style, side: side };
+    p = { overlay: overlay, panel: panel, frame: f, close: x, style: style, side: side, shop: shop };
     layout(p);
     hide(p);
     document.body.appendChild(overlay);

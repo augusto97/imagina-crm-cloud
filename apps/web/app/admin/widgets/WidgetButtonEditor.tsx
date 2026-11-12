@@ -348,12 +348,31 @@ function TypeFields({
         case 'link':
             return (
                 <>
-                    <Row label={__('Enlace')} hint={__('Tu catálogo, tienda, preguntas frecuentes… Tiene que empezar con https://.')}>
+                    <Row label={__('Enlace')} hint={__('Tu catálogo, preguntas frecuentes, tu blog… Tiene que empezar con https://.')}>
                         <Input value={button.url} placeholder="https://" onChange={(e) => onChange({ url: e.target.value })} />
                     </Row>
                     <SwitchRow icon={SquareStack} label={__('Abrir en otra pestaña')} checked={button.new_tab} onChange={(v) => onChange({ new_tab: v })} />
                 </>
             );
+        case 'shop': {
+            const shops = options.shops ?? [];
+            return (
+                <Row label={__('Tienda que se abre')} hint={__('Se abre dentro del panel: la persona mira tus productos, arma el carrito y paga sin salir de tu sitio.')}>
+                    <Select value={button.shop_id ?? ''} onChange={(e) => onChange({ shop_id: e.target.value ? Number(e.target.value) : null })} data-testid="widget-shop">
+                        <option value="">{__('Elige una tienda')}</option>
+                        {shops.map((sh) => (
+                            <option key={sh.id} value={sh.id}>
+                                {sh.name} · {sh.list_name}
+                                {sh.enabled ? '' : ` (${__('sin publicar')})`}
+                            </option>
+                        ))}
+                    </Select>
+                    {shops.length === 0 && (
+                        <p className="imcrm-mt-1 imcrm-text-[11px] imcrm-text-muted-foreground">{__('Todavía no tienes tiendas. Se arman en los Ajustes de cada lista → Tienda.')}</p>
+                    )}
+                </Row>
+            );
+        }
     }
 }
 

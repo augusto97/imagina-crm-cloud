@@ -16,17 +16,17 @@ export const meta: LearnModuleMeta = {
         'Productos con variantes: talla, color y más, cada una con su precio y su stock',
         'Productos digitales que se descargan al pagar y servicios que se agendan en tu agenda',
         'El stock se descuenta solo y vuelve si cancelas el pedido',
-        'Enlace, código para tu sitio web y código QR',
+        'En tu sitio web: dentro de la página, en una ventana, un panel o un botón «Comprar» por producto',
         'Estadísticas de la visita al pago y conversiones para Google Ads, Meta y Tag Manager',
     ],
     articles: [
         {
             id: 'tienda-online-crear',
             title: 'Crear tu tienda desde una lista de productos',
-            summary: 'Qué listas se crean, cómo se eligen el precio, la foto y el stock, cómo vender tallas y colores, archivos para descargar y servicios con cita, y qué datos de quien vende pide la ley antes de publicar.',
+            summary: 'Qué listas se crean, cómo se eligen el precio, la foto y el stock, cómo vender tallas y colores, archivos para descargar y servicios con cita, qué datos de quien vende pide la ley antes de publicar y cómo ponerla en tu sitio web.',
             minutes: 6,
             level: 'basic',
-            keywords: 'tienda crear catalogo productos precio foto stock categoria variantes talla color vender ecommerce quien vende nit politicas devoluciones publicar digital descarga archivo curso servicio agendar cita gratis',
+            keywords: 'tienda crear catalogo productos precio foto stock categoria variantes talla color vender ecommerce quien vende nit politicas devoluciones publicar digital descarga archivo curso servicio agendar cita gratis compartir insertar sitio web ventana panel boton comprar qr widget',
             needs: 'manage_lists',
         },
         {

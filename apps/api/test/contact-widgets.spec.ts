@@ -12,7 +12,7 @@ import { loadEnv } from '../src/config/env';
 import { ContactWidgetsService } from '../src/contact-widgets/contact-widgets.service';
 import { renderWidgetPage, widgetPageCsp } from '../src/contact-widgets/widget-page';
 import { WidgetStatsService } from '../src/contact-widgets/widget-stats.service';
-import { bookingPages, contactWidgets, forms, memberships, records, tenants, users, widgetStats } from '../src/db/schema';
+import { bookingPages, contactWidgets, forms, memberships, records, shops, tenants, users, widgetStats } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { FieldsRepository } from '../src/fields/fields.repository';
 import { FieldsService } from '../src/fields/fields.service';
@@ -496,6 +496,56 @@ describe('v0.1.394 — widget de contacto (Postgres + Redis reales)', () => {
             expect(await new ContactWidgetsService(pg.db, tenantDb, files).logo(token, otherId)).toBeNull();
         } finally {
             await pg.db.update(tenants).set({ settings }).where(eq(tenants.id, tenantId));
+        }
+    });
+
+    it('v0.1.419 — botón «Ver la tienda»: sólo tiendas de la empresa, publicadas y que el plan incluye', async () => {
+        const [mine] = await withTenant(pg.db, tenantId, (tx) =>
+            tx.insert(shops).values({ tenantId, listId, name: 'Tienda Acme', token: 'tiendaacmewidget0001', enabled: false, config: {}, settings: {} }).returning(),
+        );
+        const otherList = (await lists.create(otherTenantId, { name: 'Productos' })).id;
+        const [foreign] = await withTenant(pg.db, otherTenantId, (tx) =>
+            tx.insert(shops).values({ tenantId: otherTenantId, listId: otherList, name: 'Ajena', token: 'tiendaajenawidget0001', enabled: true, config: {}, settings: {} }).returning(),
+        );
+        try {
+            const opts = await widgets.options(tenantId);
+            expect(opts.shops).toEqual([{ id: mine!.id, name: 'Tienda Acme', enabled: false, list_name: 'Prospectos', public_path: '/api/v1/public/s/tiendaacmewidget0001' }]);
+
+            const w = await widgets.create(tenantId, 0, { name: 'Sitio con tienda' });
+            const config = cfg({
+                buttons: [
+                    { id: 'tienda', type: 'shop', shop_id: mine!.id },
+                    // Una tienda de otra empresa se descarta al guardar.
+                    { id: 'ajena', type: 'shop', shop_id: foreign!.id },
+                    { id: 'link', type: 'link', url: 'https://acme.co' },
+                ],
+            });
+            const saved = (await widgets.update(tenantId, w.id, { config })).dto;
+            expect(saved.config.buttons.find((b) => b.id === 'ajena')!.shop_id).toBeNull();
+            expect(saved.problems.map((p) => p.message)).toEqual(['«Ver la tienda»: la tienda «Tienda Acme» no está publicada.', '«Ver la tienda»: elige la tienda que se abre.']);
+
+            // Publicada, pero el plan de prueba no incluye la tienda: el botón no se muestra.
+            await withTenant(pg.db, tenantId, (tx) => tx.update(shops).set({ enabled: true }).where(eq(shops.id, mine!.id)));
+            const ok = cfg({ buttons: config.buttons.filter((b) => b.id !== 'ajena') });
+            const published = (await widgets.update(tenantId, w.id, { config: ok, enabled: true })).dto;
+            expect(published.problems).toEqual([]);
+            const token = await widgetToken(tenantId, w.id);
+            const trial = (await new ContactWidgetsService(pg.db, tenantDb, files).cachedPageInfo(token))!;
+            expect(trial.meta.buttons.map((b) => b.id)).toEqual(['link']);
+
+            // Con un plan que la incluye, se abre en el panel con la página de la tienda.
+            await pg.db.update(tenants).set({ plan: 'pro' }).where(eq(tenants.id, tenantId));
+            const pro = (await new ContactWidgetsService(pg.db, tenantDb, files).cachedPageInfo(token))!;
+            expect(pro.meta.buttons.find((b) => b.id === 'tienda')).toMatchObject({ type: 'shop', frame: '/api/v1/public/s/tiendaacmewidget0001', label: 'Ver la tienda', icon: 'cart', href: null });
+
+            // Suspendida por la plataforma: cuenta como no publicada.
+            await withTenant(pg.db, tenantId, (tx) => tx.update(shops).set({ suspendedAt: new Date() }).where(eq(shops.id, mine!.id)));
+            const susp = (await new ContactWidgetsService(pg.db, tenantDb, files).cachedPageInfo(token))!;
+            expect(susp.meta.buttons.map((b) => b.id)).toEqual(['link']);
+        } finally {
+            await pg.db.update(tenants).set({ plan: 'trial' }).where(eq(tenants.id, tenantId));
+            await withTenant(pg.db, tenantId, (tx) => tx.delete(shops).where(eq(shops.tenantId, tenantId)));
+            await withTenant(pg.db, otherTenantId, (tx) => tx.delete(shops).where(eq(shops.tenantId, otherTenantId)));
         }
     });
 

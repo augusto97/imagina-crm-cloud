@@ -44,7 +44,7 @@ import { accessColumns, accessOf } from '../billing/tenant-access';
 import { planModuleOff } from '../billing/plan-module-gate';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { BookingHolidaysService } from '../booking/booking-holidays';
-import { attachments, bookingPages, contactWidgets, fields, forms, lists, memberships, tenants, users, type ContactWidgetRow } from '../db/schema';
+import { attachments, bookingPages, contactWidgets, fields, forms, lists, memberships, shops, tenants, users, type ContactWidgetRow } from '../db/schema';
 import { FilesService } from '../files/files.service';
 import { DomainsService } from '../domains/domains.service';
 import { PlatformNetworkService } from '../network/platform-network.service';
@@ -134,6 +134,8 @@ interface Refs {
         WidgetTargetRef & { token: string; list_id: number; list_name: string; asks_phone: boolean; answer_slugs: Array<{ slug: string; label: string }> }
     >;
     bookings: Map<number, WidgetTargetRef & { token: string; list_id: number; list_name: string }>;
+    /** v0.1.419 — Las tiendas (ADR-S103): una suspendida por la plataforma cuenta como no publicada. */
+    shops: Map<number, WidgetTargetRef & { token: string; list_name: string }>;
 }
 
 export class WidgetNotReadyError extends BadRequestException {}
@@ -298,12 +300,14 @@ export class ContactWidgetsService {
                 list_name: b.list_name,
                 public_path: `/api/v1/public/b/${b.token}`,
             }));
+            const shopsOut = [...refs.shops.values()].map((sh) => ({ id: sh.id, name: sh.name, enabled: sh.enabled, list_name: sh.list_name, public_path: `/api/v1/public/s/${sh.token}` }));
             const people = await this.staff(tx, tenantId);
             const personFields = await this.personFields(tx, tenantId, [...new Set(formsOut.map((f) => f.list_id))]);
             const format = await this.format(tx, tenantId);
             return {
                 forms: formsOut.map((f) => ({ ...f, person_fields: personFields.get(f.list_id) ?? [] })),
                 bookings: bookingsOut,
+                shops: shopsOut,
                 brand_color: brand.accent,
                 company: brand.company,
                 logo_url: brand.logoUrl,
@@ -401,6 +405,8 @@ export class ContactWidgetsService {
             // número mal escrito no se muestran en el sitio.
             const ok = new Set(config.buttons.map((b) => b.id));
             for (const p of widgetProblems(config, refs)) if (p.button_id) ok.delete(p.button_id);
+            // v0.1.419 — la tienda sólo se abre si el plan la incluye.
+            const shopOff = config.buttons.some((b) => b.type === 'shop') ? await planModuleOff(this.db, tenantId, 'shop') : true;
             const ctx = {
                 accent,
                 goPath: (id: string) => `/api/v1/public/w/${token}/go/${id}`,
@@ -411,6 +417,10 @@ export class ContactWidgetsService {
                 bookingPath: (id: number) => {
                     const p = refs.bookings.get(id);
                     return p?.enabled ? `/api/v1/public/b/${p.token}` : null;
+                },
+                shopPath: (id: number) => {
+                    const sh = refs.shops.get(id);
+                    return sh?.enabled && !shopOff ? `/api/v1/public/s/${sh.token}` : null;
                 },
             };
             for (const b of config.buttons) {
@@ -559,6 +569,7 @@ export class ContactWidgetsService {
                 capture_form_id: b.capture_form_id !== null && refs.forms.has(b.capture_form_id) ? b.capture_form_id : null,
                 form_id: b.form_id !== null && refs.forms.has(b.form_id) ? b.form_id : null,
                 booking_page_id: b.booking_page_id !== null && refs.bookings.has(b.booking_page_id) ? b.booking_page_id : null,
+                shop_id: b.shop_id !== null && refs.shops.has(b.shop_id) ? b.shop_id : null,
             }));
         // v0.1.395 — las personas que atienden son del equipo (un id ajeno o
         // de un cliente se descarta) y el campo donde queda quién atiende es un
@@ -646,7 +657,16 @@ export class ContactWidgetsService {
                 fieldInfo.set(r.id, { slug: r.slug, label: r.label });
             }
         }
-        const out: Refs = { forms: new Map(), bookings: new Map() };
+        const shopRows = await tx
+            .select({ id: shops.id, name: shops.name, enabled: shops.enabled, suspendedAt: shops.suspendedAt, token: shops.token, listName: lists.name })
+            .from(shops)
+            .innerJoin(lists, and(eq(lists.id, shops.listId), isNull(lists.deletedAt)))
+            .where(eq(shops.tenantId, tenantId))
+            .orderBy(asc(shops.id));
+        const out: Refs = { forms: new Map(), bookings: new Map(), shops: new Map() };
+        for (const sh of shopRows) {
+            out.shops.set(sh.id, { id: sh.id, name: sh.name, enabled: sh.enabled && sh.suspendedAt === null, token: sh.token, list_name: sh.listName });
+        }
         for (const f of formRows) {
             out.forms.set(f.id, {
                 id: f.id,

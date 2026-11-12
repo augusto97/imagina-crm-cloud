@@ -32,7 +32,9 @@ import { __, sprintf } from '@/lib/i18n';
 import { useTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 
-import { useEmbedOrigin } from '../forms/useEmbedOrigin';
+import { demoVersion } from '../forms/EmbedDemo';
+import { ShareDialog, type ShareTab } from '../forms/ShareDialog';
+import { ShopBuyButtons } from './ShopBuyButtons';
 import { CatalogPanel, CheckoutPanel, DesignPanel, OrdersPanel, PaymentPanel, PublishPanel, SellerPanel } from './ShopPanels';
 import { CouponsPanel } from './ShopCouponsPanel';
 import { ShopMeasurePanel } from './ShopMeasurePanel';
@@ -148,8 +150,10 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
 
     const [enabledView, setEnabledView] = useState<boolean | null>(null);
     const enabled = enabledView ?? live.enabled;
-    const origin = useEmbedOrigin(live.embed_origin ?? null);
-    const url = shopPublicUrl(live, origin);
+    // v0.1.419 — El enlace directo sale de la app (como el de los formularios);
+    // el código para insertar toma la dirección rápida dentro de «Compartir».
+    const url = shopPublicUrl(live);
+    const [share, setShare] = useState<ShareTab | null>(null);
 
     const save = (extra?: { enabled?: boolean }): void => {
         if (extra?.enabled !== undefined) setEnabledView(extra.enabled);
@@ -273,8 +277,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                         problems={problems}
                         onTogglePublish={togglePublish}
                         onFix={(p) => openSection(p.section)}
-                        domains={config.allowed_domains}
-                        onDomains={(allowed_domains) => patch((c) => ({ ...c, allowed_domains }))}
+                        onShare={(t) => setShare(t)}
                         regenerating={regenerate.isPending}
                         onRegenerate={async () => {
                             const ok = await confirm({
@@ -324,6 +327,41 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
         </div>
     );
 
+    const accent = config.color ?? options.brand_color ?? '#0e7490';
+    const shareDialog = (
+        <ShareDialog
+            open={share !== null}
+            onOpenChange={(o) => {
+                if (!o) setShare(null);
+            }}
+            kind="shop"
+            name={name.trim() || live.name}
+            url={url}
+            origin={window.location.origin}
+            embedOrigin={live.embed_origin ?? null}
+            path={live.public_path}
+            version={demoVersion([saved.current, live.enabled, catalogVersion])}
+            published={enabled}
+            onPublish={() => {
+                if (!enabled && problems.length > 0) setShare(null);
+                togglePublish();
+            }}
+            publishBusy={update.isPending}
+            publishProblems={problems.map((p) => p.text)}
+            accent={accent}
+            domains={{
+                value: config.allowed_domains,
+                onChange: (allowed_domains) => patch((c) => ({ ...c, allowed_domains })),
+                unsaved: config.allowed_domains.join('\n') !== saved.current.config.allowed_domains.join('\n'),
+            }}
+            dirty={dirty}
+            onSave={() => save()}
+            tab={share ?? 'link'}
+            onTab={(t) => setShare(t)}
+            embedExtra={<ShopBuyButtons shopId={shop.id} url={url} origin={window.location.origin} embedOrigin={live.embed_origin ?? null} accent={accent} />}
+        />
+    );
+
     const nameInput = <InlineName value={name} onChange={setName} label={__('Nombre de la tienda')} testId="shop-name" />;
     const themeAction: MenuAction = { label: appTheme.resolved === 'dark' ? __('Modo claro') : __('Modo oscuro'), icon: appTheme.resolved === 'dark' ? Sun : Moon, onSelect: appTheme.toggle };
     const saveButton = <SaveButton dirty={dirty} busy={update.isPending && enabledView === null} onClick={() => save()} testId="shop-save" />;
@@ -346,7 +384,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                             testId="shop-more"
                             actions={[
                                 { label: enabled ? __('Dejar de publicar') : __('Publicar'), icon: enabled ? EyeOff : Send, onSelect: togglePublish, testId: 'shop-publish-menu', disabled: live.suspended },
-                                { label: __('Compartir'), icon: Code2, onSelect: () => openSection('publish') },
+                                { label: __('Compartir'), icon: Code2, onSelect: () => setShare('link'), testId: 'shop-share-menu' },
                                 { ...themeAction, separated: true },
                             ]}
                         />
@@ -396,6 +434,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                         else if (mode === 'stats') setMode('edit');
                     }}
                 />
+                {shareDialog}
             </div>
         );
     }
@@ -420,9 +459,10 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                         <Button
                             variant="outline"
                             size="sm"
-                            className={cn('imcrm-ml-1 imcrm-gap-1.5', mode === 'edit' && section === 'publish' && 'imcrm-border-primary/40 imcrm-text-primary')}
-                            onClick={() => openSection('publish')}
+                            className={cn('imcrm-ml-1 imcrm-gap-1.5', share !== null && 'imcrm-border-primary/40 imcrm-text-primary')}
+                            onClick={() => setShare('link')}
                             data-testid="shop-share"
+                            data-tour="shop-share"
                             title={__('Compartir la tienda')}
                         >
                             <Code2 className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -448,6 +488,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                     </div>
                 </div>
             )}
+            {shareDialog}
         </div>
     );
 }

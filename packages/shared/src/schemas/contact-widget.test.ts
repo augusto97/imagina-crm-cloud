@@ -233,3 +233,27 @@ describe('widget de contacto — dónde aparece y saludo (v0.1.396)', () => {
         expect(buildPublicWidgetMeta('t'.repeat(20), readContactWidgetConfig({ greeting: { enabled: true, text: ' ' } }), brand, []).greeting).toBeNull();
     });
 });
+
+describe('widget de contacto — botón «Ver la tienda» (v0.1.419)', () => {
+    const shopRef = (enabled: boolean): WidgetTargetRef => ({ id: 7, name: 'Tienda Aurora', enabled });
+    const base = { forms: new Map<number, WidgetTargetRef>(), bookings: new Map<number, WidgetTargetRef>() };
+
+    it('pide elegir la tienda, avisa si no existe o no está publicada', () => {
+        const pick = readContactWidgetConfig({ buttons: [{ id: 'sh', type: 'shop' }] });
+        expect(widgetProblems(pick, { ...base, shops: new Map() }).map((p) => p.message)).toEqual(['«Ver la tienda»: elige la tienda que se abre.']);
+        const gone = readContactWidgetConfig({ buttons: [{ id: 'sh', type: 'shop', shop_id: 9 }] });
+        expect(widgetProblems(gone, { ...base, shops: new Map([[7, shopRef(true)]]) })[0]!.message).toBe('«Ver la tienda»: la tienda ya no existe.');
+        const off = readContactWidgetConfig({ buttons: [{ id: 'sh', type: 'shop', shop_id: 7 }] });
+        expect(widgetProblems(off, { ...base, shops: new Map([[7, shopRef(false)]]) })[0]!.message).toBe('«Ver la tienda»: la tienda «Tienda Aurora» no está publicada.');
+        expect(widgetProblems(off, { ...base, shops: new Map([[7, shopRef(true)]]) })).toEqual([]);
+    });
+
+    it('se abre en el panel con la página de la tienda; sin tienda publicada, no se muestra', () => {
+        const b = readContactWidgetConfig({ buttons: [{ id: 'sh', type: 'shop', shop_id: 7 }] }).buttons[0]!;
+        const ctx = { accent: '#0e7490', goPath: () => '#', formPath: () => null, bookingPath: () => null };
+        expect(buildPublicWidgetButton(b, { ...ctx, shopPath: (id) => (id === 7 ? '/api/v1/public/s/tk' : null) })).toMatchObject({ type: 'shop', frame: '/api/v1/public/s/tk', icon: 'cart', label: 'Ver la tienda' });
+        expect(buildPublicWidgetButton(b, { ...ctx, shopPath: () => null })).toBeNull();
+        // Sin `shopPath` (un servidor viejo): no se muestra.
+        expect(buildPublicWidgetButton(b, ctx)).toBeNull();
+    });
+});

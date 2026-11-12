@@ -157,6 +157,14 @@ export class ShopService {
         return out.map((d) => ({ ...d, embed_origin: embed }));
     }
 
+    /** v0.1.419 — Todas las tiendas de la empresa (el asistente las cruza con una lista). */
+    async listForTenant(tenantId: number): Promise<ShopDto[]> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) => tx.select().from(shops).where(eq(shops.tenantId, tenantId)).orderBy(asc(shops.id)).limit(200));
+        const out: ShopDto[] = [];
+        for (const r of rows) out.push(await this.toDto(tenantId, r));
+        return out;
+    }
+
     async get(tenantId: number, id: number): Promise<ShopDto> {
         const row = await this.tenantDb.withTenant(tenantId, (tx) => this.load(tx, tenantId, id));
         const dto = await this.toDto(tenantId, row);

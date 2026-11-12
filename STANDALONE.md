@@ -8720,8 +8720,8 @@ antes de desarrollar y aprobó el plan en seis versiones, **sin la parte de SEO*
 
 (El plan original juntaba suscripción con digital/servicio en v0.1.416; se
 partió en dos al desarrollarlo para que cada versión se pudiera probar sola. La
-última también se partió en dos —medir y vender en más lugares—: quedan ocho
-versiones.)
+última también se partió en dos —medir y vender en más lugares—: fueron ocho
+versiones, todas publicadas.)
 
 Internamente el módulo se llama `shop` (`store` ya es WooCommerce, ADR-S24); la
 persona ve «Tienda».
@@ -9028,3 +9028,40 @@ persona ve «Tienda».
    correo en minúsculas y el teléfono en E.164 (`shopE164Phone`: sin
    indicativo toma el del país de la moneda de la tienda; con USD/EUR no
    adivina).
+
+**Addendum v0.1.419 — Vender en más lugares (cierra el plan de la tienda).**
+1. **Compartir la tienda** usa la MISMA ventana `ShareDialog` de formularios y
+   agenda (`kind: 'shop'`): **Enlace y QR** (enlace directo por la app,
+   WhatsApp, correo, QR) e **Insertar en tu sitio** con los tres modos de
+   `embed.js` y su **demostración en vivo**. El panel Publicar del editor deja
+   sus bloques de código/QR y abre esa ventana; los sitios permitidos viven ahí.
+   La demostración corre la página real con `imb_demo=1` sólo dentro de un
+   marco de la propia app (`isDemoFrame`): sin estadísticas, sin etiquetas, sin
+   sello ni captcha, carrito aparte (`:demo`) y «hacer el pedido» no crea nada.
+2. **`embed.js` para la tienda** (`isShop` por la ruta `/public/s/`): una
+   tienda tiene su propio scroll y su carrito arriba a la derecha, así que la
+   ventana es grande (`min(1100px,100%)` × `calc(100vh - 32px)`), el panel de
+   hasta 560 px y la pantalla completa ocupa todo; siempre con una **barra de
+   48 px** con el título y la X (una X flotante taparía el carrito). En la
+   página, alto fijo de 900 px y `allow="payment"` (la tienda no informa su
+   alto). **Escape** dentro de la ventana —tienda o formulario, con nada
+   abierto adentro— manda `imb-popup-close` y `embed.js` la cierra si ese
+   marco es la ventana abierta; la demostración escucha lo mismo.
+3. **Botón «Comprar» de un producto** (`ShopBuyButtons`, en Insertar): el
+   producto se busca con `GET /shops/:id/products`, el destino es la tienda con
+   `?producto=<id>` (`shopProductUrl`) y la página abre su hoja al cargar y
+   limpia la dirección (`history.replaceState`). Va por la dirección rápida
+   (ADR-S102) como el resto del código.
+4. **Widget de contacto: botón «Ver la tienda»** (`type: 'shop'`,
+   `shop_id`): sólo tiendas de la empresa, publicadas, sin suspender y de una
+   lista viva; `cleanConfig` descarta una ajena, `widgetProblems` avisa si no
+   está publicada, y si el plan no incluye la tienda el botón no se muestra.
+   Se abre en el panel como un formulario (`frame`). El contacto («lead») del
+   widget cuenta sólo la COMPRA, no los pasos. Migrar una empresa deja
+   `shop_id` en null (las tiendas no viajan).
+5. **Asistente y MCP** (`ShopAiTools`): `get_list_schema` suma `shops` en la
+   lista del catálogo y en las de pedidos/líneas/clientes (rol, publicada,
+   moneda, formas de pago y entrega, cómo enlazar un producto), sólo para quien
+   administra listas; `get_shop_stats` (lectura, `manage_lists`) devuelve
+   totales, embudo, productos, orígenes, dispositivos y los días con
+   movimiento. Nada escribe: la tienda se configura en su editor.

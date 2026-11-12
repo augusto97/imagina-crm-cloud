@@ -25,6 +25,7 @@ const TYPE_TILE: Record<WidgetButtonType, string> = {
     call: 'Llamada',
     email: 'Correo',
     link: 'Enlace',
+    shop: 'Tienda',
 };
 
 /**

@@ -39,8 +39,10 @@ export function EmbedDemo({
     busy,
     fill,
     testId,
+    title,
 }: {
-    kind: 'form' | 'booking';
+    /** v0.1.419 — también la tienda (una página entera, con su propio scroll). */
+    kind: 'form' | 'booking' | 'shop';
     /** La dirección pública SIN origen (`/api/v1/public/f/…`): la demo se carga del mismo origen de la app. */
     path: string;
     /** Cambia al guardar: la demo vuelve a cargar lo nuevo (y salta la caché del navegador). */
@@ -59,6 +61,8 @@ export function EmbedDemo({
     /** Llena el alto de su contenedor (en la computadora) en vez de una altura fija. */
     fill?: boolean;
     testId: string;
+    /** v0.1.419 — El nombre (la barra de la ventana de la tienda). */
+    title?: string;
 }): JSX.Element {
     const [shown, setShown] = useState(false);
     // En pantallas angostas la demo ya es angosta: no hace falta elegir el aparato.
@@ -67,10 +71,20 @@ export function EmbedDemo({
     const device: DemoDevice = canPickDevice ? picked : 'desktop';
     // Cambiar la forma de insertar (o el aparato) cierra lo que estaba abierto.
     useEffect(() => setShown(false), [mode, open, position, device]);
+    // Escape dentro de la ventana de la demostración la cierra, como en el sitio.
+    useEffect(() => {
+        if (!shown || mode === 'inline') return;
+        const onMsg = (e: MessageEvent): void => {
+            if (e.origin === window.location.origin && (e.data as { type?: unknown } | null)?.type === 'imb-popup-close') setShown(false);
+        };
+        window.addEventListener('message', onMsg);
+        return () => window.removeEventListener('message', onMsg);
+    }, [shown, mode]);
     const btnColor = safeHex(color);
     const btnLabel = label.trim() || defaultEmbedLabel(kind);
     const src = demoSrc(path, version, mode === 'inline' ? (bare ? 'bare' : 'card') : null);
-    const what = kind === 'booking' ? __('la agenda') : __('el formulario');
+    const what = kind === 'booking' ? __('la agenda') : kind === 'shop' ? __('la tienda') : __('el formulario');
+    const shop = kind === 'shop';
     const phone = device === 'mobile';
 
     const site = (
@@ -79,7 +93,7 @@ export function EmbedDemo({
                 <SiteHeader phone={phone} />
                 <div className={cn('imcrm-flex imcrm-flex-col imcrm-gap-3', phone ? 'imcrm-px-4 imcrm-py-4' : 'imcrm-px-6 imcrm-py-6')}>
                     <span className={cn('imcrm-font-bold', phone ? 'imcrm-text-base' : 'imcrm-text-lg')} style={{ color: '#111827' }}>
-                        {kind === 'booking' ? __('Agenda tu cita con nosotros') : __('Contáctanos')}
+                        {kind === 'booking' ? __('Agenda tu cita con nosotros') : shop ? __('Compra en línea') : __('Contáctanos')}
                     </span>
                     <Bars widths={['88%', '72%']} />
                     {mode === 'popup' && (
@@ -98,13 +112,13 @@ export function EmbedDemo({
                     {mode === 'inline' ? (
                         <div className="imcrm-mt-1 imcrm-flex imcrm-flex-col imcrm-gap-1">
                             <span className="imcrm-text-[10px] imcrm-font-medium imcrm-uppercase imcrm-tracking-wide" style={{ color: '#0369a1' }}>
-                                {bare ? __('Sin marco: ocupa todo el espacio') : __('Con su tarjeta')}
+                                {shop ? __('La tienda dentro de tu página') : bare ? __('Sin marco: ocupa todo el espacio') : __('Con su tarjeta')}
                             </span>
                             <div style={{ outline: '1px dashed #38bdf8' }}>
                                 {published ? (
-                                    <InlineFrame key={device} src={src} title={what} testId={`${testId}-demo-frame`} />
+                                    <InlineFrame key={device} src={src} title={what} testId={`${testId}-demo-frame`} fixedHeight={shop ? (phone ? 560 : 640) : undefined} />
                                 ) : (
-                                    <Unpublished what={what} onPublish={onPublish} busy={busy} testId={testId} />
+                                    <Unpublished what={what} feminine={kind !== 'form'} onPublish={onPublish} busy={busy} testId={testId} />
                                 )}
                             </div>
                         </div>
@@ -143,7 +157,7 @@ export function EmbedDemo({
                 </button>
             )}
             {mode !== 'inline' && shown && (
-                <Opened open={open} position={position} phone={phone} onClose={() => setShown(false)} testId={testId}>
+                <Opened open={open} position={position} phone={phone} onClose={() => setShown(false)} testId={testId} shop={shop ? title?.trim() || __('Tienda') : null}>
                     {published ? (
                         <iframe
                             // En la ventana o el panel de embed.js la página se ve con su tarjeta.
@@ -155,7 +169,7 @@ export function EmbedDemo({
                         />
                     ) : (
                         <div className="imcrm-flex imcrm-h-full imcrm-items-center imcrm-justify-center imcrm-p-4">
-                            <Unpublished what={what} onPublish={onPublish} busy={busy} testId={testId} />
+                            <Unpublished what={what} feminine={kind !== 'form'} onPublish={onPublish} busy={busy} testId={testId} />
                         </div>
                     )}
                 </Opened>
@@ -251,11 +265,15 @@ export function demoSrc(path: string, version: string, style: 'bare' | 'card' | 
     return `${path}${path.includes('?') ? '&' : '?'}${q.toString()}`;
 }
 
-/** Insertado en la página: crece con el contenido, como lo hace `embed.js` en tu sitio. */
-function InlineFrame({ src, title, testId }: { src: string; title: string; testId: string }): JSX.Element {
+/**
+ * Insertado en la página: crece con el contenido, como lo hace `embed.js` en tu
+ * sitio. La tienda no crece: va con un alto fijo y su propio scroll.
+ */
+function InlineFrame({ src, title, testId, fixedHeight }: { src: string; title: string; testId: string; fixedHeight?: number }): JSX.Element {
     const ref = useRef<HTMLIFrameElement>(null);
-    const [height, setHeight] = useState(480);
+    const [height, setHeight] = useState(fixedHeight ?? 480);
     useEffect(() => {
+        if (fixedHeight) return;
         const onMessage = (e: MessageEvent): void => {
             if (e.source !== ref.current?.contentWindow) return;
             const d = e.data as { type?: string; height?: number } | null;
@@ -265,14 +283,14 @@ function InlineFrame({ src, title, testId }: { src: string; title: string; testI
         };
         window.addEventListener('message', onMessage);
         return () => window.removeEventListener('message', onMessage);
-    }, []);
+    }, [fixedHeight]);
     return (
         <iframe
             ref={ref}
             src={src}
             title={title}
             className="imcrm-block imcrm-w-full imcrm-border-0"
-            style={{ height, background: 'transparent' }}
+            style={{ height: fixedHeight ?? height, background: 'transparent' }}
             data-testid={testId}
         />
     );
@@ -284,6 +302,7 @@ function Opened({
     phone,
     onClose,
     testId,
+    shop,
     children,
 }: {
     open: EmbedOpen;
@@ -292,6 +311,11 @@ function Opened({
     phone: boolean;
     onClose: () => void;
     testId: string;
+    /**
+     * v0.1.419 — La tienda: `embed.js` la abre más ancha y alta, con una barra
+     * arriba (título y X) para no tapar el carrito del encabezado de la tienda.
+     */
+    shop?: string | null;
     children: React.ReactNode;
 }): JSX.Element {
     const close = (
@@ -306,11 +330,33 @@ function Opened({
             <X className="imcrm-h-4 imcrm-w-4" />
         </button>
     );
+    const body = shop ? (
+        <div className="imcrm-flex imcrm-h-full imcrm-flex-col">
+            <div className="imcrm-flex imcrm-h-10 imcrm-shrink-0 imcrm-items-center imcrm-gap-2 imcrm-pl-3 imcrm-pr-1.5" style={{ borderBottom: '1px solid #e5e7eb', color: '#111827' }}>
+                <span className="imcrm-min-w-0 imcrm-flex-1 imcrm-truncate imcrm-text-xs imcrm-font-semibold">{shop}</span>
+                <button
+                    type="button"
+                    aria-label={__('Cerrar')}
+                    onClick={onClose}
+                    className="imcrm-flex imcrm-h-7 imcrm-w-7 imcrm-items-center imcrm-justify-center imcrm-rounded-full hover:imcrm-bg-black/5"
+                    style={{ color: '#374151' }}
+                    data-testid={`${testId}-demo-close`}
+                >
+                    <X className="imcrm-h-4 imcrm-w-4" />
+                </button>
+            </div>
+            <div className="imcrm-min-h-0 imcrm-flex-1">{children}</div>
+        </div>
+    ) : (
+        <>
+            {close}
+            {children}
+        </>
+    );
     if (open === 'full' || (phone && open === 'window')) {
         return (
             <div className="imcrm-absolute imcrm-inset-0 imcrm-z-20 imcrm-animate-in imcrm-fade-in" style={{ background: '#ffffff' }} data-testid={`${testId}-demo-opened`} data-open={open}>
-                {close}
-                {children}
+                {body}
             </div>
         );
     }
@@ -321,23 +367,24 @@ function Opened({
                 <div
                     className={cn(
                         'imcrm-absolute imcrm-bottom-0 imcrm-top-0 imcrm-overflow-hidden imcrm-shadow-2xl imcrm-animate-in imcrm-duration-300',
-                        phone ? 'imcrm-w-full' : 'imcrm-w-[min(88%,420px)]',
+                        phone ? 'imcrm-w-full' : shop ? 'imcrm-w-[min(88%,500px)]' : 'imcrm-w-[min(88%,420px)]',
                         position === 'left' ? 'imcrm-left-0 imcrm-slide-in-from-left-full' : 'imcrm-right-0 imcrm-slide-in-from-right-full',
                     )}
                     style={{ background: '#ffffff' }}
                 >
-                    {close}
-                    {children}
+                    {body}
                 </div>
             ) : (
                 // Centrada con flex (no con translate: la animación de entrada pisaría el transform).
                 <div className="imcrm-pointer-events-none imcrm-absolute imcrm-inset-0 imcrm-flex imcrm-items-center imcrm-justify-center">
                     <div
-                        className="imcrm-pointer-events-auto imcrm-relative imcrm-h-[88%] imcrm-w-[min(92%,560px)] imcrm-overflow-hidden imcrm-rounded-xl imcrm-shadow-2xl imcrm-animate-in imcrm-zoom-in-95"
+                        className={cn(
+                            'imcrm-pointer-events-auto imcrm-relative imcrm-overflow-hidden imcrm-rounded-xl imcrm-shadow-2xl imcrm-animate-in imcrm-zoom-in-95',
+                            shop ? 'imcrm-h-[92%] imcrm-w-[min(96%,880px)]' : 'imcrm-h-[88%] imcrm-w-[min(92%,560px)]',
+                        )}
                         style={{ background: '#ffffff' }}
                     >
-                        {close}
-                        {children}
+                        {body}
                     </div>
                 </div>
             )}
@@ -345,15 +392,15 @@ function Opened({
     );
 }
 
-function Unpublished({ what, onPublish, busy, testId }: { what: string; onPublish?: () => void; busy?: boolean; testId: string }): JSX.Element {
+function Unpublished({ what, feminine, onPublish, busy, testId }: { what: string; feminine?: boolean; onPublish?: () => void; busy?: boolean; testId: string }): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-2 imcrm-px-4 imcrm-py-8 imcrm-text-center" data-testid={`${testId}-demo-unpublished`}>
             <Rocket className="imcrm-h-6 imcrm-w-6" style={{ color: '#0369a1' }} />
             <p className="imcrm-text-sm imcrm-font-semibold" style={{ color: '#111827' }}>
-                {__('Todavía no está publicado')}
+                {feminine ? __('Todavía no está publicada') : __('Todavía no está publicado')}
             </p>
             <p className="imcrm-max-w-xs imcrm-text-xs" style={{ color: '#6b7280' }}>
-                {__('Publica %s para verlo aquí tal como lo verá la gente en tu sitio.').replace('%s', what)}
+                {(feminine ? __('Publica %s para verla aquí tal como la verá la gente en tu sitio.') : __('Publica %s para verlo aquí tal como lo verá la gente en tu sitio.')).replace('%s', what)}
             </p>
             {onPublish && (
                 <Button size="sm" onClick={onPublish} disabled={busy}>

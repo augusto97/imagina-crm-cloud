@@ -39,6 +39,8 @@ import { ShopPublicService } from '../src/shop/shop-public.service';
 import { ShopCouponsService } from '../src/shop/shop-coupons.service';
 import { ShopService } from '../src/shop/shop.service';
 import { ShopStatsService } from '../src/shop/shop-stats.service';
+import { ShopAiTools } from '../src/shop/shop-ai-tools';
+import { AiToolRegistry } from '../src/ai/tools/registry';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { BlueprintService } from '../src/templates/blueprint.service';
 import { ViewsRepository } from '../src/views/views.repository';
@@ -405,5 +407,36 @@ describe('v0.1.418 — tienda: estadísticas, origen y conversiones (Postgres + 
         expect(after.campaign).toBe(before.campaign);
         const fields = await fieldsSvc.listByListId(tenantId, ordersListId);
         expect(fields.filter((x) => x.slug === 'llego_desde')).toHaveLength(1);
+    });
+
+    it('v0.1.419 — el asistente y el MCP: la tienda en get_list_schema y get_shop_stats', async () => {
+        const registry = new AiToolRegistry();
+        const tools = new ShopAiTools(shopsSvc, statsSvc, registry);
+        tools.onModuleInit();
+        // Registrar dos veces no duplica la herramienta.
+        tools.registerInto(registry);
+        const ctx = { tenantId, userId: adminId, role: 'admin' as const };
+
+        const catalog = (await registry.listSchemaExtras(ctx, { id: catalogId, slug: 'productos' })) as { shops: { items: Array<Record<string, unknown>> } };
+        expect(catalog.shops.items).toHaveLength(1);
+        expect(catalog.shops.items[0]).toMatchObject({ id: shopId, name: 'Tienda Acme', role: 'catalog', published: true, currency: 'COP' });
+        expect((catalog.shops.items[0]!.payments as Record<string, boolean>).transfer).toBe(true);
+        const orders = (await registry.listSchemaExtras(ctx, { id: ordersListId, slug: 'pedidos' })) as { shops: { items: Array<Record<string, unknown>> } };
+        expect(orders.shops.items[0]!.role).toBe('orders');
+        // Quien no administra listas no ve la tienda (como en la app).
+        expect(await registry.listSchemaExtras({ ...ctx, role: 'agent' }, { id: catalogId, slug: 'productos' })).toEqual({});
+
+        await place();
+        const tool = registry.get('get_shop_stats')!;
+        expect(tool.capability).toBe('manage_lists');
+        const res = await tool.run(ctx, { shop_id: shopId, days: 30 });
+        expect(res.isError).toBeFalsy();
+        const content = res.content as { shop: { id: number }; totals: { orders: number }; days: Array<{ orders: number }> };
+        expect(content.shop.id).toBe(shopId);
+        expect(content.totals.orders).toBeGreaterThanOrEqual(1);
+        // Sólo los días con movimiento.
+        expect(content.days.every((d) => d.orders > 0 || (d as unknown as { visits: number }).visits > 0)).toBe(true);
+        const missing = await tool.run(ctx, { shop_id: 999_999, days: 7 });
+        expect(missing.isError).toBe(true);
     });
 });

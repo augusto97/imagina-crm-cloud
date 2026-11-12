@@ -97,8 +97,9 @@ export function cleanEmbedDomain(raw: string): string | null {
 }
 
 /** El texto que acompaña al enlace al mandarlo por WhatsApp, correo u otra app. */
-export function shareMessage(kind: 'form' | 'booking', name: string, url: string): string {
+export function shareMessage(kind: 'form' | 'booking' | 'shop', name: string, url: string): string {
     const title = name.trim();
     if (kind === 'booking') return title ? `${title}: agenda tu cita aquí ${url}` : `Agenda tu cita aquí: ${url}`;
+    if (kind === 'shop') return title ? `${title}: mira nuestros productos y compra aquí ${url}` : `Mira nuestros productos y compra aquí: ${url}`;
     return title ? `${title}: ${url}` : url;
 }

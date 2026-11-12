@@ -155,6 +155,10 @@ export function EmbedCodePicker({
                             </p>
                             {bare.unsaved && <UnsavedNote text={__('Guarda los cambios para que tu sitio lo muestre así.')} />}
                         </div>
+                    ) : target.kind === 'shop' ? (
+                        <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid={`${testId}-shop-inline`}>
+                            {__('La tienda se ve completa en el espacio que le das, con su propio scroll: 900 px de alto (puedes cambiarlo en el código).')}
+                        </p>
                     ) : (
                         <p className="imcrm-text-xs imcrm-text-muted-foreground">{__('Se ve con su fondo y su tarjeta, igual que en el enlace directo.')}</p>
                     )
@@ -282,6 +286,7 @@ export function EmbedCodePicker({
             busy={demo.busy}
             fill={wide}
             testId={testId}
+            title={target.title}
         />
     );
     // En la computadora: los pasos a la izquierda (con su propio scroll) y la

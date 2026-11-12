@@ -252,7 +252,9 @@ function onPick(b: PublicWidgetButton, ev: Event): void {
                       ? 'Elige un formulario publicado para verlo aquí.'
                       : b.type === 'booking'
                         ? 'Elige una agenda publicada para verla aquí.'
-                        : 'En tu sitio, esto abre el enlace.',
+                        : b.type === 'shop'
+                          ? 'Elige una tienda publicada para verla aquí.'
+                          : 'En tu sitio, esto abre el enlace.',
         );
     }
 }
@@ -904,9 +906,12 @@ window.addEventListener('message', (e: MessageEvent) => {
     } else if (d.type === 'imb-conversion' || d.type === 'imb-form-redirect') {
         // v0.1.396 — dejó sus datos (o agendó) desde este botón: un contacto para las estadísticas.
         if (d.type === 'imb-conversion' && child.b) {
-            const ev = d.event as { submission_id?: unknown } | undefined;
+            const ev = d.event as { submission_id?: unknown; kind?: unknown; action?: unknown } | undefined;
             const sid = typeof ev?.submission_id === 'string' ? ev.submission_id : '';
-            if (!sid || !leadSeen.has(sid)) {
+            // v0.1.419 — La tienda avisa cada paso (vio un producto, agregó al
+            // carrito…): sólo la compra es un contacto.
+            const step = ev?.kind === 'shop' && ev.action !== 'purchase';
+            if (!step && (!sid || !leadSeen.has(sid))) {
                 if (sid) leadSeen.add(sid);
                 stat({ kind: 'lead', button: child.b.id });
             }

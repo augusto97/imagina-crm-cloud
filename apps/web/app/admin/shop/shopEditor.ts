@@ -147,24 +147,6 @@ function stable(v: unknown): string {
     return JSON.stringify(v ?? null);
 }
 
-/** El código para insertar la tienda entera en una página del sitio. */
-/**
- * El código para insertar la tienda en un sitio. v0.1.418 — con el script de
- * inserción: la tienda le pasa al sitio cada paso de la compra (Tag Manager,
- * Google Ads, Meta) y recibe de dónde llegó la persona.
- */
-export function shopEmbedCode(url: string, title: string): string {
-    const safe = title.replace(/["<>&]/g, '');
-    let origin = '';
-    try {
-        origin = new URL(url).origin;
-    } catch {
-        origin = '';
-    }
-    const frame = `<iframe src="${url}" title="${safe || 'Tienda'}" data-imagina-form style="width:100%;min-height:900px;border:0" loading="lazy" allow="payment" referrerpolicy="no-referrer-when-downgrade"></iframe>`;
-    return origin ? `${frame}\n<script src="${origin}/api/v1/public/f/embed.js" async></script>` : frame;
-}
-
 /** Un número de teléfono tal como lo escribe la gente → E.164 (`+57 300 111 2233` → `+573001112233`). */
 export function cleanPhone(raw: string): string {
     const t = raw.trim();

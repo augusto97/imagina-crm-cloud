@@ -1,7 +1,7 @@
 import { defaultShopConfig, shopProblems } from '@imagina-base/shared';
 import { describe, expect, it } from 'vitest';
 
-import { cleanPhone, sameShopConfig, sectionsWithProblems, shopEditorLocation, shopEditorSection, shopEmbedCode, shopSectionSummary } from './shopEditor';
+import { cleanPhone, sameShopConfig, sectionsWithProblems, shopEditorLocation, shopEditorSection, shopSectionSummary } from './shopEditor';
 
 describe('editor de la tienda (v0.1.412)', () => {
     it('cada sección dice cómo está en una línea', () => {
@@ -53,14 +53,7 @@ describe('editor de la tienda (v0.1.412)', () => {
         expect(sameShopConfig(a, reordered)).toBe(false);
     });
 
-    it('el código para el sitio no deja colar etiquetas y el teléfono queda en E.164', () => {
-        const code = shopEmbedCode('https://app.test/api/v1/public/s/abc', 'Café "Aurora" <x>');
-        expect(code).toContain('src="https://app.test/api/v1/public/s/abc"');
-        expect(code).toContain('title="Café Aurora x"');
-        expect(code).not.toContain('<x>');
-        // v0.1.418 — con el script de inserción (conversiones y de dónde llegó).
-        expect(code).toContain('data-imagina-form');
-        expect(code).toContain('<script src="https://app.test/api/v1/public/f/embed.js" async></script>');
+    it('el teléfono queda en E.164', () => {
         expect(cleanPhone('+57 300 111 2233')).toBe('+573001112233');
         expect(cleanPhone('(300) 111-2233')).toBe('+3001112233');
         expect(cleanPhone('  ')).toBe('');
