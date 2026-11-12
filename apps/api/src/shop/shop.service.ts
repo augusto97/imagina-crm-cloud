@@ -378,6 +378,8 @@ export class ShopService {
                 .filter((f) => f.id !== kindCols.kind_field && f.id !== kindCols.download_field)
                 .map((f) => ({ id: f.id, type: f.type, label: f.label, slug: f.slug, is_primary: f.id === titleId })),
         );
+        // v0.1.420 — Sin un campo de descripción, la del registro (el documento con formato).
+        if (config.catalog.description === null) config.description_from = 'record';
         const priceField = fields.find((f) => f.id === config.catalog.price);
         const cur = (priceField?.config as { currency?: unknown } | undefined)?.currency;
         if (priceField?.type === 'currency' && typeof cur === 'string' && /^[A-Z]{3}$/.test(cur)) config.currency = cur;
@@ -612,7 +614,30 @@ export class ShopService {
             priceFieldOk: !!price && SHOP_CATALOG_FIELD_TYPES.price.includes(price.type),
             onlineConnectionOk: conn !== null,
             onlineCurrencyError: conn ? collectionCurrencyError(conn.provider, config.currency) : null,
+            needsDelivery: await this.hasPhysicalProducts(tx, tenantId, listId, config, fields),
         });
+    }
+
+    /**
+     * v0.1.420 — ¿Hay algo que se entrega? Sin columna «Tipo» ni archivos para
+     * descargar, todos los productos son físicos (o no hay productos todavía):
+     * se piden formas de entrega. Con tipos, sólo si algún producto es físico.
+     */
+    private async hasPhysicalProducts(tx: Tx, tenantId: number, listId: number, config: ShopConfig, fields: Field[]): Promise<boolean> {
+        const rf = resolveCatalogFields(fields, config.catalog, null, config.kinds);
+        if (!rf.kinds?.kind && !rf.kinds?.download) return true;
+        const rows = await tx
+            .select({ id: records.id, data: records.data, createdAt: records.createdAt })
+            .from(records)
+            .where(and(eq(records.tenantId, tenantId), eq(records.listId, listId), isNull(records.deletedAt), isNull(records.parentId)))
+            .orderBy(asc(records.id))
+            .limit(SHOP_MAX_PUBLIC_PRODUCTS);
+        if (rows.length === 0) return true;
+        for (const r of rows) {
+            const p = productFromRow({ id: r.id, data: r.data as Record<string, unknown>, createdAt: r.createdAt }, rf);
+            if (p.active && (p.product.kind ?? 'physical') === 'physical') return true;
+        }
+        return false;
     }
 
     private async ordersListsAlive(tx: Tx, tenantId: number, orders: ShopConfig['orders']): Promise<boolean> {

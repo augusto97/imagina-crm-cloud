@@ -352,6 +352,12 @@ export const shopConfigSchema = z.object({
     policies: shopPoliciesSchema.catch(() => shopPoliciesSchema.parse({})).default({}),
     display: shopDisplaySchema.catch(() => shopDisplaySchema.parse({})).default({}),
     texts: shopTextsSchema.catch(() => shopTextsSchema.parse({})).default({}),
+    /**
+     * v0.1.420 — De dónde sale la descripción del producto: de un campo de
+     * texto (`catalog.description`) o de la DESCRIPCIÓN del registro (el
+     * documento con formato de la ficha: títulos, listas, imágenes).
+     */
+    description_from: z.enum(['field', 'record']).catch('field').default('field'),
     /** null = el color de la marca (el tema completo vive en `settings.theme`). */
     color: z.string().regex(HEX_RE).nullable().catch(null).default(null),
     show_logo: z.boolean().catch(true).default(true),
@@ -719,7 +725,18 @@ export interface ShopProblem {
  */
 export function shopProblems(
     config: ShopConfig,
-    ctx: { hasOrdersLists: boolean; priceFieldOk: boolean; onlineConnectionOk?: boolean; onlineCurrencyError?: string | null },
+    ctx: {
+        hasOrdersLists: boolean;
+        priceFieldOk: boolean;
+        onlineConnectionOk?: boolean;
+        onlineCurrencyError?: string | null;
+        /**
+         * v0.1.420 — Hay productos que se entregan (físicos). Si todos son
+         * digitales, servicios o suscripciones, la tienda no pide formas de
+         * entrega. Sin el dato: se piden.
+         */
+        needsDelivery?: boolean;
+    },
 ): ShopProblem[] {
     const out: ShopProblem[] = [];
     if (!config.catalog.price || !ctx.priceFieldOk) out.push({ section: 'catalog', text: 'Elige el campo del precio de los productos.' });
@@ -738,7 +755,7 @@ export function shopProblems(
     } else if (p.online.enabled && ctx.onlineCurrencyError) {
         out.push({ section: 'payment', text: ctx.onlineCurrencyError });
     }
-    if (!config.delivery.some((d) => d.active && d.name.trim() !== '')) {
+    if (ctx.needsDelivery !== false && !config.delivery.some((d) => d.active && d.name.trim() !== '')) {
         out.push({ section: 'payment', text: 'Agrega al menos una forma de entrega.' });
     }
     const s = config.seller;

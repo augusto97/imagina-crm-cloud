@@ -35,7 +35,7 @@ import { cn } from '@/lib/utils';
 import { demoVersion } from '../forms/EmbedDemo';
 import { ShareDialog, type ShareTab } from '../forms/ShareDialog';
 import { ShopBuyButtons } from './ShopBuyButtons';
-import { CatalogPanel, CheckoutPanel, DesignPanel, OrdersPanel, PaymentPanel, PublishPanel, SellerPanel } from './ShopPanels';
+import { CatalogPanel, catalogNeedsDelivery, CheckoutPanel, DesignPanel, OrdersPanel, PaymentPanel, PublishPanel, SellerPanel } from './ShopPanels';
 import { CouponsPanel } from './ShopCouponsPanel';
 import { ShopMeasurePanel } from './ShopMeasurePanel';
 import { ShopPreview } from './ShopPreview';
@@ -143,8 +143,13 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
     const coupons = useShopCoupons(shop.id);
     const priceField = options.fields.find((f) => f.id === config.catalog.price);
     const problems: ShopProblem[] = useMemo(
-        () => shopProblems(config, { hasOrdersLists: live.orders !== null, priceFieldOk: !!priceField && (priceField.type === 'currency' || priceField.type === 'number') }),
-        [config, live.orders, priceField],
+        () =>
+            shopProblems(config, {
+                hasOrdersLists: live.orders !== null,
+                priceFieldOk: !!priceField && (priceField.type === 'currency' || priceField.type === 'number'),
+                needsDelivery: catalogNeedsDelivery(options),
+            }),
+        [config, live.orders, priceField, options],
     );
     const problemSections = useMemo(() => sectionsWithProblems(problems), [problems]);
 

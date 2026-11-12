@@ -1,4 +1,5 @@
 import { groupNumberPlain } from './shop-number';
+import type { RichNode } from './rich-text';
 import type { PublicDirectTags } from './conversion-logic';
 import type { PublicDataConsent } from './data-consent';
 import type { PublicFormCaptcha } from './form';
@@ -419,7 +420,15 @@ export interface PublicShopProduct {
     compare_price: number | null;
     /** Rutas relativas de las miniaturas (`img/<clave>`), sin el ancho. */
     images: string[];
+    /** El texto de la descripción (para buscar y, sin documento, para mostrar). */
     description: string;
+    /**
+     * v0.1.420 — La descripción es el DOCUMENTO del registro (con formato): la
+     * ficha lo pide al abrirse (`desc/<id>`) para no inflar el catálogo.
+     */
+    rich_description?: boolean;
+    /** v0.1.420 — En la vista previa del editor el documento viene incluido. */
+    description_doc?: RichNode | null;
     categories: string[];
     /** null = sin límite (o la tienda no controla stock). */
     stock: number | null;

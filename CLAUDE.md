@@ -14881,6 +14881,49 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `embed.js` real en ventana/panel/completa y Escape, widget con la tienda
         adentro, celular oscuro sin desborde) y MCP real por HTTP 5/5.
 
+  - [x] **La Descripción se guarda con «Guardar cambios» y sirve como
+        descripción del producto (v0.1.420, addendum ADR-S103, reporte del
+        usuario con captura: "esta sección de «Descripción» en un registro no
+        dispara el botón de guardar al modificarse, tampoco permite ser
+        seleccionada en cualquier configuración… en la tienda sería bastante
+        útil para la descripción del producto"; del mismo mensaje: "en los
+        productos virtuales o digitales me está pidiendo configurar envío")**.
+        (a) **Descripción como un cambio más**: se guardaba sola desde
+        v0.1.133, pero el modal y la página del registro guardan todo lo demás
+        con el botón y éste no reaccionaba. `useDescriptionDraft`
+        (`RecordDescription.tsx`) es un borrador que activa «Guardar cambios»,
+        se guarda con él (en paralelo con los campos), «Cancelar» lo descarta
+        (vuelve a montar el editor con `epoch`) y el estado dice «Sin
+        guardar»; volver al mismo texto lo limpia. La ficha diseñada (v3)
+        sigue guardándose sola.
+        (b) **La descripción del registro en la tienda**:
+        `config.description_from: 'field' | 'record'` (lectura tolerante; una
+        tienda nueva sin columna de descripción elige `record`); el editor
+        ofrece «La descripción del registro (con formato)». El catálogo lleva
+        sólo el texto (`records.description_text`, hasta 4000) y las fotos del
+        documento (al mapa de imágenes de la tienda); la página pide el
+        documento al abrir el producto (`GET /public/s/:token/desc/:pid`,
+        caché pública 30 s, `noindex`) y la vista previa lo trae en línea.
+        `publicRichDoc` (shared, puro y sin zod) deja pasar texto con formato,
+        títulos, listas, tareas, citas, código, tablas, columnas e imágenes
+        subidas (con la clave de la tienda); quita menciones a personas y
+        equipos, adjuntos e índice; un video queda como enlace; cada enlace
+        (https/mailto/tel) y cada color se revisan otra vez. La página lo
+        dibuja con DOM (sin `innerHTML`) en una sección «Descripción» de la
+        hoja del producto.
+        (c) **Lo digital no pide envío**: `shopProblems` recibe `needsDelivery`;
+        el servidor (`hasPhysicalProducts`) y el editor
+        (`catalogNeedsDelivery`) lo deducen de los tipos: sin columna de tipo,
+        o con algún producto físico, se piden formas de entrega; si todo es
+        digital, servicio o suscripción, se publica sin ellas y Pago y entrega
+        lo explica.
+        Ayuda: guía `shop`, Aprende → Fichas y novedad con carrusel. Tests:
+        `rich-public.test.ts` (6), `shops-description.spec` (4) — shared 935,
+        front 917 — + E2E navegador 19/19 en escritorio y 19/19 en celular
+        oscuro (el botón se activa y guarda, Cancelar descarta, la descripción
+        con formato en la tienda sin la mención interna, tienda digital
+        publicada sin entregas).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

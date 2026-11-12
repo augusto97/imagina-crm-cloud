@@ -415,8 +415,21 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.419**
-(**vender en más lugares, la última de las ocho versiones de la tienda** —
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.420**
+(**la Descripción se guarda con «Guardar cambios» y sirve como descripción del
+producto** — en el modal y la página del registro escribir en la Descripción
+activa «Guardar cambios» (antes se guardaba sola y el botón no reaccionaba);
+la tienda puede usar la descripción con formato del registro (títulos, listas,
+tablas, imágenes) como descripción del producto; una tienda que sólo vende lo
+digital, servicios o suscripciones se publica sin formas de entrega; addendum
+ADR-S103). **Plan acordado con el usuario para lo que sigue**: v0.1.421 qué
+pasa al agregar al carrito (aviso / abrir el carrito / ir al carrito / ir
+directo al pago, elegible) + enlace que agrega un producto y abre el pago
+(`?comprar=`) + mejoras visuales de la vitrina; v0.1.422 diseño de la tienda
+(plantillas, colores, fuentes, encabezado, tarjetas, modo oscuro, CSS propio);
+v0.1.423 dominio propio SÓLO para la tienda, y sólo ahí se indexa en Google
+(páginas de producto, sitemap, canonical, datos estructurados). Antes
+**v0.1.419** (**vender en más lugares, la última de las ocho versiones de la tienda** —
 «Compartir» de la tienda en la misma ventana de formularios y agenda (enlace,
 QR e insertar con demostración en vivo); la tienda en un sitio como ventana
 grande, panel o pantalla completa con su barra y la X; botón «Comprar» de un
@@ -1946,6 +1959,31 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-12 · v0.1.420** — **La Descripción se guarda con «Guardar
+  cambios» y sirve como descripción del producto** (reporte del usuario con
+  captura: escribir en la Descripción no activaba «Guardar cambios» y no se
+  podía elegir en la tienda). La descripción SÍ se guardaba sola (v0.1.133),
+  pero en el modal y la página del registro todo lo demás se guarda con el
+  botón y éste no reaccionaba: ahora la descripción es un cambio más
+  (`useDescriptionDraft`: activa el botón, se guarda con él, «Cancelar» la
+  descarta, el estado dice «Sin guardar»); la ficha diseñada sigue
+  guardándose sola. **Tienda**: «La descripción del registro (con formato)»
+  como descripción del producto (`description_from: 'record'`, lo que eligen
+  las tiendas nuevas sin columna de descripción); el catálogo lleva sólo el
+  texto y la página pide el documento al abrir el producto
+  (`GET /public/s/:token/desc/:pid`, caché 30 s) pasado por `publicRichDoc`
+  (shared: sin menciones a personas ni equipos, adjuntos ni índice; imágenes
+  sólo las subidas, por la ruta de fotos de la tienda; un video queda como
+  enlace; enlaces y colores revisados). **Lo digital no pide envío**: una
+  tienda cuyos productos activos son todos digitales, servicios o
+  suscripciones se publica sin formas de entrega (el servidor y el editor lo
+  deducen de los tipos). Pedidos del mismo mensaje que van en las próximas:
+  qué pasa al agregar al carrito y el enlace que agrega y abre el pago
+  (v0.1.421), diseño de la tienda (v0.1.422) y dominio propio sólo para la
+  tienda con SEO (v0.1.423). Tests: `rich-public.test` (6),
+  `shops-description.spec` (4) — shared 935, front 917 — + E2E 19/19 en
+  escritorio y 19/19 en celular oscuro.
 
 - **2026-11-12 · v0.1.419** — **Vender en más lugares** (la última de las
   ocho versiones de la tienda: el plan quedó completo). **Compartir** de la

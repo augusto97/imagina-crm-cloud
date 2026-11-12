@@ -60,7 +60,7 @@ import { SendWhatsappButton } from '@/cloud/components/whatsapp/SendWhatsappButt
 import { SendSmsButton } from '@/cloud/components/sms/SendSmsButton';
 import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine';
 import { RecordBacklinks } from './RecordBacklinks';
-import { RecordDescription } from './description/RecordDescription';
+import { RecordDescription, useDescriptionDraft } from './description/RecordDescription';
 import { RecordFieldsForm } from './RecordFieldsForm';
 import { RecordSubtasks } from './RecordSubtasks';
 import { isCloseCancelled } from './dependencies/closeGuard';
@@ -183,7 +183,10 @@ export function RecordDetailDrawer({
     const goneInSource = recordGoneInSource(storeRules, record);
 
     const draft = useRecordDraft(record);
-    const { values, setValues, dirty } = draft;
+    const { values, setValues } = draft;
+    // v0.1.420 — La descripción se guarda con «Guardar cambios», como los campos.
+    const descDraft = useDescriptionDraft(listSlug ?? listId, record?.id ?? null);
+    const dirty = draft.dirty || descDraft.dirty;
     // Atrás del navegador (que cierra el modal: `?record=`), un enlace de la
     // app o cerrar la pestaña con cambios sin guardar → pregunta antes.
     useUnsavedChangesGuard(open && dirty);
@@ -248,7 +251,11 @@ export function RecordDetailDrawer({
         });
         // flushSync: la guardia de «cambios sin guardar» se apaga ANTES de que
         // el cierre mueva el historial (si no, «Atrás» preguntaba dos veces).
-        if (ok) flushSync(() => draft.reset());
+        if (ok)
+            flushSync(() => {
+                draft.reset();
+                descDraft.discard();
+            });
         return ok;
     };
     const requestClose = async (): Promise<void> => {
@@ -303,13 +310,18 @@ export function RecordDetailDrawer({
         // Sólo lo que la persona tocó y difiere del servidor (lo que cambió
         // otra persona mientras tanto NO se pisa).
         const patch = draft.patch();
-        if (Object.keys(patch).length === 0) return;
+        const hasFields = Object.keys(patch).length > 0;
+        if (!hasFields && !descDraft.dirty) return;
 
         try {
-            const saved = await update.mutateAsync({ id: record.id, values: patch });
-            flushSync(() => draft.markSaved(patch, saved ?? null));
+            // La descripción (v0.1.420) y los campos, a la vez.
+            const [saved] = await Promise.all([
+                hasFields ? update.mutateAsync({ id: record.id, values: patch }) : Promise.resolve(null),
+                descDraft.commit(),
+            ]);
+            if (hasFields) flushSync(() => draft.markSaved(patch, saved ?? null));
             // Asignarse un registro te suscribe a él (ADR-S40).
-            void qc.invalidateQueries({ queryKey: notificationKeys.follow(record.id) });
+            if (hasFields) void qc.invalidateQueries({ queryKey: notificationKeys.follow(record.id) });
             onOpenChange(false);
         } catch (err) {
             // A8 — canceló el cierre de algo bloqueado: el borrador queda como estaba.
@@ -603,6 +615,7 @@ export function RecordDetailDrawer({
                                                 recordId={record.id}
                                                 editable={canEditRecords}
                                                 className="imcrm-mb-5"
+                                                draft={descDraft}
                                             />
                                         </div>
                                     ) : (
@@ -751,9 +764,9 @@ export function RecordDetailDrawer({
                                     <Button variant="outline" onClick={() => void requestClose()}>
                                         {__('Cancelar')}
                                     </Button>
-                                    <Button onClick={() => void handleSave()} disabled={!dirty || update.isPending} className="imcrm-gap-2">
+                                    <Button onClick={() => void handleSave()} disabled={!dirty || update.isPending || descDraft.saving} className="imcrm-gap-2" data-testid="imcrm-record-save">
                                         <Save className="imcrm-h-4 imcrm-w-4" />
-                                        {update.isPending ? __('Guardando…') : (
+                                        {update.isPending || descDraft.saving ? __('Guardando…') : (
                                             <>
                                                 <span className="sm:imcrm-hidden">{__('Guardar')}</span>
                                                 <span className="imcrm-hidden sm:imcrm-inline">{__('Guardar cambios')}</span>

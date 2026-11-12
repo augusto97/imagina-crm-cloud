@@ -551,16 +551,38 @@ export function CatalogPanel({
                 const fields = options.fields.filter((f) => (types as readonly string[]).includes(f.type));
                 const value = config.catalog[role];
                 const missingPrice = role === 'price' && value === null;
+                // v0.1.420 — La descripción también puede ser el documento del registro.
+                const fromDoc = role === 'description' && config.description_from === 'record';
                 return (
-                    <Field key={role} label={__(SHOP_CATALOG_ROLE_LABELS[role])} hint={ROLE_HINT[role] ? __(ROLE_HINT[role]!) : undefined} htmlFor={`shop-role-${role}`}>
+                    <Field
+                        key={role}
+                        label={__(SHOP_CATALOG_ROLE_LABELS[role])}
+                        hint={
+                            fromDoc
+                                ? __('Se muestra con su formato: títulos, listas, tablas e imágenes. La editas en la «Descripción» de cada registro.')
+                                : ROLE_HINT[role]
+                                  ? __(ROLE_HINT[role]!)
+                                  : undefined
+                        }
+                        htmlFor={`shop-role-${role}`}
+                    >
                         <Select
                             id={`shop-role-${role}`}
-                            value={value === null ? '' : String(value)}
-                            onChange={(e) => set(role, e.target.value === '' ? null : Number(e.target.value))}
+                            value={fromDoc ? 'record' : value === null ? '' : String(value)}
+                            onChange={(e) => {
+                                if (role !== 'description') return set(role, e.target.value === '' ? null : Number(e.target.value));
+                                const v = e.target.value;
+                                patch((c) => ({
+                                    ...c,
+                                    description_from: v === 'record' ? 'record' : 'field',
+                                    catalog: { ...c.catalog, description: v === '' || v === 'record' ? null : Number(v) },
+                                }));
+                            }}
                             className={cn(missingPrice && 'imcrm-border-destructive/60')}
                             data-testid={`shop-role-${role}`}
                         >
                             <option value="">{role === 'name' ? __('El título del registro') : role === 'active' ? __('Se venden todos') : role === 'stock' ? __('Sin control de stock') : __('Ninguno')}</option>
+                            {role === 'description' && <option value="record">{__('La descripción del registro (con formato)')}</option>}
                             {fields.map((f) => {
                                 const other = taken.get(f.id);
                                 return (
@@ -571,7 +593,7 @@ export function CatalogPanel({
                                 );
                             })}
                         </Select>
-                        {fields.length === 0 && role !== 'name' && (
+                        {fields.length === 0 && role !== 'name' && role !== 'description' && (
                             <p className="imcrm-text-[11.5px] imcrm-text-muted-foreground">
                                 {sprintf(__('La lista no tiene un campo de este tipo. Créalo en Configuración → Campos.'))}
                             </p>
@@ -793,6 +815,17 @@ function connectionLabel(name: string, provider: string, test: boolean): string 
     return label;
 }
 
+/**
+ * v0.1.420 — ¿Hay algo que se entrega? Con tipos de producto y sólo digitales,
+ * servicios o suscripciones, la tienda no pide formas de entrega (lo mismo
+ * decide el servidor al publicar). Sin productos o sin tipos: sí.
+ */
+export function catalogNeedsDelivery(options: ShopOptions): boolean {
+    const k = options.kind_counts;
+    const total = k.physical + k.digital + k.service + k.subscription;
+    return total === 0 || k.physical > 0;
+}
+
 export function PaymentPanel({ config, options, patch }: { config: ShopConfig; options: ShopOptions; patch: Patch }): JSX.Element {
     const p = config.payments;
     const setP = <K extends keyof ShopConfig['payments']>(k: K, v: Partial<ShopConfig['payments'][K]>): void =>
@@ -923,7 +956,13 @@ export function PaymentPanel({ config, options, patch }: { config: ShopConfig; o
                     </Button>
                 }
             >
-                {config.delivery.length === 0 && <p className="imcrm-text-[12px] imcrm-text-destructive">{__('Agrega al menos una forma de entrega.')}</p>}
+                {!catalogNeedsDelivery(options) ? (
+                    <p className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-3 imcrm-py-2 imcrm-text-[12px] imcrm-text-muted-foreground" data-testid="shop-delivery-not-needed">
+                        {__('Tus productos son digitales, servicios o suscripciones: no se envían, así que no hace falta configurar la entrega. Si después agregas productos físicos, configura aquí cómo se entregan.')}
+                    </p>
+                ) : (
+                    config.delivery.length === 0 && <p className="imcrm-text-[12px] imcrm-text-destructive">{__('Agrega al menos una forma de entrega.')}</p>
+                )}
                 {config.delivery.map((d, i) => (
                     <DeliveryRow
                         key={d.id}

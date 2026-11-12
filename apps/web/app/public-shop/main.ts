@@ -20,6 +20,7 @@
  * `postMessage` y nada se envía: comprar muestra un aviso.
  */
 import type {
+    RichNode,
     PublicShopMeta,
     PublicShopMyOrders,
     PublicShopOrder,
@@ -1100,6 +1101,110 @@ function variantOptions(p: PublicShopProduct, sel: Array<string | null>, imageId
     );
 }
 
+// ─────────── v0.1.420 — Descripción con formato (el documento del registro) ───────────
+// Llega como un árbol ya saneado por el servidor y se arma nodo por nodo con
+// `createElement`/`textContent`: ningún texto del producto se interpreta como HTML.
+
+const descCache = new Map<number, RichNode | null | 'loading'>();
+
+function richMarks(text: string, marks: RichNode['marks']): Node {
+    let node: Node = document.createTextNode(text);
+    for (const m of marks ?? []) {
+        let wrap: HTMLElement | null = null;
+        if (m.type === 'bold') wrap = el('strong');
+        else if (m.type === 'italic') wrap = el('em');
+        else if (m.type === 'underline') wrap = el('u');
+        else if (m.type === 'strike') wrap = el('s');
+        else if (m.type === 'code') wrap = el('code');
+        else if (m.type === 'link' && typeof m.attrs?.href === 'string' && /^(https?:\/\/|mailto:|tel:)/i.test(m.attrs.href)) {
+            wrap = el('a', { href: m.attrs.href, target: '_blank', rel: 'noopener noreferrer nofollow' });
+        } else if ((m.type === 'textStyle' || m.type === 'highlight') && typeof m.attrs?.color === 'string' && /^#[0-9a-f]{3,6}$/i.test(m.attrs.color)) {
+            wrap = el(m.type === 'highlight' ? 'mark' : 'span');
+            if (m.type === 'highlight') wrap.style.backgroundColor = m.attrs.color;
+            else wrap.style.color = m.attrs.color;
+        }
+        if (wrap) {
+            wrap.append(node);
+            node = wrap;
+        }
+    }
+    return node;
+}
+
+function richNode(n: RichNode): Node | null {
+    const kids = (): Node[] => (n.content ?? []).map(richNode).filter((x): x is Node => x !== null);
+    switch (n.type) {
+        case 'text':
+            return richMarks(n.text ?? '', n.marks);
+        case 'hardBreak':
+            return el('br');
+        case 'paragraph':
+            return el('p', {}, kids());
+        case 'heading': {
+            const level = Number(n.attrs?.level);
+            return el(level === 1 ? 'h3' : level === 2 ? 'h4' : 'h5', {}, kids());
+        }
+        case 'bulletList':
+            return el('ul', {}, kids());
+        case 'orderedList': {
+            const start = Number(n.attrs?.start);
+            return el('ol', Number.isInteger(start) && start > 1 ? { start } : {}, kids());
+        }
+        case 'taskList':
+            return el('ul', { cls: 's-tasks' }, kids());
+        case 'listItem':
+            return el('li', {}, kids());
+        case 'taskItem':
+            return el('li', { cls: n.attrs?.checked === true ? 's-task s-done' : 's-task' }, [el('span', { cls: 's-check', 'aria-hidden': 'true', text: n.attrs?.checked === true ? '✓' : '' }), el('div', {}, kids())]);
+        case 'blockquote':
+            return el('blockquote', {}, kids());
+        case 'codeBlock':
+            return el('pre', {}, [el('code', {}, kids())]);
+        case 'horizontalRule':
+            return el('hr');
+        case 'table':
+            return el('div', { cls: 's-rich-table' }, [el('table', {}, [el('tbody', {}, kids())])]);
+        case 'tableRow':
+            return el('tr', {}, kids());
+        case 'tableHeader':
+        case 'tableCell': {
+            const span = (k: string): number | null => (Number.isInteger(Number(n.attrs?.[k])) && Number(n.attrs?.[k]) > 1 ? Number(n.attrs?.[k]) : null);
+            return el(n.type === 'tableHeader' ? 'th' : 'td', { colspan: span('colspan'), rowspan: span('rowspan') }, kids());
+        }
+        case 'columnsBlock':
+            return el('div', { cls: 's-rich-cols' }, kids());
+        case 'column':
+            return el('div', {}, kids());
+        case 'image': {
+            const src = typeof n.attrs?.src === 'string' ? n.attrs.src : '';
+            if (!src.startsWith('img/') && !(BOOT.preview && /^https:\/\//.test(src))) return null;
+            return el('img', { src: imgUrl(src, 1200), alt: typeof n.attrs?.alt === 'string' ? n.attrs.alt : '', loading: 'lazy', decoding: 'async' });
+        }
+        default:
+            return null;
+    }
+}
+
+/** La descripción del producto: texto plano o, con formato, el documento (que se pide la primera vez). */
+function descriptionBlock(p: PublicShopProduct): HTMLElement | null {
+    if (!p.rich_description) return p.description ? el('p', { cls: 's-desc', text: p.description }) : null;
+    const doc = p.description_doc !== undefined ? p.description_doc : descCache.get(p.id);
+    if (doc === undefined) {
+        descCache.set(p.id, 'loading');
+        void fetch(`${PAGE}/desc/${p.id}`, { credentials: 'omit', headers: { Accept: 'application/json' } })
+            .then((r) => (r.ok ? (r.json() as Promise<{ doc: RichNode | null }>) : { doc: null }))
+            .catch(() => ({ doc: null }))
+            .then((b) => {
+                descCache.set(p.id, b.doc ?? null);
+                // Sigue abierta la ficha de ESTE producto: se redibuja (sin animación).
+                if (overlay?.kind === 'product' && overlay.id === p.id) renderOverlay();
+            });
+    }
+    if (doc === undefined || doc === 'loading') return el('div', { cls: 's-rich s-rich-wait', 'aria-busy': 'true' }, [el('span'), el('span'), el('span')]);
+    if (doc === null) return p.description ? el('p', { cls: 's-desc', text: p.description }) : null;
+    return el('div', { cls: 's-rich', 'data-testid': 'shop-rich-desc' }, (doc.content ?? []).map(richNode).filter((x): x is Node => x !== null));
+}
+
 /** v0.1.417 — Lo que dice la ficha de una suscripción. */
 function subscriptionNote(p: PublicShopProduct): string {
     const plan = p.subscription;
@@ -1185,12 +1290,17 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
                 ? el('p', { cls: 's-kind-note', 'data-testid': 'shop-kind-note' }, [icon('repeat'), subscriptionNote(p)])
                 : null,
         n > 0 && !(variant && cart.has(variant.id)) ? el('p', { cls: 's-incart', style: 'margin:8px 0 0', text: n === 1 ? 'Tienes 1 de este producto en el carrito.' : `Tienes ${n} de este producto en el carrito.` }) : null,
-        p.description ? el('p', { cls: 's-desc', text: p.description }) : null,
+        p.rich_description ? null : descriptionBlock(p),
         p.categories.length > 0 ? el('div', { cls: 's-d-cats' }, p.categories.map((c) => el('span', { text: c }))) : null,
     ]);
     const qty = isSubscription(p) ? 0 : variable ? n : (cart.get(p.id) ?? 0);
     const foot = qty > 0 ? [actionButton('Ver carrito', () => openOverlay({ kind: 'cart' }), 's-btn s-ghost')] : null;
-    return sheet('modal', p.title, [el('div', { cls: 's-detail' }, [gallery, info])], foot, 'shop-product');
+    // v0.1.420 — La descripción con formato va abajo, a lo ancho (títulos, tablas, imágenes).
+    const rich = p.rich_description ? descriptionBlock(p) : null;
+    const descSection = rich ? el('section', { cls: 's-d-desc' }, [el('h4', { cls: 's-d-desc-t', text: 'Descripción' }), rich]) : null;
+    const body: Node[] = [el('div', { cls: 's-detail' }, [gallery, info])];
+    if (descSection) body.push(descSection);
+    return sheet('modal', p.title, body, foot, 'shop-product');
 }
 
 function actionButton(label: string, onClick: () => void, cls = 's-btn', testid?: string): HTMLButtonElement {

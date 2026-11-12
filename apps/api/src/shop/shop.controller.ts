@@ -452,6 +452,30 @@ export class PublicShopPageController {
             .send(img.bytes);
     }
 
+    /**
+     * v0.1.420 — La descripción con formato de un producto (el documento del
+     * registro): la ficha la pide al abrirse. Sólo productos de esa tienda.
+     */
+    @Get(':token/desc/:pid')
+    async description(@Param('token') token: string, @Param('pid') pid: string, @Res() reply: FastifyReply): Promise<void> {
+        let doc = null;
+        if (/^[1-9]\d{0,15}$/.test(pid)) {
+            try {
+                doc = await this.publicSvc.productDescription(token, Number(pid));
+            } catch (err) {
+                if (!(err instanceof PublicBusyError)) throw err;
+                reply.status(503).header('Cache-Control', 'no-store').send({ message: 'Hay muchas visitas en este momento.' });
+                return;
+            }
+        }
+        reply.header('X-Robots-Tag', 'noindex').header('X-Content-Type-Options', 'nosniff');
+        if (!doc) {
+            reply.status(404).header('Cache-Control', 'public, max-age=30').send({ doc: null });
+            return;
+        }
+        reply.header('Cache-Control', 'public, max-age=30').send({ doc });
+    }
+
     /** «Enviar el pedido por WhatsApp»: el número nunca viaja a la página. */
     @Get(':token/wa/:order')
     async whatsapp(@Param('token') token: string, @Param('order') order: string, @Res() reply: FastifyReply): Promise<void> {
