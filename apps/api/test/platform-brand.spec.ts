@@ -110,17 +110,17 @@ describe('v0.1.327 — marca de la plataforma', () => {
         const store = new MemStore();
         const svc = new PlatformBrandService(store, new MemFiles());
         await svc.update({ app_name: 'Acme Nube' });
-        const domains = { resolveHost: async () => ({ tenant: null }) } as unknown as DomainsService;
+        const domains = { resolveHost: async () => ({ tenant: null }), resolveShopHost: async () => null } as unknown as DomainsService;
         const ctrl = new PublicDomainsController(domains, svc);
         const boot = await ctrl.boot({ headers: { host: 'app.acme.test' } } as never);
-        expect(boot).toMatchObject({ tenant: null, platform: { app_name: 'Acme Nube', logo_url: null, icons: null } });
+        expect(boot).toMatchObject({ tenant: null, shop: null, platform: { app_name: 'Acme Nube', logo_url: null, icons: null } });
     });
 
     it('v0.1.331: el sitio del producto viaja en el boot; sólo https', async () => {
         const store = new MemStore();
         const svc = new PlatformBrandService(store, new MemFiles());
         await svc.update({ app_name: 'Acme Nube', marketing_url: 'https://imagina.cloud/base' });
-        const domains = { resolveHost: async () => ({ tenant: null }) } as unknown as DomainsService;
+        const domains = { resolveHost: async () => ({ tenant: null }), resolveShopHost: async () => null } as unknown as DomainsService;
         const boot = await new PublicDomainsController(domains, svc).boot({ headers: { host: 'app.acme.test' } } as never);
         expect(boot.platform.marketing_url).toBe('https://imagina.cloud/base');
         await expect(svc.update({ app_name: 'X', marketing_url: 'http://imagina.cloud/base' })).rejects.toThrow();
