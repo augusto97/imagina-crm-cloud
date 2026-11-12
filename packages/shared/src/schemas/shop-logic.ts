@@ -23,6 +23,26 @@ export const SHOP_MAX_LINES = 50;
 /** Unidades de un mismo producto en un pedido. */
 export const SHOP_MAX_QTY = 999;
 export const SHOP_MAX_DELIVERY_METHODS = 10;
+/** v0.1.415 — Zonas de envío por forma de entrega (barrios, ciudades, regiones). */
+export const SHOP_MAX_DELIVERY_ZONES = 40;
+/** v0.1.415 — Cupones por tienda. */
+export const SHOP_MAX_COUPONS = 200;
+/** Un código: letras, números, guion y guion bajo (se guarda en mayúsculas). */
+export const SHOP_COUPON_CODE_RE = /^[A-Z0-9][A-Z0-9_-]{1,39}$/;
+export const SHOP_COUPON_KINDS = ['percent', 'fixed', 'free_shipping'] as const;
+export type ShopCouponKind = (typeof SHOP_COUPON_KINDS)[number];
+export const SHOP_COUPON_KIND_LABELS: Record<ShopCouponKind, string> = {
+    percent: 'Porcentaje de descuento',
+    fixed: 'Monto fijo de descuento',
+    free_shipping: 'Envío gratis',
+};
+
+/** «  verano-20 » → «VERANO-20»; lo que no sirve como código → ''. */
+export function normalizeCouponCode(raw: unknown): string {
+    if (typeof raw !== 'string') return '';
+    const code = raw.trim().toUpperCase().replace(/\s+/g, '');
+    return SHOP_COUPON_CODE_RE.test(code) ? code : '';
+}
 /** Fotos por producto que se muestran. */
 export const SHOP_MAX_IMAGES = 8;
 /** v0.1.414 — Atributos que distinguen las variantes (talla, color, material). */
@@ -488,12 +508,107 @@ export interface ShopCartLine {
 export interface ShopCartResult {
     lines: ShopCartLine[];
     subtotal: number;
+    /** v0.1.415 — Lo que descuenta el cupón (0 sin cupón). */
+    discount: number;
     shipping: number;
     total: number;
     /** Hay algo que impide comprar (producto que no existe, sin stock, sin precio). */
     blocked: boolean;
     /** La compra mínima no se alcanza (en la moneda de la tienda). */
     below_minimum: number | null;
+    /** v0.1.415 — El cupón aplicado (null si no hay o no aplica). */
+    coupon: { code: string; label: string; kind: ShopCouponKind } | null;
+    /** v0.1.415 — Por qué el cupón escrito no aplica a este carrito. */
+    coupon_problem: ShopCouponProblem | null;
+    /** v0.1.415 — El envío salió gratis (por el cupón o por superar el monto). */
+    free_shipping: boolean;
+    /** v0.1.415 — Cuánto falta para el envío gratis (null si no hay o ya se alcanzó). */
+    free_shipping_missing: number | null;
+}
+
+/**
+ * v0.1.415 — Un cupón ya validado por el servidor (fechas, usos, activo).
+ * `eligible` = los productos (o variantes) que descuenta; null = todos.
+ */
+export interface ShopCouponRule {
+    code: string;
+    label: string;
+    kind: ShopCouponKind;
+    value: number;
+    min_subtotal: number | null;
+    eligible: number[] | null;
+}
+
+export type ShopCouponProblem = 'min_subtotal' | 'no_eligible';
+
+/** v0.1.415 — La cuenta del carrito que devuelve el servidor, con el cupón validado. */
+export interface PublicShopQuote extends ShopCartResult {
+    /** El cupón escrito no sirve (no existe, venció, se agotó…). */
+    coupon_error: string | null;
+    /** El cupón que sirve: la página lo usa para recalcular en vivo con `computeShopCart`. */
+    coupon_rule: ShopCouponRule | null;
+}
+
+/** Sin tildes ni mayúsculas, para comparar categorías. */
+function foldText(v: string): string {
+    return v
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+}
+
+/**
+ * v0.1.415 — Qué se puede comprar con descuento: los productos elegidos (un
+ * producto con variantes cubre todas) o los de las categorías elegidas. Sin
+ * productos ni categorías, todo (null).
+ */
+export function shopCouponEligible(
+    scope: { product_ids?: readonly number[]; categories?: readonly string[] },
+    items: Iterable<{ id: number; product_id: number; categories: readonly string[] }>,
+): number[] | null {
+    const ids = new Set(scope.product_ids ?? []);
+    const cats = new Set((scope.categories ?? []).map(foldText).filter(Boolean));
+    if (ids.size === 0 && cats.size === 0) return null;
+    const out: number[] = [];
+    for (const it of items) {
+        if (ids.has(it.product_id) || ids.has(it.id) || it.categories.some((c) => cats.has(foldText(c)))) out.push(it.id);
+    }
+    return out;
+}
+
+/** El texto de un cupón que no aplica, para mostrarlo junto al código. */
+export function shopCouponProblemText(problem: ShopCouponProblem, rule: Pick<ShopCouponRule, 'min_subtotal'>, money: (n: number) => string): string {
+    if (problem === 'min_subtotal') return `Este cupón es para compras desde ${money(rule.min_subtotal ?? 0)}.`;
+    return 'Este cupón no aplica a los productos de tu carrito.';
+}
+
+/** «15 % de descuento», «$ 10.000 de descuento», «Envío gratis». */
+export function shopCouponLabel(rule: Pick<ShopCouponRule, 'kind' | 'value'>, money: (n: number) => string): string {
+    if (rule.kind === 'percent') return `${rule.value} % de descuento`;
+    if (rule.kind === 'fixed') return `${money(rule.value)} de descuento`;
+    return 'Envío gratis';
+}
+
+/** Una forma de entrega con lo que cuesta (con sus zonas). */
+export interface ShopShippingSource {
+    price: number;
+    free_over: number | null;
+    zones?: ReadonlyArray<{ id: string; price: number; free_over: number | null }>;
+}
+
+/**
+ * v0.1.415 — Cuánto cuesta el envío y desde cuánto es gratis, según la zona.
+ * Con zonas, la zona elegida manda; sin zona elegida se usa el precio de la
+ * forma de entrega (la página pide elegirla antes de comprar).
+ */
+export function shopShippingFor(source: ShopShippingSource | null | undefined, zoneId: string | null | undefined): { price: number; free_over: number | null; zone_required: boolean } {
+    if (!source) return { price: 0, free_over: null, zone_required: false };
+    const zones = source.zones ?? [];
+    if (zones.length === 0) return { price: source.price, free_over: source.free_over, zone_required: false };
+    const z = zoneId ? zones.find((x) => x.id === zoneId) : undefined;
+    if (!z) return { price: source.price, free_over: source.free_over, zone_required: true };
+    return { price: z.price, free_over: z.free_over ?? source.free_over, zone_required: true };
 }
 
 /**
@@ -504,7 +619,15 @@ export interface ShopCartResult {
 export function computeShopCart(
     input: readonly ShopCartLineInput[],
     products: ReadonlyMap<number, ShopCartProduct>,
-    opts: { shipping: number; minOrder: number | null },
+    opts: {
+        shipping: number;
+        minOrder: number | null;
+        /** v0.1.415 — Envío gratis cuando los productos (con el descuento) llegan a este monto. */
+        freeOver?: number | null;
+        coupon?: ShopCouponRule | null;
+        /** Decimales de la moneda: el descuento se redondea a la unidad que se cobra. */
+        decimals?: number;
+    },
 ): ShopCartResult {
     const merged = new Map<number, number>();
     for (const l of input) {
@@ -547,16 +670,48 @@ export function computeShopCart(
         if (!problem) subtotalC += lineC;
         lines.push({ product_id: id, title: p.title, qty, unit_price: p.price, subtotal: fromCents(lineC), problem, available });
     }
-    const shippingC = lines.length > 0 ? toCents(Math.max(0, opts.shipping)) : 0;
+    // v0.1.415 — El cupón: sobre los productos que cubre, después de sumar.
+    const rule = opts.coupon ?? null;
+    let discountC = 0;
+    let couponFreeShipping = false;
+    let couponProblem: ShopCouponProblem | null = null;
+    if (rule && lines.length > 0) {
+        const eligible = rule.eligible ? new Set(rule.eligible) : null;
+        let eligibleC = 0;
+        for (const l of lines) {
+            if (l.problem) continue;
+            if (!eligible || eligible.has(l.product_id)) eligibleC += toCents(l.subtotal);
+        }
+        if (rule.min_subtotal !== null && rule.min_subtotal > 0 && subtotalC < toCents(rule.min_subtotal)) couponProblem = 'min_subtotal';
+        else if (rule.kind !== 'free_shipping' && eligibleC <= 0) couponProblem = 'no_eligible';
+        else if (rule.kind === 'free_shipping') couponFreeShipping = true;
+        else {
+            const unit = 10 ** (2 - Math.min(2, Math.max(0, opts.decimals ?? 2)));
+            const raw = rule.kind === 'percent' ? (eligibleC * Math.min(100, Math.max(0, rule.value))) / 100 : toCents(Math.max(0, rule.value));
+            discountC = Math.min(eligibleC, Math.round(raw / unit) * unit);
+        }
+    }
+    const merchC = subtotalC - discountC;
+    const freeOver = opts.freeOver !== null && opts.freeOver !== undefined && opts.freeOver > 0 ? toCents(opts.freeOver) : null;
+    const baseShippingC = lines.length > 0 ? toCents(Math.max(0, opts.shipping)) : 0;
+    const freeByAmount = freeOver !== null && baseShippingC > 0 && merchC >= freeOver;
+    const freeShipping = baseShippingC > 0 && (couponFreeShipping || freeByAmount);
+    const shippingC = freeShipping ? 0 : baseShippingC;
+    const missing = freeOver !== null && baseShippingC > 0 && !freeShipping && lines.length > 0 ? fromCents(freeOver - merchC) : null;
     const min = opts.minOrder !== null && opts.minOrder > 0 ? opts.minOrder : null;
     const belowMinimum = min !== null && subtotalC < toCents(min) ? fromCents(toCents(min) - subtotalC) : null;
     return {
         lines,
         subtotal: fromCents(subtotalC),
+        discount: fromCents(discountC),
         shipping: fromCents(shippingC),
-        total: fromCents(subtotalC + shippingC),
+        total: fromCents(merchC + shippingC),
         blocked: blocked || lines.length === 0,
         below_minimum: belowMinimum,
+        coupon: rule && couponProblem === null && lines.length > 0 ? { code: rule.code, label: rule.label, kind: rule.kind } : null,
+        coupon_problem: rule && lines.length > 0 ? couponProblem : null,
+        free_shipping: freeShipping,
+        free_shipping_missing: missing !== null && missing > 0 ? missing : null,
     };
 }
 
@@ -596,6 +751,9 @@ export function shopWhatsappMessage(
         lines: readonly Pick<ShopOrderLineSnapshot, 'title' | 'qty' | 'subtotal'>[];
         shipping: number;
         total: number;
+        /** v0.1.415 */
+        discount?: number;
+        coupon_code?: string;
         delivery: string;
         customer: Pick<ShopCustomer, 'name' | 'address' | 'city' | 'notes'>;
         url: string | null;
@@ -608,6 +766,7 @@ export function shopWhatsappMessage(
     out.push('');
     for (const l of order.lines.slice(0, SHOP_MAX_LINES)) out.push(`• ${l.qty} × ${l.title} — ${money(l.subtotal)}`);
     out.push('');
+    if ((order.discount ?? 0) > 0) out.push(`Descuento${order.coupon_code ? ` (${order.coupon_code})` : ''}: -${money(order.discount ?? 0)}`);
     out.push(`Entrega: ${order.delivery}${order.shipping > 0 ? ` (${money(order.shipping)})` : ''}`);
     out.push(`Total: ${money(order.total)}`);
     out.push('');
@@ -634,6 +793,20 @@ export interface PublicShopDelivery {
     description: string;
     price: number;
     needs_address: boolean;
+    /** v0.1.415 — «2 a 4 días hábiles». */
+    eta: string;
+    /** v0.1.415 — Envío gratis desde este monto en productos (null = nunca). */
+    free_over: number | null;
+    /** v0.1.415 — Zonas con su precio: con zonas, la persona elige a dónde. */
+    zones: PublicShopZone[];
+}
+
+export interface PublicShopZone {
+    id: string;
+    name: string;
+    price: number;
+    free_over: number | null;
+    eta: string;
 }
 
 export interface PublicShopPayment {
@@ -665,6 +838,8 @@ export interface PublicShopMeta {
     policies: ShopPolicies;
     captcha?: PublicFormCaptcha | null;
     data_consent?: PublicDataConsent | null;
+    /** v0.1.415 — La tienda tiene cupones activos: se ofrece «¿Tienes un cupón?». */
+    coupons?: boolean;
     /** null = recibe pedidos; si no, el motivo de cerrada. */
     closed: string | null;
     /** Hay más productos que los que muestra la página. */
@@ -684,6 +859,10 @@ export interface PublicShopOrder {
     payment_instructions: string;
     lines: { title: string; qty: number; unit_price: number; subtotal: number }[];
     subtotal: number;
+    /** v0.1.415 — Descuento del cupón (0 sin cupón). */
+    discount: number;
+    /** v0.1.415 — El código del cupón usado ('' sin cupón). */
+    coupon_code: string;
     shipping: number;
     total: number;
     currency: string;

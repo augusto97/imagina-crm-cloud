@@ -5,7 +5,7 @@ import { SHOP_PAYMENT_METHOD_LABELS, type ShopConfig, type ShopProblem, type Sho
  * está cada una en palabras y la sección donde se arregla cada problema.
  */
 
-export const SHOP_EDITOR_SECTIONS: readonly ShopSection[] = ['catalog', 'design', 'payment', 'checkout', 'seller', 'orders', 'publish'];
+export const SHOP_EDITOR_SECTIONS: readonly ShopSection[] = ['catalog', 'design', 'payment', 'coupons', 'checkout', 'seller', 'orders', 'publish'];
 
 export const SHOP_SECTION_INFO: Record<ShopSection, { label: string; group: string; title: string; hint: string }> = {
     catalog: {
@@ -25,6 +25,12 @@ export const SHOP_SECTION_INFO: Record<ShopSection, { label: string; group: stri
         group: 'Al comprar',
         title: 'Pago y entrega',
         hint: 'Cómo te pagan (en línea, WhatsApp, transferencia o contra entrega) y cómo reciben el pedido.',
+    },
+    coupons: {
+        label: 'Cupones',
+        group: 'Al comprar',
+        title: 'Cupones de descuento',
+        hint: 'Códigos que tus clientes escriben al comprar: un porcentaje, un monto fijo o el envío gratis.',
     },
     checkout: {
         label: 'Datos y avisos',
@@ -53,7 +59,11 @@ export const SHOP_SECTION_INFO: Record<ShopSection, { label: string; group: stri
 };
 
 /** Cómo está cada sección, en una línea (menú del editor). */
-export function shopSectionSummary(s: ShopSection, config: ShopConfig, ctx: { enabled: boolean; productsCount: number; ordersListName: string | null }): string {
+export function shopSectionSummary(
+    s: ShopSection,
+    config: ShopConfig,
+    ctx: { enabled: boolean; productsCount: number; ordersListName: string | null; couponsActive?: number | null },
+): string {
     switch (s) {
         case 'catalog': {
             const n = ctx.productsCount === 1 ? '1 producto' : `${ctx.productsCount} productos`;
@@ -68,7 +78,12 @@ export function shopSectionSummary(s: ShopSection, config: ShopConfig, ctx: { en
                 ...(['whatsapp', 'transfer', 'cod'] as const).filter((m) => p[m].enabled).map((m) => SHOP_PAYMENT_METHOD_LABELS[m]),
             ];
             const deliveries = config.delivery.filter((d) => d.active).length;
-            return `${on.length > 0 ? on.join(', ') : 'Sin forma de pago'} · ${deliveries === 1 ? '1 entrega' : `${deliveries} entregas`}`;
+            const zones = config.delivery.filter((d) => d.active).reduce((n, d) => n + d.zones.filter((z) => z.active).length, 0);
+            return `${on.length > 0 ? on.join(', ') : 'Sin forma de pago'} · ${deliveries === 1 ? '1 entrega' : `${deliveries} entregas`}${zones > 0 ? ` · ${zones === 1 ? '1 zona' : `${zones} zonas`}` : ''}`;
+        }
+        case 'coupons': {
+            const n = ctx.couponsActive ?? 0;
+            return n === 0 ? 'Sin cupones' : n === 1 ? '1 cupón activo' : `${n} cupones activos`;
         }
         case 'checkout':
             return config.checkout.min_order ? 'Con compra mínima' : 'Sin compra mínima';

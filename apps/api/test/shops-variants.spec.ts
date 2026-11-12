@@ -243,7 +243,7 @@ describe('v0.1.414 — tienda: productos con variantes (Postgres + Redis reales)
         expect(cam.variants).toBeUndefined();
         expect(cam.price).toBe(50000);
         expect(info!.products.some((p) => p.id === product.m_rojo)).toBe(false);
-        const q = await publicSvc.quote(await tokenOf(shopId), [{ product_id: product.m_rojo!, qty: 1 }], null);
+        const q = await publicSvc.quote(await tokenOf(shopId), [{ product_id: product.m_rojo!, qty: 1 }], { deliveryId: null });
         expect(q!.lines[0]!.problem).toBe('unavailable');
     });
 
@@ -278,7 +278,7 @@ describe('v0.1.414 — tienda: productos con variantes (Postgres + Redis reales)
                 { product_id: product.m_rojo!, qty: 1 },
                 { product_id: product.l_rojo!, qty: 1 },
             ],
-            null,
+            { deliveryId: null },
         );
         expect(q!.lines.map((l) => [l.title, l.problem])).toEqual([
             ['', 'unavailable'],

@@ -19,15 +19,19 @@
  * En el editor (vista previa) el catálogo y la configuración llegan por
  * `postMessage` y nada se envía: comprar muestra un aviso.
  */
-import type { PublicShopMeta, PublicShopOrder, PublicShopProduct, PublicShopVariant, ShopCartResult, ShopPaymentMethod, ShopPurchasable } from '@imagina-base/shared';
+import type { PublicShopMeta, PublicShopOrder, PublicShopProduct, PublicShopQuote, PublicShopVariant, ShopCartResult, ShopCouponRule, ShopPaymentMethod, ShopPurchasable } from '@imagina-base/shared';
 import {
     SHOP_MAX_QTY,
     computeShopCart,
     formatShopMoney,
+    normalizeCouponCode,
     pickShopVariant,
+    shopCouponProblemText,
+    shopCurrencyDecimals,
     shopLineProblemText,
     shopOptionValueState,
     shopPurchasables,
+    shopShippingFor,
     shopVariantPriceRange,
 } from '@imagina-base/shared/src/schemas/shop-logic';
 
@@ -53,6 +57,8 @@ const API = `/api/v1/public/shops/${encodeURIComponent(BOOT.token)}`;
 const PAGE = `/api/v1/public/s/${encodeURIComponent(BOOT.token)}`;
 const CART_KEY = `imb-shop-cart:${BOOT.token}`;
 const CUSTOMER_KEY = `imb-shop-customer:${BOOT.token}`;
+/** v0.1.415 — El cupón de la sesión (escrito o llegado por `?cupon=`). */
+const COUPON_KEY = `imb-shop-coupon:${BOOT.token}`;
 
 let meta: PublicShopMeta | null = BOOT.meta;
 let products: PublicShopProduct[] = BOOT.products ?? [];
@@ -84,6 +90,8 @@ const ICONS: Record<string, string> = {
     image: 'M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM8.5 10a1.5 1.5 0 1 0 0-.01M20 15l-4.5-4.5L6 20',
     check: 'M5 12.5l4.5 4.5L19 7.5',
     wa: 'M4 20l1.3-4A8 8 0 1 1 8.5 19zM9 9.5c0 3 2.5 5.5 5.5 5.5l1.5-1.5-2-1-1 1a4 4 0 0 1-2-2l1-1-1-2z',
+    tag: 'M3.5 12.2V5a1.5 1.5 0 0 1 1.5-1.5h7.2l8.3 8.3-8.7 8.7zM8 8a1 1 0 1 0 0-.01',
+    truck: 'M3 7h11v9H3zM14 10h4l3 3v3h-7M7 18.5a1.5 1.5 0 1 0 0-.01M17.5 18.5a1.5 1.5 0 1 0 0-.01',
 };
 
 function icon(name: keyof typeof ICONS): SVGSVGElement {
@@ -237,13 +245,41 @@ function hasVariants(p: PublicShopProduct): boolean {
     return !!p.variants && p.variants.length > 0;
 }
 
-function estimate(deliveryId: string | null): ShopCartResult {
-    const d = meta?.delivery.find((x) => x.id === deliveryId);
+/** v0.1.415 — Envío de la forma de entrega elegida (y su zona). */
+function shipFor(deliveryId: string | null, zoneId: string | null): ReturnType<typeof shopShippingFor> {
+    return shopShippingFor(meta?.delivery.find((x) => x.id === deliveryId) ?? null, zoneId);
+}
+
+/** La misma cuenta que hará el servidor: envío por zona, envío gratis y el cupón validado. */
+function estimate(deliveryId: string | null, zoneId: string | null = null, coupon: ShopCouponRule | null = null): ShopCartResult {
+    const ship = deliveryId ? shipFor(deliveryId, zoneId) : { price: 0, free_over: null };
     return computeShopCart(
         [...cart].map(([product_id, qty]) => ({ product_id, qty })),
         buyable,
-        { shipping: d?.price ?? 0, minOrder: meta?.checkout.min_order ?? null },
+        {
+            shipping: ship.price,
+            freeOver: ship.free_over,
+            minOrder: meta?.checkout.min_order ?? null,
+            coupon,
+            decimals: shopCurrencyDecimals(meta?.currency ?? 'COP'),
+        },
     );
+}
+
+function sessionGet(key: string): string | null {
+    try {
+        return window.sessionStorage.getItem(key);
+    } catch {
+        return null;
+    }
+}
+function sessionSet(key: string, value: string | null): void {
+    try {
+        if (value === null) window.sessionStorage.removeItem(key);
+        else window.sessionStorage.setItem(key, value);
+    } catch {
+        // sin almacenamiento: el cupón vale mientras la página esté abierta
+    }
 }
 
 // ───────────────────────────── Estado de la página ─────────────────────────────
@@ -754,6 +790,8 @@ function cartSheet(): HTMLElement {
     foot.push(sum);
     if (est.below_minimum !== null) foot.push(el('div', { cls: 's-warn', text: `La compra mínima es de ${money(meta!.checkout.min_order ?? 0)}: te faltan ${money(est.below_minimum)}.` }));
     else if (est.blocked) foot.push(el('div', { cls: 's-warn', text: 'Revisa los productos marcados antes de seguir.' }));
+    const pendingCoupon = meta!.coupons ? sessionGet(COUPON_KEY) : null;
+    if (pendingCoupon) foot.push(el('div', { cls: 's-free-hint', 'data-testid': 'shop-cart-coupon' }, [icon('tag'), el('span', { text: `Tu cupón ${pendingCoupon} se aplica al finalizar la compra.` })]));
     foot.push(el('p', { cls: 's-line-p', style: 'margin:0 0 10px', text: 'El envío se calcula en el siguiente paso.' }));
     const go = actionButton(meta!.texts.checkout || 'Finalizar compra', () => {
         closeOverlay();
@@ -798,15 +836,47 @@ function policiesSheet(focus: 'terms' | 'returns' | 'seller'): HTMLElement {
 
 interface CheckoutState {
     deliveryId: string | null;
+    /** v0.1.415 — La zona de envío elegida (si la forma de entrega tiene zonas). */
+    zoneId: string | null;
     payment: ShopPaymentMethod | null;
     stamp: string | null;
     stampAt: number;
     sending: boolean;
     serverCart: ShopCartResult | null;
+    /** Con qué entrega, zona y cupón se pidió `serverCart`. */
+    serverKey: string;
+    /** v0.1.415 — El cupón que el servidor aceptó (se recalcula en vivo con él). */
+    couponRule: ShopCouponRule | null;
+    couponError: string | null;
+    couponBusy: boolean;
 }
 
-const co: CheckoutState = { deliveryId: null, payment: null, stamp: null, stampAt: 0, sending: false, serverCart: null };
-const inputs: Record<string, HTMLInputElement | HTMLTextAreaElement> = {};
+const co: CheckoutState = {
+    deliveryId: null,
+    zoneId: null,
+    payment: null,
+    stamp: null,
+    stampAt: 0,
+    sending: false,
+    serverCart: null,
+    serverKey: '',
+    couponRule: null,
+    couponError: null,
+    couponBusy: false,
+};
+let couponBox: HTMLElement | null = null;
+let zoneBox: HTMLElement | null = null;
+
+function quoteKey(): string {
+    return `${co.deliveryId ?? ''}|${co.zoneId ?? ''}|${co.couponRule?.code ?? ''}`;
+}
+
+/** La cuenta que se muestra: la del servidor si es de este carrito, si no la estimación. */
+function current(): ShopCartResult {
+    if (co.serverCart && co.serverKey === quoteKey() && sameCart(co.serverCart)) return co.serverCart;
+    return estimate(co.deliveryId, co.zoneId, co.couponRule);
+}
+const inputs: Record<string, HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement> = {};
 const errs: Record<string, HTMLElement> = {};
 let summaryEl: HTMLElement | null = null;
 let alertEl: HTMLElement | null = null;
@@ -882,23 +952,35 @@ function checkoutView(): HTMLElement[] {
         const radio = el('input', { type: 'radio', name: 'delivery', value: d.id, checked: d.id === co.deliveryId });
         radio.addEventListener('change', () => {
             co.deliveryId = d.id;
+            if (!d.zones.some((z) => z.id === co.zoneId)) co.zoneId = null;
             if (addressBox) addressBox.hidden = !needsAddress();
+            paintZones();
             paintSummary();
             scheduleQuote();
         });
+        const prices = d.zones.length > 0 ? d.zones.map((z) => z.price) : [d.price];
+        const low = Math.min(...prices);
+        const priceText = d.zones.length > 0 ? (low > 0 ? `Desde ${money(low)}` : 'Según la zona') : d.price > 0 ? money(d.price) : 'Gratis';
+        const extra = [d.eta, d.free_over && d.free_over > 0 && d.zones.length === 0 ? `Gratis desde ${money(d.free_over)}` : ''].filter(Boolean).join(' · ');
         deliveryOpts.append(
             el('label', { cls: 's-opt', 'data-testid': 'shop-delivery' }, [
                 radio,
-                el('span', { cls: 's-opt-t' }, [el('span', { cls: 's-opt-n', text: d.name }), d.description ? el('span', { cls: 's-opt-d', style: 'display:block', text: d.description }) : null]),
-                el('span', { cls: 's-opt-p', text: d.price > 0 ? money(d.price) : 'Gratis' }),
+                el('span', { cls: 's-opt-t' }, [
+                    el('span', { cls: 's-opt-n', text: d.name }),
+                    d.description ? el('span', { cls: 's-opt-d', style: 'display:block', text: d.description }) : null,
+                    extra ? el('span', { cls: 's-opt-d', style: 'display:block', text: extra }) : null,
+                ]),
+                el('span', { cls: 's-opt-p', text: priceText }),
             ]),
         );
     }
+    zoneBox = el('div', { cls: 's-fields', style: 'margin-top:12px' });
     addressBox = el('div', { cls: 's-fields', style: 'margin-top:12px', hidden: !needsAddress() }, [
         field('address', 'Dirección', { autocomplete: 'street-address', required: true, wide: true }),
         field('city', 'Ciudad', { autocomplete: 'address-level2', required: true, wide: true }),
     ]);
-    const deliverySec = el('section', { cls: 's-sec' }, [el('h3', { text: 'Entrega' }), deliveryOpts, addressBox]);
+    const deliverySec = el('section', { cls: 's-sec' }, [el('h3', { text: 'Entrega' }), deliveryOpts, zoneBox, addressBox]);
+    paintZones();
 
     const payOpts = el('div', { cls: 's-opts', role: 'radiogroup', 'aria-label': 'Forma de pago' });
     for (const p of m.payments) {
@@ -970,9 +1052,11 @@ function checkoutView(): HTMLElement[] {
         e.preventDefault();
         void placeOrder();
     });
+    couponBox = m.coupons ? el('div', { cls: 's-coupon', 'data-testid': 'shop-coupon-box' }) : null;
     const aside = el('aside', { cls: 's-panel s-co-aside' }, [
         el('h3', { text: 'Resumen' }),
         summaryEl,
+        couponBox,
         alertEl,
         ...legal,
         submitBtn,
@@ -987,17 +1071,182 @@ function checkoutView(): HTMLElement[] {
         el('div', {}, [back, el('h1', { text: 'Finalizar compra' }), m.closed ? el('div', { cls: 's-closed', text: m.closed }) : null, form]),
         aside,
     ]);
+    paintCoupon();
     paintSummary();
     paintSubmit();
-    scheduleQuote(0);
+    // v0.1.415 — Un cupón de la sesión (escrito antes o llegado por `?cupon=`) se aplica solo.
+    const pending = sessionGet(COUPON_KEY);
+    if (m.coupons && pending && !co.couponRule && !BOOT.preview) void applyCoupon(pending, true);
+    else scheduleQuote(0);
     ensureStamp();
     if (captchaBox) mountCaptcha();
     return [layout];
 }
 
+/** v0.1.415 — La zona de envío: sólo si la forma de entrega elegida tiene zonas. */
+let zoneNote: HTMLElement | null = null;
+function zoneNoteText(): string {
+    const d = meta?.delivery.find((x) => x.id === co.deliveryId);
+    const z = d?.zones.find((x) => x.id === co.zoneId);
+    if (!z) return '';
+    const free = z.free_over ?? d?.free_over ?? null;
+    return [z.eta, free && free > 0 ? `Gratis desde ${money(free)}` : ''].filter(Boolean).join(' · ');
+}
+function paintZones(): void {
+    if (!zoneBox || !meta) return;
+    const d = meta.delivery.find((x) => x.id === co.deliveryId);
+    delete inputs.zone;
+    delete errs.zone;
+    if (!d || d.zones.length === 0) {
+        zoneBox.hidden = true;
+        zoneBox.replaceChildren();
+        return;
+    }
+    zoneBox.hidden = false;
+    const sel = el('select', { id: 'c_zone', name: 'zone', 'aria-describedby': 'c_zone_e', 'data-testid': 'shop-zone' });
+    sel.append(el('option', { value: '', text: 'Elige a dónde enviamos' }));
+    for (const z of d.zones) sel.append(el('option', { value: z.id, text: `${z.name} · ${z.price > 0 ? money(z.price) : 'Gratis'}`, selected: z.id === co.zoneId }));
+    sel.value = co.zoneId ?? '';
+    sel.addEventListener('change', () => {
+        co.zoneId = sel.value || null;
+        setErr('zone', '');
+        if (zoneNote) {
+            zoneNote.textContent = zoneNoteText();
+            zoneNote.hidden = !zoneNote.textContent;
+        }
+        paintSummary();
+        scheduleQuote();
+    });
+    inputs.zone = sel;
+    const err = el('div', { cls: 's-err', id: 'c_zone_e', role: 'alert', hidden: true });
+    errs.zone = err;
+    zoneNote = el('div', { cls: 's-opt-d', style: 'margin-top:6px', text: zoneNoteText(), hidden: !zoneNoteText() });
+    zoneBox.replaceChildren(el('div', { cls: 's-f s-wide' }, [el('label', { for: 'c_zone', text: '¿A dónde lo enviamos? *' }), sel, zoneNote, err]));
+}
+
+function zoneMissing(): boolean {
+    return shipFor(co.deliveryId, co.zoneId).zone_required && !co.zoneId;
+}
+
+// ── v0.1.415 — Cupón ──
+let couponOpen = false;
+let couponInput: HTMLInputElement | null = null;
+let couponMsg: HTMLElement | null = null;
+
+function paintCoupon(): void {
+    if (!couponBox || !meta) return;
+    const rule = co.couponRule;
+    if (rule) {
+        couponInput = null;
+        couponMsg = null;
+        const est = current();
+        const problem = est.coupon_problem ? shopCouponProblemText(est.coupon_problem, rule, money) : null;
+        const remove = el('button', { type: 'button', cls: 's-link', text: 'Quitar', 'data-testid': 'shop-coupon-remove' });
+        remove.addEventListener('click', removeCoupon);
+        couponBox.replaceChildren(
+            el('div', { cls: `s-coupon-on${problem ? ' s-coupon-off' : ''}`, 'data-testid': 'shop-coupon-applied' }, [
+                icon('tag'),
+                el('span', { cls: 's-coupon-t' }, [el('strong', { text: rule.code }), el('span', { text: rule.label })]),
+                remove,
+            ]),
+            ...(problem ? [el('div', { cls: 's-line-err', role: 'alert', 'data-testid': 'shop-coupon-problem', text: `${problem} No se descuenta.` })] : []),
+        );
+        return;
+    }
+    if (!couponOpen && !co.couponError) {
+        couponInput = null;
+        couponMsg = null;
+        const open = el('button', { type: 'button', cls: 's-link s-coupon-open', 'data-testid': 'shop-coupon-open' }, [icon('tag'), '¿Tienes un cupón?']);
+        open.addEventListener('click', () => {
+            couponOpen = true;
+            paintCoupon();
+            couponInput?.focus();
+        });
+        couponBox.replaceChildren(open);
+        return;
+    }
+    if (!couponInput || !couponBox.contains(couponInput)) {
+        couponInput = el('input', { type: 'text', id: 'c_coupon', autocomplete: 'off', autocapitalize: 'characters', spellcheck: 'false', maxlength: '40', placeholder: 'Código del cupón', 'aria-describedby': 'c_coupon_e', 'data-testid': 'shop-coupon-input' });
+        couponInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                void applyCoupon(couponInput?.value ?? '', false);
+            }
+        });
+        const btn = el('button', { type: 'button', cls: 's-btn s-ghost s-coupon-btn', 'data-testid': 'shop-coupon-apply' });
+        btn.addEventListener('click', () => void applyCoupon(couponInput?.value ?? '', false));
+        couponMsg = el('div', { cls: 's-line-err', id: 'c_coupon_e', role: 'alert', hidden: true, 'data-testid': 'shop-coupon-error' });
+        couponBox.replaceChildren(el('label', { for: 'c_coupon', cls: 's-coupon-l', text: 'Cupón de descuento' }), el('div', { cls: 's-coupon-row' }, [couponInput, btn]), couponMsg);
+    }
+    const btn = couponBox.querySelector<HTMLButtonElement>('.s-coupon-btn');
+    if (btn) {
+        btn.disabled = co.couponBusy;
+        btn.replaceChildren(co.couponBusy ? el('span', { cls: 's-spin', 'aria-hidden': 'true' }) : '', co.couponBusy ? 'Revisando…' : 'Aplicar');
+    }
+    if (couponMsg) {
+        couponMsg.textContent = co.couponError ?? '';
+        couponMsg.hidden = !co.couponError;
+    }
+    couponInput.setAttribute('aria-invalid', co.couponError ? 'true' : 'false');
+}
+
+async function applyCoupon(raw: string, auto: boolean): Promise<void> {
+    if (!meta || co.couponBusy) return;
+    const code = normalizeCouponCode(raw);
+    if (!code) {
+        co.couponError = raw.trim() ? 'Ese código no es válido: revisa cómo lo escribiste.' : 'Escribe el código del cupón.';
+        couponOpen = true;
+        paintCoupon();
+        return;
+    }
+    if (couponInput) couponInput.value = code;
+    co.couponBusy = true;
+    co.couponError = null;
+    paintCoupon();
+    const res = await api<PublicShopQuote>('/quote', {
+        method: 'POST',
+        body: JSON.stringify({ lines: [...cart].map(([product_id, qty]) => ({ product_id, qty })), delivery_id: co.deliveryId, zone_id: co.zoneId, coupon: code }),
+    });
+    co.couponBusy = false;
+    if (!res.ok) {
+        co.couponError = res.error.message || 'No pudimos revisar el cupón. Vuelve a intentar.';
+        couponOpen = true;
+    } else if (res.data.coupon_error || !res.data.coupon_rule) {
+        co.couponError = res.data.coupon_error ?? 'Ese cupón no existe o ya no está vigente.';
+        co.couponRule = null;
+        sessionSet(COUPON_KEY, null);
+        couponOpen = true;
+    } else {
+        co.couponRule = res.data.coupon_rule;
+        co.couponError = null;
+        sessionSet(COUPON_KEY, code);
+        co.serverCart = res.data;
+        co.serverKey = quoteKey();
+        if (!auto) toast(`Cupón ${code} aplicado`);
+    }
+    // Un cupón que llegó por el enlace y ya no sirve no molesta: se olvida sin abrir la caja.
+    if (auto && !co.couponRule) {
+        co.couponError = null;
+        couponOpen = false;
+    }
+    paintCoupon();
+    paintSummary();
+    if (auto && co.couponRule === null) scheduleQuote(0);
+}
+
+function removeCoupon(): void {
+    co.couponRule = null;
+    co.couponError = null;
+    couponOpen = false;
+    sessionSet(COUPON_KEY, null);
+    paintCoupon();
+    paintSummary();
+    scheduleQuote(0);
+}
+
 function paintSummary(): void {
     if (!summaryEl || !meta) return;
-    const est = co.serverCart && sameCart(co.serverCart) ? co.serverCart : estimate(co.deliveryId);
+    const est = current();
     const rows: HTMLElement[] = [];
     for (const l of est.lines) {
         const p = buyable.get(l.product_id);
@@ -1010,10 +1259,21 @@ function paintSummary(): void {
         );
     }
     rows.push(el('div', { style: 'padding-top:6px;border-top:1px solid var(--s-line);margin-top:4px' }, [el('span', { text: 'Subtotal' }), el('span', { text: money(est.subtotal) })]));
+    if (est.discount > 0) {
+        rows.push(
+            el('div', { cls: 's-disc', 'data-testid': 'shop-discount' }, [el('span', { text: `Descuento${est.coupon ? ` (${est.coupon.code})` : ''}` }), el('span', { text: `-${money(est.discount)}` })]),
+        );
+    }
     const d = meta.delivery.find((x) => x.id === co.deliveryId);
-    rows.push(el('div', {}, [el('span', { text: d ? `Entrega · ${d.name}` : 'Entrega' }), el('span', { text: est.shipping > 0 ? money(est.shipping) : 'Gratis' })]));
+    const z = d?.zones.find((x) => x.id === co.zoneId);
+    const shipText = zoneMissing() ? 'Elige la zona' : est.shipping > 0 ? money(est.shipping) : 'Gratis';
+    rows.push(el('div', {}, [el('span', { text: d ? `Entrega · ${d.name}${z ? ` · ${z.name}` : ''}` : 'Entrega' }), el('span', { 'data-testid': 'shop-shipping', text: shipText })]));
+    if (est.free_shipping_missing !== null && !zoneMissing()) {
+        rows.push(el('div', { cls: 's-free-hint', 'data-testid': 'shop-free-hint' }, [icon('truck'), el('span', { text: `Te faltan ${money(est.free_shipping_missing)} para el envío gratis.` })]));
+    }
     rows.push(el('div', { cls: 's-tot' }, [el('span', { text: 'Total' }), el('span', { 'data-testid': 'shop-total', text: money(est.total) })]));
     summaryEl.replaceChildren(...rows);
+    if (co.couponRule) paintCoupon();
     if (alertEl) {
         let warn = '';
         if (est.lines.length === 0) warn = 'Tu carrito está vacío.';
@@ -1036,7 +1296,7 @@ function sameCart(c: ShopCartResult): boolean {
 
 function paintSubmit(): void {
     if (!submitBtn || !meta) return;
-    const est = estimate(co.deliveryId);
+    const est = current();
     const label =
         co.payment === 'whatsapp' ? 'Confirmar y enviar por WhatsApp' : co.payment === 'online' ? `Ir a pagar · ${money(est.total)}` : `Hacer el pedido · ${money(est.total)}`;
     submitBtn.replaceChildren(co.sending ? el('span', { cls: 's-spin', 'aria-hidden': 'true' }) : '', co.sending ? (co.payment === 'online' ? 'Preparando el pago…' : 'Enviando…') : label);
@@ -1048,14 +1308,32 @@ function scheduleQuote(delay = 400): void {
     window.clearTimeout(quoteTimer);
     quoteTimer = window.setTimeout(async () => {
         if (cart.size === 0) return;
-        const res = await api<ShopCartResult>('/quote', {
+        const key = quoteKey();
+        const res = await api<PublicShopQuote>('/quote', {
             method: 'POST',
-            body: JSON.stringify({ lines: [...cart].map(([product_id, qty]) => ({ product_id, qty })), delivery_id: co.deliveryId }),
+            body: JSON.stringify({
+                lines: [...cart].map(([product_id, qty]) => ({ product_id, qty })),
+                delivery_id: co.deliveryId,
+                zone_id: co.zoneId,
+                coupon: co.couponRule?.code,
+            }),
         });
-        if (res.ok) {
-            co.serverCart = res.data;
+        if (!res.ok || key !== quoteKey()) return;
+        // v0.1.415 — El cupón pudo vencer o agotarse mientras tanto: se quita y se dice por qué.
+        if (co.couponRule && res.data.coupon_error) {
+            co.couponRule = null;
+            co.couponError = res.data.coupon_error;
+            couponOpen = true;
+            sessionSet(COUPON_KEY, null);
+            paintCoupon();
             paintSummary();
+            scheduleQuote(0);
+            return;
         }
+        if (co.couponRule && res.data.coupon_rule) co.couponRule = res.data.coupon_rule;
+        co.serverCart = res.data;
+        co.serverKey = quoteKey();
+        paintSummary();
     }, delay);
 }
 
@@ -1148,6 +1426,7 @@ function validate(): boolean {
     if (!v('name')) bad('name', 'Escribe tu nombre.');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v('email'))) bad('email', 'Escribe un correo válido.');
     if (m.checkout.ask_document === 'required' && !v('document')) bad('document', 'Escribe tu número de documento.');
+    if (zoneMissing()) bad('zone', 'Elige a dónde enviamos tu pedido.');
     if (needsAddress()) {
         if (!v('address')) bad('address', 'Escribe la dirección de entrega.');
         if (!v('city')) bad('city', 'Escribe la ciudad.');
@@ -1197,6 +1476,9 @@ async function placeOrder(): Promise<void> {
             lines: [...cart].map(([product_id, qty]) => ({ product_id, qty })),
             customer,
             delivery_id: co.deliveryId,
+            zone_id: co.zoneId,
+            // v0.1.415 — El cupón viaja sólo si descuenta algo en este carrito (el total que se ve es el que se cobra).
+            coupon: co.couponRule && current().coupon ? co.couponRule.code : undefined,
             payment_method: co.payment,
             terms: termsCb ? termsCb.checked : true,
             consent: consentCb ? consentCb.checked : false,
@@ -1224,9 +1506,19 @@ async function placeOrder(): Promise<void> {
                 showServerAlert(`${e.message ?? 'Algo de tu carrito cambió.'} Ajustamos tu carrito: revísalo y confirma de nuevo.`);
                 return;
             }
+            if (e.code === 'shop_coupon') {
+                co.couponRule = null;
+                co.couponError = e.message ?? 'Ese cupón ya no sirve.';
+                couponOpen = true;
+                sessionSet(COUPON_KEY, null);
+                paintCoupon();
+                paintSummary();
+                showServerAlert(`${e.message ?? 'El cupón ya no sirve.'} Quitamos el cupón: revisa el total y confirma de nuevo.`);
+                return;
+            }
             if (e.code === 'shop_stale') co.stamp = null;
             if (e.code === 'shop_too_fast') co.stampAt = Date.now();
-            const key = { shop_address: needsAddress() ? 'address' : '', shop_document: 'document', shop_terms: 'terms', shop_consent: 'consent' }[e.code ?? ''];
+            const key = { shop_address: needsAddress() ? 'address' : '', shop_document: 'document', shop_terms: 'terms', shop_consent: 'consent', shop_zone: 'zone' }[e.code ?? ''];
             if (key && errs[key]) setErr(key, e.message ?? '');
             showServerAlert(e.message || (res.status === 429 ? 'Hiciste muchos pedidos seguidos. Espera unos minutos y vuelve a intentar.' : 'No pudimos hacer el pedido. Vuelve a intentar.'));
             return;
@@ -1234,6 +1526,10 @@ async function placeOrder(): Promise<void> {
         cart.clear();
         saveCart();
         paintCartButtons();
+        co.couponRule = null;
+        co.couponError = null;
+        couponOpen = false;
+        sessionSet(COUPON_KEY, null);
         const url = new URL(location.href);
         url.searchParams.set('pedido', res.data.order_token);
         history.replaceState(null, '', url.pathname + url.search);
@@ -1357,6 +1653,7 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
     const sum = el('div', { cls: 's-sum' }, [
         ...o.lines.map((l) => el('div', {}, [el('span', { text: `${l.qty} × ${l.title}` }), el('span', { text: fmt(l.subtotal) })])),
         el('div', { style: 'padding-top:6px;border-top:1px solid var(--s-line);margin-top:4px' }, [el('span', { text: 'Subtotal' }), el('span', { text: fmt(o.subtotal) })]),
+        o.discount > 0 ? el('div', { cls: 's-disc' }, [el('span', { text: `Descuento${o.coupon_code ? ` (${o.coupon_code})` : ''}` }), el('span', { text: `-${fmt(o.discount)}` })]) : null,
         el('div', {}, [el('span', { text: `Entrega · ${o.delivery}` }), el('span', { text: o.shipping > 0 ? fmt(o.shipping) : 'Gratis' })]),
         el('div', { cls: 's-tot' }, [el('span', { text: 'Total' }), el('span', { text: fmt(o.total) })]),
     ]);
@@ -1414,6 +1711,17 @@ function render(): void {
     indexProducts();
     sort = meta.display.sort;
     const qs = new URLSearchParams(location.search);
+    // v0.1.415 — `?cupon=CODIGO`: se guarda para la compra (se aplica solo al finalizar) y se quita de la dirección.
+    if (qs.has('cupon') && !BOOT.preview) {
+        const code = normalizeCouponCode(qs.get('cupon'));
+        const url = new URL(location.href);
+        url.searchParams.delete('cupon');
+        history.replaceState(null, '', url.pathname + url.search);
+        if (code && meta.coupons) {
+            sessionSet(COUPON_KEY, code);
+            window.setTimeout(() => toast(`Cupón ${code}: se aplica al finalizar la compra`), 300);
+        }
+    }
     const pedido = qs.get('pedido');
     if (pedido && /^[A-Za-z0-9_-]{20,64}$/.test(pedido) && !BOOT.preview) {
         // v0.1.413 — `?pago=1`: volvió de pagar en línea (se quita para que recargar no vuelva a esperar).

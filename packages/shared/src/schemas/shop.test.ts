@@ -4,18 +4,23 @@ import {
     defaultShopConfig,
     formatShopMoney,
     missingVariantCombos,
+    normalizeCouponCode,
     pickShopVariant,
     readShopConfig,
+    shopCouponEligible,
+    shopCouponProblemText,
     shopLineProblemText,
     shopOptionValueState,
     shopProblems,
     shopPurchasables,
+    shopShippingFor,
     shopVariantPriceRange,
     shopWhatsappMessage,
     summarizeVariantProduct,
     type PublicShopProduct,
     type PublicShopVariant,
     type ShopCartProduct,
+    type ShopCouponRule,
 } from './shop';
 
 const products = new Map<number, ShopCartProduct>([
@@ -247,5 +252,121 @@ describe('variantes', () => {
         expect(c.variants.enabled).toBe(true);
         expect(c.variants.attributes).toEqual([]);
         expect(readShopConfig({ variants: { enabled: true, attributes: [5, 6] } }).variants.attributes).toEqual([5, 6]);
+    });
+});
+
+describe('v0.1.415 — envío por zona, envío gratis y cupones', () => {
+    const cupon = (over: Partial<ShopCouponRule>): ShopCouponRule => ({ code: 'X', label: '', kind: 'percent', value: 10, min_subtotal: null, eligible: null, ...over });
+    const lines = [
+        { product_id: 1, qty: 1 },
+        { product_id: 2, qty: 2 },
+    ];
+
+    it('la zona elegida manda; sin zona elegida la página la pide', () => {
+        const source = { price: 9000, free_over: 200000, zones: [{ id: 'norte', price: 12000, free_over: null }, { id: 'sur', price: 6000, free_over: 100000 }] };
+        expect(shopShippingFor(source, 'sur')).toEqual({ price: 6000, free_over: 100000, zone_required: true });
+        expect(shopShippingFor(source, 'norte')).toEqual({ price: 12000, free_over: 200000, zone_required: true });
+        expect(shopShippingFor(source, null).zone_required).toBe(true);
+        expect(shopShippingFor({ price: 5000, free_over: null }, 'lo-que-sea')).toEqual({ price: 5000, free_over: null, zone_required: false });
+        expect(shopShippingFor(null, null)).toEqual({ price: 0, free_over: null, zone_required: false });
+    });
+
+    it('el envío sale gratis al llegar al monto (con el descuento) y avisa cuánto falta', () => {
+        const falta = computeShopCart([{ product_id: 1, qty: 1 }], products, { shipping: 8000, minOrder: null, freeOver: 50000 });
+        expect(falta.shipping).toBe(8000);
+        expect(falta.free_shipping).toBe(false);
+        expect(falta.free_shipping_missing).toBe(10000);
+        const gratis = computeShopCart([{ product_id: 1, qty: 2 }], products, { shipping: 8000, minOrder: null, freeOver: 50000 });
+        expect(gratis.shipping).toBe(0);
+        expect(gratis.free_shipping).toBe(true);
+        expect(gratis.total).toBe(80000);
+        // Con un 50 % de descuento los productos bajan a 40.000: ya no llega al envío gratis.
+        const conCupon = computeShopCart([{ product_id: 1, qty: 2 }], products, { shipping: 8000, minOrder: null, freeOver: 50000, coupon: cupon({ value: 50 }), decimals: 0 });
+        expect(conCupon.discount).toBe(40000);
+        expect(conCupon.shipping).toBe(8000);
+        expect(conCupon.free_shipping_missing).toBe(10000);
+        expect(conCupon.total).toBe(48000);
+    });
+
+    it('un porcentaje se redondea a la unidad que se cobra y no pasa del monto', () => {
+        // 40.000 + 50.001 = 90.001 → 15 % = 13.500,15 → en pesos, 13.500.
+        const r = computeShopCart(lines, products, { shipping: 0, minOrder: null, coupon: cupon({ code: 'QUINCE', value: 15 }), decimals: 0 });
+        expect(r.subtotal).toBe(90001);
+        expect(r.discount).toBe(13500);
+        expect(r.total).toBe(76501);
+        expect(r.coupon).toEqual({ code: 'QUINCE', label: '', kind: 'percent' });
+        const usd = computeShopCart(lines, products, { shipping: 0, minOrder: null, coupon: cupon({ value: 15 }), decimals: 2 });
+        expect(usd.discount).toBe(13500.15);
+        const fijo = computeShopCart([{ product_id: 2, qty: 1 }], products, { shipping: 3000, minOrder: null, coupon: cupon({ kind: 'fixed', value: 999999 }), decimals: 0 });
+        expect(fijo.discount).toBe(25000.5);
+        expect(fijo.total).toBe(3000);
+    });
+
+    it('descuenta sólo lo que el cupón cubre y dice por qué no aplica', () => {
+        const soloGorra = computeShopCart(lines, products, { shipping: 0, minOrder: null, coupon: cupon({ value: 10, eligible: [2] }), decimals: 0 });
+        expect(soloGorra.discount).toBe(5000);
+        const nada = computeShopCart([{ product_id: 1, qty: 1 }], products, { shipping: 0, minOrder: null, coupon: cupon({ eligible: [2] }) });
+        expect(nada.discount).toBe(0);
+        expect(nada.coupon).toBeNull();
+        expect(nada.coupon_problem).toBe('no_eligible');
+        const minimo = computeShopCart([{ product_id: 1, qty: 1 }], products, { shipping: 0, minOrder: null, coupon: cupon({ min_subtotal: 100000 }) });
+        expect(minimo.coupon_problem).toBe('min_subtotal');
+        expect(minimo.discount).toBe(0);
+        const money = (n: number): string => formatShopMoney(n, 'COP', 'comma_dot');
+        expect(shopCouponProblemText('min_subtotal', { min_subtotal: 100000 }, money)).toContain('100,000');
+        expect(shopCouponProblemText('no_eligible', { min_subtotal: null }, money)).toContain('no aplica');
+        // Lo agotado no cuenta para el descuento.
+        const conAgotado = computeShopCart([{ product_id: 3, qty: 1 }, { product_id: 2, qty: 1 }], products, { shipping: 0, minOrder: null, coupon: cupon({ kind: 'fixed', value: 30000 }) });
+        expect(conAgotado.discount).toBe(25000.5);
+    });
+
+    it('el cupón de envío gratis sólo quita el envío', () => {
+        const r = computeShopCart(lines, products, { shipping: 9000, minOrder: null, coupon: cupon({ kind: 'free_shipping', value: 0 }) });
+        expect(r.discount).toBe(0);
+        expect(r.shipping).toBe(0);
+        expect(r.free_shipping).toBe(true);
+        expect(r.total).toBe(90001);
+    });
+
+    it('los códigos se escriben sin importar mayúsculas y los productos se eligen por producto o categoría', () => {
+        expect(normalizeCouponCode('  verano 20 ')).toBe('VERANO20');
+        expect(normalizeCouponCode('mal código!')).toBe('');
+        expect(normalizeCouponCode(42)).toBe('');
+        const items = [
+            { id: 10, product_id: 10, categories: ['Camisetas'] },
+            { id: 21, product_id: 20, categories: ['Gorras'] },
+            { id: 22, product_id: 20, categories: ['Gorras'] },
+            { id: 30, product_id: 30, categories: ['Accesorios'] },
+        ];
+        expect(shopCouponEligible({}, items)).toBeNull();
+        // Elegir el producto cubre todas sus variantes; la categoría, sin tildes ni mayúsculas.
+        expect(shopCouponEligible({ product_ids: [20] }, items)).toEqual([21, 22]);
+        expect(shopCouponEligible({ categories: ['camísetas'] }, items)).toEqual([10]);
+        expect(shopCouponEligible({ product_ids: [30], categories: ['Gorras'] }, items)).toEqual([21, 22, 30]);
+    });
+
+    it('la configuración guarda zonas válidas y descarta las rotas', () => {
+        const c = readShopConfig({
+            delivery: [
+                {
+                    id: 'envio',
+                    name: 'Envío',
+                    price: 9000,
+                    needs_address: true,
+                    active: true,
+                    free_over: 150000,
+                    zones: [
+                        { id: 'norte', name: 'Norte', price: 12000 },
+                        { id: 'norte', name: 'Repetida', price: 1 },
+                        { id: 'MAL ID', name: 'Rota', price: 1 },
+                        { id: 'sur', name: 'Sur', price: 6000, free_over: 80000, eta: '1 día' },
+                    ],
+                },
+            ],
+        });
+        const d = c.delivery.find((x) => x.id === 'envio');
+        expect(d?.free_over).toBe(150000);
+        expect(d?.zones.map((z) => z.id)).toEqual(['norte', 'sur']);
+        expect(d?.zones[1]?.eta).toBe('1 día');
     });
 });

@@ -13,10 +13,12 @@ import {
     readShopConfig,
     readShopListMarker,
     resolveTitleFieldId,
+    shopCurrencyDecimals,
     shopProblems,
     suggestShopCatalog,
     type CollectionConnection,
     type CreateShopInput,
+    type Field,
     type PlatformShopDto,
     type ShopCatalogFields,
     type ShopConfig,
@@ -39,7 +41,7 @@ import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-ca
 import { PublicCacheService } from '../public-cache/public-cache.service';
 import { BlueprintService } from '../templates/blueprint.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
-import { LINE_ROLES, PROTECTED_ORDER_ROLES, packFieldIds, shopPackBlueprint } from './shop-pack';
+import { LATER_ORDER_COLUMNS, LINE_ROLES, PROTECTED_ORDER_ROLES, packFieldIds, shopPackBlueprint } from './shop-pack';
 
 /**
  * v0.1.412 (ADR-S103) — La tienda vista por el equipo: crearla (con su pack
@@ -167,8 +169,31 @@ export class ShopService {
                     return { id: o.id, name: o.name, orders_list_name: lid !== null ? (names.get(lid) ?? null) : null };
                 }),
                 payment_connections: team.map((c) => ({ id: c.id, name: c.name, provider: c.provider, test_mode: c.test_mode })),
+                categories: await this.catalogCategories(tx, tenantId, row, fields),
             };
         });
+    }
+
+    /** v0.1.415 — Las categorías del catálogo: las opciones del campo, o los textos que ya usan los productos. */
+    private async catalogCategories(tx: Tx, tenantId: number, row: ShopRow, fields: Field[]): Promise<string[]> {
+        const id = readShopConfig(row.config).catalog.category;
+        const field = id !== null ? fields.find((f) => f.id === id) : undefined;
+        if (!field) return [];
+        if (field.type !== 'text') {
+            const opts = (field.config as { options?: unknown }).options;
+            if (!Array.isArray(opts)) return [];
+            return opts
+                .map((o) => (o && typeof o === 'object' ? ((o as { label?: unknown; value?: unknown }).label ?? (o as { value?: unknown }).value) : null))
+                .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+                .slice(0, 100);
+        }
+        const key = `f${field.id}`;
+        const rows = await tx
+            .selectDistinct({ v: sql<string>`trim(${records.data}->>${key})` })
+            .from(records)
+            .where(and(eq(records.tenantId, tenantId), eq(records.listId, row.listId), isNull(records.deletedAt), sql`coalesce(trim(${records.data}->>${key}), '') <> ''`))
+            .limit(100);
+        return rows.map((r) => r.v).sort((a, b) => a.localeCompare(b, 'es'));
     }
 
     // ─────────────────────────── Alta ───────────────────────────
@@ -411,6 +436,54 @@ export class ShopService {
             .from(lists)
             .where(and(eq(lists.tenantId, tenantId), inArray(lists.id, ids), isNull(lists.deletedAt)));
         return rows.length === ids.length;
+    }
+
+    /**
+     * v0.1.415 — Las columnas «Descuento» y «Cupón» en «Pedidos» de una tienda
+     * creada antes de los cupones. Usa las que ya existan con ese nombre y
+     * tipo; si no, las crea. Todas las tiendas que escriben en esa lista
+     * quedan con ellas (y con su candado).
+     */
+    async ensureOrderColumns(tenantId: number, shopId: number): Promise<void> {
+        const row = await this.row(tenantId, shopId);
+        const config = readShopConfig(row.config);
+        const listId = config.orders.list_id;
+        if (listId === null) return;
+        const missing = LATER_ORDER_COLUMNS.filter((c) => typeof config.orders.fields[c.role] !== 'number');
+        if (missing.length === 0) return;
+        const current = await this.tenantDb.withTenant(tenantId, (tx) => this.fields.listByListIdWithinTx(tx, tenantId, listId));
+        const found: Record<string, number> = {};
+        for (const c of missing) {
+            const existing = current.find((f) => f.slug === c.slug && f.type === c.type);
+            if (existing) {
+                found[c.role] = existing.id;
+                continue;
+            }
+            const extra = c.type === 'currency' ? { config: { currency: config.currency, precision: shopCurrencyDecimals(config.currency) } } : {};
+            const created = await this.fields.create(tenantId, String(listId), {
+                label: c.label,
+                slug: current.some((f) => f.slug === c.slug) ? undefined : c.slug,
+                type: c.type,
+                ...extra,
+            } as never);
+            found[c.role] = created.id;
+        }
+        const tokens = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const rows = await tx.select().from(shops).where(eq(shops.tenantId, tenantId)).orderBy(asc(shops.id)).for('update');
+            const out: string[] = [];
+            for (const r of rows) {
+                const c = readShopConfig(r.config);
+                if (c.orders.list_id !== listId) continue;
+                const fields = { ...c.orders.fields };
+                for (const [role, id] of Object.entries(found)) if (typeof fields[role] !== 'number') fields[role] = id;
+                const next: ShopConfig = { ...c, orders: { ...c.orders, fields } };
+                await tx.update(shops).set({ config: next, updatedAt: new Date() }).where(and(eq(shops.tenantId, tenantId), eq(shops.id, r.id)));
+                await this.writeMarkers(tx, tenantId, r.id, next.orders, 'add');
+                out.push(r.token);
+            }
+            return out;
+        });
+        for (const t of tokens) this.forget(t);
     }
 
     /**

@@ -2752,4 +2752,36 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.415-tienda-cupones-zonas',
+        version: '0.1.415',
+        date: '2026-11-12',
+        kind: 'feature',
+        title: 'Cupones de descuento y envíos por zona en tu tienda',
+        summary:
+            'Crea cupones (un porcentaje, un monto fijo o el envío gratis) y cobra el envío según a dónde se manda. Tu cliente ve cuánto le falta para el envío gratis.',
+        media: {
+            slides: [
+                {
+                    title: 'Cupones que se cuentan solos',
+                    text: 'Cada cupón tiene su código, sus fechas, cuántas veces se puede usar y a qué productos aplica. Si cancelas un pedido, el uso vuelve.',
+                    illustration: 'tienda-pedido',
+                },
+                {
+                    title: 'El envío según la zona',
+                    text: 'Tu ciudad, el área metropolitana o el resto del país: cada zona con su costo y, si quieres, envío gratis desde un monto.',
+                    illustration: 'tienda-vitrina',
+                },
+            ],
+        },
+        body: [
+            'Abre tu tienda (**Configurar lista → Tienda**).',
+            '',
+            '- En **Cupones**, toca **Nuevo cupón**: elige el código, qué da y, si quieres, la compra mínima, las fechas, los usos y los productos o categorías.',
+            '- Comparte la tienda con el cupón ya puesto: agrega «?cupon=CODIGO» al final del enlace.',
+            '- En **Pago y entrega**, agrega **zonas de envío** con su costo y el monto desde el que el envío es gratis.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

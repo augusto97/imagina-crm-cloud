@@ -6,6 +6,7 @@ import {
     generateShopVariantsSchema,
     publicShopOrderSchema,
     publicShopQuoteSchema,
+    shopCouponInputSchema,
     suspendShopSchema,
     updateShopSchema,
     type CreateShopInput,
@@ -16,7 +17,9 @@ import {
     type PublicShopOrderInput,
     type PlatformShopDto,
     type PublicShopProduct,
-    type ShopCartResult,
+    type PublicShopQuote,
+    type ShopCouponDto,
+    type ShopCouponInput,
     type ShopDto,
     type ShopOptions,
     type ShopOrderPanelDto,
@@ -43,6 +46,7 @@ import { aclOf } from '../tenancy/acl-of';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { shopImageWidth } from './shop-images.service';
+import { ShopCouponsService } from './shop-coupons.service';
 import { ShopOrdersService } from './shop-orders.service';
 import { loadShopClient, renderShopPage, shopNotFoundPage, shopPageCsp } from './shop-page';
 import { ShopPublicService, type ShopPageInfo } from './shop-public.service';
@@ -63,6 +67,7 @@ export class ShopsController {
         private readonly publicSvc: ShopPublicService,
         private readonly audit: AuditService,
         private readonly variants: ShopVariantsService,
+        private readonly couponsSvc: ShopCouponsService,
     ) {}
 
     @Get()
@@ -126,6 +131,49 @@ export class ShopsController {
             await this.audit.log({ tenantId, userId: req.authUserId ?? null, action: 'shop.variants_create', targetType: 'record', targetId: productId, meta: { shop_id: id, created: out.created } });
         }
         return out;
+    }
+
+    /** v0.1.415 — Los cupones de la tienda, con cuántas veces se usaron. */
+    @Get(':id/coupons')
+    @RequireCapability('manage_lists')
+    async coupons(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<{ data: ShopCouponDto[] }> {
+        return { data: await this.couponsSvc.list(req.tenant!.tenantId, id) };
+    }
+
+    @Post(':id/coupons')
+    @RequireCapability('manage_lists')
+    async createCoupon(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(shopCouponInputSchema)) input: ShopCouponInput,
+    ): Promise<ShopCouponDto> {
+        const tenantId = req.tenant!.tenantId;
+        const out = await this.couponsSvc.create(tenantId, req.authUserId!, id, input);
+        await this.audit.log({ tenantId, userId: req.authUserId ?? null, action: 'shop.coupon_create', targetType: 'shop', targetId: id, targetLabel: out.code, meta: { kind: out.kind } });
+        return out;
+    }
+
+    @Patch(':id/coupons/:couponId')
+    @RequireCapability('manage_lists')
+    async updateCoupon(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('couponId', ParseIntPipe) couponId: number,
+        @Body(new ZodValidationPipe(shopCouponInputSchema)) input: ShopCouponInput,
+    ): Promise<ShopCouponDto> {
+        const tenantId = req.tenant!.tenantId;
+        const { dto } = await this.couponsSvc.update(tenantId, id, couponId, input);
+        await this.audit.log({ tenantId, userId: req.authUserId ?? null, action: 'shop.coupon_update', targetType: 'shop', targetId: id, targetLabel: dto.code, meta: { coupon_id: couponId } });
+        return dto;
+    }
+
+    @Delete(':id/coupons/:couponId')
+    @RequireCapability('manage_lists')
+    async removeCoupon(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number, @Param('couponId', ParseIntPipe) couponId: number): Promise<{ ok: true }> {
+        const tenantId = req.tenant!.tenantId;
+        const row = await this.couponsSvc.remove(tenantId, id, couponId);
+        await this.audit.log({ tenantId, userId: req.authUserId ?? null, action: 'shop.coupon_delete', targetType: 'shop', targetId: id, targetLabel: row.code, meta: { coupon_id: couponId } });
+        return { ok: true };
     }
 
     /** La vista previa con lo que se está editando (sin guardar). */
@@ -429,8 +477,14 @@ export class PublicShopApiController {
     async quote(
         @Param('token') token: string,
         @Body(new ZodValidationPipe(publicShopQuoteSchema)) input: z.infer<typeof publicShopQuoteSchema>,
-    ): Promise<ShopCartResult> {
-        const out = await this.publicSvc.quote(token, input.lines, input.delivery_id ?? null);
+        @Req() req: FastifyRequest,
+    ): Promise<PublicShopQuote> {
+        const out = await this.publicSvc.quote(token, input.lines, {
+            deliveryId: input.delivery_id ?? null,
+            zoneId: input.zone_id ?? null,
+            coupon: input.coupon,
+            ip: req.ip,
+        });
         if (!out) throw notFound();
         return out;
     }

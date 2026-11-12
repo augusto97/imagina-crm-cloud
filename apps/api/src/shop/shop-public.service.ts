@@ -9,7 +9,9 @@ import {
     formatShopMoney,
     readShopConfig,
     shopOnlinePayment,
+    shopCurrencyDecimals,
     shopPurchasables,
+    shopShippingFor,
     shopWhatsappMessage,
     tenantFormatSchema,
     whatsappLink,
@@ -20,9 +22,10 @@ import {
     type PublicShopOrderInput,
     type PublicShopPayment,
     type PublicShopProduct,
+    type PublicShopQuote,
     type ShopCartLineInput,
-    type ShopCartResult,
     type ShopConfig,
+    type ShopCouponRule,
     type ShopOrderLineSnapshot,
     type ShopPaymentMethod,
 } from '@imagina-base/shared';
@@ -44,6 +47,7 @@ import { REDIS } from '../redis/redis.module';
 import { incrWithTtl } from '../redis/redis.util';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { attachVariants, categoryOrder, productFromRow, resolveCatalogFields, resolveVariantAttributes, type CatalogRow } from './shop-catalog';
+import { ShopCouponsService } from './shop-coupons.service';
 import { ShopImagesService, type ShopImage, type ShopImageSource } from './shop-images.service';
 import { ShopOrdersService, paymentInstructions, type ResolvedShopForOrder } from './shop-orders.service';
 import { shopCacheKey } from './shop.service';
@@ -71,6 +75,8 @@ const ORDER_LIMITS = [
     { scope: 'shop' as const, window: 3600, max: 600 },
 ];
 const EMAIL_LIMIT = { window: 3600, max: 6 };
+/** v0.1.415 — Intentos de cupón por IP y tienda cada 10 minutos (los códigos no se adivinan). */
+const COUPON_TRIES_PER_10_MIN = 30;
 
 export interface ShopPageInfo {
     tenantId: number;
@@ -93,9 +99,9 @@ function badRequest(code: string, message: string, extra: Record<string, unknown
     throw new BadRequestException({ code, message, data: { status: 400, ...extra } });
 }
 
-function tooMany(): never {
+function tooMany(message = 'Se hicieron demasiados pedidos en poco tiempo. Espera un rato y vuelve a intentar.'): never {
     throw new HttpException(
-        { code: 'rate_limited', message: 'Se hicieron demasiados pedidos en poco tiempo. Espera un rato y vuelve a intentar.', data: { status: 429 } },
+        { code: 'rate_limited', message, data: { status: 429 } },
         HttpStatus.TOO_MANY_REQUESTS,
     );
 }
@@ -135,6 +141,8 @@ export class ShopPublicService {
         @Optional() private readonly dataConsent?: DataConsentService,
         // v0.1.413 — el pago en línea con la cuenta de cobro del equipo.
         @Optional() private readonly collections?: CollectionsService,
+        // v0.1.415 — cupones.
+        @Optional() private readonly coupons?: ShopCouponsService,
     ) {
         this.pcache = cache ?? NO_PUBLIC_CACHE;
     }
@@ -190,8 +198,10 @@ export class ShopPublicService {
         const keys = config.checkout.captcha && this.captcha ? await this.captcha.resolve(tenantId, settings) : null;
         const consent = this.dataConsent ? await this.dataConsent.active(tenantId, settings) : null;
         const online = await this.onlineConnection(tenantId, config);
+        const hasCoupons = this.coupons ? await this.tenantDb.withTenant(tenantId, (tx) => this.coupons!.hasActive(tx, tenantId, hit.shop.id)) : false;
         const title = config.texts.title || hit.shop.name;
         const meta = this.buildMeta(config, {
+            coupons: hasCoupons,
             online: online ? online.provider : null,
             title,
             company,
@@ -303,6 +313,8 @@ export class ShopPublicService {
             readOnly: boolean;
             /** v0.1.413 — El proveedor del pago en línea (null = no se ofrece). */
             online: string | null;
+            /** v0.1.415 — Hay cupones activos. */
+            coupons: boolean;
         },
     ): PublicShopMeta {
         const p = config.payments;
@@ -331,7 +343,18 @@ export class ShopPublicService {
             categories: o.categories,
             delivery: config.delivery
                 .filter((d) => d.active && d.name.trim() !== '')
-                .map((d) => ({ id: d.id, name: d.name, description: d.description, price: d.price, needs_address: d.needs_address })),
+                .map((d) => ({
+                    id: d.id,
+                    name: d.name,
+                    description: d.description,
+                    price: d.price,
+                    needs_address: d.needs_address,
+                    eta: d.eta,
+                    free_over: d.free_over,
+                    zones: d.zones
+                        .filter((z) => z.active && z.name.trim() !== '')
+                        .map((z) => ({ id: z.id, name: z.name, price: z.price, free_over: z.free_over, eta: z.eta })),
+                })),
             payments,
             checkout: {
                 ask_document: config.checkout.ask_document,
@@ -343,6 +366,7 @@ export class ShopPublicService {
             policies: config.policies,
             captcha: o.captcha,
             data_consent: o.consent,
+            coupons: o.coupons,
             // ADR-S09: una empresa en solo lectura muestra el catálogo pero no recibe pedidos.
             closed: o.readOnly
                 ? 'La tienda no está recibiendo pedidos en este momento.'
@@ -374,7 +398,9 @@ export class ShopPublicService {
         const products = built.products.map((p) => ({ ...p, images: urls(p.images), ...(p.variants ? { variants: p.variants.map((v) => ({ ...v, images: urls(v.images) })) } : {}) }));
         const consent = this.dataConsent ? await this.dataConsent.active(tenantId, settings) : null;
         const online = await this.onlineConnection(tenantId, config);
+        const hasCoupons = this.coupons ? await this.tenantDb.withTenant(tenantId, (tx) => this.coupons!.hasActive(tx, tenantId, shop.id)) : false;
         const meta = this.buildMeta(config, {
+            coupons: hasCoupons,
             online: online ? online.provider : null,
             title: config.texts.title || shop.name,
             company: b.app_name || t?.name || '',
@@ -419,13 +445,58 @@ export class ShopPublicService {
     }
 
     /** La cuenta del carrito con lo que hay ahora (estimación: el pedido relee de la base). */
-    async quote(token: string, lines: ShopCartLineInput[], deliveryId: string | null): Promise<ShopCartResult | null> {
+    async quote(
+        token: string,
+        lines: ShopCartLineInput[],
+        opts: { deliveryId: string | null; zoneId?: string | null; coupon?: string; ip?: string },
+    ): Promise<PublicShopQuote | null> {
         const info = await this.cachedInfo(token);
         if (!info) return null;
         // v0.1.414 — Con variantes, lo que se compra es la variante (el producto no).
         const byId = shopPurchasables(info.products);
-        const delivery = info.meta.delivery.find((d) => d.id === deliveryId);
-        return computeShopCart(lines, byId, { shipping: delivery?.price ?? 0, minOrder: info.config.checkout.min_order });
+        const delivery = info.meta.delivery.find((d) => d.id === opts.deliveryId);
+        const ship = shopShippingFor(delivery ?? null, opts.zoneId ?? null);
+        // v0.1.415 — El cupón se valida en el servidor (con freno por IP: los códigos no se adivinan).
+        let couponRule: ShopCouponRule | null = null;
+        let couponError: string | null = null;
+        const code = (opts.coupon ?? '').trim();
+        if (code !== '') {
+            // Freno: sólo cuentan los códigos que fallan (adivinar es lo que hay que frenar).
+            await this.couponGuard(info.shop.id, opts.ip ?? '', false);
+            if (!this.coupons) couponError = 'Ese cupón no existe o ya no está vigente.';
+            else {
+                const items = [...byId.values()].map((p) => ({ id: p.id, product_id: p.product.id, categories: p.product.categories }));
+                const r = await this.tenantDb.withTenant(info.tenantId, (tx) =>
+                    this.coupons!.resolve(tx, info.tenantId, info.shop.id, code, { items, currency: info.config.currency, numberFormat: info.meta.number_format }),
+                );
+                if (r.ok) couponRule = r.coupon.rule;
+                else couponError = r.message;
+            }
+            if (couponError !== null) await this.couponGuard(info.shop.id, opts.ip ?? '', true);
+        }
+        const cart = computeShopCart(lines, byId, {
+            shipping: ship.price,
+            freeOver: ship.free_over,
+            minOrder: info.config.checkout.min_order,
+            coupon: couponRule,
+            decimals: shopCurrencyDecimals(info.config.currency),
+        });
+        return { ...cart, coupon_error: couponError, coupon_rule: couponRule };
+    }
+
+    /**
+     * v0.1.415 — Freno de cupones por IP y tienda: `fail` suma un intento
+     * fallido; sin `fail` sólo mira si ya se pasó (un código válido no suma).
+     */
+    private async couponGuard(shopId: number, ip: string, fail: boolean): Promise<void> {
+        if (!this.redis) return;
+        const key = `shoprl:coupon:${Math.floor(Date.now() / 600_000)}:${rateKeyForIp(ip)}:${shopId}`;
+        try {
+            const n = fail ? await incrWithTtl(this.redis, key, 600) : Number((await this.redis.get(key)) ?? 0);
+            if (n > COUPON_TRIES_PER_10_MIN || (!fail && n >= COUPON_TRIES_PER_10_MIN)) tooMany('Probaste muchos cupones seguidos. Espera unos minutos y vuelve a intentar.');
+        } catch (err) {
+            if (err instanceof HttpException) throw err;
+        }
     }
 
     async placeOrder(
@@ -536,6 +607,8 @@ export class ShopPublicService {
                 lines: (row.lines as ShopOrderLineSnapshot[]).map((l) => ({ title: l.title, qty: l.qty, subtotal: l.subtotal })),
                 shipping: row.shipping,
                 total: row.total,
+                discount: row.discount,
+                coupon_code: row.couponCode,
                 delivery: delivery.name ?? '',
                 customer: { name: customer.name ?? '', address: customer.address ?? '', city: customer.city ?? '', notes: customer.notes ?? '' },
                 url: null,

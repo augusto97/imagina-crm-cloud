@@ -45,6 +45,9 @@ export const ORDER_ROLES = [
     'shop',
     'paid_at',
     'order_url',
+    /** v0.1.415 */
+    'discount',
+    'coupon',
 ] as const;
 export type OrderRole = (typeof ORDER_ROLES)[number];
 
@@ -63,6 +66,14 @@ export const PROTECTED_ORDER_ROLES: readonly OrderRole[] = [
     'shop',
     'paid_at',
     'order_url',
+    'discount',
+    'coupon',
+];
+
+/** v0.1.415 — Columnas que llegaron después del pack: una tienda que ya existía las suma al crear su primer cupón. */
+export const LATER_ORDER_COLUMNS: ReadonlyArray<{ role: OrderRole; label: string; slug: string; type: 'currency' | 'text' }> = [
+    { role: 'discount', label: 'Descuento', slug: 'descuento', type: 'currency' },
+    { role: 'coupon', label: 'Cupón', slug: 'cupon', type: 'text' },
 ];
 
 export const LINE_ROLES = ['title', 'order', 'product', 'qty', 'unit_price', 'subtotal', 'sku'] as const;
@@ -91,6 +102,8 @@ const ORDER_SLUG: Record<OrderRole, string> = {
     shop: 'tienda',
     paid_at: 'pagado_el',
     order_url: 'enlace',
+    discount: 'descuento',
+    coupon: 'cupon',
 };
 const LINE_SLUG: Record<LineRole, string> = {
     title: 'producto_nombre',
@@ -156,6 +169,8 @@ export function shopPackBlueprint(input: ShopPackInput): ListBlueprint {
                     f('Total', ORDER_SLUG.total, 'currency', { config: money }),
                     f('Subtotal', ORDER_SLUG.subtotal, 'currency', { config: money }),
                     f('Envío', ORDER_SLUG.shipping, 'currency', { config: money }),
+                    f('Descuento', ORDER_SLUG.discount, 'currency', { config: money, description: 'Lo que descontó el cupón.' }),
+                    f('Cupón', ORDER_SLUG.coupon, 'text'),
                     f('Entrega', ORDER_SLUG.delivery, 'text'),
                     f('Cliente', ORDER_SLUG.customer, 'relation', { config: { target_list_id: listRef('clientes') } }),
                     f('Correo', ORDER_SLUG.email, 'email'),

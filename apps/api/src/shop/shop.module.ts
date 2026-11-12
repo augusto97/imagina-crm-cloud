@@ -8,6 +8,7 @@ import { FilesModule } from '../files/files.module';
 import { ListsModule } from '../lists/lists.module';
 import { RecordsModule } from '../records/records.module';
 import { RelationsRepository } from '../records/relations.repository';
+import { ShopCouponsService } from './shop-coupons.service';
 import { ShopImagesService } from './shop-images.service';
 import { ShopOrdersService } from './shop-orders.service';
 import { ShopPublicService } from './shop-public.service';
@@ -23,7 +24,7 @@ import { ShopService } from './shop.service';
 @Module({
     imports: [AuthModule, ActivityModule, DomainsModule, FieldsModule, FilesModule, ListsModule, RecordsModule],
     controllers: [ShopsController, RecordShopOrderController, PlatformShopsController, PublicShopPageController, PublicShopApiController],
-    providers: [ShopService, ShopPublicService, ShopOrdersService, ShopImagesService, ShopTasksService, ShopVariantsService, RelationsRepository, SuperadminGuard],
+    providers: [ShopService, ShopPublicService, ShopOrdersService, ShopImagesService, ShopTasksService, ShopVariantsService, ShopCouponsService, RelationsRepository, SuperadminGuard],
     exports: [ShopService, ShopOrdersService],
 })
 export class ShopModule {}
