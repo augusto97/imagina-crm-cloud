@@ -73,6 +73,7 @@ export function resolveCatalogFields(
         compare_price: pick('compare_price', catalog.compare_price),
         images: pick('images', catalog.images),
         description: pick('description', catalog.description),
+        summary: pick('summary', catalog.summary),
         category: pick('category', catalog.category),
         stock: pick('stock', catalog.stock),
         sku: pick('sku', catalog.sku),
@@ -202,6 +203,12 @@ function imageSources(field: Field | null, value: unknown): Array<[string, ShopI
     return [[shopUrlImageKey(url), { kind: 'url', url }]];
 }
 
+/** v0.1.424 — La descripción corta: hasta 600 caracteres; vacía no viaja. */
+function summaryOf(v: unknown): { summary?: string } {
+    const t = str(v, 600);
+    return t ? { summary: t } : {};
+}
+
 export function productFromRow(row: CatalogRow, rf: ResolvedCatalog): CatalogProduct {
     const d = row.data ?? {};
     const get = (f: Field | null): unknown => (f ? d[jsonbKeyForField(f.id)] : undefined);
@@ -228,6 +235,7 @@ export function productFromRow(row: CatalogRow, rf: ResolvedCatalog): CatalogPro
             compare_price: compare,
             images: images.map(([key]) => `img/${key}`),
             description: str(get(rf.description), 4000),
+            ...summaryOf(get(rf.summary)),
             categories: productCategories(rf.category, get(rf.category)),
             stock: stockRaw === null ? null : Math.max(0, Math.floor(stockRaw)),
             sku: str(get(rf.sku), 80),

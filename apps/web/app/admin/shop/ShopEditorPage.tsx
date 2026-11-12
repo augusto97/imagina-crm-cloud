@@ -217,6 +217,9 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
     const [mobileTab, setMobileTab] = useState<'edit' | 'preview' | 'stats'>(mode === 'stats' ? 'stats' : 'edit');
     // v0.1.414 — Crear variantes cambia el catálogo: la vista previa se vuelve a pedir.
     const [catalogVersion, setCatalogVersion] = useState(0);
+    // v0.1.424 — Elegir el diseño de la ficha abre la ficha en la vista previa.
+    const [previewFocus, setPreviewFocus] = useState<{ view: 'catalog' | 'product' | 'checkout'; n: number } | null>(null);
+    const showInPreview = (view: 'catalog' | 'product' | 'checkout'): void => setPreviewFocus((f) => ({ view, n: (f?.n ?? 0) + 1 }));
     const [mobileSection, setMobileSection] = useState<ShopSection | null>(params.get('t') && mode === 'edit' ? section : null);
     const openSection = (s: ShopSection): void => {
         go(s);
@@ -266,7 +269,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                     />
                 );
             case 'style':
-                return <StylePanel config={config} options={options} patch={patch} />;
+                return <StylePanel config={config} options={options} patch={patch} onPreview={showInPreview} />;
             case 'design':
                 return <DesignPanel config={config} options={options} patch={patch} />;
             case 'payment':
@@ -436,7 +439,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                         ))}
                     {mobileTab === 'preview' && (
                         <div className="imcrm-h-full">
-                            <ShopPreview shopId={shop.id} config={config} version={catalogVersion} compact />
+                            <ShopPreview shopId={shop.id} config={config} version={catalogVersion} focus={previewFocus} compact />
                         </div>
                     )}
                     {mobileTab === 'stats' && stats}
@@ -500,7 +503,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                         {body(section)}
                     </aside>
                     <div className="imcrm-min-h-0 imcrm-min-w-0">
-                        <ShopPreview shopId={shop.id} config={config} version={catalogVersion} />
+                        <ShopPreview shopId={shop.id} config={config} version={catalogVersion} focus={previewFocus} />
                     </div>
                 </div>
             )}

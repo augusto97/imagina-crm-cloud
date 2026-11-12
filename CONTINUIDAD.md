@@ -415,7 +415,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.423**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.424**
+(**la ficha del producto con cinco diseños, descripción corta y la casilla de
+los términos arreglada** — Estilo → Ficha del producto: clásica, descripción
+abajo, foto arriba, compacta o pantalla completa; forma de la foto; «cómo se
+entrega» junto al botón; barra de compra fija en el celular; papel nuevo
+«Descripción corta» en Productos (tarjeta, ficha, buscador y Google); la
+casilla de los términos se veía aplastada por un choque de clases CSS del
+v0.1.420 — prueba nueva `shop-page-css.spec` que falla si una clase se define
+dos veces; addendum ADR-S103). Antes **v0.1.423**
 (**la tienda en su propio dominio, y sólo ahí en Google** — sección
 «Dominio y Google» en el editor de la tienda: se pide el dominio, se prueba
 con un TXT y se apunta con un CNAME (el mismo ciclo del dominio de la
@@ -1983,6 +1991,38 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-12 · v0.1.424** — **La ficha del producto con cinco diseños,
+  descripción corta y la casilla de los términos arreglada** (mensaje del
+  usuario con capturas: "mira como sale esto de los términos. otra cosa, veo
+  que no hay descripción corta, la ficha se ve rara, también debería haber
+  varios diseños de la ficha de producto"). (a) **Términos**: la etiqueta de la
+  casilla medía 17 px y el texto no se leía (con el captcha encima). Causa: en
+  v0.1.420 el cuadrito de las tareas de la descripción con formato se llamó
+  `.s-check`, la misma clase de las casillas del pago, y su `width:17px;
+  flex:none` pisó a la etiqueta. Renombrado a `.s-task-box` (y `.s-opts` de
+  las variantes a `.s-vopts`); se fusionaron `.s-back` y `.s-toast` repetidos,
+  y la descripción corta de la tarjeta no usa `.s-sum` (era el resumen del
+  carrito). Prueba nueva `shop-page-css.spec`: la regla base de cada clase va
+  una sola vez (falla con el código anterior). (b) **Descripción corta**: papel
+  `summary` del catálogo (texto o texto largo, se reconoce por «Descripción
+  corta», «Resumen», «Extracto»…), en la tarjeta (dos renglones, ocultable en
+  Apariencia), arriba en la ficha, en el buscador y como descripción para
+  Google. (c) **Ficha rediseñada** (`config.design.product`, sin migración):
+  el nombre una sola vez, botón principal con el color de la tienda y «Comprar
+  ahora» con contorno, galería con flechas y contador, la foto sin franjas (el
+  recuadro toma su forma), «Cómo se entrega» junto al botón, «ya tienes N en
+  el carrito», y cinco diseños (clásica, descripción abajo, foto arriba,
+  compacta, pantalla completa), forma de la foto (como es, cuadrada, vertical,
+  horizontal; completa o recortada) y barra de compra fija en el celular.
+  Elegir un diseño abre un producto en la vista previa del editor (pestaña
+  nueva «Producto»). Atrapado en el E2E: la pantalla completa quedaba corrida
+  por la animación del modal y en el celular la ficha quedaba 32 px más
+  angosta. Tests: `shop-page-css.spec` (2), caso nuevo en
+  `shops-description.spec`, shared +8 (descripción corta y diseño de la
+  ficha); E2E navegador 52/52 (ver CLAUDE.md §5). Sin capturas ni
+  ilustraciones nuevas (Regla 10): la novedad usa ilustraciones que ya
+  existían.
 
 - **2026-11-12 · v0.1.423** — **La tienda en su propio dominio, y sólo ahí en
   Google** (del mismo mensaje del usuario: "dominio propio para la tienda

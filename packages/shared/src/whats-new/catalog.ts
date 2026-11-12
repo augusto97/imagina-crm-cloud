@@ -3047,4 +3047,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.424-tienda-ficha-producto',
+        version: '0.1.424',
+        date: '2026-11-12',
+        kind: 'improvement',
+        title: 'La ficha del producto, con cinco diseños y descripción corta',
+        summary:
+            'Elige cómo se ve un producto al abrirlo (clásica, descripción abajo, foto arriba, compacta o pantalla completa) y agrega una descripción corta que sale en la tarjeta y junto al botón de comprar. En el celular, el precio y el botón quedan fijos abajo.',
+        media: {
+            slides: [
+                {
+                    title: 'Cinco diseños para la ficha',
+                    text: 'En Estilo → Ficha del producto eliges el diseño, la forma de la foto y si se ve cómo se entrega. La vista previa abre un producto para que lo veas.',
+                    illustration: 'tienda-vitrina',
+                },
+                {
+                    title: 'Una descripción corta',
+                    text: 'Una o dos frases que salen en la tarjeta y arriba en la ficha. La descripción completa va más abajo.',
+                    illustration: 'tienda-pedido',
+                },
+            ],
+        },
+        body: [
+            '- Abre tu tienda (**Configurar lista → Tienda → Editar**) y ve a **Estilo → Ficha del producto**.',
+            '- Para la descripción corta, elige la columna en **Productos → Descripción corta**.',
+            '- También se arregló la casilla de los términos al finalizar la compra, que no se leía bien.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

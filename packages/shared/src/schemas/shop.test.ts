@@ -24,6 +24,7 @@ import {
     shopServiceFor,
     shopShippingFor,
     shopVariantPriceRange,
+    suggestShopCatalog,
     suggestShopKindFields,
     shopWhatsappMessage,
     summarizeVariantProduct,
@@ -543,5 +544,36 @@ describe('v0.1.423 — direcciones de producto en el dominio propio', () => {
     it('Google: se deja indexar por defecto, y un valor raro no rompe la configuración', () => {
         expect(readShopConfig({}).seo).toEqual({ index: true, title: '', description: '' });
         expect(readShopConfig({ seo: { index: false, title: 'x'.repeat(300), description: 42 } }).seo).toEqual({ index: false, title: '', description: '' });
+    });
+});
+
+describe('v0.1.424 — la descripción corta', () => {
+    const f = (id: number, label: string, type: string, extra: Record<string, unknown> = {}) => ({ id, label, slug: label.toLowerCase().replace(/\s+/g, '_'), type: type as never, ...extra });
+
+    it('se reconoce sola y no le quita la columna a la descripción larga', () => {
+        const c = suggestShopCatalog([f(1, 'Nombre', 'text', { is_primary: true }), f(2, 'Precio', 'currency'), f(3, 'Descripción corta', 'text'), f(4, 'Descripción', 'long_text')]);
+        expect(c.name).toBe(1);
+        expect(c.summary).toBe(3);
+        expect(c.description).toBe(4);
+    });
+
+    it('también por otros nombres (resumen, extracto) y nunca una columna de otro tipo', () => {
+        expect(suggestShopCatalog([f(1, 'Nombre', 'text'), f(2, 'Resumen', 'long_text')]).summary).toBe(2);
+        expect(suggestShopCatalog([f(1, 'Nombre', 'text'), f(2, 'Extracto', 'text')]).summary).toBe(2);
+        expect(suggestShopCatalog([f(1, 'Nombre', 'text'), f(2, 'Resumen', 'number')]).summary).toBeNull();
+    });
+
+    it('sin una columna que parezca descripción corta, queda vacía (y el nombre no se usa dos veces)', () => {
+        const c = suggestShopCatalog([f(1, 'Nombre', 'text'), f(2, 'Descripción', 'long_text')]);
+        expect(c.summary).toBeNull();
+        expect(c.description).toBe(2);
+        expect(c.name).toBe(1);
+    });
+
+    it('mostrarla en las tarjetas viene encendido y se lee con tolerancia', () => {
+        expect(readShopConfig({}).display.show_summary).toBe(true);
+        expect(readShopConfig({ display: { show_summary: false } }).display.show_summary).toBe(false);
+        expect(readShopConfig({ display: { show_summary: 'quizá' } }).display.show_summary).toBe(true);
+        expect(readShopConfig({ catalog: { summary: 'x' } }).catalog.summary).toBeNull();
     });
 });

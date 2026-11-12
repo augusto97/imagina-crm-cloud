@@ -256,7 +256,8 @@ export function siteHeadFor(info: ShopPageInfo, domain: string, productId: numbe
     }
     const canonical = `${origin}${shopProductPath(p.title, p.id)}`;
     const images = p.images.map((src) => imageUrl(origin, info.token, src)).filter((x): x is string => x !== null);
-    const desc = snippet(p.description || shopDesc);
+    // v0.1.424 — La descripción corta es la que se escribió para esto; si no hay, la larga.
+    const desc = snippet(p.summary || p.description || shopDesc);
     const range = shopVariantPriceRange(p);
     const inStock = p.stock === null || p.stock > 0;
     const availability = inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock';
@@ -308,6 +309,7 @@ export function siteHeadFor(info: ShopPageInfo, domain: string, productId: numbe
         `<h1>${escapeHtml(p.title)}</h1>`,
         images[0] ? `<img src="${escapeHtml(images[0])}" alt="${escapeHtml(p.title)}" width="520" />` : '',
         priceText ? `<p class="s-ssr-price">${escapeHtml(priceText)}</p>` : '',
+        p.summary ? `<p>${escapeHtml(p.summary)}</p>` : '',
         p.description ? `<p>${escapeHtml(snippet(p.description, 2000))}</p>` : '',
         '</main>',
     ].join('');

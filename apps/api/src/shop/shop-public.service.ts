@@ -485,6 +485,7 @@ export class ShopPublicService {
                 classes: shopDesignClasses(config.design),
                 hero_image: o.heroImage,
                 auto: config.design.mode === 'auto',
+                product: config.design.product,
             },
         };
     }

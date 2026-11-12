@@ -7,12 +7,18 @@ import {
     SHOP_DESIGN_PRESETS,
     SHOP_HEADER_LABELS,
     SHOP_HERO_LABELS,
+    SHOP_PRODUCT_IMAGE_RATIOS,
+    SHOP_PRODUCT_IMAGE_RATIO_LABELS,
+    SHOP_PRODUCT_LAYOUTS,
+    SHOP_PRODUCT_LAYOUT_HINTS,
+    SHOP_PRODUCT_LAYOUT_LABELS,
     applyShopDesignPreset,
     sanitizePublicCss,
     type ShopConfig,
     type ShopDesign,
     type ShopDesignPreset,
     type ShopOptions,
+    type ShopProductLayout,
 } from '@imagina-base/shared';
 
 import { ColorField, FontSelect } from '@/components/design/DesignStyleControls';
@@ -34,7 +40,18 @@ import { Field, Segmented, type Patch } from './ShopPanels';
  * CSS propio (sólo administradores). Todo vive en `config.design`; la vista
  * previa lo muestra en vivo.
  */
-export function StylePanel({ config, options, patch }: { config: ShopConfig; options: ShopOptions; patch: Patch }): JSX.Element {
+export function StylePanel({
+    config,
+    options,
+    patch,
+    onPreview,
+}: {
+    config: ShopConfig;
+    options: ShopOptions;
+    patch: Patch;
+    /** v0.1.424 — Mostrar una pantalla en la vista previa (la ficha al elegir su diseño). */
+    onPreview?: (view: 'catalog' | 'product' | 'checkout') => void;
+}): JSX.Element {
     const toast = useToast();
     const isAdmin = useSession((st) => st.memberships.find((m) => m.tenant_id === st.activeTenantId)?.role === 'admin');
     const d = config.design;
@@ -43,6 +60,10 @@ export function StylePanel({ config, options, patch }: { config: ShopConfig; opt
     const setColors = (p: Partial<ShopDesign['colors']>): void => patch((c) => ({ ...c, design: { ...c.design, colors: { ...c.design.colors, ...p } } }));
     const setHeader = (p: Partial<ShopDesign['header']>): void => patch((c) => ({ ...c, design: { ...c.design, header: { ...c.design.header, ...p } } }));
     const setHero = (p: Partial<ShopDesign['hero']>): void => patch((c) => ({ ...c, design: { ...c.design, hero: { ...c.design.hero, ...p } } }));
+    const setProduct = (p: Partial<ShopDesign['product']>): void => {
+        patch((c) => ({ ...c, design: { ...c.design, product: { ...c.design.product, ...p } } }));
+        onPreview?.('product');
+    };
     const setT = (p: Partial<ShopConfig['texts']>): void => patch((c) => ({ ...c, texts: { ...c.texts, ...p } }));
     const cssCheck = useMemo(() => sanitizePublicCss(d.custom_css), [d.custom_css]);
     const darkBase = d.mode === 'dark';
@@ -234,6 +255,64 @@ export function StylePanel({ config, options, patch }: { config: ShopConfig; opt
                 </Field>
             </SubSection>
 
+            <SubSection
+                title={__('Ficha del producto')}
+                hint={__('Lo que se abre al tocar un producto: dónde van las fotos, el precio, el botón de comprar y la descripción.')}
+                tour="shop-style-product"
+                testId="shop-style-product"
+            >
+                <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2 sm:imcrm-grid-cols-3" role="radiogroup" aria-label={__('Diseño de la ficha')}>
+                    {SHOP_PRODUCT_LAYOUTS.map((k) => (
+                        <LayoutCard key={k} layout={k} accent={accent} active={d.product.layout === k} onClick={() => setProduct({ layout: k })} />
+                    ))}
+                </div>
+                <p className="imcrm-text-[11.5px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="shop-product-layout-hint">
+                    {__(SHOP_PRODUCT_LAYOUT_HINTS[d.product.layout])}
+                </p>
+                {onPreview && (
+                    <button type="button" className="imcrm-self-start imcrm-text-[12px] imcrm-font-medium imcrm-text-primary hover:imcrm-underline" onClick={() => onPreview('product')} data-testid="shop-product-see">
+                        {__('Ver una ficha en la vista previa')}
+                    </button>
+                )}
+                {d.product.layout !== 'compact' && (
+                    <Field label={__('Forma de la foto')}>
+                        <Segmented
+                            value={d.product.image_ratio}
+                            onChange={(image_ratio) => setProduct({ image_ratio })}
+                            options={SHOP_PRODUCT_IMAGE_RATIOS.map((k) => [k, __(SHOP_PRODUCT_IMAGE_RATIO_LABELS[k])] as const)}
+                            testId="shop-product-ratio"
+                        />
+                    </Field>
+                )}
+                {d.product.layout !== 'compact' && d.product.image_ratio !== 'auto' && (
+                    <Field label={__('La foto en el recuadro')}>
+                        <Segmented
+                            value={d.product.image_fit}
+                            onChange={(image_fit) => setProduct({ image_fit })}
+                            options={[
+                                ['contain', __('Completa')],
+                                ['cover', __('Lo llena (recortada)')],
+                            ]}
+                            testId="shop-product-fit"
+                        />
+                    </Field>
+                )}
+                <SwitchRow
+                    label={__('Cómo se entrega')}
+                    hint={__('Junto al botón: «Envío a domicilio (2 a 3 días) · Recoger en el local» y el envío gratis.')}
+                    checked={d.product.show_delivery}
+                    onChange={(show_delivery) => setProduct({ show_delivery })}
+                    testId="shop-product-delivery"
+                />
+                <SwitchRow
+                    label={__('Barra de compra fija en el celular')}
+                    hint={__('Al bajar por la ficha, el precio y el botón quedan siempre abajo.')}
+                    checked={d.product.sticky_bar}
+                    onChange={(sticky_bar) => setProduct({ sticky_bar })}
+                    testId="shop-product-bar"
+                />
+            </SubSection>
+
             <SubSection title={__('CSS propio')} hint={__('Para retoques finos. No se permite cargar nada de afuera (url, @import).')} tour="shop-style-css">
                 {isAdmin ? (
                     <>
@@ -277,13 +356,89 @@ export function StylePanel({ config, options, patch }: { config: ShopConfig; opt
     );
 }
 
+/** v0.1.424 — El dibujo de cada diseño de la ficha. */
+function LayoutCard({ layout, accent, active, onClick }: { layout: ShopProductLayout; accent: string; active: boolean; onClick: () => void }): JSX.Element {
+    const img = <span className="imcrm-block imcrm-h-full imcrm-w-full imcrm-rounded-[3px] imcrm-bg-zinc-300 dark:imcrm-bg-zinc-600" />;
+    const line = (w: string, strong = false): JSX.Element => <span className={cn('imcrm-block imcrm-h-[3px] imcrm-rounded-full', strong ? 'imcrm-bg-zinc-500' : 'imcrm-bg-zinc-300 dark:imcrm-bg-zinc-600')} style={{ width: w }} />;
+    const btn = <span className="imcrm-block imcrm-h-[6px] imcrm-w-full imcrm-rounded-[2px]" style={{ background: accent }} />;
+    const info = (
+        <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-[3px]">
+            {line('80%', true)}
+            {line('45%')}
+            {line('90%')}
+            {btn}
+        </span>
+    );
+    const drawing: JSX.Element =
+        layout === 'stacked' ? (
+            <span className="imcrm-mx-auto imcrm-flex imcrm-h-full imcrm-w-[58%] imcrm-flex-col imcrm-gap-[4px]">
+                <span className="imcrm-h-[46%]">{img}</span>
+                {info}
+            </span>
+        ) : layout === 'compact' ? (
+            <span className="imcrm-mx-auto imcrm-flex imcrm-h-full imcrm-w-[54%] imcrm-flex-col imcrm-gap-[5px] imcrm-pt-[2px]">
+                <span className="imcrm-flex imcrm-items-center imcrm-gap-[4px]">
+                    <span className="imcrm-h-[14px] imcrm-w-[14px] imcrm-flex-none">{img}</span>
+                    <span className="imcrm-flex imcrm-flex-1 imcrm-flex-col imcrm-gap-[3px]">
+                        {line('85%', true)}
+                        {line('45%')}
+                    </span>
+                </span>
+                {line('95%')}
+                {btn}
+            </span>
+        ) : layout === 'wide' ? (
+            <span className="imcrm-flex imcrm-h-full imcrm-w-full imcrm-flex-col imcrm-gap-[4px]">
+                <span className="imcrm-flex imcrm-h-[55%] imcrm-gap-[5px]">
+                    <span className="imcrm-w-[48%]">{img}</span>
+                    {info}
+                </span>
+                {line('100%')}
+                {line('90%')}
+            </span>
+        ) : (
+            <span className="imcrm-flex imcrm-h-full imcrm-w-full imcrm-gap-[5px]">
+                <span className="imcrm-w-[48%]">{img}</span>
+                <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col imcrm-gap-[3px]">
+                    {line('80%', true)}
+                    {line('45%')}
+                    {btn}
+                    {line('100%')}
+                    {line('85%')}
+                </span>
+            </span>
+        );
+    return (
+        <button
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={onClick}
+            className={cn(
+                'imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-rounded-lg imcrm-border imcrm-p-1.5 imcrm-text-left imcrm-transition-colors',
+                active ? 'imcrm-border-primary imcrm-ring-1 imcrm-ring-primary' : 'imcrm-border-border hover:imcrm-border-foreground/30',
+            )}
+            data-testid={`shop-product-layout-${layout}`}
+        >
+            <span className={cn('imcrm-flex imcrm-h-[58px] imcrm-items-stretch imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-background', layout === 'full' ? 'imcrm-p-[4px]' : 'imcrm-p-[7px]')}>{drawing}</span>
+            <span className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-1 imcrm-px-0.5 imcrm-text-[11.5px] imcrm-font-medium">
+                {__(SHOP_PRODUCT_LAYOUT_LABELS[layout])}
+                {active && <Check className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-primary" aria-hidden />}
+            </span>
+        </button>
+    );
+}
+
 const CSS_CLASSES: ReadonlyArray<readonly [string, string]> = [
     ['.s-top', 'El encabezado'],
     ['.s-hero', 'La portada (título y descripción)'],
     ['.s-card', 'La tarjeta de cada producto'],
     ['.s-title', 'El nombre del producto'],
+    ['.s-card-sum', 'La descripción corta en la tarjeta'],
     ['.s-now', 'El precio'],
     ['.s-add', 'El botón «Agregar al carrito»'],
+    ['.s-pd', 'La ficha del producto'],
+    ['.s-d-sum', 'La descripción corta en la ficha'],
     ['.s-btn', 'Los botones grandes (pagar, finalizar)'],
     ['.s-foot', 'El pie de la página'],
 ];

@@ -274,6 +274,22 @@ describe('v0.1.420 — tienda: descripción con formato y digitales sin entrega 
         await shopsSvc.update(tenantId, shopId, { config: { ...dto.config, description_from: 'record' } as never });
     });
 
+    it('v0.1.424 — la descripción corta viaja con cada producto y el diseño de la ficha con la tienda', async () => {
+        const corta = await fieldsSvc.create(tenantId, 'servicios', { label: 'Descripción corta', type: 'text', slug: 'descripcion_corta' } as never);
+        await recordsSvc.update(tenantId, admin, 'servicios', product.asesoria!, { data: { [`f${corta.id}`]: '  Clases en vivo con certificado.  ' } } as never);
+        const dto = await shopsSvc.get(tenantId, shopId);
+        await shopsSvc.update(tenantId, shopId, {
+            config: { ...dto.config, catalog: { ...dto.config.catalog, summary: corta.id }, design: { ...dto.config.design, product: { ...dto.config.design.product, layout: 'wide', image_ratio: 'square' } } } as never,
+        });
+        const info = await publicSvc.freshInfo(await tokenOf(shopId));
+        expect(info!.products.find((p) => p.id === product.asesoria)!.summary).toBe('Clases en vivo con certificado.');
+        expect(info!.products.find((p) => p.id === product.curso)!.summary).toBeUndefined();
+        expect(info!.meta.design?.product).toMatchObject({ layout: 'wide', image_ratio: 'square', image_fit: 'contain' });
+        // Una columna que no es de texto no se acepta como descripción corta.
+        await expect(shopsSvc.update(tenantId, shopId, { config: { ...dto.config, catalog: { ...dto.config.catalog, summary: f.precio!.id } } as never })).rejects.toThrow('no sirve para ese papel');
+        await shopsSvc.update(tenantId, shopId, { config: dto.config as never });
+    });
+
     it('sólo digitales y servicios: publicar no pide formas de entrega; con un producto físico, sí', async () => {
         const noDelivery = 'Agrega al menos una forma de entrega.';
         const base = await shopsSvc.get(tenantId, shopId);

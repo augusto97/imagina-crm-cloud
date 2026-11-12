@@ -52,6 +52,11 @@ export const shopCatalogFieldsSchema = z.object({
     /** Archivo (fotos subidas) o enlace mostrado como imagen. */
     images: nullableRef,
     description: nullableRef,
+    /**
+     * v0.1.424 — La descripción corta: una o dos frases que van junto al
+     * precio en la ficha (y, si se elige, en las tarjetas y en Google).
+     */
+    summary: nullableRef,
     /** Selección, varias opciones o texto: arma las categorías de la tienda. */
     category: nullableRef,
     /** Número: vacío en un producto = sin límite. null = la tienda no controla stock. */
@@ -294,6 +299,8 @@ export const shopDisplaySchema = z.object({
     after_add: z.enum(SHOP_AFTER_ADD).catch('drawer').default('drawer'),
     /** v0.1.421 — El botón «Comprar ahora» en la ficha del producto (lo agrega y va al pago). */
     buy_now: z.boolean().catch(true).default(true),
+    /** v0.1.424 — La descripción corta también en las tarjetas (dos renglones). */
+    show_summary: z.boolean().catch(true).default(true),
 });
 export type ShopDisplay = z.infer<typeof shopDisplaySchema>;
 
