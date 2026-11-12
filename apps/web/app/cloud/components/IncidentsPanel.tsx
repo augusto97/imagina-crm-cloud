@@ -14,6 +14,7 @@ import {
     Plug,
     Repeat,
     ShoppingBag,
+    ShoppingCart,
     Sparkles,
     TriangleAlert,
     Zap,
@@ -48,6 +49,8 @@ const SOURCE_ICON: Record<IncidentSource, LucideIcon> = {
     // D2 — el buzón de soporte de una lista.
     helpdesk: Inbox,
     ai_agent: Bot,
+    // v0.1.413 — una tienda que no pudo preparar un pago en línea.
+    shop: ShoppingCart,
 };
 
 /**

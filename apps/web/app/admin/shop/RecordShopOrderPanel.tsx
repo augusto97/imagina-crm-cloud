@@ -1,4 +1,4 @@
-import { CheckCircle2, ExternalLink, Loader2, PackageCheck, ShoppingBag } from 'lucide-react';
+import { CheckCircle2, Clock3, Copy, CreditCard, ExternalLink, Loader2, PackageCheck, ShoppingBag } from 'lucide-react';
 import { formatShopMoney } from '@imagina-base/shared';
 
 import { usePlanModuleOff } from '@/components/PlanModuleNotice';
@@ -28,6 +28,15 @@ export function RecordShopOrderPanel({ listId, recordId, className }: { listId: 
     if (!o) return null;
     const paid = o.payment_status === 'pagado';
     const total = formatShopMoney(o.total, o.currency, getTenantFormat().number_format);
+    const copyPayLink = async (): Promise<void> => {
+        if (!o.pay_url) return;
+        try {
+            await navigator.clipboard.writeText(o.pay_url);
+            toast.success(__('Link de pago copiado'));
+        } catch {
+            toast.error(__('No se pudo copiar el link'));
+        }
+    };
     return (
         <section
             className={cn('imcrm-rounded-xl imcrm-border imcrm-p-3', paid ? 'imcrm-border-success/30 imcrm-bg-success/5' : 'imcrm-border-border imcrm-bg-card', className)}
@@ -48,6 +57,26 @@ export function RecordShopOrderPanel({ listId, recordId, className }: { listId: 
                         {o.paid_at ? ` ${__('el')} ${formatDateTimeStr(o.paid_at)}` : ''}
                         {o.cancelled ? ` · ${__('Cancelado: el stock volvió a la tienda')}` : ''}
                     </p>
+                    {o.pay_url && (
+                        <p className="imcrm-mt-1 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-1 imcrm-text-[12px] imcrm-text-amber-700 dark:imcrm-text-amber-300" data-testid="record-shop-online-waiting">
+                            <Clock3 className="imcrm-h-3.5 imcrm-w-3.5" />
+                            <span>
+                                {o.pay_until
+                                    ? sprintf(__('Esperando el pago en línea%1$s hasta el %2$s. Si no paga, el pedido se cancela solo y el stock vuelve.'), o.pay_provider ? ` (${o.pay_provider})` : '', formatDateTimeStr(o.pay_until))
+                                    : sprintf(__('Esperando el pago en línea%s.'), o.pay_provider ? ` (${o.pay_provider})` : '')}
+                            </span>
+                            <button type="button" className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-font-medium imcrm-text-primary hover:imcrm-underline" onClick={() => void copyPayLink()} data-testid="record-shop-copy-pay-link">
+                                <Copy className="imcrm-h-3 imcrm-w-3" />
+                                {__('Copiar link de pago')}
+                            </button>
+                        </p>
+                    )}
+                    {!o.pay_url && o.pay_provider && paid && (
+                        <p className="imcrm-mt-1 imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-[12px] imcrm-text-muted-foreground">
+                            <CreditCard className="imcrm-h-3.5 imcrm-w-3.5" />
+                            {sprintf(__('Pagado en línea con %s.'), o.pay_provider)}
+                        </p>
+                    )}
                 </div>
                 <div className="imcrm-flex imcrm-items-center imcrm-gap-1">
                     {o.public_url && (

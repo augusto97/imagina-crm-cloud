@@ -2688,4 +2688,36 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.413-tienda-pago-en-linea',
+        version: '0.1.413',
+        date: '2026-11-12',
+        kind: 'feature',
+        title: 'Tu tienda ya cobra en línea',
+        summary:
+            'Activa el pago en línea y tus clientes pagan con tarjeta, PSE, Nequi o PayPal al hacer el pedido, con la cuenta de Mercado Pago, Wompi o PayPal de tu empresa. El pedido queda pagado solo.',
+        media: {
+            slides: [
+                {
+                    title: 'Pedido y pago, en un solo paso',
+                    text: 'Al hacer el pedido, tu cliente va directo a pagar. Cuando paga, el pedido queda «Pagado» y te llega el aviso.',
+                    illustration: 'tienda-vitrina',
+                },
+                {
+                    title: 'El stock queda apartado',
+                    text: 'Mientras paga, los productos quedan reservados el tiempo que elijas. Si no paga a tiempo, el pedido se cancela solo y el stock vuelve.',
+                    illustration: 'tienda-pedido',
+                },
+            ],
+        },
+        body: [
+            'Abre tu tienda (**Configurar lista → Tienda**) y ve a **Pago y entrega**.',
+            '',
+            '- Activa **Pago en línea** y elige la cuenta de cobro del equipo. Si no tienes ninguna, conéctala en **Ajustes → Integraciones**.',
+            '- Elige cuánto tiempo tiene tu cliente para pagar (30 minutos, por defecto).',
+            '- Si el pago llega tarde y todavía hay stock, el pedido se reactiva solo; si no, te avisamos para que lo resuelvas.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

@@ -93,6 +93,20 @@ describe('shopProblems', () => {
         c.payments.whatsapp.phone = '3001112233';
         expect(shopProblems(c, { hasOrdersLists: true, priceFieldOk: true }).map((p) => p.section)).toEqual(['payment']);
     });
+
+    it('v0.1.413 — el pago en línea pide una cuenta del equipo y una moneda que acepte', () => {
+        const c = defaultShopConfig();
+        c.catalog.price = 10;
+        c.seller = { legal_name: 'Café Aurora SAS', document: '900123456-7', address: 'Calle 1 # 2-3', city: 'Bogotá', email: 'hola@cafe.co', phone: '' };
+        c.payments.online = { enabled: true, connection_id: null, hold_minutes: 30 };
+        const ok = { hasOrdersLists: true, priceFieldOk: true };
+        expect(shopProblems(c, ok).map((p) => p.section)).toEqual(['payment']);
+        c.payments.online.connection_id = 4;
+        expect(shopProblems(c, { ...ok, onlineConnectionOk: false }).map((p) => p.section)).toEqual(['payment']);
+        expect(shopProblems(c, { ...ok, onlineConnectionOk: true })).toEqual([]);
+        const money = shopProblems(c, { ...ok, onlineConnectionOk: true, onlineCurrencyError: 'PayPal no cobra en pesos colombianos (COP).' });
+        expect(money).toEqual([{ section: 'payment', text: 'PayPal no cobra en pesos colombianos (COP).' }]);
+    });
 });
 
 describe('readShopConfig', () => {

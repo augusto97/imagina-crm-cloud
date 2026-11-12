@@ -24,7 +24,7 @@ export const SHOP_SECTION_INFO: Record<ShopSection, { label: string; group: stri
         label: 'Pago y entrega',
         group: 'Al comprar',
         title: 'Pago y entrega',
-        hint: 'Cómo te pagan (WhatsApp, transferencia o contra entrega) y cómo reciben el pedido.',
+        hint: 'Cómo te pagan (en línea, WhatsApp, transferencia o contra entrega) y cómo reciben el pedido.',
     },
     checkout: {
         label: 'Datos y avisos',
@@ -61,7 +61,10 @@ export function shopSectionSummary(s: ShopSection, config: ShopConfig, ctx: { en
             return `${config.display.columns} por fila · ${config.color ? 'color propio' : 'color de tu marca'}`;
         case 'payment': {
             const p = config.payments;
-            const on = (['whatsapp', 'transfer', 'cod'] as const).filter((m) => p[m].enabled).map((m) => SHOP_PAYMENT_METHOD_LABELS[m]);
+            const on = [
+                ...(p.online.enabled ? ['En línea'] : []),
+                ...(['whatsapp', 'transfer', 'cod'] as const).filter((m) => p[m].enabled).map((m) => SHOP_PAYMENT_METHOD_LABELS[m]),
+            ];
             const deliveries = config.delivery.filter((d) => d.active).length;
             return `${on.length > 0 ? on.join(', ') : 'Sin forma de pago'} · ${deliveries === 1 ? '1 entrega' : `${deliveries} entregas`}`;
         }

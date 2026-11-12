@@ -14518,6 +14518,52 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el E2E: el botón de WhatsApp de la página del pedido apuntaba a una
         ruta relativa rota.
 
+  - [x] **Tienda: pago en línea con el stock apartado (v0.1.413, addendum
+        ADR-S103, segunda de seis versiones)**: la tienda cobra con la cuenta
+        de **Mercado Pago, Wompi o PayPal** de la empresa (ADR-S31). (a)
+        **Editor → Pago y entrega → «Pago en línea»**: la cuenta del equipo (se
+        elige sola si hay una; una privada o ajena se descarta al guardar),
+        cuánto tiempo tiene para pagar (10 min a 4 h, 30 por defecto) y aviso si
+        la moneda de la tienda no la acepta la cuenta (Wompi sólo COP, PayPal
+        nunca COP — es también un problema de publicación). En la página
+        pública es la primera opción y el botón dice «Ir a pagar · $ total».
+        (b) **El pedido aparta el stock con un plazo** (`shop_orders.expires_at`)
+        y después del commit `CollectionsService.createForShop` arma el link
+        (monto del servidor, vence con el pedido, vuelta a `?pedido=…&pago=1`);
+        la persona va directo a pagar y, si cierra el checkout, le llega
+        «Completa el pago de tu pedido» con el botón **Pagar mi pedido**. Al
+        equipo no le avisa nada hasta que entra el pago. Si el proveedor no
+        responde, el pedido se cancela en el acto (stock de vuelta), 503
+        `shop_payment_unavailable` y un Problema `shop-pay:<tienda>` que se
+        cierra solo. (c) **Pagado** (`settlePaid`, idempotente con la fila
+        bloqueada, sólo desde caminos verificados): el aviso del proveedor (que
+        se RELEE), la página al volver (consulta al proveedor con freno por IP)
+        o el barrido → «Pagado», aviso «Pedido pagado» y correo «Recibimos el
+        pago». (d) **Vencer**: barrido cada minuto (`ShopTasksService`, cola
+        `shop-tasks`) que primero le pregunta al proveedor y, si no pagó,
+        cancela («No se pagó», stock de vuelta, link vencido). Un **pago
+        tardío** revive el pedido si el stock alcanza («reopened») o, si no,
+        queda cancelado y pagado y el equipo recibe el aviso para conseguir el
+        producto o devolver el dinero. Marcar pagado a mano o cancelar desde el
+        equipo vencen el link. (e) **La ficha del pedido** dice «Esperando el
+        pago en línea (Mercado Pago) hasta…» con **Copiar link de pago**; la
+        página del pedido muestra «Pagar con Mercado Pago» mientras siga a
+        tiempo, «¡Pago recibido!» o por qué se canceló. Problemas con fuente
+        nueva `shop` (lleva a la tienda → Pago). Sin migración. Ayuda: guía
+        `shop` y Aprende → Tienda online al día (sección «Cómo funciona el pago
+        en línea»), novedad con carrusel. Tests: `shops-online.spec` (7 con
+        Mercado Pago simulado: plazo y link, aviso que paga una vez, vencer y
+        revivir, tarde sin stock, preguntar al proveedor antes de cancelar y al
+        volver, marcar pagado/cancelar vencen el link, proveedor caído) +
+        `shops.spec` 8/8, cobros/agenda/problemas 41/41, shared 899, front 913
+        + E2E navegador 41/41 contra el Mercado Pago simulado (escritorio y
+        celular oscuro: tarjeta y cuenta, «Ir a pagar», 15 min apartados, ficha
+        con el link, volver → «¡Pago recibido!», aviso del proveedor, barrido
+        que cancela y devuelve el stock, cero violaciones de CSP). **Límite de
+        la verificación**: sin cuentas reales de Mercado Pago, Wompi ni PayPal;
+        en http (desarrollo) las pasarelas no reciben la vuelta ni la URL de
+        avisos.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -13,6 +13,9 @@ describe('editor de la tienda (v0.1.412)', () => {
         c.payments.transfer.enabled = true;
         c.payments.cod.enabled = true;
         expect(shopSectionSummary('payment', c, ctx)).toMatch(/^Transferencia.*Contra entrega · 2 entregas$/);
+        // v0.1.413 — el pago en línea va primero en el resumen.
+        c.payments.online = { enabled: true, connection_id: 7, hold_minutes: 30 };
+        expect(shopSectionSummary('payment', c, ctx)).toMatch(/^En línea, Transferencia/);
         expect(shopSectionSummary('seller', c, ctx)).toBe('Falta quién vende');
         expect(shopSectionSummary('orders', c, ctx)).toBe('Pedidos · Tienda');
         expect(shopSectionSummary('publish', c, { ...ctx, enabled: true })).toBe('Publicada');

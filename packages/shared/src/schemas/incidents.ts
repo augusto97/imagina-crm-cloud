@@ -33,6 +33,8 @@ export const INCIDENT_SOURCES = [
     'helpdesk',
     // E6 — un agente de IA que no pudo trabajar (sin IA, dueño sin acceso, topes).
     'ai_agent',
+    // v0.1.413 (ADR-S103) — una tienda que no pudo preparar un pago en línea.
+    'shop',
 ] as const;
 export type IncidentSource = (typeof INCIDENT_SOURCES)[number];
 
@@ -51,6 +53,7 @@ export const INCIDENT_SOURCE_LABELS: Record<IncidentSource, string> = {
     booking: 'Agenda',
     helpdesk: 'Mesa de ayuda',
     ai_agent: 'Agente de IA',
+    shop: 'Tienda online',
 };
 
 export interface IncidentDto {
@@ -124,6 +127,8 @@ export function incidentLink(i: Pick<IncidentDto, 'source' | 'source_id' | 'list
             return list ? `${list}/edit?s=correo` : '/lists';
         case 'ai_agent':
             return i.source_id ? `/agents/${i.source_id}` : '/agents';
+        case 'shop':
+            return i.source_id ? `/shops/${i.source_id}?t=payment` : '/lists';
         default:
             return '/settings?s=problemas';
     }

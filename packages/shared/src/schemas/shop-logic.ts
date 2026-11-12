@@ -78,6 +78,27 @@ export const SHOP_PAYMENT_METHOD_LABELS: Record<ShopPaymentMethod, string> = {
     online: 'Pago en línea',
 };
 
+/**
+ * v0.1.413 — Cómo se ve el pago en línea en la tienda según la cuenta de cobro
+ * de la empresa (Mercado Pago, Wompi o PayPal). Sin zod: lo usa la página.
+ */
+export function shopOnlinePayment(provider: string | null | undefined): { label: string; instructions: string; provider_label: string } {
+    switch (provider) {
+        case 'wompi':
+            return { label: 'Pagar en línea', provider_label: 'Wompi', instructions: 'Con tarjeta, PSE, Nequi o Bancolombia. Al confirmar te llevamos a Wompi para pagar.' };
+        case 'paypal':
+            return { label: 'Pagar con PayPal', provider_label: 'PayPal', instructions: 'Con tarjeta o tu cuenta de PayPal. Al confirmar te llevamos a PayPal para pagar.' };
+        case 'mercadopago':
+            return { label: 'Pagar en línea', provider_label: 'Mercado Pago', instructions: 'Con tarjeta, PSE, Nequi o efectivo. Al confirmar te llevamos a Mercado Pago para pagar.' };
+        default:
+            return { label: 'Pagar en línea', provider_label: '', instructions: 'Al confirmar te llevamos a pagar en línea.' };
+    }
+}
+
+/** v0.1.413 — Cuánto se aparta el stock mientras la persona paga en línea. */
+export const SHOP_HOLD_MINUTES_MIN = 10;
+export const SHOP_HOLD_MINUTES_MAX = 240;
+
 // ── Catálogo: qué campo sirve para cada papel ───────────────────────────
 
 /**
@@ -464,4 +485,10 @@ export interface PublicShopOrder {
     whatsapp_url: string | null;
     /** v0.1.413 — Con el pago en línea pendiente: adónde ir a pagar. */
     pay_url: string | null;
+    /** v0.1.413 — Hasta cuándo se aparta el pedido para pagarlo en línea (ISO). */
+    pay_until: string | null;
+    /** v0.1.413 — Con qué se paga en línea («Mercado Pago», «Wompi», «PayPal»). */
+    pay_provider: string | null;
+    /** v0.1.413 — Lo que la persona tiene que saber del pago (se canceló por no pagar, llegó tarde…). */
+    payment_note: string | null;
 }
