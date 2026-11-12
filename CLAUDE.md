@@ -14456,6 +14456,68 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         + E2E navegador 36/36 en escritorio y 36/36 en celular oscuro, y las 6
         capturas de automatizaciones grabadas en local.
 
+  - [x] **Tienda desde una lista: catálogo, carrito y pedido (v0.1.412,
+        ADR-S103, pedido del usuario: "algo tipo tienda para una lista… que
+        genere un link o vista pública para comprar esos productos" → "haz
+        todos los pasos excepto el 3", sin SEO por ahora)**. Primera de seis
+        versiones (siguen el pago en línea, variantes, envíos y cupones,
+        suscripción/digital/servicio y estadísticas). El módulo interno es
+        `shop` (`store` es WooCommerce); la persona ve «Tienda».
+        (a) **El catálogo ES una lista**: Configuración de la lista →
+        **Tienda** (`ShopsPanel`) crea la tienda (`shops`, migración 0121, RLS)
+        con las columnas del producto sugeridas por nombre y tipo (título,
+        precio, precio antes, foto, descripción, categoría, stock, visible,
+        orden), por ID. **Editor a pantalla completa** (`ShopEditorPage`, con
+        el kit de los constructores): Catálogo · Diseño · Pago · Compra · Quién
+        vende · Pedidos · Publicar, con el estado de cada sección, lo que falta
+        para publicar y la **página real** como vista previa.
+        (b) **Los pedidos caen en listas comunes** armadas con el motor de
+        plantillas (`shop-pack.ts`): Pedidos (`PED-0001`, estados, pago,
+        totales, entrega, cliente), Líneas de pedido y Clientes (por correo),
+        vinculadas, con kanban y el tablero «Ventas · tienda». Sólo lo que
+        escribe la tienda lleva candado (marca `shop_orders_of` en
+        `managedFieldLocks`).
+        (c) **El pedido nace en UNA transacción** (`ShopOrdersService.place`):
+        productos bloqueados en orden de id, el carrito **recalculado desde la
+        base** con `computeShopCart` (shared, la misma función de la página;
+        algo cambió → 409 `shop_cart_changed` con el carrito nuevo), stock
+        descontado, cliente/pedido/líneas/vínculos y la fila de `shop_orders`.
+        Después: tiempo real, automatizaciones y el aviso nuevo `shop`
+        (campana, correo y push). Dos compradores por la última unidad: uno
+        gana.
+        (d) **Cancelar devuelve el stock** (`RecordChangeHub` →
+        `syncCancellation`; sacarlo de «Cancelado» lo vuelve a tomar) y
+        **«Marcar como pagado»** en la ficha del pedido
+        (`RecordShopOrderPanel`).
+        (e) **Página pública** (`/api/v1/public/s/:token`, cliente IIFE
+        `public-shop/main.ts`): vitrina con buscador y categorías, carrito,
+        datos y entrega (domicilio/recoger, compra mínima), y la página del
+        pedido. Caché pública de 30 s, CSP por hash, sello HMAC + campo
+        trampa, límites por IP, tienda y correo en Redis, captcha y
+        autorización de datos opcionales, y lo que pide la ley de quien vende
+        (razón social, NIT, contacto, políticas) antes de publicar.
+        (f) **Pago sin pasarela**: WhatsApp (el número nunca viaja a la página:
+        302 a `wa.me` con el pedido armado), transferencia con instrucciones y
+        contra entrega.
+        (g) **Fotos en miniatura con `sharp`** (dependencia nueva): 160 a
+        1200 px en WebP, caché de un año, sólo fotos de productos de esa tienda;
+        sin `sharp`, la original chica.
+        (h) **Sin SEO** (decisión del usuario): `noindex` siempre, con Open
+        Graph para compartir. **Sólo planes pagos** (0121 apaga `shop` en
+        `trial`) y el operador puede **suspender** una tienda (`/platform/shops`
+        y la sección de la empresa en la consola). Migrar una empresa no lleva
+        las tiendas (se avisa); borrarla las borra.
+        Ayuda: guía `shop`, módulo nuevo **Tienda online** en Aprende (3
+        artículos, ilustraciones `tienda-vitrina` y `tienda-pedido`) y novedad
+        con carrusel. Tests: `shops.spec` (8), `shop.test` en shared (9),
+        `shopEditor.test` (5) — shared 898 y front 913 en verde — + E2E
+        navegador 47/47 (escritorio y celular oscuro: crear desde la lista,
+        editor con su vista previa, publicar, comprar por transferencia y por
+        WhatsApp sin sesión, stock, agotado, marcar pagado, cancelar devuelve
+        el stock, despublicar → 404, cero violaciones de CSP). Bug atrapado en
+        el E2E: el botón de WhatsApp de la página del pedido apuntaba a una
+        ruta relativa rota.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

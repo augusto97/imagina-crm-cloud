@@ -361,6 +361,11 @@ export function remapListSettings(
         out[key] = m;
     }
 
+    // v0.1.412 (ADR-S103) — la tienda no viaja: las listas de sus pedidos
+    // llegan como listas comunes (sin columnas protegidas por una tienda que
+    // no existe en este servidor).
+    delete out.shop_orders_of;
+
     // v0.1.371 — las columnas de cobro (v0.1.365), de suscripción (v0.1.367) y
     // del registro de cobros (v0.1.371) son mapas `dato → id de campo` cuyas
     // CLAVES son nombres («status», «link»): `remapJson` no los ve.

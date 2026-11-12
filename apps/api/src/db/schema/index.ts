@@ -39,6 +39,7 @@ export * from './subscriptions';
 export * from './document-templates';
 export * from './forms';
 export * from './contact-widgets';
+export * from './shops';
 export * from './data-consents';
 export * from './notifications';
 export * from './incidents';

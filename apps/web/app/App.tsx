@@ -55,6 +55,7 @@ const MenuPage = lazyWithReload(() => import('@/admin/menu/MenuPage').then(m => 
 const MobileNavPage = lazyWithReload(() => import('@/admin/menu/MobileNavPage').then(m => ({ default: m.MobileNavPage })));
 // v0.1.394 (ADR-S99) — el editor del widget de contacto.
 const WidgetEditorPage = lazyWithReload(() => import('@/admin/widgets/WidgetEditorPage').then(m => ({ default: m.WidgetEditorPage })));
+const ShopEditorPage = lazyWithReload(() => import('@/admin/shop/ShopEditorPage').then(m => ({ default: m.ShopEditorPage })));
 const CloudSettingsPage = lazyWithReload(() => import('@/cloud/pages/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const ListBuilderPage = lazyWithReload(() => import('@/admin/lists/ListBuilderPage').then(m => ({ default: m.ListBuilderPage })));
 const RecordLayoutEditorPage = lazyWithReload(() => import('@/admin/records/layout/editor/RecordLayoutEditorPage').then(m => ({ default: m.RecordLayoutEditorPage })));
@@ -237,6 +238,9 @@ export function App(): JSX.Element {
                 } />
                 <Route path="settings/widgets/:widgetId" element={
                     <RouteModuleGate module="forms"><Suspense fallback={<RouteFallback />}><WidgetEditorPage /></Suspense></RouteModuleGate>
+                } />
+                <Route path="shops/:shopId" element={
+                    <RouteModuleGate module="shop"><Suspense fallback={<RouteFallback />}><ShopEditorPage /></Suspense></RouteModuleGate>
                 } />
                 <Route path="settings/sms/:connectionId" element={
                     <RouteModuleGate module="integrations"><Suspense fallback={<RouteFallback />}><SmsPage /></Suspense></RouteModuleGate>

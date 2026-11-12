@@ -1,0 +1,99 @@
+import { escapeHtml, inkOn, safeColor, type PortalEmailBrand } from '../portal/portal-email';
+
+/**
+ * v0.1.412 (ADR-S103) — El correo que recibe quien compra: el detalle del
+ * pedido, cómo pagarlo (las instrucciones que escribió la empresa) y el
+ * enlace para verlo. Con la marca de la empresa, nunca la de la plataforma.
+ * Todo texto de la empresa o del cliente va escapado.
+ */
+
+export interface ShopOrderEmailInput {
+    brand: PortalEmailBrand;
+    shopName: string;
+    number: string;
+    customerName: string;
+    lines: Array<{ title: string; qty: number; subtotal: string }>;
+    subtotal: string;
+    shipping: string | null;
+    total: string;
+    delivery: string;
+    paymentLabel: string;
+    paymentInstructions: string;
+    orderUrl: string | null;
+    sellerLine: string;
+}
+
+export interface ShopOrderEmail {
+    subject: string;
+    html: string;
+    text: string;
+}
+
+function paragraphs(s: string): string {
+    return s
+        .split(/\n{2,}/)
+        .map((p) => `<p style="margin:0 0 10px">${escapeHtml(p.trim()).replace(/\n/g, '<br>')}</p>`)
+        .join('');
+}
+
+export function shopOrderEmail(o: ShopOrderEmailInput): ShopOrderEmail {
+    const e = escapeHtml;
+    const color = safeColor(o.brand.color);
+    const ink = inkOn(color);
+    const name = o.brand.name.trim() || o.shopName;
+    const subject = `Recibimos tu pedido ${o.number}`.slice(0, 200);
+    const logo = o.brand.logoUrl
+        ? `<img src="${e(o.brand.logoUrl)}" alt="${e(name)}" style="max-height:48px;max-width:200px;display:block;margin:0 auto 12px;border:0">`
+        : '';
+    const rows = o.lines
+        .map(
+            (l) =>
+                `<tr><td style="padding:8px 0;border-bottom:1px solid #f0f1f3">${e(String(l.qty))} × ${e(l.title)}</td><td style="padding:8px 0;border-bottom:1px solid #f0f1f3;text-align:right;white-space:nowrap">${e(l.subtotal)}</td></tr>`,
+        )
+        .join('');
+    const totals = [
+        `<tr><td style="padding:6px 0;color:#6b7280">Subtotal</td><td style="padding:6px 0;text-align:right">${e(o.subtotal)}</td></tr>`,
+        `<tr><td style="padding:6px 0;color:#6b7280">Entrega · ${e(o.delivery)}</td><td style="padding:6px 0;text-align:right">${e(o.shipping ?? 'Sin costo')}</td></tr>`,
+        `<tr><td style="padding:8px 0;font-weight:700;font-size:16px">Total</td><td style="padding:8px 0;text-align:right;font-weight:700;font-size:16px">${e(o.total)}</td></tr>`,
+    ].join('');
+    const button = o.orderUrl
+        ? `<p style="margin:20px 0 6px;text-align:center"><a href="${e(o.orderUrl)}" style="display:inline-block;background:${color};color:${ink};text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px">Ver mi pedido</a></p>`
+        : '';
+    const html = `<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${e(subject)}</title></head>
+<body style="margin:0;padding:0;background:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;padding:32px 12px"><tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb">
+<tr><td style="height:6px;background:${color};font-size:0;line-height:0">&nbsp;</td></tr>
+<tr><td style="padding:28px 28px 8px;text-align:center">${logo}<div style="font-size:18px;font-weight:600">${e(name)}</div></td></tr>
+<tr><td style="padding:8px 28px 4px;font-size:15px;line-height:1.55">
+<p style="margin:0 0 6px;font-size:20px;font-weight:700">¡Gracias, ${e(o.customerName.split(/\s+/)[0] ?? o.customerName)}!</p>
+<p style="margin:0 0 16px;color:#4b5563">Recibimos tu pedido <strong>${e(o.number)}</strong>.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px">${rows}${totals}</table>
+<div style="margin:18px 0 0;padding:14px 16px;background:#f8fafc;border:1px solid #eef0f3;border-radius:10px">
+<p style="margin:0 0 8px;font-weight:600">${e(o.paymentLabel)}</p>
+${paragraphs(o.paymentInstructions)}
+</div>
+${button}
+</td></tr>
+<tr><td style="padding:16px 28px 24px;border-top:1px solid #f0f1f3;font-size:12px;color:#9ca3af">${e(o.sellerLine)}</td></tr>
+</table></td></tr></table>
+</body></html>`;
+    const text = [
+        `¡Gracias, ${o.customerName}!`,
+        `Recibimos tu pedido ${o.number}.`,
+        '',
+        ...o.lines.map((l) => `${l.qty} × ${l.title} — ${l.subtotal}`),
+        '',
+        `Subtotal: ${o.subtotal}`,
+        `Entrega (${o.delivery}): ${o.shipping ?? 'Sin costo'}`,
+        `Total: ${o.total}`,
+        '',
+        o.paymentLabel,
+        o.paymentInstructions,
+        ...(o.orderUrl ? ['', `Ver tu pedido: ${o.orderUrl}`] : []),
+        '',
+        o.sellerLine,
+    ].join('\n');
+    return { subject, html, text };
+}

@@ -98,6 +98,19 @@ export type NotifyEvent =
           body: string;
       }
     | {
+          /**
+           * v0.1.412 (ADR-S103) — llegó un pedido de la tienda: a las personas
+           * elegidas en la tienda (o a quien la creó), kind `shop`.
+           */
+          type: 'shop';
+          tenantId: number;
+          listId: number;
+          recordId: number;
+          userIds: number[];
+          title: string;
+          body: string;
+      }
+    | {
           type: 'description_mention';
           tenantId: number;
           listId: number;

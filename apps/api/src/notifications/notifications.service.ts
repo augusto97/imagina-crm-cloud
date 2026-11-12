@@ -159,6 +159,12 @@ export class NotificationsService implements OnModuleInit {
             await this.deliver(e.tenantId, e.kind, e.userIds, { listId: e.listId, recordId: e.recordId, actorId: null, title: e.title, body: e.body });
             return;
         }
+        if (e.type === 'shop') {
+            // v0.1.412 — a quienes eligió la tienda; quedan siguiendo el pedido.
+            await this.follow(e.tenantId, e.listId, e.recordId, e.userIds);
+            await this.deliver(e.tenantId, 'shop', e.userIds, { listId: e.listId, recordId: e.recordId, actorId: null, title: e.title, body: e.body });
+            return;
+        }
         if (e.type === 'subscription') {
             // v0.1.367 — quien creó la suscripción y quienes siguen el registro.
             const followers = await this.followerIds(e.tenantId, e.recordId);

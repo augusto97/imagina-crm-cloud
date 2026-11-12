@@ -176,6 +176,8 @@ export function helpScreensFor(pathname: string, search = ''): string[] {
     }
     if (/^\/lists\/[^/]+\/automations(\/.*)?$/.test(path)) out.push('automations');
     if (/^\/lists\/[^/]+\/(template-editor|portal-editor)$/.test(path)) out.push('layout-editor');
+    // v0.1.412 — el editor de una tienda.
+    if (/^\/shops\/[^/]+$/.test(path)) out.push('list-settings', 'list-settings:tienda');
     if (path === '/my-work') out.push('my-work');
     if (path === '/favorites') out.push('favorites');
     if (path === '/avisos') out.push('inbox');

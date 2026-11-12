@@ -20,6 +20,7 @@ import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine'
 import { RecordSubtasks } from '../RecordSubtasks';
 import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
 import { RecordBookingPanel } from '@/admin/booking/RecordBookingPanel';
+import { RecordShopOrderPanel } from '@/admin/shop/RecordShopOrderPanel';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { RecordSubscriptionPanel } from '@/cloud/components/subscriptions/RecordSubscriptionPanel';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
@@ -198,7 +199,13 @@ function ImplicitApprovals({ layout }: { layout: RecordLayoutV3 }): JSX.Element 
     // (no tienen bloque propio: son algo que decidir, no parte del diseño).
     const proposals = ctx.preview === true ? null : <RecordAgentProposals listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />;
     // v0.1.353 — una cita por confirmar se decide arriba, como una aprobación.
-    const booking = ctx.preview === true ? null : <RecordBookingPanel listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />;
+    const booking =
+        ctx.preview === true ? null : (
+            <>
+                <RecordBookingPanel listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />
+                <RecordShopOrderPanel listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />
+            </>
+        );
     if (placed) {
         return (
             <>

@@ -17,9 +17,9 @@ import { qrTargetUrl } from './embedCode';
  * v0.1.397 — Una tarjeta compacta dentro de la pestaña del enlace (antes era
  * una pestaña propia, casi vacía).
  */
-const QR_ANCHOR = { form: 'form-qr', booking: 'booking-qr' } as const;
+const QR_ANCHOR = { form: 'form-qr', booking: 'booking-qr', shop: 'shop-qr' } as const;
 
-export function PublicQrCard({ url, name, kind, highlight }: { url: string; name: string; kind: 'form' | 'booking'; highlight?: boolean }): JSX.Element {
+export function PublicQrCard({ url, name, kind, highlight }: { url: string; name: string; kind: 'form' | 'booking' | 'shop'; highlight?: boolean }): JSX.Element {
     const canvas = useRef<HTMLCanvasElement>(null);
     const box = useRef<HTMLElement>(null);
     // v0.1.397 — Abierto desde «El código QR»: se trae a la vista y se marca.
@@ -28,7 +28,7 @@ export function PublicQrCard({ url, name, kind, highlight }: { url: string; name
     }, [highlight]);
     const [ready, setReady] = useState(false);
     const target = qrTargetUrl(url);
-    const fileBase = (name.trim() || (kind === 'booking' ? 'agenda' : 'formulario'))
+    const fileBase = (name.trim() || (kind === 'booking' ? 'agenda' : kind === 'shop' ? 'tienda' : 'formulario'))
         .toLowerCase()
         .normalize('NFD')
         .replace(/[̀-ͯ]/g, '')
@@ -108,7 +108,9 @@ export function PublicQrCard({ url, name, kind, highlight }: { url: string; name
                     <p className="imcrm-mt-0.5 imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">
                         {kind === 'form'
                             ? __('Para un volante, un cartel o el mostrador: al escanearlo se abre el formulario. En las estadísticas aparece como «Código QR».')
-                            : __('Para un volante, un cartel o el mostrador: al escanearlo se abre la agenda para reservar.')}
+                            : kind === 'shop'
+                              ? __('Para un volante, la vitrina o el mostrador: al escanearlo se abre la tienda para comprar.')
+                              : __('Para un volante, un cartel o el mostrador: al escanearlo se abre la agenda para reservar.')}
                     </p>
                 </div>
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1.5">

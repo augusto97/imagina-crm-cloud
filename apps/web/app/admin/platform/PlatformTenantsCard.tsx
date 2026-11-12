@@ -75,6 +75,7 @@ import { cn } from '@/lib/utils';
 
 import { formatDate, formatNumber } from '@/lib/tenantFormat';
 import { parseUtcDate } from '@/lib/utcDate';
+import { TenantShopsSection } from './TenantShopsSection';
 const STATUS_LABEL: Record<BillingStatus, string> = {
     trialing: __('En prueba'),
     active: __('Activa'),
@@ -767,6 +768,9 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
                                 impersonating={impersonate.isPending}
                                 onImpersonate={(userId, who) => void doImpersonate(userId, who)}
                             />
+
+                            {/* v0.1.412 — tiendas (suspender una que se usa mal). */}
+                            <TenantShopsSection tenantId={t.id} />
 
                             {error !== null && <p className="imcrm-text-sm imcrm-text-destructive">{error}</p>}
                         </>

@@ -17,6 +17,7 @@ import { CAP, useCan } from '@/lib/permissions';
 import { DocumentTemplatesPanel } from '../documents/DocumentTemplatesPanel';
 import { BookingPanel } from '../booking/BookingPanel';
 import { FormsPanel } from '../forms/FormsPanel';
+import { ShopsPanel } from '../shop/ShopsPanel';
 import { ApprovalFlowsPanel } from '../approvals/ApprovalFlowsPanel';
 import { HelpdeskMailboxPanel } from '../helpdesk/HelpdeskMailboxPanel';
 import { HelpdeskSettingsPanel } from '../helpdesk/HelpdeskSettingsPanel';
@@ -47,6 +48,7 @@ const SECTION_GUIDES: Partial<Record<ListSettingsSectionId, string>> = {
     formularios: 'forms',
     documentos: 'documents',
     agenda: 'booking',
+    tienda: 'shop',
     aprobaciones: 'approvals',
     correo: 'helpdesk',
 };
@@ -76,10 +78,15 @@ export function ListBuilderPage(): JSX.Element {
     // C2 — Formularios y Documentos tienen su propia capacidad (rol propio).
     const canForms = useCan(CAP.MANAGE_FORMS);
     const canDocs = useCan(CAP.MANAGE_DOCUMENTS);
+    // v0.1.412 — la tienda crea listas y publica datos hacia afuera.
+    const canManageLists = useCan(CAP.MANAGE_LISTS);
     // D2 — una lista que mantiene una tienda no tiene mesa de ayuda (sus registros los crea la tienda).
     const storeManaged = readMirrorListMarker(list.data?.settings) !== null;
     const allowed = (id: string): boolean =>
-        (id !== 'formularios' || canForms) && (id !== 'documentos' || canDocs) && ((id !== 'correo' && id !== 'sla') || !storeManaged);
+        (id !== 'formularios' || canForms) &&
+        (id !== 'documentos' || canDocs) &&
+        ((id !== 'correo' && id !== 'sla' && id !== 'tienda') || !storeManaged) &&
+        (id !== 'tienda' || canManageLists);
     const rawSection = params.get('s');
     const requested = resolveListSettingsSection(rawSection);
     const active = allowed(requested) ? requested : 'campos';
@@ -289,6 +296,12 @@ export function ListBuilderPage(): JSX.Element {
             {active === 'agenda' && (
                 <PlanModuleGate module="booking">
                     <BookingPanel listId={data.id} listName={data.name} listSettings={data.settings} />
+                </PlanModuleGate>
+            )}
+
+            {active === 'tienda' && (
+                <PlanModuleGate module="shop">
+                    <ShopsPanel listId={data.id} listName={data.name} listSettings={data.settings} />
                 </PlanModuleGate>
             )}
 

@@ -87,6 +87,7 @@ import {
     forms,
     bookingPages,
     contactWidgets,
+    shops,
     bookingAppointments,
     subscriptionPlans,
     subscriptions,
@@ -342,6 +343,9 @@ export class TenantTransferService {
             await dump('booking_pages', await this.byTenant(bookingPages, tenantId, liveList(bookingPages.listId)));
             // v0.1.394 — widgets de contacto (los botones apuntan a formularios y agendas por id).
             await dump('contact_widgets', await this.byTenant(contactWidgets, tenantId));
+            // v0.1.412 — las tiendas NO viajan (sólo se cuentan para avisarlo):
+            // su catálogo y sus pedidos son listas y esas sí llegan.
+            await dump('shops', (await this.byTenant(shops, tenantId)).map((r) => ({ id: (r as { id: number }).id, name: (r as { name: string }).name })));
             // v0.1.367 — suscripciones de Mercado Pago: los planes y cada
             // suscripción (siguen cobrándose en Mercado Pago; con la conexión
             // que viaja, el destino las sigue revisando). Los cobros van abajo.
@@ -2233,6 +2237,12 @@ export class TenantTransferService {
         if (publicTokens.size > 0) {
             warnings.push(
                 `${publicTokens.size} lista(s) pública(s) tienen un enlace NUEVO: hay que volver a repartirlo.`,
+            );
+        }
+        const shopRows = await this.readAll(rows('shops'));
+        if (shopRows.length > 0) {
+            warnings.push(
+                `${shopRows.length} tienda(s) no viajaron: el catálogo y sus pedidos llegaron como listas comunes. Vuelve a crear la tienda desde la configuración de la lista del catálogo.`,
             );
         }
         if ((counts.contact_widgets ?? 0) > 0) {
