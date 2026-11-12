@@ -2850,4 +2850,41 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.418-tienda-medir',
+        version: '0.1.418',
+        date: '2026-11-12',
+        kind: 'feature',
+        title: 'Estadísticas de tu tienda y conversiones para tus anuncios',
+        summary:
+            'Mira cuántos visitan tu tienda, qué productos abren y compran, cuánto vendes y de dónde llegan los que compran. Google Ads, Meta y Tag Manager ven cada compra.',
+        media: {
+            slides: [
+                {
+                    title: 'De la visita al pago',
+                    text: 'Visitas, pedidos, ventas y conversión, día por día. Cuántos abren un producto, lo agregan, empiezan la compra y pagan, y los productos que más venden.',
+                    illustration: 'tienda-medir',
+                },
+                {
+                    title: 'Cada compra, en tus anuncios',
+                    text: 'Insertada en tu sitio, la tienda le avisa cada paso a Google Tag Manager, a tu etiqueta de Google Ads y al píxel de Meta, con el número del pedido para no contarla dos veces.',
+                    illustration: 'form-conversions',
+                },
+                {
+                    title: 'De dónde llegó cada pedido',
+                    text: 'La campaña y el anuncio quedan en el pedido: en su ficha y en las columnas Llegó desde y Campaña de tu lista de Pedidos.',
+                    illustration: 'tienda-pedido',
+                },
+            ],
+        },
+        body: [
+            'Abre tu tienda (**Configurar lista → Tienda → Editar**).',
+            '',
+            '- Arriba, toca **Estadísticas** para ver los últimos 7, 30 o 90 días.',
+            '- En **Medir conversiones** pega tu etiqueta de compra de Google Ads o activa el píxel de Meta. Con Tag Manager no tienes que configurar nada.',
+            '- Si tu anuncio lleva directo al enlace de la tienda, activa **Cargar mis etiquetas en el enlace directo**.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

@@ -14779,6 +14779,61 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         normal intacto, ficha sin «Marcar como pagado», celular sin scroll
         lateral, cero violaciones de CSP).
 
+  - [x] **Tienda: estadísticas y conversiones (v0.1.418, addendum ADR-S103,
+        séptima de ocho versiones; la última se partió en «medir» y «vender en
+        más lugares»)**: (a) **Estadísticas** (modo nuevo del editor,
+        `?t=stats`, `ShopStatsPanel`): visitas, pedidos (y pagados), ventas con
+        el ticket promedio y conversión de 7, 30 o 90 días en la zona de la
+        empresa, día por día, **de la visita al pago** (vieron un producto,
+        agregaron al carrito, empezaron la compra, hicieron el pedido,
+        pagaron), los productos que más venden con cuántas veces los abren y
+        agregan, de dónde llegan (campaña, sitio o directo) y el dispositivo.
+        La página suma CONTADORES (`shop_stats`, migración 0125, RLS; lógica
+        pura sin zod en `shop-stats-logic.ts`): lotes de eventos a
+        `POST /public/s/:token/events` (204, 60 por IP y minuto), un hash de
+        Redis por tienda y día (tope 240) que cada 2 min se vuelca con un
+        UPSERT que suma — nunca la IP ni nada de la persona; un producto que la
+        tienda no vende no suma. Pedidos, pagados, ventas, unidades y origen se
+        cuentan de `shop_orders` (sin los vencidos), así también aparece lo de
+        antes. (b) **El origen de cada pedido**: la página manda la fuente y la
+        campaña (utm, gclid, fbclid…, limpiadas en el servidor), que quedan en
+        `shop_orders.origin`, en la ficha del pedido («Llegó desde: Campaña:
+        google · Campaña: navidad · anuncio de Google») y en las columnas
+        **Llegó desde** y **Campaña** de Pedidos (con candado; una tienda de
+        antes las agrega con un botón en Medir conversiones, que reusa las que
+        ya existen). (c) **Medir conversiones** (sección nueva del editor,
+        `ShopMeasurePanel`, `config.conversion`): insertada en un sitio, la
+        tienda le avisa a `embed.js` cada paso y éste empuja al `dataLayer` los
+        eventos de comercio electrónico de Google (`view_item`,
+        `add_to_cart`, `begin_checkout`, `purchase` con productos, valor,
+        moneda y el número del pedido como `transaction_id`, limpiando
+        `ecommerce` antes de cada uno), la conversión de Google Ads pegada como
+        fragmento, el píxel de Meta (ViewContent, AddToCart, InitiateCheckout,
+        Purchase con `eventID`) y el evento del navegador `imagina:shop`; en el
+        enlace directo, las mismas etiquetas cargadas por ID (Google Analytics,
+        Google Ads, píxel de Meta) con la CSP por pedido, COOP y el aviso de
+        cookies (ADR-S97). La compra sale cuando el pedido se hizo —con pago en
+        línea o suscripción, cuando se pagó; nunca cancelado— una sola vez
+        (dedup por número en el navegador). **Conversiones mejoradas** manda el
+        correo normalizado y el teléfono en E.164: uno escrito sin indicativo
+        toma el del país de la moneda de la tienda (`shopE164Phone`; con USD o
+        EUR no adivina). **Bugs atrapados**: los productos de lo todavía no
+        volcado salían sin nombre en el resumen (ahora se lee Redis antes de
+        buscar los nombres); en el celular, cambiar de sección por la dirección
+        dejaba puesta la pestaña de Estadísticas. Ayuda: guía nueva
+        `shop-measure`, paso 8 en la de la tienda, artículo de Aprende «Cuánto
+        vendes y qué anuncios traen las compras» con la ilustración nueva
+        `tienda-medir`, y novedad con carrusel. Tests: `shops-stats.spec` (5:
+        Redis → volcado que suma y RLS, origen en columnas/ficha/resumen,
+        compra con y sin el correo y cancelada, etiquetas del enlace directo,
+        columnas para tiendas de antes) + shops/formularios/agenda 155/155,
+        shared 927, front 914 — E2E navegador 40/40 (sitio de otro origen con
+        GTM, gtag y fbq simulados: los cuatro eventos, una conversión con el
+        número, Meta con eventID, recargar no repite; ficha con el origen;
+        estadísticas; enlace directo con las etiquetas simuladas en sus
+        dominios reales y cero violaciones de CSP; celular oscuro).
+
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

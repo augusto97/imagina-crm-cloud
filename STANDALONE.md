@@ -8715,10 +8715,13 @@ antes de desarrollar y aprobó el plan en seis versiones, **sin la parte de SEO*
 | v0.1.415 | Envíos por zona y cupones |
 | v0.1.416 | Productos digitales, servicios (agenda), pedidos sin costo y «Mis pedidos» |
 | v0.1.417 | Suscripciones desde la tienda |
-| v0.1.418 | Estadísticas, conversiones, botones «Comprar» insertables, widget, asistente/MCP |
+| v0.1.418 | Estadísticas y conversiones (Google Ads, Meta, Tag Manager) con el origen de cada pedido |
+| v0.1.419 | Insertar y vender en más lugares: ventana/panel/pantalla completa, botones «Comprar», widget de contacto, asistente/MCP |
 
 (El plan original juntaba suscripción con digital/servicio en v0.1.416; se
-partió en dos al desarrollarlo para que cada versión se pudiera probar sola.)
+partió en dos al desarrollarlo para que cada versión se pudiera probar sola. La
+última también se partió en dos —medir y vender en más lugares—: quedan ocho
+versiones.)
 
 Internamente el módulo se llama `shop` (`store` ya es WooCommerce, ADR-S24); la
 persona ve «Tienda».
@@ -8982,3 +8985,46 @@ persona ve «Tienda».
    suscripción con su plan («El del mismo nombre» o «Sin plan») y la casilla
    de la dirección.
 
+**Addendum v0.1.418 — Estadísticas y conversiones de la tienda.**
+1. **Contadores, no personas** (`shop_stats`, migración 0125, RLS; lo puro en
+   `shop-stats-logic.ts`, sin zod, porque lo importa la página): la página manda
+   lotes de eventos (`view` una vez por visita con el origen y el dispositivo,
+   `product`/`add` una vez por producto y visita, `checkout`) a
+   `POST /public/s/:token/events` (204, freno de 60 lotes por IP y minuto) y
+   `ShopStatsService` los SUMA en un hash de Redis por tienda y día —tope de
+   240 contadores, con el Lua de formularios y widget— que cada 2 min se vuelca
+   con un UPSERT que suma (FK rota = descartado). Un producto que la tienda no
+   vende no suma. Nunca la IP ni nada de la persona.
+2. **Lo que sale de los pedidos se cuenta de `shop_orders`** al pedir el
+   resumen (pedidos sin los vencidos, pagados, ingresos, unidades por producto
+   —el producto, no la variante— y pedidos por origen), así nada se cuenta dos
+   veces y aparecen los pedidos de antes. `GET /shops/:id/stats?days=7|30|90`
+   (`summarizeShopStats`): totales, ticket promedio, conversión (pagados /
+   visitas), día por día, embudo de seis pasos, productos (con su nombre de
+   HOY), orígenes y dispositivos. Lo todavía en Redis se lee ANTES de buscar
+   los nombres (bug atrapado por el test: los productos de lo no volcado salían
+   sin nombre). Modo **Estadísticas** del editor (`?t=stats`).
+3. **El origen de cada pedido**: la página manda `origin.src`
+   (`formStatSource`) y `origin.attribution` (utm, gclid/gbraid/wbraid,
+   fbclid…, limpiado con `cleanAttribution`); se guarda en `shop_orders.origin`
+   (`shopOrderOrigin`) y en las columnas **Llegó desde** y **Campaña** de
+   Pedidos (con candado, en el pack; una tienda de antes las agrega con
+   `POST /shops/:id/origin-columns`, que reusa las que ya existen por nombre y
+   tipo). La ficha lo muestra (`panelOrigin`: fuente, campaña, anuncio de
+   Google o Meta).
+4. **Conversiones** (`config.conversion`, `shopConversionSchema`, lectura
+   tolerante; sección **Medir conversiones** del editor): insertada, la página
+   avisa por `imb-conversion` (con ack) cada paso al `embed.js` del sitio, que
+   empuja al `dataLayer` los eventos de comercio electrónico de Google
+   (`view_item`, `add_to_cart`, `begin_checkout`, `purchase`, limpiando
+   `ecommerce` antes de cada uno y con `eventCallback` si hay GTM), la
+   conversión de Google Ads con `transaction_id` = número del pedido, el píxel
+   de Meta (ViewContent/AddToCart/InitiateCheckout/Purchase con `eventID`) si
+   se activa, y el evento del navegador `imagina:shop`. En el enlace directo,
+   las mismas etiquetas por ID (`window.imbPixels.shop`, ADR-S97 con la CSP por
+   pedido y COOP). La compra (`shopPurchaseConversion`) sale con el pedido
+   hecho —con pago en línea o suscripción, sólo pagado; nunca cancelado— y
+   se deduplica por número en el navegador. **Conversiones mejoradas** suma el
+   correo en minúsculas y el teléfono en E.164 (`shopE164Phone`: sin
+   indicativo toma el del país de la moneda de la tienda; con USD/EUR no
+   adivina).

@@ -48,6 +48,9 @@ export const ORDER_ROLES = [
     /** v0.1.415 */
     'discount',
     'coupon',
+    /** v0.1.418 — De dónde llegó: la campaña o el sitio, y el nombre de la campaña. */
+    'source',
+    'campaign',
 ] as const;
 export type OrderRole = (typeof ORDER_ROLES)[number];
 
@@ -68,12 +71,17 @@ export const PROTECTED_ORDER_ROLES: readonly OrderRole[] = [
     'order_url',
     'discount',
     'coupon',
+    'source',
+    'campaign',
 ];
 
 /** v0.1.415 — Columnas que llegaron después del pack: una tienda que ya existía las suma al crear su primer cupón. */
-export const LATER_ORDER_COLUMNS: ReadonlyArray<{ role: OrderRole; label: string; slug: string; type: 'currency' | 'text' }> = [
-    { role: 'discount', label: 'Descuento', slug: 'descuento', type: 'currency' },
-    { role: 'coupon', label: 'Cupón', slug: 'cupon', type: 'text' },
+export const LATER_ORDER_COLUMNS: ReadonlyArray<{ role: OrderRole; label: string; slug: string; type: 'currency' | 'text'; group: 'coupons' | 'origin' }> = [
+    { role: 'discount', label: 'Descuento', slug: 'descuento', type: 'currency', group: 'coupons' },
+    { role: 'coupon', label: 'Cupón', slug: 'cupon', type: 'text', group: 'coupons' },
+    /** v0.1.418 — Una tienda que ya existía las suma desde «Medir conversiones». */
+    { role: 'source', label: 'Llegó desde', slug: 'llego_desde', type: 'text', group: 'origin' },
+    { role: 'campaign', label: 'Campaña', slug: 'campana', type: 'text', group: 'origin' },
 ];
 
 export const LINE_ROLES = ['title', 'order', 'product', 'qty', 'unit_price', 'subtotal', 'sku'] as const;
@@ -104,6 +112,8 @@ const ORDER_SLUG: Record<OrderRole, string> = {
     order_url: 'enlace',
     discount: 'descuento',
     coupon: 'cupon',
+    source: 'llego_desde',
+    campaign: 'campana',
 };
 const LINE_SLUG: Record<LineRole, string> = {
     title: 'producto_nombre',
@@ -183,6 +193,8 @@ export function shopPackBlueprint(input: ShopPackInput): ListBlueprint {
                     f('Tienda', ORDER_SLUG.shop, 'text'),
                     f('Pagado el', ORDER_SLUG.paid_at, 'datetime'),
                     f('Enlace del pedido', ORDER_SLUG.order_url, 'url', { description: 'La página del pedido que ve quien compró.' }),
+                    f('Llegó desde', ORDER_SLUG.source, 'text', { description: 'La campaña (utm_source) o el sitio desde el que llegó quien compró.' }),
+                    f('Campaña', ORDER_SLUG.campaign, 'text', { description: 'El nombre de la campaña (utm_campaign), si llegó por un anuncio o un enlace con campaña.' }),
                     f('Fecha', 'fecha', 'created_at'),
                 ],
                 {

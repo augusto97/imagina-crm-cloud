@@ -17,6 +17,7 @@ export const meta: LearnModuleMeta = {
         'Productos digitales que se descargan al pagar y servicios que se agendan en tu agenda',
         'El stock se descuenta solo y vuelve si cancelas el pedido',
         'Enlace, código para tu sitio web y código QR',
+        'Estadísticas de la visita al pago y conversiones para Google Ads, Meta y Tag Manager',
     ],
     articles: [
         {
@@ -44,6 +45,15 @@ export const meta: LearnModuleMeta = {
             minutes: 5,
             level: 'basic',
             keywords: 'pedidos lineas clientes estado nuevo preparacion enviado entregado cancelado marcar pagado stock devolver tablero ventas',
+        },
+        {
+            id: 'tienda-online-medir',
+            title: 'Cuánto vendes y qué anuncios traen las compras',
+            summary: 'Las estadísticas de la tienda (de la visita al pago, los productos que más venden y de dónde llegan), las conversiones para Google Ads, Meta y Tag Manager, y de dónde llegó cada pedido.',
+            minutes: 6,
+            level: 'advanced',
+            keywords: 'estadisticas ventas visitas conversion embudo productos origen campaña anuncios google ads meta facebook pixel tag manager gtm datalayer comercio electronico purchase add to cart begin checkout view item analytics ga4 utm gclid fbclid enlace directo cookies',
+            needs: 'manage_lists',
         },
     ],
 };

@@ -49,6 +49,10 @@ import {
     shopVariantPriceRange,
 } from '@imagina-base/shared/src/schemas/shop-logic';
 import { subscriptionFrequencyText, subscriptionPlanExtras } from '@imagina-base/shared/src/schemas/form-logic';
+import { formStatSource } from '@imagina-base/shared/src/schemas/form-stats-logic';
+import { attributionFromSearch, cleanAttribution, type AttributionData } from '@imagina-base/shared/src/schemas/conversion-logic';
+import type { ShopStatDevice, ShopStatEvent } from '@imagina-base/shared/src/schemas/shop-stats-logic';
+import type { PublicDirectTags } from '@imagina-base/shared/src/schemas/conversion-logic';
 
 interface Boot {
     token: string;
@@ -221,6 +225,255 @@ async function api<T>(path: string, init?: RequestInit): Promise<{ ok: true; dat
 
 const cart = new Map<number, number>();
 
+// ─────────────── De dónde llegó la visita (v0.1.418) ───────────────
+// Insertada en un sitio con el script (`embed.js`), el sitio le pasa a la
+// tienda de dónde vino la persona (la campaña, el clic del anuncio, la página
+// del sitio) y, al comprar, convierte el aviso en un evento DEL SITIO. Sin ese
+// script (un iframe pegado solo), se usa lo que trae la propia dirección.
+let hostAttribution: AttributionData | null = null;
+let hostOrigin: string | null = null;
+const conversionAcks = new Set<string>();
+const contextWaiters: Array<() => void> = [];
+if (EMBEDDED && !BOOT.preview) {
+    window.addEventListener('message', (e: MessageEvent) => {
+        if (e.source !== window.parent) return;
+        const d = e.data as { type?: string; attribution?: unknown; ref?: string } | null;
+        if (!d || typeof d !== 'object') return;
+        if (d.type === 'imb-context') {
+            hostAttribution = cleanAttribution(d.attribution);
+            hostOrigin = typeof e.origin === 'string' && /^https?:\/\//.test(e.origin) ? e.origin : null;
+            contextWaiters.splice(0).forEach((fn) => fn());
+        } else if (d.type === 'imb-conversion-ack' && typeof d.ref === 'string') {
+            conversionAcks.add(d.ref);
+        }
+    });
+    try {
+        window.parent.postMessage({ type: 'imb-hello' }, '*');
+    } catch {
+        // nada
+    }
+}
+
+/**
+ * Lo que se sabe de dónde vino: lo del sitio (insertada) sobre lo de la
+ * propia dirección; la página es la del sitio (o, sin el script, la que cargó
+ * el marco) o, por el enlace directo, el propio enlace. El servidor lo limpia.
+ */
+function attributionNow(): AttributionData {
+    const own = attributionFromSearch(location.search);
+    let outsideRef = '';
+    try {
+        if (document.referrer && new URL(document.referrer).host !== location.host) outsideRef = document.referrer.slice(0, 1000);
+    } catch {
+        // nada
+    }
+    if (!EMBEDDED) {
+        if (outsideRef) own.referrer = outsideRef;
+        own.page_url = location.href.split('#')[0]!.slice(0, 1000);
+    } else if (outsideRef) {
+        own.page_url = outsideRef;
+    }
+    return { ...own, ...(hostAttribution ?? {}) };
+}
+
+/** Espera (un rato corto) a que el sitio diga de dónde vino la persona. */
+function whenContext(ms: number): Promise<void> {
+    if (!EMBEDDED || BOOT.preview || hostAttribution !== null) return Promise.resolve();
+    return new Promise((ok) => {
+        const t = window.setTimeout(ok, ms);
+        contextWaiters.push(() => {
+            window.clearTimeout(t);
+            ok();
+        });
+    });
+}
+
+/** La clave de origen (`d`, `u:<campaña>`, `h:<sitio>`) para las estadísticas y el pedido. */
+function sourceKey(): string {
+    const a = attributionNow();
+    return formStatSource({ utm_source: a.utm_source ?? null, referrer: a.referrer ?? (EMBEDDED ? a.page_url : null) ?? null, own_hosts: [location.hostname] });
+}
+
+// ─────────────────── Estadísticas (v0.1.418) ───────────────────
+// Sólo contadores: una visita, los productos que abrió, lo que agregó al
+// carrito y si empezó la compra. Sin cookies ni datos de la persona. Van en
+// lotes y, al cerrar la página, con sendBeacon (no frena nada).
+const statQueue: ShopStatEvent[] = [];
+let statTimer: number | null = null;
+
+/** ¿Es la primera vez en esta visita (esta pestaña)? */
+function onceThisVisit(key: string): boolean {
+    try {
+        const k = `imb-shop-st:${BOOT.token}:${key}`;
+        if (sessionStorage.getItem(k)) return false;
+        sessionStorage.setItem(k, '1');
+    } catch {
+        // Sin sessionStorage (modo privado estricto) se cuenta igual.
+    }
+    return true;
+}
+
+function flushStats(beacon = false): void {
+    if (statTimer !== null) {
+        window.clearTimeout(statTimer);
+        statTimer = null;
+    }
+    while (statQueue.length) {
+        const body = JSON.stringify({ events: statQueue.splice(0, 20) });
+        try {
+            if (beacon && typeof navigator.sendBeacon === 'function' && navigator.sendBeacon(`${API}/events`, new Blob([body], { type: 'application/json' }))) continue;
+        } catch {
+            // cae al fetch
+        }
+        void fetch(`${API}/events`, { method: 'POST', credentials: 'omit', keepalive: true, headers: { 'Content-Type': 'application/json' }, body }).catch(() => undefined);
+    }
+}
+
+function stat(e: ShopStatEvent): void {
+    if (BOOT.preview) return;
+    statQueue.push(e);
+    if (statQueue.length >= 20) flushStats();
+    else if (statTimer === null) statTimer = window.setTimeout(() => flushStats(), 1500);
+}
+
+function deviceKind(): ShopStatDevice {
+    const coarse = matchMedia('(pointer: coarse)').matches;
+    if (!coarse) return 'desktop';
+    return Math.min(screen.width, screen.height) >= 600 ? 'tablet' : 'mobile';
+}
+
+/** Una visita a la tienda (una por pestaña). */
+function trackVisit(): void {
+    if (BOOT.preview || !meta || !onceThisVisit('v')) return;
+    void whenContext(700).then(() => stat({ kind: 'view', src: sourceKey(), dev: deviceKind() }));
+}
+
+/** Abrió la ficha de un producto (una vez por producto y visita). */
+function trackProduct(productId: number): void {
+    if (BOOT.preview || !onceThisVisit(`p${productId}`)) return;
+    stat({ kind: 'product', item: productId, first: onceThisVisit('pv') });
+}
+
+/** Agregó un producto al carrito (una vez por producto y visita). */
+function trackAdd(productId: number): void {
+    if (BOOT.preview || !onceThisVisit(`a${productId}`)) return;
+    stat({ kind: 'add', item: productId, first: onceThisVisit('av') });
+}
+
+/** Empezó la compra o la suscripción (una vez por visita). */
+function trackCheckout(): void {
+    if (BOOT.preview || !onceThisVisit('c')) return;
+    stat({ kind: 'checkout' });
+}
+
+// ─────────────── Medir conversiones (v0.1.418) ───────────────
+// Insertada en un sitio con el script, cada paso de la compra se le avisa al
+// sitio con los eventos de comercio electrónico de Google (view_item,
+// add_to_cart, begin_checkout, purchase): Tag Manager, la etiqueta de Google
+// Ads (la compra) y el píxel de Meta los toman ahí. Por el enlace directo, si
+// la tienda lo pidió, la página carga las etiquetas de la empresa por su ID.
+type EcommerceAction = 'view_item' | 'add_to_cart' | 'begin_checkout' | 'purchase';
+interface EcommerceItem {
+    item_id: string;
+    item_name: string;
+    price: number;
+    quantity: number;
+    item_variant?: string;
+    item_category?: string;
+}
+interface DirectPixels {
+    start(cfg: PublicDirectTags): boolean;
+    shop?(ev: unknown, done: (() => void) | null): void;
+}
+const conversionCfg = BOOT.meta?.conversion ?? null;
+let directPixels: DirectPixels | null = null;
+if (!EMBEDDED && !BOOT.preview && conversionCfg?.direct) {
+    const p = (window as unknown as { imbPixels?: DirectPixels }).imbPixels;
+    if (p && typeof p.start === 'function' && typeof p.shop === 'function' && p.start(conversionCfg.direct)) directPixels = p;
+}
+let ecoSeq = 0;
+
+function targetOrigin(): string {
+    if (hostOrigin) return hostOrigin;
+    try {
+        const anc = (location as Location & { ancestorOrigins?: DOMStringList }).ancestorOrigins;
+        if (anc && anc.length > 0 && anc[0]) return anc[0];
+    } catch {
+        // nada
+    }
+    return '*';
+}
+
+/** Un producto (o variante) del carrito como lo piden Google y Meta. */
+function ecoItem(id: number, qty: number): EcommerceItem | null {
+    const it = buyable.get(id) ?? subscribable.get(id);
+    if (!it) return null;
+    const out: EcommerceItem = { item_id: String(it.product.id), item_name: it.product.title.slice(0, 120), price: it.price ?? 0, quantity: qty };
+    if (it.variant?.label) out.item_variant = it.variant.label.slice(0, 120);
+    if (it.product.categories[0]) out.item_category = it.product.categories[0].slice(0, 80);
+    return out;
+}
+
+/**
+ * Le avisa al sitio (o a las etiquetas del enlace directo) un paso de la
+ * compra. Con `done`, se llama cuando las etiquetas terminaron (o a los 1,6 s).
+ */
+function ecommerce(action: EcommerceAction, data: { value: number | null; items: EcommerceItem[]; transaction_id?: string; shipping?: number; coupon?: string | null; user_data?: unknown }, done?: () => void): void {
+    const finish = (): void => done?.();
+    if (BOOT.preview || !meta) return finish();
+    const ev = {
+        kind: 'shop',
+        action,
+        id: BOOT.token.slice(0, 12),
+        name: meta.title,
+        currency: meta.currency,
+        value: data.value,
+        items: data.items.slice(0, 50),
+        google_ads: conversionCfg?.google_ads ?? null,
+        meta_event: conversionCfg?.meta_event === true,
+        ...(action === 'purchase' ? { transaction_id: data.transaction_id ?? '', submission_id: data.transaction_id ?? '', shipping: data.shipping ?? 0, coupon: data.coupon ?? null, user_data: data.user_data ?? null } : {}),
+    };
+    if (EMBEDDED) {
+        const ref = `e${++ecoSeq}${Date.now().toString(36)}`;
+        try {
+            window.parent.postMessage({ type: 'imb-conversion', ref, event: ev }, targetOrigin());
+        } catch {
+            return finish();
+        }
+        if (!done) return;
+        // Si el sitio no tiene el script (un iframe pegado solo), nadie contesta: se sigue enseguida.
+        const t0 = Date.now();
+        const tick = (): void => {
+            if (conversionAcks.has(ref)) return void window.setTimeout(finish, 900);
+            if (Date.now() - t0 >= 500) return finish();
+            window.setTimeout(tick, 50);
+        };
+        tick();
+        return;
+    }
+    if (directPixels?.shop) directPixels.shop(ev, done ? finish : null);
+    else finish();
+}
+
+/** La compra de un pedido (una sola vez por pedido en este navegador). */
+function trackPurchase(c: NonNullable<PublicShopOrder['conversion']>): void {
+    try {
+        const k = `imb-shop-buy:${c.transaction_id}`;
+        if (localStorage.getItem(k)) return;
+        localStorage.setItem(k, '1');
+    } catch {
+        // sin almacenamiento: se avisa igual (Google y Meta no cuentan dos veces el mismo pedido)
+    }
+    ecommerce('purchase', { value: c.value, items: c.items as EcommerceItem[], transaction_id: c.transaction_id, shipping: c.shipping, coupon: c.coupon, user_data: c.user_data ?? null });
+}
+
+if (!BOOT.preview) {
+    window.addEventListener('pagehide', () => flushStats(true));
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') flushStats(true);
+    });
+}
+
 function loadCart(): void {
     cart.clear();
     const raw = storageGet(CART_KEY);
@@ -253,6 +506,12 @@ function setQty(id: number, qty: number): void {
     const item = buyable.get(id);
     const cap = item ? maxFor(item) : SHOP_MAX_QTY;
     const next = Math.max(0, Math.min(cap, Math.floor(qty)));
+    const prev = cart.get(id) ?? 0;
+    if (next > prev) {
+        trackAdd(item?.product.id ?? id);
+        const eco = ecoItem(id, next - prev);
+        if (eco) ecommerce('add_to_cart', { value: eco.price * eco.quantity, items: [eco] });
+    }
     if (next === 0) cart.delete(id);
     else cart.set(id, next);
     saveCart();
@@ -467,6 +726,8 @@ function footer(): HTMLElement {
                 policyBtn('Quién vende', 'seller'),
             ]),
         ]),
+        // v0.1.418 — Con las etiquetas del enlace directo, el aviso de cookies.
+        directPixels && conversionCfg?.direct?.notice ? el('div', { cls: 's-foot-in s-pixels-note', 'data-testid': 'shop-pixels-note', text: conversionCfg.direct.notice }) : null,
     ]);
 }
 
@@ -712,6 +973,11 @@ function catalogView(): HTMLElement[] {
 function openOverlay(o: NonNullable<Overlay>): void {
     if (!overlay) lastFocus = document.activeElement as HTMLElement | null;
     overlay = o;
+    if (o.kind === 'product') {
+        trackProduct(o.id);
+        const p = products.find((x) => x.id === o.id);
+        if (p) ecommerce('view_item', { value: p.price, items: [{ item_id: String(p.id), item_name: p.title.slice(0, 120), price: p.price ?? 0, quantity: 1, ...(p.categories[0] ? { item_category: p.categories[0].slice(0, 80) } : {}) }] });
+    }
     renderOverlay();
 }
 
@@ -1844,7 +2110,7 @@ async function placeOrder(): Promise<void> {
             stamp: co.stamp ?? '',
             captcha: captchaToken ?? undefined,
             website: hpInput?.value ?? '',
-            origin: { page: location.href.slice(0, 2000), referrer: document.referrer.slice(0, 2000) },
+            origin: { page: location.href.slice(0, 2000), referrer: document.referrer.slice(0, 2000), src: sourceKey(), attribution: attributionNow() },
         };
         const res = await api<{ order_token: string; number: string; total: number; payment_method: ShopPaymentMethod; whatsapp_path: string | null; pay_url: string | null }>('/orders', {
             method: 'POST',
@@ -1972,6 +2238,8 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
     }
     const o = res.data;
     const m = meta!;
+    // v0.1.418 — La compra se mide al hacer el pedido o al volver de pagar (cuando ya cuenta).
+    if (o.conversion && (opts.placed || opts.returned)) trackPurchase(o.conversion);
     const fmt = (n: number): string => formatShopMoney(n, o.currency, m.number_format);
     const kids: HTMLElement[] = [];
     kids.push(
@@ -2320,6 +2588,11 @@ function goCatalog(): void {
 function goCheckout(): void {
     view = 'checkout';
     subscribingId = null;
+    trackCheckout();
+    {
+        const items = [...cart].map(([id, qty]) => ecoItem(id, qty)).filter((x): x is EcommerceItem => x !== null);
+        ecommerce('begin_checkout', { value: items.reduce((a, x) => a + x.price * x.quantity, 0), items });
+    }
     co.serverCart = null;
     paint(checkoutView());
     window.scrollTo({ top: 0 });
@@ -2329,6 +2602,11 @@ function goCheckout(): void {
 function goSubscribe(id: number): void {
     view = 'checkout';
     subscribingId = id;
+    trackCheckout();
+    {
+        const eco = ecoItem(id, 1);
+        if (eco) ecommerce('begin_checkout', { value: eco.price, items: [eco] });
+    }
     co.serverCart = null;
     if (alertEl) {
         alertEl.dataset.kind = '';
@@ -2384,6 +2662,7 @@ function render(): void {
         void showOrder(pedido, { returned });
         return;
     }
+    trackVisit();
     if (view === 'checkout' && subscribingId !== null && subscribable.has(subscribingId)) goSubscribe(subscribingId);
     else if (view === 'checkout') goCheckout();
     else goCatalog();

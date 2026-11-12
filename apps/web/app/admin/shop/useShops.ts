@@ -13,6 +13,7 @@ import type {
     ShopOptions,
     ShopOrderPanelDto,
     ShopProductVariantsDto,
+    ShopStatsDto,
     ShopVariantProductDto,
     SuspendShopInput,
     UpdateShopInput,
@@ -34,7 +35,31 @@ export const shopKeys = {
     products: (id: number, q: string) => ['shops', id, 'products', q] as const,
     variants: (id: number, productId: number, attrs: string) => ['shops', id, 'variants', productId, attrs] as const,
     coupons: (id: number) => ['shops', id, 'coupons'] as const,
+    stats: (id: number, days: number) => ['shops', id, 'stats', days] as const,
 };
+
+/** v0.1.418 — Las columnas «Llegó desde» y «Campaña» en Pedidos (tiendas de antes). */
+export function useCreateShopOriginColumns(id: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async () => (await api.post<ShopDto>(`/shops/${id}/origin-columns`, {})).data,
+        onSuccess: (doc) => {
+            qc.setQueryData(shopKeys.one(id), doc);
+            void qc.invalidateQueries({ queryKey: shopKeys.options(id) });
+        },
+    });
+}
+
+/** v0.1.418 — Las estadísticas de la tienda (se refrescan cada minuto mientras se miran). */
+export function useShopStats(id: number, days: number, enabled = true) {
+    return useQuery({
+        queryKey: shopKeys.stats(id, days),
+        queryFn: async () => (await api.get<ShopStatsDto>(`/shops/${id}/stats?days=${days}`)).data,
+        enabled: enabled && Number.isInteger(id) && id > 0,
+        staleTime: 0,
+        refetchInterval: 60_000,
+    });
+}
 
 /** v0.1.415 — Los cupones de la tienda con sus usos. */
 export function useShopCoupons(id: number, enabled = true) {

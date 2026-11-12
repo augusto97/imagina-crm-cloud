@@ -8,7 +8,9 @@ import {
     publicShopMyOrdersRequestSchema,
     publicShopOrderSchema,
     publicShopQuoteSchema,
+    SHOP_STATS_RANGES,
     shopCouponInputSchema,
+    shopStatEventsSchema,
     suspendShopSchema,
     updateShopSchema,
     type CreateShopInput,
@@ -28,6 +30,8 @@ import {
     type ShopOptions,
     type ShopOrderPanelDto,
     type ShopProductVariantsDto,
+    type ShopStatEventsInput,
+    type ShopStatsDto,
     type ShopVariantProductDto,
     type SuspendShopInput,
     type UpdateShopInput,
@@ -43,7 +47,8 @@ import { can } from '../authz/can';
 import { useWebBuild } from '../common/web-build';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ENV, type Env } from '../config/env';
-import { inlineScriptHash, newNonce } from '../forms/form-page';
+import { directTagsCsp, pageOrigin } from '../forms/direct-tags';
+import { inlineScriptHash, newNonce, type PageCspTags } from '../forms/form-page';
 import { PublicBusyError } from '../public-cache/public-cache';
 import { precompress, sendPrecompressed, type Precompressed } from '../public-cache/public-send';
 import { RecordsService, type Actor } from '../records/records.service';
@@ -57,6 +62,7 @@ import { loadShopClient, renderShopPage, shopMessagePage, shopNotFoundPage, shop
 import { ShopPublicService, type ShopPageInfo } from './shop-public.service';
 import { ShopVariantsService } from './shop-variants.service';
 import { ShopService } from './shop.service';
+import { ShopStatsService } from './shop-stats.service';
 
 /**
  * v0.1.412 (ADR-S103) — Las tiendas de la empresa. Las arma quien administra
@@ -73,6 +79,7 @@ export class ShopsController {
         private readonly audit: AuditService,
         private readonly variants: ShopVariantsService,
         private readonly couponsSvc: ShopCouponsService,
+        private readonly statsSvc: ShopStatsService,
     ) {}
 
     @Get()
@@ -94,6 +101,17 @@ export class ShopsController {
     @RequireCapability('manage_lists')
     options(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<ShopOptions> {
         return this.shops.options(req.tenant!.tenantId, id);
+    }
+
+    /** v0.1.418 — Estadísticas: visitas, embudo, productos, de dónde llegan y lo vendido (`days` = 7, 30 o 90). */
+    @Get(':id/stats')
+    @RequireCapability('manage_lists')
+    async stats(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number, @Query('days') daysRaw?: string): Promise<ShopStatsDto> {
+        const tenantId = req.tenant!.tenantId;
+        const n = Number(daysRaw);
+        const days = (SHOP_STATS_RANGES as readonly number[]).includes(n) ? n : 30;
+        const t = await this.shops.statsTarget(tenantId, id);
+        return this.statsSvc.summary({ tenantId, shopId: id, timeZone: await this.statsSvc.timeZone(tenantId), currency: t.currency, titleKey: t.titleKey }, days);
     }
 
     /** v0.1.414 — Los productos para elegir a cuál crearle variantes. */
@@ -231,6 +249,23 @@ export class ShopsController {
      * descargar» en el catálogo. Agrega una columna: además de armar tiendas
      * hay que poder gestionar campos.
      */
+    /**
+     * v0.1.418 — Las columnas «Llegó desde» y «Campaña» en Pedidos (una tienda
+     * creada antes de esta versión). Crear columnas pide poder gestionar campos.
+     */
+    @Post(':id/origin-columns')
+    @RequireCapability('manage_lists')
+    async createOriginColumns(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<ShopDto> {
+        const tenantId = req.tenant!.tenantId;
+        if (!can({ role: req.tenant!.role, ...aclOf(req) }, 'manage_fields')) {
+            throw new ForbiddenException({ code: 'forbidden', message: 'Crear una columna requiere poder gestionar los campos.', data: { status: 403 } });
+        }
+        await this.shops.ensureOrderColumns(tenantId, id, 'origin');
+        const dto = await this.shops.get(tenantId, id);
+        await this.audit.log({ tenantId, userId: req.authUserId ?? null, action: 'shop.origin_columns', targetType: 'shop', targetLabel: dto.name, meta: { shop_id: id } });
+        return dto;
+    }
+
     @Post(':id/kind-columns')
     @RequireCapability('manage_lists')
     async createKindColumn(
@@ -489,28 +524,35 @@ export class PublicShopPageController {
         const client = this.client();
         if (client === undefined) return void this.missing(reply, 503);
         const page = this.page_(info, client);
+        // v0.1.418 — con etiquetas en el enlace directo, la CSP se limita a la
+        // ruta pública de ESTE origen y la ventana queda en su propio grupo.
+        const tags = info.meta.conversion?.direct ?? null;
+        const csp = tags ? this.csp(info, client, { csp: directTagsCsp(tags), origin: pageOrigin(req.protocol, req.host) }) : page.csp;
         reply
-            .header('Content-Security-Policy', page.csp)
+            .header('Content-Security-Policy', csp)
             .header('X-Robots-Tag', 'noindex, nofollow')
             .header('Cache-Control', 'public, max-age=30, s-maxage=30, stale-while-revalidate=120')
             .header('Referrer-Policy', 'strict-origin-when-cross-origin');
+        if (tags) reply.header('Cross-Origin-Opener-Policy', 'same-origin');
         sendPrecompressed(req, reply, page.body, 'text/html; charset=utf-8');
+    }
+
+    private csp(info: ShopPageInfo, client: string | null, tags: PageCspTags | null): string {
+        const c = captchaCspSources(info.captchaProvider);
+        return shopPageCsp(client === null ? '' : `'${this.clientHash(client)}'`, info.allowedDomains, {
+            dev: client === null,
+            captchaScript: c.script,
+            captchaFrame: c.frame,
+            captchaConnect: c.connect,
+            tags,
+        });
     }
 
     private page_(info: ShopPageInfo, client: string | null): { body: Precompressed; csp: string } {
         const hit = this.rendered.get(info);
         if (hit) return hit;
         const html = renderShopPage({ title: info.title, token: info.token, meta: info.meta, products: info.products, client, captchaScripts: CAPTCHA_SCRIPTS });
-        const c = captchaCspSources(info.captchaProvider);
-        const out = {
-            body: precompress(html),
-            csp: shopPageCsp(client === null ? '' : `'${this.clientHash(client)}'`, info.allowedDomains, {
-                dev: client === null,
-                captchaScript: c.script,
-                captchaFrame: c.frame,
-                captchaConnect: c.connect,
-            }),
-        };
+        const out = { body: precompress(html), csp: this.csp(info, client, null) };
         this.rendered.set(info, out);
         return out;
     }
@@ -544,6 +586,24 @@ export class PublicShopPageController {
 @Controller('public/shops')
 export class PublicShopApiController {
     constructor(private readonly publicSvc: ShopPublicService) {}
+
+    /**
+     * v0.1.418 — Estadísticas: la página manda lo que pasó (visitas,
+     * productos, carrito, compra). Siempre 204: las estadísticas nunca le
+     * cuestan una respuesta a nadie.
+     */
+    @Post(':token/events')
+    @HttpCode(204)
+    async events(
+        @Req() req: FastifyRequest,
+        @Param('token') token: string,
+        @Body(new ZodValidationPipe(shopStatEventsSchema)) input: ShopStatEventsInput,
+        @Res({ passthrough: true }) reply: FastifyReply,
+    ): Promise<void> {
+        reply.header('Cache-Control', 'no-store');
+        const ok = await this.publicSvc.recordStats(token, input.events, req.ip);
+        if (!ok) throw notFound();
+    }
 
     @Get(':token/stamp')
     async stamp(@Param('token') token: string, @Res({ passthrough: true }) reply: FastifyReply): Promise<{ stamp: string }> {

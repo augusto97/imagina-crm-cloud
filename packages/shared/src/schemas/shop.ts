@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { GOOGLE_ADS_SEND_TO_RE, GOOGLE_TAG_ID_RE, META_PIXEL_ID_RE } from './conversion-logic';
+import { SHOP_STAT_DEVICES } from './shop-stats-logic';
 import {
     SHOP_COUPON_CODE_RE,
     SHOP_COUPON_KINDS,
@@ -310,6 +312,28 @@ export const shopOrdersMapSchema = z.object({
 });
 export type ShopOrdersMap = z.infer<typeof shopOrdersMapSchema>;
 
+/**
+ * v0.1.418 — Medir conversiones de la tienda. Insertada en el sitio con su
+ * script, la tienda le avisa al sitio cada paso de la compra con los eventos
+ * de comercio electrónico de Google (`view_item`, `add_to_cart`,
+ * `begin_checkout`, `purchase`), para Tag Manager sin configurar nada; aquí se
+ * suma la etiqueta de Google Ads (la compra) y el píxel de Meta. El valor es
+ * SIEMPRE el total del pedido. En el enlace directo se pueden cargar las
+ * etiquetas de la empresa por su ID (como formularios y agenda, ADR-S97).
+ */
+export const shopConversionSchema = z.object({
+    google_ads: z.string().regex(GOOGLE_ADS_SEND_TO_RE).nullable().catch(null).default(null),
+    /** ViewContent, AddToCart, InitiateCheckout y Purchase en el píxel de Meta. */
+    meta_event: z.boolean().catch(false).default(false),
+    /** Conversiones mejoradas: el correo y el teléfono de quien compra (apagado por defecto). */
+    share_contact: z.boolean().catch(false).default(false),
+    direct_tags: z.boolean().catch(false).default(false),
+    google_tag_id: z.string().regex(GOOGLE_TAG_ID_RE).nullable().catch(null).default(null),
+    meta_pixel_id: z.string().regex(META_PIXEL_ID_RE).nullable().catch(null).default(null),
+    cookie_notice: z.boolean().catch(true).default(true),
+});
+export type ShopConversion = z.infer<typeof shopConversionSchema>;
+
 export const shopConfigSchema = z.object({
     currency: z
         .string()
@@ -334,6 +358,8 @@ export const shopConfigSchema = z.object({
     /** Los sitios que pueden insertarla (vacío = cualquiera). */
     allowed_domains: z.array(z.string().trim().max(200)).max(20).catch([]).default([]),
     orders: shopOrdersMapSchema.catch(() => shopOrdersMapSchema.parse({})).default({}),
+    /** v0.1.418 — Medir conversiones. */
+    conversion: shopConversionSchema.catch(() => shopConversionSchema.parse({})).default({}),
 });
 export type ShopConfig = z.infer<typeof shopConfigSchema>;
 
@@ -588,6 +614,12 @@ export interface ShopOrderPanelDto {
     } | null;
     /** v0.1.416 — Se puede reenviar el correo con las descargas (está pagado y no venció). */
     can_resend: boolean;
+    /**
+     * v0.1.418 — De dónde llegó quien compró: la campaña o el sitio (en
+     * palabras), el nombre de la campaña y si vino de un anuncio de Google o
+     * Meta. null = un pedido de antes de esta versión.
+     */
+    origin?: { source: string; campaign: string | null; ad: 'google' | 'meta' | null; page: string | null } | null;
 }
 
 /** Plataforma → Empresas: las tiendas de una empresa, para suspender una que se usa mal. */
@@ -642,7 +674,14 @@ export const publicShopOrderSchema = z.object({
     /** Campo trampa: una persona nunca lo llena. */
     website: z.string().max(200).optional(),
     origin: z
-        .object({ page: z.string().max(2000).optional(), referrer: z.string().max(2000).optional() })
+        .object({
+            page: z.string().max(2000).optional(),
+            referrer: z.string().max(2000).optional(),
+            /** v0.1.418 — De dónde llegó la visita (`formStatSource`: `d`, `u:<campaña>`, `h:<sitio>`). */
+            src: z.string().max(130).optional(),
+            /** v0.1.418 — Campaña y clics del anuncio (lo limpia el servidor con `cleanAttribution`). */
+            attribution: z.record(z.string().max(40), z.string().max(1200)).optional(),
+        })
         .partial()
         .optional(),
 });
@@ -666,7 +705,7 @@ export const publicShopQuoteSchema = z.object({
 
 // ── Lo que falta para publicar ──────────────────────────────────────────
 
-export type ShopSection = 'catalog' | 'orders' | 'payment' | 'coupons' | 'checkout' | 'seller' | 'design' | 'publish';
+export type ShopSection = 'catalog' | 'orders' | 'payment' | 'coupons' | 'checkout' | 'seller' | 'design' | 'publish' | 'measure';
 
 export interface ShopProblem {
     section: ShopSection;
@@ -713,6 +752,23 @@ export function shopProblems(
 
 
 export * from './shop-logic';
+export * from './shop-stats-logic';
+
+// ── v0.1.418 — Estadísticas de la tienda ──────────────────────────────────
+
+/** Lo que manda la página pública (ver `shop-stats-logic.ts`). */
+export const shopStatEventSchema = z.object({
+    kind: z.enum(['view', 'product', 'add', 'checkout']),
+    item: z.number().int().positive().max(999_999_999_999_999).optional(),
+    first: z.boolean().optional(),
+    src: z.string().max(130).optional(),
+    dev: z.enum(SHOP_STAT_DEVICES).optional(),
+});
+
+export const shopStatEventsSchema = z.object({
+    events: z.array(shopStatEventSchema).min(1).max(20),
+});
+export type ShopStatEventsInput = z.infer<typeof shopStatEventsSchema>;
 
 // ── v0.1.415 — Cupones ──────────────────────────────────────────────────
 

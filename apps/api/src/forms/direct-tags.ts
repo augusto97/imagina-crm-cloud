@@ -158,6 +158,77 @@ export const DIRECT_TAGS_JS = String.raw`(function () {
       }
       if (waiting <= 0) setTimeout(end, 300);
       else setTimeout(end, 1600);
+    },
+    /**
+     * v0.1.418 — Un paso de la compra de la tienda (view_item, add_to_cart,
+     * begin_checkout, purchase); done() cuando las etiquetas terminaron.
+     */
+    shop: function (ev, done) {
+      var finished = false, waiting = 0;
+      function end() { if (finished) return; finished = true; if (typeof done === 'function') done(); }
+      function one() { waiting--; if (waiting <= 0) end(); }
+      var META = { view_item: 'ViewContent', add_to_cart: 'AddToCart', begin_checkout: 'InitiateCheckout', purchase: 'Purchase' };
+      if (!cfg || !ev || typeof ev !== 'object' || !Object.prototype.hasOwnProperty.call(META, ev.action)) { end(); return; }
+      load();
+      var action = ev.action, purchase = action === 'purchase';
+      var sub = purchase ? str(ev.transaction_id) : '';
+      var currency = /^[A-Z]{3}$/.test(ev.currency || '') ? ev.currency : null;
+      var value = currency && typeof ev.value === 'number' && isFinite(ev.value) && ev.value >= 0 ? ev.value : null;
+      var items = [];
+      if (Array.isArray(ev.items)) {
+        for (var i = 0; i < ev.items.length && items.length < 50; i++) {
+          var it = ev.items[i];
+          if (!it || typeof it !== 'object') continue;
+          var o = { item_id: str(it.item_id), item_name: str(it.item_name), price: typeof it.price === 'number' && isFinite(it.price) ? it.price : 0, quantity: typeof it.quantity === 'number' && it.quantity > 0 ? Math.min(9999, Math.round(it.quantity)) : 1 };
+          if (str(it.item_variant)) o.item_variant = str(it.item_variant);
+          items.push(o);
+        }
+      }
+      var ud = purchase && ev.user_data && typeof ev.user_data === 'object' ? ev.user_data : null;
+      var email = ud ? str(ud.email) : '', phone = ud ? str(ud.phone_number) : '';
+      if (typeof window.gtag === 'function') {
+        try {
+          if (purchase && (email || phone)) {
+            var user = {};
+            if (email) user.email = email;
+            if (phone) user.phone_number = phone;
+            window.gtag('set', 'user_data', user);
+          }
+          if (purchase && cfg.google_ads) {
+            var p = { send_to: cfg.google_ads, transaction_id: sub };
+            if (value !== null) { p.value = value; p.currency = currency; }
+            waiting++; p.event_callback = one; p.event_timeout = 1500;
+            window.gtag('event', 'conversion', p);
+          }
+          if (cfg.google_tag_id) {
+            var g = { send_to: cfg.google_tag_id, items: items };
+            if (value !== null) { g.value = value; g.currency = currency; }
+            if (purchase) {
+              g.transaction_id = sub;
+              if (typeof ev.shipping === 'number' && isFinite(ev.shipping)) g.shipping = ev.shipping;
+              if (str(ev.coupon)) g.coupon = str(ev.coupon);
+              waiting++; g.event_callback = one; g.event_timeout = 1500;
+            }
+            window.gtag('event', action, g);
+          }
+        } catch (e) {}
+      }
+      if (cfg.meta_pixel_id && typeof window.fbq === 'function') {
+        try {
+          if (purchase && (email || phone)) {
+            var am = {};
+            if (email) am.em = email.toLowerCase();
+            if (phone) am.ph = phone.replace(/\D/g, '');
+            window.fbq('init', cfg.meta_pixel_id, am);
+          }
+          var data = { content_type: 'product', content_ids: items.map(function (x) { return x.item_id; }), contents: items.map(function (x) { return { id: x.item_id, quantity: x.quantity }; }), num_items: items.length };
+          if (value !== null) { data.value = value; data.currency = currency; }
+          if (purchase) window.fbq('track', META[action], data, { eventID: sub });
+          else window.fbq('track', META[action], data);
+        } catch (e) {}
+      }
+      if (waiting <= 0) setTimeout(end, purchase ? 300 : 0);
+      else setTimeout(end, 1600);
     }
   };
 })();`;

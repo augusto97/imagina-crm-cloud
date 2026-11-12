@@ -6,8 +6,11 @@ import {
     SHOP_PAYMENT_METHOD_LABELS,
     SHOP_PAYMENT_STATUS_LABELS,
     SUBSCRIPTION_STATUS_OPTIONS,
+    SHOP_STAT_SOURCE_RE,
     brandingSchema,
+    cleanAttribution,
     computeShopCart,
+    formStatSourceLabel,
     shopCouponProblemText,
     shopCurrencyDecimals,
     shopNeedsDelivery,
@@ -18,6 +21,7 @@ import {
     readShopListMarker,
     shopOnlinePayment,
     shopPlanFor,
+    shopPurchaseConversion,
     subscriptionFrequencyText,
     subscriptionPlanExtras,
     tenantFormatSchema,
@@ -416,6 +420,13 @@ export class ShopOrdersService implements OnModuleInit {
             put(data, of('notes'), c.notes);
             put(data, of('items'), items);
             put(data, of('shop'), shop.name);
+            // v0.1.418 — De dónde llegó (lo que ve el equipo, en palabras).
+            {
+                const origin = shopOrderOrigin(input.origin);
+                put(data, of('source'), formStatSourceLabel(String(origin.src)));
+                const campaign = (origin.attribution as Record<string, string> | undefined)?.utm_campaign;
+                if (campaign) put(data, of('campaign'), campaign.slice(0, 200));
+            }
             put(data, of('order_url'), orderUrl);
             put(data, of('title'), `Pedido · ${c.name}`);
             const inserted = await this.recordsRepo.insert(tx, { tenantId, listId: o.list_id!, data, createdBy: 0 });
@@ -476,7 +487,7 @@ export class ShopOrdersService implements OnModuleInit {
                 delivery: needsDelivery
                     ? { id: delivery!.id, name: deliveryLabel, needs_address: delivery!.needs_address, ...(zone ? { zone_id: zone.id, zone_name: zone.name } : {}) }
                     : { id: null, name: deliveryLabel, needs_address: subscribing && config.kinds.subscription_address, ...(subscribing ? { subscription: true } : { digital: true }) },
-                origin: { page: input.origin?.page?.slice(0, 500) ?? null, referrer: input.origin?.referrer?.slice(0, 500) ?? null },
+                origin: shopOrderOrigin(input.origin),
                 catalogListId: shop.listId,
                 stockFieldId: tookStock && rf.stock ? rf.stock.id : null,
                 statusFieldId: statusField?.id ?? null,
@@ -890,6 +901,21 @@ export class ShopOrdersService implements OnModuleInit {
             ...(await this.downloadsPart(tenantId, row, config, `/api/v1/public/s/${shopToken}`)),
             digital_only: (row.delivery as { digital?: unknown }).digital === true,
             ...(await this.subscriptionPart(tenantId, row, status)),
+            // v0.1.418 — La compra cuenta cuando el pedido quedó hecho: si se paga en
+            // línea (o es una suscripción), recién cuando se pagó; nunca cancelado.
+            conversion:
+                status === 'cancelado' || row.cancelledAt !== null || ((method === 'online' || method === 'subscription') && pay !== 'pagado')
+                    ? null
+                    : shopPurchaseConversion({
+                          number: row.number,
+                          total: row.total,
+                          currency: row.currency,
+                          shipping: row.shipping,
+                          couponCode: row.couponCode,
+                          lines: row.lines as ShopOrderLineSnapshot[],
+                          customer: { email: customer.email, phone: customer.phone },
+                          shareContact: config.conversion.share_contact,
+                      }),
         };
     }
 
@@ -1277,6 +1303,7 @@ export class ShopOrdersService implements OnModuleInit {
             created_at: row.createdAt.toISOString(),
             ...(await this.panelOnline(tenantId, row)),
             ...(await this.panelDownloads(tenantId, row)),
+            origin: panelOrigin(row.origin),
         };
     }
 
@@ -1790,4 +1817,31 @@ export function paymentInstructions(config: ShopConfig, method: ShopPaymentMetho
         default:
             return '';
     }
+}
+
+/**
+ * v0.1.418 — Lo que se guarda de dónde vino el pedido: la página, el sitio
+ * anterior, la clave del origen (la misma de las estadísticas) y la campaña
+ * del anuncio, limpia. Nada de la persona.
+ */
+export function shopOrderOrigin(raw: PublicShopOrderInput['origin']): Record<string, unknown> {
+    const src = typeof raw?.src === 'string' && SHOP_STAT_SOURCE_RE.test(raw.src) ? raw.src : 'd';
+    const attribution = cleanAttribution(raw?.attribution ?? {});
+    return {
+        page: raw?.page?.slice(0, 500) ?? null,
+        referrer: raw?.referrer?.slice(0, 500) ?? null,
+        src,
+        ...(Object.keys(attribution).length > 0 ? { attribution } : {}),
+    };
+}
+
+/** v0.1.418 — De dónde llegó un pedido, para la ficha (null = de antes de esta versión). */
+export function panelOrigin(raw: unknown): ShopOrderPanelDto['origin'] {
+    const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+    if (typeof o.src !== 'string') return null;
+    const a = o.attribution && typeof o.attribution === 'object' ? (o.attribution as Record<string, unknown>) : {};
+    const campaign = typeof a.utm_campaign === 'string' && a.utm_campaign.trim() ? a.utm_campaign.slice(0, 200) : null;
+    const ad = typeof a.gclid === 'string' || typeof a.gbraid === 'string' || typeof a.wbraid === 'string' ? 'google' : typeof a.fbclid === 'string' ? 'meta' : null;
+    const page = typeof a.page_url === 'string' && /^https?:\/\//.test(a.page_url) ? a.page_url.slice(0, 500) : null;
+    return { source: formStatSourceLabel(SHOP_STAT_SOURCE_RE.test(o.src) ? o.src : 'd'), campaign, ad, page };
 }

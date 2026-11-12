@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { PublicShopMeta, PublicShopProduct } from '@imagina-base/shared';
-import { escapeHtml, formFrameAncestors, inlineScriptText } from '../forms/form-page';
+import { directTagsHash, directTagsScriptText } from '../forms/direct-tags';
+import { escapeHtml, formFrameAncestors, inlineScriptText, type PageCspTags } from '../forms/form-page';
 
 /**
  * v0.1.412 (ADR-S103) — La página pública de la tienda
@@ -27,18 +28,28 @@ export interface ShopCspOpts {
     captchaScript?: string[];
     captchaFrame?: string[];
     captchaConnect?: string[];
+    /**
+     * v0.1.418 — Las etiquetas del ENLACE DIRECTO (Google y Meta): sus
+     * dominios entran a la CSP y lo propio queda limitado a la ruta pública
+     * de este origen (como formularios y agenda, ADR-S97).
+     */
+    tags?: PageCspTags | null;
 }
 
 export function shopPageCsp(scriptToken: string, allowedDomains: string[], opts: ShopCspOpts = {}): string {
+    const t = opts.tags ?? null;
+    const own = t && t.origin && !opts.dev ? `${t.origin}/api/v1/public/` : "'self'";
+    const frames = [...(opts.captchaFrame ?? []), ...(t?.csp.frame ?? [])];
     return [
         "default-src 'none'",
-        ['script-src', ...(opts.dev ? ["'self'"] : []), ...(scriptToken ? [scriptToken] : []), ...(opts.captchaScript ?? [])].join(' '),
+        ['script-src', ...(opts.dev ? ["'self'"] : []), ...(scriptToken ? [scriptToken] : []), ...(t ? [`'${directTagsHash()}'`] : []), ...(opts.captchaScript ?? []), ...(t?.csp.script ?? [])].join(' '),
         "style-src 'unsafe-inline'",
-        `img-src 'self' data: blob:${opts.preview ? ' https:' : ''}`,
+        ['img-src', "'self'", 'data:', 'blob:', ...(opts.preview ? ['https:'] : []), ...(t?.csp.img ?? [])].join(' '),
         "font-src 'self'",
-        ['connect-src', "'self'", ...(opts.dev ? ['ws:', 'wss:'] : []), ...(opts.captchaConnect ?? [])].join(' '),
-        ...(opts.captchaFrame && opts.captchaFrame.length > 0 ? [`frame-src ${opts.captchaFrame.join(' ')}`] : []),
-        "form-action 'none'",
+        ['connect-src', own, ...(opts.dev ? ['ws:', 'wss:'] : []), ...(opts.captchaConnect ?? []), ...(t?.csp.connect ?? [])].join(' '),
+        ...(frames.length > 0 ? [`frame-src ${frames.join(' ')}`] : []),
+        t ? ['form-action', own, ...t.csp.formAction].join(' ') : "form-action 'none'",
+        ...(t ? ["worker-src 'none'"] : []),
         "base-uri 'none'",
         `frame-ancestors ${opts.preview ? "'self'" : formFrameAncestors(allowedDomains)}`,
     ].join('; ');
@@ -139,6 +150,7 @@ a.s-add{display:flex;align-items:center;justify-content:center;gap:6px;text-deco
 .s-foot-in{max-width:1180px;margin:0 auto;padding:28px 20px 40px;display:grid;grid-template-columns:2fr 1fr;gap:20px;font-size:13.5px;color:var(--s-muted)}
 @media (max-width:640px){.s-foot-in{grid-template-columns:1fr;padding:24px 14px 96px}}
 .s-foot strong{color:var(--s-text)}
+.s-foot-in.s-pixels-note{display:block;padding-top:0;margin-top:-24px;font-size:12px}
 .s-links{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
 .s-link{background:none;border:0;padding:0;color:var(--s-accent);cursor:pointer;font-weight:550;text-align:left}
 .s-veil{position:fixed;inset:0;background:rgba(15,23,42,.42);z-index:40;animation:s-fade .16s ease both}
@@ -286,9 +298,11 @@ export interface ShopPageOpts {
 export function renderShopPage(opts: ShopPageOpts): string {
     const boot = jsonForScript({ token: opts.token, preview: opts.meta === null, meta: opts.meta, products: opts.products, scripts: opts.captchaScripts });
     const nonce = opts.nonce ? ` nonce="${opts.nonce}"` : '';
-    const client = opts.client
+    const main = opts.client
         ? `<script${nonce}>${inlineScriptText(opts.client)}</script>`
         : `<script type="module"${nonce} src="/app/public-shop/main.ts"></script>`;
+    // v0.1.418 — Las etiquetas del enlace directo van ANTES de la tienda (expone `window.imbPixels`).
+    const client = opts.meta?.conversion?.direct ? `<script>${directTagsScriptText()}</script>\n${main}` : main;
     const description = opts.meta?.description ? `<meta name="description" content="${escapeHtml(opts.meta.description.slice(0, 200))}" />\n` : '';
     return `<!doctype html>
 <html lang="es">

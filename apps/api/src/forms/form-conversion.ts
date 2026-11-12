@@ -95,7 +95,7 @@ export function publicConversion(c: ConversionSettings, a: AttributionSettings):
  * v0.1.375 — Las etiquetas que carga el ENLACE DIRECTO (null = ninguna): las
  * de la empresa, por ID (la de Google Ads sale de su acción de conversión).
  */
-export function directTags(c: ConversionSettings): PublicDirectTags | null {
+export function directTags(c: Pick<ConversionSettings, 'direct_tags' | 'google_ads' | 'google_tag_id' | 'meta_pixel_id' | 'cookie_notice'>): PublicDirectTags | null {
     if (!c.direct_tags) return null;
     const google_ads_id = googleAdsIdFromSendTo(c.google_ads);
     const t: PublicDirectTags = {

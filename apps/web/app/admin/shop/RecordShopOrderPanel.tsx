@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock3, Copy, CreditCard, Download, ExternalLink, Loader2, Mail, PackageCheck, ShoppingBag } from 'lucide-react';
+import { CheckCircle2, Clock3, Copy, CreditCard, Download, ExternalLink, Loader2, Mail, Megaphone, PackageCheck, ShoppingBag } from 'lucide-react';
 import { formatShopMoney } from '@imagina-base/shared';
 
 import { usePlanModuleOff } from '@/components/PlanModuleNotice';
@@ -70,6 +70,16 @@ export function RecordShopOrderPanel({ listId, recordId, className }: { listId: 
                                 <Copy className="imcrm-h-3 imcrm-w-3" />
                                 {__('Copiar link de pago')}
                             </button>
+                        </p>
+                    )}
+                    {o.origin && (
+                        <p className="imcrm-mt-1 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-1.5 imcrm-gap-y-1 imcrm-text-[12px] imcrm-text-muted-foreground" data-testid="record-shop-origin">
+                            <Megaphone className="imcrm-h-3.5 imcrm-w-3.5" />
+                            <span>
+                                {__('Llegó desde')}: <span className="imcrm-text-foreground">{o.origin.source}</span>
+                                {o.origin.campaign ? ` · ${__('Campaña')}: ${o.origin.campaign}` : ''}
+                                {o.origin.ad === 'google' ? ` · ${__('anuncio de Google')}` : o.origin.ad === 'meta' ? ` · ${__('anuncio de Meta')}` : ''}
+                            </span>
                         </p>
                     )}
                     {o.downloads && (

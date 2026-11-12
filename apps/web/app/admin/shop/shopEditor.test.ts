@@ -1,7 +1,7 @@
 import { defaultShopConfig, shopProblems } from '@imagina-base/shared';
 import { describe, expect, it } from 'vitest';
 
-import { cleanPhone, sameShopConfig, sectionsWithProblems, shopEditorSection, shopEmbedCode, shopSectionSummary } from './shopEditor';
+import { cleanPhone, sameShopConfig, sectionsWithProblems, shopEditorLocation, shopEditorSection, shopEmbedCode, shopSectionSummary } from './shopEditor';
 
 describe('editor de la tienda (v0.1.412)', () => {
     it('cada sección dice cómo está en una línea', () => {
@@ -22,6 +22,10 @@ describe('editor de la tienda (v0.1.412)', () => {
         expect(shopSectionSummary('seller', c, ctx)).toBe('Falta quién vende');
         expect(shopSectionSummary('orders', c, ctx)).toBe('Pedidos · Tienda');
         expect(shopSectionSummary('publish', c, { ...ctx, enabled: true })).toBe('Publicada');
+        // v0.1.418 — Medir conversiones: sin nada, sólo Tag Manager; con etiquetas, cuáles.
+        expect(shopSectionSummary('measure', c, ctx)).toBe('Tag Manager');
+        const measured = { ...c, conversion: { ...c.conversion, google_ads: 'AW-123456789/AbCdEf', meta_event: true } };
+        expect(shopSectionSummary('measure', measured, ctx)).toBe('Google Ads, Meta');
     });
 
     it('lo que falta para publicar se marca en su sección', () => {
@@ -54,8 +58,18 @@ describe('editor de la tienda (v0.1.412)', () => {
         expect(code).toContain('src="https://app.test/api/v1/public/s/abc"');
         expect(code).toContain('title="Café Aurora x"');
         expect(code).not.toContain('<x>');
+        // v0.1.418 — con el script de inserción (conversiones y de dónde llegó).
+        expect(code).toContain('data-imagina-form');
+        expect(code).toContain('<script src="https://app.test/api/v1/public/f/embed.js" async></script>');
         expect(cleanPhone('+57 300 111 2233')).toBe('+573001112233');
         expect(cleanPhone('(300) 111-2233')).toBe('+3001112233');
         expect(cleanPhone('  ')).toBe('');
+    });
+
+    it('v0.1.418 — ?t=stats abre las estadísticas; lo demás, una sección', () => {
+        expect(shopEditorLocation('stats')).toEqual({ mode: 'stats', section: 'catalog' });
+        expect(shopEditorLocation('measure')).toEqual({ mode: 'edit', section: 'measure' });
+        expect(shopEditorLocation('cualquiera')).toEqual({ mode: 'edit', section: 'catalog' });
+        expect(shopEditorLocation(null)).toEqual({ mode: 'edit', section: 'catalog' });
     });
 });

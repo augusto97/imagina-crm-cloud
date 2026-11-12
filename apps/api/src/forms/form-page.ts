@@ -291,7 +291,7 @@ export const FORM_EMBED_JS = String.raw`(function () {
       var u = new URL(raw, location.href);
       if (u.protocol !== 'https:' && u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') return null;
       if (!origins[u.origin]) return null;
-      if (!/^\/api\/v1\/public\/(f|b)\//.test(u.pathname)) return null;
+      if (!/^\/api\/v1\/public\/(f|b|s)\//.test(u.pathname)) return null;
       return u.href;
     } catch (e) { return null; }
   }
@@ -359,7 +359,79 @@ export const FORM_EMBED_JS = String.raw`(function () {
   // 1,6 s como mucho).
   var fired = {};
   function clean(v) { return typeof v === 'string' ? v.slice(0, 300) : null; }
+  function amount(v) { return typeof v === 'number' && isFinite(v) && v >= 0 ? v : null; }
+
+  // v0.1.418 — La tienda: cada paso de la compra con los eventos de comercio
+  // electrónico de Google (Tag Manager los entiende sin configurar nada), la
+  // compra en la etiqueta de Google Ads y los eventos estándar del píxel de Meta.
+  var SHOP_META = { view_item: 'ViewContent', add_to_cart: 'AddToCart', begin_checkout: 'InitiateCheckout', purchase: 'Purchase' };
+  function shopItems(list) {
+    var out = [];
+    if (!Array.isArray(list)) return out;
+    for (var i = 0; i < list.length && out.length < 50; i++) {
+      var it = list[i];
+      if (!it || typeof it !== 'object') continue;
+      var o = { item_id: clean(it.item_id) || '', item_name: clean(it.item_name) || '', price: amount(it.price) || 0, quantity: Math.max(1, Math.min(9999, Math.round(amount(it.quantity) || 1))) };
+      if (clean(it.item_variant)) o.item_variant = clean(it.item_variant);
+      if (clean(it.item_category)) o.item_category = clean(it.item_category);
+      out.push(o);
+    }
+    return out;
+  }
+  function fireShop(ev, done) {
+    var action = Object.prototype.hasOwnProperty.call(SHOP_META, ev.action) ? ev.action : null;
+    var waiting = 0, finished = false;
+    function end() { if (finished) return; finished = true; if (done) done(); }
+    function one() { waiting--; if (waiting <= 0) end(); }
+    if (!action) { end(); return; }
+    var purchase = action === 'purchase';
+    var sub = purchase ? clean(ev.transaction_id) || '' : '';
+    var currency = /^[A-Z]{3}$/.test(ev.currency || '') ? ev.currency : null;
+    var value = currency ? amount(ev.value) : null;
+    var items = shopItems(ev.items);
+    var ecommerce = { currency: currency, value: value, items: items };
+    if (purchase) {
+      ecommerce.transaction_id = sub;
+      if (amount(ev.shipping) !== null) ecommerce.shipping = amount(ev.shipping);
+      if (clean(ev.coupon)) ecommerce.coupon = clean(ev.coupon);
+    }
+    var detail = { type: 'shop', action: action, id: clean(ev.id), name: clean(ev.name), transaction_id: sub || null, value: value, currency: currency, items: items };
+    var ud = purchase && ev.user_data && typeof ev.user_data === 'object' ? ev.user_data : null;
+    var user = ud && (ud.email || ud.phone_number) ? { email: clean(ud.email) || undefined, phone_number: clean(ud.phone_number) || undefined } : null;
+    try {
+      window.dataLayer = window.dataLayer || [];
+      // Lo que recomienda Google: vaciar el comercio electrónico anterior antes de cada evento.
+      window.dataLayer.push({ ecommerce: null });
+      var push = { event: action, ecommerce: ecommerce, imagina: detail };
+      if (purchase) push.transaction_id = sub;
+      if (user) push.user_data = user;
+      if (done && window.google_tag_manager) { waiting++; push.eventCallback = one; push.eventTimeout = 1500; }
+      window.dataLayer.push(push);
+    } catch (e) {}
+    if (purchase && ev.google_ads && /^AW-\d{6,14}\/[A-Za-z0-9_-]{4,80}$/.test(ev.google_ads) && typeof window.gtag === 'function') {
+      try {
+        if (user) window.gtag('set', 'user_data', user);
+        var params = { send_to: ev.google_ads, transaction_id: sub };
+        if (value !== null) { params.value = value; params.currency = currency; }
+        if (done) { waiting++; params.event_callback = one; params.event_timeout = 1500; }
+        window.gtag('event', 'conversion', params);
+      } catch (e) {}
+    }
+    if (ev.meta_event === true && typeof window.fbq === 'function') {
+      try {
+        var data = { content_type: 'product', content_ids: items.map(function (x) { return x.item_id; }), contents: items.map(function (x) { return { id: x.item_id, quantity: x.quantity }; }), num_items: items.length };
+        if (value !== null) { data.value = value; data.currency = currency; }
+        if (purchase) window.fbq('track', SHOP_META[action], data, { eventID: sub });
+        else window.fbq('track', SHOP_META[action], data);
+      } catch (e) {}
+    }
+    try { window.dispatchEvent(new CustomEvent('imagina:shop', { detail: detail })); } catch (e) {}
+    if (waiting <= 0) end();
+    else setTimeout(end, 1600);
+  }
+
   function fire(ev, done) {
+    if (ev.kind === 'shop') { fireShop(ev, done); return; }
     var booking = ev.kind === 'booking';
     var sub = clean(ev.submission_id) || '';
     var value = typeof ev.value === 'number' && isFinite(ev.value) ? ev.value : null;
