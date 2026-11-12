@@ -118,6 +118,26 @@ export const articles: LearnArticle[] = [
                 title: 'No es facturación electrónica',
                 md: 'La tienda recibe pedidos; no emite la factura electrónica de la DIAN. Si la necesitas, sigue haciéndola con tu sistema de facturación.',
             },
+            { t: 'h', text: 'Cómo se ve tu tienda' },
+            { t: 'anim', key: 'tienda-vitrina', caption: 'La vitrina con tu estilo: encabezado, portada y tarjetas.' },
+            {
+                t: 'p',
+                md: 'En **Estilo** decides cómo se ve la tienda. Empieza por una **plantilla** y ajusta lo que quieras: la vista previa de la derecha cambia al momento. Las plantillas sólo cambian el aspecto: tus productos, textos y la foto de la portada se conservan.',
+            },
+            {
+                t: 'settings',
+                title: 'Estilo',
+                rows: [
+                    { name: 'Plantillas', what: 'Clásica, Minimalista, Boutique, Moderna, Mercado y Noche: colores, letra y formas que combinan.', tip: 'Puedes elegir una y después cambiar lo que quieras.' },
+                    { name: 'Modo', what: 'Claro, oscuro o **automático**: se ve claro u oscuro según el celular o computador de cada persona.', tip: 'Con automático, la vista previa trae un botón para ver las dos.' },
+                    { name: 'Colores', what: 'El color de la tienda (botones y precios), el fondo, las tarjetas y el texto. Si un texto no se lee bien sobre el fondo, se corrige solo.' },
+                    { name: 'Letra', what: 'La de los textos y la de los títulos (por ejemplo, títulos con serifa), el tamaño y qué tan gruesos van los títulos.' },
+                    { name: 'Encabezado', what: 'Blanco, de tu color, oscuro o sin fondo; el logo y su tamaño, a la izquierda o al centro, y si queda fijo arriba al bajar.' },
+                    { name: 'Portada', what: 'Sencilla, a lo ancho (con una foto, cuánto se oscurece para que el título se lea, y su alto) o sin portada. Aquí también van el título y la descripción de la tienda.' },
+                    { name: 'Tarjetas y botones', what: 'Con borde, con sombra, planas o sin fondo; esquinas rectas, suaves o redondas; texto a la izquierda o al centro; botón relleno o con contorno; el espacio entre productos y el ancho de la página.' },
+                    { name: 'CSS propio', what: 'Para retoques finos. Lo agrega un administrador de la empresa y nunca puede cargar nada de afuera.' },
+                ],
+            },
             { t: 'h', text: 'Qué pasa al agregar al carrito' },
             {
                 t: 'p',
@@ -187,7 +207,8 @@ export const articles: LearnArticle[] = [
                 t: 'faq',
                 items: [
                     { q: '¿Google muestra mi tienda?', a: 'No por ahora: la página no aparece en los buscadores. La compartes tú con el enlace, insertándola en tu sitio web o con el QR.' },
-                    { q: '¿Puedo usar el color de mi marca?', a: 'Sí. En **Apariencia** usa el color de tu marca o eliges otro, el título, la descripción y cómo se ven las tarjetas.' },
+                    { q: '¿Puedo usar el color de mi marca?', a: 'Sí. En **Estilo → Colores** la tienda usa el color de tu marca o el que elijas, y ahí mismo cambias el fondo, las tarjetas y el texto.' },
+                    { q: '¿La tienda se ve oscura en los celulares en modo oscuro?', a: 'Sólo si eliges el modo **Oscuro** o **Automático** en **Estilo**. Con **Claro** se ve siempre clara.' },
                     { q: '¿Puedo vender un producto con variantes y otros sin ellas?', a: 'Sí. Un producto sin subtareas se vende como siempre; uno con variantes pide elegir la opción antes de agregarlo al carrito.' },
                     { q: '¿Qué pasa si borro la tienda?', a: 'Se apaga la página. Los pedidos, las líneas y los clientes quedan en sus listas, como listas comunes.' },
                 ],

@@ -56,7 +56,7 @@ export const SHOP_MAX_GENERATED_VARIANTS = 60;
 /** Los tipos de campo que sirven como atributo de una variante. */
 export const SHOP_VARIANT_ATTRIBUTE_TYPES = ['select', 'text'] as const;
 /** Anchos de las miniaturas que sirve la tienda. */
-export const SHOP_IMAGE_WIDTHS = [160, 320, 640, 1200] as const;
+export const SHOP_IMAGE_WIDTHS = [160, 320, 640, 1200, 1600] as const;
 export type ShopImageWidth = (typeof SHOP_IMAGE_WIDTHS)[number];
 
 const PHONE_RE = /^\+[1-9]\d{6,14}$/;
@@ -1089,6 +1089,18 @@ export interface PublicShopMeta {
     closed: string | null;
     /** Hay más productos que los que muestra la página. */
     truncated: boolean;
+    /** v0.1.422 — El estilo (armado en el servidor: CSS y clases). */
+    design?: ShopDesignView;
+}
+
+/** v0.1.422 — Lo que la página pública recibe del diseño (armado en el servidor). */
+export interface ShopDesignView {
+    css: string;
+    classes: string;
+    /** La foto de la portada (`img/<clave>` en la página; URL firmada en la vista previa). */
+    hero_image: string | null;
+    /** Sigue el modo del dispositivo (la vista previa ofrece claro/oscuro). */
+    auto: boolean;
 }
 
 // ── Conversiones (v0.1.418) ─────────────────────────────────────────────

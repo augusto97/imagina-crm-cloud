@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { GOOGLE_ADS_SEND_TO_RE, GOOGLE_TAG_ID_RE, META_PIXEL_ID_RE } from './conversion-logic';
+import { shopDesignSchema } from './shop-design';
 import { SHOP_STAT_DEVICES } from './shop-stats-logic';
 import {
     SHOP_AFTER_ADD,
@@ -364,8 +365,10 @@ export const shopConfigSchema = z.object({
      * documento con formato de la ficha: títulos, listas, imágenes).
      */
     description_from: z.enum(['field', 'record']).catch('field').default('field'),
-    /** null = el color de la marca (el tema completo vive en `settings.theme`). */
+    /** null = el color de la marca. */
     color: z.string().regex(HEX_RE).nullable().catch(null).default(null),
+    /** v0.1.422 — El estilo: plantilla, colores, modo oscuro, letra, encabezado, portada y tarjetas. */
+    design: shopDesignSchema.catch(() => shopDesignSchema.parse({})).default({}),
     show_logo: z.boolean().catch(true).default(true),
     /** Los sitios que pueden insertarla (vacío = cualquiera). */
     allowed_domains: z.array(z.string().trim().max(200)).max(20).catch([]).default([]),
@@ -717,7 +720,7 @@ export const publicShopQuoteSchema = z.object({
 
 // ── Lo que falta para publicar ──────────────────────────────────────────
 
-export type ShopSection = 'catalog' | 'orders' | 'payment' | 'coupons' | 'checkout' | 'seller' | 'design' | 'publish' | 'measure';
+export type ShopSection = 'catalog' | 'style' | 'orders' | 'payment' | 'coupons' | 'checkout' | 'seller' | 'design' | 'publish' | 'measure';
 
 export interface ShopProblem {
     section: ShopSection;
@@ -775,6 +778,7 @@ export function shopProblems(
 
 
 export * from './shop-logic';
+export * from './shop-design';
 export * from './shop-stats-logic';
 
 // ── v0.1.418 — Estadísticas de la tienda ──────────────────────────────────

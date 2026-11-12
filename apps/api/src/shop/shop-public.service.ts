@@ -13,6 +13,10 @@ import {
     shopOnlinePayment,
     shopCurrencyDecimals,
     shopImageKeyForFile,
+    buildShopDesignCss,
+    shopDesignClasses,
+    shopDesignFileIds,
+    SHOP_DESIGN_IMAGE_MIMES,
     publicRichDoc,
     shopPurchasables,
     shopPlanFor,
@@ -47,10 +51,10 @@ import { CollectionsService } from '../collections/collections.service';
 import { rateKeyForIp } from '../common/client-ip';
 import { DataConsentService } from '../data-consent/data-consent.service';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { bookingPages, lists, records, shops, tenants, type ShopRow } from '../db/schema';
+import { attachments, bookingPages, lists, records, shops, tenants, type ShopRow } from '../db/schema';
 import { readBookingConfig } from '../booking/booking-config';
 import { FieldsService } from '../fields/fields.service';
-import { FilesService } from '../files/files.service';
+import { FilesService, assertNewAttachable } from '../files/files.service';
 import { CaptchaService } from '../forms/captcha.service';
 import { directTags } from '../forms/form-conversion';
 import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-cache';
@@ -63,7 +67,7 @@ import { attachVariants, categoryOrder, fileIdsOf, productFromRow, resolveCatalo
 import { ShopCouponsService } from './shop-coupons.service';
 import { ShopImagesService, type ShopImage, type ShopImageSource } from './shop-images.service';
 import { ShopOrdersService, paymentInstructions, type ResolvedShopForOrder } from './shop-orders.service';
-import { shopCacheKey } from './shop.service';
+import { shopCacheKey, type ShopActor } from './shop.service';
 
 /**
  * v0.1.412 (ADR-S103) — La tienda vista desde afuera (sin sesión).
@@ -215,7 +219,11 @@ export class ShopPublicService {
         const online = await this.onlineConnection(tenantId, config);
         const hasCoupons = this.coupons ? await this.tenantDb.withTenant(tenantId, (tx) => this.coupons!.hasActive(tx, tenantId, hit.shop.id)) : false;
         const title = config.texts.title || hit.shop.name;
+        // v0.1.422 — La foto de la portada se sirve por la misma ruta que las del catálogo.
+        const heroId = shopDesignFileIds(config.design)[0] ?? null;
+        if (heroId !== null) built.images.set(shopImageKeyForFile(heroId), { kind: 'file', fileId: heroId });
         const meta = this.buildMeta(config, {
+            heroImage: heroId !== null ? `img/${shopImageKeyForFile(heroId)}` : null,
             coupons: hasCoupons,
             online: online ? online.provider : null,
             title,
@@ -408,6 +416,8 @@ export class ShopPublicService {
             downloadable?: boolean;
             /** v0.1.417 — Hay productos de suscripción que se pueden contratar. */
             subscribable?: boolean;
+            /** v0.1.422 — La foto de la portada (clave de la página o URL firmada en la vista previa). */
+            heroImage: string | null;
         },
     ): PublicShopMeta {
         const p = config.payments;
@@ -470,6 +480,12 @@ export class ShopPublicService {
                   ? 'La tienda todavía no está lista para recibir pedidos.'
                   : null,
             truncated: o.truncated,
+            design: {
+                css: buildShopDesignCss(config.design, o.accent),
+                classes: shopDesignClasses(config.design),
+                hero_image: o.heroImage,
+                auto: config.design.mode === 'auto',
+            },
         };
     }
 
@@ -477,7 +493,7 @@ export class ShopPublicService {
      * La vista previa del editor: lo que se está editando (sin guardar), con
      * las fotos por URL firmada (la tienda todavía puede no estar publicada).
      */
-    async previewData(tenantId: number, shop: ShopRow, rawConfig: unknown): Promise<{ meta: PublicShopMeta; products: PublicShopProduct[] }> {
+    async previewData(tenantId: number, shop: ShopRow, rawConfig: unknown, actor?: ShopActor): Promise<{ meta: PublicShopMeta; products: PublicShopProduct[] }> {
         const config = readShopConfig({ ...(rawConfig as Record<string, unknown>), orders: readShopConfig(shop.config).orders });
         const [t] = await this.db.select({ settings: tenants.settings, name: tenants.name }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
         const settings = (t?.settings ?? {}) as Record<string, unknown>;
@@ -522,7 +538,9 @@ export class ShopPublicService {
         const consent = this.dataConsent ? await this.dataConsent.active(tenantId, settings) : null;
         const online = await this.onlineConnection(tenantId, config);
         const hasCoupons = this.coupons ? await this.tenantDb.withTenant(tenantId, (tx) => this.coupons!.hasActive(tx, tenantId, shop.id)) : false;
+        const heroId = await this.previewHero(tenantId, config, readShopConfig(shop.config), actor);
         const meta = this.buildMeta(config, {
+            heroImage: heroId !== null ? this.files.signedUrl(tenantId, heroId, 3600) : null,
             coupons: hasCoupons,
             online: online ? online.provider : null,
             title: config.texts.title || shop.name,
@@ -539,6 +557,31 @@ export class ShopPublicService {
             readOnly: false,
         });
         return { meta: { ...meta, closed: null }, products };
+    }
+
+    /**
+     * v0.1.422 — La foto de la portada en la vista previa: sólo una imagen de
+     * la empresa y, si no es la guardada, un archivo que quien edita puede
+     * usar (si no, la vista previa sería una forma de bajar cualquier adjunto).
+     */
+    private async previewHero(tenantId: number, config: ShopConfig, saved: ShopConfig, actor?: ShopActor): Promise<number | null> {
+        const id = shopDesignFileIds(config.design)[0] ?? null;
+        if (id === null) return null;
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            if (actor && !actor.isAdmin && !shopDesignFileIds(saved.design).includes(id)) {
+                try {
+                    await assertNewAttachable(tx, tenantId, actor.file, [id]);
+                } catch {
+                    return null;
+                }
+            }
+            const [a] = await tx
+                .select({ mime: attachments.mime })
+                .from(attachments)
+                .where(and(eq(attachments.tenantId, tenantId), eq(attachments.id, id)))
+                .limit(1);
+            return a && SHOP_DESIGN_IMAGE_MIMES.includes(a.mime.toLowerCase()) ? id : null;
+        });
     }
 
     // ─────────────────────── v0.1.420 — Descripción ───────────────────────

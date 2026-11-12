@@ -415,7 +415,16 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.421**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.422**
+(**la tienda con su estilo** — sección nueva «Estilo» en el editor de la
+tienda: seis plantillas, modo claro / oscuro / automático (con la vista
+previa para ver las dos), colores de fondo, tarjetas y texto (el texto se
+corrige solo si no se lee), letra de textos y títulos, encabezado (blanco, de
+tu color, oscuro o sin fondo; logo y tamaño; al centro; fijo), portada
+(sencilla, a lo ancho con foto, o sin portada; el título y la descripción se
+mudaron aquí), tarjetas (borde, sombra, planas, sin fondo; esquinas; al
+centro; botón con contorno), espacio entre productos, ancho de la página y CSS
+propio sólo para administradores; addendum ADR-S103). Antes **v0.1.421**
 (**qué pasa al agregar al carrito** — Apariencia → Al agregar al carrito: el
 carrito al costado con lo agregado marcado, un aviso, una página del carrito
 nueva o directo al pago; en la ficha se elige cuántos y está «Comprar ahora»;
@@ -431,8 +440,8 @@ ADR-S103). **Plan acordado con el usuario para lo que sigue**: v0.1.421 qué
 pasa al agregar al carrito (aviso / abrir el carrito / ir al carrito / ir
 directo al pago, elegible) + enlace que agrega un producto y abre el pago
 (`?comprar=`) + mejoras visuales de la vitrina (HECHO en v0.1.421); v0.1.422 diseño de la tienda
-(plantillas, colores, fuentes, encabezado, tarjetas, modo oscuro, CSS propio);
-v0.1.423 dominio propio SÓLO para la tienda, y sólo ahí se indexa en Google
+(plantillas, colores, fuentes, encabezado, tarjetas, modo oscuro, CSS propio)
+(HECHO en v0.1.422); v0.1.423 dominio propio SÓLO para la tienda, y sólo ahí se indexa en Google
 (páginas de producto, sitemap, canonical, datos estructurados). Antes
 **v0.1.419** (**vender en más lugares, la última de las ocho versiones de la tienda** —
 «Compartir» de la tienda en la misma ventana de formularios y agenda (enlace,
@@ -1964,6 +1973,34 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-12 · v0.1.422** — **La tienda con su estilo** (del mismo mensaje
+  del usuario: "tampoco veo casi estilos de la tienda o ajustes"). Sección
+  nueva **Estilo** en el editor de la tienda (`config.design`,
+  `shop-design.ts` en shared, lectura tolerante campo por campo; una tienda de
+  antes se ve igual): seis **plantillas** (Clásica, Minimalista, Boutique,
+  Moderna, Mercado, Noche) que conservan la foto, el ancho y el CSS propio;
+  **modo** claro, oscuro o automático (media query + `data-scheme`, como los
+  formularios; la vista previa trae Claro/Oscuro); colores con contraste
+  corregido solo; **letra** de textos y títulos (servidas por la app, sin
+  terceros); **encabezado** (blanco, de tu color con el carrito invertido,
+  oscuro o sin fondo; logo y tamaño; al centro en grilla de tres columnas;
+  fijo o no); **portada** sencilla, a lo ancho con foto (sólo imágenes de la
+  empresa, por la ruta de fotos de la tienda a 1600 px; la vista previa la
+  firma) o sin portada — el título y la descripción se mudaron aquí desde
+  Apariencia; **tarjetas** (borde, sombra, planas, sin fondo; esquinas; al
+  centro; botón con contorno), espacio y ancho; **CSS propio** sólo para
+  administradores, limpio al guardar y al servir. El servidor arma las
+  variables (`--s-*`) y las clases del `<body>`; `SHOP_CSS` reemplazó ~80
+  colores fijos por variables. **Atrapado en el E2E**: el encabezado centrado
+  se montaba sobre «Mis pedidos» (ahora grilla), la vista previa perdía el
+  modo oscuro si la respuesta llegaba tarde (cierre viejo en `post`), y el
+  botón «Agregar al carrito» de la tarjeta no ocupaba el ancho (en cualquier
+  tienda: pegado al texto y más angosto que el selector de cantidad; en el
+  celular se partía en dos renglones). Tests: `shop-design.test` (8),
+  `shops-design.spec` (4) — shared 946, front 917 — + E2E 24/24 en escritorio
+  y 24/24 en celular oscuro, y v0.1.421 sin regresiones (28/28). Sigue
+  v0.1.423 (dominio propio sólo para la tienda, indexable en Google).
 
 - **2026-11-12 · v0.1.421** — **Qué pasa al agregar al carrito y enlaces que
   llevan al pago** (del mismo mensaje del usuario que v0.1.420: "agregar al

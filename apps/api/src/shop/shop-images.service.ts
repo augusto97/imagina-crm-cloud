@@ -11,7 +11,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
  * v0.1.412 (ADR-S103) — Las fotos de los productos, en miniatura.
  *
  * Una tienda con 200 fotos de 3 MB sería imposible de abrir en el celular: el
- * servidor sirve cada foto al ancho que pide la página (160, 320, 640 o 1200)
+ * servidor sirve cada foto al ancho que pide la página (160, 320, 640, 1200 o 1600)
  * en WebP. La dirección lleva la foto y el ancho, y una foto nunca cambia de
  * contenido (cambiarla cambia el id), así el navegador y Cloudflare la
  * guardan un año.

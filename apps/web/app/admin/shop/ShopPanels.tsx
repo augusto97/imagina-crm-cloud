@@ -74,15 +74,14 @@ import { __, sprintf } from '@/lib/i18n';
 import { getTenantFormat } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
-import { ColorChoice } from '../widgets/WidgetButtonEditor';
 import { PanelBody, SubSection, Switch, SwitchRow } from '../widgets/widgetUi';
 import { ShopVariantsSheet } from './ShopVariantsSheet';
 import { useCreateShopKindColumn } from './useShops';
 import { SHOP_SECTION_INFO } from './shopEditor';
 
-type Patch = (fn: (c: ShopConfig) => ShopConfig) => void;
+export type Patch = (fn: (c: ShopConfig) => ShopConfig) => void;
 
-function Field({ label, hint, children, htmlFor }: { label: string; hint?: ReactNode; children: ReactNode; htmlFor?: string }): JSX.Element {
+export function Field({ label, hint, children, htmlFor }: { label: string; hint?: ReactNode; children: ReactNode; htmlFor?: string }): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
             <label htmlFor={htmlFor} className="imcrm-text-[12.5px] imcrm-font-medium">
@@ -94,7 +93,7 @@ function Field({ label, hint, children, htmlFor }: { label: string; hint?: React
     );
 }
 
-function Segmented<T extends string | number>({ value, onChange, options, testId }: { value: T; onChange: (v: T) => void; options: ReadonlyArray<readonly [T, string]>; testId?: string }): JSX.Element {
+export function Segmented<T extends string | number>({ value, onChange, options, testId }: { value: T; onChange: (v: T) => void; options: ReadonlyArray<readonly [T, string]>; testId?: string }): JSX.Element {
     return (
         <div className="imcrm-inline-flex imcrm-flex-wrap imcrm-gap-1 imcrm-rounded-lg imcrm-bg-muted imcrm-p-0.5" role="radiogroup" data-testid={testId}>
             {options.map(([v, label]) => (
@@ -103,6 +102,7 @@ function Segmented<T extends string | number>({ value, onChange, options, testId
                     type="button"
                     role="radio"
                     aria-checked={v === value}
+                    data-value={String(v)}
                     onClick={() => onChange(v)}
                     className={cn(
                         'imcrm-h-7 imcrm-rounded-md imcrm-px-2.5 imcrm-text-[12.5px] imcrm-transition-colors',
@@ -666,24 +666,12 @@ function AfterAddChoice({ value, onChange }: { value: ShopAfterAdd; onChange: (v
     );
 }
 
-export function DesignPanel({ config, options, patch }: { config: ShopConfig; options: ShopOptions; patch: Patch }): JSX.Element {
+export function DesignPanel({ config, patch }: { config: ShopConfig; options?: ShopOptions; patch: Patch }): JSX.Element {
     const d = config.display;
     const setD = (p: Partial<ShopConfig['display']>): void => patch((c) => ({ ...c, display: { ...c.display, ...p } }));
     const setT = (p: Partial<ShopConfig['texts']>): void => patch((c) => ({ ...c, texts: { ...c.texts, ...p } }));
     return (
         <PanelBody testId="shop-design">
-            <SubSection title={__('Encabezado')}>
-                <Field label={__('Título de la tienda')} hint={__('Si lo dejas vacío, se usa el nombre de la tienda.')}>
-                    <Input value={config.texts.title} maxLength={120} onChange={(e) => setT({ title: e.target.value })} data-testid="shop-title" />
-                </Field>
-                <Field label={__('Descripción')}>
-                    <Textarea value={config.texts.description} maxLength={600} rows={3} onChange={(e) => setT({ description: e.target.value })} data-testid="shop-description" />
-                </Field>
-                <SwitchRow label={__('Mostrar el logo de tu marca')} checked={config.show_logo} onChange={(v) => patch((c) => ({ ...c, show_logo: v }))} testId="shop-show-logo" />
-                <Field label={__('Color')}>
-                    <ColorChoice value={config.color} fallbackLabel={__('El de tu marca')} fallbackColor={options.brand_color} onChange={(color) => patch((c) => ({ ...c, color }))} />
-                </Field>
-            </SubSection>
             <SubSection title={__('Productos')}>
                 <Field label={__('Por fila (en computador)')} hint={__('En el celular siempre van de a dos.')}>
                     <Segmented value={d.columns} onChange={(columns) => setD({ columns })} options={[[2, '2'], [3, '3'], [4, '4']]} testId="shop-columns" />

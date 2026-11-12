@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Monitor, ShoppingCart, Smartphone, Store } from 'lucide-react';
+import { Loader2, Monitor, Moon, ShoppingCart, Smartphone, Store, Sun } from 'lucide-react';
 import type { ShopConfig } from '@imagina-base/shared';
 
 import { IconToggleGroup, PreviewToolbar } from '@/admin/builder/BuilderShell';
@@ -24,8 +24,15 @@ export function ShopPreview({ shopId, config, compact, version = 0 }: { shopId: 
     const [error, setError] = useState<string | null>(null);
     const [device, setDevice] = useState<Device>(compact ? 'mobile' : 'desktop');
     const [view, setView] = useState<View>('catalog');
+    // v0.1.422 — Con el modo «Automático», ver la tienda clara u oscura.
+    const [scheme, setScheme] = useState<'light' | 'dark'>('light');
+    const auto = config.design.mode === 'auto';
     const last = useRef<{ meta: unknown; products: unknown } | null>(null);
     const seq = useRef(0);
+    // Lo que se ve ahora (pantalla y claro/oscuro): `post` lo lee al enviar, así
+    // una vista previa que llega tarde no vuelve a la pantalla o al modo de antes.
+    const shown = useRef<{ view: View; scheme: 'light' | 'dark' | null }>({ view, scheme: null });
+    shown.current = { view, scheme: auto ? scheme : null };
 
     useEffect(() => {
         const onMsg = (e: MessageEvent): void => {
@@ -56,18 +63,16 @@ export function ShopPreview({ shopId, config, compact, version = 0 }: { shopId: 
                 });
         }, 350);
         return () => window.clearTimeout(t);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [shopId, config, version]);
 
     const post = (): void => {
         const w = frame.current?.contentWindow;
         if (!w || !last.current) return;
-        w.postMessage({ type: 'imb-shop-preview', ...last.current, view }, window.location.origin);
+        w.postMessage({ type: 'imb-shop-preview', ...last.current, ...shown.current }, window.location.origin);
     };
     useEffect(() => {
         if (ready) post();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [ready, view]);
+    }, [ready, view, scheme, auto]);
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col imcrm-bg-canvas" data-testid="shop-preview">
@@ -82,6 +87,17 @@ export function ShopPreview({ shopId, config, compact, version = 0 }: { shopId: 
                         { id: 'checkout', label: __('Compra'), icon: ShoppingCart, testId: 'shop-preview-checkout', showLabel: !compact },
                     ]}
                 />
+                {auto && (
+                    <IconToggleGroup
+                        label={__('Claro u oscuro')}
+                        value={scheme}
+                        onChange={setScheme}
+                        options={[
+                            { id: 'light', label: __('Claro'), icon: Sun, testId: 'shop-preview-light' },
+                            { id: 'dark', label: __('Oscuro'), icon: Moon, testId: 'shop-preview-dark' },
+                        ]}
+                    />
+                )}
                 {!compact && (
                     <IconToggleGroup
                         label={__('Dispositivo')}

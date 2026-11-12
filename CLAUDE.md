@@ -14962,6 +14962,43 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `?comprar=`/`?agregar=`, agotado, id inexistente, editor y botón
         «Comprar» con el enlace al pago).
 
+  - [x] **La tienda con su estilo (v0.1.422, addendum ADR-S103, del mismo
+        pedido del usuario: "tampoco veo casi estilos de la tienda o
+        ajustes")**: sección nueva **Estilo** en el editor de la tienda
+        (`ShopStylePanel`, ícono de pincel; Apariencia queda con la grilla,
+        las fotos, el orden, el buscador y qué pasa al agregar). (a) **Modelo**
+        `config.design` (`shopDesignSchema` en `shop-design.ts`, lectura
+        tolerante campo por campo, sin migración: una tienda de antes se ve
+        igual). (b) **Seis plantillas** (Clásica, Minimalista, Boutique,
+        Moderna, Mercado, Noche) con su dibujo; aplicarlas conserva la foto,
+        el ancho, el logo y el CSS propio. (c) **Colores**: modo claro, oscuro
+        o **automático** (según el dispositivo; la vista previa trae Claro /
+        Oscuro), el color de la tienda, fondo, tarjetas y texto — un texto que
+        no se lee se corrige solo (contraste ≥ 4.5). (d) **Letra** de textos y
+        títulos (las fuentes de la app, sin terceros), tamaño y grosor de
+        títulos. (e) **Encabezado** blanco, de tu color (con el botón del
+        carrito invertido), oscuro o sin fondo; logo y su tamaño; logo al
+        centro (grilla de tres columnas: «Mis pedidos» a la izquierda y el
+        carrito a la derecha); fijo o no. (f) **Portada** sencilla, a lo ancho
+        con foto (adjunto de la empresa, nunca SVG, servida por la ruta de
+        fotos a 1600 px; la vista previa la firma), alto, oscurecido,
+        alineación y tamaño del título, o sin portada; el título y la
+        descripción se mudaron aquí. (g) **Tarjetas** con borde, sombra,
+        planas o sin fondo; esquinas; texto al centro; botón con contorno;
+        espacio entre productos y ancho de la página. (h) **CSS propio** sólo
+        para administradores (403 `custom_css_admin_only`), limpio al guardar
+        y al servir. El servidor arma las variables `--s-*` y las clases del
+        `<body>` (`buildShopDesignCss`, `shopDesignClasses`); `SHOP_CSS`
+        cambió ~80 colores fijos por variables. **Atrapado en el E2E**: el
+        encabezado centrado se montaba sobre «Mis pedidos», la vista previa
+        perdía el modo oscuro si la respuesta llegaba tarde (cierre viejo en
+        `post`) y el botón «Agregar al carrito» de la tarjeta no ocupaba el
+        ancho en ninguna tienda (pegado al texto; en el celular, dos
+        renglones). Ayuda: guía `shop`, Aprende → Tienda online («Cómo se ve
+        tu tienda») y novedad con carrusel. Tests: `shop-design.test` (8),
+        `shops-design.spec` (4) — shared 946, front 917 — + E2E navegador
+        24/24 en escritorio y 24/24 en celular oscuro, y v0.1.421 28/28.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

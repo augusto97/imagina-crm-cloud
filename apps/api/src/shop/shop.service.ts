@@ -37,11 +37,15 @@ import {
     type ShopProblem,
     type ShopSubscriptionPlanOption,
     type UpdateShopInput,
+    SHOP_DESIGN_IMAGE_MIMES,
+    sanitizePublicCss,
+    shopDesignFileIds,
 } from '@imagina-base/shared';
 import { and, asc, count, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
-import { bookingPages, lists, memberships, records, shopOrders, shops, tenants, users, type ShopRow } from '../db/schema';
+import { attachments, bookingPages, lists, memberships, records, shopOrders, shops, tenants, users, type ShopRow } from '../db/schema';
+import { assertNewAttachable, type FileActor } from '../files/files.service';
 import { readBookingConfig } from '../booking/booking-config';
 import { CollectionsService } from '../collections/collections.service';
 import { DomainsService } from '../domains/domains.service';
@@ -75,6 +79,12 @@ function badRequest(code: string, message: string): never {
 
 function newToken(): string {
     return randomBytes(18).toString('base64url');
+}
+
+/** v0.1.422 — Quién guarda (el CSS propio es sólo de administradores; la foto, un archivo que puede usar). */
+export interface ShopActor {
+    isAdmin: boolean;
+    file?: FileActor;
 }
 
 @Injectable()
@@ -429,12 +439,18 @@ export class ShopService {
 
     // ─────────────────────────── Cambios ───────────────────────────
 
-    async update(tenantId: number, id: number, input: UpdateShopInput): Promise<{ dto: ShopDto; before: ShopRow; after: ShopRow }> {
+    async update(
+        tenantId: number,
+        id: number,
+        input: UpdateShopInput,
+        actor: ShopActor = { isAdmin: true },
+    ): Promise<{ dto: ShopDto; before: ShopRow; after: ShopRow }> {
         const team = await this.payTeam(tenantId);
         const res = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const row = await this.load(tx, tenantId, id, true);
             const saved = readShopConfig(row.config);
             const config = input.config !== undefined ? await this.cleanConfig(tx, tenantId, row, input.config, saved, team) : saved;
+            if (input.config !== undefined) await this.assertDesign(tx, tenantId, config, saved, actor);
             const enabled = input.enabled ?? row.enabled;
             if (enabled && !row.enabled && row.suspendedAt) {
                 throw new ForbiddenException({
@@ -602,6 +618,30 @@ export class ShopService {
         next.allowed_domains = cleanDomains(next.allowed_domains);
         next.payments.whatsapp.phone = next.payments.whatsapp.phone.replace(/[\s().-]/g, '');
         return next;
+    }
+
+    /**
+     * v0.1.422 — El estilo que se guarda: (a) el CSS propio sólo lo cambia un
+     * ADMIN (se acepta igual si es el que ya tenía) y queda guardado ya limpio;
+     * (b) la foto de la portada tiene que ser una imagen de ESTA empresa que
+     * se muestra sin ejecutar nada (nada de SVG) y, si es nueva, un archivo
+     * que quien guarda puede usar: la página pública la sirve a cualquiera.
+     */
+    private async assertDesign(tx: Tx, tenantId: number, config: ShopConfig, saved: ShopConfig, actor: ShopActor): Promise<void> {
+        const css = sanitizePublicCss(config.design.custom_css).css;
+        if (css !== sanitizePublicCss(saved.design.custom_css).css && css !== '' && !actor.isAdmin) {
+            throw new ForbiddenException({ code: 'custom_css_admin_only', message: 'El CSS propio lo agrega un administrador de la empresa.', data: { status: 403 } });
+        }
+        config.design = { ...config.design, custom_css: css };
+        const ids = shopDesignFileIds(config.design);
+        if (ids.length === 0) return;
+        if (!actor.isAdmin) await assertNewAttachable(tx, tenantId, actor.file, ids, shopDesignFileIds(saved.design));
+        const rows = await tx
+            .select({ id: attachments.id, mime: attachments.mime })
+            .from(attachments)
+            .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, ids)));
+        const ok = new Set(rows.filter((r) => SHOP_DESIGN_IMAGE_MIMES.includes(r.mime.toLowerCase())).map((r) => r.id));
+        if (ids.some((x) => !ok.has(x))) badRequest('invalid_image', 'La foto de la portada no se puede usar: sube una imagen PNG, JPG, GIF o WebP.');
     }
 
     private async problemsFor(tx: Tx, tenantId: number, listId: number, config: ShopConfig, team: CollectionConnection[]): Promise<ShopProblem[]> {

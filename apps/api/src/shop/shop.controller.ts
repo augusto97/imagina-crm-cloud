@@ -61,7 +61,7 @@ import { ShopOrdersService } from './shop-orders.service';
 import { loadShopClient, renderShopPage, shopMessagePage, shopNotFoundPage, shopPageCsp } from './shop-page';
 import { ShopPublicService, type ShopPageInfo } from './shop-public.service';
 import { ShopVariantsService } from './shop-variants.service';
-import { ShopService } from './shop.service';
+import { ShopService, type ShopActor } from './shop.service';
 import { ShopStatsService } from './shop-stats.service';
 
 /**
@@ -210,7 +210,7 @@ export class ShopsController {
     ): Promise<{ meta: PublicShopMeta; products: PublicShopProduct[] }> {
         const tenantId = req.tenant!.tenantId;
         const row = await this.shops.row(tenantId, id);
-        return this.publicSvc.previewData(tenantId, row, input.config);
+        return this.publicSvc.previewData(tenantId, row, input.config, shopActor(req));
     }
 
     @Post()
@@ -230,7 +230,7 @@ export class ShopsController {
         @Body(new ZodValidationPipe(updateShopSchema)) input: UpdateShopInput,
     ): Promise<ShopDto> {
         const tenantId = req.tenant!.tenantId;
-        const { dto, before } = await this.shops.update(tenantId, id, input);
+        const { dto, before } = await this.shops.update(tenantId, id, input, shopActor(req));
         if (before.enabled !== dto.enabled) {
             await this.audit.log({
                 tenantId,
@@ -392,6 +392,11 @@ export class PlatformShopsController {
     }
 }
 
+/** v0.1.422 — Quién guarda el estilo (el CSS propio es de administradores; la portada, un archivo que puede usar). */
+function shopActor(req: FastifyRequest): ShopActor {
+    return { isAdmin: req.tenant!.role === 'admin', file: { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) } };
+}
+
 function actorOf(req: FastifyRequest): Actor {
     return { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) };
 }
@@ -427,7 +432,7 @@ export class PublicShopPageController {
             .send(renderShopPage({ nonce, title: 'Vista previa', token: 'preview', meta: null, products: [], client, captchaScripts: CAPTCHA_SCRIPTS }));
     }
 
-    /** Una foto del catálogo al ancho pedido (160, 320, 640 o 1200). No cambia: se guarda un año. */
+    /** Una foto del catálogo al ancho pedido (160, 320, 640, 1200 o 1600). No cambia: se guarda un año. */
     @Get(':token/img/:key/:w')
     async image(@Param('token') token: string, @Param('key') key: string, @Param('w') w: string, @Res() reply: FastifyReply): Promise<void> {
         const width = shopImageWidth(w);

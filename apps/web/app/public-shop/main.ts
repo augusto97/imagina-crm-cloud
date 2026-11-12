@@ -183,7 +183,7 @@ function inkOn(hex: string): string {
 }
 
 /** La foto al ancho pedido: `img/<clave>` es del servidor; en la vista previa llega la URL entera. */
-function imgUrl(src: string, width: 160 | 320 | 640 | 1200): string {
+function imgUrl(src: string, width: 160 | 320 | 640 | 1200 | 1600): string {
     if (src.startsWith('img/')) return `${PAGE}/${src}/${width}`;
     return src;
 }
@@ -695,6 +695,20 @@ function applyTheme(): void {
     root.setProperty('--s-accent', accent);
     root.setProperty('--s-ink', inkOn(accent));
     root.setProperty('--s-cols', String(meta.display.columns));
+    // v0.1.422 — El estilo armado en el servidor (en la vista previa cambia en vivo).
+    const d = meta.design;
+    if (d) {
+        let style = document.getElementById('s-design');
+        if (!style) {
+            style = document.createElement('style');
+            style.id = 's-design';
+            document.head.appendChild(style);
+        }
+        if (style.textContent !== d.css) style.textContent = d.css;
+        document.body.className = d.classes;
+        if (d.hero_image) root.setProperty('--s-hero-img', `url("${imgUrl(d.hero_image, 1600).replace(/["\\\n]/g, '')}")`);
+        else root.removeProperty('--s-hero-img');
+    }
     document.title = meta.title || meta.company || 'Tienda';
 }
 
@@ -962,7 +976,7 @@ function productCard(p: PublicShopProduct): HTMLElement {
     title.addEventListener('click', () => openOverlay({ kind: 'product', id: p.id, image: 0 }));
     const variable = hasVariants(p) && !service;
     const st = variable ? null : stockText(p);
-    const actions = el('div', {}, [cardControl(p)]);
+    const actions = el('div', { cls: 's-act' }, [cardControl(p)]);
     const card = el('article', { cls: `s-card${soldOut(p) && !service ? ' s-out' : ''}`, 'data-testid': 'shop-card', 'data-id': String(p.id) }, [
         media,
         el('div', { cls: 's-body' }, [
@@ -2523,7 +2537,7 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
             payPoll = window.setTimeout(() => void showOrder(orderToken, { returned: true, polling: true }), 4000);
         } else if (o.payment_status === 'pagado' && o.status !== 'cancelado') {
             kids.push(
-                el('div', { cls: 's-note', 'data-testid': 'shop-paid', style: 'margin-top:18px;background:#f0fdf4;border-color:#bbf7d0;color:#166534' }, [
+                el('div', { cls: 's-note s-good', 'data-testid': 'shop-paid', style: 'margin-top:18px' }, [
                     el('strong', { style: 'display:block;margin-bottom:2px', text: '¡Pago recibido!' }),
                     o.digital_only
                         ? `${o.pay_provider ? `Pagaste en línea con ${o.pay_provider}. ` : ''}Ya puedes descargar tus archivos.`
@@ -2576,7 +2590,7 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
     kids.push(
         el('div', { cls: 's-sec', style: 'margin-top:22px;display:flex;gap:8px;flex-wrap:wrap' }, [
             el('span', { cls: 's-status', text: o.status_label }),
-            el('span', { cls: 's-status', style: 'background:#f3f4f6;color:#374151', text: `Pago: ${o.payment_status_label}` }),
+            el('span', { cls: 's-status s-neutral', text: `Pago: ${o.payment_status_label}` }),
         ]),
     );
     if (o.payment_status !== 'pagado' && o.payment_method !== 'online' && o.payment_method !== 'subscription' && o.payment_instructions) {
@@ -2619,14 +2633,14 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
 function subscriptionBox(sub: PublicShopOrderSubscription, fmt: (n: number) => string): HTMLElement {
     const prov = providerName(sub.provider);
     const charge = `${fmt(sub.amount)} ${cadenceText(sub)}`;
-    const box = (style: string, title: string, text: string, extra: HTMLElement | null = null): HTMLElement =>
-        el('div', { cls: 's-note', 'data-testid': 'shop-subscription', 'data-state': sub.state, style: `margin-top:18px;${style}` }, [el('strong', { style: 'display:block;margin-bottom:2px', text: title }), text, extra]);
+    const box = (tone: string, title: string, text: string, extra: HTMLElement | null = null): HTMLElement =>
+        el('div', { cls: `s-note${tone ? ` ${tone}` : ''}`, 'data-testid': 'shop-subscription', 'data-state': sub.state, style: 'margin-top:18px' }, [el('strong', { style: 'display:block;margin-bottom:2px', text: title }), text, extra]);
     if (sub.state === 'active') {
         const next = sub.next_charge ? longDate(`${sub.next_charge}T12:00:00`) : '';
-        return box('background:#f0fdf4;border-color:#bbf7d0;color:#166534', '¡Tu suscripción está activa!', `Se cobra ${charge} con tu tarjeta en ${prov}.${next ? ` Próximo cobro: ${next}.` : ''}`);
+        return box('s-good', '¡Tu suscripción está activa!', `Se cobra ${charge} con tu tarjeta en ${prov}.${next ? ` Próximo cobro: ${next}.` : ''}`);
     }
     if (sub.state === 'failed') {
-        return box('background:#fffbeb;border-color:#fde68a;color:#92400e', sub.label || 'Un cobro no pasó', `No pudimos hacer el último cobro de ${charge} con tu tarjeta. ${prov} lo vuelve a intentar; si cambiaste de tarjeta, escríbenos.`);
+        return box('s-caution', sub.label || 'Un cobro no pasó', `No pudimos hacer el último cobro de ${charge} con tu tarjeta. ${prov} lo vuelve a intentar; si cambiaste de tarjeta, escríbenos.`);
     }
     if (sub.state === 'cancelled') return box('', sub.label || 'Suscripción terminada', 'Esta suscripción ya no se cobra.');
     const url = safePayUrl(sub.url);
@@ -2720,7 +2734,7 @@ function mySheet(): HTMLElement {
         'narrow',
         'Mis pedidos',
         [
-            el('p', { style: 'margin:0 0 14px;color:#374151', text: 'Escribe el correo con el que compraste y te mandamos un enlace para ver tus pedidos, cómo van y tus descargas.' }),
+            el('p', { style: 'margin:0 0 14px;color:var(--s-text2)', text: 'Escribe el correo con el que compraste y te mandamos un enlace para ver tus pedidos, cómo van y tus descargas.' }),
             el('div', { cls: 's-f' }, [el('label', { for: 'my_email', text: 'Tu correo' }), input, err]),
             el('div', { cls: 's-hp', 'aria-hidden': 'true' }, [hp]),
         ],
@@ -2799,9 +2813,9 @@ async function showMyOrders(code: string): Promise<void> {
                     el('div', { cls: 's-myo-m', text: facts }),
                     el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin-top:6px' }, [
                         el('span', { cls: 's-status', text: o.status_label }),
-                        el('span', { cls: 's-status', style: 'background:#f3f4f6;color:#374151', text: `Pago: ${o.payment_status_label}` }),
+                        el('span', { cls: 's-status s-neutral', text: `Pago: ${o.payment_status_label}` }),
                         // v0.1.417 — «Suscripción cada mes · Al día».
-                        o.subscription ? el('span', { cls: 's-status', style: 'background:#fdf2f8;color:#9d174d', 'data-testid': 'shop-my-subscription', text: o.subscription }) : null,
+                        o.subscription ? el('span', { cls: 's-status s-sub', 'data-testid': 'shop-my-subscription', text: o.subscription }) : null,
                     ]),
                 ]),
                 go,
@@ -3060,8 +3074,11 @@ window.addEventListener('storage', (e) => {
 if (BOOT.preview) {
     window.addEventListener('message', (e) => {
         if (e.origin !== location.origin || e.source !== window.parent) return;
-        const d = e.data as { type?: string; meta?: PublicShopMeta; products?: PublicShopProduct[]; view?: View } | null;
+        const d = e.data as { type?: string; meta?: PublicShopMeta; products?: PublicShopProduct[]; view?: View; scheme?: 'light' | 'dark' | null } | null;
         if (!d || d.type !== 'imb-shop-preview' || !d.meta) return;
+        // v0.1.422 — «Automático»: la vista previa muestra claro u oscuro a pedido.
+        if (d.scheme) document.documentElement.dataset.scheme = d.scheme;
+        else delete document.documentElement.dataset.scheme;
         meta = d.meta;
         products = d.products ?? [];
         const first = [...shopPurchasables(products).keys()][0];
