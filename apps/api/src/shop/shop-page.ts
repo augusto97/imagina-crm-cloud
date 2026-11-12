@@ -133,6 +133,7 @@ a.s-add{display:flex;align-items:center;justify-content:center;gap:6px;text-deco
 .s-myo-m{font-size:13px;color:var(--s-muted);margin-top:2px}
 .s-body{display:flex;flex-direction:column;gap:6px;padding:12px 14px 14px;flex:1}
 .s-title{margin:0;font-size:15px;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer;background:none;border:0;padding:0;text-align:left}
+a.s-title{color:inherit;text-decoration:none}a.s-title:hover{text-decoration:underline}
 .s-sku{font-size:12px;color:var(--s-muted)}
 .s-price{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:auto}
 .s-now{font-weight:750;font-size:17px}
@@ -374,6 +375,7 @@ a.s-add{display:flex;align-items:center;justify-content:center;gap:6px;text-deco
 .s-hero-banner.s-hero-img .s-hero{background:linear-gradient(rgba(0,0,0,var(--s-hero-ov)),rgba(0,0,0,var(--s-hero-ov))),var(--s-hero-img,none) center/cover no-repeat,#1f2937;color:#fff;text-shadow:0 1px 14px rgba(0,0,0,.35)}
 @media (max-width:640px){.s-hero-banner .s-hero{min-height:calc(var(--s-hero-h) * .7);margin-top:14px}}
 @media (prefers-reduced-motion:reduce){.s-veil,.s-sheet,.s-toast,.s-bump,.s-added,.s-line.s-flash{animation:none}.s-card,.s-cards-plain .s-media img{transition:none}}
+.s-ssr{padding-top:28px}.s-ssr h1{margin:0 0 8px}.s-ssr-nav{margin:0 0 14px}.s-ssr-list{list-style:none;padding:0;margin:18px 0 0;display:grid;gap:10px}.s-ssr-list a{font-weight:600}.s-ssr-price{font-weight:700;font-size:20px}.s-ssr img{max-width:min(100%,520px);height:auto;border-radius:var(--s-radius);margin:12px 0}
 `;
 
 export interface ShopPageOpts {
@@ -385,17 +387,53 @@ export interface ShopPageOpts {
     products: PublicShopProduct[];
     client: string | null;
     captchaScripts: Record<string, string>;
+    /** v0.1.423 — La tienda en SU dominio: lo que leen los buscadores. */
+    site?: ShopSiteHead | null;
+}
+
+/**
+ * v0.1.423 — La cabecera de una página de la tienda en su dominio propio
+ * (inicio o un producto): título, descripción, dirección canónica, imagen
+ * para compartir, datos estructurados y el contenido que se ve sin
+ * JavaScript (lo que lee un buscador antes de ejecutar la tienda).
+ */
+export interface ShopSiteHead {
+    index: boolean;
+    title: string;
+    description: string;
+    canonical: string;
+    image: string | null;
+    siteName: string;
+    ogType: 'website' | 'product';
+    jsonLd: unknown[];
+    /** HTML ya escapado (se reemplaza al cargar la tienda). */
+    body: string;
+    productId: number | null;
+    /** El título de la pestaña en el inicio (al cerrar un producto). */
+    homeTitle: string;
 }
 
 export function renderShopPage(opts: ShopPageOpts): string {
-    const boot = jsonForScript({ token: opts.token, preview: opts.meta === null, meta: opts.meta, products: opts.products, scripts: opts.captchaScripts });
+    const site = opts.site ?? null;
+    const boot = jsonForScript({
+        token: opts.token,
+        preview: opts.meta === null,
+        meta: opts.meta,
+        products: opts.products,
+        scripts: opts.captchaScripts,
+        ...(site ? { site: { product_id: site.productId, home_title: site.homeTitle } } : {}),
+    });
     const nonce = opts.nonce ? ` nonce="${opts.nonce}"` : '';
     const main = opts.client
         ? `<script${nonce}>${inlineScriptText(opts.client)}</script>`
         : `<script type="module"${nonce} src="/app/public-shop/main.ts"></script>`;
     // v0.1.418 — Las etiquetas del enlace directo van ANTES de la tienda (expone `window.imbPixels`).
     const client = opts.meta?.conversion?.direct ? `<script>${directTagsScriptText()}</script>\n${main}` : main;
-    const description = opts.meta?.description ? `<meta name="description" content="${escapeHtml(opts.meta.description.slice(0, 200))}" />\n` : '';
+    const description = site
+        ? siteHead(site)
+        : opts.meta?.description
+          ? `<meta name="description" content="${escapeHtml(opts.meta.description.slice(0, 200))}" />\n<meta property="og:title" content="${escapeHtml(opts.title)}" />\n`
+          : `<meta property="og:title" content="${escapeHtml(opts.title)}" />\n`;
     // v0.1.422 — El estilo (armado en el servidor) va desde el primer pintado; la vista previa lo reemplaza en vivo.
     const design = opts.meta?.design;
     const designCss = design ? `<style id="s-design">${design.css.replace(/<\//g, '<\\/')}</style>\n` : '';
@@ -405,18 +443,36 @@ export function renderShopPage(opts: ShopPageOpts): string {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="robots" content="noindex, nofollow" />
-<title>${escapeHtml(opts.title)}</title>
-${description}<meta property="og:title" content="${escapeHtml(opts.title)}" />
-<style>${SHOP_CSS}</style>
+<meta name="robots" content="${site?.index ? 'index, follow' : 'noindex, nofollow'}" />
+<title>${escapeHtml(site ? site.title : opts.title)}</title>
+${description}<style>${SHOP_CSS}</style>
 ${designCss}</head>
 <body${bodyCls}>
-<div id="app"></div>
+<div id="app">${site ? site.body : ''}</div>
 <noscript><div class="s-wrap"><p class="s-empty">Para comprar en esta tienda, activa JavaScript en tu navegador.</p></div></noscript>
 <script type="application/json" id="boot">${boot}</script>
 ${client}
 </body>
 </html>`;
+}
+
+/** v0.1.423 — Título, descripción, canónica, Open Graph y JSON-LD (todo escapado). */
+function siteHead(site: ShopSiteHead): string {
+    const meta = (attr: 'name' | 'property', key: string, value: string): string => `<meta ${attr}="${key}" content="${escapeHtml(value)}" />\n`;
+    const out = [
+        site.description ? meta('name', 'description', site.description) : '',
+        `<link rel="canonical" href="${escapeHtml(site.canonical)}" />\n`,
+        meta('property', 'og:type', site.ogType),
+        meta('property', 'og:title', site.title),
+        site.description ? meta('property', 'og:description', site.description) : '',
+        meta('property', 'og:url', site.canonical),
+        meta('property', 'og:site_name', site.siteName),
+        site.image ? meta('property', 'og:image', site.image) : '',
+        meta('name', 'twitter:card', site.image ? 'summary_large_image' : 'summary'),
+        // Datos para los buscadores: `application/ld+json` no se ejecuta (la CSP no lo afecta).
+        ...site.jsonLd.map((d) => `<script type="application/ld+json">${jsonForScript(d)}</script>\n`),
+    ];
+    return out.join('');
 }
 
 function clientCandidates(webDistDir: string): string[] {
@@ -462,9 +518,9 @@ export function shopNotFoundPage(): string {
 }
 
 /** v0.1.416 — Un aviso simple (una descarga que ya no sirve), sin scripts. Todo escapado. */
-export function shopMessagePage(title: string, text: string, back: string | null = null): string {
+export function shopMessagePage(title: string, text: string, back: string | null = null, backText = 'Volver a mi pedido'): string {
     const esc = (v: string): string => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    const link = back ? `<p style="margin-top:16px"><a href="${esc(back)}" style="color:#0e7490;font-weight:600">Volver a mi pedido</a></p>` : '';
+    const link = back ? `<p style="margin-top:16px"><a href="${esc(back)}" style="color:#0e7490;font-weight:600">${esc(backText)}</a></p>` : '';
     return `<!doctype html><html lang="es"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex" /><title>${esc(title)}</title>
 <style>body{margin:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:#f6f7f9;color:#111827;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px}div{max-width:440px;text-align:center}h1{font-size:20px;margin:0 0 6px}p{color:#6b7280;margin:0}</style></head>
 <body><div><h1>${esc(title)}</h1><p>${esc(text)}</p>${link}</div></body></html>`;

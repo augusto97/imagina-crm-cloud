@@ -295,6 +295,37 @@ export function shopCartParam(items: ReadonlyArray<{ id: number; qty: number }>)
         .join(',');
 }
 
+/**
+ * v0.1.423 — La dirección de un producto en el dominio propio de la tienda:
+ * `/p/vela-de-soya-12`. El texto es sólo para leer (y para Google); manda el
+ * número final, el id del registro (regla de oro nº 1): renombrar el producto
+ * no rompe los enlaces viejos, la página los lleva a la dirección nueva.
+ */
+export function shopProductSlug(title: string, id: number): string {
+    const words = String(title ?? '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/ñ/g, 'n')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 60)
+        .replace(/-+$/g, '');
+    return words ? `${words}-${id}` : String(id);
+}
+
+export function shopProductPath(title: string, id: number): string {
+    return `/p/${shopProductSlug(title, id)}`;
+}
+
+/** El id de `/p/<texto>-<id>` (o null si la ruta no es la de un producto). */
+export function parseShopProductPath(pathname: string): number | null {
+    const m = /^\/p\/(?:[a-z0-9-]*-)?([1-9]\d{0,14})\/?$/.exec(pathname);
+    if (!m) return null;
+    const id = Number(m[1]);
+    return Number.isSafeInteger(id) ? id : null;
+}
+
 export const SHOP_HOLD_MINUTES_MIN = 10;
 export const SHOP_HOLD_MINUTES_MAX = 240;
 

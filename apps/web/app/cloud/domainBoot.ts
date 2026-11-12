@@ -23,6 +23,15 @@ export function initDomainBoot(): void {
                 window.location.replace('/portal');
                 return;
             }
+            // v0.1.423 — el dominio de una TIENDA no tiene app: va a la tienda.
+            // Desde cualquier ruta a `/` (si el servidor ya le pasa esa ruta a
+            // la app de la tienda, se abre ahí); si ya estábamos en `/` es que
+            // el servidor todavía no lo hace, así que a la dirección que
+            // funciona siempre.
+            if (boot.shop) {
+                window.location.replace(window.location.pathname === '/' ? boot.shop.path : '/');
+                return;
+            }
             useSession.getState().setPlatformBrand(boot.platform);
             useSession.getState().setDomainTenant(boot.tenant);
         })

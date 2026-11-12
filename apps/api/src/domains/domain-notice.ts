@@ -1,4 +1,4 @@
-import type { DomainKind } from '@imagina-base/shared';
+import type { PlatformDomainKind } from '@imagina-base/shared';
 
 /**
  * v0.1.246 — Correo al operador cuando una empresa activa o quita un dominio.
@@ -13,7 +13,9 @@ export interface DomainOperatorEvent {
     type: 'verified' | 'removed';
     tenantId: number;
     tenantName: string;
-    kind: DomainKind;
+    kind: PlatformDomainKind;
+    /** v0.1.423 — el nombre de la tienda cuando `kind` es `shop`. */
+    shopName?: string;
     domain: string;
     /** Host al que apunta el CNAME (el de la app). */
     target: string;
@@ -22,7 +24,8 @@ export interface DomainOperatorEvent {
 }
 
 export function domainOperatorNotice(e: DomainOperatorEvent): { subject: string; text: string } {
-    const what = e.kind === 'portal' ? 'el portal de sus clientes' : 'su equipo';
+    const what =
+        e.kind === 'portal' ? 'el portal de sus clientes' : e.kind === 'shop' ? `su tienda «${e.shopName ?? 'tienda'}»` : 'su equipo';
     if (e.type === 'verified') {
         return {
             subject: `Dominio para habilitar: ${e.domain} (${e.tenantName})`,
@@ -36,6 +39,13 @@ export function domainOperatorNotice(e: DomainOperatorEvent): { subject: string;
                 '  2. SSL → vuelve a emitir el certificado de Let\'s Encrypt incluyendo el alias.',
                 '',
                 `El DNS de ${e.domain} tiene que apuntar a ${e.target} (CNAME) antes de emitir el certificado.`,
+                ...(e.kind === 'shop'
+                    ? [
+                          '',
+                          'Es el dominio de una tienda: además, el servidor web tiene que mandarle a la app lo que no es un archivo',
+                          '(un paso único por servidor; la consola dice si ya está hecho y cómo hacerlo).',
+                      ]
+                    : []),
                 `En la consola ves si ya apunta y si ya responde: ${e.consoleUrl}`,
             ].join('\n'),
         };

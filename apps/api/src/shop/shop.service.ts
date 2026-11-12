@@ -787,6 +787,8 @@ export class ShopService {
     private async toDto(tenantId: number, row: ShopRow): Promise<ShopDto> {
         const config = readShopConfig(row.config);
         const embed = await this.embedOrigin(tenantId);
+        // v0.1.423 — su dominio, si ya abre la tienda (el sondeo se guarda unos minutos).
+        const site = row.customDomain && this.domains ? await this.domains.shopSiteUrl(row.id, row.customDomain).catch(() => null) : null;
         const team = await this.payTeam(tenantId);
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const problems = await this.problemsFor(tx, tenantId, row.listId, config, team);
@@ -813,6 +815,8 @@ export class ShopService {
                 orders,
                 orders_count: Number(n?.n ?? 0),
                 embed_origin: embed,
+                custom_domain: row.customDomain ?? null,
+                site_url: site,
                 created_at: row.createdAt.toISOString(),
                 updated_at: row.updatedAt.toISOString(),
             };

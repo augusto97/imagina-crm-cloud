@@ -26,7 +26,11 @@ export class PublicDomainsController {
         const fwd = req.headers['x-forwarded-host'];
         const host = (Array.isArray(fwd) ? fwd[0] : fwd) ?? req.headers.host;
         const [hostBoot, platform] = await Promise.all([this.domains.resolveHost(host), this.brand.get()]);
-        return { ...hostBoot, platform };
+        // v0.1.423 — En el dominio de una tienda no hay app: el SPA se va a la
+        // tienda (a `/` si el servidor ya le pasa esa ruta al API; si no, la
+        // dirección de la tienda en la plataforma, que funciona siempre).
+        const shop = hostBoot.tenant ? null : await this.domains.resolveShopHost(host);
+        return { ...hostBoot, platform, shop: shop ? { path: `/api/v1/public/s/${shop.token}` } : null };
     }
 
     @Get('domains/check')

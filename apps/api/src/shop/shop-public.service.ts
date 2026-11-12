@@ -830,10 +830,10 @@ export class ShopPublicService {
         if (!(await this.orders.hasOrders(info.tenantId, info.shop.id, e))) return true;
         const code = randomBytes(24).toString('base64url');
         await this.redis.set(`shopmy:${code}`, JSON.stringify({ t: info.tenantId, s: info.shop.id, e }), 'EX', SHOP_MY_ORDERS_DAYS * 86_400);
-        const base = await this.orders.publicBase(info.tenantId);
+        const page = await this.orders.shopPageUrl(info.tenantId, info.shop, token);
         const ctx = { tenantId: info.tenantId, shop: info.shop, config: info.config, token, company: info.company, tenantSettings: info.tenantSettings };
         void this.orders
-            .sendMyOrdersLink(ctx, e, `${base}/api/v1/public/s/${token}?mis-pedidos=${code}`, SHOP_MY_ORDERS_DAYS)
+            .sendMyOrdersLink(ctx, e, `${page}?mis-pedidos=${code}`, SHOP_MY_ORDERS_DAYS)
             .catch((err: unknown) => this.logger.warn(`Tienda ${info.shop.id}: no salió el enlace de «Mis pedidos»: ${String(err)}`));
         return true;
     }

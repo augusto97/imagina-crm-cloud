@@ -328,6 +328,7 @@ import {
     type PortalSwitchResult,
     type PortalRelatedOptions,
     type PublicBoot,
+    type PlatformDomainKind,
     type RecordDto,
     type TenantDomain,
     type UpdateMemberRoleInput,
@@ -894,6 +895,23 @@ export class CloudClient {
         return this.request('GET', `${this.domainPath(kind)}/dns`, {
             schema: domainDnsReportSchema,
         });
+    }
+
+    // ── v0.1.423: el dominio propio de una tienda (mismo ciclo: pedido → TXT → CNAME) ──
+    shopDomainGet(shopId: number): Promise<TenantDomain> {
+        return this.request('GET', `/shops/${shopId}/domain`, { schema: tenantDomainSchema });
+    }
+    shopDomainSet(shopId: number, input: CustomDomainInput): Promise<TenantDomain> {
+        return this.request('PATCH', `/shops/${shopId}/domain`, { body: customDomainInputSchema.parse(input), schema: tenantDomainSchema });
+    }
+    shopDomainClear(shopId: number): Promise<TenantDomain> {
+        return this.request('DELETE', `/shops/${shopId}/domain`, { schema: tenantDomainSchema });
+    }
+    shopDomainVerify(shopId: number): Promise<DomainVerifyResult> {
+        return this.request('POST', `/shops/${shopId}/domain/verify`, { body: {}, schema: domainVerifyResultSchema });
+    }
+    shopDomainDns(shopId: number): Promise<DomainDnsReport> {
+        return this.request('GET', `/shops/${shopId}/domain/dns`, { schema: domainDnsReportSchema });
     }
 
     /**
@@ -1730,9 +1748,9 @@ export class CloudClient {
     platformDomainsGet(): Promise<PlatformDomains> {
         return this.request('GET', '/platform/domains', { schema: platformDomainsSchema });
     }
-    platformDomainCheck(tenantId: number, kind: DomainKind): Promise<PlatformDomain> {
+    platformDomainCheck(tenantId: number, kind: PlatformDomainKind, shopId?: number | null): Promise<PlatformDomain> {
         return this.request('POST', '/platform/domains/check', {
-            body: { tenant_id: tenantId, kind },
+            body: { tenant_id: tenantId, kind, ...(shopId ? { shop_id: shopId } : {}) },
             schema: platformDomainSchema,
         });
     }

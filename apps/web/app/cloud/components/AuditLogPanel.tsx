@@ -71,6 +71,8 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'shop.mark_paid': { text: 'marcó como pagado un pedido de la tienda' },
     'shop.variants_create': { text: 'creó variantes de un producto de la tienda' },
     'shop.kind_column': { text: 'creó una columna de tipo o descarga en el catálogo de la tienda' },
+    'shop.domain_change': { text: 'cambió el dominio de una tienda' },
+    'shop.domain_verified': { text: 'verificó el dominio de una tienda' },
     'shop.origin_columns': { text: 'agregó las columnas de origen a los pedidos de la tienda' },
     'shop.resend_downloads': { text: 'volvió a mandar las descargas de un pedido de la tienda' },
     'shop.coupon_create': { text: 'creó un cupón de la tienda' },

@@ -40,6 +40,7 @@ import {
     formatShopMoney,
     normalizeCouponCode,
     parseShopCartParam,
+    parseShopProductPath,
     pickShopVariant,
     shopCouponProblemText,
     shopCurrencyDecimals,
@@ -47,6 +48,7 @@ import {
     shopNeedsDelivery,
     shopOptionValueState,
     shopPurchasables,
+    shopProductPath,
     shopShippingFor,
     shopVariantPriceRange,
 } from '@imagina-base/shared/src/schemas/shop-logic';
@@ -63,6 +65,8 @@ interface Boot {
     meta: PublicShopMeta | null;
     products: PublicShopProduct[];
     scripts: Record<string, string>;
+    /** v0.1.423 — La tienda en su dominio: cada producto tiene su dirección (`/p/…`). */
+    site?: { product_id: number | null; home_title: string } | null;
 }
 
 type Attrs = Record<string, string | boolean | number | null | undefined>;
@@ -83,6 +87,8 @@ const BOOT: Boot = (() => {
 const DEMO = !BOOT.preview && isDemoFrame(window);
 /** Nada se envía ni se cuenta: la vista previa del editor y la demostración. */
 const DRY = BOOT.preview || DEMO;
+/** v0.1.423 — En su dominio propio (no en la vista previa ni en la demostración). */
+const SITE = !DRY && BOOT.site ? BOOT.site : null;
 
 const API = `/api/v1/public/shops/${encodeURIComponent(BOOT.token)}`;
 const PAGE = `/api/v1/public/s/${encodeURIComponent(BOOT.token)}`;
@@ -972,8 +978,7 @@ function productCard(p: PublicShopProduct): HTMLElement {
     else if (p.kind === 'digital') media.append(el('span', { cls: 's-kind', 'data-testid': 'shop-kind' }, [icon('download'), 'Descarga digital']));
     else if (isSubscription(p)) media.append(el('span', { cls: 's-kind', 'data-testid': 'shop-kind' }, [icon('repeat'), 'Suscripción']));
     media.addEventListener('click', () => openOverlay({ kind: 'product', id: p.id, image: 0 }));
-    const title = el('button', { cls: 's-title', type: 'button', text: p.title });
-    title.addEventListener('click', () => openOverlay({ kind: 'product', id: p.id, image: 0 }));
+    const title = productLink(p, 's-title', p.title);
     const variable = hasVariants(p) && !service;
     const st = variable ? null : stockText(p);
     const actions = el('div', { cls: 's-act' }, [cardControl(p)]);
@@ -1079,9 +1084,86 @@ function catalogView(): HTMLElement[] {
 
 // ───────────────────────────── Capas (producto, carrito, políticas) ─────────────────────────────
 
+// ── v0.1.423: la tienda en su dominio — cada producto con su dirección ──
+//
+// Abrir un producto anota `/p/<nombre>-<id>` en la barra (atrás lo cierra y
+// adelante lo vuelve a abrir) y cambia el título de la pestaña. Si se llegó
+// directo a un producto, cerrarlo deja la barra en `/` sin salir del sitio.
+
+/** Mientras se aplica lo que pidió la barra (atrás/adelante): no se vuelve a anotar. */
+let siteFromHistory = false;
+
+interface SiteState {
+    imbP: number;
+    pushed: boolean;
+}
+
+function siteState(): SiteState | null {
+    const st = history.state as Partial<SiteState> | null;
+    return st && typeof st.imbP === 'number' ? { imbP: st.imbP, pushed: st.pushed === true } : null;
+}
+
+function siteProductOpened(id: number): void {
+    if (!SITE || siteFromHistory) return;
+    const p = byId.get(id);
+    if (!p) return;
+    document.title = `${p.title} · ${SITE.home_title}`;
+    const path = shopProductPath(p.title, p.id);
+    const cur = siteState();
+    if (location.pathname === path) {
+        history.replaceState({ imbP: id, pushed: cur?.pushed === true }, '', location.pathname + location.search);
+        return;
+    }
+    if (cur) history.replaceState({ imbP: id, pushed: cur.pushed }, '', path);
+    else history.pushState({ imbP: id, pushed: true }, '', path);
+}
+
+function siteProductLeft(): void {
+    if (!SITE) return;
+    document.title = SITE.home_title;
+    if (siteFromHistory) return;
+    const cur = siteState();
+    if (cur?.pushed) history.back();
+    else if (location.pathname !== '/') history.replaceState(null, '', '/' + location.search);
+}
+
+if (SITE) {
+    window.addEventListener('popstate', () => {
+        const id = siteState()?.imbP ?? parseShopProductPath(location.pathname);
+        siteFromHistory = true;
+        try {
+            if (id !== null && byId.has(id)) {
+                if (!(overlay?.kind === 'product' && overlay.id === id)) openOverlay({ kind: 'product', id, image: 0 });
+            } else if (overlay?.kind === 'product') closeOverlay();
+            document.title = id !== null && byId.has(id) ? `${byId.get(id)!.title} · ${SITE.home_title}` : SITE.home_title;
+        } finally {
+            siteFromHistory = false;
+        }
+    });
+}
+
+/** El enlace de un producto: en su dominio es una dirección de verdad (la siguen los buscadores). */
+function productLink(p: PublicShopProduct, cls: string, text: string): HTMLElement {
+    if (!SITE) {
+        const b = el('button', { cls, type: 'button', text });
+        b.addEventListener('click', () => openOverlay({ kind: 'product', id: p.id, image: 0 }));
+        return b;
+    }
+    const a = el('a', { cls, href: shopProductPath(p.title, p.id), text });
+    a.addEventListener('click', (ev) => {
+        if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey || ev.button !== 0) return;
+        ev.preventDefault();
+        openOverlay({ kind: 'product', id: p.id, image: 0 });
+    });
+    return a;
+}
+
 function openOverlay(o: NonNullable<Overlay>): void {
     if (!overlay) lastFocus = document.activeElement as HTMLElement | null;
+    const wasProduct = overlay?.kind === 'product';
     overlay = o;
+    if (o.kind === 'product') siteProductOpened(o.id);
+    else if (wasProduct) siteProductLeft();
     if (o.kind === 'product') {
         trackProduct(o.id);
         const p = products.find((x) => x.id === o.id);
@@ -1091,7 +1173,9 @@ function openOverlay(o: NonNullable<Overlay>): void {
 }
 
 function closeOverlay(): void {
+    const wasProduct = overlay?.kind === 'product';
     overlay = null;
+    if (wasProduct) siteProductLeft();
     ovRoot.replaceChildren();
     document.body.style.overflow = '';
     paintCartButtons();
@@ -2963,6 +3047,10 @@ function render(): void {
     // v0.1.419 — `?producto=<id>` (el botón «Comprar» de un producto, o su enlace):
     // la tienda abre ya en la ficha de ese producto. Se quita de la dirección
     // para que cerrar la ficha y recargar no la vuelva a abrir.
+    // v0.1.423 — Llegó a la dirección de un producto (`/p/…`): abre en su ficha.
+    if (SITE && SITE.product_id !== null && byId.has(SITE.product_id) && view === 'catalog') {
+        openOverlay({ kind: 'product', id: SITE.product_id, image: 0 });
+    }
     const wanted = Number(qs.get('producto'));
     if (qs.has('producto') && !BOOT.preview) {
         const url = new URL(location.href);
