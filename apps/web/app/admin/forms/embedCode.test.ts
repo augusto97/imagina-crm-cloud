@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buttonInk, defaultEmbedLabel, embedCode, embedPopupAttribute, qrTargetUrl, safeHex, shopProductUrl, withEmbedOrigin, type EmbedTarget } from './embedCode';
+import { buttonInk, defaultEmbedLabel, embedCode, embedPopupAttribute, qrTargetUrl, safeHex, shopCartLinkUrl, shopProductUrl, withEmbedOrigin, type EmbedTarget } from './embedCode';
 
 const target: EmbedTarget = {
     url: 'https://app.acme.co/api/v1/public/f/abc123',
@@ -108,6 +108,9 @@ describe('v0.1.419 — la tienda en tu sitio', () => {
     it('el botón «Comprar» de un producto abre la tienda en ese producto', () => {
         expect(shopProductUrl(shop.url, 42)).toBe('https://app.acme.co/api/v1/public/s/tk123?producto=42');
         expect(shopProductUrl('https://app.acme.co/api/v1/public/s/tk123?utm_source=web', 7)).toBe('https://app.acme.co/api/v1/public/s/tk123?utm_source=web&producto=7');
+        // v0.1.421 — El enlace que agrega y lleva al pago (o al carrito).
+        expect(shopCartLinkUrl(shop.url, [{ id: 42, qty: 2 }])).toBe('https://app.acme.co/api/v1/public/s/tk123?comprar=42:2');
+        expect(shopCartLinkUrl(shop.url, [{ id: 42, qty: 1 }, { id: 9, qty: 3 }], 'add')).toBe('https://app.acme.co/api/v1/public/s/tk123?agregar=42,9:3');
         const buy = embedCode(withEmbedOrigin({ ...shop, url: shopProductUrl(shop.url, 42) }, 'https://w.acme.co'), 'popup', { label: 'Comprar', color: '#111111', position: 'right', open: 'full' });
         expect(buy).toContain('data-imagina-popup="https://w.acme.co/api/v1/public/s/tk123?producto=42"');
         expect(buy).toContain('data-imagina-open="full"');

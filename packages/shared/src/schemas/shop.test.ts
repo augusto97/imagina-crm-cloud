@@ -5,9 +5,11 @@ import {
     formatShopMoney,
     missingVariantCombos,
     normalizeCouponCode,
+    parseShopCartParam,
     pickShopVariant,
     readShopConfig,
     shopCouponEligible,
+    shopCartParam,
     shopCouponProblemText,
     shopLineProblemText,
     shopOptionValueState,
@@ -478,5 +480,37 @@ describe('v0.1.417 — suscripciones', () => {
         expect(c.kinds.subscription_links).toEqual({ '5': 7 });
         expect(c.kinds.subscription_address).toBe(false);
         expect(readShopConfig({ kinds: { subscription_address: true } }).kinds.subscription_address).toBe(true);
+    });
+});
+
+describe('v0.1.421 — qué pasa al agregar y el enlace que arma el carrito', () => {
+    it('por defecto se abre el carrito al costado y se ofrece «Comprar ahora»; lo raro vuelve al default', () => {
+        const c = readShopConfig({});
+        expect(c.display.after_add).toBe('drawer');
+        expect(c.display.buy_now).toBe(true);
+        expect(c.texts.buy_now).toBe('Comprar ahora');
+        expect(readShopConfig({ display: { after_add: 'checkout' } }).display.after_add).toBe('checkout');
+        expect(readShopConfig({ display: { after_add: 'volar' } }).display.after_add).toBe('drawer');
+    });
+
+    it('lee ?comprar= con ids, cantidades y `cantidad`, y junta repetidos', () => {
+        expect(parseShopCartParam('12')).toEqual([{ id: 12, qty: 1 }]);
+        expect(parseShopCartParam('12', '3')).toEqual([{ id: 12, qty: 3 }]);
+        expect(parseShopCartParam('12:2,15')).toEqual([
+            { id: 12, qty: 2 },
+            { id: 15, qty: 1 },
+        ]);
+        expect(parseShopCartParam(' 12 x 2 , 12:1 , abc, -4, 0, 15*9999')).toEqual([
+            { id: 12, qty: 3 },
+            { id: 15, qty: 999 },
+        ]);
+        expect(parseShopCartParam('')).toEqual([]);
+        expect(parseShopCartParam(null)).toEqual([]);
+        expect(parseShopCartParam(Array.from({ length: 40 }, (_, i) => String(i + 1)).join(','))).toHaveLength(20);
+    });
+
+    it('arma el valor del enlace', () => {
+        expect(shopCartParam([{ id: 12, qty: 2 }, { id: 15, qty: 1 }, { id: -1, qty: 1 }])).toBe('12:2,15');
+        expect(parseShopCartParam(shopCartParam([{ id: 7, qty: 4 }]))).toEqual([{ id: 7, qty: 4 }]);
     });
 });

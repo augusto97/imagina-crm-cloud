@@ -363,7 +363,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
             onSave={() => save()}
             tab={share ?? 'link'}
             onTab={(t) => setShare(t)}
-            embedExtra={<ShopBuyButtons shopId={shop.id} url={url} origin={window.location.origin} embedOrigin={live.embed_origin ?? null} accent={accent} />}
+            embedExtra={<ShopBuyButtons shopId={shop.id} url={url} origin={window.location.origin} embedOrigin={live.embed_origin ?? null} accent={accent} variantAttributes={config.variants.attributes} />}
         />
     );
 

@@ -118,6 +118,27 @@ export const articles: LearnArticle[] = [
                 title: 'No es facturación electrónica',
                 md: 'La tienda recibe pedidos; no emite la factura electrónica de la DIAN. Si la necesitas, sigue haciéndola con tu sistema de facturación.',
             },
+            { t: 'h', text: 'Qué pasa al agregar al carrito' },
+            {
+                t: 'p',
+                md: 'En **Apariencia → Al agregar al carrito** eliges lo que ve tu cliente después de tocar «Agregar al carrito». En la ficha de cada producto, además, elige cuántos antes de agregar.',
+            },
+            {
+                t: 'settings',
+                title: 'Al agregar al carrito',
+                rows: [
+                    { name: 'Se abre el carrito al costado', what: 'El carrito se abre a un lado con lo que agregó marcado y el total, y puede seguir comprando o finalizar.', tip: 'Es lo que viene elegido.' },
+                    { name: 'Un aviso y sigue mirando', what: 'Sale un aviso abajo con «Ver carrito» y la persona sigue en la vitrina.', tip: 'Bueno para quien compra varias cosas.' },
+                    { name: 'Va a la página del carrito', what: 'Pasa a una página con el carrito completo, el subtotal y «Finalizar compra». El botón del carrito de arriba también lleva ahí.' },
+                    { name: 'Va directo al pago', what: 'Agregar lleva directo a pagar: para una tienda de un solo producto o compras rápidas.', tip: 'Quizás quieras que el botón diga «Comprar».' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'El botón «Comprar ahora»',
+                md: 'Con el carrito al costado, el aviso o la página del carrito, la ficha del producto puede llevar **Comprar ahora**: agrega el producto y va directo al pago. Lo apagas en **Apariencia** y cambias su texto en **Textos de los botones**.',
+            },
             { t: 'h', text: 'Publicar y compartir' },
             {
                 t: 'steps',
@@ -147,15 +168,15 @@ export const articles: LearnArticle[] = [
                 items: [
                     'Elige la forma, el texto y el color del botón, y toca **Copiar código**.',
                     'Pégalo en tu sitio (en WordPress, en un bloque «HTML personalizado»).',
-                    'Para un producto en particular, abre **Botón «Comprar» de un producto**, elige el producto y copia su código: el botón abre la tienda directo en ese producto. Ponlo al lado de su foto o su precio.',
+                    'Para un producto en particular, abre **Botón «Comprar» de un producto**, elige el producto y en **Al hacer clic** decide si el botón **abre la tienda en ese producto**, **lo agrega y lleva directo al pago** o **lo agrega y abre el carrito** (con la cantidad y, si tiene, la talla o el color). Copia el código y ponlo al lado de su foto o su precio.',
                     'Si tienes un **widget de contacto**, súmale el botón **Ver la tienda**: la tienda se abre dentro del panel del widget.',
                 ],
             },
             {
                 t: 'callout',
                 tone: 'tip',
-                title: 'El enlace directo a un producto',
-                md: 'Al enlace de la tienda agrégale `?producto=` y el número del producto (lo ves en **Botón «Comprar» de un producto → Enlace directo al producto**). Sirve para una publicación en redes o un correo: quien lo abre cae en ese producto.',
+                title: 'Enlaces que arman el carrito',
+                md: 'El mismo **Botón «Comprar» de un producto** te da el enlace para una publicación, un anuncio o un correo. Con **abre la tienda en el producto** el enlace termina en `?producto=` y el número; con **lo agrega y lleva al pago**, en `?comprar=` y el número (`:2` para dos unidades); con **lo agrega y abre el carrito**, en `?agregar=`. Quien lo abre ya tiene el producto en el carrito.',
             },
             {
                 t: 'example',

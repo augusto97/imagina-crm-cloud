@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { GOOGLE_ADS_SEND_TO_RE, GOOGLE_TAG_ID_RE, META_PIXEL_ID_RE } from './conversion-logic';
 import { SHOP_STAT_DEVICES } from './shop-stats-logic';
 import {
+    SHOP_AFTER_ADD,
     SHOP_COUPON_CODE_RE,
     SHOP_COUPON_KINDS,
     SHOP_ITEM_ID_RE,
@@ -288,6 +289,10 @@ export const shopDisplaySchema = z.object({
     show_sku: z.boolean().catch(false).default(false),
     /** Los agotados: se muestran apagados o no se muestran. */
     hide_sold_out: z.boolean().catch(false).default(false),
+    /** v0.1.421 — Qué pasa al agregar al carrito (por defecto se abre el carrito al costado). */
+    after_add: z.enum(SHOP_AFTER_ADD).catch('drawer').default('drawer'),
+    /** v0.1.421 — El botón «Comprar ahora» en la ficha del producto (lo agrega y va al pago). */
+    buy_now: z.boolean().catch(true).default(true),
 });
 export type ShopDisplay = z.infer<typeof shopDisplaySchema>;
 
@@ -296,6 +301,7 @@ export const shopTextsSchema = z.object({
     description: text(600),
     add_to_cart: text(40, 'Agregar al carrito'),
     checkout: text(40, 'Finalizar compra'),
+    buy_now: text(40, 'Comprar ahora'),
     success_title: text(120, '¡Recibimos tu pedido!'),
     success_message: text(600, 'Te enviamos el detalle a tu correo. Si tienes dudas, escríbenos.'),
 });

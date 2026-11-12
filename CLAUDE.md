@@ -14924,6 +14924,44 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         con formato en la tienda sin la mención interna, tienda digital
         publicada sin entregas).
 
+  - [x] **Qué pasa al agregar al carrito, página del carrito y enlaces que
+        llevan al pago (v0.1.421, addendum ADR-S103, del mismo pedido del
+        usuario: "agregar al carrito no abre el carrito ni nada, debería poderse
+        controlar… abrir el carrito, redirigir al carrito o directo al
+        checkout… y un link en un sitio web que redirija al producto ya
+        agregado en el checkout")**. (a) **Apariencia → Al agregar al carrito**
+        (`display.after_add`: `toast` | `drawer` | `cart` | `checkout`, default
+        `drawer`, lectura tolerante; `SHOP_AFTER_ADD` en shared): el carrito se
+        abre al costado con «Agregaste «X»» y la línea marcada; un aviso con
+        «Ver carrito»; una **página del carrito** nueva (vista `cart` de la
+        página pública: líneas, subtotal, compra mínima, cupón pendiente,
+        «Finalizar compra», «Seguir comprando»; el botón del carrito de arriba
+        también lleva ahí); o directo al pago. Con «directo al pago» el editor
+        sugiere que el botón diga «Comprar». (b) **Ficha del producto**: se elige
+        cuántos antes de agregar y el botón **Comprar ahora** (`display.buy_now`,
+        default sí; `texts.buy_now`) lo agrega y va al pago; no aparece con
+        «directo al pago». Contador del carrito que rebota al agregar, aviso con
+        acción, movimiento reducido respetado. (c) **Enlaces que arman el
+        carrito**: `?comprar=12:2,15` (lo agrega y va al pago) y `?agregar=…`
+        (lo agrega y abre el carrito), con `cantidad` para el primero;
+        `parseShopCartParam` (shared, puro: ids de producto o de variante,
+        repetidos sumados, tope de 20 y de 999 unidades). Un producto con
+        opciones o un servicio abre su ficha, una suscripción va a
+        suscribirse, un agotado avisa y no va al pago, un id inexistente no
+        frena el resto; la dirección queda limpia. (d) **Botón «Comprar» de un
+        producto** (Compartir → Insertar): «Al hacer clic» abre la tienda en el
+        producto, lo agrega y lleva al pago, o lo agrega y abre el carrito, con
+        la cantidad y la variante (`useShopProductVariants`); el código y el
+        enlace usan `shopCartLinkUrl`. Sin cambios de servidor más allá del
+        CSS de la página. Ayuda: guía `shop`, Aprende → Tienda online («Qué pasa
+        al agregar al carrito», enlaces que arman el carrito) y novedad. Tests:
+        `shop.test` +3 (default, lectura del parámetro, ida y vuelta),
+        `embedCode.test` +2 — shared y front en verde — + E2E navegador 28/28
+        en escritorio y 28/28 en celular oscuro (las cuatro formas, cantidad y
+        «Comprar ahora» en la ficha, página del carrito con subtotal en vivo,
+        `?comprar=`/`?agregar=`, agotado, id inexistente, editor y botón
+        «Comprar» con el enlace al pago).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
