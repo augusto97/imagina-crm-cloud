@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { BadRequestException, ConflictException, HttpException, HttpStatus, Inject, Injectable, Logger, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
 import {
+    SHOP_MY_ORDERS_MAX,
     SHOP_ORDER_STATUS_LABELS,
     SHOP_PAYMENT_METHOD_LABELS,
     SHOP_PAYMENT_STATUS_LABELS,
@@ -8,6 +9,7 @@ import {
     computeShopCart,
     shopCouponProblemText,
     shopCurrencyDecimals,
+    shopNeedsDelivery,
     shopShippingFor,
     formatShopMoney,
     jsonbKeyForField,
@@ -17,6 +19,8 @@ import {
     tenantFormatSchema,
     validateFieldValue,
     type Field,
+    type PublicShopDownload,
+    type PublicShopMyOrders,
     type PublicShopOrder,
     type PublicShopOrderInput,
     type ShopCartResult,
@@ -34,7 +38,7 @@ import { BillingService } from '../billing/billing.service';
 import { CollectionsService } from '../collections/collections.service';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { lists, paymentLinks, records, shopOrders, shops, tenants, type ShopOrderRow, type ShopRow } from '../db/schema';
+import { attachments, lists, paymentLinks, records, shopOrders, shops, tenants, type ShopOrderRow, type ShopRow } from '../db/schema';
 import { DomainsService } from '../domains/domains.service';
 import { FieldsService } from '../fields/fields.service';
 import { FilesService } from '../files/files.service';
@@ -49,7 +53,7 @@ import { RecordsRepository } from '../records/records.repository';
 import { RelationsRepository } from '../records/relations.repository';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { purchasablesFromRows, resolveCatalogFields, resolveVariantAttributes, type PurchasableRow, type ResolvedCatalog } from './shop-catalog';
-import { shopOrderEmail } from './shop-email';
+import { shopMyOrdersEmail, shopOrderEmail } from './shop-email';
 import type { CustomerRole, LineRole, OrderRole } from './shop-pack';
 
 /**
@@ -177,6 +181,11 @@ export class ShopOrdersService implements OnModuleInit {
         this.collections?.onLinkPaid((e) => this.onLinkPaid(e.tenantId, e.linkId));
     }
 
+    /** v0.1.416 — El dominio de la empresa para los enlaces públicos (o el de la plataforma). */
+    publicBase(tenantId: number): Promise<string> {
+        return this.base(tenantId);
+    }
+
     private async base(tenantId: number): Promise<string> {
         if (this.domains) {
             try {
@@ -194,24 +203,22 @@ export class ShopOrdersService implements OnModuleInit {
         const { tenantId, config, shop } = s;
         const o = config.orders;
         if (o.list_id === null || o.lines_list_id === null) badRequest('shop_closed', 'Esta tienda no está recibiendo pedidos ahora.');
-        const delivery = config.delivery.find((d) => d.active && d.id === input.delivery_id);
-        if (!delivery) badRequest('shop_delivery', 'Elige cómo quieres recibir tu pedido.');
+        // v0.1.416 — La entrega se exige recién al ver qué se compra: un
+        // carrito sólo de descargables no pide forma de entrega ni dirección.
+        const delivery = input.delivery_id ? (config.delivery.find((d) => d.active && d.id === input.delivery_id) ?? null) : null;
         // v0.1.415 — Con zonas, la persona elige a dónde y la zona pone el precio.
-        const zones = delivery!.zones.filter((z) => z.active && z.name.trim() !== '');
+        const zones = delivery ? delivery.zones.filter((z) => z.active && z.name.trim() !== '') : [];
         const zone = zones.length > 0 ? (zones.find((z) => z.id === input.zone_id) ?? null) : null;
-        if (zones.length > 0 && !zone) badRequest('shop_zone', 'Elige a dónde enviamos tu pedido.');
-        const ship = shopShippingFor({ price: delivery!.price, free_over: delivery!.free_over, zones }, zone?.id ?? null);
-        const deliveryLabel = zone ? `${delivery!.name} · ${zone.name}` : delivery!.name;
-        const method = input.payment_method;
-        const enabled = {
+        const enabled: Record<ShopPaymentMethod, boolean> = {
             whatsapp: config.payments.whatsapp.enabled,
             transfer: config.payments.transfer.enabled,
             cod: config.payments.cod.enabled,
             online: config.payments.online.enabled && (s.onlineConnectionId ?? null) !== null && !!this.collections,
-        } as const;
-        if (!enabled[method]) badRequest('shop_payment', 'Elige una forma de pago.');
+            // v0.1.416 — Sólo vale si el carrito sale en cero (se comprueba con la cuenta).
+            free: true,
+        };
+        if (!enabled[input.payment_method]) badRequest('shop_payment', 'Elige una forma de pago.');
         const c = input.customer;
-        if (delivery!.needs_address && (!c.address.trim() || !c.city.trim())) badRequest('shop_address', 'Escribe la dirección y la ciudad de entrega.');
         if (config.checkout.ask_document === 'required' && !c.document.trim()) badRequest('shop_document', 'Escribe tu número de documento.');
         if (config.checkout.require_terms && input.terms !== true) badRequest('shop_terms', 'Para comprar, acepta los términos y condiciones.');
 
@@ -223,14 +230,14 @@ export class ShopOrdersService implements OnModuleInit {
         const base = await this.base(tenantId);
         const orderToken = newOrderToken();
         const orderUrl = `${base}/api/v1/public/s/${s.token}?pedido=${orderToken}`;
-        // v0.1.413 — Pago en línea: el stock queda apartado mientras la persona paga.
-        const holdUntil = method === 'online' ? new Date(Date.now() + config.payments.online.hold_minutes * 60_000) : null;
+        // v0.1.416 — «Sin costo» como opción de la columna del método (tiendas de antes).
+        if (input.payment_method === 'free') await this.ensureFreeOption(tenantId, config).catch(() => undefined);
 
         const touched: Touched[] = [];
         const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const catalogFields = await this.fields.listByListIdWithinTx(tx, tenantId, shop.listId);
             const [catalogList] = await tx.select({ settings: lists.settings, name: lists.name }).from(lists).where(and(eq(lists.tenantId, tenantId), eq(lists.id, shop.listId))).limit(1);
-            const rf = resolveCatalogFields(catalogFields, config.catalog, catalogList?.settings ?? {});
+            const rf = resolveCatalogFields(catalogFields, config.catalog, catalogList?.settings ?? {}, config.kinds);
             if (!rf.price) badRequest('shop_closed', 'Esta tienda no está recibiendo pedidos ahora.');
 
             // 1) Los productos (o variantes), bloqueados y leídos de la base.
@@ -251,6 +258,15 @@ export class ShopOrdersService implements OnModuleInit {
                 .orderBy(asc(records.id))
                 .for('no key update');
             const byId = await this.purchasableRows(tx, tenantId, shop.listId, rows, rf, variantsOn ? resolveVariantAttributes(catalogFields, config.variants.attributes) : null);
+            // v0.1.416 — ¿Algo se envía o se recoge? Un carrito de descargables no pide entrega.
+            const needsDelivery = shopNeedsDelivery(input.lines, (id) => byId.get(id)?.kind);
+            if (needsDelivery) {
+                if (!delivery) badRequest('shop_delivery', 'Elige cómo quieres recibir tu pedido.');
+                if (zones.length > 0 && !zone) badRequest('shop_zone', 'Elige a dónde enviamos tu pedido.');
+                if (delivery!.needs_address && (!c.address.trim() || !c.city.trim())) badRequest('shop_address', 'Escribe la dirección y la ciudad de entrega.');
+            }
+            const ship = needsDelivery ? shopShippingFor({ price: delivery!.price, free_over: delivery!.free_over, zones }, zone?.id ?? null) : { price: 0, free_over: null };
+            const deliveryLabel = needsDelivery ? (zone ? `${delivery!.name} · ${zone.name}` : delivery!.name) : 'Descarga digital';
             // v0.1.415 — El cupón: la fila se bloquea antes de contar sus usos.
             let coupon: ResolvedCoupon | null = null;
             if (input.coupon && input.coupon.trim() !== '') {
@@ -278,6 +294,12 @@ export class ShopOrdersService implements OnModuleInit {
                 badRequest('shop_minimum', `La compra mínima es de ${money(config.checkout.min_order ?? 0)}: te faltan ${money(cart.below_minimum)}.`);
             }
             if (coupon && cart.coupon_problem) badRequest('shop_coupon', shopCouponProblemText(cart.coupon_problem, coupon.rule, money));
+            // v0.1.416 — Un pedido en cero no se paga: queda pagado al hacerlo.
+            if (input.payment_method === 'free' && cart.total > 0) badRequest('shop_payment', 'Elige una forma de pago.');
+            const method: ShopPaymentMethod = cart.total === 0 ? 'free' : input.payment_method;
+            // v0.1.413 — Pago en línea: el stock queda apartado mientras la persona paga.
+            const holdUntil = method === 'online' ? new Date(Date.now() + config.payments.online.hold_minutes * 60_000) : null;
+            const paidNow = method === 'free' ? new Date() : null;
 
             // 2) El tope de registros del plan: el pedido, sus líneas y quizá el cliente.
             if (cap && this.billing) await this.billing.assertRecordRoomInTx(tx, tenantId, cap, cart.lines.length + 2);
@@ -299,7 +321,18 @@ export class ShopOrdersService implements OnModuleInit {
                         tookStock = true;
                     }
                 }
-                lines.push({ product_id: l.product_id, title: l.title, sku: p.sku, qty: l.qty, unit_price: l.unit_price, subtotal: l.subtotal, stock_taken: taken, parent_id: p.parentId });
+                lines.push({
+                    product_id: l.product_id,
+                    title: l.title,
+                    sku: p.sku,
+                    qty: l.qty,
+                    unit_price: l.unit_price,
+                    subtotal: l.subtotal,
+                    stock_taken: taken,
+                    parent_id: p.parentId,
+                    kind: p.kind,
+                    ...(p.downloads.length > 0 ? { files: p.downloads } : {}),
+                });
             }
 
             // 4) El cliente: por su correo en «Clientes de la tienda».
@@ -312,8 +345,12 @@ export class ShopOrdersService implements OnModuleInit {
             const items = lines.map((l) => `${l.qty} × ${l.title} — ${money(l.subtotal)}`).join('\n');
             const data: Record<string, unknown> = {};
             put(data, of('status'), 'nuevo');
-            put(data, of('payment_status'), 'pendiente');
+            put(data, of('payment_status'), paidNow ? 'pagado' : 'pendiente');
             put(data, of('payment_method'), method);
+            if (paidNow) {
+                const paidField = of('paid_at');
+                if (paidField) put(data, paidField, paidField.type === 'date' ? paidNow.toISOString().slice(0, 10) : paidNow.toISOString());
+            }
             put(data, of('total'), cart.total);
             put(data, of('subtotal'), cart.subtotal);
             put(data, of('shipping'), cart.shipping);
@@ -373,7 +410,8 @@ export class ShopOrdersService implements OnModuleInit {
                 token: orderToken,
                 number,
                 paymentMethod: method,
-                paymentStatus: 'pendiente',
+                paymentStatus: paidNow ? 'pagado' : 'pendiente',
+                paidAt: paidNow,
                 currency,
                 subtotal: cart.subtotal,
                 shipping: cart.shipping,
@@ -383,7 +421,9 @@ export class ShopOrdersService implements OnModuleInit {
                 total: cart.total,
                 lines,
                 customer: { name: c.name, email: c.email, phone: c.phone, document: c.document, address: c.address, city: c.city, notes: c.notes },
-                delivery: { id: delivery!.id, name: deliveryLabel, needs_address: delivery!.needs_address, ...(zone ? { zone_id: zone.id, zone_name: zone.name } : {}) },
+                delivery: needsDelivery
+                    ? { id: delivery!.id, name: deliveryLabel, needs_address: delivery!.needs_address, ...(zone ? { zone_id: zone.id, zone_name: zone.name } : {}) }
+                    : { id: null, name: deliveryLabel, needs_address: false, digital: true },
                 origin: { page: input.origin?.page?.slice(0, 500) ?? null, referrer: input.origin?.referrer?.slice(0, 500) ?? null },
                 catalogListId: shop.listId,
                 stockFieldId: tookStock && rf.stock ? rf.stock.id : null,
@@ -391,8 +431,11 @@ export class ShopOrdersService implements OnModuleInit {
                 stockState: tookStock ? 'taken' : 'none',
                 expiresAt: holdUntil,
             });
-            return { cart, number, recordId: inserted.id, orderListId: o.list_id!, lines };
+            return { cart, number, recordId: inserted.id, orderListId: o.list_id!, lines, method, holdUntil, deliveryLabel };
         });
+        const method = result.method;
+        const holdUntil = result.holdUntil;
+        const deliveryLabel = result.deliveryLabel;
 
         // v0.1.413 — Pago en línea: el link se arma DESPUÉS del commit (es una
         // llamada al proveedor y no puede tener los productos bloqueados). Si no
@@ -474,16 +517,21 @@ export class ShopOrdersService implements OnModuleInit {
             return { order_token: orderToken, number: result.number, cart: result.cart, payment_method: method, whatsapp_path: null, pay_url: payUrl };
         }
         const notifyIds = this.notifyIds(config, shop);
+        const hasDownloads = result.lines.some((l) => (l.files?.length ?? 0) > 0);
         this.notify?.emit({
             type: 'shop',
             tenantId,
             listId: result.orderListId,
             recordId: result.recordId,
             userIds: notifyIds,
-            title: `Pedido nuevo ${result.number} · ${money(result.cart.total)}`.slice(0, 200),
+            title: (method === 'free' ? `Pedido nuevo ${result.number} · sin costo` : `Pedido nuevo ${result.number} · ${money(result.cart.total)}`).slice(0, 200),
             body: `${c.name} · ${SHOP_PAYMENT_METHOD_LABELS[method]} · ${result.lines.length === 1 ? '1 producto' : `${result.lines.length} productos`}`,
         });
-        if (config.checkout.send_confirmation) {
+        // v0.1.416 — Sin costo: queda pagado y, si trae descargables, el correo
+        // los lleva (es la entrega: sale aunque los correos de confirmación estén apagados).
+        if (method === 'free' && (config.checkout.send_confirmation || hasDownloads)) {
+            void this.sendPaidEmail(tenantId, orderToken).catch((err: unknown) => this.logger.warn(`Tienda ${shop.id}: no salió el correo del pedido ${result.number}: ${String(err)}`));
+        } else if (method !== 'free' && config.checkout.send_confirmation) {
             void this.sendConfirmation(s, {
                 kind: 'placed',
                 number: result.number,
@@ -494,6 +542,7 @@ export class ShopOrdersService implements OnModuleInit {
                 method,
                 orderUrl,
                 money,
+                ...(hasDownloads ? { downloadsNote: 'Las descargas te llegan a este correo apenas confirmemos el pago.' } : {}),
             }).catch((err: unknown) => this.logger.warn(`Tienda ${shop.id}: no salió el correo del pedido ${result.number}: ${String(err)}`));
         }
         return {
@@ -584,6 +633,10 @@ export class ShopOrdersService implements OnModuleInit {
             money: (n: number) => string;
             provider?: string | null;
             holdMinutes?: number;
+            /** v0.1.416 — Los archivos para descargar (pedido pagado). */
+            downloads?: Array<{ title: string; name: string; url: string }>;
+            /** v0.1.416 — Cuándo llegan o hasta cuándo sirven las descargas. */
+            downloadsNote?: string;
         },
     ): Promise<void> {
         if (!this.mail) return;
@@ -603,13 +656,28 @@ export class ShopOrdersService implements OnModuleInit {
             shipping: o.totals.shipping > 0 ? o.money(o.totals.shipping) : null,
             total: o.money(o.totals.total),
             delivery: o.delivery,
-            paymentLabel: paid ? (providerLabel ? `Pagado en línea · ${providerLabel}` : 'Pagado en línea') : SHOP_PAYMENT_METHOD_LABELS[o.method],
+            paymentLabel:
+                o.method === 'free'
+                    ? 'Sin costo'
+                    : paid
+                      ? o.method === 'online'
+                          ? providerLabel
+                              ? `Pagado en línea · ${providerLabel}`
+                              : 'Pagado en línea'
+                          : `Pagado · ${SHOP_PAYMENT_METHOD_LABELS[o.method]}`
+                      : SHOP_PAYMENT_METHOD_LABELS[o.method],
             paymentInstructions: paid
-                ? 'Recibimos el pago. Te avisamos cuando preparemos y enviemos tu pedido.'
+                ? o.method === 'free'
+                    ? 'Tu pedido no tiene costo.'
+                    : o.lines.every((l) => (l.kind ?? 'physical') !== 'physical')
+                      ? 'Recibimos el pago.'
+                      : 'Recibimos el pago. Te avisamos cuando preparemos y enviemos tu pedido.'
                 : o.kind === 'awaiting'
                   ? `Tienes ${holdText(o.holdMinutes ?? 30)} para pagarlo. Si no se paga a tiempo, el pedido se cancela solo y los productos vuelven a la tienda.`
                   : paymentInstructions(s.config, o.method),
             stage: o.kind,
+            downloads: o.downloads ?? [],
+            downloadsNote: o.downloadsNote ?? null,
             orderUrl: o.orderUrl,
             sellerLine: [seller.legal_name, seller.document ? `NIT/C.C. ${seller.document}` : '', seller.email, seller.phone].filter(Boolean).join(' · '),
         });
@@ -668,7 +736,273 @@ export class ShopOrdersService implements OnModuleInit {
             // El número nunca viaja: el botón pasa por la redirección del servidor.
             whatsapp_url: method === 'whatsapp' && pay === 'pendiente' && status !== 'cancelado' ? `/api/v1/public/s/${shopToken}/wa/${row.token}` : null,
             ...(await this.onlinePart(tenantId, row, status)),
+            ...(await this.downloadsPart(tenantId, row, config, `/api/v1/public/s/${shopToken}`)),
+            digital_only: (row.delivery as { digital?: unknown }).digital === true,
         };
+    }
+
+    // ─────────────────────────── Descargas (v0.1.416) ───────────────────────────
+
+    /** Los archivos del pedido (los del momento de la compra), uno por producto y archivo. */
+    private downloadFiles(row: ShopOrderRow): Array<{ product_id: number; file_id: number; title: string }> {
+        const out: Array<{ product_id: number; file_id: number; title: string }> = [];
+        for (const l of row.lines as ShopOrderLineSnapshot[]) {
+            for (const f of l.files ?? []) {
+                if (!out.some((x) => x.product_id === l.product_id && x.file_id === f)) out.push({ product_id: l.product_id, file_id: f, title: l.title });
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Si las descargas sirven ahora: pedido pagado, no cancelado y dentro de
+     * los días de la tienda (contados desde el pago). Si no, por qué.
+     */
+    private downloadState(row: ShopOrderRow, config: ShopConfig, now = new Date()): { available: boolean; until: Date | null; note: string | null } {
+        if (row.cancelledAt) return { available: false, until: null, note: 'El pedido se canceló: las descargas ya no están disponibles.' };
+        if (row.paymentStatus !== 'pagado' || !row.paidAt) return { available: false, until: null, note: 'Las descargas aparecen apenas confirmemos el pago.' };
+        const until = new Date(row.paidAt.getTime() + config.kinds.download_days * 86_400_000);
+        if (until.getTime() <= now.getTime()) {
+            return { available: false, until, note: 'El plazo para descargar terminó. Escríbenos si necesitas los archivos de nuevo.' };
+        }
+        return { available: true, until, note: null };
+    }
+
+    private async attachmentInfo(tenantId: number, ids: number[]): Promise<Map<number, { name: string; size: number }>> {
+        if (ids.length === 0) return new Map();
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: attachments.id, name: attachments.filename, size: attachments.sizeBytes })
+                .from(attachments)
+                .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, [...new Set(ids)]))),
+        );
+        return new Map(rows.map((r) => [r.id, { name: r.name, size: Number(r.size) }]));
+    }
+
+    private async downloadsPart(
+        tenantId: number,
+        row: ShopOrderRow,
+        config: ShopConfig,
+        prefix: string,
+    ): Promise<Pick<PublicShopOrder, 'downloads' | 'downloads_note' | 'downloads_until'>> {
+        const files = this.downloadFiles(row);
+        if (files.length === 0) return { downloads: [], downloads_note: null, downloads_until: null };
+        const info = await this.attachmentInfo(
+            tenantId,
+            files.map((f) => f.file_id),
+        );
+        const st = this.downloadState(row, config);
+        const counts = (row.downloads ?? {}) as Record<string, number>;
+        const max = config.kinds.max_downloads;
+        const downloads: PublicShopDownload[] = [];
+        for (const f of files) {
+            const a = info.get(f.file_id);
+            if (!a) continue; // el archivo se borró
+            const used = Number(counts[`${f.product_id}:${f.file_id}`] ?? 0);
+            const left = max === null || used < max;
+            downloads.push({
+                product_id: f.product_id,
+                file_id: f.file_id,
+                title: f.title,
+                name: a.name,
+                size: a.size,
+                url: st.available && left ? `${prefix}/d/${row.token}/${f.product_id}/${f.file_id}` : null,
+                used,
+                max,
+            });
+        }
+        return { downloads, downloads_note: st.note, downloads_until: st.until ? st.until.toISOString() : null };
+    }
+
+    /**
+     * Bajar un archivo: suma una descarga (con el tope de la tienda, en un
+     * UPDATE condicional: dos clics a la vez no pasan del tope) y devuelve la
+     * dirección firmada de unos minutos. `limit` = ya usó todas; null = no
+     * existe, no está pagado, se canceló o venció.
+     */
+    async download(
+        tenantId: number,
+        shopId: number,
+        orderToken: string,
+        productId: number,
+        fileId: number,
+        config: ShopConfig,
+    ): Promise<{ url: string } | 'limit' | 'unavailable' | null> {
+        const row = await this.findByToken(tenantId, orderToken);
+        if (!row || row.shopId !== shopId) return null;
+        if (!this.downloadFiles(row).some((f) => f.product_id === productId && f.file_id === fileId)) return null;
+        if (!this.downloadState(row, config).available) return 'unavailable';
+        const key = `${productId}:${fileId}`;
+        const max = config.kinds.max_downloads;
+        const count = sql`coalesce((${shopOrders.downloads}->>${key})::int, 0)`;
+        const [upd] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .update(shopOrders)
+                .set({ downloads: sql`jsonb_set(${shopOrders.downloads}, ${`{${key}}`}::text[], to_jsonb(${count} + 1))`, updatedAt: new Date() })
+                .where(and(eq(shopOrders.tenantId, tenantId), eq(shopOrders.id, row.id), ...(max !== null ? [sql`${count} < ${max}`] : [])))
+                .returning({ id: shopOrders.id }),
+        );
+        if (!upd) return 'limit';
+        return { url: `${this.files.signedUrl(tenantId, fileId, 300)}&dl=1` };
+    }
+
+    /**
+     * v0.1.416 — El correo de un pedido pagado (o sin costo): el detalle y, si
+     * trae descargables, los enlaces. Lo usan el pago en línea, «Marcar como
+     * pagado», los pedidos sin costo y «Reenviar las descargas».
+     */
+    async sendPaidEmail(tenantId: number, orderToken: string): Promise<boolean> {
+        const row = await this.findByToken(tenantId, orderToken);
+        if (!row || row.paymentStatus !== 'pagado') return false;
+        const ctx = await this.shopCtx(tenantId, row.shopId);
+        const customer = row.customer as Record<string, string>;
+        if (!ctx || !customer.email) return false;
+        const base = await this.base(tenantId);
+        const money = this.moneyFor(ctx, row.currency);
+        const part = await this.downloadsPart(tenantId, row, ctx.config, `${base}/api/v1/public/s/${ctx.token}`);
+        const link = row.paymentMethod === 'online' && row.paymentLinkId ? await this.linkRow(tenantId, row.paymentLinkId) : null;
+        const max = ctx.config.kinds.max_downloads;
+        await this.sendConfirmation(ctx, {
+            kind: 'paid',
+            number: row.number,
+            customer: { name: customer.name ?? '', email: customer.email },
+            lines: row.lines as ShopOrderLineSnapshot[],
+            totals: { subtotal: row.subtotal, shipping: row.shipping, total: row.total, discount: row.discount, coupon: row.couponCode },
+            delivery: (row.delivery as { name?: string }).name ?? '',
+            method: row.paymentMethod as ShopPaymentMethod,
+            orderUrl: `${base}/api/v1/public/s/${ctx.token}?pedido=${row.token}`,
+            money,
+            provider: link?.provider ?? null,
+            downloads: part.downloads.filter((d) => d.url).map((d) => ({ title: d.title, name: d.name, url: d.url! })),
+            ...(part.downloads.length > 0
+                ? {
+                      downloadsNote: part.downloads_note
+                          ? part.downloads_note
+                          : `Los enlaces sirven ${ctx.config.kinds.download_days === 1 ? '1 día' : `${ctx.config.kinds.download_days} días`}${max !== null ? ` y hasta ${max === 1 ? '1 descarga' : `${max} descargas`} por archivo` : ''}. También los tienes en la página de tu pedido.`,
+                  }
+                : {}),
+        });
+        return true;
+    }
+
+    /** v0.1.416 — «Reenviar las descargas» desde la ficha del pedido. */
+    async resendDownloads(tenantId: number, recordId: number): Promise<{ number: string; email: string }> {
+        const [row] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx.select().from(shopOrders).where(and(eq(shopOrders.tenantId, tenantId), eq(shopOrders.recordId, recordId))).limit(1),
+        );
+        if (!row) throw new NotFoundException({ code: 'shop_order_not_found', message: 'Ese registro no es un pedido de la tienda.', data: { status: 404 } });
+        const ctx = await this.shopCtx(tenantId, row.shopId);
+        if (!ctx) badRequest('shop_not_found', 'La tienda de este pedido ya no existe.');
+        if (this.downloadFiles(row).length === 0) badRequest('shop_no_downloads', 'Este pedido no trae archivos para descargar.');
+        const st = this.downloadState(row, ctx!.config);
+        if (!st.available) badRequest('shop_downloads_unavailable', st.note ?? 'Las descargas de este pedido no están disponibles.');
+        const email = (row.customer as Record<string, string>).email ?? '';
+        if (!email || !this.mail) badRequest('shop_no_email', 'Este pedido no tiene un correo al que mandarlo.');
+        await this.sendPaidEmail(tenantId, row.token);
+        return { number: row.number, email };
+    }
+
+    // ─────────────────────────── «Mis pedidos» (v0.1.416) ───────────────────────────
+
+    /** Cuántos pedidos tiene un correo en una tienda (para no mandar enlaces vacíos). */
+    async hasOrders(tenantId: number, shopId: number, email: string): Promise<boolean> {
+        const [hit] = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: shopOrders.id })
+                .from(shopOrders)
+                .where(and(eq(shopOrders.tenantId, tenantId), eq(shopOrders.shopId, shopId), sql`lower(${shopOrders.customer}->>'email') = ${email.toLowerCase()}`))
+                .limit(1),
+        );
+        return !!hit;
+    }
+
+    /** Los pedidos de un correo en una tienda, los más nuevos primero (con el estado del registro, en una consulta). */
+    async myOrders(tenantId: number, shopId: number, email: string): Promise<PublicShopMyOrders> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select()
+                .from(shopOrders)
+                .where(and(eq(shopOrders.tenantId, tenantId), eq(shopOrders.shopId, shopId), sql`lower(${shopOrders.customer}->>'email') = ${email.toLowerCase()}`))
+                .orderBy(sql`${shopOrders.createdAt} desc`)
+                .limit(SHOP_MY_ORDERS_MAX),
+        );
+        const recIds = rows.filter((r) => r.recordId && r.statusFieldId).map((r) => r.recordId!);
+        const recs = recIds.length
+            ? await this.tenantDb.withTenant(tenantId, (tx) =>
+                  tx
+                      .select({ id: records.id, data: records.data })
+                      .from(records)
+                      .where(and(eq(records.tenantId, tenantId), inArray(records.id, recIds))),
+              )
+            : [];
+        const dataOf = new Map(recs.map((r) => [r.id, r.data as Record<string, unknown>]));
+        return {
+            email: email.toLowerCase(),
+            orders: rows.map((r) => {
+                let status: ShopOrderStatus = 'nuevo';
+                if (r.cancelledAt) status = 'cancelado';
+                else if (r.recordId && r.statusFieldId) {
+                    const v = dataOf.get(r.recordId)?.[jsonbKeyForField(r.statusFieldId)];
+                    if (typeof v === 'string' && v in SHOP_ORDER_STATUS_LABELS) status = v as ShopOrderStatus;
+                }
+                const pay = r.paymentStatus as ShopPaymentStatus;
+                const lines = r.lines as ShopOrderLineSnapshot[];
+                return {
+                    number: r.number,
+                    created_at: r.createdAt.toISOString(),
+                    status,
+                    status_label: SHOP_ORDER_STATUS_LABELS[status],
+                    payment_status: pay,
+                    payment_status_label: SHOP_PAYMENT_STATUS_LABELS[pay] ?? pay,
+                    total: r.total,
+                    currency: r.currency,
+                    items: lines.reduce((n, l) => n + l.qty, 0),
+                    downloads: this.downloadFiles(r).length,
+                    order_token: r.token,
+                };
+            }),
+        };
+    }
+
+    /** v0.1.416 — Manda el enlace de «Mis pedidos» al correo (con la marca de la empresa). */
+    async sendMyOrdersLink(s: ShopCtx, email: string, url: string, days: number): Promise<void> {
+        if (!this.mail) return;
+        const brand = await this.emailBrand(s);
+        const seller = s.config.seller;
+        const m = shopMyOrdersEmail({
+            brand,
+            shopName: s.config.texts.title || s.shop.name,
+            url,
+            days,
+            sellerLine: [seller.legal_name, seller.document ? `NIT/C.C. ${seller.document}` : '', seller.email, seller.phone].filter(Boolean).join(' · '),
+        });
+        await this.mail.enqueue({
+            tenantId: s.tenantId,
+            to: email,
+            subject: m.subject,
+            html: m.html,
+            text: m.text,
+            fromName: senderName(brand.name),
+            fromNameSoft: true,
+            ...(seller.email ? { replyTo: seller.email } : {}),
+        });
+    }
+
+    /** Agrega «Sin costo» a la columna del método de pago (las tiendas de antes no la traían). */
+    private freeOptionReady = new Set<string>();
+    private async ensureFreeOption(tenantId: number, config: ShopConfig): Promise<void> {
+        const listId = config.orders.list_id;
+        const fid = config.orders.fields.payment_method;
+        if (!listId || typeof fid !== 'number') return;
+        const key = `${tenantId}:${fid}`;
+        if (this.freeOptionReady.has(key)) return;
+        const field = (await this.fields.listByListId(tenantId, listId)).find((f) => f.id === fid);
+        if (!field || field.type !== 'select') return;
+        const opts = (field.config as { options?: Array<{ value?: unknown }> }).options ?? [];
+        if (!opts.some((op) => op.value === 'free')) {
+            await this.fields.appendOption(tenantId, String(listId), String(fid), { value: 'free', label: SHOP_PAYMENT_METHOD_LABELS.free, color: '#0d9488' });
+        }
+        this.freeOptionReady.add(key);
     }
 
     /**
@@ -760,6 +1094,21 @@ export class ShopOrdersService implements OnModuleInit {
             public_url: shop ? `${base}/api/v1/public/s/${shop.token}?pedido=${row.token}` : null,
             created_at: row.createdAt.toISOString(),
             ...(await this.panelOnline(tenantId, row)),
+            ...(await this.panelDownloads(tenantId, row)),
+        };
+    }
+
+    /** v0.1.416 — Las descargas del pedido en la ficha (cuántas, hasta cuándo, si se puede reenviar). */
+    private async panelDownloads(tenantId: number, row: ShopOrderRow): Promise<Pick<ShopOrderPanelDto, 'downloads' | 'can_resend'>> {
+        const files = this.downloadFiles(row);
+        if (files.length === 0) return { downloads: null, can_resend: false };
+        const ctx = await this.shopCtx(tenantId, row.shopId);
+        const config = ctx?.config ?? readShopConfig({});
+        const st = this.downloadState(row, config);
+        const used = Object.values((row.downloads ?? {}) as Record<string, number>).reduce((n, v) => n + (Number(v) || 0), 0);
+        return {
+            downloads: { files: files.length, used, max: config.kinds.max_downloads, until: st.until ? st.until.toISOString() : null },
+            can_resend: st.available && !!(row.customer as Record<string, string>).email && !!ctx,
         };
     }
 
@@ -809,6 +1158,10 @@ export class ShopOrdersService implements OnModuleInit {
         // v0.1.413 — Pagó por otro medio: el link en línea ya no se debe pagar.
         if (out.row.paymentLinkId && this.collections) {
             await this.collections.expireLink(tenantId, out.row.paymentLinkId, 'El pedido se marcó como pagado por otro medio.').catch(() => undefined);
+        }
+        // v0.1.416 — Con descargables, marcar pagado es entregar: sale el correo con los enlaces.
+        if (out.changed && (out.row.lines as ShopOrderLineSnapshot[]).some((l) => (l.files?.length ?? 0) > 0)) {
+            void this.sendPaidEmail(tenantId, out.row.token).catch((err: unknown) => this.logger.warn(`Tienda: no salió el correo de las descargas de ${out.row.number}: ${String(err)}`));
         }
         return { number: out.row.number, listId: out.changed?.listId ?? 0 };
     }
@@ -1020,21 +1373,9 @@ export class ShopOrdersService implements OnModuleInit {
             title: `Pedido pagado ${out.row.number} · ${money(out.row.total)}`.slice(0, 200),
             body: `${customer.name ?? ''} · pagó en línea · ${(out.row.lines as ShopOrderLineSnapshot[]).length === 1 ? '1 producto' : `${(out.row.lines as ShopOrderLineSnapshot[]).length} productos`}`,
         });
-        if (ctx.config.checkout.send_confirmation && customer.email) {
-            const base = await this.base(tenantId);
-            const link = out.row.paymentLinkId ? await this.linkRow(tenantId, out.row.paymentLinkId) : null;
-            void this.sendConfirmation(ctx, {
-                kind: 'paid',
-                number: out.row.number,
-                customer: { name: customer.name ?? '', email: customer.email },
-                lines: out.row.lines as ShopOrderLineSnapshot[],
-                totals: { subtotal: out.row.subtotal, shipping: out.row.shipping, total: out.row.total, discount: out.row.discount, coupon: out.row.couponCode },
-                delivery: (out.row.delivery as { name?: string }).name ?? '',
-                method: 'online',
-                orderUrl: `${base}/api/v1/public/s/${ctx.token}?pedido=${out.row.token}`,
-                money,
-                provider: link?.provider ?? null,
-            }).catch((err: unknown) => this.logger.warn(`Tienda ${ctx.shop.id}: no salió el correo del pago ${out.row.number}: ${String(err)}`));
+        const withDownloads = (out.row.lines as ShopOrderLineSnapshot[]).some((l) => (l.files?.length ?? 0) > 0);
+        if ((ctx.config.checkout.send_confirmation || withDownloads) && customer.email) {
+            void this.sendPaidEmail(tenantId, out.row.token).catch((err: unknown) => this.logger.warn(`Tienda ${ctx.shop.id}: no salió el correo del pago ${out.row.number}: ${String(err)}`));
         }
         return out.outcome;
     }

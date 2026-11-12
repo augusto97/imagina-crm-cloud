@@ -4,7 +4,9 @@ import {
     SHOP_COUPON_KINDS,
     SHOP_ITEM_ID_RE,
     SHOP_MAX_DELIVERY_METHODS,
+    SHOP_DOWNLOAD_DAYS_DEFAULT,
     SHOP_MAX_DELIVERY_ZONES,
+    SHOP_MAX_DOWNLOADS_DEFAULT,
     SHOP_MAX_LINES,
     SHOP_MAX_QTY,
     SHOP_MAX_VARIANT_ATTRIBUTES,
@@ -70,6 +72,47 @@ export const shopVariantsSchema = z.object({
     attributes: z.array(refId).max(SHOP_MAX_VARIANT_ATTRIBUTES).catch([]).default([]),
 });
 export type ShopVariantsConfig = z.infer<typeof shopVariantsSchema>;
+
+/**
+ * v0.1.416 — Productos digitales y servicios. Un producto es digital si su
+ * «Tipo» lo dice o, sin columna «Tipo», si trae archivos para descargar; los
+ * digitales no piden entrega y, al pagar, quien compró recibe los enlaces de
+ * descarga. Un servicio no va al carrito: el botón lleva a la agenda.
+ */
+const BOOKING_SERVICE_ID_RE = /^[a-z0-9]{4,24}$/;
+export const SHOP_MAX_SERVICE_LINKS = 300;
+export const shopKindsSchema = z.object({
+    /** Selección o texto «Tipo de producto» (Físico, Digital, Servicio). null = sin columna. */
+    kind_field: nullableRef,
+    /** Archivo: lo que se descarga al pagar. */
+    download_field: nullableRef,
+    /** Cuántos días después del pago sirven las descargas. */
+    download_days: z.number().int().min(1).max(365).catch(SHOP_DOWNLOAD_DAYS_DEFAULT).default(SHOP_DOWNLOAD_DAYS_DEFAULT),
+    /** Cuántas veces se puede bajar cada archivo (null = sin límite). */
+    max_downloads: z.number().int().min(1).max(100).nullable().catch(SHOP_MAX_DOWNLOADS_DEFAULT).default(SHOP_MAX_DOWNLOADS_DEFAULT),
+    /** La agenda donde se reservan los servicios. */
+    booking_page_id: nullableRef,
+    /** Producto (id) → servicio de esa agenda. Sin elección: el servicio con el mismo nombre. */
+    service_links: z
+        .record(z.string(), z.unknown())
+        .catch({})
+        .default({})
+        .transform((raw) => {
+            const out: Record<string, string> = {};
+            let n = 0;
+            for (const [k, v] of Object.entries(raw)) {
+                if (!/^[1-9]\d{0,14}$/.test(k) || typeof v !== 'string' || !BOOKING_SERVICE_ID_RE.test(v)) continue;
+                out[k] = v;
+                if (++n >= SHOP_MAX_SERVICE_LINKS) break;
+            }
+            return out;
+        }),
+});
+export type ShopKindsConfig = z.infer<typeof shopKindsSchema>;
+
+/** Los tipos de campo de las columnas de los tipos de producto. */
+export const SHOP_KIND_FIELD_TYPES = ['select', 'text'] as const;
+export const SHOP_DOWNLOAD_FIELD_TYPES = ['file'] as const;
 
 const money = (def = 0) => z.number().min(0).max(1_000_000_000).catch(def).default(def);
 const nullableMoney = z.number().min(0).max(1_000_000_000).nullable().catch(null).default(null);
@@ -257,6 +300,8 @@ export const shopConfigSchema = z.object({
         .default('COP'),
     catalog: shopCatalogFieldsSchema.catch(() => shopCatalogFieldsSchema.parse({})).default({}),
     variants: shopVariantsSchema.catch(() => shopVariantsSchema.parse({})).default({}),
+    /** v0.1.416 — Productos digitales y servicios. */
+    kinds: shopKindsSchema.catch(() => shopKindsSchema.parse({})).default({}),
     delivery: z.array(shopDeliveryMethodSchema).max(SHOP_MAX_DELIVERY_METHODS).catch([]).default([]),
     payments: shopPaymentsSchema.catch(() => shopPaymentsSchema.parse({})).default({}),
     checkout: shopCheckoutSchema.catch(() => shopCheckoutSchema.parse({})).default({}),
@@ -387,7 +432,35 @@ export interface ShopOptions {
     payment_connections: Array<{ id: number; name: string; provider: 'mercadopago' | 'wompi' | 'paypal'; test_mode: boolean }>;
     /** v0.1.415 — Las categorías del catálogo (para limitar un cupón a algunas). */
     categories: string[];
+    /** v0.1.416 — Las agendas de la empresa (para los servicios), con sus servicios. */
+    booking_pages: ShopBookingPageOption[];
+    /** v0.1.416 — Los productos de tipo servicio, con el servicio de la agenda que les toca. */
+    service_products: ShopServiceProductDto[];
+    /** v0.1.416 — Cuántos productos de cada tipo hay (con la configuración guardada). */
+    kind_counts: { physical: number; digital: number; service: number; downloadable: number };
 }
+
+/** v0.1.416 — Una agenda de la empresa para los servicios de la tienda. */
+export interface ShopBookingPageOption {
+    id: number;
+    name: string;
+    enabled: boolean;
+    services: Array<{ id: string; name: string; active: boolean; price: number | null }>;
+}
+
+/** v0.1.416 — Un producto de tipo servicio y el servicio de la agenda que le toca. */
+export interface ShopServiceProductDto {
+    id: number;
+    title: string;
+    /** El servicio elegido a mano (null = se busca por el nombre). */
+    linked: string | null;
+    /** El servicio que se usa (elegido o por el nombre; null = ninguno). */
+    resolved: string | null;
+}
+
+/** v0.1.416 — «Agregar la columna»: Tipo de producto o Archivo para descargar en el catálogo. */
+export const createShopKindColumnSchema = z.object({ role: z.enum(['kind', 'download']) });
+export type CreateShopKindColumnInput = z.infer<typeof createShopKindColumnSchema>;
 
 // ── v0.1.414: el generador de variantes del editor ─────────────────────
 
@@ -456,6 +529,18 @@ export interface ShopOrderPanelDto {
     pay_url: string | null;
     pay_until: string | null;
     pay_provider: string | null;
+    /** v0.1.416 — Las descargas del pedido (null = no trae descargables). */
+    downloads: {
+        files: number;
+        /** Descargas hechas, sumando todos los archivos. */
+        used: number;
+        /** Por archivo (null = sin límite). */
+        max: number | null;
+        /** Hasta cuándo sirven (null = todavía no: falta el pago). */
+        until: string | null;
+    } | null;
+    /** v0.1.416 — Se puede reenviar el correo con las descargas (está pagado y no venció). */
+    can_resend: boolean;
 }
 
 /** Plataforma → Empresas: las tiendas de una empresa, para suspender una que se usa mal. */
@@ -496,7 +581,8 @@ export const publicShopOrderSchema = z.object({
         .min(1)
         .max(SHOP_MAX_LINES),
     customer: shopCustomerSchema,
-    delivery_id: z.string().regex(SHOP_ITEM_ID_RE),
+    /** v0.1.416 — null con un carrito que sólo se descarga (no pide entrega). */
+    delivery_id: z.string().regex(SHOP_ITEM_ID_RE).nullable().optional(),
     /** v0.1.415 — La zona de envío (con zonas en la forma de entrega). */
     zone_id: z.string().regex(SHOP_ITEM_ID_RE).nullable().optional(),
     /** v0.1.415 — El código del cupón (se valida en el servidor). */
@@ -514,6 +600,13 @@ export const publicShopOrderSchema = z.object({
         .optional(),
 });
 export type PublicShopOrderInput = z.infer<typeof publicShopOrderSchema>;
+
+/** v0.1.416 — «Mis pedidos»: el correo al que se manda el enlace. */
+export const publicShopMyOrdersRequestSchema = z.object({
+    email: z.string().trim().toLowerCase().email().max(254),
+    /** Campo trampa. */
+    website: z.string().max(200).optional(),
+});
 
 export const publicShopQuoteSchema = z.object({
     lines: z

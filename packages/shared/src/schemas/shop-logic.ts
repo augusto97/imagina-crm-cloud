@@ -97,14 +97,102 @@ export const SHOP_PAYMENT_STATUS_COLORS: Record<ShopPaymentStatus, string> = {
     reembolsado: '#dc2626',
 };
 
-export const SHOP_PAYMENT_METHODS = ['whatsapp', 'transfer', 'cod', 'online'] as const;
+/**
+ * `free` (v0.1.416): un pedido de total cero (un descargable gratis, un cupón
+ * del 100 %) no se paga: queda pagado al hacerlo. Nunca se elige; lo decide el
+ * servidor con la cuenta del carrito.
+ */
+export const SHOP_PAYMENT_METHODS = ['whatsapp', 'transfer', 'cod', 'online', 'free'] as const;
 export type ShopPaymentMethod = (typeof SHOP_PAYMENT_METHODS)[number];
 export const SHOP_PAYMENT_METHOD_LABELS: Record<ShopPaymentMethod, string> = {
     whatsapp: 'Pedido por WhatsApp',
     transfer: 'Transferencia',
     cod: 'Contra entrega',
     online: 'Pago en línea',
+    free: 'Sin costo',
 };
+
+// ── v0.1.416: tipos de producto ─────────────────────────────────────────
+
+/**
+ * Qué es cada producto. `physical` se envía o se recoge; `digital` se
+ * descarga (no pide entrega); `service` se agenda en la agenda de la empresa
+ * (no va al carrito).
+ */
+export const SHOP_PRODUCT_KINDS = ['physical', 'digital', 'service'] as const;
+export type ShopProductKind = (typeof SHOP_PRODUCT_KINDS)[number];
+export const SHOP_PRODUCT_KIND_LABELS: Record<ShopProductKind, string> = {
+    physical: 'Físico',
+    digital: 'Digital (se descarga)',
+    service: 'Servicio (se agenda)',
+};
+/** Las opciones de la columna «Tipo de producto» que crea la tienda. */
+export const SHOP_KIND_OPTIONS: ReadonlyArray<{ value: ShopProductKind; label: string; color: string }> = [
+    { value: 'physical', label: 'Físico', color: '#2563eb' },
+    { value: 'digital', label: 'Digital', color: '#7c3aed' },
+    { value: 'service', label: 'Servicio', color: '#0d9488' },
+];
+/** Archivos que se descargan por producto. */
+export const SHOP_MAX_DOWNLOAD_FILES = 10;
+export const SHOP_DOWNLOAD_DAYS_DEFAULT = 30;
+export const SHOP_MAX_DOWNLOADS_DEFAULT = 5;
+/** v0.1.416 — Pedidos que muestra «Mis pedidos». */
+export const SHOP_MY_ORDERS_MAX = 50;
+/** v0.1.416 — Cuánto sirve el enlace de «Mis pedidos» que llega al correo. */
+export const SHOP_MY_ORDERS_DAYS = 7;
+
+function foldKind(s: string): string {
+    return s
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+}
+
+/**
+ * El tipo de un producto según el valor de la columna «Tipo» (la etiqueta de
+ * la opción o el texto). Tolerante: «Digital», «Descargable», «E-book»,
+ * «Curso virtual» son digitales; «Servicio», «Cita», «Sesión», «Asesoría» se
+ * agendan; «Físico», «Producto» se envían. Lo que no se entiende → null (lo
+ * decide quien llama: con archivo para descargar es digital; si no, físico).
+ */
+export function shopKindFromText(raw: unknown): ShopProductKind | null {
+    if (typeof raw !== 'string') return null;
+    const t = foldKind(raw);
+    if (!t) return null;
+    if (t === 'physical' || t === 'digital' || t === 'service') return t;
+    if (/(digital|descarga|virtual|archivo|ebook|e-book|pdf|curso|plantilla|licencia)/.test(t)) return 'digital';
+    if (/(servicio|cita|reserva|agenda|sesion|consulta|asesoria|clase)/.test(t)) return 'service';
+    if (/(fisic|producto|envio|mercancia)/.test(t)) return 'physical';
+    return null;
+}
+
+/**
+ * v0.1.416 — El servicio de la agenda que le toca a un producto de tipo
+ * servicio: el elegido a mano (si sigue activo) o el que se llama igual (sin
+ * tildes ni mayúsculas). null = ninguno (el producto no se puede agendar).
+ */
+export function shopServiceFor(
+    product: { id: number; title: string },
+    links: Readonly<Record<string, string>>,
+    services: ReadonlyArray<{ id: string; name: string; active: boolean }>,
+): string | null {
+    const linked = links[String(product.id)];
+    if (linked && services.some((s) => s.id === linked && s.active)) return linked;
+    const t = foldKind(product.title).replace(/\s+/g, ' ');
+    if (!t) return null;
+    return services.find((s) => s.active && foldKind(s.name).replace(/\s+/g, ' ') === t)?.id ?? null;
+}
+
+/**
+ * ¿El carrito necesita una forma de entrega? Sí, si algo se envía o se
+ * recoge. Un carrito sólo de descargables no pide dirección ni envío. Un
+ * producto que no se conoce cuenta como físico (lo decide el servidor).
+ */
+export function shopNeedsDelivery(lines: ReadonlyArray<{ product_id: number }>, kindOf: (productId: number) => ShopProductKind | null | undefined): boolean {
+    if (lines.length === 0) return false;
+    return lines.some((l) => (kindOf(l.product_id) ?? 'physical') === 'physical');
+}
 
 /**
  * v0.1.413 — Cómo se ve el pago en línea en la tienda según la cuenta de cobro
@@ -230,6 +318,32 @@ export function suggestShopCatalog(
     return out;
 }
 
+/**
+ * v0.1.416 — Qué columna dice el tipo del producto y cuál trae el archivo
+ * para descargar, por el nombre (sólo sugerencia: el editor la confirma).
+ * `taken` = los campos que ya cumplen un papel del catálogo.
+ */
+export function suggestShopKindFields(
+    fields: ReadonlyArray<{ id: number; type: FieldType; label: string; slug: string }>,
+    taken: ReadonlySet<number> = new Set(),
+): { kind_field: number | null; download_field: number | null } {
+    const pick = (types: readonly FieldType[], words: readonly string[]): number | null => {
+        let best: { id: number; s: number } | null = null;
+        for (const f of fields) {
+            if (taken.has(f.id) || !types.includes(f.type)) continue;
+            const name = foldName(`${f.label} ${f.slug.replace(/_/g, ' ')}`);
+            let s = 0;
+            for (const w of words) if (name.includes(w)) s = Math.max(s, w.length);
+            if (s > 0 && (!best || s > best.s)) best = { id: f.id, s };
+        }
+        return best?.id ?? null;
+    };
+    return {
+        kind_field: pick(['select', 'text'], ['tipo de producto', 'tipo producto', 'clase de producto', 'tipo de venta', 'formato']),
+        download_field: pick(['file'], ['descarga', 'descargable', 'para descargar', 'entregable', 'archivo digital', 'producto digital']),
+    };
+}
+
 /** Clave de una foto en la dirección pública: `f<id>` (archivo) o `u<hash>` (enlace). */
 export function shopImageKeyForFile(fileId: number): string {
     return `f${fileId}`;
@@ -288,6 +402,16 @@ export interface PublicShopProduct {
     variants?: PublicShopVariant[];
     /** v0.1.414 — Los atributos y sus valores, en orden, para elegir la variante. */
     options?: PublicShopOption[];
+    /** v0.1.416 — Qué es (sin el dato: físico). */
+    kind?: ShopProductKind;
+    /** v0.1.416 — Trae archivos para descargar al pagar. */
+    downloadable?: boolean;
+    /**
+     * v0.1.416 — Un servicio: la agenda donde se reserva (con el servicio ya
+     * elegido). null = el servicio no se puede agendar ahora (la agenda está
+     * apagada o no tiene ese servicio).
+     */
+    book_url?: string | null;
 }
 
 /** v0.1.414 — Una variante como la ve la tienda pública. */
@@ -331,6 +455,8 @@ export function shopVariantTitle(productTitle: string, label: string): string {
 export function shopPurchasables(products: readonly PublicShopProduct[]): Map<number, ShopPurchasable> {
     const out = new Map<number, ShopPurchasable>();
     for (const p of products) {
+        // v0.1.416 — Un servicio no va al carrito: se agenda.
+        if (p.kind === 'service') continue;
         if (p.variants && p.variants.length > 0) {
             for (const v of p.variants) {
                 out.set(v.id, {
@@ -742,6 +868,10 @@ export interface ShopOrderLineSnapshot {
     stock_taken: boolean;
     /** v0.1.414 — Con una variante: el producto al que pertenece (`product_id` es la variante). */
     parent_id?: number | null;
+    /** v0.1.416 — Qué era al comprarlo (sin el dato: físico). */
+    kind?: ShopProductKind;
+    /** v0.1.416 — Los archivos que se descargan (los del momento de la compra). */
+    files?: number[];
 }
 
 /** El mensaje de WhatsApp de un pedido (lo arma el servidor: el número nunca viaja a la página). */
@@ -840,6 +970,8 @@ export interface PublicShopMeta {
     data_consent?: PublicDataConsent | null;
     /** v0.1.415 — La tienda tiene cupones activos: se ofrece «¿Tienes un cupón?». */
     coupons?: boolean;
+    /** v0.1.416 — Los descargables: cuántos días sirve el enlace y cuántas veces se baja cada archivo (null = sin límite). */
+    downloads?: { days: number; max: number | null };
     /** null = recibe pedidos; si no, el motivo de cerrada. */
     closed: string | null;
     /** Hay más productos que los que muestra la página. */
@@ -878,4 +1010,49 @@ export interface PublicShopOrder {
     pay_provider: string | null;
     /** v0.1.413 — Lo que la persona tiene que saber del pago (se canceló por no pagar, llegó tarde…). */
     payment_note: string | null;
+    /** v0.1.416 — Lo que se descarga (vacío si el pedido no trae descargables). */
+    downloads: PublicShopDownload[];
+    /** v0.1.416 — Por qué todavía no se descarga (falta el pago, venció, se canceló). */
+    downloads_note: string | null;
+    /** v0.1.416 — Hasta cuándo sirven las descargas (ISO; null = no aplica). */
+    downloads_until: string | null;
+    /** v0.1.416 — El pedido no se envía (todo se descarga). */
+    digital_only: boolean;
+}
+
+/** v0.1.416 — Un archivo de un pedido, como lo ve quien compró. */
+export interface PublicShopDownload {
+    /** El producto (o variante) y el archivo: la dirección de la descarga. */
+    product_id: number;
+    file_id: number;
+    /** El producto («Plantilla de presupuesto»). */
+    title: string;
+    /** El nombre del archivo («presupuesto-2026.xlsx»). */
+    name: string;
+    size: number | null;
+    /** null = todavía no se puede bajar (o ya no). */
+    url: string | null;
+    used: number;
+    /** null = sin límite. */
+    max: number | null;
+}
+
+/** v0.1.416 — «Mis pedidos»: los pedidos de un correo en esta tienda. */
+export interface PublicShopMyOrders {
+    email: string;
+    orders: Array<{
+        number: string;
+        created_at: string;
+        status: ShopOrderStatus;
+        status_label: string;
+        payment_status: ShopPaymentStatus;
+        payment_status_label: string;
+        total: number;
+        currency: string;
+        items: number;
+        /** Cuántos archivos para descargar trae. */
+        downloads: number;
+        /** `?pedido=<token>` de esta tienda. */
+        order_token: string;
+    }>;
 }

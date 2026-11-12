@@ -67,7 +67,12 @@ export function shopSectionSummary(
     switch (s) {
         case 'catalog': {
             const n = ctx.productsCount === 1 ? '1 producto' : `${ctx.productsCount} productos`;
-            return config.variants.enabled ? `${n} · con variantes` : n;
+            const extra = [
+                config.variants.enabled ? 'con variantes' : '',
+                config.kinds.download_field !== null ? 'con descargas' : '',
+                config.kinds.booking_page_id !== null ? 'con servicios' : '',
+            ].filter(Boolean);
+            return [n, ...extra].join(' · ');
         }
         case 'design':
             return `${config.display.columns} por fila · ${config.color ? 'color propio' : 'color de tu marca'}`;

@@ -2,6 +2,8 @@ import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import {
     AlertTriangle,
+    CalendarDays,
+    Download,
     ArrowDown,
     ArrowUp,
     Banknote,
@@ -25,6 +27,8 @@ import {
     COLLECTION_PROVIDER_LABEL,
     SHOP_CATALOG_FIELD_TYPES,
     SHOP_CATALOG_ROLE_LABELS,
+    SHOP_DOWNLOAD_FIELD_TYPES,
+    SHOP_KIND_FIELD_TYPES,
     SHOP_COD_DEFAULT,
     SHOP_DEFAULT_DELIVERY_TIME,
     SHOP_DEFAULT_RETURNS,
@@ -38,6 +42,7 @@ import {
     SHOP_VARIANT_ATTRIBUTE_TYPES,
     collectionCurrencyError,
     newShopItemId,
+    shopServiceFor,
     type ShopCatalogFields,
     type ShopConfig,
     type ShopDeliveryMethod,
@@ -60,6 +65,7 @@ import { PublicQrCard } from '../forms/PublicQrCard';
 import { ColorChoice } from '../widgets/WidgetButtonEditor';
 import { PanelBody, SubSection, Switch, SwitchRow } from '../widgets/widgetUi';
 import { ShopVariantsSheet } from './ShopVariantsSheet';
+import { useCreateShopKindColumn } from './useShops';
 import { SHOP_SECTION_INFO, shopEmbedCode } from './shopEditor';
 
 type Patch = (fn: (c: ShopConfig) => ShopConfig) => void;
@@ -214,18 +220,218 @@ function VariantsSection({ shopId, config, options, patch, onCatalogChanged }: {
     );
 }
 
+/**
+ * v0.1.416 — Tipos de producto: físicos (lo de siempre), digitales (un
+ * archivo que se descarga al pagar) y servicios (se agendan en la agenda de
+ * la empresa, con el servicio ya elegido).
+ */
+function KindsSection({
+    shopId,
+    config,
+    options,
+    patch,
+    onKindColumn,
+}: {
+    shopId: number;
+    config: ShopConfig;
+    options: ShopOptions;
+    patch: Patch;
+    onKindColumn: (role: 'kind' | 'download', fieldId: number | null) => void;
+}): JSX.Element {
+    const toast = useToast();
+    const k = config.kinds;
+    const setK = (p: Partial<ShopConfig['kinds']>): void => patch((c) => ({ ...c, kinds: { ...c.kinds, ...p } }));
+    const create = useCreateShopKindColumn(shopId);
+    const roleIds = new Set<number>([...Object.values(config.catalog).filter((x): x is number => x !== null), ...config.variants.attributes]);
+    const kindFields = options.fields.filter((f) => (SHOP_KIND_FIELD_TYPES as readonly string[]).includes(f.type) && (!roleIds.has(f.id) || f.id === k.kind_field));
+    const fileFields = options.fields.filter((f) => (SHOP_DOWNLOAD_FIELD_TYPES as readonly string[]).includes(f.type) && (!roleIds.has(f.id) || f.id === k.download_field));
+    const counts = options.kind_counts;
+    const page = options.booking_pages.find((p) => p.id === k.booking_page_id) ?? null;
+    const services = page?.services.filter((sv) => sv.active) ?? [];
+    const addColumn = (role: 'kind' | 'download'): void =>
+        create.mutate(role, {
+            onSuccess: (doc) => {
+                const kinds = (doc.config as { kinds?: { kind_field?: number | null; download_field?: number | null } }).kinds ?? {};
+                onKindColumn(role, (role === 'kind' ? kinds.kind_field : kinds.download_field) ?? null);
+                toast.success(role === 'kind' ? __('Agregamos la columna «Tipo de producto»') : __('Agregamos la columna «Archivo para descargar»'), __('Complétala en la lista de productos.'));
+            },
+            onError: (e) => toast.error(__('No se pudo crear la columna'), e instanceof Error ? e.message : undefined),
+        });
+    const summary = [
+        counts.physical > 0 ? (counts.physical === 1 ? __('1 físico') : sprintf(__('%d físicos'), counts.physical)) : '',
+        counts.digital > 0 ? (counts.digital === 1 ? __('1 digital') : sprintf(__('%d digitales'), counts.digital)) : '',
+        counts.service > 0 ? (counts.service === 1 ? __('1 servicio') : sprintf(__('%d servicios'), counts.service)) : '',
+    ].filter(Boolean);
+    return (
+        <SubSection
+            title={__('Tipos de producto')}
+            hint={__('Además de productos físicos, puedes vender descargas (un PDF, una plantilla, un curso) y servicios que se agendan.')}
+            testId="shop-kinds"
+            tour="shop-kinds"
+        >
+            {summary.length > 0 && <p className="imcrm-text-[12px] imcrm-text-muted-foreground" data-testid="shop-kind-counts">{summary.join(' · ')}</p>}
+            <Field
+                label={__('Columna con el tipo')}
+                htmlFor="shop-kind-field"
+                hint={__('Una selección con Físico, Digital y Servicio. Sin columna, todo es físico salvo lo que tenga un archivo para descargar.')}
+            >
+                <Select id="shop-kind-field" value={k.kind_field === null ? '' : String(k.kind_field)} onChange={(e) => setK({ kind_field: e.target.value === '' ? null : Number(e.target.value) })} data-testid="shop-kind-field">
+                    <option value="">{__('Ninguna')}</option>
+                    {kindFields.map((f) => (
+                        <option key={f.id} value={f.id}>
+                            {f.label}
+                        </option>
+                    ))}
+                </Select>
+                {k.kind_field === null && (
+                    <Button variant="outline" size="sm" className="imcrm-self-start" onClick={() => addColumn('kind')} disabled={create.isPending} data-testid="shop-kind-create">
+                        {create.isPending && create.variables === 'kind' ? <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" /> : <Plus className="imcrm-h-4 imcrm-w-4" />}
+                        {__('Crear la columna «Tipo de producto»')}
+                    </Button>
+                )}
+            </Field>
+            <Field label={__('Archivo para descargar')} htmlFor="shop-download-field" hint={__('Lo que recibe quien compra al confirmarse el pago: le llega por correo y lo baja desde su pedido.')}>
+                <Select id="shop-download-field" value={k.download_field === null ? '' : String(k.download_field)} onChange={(e) => setK({ download_field: e.target.value === '' ? null : Number(e.target.value) })} data-testid="shop-download-field">
+                    <option value="">{__('Ninguno')}</option>
+                    {fileFields.map((f) => (
+                        <option key={f.id} value={f.id}>
+                            {f.label}
+                        </option>
+                    ))}
+                </Select>
+                {k.download_field === null && (
+                    <Button variant="outline" size="sm" className="imcrm-self-start" onClick={() => addColumn('download')} disabled={create.isPending} data-testid="shop-download-create">
+                        {create.isPending && create.variables === 'download' ? <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" /> : <Download className="imcrm-h-4 imcrm-w-4" />}
+                        {__('Crear la columna «Archivo para descargar»')}
+                    </Button>
+                )}
+            </Field>
+            {(k.download_field !== null || counts.digital > 0) && (
+                <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-2" data-testid="shop-download-rules">
+                    <Field label={__('Días para descargar')} htmlFor="shop-download-days" hint={__('Contados desde el pago.')}>
+                        <Input
+                            id="shop-download-days"
+                            type="number"
+                            min={1}
+                            max={365}
+                            value={k.download_days}
+                            onChange={(e) => setK({ download_days: Math.max(1, Math.min(365, Math.floor(Number(e.target.value) || 1))) })}
+                            className="imcrm-w-28"
+                            data-testid="shop-download-days"
+                        />
+                    </Field>
+                    <Field label={__('Descargas por archivo')} htmlFor="shop-max-downloads" hint={__('Para que el enlace no se reparta.')}>
+                        <div className="imcrm-flex imcrm-items-center imcrm-gap-3">
+                            <Input
+                                id="shop-max-downloads"
+                                type="number"
+                                min={1}
+                                max={100}
+                                disabled={k.max_downloads === null}
+                                value={k.max_downloads ?? ''}
+                                onChange={(e) => setK({ max_downloads: Math.max(1, Math.min(100, Math.floor(Number(e.target.value) || 1))) })}
+                                className="imcrm-w-24"
+                                data-testid="shop-max-downloads"
+                            />
+                            <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-[12.5px]">
+                                <input
+                                    type="checkbox"
+                                    checked={k.max_downloads === null}
+                                    onChange={(e) => setK({ max_downloads: e.target.checked ? null : 5 })}
+                                    className="imcrm-accent-[hsl(var(--imcrm-primary))]"
+                                    data-testid="shop-unlimited-downloads"
+                                />
+                                {__('Sin límite')}
+                            </label>
+                        </div>
+                    </Field>
+                </div>
+            )}
+            <Field
+                label={__('Agenda de los servicios')}
+                htmlFor="shop-booking-page"
+                hint={__('Un producto de tipo servicio no va al carrito: su botón «Agendar» lleva a esta agenda con el servicio ya elegido. Ahí se cobra, si la agenda cobra.')}
+            >
+                <Select id="shop-booking-page" value={k.booking_page_id === null ? '' : String(k.booking_page_id)} onChange={(e) => setK({ booking_page_id: e.target.value === '' ? null : Number(e.target.value) })} data-testid="shop-booking-page">
+                    <option value="">{__('Ninguna')}</option>
+                    {options.booking_pages.map((p) => (
+                        <option key={p.id} value={p.id}>
+                            {p.name}
+                            {p.enabled ? '' : ` · ${__('sin publicar')}`}
+                        </option>
+                    ))}
+                </Select>
+                {options.booking_pages.length === 0 && <p className="imcrm-text-[11.5px] imcrm-text-muted-foreground">{__('No tienes agendas. Créala desde la configuración de una lista → Agenda.')}</p>}
+                {page && !page.enabled && (
+                    <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[11.5px] imcrm-text-amber-700 dark:imcrm-text-amber-400">
+                        <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                        {__('Esa agenda no está publicada: los servicios se verán sin el botón para agendar.')}
+                    </p>
+                )}
+            </Field>
+            {counts.service > 0 && !page && (
+                <p className="imcrm-flex imcrm-items-start imcrm-gap-1.5 imcrm-text-[12px] imcrm-text-amber-700 dark:imcrm-text-amber-400" data-testid="shop-services-no-agenda">
+                    <AlertTriangle className="imcrm-mt-0.5 imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" />
+                    {__('Tienes servicios en el catálogo: elige la agenda donde se reservan.')}
+                </p>
+            )}
+            {page && options.service_products.length > 0 && (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="shop-service-links">
+                    <p className="imcrm-text-[12px] imcrm-font-medium">{__('Qué servicio de la agenda es cada producto')}</p>
+                    {options.service_products.map((sp) => {
+                        const linked = k.service_links[String(sp.id)] ?? '';
+                        const resolved = shopServiceFor({ id: sp.id, title: sp.title }, k.service_links, services);
+                        const byName = linked === '' && resolved ? services.find((sv) => sv.id === resolved)?.name : null;
+                        return (
+                            <div key={sp.id} className="imcrm-grid imcrm-grid-cols-1 imcrm-items-center imcrm-gap-1.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-p-2 sm:imcrm-grid-cols-[1fr_1fr]">
+                                <span className="imcrm-flex imcrm-min-w-0 imcrm-items-center imcrm-gap-1.5 imcrm-text-[12.5px]">
+                                    <CalendarDays className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0 imcrm-text-muted-foreground" />
+                                    <span className="imcrm-truncate">{sp.title || `#${sp.id}`}</span>
+                                </span>
+                                <Select
+                                    value={linked}
+                                    aria-label={sprintf(__('Servicio de «%s»'), sp.title)}
+                                    onChange={(e) =>
+                                        patch((c) => {
+                                            const links = { ...c.kinds.service_links };
+                                            if (e.target.value === '') delete links[String(sp.id)];
+                                            else links[String(sp.id)] = e.target.value;
+                                            return { ...c, kinds: { ...c.kinds, service_links: links } };
+                                        })
+                                    }
+                                    className={cn(!resolved && 'imcrm-border-amber-500/60')}
+                                    data-testid="shop-service-link"
+                                >
+                                    <option value="">{byName ? sprintf(__('El del mismo nombre: %s'), byName) : __('Sin servicio (elige uno)')}</option>
+                                    {services.map((sv) => (
+                                        <option key={sv.id} value={sv.id}>
+                                            {sv.name}
+                                        </option>
+                                    ))}
+                                </Select>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </SubSection>
+    );
+}
+
 export function CatalogPanel({
     shopId,
     config,
     options,
     patch,
     onCatalogChanged,
+    onKindColumn,
 }: {
     shopId: number;
     config: ShopConfig;
     options: ShopOptions;
     patch: Patch;
     onCatalogChanged: () => void;
+    onKindColumn: (role: 'kind' | 'download', fieldId: number | null) => void;
 }): JSX.Element {
     const set = (role: keyof ShopCatalogFields, id: number | null): void => patch((c) => ({ ...c, catalog: { ...c.catalog, [role]: id } }));
     const taken = new Map<number, keyof ShopCatalogFields>();
@@ -281,6 +487,7 @@ export function CatalogPanel({
                 );
             })}
             <VariantsSection shopId={shopId} config={config} options={options} patch={patch} onCatalogChanged={onCatalogChanged} />
+            <KindsSection shopId={shopId} config={config} options={options} patch={patch} onKindColumn={onKindColumn} />
             <SubSection title={__('Moneda')} hint={__('La de los precios de la lista. Todos los productos de la tienda se venden en la misma.')}>
                 <Select value={config.currency} onChange={(e) => patch((c) => ({ ...c, currency: e.target.value }))} data-testid="shop-currency">
                     {['COP', 'USD', 'MXN', 'CLP', 'PEN', 'ARS', 'EUR', 'BRL'].map((c) => (

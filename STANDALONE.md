@@ -8713,8 +8713,12 @@ antes de desarrollar y aprobó el plan en seis versiones, **sin la parte de SEO*
 | v0.1.413 | Pago en línea (Mercado Pago, Wompi, PayPal) con vencimiento y pago tardío |
 | v0.1.414 | Productos variables (variantes como subtareas) |
 | v0.1.415 | Envíos por zona y cupones |
-| v0.1.416 | Suscripción, digital, servicio y «Mis pedidos» |
-| v0.1.417 | Estadísticas, conversiones, botones «Comprar» insertables, widget, asistente/MCP |
+| v0.1.416 | Productos digitales, servicios (agenda), pedidos sin costo y «Mis pedidos» |
+| v0.1.417 | Suscripciones desde la tienda |
+| v0.1.418 | Estadísticas, conversiones, botones «Comprar» insertables, widget, asistente/MCP |
+
+(El plan original juntaba suscripción con digital/servicio en v0.1.416; se
+partió en dos al desarrollarlo para que cada versión se pudiera probar sola.)
 
 Internamente el módulo se llama `shop` (`store` ya es WooCommerce, ADR-S24); la
 persona ve «Tienda».
@@ -8886,4 +8890,48 @@ persona ve «Tienda».
 7. `?cupon=CODIGO` en el enlace lo guarda para la sesión y se aplica solo al
    finalizar la compra. Migrar una empresa no lleva las tiendas (ni sus
    cupones); borrarla los borra.
+
+**Addendum v0.1.416 — Productos digitales, servicios y «Mis pedidos».**
+1. **Tipo de producto** (`config.kinds`, `shopKindsSchema`, lectura tolerante):
+   una columna «Tipo» de selección o texto (`kind_field`; `shopKindFromText`
+   reconoce Físico/Digital/Servicio sin tildes ni mayúsculas) y una columna
+   Archivo con lo que se descarga (`download_field`). Sin columna «Tipo», un
+   producto con archivos es digital. El editor las sugiere por nombre y las
+   crea con un clic (`POST /shops/:id/kind-columns`, exige `manage_fields`;
+   bitácora `shop.kind_column`) sin dejar el editor con cambios sin guardar.
+2. **Digitales**: no piden entrega. Un carrito sólo de digitales no muestra la
+   entrega ni la dirección (`shopNeedsDelivery`; el pedido va con
+   `delivery_id: null` y «Descarga digital · Sin envío»). Al quedar PAGADO, el
+   correo «Recibimos el pago» y la página del pedido traen los enlaces;
+   `GET /public/s/:token/d/:order/:product/:file` revisa que el pedido esté
+   pagado y sin cancelar, que el archivo esté en la línea del pedido (los
+   archivos se toman del producto AL COMPRAR) y que no haya vencido
+   (`download_days` desde `paid_at`, 30 por defecto), suma la descarga con un
+   UPDATE condicional sobre `shop_orders.downloads` (migración 0123: jsonb
+   `"<producto>:<archivo>" → n`; dos clics a la vez no pasan de
+   `max_downloads`, 5 por defecto o sin límite → 429 al tope) y redirige a una
+   URL firmada de 5 minutos con `dl=1`. «Reenviar las descargas» en la ficha
+   del pedido (bitácora `shop.resend_downloads`).
+3. **Servicios**: no van al carrito (`shopPurchasables` los saltea; un pedido
+   con un servicio se rechaza). Su botón «Agendar» lleva a la agenda elegida
+   (`booking_page_id`) con `?servicio=<id>`: el servicio elegido a mano
+   (`service_links`, producto → servicio) o el de la agenda con el mismo
+   nombre (`shopServiceFor`). Sólo si la agenda está publicada, su lista no
+   está en la papelera, el plan incluye la agenda y el servicio se muestra en
+   ella (activo y con alguien que lo atienda: el mismo criterio de la página
+   de la agenda); si no, la tarjeta dice que no se agenda en línea. La agenda
+   lee `?servicio=` y empieza en «Elige el día y la hora». El cobro, si lo
+   hay, es el de la agenda (ADR-S67).
+4. **Pedidos sin costo**: total 0 → forma de pago `free`, pagado al momento
+   (también recibe las descargas); `free` con total > 0 → 400 `shop_payment`.
+5. **«Mis pedidos»** (botón arriba y en el pie de la tienda): la persona
+   escribe su correo y `POST /public/shops/:token/my-orders` responde 202 IGUAL
+   haya o no pedidos (no sirve para averiguar quién compró). Si los hay, llega
+   un enlace `?mis-pedidos=<código>` (24 bytes base64url en Redis
+   `shopmy:<código>` → tienda + correo, 7 días) que lista sus pedidos de ESA
+   tienda con el estado, el total y las descargas. Frenos: 5 pedidos por IP y
+   tienda cada 10 min (429) y 3 correos por dirección por hora (sin aviso).
+   Sin Redis, 503. Índice `shop_orders_email_ix` por `lower(customer->>'email')`.
+6. La página del pedido abierta con su enlace dice «Tu pedido» (antes repetía
+   el número en el título y en la etiqueta).
 

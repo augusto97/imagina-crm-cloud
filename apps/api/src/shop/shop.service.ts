@@ -3,6 +3,10 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundEx
 import { ModuleRef } from '@nestjs/core';
 import {
     SHOP_CATALOG_FIELD_TYPES,
+    SHOP_DOWNLOAD_FIELD_TYPES,
+    SHOP_KIND_FIELD_TYPES,
+    SHOP_KIND_OPTIONS,
+    SHOP_MAX_PUBLIC_PRODUCTS,
     SHOP_VARIANT_ATTRIBUTE_TYPES,
     SHOP_ITEM_ID_RE,
     SHOP_LIST_MARKER_KEY,
@@ -15,11 +19,14 @@ import {
     resolveTitleFieldId,
     shopCurrencyDecimals,
     shopProblems,
+    shopServiceFor,
     suggestShopCatalog,
+    suggestShopKindFields,
     type CollectionConnection,
     type CreateShopInput,
     type Field,
     type PlatformShopDto,
+    type ShopBookingPageOption,
     type ShopCatalogFields,
     type ShopConfig,
     type ShopDto,
@@ -30,7 +37,8 @@ import {
 } from '@imagina-base/shared';
 import { and, asc, count, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { lists, memberships, records, shopOrders, shops, tenants, users, type ShopRow } from '../db/schema';
+import { bookingPages, lists, memberships, records, shopOrders, shops, tenants, users, type ShopRow } from '../db/schema';
+import { readBookingConfig } from '../booking/booking-config';
 import { CollectionsService } from '../collections/collections.service';
 import { DomainsService } from '../domains/domains.service';
 import { FieldsService } from '../fields/fields.service';
@@ -41,6 +49,7 @@ import { NO_PUBLIC_CACHE, type PublicCacheLike } from '../public-cache/public-ca
 import { PublicCacheService } from '../public-cache/public-cache.service';
 import { BlueprintService } from '../templates/blueprint.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { productFromRow, resolveCatalogFields } from './shop-catalog';
 import { LATER_ORDER_COLUMNS, LINE_ROLES, PROTECTED_ORDER_ROLES, packFieldIds, shopPackBlueprint } from './shop-pack';
 
 /**
@@ -170,8 +179,98 @@ export class ShopService {
                 }),
                 payment_connections: team.map((c) => ({ id: c.id, name: c.name, provider: c.provider, test_mode: c.test_mode })),
                 categories: await this.catalogCategories(tx, tenantId, row, fields),
+                ...(await this.kindOptions(tx, tenantId, row, fields, list.settings)),
             };
         });
+    }
+
+    /** v0.1.416 — Las agendas de la empresa con sus servicios (para los productos de tipo servicio). */
+    private async bookingOptions(tx: Tx, tenantId: number): Promise<ShopBookingPageOption[]> {
+        const rows = await tx
+            .select({ id: bookingPages.id, name: bookingPages.name, enabled: bookingPages.enabled, config: bookingPages.config })
+            .from(bookingPages)
+            .innerJoin(lists, eq(lists.id, bookingPages.listId))
+            .where(and(eq(bookingPages.tenantId, tenantId), isNull(lists.deletedAt)))
+            .orderBy(asc(bookingPages.name))
+            .limit(100);
+        return rows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            enabled: r.enabled,
+            services: readBookingConfig(r.config).services.map((sv) => ({ id: sv.id, name: sv.name, active: sv.active, price: sv.price })),
+        }));
+    }
+
+    /**
+     * v0.1.416 — Lo que el editor necesita de los tipos de producto: las
+     * agendas, los productos de tipo servicio con el servicio que les toca y
+     * cuántos productos hay de cada tipo (con lo guardado).
+     */
+    private async kindOptions(
+        tx: Tx,
+        tenantId: number,
+        row: ShopRow,
+        fields: Field[],
+        listSettings: Record<string, unknown> | null,
+    ): Promise<Pick<ShopOptions, 'booking_pages' | 'service_products' | 'kind_counts'>> {
+        const config = readShopConfig(row.config);
+        const pages = await this.bookingOptions(tx, tenantId);
+        const rf = resolveCatalogFields(fields, config.catalog, listSettings, config.kinds);
+        const counts = { physical: 0, digital: 0, service: 0, downloadable: 0 };
+        const services: ShopOptions['service_products'] = [];
+        if (!rf.kinds?.kind && !rf.kinds?.download) return { booking_pages: pages, service_products: services, kind_counts: counts };
+        const page = pages.find((p) => p.id === config.kinds.booking_page_id) ?? null;
+        const rows = await tx
+            .select({ id: records.id, data: records.data, createdAt: records.createdAt })
+            .from(records)
+            .where(and(eq(records.tenantId, tenantId), eq(records.listId, row.listId), isNull(records.deletedAt), isNull(records.parentId)))
+            .orderBy(asc(records.id))
+            .limit(SHOP_MAX_PUBLIC_PRODUCTS);
+        for (const r of rows) {
+            const p = productFromRow({ id: r.id, data: r.data as Record<string, unknown>, createdAt: r.createdAt }, rf);
+            const kind = p.product.kind ?? 'physical';
+            counts[kind]++;
+            if (p.downloads.length > 0) counts.downloadable++;
+            if (kind === 'service' && services.length < 200) {
+                services.push({
+                    id: r.id,
+                    title: p.product.title,
+                    linked: config.kinds.service_links[String(r.id)] ?? null,
+                    resolved: page ? shopServiceFor({ id: r.id, title: p.product.title }, config.kinds.service_links, page.services) : null,
+                });
+            }
+        }
+        return { booking_pages: pages, service_products: services, kind_counts: counts };
+    }
+
+    /**
+     * v0.1.416 — «Agregar la columna» Tipo de producto (Físico, Digital,
+     * Servicio) o Archivo para descargar en la lista del catálogo, y la deja
+     * elegida en la tienda.
+     */
+    async createKindColumn(tenantId: number, id: number, role: 'kind' | 'download'): Promise<ShopDto> {
+        const row = await this.row(tenantId, id);
+        const current = await this.fields.listByListId(tenantId, row.listId);
+        const label = role === 'kind' ? 'Tipo de producto' : 'Archivo para descargar';
+        const slug = role === 'kind' ? 'tipo_de_producto' : 'archivo_para_descargar';
+        const created = await this.fields.create(tenantId, String(row.listId), {
+            label,
+            slug: current.some((f) => f.slug === slug) ? undefined : slug,
+            type: role === 'kind' ? 'select' : 'file',
+            ...(role === 'kind' ? { config: { options: SHOP_KIND_OPTIONS.map((o) => ({ value: o.value, label: o.label, color: o.color })) } } : {}),
+        } as never);
+        const token = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const r = await this.load(tx, tenantId, id, true);
+            const c = readShopConfig(r.config);
+            const kinds = { ...c.kinds, ...(role === 'kind' ? { kind_field: created.id } : { download_field: created.id }) };
+            await tx
+                .update(shops)
+                .set({ config: { ...c, kinds }, updatedAt: new Date() })
+                .where(and(eq(shops.tenantId, tenantId), eq(shops.id, id)));
+            return r.token;
+        });
+        this.forget(token);
+        return this.get(tenantId, id);
     }
 
     /** v0.1.415 — Las categorías del catálogo: las opciones del campo, o los textos que ya usan los productos. */
@@ -208,7 +307,14 @@ export class ShopService {
         const fields = await this.fields.listByListId(tenantId, list.id);
         const titleId = resolveTitleFieldId(fields, list.settings);
         const config = defaultShopConfig();
-        config.catalog = suggestShopCatalog(fields.map((f) => ({ id: f.id, type: f.type, label: f.label, slug: f.slug, is_primary: f.id === titleId })));
+        // v0.1.416 — Una columna «Tipo de producto» o «Archivo para descargar» ya existente (no es la categoría).
+        const kindCols = suggestShopKindFields(fields);
+        config.kinds = { ...config.kinds, ...kindCols };
+        config.catalog = suggestShopCatalog(
+            fields
+                .filter((f) => f.id !== kindCols.kind_field && f.id !== kindCols.download_field)
+                .map((f) => ({ id: f.id, type: f.type, label: f.label, slug: f.slug, is_primary: f.id === titleId })),
+        );
         const priceField = fields.find((f) => f.id === config.catalog.price);
         const cur = (priceField?.config as { currency?: unknown } | undefined)?.currency;
         if (priceField?.type === 'currency' && typeof cur === 'string' && /^[A-Z]{3}$/.test(cur)) config.currency = cur;
@@ -397,6 +503,24 @@ export class ShopService {
             attrs.push(fid);
         }
         next.variants = { ...next.variants, attributes: attrs };
+        // v0.1.416 — Las columnas de los tipos: de la lista, del tipo que sirve y sin cumplir otro papel.
+        const kindField = next.kinds.kind_field !== null ? byId.get(next.kinds.kind_field) : undefined;
+        const dlField = next.kinds.download_field !== null ? byId.get(next.kinds.download_field) : undefined;
+        next.kinds = {
+            ...next.kinds,
+            kind_field:
+                kindField && (SHOP_KIND_FIELD_TYPES as readonly string[]).includes(kindField.type) && !used.has(kindField.id) && !attrs.includes(kindField.id) ? kindField.id : null,
+            download_field: dlField && (SHOP_DOWNLOAD_FIELD_TYPES as readonly string[]).includes(dlField.type) && !used.has(dlField.id) ? dlField.id : null,
+        };
+        // La agenda de los servicios: de esta empresa (los servicios elegidos se leen al servir la página).
+        if (next.kinds.booking_page_id !== null) {
+            const [page] = await tx
+                .select({ id: bookingPages.id })
+                .from(bookingPages)
+                .where(and(eq(bookingPages.tenantId, tenantId), eq(bookingPages.id, next.kinds.booking_page_id)))
+                .limit(1);
+            if (!page) next.kinds = { ...next.kinds, booking_page_id: null };
+        }
         // Formas de entrega con ids únicos.
         const seen = new Set<string>();
         next.delivery = next.delivery

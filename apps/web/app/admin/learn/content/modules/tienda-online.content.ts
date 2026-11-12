@@ -77,6 +77,34 @@ export const articles: LearnArticle[] = [
                 title: 'Lo agotado se ve tachado',
                 md: 'Si una combinación no tiene stock, tu cliente la ve tachada; si no existe (no vendes la S en azul), no se puede elegir. El pedido guarda la variante exacta y el stock se descuenta de ella.',
             },
+            { t: 'h', text: 'Productos digitales y servicios' },
+            {
+                t: 'p',
+                md: 'No todo lo que vendes se envía. En **Productos → Productos digitales y servicios** le dices a la tienda qué es cada producto: con una columna **Tipo** (Físico, Digital o Servicio) y una columna con los **archivos para descargar**. Si no las tienes, la tienda te ofrece crearlas con un clic. Sin columna «Tipo», un producto que tiene archivos se vende como digital.',
+            },
+            {
+                t: 'settings',
+                title: 'Cómo se vende cada tipo',
+                rows: [
+                    { name: 'Físico', what: 'Como siempre: va al carrito, se elige la entrega y se descuenta el stock.' },
+                    { name: 'Digital', what: 'Un curso, una guía, una plantilla. No pide entrega ni dirección; cuando el pedido queda pagado, el enlace de descarga llega por correo y aparece en la página del pedido.', tip: 'Tú eliges cuántos días sirve el enlace (30 por defecto) y cuántas veces se puede bajar cada archivo (5 por defecto, o sin límite).' },
+                    { name: 'Servicio', what: 'Una asesoría, una clase, un masaje. No va al carrito: su botón **Agendar** abre tu agenda con el servicio ya elegido, y tu cliente sólo escoge el día y la hora.', tip: 'Elige la agenda en esta misma sección. Cada producto va al servicio con el mismo nombre, o al que elijas tú.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Gratis también se puede',
+                md: 'Un producto de $0 (una guía de regalo, por ejemplo) se pide sin pasar por el pago: el pedido queda pagado al momento y, si es digital, la descarga llega enseguida. Sirve para armar tu lista de clientes.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Si cambio el archivo del producto, cambia lo que bajan los que ya compraron?', a: 'No: cada pedido guarda los archivos que tenía el producto cuando se compró. Los pedidos nuevos reciben el archivo nuevo.' },
+                    { q: '¿Un servicio no aparece con el botón Agendar?', a: 'Revisa que la agenda esté publicada, que tenga ese servicio activo y que alguien lo atienda. Si no, la tarjeta dice que no se agenda en línea.' },
+                    { q: '¿Y si mi cliente perdió el correo con la descarga?', a: 'En la tienda, **Mis pedidos** le manda a su correo un enlace con todos sus pedidos y sus descargas. También puedes abrir el pedido y tocar **Reenviar las descargas**.' },
+                ],
+            },
             { t: 'h', text: 'Quién vende y las políticas' },
             {
                 t: 'p',
@@ -264,6 +292,7 @@ export const articles: LearnArticle[] = [
                     'Cuando te llega la transferencia o te pagan al entregar, abre el pedido.',
                     'En el recuadro del pedido (arriba de los campos), toca **Marcar como pagado** y confirma.',
                     'El estado del pago pasa a **Pagado** y queda la fecha. Si tienes una automatización que corre al cambiar el registro, corre sola.',
+                    'Si el pedido tiene productos digitales, en ese momento le llega a tu cliente el correo con las descargas. ¿Lo perdió? Toca **Reenviar las descargas** en el mismo recuadro.',
                 ],
             },
             { t: 'h', text: 'Cancelar devuelve el stock' },

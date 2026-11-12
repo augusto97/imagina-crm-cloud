@@ -13,8 +13,12 @@ import {
     shopOptionValueState,
     shopProblems,
     shopPurchasables,
+    shopKindFromText,
+    shopNeedsDelivery,
+    shopServiceFor,
     shopShippingFor,
     shopVariantPriceRange,
+    suggestShopKindFields,
     shopWhatsappMessage,
     summarizeVariantProduct,
     type PublicShopProduct,
@@ -368,5 +372,67 @@ describe('v0.1.415 — envío por zona, envío gratis y cupones', () => {
         expect(d?.free_over).toBe(150000);
         expect(d?.zones.map((z) => z.id)).toEqual(['norte', 'sur']);
         expect(d?.zones[1]?.eta).toBe('1 día');
+    });
+});
+
+describe('v0.1.416 — tipos de producto', () => {
+    it('lee el tipo de una columna de selección o de texto (sin tildes ni mayúsculas)', () => {
+        expect(shopKindFromText('digital')).toBe('digital');
+        expect(shopKindFromText('Descarga digital')).toBe('digital');
+        expect(shopKindFromText('E-book')).toBe('digital');
+        expect(shopKindFromText('Servicio')).toBe('service');
+        expect(shopKindFromText('Sesión de asesoría')).toBe('service');
+        expect(shopKindFromText('Físico')).toBe('physical');
+        expect(shopKindFromText('Otro')).toBeNull();
+        expect(shopKindFromText(3)).toBeNull();
+    });
+
+    it('elige el servicio de la agenda: el elegido a mano si sigue activo; si no, el del mismo nombre', () => {
+        const services = [
+            { id: 'svca', name: 'Asesoria personalizada', active: true },
+            { id: 'svcb', name: 'Masaje', active: true },
+            { id: 'svcc', name: 'Clase', active: false },
+        ];
+        expect(shopServiceFor({ id: 1, title: 'Asesoría  Personalizada' }, {}, services)).toBe('svca');
+        expect(shopServiceFor({ id: 2, title: 'Otro nombre' }, { '2': 'svcb' }, services)).toBe('svcb');
+        // Elegido a mano pero apagado: cae al nombre (y si no hay, a ninguno).
+        expect(shopServiceFor({ id: 3, title: 'Clase' }, { '3': 'svcc' }, services)).toBeNull();
+        expect(shopServiceFor({ id: 4, title: 'Masaje' }, { '4': 'svcx' }, services)).toBe('svcb');
+    });
+
+    it('sólo pide entrega si algo se envía o se recoge', () => {
+        const kinds: Record<number, 'physical' | 'digital'> = { 1: 'digital', 2: 'physical' };
+        const kindOf = (id: number) => kinds[id] ?? null;
+        expect(shopNeedsDelivery([], kindOf)).toBe(false);
+        expect(shopNeedsDelivery([{ product_id: 1 }], kindOf)).toBe(false);
+        expect(shopNeedsDelivery([{ product_id: 1 }, { product_id: 2 }], kindOf)).toBe(true);
+        // Sin tipo conocido se trata como físico (lo seguro: pedir la entrega).
+        expect(shopNeedsDelivery([{ product_id: 9 }], kindOf)).toBe(true);
+    });
+
+    it('los servicios no van al carrito', () => {
+        const p = (id: number, kind?: PublicShopProduct['kind']): PublicShopProduct =>
+            ({ id, title: `P${id}`, description: '', price: 1000, compare_price: null, stock: null, images: [], categories: [], sku: '', created_at: '', ...(kind ? { kind } : {}) }) as PublicShopProduct;
+        const map = shopPurchasables([p(1), p(2, 'digital'), p(3, 'service')]);
+        expect([...map.keys()]).toEqual([1, 2]);
+    });
+
+    it('sugiere las columnas de tipo y de descarga por el nombre', () => {
+        const fields = [
+            { id: 1, type: 'select', label: 'Categoría', slug: 'categoria' },
+            { id: 2, type: 'select', label: 'Tipo de producto', slug: 'tipo_de_producto' },
+            { id: 3, type: 'file', label: 'Fotos', slug: 'fotos' },
+            { id: 4, type: 'file', label: 'Archivo descargable', slug: 'descargable' },
+        ] as const;
+        expect(suggestShopKindFields(fields as never)).toEqual({ kind_field: 2, download_field: 4 });
+        expect(suggestShopKindFields(fields as never, new Set([2, 4]))).toEqual({ kind_field: null, download_field: null });
+    });
+
+    it('lee la configuración de tipos con tolerancia', () => {
+        const c = readShopConfig({ kinds: { download_days: 9999, max_downloads: 'x', service_links: { '12': 'svcok', 'abc': 'svcx', '13': 5 } } });
+        expect(c.kinds.download_days).toBe(30);
+        expect(c.kinds.max_downloads).toBe(5);
+        expect(c.kinds.service_links).toEqual({ '12': 'svcok' });
+        expect(readShopConfig({ kinds: { max_downloads: null } }).kinds.max_downloads).toBeNull();
     });
 });
