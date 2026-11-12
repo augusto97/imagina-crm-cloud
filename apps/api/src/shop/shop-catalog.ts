@@ -297,6 +297,8 @@ export interface PurchasableItem {
     sku: string;
     /** Con una variante: su producto. */
     parentId: number | null;
+    /** v0.1.415 — Las categorías del producto (las de su producto, en una variante): para los cupones. */
+    categories: string[];
 }
 
 /**
@@ -320,7 +322,13 @@ export function purchasablesFromRows(
             if (attrs !== null && withVariants.has(r.id)) continue;
             const p = productFromRow(r, rf);
             if (!p.active) continue;
-            out.set(r.id, { data: r.data, product: { id: r.id, title: p.product.title, price: p.product.price, stock: p.product.stock }, sku: p.product.sku, parentId: null });
+            out.set(r.id, {
+                data: r.data,
+                product: { id: r.id, title: p.product.title, price: p.product.price, stock: p.product.stock },
+                sku: p.product.sku,
+                parentId: null,
+                categories: p.product.categories,
+            });
             continue;
         }
         if (attrs === null) continue;
@@ -330,7 +338,13 @@ export function purchasablesFromRows(
         if (!parent.active) continue;
         const item = shopPurchasables([attachVariants(parent, [r], rf, attrs).product]).get(r.id);
         if (!item) continue;
-        out.set(r.id, { data: r.data, product: { id: r.id, title: item.title, price: item.price, stock: item.stock }, sku: item.sku, parentId: parentRow.id });
+        out.set(r.id, {
+            data: r.data,
+            product: { id: r.id, title: item.title, price: item.price, stock: item.stock },
+            sku: item.sku,
+            parentId: parentRow.id,
+            categories: parent.product.categories,
+        });
     }
     return out;
 }

@@ -1,4 +1,4 @@
-import { bigint, boolean, index, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
+import { bigint, boolean, date, index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
 import { lists } from './lists';
 import { records } from './records';
 import { tenants } from './tenants';
@@ -61,6 +61,9 @@ export const shopOrders = pgTable(
         statusFieldId: bigint('status_field_id', { mode: 'number' }),
         stockState: varchar('stock_state', { length: 12 }).notNull().default('none'),
         paymentLinkId: bigint('payment_link_id', { mode: 'number' }),
+        /** v0.1.415 — El cupón usado (el código queda aunque el cupón se borre). */
+        couponId: bigint('coupon_id', { mode: 'number' }),
+        couponCode: varchar('coupon_code', { length: 40 }).notNull().default(''),
         expiresAt: timestamp('expires_at', { withTimezone: true }),
         paidAt: timestamp('paid_at', { withTimezone: true }),
         cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
@@ -74,3 +77,37 @@ export const shopOrders = pgTable(
     ],
 );
 export type ShopOrderRow = typeof shopOrders.$inferSelect;
+
+/**
+ * v0.1.415 — Cupones de la tienda. Los usos se cuentan de `shop_orders`
+ * (sin los cancelados) bajo el bloqueo de esta fila: cancelar un pedido libera
+ * su uso sin contadores que sincronizar.
+ */
+export const shopCoupons = pgTable(
+    'shop_coupons',
+    {
+        id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
+        tenantId: bigint('tenant_id', { mode: 'number' })
+            .notNull()
+            .references(() => tenants.id, { onDelete: 'cascade' }),
+        shopId: bigint('shop_id', { mode: 'number' })
+            .notNull()
+            .references(() => shops.id, { onDelete: 'cascade' }),
+        code: varchar('code', { length: 40 }).notNull(),
+        description: varchar('description', { length: 200 }).notNull().default(''),
+        kind: varchar('kind', { length: 16 }).notNull(),
+        value: numeric('value', { precision: 14, scale: 2, mode: 'number' }).notNull().default(0),
+        minSubtotal: numeric('min_subtotal', { precision: 14, scale: 2, mode: 'number' }),
+        maxUses: integer('max_uses'),
+        oncePerCustomer: boolean('once_per_customer').notNull().default(false),
+        startsOn: date('starts_on', { mode: 'string' }),
+        endsOn: date('ends_on', { mode: 'string' }),
+        scope: jsonb('scope').$type<{ product_ids?: number[]; categories?: string[] }>().notNull(),
+        active: boolean('active').notNull().default(true),
+        createdBy: bigint('created_by', { mode: 'number' }),
+        createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+        updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (t) => [uniqueIndex('shop_coupons_code_ux').on(t.shopId, t.code), index('shop_coupons_tenant_ix').on(t.tenantId)],
+);
+export type ShopCouponRow = typeof shopCoupons.$inferSelect;

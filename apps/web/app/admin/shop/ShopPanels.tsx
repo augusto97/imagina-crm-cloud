@@ -30,6 +30,7 @@ import {
     SHOP_DEFAULT_RETURNS,
     SHOP_DEFAULT_REVERSAL,
     SHOP_MAX_DELIVERY_METHODS,
+    SHOP_MAX_DELIVERY_ZONES,
     SHOP_MAX_VARIANT_ATTRIBUTES,
     SHOP_SORTS,
     SHOP_SORT_LABELS,
@@ -40,6 +41,7 @@ import {
     type ShopCatalogFields,
     type ShopConfig,
     type ShopDeliveryMethod,
+    type ShopDeliveryZone,
     type ShopDto,
     type ShopOptions,
     type ShopProblem,
@@ -397,6 +399,11 @@ function DeliveryRow({ d, index, count, onChange, onMove, onRemove }: { d: ShopD
                     <MoneyInput value={d.price} onChange={(v) => onChange({ ...d, price: v ?? 0 })} placeholder={__('Costo')} />
                 </div>
             </div>
+            <div className="imcrm-mt-2 imcrm-grid imcrm-grid-cols-1 imcrm-gap-2 sm:imcrm-grid-cols-2">
+                <Input value={d.eta} maxLength={80} placeholder={__('Tiempo de entrega (ej.: 2 a 4 días hábiles)')} onChange={(e) => onChange({ ...d, eta: e.target.value })} aria-label={__('Tiempo de entrega')} data-testid="shop-delivery-eta" />
+                <MoneyInput value={d.free_over} onChange={(v) => onChange({ ...d, free_over: v !== null && v > 0 ? v : null })} placeholder={__('Envío gratis desde (opcional)')} testId="shop-delivery-free" />
+            </div>
+            {d.needs_address && <ZonesEditor d={d} onChange={onChange} />}
             <div className="imcrm-mt-2 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-2">
                 <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-[12.5px]">
                     <input type="checkbox" checked={d.needs_address} onChange={(e) => onChange({ ...d, needs_address: e.target.checked })} className="imcrm-accent-[hsl(var(--imcrm-primary))]" />
@@ -414,6 +421,57 @@ function DeliveryRow({ d, index, count, onChange, onMove, onRemove }: { d: ShopD
                     </Button>
                 </div>
             </div>
+        </div>
+    );
+}
+
+/** v0.1.415 — Zonas de envío: cada una con su costo (y su «gratis desde»). */
+function ZonesEditor({ d, onChange }: { d: ShopDeliveryMethod; onChange: (d: ShopDeliveryMethod) => void }): JSX.Element {
+    const setZones = (zones: ShopDeliveryZone[]): void => onChange({ ...d, zones });
+    const add = (): void =>
+        setZones([...d.zones, { id: newShopItemId(d.zones.map((z) => z.id)), name: '', price: d.price, free_over: null, eta: '', active: true }]);
+    return (
+        <div className="imcrm-mt-3 imcrm-rounded-lg imcrm-bg-muted/40 imcrm-p-2.5" data-testid="shop-zones">
+            <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2">
+                <div className="imcrm-min-w-0">
+                    <p className="imcrm-text-[12.5px] imcrm-font-medium">{__('Zonas de envío')}</p>
+                    <p className="imcrm-text-[11.5px] imcrm-text-muted-foreground">
+                        {d.zones.length === 0
+                            ? __('Opcional: cobra distinto según a dónde se envía (tu ciudad, el área metropolitana, el resto del país).')
+                            : __('Tu cliente elige a dónde enviamos y paga el costo de esa zona.')}
+                    </p>
+                </div>
+                <Button variant="outline" size="sm" className="imcrm-h-7 imcrm-shrink-0 imcrm-gap-1 imcrm-text-xs" disabled={d.zones.length >= SHOP_MAX_DELIVERY_ZONES} onClick={add} data-testid="shop-zone-add">
+                    <Plus className="imcrm-h-3.5 imcrm-w-3.5" />
+                    {__('Agregar zona')}
+                </Button>
+            </div>
+            {d.zones.length > 0 && (
+                <div className="imcrm-mt-2 imcrm-space-y-2">
+                    {d.zones.map((z) => {
+                        const setZ = (patch: Partial<ShopDeliveryZone>): void => setZones(d.zones.map((x) => (x.id === z.id ? { ...x, ...patch } : x)));
+                        return (
+                            <div key={z.id} className={cn('imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-2', !z.active && 'imcrm-opacity-70')} data-testid="shop-zone">
+                                <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                                    <Input value={z.name} maxLength={80} placeholder={__('Zona (ej.: Bogotá)')} onChange={(e) => setZ({ name: e.target.value })} aria-label={__('Nombre de la zona')} data-testid="shop-zone-name" />
+                                    <div className="imcrm-w-28 imcrm-shrink-0">
+                                        <MoneyInput value={z.price} onChange={(v) => setZ({ price: v ?? 0 })} placeholder={__('Costo')} testId="shop-zone-price" />
+                                    </div>
+                                    <Switch checked={z.active} onChange={(active) => setZ({ active })} label={__('Activa')} />
+                                    <Button variant="ghost" size="icon" className="imcrm-h-7 imcrm-w-7 imcrm-shrink-0" onClick={() => setZones(d.zones.filter((x) => x.id !== z.id))} aria-label={__('Quitar la zona')}>
+                                        <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
+                                    </Button>
+                                </div>
+                                <div className="imcrm-mt-1.5 imcrm-grid imcrm-grid-cols-1 imcrm-gap-2 sm:imcrm-grid-cols-2">
+                                    <Input value={z.eta} maxLength={80} placeholder={__('Tiempo de entrega (opcional)')} onChange={(e) => setZ({ eta: e.target.value })} aria-label={__('Tiempo de entrega de la zona')} />
+                                    <MoneyInput value={z.free_over} onChange={(v) => setZ({ free_over: v !== null && v > 0 ? v : null })} placeholder={__('Gratis desde (opcional)')} />
+                                </div>
+                            </div>
+                        );
+                    })}
+                    <p className="imcrm-text-[11.5px] imcrm-text-muted-foreground">{__('Con zonas, el costo de arriba deja de usarse: vale el de la zona que elija tu cliente.')}</p>
+                </div>
+            )}
         </div>
     );
 }
@@ -545,7 +603,7 @@ export function PaymentPanel({ config, options, patch }: { config: ShopConfig; o
             </SubSection>
             <SubSection
                 title={__('Cómo reciben el pedido')}
-                hint={__('El costo de cada una se suma al total. Una entrega a domicilio pide la dirección; recoger en el local, no.')}
+                hint={__('El costo de cada una se suma al total; con «Envío gratis desde» no se cobra cuando la compra llega a ese monto. Una entrega a domicilio pide la dirección; recoger en el local, no.')}
                 action={
                     <Button
                         variant="outline"
@@ -553,7 +611,10 @@ export function PaymentPanel({ config, options, patch }: { config: ShopConfig; o
                         className="imcrm-h-7 imcrm-gap-1 imcrm-text-xs"
                         disabled={config.delivery.length >= SHOP_MAX_DELIVERY_METHODS}
                         onClick={() =>
-                            setDelivery((list) => [...list, { id: newShopItemId(list.map((d) => d.id)), name: '', description: '', price: 0, needs_address: true, active: true }])
+                            setDelivery((list) => [
+                                ...list,
+                                { id: newShopItemId(list.map((d) => d.id)), name: '', description: '', price: 0, needs_address: true, active: true, eta: '', free_over: null, zones: [] },
+                            ])
                         }
                         data-testid="shop-delivery-add"
                     >

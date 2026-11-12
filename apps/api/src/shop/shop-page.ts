@@ -165,6 +165,26 @@ img{display:block;max-width:100%}
 .s-sum{display:flex;flex-direction:column;gap:6px;margin:0 0 12px}
 .s-sum div{display:flex;justify-content:space-between;gap:12px;font-size:14px}
 .s-sum .s-tot{font-size:17px;font-weight:750;padding-top:6px;border-top:1px solid var(--s-line);margin-top:4px}
+.s-sum .s-disc{color:#15803d;font-weight:600}
+.s-free-hint{display:flex!important;justify-content:flex-start!important;align-items:center;gap:8px;font-size:13px!important;color:#166534;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:8px 10px;margin:2px 0}
+.s-free-hint svg{width:16px;height:16px;flex:none}
+.s-coupon{margin:0 0 12px}
+.s-coupon svg{width:16px;height:16px;flex:none}
+.s-coupon-open{display:inline-flex;align-items:center;gap:6px;font-size:14px}
+.s-coupon-l{display:block;font-size:13px;font-weight:600;margin:0 0 4px}
+.s-coupon-row{display:flex;gap:8px}
+.s-coupon-row input{flex:1;min-width:0;height:42px;border-radius:10px;border:1px solid var(--s-line);background:#fff;padding:0 12px;outline:none;text-transform:uppercase;letter-spacing:.03em;font-weight:600}
+.s-coupon-row input:focus{border-color:var(--s-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--s-accent) 18%,transparent)}
+.s-coupon-row input[aria-invalid="true"]{border-color:#dc2626}
+.s-coupon-row .s-btn{width:auto;height:42px;padding:0 16px;font-size:14px;flex:none}
+.s-coupon-on{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:10px;border:1px dashed #86efac;background:#f0fdf4;color:#166534}
+.s-coupon-on.s-coupon-off{border-color:#fcd34d;background:#fffbeb;color:#92400e}
+.s-coupon-t{flex:1;min-width:0;display:flex;flex-direction:column;font-size:13px;line-height:1.3}
+.s-coupon-t strong{letter-spacing:.03em}
+.s-coupon .s-line-err{margin-top:6px}
+.s-f select{width:100%;height:44px;border-radius:10px;border:1px solid var(--s-line);background:#fff;padding:0 10px;outline:none}
+.s-f select:focus{border-color:var(--s-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--s-accent) 18%,transparent)}
+.s-f select[aria-invalid="true"]{border-color:#dc2626}
 .s-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:50px;border-radius:12px;border:0;background:var(--s-accent);color:var(--s-ink);font-weight:700;font-size:16px;cursor:pointer;text-decoration:none}
 .s-btn:disabled{opacity:.55;cursor:not-allowed}
 .s-btn.s-ghost{background:#f3f4f6;color:var(--s-text)}

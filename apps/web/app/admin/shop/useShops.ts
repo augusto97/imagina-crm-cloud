@@ -7,6 +7,8 @@ import type {
     PublicShopMeta,
     PublicShopProduct,
     ShopConfig,
+    ShopCouponDto,
+    ShopCouponInput,
     ShopDto,
     ShopOptions,
     ShopOrderPanelDto,
@@ -31,7 +33,43 @@ export const shopKeys = {
     platform: (tenantId: number) => ['platform-shops', tenantId] as const,
     products: (id: number, q: string) => ['shops', id, 'products', q] as const,
     variants: (id: number, productId: number, attrs: string) => ['shops', id, 'variants', productId, attrs] as const,
+    coupons: (id: number) => ['shops', id, 'coupons'] as const,
 };
+
+/** v0.1.415 — Los cupones de la tienda con sus usos. */
+export function useShopCoupons(id: number, enabled = true) {
+    return useQuery({
+        queryKey: shopKeys.coupons(id),
+        queryFn: async () => (await api.get<ShopCouponDto[]>(`/shops/${id}/coupons`)).data,
+        enabled: enabled && id > 0,
+        staleTime: 15_000,
+    });
+}
+
+export function useSaveShopCoupon(id: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ couponId, input }: { couponId: number | null; input: ShopCouponInput }) =>
+            couponId === null
+                ? (await api.post<ShopCouponDto>(`/shops/${id}/coupons`, input)).data
+                : (await api.patch<ShopCouponDto>(`/shops/${id}/coupons/${couponId}`, input)).data,
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: shopKeys.coupons(id) });
+            // La primera vez se suman las columnas «Descuento» y «Cupón» a Pedidos.
+            void qc.invalidateQueries({ queryKey: ['fields'] });
+        },
+    });
+}
+
+export function useDeleteShopCoupon(id: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (couponId: number) => {
+            await api.delete(`/shops/${id}/coupons/${couponId}`);
+        },
+        onSuccess: () => void qc.invalidateQueries({ queryKey: shopKeys.coupons(id) }),
+    });
+}
 
 /** v0.1.414 — Los productos del catálogo para elegir a cuál crearle variantes. */
 export function useShopProducts(id: number, q: string, enabled = true) {

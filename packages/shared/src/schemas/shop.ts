@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import {
+    SHOP_COUPON_CODE_RE,
+    SHOP_COUPON_KINDS,
     SHOP_ITEM_ID_RE,
     SHOP_MAX_DELIVERY_METHODS,
+    SHOP_MAX_DELIVERY_ZONES,
     SHOP_MAX_LINES,
     SHOP_MAX_QTY,
     SHOP_MAX_VARIANT_ATTRIBUTES,
@@ -68,14 +71,50 @@ export const shopVariantsSchema = z.object({
 });
 export type ShopVariantsConfig = z.infer<typeof shopVariantsSchema>;
 
+const money = (def = 0) => z.number().min(0).max(1_000_000_000).catch(def).default(def);
+const nullableMoney = z.number().min(0).max(1_000_000_000).nullable().catch(null).default(null);
+
+/** v0.1.415 — Una zona de envío: «Bogotá», «Área metropolitana», «Resto del país». */
+export const shopDeliveryZoneSchema = z.object({
+    id: z.string().regex(SHOP_ITEM_ID_RE),
+    name: text(80),
+    price: money(),
+    /** Envío gratis desde este monto en productos (null = el de la forma de entrega). */
+    free_over: nullableMoney,
+    eta: text(80),
+    active: z.boolean().catch(true).default(true),
+});
+export type ShopDeliveryZone = z.infer<typeof shopDeliveryZoneSchema>;
+
 export const shopDeliveryMethodSchema = z.object({
     id: z.string().regex(SHOP_ITEM_ID_RE),
     name: text(80),
     description: text(240),
-    price: z.number().min(0).max(1_000_000_000).catch(0).default(0),
+    price: money(),
     /** Pide dirección y ciudad (envío a domicilio); si no, es retiro o digital. */
     needs_address: z.boolean().catch(true).default(true),
     active: z.boolean().catch(true).default(true),
+    /** v0.1.415 — «2 a 4 días hábiles». */
+    eta: text(80),
+    /** v0.1.415 — Envío gratis desde este monto en productos (null = nunca). */
+    free_over: nullableMoney,
+    /** v0.1.415 — Con zonas, la persona elige a dónde y cada zona tiene su precio. */
+    zones: z
+        .array(z.unknown())
+        .catch([])
+        .default([])
+        .transform((raw) => {
+            const out: ShopDeliveryZone[] = [];
+            const seen = new Set<string>();
+            for (const z0 of raw) {
+                const p = shopDeliveryZoneSchema.safeParse(z0);
+                if (!p.success || seen.has(p.data.id)) continue;
+                seen.add(p.data.id);
+                out.push(p.data);
+                if (out.length >= SHOP_MAX_DELIVERY_ZONES) break;
+            }
+            return out;
+        }),
 });
 export type ShopDeliveryMethod = z.infer<typeof shopDeliveryMethodSchema>;
 
@@ -263,8 +302,8 @@ export function defaultShopConfig(): ShopConfig {
     return {
         ...c,
         delivery: [
-            { id: 'domicilio', name: 'Envío a domicilio', description: '', price: 0, needs_address: true, active: true },
-            { id: 'retiro', name: 'Recoger en el local', description: '', price: 0, needs_address: false, active: true },
+            { id: 'domicilio', name: 'Envío a domicilio', description: '', price: 0, needs_address: true, active: true, eta: '', free_over: null, zones: [] },
+            { id: 'retiro', name: 'Recoger en el local', description: '', price: 0, needs_address: false, active: true, eta: '', free_over: null, zones: [] },
         ],
     };
 }
@@ -346,6 +385,8 @@ export interface ShopOptions {
     other_shops: Array<{ id: number; name: string; orders_list_name: string | null }>;
     /** v0.1.413 — Las cuentas de cobro del equipo (Mercado Pago, Wompi, PayPal) para el pago en línea. */
     payment_connections: Array<{ id: number; name: string; provider: 'mercadopago' | 'wompi' | 'paypal'; test_mode: boolean }>;
+    /** v0.1.415 — Las categorías del catálogo (para limitar un cupón a algunas). */
+    categories: string[];
 }
 
 // ── v0.1.414: el generador de variantes del editor ─────────────────────
@@ -456,6 +497,10 @@ export const publicShopOrderSchema = z.object({
         .max(SHOP_MAX_LINES),
     customer: shopCustomerSchema,
     delivery_id: z.string().regex(SHOP_ITEM_ID_RE),
+    /** v0.1.415 — La zona de envío (con zonas en la forma de entrega). */
+    zone_id: z.string().regex(SHOP_ITEM_ID_RE).nullable().optional(),
+    /** v0.1.415 — El código del cupón (se valida en el servidor). */
+    coupon: z.string().trim().max(40).optional(),
     payment_method: z.enum(SHOP_PAYMENT_METHODS),
     terms: z.boolean().default(false),
     consent: z.boolean().default(false),
@@ -475,11 +520,13 @@ export const publicShopQuoteSchema = z.object({
         .array(z.object({ product_id: refId, qty: z.number().int().min(1).max(SHOP_MAX_QTY) }))
         .max(SHOP_MAX_LINES),
     delivery_id: z.string().regex(SHOP_ITEM_ID_RE).nullable().optional(),
+    zone_id: z.string().regex(SHOP_ITEM_ID_RE).nullable().optional(),
+    coupon: z.string().trim().max(40).optional(),
 });
 
 // ── Lo que falta para publicar ──────────────────────────────────────────
 
-export type ShopSection = 'catalog' | 'orders' | 'payment' | 'checkout' | 'seller' | 'design' | 'publish';
+export type ShopSection = 'catalog' | 'orders' | 'payment' | 'coupons' | 'checkout' | 'seller' | 'design' | 'publish';
 
 export interface ShopProblem {
     section: ShopSection;
@@ -526,3 +573,58 @@ export function shopProblems(
 
 
 export * from './shop-logic';
+
+// ── v0.1.415 — Cupones ──────────────────────────────────────────────────
+
+const isoDate = z
+    .string()
+    .trim()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .optional();
+
+/** Lo que manda el editor al crear o cambiar un cupón. */
+export const shopCouponInputSchema = z
+    .object({
+        code: z
+            .string()
+            .trim()
+            .transform((v) => v.toUpperCase().replace(/\s+/g, ''))
+            .pipe(z.string().regex(SHOP_COUPON_CODE_RE, 'El código usa letras, números, guion o guion bajo (2 a 40).')),
+        description: z.string().trim().max(200).default(''),
+        kind: z.enum(SHOP_COUPON_KINDS),
+        value: z.number().min(0).max(1_000_000_000).default(0),
+        /** Compra mínima (en productos, antes del descuento) para usarlo. */
+        min_subtotal: z.number().min(0).max(1_000_000_000).nullable().default(null),
+        /** Cuántas veces se puede usar en total (null = sin límite). */
+        max_uses: z.number().int().min(1).max(1_000_000).nullable().default(null),
+        /** Una vez por cliente (por su correo). */
+        once_per_customer: z.boolean().default(false),
+        /** Fechas en la zona de la empresa, AAAA-MM-DD (null = sin límite). */
+        starts_on: isoDate.default(null),
+        ends_on: isoDate.default(null),
+        /** Sólo estos productos (por ID; un producto con variantes cubre todas). Vacío = todos. */
+        product_ids: z.array(refId).max(200).default([]),
+        /** Sólo estas categorías (el valor de la categoría). Vacío = todas. */
+        categories: z.array(z.string().trim().min(1).max(80)).max(50).default([]),
+        active: z.boolean().default(true),
+    })
+    .superRefine((c, ctx) => {
+        if (c.kind === 'percent' && (c.value <= 0 || c.value > 100)) ctx.addIssue({ code: 'custom', path: ['value'], message: 'El porcentaje va de 1 a 100.' });
+        if (c.kind === 'fixed' && c.value <= 0) ctx.addIssue({ code: 'custom', path: ['value'], message: 'Escribe el monto del descuento.' });
+        if (c.starts_on && c.ends_on && c.ends_on < c.starts_on) ctx.addIssue({ code: 'custom', path: ['ends_on'], message: 'La fecha final es antes de la inicial.' });
+    });
+export type ShopCouponInput = z.infer<typeof shopCouponInputSchema>;
+
+export interface ShopCouponDto extends Omit<ShopCouponInput, 'starts_on' | 'ends_on'> {
+    id: number;
+    shop_id: number;
+    starts_on: string | null;
+    ends_on: string | null;
+    /** Pedidos que lo usan (sin los cancelados). */
+    uses: number;
+    /** Lo que se descontó con él (sin los cancelados). */
+    discounted: number;
+    created_at: string;
+}
+

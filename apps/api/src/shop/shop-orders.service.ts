@@ -6,6 +6,9 @@ import {
     SHOP_PAYMENT_STATUS_LABELS,
     brandingSchema,
     computeShopCart,
+    shopCouponProblemText,
+    shopCurrencyDecimals,
+    shopShippingFor,
     formatShopMoney,
     jsonbKeyForField,
     readShopConfig,
@@ -40,6 +43,7 @@ import { MailService } from '../mail/mail.service';
 import { NotifyHub } from '../notifications/notify-hub';
 import { senderName, type PortalEmailBrand } from '../portal/portal-email';
 import { RealtimeService } from '../realtime/realtime.service';
+import { ShopCouponsService, type ResolvedCoupon } from './shop-coupons.service';
 import { RecordChangeHub, type RecordChange } from '../records/record-change-hub';
 import { RecordsRepository } from '../records/records.repository';
 import { RelationsRepository } from '../records/relations.repository';
@@ -163,6 +167,8 @@ export class ShopOrdersService implements OnModuleInit {
         @Optional() private readonly collections?: CollectionsService,
         @Optional() private readonly incidents?: IncidentHub,
         @Optional() @Inject(DRIZZLE) private readonly db?: Db,
+        // v0.1.415 — cupones (se validan y se cuentan dentro del pedido).
+        @Optional() private readonly coupons?: ShopCouponsService,
     ) {}
 
     onModuleInit(): void {
@@ -190,6 +196,12 @@ export class ShopOrdersService implements OnModuleInit {
         if (o.list_id === null || o.lines_list_id === null) badRequest('shop_closed', 'Esta tienda no está recibiendo pedidos ahora.');
         const delivery = config.delivery.find((d) => d.active && d.id === input.delivery_id);
         if (!delivery) badRequest('shop_delivery', 'Elige cómo quieres recibir tu pedido.');
+        // v0.1.415 — Con zonas, la persona elige a dónde y la zona pone el precio.
+        const zones = delivery!.zones.filter((z) => z.active && z.name.trim() !== '');
+        const zone = zones.length > 0 ? (zones.find((z) => z.id === input.zone_id) ?? null) : null;
+        if (zones.length > 0 && !zone) badRequest('shop_zone', 'Elige a dónde enviamos tu pedido.');
+        const ship = shopShippingFor({ price: delivery!.price, free_over: delivery!.free_over, zones }, zone?.id ?? null);
+        const deliveryLabel = zone ? `${delivery!.name} · ${zone.name}` : delivery!.name;
         const method = input.payment_method;
         const enabled = {
             whatsapp: config.payments.whatsapp.enabled,
@@ -239,9 +251,21 @@ export class ShopOrdersService implements OnModuleInit {
                 .orderBy(asc(records.id))
                 .for('no key update');
             const byId = await this.purchasableRows(tx, tenantId, shop.listId, rows, rf, variantsOn ? resolveVariantAttributes(catalogFields, config.variants.attributes) : null);
+            // v0.1.415 — El cupón: la fila se bloquea antes de contar sus usos.
+            let coupon: ResolvedCoupon | null = null;
+            if (input.coupon && input.coupon.trim() !== '') {
+                if (!this.coupons) badRequest('shop_coupon', 'Ese cupón no existe o ya no está vigente.');
+                const items = [...byId].map(([id, it]) => ({ id, product_id: it.parentId ?? id, categories: it.categories }));
+                const r = await this.coupons!.resolve(tx, tenantId, shop.id, input.coupon, { items, currency, numberFormat, email: c.email, lock: true });
+                if (!r.ok) badRequest('shop_coupon', r.message);
+                coupon = r.coupon;
+            }
             const cart = computeShopCart(input.lines, new Map([...byId].map(([k, v]) => [k, v.product])), {
-                shipping: delivery!.price,
+                shipping: ship.price,
+                freeOver: ship.free_over,
                 minOrder: config.checkout.min_order,
+                coupon: coupon?.rule ?? null,
+                decimals: shopCurrencyDecimals(currency),
             });
             if (cart.blocked) {
                 throw new ShopCartChangedError({
@@ -253,6 +277,7 @@ export class ShopOrdersService implements OnModuleInit {
             if (cart.below_minimum !== null) {
                 badRequest('shop_minimum', `La compra mínima es de ${money(config.checkout.min_order ?? 0)}: te faltan ${money(cart.below_minimum)}.`);
             }
+            if (coupon && cart.coupon_problem) badRequest('shop_coupon', shopCouponProblemText(cart.coupon_problem, coupon.rule, money));
 
             // 2) El tope de registros del plan: el pedido, sus líneas y quizá el cliente.
             if (cap && this.billing) await this.billing.assertRecordRoomInTx(tx, tenantId, cap, cart.lines.length + 2);
@@ -292,7 +317,9 @@ export class ShopOrdersService implements OnModuleInit {
             put(data, of('total'), cart.total);
             put(data, of('subtotal'), cart.subtotal);
             put(data, of('shipping'), cart.shipping);
-            put(data, of('delivery'), delivery!.name);
+            if (cart.discount > 0) put(data, of('discount'), cart.discount);
+            if (coupon) put(data, of('coupon'), coupon.rule.code);
+            put(data, of('delivery'), deliveryLabel);
             put(data, of('email'), c.email);
             put(data, of('phone'), c.phone);
             put(data, of('document'), c.document);
@@ -350,11 +377,13 @@ export class ShopOrdersService implements OnModuleInit {
                 currency,
                 subtotal: cart.subtotal,
                 shipping: cart.shipping,
-                discount: 0,
+                discount: cart.discount,
+                couponId: coupon?.row.id ?? null,
+                couponCode: coupon?.rule.code ?? '',
                 total: cart.total,
                 lines,
                 customer: { name: c.name, email: c.email, phone: c.phone, document: c.document, address: c.address, city: c.city, notes: c.notes },
-                delivery: { id: delivery!.id, name: delivery!.name, needs_address: delivery!.needs_address },
+                delivery: { id: delivery!.id, name: deliveryLabel, needs_address: delivery!.needs_address, ...(zone ? { zone_id: zone.id, zone_name: zone.name } : {}) },
                 origin: { page: input.origin?.page?.slice(0, 500) ?? null, referrer: input.origin?.referrer?.slice(0, 500) ?? null },
                 catalogListId: shop.listId,
                 stockFieldId: tookStock && rf.stock ? rf.stock.id : null,
@@ -434,8 +463,8 @@ export class ShopOrdersService implements OnModuleInit {
                     number: result.number,
                     customer: c,
                     lines: result.lines,
-                    totals: { subtotal: result.cart.subtotal, shipping: result.cart.shipping, total: result.cart.total },
-                    delivery: delivery!.name,
+                    totals: { subtotal: result.cart.subtotal, shipping: result.cart.shipping, total: result.cart.total, discount: result.cart.discount, coupon: result.cart.coupon?.code ?? '' },
+                    delivery: deliveryLabel,
                     method,
                     orderUrl,
                     money,
@@ -460,8 +489,8 @@ export class ShopOrdersService implements OnModuleInit {
                 number: result.number,
                 customer: c,
                 lines: result.lines,
-                totals: { subtotal: result.cart.subtotal, shipping: result.cart.shipping, total: result.cart.total },
-                delivery: delivery!.name,
+                totals: { subtotal: result.cart.subtotal, shipping: result.cart.shipping, total: result.cart.total, discount: result.cart.discount, coupon: result.cart.coupon?.code ?? '' },
+                delivery: deliveryLabel,
                 method,
                 orderUrl,
                 money,
@@ -548,7 +577,7 @@ export class ShopOrdersService implements OnModuleInit {
             number: string;
             customer: Pick<PublicShopOrderInput['customer'], 'name' | 'email'>;
             lines: ShopOrderLineSnapshot[];
-            totals: { subtotal: number; shipping: number; total: number };
+            totals: { subtotal: number; shipping: number; total: number; discount?: number; coupon?: string };
             delivery: string;
             method: ShopPaymentMethod;
             orderUrl: string;
@@ -569,6 +598,8 @@ export class ShopOrdersService implements OnModuleInit {
             customerName: o.customer.name,
             lines: o.lines.map((l) => ({ title: l.title, qty: l.qty, subtotal: o.money(l.subtotal) })),
             subtotal: o.money(o.totals.subtotal),
+            discount: (o.totals.discount ?? 0) > 0 ? `-${o.money(o.totals.discount ?? 0)}` : null,
+            couponCode: o.totals.coupon ?? '',
             shipping: o.totals.shipping > 0 ? o.money(o.totals.shipping) : null,
             total: o.money(o.totals.total),
             delivery: o.delivery,
@@ -627,6 +658,8 @@ export class ShopOrdersService implements OnModuleInit {
             payment_instructions: pay === 'pendiente' ? paymentInstructions(config, method) : '',
             lines: (row.lines as ShopOrderLineSnapshot[]).map((l) => ({ title: l.title, qty: l.qty, unit_price: l.unit_price, subtotal: l.subtotal })),
             subtotal: row.subtotal,
+            discount: row.discount,
+            coupon_code: row.couponCode,
             shipping: row.shipping,
             total: row.total,
             currency: row.currency,
@@ -995,7 +1028,7 @@ export class ShopOrdersService implements OnModuleInit {
                 number: out.row.number,
                 customer: { name: customer.name ?? '', email: customer.email },
                 lines: out.row.lines as ShopOrderLineSnapshot[],
-                totals: { subtotal: out.row.subtotal, shipping: out.row.shipping, total: out.row.total },
+                totals: { subtotal: out.row.subtotal, shipping: out.row.shipping, total: out.row.total, discount: out.row.discount, coupon: out.row.couponCode },
                 delivery: (out.row.delivery as { name?: string }).name ?? '',
                 method: 'online',
                 orderUrl: `${base}/api/v1/public/s/${ctx.token}?pedido=${out.row.token}`,

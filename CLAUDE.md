@@ -14611,6 +14611,61 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         elegir talla y color, lo agotado tachado, carrito con la variante,
         pedido que descuenta su stock, sin parpadeo al elegir).
 
+  - [x] **Tienda: envíos por zona y cupones (v0.1.415, addendum ADR-S103,
+        cuarta de seis versiones)**: (a) **Entregas**: cada forma de entrega
+        gana tiempo de entrega (`eta`), **envío gratis desde** (`free_over`) y,
+        si pide dirección, **zonas** (`zones[]`: nombre, costo, tiempo y
+        «gratis desde» propios, activa; tope 40, lectura tolerante). El costo
+        lo decide `shopShippingFor` (shared, puro): la zona elegida manda y su
+        «gratis desde» cae al de la entrega. La página pública muestra «Desde
+        $…» y el tiempo en la entrega, un selector «¿A dónde lo enviamos?»,
+        «Elige la zona» mientras falta, y **«Te faltan $X para el envío
+        gratis»** (cuenta con el descuento); el pedido exige la zona (400
+        `shop_zone`) y guarda «Envío a domicilio · Zona» con `zone_id`/
+        `zone_name`. (b) **Cupones** (`shop_coupons`, migración 0122, RLS,
+        código único por tienda; sección nueva **Cupones** del editor,
+        `ShopCouponsPanel`): porcentaje, monto fijo o envío gratis; compra
+        mínima; desde/hasta en la zona de la empresa; usos en total y una vez
+        por cliente (por correo); alcance por productos (un producto cubre sus
+        variantes; elegir una variante se guarda como su producto) o
+        categorías (`options.categories` del catálogo; sin tildes ni
+        mayúsculas). `computeShopCart` aplica el cupón en centavos sobre lo
+        que cubre, redondeado a la unidad de la moneda. (c) **Usos sin
+        contador**: se cuentan de `shop_orders` (ese `coupon_id`, sin
+        cancelar) bajo `FOR UPDATE` de la fila del cupón dentro de la
+        transacción del pedido — cancelar o vencer devuelve el uso, un pago
+        tardío que revive el pedido lo vuelve a contar y dos compras por el
+        último uso: gana una. Borrar el cupón deja el código y el descuento en
+        los pedidos. (d) **El servidor valida siempre**: `/quote` con `coupon`
+        devuelve `coupon_rule` (la página recalcula en vivo con la misma
+        función) o `coupon_error` con el motivo (no existe, todavía no rige,
+        venció, se agotó, ya lo usaste); el pedido re-valida (400
+        `shop_coupon`, también si no alcanza la compra mínima o no cubre nada:
+        el total que se ve es el que se cobra). Freno de 30 códigos FALLIDOS
+        cada 10 min por IP y tienda (los válidos no suman). (e) **Página**:
+        «¿Tienes un cupón?» con el código, «Aplicar», el motivo si no sirve, la
+        etiqueta aplicada con «Quitar», la línea «Descuento (CÓDIGO)» en el
+        resumen, el correo de confirmación y la página del pedido;
+        `?cupon=CODIGO` lo guarda para la sesión, el carrito lo avisa y se
+        aplica solo al finalizar. (f) **Columnas «Descuento» y «Cupón»** en
+        Pedidos, con candado; una tienda de antes las recibe al crear su
+        primer cupón (`ensureOrderColumns`: reusa un campo con el mismo nombre
+        y tipo o lo crea, en todas las tiendas que comparten la lista).
+        Bitácora `shop.coupon_create|update|delete`. **Bug atrapado en el
+        E2E**: el primer clic en una categoría del cupón se perdía — al salir
+        del campo del monto desaparecía el aviso rojo y la página se movía
+        bajo el mouse; ahora los avisos salen al intentar guardar. Ayuda: guía
+        `shop`, Aprende → Tienda online (zonas, envío gratis y cupones) y
+        novedad con carrusel. Tests: `shops-coupons.spec` (7: zonas y envío
+        gratis, columnas en una tienda de antes, vigencia/compra mínima/freno
+        por IP, usos con máximo, una vez por cliente y cancelar, último uso en
+        paralelo, productos/categorías con variantes, otra empresa),
+        `shop.test` +7 en shared, tienda/cobros/plataforma 73/73, front 913 +
+        E2E navegador 33/33 en escritorio y celular oscuro (zonas desde el
+        editor, cupones, cupón inexistente, 10 % con zona y envío gratis,
+        pedido con descuento y zona, `?cupon=` en el celular, quitar, el
+        editor cuenta el uso).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

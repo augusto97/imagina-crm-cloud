@@ -123,6 +123,7 @@ import {
     formDrafts,
     formStats,
     contactWidgets,
+    shopCoupons,
     shopOrders,
     shops,
     widgetStats,
@@ -499,6 +500,7 @@ export class PlatformService {
             await tx.delete(bookingPages).where(eq(bookingPages.tenantId, id));
             // v0.1.412 — tiendas y lo que saben de cada pedido.
             await tx.delete(shopOrders).where(eq(shopOrders.tenantId, id));
+            await tx.delete(shopCoupons).where(eq(shopCoupons.tenantId, id));
             await tx.delete(shops).where(eq(shops.tenantId, id));
             await tx.delete(records).where(eq(records.tenantId, id));
             await tx.delete(fields).where(eq(fields.tenantId, id));

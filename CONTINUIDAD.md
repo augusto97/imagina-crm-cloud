@@ -415,7 +415,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.414**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.415**
+(**envíos por zona y cupones, cuarta de seis versiones** — zonas de envío con
+su costo y «gratis desde», aviso de cuánto falta para el envío gratis y
+cupones de porcentaje, monto fijo o envío gratis con fechas, usos, compra
+mínima y productos o categorías; los usos se cuentan de los pedidos, así
+cancelar los devuelve; addendum ADR-S103). Antes **v0.1.414**
 (**productos con variantes, tercera de seis versiones** — talla, color y más:
 cada combinación es una subtarea del producto con su precio, stock, referencia
 y foto; la página pública elige la opción y el pedido descuenta el stock de esa
@@ -707,12 +712,12 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   aceptadas las decisiones propuestas: catálogo = lista, primera versión sin
   pasarela, módulo `shop` sólo en planes pagos (0121 lo apaga en `trial`),
   suspensión por el operador, miniaturas con `sharp`, factura DIAN fuera,
-  `noindex` siempre (con Open Graph para compartir). **v0.1.412, v0.1.413 y
-  v0.1.414 HECHAS** (catálogo, carrito y pedido sin pasarela; pago en línea con
-  el stock apartado y pago tardío; productos con variantes como subtareas:
-  ADR-S103 y sus addendums). Falta probar el pago en línea
-  con cuentas de prueba reales en el servidor. **Siguen, en orden**:
-  v0.1.415 envíos por zona y cupones → v0.1.416 suscripción,
+  `noindex` siempre (con Open Graph para compartir). **v0.1.412, v0.1.413,
+  v0.1.414 y v0.1.415 HECHAS** (catálogo, carrito y pedido sin pasarela; pago
+  en línea con el stock apartado y pago tardío; productos con variantes como
+  subtareas; envíos por zona y cupones: ADR-S103 y sus addendums). Falta
+  probar el pago en línea con cuentas de prueba reales en el servidor.
+  **Siguen, en orden**: v0.1.416 suscripción,
   digital, servicio y «Mis pedidos» → v0.1.417 estadísticas, conversiones,
   botones «Comprar» insertables, widget y asistente/MCP. El SEO (y el dominio
   propio de la tienda) queda para cuando el usuario lo pida.
@@ -1910,6 +1915,24 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-12 · v0.1.415** — **Envíos por zona y cupones** (cuarta de seis
+  versiones). Pago y entrega: tiempo de entrega, «envío gratis desde» y
+  **zonas** (costo, tiempo y «gratis desde» propios) en las entregas con
+  dirección; la página pide la zona, cobra su costo y avisa «Te faltan $X
+  para el envío gratis» (cuenta con el descuento). Sección nueva **Cupones**
+  (`shop_coupons`, migración 0122): porcentaje, monto fijo o envío gratis,
+  compra mínima, fechas, usos en total y una vez por cliente, productos o
+  categorías; la página tiene «¿Tienes un cupón?» y `?cupon=CODIGO` lo deja
+  puesto. Los usos se cuentan de los pedidos bajo el candado del cupón
+  (cancelar devuelve el uso; dos compras por el último, una gana). Columnas
+  «Descuento» y «Cupón» en Pedidos (una tienda de antes las recibe al crear su
+  primer cupón). Freno de códigos fallidos por IP. El E2E atrapó un clic
+  perdido: el aviso rojo del monto desaparecía al salir del campo y la página
+  se movía bajo el mouse; ahora los avisos salen al guardar. Tests:
+  `shops-coupons.spec` 7/7, shared 22 en `shop.test`, tienda/cobros/plataforma
+  73/73, front 913 + E2E 33/33 (escritorio y celular oscuro). Sigue v0.1.416
+  (suscripción, digital, servicio y «Mis pedidos»).
 
 - **2026-11-12 · v0.1.414** — **Productos con variantes** (tercera de seis
   versiones). Editor → Catálogo → **Variantes**: hasta 3 campos (Talla, Color)

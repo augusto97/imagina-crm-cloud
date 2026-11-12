@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
-import { Code2, CreditCard, Eye, EyeOff, Loader2, Moon, Package, Palette, ReceiptText, Send, ShieldCheck, ShoppingBag, SlidersHorizontal, Sun, UserRound, type LucideIcon } from 'lucide-react';
+import { Code2, CreditCard, Eye, EyeOff, Loader2, Moon, Package, Palette, ReceiptText, Send, ShieldCheck, ShoppingBag, SlidersHorizontal, Sun, Ticket, UserRound, type LucideIcon } from 'lucide-react';
 import { readShopConfig, shopProblems, type ShopConfig, type ShopDto, type ShopOptions, type ShopProblem, type ShopSection } from '@imagina-base/shared';
 
 import {
@@ -31,15 +31,17 @@ import { cn } from '@/lib/utils';
 
 import { useEmbedOrigin } from '../forms/useEmbedOrigin';
 import { CatalogPanel, CheckoutPanel, DesignPanel, OrdersPanel, PaymentPanel, PublishPanel, SellerPanel } from './ShopPanels';
+import { CouponsPanel } from './ShopCouponsPanel';
 import { ShopPreview } from './ShopPreview';
 import { SHOP_EDITOR_SECTIONS, SHOP_SECTION_INFO, sameShopConfig, sectionsWithProblems, shopEditorSection, shopSectionSummary } from './shopEditor';
-import { shopPublicUrl, useDeleteShop, useRegenerateShop, useShop, useShopOptions, useUpdateShop } from './useShops';
+import { shopPublicUrl, useDeleteShop, useRegenerateShop, useShop, useShopCoupons, useShopOptions, useUpdateShop } from './useShops';
 
 const SECTION_ICON: Record<ShopSection, LucideIcon> = {
     catalog: Package,
     design: Palette,
     payment: CreditCard,
     checkout: ReceiptText,
+    coupons: Ticket,
     seller: ShieldCheck,
     orders: UserRound,
     publish: Code2,
@@ -123,6 +125,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
     const { confirmLeave } = useUnsavedChangesGuard(dirty);
 
     const live = update.data ?? regenerate.data ?? shop;
+    const coupons = useShopCoupons(shop.id);
     const priceField = options.fields.find((f) => f.id === config.catalog.price);
     const problems: ShopProblem[] = useMemo(
         () => shopProblems(config, { hasOrdersLists: live.orders !== null, priceFieldOk: !!priceField && (priceField.type === 'currency' || priceField.type === 'number') }),
@@ -198,7 +201,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
         label: __(SHOP_SECTION_INFO[s].label),
         icon: SECTION_ICON[s],
         group: __(SHOP_SECTION_INFO[s].group),
-        summary: __(shopSectionSummary(s, config, { enabled, productsCount: options.products_count, ordersListName: live.orders?.list_name ?? null })),
+        summary: __(shopSectionSummary(s, config, { enabled, productsCount: options.products_count, ordersListName: live.orders?.list_name ?? null, couponsActive: coupons.data ? coupons.data.filter((c) => c.active).length : null })),
         problem: problemSections.has(s),
     }));
 
@@ -212,6 +215,8 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                 return <PaymentPanel config={config} options={options} patch={patch} />;
             case 'checkout':
                 return <CheckoutPanel config={config} options={options} patch={patch} />;
+            case 'coupons':
+                return <CouponsPanel shopId={shop.id} config={config} options={options} />;
             case 'seller':
                 return <SellerPanel config={config} patch={patch} />;
             case 'orders':

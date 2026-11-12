@@ -8848,3 +8848,42 @@ persona ve «Tienda».
    campo de selección tienen que ser opciones del campo (si no, 400 con el
    motivo); los de texto conservan la escritura que ya existe.
 
+**Addendum v0.1.415 — Envíos por zona y cupones.**
+1. **Zonas de envío** dentro de cada forma de entrega con dirección
+   (`delivery.zones[]`: id, nombre, costo, «gratis desde», tiempo, activa;
+   tope 40, lectura tolerante que descarta rotas y repetidas) + `eta` y
+   `free_over` en la forma de entrega. `shopShippingFor` (shared, puro) decide
+   el costo: la zona elegida manda, su «gratis desde» cae al de la forma de
+   entrega. Con zonas activas el pedido exige elegir una (400 `shop_zone`) y
+   guarda «Envío a domicilio · Zona» con `zone_id`/`zone_name`.
+2. **Envío gratis desde un monto**: `computeShopCart` compara los productos
+   CON el descuento contra `free_over` y devuelve `free_shipping` y
+   `free_shipping_missing` (la página dice «Te faltan $X para el envío
+   gratis»).
+3. **Cupones** (`shop_coupons`, migración 0122, RLS, código único por
+   tienda): porcentaje, monto fijo o envío gratis; compra mínima, fechas
+   (en la zona de la empresa), usos en total y una vez por cliente (por
+   correo), y alcance por productos (un producto cubre sus variantes; una
+   variante elegida se guarda como su producto) o categorías (sin tildes ni
+   mayúsculas). El descuento se calcula en centavos sobre lo que cubre y se
+   redondea a la unidad que se cobra (`decimals` de la moneda).
+4. **Los usos NO son un contador**: se cuentan de `shop_orders` (con ese
+   `coupon_id` y sin cancelar) bajo `FOR UPDATE` de la fila del cupón, dentro
+   de la transacción del pedido. Cancelar o vencer un pedido devuelve el uso
+   sin más; un pago tardío que revive el pedido lo vuelve a contar; dos
+   compras por el último uso: lo gana una. Borrar un cupón deja el código y el
+   descuento en los pedidos (`coupon_id` → NULL).
+5. **El servidor valida siempre**: la cotización (`/quote` con `coupon`)
+   devuelve `coupon_rule` (la página recalcula en vivo con la misma función)
+   o `coupon_error` con el motivo; el pedido re-valida y rechaza con 400
+   `shop_coupon` (también si no alcanza la compra mínima o no cubre nada del
+   carrito: el total que se ve es el que se cobra). Freno de 30 códigos
+   FALLIDOS cada 10 min por IP y tienda (los válidos no suman).
+6. **Columnas «Descuento» y «Cupón»** en Pedidos, con candado; una tienda de
+   antes las recibe al crear su primer cupón (`ensureOrderColumns`: reusa un
+   campo con el mismo nombre y tipo o lo crea, para todas las tiendas que
+   comparten la lista).
+7. `?cupon=CODIGO` en el enlace lo guarda para la sesión y se aplica solo al
+   finalizar la compra. Migrar una empresa no lleva las tiendas (ni sus
+   cupones); borrarla los borra.
+
