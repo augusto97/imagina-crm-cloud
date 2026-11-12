@@ -378,7 +378,11 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Archivos' },
             {
                 t: 'p',
-                md: 'El campo **Archivo** guarda uno o varios archivos por registro: fotos, PDF, contratos firmados, la cédula escaneada. Se suben desde la celda o la ficha, se ven con un visor sin descargarlos (imágenes, PDF, video y texto) y la primera imagen puede ser la portada de la vista de tarjetas. El espacio que ocupan cuenta para el almacenamiento de tu plan.',
+                md: 'El campo **Archivo** guarda uno o varios archivos por registro: fotos, PDF, contratos firmados, la cédula escaneada. Se suben desde la celda o la ficha, se ven con un visor sin descargarlos (imágenes, PDF, video y texto) y la primera imagen puede ser la portada de la vista de tarjetas. Las imágenes se ven como **miniatura** en la tabla y la ficha (tócala para verla en grande); lo demás, con su nombre. El espacio que ocupan cuenta para el almacenamiento de tu plan.',
+            },
+            {
+                t: 'p',
+                md: 'Para fotos de productos, logos o la foto de una persona, usa el campo **Imagen**: es un campo de archivos que sólo acepta imágenes (PNG, JPG, GIF, WebP o AVIF), así nadie sube un PDF por error, y en la ficha las muestra en una cuadrícula. En un campo **Archivo** que ya tienes, marca **Sólo imágenes** en sus ajustes y pasa a ser un campo Imagen (lo que ya tenía se conserva).',
             },
             {
                 t: 'example',

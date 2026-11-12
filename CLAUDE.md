@@ -15130,6 +15130,31 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         46/46 en escritorio, celular y oscuro (los cuatro diseños, pasos con
         validación y «Cambiar», pedido hecho, opciones, editor).
 
+  - [x] **Campo «Imagen» y miniaturas de los archivos (v0.1.426, addendum
+        ADR-S16, pedido del usuario: "no hay en las listas campo de imagen…
+        en la lista se ve es el nombre del archivo en lugar de verse una
+        miniatura de la imagen cargada")**. (a) **Miniaturas** en la tabla
+        (hasta 4 y «+N»), la ficha (cuadrícula) y las portadas de tarjetas y
+        kanban, para las imágenes de CUALQUIER campo de archivos; tocar abre
+        el visor. `GET /files/:id/signed?…&w=96|160|320|640` las entrega en
+        WebP (`ImageThumbsService`, extraído de la tienda; tipo confirmado
+        por los bytes, nunca SVG; memoria de 64 MB, pedidos iguales juntos y
+        un tope de 3 a la vez por proceso); el ancho no entra en la firma.
+        `thumb_url` en `GET /files?ids=` sólo para imágenes. Las imágenes van
+        primero en la fila (`visibleFileItems`); en la celda se corta tras el
+        primer archivo con nombre. (b) **Campo «Imagen»** = `file` con
+        `config.only_images` (`field-types/file-images.ts`; no es un tipo
+        nuevo): catálogo, ícono y nombre propios (`fieldKindOf`), casilla
+        «Sólo imágenes» en el campo Archivo, selector con `accept` de
+        imágenes; al guardar (`assertImagesInTx`) y al subir por un formulario
+        un archivo NUEVO que no es PNG/JPG/GIF/WebP/AVIF se rechaza con el
+        motivo (lo ya guardado se conserva); el asistente/MCP acepta
+        `only_images`. Portal: miniatura en los campos «Imagen». Hecho por un
+        agente en paralelo y revisado (se sumó el tope de concurrencia y el
+        orden de imágenes primero, encontrado en el E2E). Tests:
+        `file-thumbs.spec` (7), shared `file-images.test` (6), front
+        `fileThumbs.test` (5) + E2E navegador 18/18 y 16/16 en celular oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -53,12 +53,15 @@ import {
     type Role,
     type UpdateRecordDescriptionInput,
     type UpdateRecordInput,
+    fileFieldOnlyImages,
+    isImageFileMime,
+    onlyImagesMessage,
 } from '@imagina-base/shared';
 import { and, eq, inArray, isNotNull, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import { ActivityService, computeDiff } from '../activity/activity.service';
 import type { Tx } from '../db/client';
 import { disableJitForTx, groupKeyHasSubquery } from '../db/no-jit';
-import { memberships, mentions, records, subscriptions, teams } from '../db/schema';
+import { attachments, memberships, mentions, records, subscriptions, teams } from '../db/schema';
 import { AutomationDispatcher, type AutomationChain } from '../automations/automation-dispatcher.service';
 import {
     andWhere,
@@ -2370,19 +2373,27 @@ export class RecordsService {
     ): Promise<void> {
         const newFiles: number[] = [];
         const newUsers = new Map<number, Field>();
+        // v0.1.426 — campo «Imagen» (`only_images`): lo que se SUMA tiene que ser una imagen.
+        const newImages = new Map<number, Field>();
         for (const f of fields) {
             if (f.type !== 'file' && f.type !== 'user') continue;
             const key = jsonbKeyForField(f.id);
             if (!(key in data) || data[key] === null || data[key] === undefined) continue;
             if (f.type === 'file') {
                 const had = new Set(fileIdsIn(current?.[key]));
-                for (const id of fileIdsIn(data[key])) if (!had.has(id)) newFiles.push(id);
+                const imagesOnly = fileFieldOnlyImages(f.config);
+                for (const id of fileIdsIn(data[key])) {
+                    if (had.has(id)) continue;
+                    newFiles.push(id);
+                    if (imagesOnly) newImages.set(id, f);
+                }
             } else if (actor.userId > 0) {
                 const id = Number(data[key]);
                 if (Number.isInteger(id) && id > 0 && Number(current?.[key]) !== id) newUsers.set(id, f);
             }
         }
         await assertAttachable(tx, tenantId, actor, newFiles);
+        if (newImages.size > 0) await this.assertImagesInTx(tx, tenantId, newImages);
         if (newUsers.size === 0) return;
         const found = new Set(
             (
@@ -2401,6 +2412,32 @@ export class RecordsService {
                 data: { status: 400, errors },
             });
         }
+    }
+
+    /**
+     * v0.1.426 — Un campo «Imagen» (`file` con `only_images`) sólo recibe
+     * imágenes que se pueden mostrar (PNG, JPG, GIF, WebP o AVIF; nunca SVG).
+     * Se mira el tipo guardado del adjunto (las miniaturas además lo
+     * confirman por los bytes). Lo que el campo ya tenía no se revisa: pasar
+     * un campo de archivos a «sólo imágenes» no rompe los registros viejos.
+     */
+    private async assertImagesInTx(tx: Tx, tenantId: number, wanted: Map<number, Field>): Promise<void> {
+        const rows = await tx
+            .select({ id: attachments.id, mime: attachments.mime })
+            .from(attachments)
+            .where(and(eq(attachments.tenantId, tenantId), inArray(attachments.id, [...wanted.keys()])));
+        const mimeById = new Map(rows.map((r) => [r.id, r.mime]));
+        const errors: Record<string, string> = {};
+        for (const [id, f] of wanted) {
+            if (!isImageFileMime(mimeById.get(id))) errors[f.slug] = onlyImagesMessage(f.label);
+        }
+        const messages = [...new Set(Object.values(errors))];
+        if (messages.length === 0) return;
+        throw new BadRequestException({
+            code: 'validation_failed',
+            message: messages.length === 1 ? messages[0] : 'Datos del registro inválidos',
+            data: { status: 400, errors },
+        });
     }
 
     private validateData(

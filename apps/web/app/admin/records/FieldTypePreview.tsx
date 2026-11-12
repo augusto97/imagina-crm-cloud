@@ -1,4 +1,4 @@
-import { Calendar, Check, Paperclip, Star } from 'lucide-react';
+import { Calendar, Check, Image as ImageIcon, Paperclip, Star } from 'lucide-react';
 
 import { FieldButtonView } from '@/components/fields/FieldButtonView';
 import { chipSoftStyle } from '@/components/ui/color-picker';
@@ -14,7 +14,7 @@ import type { FieldTypeSlug } from '@/types/field';
  * lado de la descripción. Esto dibuja la celda tal como quedaría, con datos
  * de mentira: no consulta nada ni depende de la lista.
  */
-export function FieldTypePreview({ type }: { type: FieldTypeSlug }): JSX.Element {
+export function FieldTypePreview({ type }: { type: FieldTypeSlug | 'image' }): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-min-h-[64px] imcrm-flex-col imcrm-justify-center imcrm-gap-1.5 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-background imcrm-p-2.5">
             {renderPreview(type)}
@@ -41,8 +41,25 @@ function Line({ w = '70%' }: { w?: string }): JSX.Element {
     return <span className="imcrm-block imcrm-h-2 imcrm-rounded imcrm-bg-muted" style={{ width: w }} />;
 }
 
-function renderPreview(type: FieldTypeSlug): React.ReactNode {
+function renderPreview(type: FieldTypeSlug | 'image'): React.ReactNode {
     switch (type) {
+        // v0.1.426 — «Imagen»: miniaturas en la celda.
+        case 'image':
+            return (
+                <Row>
+                    {(['#0ea5e9', '#f59e0b', '#10b981'] as const).map((c) => (
+                        <span
+                            key={c}
+                            className="imcrm-inline-flex imcrm-h-6 imcrm-w-6 imcrm-items-center imcrm-justify-center imcrm-rounded imcrm-border imcrm-border-border"
+                            style={{ background: `linear-gradient(135deg, ${c}55, ${c})` }}
+                            aria-hidden
+                        >
+                            <ImageIcon className="imcrm-h-3 imcrm-w-3 imcrm-text-white" />
+                        </span>
+                    ))}
+                    <span className="imcrm-text-[11px] imcrm-text-muted-foreground">+2</span>
+                </Row>
+            );
         case 'text':
             return <Row><span className="imcrm-text-foreground">Acme S.A.</span></Row>;
         case 'long_text':

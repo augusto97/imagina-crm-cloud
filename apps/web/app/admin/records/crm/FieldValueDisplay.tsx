@@ -1,7 +1,8 @@
 import { FileCell } from '@/admin/records/renderCellValue';
 import { Check, ExternalLink, Mail, Minus, Paperclip, User as UserIcon } from 'lucide-react';
 
-import { formatDuration, teamIdsOf, type DurationFormat } from '@imagina-base/shared';
+import { useState } from 'react';
+import { fileFieldOnlyImages, formatDuration, teamIdsOf, type DurationFormat } from '@imagina-base/shared';
 
 import { PercentDisplay } from '@/components/fields/PercentDisplay';
 import { PhoneDisplay } from '@/components/fields/PhoneControl';
@@ -22,6 +23,8 @@ import type { FieldEntity } from '@/types/field';
 import { UrlImage } from '@/components/fields/UrlImage';
 import { isImageUrlField } from '@/lib/imageProxy';
 import { toUtcIso } from '@/lib/utcDate';
+import { withThumbWidth } from '@/lib/fileThumbs';
+import { cn } from '@/lib/utils';
 
 interface FieldValueDisplayProps {
     field: FieldEntity;
@@ -112,7 +115,7 @@ export function FieldValueDisplay({ field, value }: FieldValueDisplayProps): JSX
         case 'team':
             return <TeamDisplay value={value} />;
         case 'file':
-            return <FileDisplay value={value} />;
+            return <FileDisplay value={value} onlyImages={fileFieldOnlyImages(field.config)} />;
         case 'long_text':
         case 'ai':
             return <LongTextDisplay value={value} />;
@@ -330,30 +333,58 @@ function UserDisplay({ value }: { value: unknown }): JSX.Element {
  * v0.1.252 — Antes mostraba «#17» (el id) y, en el portal, «#/api/v1/files/…»
  * (la URL firmada como texto). Ahora: ids → nombre del archivo con enlace
  * (resueltos en lote); URL (firmada del portal o externa) → enlace.
+ *
+ * v0.1.426 — las imágenes se ven como miniatura. En el portal llegan URLs
+ * firmadas (sin el tipo del archivo): en un campo «Imagen» se piden achicadas
+ * (`&w=`); si una no carga (un archivo viejo que no era imagen), vuelve a ser
+ * el enlace «Descargar archivo».
  */
-function FileDisplay({ value }: { value: unknown }): JSX.Element {
+function FileDisplay({ value, onlyImages }: { value: unknown; onlyImages: boolean }): JSX.Element {
     const items = Array.isArray(value) ? value : [value];
     const ids = items
         .map((v) => (typeof v === 'number' ? v : typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : NaN))
         .filter((n) => Number.isInteger(n) && n > 0);
-    if (ids.length > 0) return <FileCell ids={ids} />;
+    if (ids.length > 0) return <FileCell ids={ids} size="field" />;
     const urls = items.filter((v): v is string => typeof v === 'string' && /^(https?:\/\/|\/api\/)/i.test(v.trim()));
     if (urls.length === 0) return <span className="imcrm-text-muted-foreground">—</span>;
     return (
-        <span className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+        <span className={cn('imcrm-flex', onlyImages ? 'imcrm-flex-wrap imcrm-gap-1.5' : 'imcrm-flex-col imcrm-gap-1')}>
             {urls.map((u, i) => (
-                <a
-                    key={i}
-                    href={u.trim()}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-primary hover:imcrm-underline"
-                >
-                    <Paperclip className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-hidden />
-                    {urls.length > 1 ? `${__('Descargar archivo')} ${i + 1}` : __('Descargar archivo')}
-                </a>
+                <UrlFileLink key={i} url={u.trim()} label={urls.length > 1 ? `${__('Descargar archivo')} ${i + 1}` : __('Descargar archivo')} image={onlyImages} />
             ))}
         </span>
+    );
+}
+
+function UrlFileLink({ url, label, image }: { url: string; label: string; image: boolean }): JSX.Element {
+    const [failed, setFailed] = useState(false);
+    // Sólo las URLs firmadas de la app aceptan `&w=` (una externa se deja como enlace).
+    const signed = /\/api\/v1\/files\/\d+\/signed\?/.test(url);
+    if (image && signed && !failed) {
+        return (
+            <a href={url} target="_blank" rel="noreferrer" className="imcrm-inline-flex imcrm-shrink-0" title={label} aria-label={label}>
+                <img
+                    src={withThumbWidth(url, 160)}
+                    srcSet={`${withThumbWidth(url, 160)} 1x, ${withThumbWidth(url, 320)} 2x`}
+                    alt=""
+                    decoding="async"
+                    onError={() => setFailed(true)}
+                    className="imcrm-h-16 imcrm-w-16 imcrm-rounded imcrm-border imcrm-border-border imcrm-bg-muted imcrm-object-cover"
+                    data-testid="imcrm-file-thumb"
+                />
+            </a>
+        );
+    }
+    return (
+        <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="imcrm-inline-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-primary hover:imcrm-underline"
+        >
+            <Paperclip className="imcrm-h-3.5 imcrm-w-3.5 imcrm-shrink-0" aria-hidden />
+            {label}
+        </a>
     );
 }
 

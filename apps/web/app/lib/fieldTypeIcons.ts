@@ -11,6 +11,7 @@ import {
     GitBranch,
     Hash,
     History,
+    Image as ImageIcon,
     Link2,
     ScanBarcode,
     UserCheck,
@@ -35,6 +36,7 @@ import {
     Sparkles,
 } from 'lucide-react';
 
+import { IMAGE_FIELD_KIND, fieldKindOf } from '@/lib/fieldTypeCatalog';
 import type { FieldTypeSlug } from '@/types/field';
 
 /**
@@ -82,5 +84,12 @@ export const FIELD_TYPE_ICONS: Record<FieldTypeSlug, LucideIcon> = {
 
 /** Icono para un tipo (con fallback seguro para tipos desconocidos). */
 export function fieldTypeIcon(type: string): LucideIcon {
+    // v0.1.426 — la clase `image` (campo «Imagen») tiene su propio ícono.
+    if (type === IMAGE_FIELD_KIND) return ImageIcon;
     return FIELD_TYPE_ICONS[type as FieldTypeSlug] ?? Type;
+}
+
+/** Icono de UN campo: el de su tipo, o el de imagen para un campo «Imagen». */
+export function fieldIconOf(field: { type: string; config?: unknown }): LucideIcon {
+    return fieldTypeIcon(fieldKindOf(field));
 }

@@ -4,6 +4,7 @@ import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 import { isImageUrlField } from '@/lib/imageProxy';
+import { IMAGE_FIELD_KIND, fieldKindOf, fieldTypeLabelOf } from '@/lib/fieldTypeCatalog';
 
 interface CardsConfigPanelProps {
     fields: FieldEntity[];
@@ -39,7 +40,10 @@ export function CardsConfigPanel({
 }: CardsConfigPanelProps): JSX.Element {
     const candidateFields = fields.filter((f) => f.type !== 'relation' && f.type !== 'button');
     // v0.1.210 — también un enlace que se muestra como imagen (la foto de un producto).
-    const fileFields = fields.filter((f) => f.type === 'file' || (f.type === 'url' && isImageUrlField(f.config)));
+    // v0.1.426 — los campos «Imagen» primero: son la portada natural.
+    const fileFields = fields
+        .filter((f) => f.type === 'file' || (f.type === 'url' && isImageUrlField(f.config)))
+        .sort((a, b) => Number(fieldKindOf(b) === IMAGE_FIELD_KIND) - Number(fieldKindOf(a) === IMAGE_FIELD_KIND));
 
     return (
         <>
@@ -72,7 +76,7 @@ export function CardsConfigPanel({
                                 />
                                 <span className="imcrm-truncate">
                                     {f.label}
-                                    <span className="imcrm-ml-1 imcrm-text-muted-foreground">({f.type})</span>
+                                    <span className="imcrm-ml-1 imcrm-text-muted-foreground">({fieldTypeLabelOf(f)})</span>
                                 </span>
                             </label>
                         ))
@@ -91,13 +95,13 @@ export function CardsConfigPanel({
                     <option value={0}>{__('— Sin portada (avatar colorizado) —')}</option>
                     {fileFields.map((f) => (
                         <option key={f.id} value={f.id}>
-                            {f.label}
+                            {f.label} ({fieldTypeLabelOf(f)})
                         </option>
                     ))}
                 </Select>
                 {fileFields.length === 0 && (
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                        {__('Necesitas un campo tipo Archivo, o un Enlace que se muestre como imagen, para usar portada.')}
+                        {__('Necesitas un campo de tipo Imagen o Archivo, o un Enlace que se muestre como imagen, para usar portada.')}
                     </p>
                 )}
             </div>

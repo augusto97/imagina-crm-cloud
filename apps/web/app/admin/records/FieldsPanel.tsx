@@ -18,8 +18,8 @@ import {
 import { useCreateField, useFields } from '@/hooks/useFields';
 import { useLists } from '@/hooks/useLists';
 import { ApiError } from '@/lib/api';
-import { DERIVED_FIELD_TYPES, FIELD_TYPE_OPTIONS, POPULAR_FIELD_TYPES, SYSTEM_FIELD_TYPES } from '@/lib/fieldTypeCatalog';
-import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
+import { DERIVED_FIELD_TYPES, FIELD_TYPE_OPTIONS, POPULAR_FIELD_TYPES, SYSTEM_FIELD_TYPES, fieldKindOf, fieldTypeOptionOf } from '@/lib/fieldTypeCatalog';
+import { fieldIconOf, fieldTypeIcon } from '@/lib/fieldTypeIcons';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity, FieldTypeSlug } from '@/types/field';
@@ -72,7 +72,7 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
      * diferenciarse del contenido. Aquí se guarda el rect de la fila para
      * anclarla a su altura, como el catálogo de ClickUp.
      */
-    const [hovered, setHovered] = useState<{ type: FieldTypeSlug; top: number; left: number } | null>(null);
+    const [hovered, setHovered] = useState<{ key: string; top: number; left: number } | null>(null);
 
     useEffect(() => {
         if (!open) return;
@@ -95,12 +95,12 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
             (o) =>
                 o.label.toLowerCase().includes(q)
                 || o.description.toLowerCase().includes(q)
-                || o.type.includes(q),
+                || o.key.includes(q),
         );
     }, [search, aiOff]);
 
     const popular = useMemo(
-        () => filtered.filter((o) => POPULAR_FIELD_TYPES.includes(o.type)),
+        () => filtered.filter((o) => POPULAR_FIELD_TYPES.includes(o.key)),
         [filtered],
     );
     // v0.1.300 — las columnas de sistema van en su propia sección.
@@ -134,16 +134,18 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
         }
     };
 
-    const selected = type !== '' ? FIELD_TYPE_OPTIONS.find((o) => o.type === type) : undefined;
-    const SelectedIcon = type !== '' ? fieldTypeIcon(type) : null;
-    const hoveredOption = hovered !== null ? FIELD_TYPE_OPTIONS.find((o) => o.type === hovered.type) : undefined;
+    // v0.1.426 — «Imagen» es un campo de archivos con `only_images`: el chip
+    // y la vista previa siguen a la config (el editor la puede cambiar).
+    const selected = type !== '' ? fieldTypeOptionOf({ type, config }) : undefined;
+    const SelectedIcon = type !== '' ? fieldIconOf({ type, config }) : null;
+    const hoveredOption = hovered !== null ? FIELD_TYPE_OPTIONS.find((o) => o.key === hovered.key) : undefined;
 
-    const showPreview = (next: FieldTypeSlug | null, el?: HTMLElement): void => {
+    const showPreview = (next: string | null, el?: HTMLElement): void => {
         if (next === null || el === undefined) {
             setHovered(null);
             return;
         }
-        setHovered({ type: next, ...previewAnchor(el) });
+        setHovered({ key: next, ...previewAnchor(el) });
     };
 
     return (
@@ -263,7 +265,7 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
                                 </span>
                             </div>
 
-                            <FieldTypePreview type={type} />
+                            <FieldTypePreview type={fieldKindOf({ type, config }) as FieldTypeSlug | 'image'} />
 
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
                                 <Label htmlFor="fields-panel-name">{__('Nombre')}</Label>
@@ -327,7 +329,7 @@ export function FieldsPanel({ listId, listSlug, open, onOpenChange }: FieldsPane
                         className="imcrm-pointer-events-none imcrm-fixed imcrm-z-[60] imcrm-hidden imcrm-w-64 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-3 imcrm-shadow-imcrm-lg sm:imcrm-block"
                         style={{ top: hovered.top, left: hovered.left }}
                     >
-                        <FieldTypePreview type={hoveredOption.type} />
+                        <FieldTypePreview type={hoveredOption.key as FieldTypeSlug | 'image'} />
                         <p className="imcrm-mt-2 imcrm-text-sm imcrm-font-medium">{hoveredOption.label}</p>
                         <p className="imcrm-text-xs imcrm-leading-snug imcrm-text-muted-foreground">
                             {hoveredOption.description}
@@ -370,7 +372,7 @@ function TypeSection({
     title: string;
     options: typeof FIELD_TYPE_OPTIONS;
     onPick: PickFn;
-    onHover: (type: FieldTypeSlug | null, el?: HTMLElement) => void;
+    onHover: (key: string | null, el?: HTMLElement) => void;
 }): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-0.5">
@@ -378,16 +380,16 @@ function TypeSection({
                 {title}
             </p>
             {options.map((opt) => {
-                const Icon = fieldTypeIcon(opt.type);
+                const Icon = fieldTypeIcon(opt.key);
                 return (
                     <button
-                        key={opt.type}
+                        key={opt.key}
                         type="button"
-                        onMouseEnter={(e) => onHover(opt.type, e.currentTarget)}
+                        onMouseEnter={(e) => onHover(opt.key, e.currentTarget)}
                         onMouseLeave={() => onHover(null)}
-                        onFocus={(e) => onHover(opt.type, e.currentTarget)}
+                        onFocus={(e) => onHover(opt.key, e.currentTarget)}
                         onBlur={() => onHover(null)}
-                        onClick={() => onPick(opt.type)}
+                        onClick={() => onPick(opt.type, '', opt.config ?? {})}
                         className="imcrm-group/type imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2.5 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-left hover:imcrm-bg-accent focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-primary/40"
                     >
                         <Icon className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
@@ -468,7 +470,7 @@ function CopyFromList({
                 </p>
             ) : (
                 rows.map((f: FieldEntity) => {
-                    const Icon = fieldTypeIcon(f.type);
+                    const Icon = fieldIconOf(f);
                     return (
                         <button
                             key={f.id}

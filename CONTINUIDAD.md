@@ -415,7 +415,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.425**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.426**
+(**campo «Imagen» y miniaturas de los archivos** — las imágenes de cualquier
+campo de archivos se ven como miniatura en la tabla, la ficha y las tarjetas
+(achicadas en el servidor a WebP); campo nuevo «Imagen» = archivo con «Sólo
+imágenes» (PNG, JPG, GIF, WebP o AVIF; un PDF se rechaza); addendum ADR-S16).
+Antes **v0.1.425**
 (**cuatro diseños para la página de pago de la tienda** — Estilo → Pago:
 clásico (el de siempre), dos columnas (el pedido con sus fotos en una columna
 aparte, como las tiendas más conocidas), por pasos (datos → entrega → pago con
@@ -1998,6 +2003,29 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-12 · v0.1.426** — **Campo «Imagen» y miniaturas de los archivos**
+  (mismo mensaje del usuario que v0.1.425: "veo que no hay en las listas campo
+  de imagen, solo veo campo de archivo y adjunto en la lista se ve es el
+  nombre del archivo en lugar de verse una miniatura de la imagen cargada").
+  (a) **Miniaturas**: las imágenes de cualquier campo de archivos se ven como
+  miniatura en la tabla (hasta 4 y «+N»), la ficha (cuadrícula) y las portadas
+  de tarjetas y kanban; tocar abre el visor. El servidor las entrega achicadas
+  a WebP (`/files/:id/signed?…&w=`, 96/160/320/640; el ancho no entra en la
+  firma) con el mismo servicio de la tienda, con memoria de 64 MB y como mucho
+  3 a la vez por proceso. (b) **Campo «Imagen»**: archivo con
+  `config.only_images` (no es un tipo nuevo: filtros, importar, exportar y
+  migración siguen igual); sólo PNG, JPG, GIF, WebP o AVIF (nunca SVG), al
+  guardar y al subir por un formulario; lo ya guardado se conserva. Casilla
+  «Sólo imágenes» en un campo Archivo. (c) **Encontrado en la prueba**: con un
+  PDF subido antes que la foto, la foto quedaba escondida como «+1» — ahora las
+  imágenes van primero. Hecho con un agente en paralelo (worktree) y revisado:
+  se le sumó el tope de 3 a la vez (una tabla con 50 fotos grandes leía todas
+  juntas). Tests: `file-thumbs.spec` (7), `file-images.test` (6) en shared,
+  `fileThumbs.test` (5) en el front + E2E navegador 18/18 en escritorio y
+  16/16 en celular oscuro (rechazo del PDF, WebP más liviano, 4 miniaturas
+  cargadas con `&w=`, el PDF por su nombre, visor, cuadrícula en la ficha,
+  `accept` de imágenes, «Imagen» en el catálogo, portadas a 640 px).
 
 - **2026-11-12 · v0.1.425** — **Cuatro diseños para la página de pago de la
   tienda** (mensaje del usuario: "también crea varios estilos del checkout, me

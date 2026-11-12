@@ -10,7 +10,7 @@ import {
     Optional,
     ServiceUnavailableException,
 } from '@nestjs/common';
-import { type Role } from '@imagina-base/shared';
+import { isImageFileMime, type Role } from '@imagina-base/shared';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { ENV, type Env } from '../config/env';
 import { attachments, dashboards, documentNumbers, fields, lists, records } from '../db/schema';
@@ -33,6 +33,10 @@ export interface AttachmentDto {
     id: number;
     /** URL de descarga servida por el API (auth + tenant check). */
     url: string;
+    /**
+     * v0.1.426 — sólo imágenes (PNG/JPG/GIF/WebP/AVIF): la misma URL firmada
+     * con `&w=320`, que el servidor entrega achicada en WebP.
+     */
     thumb_url?: string;
     title: string;
     mime_type: string;
@@ -74,6 +78,8 @@ const PRESIGN_TTL = 15 * 60;
 const MOVE_BATCH = 20;
 
 const MAX_BATCH = 100;
+/** v0.1.426 — ancho de la miniatura que viaja en `thumb_url` (uno de FILE_THUMB_WIDTHS). */
+const DEFAULT_THUMB_WIDTH = 320;
 
 /** Quién pide un archivo (SEC-25). Sin actor = uso interno (sin recorte). */
 export interface FileActor extends AclExtras {
@@ -423,14 +429,23 @@ export class FilesService {
         sig: string,
         opts: { proxy?: boolean; download?: boolean } = {},
     ): Promise<OpenedFile> {
+        this.assertSigned(id, tenantId, exp, sig);
+        return this.openDownload(tenantId, id, undefined, opts);
+    }
+
+    /**
+     * Valida una URL firmada (tenant + id + vencimiento): 404 opaco si no
+     * cuadra. v0.1.426 — la usan también las miniaturas (`&w=`): el ancho no
+     * entra en la firma porque no cambia QUÉ archivo se ve, sólo su tamaño.
+     */
+    assertSigned(id: number, tenantId: number, exp: number, sig: string): void {
         const now = Math.floor(Date.now() / 1000);
         const expected = this.sign(tenantId, id, exp);
         const a = Buffer.from(sig, 'utf8');
         const b = Buffer.from(expected, 'utf8');
-        if (exp < now || a.length !== b.length || !timingSafeEqual(a, b)) {
+        if (!Number.isFinite(exp) || exp < now || a.length !== b.length || !timingSafeEqual(a, b)) {
             throw fileNotFound(id); // 404 opaco: no filtramos si existe.
         }
-        return this.openDownload(tenantId, id, undefined, opts);
     }
 
     private sign(tenantId: number, id: number, exp: number): string {
@@ -884,6 +899,10 @@ function toDto(row: typeof attachments.$inferSelect, url: string): AttachmentDto
     return {
         id: row.id,
         url,
+        // v0.1.426 — miniatura sólo para las imágenes que se pueden achicar
+        // (nunca SVG): la misma URL firmada con un ancho. La UI cambia el
+        // `w` según dónde la muestra (96 en la tabla, 640 en una portada).
+        ...(isImageFileMime(row.mime) ? { thumb_url: `${url}&w=${DEFAULT_THUMB_WIDTH}` } : {}),
         title: row.filename,
         mime_type: row.mime,
         size_bytes: row.sizeBytes,

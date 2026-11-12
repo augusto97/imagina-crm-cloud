@@ -9257,3 +9257,35 @@ tienda.**
    `:focus-within`, una clase `s-has` que pone el cliente al escribir,
    `:has(select)` y el autocompletado del navegador; vale también en el
    clásico.
+
+**Addendum v0.1.426 (ADR-S16) — El campo «Imagen» y las miniaturas de los
+archivos.**
+
+1. **«Imagen» no es un tipo nuevo**: es un campo `file` con
+   `config.only_images = true` (`field-types/file-images.ts`, lectura
+   tolerante: sólo `true` cuenta). Un tipo nuevo habría tocado filtros,
+   importar, exportar, plantillas, migración de empresa y el asistente para
+   lo mismo; con la marca todo eso sigue igual. La UI lo distingue con
+   `fieldKindOf` (nombre, ícono, catálogo) y la casilla «Sólo imágenes» del
+   campo Archivo lo activa.
+2. **Qué es una imagen**: PNG, JPG, GIF, WebP y AVIF (`IMAGE_FILE_MIMES`).
+   Nunca SVG (puede llevar script) ni HEIC/BMP. Al guardar un registro
+   (`assertImagesInTx`) y al subir por un formulario público, un archivo
+   NUEVO que no es imagen en un campo «Imagen» se rechaza (400 con el motivo);
+   lo que el campo ya tenía se conserva.
+3. **Miniaturas**: `GET /files/:id/signed?…&w=96|160|320|640` entrega la
+   imagen achicada en WebP (`ImageThumbsService`, el mismo de la tienda). El
+   ancho NO entra en la firma (no cambia qué archivo se ve, sólo su tamaño);
+   un ancho fuera de la lista, `dl=1` o un archivo que no es imagen sirven el
+   original como siempre. El tipo se confirma por los BYTES. Memoria con tope
+   de 64 MB (LRU), pedidos iguales juntos y **como mucho 3 imágenes
+   achicándose a la vez por proceso** (cada una se lee entera). Funciona con
+   el almacenamiento propio de la empresa (ADR-S36).
+4. **`thumb_url`** viaja en `GET /files?ids=` sólo para imágenes; la UI cambia
+   el `w` según dónde la muestra (96 en la celda, 160/320 en la ficha, 640 en
+   las portadas). En la fila, las imágenes van primero (un PDF subido antes
+   no las esconde) y en la celda se corta después del primer archivo con
+   nombre.
+5. **Portal**: el portal recibe URLs firmadas sin el tipo del archivo, así que
+   la miniatura sale sólo en los campos «Imagen»; un campo Archivo común
+   sigue con «Descargar archivo».

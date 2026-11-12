@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { Readable } from 'node:stream';
+import { imageMimeOf, readCapped } from '../files/image-bytes';
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import {
     WIDGET_ADVISOR_VAR,
@@ -734,26 +734,5 @@ function brandOf(
     return { accent, company, logoUrl: logoId ? sign(logoId) : null, logoId: logoId ?? null };
 }
 
-/** PNG, JPEG, GIF o WebP por su cabecera; cualquier otra cosa (SVG incluido) no es un logo que se sirva. */
-export function imageMimeOf(b: Buffer): string | null {
-    if (b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
-    if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
-    if (b.length > 6 && b.subarray(0, 6).toString('latin1').startsWith('GIF8')) return 'image/gif';
-    if (b.length > 12 && b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp';
-    return null;
-}
-
-export async function readCapped(stream: Readable, max: number): Promise<Buffer | null> {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    for await (const chunk of stream) {
-        const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
-        size += b.length;
-        if (size > max) {
-            stream.destroy();
-            return null;
-        }
-        chunks.push(b);
-    }
-    return Buffer.concat(chunks);
-}
+/** v0.1.426 — viven en el módulo de archivos (`files/image-bytes`); se reexportan por compatibilidad. */
+export { imageMimeOf, readCapped };

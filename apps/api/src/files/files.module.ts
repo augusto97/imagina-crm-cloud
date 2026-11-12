@@ -7,6 +7,7 @@ import { FilesController, SignedFilesController } from './files.controller';
 import { FilesService } from './files.service';
 import { ImageProxyController } from './image-proxy.controller';
 import { ImageProxyService } from './image-proxy';
+import { ImageThumbsService } from './image-thumbs.service';
 import { WorkspaceStorageController } from './workspace-storage.controller';
 
 @Module({
@@ -15,6 +16,7 @@ import { WorkspaceStorageController } from './workspace-storage.controller';
     providers: [
         FilesService,
         ImageProxyService,
+        ImageThumbsService,
         {
             provide: FILE_STORAGE,
             inject: [ENV],
@@ -33,6 +35,6 @@ import { WorkspaceStorageController } from './workspace-storage.controller';
     ],
     // `FILE_STORAGE` sale del módulo para que la migración de empresas
     // (ADR-S23) mueva los bytes por el mismo driver que los sube.
-    exports: [FilesService, FILE_STORAGE, ImageProxyService],
+    exports: [FilesService, FILE_STORAGE, ImageProxyService, ImageThumbsService],
 })
 export class FilesModule {}

@@ -13,6 +13,7 @@ import {
 import { widgetSubmitContextSchema } from './contact-widget';
 import type { PublicDataConsent } from './data-consent';
 import type { FieldType } from './field';
+import { IMAGE_FILE_EXTENSIONS, IMAGE_FILE_KINDS_LABEL, fileFieldOnlyImages } from '../field-types/file-images';
 import { FORM_RECORD_VALUES_DEFAULT, formRecordValuesSchema } from './form-record-values';
 import { publicThemeSchema, readPublicTheme, type PublicChoiceStyle } from './public-theme';
 import type { PublicThemeView } from './public-theme-css';
@@ -1493,6 +1494,11 @@ function publicField(
         config.accept = formAcceptAttribute(accept);
         config.accept_label = FORM_FILE_ACCEPT_INFO[accept].label;
         if (shown === 'signature') config.max_files = 1;
+        // v0.1.426 — un campo «Imagen» sólo recibe imágenes que se pueden mostrar.
+        else if (fileFieldOnlyImages(cfg)) {
+            config.accept = IMAGE_FILE_EXTENSIONS.map((e) => `.${e}`).join(',');
+            config.accept_label = `Imágenes (${IMAGE_FILE_KINDS_LABEL})`;
+        }
     }
     const out: PublicFormFieldItem = {
         id: item.id,

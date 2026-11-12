@@ -9,7 +9,7 @@ import { useFields, useUpdateField } from '@/hooks/useFields';
 import { useFieldTypes } from '@/hooks/useFieldTypes';
 import { useListPermissions, useUpdateListPermissions } from '@/hooks/usePermissions';
 import { ApiError } from '@/lib/api';
-import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
+import { fieldIconOf } from '@/lib/fieldTypeIcons';
 import { formulaConversionNote, riskOf } from '@/lib/fieldTypeMigration';
 import { formulaConfigFromComputed } from './formula/formulaConvert';
 import { __ } from '@/lib/i18n';
@@ -141,7 +141,8 @@ export function FieldSettingsPanel({ listId, field, onDelete, onMakeTitle, store
         }
     };
 
-    const Icon = fieldTypeIcon(field.type);
+    // v0.1.426 — sigue a la config: «Sólo imágenes» lo muestra como «Imagen».
+    const Icon = fieldIconOf({ type, config });
 
     return (
         <form

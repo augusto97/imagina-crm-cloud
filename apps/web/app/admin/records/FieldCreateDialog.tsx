@@ -9,8 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useUpdateField } from '@/hooks/useFields';
 import { ApiError } from '@/lib/api';
-import { FIELD_TYPE_OPTIONS } from '@/lib/fieldTypeCatalog';
-import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
+import { fieldTypeOptionOf } from '@/lib/fieldTypeCatalog';
+import { fieldIconOf } from '@/lib/fieldTypeIcons';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
@@ -90,8 +90,9 @@ export function FieldCreateDialog({
         }
     };
 
-    const option = FIELD_TYPE_OPTIONS.find((o) => o.type === field.type);
-    const Icon = fieldTypeIcon(field.type);
+    // v0.1.426 — sigue a la config («Sólo imágenes» cambia Archivo ↔ Imagen).
+    const option = fieldTypeOptionOf({ type: field.type, config });
+    const Icon = fieldIconOf({ type: field.type, config });
 
     return (
         <Dialog.Root open={open} onOpenChange={onOpenChange}>

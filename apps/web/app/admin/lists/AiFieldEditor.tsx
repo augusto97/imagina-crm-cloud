@@ -10,7 +10,7 @@ import { useToast } from '@/components/ui/toast';
 import { useAiFieldStatus, useFillAiField } from '@/hooks/useAiFields';
 import { useFields } from '@/hooks/useFields';
 import { __, sprintf } from '@/lib/i18n';
-import { fieldTypeIcon } from '@/lib/fieldTypeIcons';
+import { fieldIconOf } from '@/lib/fieldTypeIcons';
 import { formatDateTime } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
@@ -82,7 +82,7 @@ export function AiFieldEditor({
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-1.5" data-testid="ai-field-inputs">
                         {eligible.map((f) => {
                             const on = inputs.includes(f.id);
-                            const Icon = fieldTypeIcon(f.type);
+                            const Icon = fieldIconOf(f);
                             return (
                                 <button
                                     key={f.id}

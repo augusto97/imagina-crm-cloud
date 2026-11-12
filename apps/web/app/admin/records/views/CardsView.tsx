@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 
 import { renderCellValue } from '@/admin/records/renderCellValue';
 import { useAttachments } from '@/hooks/useAttachments';
+import { withThumbWidth } from '@/lib/fileThumbs';
 import { colorFromString, pickPrimaryField } from '@/lib/recordCategorize';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -90,7 +91,9 @@ export function CardsView({
                         record={rec}
                         primaryField={primary}
                         extraFields={extraFields}
-                        coverUrl={urlCover ?? cover?.thumbUrl ?? cover?.url ?? null}
+                        // v0.1.426 — la portada se pide achicada (nunca el original de 4 MB);
+                        // un archivo que no es imagen no tiene portada.
+                        coverUrl={urlCover ?? (cover?.thumbUrl !== undefined ? withThumbWidth(cover.thumbUrl, 640) : null)}
                         onClick={() => onCardClick(rec)}
                     />
                 );
