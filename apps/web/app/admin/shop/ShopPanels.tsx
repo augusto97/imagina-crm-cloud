@@ -10,6 +10,7 @@ import {
     CreditCard,
     ExternalLink,
     Home,
+    Layers,
     LayoutDashboard,
     Loader2,
     MessageCircle,
@@ -29,9 +30,11 @@ import {
     SHOP_DEFAULT_RETURNS,
     SHOP_DEFAULT_REVERSAL,
     SHOP_MAX_DELIVERY_METHODS,
+    SHOP_MAX_VARIANT_ATTRIBUTES,
     SHOP_SORTS,
     SHOP_SORT_LABELS,
     SHOP_TRANSFER_DEFAULT,
+    SHOP_VARIANT_ATTRIBUTE_TYPES,
     collectionCurrencyError,
     newShopItemId,
     type ShopCatalogFields,
@@ -54,6 +57,7 @@ import { DomainChips } from '../forms/DomainChips';
 import { PublicQrCard } from '../forms/PublicQrCard';
 import { ColorChoice } from '../widgets/WidgetButtonEditor';
 import { PanelBody, SubSection, Switch, SwitchRow } from '../widgets/widgetUi';
+import { ShopVariantsSheet } from './ShopVariantsSheet';
 import { SHOP_SECTION_INFO, shopEmbedCode } from './shopEditor';
 
 type Patch = (fn: (c: ShopConfig) => ShopConfig) => void;
@@ -131,7 +135,96 @@ const ROLE_HINT: Partial<Record<keyof ShopCatalogFields, string>> = {
     active: 'Una casilla: sólo se venden los marcados. Sin elegirla, se venden todos.',
 };
 
-export function CatalogPanel({ config, options, patch }: { config: ShopConfig; options: ShopOptions; patch: Patch }): JSX.Element {
+/**
+ * v0.1.414 — Productos con variantes (talla, color…): cada variante es una
+ * subtarea del producto en la lista. Aquí se eligen los atributos y se abre
+ * el generador de combinaciones.
+ */
+function VariantsSection({ shopId, config, options, patch, onCatalogChanged }: { shopId: number; config: ShopConfig; options: ShopOptions; patch: Patch; onCatalogChanged: () => void }): JSX.Element {
+    const [open, setOpen] = useState(false);
+    const v = config.variants;
+    const roleIds = new Set(Object.values(config.catalog).filter((x): x is number => x !== null));
+    const usable = options.fields.filter((f) => (SHOP_VARIANT_ATTRIBUTE_TYPES as readonly string[]).includes(f.type) && !roleIds.has(f.id));
+    const setAttrs = (attributes: number[]): void => patch((c) => ({ ...c, variants: { ...c.variants, attributes } }));
+    return (
+        <SubSection
+            title={__('Variantes')}
+            hint={__('Para vender un mismo producto en varias tallas, colores o materiales. Cada variante es una subtarea del producto en la lista, con su propio precio, stock, referencia y fotos (vacíos = los del producto).')}
+        >
+            <SwitchRow
+                label={__('Productos con variantes')}
+                hint={__('Un producto con subtareas se compra eligiendo una: el precio del catálogo es el más bajo y el stock, la suma.')}
+                checked={v.enabled}
+                onChange={(enabled) => patch((c) => ({ ...c, variants: { ...c.variants, enabled } }))}
+                testId="shop-variants-on"
+            >
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="shop-variant-attrs">
+                    <p className="imcrm-text-[12px] imcrm-text-muted-foreground">
+                        {__('Los campos que distinguen una variante de otra (selección o texto). Sin atributos, la opción que se elige es el nombre de la subtarea.')}
+                    </p>
+                    {v.attributes.map((fid, i) => (
+                        <div key={`${fid}-${i}`} className="imcrm-flex imcrm-items-center imcrm-gap-2">
+                            <Select
+                                value={String(fid)}
+                                onChange={(e) => setAttrs(v.attributes.map((x, j) => (j === i ? Number(e.target.value) : x)))}
+                                aria-label={sprintf(__('Atributo %d'), i + 1)}
+                                data-testid="shop-variant-attr"
+                            >
+                                {usable
+                                    .filter((f) => f.id === fid || !v.attributes.includes(f.id))
+                                    .map((f) => (
+                                        <option key={f.id} value={f.id}>
+                                            {f.label}
+                                        </option>
+                                    ))}
+                            </Select>
+                            <Button variant="ghost" size="icon" aria-label={__('Quitar atributo')} onClick={() => setAttrs(v.attributes.filter((_, j) => j !== i))}>
+                                <Trash2 className="imcrm-h-4 imcrm-w-4" />
+                            </Button>
+                        </div>
+                    ))}
+                    {v.attributes.length < SHOP_MAX_VARIANT_ATTRIBUTES && usable.some((f) => !v.attributes.includes(f.id)) && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="imcrm-self-start"
+                            onClick={() => {
+                                const next = usable.find((f) => !v.attributes.includes(f.id));
+                                if (next) setAttrs([...v.attributes, next.id]);
+                            }}
+                            data-testid="shop-variant-attr-add"
+                        >
+                            <Plus className="imcrm-h-4 imcrm-w-4" />
+                            {__('Agregar atributo')}
+                        </Button>
+                    )}
+                    {usable.length === 0 && (
+                        <p className="imcrm-text-[11.5px] imcrm-text-muted-foreground">{__('La lista no tiene campos de selección o de texto libres para usar como atributo (Talla, Color…). Créalos en Configuración → Campos.')}</p>
+                    )}
+                    <Button variant="outline" size="sm" className="imcrm-mt-1 imcrm-self-start" onClick={() => setOpen(true)} data-testid="shop-variants-open">
+                        <Layers className="imcrm-h-4 imcrm-w-4" />
+                        {__('Crear variantes de un producto')}
+                    </Button>
+                </div>
+            </SwitchRow>
+            <ShopVariantsSheet shopId={shopId} attributes={v.attributes} open={open} onOpenChange={setOpen} onCreated={onCatalogChanged} />
+        </SubSection>
+    );
+}
+
+export function CatalogPanel({
+    shopId,
+    config,
+    options,
+    patch,
+    onCatalogChanged,
+}: {
+    shopId: number;
+    config: ShopConfig;
+    options: ShopOptions;
+    patch: Patch;
+    onCatalogChanged: () => void;
+}): JSX.Element {
     const set = (role: keyof ShopCatalogFields, id: number | null): void => patch((c) => ({ ...c, catalog: { ...c.catalog, [role]: id } }));
     const taken = new Map<number, keyof ShopCatalogFields>();
     for (const r of ROLE_ORDER) {
@@ -185,6 +278,7 @@ export function CatalogPanel({ config, options, patch }: { config: ShopConfig; o
                     </Field>
                 );
             })}
+            <VariantsSection shopId={shopId} config={config} options={options} patch={patch} onCatalogChanged={onCatalogChanged} />
             <SubSection title={__('Moneda')} hint={__('La de los precios de la lista. Todos los productos de la tienda se venden en la misma.')}>
                 <Select value={config.currency} onChange={(e) => patch((c) => ({ ...c, currency: e.target.value }))} data-testid="shop-currency">
                     {['COP', 'USD', 'MXN', 'CLP', 'PEN', 'ARS', 'EUR', 'BRL'].map((c) => (

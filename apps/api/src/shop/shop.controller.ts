@@ -3,11 +3,14 @@ import {
     CAPTCHA_PROVIDER_INFO,
     captchaCspSources,
     createShopSchema,
+    generateShopVariantsSchema,
     publicShopOrderSchema,
     publicShopQuoteSchema,
     suspendShopSchema,
     updateShopSchema,
     type CreateShopInput,
+    type GenerateShopVariantsInput,
+    type GenerateShopVariantsResult,
     type PublicShopMeta,
     type PublicShopOrder,
     type PublicShopOrderInput,
@@ -17,6 +20,8 @@ import {
     type ShopDto,
     type ShopOptions,
     type ShopOrderPanelDto,
+    type ShopProductVariantsDto,
+    type ShopVariantProductDto,
     type SuspendShopInput,
     type UpdateShopInput,
 } from '@imagina-base/shared';
@@ -41,6 +46,7 @@ import { shopImageWidth } from './shop-images.service';
 import { ShopOrdersService } from './shop-orders.service';
 import { loadShopClient, renderShopPage, shopNotFoundPage, shopPageCsp } from './shop-page';
 import { ShopPublicService, type ShopPageInfo } from './shop-public.service';
+import { ShopVariantsService } from './shop-variants.service';
 import { ShopService } from './shop.service';
 
 /**
@@ -56,6 +62,7 @@ export class ShopsController {
         private readonly shops: ShopService,
         private readonly publicSvc: ShopPublicService,
         private readonly audit: AuditService,
+        private readonly variants: ShopVariantsService,
     ) {}
 
     @Get()
@@ -77,6 +84,48 @@ export class ShopsController {
     @RequireCapability('manage_lists')
     options(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<ShopOptions> {
         return this.shops.options(req.tenant!.tenantId, id);
+    }
+
+    /** v0.1.414 — Los productos para elegir a cuál crearle variantes. */
+    @Get(':id/products')
+    @RequireCapability('manage_lists')
+    async products(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number, @Query('q') q?: string): Promise<{ data: ShopVariantProductDto[] }> {
+        return { data: await this.variants.products(req.tenant!.tenantId, id, String(q ?? '').slice(0, 120)) };
+    }
+
+    /** v0.1.414 — Un producto con sus variantes, leídas con los atributos del editor (`attributes=1,2`). */
+    @Get(':id/products/:productId/variants')
+    @RequireCapability('manage_lists')
+    productVariants(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('productId', ParseIntPipe) productId: number,
+        @Query('attributes') attrsRaw?: string,
+    ): Promise<ShopProductVariantsDto> {
+        const attrs = String(attrsRaw ?? '')
+            .split(',')
+            .map((x) => Number(x))
+            .filter((n) => Number.isSafeInteger(n) && n > 0)
+            .slice(0, 3);
+        return this.variants.forProduct(req.tenant!.tenantId, id, productId, attrs);
+    }
+
+    /** v0.1.414 — Crea las combinaciones que faltan como subtareas del producto. */
+    @Post(':id/products/:productId/variants')
+    @HttpCode(200)
+    @RequireCapability('manage_lists')
+    async generateVariants(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Param('productId', ParseIntPipe) productId: number,
+        @Body(new ZodValidationPipe(generateShopVariantsSchema)) input: GenerateShopVariantsInput,
+    ): Promise<GenerateShopVariantsResult> {
+        const tenantId = req.tenant!.tenantId;
+        const out = await this.variants.generate(tenantId, actorOf(req), id, productId, input);
+        if (out.created > 0) {
+            await this.audit.log({ tenantId, userId: req.authUserId ?? null, action: 'shop.variants_create', targetType: 'record', targetId: productId, meta: { shop_id: id, created: out.created } });
+        }
+        return out;
     }
 
     /** La vista previa con lo que se está editando (sin guardar). */

@@ -8826,3 +8826,25 @@ persona ve «Tienda».
    ni la URL de avisos (sólo con https); la prueba de la API las verifica con
    https.
 
+**Addendum v0.1.414 — Productos con variantes.**
+1. **Una variante es una subtarea** del producto en la lista del catálogo
+   (`records.parent_id`, el modelo de WooCommerce de ADR-S24). Se enciende con
+   `config.variants {enabled, attributes}`: hasta 3 campos de selección o
+   texto (nunca uno del catálogo). Sin migración.
+2. **Herencia, en un solo lugar** (`shop-logic.ts`, sin zod, usado por la
+   página y el servidor): precio propio o el del producto («precio antes»
+   sólo si hereda el precio), stock propio (vacío = sin límite), SKU y fotos
+   propios o del producto, visibilidad del producto. El producto muestra el
+   precio mínimo y la suma del stock (sin límite si alguna variante lo es) y,
+   con variantes, no se compra directo.
+3. **El pedido compra la variante**: el servidor arma lo que se compra con
+   `shopPurchasables` (el mismo carrito de siempre), bloquea las filas de las
+   variantes, descuenta su stock y guarda en la línea el título «Producto ·
+   M / Rojo», su SKU y `parent_id`. Cancelar o vencer devuelve el stock a la
+   variante (el mismo `moveStock`).
+4. **El generador** crea sólo las combinaciones que faltan (comparadas sin
+   tildes ni mayúsculas, tope 60) por `RecordsService.create`, así respeta
+   permisos, límite del plan, actividad y automatizaciones. Los valores de un
+   campo de selección tienen que ser opciones del campo (si no, 400 con el
+   motivo); los de texto conservan la escritura que ya existe.
+

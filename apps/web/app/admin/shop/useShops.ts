@@ -1,5 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { CreateShopInput, PlatformShopDto, PublicShopMeta, PublicShopProduct, ShopConfig, ShopDto, ShopOptions, ShopOrderPanelDto, SuspendShopInput, UpdateShopInput } from '@imagina-base/shared';
+import type {
+    CreateShopInput,
+    GenerateShopVariantsInput,
+    GenerateShopVariantsResult,
+    PlatformShopDto,
+    PublicShopMeta,
+    PublicShopProduct,
+    ShopConfig,
+    ShopDto,
+    ShopOptions,
+    ShopOrderPanelDto,
+    ShopProductVariantsDto,
+    ShopVariantProductDto,
+    SuspendShopInput,
+    UpdateShopInput,
+} from '@imagina-base/shared';
 
 import { api } from '@/lib/api';
 
@@ -14,7 +29,44 @@ export const shopKeys = {
     options: (id: number) => ['shops', id, 'options'] as const,
     order: (listId: number, recordId: number) => ['shop-order', listId, recordId] as const,
     platform: (tenantId: number) => ['platform-shops', tenantId] as const,
+    products: (id: number, q: string) => ['shops', id, 'products', q] as const,
+    variants: (id: number, productId: number, attrs: string) => ['shops', id, 'variants', productId, attrs] as const,
 };
+
+/** v0.1.414 — Los productos del catálogo para elegir a cuál crearle variantes. */
+export function useShopProducts(id: number, q: string, enabled = true) {
+    return useQuery({
+        queryKey: shopKeys.products(id, q),
+        queryFn: async () => (await api.get<ShopVariantProductDto[]>(`/shops/${id}/products?q=${encodeURIComponent(q)}`)).data,
+        enabled: enabled && id > 0,
+        staleTime: 10_000,
+    });
+}
+
+/** v0.1.414 — Un producto con sus variantes, leídas con los atributos del editor (aunque no estén guardados). */
+export function useShopProductVariants(id: number, productId: number | null, attributes: number[]) {
+    const attrs = attributes.join(',');
+    return useQuery({
+        queryKey: shopKeys.variants(id, productId ?? 0, attrs),
+        queryFn: async () => (await api.get<ShopProductVariantsDto>(`/shops/${id}/products/${productId}/variants?attributes=${attrs}`)).data,
+        enabled: id > 0 && productId !== null && productId > 0,
+    });
+}
+
+export function useGenerateShopVariants(id: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (input: GenerateShopVariantsInput & { product_id: number }) => {
+            const { product_id, ...body } = input;
+            return (await api.post<GenerateShopVariantsResult>(`/shops/${id}/products/${product_id}/variants`, body)).data;
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: ['shops', id, 'variants'] });
+            void qc.invalidateQueries({ queryKey: ['shops', id, 'products'] });
+            void qc.invalidateQueries({ queryKey: ['records'] });
+        },
+    });
+}
 
 export function useShops(listId: number | undefined) {
     return useQuery({

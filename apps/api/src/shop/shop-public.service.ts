@@ -9,6 +9,7 @@ import {
     formatShopMoney,
     readShopConfig,
     shopOnlinePayment,
+    shopPurchasables,
     shopWhatsappMessage,
     tenantFormatSchema,
     whatsappLink,
@@ -25,7 +26,7 @@ import {
     type ShopOrderLineSnapshot,
     type ShopPaymentMethod,
 } from '@imagina-base/shared';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { accessColumns, accessOf } from '../billing/tenant-access';
 import { planModuleOff } from '../billing/plan-module-gate';
@@ -42,7 +43,7 @@ import { PublicCacheService } from '../public-cache/public-cache.service';
 import { REDIS } from '../redis/redis.module';
 import { incrWithTtl } from '../redis/redis.util';
 import { TenantDb } from '../tenancy/tenant-db.service';
-import { categoryOrder, productFromRow, resolveCatalogFields } from './shop-catalog';
+import { attachVariants, categoryOrder, productFromRow, resolveCatalogFields, resolveVariantAttributes, type CatalogRow } from './shop-catalog';
 import { ShopImagesService, type ShopImage, type ShopImageSource } from './shop-images.service';
 import { ShopOrdersService, paymentInstructions, type ResolvedShopForOrder } from './shop-orders.service';
 import { shopCacheKey } from './shop.service';
@@ -60,6 +61,8 @@ const PAGE_CACHE_TTL_MS = 30_000;
 const MISSING_CACHE_TTL_MS = 15_000;
 const STAMP_TTL_MS = 6 * 3600_000;
 const MIN_FILL_MS = 3000;
+/** v0.1.414 — Subtareas que lee el catálogo como variantes (todas las de la página). */
+const SHOP_MAX_PUBLIC_VARIANT_ROWS = SHOP_MAX_PUBLIC_PRODUCTS * 10;
 
 /** Frenos por IP y por tienda (Redis caído → no frena; el sello y la trampa igual corren). */
 const ORDER_LIMITS = [
@@ -241,9 +244,39 @@ export class ShopPublicService {
                 .limit(SHOP_MAX_PUBLIC_PRODUCTS + 1);
             const images = new Map<string, ShopImageSource>();
             const products: PublicShopProduct[] = [];
-            for (const r of rows.slice(0, SHOP_MAX_PUBLIC_PRODUCTS)) {
-                const p = productFromRow({ id: r.id, data: r.data as Record<string, unknown>, createdAt: r.createdAt }, rf);
+            const top = rows.slice(0, SHOP_MAX_PUBLIC_PRODUCTS);
+            // v0.1.414 — Las variantes son subtareas del producto (una consulta para todas).
+            const children = new Map<number, CatalogRow[]>();
+            if (config.variants.enabled && top.length > 0) {
+                const kids = await tx
+                    .select({ id: records.id, data: records.data, createdAt: records.createdAt, parentId: records.parentId })
+                    .from(records)
+                    .where(
+                        and(
+                            eq(records.tenantId, tenantId),
+                            eq(records.listId, listId),
+                            isNull(records.deletedAt),
+                            inArray(
+                                records.parentId,
+                                top.map((r) => r.id),
+                            ),
+                        ),
+                    )
+                    .orderBy(asc(records.id))
+                    .limit(SHOP_MAX_PUBLIC_VARIANT_ROWS);
+                for (const k of kids) {
+                    if (k.parentId === null) continue;
+                    const list = children.get(k.parentId) ?? [];
+                    list.push({ id: k.id, data: k.data as Record<string, unknown>, createdAt: k.createdAt });
+                    children.set(k.parentId, list);
+                }
+            }
+            const attrs = config.variants.enabled ? resolveVariantAttributes(fields, config.variants.attributes) : [];
+            for (const r of top) {
+                let p = productFromRow({ id: r.id, data: r.data as Record<string, unknown>, createdAt: r.createdAt }, rf);
                 if (!p.active) continue;
+                const kids = children.get(r.id);
+                if (kids && kids.length > 0) p = attachVariants(p, kids, rf, attrs);
                 if (config.display.hide_sold_out && p.product.stock === 0) continue;
                 for (const [k, src] of p.images) images.set(k, src);
                 products.push(p.product);
@@ -337,7 +370,8 @@ export class ShopPublicService {
             if (!src) return null;
             return src.kind === 'file' ? this.files.signedUrl(tenantId, src.fileId, 3600) : src.url;
         };
-        const products = built.products.map((p) => ({ ...p, images: p.images.map((i) => url(i.replace(/^img\//, ''))).filter((x): x is string => !!x) }));
+        const urls = (list: string[]): string[] => list.map((i) => url(i.replace(/^img\//, ''))).filter((x): x is string => !!x);
+        const products = built.products.map((p) => ({ ...p, images: urls(p.images), ...(p.variants ? { variants: p.variants.map((v) => ({ ...v, images: urls(v.images) })) } : {}) }));
         const consent = this.dataConsent ? await this.dataConsent.active(tenantId, settings) : null;
         const online = await this.onlineConnection(tenantId, config);
         const meta = this.buildMeta(config, {
@@ -388,7 +422,8 @@ export class ShopPublicService {
     async quote(token: string, lines: ShopCartLineInput[], deliveryId: string | null): Promise<ShopCartResult | null> {
         const info = await this.cachedInfo(token);
         if (!info) return null;
-        const byId = new Map(info.products.map((p) => [p.id, { id: p.id, title: p.title, price: p.price, stock: p.stock }]));
+        // v0.1.414 — Con variantes, lo que se compra es la variante (el producto no).
+        const byId = shopPurchasables(info.products);
         const delivery = info.meta.delivery.find((d) => d.id === deliveryId);
         return computeShopCart(lines, byId, { shipping: delivery?.price ?? 0, minOrder: info.config.checkout.min_order });
     }

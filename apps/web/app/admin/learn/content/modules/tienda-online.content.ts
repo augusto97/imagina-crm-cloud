@@ -46,6 +46,37 @@ export const articles: LearnArticle[] = [
                 t: 'p',
                 md: 'La app elige sola los campos por su nombre («Precio», «Stock», «Foto»…): revisa que estén bien. La moneda sale del campo del precio.',
             },
+            { t: 'h', text: 'Productos con variantes: tallas, colores y más' },
+            {
+                t: 'p',
+                md: 'Si un producto se vende en varias opciones (talla, color, tamaño), activa **Variantes** en la sección **Productos**. Cada combinación es una **subtarea** del producto en tu lista («Camiseta» → «M / Rojo», «L / Azul»), con su propio precio, stock, referencia y foto. En la tienda, tu cliente elige la talla y el color y compra esa variante.',
+            },
+            {
+                t: 'steps',
+                items: [
+                    'En **Productos → Variantes**, activa **Productos con variantes**.',
+                    'Elige hasta tres campos de la variante, como «Talla» y «Color» (de selección o de texto). Si todavía no existen, créalos en la lista.',
+                    'Toca **Crear variantes de un producto**, busca el producto y marca los valores de cada campo (S, M, L × Rojo, Azul).',
+                    'Escribe el precio y el stock si son los mismos para todas, y toca **Crear**. Se crean sólo las combinaciones que faltan.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Qué toma cada variante',
+                rows: [
+                    { name: 'Precio', what: 'El de la variante; si lo dejas vacío, el del producto. La tarjeta muestra «Desde» con el más bajo.' },
+                    { name: 'Stock', what: 'El de cada variante, por separado. El producto muestra la suma.', tip: 'Vacío = sin límite.' },
+                    { name: 'Foto', what: 'La de la variante; si no tiene, las del producto.' },
+                    { name: 'Referencia (SKU)', what: 'La de la variante; al crearlas se arma sola: CAM-01-M-ROJO.' },
+                    { name: 'Se vende', what: 'Se decide en el producto: si lo escondes, se esconden todas sus variantes.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Lo agotado se ve tachado',
+                md: 'Si una combinación no tiene stock, tu cliente la ve tachada; si no existe (no vendes la S en azul), no se puede elegir. El pedido guarda la variante exacta y el stock se descuenta de ella.',
+            },
             { t: 'h', text: 'Quién vende y las políticas' },
             {
                 t: 'p',
@@ -76,6 +107,7 @@ export const articles: LearnArticle[] = [
                 items: [
                     { q: '¿Google muestra mi tienda?', a: 'No por ahora: la página no aparece en los buscadores. La compartes tú con el enlace, el código para tu sitio o el QR.' },
                     { q: '¿Puedo usar el color de mi marca?', a: 'Sí. En **Apariencia** usa el color de tu marca o eliges otro, el título, la descripción y cómo se ven las tarjetas.' },
+                    { q: '¿Puedo vender un producto con variantes y otros sin ellas?', a: 'Sí. Un producto sin subtareas se vende como siempre; uno con variantes pide elegir la opción antes de agregarlo al carrito.' },
                     { q: '¿Qué pasa si borro la tienda?', a: 'Se apaga la página. Los pedidos, las líneas y los clientes quedan en sus listas, como listas comunes.' },
                 ],
             },

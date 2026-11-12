@@ -51,6 +51,7 @@ export type AuditAction =
     | 'shop.regenerate_link'
     | 'shop.delete'
     | 'shop.mark_paid'
+    | 'shop.variants_create'
     | 'shop.suspend'
     | 'shop.unsuspend'
     // v0.1.353 — aprobar o rechazar una cita por confirmar.

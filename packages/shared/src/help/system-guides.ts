@@ -1130,7 +1130,7 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         minutes: 3,
         body: [
             '1. Abre la lista de tus productos y ve a **Configurar lista → Tienda**. Escribe un nombre y toca **Crear la tienda**: se crean las listas de **Pedidos**, **Líneas de pedido** y **Clientes**, y un tablero de ventas.',
-            '2. En **Productos**, revisa qué campo es el nombre, el precio, la foto, la categoría y el stock (se eligen solos por su nombre). Un producto sin stock escrito se vende sin límite.',
+            '2. En **Productos**, revisa qué campo es el nombre, el precio, la foto, la categoría y el stock (se eligen solos por su nombre). Un producto sin stock escrito se vende sin límite. Si vendes tallas o colores, activa **Variantes**: cada combinación es una subtarea del producto, con su precio y su stock, y **Crear variantes de un producto** las arma de una vez.',
             '3. En **Pago y entrega**, activa cómo te pagan: **pago en línea** (con la cuenta de Mercado Pago, Wompi o PayPal de tu empresa), **pedido por WhatsApp** (con tu número), **transferencia** (con los datos de la cuenta) o **contra entrega**, y cómo lo reciben (envío a domicilio, recoger en el local…).',
             '4. En **Quién vende**, completa la razón social, el NIT o la cédula, la dirección y un contacto, y revisa la política de devoluciones: la ley pide mostrarlo antes de comprar.',
             '5. En **Publicar**, enciende la tienda. Si falta algo, te dice qué y te lleva ahí. Copia el enlace, el código para tu sitio o el QR.',
@@ -1138,7 +1138,7 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         ].join('\n'),
         tip: 'Con el pago en línea, el pedido queda pagado solo; si no pagan a tiempo, se cancela y el stock vuelve. Cuando te pagan por transferencia o contra entrega, abre el pedido y toca **Marcar como pagado**. El aviso de cada pedido llega a la campana (y al celular si activaste las notificaciones).',
         screens: ['list-settings:tienda'],
-        keywords: 'tienda vender productos catalogo carrito pedido pedidos stock inventario whatsapp transferencia contra entrega ecommerce venta online checkout pago en linea tarjeta pse nequi mercado pago wompi paypal',
+        keywords: 'tienda vender productos catalogo carrito pedido pedidos stock inventario variantes variante talla tallas color colores combinaciones whatsapp transferencia contra entrega ecommerce venta online checkout pago en linea tarjeta pse nequi mercado pago wompi paypal',
         route: '/lists/{list}/edit?s=tienda',
         related: ['booking', 'payment-links', 'embed-site', 'notifications'],
         requires: ['manage_lists'],

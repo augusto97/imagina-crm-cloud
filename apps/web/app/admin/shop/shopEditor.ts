@@ -55,8 +55,10 @@ export const SHOP_SECTION_INFO: Record<ShopSection, { label: string; group: stri
 /** Cómo está cada sección, en una línea (menú del editor). */
 export function shopSectionSummary(s: ShopSection, config: ShopConfig, ctx: { enabled: boolean; productsCount: number; ordersListName: string | null }): string {
     switch (s) {
-        case 'catalog':
-            return ctx.productsCount === 1 ? '1 producto' : `${ctx.productsCount} productos`;
+        case 'catalog': {
+            const n = ctx.productsCount === 1 ? '1 producto' : `${ctx.productsCount} productos`;
+            return config.variants.enabled ? `${n} · con variantes` : n;
+        }
         case 'design':
             return `${config.display.columns} por fila · ${config.color ? 'color propio' : 'color de tu marca'}`;
         case 'payment': {

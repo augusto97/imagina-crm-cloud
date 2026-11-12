@@ -14564,6 +14564,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         en http (desarrollo) las pasarelas no reciben la vuelta ni la URL de
         avisos.
 
+  - [x] **Tienda: productos con variantes (v0.1.414, addendum ADR-S103,
+        tercera de seis versiones)**: un producto se vende en varias opciones
+        (talla, color, tamaño) y cada combinación es una **subtarea** del
+        producto en la lista del catálogo (`records.parent_id`), con su propio
+        precio, stock, referencia y foto. Sin migración. (a) **Editor →
+        Catálogo → Variantes** (`config.variants {enabled, attributes}`, hasta
+        3 campos de selección o texto que no sean del catálogo; `cleanConfig`
+        los filtra). (b) **Qué toma cada variante** (`shop-logic.ts`, puro, el
+        MISMO en la página y el servidor): precio propio o el del producto (el
+        «precio antes» sólo si hereda el precio), stock propio (vacío = sin
+        límite), SKU y fotos propios o los del producto, y la visibilidad la
+        decide el producto. El producto muestra «Desde» el precio más bajo y la
+        suma del stock; con variantes no se compra directo. Etiqueta = valores
+        de los atributos «M / Rojo» (o el nombre de la subtarea), opciones sólo
+        con lo que alguna variante llena, combinaciones repetidas descartadas.
+        (c) **El servidor**: `loadCatalog` trae las subtareas en UNA consulta y
+        las adjunta (`attachVariants`); `shopPurchasables` arma lo que se
+        compra para el carrito (`computeShopCart` de siempre) y el pedido
+        bloquea las filas de las variantes, descuenta SU stock y guarda en la
+        línea «Producto · M / Rojo», su SKU y `parent_id`; cancelar o vencer
+        devuelve el stock a la variante. (d) **Página pública**: tarjeta con
+        «Desde $…» y «Elegir opción», hoja del producto con un selector por
+        atributo (lo agotado tachado, lo que no existe deshabilitado), precio,
+        stock, referencia y fotos de la variante elegida. **Bug atrapado en el
+        E2E**: cada toque en una opción o en la cantidad volvía a dibujar la
+        hoja con su animación de entrada (parpadeo), el scroll arriba y el foco
+        perdido — `renderOverlay` reconoce la misma hoja, la redibuja sin
+        animación (`s-still`) y restaura scroll y foco (`data-k`). (e)
+        **«Crear variantes de un producto»** (`ShopVariantsService`,
+        `GET /shops/:id/products`, `GET|POST /shops/:id/products/:p/variants`,
+        `manage_lists`, bitácora `shop.variants_create`): elegir el producto,
+        marcar los valores (opciones del campo o texto separado por comas),
+        precio y stock para todas, y crea sólo las combinaciones que faltan
+        (`missingVariantCombos`, sin tildes ni mayúsculas, tope 60) por
+        `RecordsService.create` (ACL, plan, actividad, automatizaciones), con
+        el texto que ya existe conservando su escritura y SKU
+        `CAM-01-M-ROJO`; un valor que no es opción del campo → 400 con el
+        motivo. La vista previa del editor se refresca al crearlas. Ayuda:
+        guía `shop`, Aprende → Tienda online (sección de variantes) y novedad
+        con carrusel. Tests: `shops-variants.spec` (4: apagado, opciones y
+        «Desde», pedido de una variante con su stock y su línea, generador con
+        repetidos y otra empresa), `shop.test` +5 en shared — shared 904,
+        front 913, specs de tienda/cobros/registros 56/56 — + E2E navegador
+        29/29 en escritorio y celular (crear 6 variantes desde el editor,
+        elegir talla y color, lo agotado tachado, carrito con la variante,
+        pedido que descuenta su stock, sin parpadeo al elegir).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

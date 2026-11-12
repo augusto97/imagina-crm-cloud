@@ -3,6 +3,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundEx
 import { ModuleRef } from '@nestjs/core';
 import {
     SHOP_CATALOG_FIELD_TYPES,
+    SHOP_VARIANT_ATTRIBUTE_TYPES,
     SHOP_ITEM_ID_RE,
     SHOP_LIST_MARKER_KEY,
     collectionCurrencyError,
@@ -363,6 +364,14 @@ export class ShopService {
             used.set(fid, role);
         }
         next.catalog = catalog;
+        // v0.1.414 — Atributos de las variantes: selección o texto de la lista, sin repetir y sin ser un papel del catálogo.
+        const attrs: number[] = [];
+        for (const fid of next.variants.attributes) {
+            const f = byId.get(fid);
+            if (!f || !(SHOP_VARIANT_ATTRIBUTE_TYPES as readonly string[]).includes(f.type) || used.has(fid) || attrs.includes(fid)) continue;
+            attrs.push(fid);
+        }
+        next.variants = { ...next.variants, attributes: attrs };
         // Formas de entrega con ids únicos.
         const seen = new Set<string>();
         next.delivery = next.delivery

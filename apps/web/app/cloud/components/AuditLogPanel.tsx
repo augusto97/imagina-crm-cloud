@@ -69,6 +69,7 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'shop.regenerate_link': { text: 'cambió la dirección de la tienda' },
     'shop.delete': { text: 'eliminó la tienda', danger: true },
     'shop.mark_paid': { text: 'marcó como pagado un pedido de la tienda' },
+    'shop.variants_create': { text: 'creó variantes de un producto de la tienda' },
     'shop.suspend': { text: 'suspendió la tienda (plataforma)', danger: true },
     'shop.unsuspend': { text: 'reactivó la tienda (plataforma)' },
     'booking.approve': { text: 'aprobó la cita' },

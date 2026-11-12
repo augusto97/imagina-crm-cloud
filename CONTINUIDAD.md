@@ -415,7 +415,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.413**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.414**
+(**productos con variantes, tercera de seis versiones** — talla, color y más:
+cada combinación es una subtarea del producto con su precio, stock, referencia
+y foto; la página pública elige la opción y el pedido descuenta el stock de esa
+variante; «Crear variantes de un producto» arma las combinaciones que faltan;
+addendum ADR-S103). Antes **v0.1.413**
 (**la tienda cobra en línea, segunda de seis versiones** — pago con la cuenta
 de Mercado Pago, Wompi o PayPal del equipo, el stock apartado el tiempo elegido,
 el pedido pagado solo al entrar el pago, barrido que cancela lo que no se pagó y
@@ -702,12 +707,12 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   aceptadas las decisiones propuestas: catálogo = lista, primera versión sin
   pasarela, módulo `shop` sólo en planes pagos (0121 lo apaga en `trial`),
   suspensión por el operador, miniaturas con `sharp`, factura DIAN fuera,
-  `noindex` siempre (con Open Graph para compartir). **v0.1.412 y v0.1.413
-  HECHAS** (catálogo, carrito y pedido sin pasarela; pago en línea con el stock
-  apartado y pago tardío: ADR-S103 y su addendum). Falta probar el pago en línea
+  `noindex` siempre (con Open Graph para compartir). **v0.1.412, v0.1.413 y
+  v0.1.414 HECHAS** (catálogo, carrito y pedido sin pasarela; pago en línea con
+  el stock apartado y pago tardío; productos con variantes como subtareas:
+  ADR-S103 y sus addendums). Falta probar el pago en línea
   con cuentas de prueba reales en el servidor. **Siguen, en orden**:
-  v0.1.414 productos variables (variantes como
-  subtareas) → v0.1.415 envíos por zona y cupones → v0.1.416 suscripción,
+  v0.1.415 envíos por zona y cupones → v0.1.416 suscripción,
   digital, servicio y «Mis pedidos» → v0.1.417 estadísticas, conversiones,
   botones «Comprar» insertables, widget y asistente/MCP. El SEO (y el dominio
   propio de la tienda) queda para cuando el usuario lo pida.
@@ -1905,6 +1910,20 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-12 · v0.1.414** — **Productos con variantes** (tercera de seis
+  versiones). Editor → Catálogo → **Variantes**: hasta 3 campos (Talla, Color)
+  y cada combinación es una subtarea del producto con su precio, stock, SKU y
+  foto (lo vacío lo toma del producto; la visibilidad la decide el producto).
+  La página pública muestra «Desde $…», la hoja con un selector por atributo
+  (agotado tachado, inexistente deshabilitado) y el pedido descuenta el stock
+  de la variante con la línea «Producto · M / Rojo». «Crear variantes de un
+  producto» crea sólo las combinaciones que faltan por el alta de siempre
+  (bitácora `shop.variants_create`). El E2E atrapó un parpadeo: cada toque
+  redibujaba la hoja con su animación; ahora se redibuja quieta y conserva
+  scroll y foco. Sin migración. Tests: `shops-variants.spec` 4/4, shared 904,
+  front 913, tienda/cobros/registros 56/56 + E2E 29/29 (escritorio y celular).
+  Sigue v0.1.415 (envíos por zona y cupones).
 
 - **2026-11-12 · v0.1.413** — **La tienda cobra en línea** (segunda de seis
   versiones). Editor → Pago y entrega → **«Pago en línea»**: la cuenta de
