@@ -39,7 +39,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'El título y los campos' },
             {
                 t: 'p',
-                md: 'El **título** grande de arriba es el campo de título de la lista (por ejemplo, el nombre del cliente). Se edita ahí mismo. Debajo están **Creado** y **Actualizado**, y la sección **Campos** con un renglón por campo y su ícono de tipo.\n\nEn la ficha simple, los cambios de los campos se guardan con **Guardar cambios** (abajo a la derecha). Si intentas cerrar con cambios sin guardar, la app pregunta si quieres descartarlos. En la **ficha diseñada** cada campo **se guarda solo** al cambiarlo. La descripción, los comentarios, los checklists y el tiempo se guardan siempre solos.',
+                md: 'El **título** grande de arriba es el campo de título de la lista (por ejemplo, el nombre del cliente). Se edita ahí mismo. Debajo están **Creado** y **Actualizado**, y la sección **Campos** con un renglón por campo y su ícono de tipo.\n\nEn la ficha simple, los cambios de los campos se guardan con **Guardar cambios** (abajo a la derecha). Si intentas cerrar con cambios sin guardar, la app pregunta si quieres descartarlos. La **descripción** también: lo que escribes ahí activa **Guardar cambios** y se guarda junto con los campos. En la **ficha diseñada** cada campo y la descripción **se guardan solos** al cambiarlos. Los comentarios, los checklists y el tiempo se guardan siempre solos.',
             },
             {
                 t: 'callout',
@@ -100,7 +100,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Cada registro tiene una **descripción**: un documento libre arriba de los campos, como el cuerpo de una tarea. Sirve para lo que no entra en un campo: el brief de un proyecto, la historia de un cliente, el protocolo de un procedimiento, el acta de una reunión.\n\nSe escribe como en un editor moderno: con el menú **«/»** insertas títulos, listas, tablas, columnas, videos y archivos; al seleccionar texto aparece una barra de formato. **Se guarda solo** mientras escribes («Guardando…» → «Guardado»).',
+                md: 'Cada registro tiene una **descripción**: un documento libre arriba de los campos, como el cuerpo de una tarea. Sirve para lo que no entra en un campo: el brief de un proyecto, la historia de un cliente, el protocolo de un procedimiento, el acta de una reunión.\n\nSe escribe como en un editor moderno: con el menú **«/»** insertas títulos, listas, tablas, columnas, videos y archivos; al seleccionar texto aparece una barra de formato. En la ficha simple (el modal o la página del registro) se guarda con **Guardar cambios**, junto con los campos: mientras tengas algo sin guardar, al lado del título dice «Sin guardar», y si cierras sin guardar la app te pregunta. En la **ficha diseñada** se guarda sola mientras escribes («Guardando…» → «Guardado»).\n\nEn la **tienda**, la descripción de cada registro puede ser la descripción del producto, con su formato: elige **La descripción del registro (con formato)** en **Tienda → Productos → Descripción**.',
             },
             { t: 'anim', key: 'ficha-descripcion', caption: 'Escribir «/» abre el menú de bloques: una lista de control aparece lista para marcar.' },
             { t: 'h', text: 'El menú «/»' },

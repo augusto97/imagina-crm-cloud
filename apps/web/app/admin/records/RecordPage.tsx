@@ -31,7 +31,7 @@ import { SendWhatsappButton } from '@/cloud/components/whatsapp/SendWhatsappButt
 import { SendSmsButton } from '@/cloud/components/sms/SendSmsButton';
 import { RecordDataConsentLine } from '@/cloud/components/RecordDataConsentLine';
 import { RecordBacklinks } from '@/admin/records/RecordBacklinks';
-import { RecordDescription } from '@/admin/records/description/RecordDescription';
+import { RecordDescription, useDescriptionDraft } from '@/admin/records/description/RecordDescription';
 import { RecordFieldsForm } from '@/admin/records/RecordFieldsForm';
 import { RecordSubtasks } from '@/admin/records/RecordSubtasks';
 import { isCloseCancelled } from '@/admin/records/dependencies/closeGuard';
@@ -114,7 +114,10 @@ export function RecordPage(): JSX.Element {
     // autoguardado de la descripción, que vuelve a pedir el registro) ya no
     // borra lo que se está escribiendo ni se revierte al guardar.
     const draft = useRecordDraft(record.data);
-    const { values, setValues, dirty } = draft;
+    const { values, setValues } = draft;
+    // v0.1.420 — La descripción se guarda con «Guardar cambios», como los campos.
+    const descDraft = useDescriptionDraft(listSlug ?? '', Number.isFinite(id) ? id : null);
+    const dirty = draft.dirty || descDraft.dirty;
     // Salir con cambios sin guardar (enlace, Atrás, cerrar la pestaña) pregunta.
     useUnsavedChangesGuard(dirty);
     // v0.1.213 — lista de una tienda: sin borrar y con los campos de WooCommerce de lectura.
@@ -175,6 +178,7 @@ export function RecordPage(): JSX.Element {
         const deletedName = recordTitleFor(fields.data ?? [], record.data.fields);
         flushSync(() => {
             draft.reset();
+            descDraft.discard();
             setDeletedId(id);
         });
         navigate(`/lists/${list.data.slug}/records`);
@@ -317,12 +321,19 @@ export function RecordPage(): JSX.Element {
         setFieldErrors({});
 
         const patch = draft.patch();
-        if (Object.keys(patch).length === 0) return;
+        const hasFields = Object.keys(patch).length > 0;
+        if (!hasFields && !descDraft.dirty) return;
 
         try {
-            const saved = await update.mutateAsync({ id: rec.id, values: patch });
-            draft.markSaved(patch, saved ?? null);
-            void qc.invalidateQueries({ queryKey: notificationKeys.follow(rec.id) });
+            // La descripción (v0.1.420) y los campos, a la vez.
+            const [saved] = await Promise.all([
+                hasFields ? update.mutateAsync({ id: rec.id, values: patch }) : Promise.resolve(null),
+                descDraft.commit(),
+            ]);
+            if (hasFields) {
+                draft.markSaved(patch, saved ?? null);
+                void qc.invalidateQueries({ queryKey: notificationKeys.follow(rec.id) });
+            }
         } catch (err) {
             // A8 — canceló el cierre de algo bloqueado: el borrador queda como estaba.
             if (isCloseCancelled(err)) return;
@@ -382,9 +393,9 @@ export function RecordPage(): JSX.Element {
                             </Button>
                         )}
                         {(!isGuest || canEditRecords) && (
-                            <Button size="sm" onClick={() => void handleSave()} disabled={!dirty || update.isPending} className="imcrm-gap-2 imcrm-whitespace-nowrap">
+                            <Button size="sm" onClick={() => void handleSave()} disabled={!dirty || update.isPending || descDraft.saving} className="imcrm-gap-2 imcrm-whitespace-nowrap" data-testid="imcrm-record-save">
                                 <Save className="imcrm-h-4 imcrm-w-4" />
-                                {update.isPending ? __('Guardando…') : __('Guardar cambios')}
+                                {update.isPending || descDraft.saving ? __('Guardando…') : __('Guardar cambios')}
                             </Button>
                         )}
                     </div>
@@ -431,6 +442,7 @@ export function RecordPage(): JSX.Element {
                         listKey={listSlug ?? listInfo.id}
                         recordId={rec.id}
                         editable={canEditRecords}
+                        draft={descDraft}
                     />
 
                     {/* Sección "Campos" colapsable: una fila por campo custom

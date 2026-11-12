@@ -12,6 +12,8 @@ import {
     readShopConfig,
     shopOnlinePayment,
     shopCurrencyDecimals,
+    shopImageKeyForFile,
+    publicRichDoc,
     shopPurchasables,
     shopPlanFor,
     shopServiceFor,
@@ -35,8 +37,9 @@ import {
     type ShopCouponRule,
     type ShopOrderLineSnapshot,
     type ShopPaymentMethod,
+    type RichNode,
 } from '@imagina-base/shared';
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { accessColumns, accessOf } from '../billing/tenant-access';
 import { planModuleOff } from '../billing/plan-module-gate';
@@ -56,7 +59,7 @@ import { REDIS } from '../redis/redis.module';
 import { ShopStatsService } from './shop-stats.service';
 import { incrWithTtl } from '../redis/redis.util';
 import { TenantDb } from '../tenancy/tenant-db.service';
-import { attachVariants, categoryOrder, productFromRow, resolveCatalogFields, resolveVariantAttributes, type CatalogRow } from './shop-catalog';
+import { attachVariants, categoryOrder, fileIdsOf, productFromRow, resolveCatalogFields, resolveVariantAttributes, type CatalogRow } from './shop-catalog';
 import { ShopCouponsService } from './shop-coupons.service';
 import { ShopImagesService, type ShopImage, type ShopImageSource } from './shop-images.service';
 import { ShopOrdersService, paymentInstructions, type ResolvedShopForOrder } from './shop-orders.service';
@@ -264,8 +267,20 @@ export class ShopPublicService {
             const rf = resolveCatalogFields(fields, config.catalog, list.settings, config.kinds);
             // v0.1.416 — La agenda de los servicios (sólo si está publicada y el plan la incluye).
             const agenda = await this.agendaFor(tx, tenantId, config);
+            // v0.1.420 — La descripción con formato: el texto (para buscar) y las
+            // imágenes subidas que trae (se sirven como las fotos). El documento
+            // entero se pide al abrir el producto (`productDescription`).
+            const fromDoc = config.description_from === 'record';
             const rows = await tx
-                .select({ id: records.id, data: records.data, createdAt: records.createdAt })
+                .select({
+                    id: records.id,
+                    data: records.data,
+                    createdAt: records.createdAt,
+                    descText: fromDoc ? records.descriptionText : sql<string | null>`null`,
+                    descImages: fromDoc
+                        ? sql<unknown>`jsonb_path_query_array(${records.description}, 'strict $.** ? (@.type == "imageBlock").attrs.fileId')`
+                        : sql<unknown>`null`,
+                })
                 .from(records)
                 .where(and(eq(records.tenantId, tenantId), eq(records.listId, listId), isNull(records.deletedAt), isNull(records.parentId)))
                 .orderBy(asc(records.id))
@@ -303,6 +318,19 @@ export class ShopPublicService {
             for (const r of top) {
                 let p = productFromRow({ id: r.id, data: r.data as Record<string, unknown>, createdAt: r.createdAt }, rf);
                 if (!p.active) continue;
+                if (fromDoc) {
+                    const descImages = fileIdsOf(r.descImages, 40);
+                    for (const id of descImages) images.set(shopImageKeyForFile(id), { kind: 'file', fileId: id });
+                    const text = (r.descText ?? '').trim();
+                    p = {
+                        ...p,
+                        product: {
+                            ...p.product,
+                            description: text.slice(0, 4000),
+                            ...(text !== '' || descImages.length > 0 ? { rich_description: true } : {}),
+                        },
+                    };
+                }
                 const kids = children.get(r.id);
                 if (kids && kids.length > 0) p = attachVariants(p, kids, rf, attrs);
                 if (p.product.kind === 'service') {
@@ -463,7 +491,34 @@ export class ShopPublicService {
             return src.kind === 'file' ? this.files.signedUrl(tenantId, src.fileId, 3600) : src.url;
         };
         const urls = (list: string[]): string[] => list.map((i) => url(i.replace(/^img\//, ''))).filter((x): x is string => !!x);
-        const products = built.products.map((p) => ({ ...p, images: urls(p.images), ...(p.variants ? { variants: p.variants.map((v) => ({ ...v, images: urls(v.images) })) } : {}) }));
+        // v0.1.420 — En la vista previa la descripción con formato viaja incluida
+        // (no hay token para pedirla), con las imágenes por URL firmada.
+        const docs = new Map<number, RichNode | null>();
+        if (config.description_from === 'record') {
+            const ids = built.products.filter((p) => p.rich_description).slice(0, 60).map((p) => p.id);
+            if (ids.length > 0) {
+                const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+                    tx
+                        .select({ id: records.id, description: records.description })
+                        .from(records)
+                        .where(and(eq(records.tenantId, tenantId), eq(records.listId, shop.listId), inArray(records.id, ids))),
+                );
+                for (const r of rows) {
+                    docs.set(
+                        r.id,
+                        publicRichDoc(r.description as RichNode | null, {
+                            imageKey: (fileId) => (built.images.has(shopImageKeyForFile(fileId)) ? this.files.signedUrl(tenantId, fileId, 3600) : null),
+                        }),
+                    );
+                }
+            }
+        }
+        const products = built.products.map((p) => ({
+            ...p,
+            images: urls(p.images),
+            ...(docs.has(p.id) ? { description_doc: docs.get(p.id) ?? null } : {}),
+            ...(p.variants ? { variants: p.variants.map((v) => ({ ...v, images: urls(v.images) })) } : {}),
+        }));
         const consent = this.dataConsent ? await this.dataConsent.active(tenantId, settings) : null;
         const online = await this.onlineConnection(tenantId, config);
         const hasCoupons = this.coupons ? await this.tenantDb.withTenant(tenantId, (tx) => this.coupons!.hasActive(tx, tenantId, shop.id)) : false;
@@ -484,6 +539,46 @@ export class ShopPublicService {
             readOnly: false,
         });
         return { meta: { ...meta, closed: null }, products };
+    }
+
+    // ─────────────────────── v0.1.420 — Descripción ───────────────────────
+
+    /**
+     * La descripción con formato de un producto (el documento del registro),
+     * lista para la página: sólo lo que se muestra afuera y con las imágenes
+     * por la clave con que la página las pide. null = el producto no está en
+     * la tienda o no tiene descripción con formato.
+     */
+    async productDescription(token: string, productId: number): Promise<RichNode | null> {
+        if (!Number.isSafeInteger(productId) || productId <= 0) return null;
+        const info = await this.cachedInfo(token);
+        if (!info || info.config.description_from !== 'record') return null;
+        const product = info.products.find((p) => p.id === productId);
+        if (!product?.rich_description) return null;
+        return this.pcache.get(
+            `${shopCacheKey(token)}:desc:${productId}`,
+            PAGE_CACHE_TTL_MS,
+            () => this.loadDescription(info, productId),
+            MISSING_CACHE_TTL_MS,
+        );
+    }
+
+    private async loadDescription(info: ShopPageInfo, productId: number): Promise<RichNode | null> {
+        const raw = await this.tenantDb.withTenant(info.tenantId, async (tx) => {
+            const [row] = await tx
+                .select({ description: records.description })
+                .from(records)
+                .where(and(eq(records.tenantId, info.tenantId), eq(records.listId, info.shop.listId), eq(records.id, productId), isNull(records.deletedAt)))
+                .limit(1);
+            return row?.description ?? null;
+        });
+        return publicRichDoc(raw as RichNode | null, {
+            // Sólo las imágenes que el catálogo ya sirve (las de los productos).
+            imageKey: (fileId) => {
+                const key = shopImageKeyForFile(fileId);
+                return info.images.has(key) ? `img/${key}` : null;
+            },
+        });
     }
 
     // ─────────────────────────── Fotos ───────────────────────────

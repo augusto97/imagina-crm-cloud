@@ -2925,4 +2925,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.420-descripcion-y-tienda',
+        version: '0.1.420',
+        date: '2026-11-12',
+        kind: 'improvement',
+        title: 'La descripción se guarda con «Guardar cambios» y sirve como descripción del producto',
+        summary:
+            'Escribir en la Descripción de un registro ahora activa «Guardar cambios». En tu tienda, esa descripción con formato puede ser la del producto, y lo digital y los servicios ya no piden configurar envíos.',
+        media: {
+            slides: [
+                {
+                    title: 'Se guarda con el botón',
+                    text: 'Lo que escribes en la Descripción activa «Guardar cambios» y se guarda junto con los campos. Si sales sin guardar, te avisa.',
+                    illustration: 'ficha-descripcion',
+                },
+                {
+                    title: 'La descripción del producto, con formato',
+                    text: 'En la tienda, elige «La descripción del registro (con formato)» como descripción del producto: se ve con sus títulos, listas, tablas e imágenes.',
+                    illustration: 'tienda-vitrina',
+                },
+            ],
+        },
+        body: [
+            '- En la ficha de un registro, escribe en la **Descripción** y toca **Guardar cambios**.',
+            '- En tu tienda (**Configurar lista → Tienda → Editar → Productos**), en **Descripción** elige **La descripción del registro (con formato)**.',
+            '- Si vendes sólo productos digitales, servicios o suscripciones, la tienda se publica sin formas de entrega.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager', 'agent'] },
+    },
 ];

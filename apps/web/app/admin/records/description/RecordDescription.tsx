@@ -1,7 +1,7 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { JSONContent } from '@tiptap/react';
 import type { RichDoc } from '@imagina-base/shared';
-import { AlignLeft, Check, Loader2 } from 'lucide-react';
+import { AlignLeft, Check, Dot, Loader2 } from 'lucide-react';
 
 import { useRecordDescription, useUpdateRecordDescription } from '@/hooks/useRecordDescription';
 import { __ } from '@/lib/i18n';
@@ -26,9 +26,86 @@ interface RecordDescriptionProps {
      * bloques de la ficha diseñada (en vez de la etiqueta en mayúsculas).
      */
     heading?: 'label' | 'block';
+    /**
+     * v0.1.420 — Con borrador, la descripción NO se guarda sola: cuenta como
+     * un cambio más del registro (activa «Guardar cambios», se guarda con él
+     * y «Cancelar» la descarta). Lo usan el modal y la página del registro,
+     * donde los campos también se guardan con el botón. Sin borrador (la ficha
+     * diseñada, donde todo se guarda solo) sigue el guardado automático.
+     */
+    draft?: DescriptionDraft;
 }
 
 const AUTOSAVE_MS = 900;
+
+/**
+ * v0.1.420 — El borrador de la descripción de un registro: lo crea quien
+ * tiene el botón «Guardar cambios» y se lo pasa a `RecordDescription`.
+ */
+export interface DescriptionDraft {
+    /** Hay cambios sin guardar en la descripción. */
+    readonly dirty: boolean;
+    readonly saving: boolean;
+    readonly error: boolean;
+    /** Sube al descartar: el editor vuelve a lo guardado. */
+    readonly epoch: number;
+    /** Guarda lo pendiente (si hay). Lanza si el servidor lo rechaza. */
+    commit: () => Promise<void>;
+    /** Vuelve a lo guardado. */
+    discard: () => void;
+    /** @internal lo usa `RecordDescription`. */
+    mark: (doc: JSONContent | null) => void;
+    /** @internal lo usa `RecordDescription`. */
+    clear: () => void;
+}
+
+export function useDescriptionDraft(listKey: string | number, recordId: number | null): DescriptionDraft {
+    const save = useUpdateRecordDescription(listKey, recordId ?? 0);
+    const { mutateAsync } = save;
+    const [dirty, setDirty] = useState(false);
+    const [epoch, setEpoch] = useState(0);
+    const dirtyRef = useRef(false);
+    const pending = useRef<JSONContent | null>(null);
+
+    // Otro registro: nada pendiente.
+    useEffect(() => {
+        dirtyRef.current = false;
+        pending.current = null;
+        setDirty(false);
+    }, [recordId]);
+
+    const mark = useCallback((doc: JSONContent | null) => {
+        pending.current = doc;
+        dirtyRef.current = true;
+        setDirty(true);
+    }, []);
+    const clear = useCallback(() => {
+        dirtyRef.current = false;
+        setDirty(false);
+    }, []);
+    const commit = useCallback(async () => {
+        if (!dirtyRef.current || recordId === null) return;
+        const doc = pending.current;
+        await mutateAsync((doc as RichDoc | null) ?? null);
+        // Si se siguió escribiendo mientras se guardaba, queda pendiente.
+        if (pending.current === doc) {
+            dirtyRef.current = false;
+            setDirty(false);
+        }
+    }, [mutateAsync, recordId]);
+    const discard = useCallback(() => {
+        if (!dirtyRef.current) return;
+        dirtyRef.current = false;
+        pending.current = null;
+        setDirty(false);
+        setEpoch((e) => e + 1);
+    }, []);
+
+    return useMemo(
+        () => ({ dirty, saving: save.isPending, error: save.isError, epoch, commit, discard, mark, clear }),
+        [dirty, save.isPending, save.isError, epoch, commit, discard, mark, clear],
+    );
+}
 
 /**
  * Firma comparable de un documento. Ignora los párrafos vacíos del final (el
@@ -65,6 +142,7 @@ export function RecordDescription({
     editable,
     className,
     heading = 'label',
+    draft,
 }: RecordDescriptionProps): JSX.Element {
     const { data, isLoading } = useRecordDescription(listKey, recordId);
     const save = useUpdateRecordDescription(listKey, recordId);
@@ -104,6 +182,8 @@ export function RecordDescription({
     );
 
     const flush = useCallback(() => {
+        // Con borrador lo guarda el botón «Guardar cambios», no el blur.
+        if (draft) return;
         if (timer.current !== null) {
             clearTimeout(timer.current);
             timer.current = null;
@@ -112,7 +192,7 @@ export function RecordDescription({
         dirtyRef.current = false;
         setDirty(false);
         send(pending.current);
-    }, [send]);
+    }, [send, draft]);
 
     const handleChange = useCallback(
         (doc: JSONContent | null, fromUser: boolean) => {
@@ -123,7 +203,15 @@ export function RecordDescription({
                 return;
             }
             // Mismo contenido (ruido de foco/selección) → tampoco se guarda.
-            if (docKey(doc) === lastSent.current) return;
+            if (docKey(doc) === lastSent.current) {
+                // Con borrador: volvió a quedar como estaba → nada pendiente.
+                draft?.clear();
+                return;
+            }
+            if (draft) {
+                draft.mark(doc);
+                return;
+            }
             pending.current = doc;
             dirtyRef.current = true;
             setDirty(true);
@@ -136,7 +224,7 @@ export function RecordDescription({
                 send(pending.current);
             }, AUTOSAVE_MS);
         },
-        [send],
+        [send, draft],
     );
 
     // Al desmontar (cerrar el modal, navegar) se guarda lo que quedó pendiente:
@@ -150,11 +238,18 @@ export function RecordDescription({
         [recordId],
     );
 
-    const status = dirty || save.isPending
-        ? { icon: Loader2, text: __('Guardando…'), spin: true }
-        : save.isSuccess
-            ? { icon: Check, text: __('Guardado'), spin: false }
-            : null;
+    const status = draft
+        ? draft.saving
+            ? { icon: Loader2, text: __('Guardando…'), spin: true }
+            : draft.dirty
+                ? { icon: Dot, text: __('Sin guardar'), spin: false }
+                : null
+        : dirty || save.isPending
+            ? { icon: Loader2, text: __('Guardando…'), spin: true }
+            : save.isSuccess
+                ? { icon: Check, text: __('Guardado'), spin: false }
+                : null;
+    const failed = draft ? draft.error : save.isError;
 
     return (
         <section className={cn('imcrm-relative', className)} data-imcrm-description>
@@ -178,7 +273,7 @@ export function RecordDescription({
                         {status.text}
                     </span>
                 )}
-                {save.isError && (
+                {failed && (
                     <span className="imcrm-text-[11px] imcrm-text-destructive">
                         {__('No se pudo guardar')}
                     </span>
@@ -190,13 +285,13 @@ export function RecordDescription({
             ) : (
                 <Suspense fallback={<div className="imcrm-h-16" />}>
                     <DescriptionEditor
-                        key={recordId}
+                        key={draft ? `${recordId}:${draft.epoch}` : recordId}
                         value={(data ?? null) as JSONContent | null}
                         editable={editable}
                         listSlug={listSlug ?? (typeof listKey === 'string' ? listKey : undefined)}
                         recordId={recordId}
                         onChange={handleChange}
-                        onBlurFlush={flush}
+                        onBlurFlush={draft ? undefined : flush}
                     />
                 </Suspense>
             )}

@@ -9065,3 +9065,34 @@ persona ve «Tienda».
    administra listas; `get_shop_stats` (lectura, `manage_lists`) devuelve
    totales, embudo, productos, orígenes, dispositivos y los días con
    movimiento. Nada escribe: la tienda se configura en su editor.
+
+**Addendum v0.1.420 — La descripción del registro como descripción del
+producto, y lo digital sin entregas.** El usuario pidió después una segunda
+tanda de la tienda (v0.1.420–v0.1.423: descripción, qué pasa al agregar al
+carrito, diseño, dominio propio con SEO).
+1. **El borrador de la descripción** (`useDescriptionDraft`): en el modal y la
+   página del registro la descripción ya no se guarda sola (v0.1.133); cuenta
+   como un cambio más, activa «Guardar cambios», se guarda con él (en paralelo
+   con los campos) y «Cancelar» la descarta. La ficha diseñada (v3), donde todo
+   se guarda solo, conserva el guardado automático.
+2. **`config.description_from: 'field' | 'record'`** (lectura tolerante,
+   default `field`; una tienda nueva sin columna de descripción elige
+   `record`). Con `record`, el catálogo lleva el texto plano
+   (`records.description_text`) y las fotos del documento entran al mapa de
+   imágenes de la tienda (así la ruta de fotos las sirve); el documento viaja
+   aparte, al abrir el producto: `GET /public/s/:token/desc/:pid` (caché
+   pública 30 s, `noindex`, 404 si ese producto no tiene). La vista previa del
+   editor lo trae en línea.
+3. **`publicRichDoc`** (shared, puro, sin zod porque lo importa la página
+   pública) es la única puerta del documento hacia afuera: texto con formato,
+   títulos 1-3, listas, tareas, citas, código, tablas, columnas e imágenes
+   SUBIDAS con la clave de la tienda; sin menciones a personas ni equipos,
+   adjuntos ni índice; una mención a otro registro queda como su nombre; un
+   video, como enlace; cada enlace (https/mailto/tel) y cada color (hex) se
+   revisan otra vez; techo de 3000 nodos. La página lo dibuja con DOM, nunca
+   `innerHTML`.
+4. **`needsDelivery`** en `shopProblems`: sin columna de tipo ni de archivos, o
+   con algún producto activo físico, la tienda necesita una forma de entrega;
+   si todo es digital, servicio o suscripción, se publica sin ellas. Lo deducen
+   igual el servidor (`hasPhysicalProducts`) y el editor
+   (`catalogNeedsDelivery`).

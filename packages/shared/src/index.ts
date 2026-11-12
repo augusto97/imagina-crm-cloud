@@ -43,6 +43,7 @@ export * from './schemas/bulk-structure';
 export * from './schemas/record-labels';
 export * from './schemas/rich-text';
 export * from './schemas/markdown-lite';
+export * from './schemas/rich-public';
 export * from './schemas/embeds';
 export * from './schemas/recurrence';
 export * from './schemas/view';
