@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { AppWindow, CheckIcon, ChevronDown, Copy, Link2, Loader2, Maximize2, PanelRight, Search, ShoppingBag, X } from 'lucide-react';
-import type { ShopVariantProductDto } from '@imagina-base/shared';
+import { SHOP_MAX_QTY, parseShopQtyInput, type ShopVariantProductDto } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { __ } from '@/lib/i18n';
-import { formatNumber } from '@/lib/tenantFormat';
+import { formatNumber, getTenantFormat } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
 import { CodeBlock, Segmented } from '@/admin/forms/EmbedCodePicker';
@@ -61,7 +61,9 @@ export function ShopBuyButtons({
     const [side, setSide] = useState<'right' | 'left'>('right');
     const [copied, setCopied] = useState<'code' | 'link' | null>(null);
     const [action, setAction] = useState<BuyAction>('open');
-    const [qty, setQty] = useState(1);
+    // v0.1.429 — Con decimales (1,5 kg); la tienda la lleva a la regla del producto.
+    const [qtyText, setQtyText] = useState('1');
+    const qty = Math.min(SHOP_MAX_QTY, parseShopQtyInput(qtyText, getTenantFormat().number_format) ?? 1);
     const [variantId, setVariantId] = useState<number | null>(null);
     const products = useShopProducts(shopId, q.trim(), open && product === null);
     const needsVariant = !!product && product.variants > 0 && action !== 'open';
@@ -198,11 +200,11 @@ export function ShopBuyButtons({
                                         <label className="imcrm-flex imcrm-w-24 imcrm-flex-col imcrm-gap-1">
                                             <span className="imcrm-text-[11.5px] imcrm-text-muted-foreground">{__('Cantidad')}</span>
                                             <Input
-                                                type="number"
-                                                min={1}
-                                                max={99}
-                                                value={qty}
-                                                onChange={(e) => setQty(Math.max(1, Math.min(99, Math.floor(Number(e.target.value) || 1))))}
+                                                type="text"
+                                                inputMode="decimal"
+                                                value={qtyText}
+                                                onChange={(e) => setQtyText(e.target.value.slice(0, 9))}
+                                                onBlur={() => setQtyText(formatNumber(qty))}
                                                 className="imcrm-h-9"
                                                 data-testid="shop-buy-qty"
                                             />

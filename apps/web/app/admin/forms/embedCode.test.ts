@@ -111,6 +111,8 @@ describe('v0.1.419 — la tienda en tu sitio', () => {
         // v0.1.421 — El enlace que agrega y lleva al pago (o al carrito).
         expect(shopCartLinkUrl(shop.url, [{ id: 42, qty: 2 }])).toBe('https://app.acme.co/api/v1/public/s/tk123?comprar=42:2');
         expect(shopCartLinkUrl(shop.url, [{ id: 42, qty: 1 }, { id: 9, qty: 3 }], 'add')).toBe('https://app.acme.co/api/v1/public/s/tk123?agregar=42,9:3');
+        // v0.1.429 — Con decimales (kg, horas): la misma escritura que lee la tienda.
+        expect(shopCartLinkUrl(shop.url, [{ id: 7, qty: 1.5 }])).toBe('https://app.acme.co/api/v1/public/s/tk123?comprar=7:1.5');
         const buy = embedCode(withEmbedOrigin({ ...shop, url: shopProductUrl(shop.url, 42) }, 'https://w.acme.co'), 'popup', { label: 'Comprar', color: '#111111', position: 'right', open: 'full' });
         expect(buy).toContain('data-imagina-popup="https://w.acme.co/api/v1/public/s/tk123?producto=42"');
         expect(buy).toContain('data-imagina-open="full"');
