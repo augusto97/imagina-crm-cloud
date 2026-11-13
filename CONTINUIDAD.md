@@ -415,7 +415,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.429**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.430**
+(**lo que se pide al pagar en la tienda** — el celular, la cédula o NIT y las
+notas se eligen no pedirlos, opcionales u obligatorios, con su nombre
+(«WhatsApp», «RUT»), y hasta 12 **preguntas propias** (texto, número, lista,
+casilla, fecha) con tus datos, con la dirección o al final, cada una guardada
+en su columna de «Pedidos», en el correo y en el WhatsApp del pedido; addendum
+ADR-S103). Antes **v0.1.429**
 (**unidades de venta en la tienda** — cada producto dice en qué se vende
 (hora, año, kg, licencia) y cuánto se puede comprar (mínimo, máximo, de a
 cuánto, con decimales) en cuatro columnas de su lista; «$ 50.000 / hora» en la
@@ -2024,6 +2030,29 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-13 · v0.1.430** — **Lo que se pide al pagar en la tienda +
+  preguntas propias** (reporte del usuario: "No veo forma donde añadir más
+  campos al formulario del checkout de la tienda ni tampoco decidir cuál es
+  opcional u obligatorio"). Editor → **Datos y avisos**: «Lo que se pide al
+  comprar» (nombre y correo siempre; celular, cédula o NIT y notas con **No
+  pedirlo / Opcional / Obligatorio** y su nombre propio) y «Preguntas propias»
+  (hasta 12: texto corto o largo, número, una opción de una lista, casilla o
+  fecha; opcional u obligatoria; con «Tus datos», con la dirección —sólo si
+  la entrega es a domicilio— o al final; ayuda y ejemplo; «Se guarda en»).
+  Al guardar, la tienda crea la columna de cada pregunta en «Pedidos» con su
+  tipo (y suma opciones nuevas a una lista). Reglas puras en
+  `packages/shared/src/schemas/shop-checkout-fields.ts` que usan la página y
+  el servidor; el servidor vuelve a validar (400 `shop_answer` con la
+  pregunta, que la página marca; en «Por pasos» cada paso revisa lo suyo). Las
+  respuestas quedan en sus columnas y, en palabras, en el correo de
+  confirmación («Lo que nos contaste») y el mensaje de WhatsApp. Lo guardado
+  antes se lee igual (las notas sí/no → opcional/no pedirlas, el celular
+  opcional). Tests: shared 994 (7 nuevos), `shops-checkout-fields.spec` 3/3
+  (specs de la tienda 69/69), front 924 + E2E navegador 45/45 en escritorio y
+  43/43 en celular oscuro (editor con modos y preguntas, columnas creadas,
+  vista previa que lleva a «Preguntas propias», pago clásico con errores por
+  pregunta y barrio sólo a domicilio, «Por pasos», «Dos columnas» y «Una
+  columna» con los nombres adentro, respuestas en «Pedidos»).
 - **2026-11-13 · v0.1.429** — **Unidades de venta en la tienda** (aprobado
   por el usuario: "El usuario debe poder decir las unidades, minimo y de a
   cuanto, debe poder decidir todo del producto en si"). Cada producto decide

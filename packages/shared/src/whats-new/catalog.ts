@@ -3210,4 +3210,33 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.430-tienda-preguntas-del-pago',
+        version: '0.1.430',
+        date: '2026-11-13',
+        kind: 'feature',
+        title: 'Pide lo que necesitas al cobrar en tu tienda',
+        summary:
+            'Elige qué datos son obligatorios, cuáles opcionales y cuáles no pides, cámbiales el nombre y suma tus propias preguntas al pago: «Barrio», «¿Cómo nos conociste?», «Fecha del evento».',
+        media: {
+            slides: [
+                {
+                    title: 'Obligatorio, opcional o no pedirlo',
+                    text: 'El celular, la cédula o NIT y las notas se piden como quieras, con el nombre de tu país o tu negocio («WhatsApp», «RUT», «Indicaciones»).',
+                    illustration: 'tienda-pedido',
+                },
+                {
+                    title: 'Tus preguntas, en tu lista de pedidos',
+                    text: 'Texto, número, una lista de opciones, una casilla o una fecha. Cada respuesta queda en su columna de «Pedidos», en el correo de confirmación y en el mensaje de WhatsApp.',
+                    illustration: 'tienda-vitrina',
+                },
+            ],
+        },
+        body: [
+            '- Abre tu tienda (**Configurar lista → Tienda → Editar**) y ve a **Datos y avisos**.',
+            '- En **Preguntas propias**, toca **Agregar una pregunta**. Las que van con la dirección sólo se piden cuando la entrega es a domicilio.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

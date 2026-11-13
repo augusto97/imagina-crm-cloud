@@ -13,9 +13,10 @@ import type { PublicDirectTags } from './conversion-logic';
 import type { PublicDataConsent } from './data-consent';
 import type { PublicFormCaptcha } from './form';
 import type { FieldType } from './field';
-import type { ShopCatalogFields, ShopCheckout, ShopCustomer, ShopDisplay, ShopPolicies, ShopSeller, ShopTexts } from './shop';
+import type { ShopCatalogFields, ShopCustomer, ShopDisplay, ShopPolicies, ShopSeller, ShopTexts } from './shop';
 import type { ShopDesignCheckout, ShopDesignProduct } from './shop-design';
 import type { TenantFormat } from './tenant';
+import type { PublicShopCheckoutFields } from './shop-checkout-fields';
 
 /**
  * v0.1.412 (ADR-S103) — La lógica PURA de la tienda, sin validadores: la usan
@@ -35,6 +36,8 @@ export const SHOP_MAX_LINES = 50;
 /** Unidades de un mismo producto en un pedido. */
 /** v0.1.429 — El tope de una línea vive en `shop-units` (`SHOP_MAX_QTY`). */
 export * from './shop-units';
+/** v0.1.430 — Lo que se pide al pagar (datos fijos y preguntas propias). */
+export * from './shop-checkout-fields';
 export const SHOP_MAX_DELIVERY_METHODS = 10;
 /** v0.1.415 — Zonas de envío por forma de entrega (barrios, ciudades, regiones). */
 export const SHOP_MAX_DELIVERY_ZONES = 40;
@@ -1105,7 +1108,7 @@ export function shopWhatsappMessage(
         discount?: number;
         coupon_code?: string;
         delivery: string;
-        customer: Pick<ShopCustomer, 'name' | 'address' | 'city' | 'notes'>;
+        customer: Pick<ShopCustomer, 'name' | 'address' | 'city' | 'notes'> & { answers?: ReadonlyArray<{ label: string; text: string }> };
         url: string | null;
     },
     intro: string,
@@ -1125,6 +1128,8 @@ export function shopWhatsappMessage(
     const where = [order.customer.address, order.customer.city].filter(Boolean).join(', ');
     if (where) out.push(`Dirección: ${where}`);
     if (order.customer.notes) out.push(`Notas: ${order.customer.notes}`);
+    // v0.1.430 — Las respuestas de las preguntas propias del pago.
+    for (const a of (order.customer.answers ?? []).slice(0, 12)) if (a.label && a.text) out.push(`${a.label}: ${a.text}`);
     if (order.url) {
         out.push('');
         out.push(`Ver el pedido: ${order.url}`);
@@ -1180,10 +1185,10 @@ export interface PublicShopMeta {
     delivery: PublicShopDelivery[];
     payments: PublicShopPayment[];
     checkout: {
-        ask_document: ShopCheckout['ask_document'];
-        ask_notes: boolean;
         require_terms: boolean;
         min_order: number | null;
+        /** v0.1.430 — Qué datos se piden (celular, documento, notas) y las preguntas propias. */
+        fields: PublicShopCheckoutFields;
     };
     seller: ShopSeller;
     policies: ShopPolicies;
