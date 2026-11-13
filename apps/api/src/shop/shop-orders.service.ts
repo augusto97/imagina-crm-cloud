@@ -9,6 +9,11 @@ import {
     SHOP_STAT_SOURCE_RE,
     brandingSchema,
     cleanAttribution,
+    cleanShopAnswers,
+    publicShopCheckoutFields,
+    shopAnswerText,
+    shopFieldLabel,
+    shopPhoneOk,
     computeShopCart,
     formStatSourceLabel,
     roundShopQty,
@@ -33,6 +38,8 @@ import {
     type PublicShopMyOrders,
     type PublicShopOrder,
     type PublicShopOrderInput,
+    type PublicShopQuestion,
+    type ShopAnswer,
     type ShopCartResult,
     type ShopConfig,
     type ShopOrderLineSnapshot,
@@ -139,6 +146,34 @@ export class ShopCartChangedError extends ConflictException {}
 
 function badRequest(code: string, message: string): never {
     throw new BadRequestException({ code, message, data: { status: 400 } });
+}
+
+/**
+ * v0.1.430 — La respuesta de una pregunta propia en el tipo de su columna de
+ * «Pedidos»: una opción por su valor (la etiqueta que eligió la persona),
+ * un texto en palabras («Sí», «14/11/2026»), o tal cual.
+ */
+function answerForColumn(field: Field, q: PublicShopQuestion, value: ShopAnswer, format: TenantFormat['number_format']): unknown {
+    if (field.type === 'select') {
+        const opts = ((field.config as { options?: Array<{ value?: unknown; label?: unknown }> } | undefined)?.options ?? []) as Array<{ value?: unknown; label?: unknown }>;
+        const key = (x: unknown): string => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+        const want = key(value);
+        const hit = opts.find((o) => key(o.label) === want || key(o.value) === want);
+        return hit ? hit.value : undefined;
+    }
+    if (field.type === 'text' || field.type === 'long_text') return shopAnswerText(q, value, format);
+    return value;
+}
+
+/** v0.1.430 — Las respuestas guardadas con el pedido (tolerante: un pedido de antes no trae). */
+export function orderAnswers(customer: unknown): Array<{ label: string; text: string }> {
+    const raw = (customer as { answers?: unknown } | null)?.answers;
+    if (!Array.isArray(raw)) return [];
+    return raw
+        .filter((a): a is { label: unknown; text: unknown } => !!a && typeof a === 'object')
+        .map((a) => ({ label: String(a.label ?? '').slice(0, 120), text: String(a.text ?? '').slice(0, 2000) }))
+        .filter((a) => a.label !== '' && a.text !== '')
+        .slice(0, 12);
 }
 
 function newOrderToken(): string {
@@ -257,8 +292,18 @@ export class ShopOrdersService implements OnModuleInit {
         }
         const subPlans = subscribing ? await this.subscriptions!.shopPlans(tenantId).catch(() => []) : [];
         const orderLines = subscribing ? [{ product_id: input.lines[0]!.product_id, qty: 1 }] : input.lines;
-        const c = input.customer;
-        if (config.checkout.ask_document === 'required' && !c.document.trim()) badRequest('shop_document', 'Escribe tu número de documento.');
+        // v0.1.430 — Lo que la tienda no pide no se guarda aunque llegue; lo obligatorio se exige.
+        const ch = config.checkout;
+        const askFields = publicShopCheckoutFields(ch);
+        const c = {
+            ...input.customer,
+            phone: ch.ask_phone === 'hidden' ? '' : input.customer.phone,
+            document: ch.ask_document === 'hidden' ? '' : input.customer.document,
+            notes: ch.ask_notes === 'hidden' ? '' : input.customer.notes,
+        };
+        if (ch.ask_phone === 'required' && !shopPhoneOk(c.phone)) badRequest('shop_phone', `Completa «${shopFieldLabel(askFields, 'phone')}» (al menos 7 números).`);
+        if (ch.ask_document === 'required' && !c.document.trim()) badRequest('shop_document', `Completa «${shopFieldLabel(askFields, 'document')}».`);
+        if (ch.ask_notes === 'required' && !c.notes.trim()) badRequest('shop_notes', `Completa «${shopFieldLabel(askFields, 'notes')}».`);
         if (config.checkout.require_terms && input.terms !== true) badRequest('shop_terms', 'Para comprar, acepta los términos y condiciones.');
 
         const cap = this.billing ? await this.billing.recordLimit(tenantId) : null;
@@ -325,6 +370,14 @@ export class ShopOrdersService implements OnModuleInit {
                 if (zones.length > 0 && !zone) badRequest('shop_zone', 'Elige a dónde enviamos tu pedido.');
                 if (delivery!.needs_address && (!c.address.trim() || !c.city.trim())) badRequest('shop_address', 'Escribe la dirección y la ciudad de entrega.');
             }
+            // v0.1.430 — Las preguntas propias: las de la dirección, sólo si la entrega pide dirección.
+            const withAddress = subscribing ? config.kinds.subscription_address : needsDelivery && !!delivery?.needs_address;
+            const asked = cleanShopAnswers(askFields.questions, input.answers ?? {}, { withAddress, format: numberFormat });
+            if (asked.error) {
+                throw new BadRequestException({ code: 'shop_answer', message: asked.error.text, data: { status: 400, question: asked.error.id } });
+            }
+            const answers = asked.answers;
+            const answerTexts = askFields.questions.filter((q) => answers[q.id] !== undefined).map((q) => ({ label: q.label, text: shopAnswerText(q, answers[q.id]!, numberFormat) }));
             const ship = needsDelivery ? shopShippingFor({ price: delivery!.price, free_over: delivery!.free_over, zones }, zone?.id ?? null) : { price: 0, free_over: null };
             const deliveryLabel = subscribing
                 ? config.kinds.subscription_address
@@ -445,6 +498,14 @@ export class ShopOrdersService implements OnModuleInit {
             put(data, of('address'), where);
             put(data, of('notes'), c.notes);
             put(data, of('items'), items);
+            // v0.1.430 — Cada respuesta en su columna.
+            for (const q of askFields.questions) {
+                const value = answers[q.id];
+                const fid = ch.questions.find((x) => x.id === q.id)?.field_id ?? null;
+                const field = fid !== null ? orderFields.get(fid) : undefined;
+                if (value === undefined || !field) continue;
+                put(data, field, answerForColumn(field, q, value, numberFormat));
+            }
             put(data, of('shop'), shop.name);
             // v0.1.418 — De dónde llegó (lo que ve el equipo, en palabras).
             {
@@ -511,7 +572,17 @@ export class ShopOrdersService implements OnModuleInit {
                 couponCode: coupon?.rule.code ?? '',
                 total: cart.total,
                 lines,
-                customer: { name: c.name, email: c.email, phone: c.phone, document: c.document, address: c.address, city: c.city, notes: c.notes },
+                customer: {
+                    name: c.name,
+                    email: c.email,
+                    phone: c.phone,
+                    document: c.document,
+                    address: c.address,
+                    city: c.city,
+                    notes: c.notes,
+                    // v0.1.430 — Las respuestas en palabras (correo, WhatsApp, página del pedido).
+                    ...(answerTexts.length > 0 ? { answers: answerTexts } : {}),
+                },
                 delivery: needsDelivery
                     ? { id: delivery!.id, name: deliveryLabel, needs_address: delivery!.needs_address, ...(zone ? { zone_id: zone.id, zone_name: zone.name } : {}) }
                     : { id: null, name: deliveryLabel, needs_address: subscribing && config.kinds.subscription_address, ...(subscribing ? { subscription: true } : { digital: true }) },
@@ -522,7 +593,7 @@ export class ShopOrdersService implements OnModuleInit {
                 stockState: tookStock ? 'taken' : 'none',
                 expiresAt: holdUntil,
             });
-            return { cart, number, recordId: inserted.id, orderListId: o.list_id!, lines, method, holdUntil, deliveryLabel, planId };
+            return { cart, number, recordId: inserted.id, orderListId: o.list_id!, lines, method, holdUntil, deliveryLabel, planId, answerTexts };
         });
         const method = result.method;
         const holdUntil = result.holdUntil;
@@ -638,6 +709,7 @@ export class ShopOrdersService implements OnModuleInit {
                     kind: 'awaiting',
                     number: result.number,
                     customer: c,
+                    answers: result.answerTexts,
                     lines: result.lines,
                     totals: { subtotal: result.cart.subtotal, shipping: 0, total: result.cart.total },
                     delivery: deliveryLabel,
@@ -655,6 +727,7 @@ export class ShopOrdersService implements OnModuleInit {
                     kind: 'awaiting',
                     number: result.number,
                     customer: c,
+                    answers: result.answerTexts,
                     lines: result.lines,
                     totals: { subtotal: result.cart.subtotal, shipping: result.cart.shipping, total: result.cart.total, discount: result.cart.discount, coupon: result.cart.coupon?.code ?? '' },
                     delivery: deliveryLabel,
@@ -686,6 +759,7 @@ export class ShopOrdersService implements OnModuleInit {
                 kind: 'placed',
                 number: result.number,
                 customer: c,
+                answers: result.answerTexts,
                 lines: result.lines,
                 totals: { subtotal: result.cart.subtotal, shipping: result.cart.shipping, total: result.cart.total, discount: result.cart.discount, coupon: result.cart.coupon?.code ?? '' },
                 delivery: deliveryLabel,
@@ -803,6 +877,8 @@ export class ShopOrdersService implements OnModuleInit {
             kind: 'placed' | 'awaiting' | 'paid';
             number: string;
             customer: Pick<PublicShopOrderInput['customer'], 'name' | 'email'>;
+            /** v0.1.430 — Las respuestas de las preguntas propias, en palabras. */
+            answers?: Array<{ label: string; text: string }>;
             lines: ShopOrderLineSnapshot[];
             totals: { subtotal: number; shipping: number; total: number; discount?: number; coupon?: string };
             delivery: string;
@@ -869,6 +945,7 @@ export class ShopOrdersService implements OnModuleInit {
             downloads: o.downloads ?? [],
             downloadsNote: o.downloadsNote ?? null,
             orderUrl: o.orderUrl,
+            answers: o.answers ?? [],
             sellerLine: [seller.legal_name, seller.document ? `NIT/C.C. ${seller.document}` : '', seller.email, seller.phone].filter(Boolean).join(' · '),
         });
         await this.mail.enqueue({
@@ -1085,6 +1162,7 @@ export class ShopOrdersService implements OnModuleInit {
             kind: 'paid',
             number: row.number,
             customer: { name: customer.name ?? '', email: customer.email },
+            answers: orderAnswers(row.customer),
             lines: row.lines as ShopOrderLineSnapshot[],
             totals: { subtotal: row.subtotal, shipping: row.shipping, total: row.total, discount: row.discount, coupon: row.couponCode },
             delivery: (row.delivery as { name?: string }).name ?? '',

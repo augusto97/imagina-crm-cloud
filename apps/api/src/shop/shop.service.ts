@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import {
     SHOP_CATALOG_FIELD_TYPES,
@@ -10,6 +10,7 @@ import {
     SHOP_VARIANT_ATTRIBUTE_TYPES,
     SHOP_ITEM_ID_RE,
     SHOP_LIST_MARKER_KEY,
+    SHOP_QUESTION_COLUMN_TYPES,
     collectionCurrencyError,
     defaultShopConfig,
     jsonbKeyForField,
@@ -89,6 +90,7 @@ export interface ShopActor {
 
 @Injectable()
 export class ShopService {
+    private readonly logger = new Logger(ShopService.name);
     private readonly pcache: PublicCacheLike;
 
     constructor(
@@ -228,9 +230,20 @@ export class ShopService {
                 }),
                 payment_connections: team.map((c) => ({ id: c.id, name: c.name, provider: c.provider, test_mode: c.test_mode })),
                 categories: await this.catalogCategories(tx, tenantId, row, fields),
+                order_fields: await this.orderQuestionFields(tx, tenantId, readShopConfig(row.config)),
                 ...(await this.kindOptions(tx, tenantId, row, fields, list.settings, plans)),
             };
         });
+    }
+
+    /** v0.1.430 — Las columnas de «Pedidos» donde puede ir una pregunta propia (no las que escribe la tienda). */
+    private async orderQuestionFields(tx: Tx, tenantId: number, config: ShopConfig): Promise<ShopOptions['order_fields']> {
+        const listId = config.orders.list_id;
+        if (listId === null) return [];
+        const taken = new Set<number>(Object.values(config.orders.fields).filter((x): x is number => typeof x === 'number'));
+        const all = new Set(Object.values(SHOP_QUESTION_COLUMN_TYPES).flat());
+        const rows = await this.fields.listByListIdWithinTx(tx, tenantId, listId);
+        return rows.filter((f) => !taken.has(f.id) && all.has(f.type)).map((f) => ({ id: f.id, label: f.label, type: f.type }));
     }
 
     /** v0.1.418 — Lo que necesita el resumen de estadísticas: la moneda y la columna del nombre de los productos. */
@@ -490,6 +503,10 @@ export class ShopService {
             await this.ensureLineUnitColumn(tenantId, id).catch(() => undefined);
             after = await this.row(tenantId, id);
         }
+        // v0.1.430 — Las preguntas propias del pago, cada una con su columna en «Pedidos».
+        if (input.config !== undefined && readShopConfig(after.config).checkout.questions.length > 0) {
+            if (await this.ensureQuestionColumns(tenantId, id).catch(() => false)) after = await this.row(tenantId, id);
+        }
         const dto = await this.toDto(tenantId, after);
         return { dto: { ...dto, embed_origin: await this.embedOrigin(tenantId) }, before: res.before, after: res.after };
     }
@@ -624,7 +641,97 @@ export class ShopService {
         }
         next.allowed_domains = cleanDomains(next.allowed_domains);
         next.payments.whatsapp.phone = next.payments.whatsapp.phone.replace(/[\s().-]/g, '');
+        next.checkout = { ...next.checkout, questions: await this.cleanQuestions(tx, tenantId, next) };
         return next;
+    }
+
+    /**
+     * v0.1.430 — Las preguntas propias del pago: ids únicos y una columna de
+     * «Pedidos» de un tipo que sirva, que no sea una de las que escribe la
+     * tienda ni la de otra pregunta. Una que no sirve queda en null (el
+     * servidor crea la columna al guardar).
+     */
+    private async cleanQuestions(tx: Tx, tenantId: number, next: ShopConfig): Promise<ShopConfig['checkout']['questions']> {
+        const listId = next.orders.list_id;
+        const orderFields = listId !== null ? await this.fields.listByListIdWithinTx(tx, tenantId, listId) : [];
+        const byId = new Map(orderFields.map((f) => [f.id, f]));
+        const taken = new Set<number>(Object.values(next.orders.fields).filter((x): x is number => typeof x === 'number'));
+        const seen = new Set<string>();
+        return next.checkout.questions.map((q0) => {
+            const q = SHOP_ITEM_ID_RE.test(q0.id) && !seen.has(q0.id) ? q0 : { ...q0, id: newShopItemId(seen) };
+            seen.add(q.id);
+            const f = q.field_id !== null ? byId.get(q.field_id) : undefined;
+            const ok = !!f && SHOP_QUESTION_COLUMN_TYPES[q.type].includes(f.type) && !taken.has(f.id);
+            if (ok) taken.add(f!.id);
+            return { ...q, field_id: ok ? f!.id : null };
+        });
+    }
+
+    /**
+     * v0.1.430 — La columna de cada pregunta propia en «Pedidos»: la crea si
+     * todavía no tiene (con el nombre de la pregunta y su tipo) y, en una de
+     * selección, suma las opciones que le falten. Se llama al guardar.
+     */
+    async ensureQuestionColumns(tenantId: number, shopId: number): Promise<boolean> {
+        const row = await this.row(tenantId, shopId);
+        const config = readShopConfig(row.config);
+        const listId = config.orders.list_id;
+        if (listId === null) return false;
+        const questions = config.checkout.questions.filter((q) => q.label.trim() !== '' && (q.type !== 'select' || q.options.length > 0));
+        if (questions.length === 0) return false;
+        const current = await this.tenantDb.withTenant(tenantId, (tx) => this.fields.listByListIdWithinTx(tx, tenantId, listId));
+        const byId = new Map(current.map((f) => [f.id, f]));
+        const key = (x: unknown): string => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+        const created: Record<string, number> = {};
+        for (const q of questions) {
+            const f = q.field_id !== null ? byId.get(q.field_id) : undefined;
+            try {
+                if (!f) {
+                    const type = SHOP_QUESTION_COLUMN_TYPES[q.type][0]!;
+                    const extra =
+                        type === 'select'
+                            ? { config: { options: q.options.map((o) => ({ value: o, label: o })) } }
+                            : type === 'number'
+                              ? { config: { precision: 2 } }
+                              : {};
+                    const made = await this.fields.create(tenantId, String(listId), {
+                        label: q.label.trim().slice(0, 100),
+                        type,
+                        description: 'Lo responde quien compra en el pago de la tienda.',
+                        ...extra,
+                    } as never);
+                    created[q.id] = made.id;
+                } else if (f.type === 'select') {
+                    const cfg = (f.config ?? {}) as Record<string, unknown>;
+                    const opts = Array.isArray(cfg.options) ? (cfg.options as Array<{ value?: unknown; label?: unknown }>) : [];
+                    const missing = q.options.filter((o) => !opts.some((x) => key(x.label) === key(o) || key(x.value) === key(o)));
+                    if (missing.length > 0) {
+                        await this.fields.update(
+                            tenantId,
+                            String(listId),
+                            String(f.id),
+                            { config: { ...cfg, options: [...opts, ...missing.map((o) => ({ value: o, label: o }))] } } as never,
+                            { internal: true },
+                        );
+                    }
+                }
+            } catch (err) {
+                this.logger.warn(`Tienda ${shopId}: no se pudo preparar la columna de la pregunta «${q.label}»: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+        if (Object.keys(created).length === 0) return false;
+        const token = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const r = await this.load(tx, tenantId, shopId, true);
+            const c = readShopConfig(r.config);
+            const questions2 = c.checkout.questions.map((q) => (q.field_id === null && created[q.id] !== undefined ? { ...q, field_id: created[q.id]! } : q));
+            await tx
+                .update(shops)
+                .set({ config: { ...c, checkout: { ...c.checkout, questions: questions2 } }, updatedAt: new Date() })
+                .where(and(eq(shops.tenantId, tenantId), eq(shops.id, shopId)));
+            return r.token;
+        });
+        this.forget(token);
+        return true;
     }
 
     /**

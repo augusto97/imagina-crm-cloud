@@ -52,6 +52,7 @@ export const SHOP_EDIT_TARGETS = {
     cart: { label: 'Carrito', section: 'design', tour: 'shop-design-after-add' },
     checkout: { label: 'Página de pago', section: 'style', tour: 'shop-style-checkout' },
     'cx-you': { label: 'Tus datos', section: 'checkout', tour: 'shop-checkout-fields' },
+    'cx-questions': { label: 'Preguntas del pago', section: 'checkout', tour: 'shop-checkout-questions' },
     'cx-delivery': { label: 'Entrega', section: 'payment', tour: 'shop-delivery' },
     'cx-pay': { label: 'Pago', section: 'payment', tour: 'shop-payments' },
     'cx-coupon': { label: 'Cupón', section: 'coupons', tour: 'shop-coupons' },

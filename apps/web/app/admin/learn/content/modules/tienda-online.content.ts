@@ -405,7 +405,34 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Lo que le pides a quien compra' },
             {
                 t: 'p',
-                md: 'En **Datos y avisos** decides si pides el documento (opcional, obligatorio o no), si deja notas, si tiene que aceptar los términos, una **compra mínima** y si le llega un **correo de confirmación** con el detalle del pedido (sale por el correo de tu empresa). Si tu empresa pide la autorización de datos personales, la tienda la muestra y la guarda con cada pedido.',
+                md: 'En **Datos y avisos → Lo que se pide al comprar** decides qué datos pides. El **nombre** y el **correo** se piden siempre: al correo le llega la confirmación del pedido. La **dirección** y la **ciudad** las pide la forma de entrega (sólo cuando es a domicilio). Los demás los eliges tú:',
+            },
+            {
+                t: 'settings',
+                title: 'Lo que se pide al comprar',
+                rows: [
+                    { name: 'Celular', what: '**No pedirlo**, **Opcional** u **Obligatorio**. Obligatorio exige al menos 7 números.', tip: 'Cámbiale el nombre a «WhatsApp» si es por ahí que le escribes.' },
+                    { name: 'Cédula o NIT', what: 'Igual: no pedirla, opcional u obligatoria, con el nombre de tu país («RUT», «DNI», «RFC»).' },
+                    { name: 'Notas', what: 'Un espacio para indicaciones (talla, color, horario de entrega). También se puede volver obligatorio y cambiarle el nombre.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'Debajo, en **Preguntas propias**, toca **Agregar una pregunta** para pedir lo que tu negocio necesita: «Barrio», «¿Cómo nos conociste?», «Fecha del evento», «Mensaje para la tarjeta». Cada respuesta se guarda en **su columna de «Pedidos»**: la crea la tienda al guardar (o eliges una que ya tengas en **Se guarda en**), así la puedes filtrar, agrupar y usar en tus automatizaciones.',
+            },
+            {
+                t: 'settings',
+                title: 'Cada pregunta',
+                rows: [
+                    { name: 'Tipo de respuesta', what: 'Texto corto, texto largo, número, una opción de una lista, casilla (sí o no) o fecha.', tip: 'En una lista, escribe una opción por renglón.' },
+                    { name: 'Dónde va', what: '**Con «Tus datos»**, **Con la dirección de entrega** (sólo se pide cuando la entrega es a domicilio) o **Al final, antes de pagar**.' },
+                    { name: 'Opcional u obligatoria', what: 'Si es obligatoria, el pedido no se hace sin ella y la página marca la pregunta con lo que falta. Una casilla obligatoria se tiene que marcar.' },
+                    { name: 'Ayuda y ejemplo', what: 'Una línea debajo de la pregunta y un ejemplo dentro del campo, los dos opcionales.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'Las respuestas también llegan en el **correo de confirmación** («Lo que nos contaste») y en el **mensaje de WhatsApp** del pedido. Además, en **Datos y avisos** eliges si tiene que aceptar los términos, una **compra mínima** y si le llega el correo de confirmación (sale por el correo de tu empresa). Si tu empresa pide la autorización de datos personales, la tienda la muestra y la guarda con cada pedido.',
             },
             {
                 t: 'callout',

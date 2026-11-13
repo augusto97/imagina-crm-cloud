@@ -36,6 +36,8 @@ import type {
     ShopPurchasable,
     ShopQtyRule,
     ShopUnit,
+    PublicShopQuestion,
+    ShopQuestionPlace,
 } from '@imagina-base/shared';
 import {
     SHOP_MAX_QTY,
@@ -65,6 +67,11 @@ import {
     shopProductPath,
     shopShippingFor,
     shopVariantPriceRange,
+    cleanShopAnswer,
+    parseShopNumberInput,
+    shopFieldLabel,
+    shopPhoneOk,
+    shopQuestionAsked,
 } from '@imagina-base/shared/src/schemas/shop-logic';
 import { subscriptionFrequencyText, subscriptionPlanExtras } from '@imagina-base/shared/src/schemas/form-logic';
 import { formStatSource } from '@imagina-base/shared/src/schemas/form-stats-logic';
@@ -2076,7 +2083,14 @@ let cxReview: HTMLElement | null = null;
 /** El anti-robots de «Por pasos» se monta al llegar al pago (en un paso oculto no se dibuja). */
 let cxCaptchaPending = false;
 /** Lo que valida cada paso antes de seguir. */
-const CX_STEP_KEYS: Record<CxStepId, readonly string[]> = { you: ['name', 'email', 'phone', 'document'], delivery: ['zone', 'address', 'city'], pay: [] };
+const CX_STEP_KEYS: Record<CxStepId, readonly string[]> = { you: ['name', 'email', 'phone', 'document'], delivery: ['zone', 'address', 'city'], pay: ['notes'] };
+const CX_STEP_PLACE: Record<CxStepId, ShopQuestionPlace> = { you: 'you', delivery: 'delivery', pay: 'end' };
+
+/** v0.1.430 — Lo que revisa cada paso: sus datos fijos y sus preguntas propias. */
+function cxStepKeys(id: CxStepId): string[] {
+    const qs = (meta?.checkout.fields.questions ?? []).filter((q) => q.place === CX_STEP_PLACE[id]).map((q) => qKey(q));
+    return [...CX_STEP_KEYS[id], ...qs];
+}
 
 function cxReset(): void {
     cxActive = false;
@@ -2236,7 +2250,7 @@ function cxGo(i: number): void {
 function cxNext(i: number): void {
     const st = cxSteps[i];
     if (!st) return;
-    if (!BOOT.preview && !validate(new Set(CX_STEP_KEYS[st.id]))) return;
+    if (!BOOT.preview && !validate(new Set(cxStepKeys(st.id)))) return;
     cxGo(i + 1);
 }
 
@@ -2311,18 +2325,33 @@ function savedCustomer(): Record<string, string> {
     }
 }
 
-function field(key: string, label: string, opts: { type?: string; autocomplete?: string; required?: boolean; wide?: boolean; textarea?: boolean; inputmode?: string } = {}): HTMLElement {
+function field(
+    key: string,
+    label: string,
+    opts: { type?: string; autocomplete?: string; required?: boolean; wide?: boolean; textarea?: boolean; inputmode?: string; placeholder?: string; help?: string } = {},
+): HTMLElement {
     const id = `c_${key}`;
     const saved = savedCustomer();
+    const described = opts.help ? `${id}_h ${id}_e` : `${id}_e`;
     const input = opts.textarea
-        ? el('textarea', { id, name: key, autocomplete: opts.autocomplete, 'aria-describedby': `${id}_e` })
-        : el('input', { id, name: key, type: opts.type ?? 'text', autocomplete: opts.autocomplete, inputmode: opts.inputmode, 'aria-describedby': `${id}_e` });
-    if (key !== 'notes' && saved[key]) input.value = saved[key]!;
+        ? el('textarea', { id, name: key, autocomplete: opts.autocomplete, placeholder: opts.placeholder || undefined, 'aria-describedby': described, 'aria-required': opts.required ? 'true' : undefined })
+        : el('input', {
+              id,
+              name: key,
+              type: opts.type ?? 'text',
+              autocomplete: opts.autocomplete,
+              inputmode: opts.inputmode,
+              placeholder: opts.placeholder || undefined,
+              'aria-describedby': described,
+              'aria-required': opts.required ? 'true' : undefined,
+          });
+    if (key !== 'notes' && !key.startsWith('q_') && saved[key]) input.value = saved[key]!;
     input.addEventListener('input', () => setErr(key, ''));
     inputs[key] = input;
     const err = el('div', { cls: 's-err', id: `${id}_e`, role: 'alert', hidden: true });
     errs[key] = err;
-    const wrap = el('div', { cls: `s-f${opts.wide ? ' s-wide' : ''}` }, [el('label', { for: id, text: opts.required ? `${label} *` : label }), input, err]);
+    const help = opts.help ? el('div', { cls: 's-fhelp', id: `${id}_h`, text: opts.help }) : null;
+    const wrap = el('div', { cls: `s-f${opts.wide ? ' s-wide' : ''}` }, [el('label', { for: id, text: opts.required ? `${label} *` : label }), input, help, err]);
     // v0.1.425 — Con los nombres adentro del campo, se achican cuando ya hay algo escrito.
     const sync = (): void => {
         wrap.classList.toggle('s-has', input.value !== '');
@@ -2331,6 +2360,101 @@ function field(key: string, label: string, opts: { type?: string; autocomplete?:
     input.addEventListener('change', sync);
     sync();
     return wrap;
+}
+
+// ── v0.1.430 — Lo que se pide al pagar: datos fijos y preguntas propias ──
+
+function qKey(q: Pick<PublicShopQuestion, 'id'>): string {
+    return `q_${q.id}`;
+}
+
+/** Celular y documento, según lo que pidió la tienda (no pedirlos, opcionales u obligatorios). */
+function ownFields(): HTMLElement[] {
+    const f = meta!.checkout.fields;
+    return [
+        field('name', 'Nombre completo', { autocomplete: 'name', required: true, wide: true }),
+        field('email', 'Correo', { type: 'email', autocomplete: 'email', required: true }),
+        f.phone !== 'hidden' ? field('phone', shopFieldLabel(f, 'phone'), { type: 'tel', autocomplete: 'tel', inputmode: 'tel', required: f.phone === 'required' }) : null,
+        f.document !== 'hidden' ? field('document', shopFieldLabel(f, 'document'), { required: f.document === 'required', inputmode: 'numeric' }) : null,
+        ...questionFields('you'),
+    ].filter((x): x is HTMLElement => x !== null);
+}
+
+/** Las preguntas propias de un lugar del pago. */
+function questionFields(place: ShopQuestionPlace): HTMLElement[] {
+    return (meta?.checkout.fields.questions ?? []).filter((q) => q.place === place).map((q) => questionField(q));
+}
+
+function questionField(q: PublicShopQuestion): HTMLElement {
+    const key = qKey(q);
+    const id = `c_${key}`;
+    if (q.type === 'checkbox') {
+        const cb = el('input', { type: 'checkbox', id, name: key, 'aria-describedby': q.help ? `${id}_h ${id}_e` : `${id}_e`, 'aria-required': q.required ? 'true' : undefined });
+        cb.addEventListener('change', () => setErr(key, ''));
+        inputs[key] = cb;
+        const err = el('div', { cls: 's-line-err', id: `${id}_e`, role: 'alert', hidden: true });
+        errs[key] = err;
+        return el('div', { cls: 's-wide s-qbox', 'data-testid': 'shop-question', 'data-q': q.id }, [
+            el('label', { cls: 's-check', for: id }, [cb, el('span', { text: q.required ? `${q.label} *` : q.label })]),
+            q.help ? el('div', { cls: 's-fhelp', id: `${id}_h`, style: 'margin:-4px 0 6px 27px', text: q.help }) : null,
+            err,
+        ]);
+    }
+    if (q.type === 'select') {
+        const sel = el('select', { id, name: key, 'aria-describedby': q.help ? `${id}_h ${id}_e` : `${id}_e`, 'aria-required': q.required ? 'true' : undefined });
+        sel.append(el('option', { value: '', text: q.placeholder || 'Elige una opción' }));
+        for (const o of q.options) sel.append(el('option', { value: o, text: o }));
+        sel.addEventListener('change', () => setErr(key, ''));
+        inputs[key] = sel;
+        const err = el('div', { cls: 's-err', id: `${id}_e`, role: 'alert', hidden: true });
+        errs[key] = err;
+        return el('div', { cls: 's-f s-wide', 'data-testid': 'shop-question', 'data-q': q.id }, [
+            el('label', { for: id, text: q.required ? `${q.label} *` : q.label }),
+            sel,
+            q.help ? el('div', { cls: 's-fhelp', id: `${id}_h`, text: q.help }) : null,
+            err,
+        ]);
+    }
+    const node = field(key, q.label, {
+        required: q.required,
+        wide: q.type === 'textarea' || q.type === 'text',
+        textarea: q.type === 'textarea',
+        type: q.type === 'date' ? 'date' : 'text',
+        inputmode: q.type === 'number' ? 'decimal' : undefined,
+        placeholder: q.placeholder,
+        help: q.help,
+    });
+    node.setAttribute('data-testid', 'shop-question');
+    node.setAttribute('data-q', q.id);
+    return node;
+}
+
+/** El final del pago: las preguntas de ese lugar y las notas (si la tienda las pide). */
+function endSection(): HTMLElement | null {
+    const f = meta!.checkout.fields;
+    const qs = questionFields('end');
+    const notesLabel = shopFieldLabel(f, 'notes');
+    const notes = f.notes !== 'hidden' ? field('notes', f.notes === 'optional' ? `${notesLabel} (opcional)` : notesLabel, { textarea: true, wide: true, required: f.notes === 'required' }) : null;
+    if (qs.length === 0 && !notes) return null;
+    return pv(el('section', { cls: 's-sec' }, [el('div', { cls: 's-fields' }, [...qs, notes].filter((x): x is HTMLElement => x !== null))]), 'cx-questions');
+}
+
+/** Las respuestas de las preguntas que se piden en este pedido (lo limpia el servidor). */
+function collectAnswers(): Record<string, string | number | boolean> {
+    const out: Record<string, string | number | boolean> = {};
+    for (const q of meta?.checkout.fields.questions ?? []) {
+        if (!shopQuestionAsked(q, { withAddress: needsAddress() })) continue;
+        const input = inputs[qKey(q)];
+        if (!input) continue;
+        if (q.type === 'checkbox') {
+            out[q.id] = (input as HTMLInputElement).checked;
+            continue;
+        }
+        const raw = input.value.trim();
+        if (!raw) continue;
+        out[q.id] = q.type === 'number' ? (parseShopNumberInput(raw, meta?.number_format) ?? raw) : raw;
+    }
+    return out;
 }
 
 function setErr(key: string, text: string): void {
@@ -2422,15 +2546,7 @@ function subscribeView(): HTMLElement[] {
         submitBtn = null;
         return [el('div', { 'data-testid': 'shop-subscribe-view' }, [back, el('h1', { text: 'Suscribirme' }), el('p', { cls: 's-empty', text: 'Esta suscripción ya no está disponible. Escríbenos para contratarla.' })])];
     }
-    const you = pv(el('section', { cls: 's-sec' }, [
-        el('h3', { text: 'Tus datos' }),
-        el('div', { cls: 's-fields' }, [
-            field('name', 'Nombre completo', { autocomplete: 'name', required: true, wide: true }),
-            field('email', 'Correo', { type: 'email', autocomplete: 'email', required: true }),
-            field('phone', 'Celular', { type: 'tel', autocomplete: 'tel', inputmode: 'tel' }),
-            m.checkout.ask_document !== 'hidden' ? field('document', 'Cédula o NIT', { required: m.checkout.ask_document === 'required', inputmode: 'numeric' }) : null,
-        ].filter((x): x is HTMLElement => x !== null)),
-    ]), 'cx-you');
+    const you = pv(el('section', { cls: 's-sec' }, [el('h3', { text: 'Tus datos' }), el('div', { cls: 's-fields' }, ownFields())]), 'cx-you');
     addressBox = null;
     const addrSec = m.subscriptions?.address
         ? el('section', { cls: 's-sec', 'data-testid': 'shop-sub-address' }, [
@@ -2439,6 +2555,7 @@ function subscribeView(): HTMLElement[] {
               el('div', { cls: 's-fields' }, [
                   field('address', 'Dirección', { autocomplete: 'street-address', required: true, wide: true }),
                   field('city', 'Ciudad', { autocomplete: 'address-level2', required: true, wide: true }),
+                  ...questionFields('delivery'),
               ]),
           ])
         : null;
@@ -2450,7 +2567,7 @@ function subscribeView(): HTMLElement[] {
             el('span', { text: `Se cobra ${money(item.price ?? 0)} ${cadenceText(plan)} con débito automático. Al continuar te llevamos a ${providerName(plan.provider)} para autorizar tu tarjeta una sola vez.${trial}` }),
         ]),
     ]);
-    const notesSec = m.checkout.ask_notes ? el('section', { cls: 's-sec' }, [el('div', { cls: 's-fields' }, [field('notes', 'Notas (opcional)', { textarea: true, wide: true })])]) : null;
+    const notesSec = endSection();
     summaryEl = el('div', { cls: 's-sum', 'data-testid': 'shop-summary' });
     alertEl = el('div', { cls: 's-warn', role: 'alert', hidden: true });
     const legal = legalBlock();
@@ -2545,15 +2662,7 @@ function checkoutView(): HTMLElement[] {
     const back = el('button', { type: 'button', cls: 's-back' }, [icon('back'), 'Seguir comprando']);
     back.addEventListener('click', goCatalog);
 
-    const you = pv(el('section', { cls: 's-sec' }, [
-        el('h3', { text: 'Tus datos' }),
-        el('div', { cls: 's-fields' }, [
-            field('name', 'Nombre completo', { autocomplete: 'name', required: true, wide: true }),
-            field('email', 'Correo', { type: 'email', autocomplete: 'email', required: true }),
-            field('phone', 'Celular', { type: 'tel', autocomplete: 'tel', inputmode: 'tel' }),
-            m.checkout.ask_document !== 'hidden' ? field('document', 'Cédula o NIT', { required: m.checkout.ask_document === 'required', inputmode: 'numeric' }) : null,
-        ].filter((x): x is HTMLElement => x !== null)),
-    ]), 'cx-you');
+    const you = pv(el('section', { cls: 's-sec' }, [el('h3', { text: 'Tus datos' }), el('div', { cls: 's-fields' }, ownFields())]), 'cx-you');
 
     const deliveryOpts = el('div', { cls: 's-opts', role: 'radiogroup', 'aria-label': 'Cómo recibes tu pedido' });
     for (const d of m.delivery) {
@@ -2586,6 +2695,7 @@ function checkoutView(): HTMLElement[] {
     addressBox = el('div', { cls: 's-fields', style: 'margin-top:12px', hidden: !needsAddress() }, [
         field('address', 'Dirección', { autocomplete: 'street-address', required: true, wide: true }),
         field('city', 'Ciudad', { autocomplete: 'address-level2', required: true, wide: true }),
+        ...questionFields('delivery'),
     ]);
     const deliverySec = pv(el('section', { cls: 's-sec' }, [el('h3', { text: 'Entrega' }), deliveryOpts, zoneBox, addressBox]), 'cx-delivery');
     deliverySecEl = deliverySec;
@@ -2617,7 +2727,7 @@ function checkoutView(): HTMLElement[] {
         el('div', { cls: 's-kind-box' }, [icon('check'), el('span', { text: 'Este pedido no tiene costo: no hay nada que pagar.' })]),
     ]);
 
-    const notesSec = m.checkout.ask_notes ? el('section', { cls: 's-sec' }, [el('div', { cls: 's-fields' }, [field('notes', 'Notas para el pedido (opcional)', { textarea: true, wide: true })])]) : null;
+    const notesSec = endSection();
 
     summaryEl = el('div', { cls: 's-sum', 'data-testid': 'shop-summary' });
     alertEl = el('div', { cls: 's-warn', role: 'alert', hidden: true });
@@ -3089,7 +3199,17 @@ function validate(only?: ReadonlySet<string>): boolean {
     const v = (k: string): string => (inputs[k]?.value ?? '').trim();
     if (!v('name')) bad('name', 'Escribe tu nombre.');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v('email'))) bad('email', 'Escribe un correo válido.');
-    if (m.checkout.ask_document === 'required' && !v('document')) bad('document', 'Escribe tu número de documento.');
+    const f = m.checkout.fields;
+    if (f.phone === 'required' && !shopPhoneOk(v('phone'))) bad('phone', `Completa «${shopFieldLabel(f, 'phone')}» (al menos 7 números).`);
+    if (f.document === 'required' && !v('document')) bad('document', `Completa «${shopFieldLabel(f, 'document')}».`);
+    if (f.notes === 'required' && !v('notes')) bad('notes', `Completa «${shopFieldLabel(f, 'notes')}».`);
+    // v0.1.430 — Las preguntas propias, con la misma regla que el servidor.
+    const answers = collectAnswers();
+    for (const q of f.questions) {
+        if (!shopQuestionAsked(q, { withAddress: needsAddress() })) continue;
+        const r = cleanShopAnswer(q, answers[q.id], m.number_format);
+        if (r.error !== undefined) bad(qKey(q), r.error);
+    }
     if (zoneMissing()) bad('zone', 'Elige a dónde enviamos tu pedido.');
     if (needsAddress()) {
         if (!v('address')) bad('address', 'Escribe la dirección de entrega.');
@@ -3156,6 +3276,7 @@ async function placeOrder(): Promise<void> {
             coupon: !subscribing && co.couponRule && current().coupon ? co.couponRule.code : undefined,
             // v0.1.416 — Sin costo no se elige forma de pago (el servidor lo confirma con su cuenta).
             payment_method: subscribing ? 'subscription' : isFree() ? 'free' : co.payment,
+            answers: collectAnswers(),
             terms: termsCb ? termsCb.checked : true,
             consent: consentCb ? consentCb.checked : false,
             stamp: co.stamp ?? '',
@@ -3202,7 +3323,11 @@ async function placeOrder(): Promise<void> {
             }
             if (e.code === 'shop_stale') co.stamp = null;
             if (e.code === 'shop_too_fast') co.stampAt = Date.now();
-            const key = { shop_address: needsAddress() ? 'address' : '', shop_document: 'document', shop_terms: 'terms', shop_consent: 'consent', shop_zone: 'zone' }[e.code ?? ''];
+            const question = e.code === 'shop_answer' ? (e.data as { question?: unknown } | undefined)?.question : undefined;
+            const key =
+                typeof question === 'string'
+                    ? `q_${question}`
+                    : { shop_address: needsAddress() ? 'address' : '', shop_document: 'document', shop_phone: 'phone', shop_notes: 'notes', shop_terms: 'terms', shop_consent: 'consent', shop_zone: 'zone' }[e.code ?? ''];
             if (key && errs[key]) setErr(key, e.message ?? '');
             showServerAlert(e.message || (res.status === 429 ? 'Hiciste muchos pedidos seguidos. Espera unos minutos y vuelve a intentar.' : 'No pudimos hacer el pedido. Vuelve a intentar.'));
             return;

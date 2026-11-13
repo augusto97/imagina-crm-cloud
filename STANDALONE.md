@@ -9408,3 +9408,40 @@ decidir todo del producto en sí".
    Google Ads y Meta una cantidad con decimales viaja como 1 unidad al
    subtotal de la línea. En el contador del carrito una línea con unidad
    cuenta como 1.
+
+**Addendum v0.1.430 (ADR-S103) — Lo que se pide al pagar y preguntas
+propias.** Pedido del usuario: "no veo forma donde añadir más campos al
+formulario del checkout de la tienda ni tampoco decidir cuál es opcional u
+obligatorio".
+
+1. **Datos fijos con modo**: el nombre y el correo se piden siempre (al
+   correo llega la confirmación, «Mis pedidos» lo usa y es la clave del
+   cliente); la dirección y la ciudad las decide la forma de entrega. El
+   celular, el documento y las notas tienen `ask_phone|ask_document|ask_notes`
+   = `hidden | optional | required` y un nombre propio en `checkout.labels`
+   («WhatsApp», «RUT»). Lo guardado antes se lee igual: `ask_notes` booleano
+   pasa a `optional`/`hidden` y el celular arranca opcional. Un dato que no se
+   pide no se guarda aunque el navegador lo mande.
+2. **Preguntas propias** (`checkout.questions`, hasta 12, sin migración): id
+   estable, texto, tipo (`text | textarea | number | select | checkbox |
+   date`), opcional u obligatoria, ayuda, ejemplo, opciones (lista, hasta 30,
+   sin repetidas sin tildes ni mayúsculas), **dónde va** (`you` con «Tus
+   datos», `delivery` sólo si la entrega pide dirección, `end` antes de pagar)
+   y `field_id`: la columna de «Pedidos». A la página pública viajan sin la
+   columna y sin las incompletas (`publicShopCheckoutFields`).
+3. **Reglas puras** en `packages/shared/src/schemas/shop-checkout-fields.ts`
+   (sin zod: las importa el cliente de la página): `cleanShopAnswer(s)`
+   (números con el formato de la empresa, fechas reales, opción de la lista
+   sin tildes, largos), `shopQuestionAsked`, `shopAnswerText`, `shopPhoneOk`.
+   La página valida con ellas y el servidor vuelve a validar con las mismas:
+   un error responde 400 `shop_answer` con `data.question`, que la página usa
+   para marcar la pregunta (en «Por pasos», vuelve al paso de la pregunta).
+4. **Columnas**: al guardar, la tienda crea en «Pedidos» la columna de cada
+   pregunta sin columna (`ensureQuestionColumns`, con el tipo que le
+   corresponde — lista con sus opciones —) y le suma a una columna de lista
+   las opciones nuevas. Nunca toma una columna de la propia tienda ni la de
+   otra pregunta. Las columnas de las preguntas no llevan candado: son
+   columnas de la empresa.
+5. **El pedido** guarda cada respuesta en su columna (una lista, por el valor
+   de su opción) y, en palabras, en `shop_orders.customer.answers`, que usan el
+   correo de confirmación («Lo que nos contaste») y el mensaje de WhatsApp.

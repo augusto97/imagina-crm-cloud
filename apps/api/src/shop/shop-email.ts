@@ -36,6 +36,8 @@ export interface ShopOrderEmailInput {
     /** v0.1.416 — Cuándo llegan o hasta cuándo sirven las descargas. */
     downloadsNote?: string | null;
     orderUrl: string | null;
+    /** v0.1.430 — Las respuestas de las preguntas propias del pago, en palabras. */
+    answers?: Array<{ label: string; text: string }>;
     sellerLine: string;
 }
 
@@ -112,6 +114,14 @@ ${downloads
 ${o.downloadsNote ? `<p style="margin:0;color:#6b7280;font-size:13px">${e(o.downloadsNote)}</p>` : ''}
 </div>`
             : '';
+    const answers = (o.answers ?? []).filter((a) => a.label && a.text);
+    const answersBlock =
+        answers.length > 0
+            ? `<div style="margin:18px 0 0;padding:14px 16px;background:#f8fafc;border:1px solid #eef0f3;border-radius:10px">
+<p style="margin:0 0 8px;font-weight:600">Lo que nos contaste</p>
+${answers.map((a) => `<p style="margin:0 0 6px"><span style="color:#6b7280">${e(a.label)}:</span> ${e(a.text).replace(/\n/g, '<br>')}</p>`).join('')}
+</div>`
+            : '';
     const button = o.orderUrl
         ? `<p style="margin:20px 0 6px;text-align:center"><a href="${e(o.orderUrl)}" style="display:inline-block;background:${color};color:${ink};text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px">${buttonLabel}</a></p>`
         : '';
@@ -131,6 +141,7 @@ ${o.downloadsNote ? `<p style="margin:0;color:#6b7280;font-size:13px">${e(o.down
 ${paragraphs(o.paymentInstructions)}
 </div>
 ${dlBlock}
+${answersBlock}
 ${button}
 </td></tr>
 <tr><td style="padding:16px 28px 24px;border-top:1px solid #f0f1f3;font-size:12px;color:#9ca3af">${e(o.sellerLine)}</td></tr>
@@ -151,6 +162,7 @@ ${button}
         o.paymentInstructions,
         ...(downloads.length > 0 ? ['', 'Tus descargas:', ...downloads.map((d) => `${d.name} (${d.title}): ${d.url}`)] : []),
         ...(o.downloadsNote ? [o.downloadsNote] : []),
+        ...(answers.length > 0 ? ['', 'Lo que nos contaste:', ...answers.map((a) => `${a.label}: ${a.text}`)] : []),
         ...(o.orderUrl ? ['', `${stage === 'awaiting' ? (sub ? 'Activa tu suscripción' : 'Paga tu pedido') : 'Ver tu pedido'}: ${o.orderUrl}`] : []),
         '',
         o.sellerLine,

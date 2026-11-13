@@ -339,6 +339,9 @@ a.s-title{color:inherit;text-decoration:none}a.s-title:hover{text-decoration:und
 .s-f textarea{height:80px;padding:10px 12px;resize:vertical}
 .s-f input:focus,.s-f textarea:focus{border-color:var(--s-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--s-accent) 18%,transparent)}
 .s-f .s-err{font-size:12.5px;color:var(--s-danger-ink);margin-top:4px}
+.s-fhelp{font-size:12.5px;line-height:1.4;color:var(--s-muted);margin-top:4px}
+.s-qbox .s-check{margin:2px 0 6px}
+.s-f input[type=date]{min-width:0}
 .s-f input[aria-invalid="true"]{border-color:#dc2626}
 .s-opts{display:flex;flex-direction:column;gap:8px}
 .s-opt{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:var(--s-radius-sm);border:1px solid var(--s-line);cursor:pointer;background:var(--s-card)}
@@ -495,6 +498,7 @@ a.s-title{color:inherit;text-decoration:none}a.s-title:hover{text-decoration:und
 .s-lbl-in .s-f textarea{height:96px;padding-top:24px}
 .s-lbl-in .s-f:focus-within>label,.s-lbl-in .s-f.s-has>label,.s-lbl-in .s-f:has(select)>label{top:7px;font-size:11.5px}
 .s-lbl-in .s-f:has(input:autofill)>label{top:7px;font-size:11.5px}
+.s-lbl-in .s-f:has(input[type=date])>label{top:7px;font-size:11.5px}
 @media (max-width:999px){
 .s-cx-grid{grid-template-columns:1fr;min-height:0}
 .s-cx-side{order:-1;border-left:0;border-bottom:1px solid var(--s-cx-line)}

@@ -122,7 +122,7 @@ export function Segmented<T extends string | number>({ value, onChange, options,
 }
 
 /** El monto en la moneda de la tienda, con los separadores que use la persona («12.500»). */
-function MoneyInput({ value, onChange, testId, placeholder }: { value: number | null; onChange: (v: number | null) => void; testId?: string; placeholder?: string }): JSX.Element {
+export function MoneyInput({ value, onChange, testId, placeholder }: { value: number | null; onChange: (v: number | null) => void; testId?: string; placeholder?: string }): JSX.Element {
     const [draft, setDraft] = useState<string | null>(null);
     const shown = draft ?? (value === null ? '' : String(value));
     return (
@@ -1133,84 +1133,6 @@ export function PaymentPanel({ config, options, patch }: { config: ShopConfig; o
     );
 }
 
-// ── Datos y avisos ─────────────────────────────────────────────────────
-
-export function CheckoutPanel({ config, options, patch }: { config: ShopConfig; options: ShopOptions; patch: Patch }): JSX.Element {
-    const ch = config.checkout;
-    const setC = (p: Partial<ShopConfig['checkout']>): void => patch((c) => ({ ...c, checkout: { ...c.checkout, ...p } }));
-    const setT = (p: Partial<ShopConfig['texts']>): void => patch((c) => ({ ...c, texts: { ...c.texts, ...p } }));
-    const toggleNotify = (id: number, on: boolean): void =>
-        setC({ notify_user_ids: on ? [...ch.notify_user_ids.filter((x) => x !== id), id].slice(0, 20) : ch.notify_user_ids.filter((x) => x !== id) });
-    return (
-        <PanelBody testId="shop-checkout">
-            <SubSection title={__('Lo que se pide al comprar')} hint={__('Nombre, correo y celular siempre. La dirección, sólo si la entrega la necesita.')} tour="shop-checkout-fields">
-                <Field label={__('Cédula o NIT')}>
-                    <Segmented
-                        value={ch.ask_document}
-                        onChange={(ask_document) => setC({ ask_document })}
-                        options={[
-                            ['hidden', __('No pedirla')],
-                            ['optional', __('Opcional')],
-                            ['required', __('Obligatoria')],
-                        ]}
-                        testId="shop-ask-document"
-                    />
-                </Field>
-                <SwitchRow label={__('Notas para el pedido')} hint={__('Un espacio para indicaciones (talla, color, horario de entrega…).')} checked={ch.ask_notes} onChange={(v) => setC({ ask_notes: v })} />
-                <SwitchRow
-                    label={__('Aceptar los términos')}
-                    hint={__('Una casilla obligatoria con el enlace a tus términos y a la política de cambios y devoluciones.')}
-                    checked={ch.require_terms}
-                    onChange={(v) => setC({ require_terms: v })}
-                />
-                <SwitchRow
-                    label={__('Verificación anti-robots')}
-                    hint={__('Usa la que configuraste en Ajustes → Portal y formularios. Sin llaves, no se muestra.')}
-                    checked={ch.captcha}
-                    onChange={(v) => setC({ captcha: v })}
-                />
-                <Field label={__('Compra mínima')} hint={__('Vacío = sin mínimo. Se compara con el subtotal (sin el envío).')}>
-                    <div className="imcrm-w-40">
-                        <MoneyInput value={ch.min_order} onChange={(min_order) => setC({ min_order: min_order && min_order > 0 ? min_order : null })} placeholder={__('Sin mínimo')} testId="shop-min-order" />
-                    </div>
-                </Field>
-            </SubSection>
-            <SubSection title={__('Después de comprar')}>
-                <SwitchRow
-                    label={__('Correo de confirmación a quien compra')}
-                    hint={__('Con el detalle del pedido, cómo pagar y el enlace para ver su estado. Sale por el correo de tu empresa.')}
-                    checked={ch.send_confirmation}
-                    onChange={(v) => setC({ send_confirmation: v })}
-                />
-                <Field label={__('Título del mensaje de gracias')}>
-                    <Input value={config.texts.success_title} maxLength={120} onChange={(e) => setT({ success_title: e.target.value })} />
-                </Field>
-                <Field label={__('Mensaje de gracias')}>
-                    <Textarea value={config.texts.success_message} maxLength={600} rows={3} onChange={(e) => setT({ success_message: e.target.value })} />
-                </Field>
-            </SubSection>
-            <SubSection title={__('A quién le avisa cada pedido')} hint={__('Les llega en la campana, al correo y al celular. Si no eliges a nadie, le llega a quien creó la tienda.')}>
-                {options.members.length === 0 ? (
-                    <p className="imcrm-text-[12px] imcrm-text-muted-foreground">{__('No hay personas en el equipo.')}</p>
-                ) : (
-                    <ul className="imcrm-flex imcrm-max-h-60 imcrm-flex-col imcrm-gap-1 imcrm-overflow-y-auto" data-testid="shop-notify">
-                        {options.members.map((m) => {
-                            const on = ch.notify_user_ids.includes(m.id);
-                            return (
-                                <li key={m.id}>
-                                    <label className="imcrm-flex imcrm-cursor-pointer imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-px-2 imcrm-py-1.5 imcrm-text-[13px] hover:imcrm-bg-muted">
-                                        <input type="checkbox" checked={on} onChange={(e) => toggleNotify(m.id, e.target.checked)} />
-                                        {m.name}
-                                    </label>
-                                </li>
-                            );
-                        })}
-                    </ul>
-                )}
-            </SubSection>
-        </PanelBody>
-    );
-}
 
 // ── Quién vende y políticas ────────────────────────────────────────────
 

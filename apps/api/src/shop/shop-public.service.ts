@@ -10,6 +10,7 @@ import {
     computeShopCart,
     formatShopMoney,
     readShopConfig,
+    publicShopCheckoutFields,
     shopOnlinePayment,
     shopCurrencyDecimals,
     shopImageKeyForFile,
@@ -66,7 +67,7 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { attachVariants, categoryOrder, fileIdsOf, productFromRow, resolveCatalogFields, resolveVariantAttributes, type CatalogRow } from './shop-catalog';
 import { ShopCouponsService } from './shop-coupons.service';
 import { ShopImagesService, type ShopImage, type ShopImageSource } from './shop-images.service';
-import { ShopOrdersService, paymentInstructions, type ResolvedShopForOrder } from './shop-orders.service';
+import { ShopOrdersService, orderAnswers, paymentInstructions, type ResolvedShopForOrder } from './shop-orders.service';
 import { shopCacheKey, type ShopActor } from './shop.service';
 
 /**
@@ -460,10 +461,9 @@ export class ShopPublicService {
                 })),
             payments,
             checkout: {
-                ask_document: config.checkout.ask_document,
-                ask_notes: config.checkout.ask_notes,
                 require_terms: config.checkout.require_terms,
                 min_order: config.checkout.min_order,
+                fields: publicShopCheckoutFields(config.checkout),
             },
             seller: config.seller,
             policies: config.policies,
@@ -888,7 +888,7 @@ export class ShopPublicService {
                 discount: row.discount,
                 coupon_code: row.couponCode,
                 delivery: delivery.name ?? '',
-                customer: { name: customer.name ?? '', address: customer.address ?? '', city: customer.city ?? '', notes: customer.notes ?? '' },
+                customer: { name: customer.name ?? '', address: customer.address ?? '', city: customer.city ?? '', notes: customer.notes ?? '', answers: orderAnswers(row.customer) },
                 url: null,
             },
             info.config.payments.whatsapp.intro,

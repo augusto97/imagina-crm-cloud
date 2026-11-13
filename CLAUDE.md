@@ -15291,6 +15291,57 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         front 924 + E2E navegador 37/37 en escritorio claro, 37/37 en oscuro y
         36/36 en celular oscuro.
 
+  - [x] **Lo que se pide al pagar en la tienda + preguntas propias (v0.1.430,
+        addendum ADR-S103, reporte del usuario: "No veo forma donde añadir más
+        campos al formulario del checkout de la tienda ni tampoco decidir cuál
+        es opcional u obligatorio")**. Sin migración: todo vive en
+        `config.checkout` de la tienda.
+        (a) **Datos fijos con modo**: el nombre y el correo se piden siempre
+        (al correo llega la confirmación; es la clave del cliente y de «Mis
+        pedidos»); la dirección y la ciudad las pide la forma de entrega. El
+        **celular**, la **cédula o NIT** y las **notas** se eligen **No
+        pedirlo / Opcional / Obligatorio** (`ask_phone|ask_document|ask_notes`)
+        y con su nombre (`checkout.labels`: «WhatsApp», «RUT», «Indicaciones»);
+        el celular obligatorio exige 7 números. Lo guardado antes se lee igual
+        (`ask_notes` booleano → opcional / no pedirlas; el celular arranca
+        opcional) y un dato que no se pide no se guarda aunque el navegador lo
+        mande.
+        (b) **Preguntas propias** (`checkout.questions`, hasta 12): texto
+        corto o largo, número, una opción de una lista (hasta 30, sin
+        repetidas), casilla o fecha; opcional u obligatoria («Hay que
+        marcarla» en una casilla); **dónde va**: con «Tus datos», con la
+        dirección (sólo se pide si la entrega es a domicilio) o al final;
+        ayuda y ejemplo; y **«Se guarda en»**: la columna de «Pedidos». Al
+        guardar, la tienda crea la columna de cada pregunta sin columna con su
+        tipo (`ensureQuestionColumns`; una lista con sus opciones, y suma las
+        nuevas a una lista existente), nunca toma una columna de la tienda ni
+        la de otra pregunta, y a la página viajan sin la columna ni las
+        incompletas (`publicShopCheckoutFields`).
+        (c) **Reglas puras** en `packages/shared/src/schemas/shop-checkout-fields.ts`
+        (sin zod: las importa el cliente de la página): `cleanShopAnswer(s)`
+        (números con el formato de la empresa, fechas reales, opción de la
+        lista sin tildes, largos), `shopQuestionAsked`, `shopAnswerText`,
+        `shopPhoneOk`. La página valida con ellas y el servidor vuelve a
+        validar: 400 `shop_answer` con `data.question`, que la página marca en
+        su pregunta; en «Por pasos» cada paso revisa sólo lo suyo y al pagar
+        vuelve al paso de lo que falta.
+        (d) **El pedido** guarda cada respuesta en su columna (una lista, por
+        el valor de su opción) y, en palabras, en `shop_orders.customer.answers`:
+        el correo de confirmación («Lo que nos contaste») y el mensaje de
+        WhatsApp las llevan.
+        (e) **Editor** (`ShopCheckoutFields.tsx`, el panel de «Datos y
+        avisos» se mudó ahí): «Lo que se pide al comprar» y «Preguntas propias»
+        (subir, bajar, quitar, avisos de pregunta sin texto o lista sin
+        opciones); tocar una pregunta en la vista previa lleva a «Preguntas
+        propias». Ayuda: guía `shop`, Aprende → Tienda online («Lo que le
+        pides a quien compra») y novedad con carrusel (ilustraciones que ya
+        existían). Tests: `shop-checkout-fields.test` (7) en shared (994 en
+        verde), `shops-checkout-fields.spec` (3: modos y nombres, columnas
+        creadas y reusadas, pedido con errores por pregunta y respuestas en
+        sus columnas; specs de la tienda 69/69), front 924 + E2E navegador
+        45/45 en escritorio y 43/43 en celular oscuro (pago clásico, «Por
+        pasos», «Dos columnas» y «Una columna» con los nombres adentro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -3,6 +3,16 @@ import { GOOGLE_ADS_SEND_TO_RE, GOOGLE_TAG_ID_RE, META_PIXEL_ID_RE } from './con
 import { SHOP_IMAGE_RATIOS, shopDesignSchema } from './shop-design';
 import { SHOP_STAT_DEVICES } from './shop-stats-logic';
 import {
+    SHOP_FIELD_MODES,
+    SHOP_MAX_QUESTIONS,
+    SHOP_MAX_QUESTION_OPTIONS,
+    SHOP_QUESTION_PLACES,
+    SHOP_QUESTION_TYPES,
+    cleanShopQuestionOptions,
+    type PublicShopCheckoutFields,
+    type ShopFieldMode,
+} from './shop-checkout-fields';
+import {
     SHOP_AFTER_ADD,
     SHOP_COUPON_CODE_RE,
     SHOP_COUPON_KINDS,
@@ -239,10 +249,62 @@ export const shopPaymentsSchema = z.object({
 });
 export type ShopPayments = z.infer<typeof shopPaymentsSchema>;
 
+/**
+ * v0.1.430 — Una pregunta propia del pago: «Barrio», «¿Cómo nos conociste?»,
+ * «Fecha del evento». La respuesta se guarda en una columna de «Pedidos»
+ * (`field_id`; null = la crea el servidor al guardar).
+ */
+export const shopQuestionSchema = z.object({
+    id: z.string().regex(SHOP_ITEM_ID_RE),
+    label: text(120),
+    type: z.enum(SHOP_QUESTION_TYPES).catch('text').default('text'),
+    mode: z.enum(['optional', 'required']).catch('optional').default('optional'),
+    help: text(240),
+    placeholder: text(120),
+    options: z
+        .array(z.unknown())
+        .catch([])
+        .default([])
+        .transform((raw) => cleanShopQuestionOptions(raw.map((x) => (typeof x === 'string' ? x : ''))).slice(0, SHOP_MAX_QUESTION_OPTIONS)),
+    place: z.enum(SHOP_QUESTION_PLACES).catch('end').default('end'),
+    field_id: nullableRef,
+});
+export type ShopQuestion = z.infer<typeof shopQuestionSchema>;
+
+const fieldMode = (def: ShopFieldMode) => z.enum(SHOP_FIELD_MODES).catch(def).default(def);
+
 export const shopCheckoutSchema = z.object({
+    /** v0.1.430 — Celular: no pedirlo, opcional u obligatorio (antes siempre opcional). */
+    ask_phone: fieldMode('optional'),
     /** Cédula / NIT de quien compra. */
-    ask_document: z.enum(['hidden', 'optional', 'required']).catch('optional').default('optional'),
-    ask_notes: z.boolean().catch(true).default(true),
+    ask_document: fieldMode('optional'),
+    /** v0.1.430 — Notas: antes sí/no (true = opcional). */
+    ask_notes: z
+        .preprocess((v) => (v === true ? 'optional' : v === false ? 'hidden' : v), z.enum(SHOP_FIELD_MODES))
+        .catch('optional')
+        .default('optional'),
+    /** v0.1.430 — El nombre de cada dato («RUT», «DNI», «WhatsApp»). Vacío = el de siempre. */
+    labels: z
+        .object({ phone: text(60), document: text(60), notes: text(60) })
+        .catch({ phone: '', document: '', notes: '' })
+        .default({}),
+    /** v0.1.430 — Preguntas propias (una rota se descarta, no tira las demás). */
+    questions: z
+        .array(z.unknown())
+        .catch([])
+        .default([])
+        .transform((raw) => {
+            const out: ShopQuestion[] = [];
+            const seen = new Set<string>();
+            for (const q of raw) {
+                const p = shopQuestionSchema.safeParse(q);
+                if (!p.success || seen.has(p.data.id)) continue;
+                seen.add(p.data.id);
+                out.push(p.data);
+                if (out.length >= SHOP_MAX_QUESTIONS) break;
+            }
+            return out;
+        }),
     /** Casilla «Acepto los términos». */
     require_terms: z.boolean().catch(true).default(true),
     captcha: z.boolean().catch(false).default(false),
@@ -254,6 +316,28 @@ export const shopCheckoutSchema = z.object({
     notify_user_ids: z.array(refId).max(20).catch([]).default([]),
 });
 export type ShopCheckout = z.infer<typeof shopCheckoutSchema>;
+
+/** v0.1.430 — Lo que la página pública necesita de los datos del pago (sin las columnas). */
+export function publicShopCheckoutFields(ch: ShopCheckout): PublicShopCheckoutFields {
+    return {
+        phone: ch.ask_phone,
+        document: ch.ask_document,
+        notes: ch.ask_notes,
+        labels: { ...ch.labels },
+        questions: ch.questions
+            .filter((q) => q.label.trim() !== '' && (q.type !== 'select' || q.options.length > 0))
+            .map((q) => ({
+                id: q.id,
+                label: q.label.trim(),
+                type: q.type,
+                required: q.mode === 'required',
+                help: q.help,
+                placeholder: q.placeholder,
+                options: q.type === 'select' ? q.options : [],
+                place: q.place,
+            })),
+    };
+}
 
 /** Quién vende: el Estatuto del Consumidor pide mostrarlo antes de comprar. */
 export const shopSellerSchema = z.object({
@@ -532,6 +616,8 @@ export interface ShopOptions {
     payment_connections: Array<{ id: number; name: string; provider: 'mercadopago' | 'wompi' | 'paypal'; test_mode: boolean }>;
     /** v0.1.415 — Las categorías del catálogo (para limitar un cupón a algunas). */
     categories: string[];
+    /** v0.1.430 — Las columnas de «Pedidos» donde puede guardarse una pregunta propia del pago. */
+    order_fields: Array<{ id: number; label: string; type: string }>;
     /** v0.1.416 — Las agendas de la empresa (para los servicios), con sus servicios. */
     booking_pages: ShopBookingPageOption[];
     /** v0.1.416 — Los productos de tipo servicio, con el servicio de la agenda que les toca. */
@@ -722,6 +808,11 @@ export const publicShopOrderSchema = z.object({
     /** v0.1.415 — El código del cupón (se valida en el servidor). */
     coupon: z.string().trim().max(40).optional(),
     payment_method: z.enum(SHOP_PAYMENT_METHODS),
+    /** v0.1.430 — Las respuestas de las preguntas propias, por su id (las valida el servidor). */
+    answers: z
+        .record(z.string().regex(SHOP_ITEM_ID_RE), z.union([z.string().max(4000), z.number().finite(), z.boolean()]))
+        .refine((a) => Object.keys(a).length <= SHOP_MAX_QUESTIONS, 'Demasiadas respuestas.')
+        .optional(),
     terms: z.boolean().default(false),
     consent: z.boolean().default(false),
     stamp: z.string().max(400),
