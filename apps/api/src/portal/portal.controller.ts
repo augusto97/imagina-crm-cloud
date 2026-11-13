@@ -13,6 +13,7 @@ import {
     Req,
     Res,
     UseGuards,
+    UseInterceptors,
 } from '@nestjs/common';
 import {
     consumeMagicLinkSchema,
@@ -59,6 +60,7 @@ import { RequireCapability } from '../authz/require-capability.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ENV, type Env } from '../config/env';
 import { contentDispositionHeader } from '../files/safe-content-type';
+import { FileBindingInterceptor } from '../files/file-binding';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { openPortalSession } from './portal-cookie';
 import { PortalService, type PortalActor } from './portal.service';
@@ -67,6 +69,9 @@ import { PlanModule } from '../tenancy/plan-module.decorator';
 const portalPreviewSchema = layoutDataRequestSchema.extend({ record_id: idSchema });
 
 @Controller()
+// v0.1.427 — las imágenes y archivos que ve el cliente (y la vista previa del
+// editor) quedan atados a su sesión: un enlace copiado no abre afuera.
+@UseInterceptors(FileBindingInterceptor)
 export class PortalController {
     constructor(
         private readonly portal: PortalService,

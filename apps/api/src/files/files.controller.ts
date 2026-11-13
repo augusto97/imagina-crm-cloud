@@ -4,6 +4,8 @@ import {
     Delete,
     Get,
     HttpCode,
+    Inject,
+    NotFoundException,
     Optional,
     Param,
     ParseIntPipe,
@@ -12,16 +14,24 @@ import {
     Req,
     Res,
     UseGuards,
+    UseInterceptors,
 } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { Redis } from 'ioredis';
 import { fileThumbWidth } from '@imagina-base/shared';
-import { SessionGuard } from '../auth/session.guard';
+import { PORTAL_SESSION_COOKIE, SESSION_COOKIE, SessionGuard } from '../auth/session.guard';
+import { SessionService } from '../auth/session.service';
+import { fetchContextOf, isBrowserImageLoad, isCrossSiteEmbed } from '../common/hotlink';
+import { REDIS } from '../redis/redis.module';
+import { incrWithTtl } from '../redis/redis.util';
+import { AllowTenantQuery } from '../tenancy/allow-tenant-query.decorator';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
 import { RequireCapability } from '../authz/require-capability.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { AllowGuest } from '../tenancy/allow-guest.decorator';
 import { BillingService } from '../billing/billing.service';
-import { type FileActor, FilesService, type AttachmentDto, type OpenedFile } from './files.service';
+import { type FileActor, FilesService, MAIL_URL_MIN_TTL, type AttachmentDto, type OpenedFile } from './files.service';
+import { BIND_TAG_RE, FileBindingInterceptor, sessionBindTag } from './file-binding';
 import { contentDispositionHeader, parseByteRange, safeDisposition } from './safe-content-type';
 import { ImageThumbsService, type ImageBytes } from './image-thumbs.service';
 import { aclOf } from '../tenancy/acl-of';
@@ -41,6 +51,9 @@ export class SignedFilesController {
         private readonly files: FilesService,
         // v0.1.426 — miniaturas (`&w=`). Opcional: los specs arman el controlador a mano.
         @Optional() private readonly thumbs?: ImageThumbsService,
+        // v0.1.427 — la sesión de una URL atada y el tope de las de correo.
+        @Optional() private readonly sessions?: SessionService,
+        @Optional() @Inject(REDIS) private readonly redis?: Redis,
     ) {}
 
     /**
@@ -60,33 +73,116 @@ export class SignedFilesController {
         @Query('preview') preview?: string,
         @Query('dl') dl?: string,
         @Query('w') w?: string,
+        @Query('b') b?: string,
     ): Promise<void> {
         const expSec = Number(exp ?? 0);
         const tenantId = Number(tenant ?? 0);
         const opts = { proxy: preview === '1', download: dl === '1' };
+        // v0.1.427 — `b`: la URL es de UNA sesión (la app, el portal). Sólo la
+        // abre el navegador que tiene esa sesión; copiada a otro lado, 404.
+        const bindTag = b === undefined ? null : BIND_TAG_RE.test(b) ? b : '';
+        if (bindTag === '') throw new NotFoundException();
+        this.files.assertSigned(id, tenantId, expSec, String(sig ?? ''), bindTag);
+        const secondsLeft = Math.floor(expSec - Date.now() / 1000);
+        const mail = bindTag === null && secondsLeft > MAIL_URL_MIN_TTL;
+        if (bindTag !== null) {
+            if (!(await this.holdsSession(req, bindTag))) throw new NotFoundException();
+        } else {
+            const verdict = await this.publicVerdict(req, tenantId, id, mail);
+            if (verdict !== 'ok') {
+                refuse(reply, verdict);
+                return;
+            }
+        }
         // v0.1.253 — la URL firmada es inmutable hasta que vence (la firma
         // cubre id + exp): el navegador la puede guardar hasta entonces. Sin
         // esto, el logo del workspace se volvía a bajar en cada pantalla.
-        const ttl = Math.max(0, Math.min(86_400, Math.floor(expSec - Date.now() / 1000)));
+        // v0.1.427 — la de un correo (dura años) se guarda un año.
+        const ttl = Math.max(0, Math.min(mail ? 31_536_000 : 86_400, secondsLeft));
         const cacheControl = ttl > 0 ? `private, max-age=${ttl}, immutable` : undefined;
+        // Lo que no es de un correo, el navegador no lo muestra dentro de una
+        // página de otro sitio (aunque el servidor lo hubiera mandado).
+        if (!mail) reply.raw.setHeader('cross-origin-resource-policy', 'same-site');
         // v0.1.426 — `w`: la miniatura (WebP al ancho pedido) de una IMAGEN.
         // Un ancho fuera de la lista, o un archivo que no es una imagen que se
         // pueda achicar (PDF, SVG…), se ignora: va el original como siempre.
-        const width = opts.download ? null : fileThumbWidth(w);
+        // Una imagen de correo va siempre tal cual (Outlook no lee WebP).
+        const width = opts.download || mail ? null : fileThumbWidth(w);
         if (width !== null && this.thumbs) {
-            this.files.assertSigned(id, tenantId, expSec, String(sig ?? ''));
             const thumb = await this.thumbs.attachmentThumb(tenantId, id, width);
             if (thumb) {
                 sendImage(reply, thumb, cacheControl);
                 return;
             }
         }
-        const file = await this.files.openSigned(id, tenantId, expSec, String(sig ?? ''), opts);
+        const file = await this.files.openSigned(id, tenantId, expSec, String(sig ?? ''), opts, bindTag);
         await streamFile(file, reply, cacheControl, {
             range: req.headers.range,
             download: opts.download,
         });
     }
+
+    /**
+     * ¿El pedido trae la sesión a la que está atada la URL? Se compara el
+     * resumen de cada credencial que llega (la cookie de la app, la del portal,
+     * un `Authorization`) con el de la URL, y la sesión tiene que seguir viva
+     * (cerrar sesión o revocarla deja de servir sus URLs).
+     */
+    private async holdsSession(req: FastifyRequest, tag: string): Promise<boolean> {
+        const header = req.headers.authorization;
+        const candidates = [
+            req.cookies?.[SESSION_COOKIE],
+            req.cookies?.[PORTAL_SESSION_COOKIE],
+            header?.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : undefined,
+        ];
+        for (const token of candidates) {
+            if (typeof token !== 'string' || token === '' || sessionBindTag(token) !== tag) continue;
+            if (!this.sessions) return true;
+            return (await this.sessions.peek(token).catch(() => null)) !== null;
+        }
+        return false;
+    }
+
+    /**
+     * Una URL sin sesión es de una página PÚBLICA (la tienda, un formulario…)
+     * o de un CORREO. La de una página pública sólo se muestra en esa página:
+     * otro sitio no la puede usar. La de un correo sí (cada programa de correo
+     * la pide a su manera), pero con un tope de pedidos por minuto, así no se
+     * convierte en la imagen de la página de alguien.
+     */
+    private async publicVerdict(req: FastifyRequest, tenantId: number, id: number, mail: boolean): Promise<'ok' | 'hotlink' | 'busy'> {
+        const ctx = fetchContextOf(req);
+        if (!isCrossSiteEmbed(ctx)) return 'ok';
+        if (!mail) return 'hotlink';
+        if (!this.redis || !isBrowserImageLoad(ctx)) return 'ok';
+        const minute = Math.floor(Date.now() / 60_000);
+        try {
+            const n = await incrWithTtl(this.redis, `filehot:${tenantId}:${id}:${minute}`, 120);
+            return n > MAIL_IMAGE_LOADS_PER_MINUTE ? 'busy' : 'ok';
+        } catch {
+            return 'ok';
+        }
+    }
+}
+
+/**
+ * v0.1.427 — Cuántas veces por minuto se puede pedir una imagen de correo desde
+ * fuera de un proxy de correo (Gmail, Outlook y Apple Mail la piden por su
+ * servidor y no cuentan). Un correo no se abre 60 veces en el mismo minuto;
+ * una página de otro sitio que la usa como su imagen, sí.
+ */
+export const MAIL_IMAGE_LOADS_PER_MINUTE = 60;
+
+/** La respuesta a quien no puede usar el archivo así. No se guarda en ningún caché. */
+function refuse(reply: FastifyReply, verdict: 'hotlink' | 'busy'): void {
+    const status = verdict === 'busy' ? 429 : 403;
+    const body = verdict === 'busy' ? 'Demasiados pedidos de esta imagen.' : 'Este archivo sólo se puede ver en la página donde se publicó.';
+    reply.raw.writeHead(status, {
+        'content-type': 'text/plain; charset=utf-8',
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+    });
+    reply.raw.end(body);
 }
 
 /**
@@ -179,6 +275,8 @@ export async function streamFile(
 
 @Controller('files')
 @UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
+// v0.1.427 — las URLs que devuelve (subir, resolver) quedan atadas a la sesión.
+@UseInterceptors(FileBindingInterceptor)
 export class FilesController {
     constructor(
         private readonly files: FilesService,
@@ -255,6 +353,35 @@ export class FilesController {
         @Param('id', ParseIntPipe) id: number,
     ): Promise<{ url: string }> {
         return { url: await this.files.publicImageUrl(req.tenant!.tenantId, id, fileActor(req)) };
+    }
+
+    /**
+     * v0.1.427 — Dirección FIJA de un archivo para usar en la app sin pedir
+     * antes su URL (las imágenes de la ficha diseñada y de los tableros). Una
+     * `<img>` no manda el `X-Tenant-Id`, así que la empresa viaja en `?t=`; la
+     * sesión es la cookie, que el navegador sólo manda desde la propia app.
+     * Revisa el acceso y redirige a la URL atada a esta sesión (con `w` si se
+     * pidió una miniatura): el navegador guarda las dos.
+     */
+    @Get(':id/view')
+    @AllowGuest()
+    @AllowTenantQuery()
+    @RequireCapability('view_records', 'view_own_records')
+    async view(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Res() reply: FastifyReply,
+        @Query('w') w?: string,
+    ): Promise<void> {
+        const [dto] = await this.files.resolve(req.tenant!.tenantId, [id], fileActor(req));
+        if (!dto) throw new NotFoundException();
+        const width = fileThumbWidth(w);
+        reply.raw.writeHead(302, {
+            location: width !== null ? `${dto.url}&w=${width}` : dto.url,
+            'cache-control': 'private, max-age=600',
+            'referrer-policy': 'no-referrer',
+        });
+        reply.raw.end();
     }
 
     /** Descarga streameada (inline; el browser decide por content-type). */

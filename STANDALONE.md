@@ -9289,3 +9289,52 @@ archivos.**
 5. **Portal**: el portal recibe URLs firmadas sin el tipo del archivo, así que
    la miniatura sale sólo en los campos «Imagen»; un campo Archivo común
    sigue con «Descargar archivo».
+
+**Addendum v0.1.427 (ADR-S16) — La app no es un servidor de imágenes para
+otros sitios.** Pedido del usuario: "si una lista no es pública no puede
+generar una URL pública de la imagen… sólo debe servir para lo público como la
+tienda… pero no para ser insertadas en otros sitios web y que puedan llegar a
+usar esta app como una CDN de imágenes". Tres clases de URL de archivo:
+
+1. **De la app y del portal → atadas a la sesión.** `FileBindingInterceptor`
+   (en `FilesController`, `PortalController` y la vista previa de la tienda)
+   deja la sesión del pedido en un `AsyncLocalStorage`, y
+   `FilesService.signedUrl` la toma de ahí: la URL lleva `&b=<etiqueta>` (un
+   resumen SHA-256 de la sesión, no la sesión) y la etiqueta entra en la
+   firma. `GET /files/:id/signed` exige que el pedido traiga una credencial
+   (cookie de la app, cookie del portal o `Authorization`) con ese resumen y
+   que la sesión siga viva (`SessionService.peek`): copiada a otro navegador,
+   404; cerrar sesión deja de servirlas. Como la cookie es `SameSite=Lax`, una
+   página de otro sitio tampoco la puede mostrar aunque el visitante tenga la
+   sesión abierta. Costo por imagen: una HMAC y un `GET` de Redis (no la base).
+2. **De lo público → se ven en su página, no sueltas en otra.** La tienda, un
+   formulario, la agenda, una lista o un tablero publicados piden sus imágenes
+   desde su propia dirección (también insertados en un sitio: el marco es
+   nuestro). `common/hotlink.ts` corta el pedido que hace una página de OTRO
+   sitio para mostrarlo adentro: `Sec-Fetch-Site: cross-site` con un destino
+   que no es una navegación → 403 `no-store` (en un navegador viejo sin Fetch
+   Metadata decide el `Referer`). Abrir el enlace sigue funcionando. Además
+   `Cross-Origin-Resource-Policy: same-site`. Vale para `/files/:id/signed`,
+   las fotos de la tienda (`/public/s/:token/img/…`, que antes mandaban
+   `cross-origin`) y el logo del widget.
+3. **De un correo → se ven en cualquier programa, con tope.** Una URL que dura
+   más de 2 días (`MAIL_URL_MIN_TTL`) es de un correo o un mensaje (el logo de
+   una confirmación, 30 días; una imagen del editor de correos, 5 años) y
+   nunca se ata a una sesión. Un programa de correo puede pedirla como
+   "otro sitio", así que no se corta por origen: los pedidos de un navegador
+   (`Sec-Fetch-Dest: image`) cuentan en Redis y pasados
+   `MAIL_IMAGE_LOADS_PER_MINUTE` (60) por archivo y minuto responden 429; los
+   proxies de Gmail, Outlook y Apple no cuentan. Se guardan un año en el
+   navegador, nunca se achican (Outlook no lee WebP) y la imagen tiene que
+   pesar menos de 3 MB (`email_image_too_large`).
+4. **Dirección fija para la app** (`GET /files/:id/view?t=<empresa>[&w=]`):
+   las imágenes de la ficha diseñada y de los bloques de contenido de los
+   tableros usaban `/files/:id/download`, que exige el header `X-Tenant-Id`
+   que una `<img>` no manda — respondían 400 y no se veían. La ruta nueva
+   recibe la empresa en `?t=` (`@AllowTenantQuery`, sólo GET; la sesión sigue
+   siendo la cookie), revisa el acceso y redirige a la URL atada a la sesión.
+
+Las páginas públicas no corren dentro de una sesión: sus URLs nunca quedan
+atadas, aunque las arme un pedido de alguien con la app abierta. El
+interceptor se aplica sólo donde la respuesta es para el navegador de quien
+pide (nunca en lo que se guarda en la caché pública).

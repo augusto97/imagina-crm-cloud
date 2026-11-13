@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, Inject, NotFoundException, Param, ParseIntPipe, Patch, Post, Query, Req, Res, UseGuards, UseInterceptors } from '@nestjs/common';
 import {
     CAPTCHA_PROVIDER_INFO,
     createShopKindColumnSchema,
@@ -41,6 +41,8 @@ import {
     type UpdateShopInput,
 } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { fetchContextOf, isCrossSiteEmbed } from '../common/hotlink';
+import { FileBindingInterceptor } from '../files/file-binding';
 import { z } from 'zod';
 import { AuditService } from '../audit/audit.service';
 import { SessionGuard } from '../auth/session.guard';
@@ -281,6 +283,9 @@ export class ShopsController {
     /** La vista previa con lo que se está editando (sin guardar). */
     @Post(':id/preview')
     @HttpCode(200)
+    // v0.1.427 — las fotos de la vista previa (tienda quizá sin publicar) sólo
+    // las abre el navegador de quien está editando.
+    @UseInterceptors(FileBindingInterceptor)
     @RequireCapability('manage_lists')
     async preview(
         @Req() req: FastifyRequest,
@@ -521,6 +526,13 @@ export class PublicShopPageController {
     /** Una foto del catálogo al ancho pedido (160, 320, 640, 1200 o 1600). No cambia: se guarda un año. */
     @Get(':token/img/:key/:w')
     async image(@Req() req: FastifyRequest, @Param('token') token: string, @Param('key') key: string, @Param('w') w: string, @Res() reply: FastifyReply): Promise<void> {
+        // v0.1.427 — la foto se ve en la tienda (su dirección, su dominio o
+        // insertada en un sitio: el marco es de la tienda); una página de OTRO
+        // sitio no la puede usar como su imagen.
+        if (isCrossSiteEmbed(fetchContextOf(req))) {
+            reply.status(403).header('Cache-Control', 'no-store').header('X-Content-Type-Options', 'nosniff').send();
+            return;
+        }
         const width = shopImageWidth(w);
         let img = null;
         if (width) {
@@ -541,7 +553,7 @@ export class PublicShopPageController {
         reply
             .header('Cache-Control', 'public, max-age=31536000, immutable')
             .header('Content-Security-Policy', "default-src 'none'; sandbox")
-            .header('Cross-Origin-Resource-Policy', 'cross-origin')
+            .header('Cross-Origin-Resource-Policy', 'same-site')
             .type(img.mime)
             .send(img.bytes);
     }

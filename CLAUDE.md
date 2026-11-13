@@ -15155,6 +15155,41 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `file-thumbs.spec` (7), shared `file-images.test` (6), front
         `fileThumbs.test` (5) + E2E navegador 18/18 y 16/16 en celular oscuro.
 
+  - [x] **Las imágenes no se pueden usar desde otros sitios (v0.1.427,
+        addendum ADR-S16, pedido del usuario: "si una lista no es pública no
+        puede generar una url pública de la imagen… solo debe servir para lo
+        público como la tienda… pero no para ser insertadas en otros sitios web
+        y que puedan llegar a usar esta app como una cdn de imagenes")**. Cada
+        imagen de la app viajaba con una URL firmada que servía SIN sesión 4
+        horas. Ahora hay tres clases: (a) **app y portal → atadas a la
+        sesión**: `FileBindingInterceptor` (Files, Portal y la vista previa de
+        la tienda) deja la sesión en un `AsyncLocalStorage` y
+        `FilesService.signedUrl` agrega `&b=<resumen SHA-256 de la sesión>`,
+        que entra en la firma; `/files/:id/signed` exige una credencial con ese
+        resumen (cookie de la app o del portal, o `Authorization`) y la sesión
+        viva — copiada a otro navegador, 404; cerrar sesión las apaga; y como
+        la cookie es `SameSite=Lax`, otra página no la puede mostrar. (b)
+        **Público → en su página, no suelto en otra**: `common/hotlink.ts`
+        corta con 403 `no-store` lo que una página de OTRO sitio pide para
+        mostrar adentro (`Sec-Fetch-Site: cross-site` sin ser navegación; sin
+        Fetch Metadata, el `Referer`), con `CORP: same-site`; vale para
+        `/files/:id/signed`, las fotos de la tienda (antes `cross-origin`) y el
+        logo del widget. La tienda o un formulario insertados en otro sitio
+        siguen mostrando sus fotos (el marco es nuestro). (c) **Correos → desde
+        cualquier lado, con tope**: una URL de más de 2 días
+        (`MAIL_URL_MIN_TTL`) nunca se ata; los pedidos de navegador cuentan en
+        Redis y pasados 60 por archivo y minuto dan 429 (los proxies de Gmail,
+        Outlook y Apple no cuentan); se guardan un año, no se achican y la
+        imagen tiene que pesar menos de 3 MB. **Bug real**: las imágenes subidas
+        a una ficha diseñada o a un tablero usaban `/files/:id/download` como
+        `<img>`, que exige el header de la empresa → 400 y no se veían; ruta
+        nueva `GET /files/:id/view?t=` (`@AllowTenantQuery`, sólo GET) que
+        revisa el acceso y redirige a la URL atada. Tests: `file-hotlink.spec`
+        (9: reglas puras, atar dentro y no fuera, sesión viva, etiqueta
+        arrancada, portal, público vs otro sitio, tope del correo, 3 MB, el
+        interceptor y `?t=`), `roles-guests` al día, specs de portal, tienda,
+        widget, documentos e invitados 155/155 + E2E navegador 15/15.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

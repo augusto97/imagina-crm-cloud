@@ -3135,4 +3135,21 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         ].join('\n'),
         action: { label: 'Ir a mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.427-imagenes-protegidas',
+        version: '0.1.427',
+        date: '2026-11-13',
+        kind: 'improvement',
+        title: 'Tus imágenes sólo se ven donde las pusiste',
+        summary:
+            'Las imágenes de tus listas ya no se pueden copiar como enlace para mostrarlas en otra página: sólo se ven dentro de la app, con tu sesión. Y las imágenes de la ficha diseñada y de los tableros vuelven a verse.',
+        media: { illustration: 'ficha-archivos' },
+        body: [
+            '- Lo que está en tus listas lo ve sólo quien entra a la app. Si alguien copia la dirección de una foto y la abre en otro navegador, no carga.',
+            '- Lo que publicas (la tienda, un formulario, la agenda, una lista pública) se sigue viendo en su página, también cuando la insertas en tu sitio web. Lo que no se puede es usar una de esas fotos suelta en otra página.',
+            '- Las imágenes de los correos se ven en cualquier programa de correo. Para un correo, la imagen tiene que pesar menos de 3 MB.',
+            '- Si subiste imágenes a una ficha diseñada o a un tablero y no se veían, ahora sí.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+    },
 ];

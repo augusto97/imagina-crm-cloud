@@ -13,6 +13,7 @@ import {
     type WidgetStatsRange,
 } from '@imagina-base/shared';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { fetchContextOf, isCrossSiteEmbed } from '../common/hotlink';
 import { AuditService } from '../audit/audit.service';
 import { SessionGuard } from '../auth/session.guard';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
@@ -212,7 +213,13 @@ export class PublicWidgetController {
      * widget muestra hoy.
      */
     @Get(':token/logo/:fileId')
-    async logo(@Param('token') token: string, @Param('fileId') fileIdRaw: string, @Res() reply: FastifyReply): Promise<void> {
+    async logo(@Req() req: FastifyRequest, @Param('token') token: string, @Param('fileId') fileIdRaw: string, @Res() reply: FastifyReply): Promise<void> {
+        // v0.1.427 — el logo se ve dentro del widget (su marco es nuestro); una
+        // página de otro sitio no lo puede usar suelto.
+        if (isCrossSiteEmbed(fetchContextOf(req))) {
+            reply.status(403).header('Cache-Control', 'no-store').header('X-Content-Type-Options', 'nosniff').send();
+            return;
+        }
         const fileId = Number(fileIdRaw);
         let logo: WidgetLogo | null = null;
         if (/^\d{1,15}$/.test(fileIdRaw) && Number.isSafeInteger(fileId) && fileId > 0) {
