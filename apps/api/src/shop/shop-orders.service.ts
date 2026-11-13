@@ -11,6 +11,8 @@ import {
     cleanAttribution,
     computeShopCart,
     formStatSourceLabel,
+    roundShopQty,
+    shopLineText,
     shopCouponProblemText,
     shopCurrencyDecimals,
     shopNeedsDelivery,
@@ -36,6 +38,7 @@ import {
     type ShopOrderLineSnapshot,
     type ShopOrderPanelDto,
     type ShopOrderStatus,
+    type TenantFormat,
     type ShopPaymentMethod,
     type ShopPaymentStatus,
 } from '@imagina-base/shared';
@@ -348,6 +351,16 @@ export class ShopOrdersService implements OnModuleInit {
                 coupon: coupon?.rule ?? null,
                 decimals: shopCurrencyDecimals(currency),
             });
+            // v0.1.429 — Una cantidad que la regla del producto no acepta (cambió
+            // el mínimo o el «de a cuánto» mientras compraba): no se cobra otra
+            // cosa de la que vio; se le muestra el carrito corregido.
+            if (cart.lines.some((l) => l.adjusted)) {
+                throw new ShopCartChangedError({
+                    code: 'shop_cart_changed',
+                    message: 'Cambió la cantidad que se puede comprar de un producto. Revisa tu carrito y vuelve a intentar.',
+                    data: { status: 409, cart },
+                });
+            }
             if (cart.blocked) {
                 throw new ShopCartChangedError({
                     code: 'shop_cart_changed',
@@ -380,7 +393,7 @@ export class ShopOrdersService implements OnModuleInit {
                 // v0.1.417 — Una suscripción no descuenta stock (en 0 se cierran las inscripciones).
                 if (!subscribing && rf.stock && p.product.stock !== null) {
                     const key = jsonbKeyForField(rf.stock.id);
-                    const next = { ...p.data, [key]: Math.max(0, p.product.stock - l.qty) };
+                    const next = { ...p.data, [key]: Math.max(0, roundShopQty(p.product.stock - l.qty)) };
                     const updated = await this.recordsRepo.updateData(tx, tenantId, shop.listId, l.product_id, next, 0);
                     if (updated) {
                         await this.activity.logInTx(tx, { tenantId, listId: shop.listId, recordId: l.product_id, userId: null, action: 'record_updated', diff: computeDiff(p.data, next) });
@@ -400,6 +413,7 @@ export class ShopOrdersService implements OnModuleInit {
                     parent_id: p.parentId,
                     kind: p.kind,
                     ...(p.downloads.length > 0 ? { files: p.downloads } : {}),
+                    ...(l.unit ? { unit: l.unit } : {}),
                 });
             }
 
@@ -410,7 +424,7 @@ export class ShopOrdersService implements OnModuleInit {
             const orderFields = await this.fieldsOf(tx, tenantId, o.list_id!);
             const of = (r: OrderRole): Field | undefined => orderFields.get(o.fields[r] ?? -1);
             const where = [c.address, c.city].filter((x) => x.trim()).join(', ');
-            const items = lines.map((l) => `${l.qty} × ${l.title} — ${money(l.subtotal)}`).join('\n');
+            const items = lines.map((l) => `${shopLineText(l, numberFormat)} — ${money(l.subtotal)}`).join('\n');
             const data: Record<string, unknown> = {};
             put(data, of('status'), 'nuevo');
             put(data, of('payment_status'), paidNow ? 'pagado' : 'pendiente');
@@ -462,6 +476,8 @@ export class ShopOrdersService implements OnModuleInit {
                 const ld: Record<string, unknown> = {};
                 put(ld, lf('title'), l.title);
                 put(ld, lf('qty'), l.qty);
+                // v0.1.429 — En qué se compró («horas», «kg»): la cantidad sola no lo dice.
+                if (l.unit) put(ld, lf('unit'), l.qty === 1 ? l.unit.one : l.unit.many);
                 put(ld, lf('unit_price'), l.unit_price);
                 put(ld, lf('subtotal'), l.subtotal);
                 put(ld, lf('sku'), l.sku);
@@ -813,7 +829,7 @@ export class ShopOrdersService implements OnModuleInit {
             shopName: s.shop.name,
             number: o.number,
             customerName: o.customer.name,
-            lines: o.lines.map((l) => ({ title: l.title, qty: l.qty, subtotal: o.money(l.subtotal) })),
+            lines: o.lines.map((l) => ({ text: shopLineText(l, this.numberFormatOf(s)), subtotal: o.money(l.subtotal) })),
             subtotal: o.money(o.totals.subtotal),
             discount: (o.totals.discount ?? 0) > 0 ? `-${o.money(o.totals.discount ?? 0)}` : null,
             couponCode: o.totals.coupon ?? '',
@@ -898,7 +914,7 @@ export class ShopOrdersService implements OnModuleInit {
             payment_method: method,
             payment_label: SHOP_PAYMENT_METHOD_LABELS[method] ?? method,
             payment_instructions: pay === 'pendiente' ? paymentInstructions(config, method) : '',
-            lines: (row.lines as ShopOrderLineSnapshot[]).map((l) => ({ title: l.title, qty: l.qty, unit_price: l.unit_price, subtotal: l.subtotal })),
+            lines: (row.lines as ShopOrderLineSnapshot[]).map((l) => ({ title: l.title, qty: l.qty, unit_price: l.unit_price, subtotal: l.subtotal, ...(l.unit ? { unit: l.unit } : {}) })),
             subtotal: row.subtotal,
             discount: row.discount,
             coupon_code: row.couponCode,
@@ -1163,7 +1179,8 @@ export class ShopOrdersService implements OnModuleInit {
                     payment_status_label: SHOP_PAYMENT_STATUS_LABELS[pay] ?? pay,
                     total: r.total,
                     currency: r.currency,
-                    items: lines.reduce((n, l) => n + l.qty, 0),
+                    // v0.1.429 — Una línea con unidad (3 horas, 1,5 kg) cuenta como un producto.
+                    items: lines.reduce((n, l) => n + (l.unit || !Number.isInteger(l.qty) ? 1 : l.qty), 0),
                     downloads: this.downloadFiles(r).length,
                     subscription: (() => {
                         const sb = r.subscriptionId ? subs.get(r.subscriptionId) : undefined;
@@ -1462,6 +1479,12 @@ export class ShopOrdersService implements OnModuleInit {
             company: (b.success ? b.data.app_name : null) || hit.name,
             tenantSettings: settings,
         };
+    }
+
+    /** v0.1.429 — Los separadores de la empresa (para escribir cantidades: «1,5 kg»). */
+    private numberFormatOf(ctx: ShopCtx): TenantFormat['number_format'] {
+        const fmt = tenantFormatSchema.safeParse(ctx.tenantSettings.format ?? {});
+        return fmt.success ? fmt.data.number_format : 'dot_comma';
     }
 
     private moneyFor(ctx: ShopCtx, currency: string): (n: number) => string {
@@ -1807,7 +1830,7 @@ export class ShopOrdersService implements OnModuleInit {
             // Un producto que ahora no controla stock (lo vaciaron) no se toca.
             if (!Number.isFinite(cur)) continue;
             const qty = lines.filter((l) => l.product_id === r.id).reduce((n, l) => n + l.qty, 0);
-            const next = { ...data, [key]: Math.max(0, cur + sign * qty) };
+            const next = { ...data, [key]: Math.max(0, roundShopQty(cur + sign * qty)) };
             const updated = await this.recordsRepo.updateData(tx, tenantId, row.catalogListId, r.id, next, 0);
             if (!updated) continue;
             await this.activity.logInTx(tx, { tenantId, listId: row.catalogListId, recordId: r.id, userId: null, action: 'record_updated', diff: computeDiff(data, next) });

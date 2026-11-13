@@ -15237,6 +15237,60 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         círculo/borde/sombra/forma en la vista previa y en la tienda
         publicada).
 
+  - [x] **Unidades de venta en la tienda (v0.1.429, addendum ADR-S103,
+        aprobado por el usuario: "el usuario debe poder decir las unidades,
+        mínimo y de a cuánto; debe poder decidir todo del producto en sí")**:
+        cada producto dice en qué se vende y cuánto se puede comprar, en
+        cuatro columnas de su lista. (a) **Papeles nuevos del catálogo**
+        `unit` (texto o selección: «hora», «año», «kg», «licencia»; el plural
+        se arma solo y «mes/meses» lo fija a mano; «unidad» o vacío = por
+        unidad), `qty_min`, `qty_max` y `qty_step` (números con hasta 3
+        decimales). Lo vacío es lo de siempre: por unidad, desde 1 y de a 1;
+        sin mínimo, el mínimo es el paso. Una variante hereda de su producto
+        cada dato que deja vacío. Editor → Productos → **Unidades y
+        cantidades** (`data-tour="shop-units"`): los cuatro selectores, un
+        ejemplo armado con las mismas funciones de la tienda y **«Crear las
+        columnas»** (`POST /shops/:id/unit-columns`, `manage_lists` +
+        `manage_fields`, bitácora `shop.unit_columns`) que las arma en la
+        lista y las elige sin dejar el editor con cambios. Sin migración.
+        (b) **Reglas puras** en `packages/shared/src/schemas/shop-units.ts`
+        (sin zod: las usa la página): cantidades válidas = mínimo + k·paso
+        hasta el tope (máximo, stock y `SHOP_MAX_QTY`, que pasa de 999 a
+        10.000), en milésimas enteras; `snapShopQty`, `shopQtyCap`,
+        `shopQtyNext`, `shopQtyRuleFrom`, `shopUnitFrom`, `shopQtyText`,
+        `shopQtyRuleText`, `parseShopQtyInput` (con el formato de la empresa:
+        «1.500» con punto de miles es 1500). (c) **La página**: «$ 50.000 /
+        hora» en la tarjeta y la ficha, la regla en una frase («Mínimo 2 horas
+        · máximo 40 horas», «De a 0,5 kg»), «Cantidad (kg)» o «Horas» sobre el
+        selector, que sube de a lo elegido y se puede escribir (1,3 con «de a
+        0,5» queda en 1,5); agregar desde la tarjeta arranca en el mínimo y
+        «−» desde el mínimo lo saca; el stock se dice en la unidad («Quedan
+        3,2 kg»); el carrito, el pago, la página del pedido, el correo y el
+        mensaje de WhatsApp dicen «Asesoría · 3 horas», «Café · 1,5 kg»;
+        `?comprar=` y `?agregar=` aceptan decimales (`12:1.5`) y se corrigen a
+        la regla (el botón «Comprar» de Compartir también acepta «1,5»: su
+        enlace se arma ahora con el mismo `shopCartParam`, antes redondeaba
+        hacia abajo); la vista previa lleva a «Unidades y cantidades» al tocar la
+        regla. (d) **El servidor manda**: `computeShopCart` corrige cada línea
+        y la marca `adjusted`; el pedido con una línea corregida responde 409
+        `shop_cart_changed` con el carrito nuevo. El stock baja y vuelve con
+        decimales; la línea del pedido guarda la unidad, la lista de líneas
+        tiene la columna **Unidad** (con candado) y la cantidad con 3
+        decimales (`ensureLineUnitColumn`: una tienda de antes la recibe al
+        elegir una unidad). Google y Meta reciben una cantidad con decimales
+        como 1 unidad al subtotal de la línea; el JSON-LD del dominio propio
+        lleva `UnitPriceSpecification`. **Bug atrapado en el E2E**: la ficha
+        arrancaba en 1 en vez del mínimo (con «de a 0,5 kg» debía empezar en
+        0,5). De paso, los «−»/«+» del carrito se llamaban «Quitar»/«Agregar»
+        y chocaban con el botón «Quitar» del producto: ahora «Menos»/«Más».
+        Ayuda: guía `shop`, sección «Vender por hora, por año o por kilo» en
+        Aprende → Tienda online y novedad con carrusel (ilustraciones que ya
+        existían). Tests: `shop-units` en shared (9 nuevos, 987 en verde),
+        `shops-units.spec` (5: columnas, catálogo, pedido con decimales y 409,
+        herencia en variantes, tienda de antes; specs de la tienda 84/84),
+        front 924 + E2E navegador 37/37 en escritorio claro, 37/37 en oscuro y
+        36/36 en celular oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -1,3 +1,5 @@
+import { shopCartParam } from '@imagina-base/shared';
+
 /**
  * v0.1.352 (ADR-S95) — El código para insertar un formulario o una agenda en
  * el sitio de la empresa, en tres formas:
@@ -163,10 +165,8 @@ export function shopProductUrl(url: string, productId: number): string {
  * el del producto o el de una variante.
  */
 export function shopCartLinkUrl(url: string, items: ReadonlyArray<{ id: number; qty: number }>, mode: 'buy' | 'add' = 'buy'): string {
-    const value = items
-        .filter((x) => Number.isSafeInteger(x.id) && x.id > 0)
-        .map((x) => (x.qty > 1 ? `${x.id}:${Math.floor(x.qty)}` : String(x.id)))
-        .join(',');
+    // v0.1.429 — La misma escritura que lee la tienda (acepta decimales: 12:1.5).
+    const value = shopCartParam(items);
     const key = mode === 'buy' ? 'comprar' : 'agregar';
     try {
         const u = new URL(url);

@@ -350,6 +350,19 @@ export class ShopsController {
         return dto;
     }
 
+    /** v0.1.429 — Crear las columnas de las unidades (Unidad de venta, mínimo, máximo, de a cuánto) en el catálogo. */
+    @Post(':id/unit-columns')
+    @RequireCapability('manage_lists')
+    async createUnitColumns(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<ShopDto> {
+        const tenantId = req.tenant!.tenantId;
+        if (!can({ role: req.tenant!.role, ...aclOf(req) }, 'manage_fields')) {
+            throw new ForbiddenException({ code: 'forbidden', message: 'Crear una columna requiere poder gestionar los campos.', data: { status: 403 } });
+        }
+        const dto = await this.shops.createUnitColumns(tenantId, id);
+        await this.audit.log({ tenantId, userId: req.authUserId ?? null, action: 'shop.unit_columns', targetType: 'shop', targetLabel: dto.name, meta: { shop_id: id } });
+        return dto;
+    }
+
     @Post(':id/kind-columns')
     @RequireCapability('manage_lists')
     async createKindColumn(

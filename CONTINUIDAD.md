@@ -415,15 +415,20 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.428**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.429**
+(**unidades de venta en la tienda** — cada producto dice en qué se vende
+(hora, año, kg, licencia) y cuánto se puede comprar (mínimo, máximo, de a
+cuánto, con decimales) en cuatro columnas de su lista; «$ 50.000 / hora» en la
+tienda, selector que sube de a lo elegido y se puede escribir, «3 horas» y
+«1,5 kg» en el carrito, el pedido y las líneas, stock con decimales; addendum
+ADR-S103). Antes **v0.1.428**
 (**tocar la vista previa de la tienda lleva al ajuste + fotos con su forma,
 esquinas y borde** — en el editor de la tienda, tocar una parte de la vista
 previa abre su sección y baja hasta el ajuste («Navegar» para recorrerla como
 un cliente); Estilo → Fotos de los productos con la forma en la vitrina y en
 la ficha (suma alta, de cámara y panorámica), completa o recortada, esquinas
 hasta en círculo, borde con grosor y color, margen y sombra; addendum
-ADR-S103). Pendiente propuesto al usuario: **unidades de venta en la tienda**
-(v0.1.429, esperando su visto bueno). Antes **v0.1.427**
+ADR-S103). Antes **v0.1.427**
 (**las imágenes ya no se pueden usar desde otros sitios** — las de la app y el
 portal viajan con una URL atada a la sesión (copiada a otro navegador no
 abre); las de lo público (tienda, formularios, agenda, listas publicadas) se
@@ -2019,6 +2024,33 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-13 · v0.1.429** — **Unidades de venta en la tienda** (aprobado
+  por el usuario: "El usuario debe poder decir las unidades, minimo y de a
+  cuanto, debe poder decidir todo del producto en si"). Cada producto decide
+  lo suyo en cuatro columnas de la lista (papeles nuevos del catálogo:
+  `unit`, `qty_min`, `qty_max`, `qty_step`; «Crear las columnas» en Productos →
+  Unidades y cantidades las arma y elige, sin migración): «hora» (el plural se
+  arma solo; «mes/meses» a mano), mínimo, máximo y de a cuánto, con hasta 3
+  decimales. Lo vacío es lo de siempre (por unidad, desde 1, de a 1) y una
+  variante hereda de su producto lo que deja vacío. Reglas puras en
+  `packages/shared/src/schemas/shop-units.ts` (la misma cuenta en la página y
+  en el servidor, en milésimas enteras). La tienda muestra «$ X / hora», la
+  regla en una frase, el selector sube de a lo elegido y se puede escribir
+  (1,3 con «de a 0,5» queda en 1,5); el carrito, el pago, el pedido, el correo
+  y WhatsApp dicen «3 horas» / «1,5 kg». El servidor corrige la cantidad: si
+  el pedido llega con una que no vale, 409 `shop_cart_changed` con el carrito
+  corregido. El stock baja y vuelve con decimales; las líneas guardan la
+  cantidad con 3 decimales y la columna **Unidad** (una tienda de antes la
+  recibe al elegir una unidad). `SHOP_MAX_QTY` pasa de 999 a 10.000. **Bug
+  atrapado en el E2E**: la ficha arrancaba en 1 en vez del mínimo (con «de a
+  0,5 kg» debía arrancar en 0,5). De paso, los «−»/«+» del carrito decían
+  «Quitar»/«Agregar» (chocaba con el botón «Quitar» del producto): ahora
+  «Menos»/«Más», y el botón «Comprar» de Compartir acepta cantidades con
+  decimales (su enlace redondeaba hacia abajo). Tests: shared 987, front 924,
+  `shops-units.spec` 5/5 (specs
+  de la tienda 84/84) + E2E navegador 37/37 claro, 37/37 oscuro y 36/36
+  celular oscuro (editor, vista previa, vitrina, carrito, ficha con
+  decimales, pago, pedido, stock 3,2 → 1,7, `?comprar=` corregido).
 - **2026-11-13 · v0.1.428** — **Tocar la vista previa de la tienda lleva al
   ajuste + fotos con su forma, esquinas y borde** (pedidos del usuario: "que
   el usuario al hacer click en el editor de la tienda pueda ir de una al

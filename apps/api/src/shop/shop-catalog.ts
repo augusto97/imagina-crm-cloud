@@ -11,8 +11,12 @@ import {
     SHOP_MAX_VARIANTS,
     SHOP_VARIANT_ATTRIBUTE_TYPES,
     shopImageKeyForFile,
+    roundShopQty,
     shopKindFromText,
     shopPurchasables,
+    shopQtyRuleFrom,
+    shopUnitFrom,
+    unitFields,
     summarizeVariantProduct,
     type Field,
     type PublicShopOption,
@@ -22,6 +26,8 @@ import {
     type ShopCatalogFields,
     type ShopKindsConfig,
     type ShopProductKind,
+    type ShopQtyRule,
+    type ShopUnit,
 } from '@imagina-base/shared';
 import type { ShopImageSource } from './shop-images.service';
 
@@ -78,7 +84,41 @@ export function resolveCatalogFields(
         stock: pick('stock', catalog.stock),
         sku: pick('sku', catalog.sku),
         active: pick('active', catalog.active),
+        unit: pick('unit', catalog.unit),
+        qty_min: pick('qty_min', catalog.qty_min),
+        qty_max: pick('qty_max', catalog.qty_max),
+        qty_step: pick('qty_step', catalog.qty_step),
     };
+}
+
+/**
+ * v0.1.429 — La unidad de un registro (la etiqueta de la opción o el texto) y
+ * su regla de cantidad. En una variante, lo que no dice queda en `inherit`
+ * (lo de su producto): la unidad y cada número por separado.
+ */
+export function unitOfRow(
+    rf: ResolvedCatalog,
+    data: Record<string, unknown>,
+    inherit?: { unit: ShopUnit | null; raw: { min: unknown; max: unknown; step: unknown } },
+): { unit: ShopUnit | null; qty: ShopQtyRule | null; raw: { min: unknown; max: unknown; step: unknown } } {
+    const get = (f: Field | null): unknown => (f ? data[jsonbKeyForField(f.id)] : undefined);
+    let unit: ShopUnit | null = null;
+    if (rf.unit) {
+        const v = get(rf.unit);
+        const text = rf.unit.type === 'select' && typeof v === 'string' ? (optionLabels(rf.unit).get(v) ?? '') : v;
+        unit = shopUnitFrom(text);
+    }
+    const own = { min: get(rf.qty_min), max: get(rf.qty_max), step: get(rf.qty_step) };
+    const empty = (v: unknown): boolean => v === null || v === undefined || v === '';
+    const raw = inherit
+        ? { min: empty(own.min) ? inherit.raw.min : own.min, max: empty(own.max) ? inherit.raw.max : own.max, step: empty(own.step) ? inherit.raw.step : own.step }
+        : own;
+    return { unit: unit ?? inherit?.unit ?? null, qty: shopQtyRuleFrom(raw), raw };
+}
+
+/** El stock en la unidad del producto (puede tener decimales: 12,5 kg). */
+function stockOf(v: number | null): number | null {
+    return v === null ? null : Math.max(0, roundShopQty(v));
 }
 
 /** Clave de una foto que viene por enlace: no se adivina la dirección desde la clave. */
@@ -237,8 +277,13 @@ export function productFromRow(row: CatalogRow, rf: ResolvedCatalog): CatalogPro
             description: str(get(rf.description), 4000),
             ...summaryOf(get(rf.summary)),
             categories: productCategories(rf.category, get(rf.category)),
-            stock: stockRaw === null ? null : Math.max(0, Math.floor(stockRaw)),
+            stock: stockOf(stockRaw),
             sku: str(get(rf.sku), 80),
+            // v0.1.429 — Unidad de venta y cuánto se puede comprar (sólo si no es lo de siempre).
+            ...(() => {
+                const u = unitOfRow(rf, d);
+                return unitFields(u.unit, u.qty);
+            })(),
             created_at: created,
         },
         images,
@@ -282,6 +327,9 @@ interface RawVariant {
     images: Array<[string, ShopImageSource]>;
     /** v0.1.416 — Sus archivos para descargar (vacío = los del producto). */
     downloads: number[];
+    /** v0.1.429 — Su unidad y su regla (con lo de su producto donde no dice nada). */
+    unit: ShopUnit | null;
+    qty: ShopQtyRule | null;
 }
 
 /** «M / Rojo»: los valores de los atributos; sin ninguno, el nombre de la subtarea. */
@@ -294,8 +342,10 @@ export function variantLabel(row: CatalogRow, rf: ResolvedCatalog, attrs: readon
     return own || `Opción ${index + 1}`;
 }
 
-function readVariant(parent: PublicShopProduct, row: CatalogRow, rf: ResolvedCatalog, attrs: readonly Field[], index: number): RawVariant {
+function readVariant(parent: PublicShopProduct, row: CatalogRow, rf: ResolvedCatalog, attrs: readonly Field[], index: number, parentData?: Record<string, unknown>): RawVariant {
     const d = row.data ?? {};
+    const parentUnit = parentData ? unitOfRow(rf, parentData) : { unit: parent.unit ?? null, raw: { min: parent.qty?.min, max: parent.qty?.max, step: parent.qty?.step } };
+    const units = unitOfRow(rf, d, { unit: parentUnit.unit, raw: parentUnit.raw });
     const get = (f: Field | null): unknown => (f ? d[jsonbKeyForField(f.id)] : undefined);
     const ownPrice = num(get(rf.price));
     const price = ownPrice !== null && ownPrice >= 0 ? ownPrice : parent.price;
@@ -309,10 +359,12 @@ function readVariant(parent: PublicShopProduct, row: CatalogRow, rf: ResolvedCat
         label: variantLabel(row, rf, attrs, index),
         price,
         compare_price: compareRaw !== null && price !== null && compareRaw > price ? compareRaw : null,
-        stock: stockRaw === null ? null : Math.max(0, Math.floor(stockRaw)),
+        stock: stockOf(stockRaw),
         sku: str(get(rf.sku), 80),
         images: imageSources(rf.images, get(rf.images)),
         downloads: rf.kinds?.download ? fileIdsOf(get(rf.kinds.download)) : [],
+        unit: units.unit,
+        qty: units.qty,
     };
 }
 
@@ -324,8 +376,8 @@ const EMPTY_VALUE = '—';
  * nombre de la subtarea. Las combinaciones repetidas se ignoran (gana la
  * primera). Las fotos de las variantes se suman a las que sirve la tienda.
  */
-export function attachVariants(parent: CatalogProduct, children: readonly CatalogRow[], rf: ResolvedCatalog, attrs: readonly Field[]): CatalogProduct {
-    const raws = children.slice(0, SHOP_MAX_VARIANTS).map((row, i) => readVariant(parent.product, row, rf, attrs, i));
+export function attachVariants(parent: CatalogProduct, children: readonly CatalogRow[], rf: ResolvedCatalog, attrs: readonly Field[], parentData?: Record<string, unknown>): CatalogProduct {
+    const raws = children.slice(0, SHOP_MAX_VARIANTS).map((row, i) => readVariant(parent.product, row, rf, attrs, i, parentData));
     if (raws.length === 0) return parent;
     const used = attrs.map((_, i) => i).filter((i) => raws.some((r) => r.raw[i] !== ''));
     const options: PublicShopOption[] = [];
@@ -359,6 +411,7 @@ export function attachVariants(parent: CatalogProduct, children: readonly Catalo
             stock: r.stock,
             sku: r.sku,
             images: r.images.map(([k]) => `img/${k}`),
+            ...unitFields(r.unit, r.qty),
         });
     }
     const summary = summarizeVariantProduct(parent.product, variants, options);
@@ -415,7 +468,7 @@ export function purchasablesFromRows(
             if (!p.active || wrongKind(p.product.kind)) continue;
             out.set(r.id, {
                 data: r.data,
-                product: { id: r.id, title: p.product.title, price: p.product.price, stock: p.product.stock },
+                product: { id: r.id, title: p.product.title, price: p.product.price, stock: p.product.stock, ...unitFields(p.product.unit, p.product.qty) },
                 sku: p.product.sku,
                 parentId: null,
                 categories: p.product.categories,
@@ -429,12 +482,12 @@ export function purchasablesFromRows(
         if (!parentRow) continue;
         const parent = productFromRow(parentRow, rf);
         if (!parent.active || wrongKind(parent.product.kind)) continue;
-        const item = shopPurchasables([attachVariants(parent, [r], rf, attrs).product], opts).get(r.id);
+        const item = shopPurchasables([attachVariants(parent, [r], rf, attrs, parentRow.data).product], opts).get(r.id);
         if (!item) continue;
         const own = rf.kinds?.download ? fileIdsOf(r.data[jsonbKeyForField(rf.kinds.download.id)]) : [];
         out.set(r.id, {
             data: r.data,
-            product: { id: r.id, title: item.title, price: item.price, stock: item.stock },
+            product: { id: r.id, title: item.title, price: item.price, stock: item.stock, ...unitFields(item.unit, item.qty) },
             sku: item.sku,
             parentId: parentRow.id,
             categories: parent.product.categories,

@@ -44,6 +44,8 @@ export const SHOP_EDIT_TARGETS = {
     gallery: { label: 'Fotos de la ficha', section: 'style', tour: 'shop-style-images-product' },
     description: { label: 'Descripción', section: 'catalog', tour: 'shop-role-description' },
     variants: { label: 'Variantes', section: 'catalog', tour: 'shop-variants' },
+    /** v0.1.429 — La unidad, el mínimo y «de a cuánto» de cada producto. */
+    units: { label: 'Unidades y cantidades', section: 'catalog', tour: 'shop-units' },
     buy: { label: 'Botones de compra', section: 'design', tour: 'shop-design-after-add' },
     delivery: { label: 'Cómo se entrega', section: 'payment', tour: 'shop-delivery' },
     // El carrito y el pago

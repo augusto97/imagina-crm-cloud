@@ -9374,3 +9374,37 @@ controlar los bordes y la relación de aspecto".
    es»); las dos suman alta 2:3, de cámara 3:2 y panorámica 16:9. Los ajustes
    de las fotos se mudaron de Apariencia y de «Ficha del producto» a
    **Estilo → Fotos de los productos**, con un dibujo de cada forma.
+
+**Addendum v0.1.429 (ADR-S103) — Unidades de venta.** Pedido del usuario:
+"el usuario debe poder decir las unidades, mínimo y de a cuánto; debe poder
+decidir todo del producto en sí".
+
+1. **Por producto, en columnas**: cuatro papeles nuevos del catálogo
+   (`unit` texto o selección; `qty_min`, `qty_max`, `qty_step` número). Una
+   celda vacía es lo de siempre (por unidad, desde 1, de a 1); sin mínimo, el
+   mínimo es el paso; un máximo menor que el mínimo se ignora. Una variante
+   hereda de su producto cada dato que deja vacío (el catálogo y el servidor
+   leen el dato crudo del padre, así resuelven igual). «Crear las columnas»
+   (`POST /shops/:id/unit-columns`, `manage_lists` + `manage_fields`, bitácora
+   `shop.unit_columns`) las arma con 3 decimales y las elige.
+2. **Reglas puras** en `packages/shared/src/schemas/shop-units.ts`, sin zod
+   porque las importa el cliente de la página: cantidades válidas = mínimo +
+   k·paso hasta el tope (máximo, stock y `SHOP_MAX_QTY` = 10.000), en milésimas
+   enteras (hasta 3 decimales); `snapShopQty` lleva cualquier cantidad a la
+   válida más cercana y `computeShopCart` marca la línea `adjusted` si la
+   cambió. El texto de la unidad (plural en español, abreviaturas sin plural,
+   «mes/meses» a mano) también vive ahí.
+3. **El servidor manda**: un pedido con una línea `adjusted` responde 409
+   `shop_cart_changed` con el carrito corregido (el total que se ve es el que
+   se cobra). El stock se descuenta y devuelve con `roundShopQty`. La línea
+   del pedido guarda `unit`; la lista de líneas tiene la columna **Unidad**
+   (`line_fields.unit`, con candado) y la cantidad con 3 decimales —
+   `ensureLineUnitColumn` la agrega a una tienda de antes cuando elige una
+   unidad.
+4. **La página**: «$ X / hora», la regla en una frase en la ficha, el
+   selector que sube de a lo elegido y acepta lo escrito (con el formato de la
+   empresa), la unidad en el carrito, el pago, el pedido, el correo y el
+   mensaje de WhatsApp, y en el JSON-LD (`UnitPriceSpecification`). Para
+   Google Ads y Meta una cantidad con decimales viaja como 1 unidad al
+   subtotal de la línea. En el contador del carrito una línea con unidad
+   cuenta como 1.

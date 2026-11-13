@@ -64,6 +64,16 @@ export const shopCatalogFieldsSchema = z.object({
     sku: nullableRef,
     /** Casilla «se vende»: null = se venden todos. */
     active: nullableRef,
+    /**
+     * v0.1.429 — Unidades de venta, por producto: en qué se vende (texto o
+     * selección: «hora», «año», «kg», o «mes/meses» con el plural a mano) y
+     * cuánto se puede comprar (números). Una celda vacía = lo de siempre: por
+     * unidad, desde 1 y de a 1. En una variante, vacío = lo de su producto.
+     */
+    unit: nullableRef,
+    qty_min: nullableRef,
+    qty_max: nullableRef,
+    qty_step: nullableRef,
 });
 export type ShopCatalogFields = z.infer<typeof shopCatalogFieldsSchema>;
 
@@ -701,7 +711,7 @@ export type ShopCustomer = z.infer<typeof shopCustomerSchema>;
 
 export const publicShopOrderSchema = z.object({
     lines: z
-        .array(z.object({ product_id: refId, qty: z.number().int().min(1).max(SHOP_MAX_QTY) }))
+        .array(z.object({ product_id: refId, qty: z.number().positive().max(SHOP_MAX_QTY) }))
         .min(1)
         .max(SHOP_MAX_LINES),
     customer: shopCustomerSchema,
@@ -741,7 +751,7 @@ export const publicShopMyOrdersRequestSchema = z.object({
 
 export const publicShopQuoteSchema = z.object({
     lines: z
-        .array(z.object({ product_id: refId, qty: z.number().int().min(1).max(SHOP_MAX_QTY) }))
+        .array(z.object({ product_id: refId, qty: z.number().positive().max(SHOP_MAX_QTY) }))
         .max(SHOP_MAX_LINES),
     delivery_id: z.string().regex(SHOP_ITEM_ID_RE).nullable().optional(),
     zone_id: z.string().regex(SHOP_ITEM_ID_RE).nullable().optional(),

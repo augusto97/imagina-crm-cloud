@@ -296,6 +296,13 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                             patch((c) => ({ ...c, kinds: { ...c.kinds, [key]: fieldId } }));
                             setCatalogVersion((n) => n + 1);
                         }}
+                        onUnitColumns={(cat) => {
+                            // v0.1.429 — Las columnas ya quedaron guardadas en la tienda.
+                            const next = Object.fromEntries(Object.entries(cat).filter(([, v]) => v !== null));
+                            saved.current = { ...saved.current, config: { ...saved.current.config, catalog: { ...saved.current.config.catalog, ...next } } };
+                            patch((c) => ({ ...c, catalog: { ...c.catalog, ...next } }));
+                            setCatalogVersion((n) => n + 1);
+                        }}
                     />
                 );
             case 'style':

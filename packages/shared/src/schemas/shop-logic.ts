@@ -1,4 +1,13 @@
 import { groupNumberPlain } from './shop-number';
+import {
+    SHOP_MAX_QTY,
+    roundShopQty,
+    shopQtyCap,
+    shopQtyText,
+    snapShopQty,
+    type ShopQtyRule,
+    type ShopUnit,
+} from './shop-units';
 import type { RichNode } from './rich-text';
 import type { PublicDirectTags } from './conversion-logic';
 import type { PublicDataConsent } from './data-consent';
@@ -24,7 +33,8 @@ export const SHOP_MAX_PUBLIC_PRODUCTS = 600;
 /** Productos distintos en un pedido. */
 export const SHOP_MAX_LINES = 50;
 /** Unidades de un mismo producto en un pedido. */
-export const SHOP_MAX_QTY = 999;
+/** v0.1.429 — El tope de una línea vive en `shop-units` (`SHOP_MAX_QTY`). */
+export * from './shop-units';
 export const SHOP_MAX_DELIVERY_METHODS = 10;
 /** v0.1.415 — Zonas de envío por forma de entrega (barrios, ciudades, regiones). */
 export const SHOP_MAX_DELIVERY_ZONES = 40;
@@ -275,14 +285,15 @@ export function parseShopCartParam(raw: string | null | undefined, qtyParam?: st
     const out = new Map<number, number>();
     const parts = raw.split(',').slice(0, SHOP_LINK_MAX_ITEMS * 2);
     parts.forEach((part, i) => {
-        const m = /^\s*(\d{1,15})(?:\s*[:x*]\s*(\d{1,4}))?\s*$/i.exec(part);
+        // v0.1.429 — La cantidad puede traer decimales (`12:1.5` = 1,5 kg).
+        const m = /^\s*(\d{1,15})(?:\s*[:x*]\s*(\d{1,5}(?:\.\d{1,3})?))?\s*$/i.exec(part);
         if (!m) return;
         const id = Number(m[1]);
         if (!Number.isSafeInteger(id) || id <= 0) return;
-        let qty = m[2] !== undefined ? Number(m[2]) : i === 0 && Number.isInteger(fallback) && fallback > 0 ? fallback : 1;
-        if (!Number.isInteger(qty) || qty <= 0) qty = 1;
+        let qty = m[2] !== undefined ? Number(m[2]) : i === 0 && Number.isFinite(fallback) && fallback > 0 ? fallback : 1;
+        if (!Number.isFinite(qty) || qty <= 0) qty = 1;
         if (!out.has(id) && out.size >= SHOP_LINK_MAX_ITEMS) return;
-        out.set(id, Math.min(SHOP_MAX_QTY, (out.get(id) ?? 0) + qty));
+        out.set(id, Math.min(SHOP_MAX_QTY, roundShopQty((out.get(id) ?? 0) + qty)));
     });
     return [...out].map(([id, qty]) => ({ id, qty }));
 }
@@ -292,7 +303,7 @@ export function shopCartParam(items: ReadonlyArray<{ id: number; qty: number }>)
     return items
         .filter((x) => Number.isSafeInteger(x.id) && x.id > 0)
         .slice(0, SHOP_LINK_MAX_ITEMS)
-        .map((x) => (x.qty > 1 ? `${x.id}:${Math.min(SHOP_MAX_QTY, Math.floor(x.qty))}` : String(x.id)))
+        .map((x) => (x.qty !== 1 && x.qty > 0 ? `${x.id}:${Math.min(SHOP_MAX_QTY, roundShopQty(x.qty))}` : String(x.id)))
         .join(',');
 }
 
@@ -349,6 +360,10 @@ export const SHOP_CATALOG_FIELD_TYPES: Record<keyof ShopCatalogFields, readonly 
     stock: ['number'],
     sku: ['text', 'autonumber'],
     active: ['checkbox'],
+    unit: ['text', 'select'],
+    qty_min: ['number'],
+    qty_max: ['number'],
+    qty_step: ['number'],
 };
 
 export const SHOP_CATALOG_ROLE_LABELS: Record<keyof ShopCatalogFields, string> = {
@@ -362,6 +377,10 @@ export const SHOP_CATALOG_ROLE_LABELS: Record<keyof ShopCatalogFields, string> =
     stock: 'Unidades disponibles',
     sku: 'Referencia (SKU)',
     active: '¿Se vende?',
+    unit: 'Unidad de venta',
+    qty_min: 'Cantidad mínima',
+    qty_max: 'Cantidad máxima',
+    qty_step: 'De a cuánto',
 };
 
 function foldName(s: string): string {
@@ -384,6 +403,10 @@ const ROLE_WORDS: Record<keyof ShopCatalogFields, string[]> = {
     stock: ['stock', 'inventario', 'existencias', 'disponibles', 'unidades', 'cantidad', 'disponible'],
     sku: ['sku', 'referencia', 'codigo', 'ref', 'codigo de barras'],
     active: ['activo', 'publicado', 'se vende', 'visible', 'disponible en tienda', 'en tienda', 'a la venta'],
+    unit: ['unidad de venta', 'unidad de medida', 'unidad', 'se vende por', 'medida', 'unit', 'presentacion'],
+    qty_min: ['cantidad minima', 'minimo', 'minimo de compra', 'compra minima por producto'],
+    qty_max: ['cantidad maxima', 'maximo', 'maximo de compra', 'tope'],
+    qty_step: ['de a cuanto', 'incremento', 'multiplo', 'multiplos', 'paso', 'intervalo', 'se vende de a', 'step'],
 };
 
 /**
@@ -405,6 +428,10 @@ export function suggestShopCatalog(
         stock: null,
         sku: null,
         active: null,
+        unit: null,
+        qty_min: null,
+        qty_max: null,
+        qty_step: null,
     };
     const used = new Set<number>();
     const score = (role: keyof ShopCatalogFields, f: { label: string; slug: string }): number => {
@@ -418,7 +445,8 @@ export function suggestShopCatalog(
         }
         return best;
     };
-    const order: (keyof ShopCatalogFields)[] = ['compare_price', 'price', 'stock', 'sku', 'images', 'category', 'active', 'summary', 'description', 'name'];
+    // v0.1.429 — Las cantidades antes que el stock: «Cantidad mínima» también dice «cantidad».
+    const order: (keyof ShopCatalogFields)[] = ['compare_price', 'price', 'qty_min', 'qty_max', 'qty_step', 'stock', 'sku', 'images', 'category', 'unit', 'active', 'summary', 'description', 'name'];
     for (const role of order) {
         const types = SHOP_CATALOG_FIELD_TYPES[role];
         let pick: { id: number; s: number } | null = null;
@@ -426,7 +454,7 @@ export function suggestShopCatalog(
             if (used.has(f.id) || !types.includes(f.type)) continue;
             const s = score(role, f) + (role === 'name' && f.is_primary ? 4 : 0);
             // El «precio antes» sólo por nombre; el resto también por tipo (con desempate por nombre).
-            if (s === 0 && (role === 'compare_price' || role === 'active' || role === 'stock' || role === 'sku' || role === 'description' || role === 'summary' || role === 'category')) continue;
+            if (s === 0 && role !== 'name' && role !== 'price' && role !== 'images') continue;
             if (!pick || s > pick.s) pick = { id: f.id, s };
         }
         if (pick) {
@@ -518,9 +546,13 @@ export interface PublicShopProduct {
     /** v0.1.424 — La descripción corta (sin ella, no viaja). */
     summary?: string;
     categories: string[];
-    /** null = sin límite (o la tienda no controla stock). */
+    /** null = sin límite (o la tienda no controla stock). En la unidad del producto (puede tener decimales). */
     stock: number | null;
     sku: string;
+    /** v0.1.429 — En qué se vende: «hora», «año», «kg» (sin el dato: por unidad). */
+    unit?: ShopUnit;
+    /** v0.1.429 — Cuánto se puede comprar (sin el dato: desde 1, de a 1). */
+    qty?: ShopQtyRule;
     /** `created_at` para ordenar por lo más nuevo. */
     created_at: string;
     /**
@@ -572,6 +604,9 @@ export interface PublicShopVariant {
     sku: string;
     /** Sus fotos (vacío = las del producto). */
     images: string[];
+    /** v0.1.429 — Su unidad y su regla (vacías en la subtarea = las del producto). */
+    unit?: ShopUnit;
+    qty?: ShopQtyRule;
 }
 
 export interface PublicShopOption {
@@ -590,6 +625,11 @@ export interface ShopPurchasable extends ShopCartProduct {
 /** «Camiseta · M / Rojo»: el nombre de una variante en el carrito y el pedido. */
 export function shopVariantTitle(productTitle: string, label: string): string {
     return label ? `${productTitle} · ${label}`.slice(0, 250) : productTitle;
+}
+
+/** v0.1.429 — La unidad y la regla, sólo si las hay (lo de siempre no viaja). */
+export function unitFields(unit: ShopUnit | null | undefined, qty: ShopQtyRule | null | undefined): { unit?: ShopUnit; qty?: ShopQtyRule } {
+    return { ...(unit ? { unit } : {}), ...(qty ? { qty } : {}) };
 }
 
 /**
@@ -611,6 +651,7 @@ export function shopPurchasables(products: readonly PublicShopProduct[], opts: {
                     title: shopVariantTitle(p.title, v.label),
                     price: v.price,
                     stock: v.stock,
+                    ...unitFields(v.unit ?? p.unit, v.qty ?? p.qty),
                     product: p,
                     variant: v,
                     images: v.images.length > 0 ? v.images : p.images,
@@ -619,7 +660,7 @@ export function shopPurchasables(products: readonly PublicShopProduct[], opts: {
             }
             continue;
         }
-        out.set(p.id, { id: p.id, title: p.title, price: p.price, stock: p.stock, product: p, variant: null, images: p.images, sku: p.sku });
+        out.set(p.id, { id: p.id, title: p.title, price: p.price, stock: p.stock, ...unitFields(p.unit, p.qty), product: p, variant: null, images: p.images, sku: p.sku });
     }
     return out;
 }
@@ -688,8 +729,11 @@ export function summarizeVariantProduct(p: PublicShopProduct, variants: PublicSh
         stock += Math.max(0, v.stock);
     }
     const images = p.images.length > 0 ? p.images : (variants.find((v) => v.images.length > 0)?.images ?? []);
+    // v0.1.429 — El «Desde» de la tarjeta va con la unidad de la variante más barata.
+    const unit = cheapest?.unit ?? p.unit;
     return {
         ...p,
+        ...(unit ? { unit } : {}),
         price: cheapest?.price ?? null,
         compare_price: cheapest && cheapest.compare_price !== null && cheapest.price !== null && cheapest.compare_price > cheapest.price ? cheapest.compare_price : null,
         stock,
@@ -763,6 +807,9 @@ export interface ShopCartProduct {
     title: string;
     price: number | null;
     stock: number | null;
+    /** v0.1.429 — En qué se vende y cuánto se puede comprar (sin el dato: de a 1). */
+    unit?: ShopUnit;
+    qty?: ShopQtyRule;
 }
 
 export type ShopLineProblem = 'unavailable' | 'no_price' | 'no_stock' | 'low_stock';
@@ -774,8 +821,15 @@ export interface ShopCartLine {
     unit_price: number;
     subtotal: number;
     problem: ShopLineProblem | null;
-    /** Con `low_stock`: cuántas quedan. */
+    /** Con `low_stock`: cuánto se puede llevar (en la unidad del producto). */
     available: number | null;
+    /** v0.1.429 — La unidad del producto (sin el dato: por unidad). */
+    unit?: ShopUnit;
+    /**
+     * v0.1.429 — La cantidad pedida no era válida (menos del mínimo, fuera del
+     * «de a cuánto», más del máximo) y se llevó a la válida más cercana.
+     */
+    adjusted?: true;
 }
 
 export interface ShopCartResult {
@@ -905,43 +959,49 @@ export function computeShopCart(
     const merged = new Map<number, number>();
     for (const l of input) {
         if (!Number.isInteger(l.product_id) || l.product_id <= 0) continue;
-        const qty = Math.min(SHOP_MAX_QTY, Math.max(0, Math.floor(Number(l.qty) || 0)));
+        // v0.1.429 — La cantidad puede traer decimales (kg, horas): se redondea a milésimas.
+        const qty = Math.min(SHOP_MAX_QTY, Math.max(0, roundShopQty(Number(l.qty) || 0)));
         if (qty === 0) continue;
-        merged.set(l.product_id, Math.min(SHOP_MAX_QTY, (merged.get(l.product_id) ?? 0) + qty));
+        merged.set(l.product_id, Math.min(SHOP_MAX_QTY, roundShopQty((merged.get(l.product_id) ?? 0) + qty)));
         if (merged.size >= SHOP_MAX_LINES) break;
     }
     const lines: ShopCartLine[] = [];
     let subtotalC = 0;
     let blocked = false;
-    for (const [id, qty] of merged) {
+    for (const [id, asked] of merged) {
         const p = products.get(id);
         if (!p) {
-            lines.push({ product_id: id, title: '', qty, unit_price: 0, subtotal: 0, problem: 'unavailable', available: 0 });
+            lines.push({ product_id: id, title: '', qty: asked, unit_price: 0, subtotal: 0, problem: 'unavailable', available: 0 });
             blocked = true;
             continue;
         }
+        const unit = p.unit ? { unit: p.unit } : {};
+        // v0.1.429 — La cantidad válida más cercana según el mínimo, el máximo y el «de a cuánto».
+        const qty = snapShopQty(asked, p.qty);
+        const adjusted = qty !== asked ? { adjusted: true as const } : {};
         if (p.price === null || !(p.price >= 0)) {
-            lines.push({ product_id: id, title: p.title, qty, unit_price: 0, subtotal: 0, problem: 'no_price', available: null });
+            lines.push({ product_id: id, title: p.title, qty, unit_price: 0, subtotal: 0, problem: 'no_price', available: null, ...unit, ...adjusted });
             blocked = true;
             continue;
         }
         let problem: ShopLineProblem | null = null;
         let available: number | null = null;
         if (p.stock !== null) {
-            const stock = Math.max(0, Math.floor(p.stock));
-            if (stock <= 0) {
+            // Lo que se puede llevar con el stock de hoy, en cantidades válidas.
+            const cap = shopQtyCap(p.qty, p.stock);
+            if (cap <= 0) {
                 problem = 'no_stock';
                 available = 0;
                 blocked = true;
-            } else if (qty > stock) {
+            } else if (qty > cap) {
                 problem = 'low_stock';
-                available = stock;
+                available = cap;
                 blocked = true;
             }
         }
-        const lineC = toCents(p.price) * qty;
+        const lineC = Math.round(toCents(p.price) * qty);
         if (!problem) subtotalC += lineC;
-        lines.push({ product_id: id, title: p.title, qty, unit_price: p.price, subtotal: fromCents(lineC), problem, available });
+        lines.push({ product_id: id, title: p.title, qty, unit_price: p.price, subtotal: fromCents(lineC), problem, available, ...unit, ...adjusted });
     }
     // v0.1.415 — El cupón: sobre los productos que cubre, después de sumar.
     const rule = opts.coupon ?? null;
@@ -988,7 +1048,7 @@ export function computeShopCart(
     };
 }
 
-export function shopLineProblemText(line: Pick<ShopCartLine, 'problem' | 'available'>): string | null {
+export function shopLineProblemText(line: Pick<ShopCartLine, 'problem' | 'available' | 'unit'>, format: TenantFormat['number_format'] = 'dot_comma'): string | null {
     switch (line.problem) {
         case 'unavailable':
             return 'Este producto ya no está disponible.';
@@ -997,6 +1057,8 @@ export function shopLineProblemText(line: Pick<ShopCartLine, 'problem' | 'availa
         case 'no_stock':
             return 'Se agotó.';
         case 'low_stock':
+            // v0.1.429 — Con unidad: «Puedes llevar hasta 2,5 kg».
+            if (line.unit) return `Puedes llevar hasta ${shopQtyText(line.available ?? 0, line.unit, format)}.`;
             return line.available === 1 ? 'Sólo queda 1.' : `Sólo quedan ${line.available ?? 0}.`;
         default:
             return null;
@@ -1019,13 +1081,24 @@ export interface ShopOrderLineSnapshot {
     kind?: ShopProductKind;
     /** v0.1.416 — Los archivos que se descargan (los del momento de la compra). */
     files?: number[];
+    /** v0.1.429 — La unidad en que se compró (sin el dato: por unidad). */
+    unit?: ShopUnit;
+}
+
+/**
+ * v0.1.429 — Una línea en una frase: «2 × Camiseta» sin unidad, «Asesoría ·
+ * 3 horas» con unidad (en el WhatsApp, el correo y el pedido).
+ */
+export function shopLineText(l: { qty: number; title: string; unit?: ShopUnit | null }, format: TenantFormat['number_format'] = 'dot_comma'): string {
+    if (l.unit) return `${l.title} · ${shopQtyText(l.qty, l.unit, format)}`;
+    return `${shopQtyText(l.qty, null, format)} × ${l.title}`;
 }
 
 /** El mensaje de WhatsApp de un pedido (lo arma el servidor: el número nunca viaja a la página). */
 export function shopWhatsappMessage(
     order: {
         number: string;
-        lines: readonly Pick<ShopOrderLineSnapshot, 'title' | 'qty' | 'subtotal'>[];
+        lines: readonly Pick<ShopOrderLineSnapshot, 'title' | 'qty' | 'subtotal' | 'unit'>[];
         shipping: number;
         total: number;
         /** v0.1.415 */
@@ -1037,11 +1110,12 @@ export function shopWhatsappMessage(
     },
     intro: string,
     money: (n: number) => string,
+    format: TenantFormat['number_format'] = 'dot_comma',
 ): string {
     const out: string[] = [];
     out.push(`${(intro || SHOP_WHATSAPP_DEFAULT_INTRO).trim()} (${order.number})`);
     out.push('');
-    for (const l of order.lines.slice(0, SHOP_MAX_LINES)) out.push(`• ${l.qty} × ${l.title} — ${money(l.subtotal)}`);
+    for (const l of order.lines.slice(0, SHOP_MAX_LINES)) out.push(`• ${shopLineText(l, format)} — ${money(l.subtotal)}`);
     out.push('');
     if ((order.discount ?? 0) > 0) out.push(`Descuento${order.coupon_code ? ` (${order.coupon_code})` : ''}: -${money(order.discount ?? 0)}`);
     out.push(`Entrega: ${order.delivery}${order.shipping > 0 ? ` (${money(order.shipping)})` : ''}`);
@@ -1205,7 +1279,7 @@ export interface PublicShopOrder {
     payment_method: ShopPaymentMethod;
     payment_label: string;
     payment_instructions: string;
-    lines: { title: string; qty: number; unit_price: number; subtotal: number }[];
+    lines: { title: string; qty: number; unit_price: number; subtotal: number; unit?: ShopUnit }[];
     subtotal: number;
     /** v0.1.415 — Descuento del cupón (0 sin cupón). */
     discount: number;
@@ -1359,11 +1433,13 @@ export function shopPurchaseConversion(o: {
     const items: ShopEcommerceItem[] = o.lines.map((l) => {
         const variant = l.parent_id ? l.title.split(' · ').slice(1).join(' · ').trim() : '';
         const name = variant ? l.title.slice(0, l.title.length - variant.length - 3).trim() : l.title;
+        // v0.1.429 — Google y Meta esperan cantidades enteras: con decimales (1,5 kg) va 1 al precio de la línea.
+        const whole = Number.isInteger(l.qty);
         return {
             item_id: String(l.parent_id ?? l.product_id),
             item_name: name.slice(0, 120),
-            price: l.unit_price,
-            quantity: l.qty,
+            price: whole ? l.unit_price : l.subtotal,
+            quantity: whole ? l.qty : 1,
             ...(variant ? { item_variant: variant.slice(0, 120) } : {}),
         };
     });

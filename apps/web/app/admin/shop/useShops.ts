@@ -245,6 +245,18 @@ export function useCreateShopKindColumn(id: number) {
     });
 }
 
+/** v0.1.429 — Crear las columnas de las unidades de venta en el catálogo. */
+export function useCreateShopUnitColumns(id: number) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async () => (await api.post<ShopDto>(`/shops/${id}/unit-columns`, {})).data,
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: shopKeys.options(id) });
+            void qc.invalidateQueries({ queryKey: ['fields'] });
+        },
+    });
+}
+
 /** v0.1.416 — Volver a mandar el correo con las descargas del pedido. */
 export function useResendShopDownloads(listId: number | string, recordId: number) {
     const qc = useQueryClient();
