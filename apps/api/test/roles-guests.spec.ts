@@ -142,6 +142,7 @@ describe('C3 — rutas abiertas a invitados', () => {
         'DELETE lists/:list/records/:recordId/comments/:id',
         'GET files',
         'GET files/:id/download',
+        'GET files/:id/view',
         'GET lists',
         'GET lists/:idOrSlug',
         'GET lists/:list/fields',

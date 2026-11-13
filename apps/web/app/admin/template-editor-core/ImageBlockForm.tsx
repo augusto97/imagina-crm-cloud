@@ -8,6 +8,7 @@ import { Select } from '@/components/ui/select';
 import { useToast } from '@/components/ui/toast';
 import { api } from '@/cloud/session';
 import { ApiError } from '@/lib/api';
+import { getBootData } from '@/lib/boot';
 import { __ } from '@/lib/i18n';
 
 /**
@@ -153,9 +154,20 @@ export function ImageBlockForm({
 }
 
 /**
+ * v0.1.427 — Dirección de un archivo para mostrarlo en la APP. Una `<img>` no
+ * manda el `X-Tenant-Id` (la descarga con sesión respondía 400 y la imagen no
+ * se veía): la empresa va en `?t=` y la sesión es la cookie. El servidor
+ * revisa el acceso y redirige a una URL atada a esta sesión.
+ */
+export function appFileUrl(id: number, width?: number): string {
+    const tenant = getBootData().tenantId;
+    const q = tenant !== null ? `?t=${tenant}` : '';
+    return `/api/v1/files/${id}/view${q}${width ? `${q ? '&' : '?'}w=${width}` : ''}`;
+}
+
+/**
  * Resuelve el `src` de la imagen en superficies del ADMIN (editor +
- * ficha del registro): URL externa directa, o la descarga inline del
- * módulo de archivos (misma ruta que usan los covers de tarjetas).
+ * ficha del registro): URL externa directa, o el archivo de la app.
  * El PORTAL no usa esto — recibe la URL firmada desde el backend.
  */
 export function adminImageSrc(config: Record<string, unknown>): string | undefined {
@@ -164,7 +176,7 @@ export function adminImageSrc(config: Record<string, unknown>): string | undefin
     const id = typeof config.image_file_id === 'number' && config.image_file_id > 0
         ? config.image_file_id
         : undefined;
-    return id !== undefined ? `/api/v1/files/${id}/download` : undefined;
+    return id !== undefined ? appFileUrl(id) : undefined;
 }
 
 /**
@@ -412,7 +424,7 @@ export function GalleryBlockView({
 export function adminGallerySrc(img: GalleryImage): string | undefined {
     if (img.url !== undefined && img.url !== '') return img.url;
     return img.image_file_id !== undefined && img.image_file_id > 0
-        ? `/api/v1/files/${img.image_file_id}/download`
+        ? appFileUrl(img.image_file_id)
         : undefined;
 }
 

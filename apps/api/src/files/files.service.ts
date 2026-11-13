@@ -27,6 +27,7 @@ import {
 } from './file-storage';
 import { describeS3Error } from './s3-file-storage';
 import { safeDisposition, contentDispositionHeader } from './safe-content-type';
+import { currentFileBinding, sessionBindTag } from './file-binding';
 import { can } from '../authz/can';
 
 export interface AttachmentDto {
@@ -348,6 +349,16 @@ export function fileIdsUnder(value: unknown, keys: readonly string[]): number[] 
 const EMAIL_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']);
 /** 5 años: un correo se relee mucho después de enviado. */
 const EMAIL_IMAGE_TTL = 5 * 365 * 24 * 3600;
+/**
+ * v0.1.427 — Una URL firmada que dura más que esto es de un CORREO (o de un
+ * mensaje): la del logo de una confirmación (30 días), la de una imagen del
+ * editor de correos (5 años). Las de la app y las páginas públicas duran
+ * hasta un día. Un correo se abre desde cualquier programa, así que esas son
+ * las únicas que se pueden mostrar desde otro lado (con un tope de pedidos).
+ */
+export const MAIL_URL_MIN_TTL = 2 * 24 * 3600;
+/** Una imagen para un correo no pasa de esto: un correo pesado igual no se lee. */
+export const EMAIL_IMAGE_MAX_BYTES = 3 * 1024 * 1024;
 
 @Injectable()
 export class FilesService {
@@ -373,16 +384,27 @@ export class FilesService {
     // por una URL de vida corta firmada con HMAC: quien tiene el link accede
     // a ESE archivo hasta el vencimiento, sin sesión.
 
-    /** URL relativa firmada, válida por `ttlSeconds`. */
-    signedUrl(tenantId: number, id: number, ttlSeconds = 3600): string {
+    /**
+     * URL relativa firmada, válida por `ttlSeconds`.
+     *
+     * v0.1.427 — Armada dentro de un pedido con sesión (la app, el portal del
+     * cliente: `FileBindingInterceptor`), queda ATADA a esa sesión (`&b=`):
+     * sólo la abre ese navegador. `bind: null` la deja suelta a propósito
+     * (no hace falta: lo público no corre dentro de una sesión).
+     */
+    signedUrl(tenantId: number, id: number, ttlSeconds = 3600, opts: { bind?: string | null } = {}): string {
         // v0.1.252 — el vencimiento se redondea a la HORA siguiente: así la
         // misma URL sirve durante esa hora y el navegador la cachea (antes
         // cada consulta daba otra URL y las imágenes se bajaban de nuevo).
         // Nunca vence ANTES de lo pedido.
         const now = Math.floor(Date.now() / 1000);
         const exp = Math.ceil((now + Math.max(60, ttlSeconds)) / 3600) * 3600;
-        const sig = this.sign(tenantId, id, exp);
-        return `/api/v1/files/${id}/signed?tenant=${tenantId}&exp=${exp}&sig=${sig}`;
+        // Una URL de vida LARGA sale de la app (un correo, un WhatsApp): nunca
+        // se ata a una sesión, aunque se arme dentro de un pedido con sesión.
+        const bind = opts.bind === undefined ? (ttlSeconds > MAIL_URL_MIN_TTL ? null : currentFileBinding()) : opts.bind;
+        const tag = bind ? sessionBindTag(bind) : null;
+        const sig = this.sign(tenantId, id, exp, tag);
+        return `/api/v1/files/${id}/signed?tenant=${tenantId}&exp=${exp}&sig=${sig}${tag ? `&b=${tag}` : ''}`;
     }
 
     /**
@@ -396,7 +418,7 @@ export class FilesService {
     async publicImageUrl(tenantId: number, id: number, actor?: FileActor): Promise<string> {
         const [row] = await this.tenantDb.withTenant(tenantId, async (tx) =>
             tx
-                .select({ id: attachments.id, mime: attachments.mime })
+                .select({ id: attachments.id, mime: attachments.mime, size: attachments.sizeBytes })
                 .from(attachments)
                 .where(and(eq(attachments.tenantId, tenantId), eq(attachments.id, id), await readableBy(tx, tenantId, actor)))
                 .limit(1),
@@ -409,7 +431,16 @@ export class FilesService {
                 data: { status: 400 },
             });
         }
-        return `${this.publicBase}${this.signedUrl(tenantId, id, EMAIL_IMAGE_TTL)}`;
+        // v0.1.427 — una imagen de correo se puede pedir desde cualquier lado:
+        // que no sea un archivo pesado (y un correo pesado tarda en abrir).
+        if (Number(row.size) > EMAIL_IMAGE_MAX_BYTES) {
+            throw new BadRequestException({
+                code: 'email_image_too_large',
+                message: 'Para un correo la imagen tiene que pesar menos de 3 MB. Achícala o comprímela y súbela otra vez.',
+                data: { status: 400 },
+            });
+        }
+        return `${this.publicBase}${this.signedUrl(tenantId, id, EMAIL_IMAGE_TTL, { bind: null })}`;
     }
 
     /**
@@ -418,7 +449,8 @@ export class FilesService {
      * manda por WhatsApp (`{{pdf.link}}`). Sin `APP_BASE_URL` queda relativa.
      */
     absoluteSignedUrl(tenantId: number, id: number, ttlSeconds: number): string {
-        return `${this.publicBase}${this.signedUrl(tenantId, id, ttlSeconds)}`;
+        // Sale de la app (un WhatsApp, un correo): nunca atada a una sesión.
+        return `${this.publicBase}${this.signedUrl(tenantId, id, ttlSeconds, { bind: null })}`;
     }
 
     /** Valida tenant/exp/sig y abre el stream (para la ruta pública). */
@@ -428,8 +460,9 @@ export class FilesService {
         exp: number,
         sig: string,
         opts: { proxy?: boolean; download?: boolean } = {},
+        bindTag: string | null = null,
     ): Promise<OpenedFile> {
-        this.assertSigned(id, tenantId, exp, sig);
+        this.assertSigned(id, tenantId, exp, sig, bindTag);
         return this.openDownload(tenantId, id, undefined, opts);
     }
 
@@ -438,9 +471,9 @@ export class FilesService {
      * cuadra. v0.1.426 — la usan también las miniaturas (`&w=`): el ancho no
      * entra en la firma porque no cambia QUÉ archivo se ve, sólo su tamaño.
      */
-    assertSigned(id: number, tenantId: number, exp: number, sig: string): void {
+    assertSigned(id: number, tenantId: number, exp: number, sig: string, bindTag: string | null = null): void {
         const now = Math.floor(Date.now() / 1000);
-        const expected = this.sign(tenantId, id, exp);
+        const expected = this.sign(tenantId, id, exp, bindTag);
         const a = Buffer.from(sig, 'utf8');
         const b = Buffer.from(expected, 'utf8');
         if (!Number.isFinite(exp) || exp < now || a.length !== b.length || !timingSafeEqual(a, b)) {
@@ -448,9 +481,11 @@ export class FilesService {
         }
     }
 
-    private sign(tenantId: number, id: number, exp: number): string {
+    private sign(tenantId: number, id: number, exp: number, bindTag: string | null = null): string {
+        // La etiqueta de la sesión entra en la firma: no se puede sacar de la
+        // URL (para usarla sin sesión) ni cambiar por la de otra.
         return createHmac('sha256', this.signingSecret)
-            .update(`${tenantId}.${id}.${exp}`)
+            .update(bindTag ? `${tenantId}.${id}.${exp}.b.${bindTag}` : `${tenantId}.${id}.${exp}`)
             .digest('hex');
     }
 

@@ -415,7 +415,17 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.426**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.427**
+(**las imágenes ya no se pueden usar desde otros sitios** — las de la app y el
+portal viajan con una URL atada a la sesión (copiada a otro navegador no
+abre); las de lo público (tienda, formularios, agenda, listas publicadas) se
+ven en su página pero no sueltas en otra (`Sec-Fetch-Site`); las de los
+correos se abren desde cualquier programa con un tope de 60 por minuto y 3 MB;
+y las imágenes subidas a una ficha diseñada o a un tablero vuelven a verse
+(la dirección vieja respondía 400); addendum ADR-S16). Pendiente propuesto al
+usuario: **unidades de venta en la tienda** (v0.1.428, esperando su visto
+bueno) y **tocar en la vista previa de la tienda para ir al ajuste + bordes y
+forma de las imágenes** (v0.1.429). Antes **v0.1.426**
 (**campo «Imagen» y miniaturas de los archivos** — las imágenes de cualquier
 campo de archivos se ven como miniatura en la tabla, la ficha y las tarjetas
 (achicadas en el servidor a WebP); campo nuevo «Imagen» = archivo con «Sólo
@@ -2004,6 +2014,34 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-13 · v0.1.427** — **Las imágenes no se pueden usar desde otros
+  sitios** (pedido del usuario: "si una lista no es pública no puede generar
+  una url pública de la imagen porque la usan luego para otras cosas y me
+  gastaría recursos… solo debe servir para lo público como la tienda… pero no
+  para ser insertadas en otros sitios web y que puedan llegar a usar esta app
+  como una cdn de imagenes"). Hasta acá cada imagen de la app viajaba con una
+  URL firmada que servía SIN sesión durante 4 horas. Ahora: (a) las de la app
+  y el portal quedan atadas a la sesión (`&b=`, `FileBindingInterceptor` +
+  `AsyncLocalStorage`): copiadas a otro navegador, 404; (b) las de lo público
+  se cortan si una página de otro sitio las pide para mostrarlas adentro
+  (`common/hotlink.ts`, 403), también las fotos de la tienda y el logo del
+  widget, y llevan `CORP: same-site`; (c) las de los correos (URL de más de 2
+  días) se abren desde cualquier lado pero con tope de 60 pedidos de
+  navegador por minuto y archivo y 3 MB por imagen. **Bug encontrado**: las
+  imágenes subidas a una ficha diseñada o a un tablero usaban
+  `/files/:id/download` como `<img>`, que exige el header de la empresa →
+  400; ruta nueva `/files/:id/view?t=` que redirige a la URL atada. En el
+  mismo mensaje el usuario preguntó por las **unidades de venta** de la
+  tienda (horas, años…): se le mandó una propuesta (unidad por producto con
+  "$X / hora", "¿Cuántas horas?" con mínimo/máximo/paso, decimales donde la
+  unidad lo permite, la unidad en el carrito, el pedido y el stock) y queda
+  esperando su visto bueno (v0.1.428). También pidió **tocar un elemento en la
+  vista previa de la tienda para ir a su ajuste** y **controlar bordes y
+  relación de aspecto de las imágenes** (v0.1.429). Tests:
+  `file-hotlink.spec` (9) + E2E navegador 15/15 (miniaturas atadas, copia a
+  otro navegador 404, pegada en otro sitio no se ve, ficha diseñada se ve,
+  tienda en su página y en un sitio de otro origen sí, foto suelta en otro
+  sitio no, imagen de correo desde otro lado sí).
 - **2026-11-12 · v0.1.426** — **Campo «Imagen» y miniaturas de los archivos**
   (mismo mensaje del usuario que v0.1.425: "veo que no hay en las listas campo
   de imagen, solo veo campo de archivo y adjunto en la lista se ve es el

@@ -23,6 +23,7 @@ import { memberships, plans, recordShares, tenants } from '../db/schema';
 import type { GuestShares } from '../lists/list-acl';
 import { ALLOW_GUEST } from './allow-guest.decorator';
 import { ALLOW_LOCKED } from './allow-locked.decorator';
+import { ALLOW_TENANT_QUERY } from './allow-tenant-query.decorator';
 import { ALLOW_READ_ONLY } from './allow-read-only.decorator';
 import { PLAN_MODULE } from './plan-module.decorator';
 import { sessionTenantScope } from '../auth/host-tenant';
@@ -75,7 +76,13 @@ export class TenantGuard implements CanActivate {
         }
 
         const raw = req.headers['x-tenant-id'];
-        const value = Array.isArray(raw) ? raw[0] : raw;
+        let value = Array.isArray(raw) ? raw[0] : raw;
+        // v0.1.427 — una `<img>` de la app no puede mandar el header: en las
+        // lecturas marcadas, la empresa viaja en `?t=` (id numérico).
+        if (!value && req.method === 'GET' && this.reflector.getAllAndOverride<boolean>(ALLOW_TENANT_QUERY, [context.getHandler(), context.getClass()]) === true) {
+            const q = (req.query as Record<string, unknown> | undefined)?.t;
+            if (typeof q === 'string' && /^\d{1,12}$/.test(q)) value = q;
+        }
         if (!value) {
             throw new BadRequestException('Falta el header X-Tenant-Id');
         }
