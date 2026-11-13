@@ -2045,7 +2045,9 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   atrapado en el E2E**: la ficha arrancaba en 1 en vez del mínimo (con «de a
   0,5 kg» debía arrancar en 0,5). De paso, los «−»/«+» del carrito decían
   «Quitar»/«Agregar» (chocaba con el botón «Quitar» del producto): ahora
-  «Menos»/«Más». Tests: shared 987, front 924, `shops-units.spec` 5/5 (specs
+  «Menos»/«Más», y el botón «Comprar» de Compartir acepta cantidades con
+  decimales (su enlace redondeaba hacia abajo). Tests: shared 987, front 924,
+  `shops-units.spec` 5/5 (specs
   de la tienda 84/84) + E2E navegador 37/37 claro, 37/37 oscuro y 36/36
   celular oscuro (editor, vista previa, vitrina, carrito, ficha con
   decimales, pago, pedido, stock 3,2 → 1,7, `?comprar=` corregido).

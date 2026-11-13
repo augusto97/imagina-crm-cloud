@@ -15268,7 +15268,9 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         3,2 kg»); el carrito, el pago, la página del pedido, el correo y el
         mensaje de WhatsApp dicen «Asesoría · 3 horas», «Café · 1,5 kg»;
         `?comprar=` y `?agregar=` aceptan decimales (`12:1.5`) y se corrigen a
-        la regla; la vista previa lleva a «Unidades y cantidades» al tocar la
+        la regla (el botón «Comprar» de Compartir también acepta «1,5»: su
+        enlace se arma ahora con el mismo `shopCartParam`, antes redondeaba
+        hacia abajo); la vista previa lleva a «Unidades y cantidades» al tocar la
         regla. (d) **El servidor manda**: `computeShopCart` corrige cada línea
         y la marca `adjusted`; el pedido con una línea corregida responde 409
         `shop_cart_changed` con el carrito nuevo. El stock baja y vuelve con
