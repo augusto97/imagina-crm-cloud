@@ -12,7 +12,8 @@ export interface ShopOrderEmailInput {
     shopName: string;
     number: string;
     customerName: string;
-    lines: Array<{ title: string; qty: number; subtotal: string }>;
+    /** v0.1.429 — Cada línea ya en una frase: «2 × Camiseta» o «Asesoría · 3 horas». */
+    lines: Array<{ text: string; subtotal: string }>;
     subtotal: string;
     /** v0.1.415 — El descuento del cupón ya formateado («-$ 10.000») y su código. */
     discount?: string | null;
@@ -86,7 +87,7 @@ export function shopOrderEmail(o: ShopOrderEmailInput): ShopOrderEmail {
     const rows = o.lines
         .map(
             (l) =>
-                `<tr><td style="padding:8px 0;border-bottom:1px solid #f0f1f3">${e(String(l.qty))} × ${e(l.title)}</td><td style="padding:8px 0;border-bottom:1px solid #f0f1f3;text-align:right;white-space:nowrap">${e(l.subtotal)}</td></tr>`,
+                `<tr><td style="padding:8px 0;border-bottom:1px solid #f0f1f3">${e(l.text)}</td><td style="padding:8px 0;border-bottom:1px solid #f0f1f3;text-align:right;white-space:nowrap">${e(l.subtotal)}</td></tr>`,
         )
         .join('');
     const totals = [
@@ -139,7 +140,7 @@ ${button}
         `¡Gracias, ${o.customerName}!`,
         `${intro} ${o.number}.`,
         '',
-        ...o.lines.map((l) => `${l.qty} × ${l.title} — ${l.subtotal}`),
+        ...o.lines.map((l) => `${l.text} — ${l.subtotal}`),
         '',
         ...(sub ? [] : [`Subtotal: ${o.subtotal}`]),
         ...(o.discount ? [`Descuento${o.couponCode ? ` (${o.couponCode})` : ''}: ${o.discount}`] : []),

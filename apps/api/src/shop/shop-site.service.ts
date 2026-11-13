@@ -1,6 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
     formatShopMoney,
+    shopPerUnit,
     parseShopProductPath,
     shopCurrencyDecimals,
     shopProductPath,
@@ -230,7 +231,7 @@ export function siteHeadFor(info: ShopPageInfo, domain: string, productId: numbe
     if (!p) {
         const items = info.products
             .slice(0, 200)
-            .map((x) => `<li><a href="${escapeHtml(shopProductPath(x.title, x.id))}">${escapeHtml(x.title)}</a>${x.price !== null ? ` — ${escapeHtml(money(x.price))}` : ''}</li>`)
+            .map((x) => `<li><a href="${escapeHtml(shopProductPath(x.title, x.id))}">${escapeHtml(x.title)}</a>${x.price !== null ? ` — ${escapeHtml(money(x.price) + shopPerUnit(x.unit))}` : ''}</li>`)
             .join('');
         const body = [
             '<main class="s-wrap s-ssr">',
@@ -277,6 +278,10 @@ export function siteHeadFor(info: ShopPageInfo, domain: string, productId: numbe
                     '@type': 'Offer',
                     priceCurrency: meta.currency,
                     price: priceString(p.price, meta.currency),
+                    // v0.1.429 — El precio es por hora, por kg…: Google lo dice así.
+                    ...(p.unit
+                        ? { priceSpecification: { '@type': 'UnitPriceSpecification', price: priceString(p.price, meta.currency), priceCurrency: meta.currency, unitText: p.unit.one } }
+                        : {}),
                     availability,
                     itemCondition: 'https://schema.org/NewCondition',
                     url: canonical,
@@ -331,8 +336,9 @@ export function siteHeadFor(info: ShopPageInfo, domain: string, productId: numbe
 
 function productPriceText(p: PublicShopProduct, money: (n: number) => string): string {
     const range = shopVariantPriceRange(p);
-    if (range && range.min !== range.max) return `Desde ${money(range.min)}`;
-    return p.price !== null ? money(p.price) : '';
+    // v0.1.429 — «$ 50.000 / hora».
+    if (range && range.min !== range.max) return `Desde ${money(range.min)}${shopPerUnit(p.unit)}`;
+    return p.price !== null ? `${money(p.price)}${shopPerUnit(p.unit)}` : '';
 }
 
 /** El mapa del sitio: el inicio y cada producto (con sus fotos). */

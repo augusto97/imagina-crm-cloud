@@ -34,10 +34,23 @@ import type {
     ShopDesignCheckout,
     ShopPaymentMethod,
     ShopPurchasable,
+    ShopQtyRule,
+    ShopUnit,
 } from '@imagina-base/shared';
 import {
     SHOP_MAX_QTY,
     computeShopCart,
+    formatShopQty,
+    parseShopQtyInput,
+    roundShopQty,
+    shopLineText,
+    shopPerUnit,
+    shopQtyCap,
+    shopQtyLabel,
+    shopQtyNext,
+    shopQtyRuleText,
+    shopQtyText,
+    snapShopQty,
     formatShopMoney,
     normalizeCouponCode,
     parseShopCartParam,
@@ -445,7 +458,9 @@ function targetOrigin(): string {
 function ecoItem(id: number, qty: number): EcommerceItem | null {
     const it = buyable.get(id) ?? subscribable.get(id);
     if (!it) return null;
-    const out: EcommerceItem = { item_id: String(it.product.id), item_name: it.product.title.slice(0, 120), price: it.price ?? 0, quantity: qty };
+    // v0.1.429 — Google y Meta esperan cantidades enteras: 1,5 kg va como 1 al precio de la línea.
+    const whole = Number.isInteger(qty);
+    const out: EcommerceItem = { item_id: String(it.product.id), item_name: it.product.title.slice(0, 120), price: whole ? (it.price ?? 0) : Math.round((it.price ?? 0) * qty * 100) / 100, quantity: whole ? qty : 1 };
     if (it.variant?.label) out.item_variant = it.variant.label.slice(0, 120);
     if (it.product.categories[0]) out.item_category = it.product.categories[0].slice(0, 80);
     return out;
@@ -518,7 +533,8 @@ function loadCart(): void {
     try {
         const parsed = JSON.parse(raw) as Array<[number, number]>;
         for (const [id, qty] of parsed) {
-            if (Number.isInteger(id) && id > 0 && Number.isInteger(qty) && qty > 0) cart.set(id, Math.min(qty, SHOP_MAX_QTY));
+            // v0.1.429 — Con unidades la cantidad puede tener decimales (1,5 kg).
+            if (Number.isInteger(id) && id > 0 && typeof qty === 'number' && Number.isFinite(qty) && qty > 0) cart.set(id, Math.min(roundShopQty(qty), SHOP_MAX_QTY));
         }
     } catch {
         // carrito ilegible: se empieza vacío
@@ -531,18 +547,92 @@ function saveCart(): void {
 
 function cartCount(): number {
     let n = 0;
-    for (const q of cart.values()) n += q;
+    // v0.1.429 — Una línea con unidad (3 horas, 1,5 kg) cuenta como un producto.
+    for (const [id, q] of cart) n += buyable.get(id)?.unit || !Number.isInteger(q) ? 1 : q;
     return n;
 }
 
-function maxFor(p: { stock: number | null }): number {
-    return p.stock === null ? SHOP_MAX_QTY : Math.max(0, Math.min(SHOP_MAX_QTY, Math.floor(p.stock)));
+/** Lo que se compra de a cuánto y en qué (v0.1.429). */
+type QtyItem = { stock: number | null; unit?: ShopUnit; qty?: ShopQtyRule };
+
+/** Lo máximo que se puede tener en el carrito (el máximo del producto y el stock, en cantidades válidas). */
+function maxFor(p: QtyItem): number {
+    return shopQtyCap(p.qty, p.stock);
+}
+
+/** «3 horas», «1,5 kg» o «3» (sin unidad), con los separadores de la empresa. */
+function qtyText(n: number, unit: ShopUnit | null | undefined): string {
+    return shopQtyText(n, unit, meta?.number_format ?? 'dot_comma');
+}
+
+/** El número solo (para el selector). */
+function qtyNum(n: number): string {
+    return formatShopQty(n, meta?.number_format ?? 'dot_comma');
+}
+
+/**
+ * v0.1.429 — El selector de cantidad: −, el número (se puede escribir: 2,5) y
+ * +. `next` dice qué pasa con cada botón; `commit` recibe lo escrito.
+ */
+function qtyStepper(o: {
+    value: number;
+    unit?: ShopUnit;
+    canMinus: boolean;
+    canPlus: boolean;
+    onMinus: () => void;
+    onPlus: () => void;
+    onType?: (n: number) => void;
+    key: string;
+    testid?: string;
+    cls?: string;
+    style?: string;
+    labels?: [string, string];
+}): HTMLElement {
+    const minus = el('button', { type: 'button', 'aria-label': o.labels?.[0] ?? 'Menos', text: '−', disabled: !o.canMinus, 'data-k': `${o.key}-m` });
+    minus.addEventListener('click', o.onMinus);
+    const plus = el('button', { type: 'button', 'aria-label': o.labels?.[1] ?? 'Más', text: '+', disabled: !o.canPlus, 'data-k': `${o.key}-p` });
+    plus.addEventListener('click', o.onPlus);
+    const label = `Cantidad: ${qtyText(o.value, o.unit)}`;
+    let mid: HTMLElement;
+    if (o.onType) {
+        const onType = o.onType;
+        const input = el('input', { type: 'text', inputmode: 'decimal', cls: 's-step-in', value: qtyNum(o.value), 'aria-label': label, 'data-k': `${o.key}-i`, autocomplete: 'off' }) as HTMLInputElement;
+        const commit = (): void => {
+            const n = parseShopQtyInput(input.value, meta?.number_format);
+            if (n === null) {
+                input.value = qtyNum(o.value);
+                return;
+            }
+            if (n !== o.value) onType(n);
+            else input.value = qtyNum(o.value);
+        };
+        input.addEventListener('change', commit);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                commit();
+            }
+        });
+        mid = input;
+    } else {
+        // Sin caja para escribir (la tarjeta): el número con su unidad, «3 horas».
+        mid = el('span', { 'aria-live': 'polite', 'aria-label': label, text: o.unit ? qtyText(o.value, o.unit) : qtyNum(o.value) });
+    }
+    const kids: Node[] = [minus, mid, plus];
+    return el('div', { cls: o.cls ?? 's-step', 'data-testid': o.testid, ...(o.style ? { style: o.style } : {}) }, kids);
+}
+
+/** La palabra de la unidad junto al selector («horas»), o nada. */
+function unitWord(n: number, unit: ShopUnit | null | undefined): HTMLElement | null {
+    if (!unit) return null;
+    return el('span', { cls: 's-unit', text: qtyText(n, unit).replace(/^\S+\s/, '') });
 }
 
 function setQty(id: number, qty: number): void {
     const item = buyable.get(id);
     const cap = item ? maxFor(item) : SHOP_MAX_QTY;
-    const next = Math.max(0, Math.min(cap, Math.floor(qty)));
+    // v0.1.429 — La cantidad válida más cercana (mínimo, «de a cuánto», máximo) que entra en el stock.
+    const next = qty <= 0 || cap <= 0 ? 0 : Math.min(cap, snapShopQty(qty, item?.qty));
     const prev = cart.get(id) ?? 0;
     if (next > prev) {
         trackAdd(item?.product.id ?? id);
@@ -740,6 +830,13 @@ function indexProducts(): void {
     subscribable = shopPurchasables(products, { subscriptions: true });
     // Lo que ya no está en la tienda sale del carrito (al cargar la página).
     for (const id of [...cart.keys()]) if (!buyable.has(id)) cart.delete(id);
+    // v0.1.429 — Si cambió el mínimo o el «de a cuánto», lo del carrito se acomoda.
+    for (const [id, q] of [...cart]) {
+        const it = buyable.get(id);
+        if (!it) continue;
+        const v = snapShopQty(q, it.qty);
+        if (v !== q) cart.set(id, v);
+    }
 }
 
 // ───────────────────────────── Encabezado y pie ─────────────────────────────
@@ -841,19 +938,28 @@ function stockText(p: PublicShopProduct): string | null {
     if (p.stock <= 0) return sub ? 'Sin cupos' : 'Agotado';
     if (d.show_stock === 'always' || (d.show_stock === 'low' && p.stock <= d.low_stock_at)) {
         if (sub) return p.stock === 1 ? 'Queda 1 cupo' : `Quedan ${p.stock} cupos`;
-        return p.stock === 1 ? 'Queda 1' : `Quedan ${p.stock}`;
+        // v0.1.429 — Con unidad: «Quedan 12,5 kg», «Queda 1 hora».
+        if (p.unit) return `${p.stock === 1 ? 'Queda' : 'Quedan'} ${qtyText(p.stock, p.unit)}`;
+        return p.stock === 1 ? 'Queda 1' : `Quedan ${qtyNum(p.stock)}`;
     }
     return null;
 }
 
-function priceNode(p: { price: number | null; compare_price: number | null }, cls = 's-price', from = false): HTMLElement {
+function priceNode(p: { price: number | null; compare_price: number | null; unit?: ShopUnit }, cls = 's-price', from = false): HTMLElement {
     const kids: HTMLElement[] = [];
+    // v0.1.429 — El precio es por hora, por kg…: «$ 50.000 / hora».
+    const per = p.price !== null && p.unit ? el('span', { cls: 's-per', 'data-testid': 'shop-per-unit', text: shopPerUnit(p.unit).trim() }) : null;
     if (p.price === null) kids.push(el('span', { cls: 's-was', text: 'Sin precio' }));
     else if (from) kids.push(el('span', { cls: 's-now', text: `Desde ${money(p.price)}` }));
     else {
         kids.push(el('span', { cls: 's-now', text: money(p.price) }));
+        if (per) {
+            kids.push(per);
+        }
         if (p.compare_price !== null && p.compare_price > p.price) kids.push(el('span', { cls: 's-was', text: money(p.compare_price), 'aria-label': `Antes ${money(p.compare_price)}` }));
+        return el('div', { cls }, kids);
     }
+    if (per) kids.push(per);
     return el('div', { cls }, kids);
 }
 
@@ -879,53 +985,56 @@ function chooseControl(p: PublicShopProduct): HTMLElement {
         'data-testid': 'shop-choose',
     });
     b.addEventListener('click', () => openOverlay({ kind: 'product', id: p.id, image: 0 }));
-    return el('div', { style: 'display:flex;flex-direction:column' }, [b, n > 0 ? el('span', { cls: 's-incart', style: 'margin-top:6px', text: n === 1 ? '1 en el carrito' : `${n} en el carrito` }) : null]);
+    return el('div', { style: 'display:flex;flex-direction:column' }, [b, n > 0 ? el('span', { cls: 's-incart', style: 'margin-top:6px', text: `${p.unit ? qtyText(n, p.unit) : n} en el carrito` }) : null]);
 }
 
-function addControl(p: { id: number; title: string; price: number | null; stock: number | null }, big = false, pick = 1): HTMLElement {
+function addControl(p: { id: number; title: string; price: number | null } & QtyItem): HTMLElement {
     const qty = cart.get(p.id) ?? 0;
     const m = meta!;
     if (qty === 0) {
-        const unavailable = soldOut(p) || p.price === null || !!m.closed;
-        const cap = maxFor(p);
-        const n = Math.max(1, Math.min(pick, cap || 1));
+        const unavailable = soldOut(p) || p.price === null || !!m.closed || maxFor(p) <= 0;
         const b = el('button', {
             type: 'button',
-            cls: big ? 's-btn' : 's-add',
+            cls: 's-add',
             disabled: unavailable,
-            text: soldOut(p) ? 'Agotado' : p.price === null ? 'No disponible' : m.texts.add_to_cart || 'Agregar al carrito',
+            text: soldOut(p) || (p.price !== null && maxFor(p) <= 0) ? 'Agotado' : p.price === null ? 'No disponible' : m.texts.add_to_cart || 'Agregar al carrito',
             'data-testid': 'shop-add',
             // Al agregar, el foco pasa al «+» que aparece en su lugar.
-            'data-k': `plus-${p.id}`,
+            'data-k': `plus-${p.id}-p`,
         });
-        b.addEventListener('click', () => addToCart(p.id, big ? n : 1));
-        if (!big || unavailable || cap <= 1) return b;
-        // v0.1.421 — En la ficha se elige cuántos antes de agregar.
-        const minus = el('button', { type: 'button', 'aria-label': 'Uno menos', text: '−', disabled: n <= 1, 'data-k': `pminus-${p.id}` });
-        minus.addEventListener('click', () => setPick(n - 1));
-        const plus = el('button', { type: 'button', 'aria-label': 'Uno más', text: '+', disabled: n >= cap, 'data-k': `pplus-${p.id}` });
-        plus.addEventListener('click', () => setPick(n + 1));
-        return el('div', { cls: 's-buyrow' }, [el('div', { cls: 's-step s-pick', 'data-testid': 'shop-pick' }, [minus, el('span', { 'aria-live': 'polite', 'aria-label': 'Cantidad', text: String(n) }), plus]), b]);
+        b.addEventListener('click', () => addToCart(p.id));
+        return b;
     }
-    const minus = el('button', { type: 'button', 'aria-label': 'Quitar uno', text: '−', 'data-k': `minus-${p.id}` });
-    minus.addEventListener('click', () => setQty(p.id, qty - 1));
-    const plus = el('button', { type: 'button', 'aria-label': 'Agregar uno', text: '+', disabled: qty >= maxFor(p), 'data-k': `plus-${p.id}` });
-    plus.addEventListener('click', () => setQty(p.id, qty + 1));
-    return el('div', { cls: 's-step', 'data-testid': 'shop-step', ...(big ? { style: 'height:50px' } : {}) }, [minus, el('span', { 'aria-live': 'polite', text: String(qty) }), plus]);
+    // v0.1.429 — Sube y baja de a lo que dice el producto (el mínimo, «de a cuánto»).
+    return qtyStepper({
+        value: qty,
+        unit: p.unit,
+        canMinus: true,
+        canPlus: shopQtyNext(qty, p.qty, 1, p.stock) > qty,
+        onMinus: () => setQty(p.id, shopQtyNext(qty, p.qty, -1, p.stock)),
+        onPlus: () => setQty(p.id, shopQtyNext(qty, p.qty, 1, p.stock)),
+        key: `plus-${p.id}`,
+        testid: 'shop-step',
+    });
 }
 
-/** v0.1.421 — Cuántos se eligieron en la ficha antes de agregar. */
+/** v0.1.421 — Cuánto se eligió en la ficha antes de agregar (v0.1.429: con decimales y en la unidad del producto). */
 function setPick(n: number): void {
     if (overlay?.kind !== 'product') return;
-    overlay = { ...overlay, pick: Math.max(1, Math.min(SHOP_MAX_QTY, n)) };
+    overlay = { ...overlay, pick: Math.max(0.001, Math.min(SHOP_MAX_QTY, roundShopQty(n))) };
     renderOverlay();
 }
 
-/** Agrega `n` unidades y hace lo que la tienda eligió para después. */
-function addToCart(id: number, n: number): void {
-    if (!buyable.has(id)) return;
+/**
+ * Agrega al carrito y hace lo que la tienda eligió para después. Sin `n`: el
+ * mínimo del producto (o un «de a cuánto» más si ya estaba).
+ */
+function addToCart(id: number, n?: number): void {
+    const item = buyable.get(id);
+    if (!item) return;
     const before = cart.get(id) ?? 0;
-    setQty(id, before + n);
+    const add = n ?? (before > 0 ? (item.qty?.step ?? 1) : (item.qty?.min ?? 1));
+    setQty(id, before + add);
     if ((cart.get(id) ?? 0) > before) afterAdded(id);
 }
 
@@ -1239,7 +1348,7 @@ function renderOverlay(): void {
     const veil = el('div', { cls: 's-veil' });
     veil.addEventListener('click', closeOverlay);
     let box: HTMLElement;
-    if (overlay.kind === 'product') box = productSheet(overlay.id, overlay.image, overlay.sel, overlay.pick ?? 1);
+    if (overlay.kind === 'product') box = productSheet(overlay.id, overlay.image, overlay.sel, overlay.pick);
     else if (overlay.kind === 'cart') box = cartSheet(overlay.flash);
     else if (overlay.kind === 'my') box = mySheet();
     else box = policiesSheet(overlay.focus);
@@ -1497,51 +1606,95 @@ function productGallery(p: PublicShopProduct, imgs: string[], idx: number, sel: 
  * siempre está (aunque ya haya en el carrito: suma lo elegido). Abajo, lo
  * que ya hay en el carrito con «Ver carrito».
  */
-function sheetBuy(item: { id: number; title: string; price: number | null; stock: number | null }, pick: number): HTMLElement {
+function sheetBuy(item: { id: number; title: string; price: number | null } & QtyItem, pick: number | undefined): HTMLElement {
     const m = meta!;
     const inCartNow = cart.get(item.id) ?? 0;
     const cap = maxFor(item);
-    const room = Math.max(0, cap - inCartNow);
-    const unavailable = soldOut(item) || item.price === null || !!m.closed;
-    const full = !unavailable && room <= 0;
-    const n = Math.max(1, Math.min(pick, room || 1));
+    const unavailable = soldOut(item) || item.price === null || !!m.closed || cap <= 0;
+    // v0.1.429 — Cuánto se puede sumar: desde el mínimo (o un «de a cuánto» si ya está en el carrito) hasta lo que queda.
+    const r = pickRule(item, inCartNow);
+    const full = !unavailable && r === null;
+    const n = pickedQty(r, pick);
     const b = el('button', {
         type: 'button',
         cls: 's-btn',
         disabled: unavailable || full,
-        text: soldOut(item)
+        text: soldOut(item) || (item.price !== null && cap <= 0)
             ? 'Agotado'
             : item.price === null
               ? 'No disponible'
               : full
-                ? 'Ya tienes todas las disponibles'
+                ? item.unit
+                    ? 'Ya tienes lo máximo en el carrito'
+                    : 'Ya tienes todas las disponibles'
                 : m.texts.add_to_cart || 'Agregar al carrito',
         'data-testid': 'shop-add',
         'data-k': `sadd-${item.id}`,
     });
     b.addEventListener('click', () => addToCart(item.id, n));
     const row: Node[] = [];
-    if (!unavailable && !full && room > 1) {
-        const minus = el('button', { type: 'button', 'aria-label': 'Uno menos', text: '−', disabled: n <= 1, 'data-k': `pminus-${item.id}` });
-        minus.addEventListener('click', () => setPick(n - 1));
-        const plus = el('button', { type: 'button', 'aria-label': 'Uno más', text: '+', disabled: n >= room, 'data-k': `pplus-${item.id}` });
-        plus.addEventListener('click', () => setPick(n + 1));
-        row.push(el('div', { cls: 's-step s-pick', 'data-testid': 'shop-pick' }, [minus, el('span', { 'aria-live': 'polite', 'aria-label': 'Cantidad', text: String(n) }), plus]));
+    let qtyLabel: HTMLElement | null = null;
+    if (r && !unavailable && (r.max === null || r.max > r.min)) {
+        const step = r.step;
+        if (item.unit || item.qty) qtyLabel = el('div', { cls: 's-qty-l', text: shopQtyLabel(item.unit) });
+        row.push(
+            qtyStepper({
+                value: n,
+                unit: item.unit,
+                canMinus: n > r.min,
+                canPlus: r.max === null || roundShopQty(n + step) <= r.max,
+                onMinus: () => setPick(Math.max(r.min, roundShopQty(n - step))),
+                onPlus: () => setPick(roundShopQty(n + step)),
+                onType: (v) => setPick(v),
+                key: `pick-${item.id}`,
+                cls: 's-step s-pick',
+                testid: 'shop-pick',
+                labels: ['Menos', 'Más'],
+            }),
+        );
     }
     row.push(b);
-    const box = el('div', { cls: 's-buybox' }, [el('div', { cls: 's-buyrow' }, row)]);
+    const box = el('div', { cls: 's-buybox' }, [qtyLabel, el('div', { cls: 's-buyrow' }, row)]);
     if (inCartNow > 0) {
         const view = el('button', { type: 'button', cls: 's-link', text: 'Ver carrito', 'data-testid': 'shop-sheet-cart' });
         view.addEventListener('click', () => openCart());
         box.append(
             el('p', { cls: 's-incart-row', 'data-testid': 'shop-incart' }, [
                 icon('check'),
-                el('span', { text: inCartNow === 1 ? 'Tienes 1 en el carrito.' : `Tienes ${inCartNow} en el carrito.` }),
+                el('span', { text: item.unit ? `Tienes ${qtyText(inCartNow, item.unit)} en el carrito.` : inCartNow === 1 ? 'Tienes 1 en el carrito.' : `Tienes ${qtyNum(inCartNow)} en el carrito.` }),
                 view,
             ]),
         );
     }
     return box;
+}
+
+/**
+ * v0.1.429 — Lo que se puede sumar al carrito desde la ficha: la primera vez,
+ * desde el mínimo del producto; si ya hay, de a lo que dice «de a cuánto».
+ * Hasta lo que queda (máximo y stock). null = ya no entra más.
+ */
+function pickRule(item: QtyItem, inCartNow: number): { min: number; max: number | null; step: number } | null {
+    const step = item.qty?.step ?? 1;
+    const min = inCartNow > 0 ? step : (item.qty?.min ?? 1);
+    const cap = maxFor(item);
+    const room = roundShopQty(cap - inCartNow);
+    if (room < min) return null;
+    const k = Math.floor(roundShopQty((room - min) / step) + 1e-9);
+    return { min, max: roundShopQty(min + k * step), step };
+}
+
+/** v0.1.429 — Lo elegido en la ficha: sin tocar, el mínimo (no 1: «de a 0,5 kg» arranca en 0,5). */
+function pickedQty(r: { min: number; max: number | null; step: number } | null, pick: number | undefined): number {
+    if (!r) return 0;
+    return pick === undefined ? r.min : snapShopQty(pick, r);
+}
+
+/** v0.1.429 — La regla en una frase («Mínimo 2 horas · de a 1»), si no es la de siempre. */
+function qtyRuleNode(item: QtyItem | undefined): HTMLElement | null {
+    if (!item?.qty) return null;
+    const text = shopQtyRuleText(item.qty, item.unit, meta?.number_format ?? 'dot_comma');
+    return text ? el('div', { cls: 's-qty-rule', 'data-testid': 'shop-qty-rule', text }) : null;
 }
 
 /** v0.1.424 — Cómo se entrega lo físico (envío, recoger, envío gratis desde…). */
@@ -1554,7 +1707,7 @@ function deliveryHint(): HTMLElement | null {
     return el('p', { cls: 's-kind-note', 'data-testid': 'shop-delivery-hint' }, kids);
 }
 
-function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>, pick = 1): HTMLElement {
+function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>, pick?: number): HTMLElement {
     const p = byId.get(id);
     if (!p) return sheet('narrow', 'Producto', [el('p', { cls: 's-empty', text: 'Este producto ya no está disponible.' })], null, 'shop-product');
     const look = productLook();
@@ -1573,7 +1726,7 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
     let st: string | null;
     let sku = p.sku;
     // Lo que se compra (null = no se compra desde aquí: servicio, suscripción o falta elegir).
-    let buyItem: { id: number; title: string; price: number | null; stock: number | null } | undefined;
+    let buyItem: ({ id: number; title: string; price: number | null } & QtyItem) | undefined;
     if (service) {
         buy = bookControl(p, true);
         priceEl = priceNode(p, 's-price s-d-price', priceFrom(p));
@@ -1613,7 +1766,8 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
     const canBuyNow = !!buyItem && d.buy_now && d.after_add !== 'checkout' && !meta!.closed && !soldOut(buyItem) && buyItem.price !== null;
     const buyNowRun = (): void => {
         if (!buyItem) return;
-        if ((cart.get(buyItem.id) ?? 0) === 0) setQty(buyItem.id, Math.max(1, Math.min(pick, maxFor(buyItem) || 1)));
+        // v0.1.429 — Lo elegido en la ficha (la cantidad válida más cercana).
+        if ((cart.get(buyItem.id) ?? 0) === 0) setQty(buyItem.id, pickedQty(pickRule(buyItem, 0), pick));
         closeOverlay();
         goCheckout();
     };
@@ -1642,9 +1796,13 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
         p.summary ? el('p', { cls: 's-d-sum', 'data-testid': 'shop-product-summary', text: p.summary }) : null,
         variable ? variantOptions(p, sel, idx) : null,
         st ? el('div', { cls: 's-stock s-d-stock', text: st }) : null,
+        // v0.1.429 — Mínimo, de a cuánto y máximo, si el producto los tiene.
+        qtyRuleNode(buyItem),
         el('div', { cls: 's-d-buy' }, [buy, buyNow]),
         kindNote,
-        n > 0 && !(variant && cart.has(variant.id)) ? el('p', { cls: 's-incart', style: 'margin:8px 0 0', text: n === 1 ? 'Tienes 1 de este producto en el carrito.' : `Tienes ${n} de este producto en el carrito.` }) : null,
+        n > 0 && !(variant && cart.has(variant.id))
+            ? el('p', { cls: 's-incart', style: 'margin:8px 0 0', text: p.unit ? `Tienes ${qtyText(n, p.unit)} de este producto en el carrito.` : n === 1 ? 'Tienes 1 de este producto en el carrito.' : `Tienes ${qtyNum(n)} de este producto en el carrito.` })
+            : null,
         layout === 'wide' ? null : descSection,
     ].filter((x): x is Node => x !== null);
     const body: Node[] = [];
@@ -1660,10 +1818,10 @@ function productSheet(id: number, imageIdx: number, selIn?: Array<string | null>
     let foot: Node[] | null = null;
     if (look.sticky_bar && buyItem && barPrice && !meta!.closed && !soldOut(buyItem) && buyItem.price !== null) {
         const item = buyItem;
-        const room = Math.max(0, maxFor(item) - (cart.get(item.id) ?? 0));
+        const r = pickRule(item, cart.get(item.id) ?? 0);
         const barBtn =
-            room > 0
-                ? actionButton(addLabel(), () => addToCart(item.id, Math.max(1, Math.min(pick, room))), 's-btn', 'shop-bar-add')
+            r
+                ? actionButton(addLabel(), () => addToCart(item.id, pickedQty(r, pick)), 's-btn', 'shop-bar-add')
                 : canBuyNow
                   ? actionButton(meta!.texts.buy_now || 'Comprar ahora', buyNowRun, 's-btn', 'shop-bar-buy')
                   : actionButton('Ver carrito', () => openCart(), 's-btn', 'shop-bar-cart');
@@ -1690,20 +1848,28 @@ function actionButton(label: string, onClick: () => void, cls = 's-btn', testid?
 function cartLine(line: ShopCartResult['lines'][number], flash?: number): HTMLElement {
     const p = buyable.get(line.product_id);
     const img = p?.images[0];
-    const minus = el('button', { type: 'button', 'aria-label': 'Quitar uno', text: '−', 'data-k': `cminus-${line.product_id}` });
-    minus.addEventListener('click', () => setQty(line.product_id, line.qty - 1));
-    const plus = el('button', { type: 'button', 'aria-label': 'Agregar uno', text: '+', disabled: !p || line.qty >= maxFor(p), 'data-k': `cplus-${line.product_id}` });
-    plus.addEventListener('click', () => setQty(line.product_id, line.qty + 1));
+    const unit = line.unit ?? p?.unit;
     const rm = el('button', { type: 'button', cls: 's-rm', text: 'Quitar' });
     rm.addEventListener('click', () => setQty(line.product_id, 0));
-    const problem = shopLineProblemText(line);
+    const problem = shopLineProblemText(line, meta?.number_format);
+    // v0.1.429 — Sube y baja de a lo que dice el producto; la cantidad se puede escribir (2,5).
+    const stepper = qtyStepper({
+        value: line.qty,
+        unit,
+        canMinus: true,
+        canPlus: !!p && shopQtyNext(line.qty, p.qty, 1, p.stock) > line.qty,
+        onMinus: () => setQty(line.product_id, shopQtyNext(line.qty, p?.qty, -1, p?.stock ?? null)),
+        onPlus: () => setQty(line.product_id, shopQtyNext(line.qty, p?.qty, 1, p?.stock ?? null)),
+        onType: (n) => setQty(line.product_id, n),
+        key: `c-${line.product_id}`,
+    });
     return el('div', { cls: `s-line${flash === line.product_id ? ' s-flash' : ''}`, 'data-testid': 'shop-cart-line' }, [
         el('div', { cls: 's-line-img' }, [img ? el('img', { src: imgUrl(img, 160), alt: '' }) : el('div', { cls: 's-noimg' }, [icon('image')])]),
         el('div', {}, [
             el('div', { cls: 's-line-t', text: p?.title || line.title || 'Producto' }),
-            el('div', { cls: 's-line-p', text: money(line.unit_price) }),
+            el('div', { cls: 's-line-p', text: `${money(line.unit_price)}${shopPerUnit(unit)}` }),
             problem ? el('div', { cls: 's-line-err', text: problem }) : null,
-            el('div', { cls: 's-step' }, [minus, el('span', { text: String(line.qty) }), plus]),
+            unit ? el('div', { cls: 's-step-row' }, [stepper, unitWord(line.qty, unit)]) : stepper,
         ]),
         el('div', {}, [el('div', { cls: 's-line-sub', text: money(line.subtotal) }), rm]),
     ]);
@@ -1939,20 +2105,21 @@ function cxHead(home: { label: string; go: () => void }): HTMLElement {
 }
 
 /** Una línea del pedido: la foto con la cantidad encima, el nombre, la opción y el subtotal. */
-function cxItem(p: ShopPurchasable | undefined, fallback: string, qty: number, amount: string, extra: string, problem: string | null): HTMLElement {
+function cxItem(p: ShopPurchasable | undefined, fallback: string, qty: number, amount: string, extra: string, problem: string | null, unit?: ShopUnit): HTMLElement {
     const thumbs = coCfg().thumbnails;
     const img = p?.images[0];
     const name = p?.variant ? p.product.title : p?.title || fallback;
-    const variant = p?.variant?.label ?? '';
+    // v0.1.429 — Con unidad, la cantidad va en palabras («3 horas»).
+    const variant = [p?.variant?.label ?? '', unit ? qtyText(qty, unit) : ''].filter(Boolean).join(' · ');
     return el('div', { cls: 's-cx-item', 'data-testid': 'shop-cx-item' }, [
         thumbs
             ? el('div', { cls: 's-cx-thumb' }, [
                   img ? el('img', { src: imgUrl(img, 160), alt: '' }) : el('div', { cls: 's-noimg' }, [icon('image')]),
-                  el('span', { cls: 's-cx-qty', 'data-testid': 'shop-cx-qty', 'aria-label': `Cantidad: ${qty}`, text: String(qty) }),
+                  unit ? null : el('span', { cls: 's-cx-qty', 'data-testid': 'shop-cx-qty', 'aria-label': `Cantidad: ${qtyNum(qty)}`, text: qtyNum(qty) }),
               ])
             : null,
         el('div', { cls: 's-cx-it' }, [
-            el('div', { cls: 's-cx-it-n', text: thumbs ? name : `${qty} × ${name}` }),
+            el('div', { cls: 's-cx-it-n', text: thumbs || unit ? name : `${qtyNum(qty)} × ${name}` }),
             variant ? el('div', { cls: 's-cx-it-v', text: variant }) : null,
             extra ? el('div', { cls: 's-cx-it-v', text: extra }) : null,
             problem ? el('div', { cls: 's-line-err', text: problem }) : null,
@@ -2713,15 +2880,17 @@ function paintSummary(): void {
     const items: HTMLElement[] = [];
     for (const l of est.lines) {
         const p = buyable.get(l.product_id);
-        const problem = shopLineProblemText(l);
+        const problem = shopLineProblemText(l, meta.number_format);
+        const unit = l.unit ?? p?.unit;
         // v0.1.425 — En los estilos nuevos cada línea va con su foto y la cantidad encima.
         if (cxItemsEl) {
-            items.push(cxItem(p, l.title || 'Producto', l.qty, money(l.subtotal), l.qty > 1 ? `${money(l.unit_price)} c/u` : '', problem));
+            const each = unit ? `${money(l.unit_price)}${shopPerUnit(unit)}` : l.qty > 1 ? `${money(l.unit_price)} c/u` : '';
+            items.push(cxItem(p, l.title || 'Producto', l.qty, money(l.subtotal), each, problem, unit));
             continue;
         }
         rows.push(
             el('div', {}, [
-                el('span', {}, [`${l.qty} × ${p?.title || l.title || 'Producto'}`, problem ? el('span', { cls: 's-line-err', style: 'display:block', text: problem }) : null]),
+                el('span', {}, [shopLineText({ qty: l.qty, title: p?.title || l.title || 'Producto', unit }, meta.number_format), problem ? el('span', { cls: 's-line-err', style: 'display:block', text: problem }) : null]),
                 el('span', { text: money(l.subtotal) }),
             ]),
         );
@@ -3003,7 +3172,7 @@ async function placeOrder(): Promise<void> {
             const e = res.error;
             if (subscribing && (e.code === 'shop_cart_changed' || e.code === 'shop_subscription')) {
                 const line = e.data?.cart?.lines?.[0];
-                const why = line ? shopLineProblemText(line) : '';
+                const why = line ? shopLineProblemText(line, meta.number_format) : '';
                 showServerAlert(why ? `${why} No se pudo hacer la suscripción.` : e.message || 'No se pudo hacer la suscripción. Vuelve a intentar.');
                 return;
             }
@@ -3012,6 +3181,8 @@ async function placeOrder(): Promise<void> {
                 for (const l of e.data.cart.lines) {
                     if (l.problem === 'unavailable' || l.problem === 'no_price' || l.problem === 'no_stock') cart.delete(l.product_id);
                     else if (l.problem === 'low_stock' && l.available !== null) cart.set(l.product_id, l.available);
+                    // v0.1.429 — La cantidad que acepta el producto ahora (cambió el mínimo o el «de a cuánto»).
+                    else if (l.adjusted && l.qty > 0) cart.set(l.product_id, l.qty);
                 }
                 saveCart();
                 paintCartButtons();
@@ -3215,7 +3386,7 @@ async function showOrder(orderToken: string, opts: { placed?: boolean; whatsappP
               el('div', { cls: 's-tot' }, [el('span', { text: `Total ${subFreq}` }), el('span', { text: fmt(o.total) })]),
           ])
         : el('div', { cls: 's-sum' }, [
-              ...o.lines.map((l) => el('div', {}, [el('span', { text: `${l.qty} × ${l.title}` }), el('span', { text: fmt(l.subtotal) })])),
+              ...o.lines.map((l) => el('div', {}, [el('span', { text: shopLineText(l, m.number_format) }), el('span', { text: fmt(l.subtotal) })])),
               el('div', { style: 'padding-top:6px;border-top:1px solid var(--s-line);margin-top:4px' }, [el('span', { text: 'Subtotal' }), el('span', { text: fmt(o.subtotal) })]),
               o.discount > 0 ? el('div', { cls: 's-disc' }, [el('span', { text: `Descuento${o.coupon_code ? ` (${o.coupon_code})` : ''}` }), el('span', { text: `-${fmt(o.discount)}` })]) : null,
               o.digital_only
@@ -3612,6 +3783,7 @@ function handleCartLink(items: Array<{ id: number; qty: number }>, buying: boole
                 problems.push(`«${item.title}» está agotado.`);
                 continue;
             }
+            // v0.1.429 — La cantidad válida más cercana (mínimo, «de a cuánto», stock).
             setQty(id, Math.max(cart.get(id) ?? 0, Math.min(qty, cap)));
             added++;
             lastAdded = id;
@@ -3726,6 +3898,8 @@ const PV_MARKS: ReadonlyArray<readonly [string, ShopEditTargetId]> = [
     ['.s-pd .s-d-stock', 'stock'],
     ['.s-pd .s-d-desc', 'description'],
     ['.s-pd .s-vopts', 'variants'],
+    ['.s-pd .s-qty-rule', 'units'],
+    ['.s-pd .s-qty-l', 'units'],
     ['.s-pd .s-d-buy', 'buy'],
     ['.s-pd .s-kind-note', 'delivery'],
     ['.s-sheet.s-pd', 'product'],

@@ -78,6 +78,36 @@ export const articles: LearnArticle[] = [
                 title: 'Lo agotado se ve tachado',
                 md: 'Si una combinación no tiene stock, tu cliente la ve tachada; si no existe (no vendes la S en azul), no se puede elegir. El pedido guarda la variante exacta y el stock se descuenta de ella.',
             },
+            { t: 'h', text: 'Vender por hora, por año o por kilo' },
+            {
+                t: 'p',
+                md: 'Cada producto decide en qué se vende y cuánto se puede comprar. Una asesoría se vende por horas y desde 2; un café, por kilo y de a medio kilo; una licencia, por año y como máximo 5. Todo sale de cuatro columnas de tu lista, así que cada producto tiene lo suyo y lo que dejes vacío queda como siempre: por unidad, desde 1 y de a 1.',
+            },
+            {
+                t: 'steps',
+                items: [
+                    'En **Productos → Unidades y cantidades**, toca **Crear las columnas**: se agregan a tu lista «Unidad de venta», «Cantidad mínima», «Cantidad máxima» y «De a cuánto», y quedan elegidas. Si ya tienes columnas así, elígelas ahí.',
+                    'En tu lista, llena la unidad de cada producto que no se vende por unidad: «hora», «año», «kg», «licencia». El plural se arma solo («horas»); si es especial, escríbelo así: «mes/meses».',
+                    'Escribe el mínimo, el máximo y de a cuánto se compra sólo donde haga falta. Para vender por kilo con decimales, pon «De a cuánto» en 0,5 (o 0,25).',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Cómo lo ve tu cliente',
+                rows: [
+                    { name: 'Precio', what: 'Con la unidad al lado: «$ 50.000 / hora».' },
+                    { name: 'Cantidad', what: 'El selector sube y baja de a lo que dice «De a cuánto» y también se puede escribir (1,5 kg). Si escribe 1,3 con «de a 0,5», queda en 1,5.' },
+                    { name: 'Regla', what: 'Debajo del stock, en una frase: «Mínimo 2 horas · máximo 40 horas».' },
+                    { name: 'Carrito y pedido', what: '«Asesoría · 3 horas», «Café · 1,5 kg». En **Líneas de pedido** se guarda la cantidad con decimales y la columna **Unidad**.' },
+                    { name: 'Stock', what: 'Se cuenta en la misma unidad: con 3,2 kg y de a 0,5, se pueden pedir hasta 3 kg.', tip: 'Si vendes con decimales, la columna de stock también necesita decimales (en sus ajustes).' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Las variantes heredan',
+                md: 'Una variante usa la unidad y las cantidades de su producto si las dejas vacías, y las suyas si las llenas: el café molido y el café en grano pueden venderse distinto.',
+            },
             { t: 'h', text: 'Productos digitales, servicios y suscripciones' },
             {
                 t: 'p',
@@ -276,6 +306,7 @@ export const articles: LearnArticle[] = [
                     { q: '¿Google muestra mi tienda?', a: 'Sólo si la pones en tu propio dominio (**Dominio y Google**): ahí cada producto tiene su dirección y Google la puede mostrar. La dirección de la plataforma nunca aparece en los buscadores.' },
                     { q: '¿Puedo usar el color de mi marca?', a: 'Sí. En **Estilo → Colores** la tienda usa el color de tu marca o el que elijas, y ahí mismo cambias el fondo, las tarjetas y el texto.' },
                     { q: '¿La tienda se ve oscura en los celulares en modo oscuro?', a: 'Sólo si eliges el modo **Oscuro** o **Automático** en **Estilo**. Con **Claro** se ve siempre clara.' },
+                    { q: '¿Puedo vender servicios por hora y productos por unidad en la misma tienda?', a: 'Sí. Cada producto dice su unidad en su columna: los que la dejan vacía se venden por unidad, como siempre.' },
                     { q: '¿Puedo vender un producto con variantes y otros sin ellas?', a: 'Sí. Un producto sin subtareas se vende como siempre; uno con variantes pide elegir la opción antes de agregarlo al carrito.' },
                     { q: '¿Qué pasa si borro la tienda?', a: 'Se apaga la página. Los pedidos, las líneas y los clientes quedan en sus listas, como listas comunes.' },
                 ],

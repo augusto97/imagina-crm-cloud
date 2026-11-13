@@ -28,6 +28,19 @@ import {
     suggestShopKindFields,
     shopWhatsappMessage,
     summarizeVariantProduct,
+    parseShopQtyInput,
+    pluralizeShopUnit,
+    shopLineText,
+    shopPerUnit,
+    shopQtyCap,
+    shopQtyLabel,
+    shopQtyNext,
+    shopQtyRuleFrom,
+    shopQtyRuleText,
+    shopQtyText,
+    shopQtyValid,
+    shopUnitFrom,
+    snapShopQty,
     type PublicShopProduct,
     type PublicShopVariant,
     type ShopCartProduct,
@@ -87,8 +100,8 @@ describe('computeShopCart', () => {
     });
 
     it('recorta cantidades imposibles', () => {
-        const r = computeShopCart([{ product_id: 2, qty: 5000 }, { product_id: 2, qty: -3 }], products, { shipping: 0, minOrder: null });
-        expect(r.lines[0]!.qty).toBe(999);
+        const r = computeShopCart([{ product_id: 2, qty: 50000 }, { product_id: 2, qty: -3 }], products, { shipping: 0, minOrder: null });
+        expect(r.lines[0]!.qty).toBe(10000);
     });
 });
 
@@ -504,9 +517,9 @@ describe('v0.1.421 — qué pasa al agregar y el enlace que arma el carrito', ()
             { id: 12, qty: 2 },
             { id: 15, qty: 1 },
         ]);
-        expect(parseShopCartParam(' 12 x 2 , 12:1 , abc, -4, 0, 15*9999')).toEqual([
+        expect(parseShopCartParam(' 12 x 2 , 12:1 , abc, -4, 0, 15*99999')).toEqual([
             { id: 12, qty: 3 },
-            { id: 15, qty: 999 },
+            { id: 15, qty: 10000 },
         ]);
         expect(parseShopCartParam('')).toEqual([]);
         expect(parseShopCartParam(null)).toEqual([]);
@@ -575,5 +588,157 @@ describe('v0.1.424 — la descripción corta', () => {
         expect(readShopConfig({ display: { show_summary: false } }).display.show_summary).toBe(false);
         expect(readShopConfig({ display: { show_summary: 'quizá' } }).display.show_summary).toBe(true);
         expect(readShopConfig({ catalog: { summary: 'x' } }).catalog.summary).toBeNull();
+    });
+});
+
+describe('v0.1.429 — unidades de venta', () => {
+    it('arma el plural de la unidad y respeta lo escrito a mano', () => {
+        expect(pluralizeShopUnit('hora')).toBe('horas');
+        expect(pluralizeShopUnit('mes')).toBe('meses');
+        expect(pluralizeShopUnit('sesión')).toBe('sesiones');
+        expect(pluralizeShopUnit('licencia')).toBe('licencias');
+        expect(pluralizeShopUnit('lápiz')).toBe('lápices');
+        expect(pluralizeShopUnit('metro cuadrado')).toBe('metros cuadrados');
+        expect(pluralizeShopUnit('hora de asesoría')).toBe('horas de asesoría');
+        expect(pluralizeShopUnit('kg')).toBe('kg');
+        expect(pluralizeShopUnit('GB')).toBe('GB');
+        expect(pluralizeShopUnit('m²')).toBe('m²');
+        expect(shopUnitFrom('mes/meses')).toEqual({ one: 'mes', many: 'meses' });
+        expect(shopUnitFrom(' Año ')).toEqual({ one: 'Año', many: 'Años' });
+        expect(shopUnitFrom('unidad')).toBeNull();
+        expect(shopUnitFrom('und')).toBeNull();
+        expect(shopUnitFrom('')).toBeNull();
+        expect(shopUnitFrom(12)).toBeNull();
+    });
+
+    it('lee la regla de las columnas y vuelve a lo de siempre con lo vacío o raro', () => {
+        expect(shopQtyRuleFrom({})).toBeNull();
+        expect(shopQtyRuleFrom({ min: 1, step: 1 })).toBeNull();
+        expect(shopQtyRuleFrom({ min: 2 })).toEqual({ min: 2, max: null, step: 1 });
+        // Sin mínimo, el mínimo es el paso.
+        expect(shopQtyRuleFrom({ step: 5 })).toEqual({ min: 5, max: null, step: 5 });
+        expect(shopQtyRuleFrom({ step: '0,5' })).toEqual({ min: 0.5, max: null, step: 0.5 });
+        // Un máximo menor que el mínimo se ignora; negativos y texto, también.
+        expect(shopQtyRuleFrom({ min: 10, max: 3 })).toEqual({ min: 10, max: null, step: 1 });
+        expect(shopQtyRuleFrom({ min: -2, max: 'mucho', step: 0 })).toBeNull();
+    });
+
+    it('lleva la cantidad a la válida más cercana y respeta el máximo y el stock', () => {
+        const rule = { min: 2, max: 40, step: 1 };
+        expect(snapShopQty(1, rule)).toBe(2);
+        expect(snapShopQty(7, rule)).toBe(7);
+        expect(snapShopQty(99, rule)).toBe(40);
+        expect(snapShopQty(0, rule)).toBe(0);
+        const kg = { min: 0.5, max: null, step: 0.5 };
+        expect(snapShopQty(1.3, kg)).toBe(1.5);
+        expect(snapShopQty(0.2, kg)).toBe(0.5);
+        // De a 5 desde 10: 10, 15, 20…
+        const box = { min: 10, max: null, step: 5 };
+        expect(snapShopQty(12, box)).toBe(10);
+        expect(snapShopQty(13, box)).toBe(15);
+        expect(shopQtyCap(box, 23)).toBe(20);
+        expect(shopQtyCap(box, 9)).toBe(0);
+        expect(shopQtyCap(null, 4.7)).toBe(4);
+        expect(shopQtyValid(15, box)).toBe(true);
+        expect(shopQtyValid(16, box)).toBe(false);
+    });
+
+    it('suma y resta de a pasos; bajar del mínimo saca el producto', () => {
+        const box = { min: 10, max: 20, step: 5 };
+        expect(shopQtyNext(0, box, 1)).toBe(10);
+        expect(shopQtyNext(10, box, 1)).toBe(15);
+        expect(shopQtyNext(20, box, 1)).toBe(20);
+        expect(shopQtyNext(15, box, -1)).toBe(10);
+        expect(shopQtyNext(10, box, -1)).toBe(0);
+        expect(shopQtyNext(1.5, { min: 0.5, max: null, step: 0.5 }, 1)).toBe(2);
+        expect(shopQtyNext(1, null, 1, 1)).toBe(1);
+    });
+
+    it('dice la cantidad y la regla en palabras', () => {
+        const hora = shopUnitFrom('hora');
+        expect(shopQtyText(1, hora, 'dot_comma')).toBe('1 hora');
+        expect(shopQtyText(3, hora, 'dot_comma')).toBe('3 horas');
+        expect(shopQtyText(1.5, shopUnitFrom('kg'), 'dot_comma')).toBe('1,5 kg');
+        expect(shopQtyText(1.5, shopUnitFrom('kg'), 'comma_dot')).toBe('1.5 kg');
+        expect(shopQtyText(2, null, 'dot_comma')).toBe('2');
+        expect(shopQtyText(2, shopUnitFrom('Hora'), 'dot_comma')).toBe('2 horas');
+        expect(shopQtyLabel(hora)).toBe('Horas');
+        expect(shopQtyLabel(null)).toBe('Cantidad');
+        expect(shopQtyLabel(shopUnitFrom('kg'))).toBe('Cantidad (kg)');
+        expect(shopQtyLabel(shopUnitFrom('mes/meses'))).toBe('Meses');
+        expect(shopPerUnit(hora)).toBe(' / hora');
+        expect(shopPerUnit(null)).toBe('');
+        expect(shopQtyRuleText({ min: 2, max: 40, step: 1 }, hora, 'dot_comma')).toBe('Mínimo 2 horas · máximo 40 horas');
+        expect(shopQtyRuleText({ min: 5, max: null, step: 5 }, null, 'dot_comma')).toBe('De a 5');
+        expect(shopQtyRuleText(null, hora, 'dot_comma')).toBe('');
+    });
+
+    it('lee la cantidad que escribe la persona', () => {
+        expect(parseShopQtyInput('1,5')).toBe(1.5);
+        expect(parseShopQtyInput('1.5')).toBe(1.5);
+        expect(parseShopQtyInput('1.500', 'dot_comma')).toBe(1500);
+        expect(parseShopQtyInput('1,500', 'comma_dot')).toBe(1500);
+        expect(parseShopQtyInput('abc')).toBeNull();
+        expect(parseShopQtyInput('0')).toBeNull();
+        expect(parseShopQtyInput('')).toBeNull();
+    });
+
+    it('el carrito corrige la cantidad, la marca y cobra los decimales', () => {
+        const map = new Map<number, ShopCartProduct>([
+            [1, { id: 1, title: 'Asesoría', price: 50000, stock: null, unit: { one: 'hora', many: 'horas' }, qty: { min: 2, max: 40, step: 1 } }],
+            [2, { id: 2, title: 'Café', price: 32000, stock: 3.2, unit: { one: 'kg', many: 'kg' }, qty: { min: 0.5, max: null, step: 0.5 } }],
+        ]);
+        const r = computeShopCart(
+            [
+                { product_id: 1, qty: 1 },
+                { product_id: 2, qty: 1.5 },
+            ],
+            map,
+            { shipping: 0, minOrder: null },
+        );
+        expect(r.lines.map((l) => [l.qty, l.subtotal, l.adjusted ?? false])).toEqual([
+            [2, 100000, true],
+            [1.5, 48000, false],
+        ]);
+        expect(r.total).toBe(148000);
+        expect(r.blocked).toBe(false);
+        // Pasa el stock: lo que alcanza en pasos de 0,5.
+        const low = computeShopCart([{ product_id: 2, qty: 5 }], map, { shipping: 0, minOrder: null });
+        expect(low.lines[0]!.problem).toBe('low_stock');
+        expect(low.lines[0]!.available).toBe(3);
+        expect(shopLineProblemText(low.lines[0]!)).toContain('3 kg');
+        expect(shopLineText({ title: 'Asesoría', qty: 3, unit: { one: 'hora', many: 'horas' } }, 'dot_comma')).toBe('Asesoría · 3 horas');
+        expect(shopLineText({ title: 'Camiseta', qty: 2 }, 'dot_comma')).toBe('2 × Camiseta');
+    });
+
+    it('el enlace del carrito lleva cantidades con decimales', () => {
+        expect(parseShopCartParam('7:1.5,8:2')).toEqual([
+            { id: 7, qty: 1.5 },
+            { id: 8, qty: 2 },
+        ]);
+        expect(shopCartParam([{ id: 7, qty: 1.5 }])).toBe('7:1.5');
+        expect(parseShopCartParam(shopCartParam([{ id: 7, qty: 0.25 }]))).toEqual([{ id: 7, qty: 0.25 }]);
+    });
+
+    it('las variantes heredan la unidad y la regla del producto', () => {
+        const base: PublicShopProduct = {
+            id: 1,
+            title: 'Café',
+            price: 30000,
+            compare_price: null,
+            images: [],
+            description: '',
+            categories: [],
+            stock: null,
+            sku: '',
+            created_at: '2026-11-01T00:00:00Z',
+            unit: { one: 'kg', many: 'kg' },
+            qty: { min: 0.5, max: null, step: 0.5 },
+        };
+        const v: PublicShopVariant = { id: 11, label: 'Molido', price: 32000, compare_price: null, stock: 10, sku: '', images: [], values: ['Molido'] };
+        const items = shopPurchasables([{ ...base, variants: [v] }]);
+        const it11 = items.get(11)!;
+        expect(it11.unit).toEqual({ one: 'kg', many: 'kg' });
+        expect(it11.qty).toEqual({ min: 0.5, max: null, step: 0.5 });
     });
 });

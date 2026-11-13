@@ -84,7 +84,8 @@ export const LATER_ORDER_COLUMNS: ReadonlyArray<{ role: OrderRole; label: string
     { role: 'campaign', label: 'Campaña', slug: 'campana', type: 'text', group: 'origin' },
 ];
 
-export const LINE_ROLES = ['title', 'order', 'product', 'qty', 'unit_price', 'subtotal', 'sku'] as const;
+/** v0.1.429 — `unit`: en qué se compró («horas», «kg»); una tienda de antes la suma al usar unidades. */
+export const LINE_ROLES = ['title', 'order', 'product', 'qty', 'unit_price', 'subtotal', 'sku', 'unit'] as const;
 export type LineRole = (typeof LINE_ROLES)[number];
 
 export const CUSTOMER_ROLES = ['name', 'email', 'phone', 'document', 'address', 'city'] as const;
@@ -123,6 +124,7 @@ const LINE_SLUG: Record<LineRole, string> = {
     unit_price: 'precio',
     subtotal: 'subtotal',
     sku: 'sku',
+    unit: 'unidad',
 };
 const CUSTOMER_SLUG: Record<CustomerRole, string> = {
     name: 'nombre',
@@ -218,7 +220,9 @@ export function shopPackBlueprint(input: ShopPackInput): ListBlueprint {
                     f('Producto', LINE_SLUG.title, 'text', { description: 'El nombre del producto cuando se compró.' }),
                     f('Pedido', LINE_SLUG.order, 'relation', { config: { target_list_id: listRef('pedidos') } }),
                     f(productName, LINE_SLUG.product, 'relation', { config: { target_list_id: input.catalogListId } }),
-                    f('Cantidad', LINE_SLUG.qty, 'number'),
+                    // v0.1.429 — Con decimales: se puede comprar 1,5 kg o 2,5 horas.
+                    f('Cantidad', LINE_SLUG.qty, 'number', { config: { precision: 3 } }),
+                    f('Unidad', LINE_SLUG.unit, 'text', { description: 'En qué se compró: horas, años, kg… Vacía = por unidad.' }),
                     f('Precio', LINE_SLUG.unit_price, 'currency', { config: money }),
                     f('Subtotal', LINE_SLUG.subtotal, 'currency', { config: money }),
                     f('Referencia', LINE_SLUG.sku, 'text'),

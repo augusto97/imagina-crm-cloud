@@ -51,6 +51,10 @@ import {
     collectionCurrencyError,
     formatShopMoney,
     newShopItemId,
+    shopPerUnit,
+    shopQtyLabel,
+    shopQtyRuleText,
+    shopUnitFrom,
     shopPlanFor,
     shopServiceFor,
     subscriptionFrequencyText,
@@ -77,7 +81,7 @@ import { cn } from '@/lib/utils';
 
 import { PanelBody, SubSection, Switch, SwitchRow } from '../widgets/widgetUi';
 import { ShopVariantsSheet } from './ShopVariantsSheet';
-import { useCreateShopKindColumn } from './useShops';
+import { useCreateShopKindColumn, useCreateShopUnitColumns } from './useShops';
 import { SHOP_SECTION_INFO } from './shopEditor';
 
 export type Patch = (fn: (c: ShopConfig) => ShopConfig) => void;
@@ -145,6 +149,8 @@ function MoneyInput({ value, onChange, testId, placeholder }: { value: number | 
 // ── Productos ──────────────────────────────────────────────────────────
 
 const ROLE_ORDER: Array<keyof ShopCatalogFields> = ['name', 'price', 'compare_price', 'images', 'summary', 'description', 'category', 'stock', 'sku', 'active'];
+/** v0.1.429 — Las columnas de las unidades de venta (en su propia sección). */
+const UNIT_ROLES: Array<'unit' | 'qty_min' | 'qty_max' | 'qty_step'> = ['unit', 'qty_min', 'qty_max', 'qty_step'];
 
 const ROLE_HINT: Partial<Record<keyof ShopCatalogFields, string>> = {
     name: 'Si no eliges uno, se usa el título de cada registro.',
@@ -155,6 +161,10 @@ const ROLE_HINT: Partial<Record<keyof ShopCatalogFields, string>> = {
     category: 'Arma los filtros de categoría de la tienda.',
     stock: 'Un número: cada venta lo descuenta y cancelar un pedido lo devuelve. Vacío en un producto = sin límite.',
     active: 'Una casilla: sólo se venden los marcados. Sin elegirla, se venden todos.',
+    unit: 'Texto o selección: «hora», «año», «kg», «licencia». El plural se arma solo; si es especial, escríbelo así: «mes/meses». Vacía = por unidad.',
+    qty_min: 'Lo mínimo que se puede comprar de ese producto (2 horas, 0,5 kg). Vacía = lo de «De a cuánto», o 1.',
+    qty_max: 'Lo máximo por compra (40 horas). Vacía = sin tope, salvo el stock.',
+    qty_step: 'Cuánto sube o baja la cantidad: 1, 0,5, 5… Vacía = de a 1. Con decimales, se puede comprar 1,5 kg.',
 };
 
 /**
@@ -240,6 +250,75 @@ function VariantsSection({ shopId, config, options, patch, onCatalogChanged }: {
  * archivo que se descarga al pagar) y servicios (se agendan en la agenda de
  * la empresa, con el servicio ya elegido).
  */
+/**
+ * v0.1.429 — Unidades de venta: cada producto dice en qué se vende (hora,
+ * año, kg) y cuánto se puede comprar, en sus propias columnas de la lista.
+ */
+function UnitsSection({
+    shopId,
+    config,
+    roleField,
+    onUnitColumns,
+}: {
+    shopId: number;
+    config: ShopConfig;
+    roleField: (role: keyof ShopCatalogFields) => JSX.Element;
+    onUnitColumns: (catalog: Partial<ShopCatalogFields>) => void;
+}): JSX.Element {
+    const toast = useToast();
+    const create = useCreateShopUnitColumns(shopId);
+    const missing = UNIT_ROLES.filter((r) => config.catalog[r] === null);
+    const fmt = getTenantFormat().number_format;
+    // Así se ve un producto por horas: el ejemplo usa las mismas funciones que la tienda.
+    const unit = shopUnitFrom('hora');
+    const rule = { min: 2, max: 40, step: 1 };
+    const money = (n: number): string => formatShopMoney(n, config.currency, fmt);
+    const addColumns = (): void =>
+        create.mutate(undefined, {
+            onSuccess: (doc) => {
+                const cat = ((doc.config as { catalog?: Partial<ShopCatalogFields> }).catalog ?? {}) as Partial<ShopCatalogFields>;
+                onUnitColumns({ unit: cat.unit ?? null, qty_min: cat.qty_min ?? null, qty_max: cat.qty_max ?? null, qty_step: cat.qty_step ?? null });
+                toast.success(__('Agregamos las columnas de unidades'), __('Llénalas en cada producto de la lista: lo que dejes vacío queda como siempre.'));
+            },
+            onError: (e) => toast.error(__('No se pudieron crear las columnas'), e instanceof Error ? e.message : undefined),
+        });
+    return (
+        <SubSection
+            title={__('Unidades y cantidades')}
+            hint={__('Para vender por hora, por año, por kg o por licencia. Cada producto decide su unidad, su mínimo, su máximo y de a cuánto se compra en sus propias columnas de la lista. Lo que quede vacío es lo de siempre: por unidad, desde 1 y de a 1. En una variante, vacío = lo de su producto.')}
+            testId="shop-units"
+            tour="shop-units"
+        >
+            {missing.length > 0 && (
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-dashed imcrm-border-border imcrm-px-3 imcrm-py-2.5">
+                    <p className="imcrm-min-w-0 imcrm-flex-1 imcrm-text-[12px] imcrm-text-muted-foreground">
+                        {missing.length === UNIT_ROLES.length
+                            ? __('Crea las columnas «Unidad de venta», «Cantidad mínima», «Cantidad máxima» y «De a cuánto» en la lista y quedan elegidas aquí.')
+                            : __('Crea en la lista las columnas que faltan y quedan elegidas aquí.')}
+                    </p>
+                    <Button size="sm" variant="outline" onClick={addColumns} disabled={create.isPending} data-testid="shop-units-create">
+                        {create.isPending ? <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin" /> : <Plus className="imcrm-h-3.5 imcrm-w-3.5" />}
+                        {missing.length === UNIT_ROLES.length ? __('Crear las columnas') : __('Crear las que faltan')}
+                    </Button>
+                </div>
+            )}
+            {UNIT_ROLES.map((r) => roleField(r))}
+            {unit && (
+                <div className="imcrm-rounded-lg imcrm-bg-muted/50 imcrm-px-3 imcrm-py-2.5 imcrm-text-[12px]" data-testid="shop-units-example">
+                    <p className="imcrm-mb-1 imcrm-font-medium">{__('Así se ve un producto con «hora», mínimo 2 y máximo 40:')}</p>
+                    <p>
+                        <strong>{money(50000)}</strong>
+                        <span className="imcrm-text-muted-foreground">{shopPerUnit(unit)}</span>
+                        {' · '}
+                        {shopQtyLabel(unit)}: 2
+                    </p>
+                    <p className="imcrm-text-muted-foreground">{shopQtyRuleText(rule, unit, fmt)}</p>
+                </div>
+            )}
+        </SubSection>
+    );
+}
+
 function KindsSection({
     shopId,
     config,
@@ -527,6 +606,7 @@ export function CatalogPanel({
     patch,
     onCatalogChanged,
     onKindColumn,
+    onUnitColumns,
 }: {
     shopId: number;
     config: ShopConfig;
@@ -534,28 +614,15 @@ export function CatalogPanel({
     patch: Patch;
     onCatalogChanged: () => void;
     onKindColumn: (role: 'kind' | 'download', fieldId: number | null) => void;
+    onUnitColumns: (catalog: Partial<ShopCatalogFields>) => void;
 }): JSX.Element {
     const set = (role: keyof ShopCatalogFields, id: number | null): void => patch((c) => ({ ...c, catalog: { ...c.catalog, [role]: id } }));
     const taken = new Map<number, keyof ShopCatalogFields>();
-    for (const r of ROLE_ORDER) {
+    for (const r of [...ROLE_ORDER, ...UNIT_ROLES]) {
         const v = config.catalog[r];
         if (v !== null) taken.set(v, r);
     }
-    return (
-        <PanelBody testId="shop-catalog">
-            <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-3 imcrm-py-2 imcrm-text-[12.5px]">
-                <span>
-                    {options.products_count === 1 ? __('1 producto en') : sprintf(__('%d productos en'), options.products_count)} <strong>{options.list.name}</strong>
-                </span>
-                <Link to={`/lists/${options.list.slug}/records`} className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-text-primary hover:imcrm-underline">
-                    {__('Editar productos')}
-                    <ExternalLink className="imcrm-h-3 imcrm-w-3" />
-                </Link>
-            </div>
-            <p className="imcrm-text-[12px] imcrm-text-muted-foreground">
-                {__('Para agregar un producto, crea un registro en la lista. Lo que cambies ahí se ve en la tienda en menos de un minuto.')}
-            </p>
-            {ROLE_ORDER.map((role) => {
+    const roleField = (role: keyof ShopCatalogFields): JSX.Element => {
                 const types = SHOP_CATALOG_FIELD_TYPES[role];
                 const fields = options.fields.filter((f) => (types as readonly string[]).includes(f.type));
                 const value = config.catalog[role];
@@ -610,8 +677,24 @@ export function CatalogPanel({
                         )}
                     </Field>
                 );
-            })}
+            };
+    return (
+        <PanelBody testId="shop-catalog">
+            <div className="imcrm-flex imcrm-items-center imcrm-justify-between imcrm-gap-2 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-px-3 imcrm-py-2 imcrm-text-[12.5px]">
+                <span>
+                    {options.products_count === 1 ? __('1 producto en') : sprintf(__('%d productos en'), options.products_count)} <strong>{options.list.name}</strong>
+                </span>
+                <Link to={`/lists/${options.list.slug}/records`} className="imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-text-primary hover:imcrm-underline">
+                    {__('Editar productos')}
+                    <ExternalLink className="imcrm-h-3 imcrm-w-3" />
+                </Link>
+            </div>
+            <p className="imcrm-text-[12px] imcrm-text-muted-foreground">
+                {__('Para agregar un producto, crea un registro en la lista. Lo que cambies ahí se ve en la tienda en menos de un minuto.')}
+            </p>
+            {ROLE_ORDER.map((role) => roleField(role))}
             <VariantsSection shopId={shopId} config={config} options={options} patch={patch} onCatalogChanged={onCatalogChanged} />
+            <UnitsSection shopId={shopId} config={config} roleField={roleField} onUnitColumns={onUnitColumns} />
             <KindsSection shopId={shopId} config={config} options={options} patch={patch} onKindColumn={onKindColumn} />
             <SubSection title={__('Moneda')} hint={__('La de los precios de la lista. Todos los productos de la tienda se venden en la misma.')}>
                 <Select value={config.currency} onChange={(e) => patch((c) => ({ ...c, currency: e.target.value }))} data-testid="shop-currency">

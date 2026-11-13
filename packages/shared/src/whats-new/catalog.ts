@@ -3181,4 +3181,33 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.429-tienda-unidades',
+        version: '0.1.429',
+        date: '2026-11-13',
+        kind: 'feature',
+        title: 'Vende por hora, por año o por kilo',
+        summary:
+            'Cada producto de tu tienda dice en qué se vende y cuánto se puede comprar: una asesoría desde 2 horas, un café de a medio kilo, una licencia por año y como máximo 5.',
+        media: {
+            slides: [
+                {
+                    title: 'La unidad junto al precio',
+                    text: 'Tus clientes ven «$ 50.000 / hora» o «$ 32.000 / kg», y el carrito y el pedido dicen «3 horas» o «1,5 kg».',
+                    illustration: 'tienda-vitrina',
+                },
+                {
+                    title: 'Mínimo, máximo y de a cuánto',
+                    text: 'El selector de cantidad sube de a lo que elijas (también con decimales) y no deja pasar del mínimo, del máximo ni del stock.',
+                    illustration: 'tienda-pedido',
+                },
+            ],
+        },
+        body: [
+            '- Abre tu tienda (**Configurar lista → Tienda → Editar**), ve a **Productos → Unidades y cantidades** y toca **Crear las columnas**.',
+            '- En tu lista, llena la unidad («hora», «año», «kg») y las cantidades sólo en los productos que lo necesitan: lo vacío queda como siempre, por unidad y de a 1.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

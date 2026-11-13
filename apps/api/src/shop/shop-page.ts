@@ -370,6 +370,16 @@ a.s-title{color:inherit;text-decoration:none}a.s-title:hover{text-decoration:und
 .s-buyrow{display:flex;gap:10px;align-items:stretch}
 .s-buyrow .s-pick{margin:0;width:132px;height:50px;flex:none}
 .s-buyrow .s-btn{flex:1;min-width:0}
+/* v0.1.429 — Unidades de venta: «/ hora», la cantidad que se escribe, la regla. */
+.s-per{font-size:13px;font-weight:600;color:var(--s-muted);margin-left:-4px}
+.s-d-price .s-per{font-size:15px}
+.s-step .s-step-in{width:100%;min-width:0;flex:1;height:100%;border:0;background:transparent;text-align:center;font:inherit;font-weight:700;color:inherit;padding:0;-moz-appearance:textfield}
+.s-step .s-step-in:focus{outline:2px solid var(--s-accent);outline-offset:-2px}
+.s-step-row{display:flex;align-items:center;gap:8px}
+.s-step-row .s-step{flex:none}
+.s-unit{font-size:13px;color:var(--s-text2)}
+.s-qty-l{font-size:12.5px;font-weight:650;color:var(--s-text2);margin:0 0 -2px}
+.s-qty-rule{margin-top:8px;font-size:12.5px;color:var(--s-muted)}
 .s-bump{animation:s-bump .5s ease}
 @keyframes s-bump{30%{transform:scale(1.3)}65%{transform:scale(.94)}100%{transform:scale(1)}}
 .s-added{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:var(--s-radius-sm);background:color-mix(in srgb,#10b981 12%,var(--s-card));color:var(--s-ok-ink);font-weight:650;font-size:14px;margin:0 0 6px;animation:s-in .22s ease both}

@@ -340,7 +340,7 @@ export class ShopPublicService {
                     };
                 }
                 const kids = children.get(r.id);
-                if (kids && kids.length > 0) p = attachVariants(p, kids, rf, attrs);
+                if (kids && kids.length > 0) p = attachVariants(p, kids, rf, attrs, r.data as Record<string, unknown>);
                 if (p.product.kind === 'service') {
                     // Un servicio se agenda: el botón lleva a la agenda con el servicio elegido.
                     const sid = agenda ? shopServiceFor(p.product, config.kinds.service_links, agenda.services) : null;
@@ -882,7 +882,7 @@ export class ShopPublicService {
         const text = shopWhatsappMessage(
             {
                 number: row.number,
-                lines: (row.lines as ShopOrderLineSnapshot[]).map((l) => ({ title: l.title, qty: l.qty, subtotal: l.subtotal })),
+                lines: (row.lines as ShopOrderLineSnapshot[]).map((l) => ({ title: l.title, qty: l.qty, subtotal: l.subtotal, ...(l.unit ? { unit: l.unit } : {}) })),
                 shipping: row.shipping,
                 total: row.total,
                 discount: row.discount,
@@ -893,6 +893,7 @@ export class ShopPublicService {
             },
             info.config.payments.whatsapp.intro,
             money,
+            info.meta.number_format,
         );
         return whatsappLink(phone, text);
     }

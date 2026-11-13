@@ -483,7 +483,14 @@ export class ShopService {
             return { before: row, after: next! };
         });
         this.forget(res.before.token);
-        const dto = await this.toDto(tenantId, res.after);
+        // v0.1.429 — Con unidades, las líneas de pedido guardan en qué se compró.
+        const cat = readShopConfig(res.after.config).catalog;
+        let after = res.after;
+        if ((cat.unit !== null || cat.qty_min !== null || cat.qty_max !== null || cat.qty_step !== null) && typeof readShopConfig(after.config).orders.line_fields.unit !== 'number') {
+            await this.ensureLineUnitColumn(tenantId, id).catch(() => undefined);
+            after = await this.row(tenantId, id);
+        }
+        const dto = await this.toDto(tenantId, after);
         return { dto: { ...dto, embed_origin: await this.embedOrigin(tenantId) }, before: res.before, after: res.after };
     }
 
@@ -736,6 +743,94 @@ export class ShopService {
             return out;
         });
         for (const t of tokens) this.forget(t);
+    }
+
+    /**
+     * v0.1.429 — Las líneas de pedido de una tienda que ya existía, listas para
+     * unidades: la columna «Unidad» (en qué se compró) y «Cantidad» con
+     * decimales (1,5 kg). Usa la que ya exista con ese nombre; si no, la crea.
+     * Todas las tiendas que escriben en esa lista quedan con ella (y su candado).
+     */
+    async ensureLineUnitColumn(tenantId: number, shopId: number): Promise<void> {
+        const row = await this.row(tenantId, shopId);
+        const config = readShopConfig(row.config);
+        const listId = config.orders.lines_list_id;
+        if (listId === null) return;
+        const current = await this.tenantDb.withTenant(tenantId, (tx) => this.fields.listByListIdWithinTx(tx, tenantId, listId));
+        // «Cantidad» con decimales: sin esto, 1,5 se vería como 2 en la tabla.
+        const qtyId = config.orders.line_fields.qty;
+        const qtyField = typeof qtyId === 'number' ? current.find((f) => f.id === qtyId) : undefined;
+        const precision = Number((qtyField?.config as { precision?: unknown } | undefined)?.precision ?? 0);
+        if (qtyField && qtyField.type === 'number' && !(precision >= 3)) {
+            await this.fields.update(tenantId, String(listId), String(qtyField.id), { config: { ...(qtyField.config ?? {}), precision: 3 } } as never, { internal: true }).catch(() => undefined);
+        }
+        if (typeof config.orders.line_fields.unit === 'number') return;
+        const existing = current.find((f) => f.slug === 'unidad' && f.type === 'text');
+        const unitId =
+            existing?.id ??
+            (
+                await this.fields.create(tenantId, String(listId), {
+                    label: 'Unidad',
+                    slug: current.some((f) => f.slug === 'unidad') ? undefined : 'unidad',
+                    type: 'text',
+                    description: 'En qué se compró: horas, años, kg… Vacía = por unidad.',
+                } as never)
+            ).id;
+        const tokens = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const rows = await tx.select().from(shops).where(eq(shops.tenantId, tenantId)).orderBy(asc(shops.id)).for('update');
+            const out: string[] = [];
+            for (const r of rows) {
+                const c = readShopConfig(r.config);
+                if (c.orders.lines_list_id !== listId || typeof c.orders.line_fields.unit === 'number') continue;
+                const next: ShopConfig = { ...c, orders: { ...c.orders, line_fields: { ...c.orders.line_fields, unit: unitId } } };
+                await tx.update(shops).set({ config: next, updatedAt: new Date() }).where(and(eq(shops.tenantId, tenantId), eq(shops.id, r.id)));
+                await this.writeMarkers(tx, tenantId, r.id, next.orders, 'add');
+                out.push(r.token);
+            }
+            return out;
+        });
+        for (const t of tokens) this.forget(t);
+    }
+
+    /**
+     * v0.1.429 — «Crear las columnas» de las unidades en el catálogo: Unidad de
+     * venta, Cantidad mínima, Cantidad máxima y De a cuánto (las que todavía no
+     * tienen columna elegida), con decimales; quedan elegidas en la tienda.
+     */
+    async createUnitColumns(tenantId: number, id: number): Promise<ShopDto> {
+        const row = await this.row(tenantId, id);
+        const config = readShopConfig(row.config);
+        const current = await this.fields.listByListId(tenantId, row.listId);
+        const want: Array<{ role: 'unit' | 'qty_min' | 'qty_max' | 'qty_step'; label: string; slug: string; description: string }> = [
+            { role: 'unit', label: 'Unidad de venta', slug: 'unidad_de_venta', description: 'En qué se vende: hora, año, kg, licencia… Vacía = por unidad. Si el plural es especial, escríbelo así: mes/meses.' },
+            { role: 'qty_min', label: 'Cantidad mínima', slug: 'cantidad_minima', description: 'Lo mínimo que se puede comprar. Vacía = lo de «De a cuánto» (o 1).' },
+            { role: 'qty_max', label: 'Cantidad máxima', slug: 'cantidad_maxima', description: 'Lo máximo por compra. Vacía = sin tope (salvo el stock).' },
+            { role: 'qty_step', label: 'De a cuánto', slug: 'de_a_cuanto', description: 'Cuánto sube o baja la cantidad: 1, 0,5, 5… Vacía = de a 1.' },
+        ];
+        const created: Partial<Record<'unit' | 'qty_min' | 'qty_max' | 'qty_step', number>> = {};
+        for (const w of want) {
+            if (config.catalog[w.role] !== null) continue;
+            const f = await this.fields.create(tenantId, String(row.listId), {
+                label: w.label,
+                slug: current.some((x) => x.slug === w.slug) ? undefined : w.slug,
+                type: w.role === 'unit' ? 'text' : 'number',
+                description: w.description,
+                ...(w.role === 'unit' ? {} : { config: { precision: 3 } }),
+            } as never);
+            created[w.role] = f.id;
+        }
+        const token = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const r = await this.load(tx, tenantId, id, true);
+            const c = readShopConfig(r.config);
+            await tx
+                .update(shops)
+                .set({ config: { ...c, catalog: { ...c.catalog, ...created } }, updatedAt: new Date() })
+                .where(and(eq(shops.tenantId, tenantId), eq(shops.id, id)));
+            return r.token;
+        });
+        this.forget(token);
+        await this.ensureLineUnitColumn(tenantId, id).catch(() => undefined);
+        return this.get(tenantId, id);
     }
 
     /**
