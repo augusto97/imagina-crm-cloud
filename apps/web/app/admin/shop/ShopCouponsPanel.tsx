@@ -355,7 +355,7 @@ export function CouponsPanel({ shopId, config, options }: { shopId: number; conf
     const list = coupons.data ?? [];
 
     return (
-        <PanelBody testId="shop-coupons-panel">
+        <PanelBody testId="shop-coupons-panel" tour="shop-coupons">
             <SubSection
                 title={__('Tus cupones')}
                 hint={__('Tu cliente escribe el código al pagar y ve el descuento antes de confirmar. Cada uso cuenta con su pedido: si lo cancelas, el uso vuelve.')}

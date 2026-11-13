@@ -9338,3 +9338,39 @@ Las páginas públicas no corren dentro de una sesión: sus URLs nunca quedan
 atadas, aunque las arme un pedido de alguien con la app abierta. El
 interceptor se aplica sólo donde la respuesta es para el navegador de quien
 pide (nunca en lo que se guarda en la caché pública).
+
+**Addendum v0.1.428 (ADR-S103) — Tocar la vista previa de la tienda lleva al
+ajuste; las fotos de los productos con su forma, esquinas y borde.** Pedidos
+del usuario: "que el usuario al hacer click en el editor de la tienda pueda ir
+de una al ajuste de ese elemento" y "de las imágenes también sería bueno poder
+controlar los bordes y la relación de aspecto".
+
+1. **Un mapa compartido** (`packages/shared/src/schemas/shop-edit-targets.ts`,
+   sin zod porque lo importa el cliente de la página): cada parte de la tienda
+   (`header`, `image`, `price`, `buy`, `cx-pay`…) → su etiqueta, la sección
+   del editor y el `data-tour` del bloque del panel. Un test del front exige
+   que cada `tour` exista en el código del editor.
+2. **La página pública, sólo en la vista previa** (`BOOT.preview`), marca las
+   partes (`data-pv` en el checkout; el resto por selectores en `PV_MARKS`,
+   del más específico al más general), dibuja un recuadro y una etiqueta fija
+   («Foto · Estilo») al pasar el mouse y, con un clic en fase de captura,
+   avisa `imb-shop-edit` sin navegar. Los controles de formulario, la galería,
+   los pasos del pago y la cantidad pasan de largo (`PV_PASS`), así la vista
+   previa se puede llenar igual. La página publicada no lleva nada de esto.
+3. **El editor** abre la sección, baja hasta `[data-tour]` dentro del panel y
+   lo marca un momento (`imcrm-jump-flash`, sin movimiento con «reducir
+   movimiento»). La barra de la vista previa trae «Tocar para editar»
+   (el de entrada) / «Navegar» (`imb-shop-edit-mode`).
+4. **Fotos** en `config.design.images` (lectura tolerante, sin migración; una
+   tienda de antes se ve igual): esquinas (`inherit` = las de las tarjetas,
+   rectas, suaves, redondas, círculo), borde 0-6 px y su color, margen dentro
+   de la tarjeta, sombra y el color detrás de la foto. `buildShopDesignCss`
+   emite `--s-img-*` sólo si cambiaron y `shopDesignClasses` las clases
+   `s-img-*` del `<body>`; el círculo fuerza 1:1 en la vitrina y el margen. El
+   borde es un `::after` encima de la foto, así no cambia su tamaño. Las
+   plantillas de estilo conservan las fotos.
+5. **Formas**: la de la vitrina sigue en `config.display.image_ratio` y la de
+   la ficha en `config.design.product.image_ratio` (la ficha además «como
+   es»); las dos suman alta 2:3, de cámara 3:2 y panorámica 16:9. Los ajustes
+   de las fotos se mudaron de Apariencia y de «Ficha del producto» a
+   **Estilo → Fotos de los productos**, con un dibujo de cada forma.

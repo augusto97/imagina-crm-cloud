@@ -96,13 +96,35 @@ export const SHOP_PRODUCT_LAYOUT_HINTS: Record<ShopProductLayout, string> = {
     compact: 'Una ventana angosta con la foto chica junto al nombre. Para servicios o un menú.',
     full: 'Como la clásica, pero ocupa toda la pantalla, como una página del producto.',
 };
-export const SHOP_PRODUCT_IMAGE_RATIOS = ['auto', 'square', 'portrait', 'landscape'] as const;
-export type ShopProductImageRatio = (typeof SHOP_PRODUCT_IMAGE_RATIOS)[number];
-export const SHOP_PRODUCT_IMAGE_RATIO_LABELS: Record<ShopProductImageRatio, string> = {
-    auto: 'Como es la foto',
+/**
+ * v0.1.428 — Las formas de la foto (ancho : alto). Las mismas para las
+ * tarjetas de la vitrina y la ficha del producto; las tres primeras son las de
+ * antes, así lo guardado sigue valiendo.
+ */
+export const SHOP_IMAGE_RATIOS = ['square', 'portrait', 'landscape', 'tall', 'photo', 'wide'] as const;
+export type ShopImageRatio = (typeof SHOP_IMAGE_RATIOS)[number];
+export const SHOP_IMAGE_RATIO_LABELS: Record<ShopImageRatio, string> = {
     square: 'Cuadrada',
     portrait: 'Vertical',
     landscape: 'Horizontal',
+    tall: 'Alta',
+    photo: 'Foto',
+    wide: 'Panorámica',
+};
+/** La proporción que se escribe («4:5») y el ancho/alto para el CSS. */
+export const SHOP_IMAGE_RATIO_SIZES: Record<ShopImageRatio, { text: string; w: number; h: number }> = {
+    square: { text: '1:1', w: 1, h: 1 },
+    portrait: { text: '4:5', w: 4, h: 5 },
+    landscape: { text: '4:3', w: 4, h: 3 },
+    tall: { text: '2:3', w: 2, h: 3 },
+    photo: { text: '3:2', w: 3, h: 2 },
+    wide: { text: '16:9', w: 16, h: 9 },
+};
+export const SHOP_PRODUCT_IMAGE_RATIOS = ['auto', ...SHOP_IMAGE_RATIOS] as const;
+export type ShopProductImageRatio = (typeof SHOP_PRODUCT_IMAGE_RATIOS)[number];
+export const SHOP_PRODUCT_IMAGE_RATIO_LABELS: Record<ShopProductImageRatio, string> = {
+    auto: 'Como es la foto',
+    ...SHOP_IMAGE_RATIO_LABELS,
 };
 
 export const shopDesignProductSchema = z.object({
@@ -117,6 +139,36 @@ export const shopDesignProductSchema = z.object({
     sticky_bar: z.boolean().catch(true).default(true),
 });
 export type ShopDesignProduct = z.infer<typeof shopDesignProductSchema>;
+
+/**
+ * v0.1.428 — Las FOTOS de los productos (vitrina y ficha): esquinas, borde,
+ * margen dentro de la tarjeta, sombra y el color detrás de una foto que no
+ * llena el recuadro. Por defecto se ven como siempre.
+ */
+export const SHOP_IMAGE_CORNERS = ['inherit', 'square', 'soft', 'round', 'circle'] as const;
+export type ShopImageCorners = (typeof SHOP_IMAGE_CORNERS)[number];
+export const SHOP_IMAGE_CORNER_LABELS: Record<ShopImageCorners, string> = {
+    inherit: 'Como las tarjetas',
+    square: 'Rectas',
+    soft: 'Suaves',
+    round: 'Redondas',
+    circle: 'Círculo',
+};
+export const SHOP_IMAGE_BORDER_MAX = 6;
+
+export const shopDesignImagesSchema = z.object({
+    corners: z.enum(SHOP_IMAGE_CORNERS).catch('inherit').default('inherit'),
+    /** Grosor del borde (px; 0 = sin borde). */
+    border: z.number().int().min(0).max(SHOP_IMAGE_BORDER_MAX).catch(0).default(0),
+    /** El color del borde (null = la línea de la tienda). */
+    border_color: nullableHex,
+    /** Un margen entre la foto y el borde de la tarjeta (la foto no toca los bordes). */
+    inset: z.boolean().catch(false).default(false),
+    shadow: z.boolean().catch(false).default(false),
+    /** Lo que se ve detrás de una foto que no llena el recuadro (null = un gris suave). */
+    background: nullableHex,
+});
+export type ShopDesignImages = z.infer<typeof shopDesignImagesSchema>;
 
 /**
  * v0.1.425 — El PAGO (finalizar compra): cómo se acomodan los datos, la
@@ -183,6 +235,8 @@ export const shopDesignSchema = z.object({
     product: shopDesignProductSchema.catch(() => shopDesignProductSchema.parse({})).default({}),
     /** v0.1.425 — El pago. */
     checkout: shopDesignCheckoutSchema.catch(() => shopDesignCheckoutSchema.parse({})).default({}),
+    /** v0.1.428 — Las fotos de los productos. */
+    images: shopDesignImagesSchema.catch(() => shopDesignImagesSchema.parse({})).default({}),
     /** CSS propio (sólo lo cambia un administrador; se guarda limpio). */
     custom_css: z.string().max(SHOP_CUSTOM_CSS_MAX).catch('').default(''),
 });
@@ -205,7 +259,7 @@ export interface ShopDesignPreset {
     label: string;
     description: string;
     /** Lo que cambia la plantilla (el resto queda como por defecto). */
-    design: Partial<Omit<ShopDesign, 'header' | 'hero' | 'colors' | 'custom_css' | 'preset' | 'product' | 'checkout'>> & {
+    design: Partial<Omit<ShopDesign, 'header' | 'hero' | 'colors' | 'custom_css' | 'preset' | 'product' | 'checkout' | 'images'>> & {
         colors: ShopDesignColors;
         header?: Partial<ShopDesignHeader>;
         hero?: Partial<Omit<ShopDesignHero, 'image_file_id'>>;
@@ -315,6 +369,8 @@ export function applyShopDesignPreset(current: ShopDesign, presetId: string): Sh
         product: current.product,
         // v0.1.425 — El pago tampoco.
         checkout: current.checkout,
+        // v0.1.428 — Ni cómo se ven las fotos.
+        images: current.images,
         preset: p.id,
     });
 }
@@ -421,6 +477,17 @@ function colorVars(d: ShopDesign, p: Palette, accent: string): string {
     return v.map(([k, x]) => `${k}:${x}`).join(';');
 }
 
+const IMAGE_RADIUS: Record<Exclude<ShopImageCorners, 'inherit'>, string> = { square: '0px', soft: '10px', round: '22px', circle: '50%' };
+
+/** v0.1.428 — Las variables de las fotos (sólo lo que se cambió). */
+function imageVars(im: ShopDesignImages): string[] {
+    const v: string[] = [];
+    if (im.corners !== 'inherit') v.push(`--s-img-r:${IMAGE_RADIUS[im.corners]}`);
+    if (im.border > 0) v.push(`--s-img-bw:${im.border}px`, `--s-img-bc:${im.border_color ?? 'var(--s-line)'}`);
+    if (im.background) v.push(`--s-img-bg:${im.background}`);
+    return v;
+}
+
 /** Las variables de forma (no cambian con el modo). */
 function shapeVars(d: ShopDesign): string {
     const r = RADIUS[d.corners];
@@ -441,6 +508,7 @@ function shapeVars(d: ShopDesign): string {
         `--s-hero-h:${HERO_H[d.hero.height]}`,
         `--s-hero-ov:${(d.hero.overlay / 100).toFixed(2)}`,
         `--s-title:${TITLE[d.hero.title_size]}`,
+        ...imageVars(d.images),
     ].join(';');
 }
 
@@ -457,6 +525,12 @@ export function shopDesignClasses(d: ShopDesign): string {
         d.hero.align === 'center' ? 's-hero-center' : '',
         d.hero.style === 'banner' && d.hero.image_file_id !== null ? 's-hero-img' : '',
         d.corners === 'square' ? 's-square' : '',
+        // v0.1.428 — Las fotos.
+        d.images.corners !== 'inherit' ? `s-img-c s-img-c-${d.images.corners}` : '',
+        d.images.border > 0 ? 's-img-border' : '',
+        // El círculo va siempre con margen (pegado al borde de la tarjeta se ve cortado).
+        d.images.inset || d.images.corners === 'circle' ? 's-img-inset' : '',
+        d.images.shadow ? 's-img-shadow' : '',
     ]
         .filter(Boolean)
         .join(' ');

@@ -63,6 +63,7 @@ import {
     type ShopDto,
     type ShopOptions,
     type ShopProblem,
+    type ShopSection,
 } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -81,9 +82,9 @@ import { SHOP_SECTION_INFO } from './shopEditor';
 
 export type Patch = (fn: (c: ShopConfig) => ShopConfig) => void;
 
-export function Field({ label, hint, children, htmlFor }: { label: string; hint?: ReactNode; children: ReactNode; htmlFor?: string }): JSX.Element {
+export function Field({ label, hint, children, htmlFor, tour }: { label: string; hint?: ReactNode; children: ReactNode; htmlFor?: string; tour?: string }): JSX.Element {
     return (
-        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5">
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-1.5" data-tour={tour}>
             <label htmlFor={htmlFor} className="imcrm-text-[12.5px] imcrm-font-medium">
                 {label}
             </label>
@@ -169,6 +170,7 @@ function VariantsSection({ shopId, config, options, patch, onCatalogChanged }: {
     const setAttrs = (attributes: number[]): void => patch((c) => ({ ...c, variants: { ...c.variants, attributes } }));
     return (
         <SubSection
+            tour="shop-variants"
             title={__('Variantes')}
             hint={__('Para vender un mismo producto en varias tallas, colores o materiales. Cada variante es una subtarea del producto en la lista, con su propio precio, stock, referencia y fotos (vacíos = los del producto).')}
         >
@@ -572,6 +574,7 @@ export function CatalogPanel({
                                   : undefined
                         }
                         htmlFor={`shop-role-${role}`}
+                        tour={`shop-role-${role}`}
                     >
                         <Select
                             id={`shop-role-${role}`}
@@ -667,47 +670,26 @@ function AfterAddChoice({ value, onChange }: { value: ShopAfterAdd; onChange: (v
     );
 }
 
-export function DesignPanel({ config, patch }: { config: ShopConfig; options?: ShopOptions; patch: Patch }): JSX.Element {
+export function DesignPanel({ config, patch, onJump }: { config: ShopConfig; options?: ShopOptions; patch: Patch; onJump?: (section: ShopSection, tour: string) => void }): JSX.Element {
     const d = config.display;
     const setD = (p: Partial<ShopConfig['display']>): void => patch((c) => ({ ...c, display: { ...c.display, ...p } }));
     const setT = (p: Partial<ShopConfig['texts']>): void => patch((c) => ({ ...c, texts: { ...c.texts, ...p } }));
     return (
         <PanelBody testId="shop-design">
-            <SubSection title={__('Productos')}>
+            <SubSection title={__('Productos')} tour="shop-design-grid">
                 <Field label={__('Por fila (en computador)')} hint={__('En el celular siempre van de a dos.')}>
                     <Segmented value={d.columns} onChange={(columns) => setD({ columns })} options={[[2, '2'], [3, '3'], [4, '4']]} testId="shop-columns" />
                 </Field>
-                <Field label={__('Forma de la foto')}>
-                    <Segmented
-                        value={d.image_ratio}
-                        onChange={(image_ratio) => setD({ image_ratio })}
-                        options={[
-                            ['square', __('Cuadrada')],
-                            ['portrait', __('Vertical')],
-                            ['landscape', __('Horizontal')],
-                        ]}
-                    />
-                </Field>
-                <Field label={__('Cómo se ajusta la foto')}>
-                    <Segmented
-                        value={d.image_fit}
-                        onChange={(image_fit) => setD({ image_fit })}
-                        options={[
-                            ['cover', __('Llena el espacio')],
-                            ['contain', __('Se ve entera')],
-                        ]}
-                    />
-                </Field>
-                <Field label={__('Orden')}>
-                    <Select value={d.sort} onChange={(e) => setD({ sort: e.target.value as ShopConfig['display']['sort'] })} data-testid="shop-sort">
-                        {SHOP_SORTS.map((s) => (
-                            <option key={s} value={s}>
-                                {__(SHOP_SORT_LABELS[s])}
-                            </option>
-                        ))}
-                    </Select>
-                </Field>
-                <Field label={__('Cuántas quedan')}>
+                {/* v0.1.428 — La forma, las esquinas y el borde de las fotos viven en Estilo. */}
+                <p className="imcrm-text-[11.5px] imcrm-leading-snug imcrm-text-muted-foreground" data-testid="shop-design-images-moved">
+                    {__('La forma, las esquinas y el borde de las fotos están en Estilo → Fotos de los productos.')}{' '}
+                    {onJump && (
+                        <button type="button" className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline" onClick={() => onJump('style', 'shop-style-images')} data-testid="shop-design-images-go">
+                            {__('Ir ahí')}
+                        </button>
+                    )}
+                </p>
+                <Field label={__('Cuántas quedan')} tour="shop-design-stock">
                     <Segmented
                         value={d.show_stock}
                         onChange={(show_stock) => setD({ show_stock })}
@@ -723,8 +705,6 @@ export function DesignPanel({ config, patch }: { config: ShopConfig; options?: S
                         <Input type="number" min={1} max={1000} value={d.low_stock_at} onChange={(e) => setD({ low_stock_at: Math.max(1, Math.min(1000, Math.floor(Number(e.target.value) || 1))) })} className="imcrm-w-28" />
                     </Field>
                 )}
-                <SwitchRow label={__('Buscador')} checked={d.show_search} onChange={(v) => setD({ show_search: v })} />
-                <SwitchRow label={__('Filtros por categoría')} hint={__('Salen del campo de categoría de los productos.')} checked={d.show_categories} onChange={(v) => setD({ show_categories: v })} />
                 <SwitchRow
                     label={__('Descripción corta en las tarjetas')}
                     hint={config.catalog.summary === null ? __('Elige la columna de la descripción corta en Productos.') : __('Dos renglones bajo el nombre.')}
@@ -736,7 +716,20 @@ export function DesignPanel({ config, patch }: { config: ShopConfig; options?: S
                 <SwitchRow label={__('Mostrar la referencia (SKU)')} checked={d.show_sku} onChange={(v) => setD({ show_sku: v })} />
                 <SwitchRow label={__('Ocultar los agotados')} hint={__('Si no, se ven apagados con «Agotado».')} checked={d.hide_sold_out} onChange={(v) => setD({ hide_sold_out: v })} />
             </SubSection>
-            <SubSection title={__('Al agregar al carrito')} hint={__('Qué ve la persona después de tocar «Agregar al carrito».')}>
+            <SubSection title={__('Buscar y ordenar')} tour="shop-design-browse">
+                <Field label={__('Orden')}>
+                    <Select value={d.sort} onChange={(e) => setD({ sort: e.target.value as ShopConfig['display']['sort'] })} data-testid="shop-sort">
+                        {SHOP_SORTS.map((s) => (
+                            <option key={s} value={s}>
+                                {__(SHOP_SORT_LABELS[s])}
+                            </option>
+                        ))}
+                    </Select>
+                </Field>
+                <SwitchRow label={__('Buscador')} checked={d.show_search} onChange={(v) => setD({ show_search: v })} />
+                <SwitchRow label={__('Filtros por categoría')} hint={__('Salen del campo de categoría de los productos.')} checked={d.show_categories} onChange={(v) => setD({ show_categories: v })} />
+            </SubSection>
+            <SubSection title={__('Al agregar al carrito')} hint={__('Qué ve la persona después de tocar «Agregar al carrito».')} tour="shop-design-after-add">
                 <AfterAddChoice value={d.after_add} onChange={(after_add) => setD({ after_add })} />
                 {d.after_add === 'checkout' && config.texts.add_to_cart === 'Agregar al carrito' && (
                     <p className="imcrm-text-[11.5px] imcrm-text-muted-foreground" data-testid="shop-after-add-hint">
@@ -755,7 +748,7 @@ export function DesignPanel({ config, patch }: { config: ShopConfig; options?: S
                     testId="shop-buy-now-toggle"
                 />
             </SubSection>
-            <SubSection title={__('Textos de los botones')}>
+            <SubSection title={__('Textos de los botones')} tour="shop-design-texts">
                 <Field label={__('Agregar al carrito')}>
                     <Input value={config.texts.add_to_cart} maxLength={40} onChange={(e) => setT({ add_to_cart: e.target.value })} data-testid="shop-text-add" />
                 </Field>
@@ -906,7 +899,7 @@ export function PaymentPanel({ config, options, patch }: { config: ShopConfig; o
     const holds = SHOP_HOLD_OPTIONS.includes(p.online.hold_minutes) ? SHOP_HOLD_OPTIONS : [...SHOP_HOLD_OPTIONS, p.online.hold_minutes].sort((a, b) => a - b);
     return (
         <PanelBody testId="shop-payment">
-            <SubSection title={__('Cómo te pagan')} hint={__('Puedes activar varias: quien compra elige una.')}>
+            <SubSection title={__('Cómo te pagan')} hint={__('Puedes activar varias: quien compra elige una.')} tour="shop-payments">
                 <SwitchRow
                     boxed
                     icon={CreditCard}
@@ -1004,6 +997,7 @@ export function PaymentPanel({ config, options, patch }: { config: ShopConfig; o
                 </SwitchRow>
             </SubSection>
             <SubSection
+                tour="shop-delivery"
                 title={__('Cómo reciben el pedido')}
                 hint={__('El costo de cada una se suma al total; con «Envío gratis desde» no se cobra cuando la compra llega a ese monto. Una entrega a domicilio pide la dirección; recoger en el local, no.')}
                 action={
@@ -1066,7 +1060,7 @@ export function CheckoutPanel({ config, options, patch }: { config: ShopConfig; 
         setC({ notify_user_ids: on ? [...ch.notify_user_ids.filter((x) => x !== id), id].slice(0, 20) : ch.notify_user_ids.filter((x) => x !== id) });
     return (
         <PanelBody testId="shop-checkout">
-            <SubSection title={__('Lo que se pide al comprar')} hint={__('Nombre, correo y celular siempre. La dirección, sólo si la entrega la necesita.')}>
+            <SubSection title={__('Lo que se pide al comprar')} hint={__('Nombre, correo y celular siempre. La dirección, sólo si la entrega la necesita.')} tour="shop-checkout-fields">
                 <Field label={__('Cédula o NIT')}>
                     <Segmented
                         value={ch.ask_document}
@@ -1149,7 +1143,7 @@ export function SellerPanel({ config, patch }: { config: ShopConfig; patch: Patc
                     {__('El Estatuto del Consumidor (Ley 1480) pide que, antes de comprar, se vea quién vende, cómo contactarlo, el precio total y las condiciones de cambios y devoluciones. Sin estos datos la tienda no se puede publicar. Los textos de abajo son un punto de partida: revísalos con tu abogado.')}
                 </p>
             </div>
-            <SubSection title={__('Quién vende')}>
+            <SubSection title={__('Quién vende')} tour="shop-seller">
                 <Field label={__('Nombre o razón social')}>
                     <Input value={s.legal_name} maxLength={160} onChange={(e) => setS({ legal_name: e.target.value })} data-testid="shop-seller-name" />
                 </Field>
@@ -1173,7 +1167,7 @@ export function SellerPanel({ config, patch }: { config: ShopConfig; patch: Patc
                     </Field>
                 </div>
             </SubSection>
-            <SubSection title={__('Políticas')}>
+            <SubSection title={__('Políticas')} tour="shop-policies">
                 <Field label={__('Tiempos de entrega')}>
                     <Textarea value={config.policies.delivery_time} rows={2} maxLength={600} placeholder={SHOP_DEFAULT_DELIVERY_TIME} onChange={(e) => setPol({ delivery_time: e.target.value })} />
                 </Field>

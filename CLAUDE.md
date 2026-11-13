@@ -15190,6 +15190,53 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         interceptor y `?t=`), `roles-guests` al día, specs de portal, tienda,
         widget, documentos e invitados 155/155 + E2E navegador 15/15.
 
+  - [x] **Tocar la vista previa de la tienda lleva al ajuste + fotos con su
+        forma, esquinas y borde (v0.1.428, addendum ADR-S103, dos pedidos del
+        usuario: "que el usuario al hacer click en el editor de la tienda pueda
+        ir de una al ajuste de ese elemento… máxima usabilidad" y "de las
+        imágenes también sería bueno poder controlar los bordes, y también la
+        relación de aspecto")**. Las unidades de venta (pedidas en el mismo
+        mensaje que v0.1.427) esperan su visto bueno y pasan a v0.1.429.
+        (a) **Tocar para editar**: un mapa compartido
+        (`schemas/shop-edit-targets.ts`, sin zod) dice qué es cada parte de la
+        tienda (encabezado, logo, portada, buscador, categorías, tarjeta, foto,
+        nombre, precio, descripción corta, cuántas quedan, botón, pie,
+        políticas, ficha, galería, descripción, variantes, botones de compra,
+        cómo se entrega, carrito y las partes del pago), en qué sección del
+        editor se cambia y a qué bloque del panel (`data-tour`) se baja. La
+        página pública, sólo en la vista previa, marca cada parte al pasar el
+        mouse con un recuadro y la etiqueta «Foto · Estilo», y al tocarla avisa
+        `imb-shop-edit` sin navegar; los campos del formulario, la galería, los
+        pasos del pago y la cantidad siguen funcionando. El editor abre la
+        sección, baja al ajuste y lo resalta un momento (`imcrm-jump-flash`).
+        Barra de la vista previa con **«Tocar para editar»** (de entrada) /
+        **«Navegar»** para recorrerla como un cliente. Se sumaron anclas
+        `data-tour` a los bloques que faltaban (papeles del catálogo,
+        variantes, pagos, entregas, datos que se piden, quién vende, políticas,
+        cupones y los grupos nuevos de Apariencia). (b) **Fotos de los
+        productos** (Estilo → sección nueva, `config.design.images`, lectura
+        tolerante, sin migración): forma en la vitrina y en la ficha con un
+        dibujo de cada una — cuadrada, vertical, horizontal y las nuevas
+        **alta 2:3**, **de cámara 3:2** y **panorámica 16:9** (la ficha también
+        «como es») —, completa o recortada, **esquinas** (como las tarjetas,
+        rectas, suaves, redondas o en círculo), **borde** de 0 a 6 px con su
+        color (un `::after` encima: la foto no cambia de tamaño), **margen**
+        dentro de la tarjeta, **sombra** y el color detrás de la foto. Las
+        plantillas de estilo conservan las fotos; los ajustes de foto se
+        mudaron de Apariencia y de «Ficha del producto» (dejan «Ir ahí»), y
+        Apariencia quedó por grupos (Productos, Buscar y ordenar, Al agregar al
+        carrito, Textos de los botones). Ayuda: guía `shop` y Aprende → Tienda
+        online (fila «Fotos de los productos» y el párrafo de tocar para
+        editar) y novedad con carrusel. Tests: `shop-edit-targets.test` (4) y
+        6 nuevos en `shop-design.test` (shared 978), el test del front que
+        exige que cada parte tenga sección y ancla (front 924),
+        `shop-page-css.spec` 2/2 + E2E navegador 34/34 en escritorio claro,
+        34/34 en oscuro y 5/5 en celular oscuro (etiqueta al pasar el mouse,
+        foto → Estilo con el bloque resaltado, precio → Productos, botón →
+        Apariencia, pago y datos → su sección, «Navegar» abre el producto,
+        círculo/borde/sombra/forma en la vista previa y en la tienda
+        publicada).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

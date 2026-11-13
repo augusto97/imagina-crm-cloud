@@ -18,13 +18,13 @@ export const SHOP_SECTION_INFO: Record<ShopSection, { label: string; group: stri
         label: 'Estilo',
         group: 'La tienda',
         title: 'Estilo',
-        hint: 'Plantillas, colores y modo oscuro, letra, encabezado, portada y cómo se ven las tarjetas y los botones.',
+        hint: 'Plantillas, colores y modo oscuro, letra, encabezado, portada, tarjetas, botones y las fotos de los productos.',
     },
     design: {
         label: 'Apariencia',
         group: 'La tienda',
         title: 'Apariencia',
-        hint: 'Cuántos productos por fila, cómo se ven las fotos, el orden, el buscador y qué pasa al agregar al carrito.',
+        hint: 'Cuántos productos por fila, el orden, el buscador y qué pasa al agregar al carrito.',
     },
     payment: {
         label: 'Pago y entrega',

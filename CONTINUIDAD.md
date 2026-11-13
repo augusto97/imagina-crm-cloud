@@ -415,17 +415,22 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.427**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.428**
+(**tocar la vista previa de la tienda lleva al ajuste + fotos con su forma,
+esquinas y borde** — en el editor de la tienda, tocar una parte de la vista
+previa abre su sección y baja hasta el ajuste («Navegar» para recorrerla como
+un cliente); Estilo → Fotos de los productos con la forma en la vitrina y en
+la ficha (suma alta, de cámara y panorámica), completa o recortada, esquinas
+hasta en círculo, borde con grosor y color, margen y sombra; addendum
+ADR-S103). Pendiente propuesto al usuario: **unidades de venta en la tienda**
+(v0.1.429, esperando su visto bueno). Antes **v0.1.427**
 (**las imágenes ya no se pueden usar desde otros sitios** — las de la app y el
 portal viajan con una URL atada a la sesión (copiada a otro navegador no
 abre); las de lo público (tienda, formularios, agenda, listas publicadas) se
 ven en su página pero no sueltas en otra (`Sec-Fetch-Site`); las de los
 correos se abren desde cualquier programa con un tope de 60 por minuto y 3 MB;
 y las imágenes subidas a una ficha diseñada o a un tablero vuelven a verse
-(la dirección vieja respondía 400); addendum ADR-S16). Pendiente propuesto al
-usuario: **unidades de venta en la tienda** (v0.1.428, esperando su visto
-bueno) y **tocar en la vista previa de la tienda para ir al ajuste + bordes y
-forma de las imágenes** (v0.1.429). Antes **v0.1.426**
+(la dirección vieja respondía 400); addendum ADR-S16). Antes **v0.1.426**
 (**campo «Imagen» y miniaturas de los archivos** — las imágenes de cualquier
 campo de archivos se ven como miniatura en la tabla, la ficha y las tarjetas
 (achicadas en el servidor a WebP); campo nuevo «Imagen» = archivo con «Sólo
@@ -2014,6 +2019,24 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-13 · v0.1.428** — **Tocar la vista previa de la tienda lleva al
+  ajuste + fotos con su forma, esquinas y borde** (pedidos del usuario: "que
+  el usuario al hacer click en el editor de la tienda pueda ir de una al
+  ajuste de ese elemento, la idea es dar máxima usabilidad" y "de las imágenes
+  también sería bueno poder controlar los bordes, y también la relación de
+  aspecto"). Salió como v0.1.428 porque las **unidades de venta** siguen
+  esperando su visto bueno (ahora v0.1.429). (a) En la vista previa del editor
+  cada parte se marca al pasar el mouse («Foto · Estilo», «Precio ·
+  Productos») y al tocarla el editor abre esa sección, baja al ajuste y lo
+  resalta; «Navegar» la deja recorrer como un cliente. El mapa vive en
+  `packages/shared/src/schemas/shop-edit-targets.ts` y un test exige que cada
+  parte apunte a un ancla que existe. (b) Estilo → **Fotos de los productos**
+  (`config.design.images`, sin migración): forma en la vitrina y en la ficha
+  (suma alta 2:3, de cámara 3:2 y panorámica 16:9), completa o recortada,
+  esquinas (como las tarjetas, rectas, suaves, redondas, círculo), borde
+  0-6 px con color, margen, sombra y fondo detrás de la foto; Apariencia quedó
+  por grupos y sin los ajustes de foto. Tests: shared 978, front 924 + E2E
+  navegador 34/34 claro, 34/34 oscuro y 5/5 celular oscuro.
 - **2026-11-13 · v0.1.427** — **Las imágenes no se pueden usar desde otros
   sitios** (pedido del usuario: "si una lista no es pública no puede generar
   una url pública de la imagen porque la usan luego para otras cosas y me
@@ -2035,9 +2058,9 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   tienda (horas, años…): se le mandó una propuesta (unidad por producto con
   "$X / hora", "¿Cuántas horas?" con mínimo/máximo/paso, decimales donde la
   unidad lo permite, la unidad en el carrito, el pedido y el stock) y queda
-  esperando su visto bueno (v0.1.428). También pidió **tocar un elemento en la
-  vista previa de la tienda para ir a su ajuste** y **controlar bordes y
-  relación de aspecto de las imágenes** (v0.1.429). Tests:
+  esperando su visto bueno (pasó a v0.1.429). También pidió **tocar un
+  elemento en la vista previa de la tienda para ir a su ajuste** y **controlar
+  bordes y relación de aspecto de las imágenes** (salió en v0.1.428). Tests:
   `file-hotlink.spec` (9) + E2E navegador 15/15 (miniaturas atadas, copia a
   otro navegador 404, pegada en otro sitio no se ve, ficha diseñada se ve,
   tienda en su página y en un sitio de otro origen sí, foto suelta en otro

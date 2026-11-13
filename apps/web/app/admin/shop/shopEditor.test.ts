@@ -1,7 +1,9 @@
-import { defaultShopConfig, shopProblems } from '@imagina-base/shared';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { SHOP_EDIT_TARGETS, defaultShopConfig, shopProblems } from '@imagina-base/shared';
 import { describe, expect, it } from 'vitest';
 
-import { cleanPhone, sameShopConfig, sectionsWithProblems, shopEditorLocation, shopEditorSection, shopSectionSummary } from './shopEditor';
+import { SHOP_EDITOR_SECTIONS, cleanPhone, sameShopConfig, sectionsWithProblems, shopEditorLocation, shopEditorSection, shopSectionSummary } from './shopEditor';
 
 describe('editor de la tienda (v0.1.412)', () => {
     it('cada sección dice cómo está en una línea', () => {
@@ -75,5 +77,26 @@ describe('editor de la tienda (v0.1.412)', () => {
         expect(shopEditorLocation('measure')).toEqual({ mode: 'edit', section: 'measure' });
         expect(shopEditorLocation('cualquiera')).toEqual({ mode: 'edit', section: 'catalog' });
         expect(shopEditorLocation(null)).toEqual({ mode: 'edit', section: 'catalog' });
+    });
+});
+
+describe('tocar una parte de la vista previa lleva a su ajuste (v0.1.428)', () => {
+    // Los paneles del editor: cada destino tiene que existir como `tour="…"`
+    // (o `data-tour`), así un cambio en un panel no deja un clic sin destino.
+    const src = readdirSync(__dirname)
+        .filter((f) => /\.tsx$/.test(f))
+        .map((f) => readFileSync(join(__dirname, f), 'utf8'))
+        .join('\n');
+    const anchors = new Set([...src.matchAll(/\b(?:data-tour|tour)="([a-z0-9-]+)"/g)].map((m) => m[1]!));
+    const roles = new Set([...(src.match(/const ROLE_ORDER[^=]*=\s*\[([^\]]*)\]/)?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!));
+
+    it('cada parte apunta a una sección del menú y a un bloque que existe', () => {
+        for (const [id, t] of Object.entries(SHOP_EDIT_TARGETS)) {
+            expect(SHOP_EDITOR_SECTIONS, id).toContain(t.section);
+            if (t.tour.startsWith('shop-role-')) {
+                expect(src).toContain('tour={`shop-role-${role}`}');
+                expect(roles, id).toContain(t.tour.slice('shop-role-'.length));
+            } else expect(anchors, `${id} → ${t.tour}`).toContain(t.tour);
+        }
     });
 });
