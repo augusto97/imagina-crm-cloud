@@ -1531,6 +1531,17 @@ body.imcrm-grid-selecting {
     .imcrm-ideas-arrow svg { animation: none; }
 }
 
+/* ── v0.1.428 — El ajuste al que se llega tocando la vista previa ───────── */
+@keyframes imcrm-jump-flash {
+    0% { background-color: hsl(var(--imcrm-primary) / 0.14); box-shadow: 0 0 0 6px hsl(var(--imcrm-primary) / 0.14); }
+    70% { background-color: hsl(var(--imcrm-primary) / 0.06); box-shadow: 0 0 0 6px hsl(var(--imcrm-primary) / 0.06); }
+    100% { background-color: transparent; box-shadow: 0 0 0 6px transparent; }
+}
+.imcrm-jump-flash { animation: imcrm-jump-flash 1.8s ease-out; border-radius: 8px; scroll-margin-top: 12px; }
+@media (prefers-reduced-motion: reduce) {
+    .imcrm-jump-flash { animation-duration: 0.01s; }
+}
+
 /* ── Recorridos (v0.1.324) ─────────────────────────────────────────────── */
 @keyframes imcrm-tour-pulse {
     0% { box-shadow: 0 0 0 0 hsl(var(--imcrm-primary) / 0.55); }

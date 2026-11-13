@@ -5,6 +5,8 @@ import {
     SHOP_CHECKOUT_LAYOUT_HINTS,
     SHOP_CHECKOUT_LAYOUT_LABELS,
     SHOP_DESIGN_PRESETS,
+    SHOP_IMAGE_RATIOS,
+    SHOP_IMAGE_RATIO_SIZES,
     SHOP_PRODUCT_LAYOUTS,
     SHOP_PRODUCT_LAYOUT_HINTS,
     SHOP_PRODUCT_LAYOUT_LABELS,
@@ -183,5 +185,48 @@ describe('v0.1.425 — el pago', () => {
             expect(SHOP_CHECKOUT_LAYOUT_LABELS[l].length).toBeGreaterThan(3);
             expect(SHOP_CHECKOUT_LAYOUT_HINTS[l].length).toBeGreaterThan(10);
         }
+    });
+});
+
+describe('fotos de los productos (v0.1.428)', () => {
+    it('por defecto se ven como siempre: sin clases ni variables nuevas', () => {
+        const d = defaultShopDesign();
+        expect(d.images).toEqual({ corners: 'inherit', border: 0, border_color: null, inset: false, shadow: false, background: null });
+        expect(shopDesignClasses(d)).not.toMatch(/s-img-/);
+        expect(buildShopDesignCss(d, '#0e7490')).not.toMatch(/--s-img-/);
+    });
+
+    it('esquinas, borde, margen, sombra y fondo llegan como clases y variables', () => {
+        const d = readShopDesign({ images: { corners: 'round', border: 2, border_color: '#111827', inset: true, shadow: true, background: '#fafafa' } });
+        const cls = shopDesignClasses(d);
+        for (const c of ['s-img-c', 's-img-c-round', 's-img-border', 's-img-inset', 's-img-shadow']) expect(cls.split(' ')).toContain(c);
+        const css = buildShopDesignCss(d, '#0e7490');
+        expect(varOf(css, '--s-img-r')).toBe('22px');
+        expect(varOf(css, '--s-img-bw')).toBe('2px');
+        expect(varOf(css, '--s-img-bc')).toBe('#111827');
+        expect(varOf(css, '--s-img-bg')).toBe('#fafafa');
+        // Sin color, el borde es la línea de la tienda.
+        expect(varOf(buildShopDesignCss(readShopDesign({ images: { border: 1 } }), '#0e7490'), '--s-img-bc')).toBe('var(--s-line)');
+    });
+
+    it('el círculo va siempre con margen dentro de la tarjeta', () => {
+        expect(shopDesignClasses(readShopDesign({ images: { corners: 'circle' } })).split(' ')).toContain('s-img-inset');
+        expect(varOf(buildShopDesignCss(readShopDesign({ images: { corners: 'circle' } }), '#0e7490'), '--s-img-r')).toBe('50%');
+    });
+
+    it('lo que no se entiende toma su valor por defecto, campo por campo', () => {
+        const d = readShopDesign({ images: { corners: 'estrella', border: 40, border_color: 'rojo', inset: 'sí', shadow: true } });
+        expect(d.images).toEqual({ corners: 'inherit', border: 0, border_color: null, inset: false, shadow: true, background: null });
+    });
+
+    it('las formas nuevas de la foto valen en la ficha (y lo guardado antes sigue valiendo)', () => {
+        for (const r of ['auto', 'square', 'portrait', 'landscape', 'tall', 'photo', 'wide'] as const) expect(readShopDesign({ product: { image_ratio: r } }).product.image_ratio).toBe(r);
+        expect(readShopDesign({ product: { image_ratio: 'panorama' } }).product.image_ratio).toBe('auto');
+        for (const r of SHOP_IMAGE_RATIOS) expect(SHOP_IMAGE_RATIO_SIZES[r].text).toMatch(/^\d+:\d+$/);
+    });
+
+    it('aplicar una plantilla de estilo no cambia las fotos', () => {
+        const current = readShopDesign({ images: { corners: 'square', border: 3, inset: true } });
+        for (const p of SHOP_DESIGN_PRESETS) expect(applyShopDesignPreset(current, p.id).images).toEqual(current.images);
     });
 });

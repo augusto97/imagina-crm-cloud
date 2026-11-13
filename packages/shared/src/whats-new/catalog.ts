@@ -3152,4 +3152,33 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         ].join('\n'),
         action: { label: 'Ir a mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.428-tienda-tocar-para-editar-fotos',
+        version: '0.1.428',
+        date: '2026-11-13',
+        kind: 'feature',
+        title: 'Toca tu tienda para cambiarla, y fotos a tu gusto',
+        summary:
+            'En el editor de la tienda, toca cualquier parte de la vista previa (la foto, el precio, el encabezado, un botón) y te lleva directo a su ajuste. Y las fotos de los productos ganan forma, esquinas, borde y sombra.',
+        media: {
+            slides: [
+                {
+                    title: 'Toca y ve al ajuste',
+                    text: 'Al pasar el mouse por la vista previa, cada parte se marca con su nombre y dónde se cambia. Al tocarla, el editor abre esa sección y te lleva al ajuste. Para recorrer la tienda como un cliente, cambia a «Navegar».',
+                    illustration: 'tienda-vitrina',
+                },
+                {
+                    title: 'Fotos con la forma que quieras',
+                    text: 'En Estilo → Fotos de los productos eliges la forma (cuadrada, vertical, horizontal, alta, de cámara o panorámica), si se ve completa o recortada, las esquinas (hasta en círculo), un borde con su grosor y color, un margen y una sombra.',
+                    illustration: 'tienda-pedido',
+                },
+            ],
+        },
+        body: [
+            '- Abre tu tienda (**Configurar lista → Tienda → Editar**) y toca la foto de un producto en la vista previa.',
+            '- La forma de la foto de la ficha también se elige en **Estilo → Fotos de los productos**.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

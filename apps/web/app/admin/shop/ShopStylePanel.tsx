@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Check, Code2, Moon, RotateCcw, Sun, SunMoon } from 'lucide-react';
+import { Check, Code2, ImageIcon, Moon, RotateCcw, Sun, SunMoon } from 'lucide-react';
 import {
     SHOP_CARD_LABELS,
     SHOP_CHECKOUT_LAYOUTS,
@@ -10,6 +10,11 @@ import {
     SHOP_DESIGN_PRESETS,
     SHOP_HEADER_LABELS,
     SHOP_HERO_LABELS,
+    SHOP_IMAGE_BORDER_MAX,
+    SHOP_IMAGE_CORNERS,
+    SHOP_IMAGE_CORNER_LABELS,
+    SHOP_IMAGE_RATIOS,
+    SHOP_IMAGE_RATIO_SIZES,
     SHOP_PRODUCT_IMAGE_RATIOS,
     SHOP_PRODUCT_IMAGE_RATIO_LABELS,
     SHOP_PRODUCT_LAYOUTS,
@@ -22,7 +27,9 @@ import {
     type ShopDesignPreset,
     type ShopOptions,
     type ShopCheckoutLayout,
+    type ShopProductImageRatio,
     type ShopProductLayout,
+    type ShopSection,
 } from '@imagina-base/shared';
 
 import { ColorField, FontSelect } from '@/components/design/DesignStyleControls';
@@ -49,12 +56,15 @@ export function StylePanel({
     options,
     patch,
     onPreview,
+    onJump,
 }: {
     config: ShopConfig;
     options: ShopOptions;
     patch: Patch;
     /** v0.1.424 — Mostrar una pantalla en la vista previa (la ficha al elegir su diseño). */
     onPreview?: (view: 'catalog' | 'product' | 'checkout') => void;
+    /** v0.1.428 — Ir a otro ajuste del editor. */
+    onJump?: (section: ShopSection, tour: string) => void;
 }): JSX.Element {
     const toast = useToast();
     const isAdmin = useSession((st) => st.memberships.find((m) => m.tenant_id === st.activeTenantId)?.role === 'admin');
@@ -73,6 +83,13 @@ export function StylePanel({
         onPreview?.('checkout');
     };
     const setT = (p: Partial<ShopConfig['texts']>): void => patch((c) => ({ ...c, texts: { ...c.texts, ...p } }));
+    // v0.1.428 — Las fotos: la forma en la vitrina (config.display) y el resto en el diseño.
+    const setImages = (p: Partial<ShopDesign['images']>): void => patch((c) => ({ ...c, design: { ...c.design, images: { ...c.design.images, ...p } } }));
+    const setCardImage = (p: Partial<Pick<ShopConfig['display'], 'image_ratio' | 'image_fit'>>): void => {
+        patch((c) => ({ ...c, display: { ...c.display, ...p } }));
+        onPreview?.('catalog');
+    };
+    const im = d.images;
     const cssCheck = useMemo(() => sanitizePublicCss(d.custom_css), [d.custom_css]);
     const darkBase = d.mode === 'dark';
 
@@ -264,6 +281,106 @@ export function StylePanel({
             </SubSection>
 
             <SubSection
+                title={__('Fotos de los productos')}
+                hint={__('La forma de las fotos en la vitrina y en la ficha, sus esquinas, un borde, un margen dentro de la tarjeta y lo que se ve detrás de una foto que no llena el recuadro.')}
+                tour="shop-style-images"
+                testId="shop-style-images"
+            >
+                <Field label={__('Forma en la vitrina')}>
+                    <RatioPicker
+                        value={config.display.image_ratio}
+                        options={SHOP_IMAGE_RATIOS}
+                        onChange={(image_ratio) => setCardImage({ image_ratio: image_ratio as ShopConfig['display']['image_ratio'] })}
+                        accent={accent}
+                        testId="shop-card-ratio"
+                    />
+                    {im.corners === 'circle' && config.display.image_ratio !== 'square' && (
+                        <p className="imcrm-text-[11.5px] imcrm-text-muted-foreground">{__('Con las esquinas en «Círculo», la foto de la vitrina siempre es cuadrada.')}</p>
+                    )}
+                </Field>
+                <Field label={__('La foto en su recuadro')}>
+                    <Segmented
+                        value={config.display.image_fit}
+                        onChange={(image_fit) => setCardImage({ image_fit })}
+                        options={[
+                            ['cover', __('Lo llena (recortada)')],
+                            ['contain', __('Completa')],
+                        ]}
+                        testId="shop-card-fit"
+                    />
+                </Field>
+                <Field label={__('Esquinas')}>
+                    <Segmented
+                        value={im.corners}
+                        onChange={(corners) => setImages({ corners })}
+                        options={SHOP_IMAGE_CORNERS.map((k) => [k, __(SHOP_IMAGE_CORNER_LABELS[k])] as const)}
+                        testId="shop-image-corners"
+                    />
+                </Field>
+                <Field label={im.border === 0 ? __('Borde: sin borde') : sprintf(__('Borde: %d px'), im.border)}>
+                    <input
+                        type="range"
+                        min={0}
+                        max={SHOP_IMAGE_BORDER_MAX}
+                        step={1}
+                        value={im.border}
+                        onChange={(e) => setImages({ border: Number(e.target.value) })}
+                        className="imcrm-w-full imcrm-accent-primary"
+                        aria-label={__('Grosor del borde de las fotos')}
+                        data-testid="shop-image-border"
+                    />
+                </Field>
+                {im.border > 0 && <ColorField label={__('Color del borde')} value={im.border_color} onChange={(v) => setImages({ border_color: v })} placeholder="#e5e7eb" />}
+                <SwitchRow
+                    label={__('Margen dentro de la tarjeta')}
+                    hint={
+                        d.cards === 'plain'
+                            ? __('Con tarjetas «Sólo la foto» no hace falta: la foto ya va sola.')
+                            : im.corners === 'circle'
+                              ? __('El círculo siempre lleva margen.')
+                              : __('La foto no toca los bordes de la tarjeta.')
+                    }
+                    checked={im.inset || im.corners === 'circle'}
+                    disabled={d.cards === 'plain' || im.corners === 'circle'}
+                    onChange={(inset) => setImages({ inset })}
+                    testId="shop-image-inset"
+                />
+                <SwitchRow label={__('Sombra')} hint={__('Se nota más con margen o con tarjetas «Sólo la foto».')} checked={im.shadow} onChange={(shadow) => setImages({ shadow })} testId="shop-image-shadow" />
+                <ColorField label={__('Detrás de la foto')} value={im.background} onChange={(v) => setImages({ background: v })} placeholder={darkBase ? '#1f2430' : '#f3f4f6'} />
+                <p className="-imcrm-mt-1 imcrm-text-[11.5px] imcrm-text-muted-foreground">{__('Se ve cuando la foto va completa o no tiene fondo (un PNG). Vacío = un gris suave.')}</p>
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-pt-3" data-tour="shop-style-images-product">
+                    <p className="imcrm-text-[12.5px] imcrm-font-medium">{__('En la ficha del producto')}</p>
+                    {d.product.layout === 'compact' ? (
+                        <p className="imcrm-text-[11.5px] imcrm-text-muted-foreground">{__('La ficha «Compacta» lleva la foto chica y cuadrada, junto al nombre.')}</p>
+                    ) : (
+                        <>
+                            <RatioPicker
+                                value={d.product.image_ratio}
+                                options={SHOP_PRODUCT_IMAGE_RATIOS}
+                                onChange={(image_ratio) => setProduct({ image_ratio })}
+                                accent={accent}
+                                testId="shop-product-ratio"
+                            />
+                            {d.product.image_ratio !== 'auto' && (
+                                <Field label={__('La foto en su recuadro')}>
+                                    <Segmented
+                                        value={d.product.image_fit}
+                                        onChange={(image_fit) => setProduct({ image_fit })}
+                                        options={[
+                                            ['contain', __('Completa')],
+                                            ['cover', __('Lo llena (recortada)')],
+                                        ]}
+                                        testId="shop-product-fit"
+                                    />
+                                </Field>
+                            )}
+                            <p className="imcrm-text-[11.5px] imcrm-text-muted-foreground">{__('Las esquinas, el borde y la sombra son los mismos de la vitrina (el círculo, en la ficha, queda con esquinas redondas).')}</p>
+                        </>
+                    )}
+                </div>
+            </SubSection>
+
+            <SubSection
                 title={__('Ficha del producto')}
                 hint={__('Lo que se abre al tocar un producto: dónde van las fotos, el precio, el botón de comprar y la descripción.')}
                 tour="shop-style-product"
@@ -282,29 +399,14 @@ export function StylePanel({
                         {__('Ver una ficha en la vista previa')}
                     </button>
                 )}
-                {d.product.layout !== 'compact' && (
-                    <Field label={__('Forma de la foto')}>
-                        <Segmented
-                            value={d.product.image_ratio}
-                            onChange={(image_ratio) => setProduct({ image_ratio })}
-                            options={SHOP_PRODUCT_IMAGE_RATIOS.map((k) => [k, __(SHOP_PRODUCT_IMAGE_RATIO_LABELS[k])] as const)}
-                            testId="shop-product-ratio"
-                        />
-                    </Field>
-                )}
-                {d.product.layout !== 'compact' && d.product.image_ratio !== 'auto' && (
-                    <Field label={__('La foto en el recuadro')}>
-                        <Segmented
-                            value={d.product.image_fit}
-                            onChange={(image_fit) => setProduct({ image_fit })}
-                            options={[
-                                ['contain', __('Completa')],
-                                ['cover', __('Lo llena (recortada)')],
-                            ]}
-                            testId="shop-product-fit"
-                        />
-                    </Field>
-                )}
+                <p className="imcrm-text-[11.5px] imcrm-leading-snug imcrm-text-muted-foreground">
+                    {__('La forma, las esquinas y el borde de las fotos de la ficha están en «Fotos de los productos».')}{' '}
+                    {onJump && (
+                        <button type="button" className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline" onClick={() => onJump('style', 'shop-style-images-product')} data-testid="shop-product-photos-go">
+                            {__('Ir ahí')}
+                        </button>
+                    )}
+                </p>
                 <SwitchRow
                     label={__('Cómo se entrega')}
                     hint={__('Junto al botón: «Envío a domicilio (2 a 3 días) · Recoger en el local» y el envío gratis.')}
@@ -438,6 +540,63 @@ export function StylePanel({
 }
 
 /** v0.1.424 — El dibujo de cada diseño de la ficha. */
+/**
+ * v0.1.428 — Elegir la forma de la foto: cada opción con su dibujo y la
+ * proporción escrita («4:5»).
+ */
+function RatioPicker({
+    value,
+    options,
+    onChange,
+    accent,
+    testId,
+}: {
+    value: ShopProductImageRatio;
+    options: readonly ShopProductImageRatio[];
+    onChange: (v: ShopProductImageRatio) => void;
+    accent: string;
+    testId?: string;
+}): JSX.Element {
+    return (
+        <div className="imcrm-grid imcrm-grid-cols-4 imcrm-gap-1.5" role="radiogroup" aria-label={__('Forma de la foto')} data-testid={testId}>
+            {options.map((k) => {
+                const on = k === value;
+                const size = k === 'auto' ? null : SHOP_IMAGE_RATIO_SIZES[k];
+                // El dibujo entra en un cuadro de 28 px: el lado largo mide 28.
+                const w = size ? (size.w >= size.h ? 28 : Math.round((28 * size.w) / size.h)) : 22;
+                const h = size ? (size.h >= size.w ? 28 : Math.round((28 * size.h) / size.w)) : 26;
+                return (
+                    <button
+                        key={k}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        data-value={k}
+                        onClick={() => onChange(k)}
+                        title={__(SHOP_PRODUCT_IMAGE_RATIO_LABELS[k])}
+                        className={cn(
+                            'imcrm-flex imcrm-flex-col imcrm-items-center imcrm-gap-1 imcrm-rounded-lg imcrm-border imcrm-px-1 imcrm-pb-1.5 imcrm-pt-2 imcrm-transition-colors',
+                            on ? 'imcrm-border-primary imcrm-bg-primary/5 imcrm-ring-1 imcrm-ring-primary' : 'imcrm-border-border hover:imcrm-bg-muted/50',
+                        )}
+                    >
+                        <span className="imcrm-flex imcrm-h-8 imcrm-items-center imcrm-justify-center" aria-hidden>
+                            {size ? (
+                                <span className="imcrm-block imcrm-rounded-[3px]" style={{ width: w, height: h, background: on ? accent : 'hsl(var(--imcrm-muted-foreground) / .35)' }} />
+                            ) : (
+                                <span className="imcrm-flex imcrm-items-center imcrm-justify-center imcrm-rounded-[3px] imcrm-border imcrm-border-dashed imcrm-border-muted-foreground/60" style={{ width: w, height: h }}>
+                                    <ImageIcon className="imcrm-h-3.5 imcrm-w-3.5 imcrm-text-muted-foreground" />
+                                </span>
+                            )}
+                        </span>
+                        <span className={cn('imcrm-text-[11px] imcrm-leading-tight', on ? 'imcrm-font-medium' : 'imcrm-text-muted-foreground')}>{__(SHOP_PRODUCT_IMAGE_RATIO_LABELS[k])}</span>
+                        <span className="imcrm-text-[10px] imcrm-leading-none imcrm-text-muted-foreground">{size ? size.text : __('libre')}</span>
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
 function LayoutCard({ layout, accent, active, onClick }: { layout: ShopProductLayout; accent: string; active: boolean; onClick: () => void }): JSX.Element {
     const img = <span className="imcrm-block imcrm-h-full imcrm-w-full imcrm-rounded-[3px] imcrm-bg-zinc-300 dark:imcrm-bg-zinc-600" />;
     const line = (w: string, strong = false): JSX.Element => <span className={cn('imcrm-block imcrm-h-[3px] imcrm-rounded-full', strong ? 'imcrm-bg-zinc-500' : 'imcrm-bg-zinc-300 dark:imcrm-bg-zinc-600')} style={{ width: w }} />;

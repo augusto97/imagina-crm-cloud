@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Monitor, Moon, Package, ShoppingCart, Smartphone, Store, Sun } from 'lucide-react';
-import type { ShopConfig } from '@imagina-base/shared';
+import { Hand, Loader2, Monitor, Moon, MousePointerClick, Package, ShoppingCart, Smartphone, Store, Sun } from 'lucide-react';
+import { isShopEditTarget, type ShopConfig, type ShopEditTargetId } from '@imagina-base/shared';
 
 import { IconToggleGroup, PreviewToolbar } from '@/admin/builder/BuilderShell';
 import { __ } from '@/lib/i18n';
@@ -17,6 +17,10 @@ type View = 'catalog' | 'product' | 'checkout';
  * tienda (`/public/s/preview`) con lo que se está editando, sin guardar. El
  * catálogo lo arma el servidor (con las fotos por URL firmada) y llega al
  * marco por `postMessage`; nada se envía desde ahí.
+ *
+ * v0.1.428 — Con «Tocar para editar», tocar una parte (la foto, el precio, el
+ * encabezado…) avisa `imb-shop-edit` y el editor abre su ajuste; «Navegar»
+ * deja recorrer la tienda como un cliente.
  */
 export function ShopPreview({
     shopId,
@@ -24,6 +28,7 @@ export function ShopPreview({
     compact,
     version = 0,
     focus,
+    onEdit,
 }: {
     shopId: number;
     config: ShopConfig;
@@ -31,6 +36,8 @@ export function ShopPreview({
     version?: number;
     /** v0.1.424 — Pedir una pantalla desde el panel (ej.: la ficha al elegir su diseño). `n` cambia en cada pedido. */
     focus?: { view: View; n: number } | null;
+    /** v0.1.428 — Tocaron una parte de la tienda: ir a su ajuste. */
+    onEdit?: (target: ShopEditTargetId) => void;
 }): JSX.Element {
     const frame = useRef<HTMLIFrameElement>(null);
     const [ready, setReady] = useState(false);
@@ -44,21 +51,30 @@ export function ShopPreview({
     // v0.1.422 — Con el modo «Automático», ver la tienda clara u oscura.
     const [scheme, setScheme] = useState<'light' | 'dark'>('light');
     const auto = config.design.mode === 'auto';
+    // v0.1.428 — Tocar una parte lleva a su ajuste (o se navega como un cliente).
+    const [mode, setMode] = useState<'edit' | 'browse'>(onEdit ? 'edit' : 'browse');
     const last = useRef<{ meta: unknown; products: unknown } | null>(null);
     const seq = useRef(0);
     // Lo que se ve ahora (pantalla y claro/oscuro): `post` lo lee al enviar, así
     // una vista previa que llega tarde no vuelve a la pantalla o al modo de antes.
-    const shown = useRef<{ view: View; scheme: 'light' | 'dark' | null }>({ view, scheme: null });
-    shown.current = { view, scheme: auto ? scheme : null };
+    const shown = useRef<{ view: View; scheme: 'light' | 'dark' | null; edit: boolean }>({ view, scheme: null, edit: mode === 'edit' });
+    shown.current = { view, scheme: auto ? scheme : null, edit: mode === 'edit' };
+    const onEditRef = useRef(onEdit);
+    onEditRef.current = onEdit;
 
     useEffect(() => {
         const onMsg = (e: MessageEvent): void => {
             if (e.origin !== window.location.origin || e.source !== frame.current?.contentWindow) return;
-            if ((e.data as { type?: string } | null)?.type === 'imb-shop-ready') setReady(true);
+            const d = e.data as { type?: string; target?: unknown } | null;
+            if (d?.type === 'imb-shop-ready') setReady(true);
+            else if (d?.type === 'imb-shop-edit' && isShopEditTarget(d.target)) onEditRef.current?.(d.target);
         };
         window.addEventListener('message', onMsg);
         return () => window.removeEventListener('message', onMsg);
     }, []);
+    useEffect(() => {
+        if (ready) frame.current?.contentWindow?.postMessage({ type: 'imb-shop-edit-mode', edit: mode === 'edit' }, window.location.origin);
+    }, [mode, ready]);
 
     // Lo editado → el servidor arma el catálogo (sin guardar), con una pausa para no pedir por tecla.
     useEffect(() => {
@@ -93,8 +109,20 @@ export function ShopPreview({
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col imcrm-bg-canvas" data-testid="shop-preview">
-            <PreviewToolbar hint={__('Así la ven tus clientes. En la vista previa no se hacen pedidos.')}>
+            <PreviewToolbar hint={mode === 'edit' ? __('Toca una parte de la tienda para ir a su ajuste.') : __('Así la ven tus clientes. En la vista previa no se hacen pedidos.')}>
                 {loading && <Loader2 className="imcrm-h-3.5 imcrm-w-3.5 imcrm-animate-spin imcrm-text-muted-foreground" aria-label={__('Actualizando')} />}
+                {onEdit && (
+                    <IconToggleGroup
+                        label={__('Qué pasa al tocar la vista previa')}
+                        value={mode}
+                        onChange={setMode}
+                        testId="shop-preview-mode"
+                        options={[
+                            { id: 'edit', label: __('Tocar para editar'), icon: MousePointerClick, testId: 'shop-preview-edit', showLabel: !compact },
+                            { id: 'browse', label: __('Navegar'), icon: Hand, testId: 'shop-preview-browse' },
+                        ]}
+                    />
+                )}
                 <IconToggleGroup
                     label={__('Qué pantalla')}
                     value={view}

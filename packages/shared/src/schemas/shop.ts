@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { GOOGLE_ADS_SEND_TO_RE, GOOGLE_TAG_ID_RE, META_PIXEL_ID_RE } from './conversion-logic';
-import { shopDesignSchema } from './shop-design';
+import { SHOP_IMAGE_RATIOS, shopDesignSchema } from './shop-design';
 import { SHOP_STAT_DEVICES } from './shop-stats-logic';
 import {
     SHOP_AFTER_ADD,
@@ -285,7 +285,8 @@ export const shopDisplaySchema = z.object({
     columns: z.union([z.literal(2), z.literal(3), z.literal(4)]).catch(3).default(3),
     /** Cómo se ven las fotos en la tarjeta. */
     image_fit: z.enum(['cover', 'contain']).catch('cover').default('cover'),
-    image_ratio: z.enum(['square', 'portrait', 'landscape']).catch('square').default('square'),
+    /** v0.1.428 — La forma de la foto en la tarjeta (SHOP_IMAGE_RATIOS). */
+    image_ratio: z.enum(SHOP_IMAGE_RATIOS).catch('square').default('square'),
     /** Cuándo se dice cuántas quedan. */
     show_stock: z.enum(['never', 'low', 'always']).catch('low').default('low'),
     low_stock_at: z.number().int().min(1).max(1000).catch(5).default(5),
@@ -809,6 +810,7 @@ export function shopProblems(
 export * from './shop-logic';
 export * from './shop-design';
 export * from './shop-stats-logic';
+export * from './shop-edit-targets';
 
 // ── v0.1.418 — Estadísticas de la tienda ──────────────────────────────────
 

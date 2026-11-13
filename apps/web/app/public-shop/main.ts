@@ -57,6 +57,7 @@ import { subscriptionFrequencyText, subscriptionPlanExtras } from '@imagina-base
 import { formStatSource } from '@imagina-base/shared/src/schemas/form-stats-logic';
 import { attributionFromSearch, cleanAttribution, type AttributionData } from '@imagina-base/shared/src/schemas/conversion-logic';
 import type { ShopStatDevice, ShopStatEvent } from '@imagina-base/shared/src/schemas/shop-stats-logic';
+import { isShopEditTarget, shopEditTargetText, type ShopEditTargetId } from '@imagina-base/shared/src/schemas/shop-edit-targets';
 import type { PublicDirectTags } from '@imagina-base/shared/src/schemas/conversion-logic';
 import { isDemoFrame } from '../public-form/demoGate';
 
@@ -152,6 +153,8 @@ const ICONS: Record<string, string> = {
     chev: 'M6 9l6 6 6-6',
     next: 'M9 6l6 6-6 6',
     bag: 'M5 8h14l-1 12H6zM9 8V6.5a3 3 0 0 1 6 0V8',
+    // v0.1.428 — La etiqueta de la vista previa del editor.
+    edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
 };
 
 function icon(name: keyof typeof ICONS): SVGSVGElement {
@@ -718,6 +721,8 @@ function applyTheme(): void {
         }
         if (style.textContent !== d.css) style.textContent = d.css;
         document.body.className = d.classes;
+        // v0.1.428 — En la vista previa, «tocar para editar» sobrevive al cambio de clases.
+        if (BOOT.preview && pvOn) document.body.classList.add('s-pv-on');
         if (d.hero_image) root.setProperty('--s-hero-img', `url("${imgUrl(d.hero_image, 1600).replace(/["\\\n]/g, '')}")`);
         else root.removeProperty('--s-hero-img');
     }
@@ -1030,7 +1035,7 @@ function paintGrid(): void {
     cardEls.clear();
     const list = visibleProducts();
     const d = meta.display;
-    gridEl.className = `s-grid${d.image_ratio === 'portrait' ? ' s-portrait' : d.image_ratio === 'landscape' ? ' s-landscape' : ''}${d.image_fit === 'contain' ? ' s-contain' : ''}`;
+    gridEl.className = `s-grid s-ar-${d.image_ratio}${d.image_fit === 'contain' ? ' s-contain' : ''}`;
     if (list.length === 0) {
         gridEl.replaceChildren(
             el('p', {
@@ -2194,7 +2199,7 @@ function legalBlock(): HTMLElement[] {
         });
         termsCb.addEventListener('change', () => setErr('terms', ''));
         errs.terms = el('div', { cls: 's-line-err', role: 'alert', hidden: true });
-        legal.push(el('label', { cls: 's-check', for: 'c_terms' }, [termsCb, el('span', {}, ['Acepto ', link, ' y la política de cambios y devoluciones.'])]), errs.terms);
+        legal.push(pv(el('label', { cls: 's-check', for: 'c_terms' }, [termsCb, el('span', {}, ['Acepto ', link, ' y la política de cambios y devoluciones.'])]), 'cx-terms'), errs.terms);
     }
     if (m.data_consent) {
         const dc = m.data_consent;
@@ -2250,7 +2255,7 @@ function subscribeView(): HTMLElement[] {
         submitBtn = null;
         return [el('div', { 'data-testid': 'shop-subscribe-view' }, [back, el('h1', { text: 'Suscribirme' }), el('p', { cls: 's-empty', text: 'Esta suscripción ya no está disponible. Escríbenos para contratarla.' })])];
     }
-    const you = el('section', { cls: 's-sec' }, [
+    const you = pv(el('section', { cls: 's-sec' }, [
         el('h3', { text: 'Tus datos' }),
         el('div', { cls: 's-fields' }, [
             field('name', 'Nombre completo', { autocomplete: 'name', required: true, wide: true }),
@@ -2258,7 +2263,7 @@ function subscribeView(): HTMLElement[] {
             field('phone', 'Celular', { type: 'tel', autocomplete: 'tel', inputmode: 'tel' }),
             m.checkout.ask_document !== 'hidden' ? field('document', 'Cédula o NIT', { required: m.checkout.ask_document === 'required', inputmode: 'numeric' }) : null,
         ].filter((x): x is HTMLElement => x !== null)),
-    ]);
+    ]), 'cx-you');
     addressBox = null;
     const addrSec = m.subscriptions?.address
         ? el('section', { cls: 's-sec', 'data-testid': 'shop-sub-address' }, [
@@ -2373,7 +2378,7 @@ function checkoutView(): HTMLElement[] {
     const back = el('button', { type: 'button', cls: 's-back' }, [icon('back'), 'Seguir comprando']);
     back.addEventListener('click', goCatalog);
 
-    const you = el('section', { cls: 's-sec' }, [
+    const you = pv(el('section', { cls: 's-sec' }, [
         el('h3', { text: 'Tus datos' }),
         el('div', { cls: 's-fields' }, [
             field('name', 'Nombre completo', { autocomplete: 'name', required: true, wide: true }),
@@ -2381,7 +2386,7 @@ function checkoutView(): HTMLElement[] {
             field('phone', 'Celular', { type: 'tel', autocomplete: 'tel', inputmode: 'tel' }),
             m.checkout.ask_document !== 'hidden' ? field('document', 'Cédula o NIT', { required: m.checkout.ask_document === 'required', inputmode: 'numeric' }) : null,
         ].filter((x): x is HTMLElement => x !== null)),
-    ]);
+    ]), 'cx-you');
 
     const deliveryOpts = el('div', { cls: 's-opts', role: 'radiogroup', 'aria-label': 'Cómo recibes tu pedido' });
     for (const d of m.delivery) {
@@ -2415,13 +2420,13 @@ function checkoutView(): HTMLElement[] {
         field('address', 'Dirección', { autocomplete: 'street-address', required: true, wide: true }),
         field('city', 'Ciudad', { autocomplete: 'address-level2', required: true, wide: true }),
     ]);
-    const deliverySec = el('section', { cls: 's-sec' }, [el('h3', { text: 'Entrega' }), deliveryOpts, zoneBox, addressBox]);
+    const deliverySec = pv(el('section', { cls: 's-sec' }, [el('h3', { text: 'Entrega' }), deliveryOpts, zoneBox, addressBox]), 'cx-delivery');
     deliverySecEl = deliverySec;
     // v0.1.416 — Todo para descargar: no se pide entrega ni dirección.
-    digitalNoteEl = el('section', { cls: 's-sec', 'data-testid': 'shop-digital-note' }, [
+    digitalNoteEl = pv(el('section', { cls: 's-sec', 'data-testid': 'shop-digital-note' }, [
         el('h3', { text: 'Entrega' }),
         el('div', { cls: 's-kind-box' }, [icon('download'), el('span', { text: `Tu pedido se descarga: no hay envío. ${downloadsText()} Te mandamos los enlaces por correo.` })]),
-    ]);
+    ]), 'cx-delivery');
     paintZones();
 
     const payOpts = el('div', { cls: 's-opts', role: 'radiogroup', 'aria-label': 'Forma de pago' });
@@ -2438,7 +2443,7 @@ function checkoutView(): HTMLElement[] {
             ]),
         );
     }
-    const paySec = el('section', { cls: 's-sec' }, [el('h3', { text: 'Pago' }), payOpts]);
+    const paySec = pv(el('section', { cls: 's-sec' }, [el('h3', { text: 'Pago' }), payOpts]), 'cx-pay');
     paySecEl = paySec;
     freeNoteEl = el('section', { cls: 's-sec', 'data-testid': 'shop-free-note' }, [
         el('h3', { text: 'Pago' }),
@@ -3684,12 +3689,165 @@ window.addEventListener('storage', (e) => {
     if (view === 'checkout') paintSummary();
 });
 
+// ── v0.1.428 — Vista previa del editor: tocar una parte lleva a su ajuste ──
+
+/** Marca una parte (sólo en la vista previa del editor). */
+function pv<T extends HTMLElement | null>(node: T, id: ShopEditTargetId): T {
+    if (BOOT.preview && node) node.dataset.pv = id;
+    return node;
+}
+
+/**
+ * Las partes que se reconocen por su clase (lo más específico primero: una
+ * parte ya marcada no se vuelve a marcar). Lo que no está aquí lo marca `pv()`
+ * al crearlo.
+ */
+const PV_MARKS: ReadonlyArray<readonly [string, ShopEditTargetId]> = [
+    ['.s-top .s-brand', 'logo'],
+    ['.s-top .s-cart-btn', 'cart'],
+    ['.s-top', 'header'],
+    ['.s-hero', 'hero'],
+    ['.s-tools', 'browse'],
+    ['.s-cats', 'categories'],
+    ['.s-card .s-media', 'image'],
+    ['.s-card .s-title', 'name'],
+    ['.s-card .s-price', 'price'],
+    ['.s-card .s-card-sum', 'summary'],
+    ['.s-card .s-stock', 'stock'],
+    ['.s-card .s-act', 'button'],
+    ['.s-card', 'card'],
+    ['.s-grid', 'grid'],
+    ['.s-foot .s-links', 'policies'],
+    ['.s-foot', 'footer'],
+    ['.s-pd .s-gal', 'gallery'],
+    ['.s-pd .s-d-title', 'name'],
+    ['.s-pd .s-d-price', 'price'],
+    ['.s-pd .s-d-sum', 'summary'],
+    ['.s-pd .s-d-stock', 'stock'],
+    ['.s-pd .s-d-desc', 'description'],
+    ['.s-pd .s-vopts', 'variants'],
+    ['.s-pd .s-d-buy', 'buy'],
+    ['.s-pd .s-kind-note', 'delivery'],
+    ['.s-sheet.s-pd', 'product'],
+    ['.s-drawer', 'cart'],
+    ['.s-cartpage', 'cart'],
+    ['.s-coupon', 'cx-coupon'],
+    ['.s-cx-side', 'cx-summary'],
+    ['.s-co-aside .s-sum', 'cx-summary'],
+    ['[data-testid="shop-checkout-view"]', 'checkout'],
+];
+
+/**
+ * Lo que sigue funcionando normal aunque esté dentro de una parte: escribir en
+ * los campos, elegir una opción, cerrar, pasar las fotos, la cantidad y los
+ * pasos del pago (así se puede recorrer la tienda mientras se edita).
+ */
+const PV_PASS = 'input,select,textarea,option,label,.s-x,.s-gal-nav,.s-thumb,.s-step,.s-vopts button,.s-chip,.s-cx-nav,.s-cx-crumbs,.s-back,.s-cx-back,.s-cx-toggle,.s-pv-chip';
+
+let pvOn = true;
+let pvCur: HTMLElement | null = null;
+const pvBox = el('div', { cls: 's-pv-box', 'aria-hidden': 'true' });
+const pvChipText = el('span', { text: '' });
+const pvChip = el('button', { type: 'button', cls: 's-pv-chip', 'data-testid': 'shop-pv-chip' }, [icon('edit'), pvChipText]);
+
+function pvMark(): void {
+    for (const [sel, id] of PV_MARKS) {
+        for (const n of document.querySelectorAll<HTMLElement>(sel)) if (!n.dataset.pv) n.dataset.pv = id;
+    }
+}
+
+function pvHide(): void {
+    pvCur = null;
+    pvBox.style.display = 'none';
+    pvChip.style.display = 'none';
+}
+
+function pvPlace(): void {
+    if (!pvCur || !pvCur.isConnected) return pvHide();
+    const r = pvCur.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return pvHide();
+    pvBox.style.display = 'block';
+    pvBox.style.top = `${r.top - 2}px`;
+    pvBox.style.left = `${r.left - 2}px`;
+    pvBox.style.width = `${r.width + 4}px`;
+    pvBox.style.height = `${r.height + 4}px`;
+    pvChip.style.display = 'inline-flex';
+    // La etiqueta arriba a la izquierda, por dentro si arriba no hay lugar.
+    const top = r.top >= 30 ? r.top - 28 : Math.max(4, r.top + 4);
+    pvChip.style.top = `${top}px`;
+    pvChip.style.left = `${Math.max(4, Math.min(r.left, window.innerWidth - pvChip.offsetWidth - 4))}px`;
+}
+
+function pvShow(node: HTMLElement): void {
+    const id = node.dataset.pv;
+    if (!isShopEditTarget(id)) return pvHide();
+    if (pvCur !== node) {
+        pvCur = node;
+        pvChipText.textContent = shopEditTargetText(id);
+        pvChip.title = 'Ir a este ajuste';
+    }
+    pvPlace();
+}
+
+function pvSend(node: HTMLElement | null): void {
+    const id = node?.dataset.pv;
+    if (!isShopEditTarget(id)) return;
+    window.parent?.postMessage({ type: 'imb-shop-edit', target: id }, location.origin);
+}
+
+function pvSetOn(on: boolean): void {
+    pvOn = on;
+    document.body.classList.toggle('s-pv-on', on);
+    if (!on) pvHide();
+}
+
+if (BOOT.preview) {
+    document.body.append(pvBox, pvChip);
+    new MutationObserver(() => pvMark()).observe(document.body, { childList: true, subtree: true });
+    pvSetOn(true);
+    document.addEventListener('pointermove', (e) => {
+        if (!pvOn || e.pointerType === 'touch') return;
+        const t = e.target as Element | null;
+        if (!t || pvChip.contains(t)) return;
+        const part = t.closest<HTMLElement>('[data-pv]');
+        if (part) pvShow(part);
+        else pvHide();
+    });
+    document.documentElement.addEventListener('mouseleave', () => pvHide());
+    window.addEventListener('scroll', () => pvPlace(), true);
+    window.addEventListener('resize', () => pvPlace());
+    pvChip.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        pvSend(pvCur);
+    });
+    // En la fase de captura: el clic en una parte no hace lo de siempre (abrir
+    // el producto, agregar al carrito…): lleva a su ajuste.
+    document.addEventListener(
+        'click',
+        (e) => {
+            if (!pvOn) return;
+            const t = e.target as Element | null;
+            if (!t || pvChip.contains(t) || t.closest(PV_PASS)) return;
+            const part = t.closest<HTMLElement>('[data-pv]');
+            if (!part) return;
+            e.preventDefault();
+            e.stopPropagation();
+            pvSend(part);
+        },
+        true,
+    );
+}
+
 // Vista previa del editor: lo que se está editando llega por postMessage.
 if (BOOT.preview) {
     window.addEventListener('message', (e) => {
         if (e.origin !== location.origin || e.source !== window.parent) return;
-        const d = e.data as { type?: string; meta?: PublicShopMeta; products?: PublicShopProduct[]; view?: View | 'product'; scheme?: 'light' | 'dark' | null } | null;
+        const d = e.data as { type?: string; meta?: PublicShopMeta; products?: PublicShopProduct[]; view?: View | 'product'; scheme?: 'light' | 'dark' | null; edit?: boolean } | null;
+        // v0.1.428 — «Tocar para editar» se prende y se apaga desde el editor.
+        if (d && d.type === 'imb-shop-edit-mode') return pvSetOn(d.edit !== false);
         if (!d || d.type !== 'imb-shop-preview' || !d.meta) return;
+        if (typeof d.edit === 'boolean') pvSetOn(d.edit);
         // v0.1.422 — «Automático»: la vista previa muestra claro u oscuro a pedido.
         if (d.scheme) document.documentElement.dataset.scheme = d.scheme;
         else delete document.documentElement.dataset.scheme;

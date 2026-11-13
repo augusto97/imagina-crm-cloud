@@ -126,6 +126,10 @@ export const articles: LearnArticle[] = [
                 md: 'En **Estilo** decides cómo se ve la tienda. Empieza por una **plantilla** y ajusta lo que quieras: la vista previa de la derecha cambia al momento. Las plantillas sólo cambian el aspecto: tus productos, textos y la foto de la portada se conservan.',
             },
             {
+                t: 'p',
+                md: '**Toca la vista previa para ir al ajuste.** Al pasar el mouse por una parte de la tienda se marca con su nombre y dónde se cambia («Foto · Estilo», «Precio · Productos»); al tocarla, el editor abre esa sección y te lleva al ajuste. Para recorrer la tienda como un cliente (abrir productos, llenar el carrito), cambia a **Navegar** arriba de la vista previa.',
+            },
+            {
                 t: 'settings',
                 title: 'Estilo',
                 rows: [
@@ -136,6 +140,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Encabezado', what: 'Blanco, de tu color, oscuro o sin fondo; el logo y su tamaño, a la izquierda o al centro, y si queda fijo arriba al bajar.' },
                     { name: 'Portada', what: 'Sencilla, a lo ancho (con una foto, cuánto se oscurece para que el título se lea, y su alto) o sin portada. Aquí también van el título y la descripción de la tienda.' },
                     { name: 'Tarjetas y botones', what: 'Con borde, con sombra, planas o sin fondo; esquinas rectas, suaves o redondas; texto a la izquierda o al centro; botón relleno o con contorno; el espacio entre productos y el ancho de la página.' },
+                    { name: 'Fotos de los productos', what: 'La forma de la foto en la vitrina y en la ficha (cuadrada, vertical, horizontal, alta, de cámara o panorámica; en la ficha también «como es»), si se ve completa o recortada, las esquinas (como las tarjetas, rectas, suaves, redondas o en círculo), un borde con su grosor y color, un margen dentro de la tarjeta, una sombra y el color detrás de la foto.', tip: 'Con fotos de distintos tamaños, «completa» con un color detrás deja la vitrina pareja sin cortar nada.' },
                     { name: 'CSS propio', what: 'Para retoques finos. Lo agrega un administrador de la empresa y nunca puede cargar nada de afuera.' },
                 ],
             },
@@ -153,7 +158,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Foto arriba', what: 'Una sola columna: la foto grande arriba y todo lo demás debajo.' },
                     { name: 'Compacta', what: 'Una ventana chica: la foto pequeña junto al nombre y el precio.', tip: 'Para productos donde la foto importa poco (servicios, recargas).' },
                     { name: 'Pantalla completa', what: 'La ficha ocupa toda la pantalla, como la página de un producto.' },
-                    { name: 'Forma de la foto', what: 'Como es la foto (sin recortar ni franjas), cuadrada, vertical u horizontal. Con una forma fija eliges si la foto se ve completa o recortada para llenar el recuadro.' },
+                    { name: 'Forma de la foto', what: 'Se elige en **Estilo → Fotos de los productos**: como es la foto (sin recortar ni franjas) o una forma fija, y si se ve completa o recortada para llenar el recuadro.' },
                     { name: 'Cómo se entrega', what: 'Junto al botón aparece «Envío a domicilio (2 a 3 días) · Recoger en el local» y desde cuánto es gratis.' },
                     { name: 'Barra de compra fija en el celular', what: 'Al bajar por la ficha en el celular, el precio y el botón quedan siempre abajo.' },
                 ],

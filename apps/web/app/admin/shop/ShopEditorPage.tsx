@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { BarChart3, Code2, CreditCard, Globe, LayoutGrid, Paintbrush, Megaphone, Eye, EyeOff, Loader2, Moon, Package, ReceiptText, Send, ShieldCheck, ShoppingBag, SlidersHorizontal, Sun, Ticket, UserRound, type LucideIcon } from 'lucide-react';
-import { readShopConfig, shopProblems, type ShopConfig, type ShopDto, type ShopOptions, type ShopProblem, type ShopSection } from '@imagina-base/shared';
+import { SHOP_EDIT_TARGETS, readShopConfig, shopProblems, type ShopConfig, type ShopDto, type ShopEditTargetId, type ShopOptions, type ShopProblem, type ShopSection } from '@imagina-base/shared';
 
 import {
     BuilderMobileNav,
@@ -226,6 +226,36 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
         setMobileTab('edit');
         setMobileSection(s);
     };
+    // v0.1.428 — Tocar una parte en la vista previa: su sección, baja hasta el
+    // ajuste y lo resalta un momento.
+    const [jump, setJump] = useState<{ tour: string; n: number } | null>(null);
+    const jumpTo = (s: ShopSection, tour: string): void => {
+        openSection(s);
+        setJump((j) => ({ tour, n: (j?.n ?? 0) + 1 }));
+    };
+    const editTarget = (id: ShopEditTargetId): void => {
+        const t = SHOP_EDIT_TARGETS[id];
+        jumpTo(t.section, t.tour);
+    };
+    useEffect(() => {
+        if (!jump) return;
+        let flashTimer = 0;
+        // Espera a que la sección se dibuje (y, en el celular, a que se abra).
+        const t = window.setTimeout(() => {
+            const node = document.querySelector<HTMLElement>(`[data-testid="shop-section"] [data-tour="${jump.tour}"]`);
+            if (!node) return;
+            const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            node.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+            node.classList.remove('imcrm-jump-flash');
+            void node.offsetWidth;
+            node.classList.add('imcrm-jump-flash');
+            flashTimer = window.setTimeout(() => node.classList.remove('imcrm-jump-flash'), 1900);
+        }, 60);
+        return () => {
+            window.clearTimeout(t);
+            window.clearTimeout(flashTimer);
+        };
+    }, [jump]);
     // v0.1.418 — Un enlace que cambia `?t=` con el editor ya abierto (la ayuda,
     // «Ir ahí», el botón atrás) también mueve la pestaña del celular: si no, se
     // quedaba en Estadísticas aunque la dirección pidiera una sección.
@@ -269,9 +299,9 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                     />
                 );
             case 'style':
-                return <StylePanel config={config} options={options} patch={patch} onPreview={showInPreview} />;
+                return <StylePanel config={config} options={options} patch={patch} onPreview={showInPreview} onJump={jumpTo} />;
             case 'design':
-                return <DesignPanel config={config} options={options} patch={patch} />;
+                return <DesignPanel config={config} options={options} patch={patch} onJump={jumpTo} />;
             case 'payment':
                 return <PaymentPanel config={config} options={options} patch={patch} />;
             case 'checkout':
@@ -439,7 +469,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                         ))}
                     {mobileTab === 'preview' && (
                         <div className="imcrm-h-full">
-                            <ShopPreview shopId={shop.id} config={config} version={catalogVersion} focus={previewFocus} compact />
+                            <ShopPreview shopId={shop.id} config={config} version={catalogVersion} focus={previewFocus} onEdit={editTarget} compact />
                         </div>
                     )}
                     {mobileTab === 'stats' && stats}
@@ -503,7 +533,7 @@ function Editor({ shop, options }: { shop: ShopDto; options: ShopOptions }): JSX
                         {body(section)}
                     </aside>
                     <div className="imcrm-min-h-0 imcrm-min-w-0">
-                        <ShopPreview shopId={shop.id} config={config} version={catalogVersion} focus={previewFocus} />
+                        <ShopPreview shopId={shop.id} config={config} version={catalogVersion} focus={previewFocus} onEdit={editTarget} />
                     </div>
                 </div>
             )}
