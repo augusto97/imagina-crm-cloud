@@ -8418,6 +8418,38 @@ la versión anterior falla la de cada bug):
 
 **Versión del documento:** 1.164.0 (Integraciones y tareas periódicas a escala)
 
+**Addendum v0.1.433 — lo programado no se pierde en un reinicio o una
+caída.** Revisado a pedido del usuario («mientras esté caída, ¿qué pasa con
+las automatizaciones programadas?»):
+- **Horarios de BullMQ**: `upsertJobScheduler` con un `pattern` BORRA la
+  vuelta atrasada y la reemplaza por la próxima del cron, así que cada
+  reinicio que cruzaba la hora de un horario se lo comía (resumen diario,
+  automatizaciones programadas, envíos de tableros, papelera, recurrencias).
+  `upsertSchedulerIfChanged` (`redis/queue-runtime.ts`) sólo escribe si el
+  horario cambió (patrón, intervalo, zona, nombre, datos) o si no quedó una
+  vuelta pendiente (`repeat:<id>:<next>` en delayed/waiting/active); lo usan
+  `registerScheduler`, `AutomationScheduler.sync` (ya no borra y re-crea:
+  sólo quita el del otro tipo de disparador) y
+  `DashboardSubscriptionScheduler.sync`. La vuelta atrasada corre UNA vez al
+  volver (BullMQ guarda una sola); las intermedias no se repiten.
+- **Resumen diario**: se manda a la hora elegida o en las 6 siguientes del
+  mismo día si esa vuelta no corrió (`digestHourDue`); la marca por día evita
+  repetirlo.
+- **Recurrencias programadas**: la guarda de idempotencia `lastFiredAt >
+  fecha` (del plugin) trababa la serie PARA SIEMPRE con dos o más fechas
+  atrasadas. En las programadas cada barrido corre UNA fecha atrasada hasta
+  ponerse al día, y con más de 12 (`RECURRENCE_CATCHUP_MAX`) salta a la
+  primera que todavía no llegó; una fecha que no avanza se detiene. La guarda
+  vieja queda sólo para el disparo por cambio de estado.
+- **Links de pago**: `expireDue` le pregunta al proveedor antes de vencer
+  (`refreshLink`); si no responde, se reintenta y pasado un día se vence igual.
+- **Avisos de Whats**: la revisión horaria hace un GET del aviso (Whats lo
+  apaga tras varios fallos de entrega) y lo vuelve a registrar si está
+  apagado o no existe.
+- **Redis**: la vigilancia de la plataforma (`checkRedis`, cada 15 min) avisa
+  por correo si Redis no guarda en disco (sin AOF ni fotos) o si puede borrar
+  datos al llenarse (`maxmemory` con una regla distinta de `noeviction`).
+
 ### ADR-S99 — Widget de contacto para el sitio de la empresa (v0.1.394)
 
 **Contexto.** Pedido del usuario: «botones de contacto como los de WhatsApp o

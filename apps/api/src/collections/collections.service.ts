@@ -185,6 +185,8 @@ export interface PaypalWebhookState {
 
 const DAY = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 15_000;
+/** v0.1.433 — Cuánto se espera a un proveedor que no responde antes de vencer el link igual. */
+const EXPIRE_ASK_GRACE_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Cobros de las EMPRESAS a sus clientes (v0.1.251, ADR-S31): Mercado Pago y
@@ -1327,14 +1329,35 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         this.afterWrite(tenantId, out);
     }
 
-    /** Pasa a «Vencido» los links pendientes cuya fecha ya pasó (todas las empresas). */
+    /**
+     * Pasa a «Vencido» los links pendientes cuya fecha ya pasó (todas las empresas).
+     * v0.1.433 — antes le pregunta al proveedor: si el cliente pagó mientras el
+     * servidor estaba caído y el aviso no llegó (o el proveedor dejó de
+     * reintentar), el link queda pagado en vez de «Vencido». Si el proveedor no
+     * responde, se reintenta en la próxima vuelta; pasado un día se vence igual.
+     */
     async expireDue(now = new Date()): Promise<number> {
         const due = await this.db
-            .select({ id: paymentLinks.id, tenantId: paymentLinks.tenantId })
+            .select()
             .from(paymentLinks)
             .where(and(eq(paymentLinks.status, 'pending'), lt(paymentLinks.expiresAt, now)))
             .limit(500);
-        for (const d of due) await this.expireIfDue(d.tenantId, d.id);
+        for (const link of due) {
+            const askable = link.connectionId !== null && isCollectionProvider(link.provider);
+            if (askable) {
+                try {
+                    await this.refreshLink(link.tenantId, link);
+                    continue;
+                } catch (err) {
+                    const lateBy = now.getTime() - (link.expiresAt?.getTime() ?? now.getTime());
+                    if (lateBy < EXPIRE_ASK_GRACE_MS) {
+                        this.logger.warn(`Link de pago ${link.id}: no se pudo consultar antes de vencerlo (${String(err)}); se reintenta`);
+                        continue;
+                    }
+                }
+            }
+            await this.expireIfDue(link.tenantId, link.id);
+        }
         return due.length;
     }
 

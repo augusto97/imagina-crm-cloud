@@ -377,9 +377,16 @@ export class RecurrencesService {
         const currentValue = (record.data as Record<string, unknown>)[dateKey];
         if (typeof currentValue !== 'string' || currentValue === '') return null;
 
-        // Idempotencia: si la fecha ya está rodada respecto al last_fired_at,
-        // no rodarla de nuevo (comparación de strings, semántica del plugin).
+        // Idempotencia (semántica del plugin): si la fecha quedó más vieja que el
+        // último disparo, no se rueda de nuevo. v0.1.433 — sólo para el disparo
+        // por cambio de estado: en las programadas trababa la serie PARA SIEMPRE
+        // cuando quedaban dos o más fechas atrasadas (servidor caído unos días,
+        // una fecha vieja): la primera rodaba, la siguiente ya era anterior al
+        // disparo y no avanzaba nunca más. Ahí protege el candado de la fila y
+        // el barrido de a uno.
+        const scheduled = rec.triggerType === 'schedule';
         if (
+            !scheduled &&
             rec.lastFiredAt !== null &&
             comparableDate(rec.lastFiredAt) > comparableDate(currentValue)
         ) {
@@ -398,11 +405,41 @@ export class RecurrencesService {
                 : zonedToday(this.timeZones ? await this.timeZones.orUtc(tenantId, tx) : FALLBACK_TIME_ZONE);
         }
 
-        const nextDate = nextOccurrence(seed, {
+        const rollOpts = {
             frequency: rec.frequency,
             intervalN: rec.intervalN,
             monthlyPattern: rec.monthlyPattern,
-        });
+        };
+        let nextDate = nextOccurrence(seed, rollOpts);
+
+        if (scheduled && rec.frequency !== 'days_after') {
+            // Una fecha que no avanza no se vuelve a disparar (con «clonar»
+            // crearía un registro cada 5 minutos).
+            if (comparableDate(nextDate) <= comparableDate(currentValue)) {
+                this.logger.warn(`recurrencia ${rec.id}: la fecha ${currentValue} no avanza; se detiene`);
+                await tx
+                    .update(recurrences)
+                    .set({ stoppedValue: currentValue.trim() })
+                    .where(and(eq(recurrences.tenantId, tenantId), eq(recurrences.id, rec.id)));
+                return null;
+            }
+            // v0.1.433 — Fechas atrasadas: cada barrido corre UNA (con su fecha,
+            // y sus automatizaciones) hasta ponerse al día. Si son demasiadas
+            // (una fecha de hace años), se salta a la primera que todavía no
+            // llegó y corre una sola vez.
+            const tz = this.timeZones ? await this.timeZones.orUtc(tenantId, tx) : FALLBACK_TIME_ZONE;
+            const due = (value: string) => recurrenceValueDue(value, tz);
+            let probe = nextDate;
+            let behind = 0;
+            while (due(probe) && behind < RECURRENCE_CATCHUP_MAX) {
+                probe = nextOccurrence(probe, rollOpts);
+                behind++;
+            }
+            if (behind >= RECURRENCE_CATCHUP_MAX) {
+                for (let guard = 0; due(probe) && guard < 20_000; guard++) probe = nextOccurrence(probe, rollOpts);
+                nextDate = probe;
+            }
+        }
 
         // Si pasó repeat_until, no disparar más. v0.1.393 — y se anota con qué
         // fecha se detuvo, así el barrido no la vuelve a tomar cada 5 minutos.
@@ -591,6 +628,23 @@ export class RecurrencesService {
             }
         }
     }
+}
+
+/**
+ * v0.1.433 — Fechas atrasadas que se recorren de a una antes de saltar a la
+ * próxima que todavía no llegó.
+ */
+export const RECURRENCE_CATCHUP_MAX = 12;
+
+/**
+ * ¿Esta fecha ya llegó? Con la regla del barrido (`dueScheduled`): una fecha
+ * sin hora vence cuando empieza ese día en la zona de la empresa; con hora, en
+ * ese instante UTC.
+ */
+export function recurrenceValueDue(value: string, tz: string, now: Date = new Date()): boolean {
+    const v = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v <= zonedToday(tz, now);
+    return comparableDate(v) <= now.toISOString().replace('T', ' ').slice(0, 19);
 }
 
 function toDto(row: RecurrenceRow): RecurrenceDto {

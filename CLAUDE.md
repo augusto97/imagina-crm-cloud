@@ -15469,6 +15469,38 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `platform-watch.spec` 17 — E2E navegador 20/20 con el proceso ya como
         `nobody` (escritorio claro y celular oscuro).
 
+  - [x] **Lo programado no se pierde en un reinicio o una caída (v0.1.433,
+        addendum ADR-S98, pregunta del usuario: "mientras esté caída, ¿qué pasa
+        con las automatizaciones programadas? ¿se envían cuando vuelva o
+        fallan?")**: investigado con BullMQ 5.79.3. (a) **Horarios con cron**:
+        `upsertJobScheduler` con un `pattern` borra la vuelta atrasada y la
+        reemplaza por la próxima, y la app re-registraba todos los horarios al
+        arrancar (y `AutomationScheduler.sync` borraba y re-creaba): un reinicio
+        que cruzaba la hora se comía esa vuelta. `upsertSchedulerIfChanged`
+        (`redis/queue-runtime.ts`, `sameSchedule` compara patrón, intervalo,
+        zona, nombre y datos; con `opts` re-registra siempre) sólo escribe si
+        cambió o si no quedó la vuelta `repeat:<id>:<next>` pendiente; lo usan
+        `registerScheduler`, las automatizaciones y los envíos de tableros. La
+        vuelta atrasada corre una vez al volver. (b) **Resumen diario**: a la
+        hora elegida o en las 6 siguientes del mismo día (`digestHourDue`).
+        (c) **Recurrencias programadas**: la guarda `lastFiredAt > fecha`
+        trababa la serie con dos o más fechas atrasadas; ahora se corre una por
+        barrido hasta ponerse al día y con más de 12 se salta a la primera que
+        no llegó (`RECURRENCE_CATCHUP_MAX`, `recurrenceValueDue` con la misma
+        regla que `dueScheduled`); una fecha que no avanza se detiene. La guarda
+        vieja sigue para el disparo por cambio de estado. (d) **Links de pago**:
+        `expireDue` consulta al proveedor (`refreshLink`) antes de vencer;
+        proveedor caído → se reintenta, a las 24 h se vence igual.
+        (e) **Whats**: `reconcileWebHooks` hace un GET del aviso y lo registra de
+        nuevo si Whats lo apagó. (f) **Redis**: `checkRedis` en la vigilancia
+        (avisos `redis:persistence` y `redis:eviction`, con `redisPersistence`
+        puro sobre `INFO` + `CONFIG GET save`); `docs/runbook-backups.md`
+        corregido (decía que Redis era efímero). Novedad en el catálogo. Tests:
+        `queue-runtime.spec` +2 (Redis real: BullMQ solo borra la vuelta, el
+        helper la conserva y corre), `recurrences.spec` +2 (fallan con el código
+        anterior) y uno actualizado, `notifications.spec` +1, `collections.spec`
+        +1, `whatsapp-web.spec` actualizado, `platform-watch.spec` +2.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -24,6 +24,7 @@ import { ListsRepository } from '../src/lists/lists.repository';
 import { ListsService } from '../src/lists/lists.service';
 import type { MailMessage } from '../src/mail/mail.types';
 import { changeSummary, digestEmail, newlyAssigned, notificationEmail, notificationTitle } from '../src/notifications/notification-text';
+import { digestHourDue } from '../src/notifications/notifications.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { NotifyHub } from '../src/notifications/notify-hub';
 import { RealtimeService } from '../src/realtime/realtime.service';
@@ -525,5 +526,15 @@ describe('v0.1.276 — avisos (Postgres + Redis reales)', () => {
         expect(sent[0]!.text).toContain('Vencido');
         expect(sent[0]!.text).toContain('Vencida');
         expect(await svc.digestTick(now)).toBe(0);
+    });
+
+    it('resumen diario: si a su hora el servidor estaba caído, sale en las horas siguientes del mismo día (v0.1.433)', () => {
+        expect(digestHourDue(8, 8)).toBe(true);
+        expect(digestHourDue(9, 8)).toBe(true);
+        expect(digestHourDue(13, 8)).toBe(true);
+        expect(digestHourDue(14, 8)).toBe(false);
+        expect(digestHourDue(7, 8)).toBe(false);
+        expect(digestHourDue(23, 22)).toBe(true);
+        expect(digestHourDue(0, 22)).toBe(false);
     });
 });

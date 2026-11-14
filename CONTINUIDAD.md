@@ -430,7 +430,16 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.432**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.433**
+(**lo programado no se pierde en un reinicio o una caída** — las
+automatizaciones programadas, el resumen diario, los envíos de tableros y las
+tareas de la plataforma ya no pierden la vuelta que quedó esperando: corre una
+vez al volver; las recurrencias atrasadas se ponen al día en vez de trabarse;
+los links de pago le preguntan al proveedor antes de vencer; la revisión de
+Whats vuelve a registrar un aviso apagado; y la consola avisa si Redis no
+guarda en disco o puede borrar datos al llenarse; addendum ADR-S98).
+**Pendiente del usuario**: revisar el Redis del servidor con los comandos de
+`docs/runbook-backups.md` (si la consola manda el aviso). Antes **v0.1.432**
 (**reparar el servidor sin la app** — comandos por SSH `imagina-estado`,
 `imagina-reparar [reiniciar|version-anterior|espacio]` e `imagina-rescate`, y
 una **página de rescate** en su propio puerto (8899) y con clave que funciona
@@ -2063,6 +2072,37 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-14 · v0.1.433** — **Lo programado no se pierde en un reinicio o
+  una caída** (pregunta del usuario: "mientras esté caída, ¿qué pasa con las
+  automatizaciones que se tengan programadas? ¿se envían cuando la app vuelva
+  o simplemente fallan?"). Investigado a fondo (BullMQ 5.79.3 con
+  experimentos): casi todo lo que no pudo correr lo hace UNA vez al volver
+  (vencimientos por ventana, pasos «Esperar», recordatorios, SMS, correos y
+  eventos en cola, suscripciones, cobros de la plataforma), pero había huecos
+  reales y se corrigieron: (a) **horarios con cron** — al arrancar se volvían
+  a registrar y BullMQ BORRABA la vuelta atrasada: una automatización «los
+  lunes a las 8» que caía durante un reinicio se perdía esa semana. Ahora
+  `upsertSchedulerIfChanged` sólo escribe si el horario cambió o no quedó una
+  vuelta pendiente (prueba con Redis real que reproduce el borrado con BullMQ
+  solo y muestra que la vuelta se conserva y corre al volver); vale para
+  automatizaciones, envíos de tableros y todas las tareas de la plataforma.
+  (b) **resumen diario** — se mandaba sólo a la hora exacta; ahora en las 6
+  horas siguientes del mismo día si esa vuelta no corrió. (c) **recurrencias**
+  — con dos o más fechas atrasadas la serie quedaba trabada PARA SIEMPRE (la
+  guarda del plugin `lastFiredAt > fecha`); ahora cada barrido corre una hasta
+  ponerse al día y con más de 12 salta a la próxima que todavía no llegó (una
+  sola factura, no una por día). (d) **links de pago** — se vencían sin
+  preguntar: un cliente que pagó mientras el aviso no llegaba quedaba
+  «Vencido»; ahora se le pregunta al proveedor (si no responde, se reintenta y
+  a las 24 h se vence igual). (e) **Whats** — la revisión horaria no veía un
+  aviso apagado por Whats tras fallos de entrega; ahora hace un GET y lo
+  registra de nuevo. (f) **Redis** — aviso por correo si no guarda en disco o
+  si puede borrar datos al llenarse; `docs/runbook-backups.md` decía que Redis
+  era efímero (corregido, con los comandos para revisarlo). Lo que sigue
+  perdiéndose y no tiene arreglo del lado de la app: un formulario público que
+  alguien envía mientras el servidor está caído, y los avisos de servicios que
+  no reintentan. Pruebas nuevas: colas 2, recurrencias 2 (fallan con el código
+  anterior), resumen 1, cobros 1, Whats 1, vigilancia 2.
 - **2026-11-14 · v0.1.432** — **Reparar el servidor sin la app: comandos por
   SSH y página de rescate** (pregunta del usuario: "¿habría una url de
   recuperación a la cual yo pueda acceder para hacer las reparaciones? si se

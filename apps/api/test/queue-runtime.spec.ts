@@ -12,6 +12,8 @@ import {
     isShuttingDown,
     registerScheduler,
     resetQueueRuntimeForTests,
+    sameSchedule,
+    upsertSchedulerIfChanged,
     workerConcurrencyTotal,
     workersEnabled,
 } from '../src/redis/queue-runtime';
@@ -238,6 +240,62 @@ describe('Colas: piezas comunes (Redis real)', () => {
         });
         expect(ran).toEqual({ ran: true, result: true });
         expect(await redis.exists(key)).toBe(0);
+    });
+
+    it('v0.1.433 — re-registrar un horario igual NO se come la vuelta atrasada; BullMQ solo sí la borraba', async () => {
+        const pending = async (q: Queue, id: string) => {
+            const s = await q.getJobScheduler(id);
+            return s?.next ? { next: s.next, state: await q.getJobState(`repeat:${id}:${s.next}`) } : null;
+        };
+        // Un horario de cada segundo sin worker: la vuelta queda atrasada (como
+        // durante una caída). Re-registrarlo con BullMQ la reemplaza por otra.
+        const plain = new Queue(qname(), { connection: conn() });
+        await plain.upsertJobScheduler('h', { pattern: '* * * * * *' }, { name: 'tick', data: { a: 1 } });
+        const before = await pending(plain, 'h');
+        expect(before?.state).toBe('delayed');
+        await sleep(1_600);
+        await plain.upsertJobScheduler('h', { pattern: '* * * * * *' }, { name: 'tick', data: { a: 1 } });
+        const after = await pending(plain, 'h');
+        expect(after?.next).not.toBe(before?.next);
+        expect(await plain.getJobState(`repeat:h:${before!.next}`)).toBe('unknown');
+
+        // Con upsertSchedulerIfChanged la vuelta atrasada se conserva y corre
+        // una vez apenas vuelve el worker.
+        const name = qname();
+        const queue = new Queue(name, { connection: conn() });
+        expect(await upsertSchedulerIfChanged(queue, 'h', { pattern: '* * * * * *' }, { name: 'tick', data: { a: 1 } })).toBe(true);
+        const kept = await pending(queue, 'h');
+        await sleep(1_600);
+        expect(await upsertSchedulerIfChanged(queue, 'h', { pattern: '* * * * * *' }, { name: 'tick', data: { a: 1 } })).toBe(false);
+        expect((await pending(queue, 'h'))?.next).toBe(kept?.next);
+        const ran: string[] = [];
+        const worker = new Worker(name, async (job) => void ran.push(String(job.id)), { connection: conn() });
+        await until(() => ran.length > 0);
+        expect(ran[0]).toBe(`repeat:h:${kept!.next}`);
+        await worker.close();
+
+        // Si el horario cambia (otro patrón, otra zona, otros datos), se registra.
+        expect(await upsertSchedulerIfChanged(queue, 'h', { pattern: '*/5 * * * *' }, { name: 'tick', data: { a: 1 } })).toBe(true);
+        expect((await queue.getJobScheduler('h'))?.pattern).toBe('*/5 * * * *');
+        expect(await upsertSchedulerIfChanged(queue, 'h', { pattern: '*/5 * * * *', tz: 'America/Bogota' }, { name: 'tick', data: { a: 1 } })).toBe(true);
+        expect(await upsertSchedulerIfChanged(queue, 'h', { pattern: '*/5 * * * *', tz: 'America/Bogota' }, { name: 'tick', data: { a: 2 } })).toBe(true);
+        expect(await upsertSchedulerIfChanged(queue, 'h', { pattern: '*/5 * * * *', tz: 'America/Bogota' }, { name: 'tick', data: { a: 2 } })).toBe(false);
+        // Un horario borrado se vuelve a crear.
+        await queue.removeJobScheduler('h');
+        expect(await upsertSchedulerIfChanged(queue, 'h', { pattern: '*/5 * * * *', tz: 'America/Bogota' }, { name: 'tick', data: { a: 2 } })).toBe(true);
+        await Promise.all([plain.obliterate({ force: true }), queue.obliterate({ force: true })]);
+    });
+
+    it('sameSchedule compara patrón, intervalo, zona, nombre y datos sin importar el orden de las claves', () => {
+        const ex = { pattern: '0 8 * * 1', tz: 'America/Bogota', name: 'scheduled', template: { data: { tenantId: 1, automationId: 7 } } };
+        expect(sameSchedule(ex, { pattern: '0 8 * * 1', tz: 'America/Bogota' }, { name: 'scheduled', data: { automationId: 7, tenantId: 1 } })).toBe(true);
+        expect(sameSchedule(ex, { pattern: '0 9 * * 1', tz: 'America/Bogota' }, { name: 'scheduled', data: { automationId: 7, tenantId: 1 } })).toBe(false);
+        expect(sameSchedule(ex, { pattern: '0 8 * * 1' }, { name: 'scheduled', data: { automationId: 7, tenantId: 1 } })).toBe(false);
+        expect(sameSchedule(ex, { pattern: '0 8 * * 1', tz: 'America/Bogota' }, { name: 'otro', data: { automationId: 7, tenantId: 1 } })).toBe(false);
+        expect(sameSchedule({ every: 60_000, name: 'tick' }, { every: 60_000 }, { name: 'tick' })).toBe(true);
+        expect(sameSchedule({ every: 60_000, name: 'tick' }, { every: 30_000 }, { name: 'tick' })).toBe(false);
+        expect(sameSchedule(undefined, { every: 60_000 }, { name: 'tick' })).toBe(false);
+        expect(sameSchedule({ every: 60_000, name: 'tick' }, { every: 60_000 }, { name: 'tick', opts: { attempts: 3 } })).toBe(false);
     });
 
     it('al arrancar avisa si la concurrencia de los workers supera el pool de la base', () => {

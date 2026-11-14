@@ -3239,4 +3239,42 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.433-lo-programado-no-se-pierde',
+        version: '0.1.433',
+        date: '2026-11-14',
+        kind: 'improvement',
+        title: 'Lo programado no se pierde si el servidor se reinicia',
+        summary:
+            'Si el servidor estaba reiniciándose o caído a la hora de una automatización programada, ahora corre apenas vuelve. El resumen diario y los registros que se repiten solos también se ponen al día.',
+        media: {
+            slides: [
+                {
+                    title: 'Las automatizaciones programadas corren al volver',
+                    text: 'Una automatización de «todos los lunes a las 8» que no pudo correr a esa hora corre una vez apenas el servidor vuelve, en vez de esperar a la semana siguiente.',
+                    illustration: 'auto-horario',
+                },
+                {
+                    title: 'El resumen diario llega igual',
+                    text: 'Si a tu hora el servidor no estaba disponible, el resumen llega en las horas siguientes del mismo día.',
+                    illustration: 'dia-resumen',
+                },
+                {
+                    title: 'Los registros que se repiten se ponen al día',
+                    text: 'Una fecha que quedó atrasada avanza de a una hasta llegar a hoy, en vez de quedarse trabada. Si el atraso es muy grande, salta directo a la próxima fecha.',
+                    illustration: 'auto-repetir',
+                },
+                {
+                    title: 'Un link de pago no vence si ya se pagó',
+                    text: 'Antes de marcar un link como «Vencido», la app le pregunta al proveedor si el cliente pagó mientras el aviso no llegaba.',
+                    illustration: 'cobro-estados',
+                },
+            ],
+        },
+        body: [
+            '- No tienes que hacer nada: funciona solo.',
+            '- Lo que corre tarde queda en el historial de la automatización con la hora real en que corrió.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+    },
 ];

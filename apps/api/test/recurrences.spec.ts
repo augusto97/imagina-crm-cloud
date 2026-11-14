@@ -177,6 +177,13 @@ describe('RecurrencesService (Postgres real + RLS)', () => {
         return row!;
     }
 
+    const today = () => new Date().toISOString().slice(0, 10);
+    const addDays = (ymd: string, n: number) => {
+        const d = new Date(`${ymd}T00:00:00Z`);
+        d.setUTCDate(d.getUTCDate() + n);
+        return d.toISOString().slice(0, 10);
+    };
+
     async function dateValue(recordId: number): Promise<unknown> {
         const rec = await recordsService.get(tenantA, admin, 'tareas', recordId);
         return rec.data[key('vence')];
@@ -239,8 +246,48 @@ describe('RecurrencesService (Postgres real + RLS)', () => {
         expect(ids).toEqual([due]);
 
         await service.tick();
-        expect(await dateValue(due)).toBe('2020-02-15');
+        // v0.1.433 — con años de atraso no se recorren todas: salta a la
+        // primera que todavía no llegó (antes rodaba una y se trababa ahí).
+        let expected = '2020-01-15';
+        while (expected <= today()) expected = nextOccurrence(expected, { frequency: 'monthly', intervalN: 1, monthlyPattern: 'same_day' });
+        expect(await dateValue(due)).toBe(expected);
         expect(await dateValue(future)).toBe('2099-01-15');
+    });
+
+    it('fechas atrasadas: cada barrido corre una hasta ponerse al día, sin trabarse (v0.1.433)', async () => {
+        const id = await newRecord({ [key('nombre')]: 'Diaria', [key('vence')]: addDays(today(), -3) });
+        await service.upsert(tenantA, 'tareas', id, {
+            date_field_id: f.vence!.id,
+            frequency: 'daily',
+            interval_n: 1,
+            trigger_type: 'schedule',
+            action_type: 'update',
+        });
+        // Antes: la primera vuelta rodaba a hace 2 días y la serie quedaba ahí
+        // para siempre (la fecha era anterior al último disparo).
+        for (const d of [-2, -1, 0, 1]) {
+            await service.tick();
+            expect(await dateValue(id)).toBe(addDays(today(), d));
+        }
+        await service.tick();
+        expect(await dateValue(id)).toBe(addDays(today(), 1));
+    });
+
+    it('fechas muy atrasadas con «clonar»: un solo registro nuevo con la próxima fecha, no uno por cada día (v0.1.433)', async () => {
+        const id = await newRecord({ [key('nombre')]: 'Caja', [key('vence')]: addDays(today(), -40) });
+        await service.upsert(tenantA, 'tareas', id, {
+            date_field_id: f.vence!.id,
+            frequency: 'daily',
+            interval_n: 1,
+            trigger_type: 'schedule',
+            action_type: 'clone',
+        });
+        await service.tick();
+        await service.tick();
+        const rows = (await recordsService.list(tenantA, admin, 'tareas', { limit: 50, sort_dir: 'asc' })).data;
+        expect(rows).toHaveLength(2);
+        expect(rows.find((r) => r.id === id)!.data[key('vence')]).toBe(addDays(today(), -40));
+        expect(rows.find((r) => r.id !== id)!.data[key('vence')]).toBe(addDays(today(), 1));
     });
 
     it('upsert reemplaza por (record, date_field) conservando el id', async () => {

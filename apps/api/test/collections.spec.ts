@@ -818,4 +818,47 @@ describe('Cobros de las empresas — Mercado Pago y Wompi (v0.1.251)', () => {
         // Anular: sólo un pendiente.
         await expect(svc.cancelLink(tenantId, admin, link.id)).rejects.toThrow(/pendiente/);
     });
+
+    it('vencer: antes le pregunta al proveedor — lo pagado mientras el servidor estaba caído queda «Pagado» (v0.1.433)', async () => {
+        const mp = fakeMercadoPago();
+        const connId = await connectMp();
+        const inv = await seedInvoice();
+        const mapping = await svc.setupFields(tenantId, admin, inv.slug);
+        await svc.createForRecord(tenantId, admin, inv.slug, inv.recordId, { connection_id: connId, title: 'Factura', amount: 150000, currency: 'COP', expires_days: 1 });
+        // El cliente pagó, pero el aviso de Mercado Pago nunca llegó.
+        mp.payments.set('9501', {
+            id: 9501,
+            status: 'approved',
+            status_detail: 'accredited',
+            transaction_amount: 150000,
+            currency_id: 'COP',
+            date_approved: '2026-10-03T15:00:00.000-05:00',
+            payment_method_id: 'pse',
+            payment_type_id: 'bank_transfer',
+            external_reference: mp.prefs[0]!.external_reference,
+        });
+        await withTenant(pg.db, tenantId, (tx) => tx.update(paymentLinks).set({ expiresAt: new Date(Date.now() - 1000) }));
+        expect(await svc.expireDue()).toBe(1);
+        expect((await recordData(inv.listId, inv.recordId))[`f${mapping.status}`]).toBe('pagado');
+        expect(await svc.expireDue()).toBe(0);
+
+        // Con el proveedor caído no se vence en el momento (se reintenta)…
+        const inv2 = await seedInvoiceAgain();
+        await svc.createForRecord(tenantId, admin, inv.slug, inv2, { connection_id: connId, title: 'Factura 2', amount: 90000, currency: 'COP', expires_days: 1 });
+        const down = net.handler;
+        net.handler = (call) => (call.url.includes('/v1/payments/search') ? { status: 503, body: '{}' } : down(call));
+        await withTenant(pg.db, tenantId, (tx) => tx.update(paymentLinks).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(paymentLinks.status, 'pending')));
+        expect(await svc.expireDue()).toBe(1);
+        expect((await recordData(inv.listId, inv2))[`f${mapping.status}`]).toBe('pendiente');
+        // …y pasado un día se vence igual.
+        await withTenant(pg.db, tenantId, (tx) => tx.update(paymentLinks).set({ expiresAt: new Date(Date.now() - 25 * 3_600_000) }).where(eq(paymentLinks.status, 'pending')));
+        expect(await svc.expireDue()).toBe(1);
+        expect((await recordData(inv.listId, inv2))[`f${mapping.status}`]).toBe('vencido');
+        net.handler = down;
+
+        async function seedInvoiceAgain(): Promise<number> {
+            const [rec] = await withTenant(pg.db, tenantId, (tx) => tx.insert(records).values({ tenantId, listId: inv.listId, data: {}, createdBy: adminId }).returning());
+            return rec!.id;
+        }
+    });
 });

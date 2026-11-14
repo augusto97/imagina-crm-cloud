@@ -29,9 +29,28 @@ forma selectiva). Incluye todo el schema `public`: `tenants`, `users`,
 `memberships`, `lists`, `fields`, `records`, `saved_views`, `comments`,
 `activity`, `automations`, `portal_links` — con sus políticas RLS y datos.
 
-Redis (sesiones, colas BullMQ, magic links) **no** se respalda: es estado
-efímero/reconstruible. Las sesiones caídas se re-crean con login; los job
-schedulers de BullMQ persisten en Redis pero se re-siembran al bootear.
+Redis **no** entra en este backup lógico, pero NO es efímero: guarda las
+sesiones, las colas BullMQ (correos por salir, automatizaciones por correr),
+los horarios de lo programado y los ajustes de plataforma (`platform:*`: SMTP,
+copias, IA, cobros, llaves VAPID…). La copia completa del servidor
+(`snapshot.sh`, ADR-S20) sí lleva `platform:*`. Para que un reinicio no borre
+lo demás, Redis tiene que **guardar en disco** (AOF o fotos RDB) y tener
+`maxmemory-policy noeviction`; desde v0.1.433 la consola avisa por correo si
+no es así. Para revisarlo en el servidor (como root):
+
+```bash
+redis-cli CONFIG GET appendonly      # ideal: yes
+redis-cli CONFIG GET save            # vacío = no guarda fotos
+redis-cli CONFIG GET maxmemory-policy  # tiene que ser noeviction
+# Para corregirlo y que quede así al reiniciar:
+redis-cli CONFIG SET appendonly yes
+redis-cli CONFIG SET maxmemory-policy noeviction
+redis-cli CONFIG REWRITE
+```
+
+(Si el Redis tiene clave, agrega `-a TU_CLAVE` a cada comando.) Desde v0.1.433
+los horarios de BullMQ NO se re-siembran al bootear si no cambiaron: así la
+vuelta que quedó esperando durante un reinicio corre una vez al volver.
 
 ## Scripts
 

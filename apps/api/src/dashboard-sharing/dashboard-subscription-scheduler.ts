@@ -2,6 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { FALLBACK_TIME_ZONE, isValidTimeZone, subscriptionCron, type DashboardSubscriptionInput } from '@imagina-base/shared';
 import type { Queue } from 'bullmq';
 import type { dashboardSubscriptions } from '../db/schema';
+import { upsertSchedulerIfChanged } from '../redis/queue-runtime';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 
 type Row = typeof dashboardSubscriptions.$inferSelect;
@@ -35,8 +36,12 @@ export class DashboardSubscriptionScheduler {
     async sync(tenantId: number, row: Row): Promise<void> {
         if (!this.queue) return;
         try {
-            await this.remove(row.id);
-            if (!row.enabled) return;
+            // v0.1.433 — Si el horario no cambió se deja como está: la vuelta
+            // que quedó esperando durante un reinicio sale una vez al volver.
+            if (!row.enabled) {
+                await this.remove(row.id);
+                return;
+            }
             const tenantTz = this.timeZones ? await this.timeZones.get(tenantId) : null;
             const tz = isValidTimeZone(row.timeZone) ? row.timeZone : isValidTimeZone(tenantTz) ? tenantTz : FALLBACK_TIME_ZONE;
             const pattern = subscriptionCron({
@@ -46,7 +51,8 @@ export class DashboardSubscriptionScheduler {
                 hour: row.hour,
                 minute: row.minute,
             });
-            await this.queue.upsertJobScheduler(
+            await upsertSchedulerIfChanged(
+                this.queue,
                 schedulerId(row.id),
                 { pattern, tz },
                 { name: SEND_JOB, data: { tenantId, subscriptionId: row.id } },
