@@ -23,7 +23,7 @@ import { GUARDIAN_VERSION, heartbeatSupportsFail } from '@imagina-base/shared';
 import type { Env } from '../src/config/env';
 import { GuardianService, parseGuardianEvents } from '../src/update/guardian.service';
 import { PlatformAlertsService } from '../src/update/platform-alerts.service';
-import { PlatformWatchService, certDaysLeft, guardianAllOk, pendingGuardianEvents } from '../src/update/platform-watch.service';
+import { PlatformWatchService, certDaysLeft, guardianAllOk, pendingGuardianEvents, redisPersistence } from '../src/update/platform-watch.service';
 import { startRedis, type TestRedis } from './helpers/containers';
 
 type Mail = { to: string; subject: string; text: string; html: string };
@@ -75,6 +75,20 @@ describe('Vigilancia del servidor (v0.1.431) — piezas puras', () => {
         expect(pendingGuardianEvents(events, null, '2026-11-14T12:00:00Z', T0).map((e) => e.message)).toEqual(['nuevo']);
         expect(pendingGuardianEvents(events, '2026-11-14T11:30:00Z', '2026-11-14T12:00:00Z', T0)).toEqual([]);
         expect(pendingGuardianEvents(events, '2026-11-14T11:30:00Z', '2026-11-14T12:01:00Z', T0).map((e) => e.message)).toEqual(['corrida en curso']);
+    });
+
+    it('v0.1.433 — Redis: guarda en disco con AOF o con fotos; borra al llenarse sólo con tope y otra regla', () => {
+        const info = (o: Record<string, string>) => Object.entries(o).map(([k, v]) => `${k}:${v}`).join('\r\n');
+        expect(redisPersistence(info({ aof_enabled: '1', maxmemory: '0', maxmemory_policy: 'noeviction' }), '')).toEqual({ persistent: true, evicts: false, policy: 'noeviction' });
+        expect(redisPersistence(info({ aof_enabled: '0' }), '3600 1 300 100').persistent).toBe(true);
+        expect(redisPersistence(info({ aof_enabled: '0' }), '').persistent).toBe(false);
+        // Sin poder leer CONFIG: cuenta una foto reciente que salió bien.
+        const now = Date.parse('2026-11-14T12:00:00Z');
+        expect(redisPersistence(info({ aof_enabled: '0', rdb_last_save_time: String(now / 1000 - 3600), rdb_last_bgsave_status: 'ok' }), null, now).persistent).toBe(true);
+        expect(redisPersistence(info({ aof_enabled: '0', rdb_last_save_time: String(now / 1000 - 5 * 86400), rdb_last_bgsave_status: 'ok' }), null, now).persistent).toBe(false);
+        expect(redisPersistence(info({ aof_enabled: '0' }), null, now).persistent).toBeNull();
+        expect(redisPersistence(info({ maxmemory: '104857600', maxmemory_policy: 'allkeys-lru' }), 'x').evicts).toBe(true);
+        expect(redisPersistence(info({ maxmemory: '0', maxmemory_policy: 'allkeys-lru' }), 'x').evicts).toBe(false);
     });
 
     it('días del certificado, «todo bien» y quién entiende /fail', () => {
@@ -397,6 +411,32 @@ describe('Vigilancia del servidor (v0.1.431) — con Redis real', () => {
         net.calls.length = 0;
         expect(await watch.heartbeat(T0)).toBeNull();
         expect(net.calls).toEqual([]);
+    });
+
+    it('v0.1.433 — Redis sin guardar en disco o que borra al llenarse avisa; corregido se cierra', async () => {
+        const get = async (k: string) => ((await redis.config('GET', k)) as string[])[1] ?? '';
+        const prev = { save: await get('save'), policy: await get('maxmemory-policy'), max: await get('maxmemory') };
+        try {
+            await redis.config('SET', 'save', '');
+            await redis.config('SET', 'appendonly', 'no');
+            await redis.config('SET', 'maxmemory', '536870912');
+            await redis.config('SET', 'maxmemory-policy', 'allkeys-lru');
+            await watch.checkRedis(T0);
+            let open = (await alerts.list()).open.map((a) => a.key).sort();
+            expect(open).toEqual(['redis:eviction', 'redis:persistence']);
+            expect(subjects().some((t) => /no guarda sus datos en el disco/.test(t))).toBe(true);
+            expect(subjects().some((t) => /puede borrar datos cuando se llena/.test(t))).toBe(true);
+
+            await redis.config('SET', 'save', '3600 1');
+            await redis.config('SET', 'maxmemory-policy', 'noeviction');
+            await watch.checkRedis(T0 + HOUR);
+            open = (await alerts.list()).open.map((a) => a.key);
+            expect(open).toEqual([]);
+        } finally {
+            await redis.config('SET', 'save', prev.save);
+            await redis.config('SET', 'maxmemory-policy', prev.policy);
+            await redis.config('SET', 'maxmemory', prev.max);
+        }
     });
 
     it('el tick: lo lento cada 15 minutos (o forzado) y la hora de la última revisión', async () => {

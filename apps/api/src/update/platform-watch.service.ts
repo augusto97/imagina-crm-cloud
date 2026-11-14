@@ -173,6 +173,7 @@ export class PlatformWatchService {
             await step('Google Drive', () => this.checkDrive(now));
             await step('actualización', () => this.checkUpdate(now));
             await step('base de datos', () => this.checkDatabaseMirror(now));
+            await step('Redis', () => this.checkRedis(now));
         }
         const cert = opts.force || (await this.redis.set(CERT_GATE_KEY, '1', 'EX', 6 * 3600 - 30, 'NX')) === 'OK';
         if (cert) await step('certificado', () => this.checkCertificate(now));
@@ -643,6 +644,69 @@ export class PlatformWatchService {
         }
     }
 
+    /**
+     * v0.1.433 — Redis guarda las colas, los horarios de las automatizaciones,
+     * las esperas en curso de la cola y los ajustes de la plataforma. Si no los
+     * escribe en disco, un reinicio del servidor los borra; y si puede borrar
+     * datos cuando se llena (`maxmemory-policy` distinta de `noeviction`), se
+     * pierden trabajos sin aviso.
+     */
+    async checkRedis(now = Date.now()): Promise<void> {
+        const at = new Date(now);
+        const info = `${await this.redis.info('persistence')}\n${await this.redis.info('memory')}`;
+        let save: string | null = null;
+        try {
+            const res = (await this.redis.config('GET', 'save')) as unknown as string[];
+            save = typeof res[1] === 'string' ? res[1] : '';
+        } catch {
+            save = null; // un Redis administrado puede no dejar leer CONFIG
+        }
+        const r = redisPersistence(info, save, now);
+        const fix = 'Se arregla desde la consola del servidor (como root): `redis-cli CONFIG SET appendonly yes` y `redis-cli CONFIG SET maxmemory-policy noeviction`, y después `redis-cli CONFIG REWRITE` para que quede así al reiniciar. Si tu Redis tiene clave, agrega `-a TU_CLAVE` a cada comando.';
+        if (r.persistent === false) {
+            await this.alerts.raise(
+                {
+                    key: 'redis:persistence',
+                    source: 'database',
+                    severity: 'warning',
+                    title: 'Redis no guarda sus datos en el disco',
+                    detail: 'Si el servidor se reinicia, se pierden las tareas en cola y los ajustes de la plataforma.',
+                    paragraphs: [
+                        'Redis guarda las tareas en cola (correos por salir, automatizaciones por correr), los horarios de lo programado y los ajustes de la plataforma. Así como está configurado, no los escribe en el disco: si el servidor se reinicia, se pierden.',
+                        fix,
+                    ],
+                    action_path: '/platform?tab=diagnostico',
+                    action_label: 'Abrir Plataforma → Diagnóstico',
+                    remind_hours: 72,
+                },
+                at,
+            );
+        } else if (r.persistent === true) {
+            await this.alerts.resolve('redis:persistence', { message: 'Redis ya guarda sus datos en el disco.' }, at);
+        }
+        if (r.evicts) {
+            await this.alerts.raise(
+                {
+                    key: 'redis:eviction',
+                    source: 'database',
+                    severity: 'warning',
+                    title: 'Redis puede borrar datos cuando se llena',
+                    detail: `Está configurado con «${r.policy}»: al llenarse borra datos para hacer lugar.`,
+                    paragraphs: [
+                        `Redis tiene un tope de memoria y la regla «${r.policy}»: cuando se llena, borra datos para hacer lugar. Entre ellos pueden ir tareas en cola y horarios de automatizaciones, y se pierden sin aviso. La app necesita «noeviction» (al llenarse, Redis rechaza lo nuevo en vez de borrar).`,
+                        fix,
+                    ],
+                    action_path: '/platform?tab=diagnostico',
+                    action_label: 'Abrir Plataforma → Diagnóstico',
+                    remind_hours: 72,
+                },
+                at,
+            );
+        } else {
+            await this.alerts.resolve('redis:eviction', { message: 'Redis ya no borra datos al llenarse.' }, at);
+        }
+    }
+
     async checkCertificate(now = Date.now()): Promise<void> {
         const at = new Date(now);
         if (!this.production || !this.env.APP_BASE_URL.startsWith('https://')) return;
@@ -812,4 +876,30 @@ function probeCert(host: string): Promise<{ valid_to: string; authorized: boolea
         });
         socket.on('error', () => resolve(null));
     });
+}
+
+/**
+ * v0.1.433 — Lo que importa de la configuración de Redis, leído de `INFO
+ * persistence` + `INFO memory` y de `CONFIG GET save` (null si no se pudo
+ * leer). `persistent` = null cuando no se puede saber.
+ */
+export function redisPersistence(
+    info: string,
+    saveRules: string | null,
+    now = Date.now(),
+): { persistent: boolean | null; evicts: boolean; policy: string } {
+    const kv = new Map<string, string>();
+    for (const line of info.split(/\r?\n/)) {
+        const i = line.indexOf(':');
+        if (i > 0 && !line.startsWith('#')) kv.set(line.slice(0, i).trim(), line.slice(i + 1).trim());
+    }
+    const policy = kv.get('maxmemory_policy') ?? 'noeviction';
+    const maxmemory = Number(kv.get('maxmemory') ?? '0');
+    const evicts = policy !== 'noeviction' && maxmemory > 0;
+    if (kv.get('aof_enabled') === '1') return { persistent: true, evicts, policy };
+    if (saveRules !== null) return { persistent: saveRules.trim() !== '', evicts, policy };
+    // Sin poder leer CONFIG: una foto en disco de los últimos 2 días cuenta.
+    const lastSave = Number(kv.get('rdb_last_save_time') ?? '0');
+    if (!lastSave) return { persistent: null, evicts, policy };
+    return { persistent: kv.get('rdb_last_bgsave_status') === 'ok' && lastSave * 1000 > now - 2 * 86_400_000, evicts, policy };
 }

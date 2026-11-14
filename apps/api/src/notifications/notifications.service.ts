@@ -122,6 +122,18 @@ interface Recipient {
  * destinatario se filtra con el MISMO ACL del registro: nadie se entera de un
  * registro que no puede ver. Nunca se le avisa a alguien de lo que hizo él.
  */
+/** v0.1.433 — Horas que se espera a un resumen que no salió a su hora. */
+export const DIGEST_CATCHUP_HOURS = 6;
+
+/**
+ * ¿Le toca el resumen a esta hora local? A la hora elegida o, si esa vuelta no
+ * corrió (caída, reinicio), en las siguientes del MISMO día. Lo que ya salió
+ * hoy lo frena la marca de Redis por día.
+ */
+export function digestHourDue(localHour: number, chosenHour: number): boolean {
+    return localHour >= chosenHour && localHour < chosenHour + DIGEST_CATCHUP_HOURS;
+}
+
 @Injectable()
 export class NotificationsService implements OnModuleInit {
     private readonly logger = new Logger(NotificationsService.name);
@@ -1305,6 +1317,9 @@ export class NotificationsService implements OnModuleInit {
      * Corre cada hora: a cada persona con el resumen encendido le llega a SU
      * hora en la zona de la empresa, los días elegidos. Redis evita repetir el
      * mismo día (dos nodos, o un reinicio a mitad de la hora).
+     * v0.1.433 — si a esa hora el servidor estaba caído o reiniciándose, sale
+     * en la próxima vuelta del mismo día (hasta 6 horas después): antes sólo
+     * se miraba la hora exacta y ese día no llegaba.
      */
     async digestTick(now: Date = new Date()): Promise<number> {
         // v0.1.393 — antes se abría una transacción por CADA empresa no
@@ -1342,7 +1357,7 @@ export class NotificationsService implements OnModuleInit {
             const weekday = new Date(`${ymd}T00:00:00Z`).getUTCDay();
             const dueNow = t.members.filter((m) => {
                 const prefs = readNotificationPrefs((m.settings as Record<string, unknown> | null)?.notifications);
-                return prefs.digest === 'daily' && prefs.digest_hour === hour && prefs.digest_days.includes(weekday);
+                return prefs.digest === 'daily' && digestHourDue(hour, prefs.digest_hour) && prefs.digest_days.includes(weekday);
             });
             if (dueNow.length === 0) continue;
             const teamsOf = this.teams

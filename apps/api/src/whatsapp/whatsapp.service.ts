@@ -1168,16 +1168,32 @@ export class WhatsappService {
     /**
      * v0.1.391 — La revisión de cada hora: cada conexión de Imagina WAS queda
      * suscrita sólo a lo que usa (una lista que se borró, una columna de
-     * estado que se sacó…). Sin cambios no se llama a WAS.
+     * estado que se sacó…).
+     * v0.1.433 — y se le pregunta a Whats (un GET) si el aviso sigue ACTIVO:
+     * Whats lo apaga cuando la app no contesta varias veces (un servidor caído,
+     * una actualización larga) y sin esta revisión los mensajes de los clientes
+     * no volvían a llegar nunca. Si está apagado o ya no existe, se registra de
+     * nuevo.
      */
     async reconcileWebHooks(): Promise<number> {
         const rows = await this.db
-            .select({ id: connections.id, tenantId: connections.tenantId })
+            .select({ id: connections.id, tenantId: connections.tenantId, config: connections.config })
             .from(connections)
             .where(eq(connections.provider, 'whatsapp_web'));
         let n = 0;
         for (const r of rows) {
-            if (await this.syncWebHookEvents(r.tenantId, r.id).catch(() => false)) n++;
+            try {
+                if (await this.syncWebHookEvents(r.tenantId, r.id)) {
+                    n++;
+                    continue;
+                }
+                const before = readWebHookState(r.config);
+                if (before.hook_id === null) continue;
+                const after = await this.ensureWebHook(r.tenantId, r.id, false);
+                if (after.hook_id !== before.hook_id) n++;
+            } catch {
+                // Una conexión con problemas no frena la revisión de las demás.
+            }
         }
         return n;
     }

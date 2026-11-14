@@ -54,6 +54,62 @@ export function workerConcurrencyTotal(): number {
 }
 
 type SchedulerTemplate = Parameters<Queue['upsertJobScheduler']>[2];
+type SchedulerRepeat = Omit<RepeatOptions, 'key'>;
+type SchedulerQueue = Pick<Queue, 'upsertJobScheduler'> & Partial<Pick<Queue, 'getJobScheduler' | 'getJobState'>>;
+
+function canonical(v: unknown): string {
+    if (v === null || typeof v !== 'object') return JSON.stringify(v ?? null);
+    if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
+    return `{${Object.keys(v as Record<string, unknown>)
+        .sort()
+        .map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`)
+        .join(',')}}`;
+}
+
+/** El horario guardado en Redis es el mismo que se quiere registrar. */
+export function sameSchedule(
+    existing: { pattern?: string | null; every?: number | string | null; tz?: string | null; name?: string; template?: { data?: unknown } } | undefined,
+    repeat: SchedulerRepeat,
+    template?: SchedulerTemplate,
+): boolean {
+    if (!existing) return false;
+    if ((existing.pattern ?? null) !== (repeat.pattern ?? null)) return false;
+    const everyA = existing.every == null ? null : Number(existing.every);
+    const everyB = repeat.every == null ? null : Number(repeat.every);
+    if (everyA !== everyB) return false;
+    if ((existing.tz ?? null) !== (repeat.tz ?? null)) return false;
+    if (template?.name !== undefined && existing.name !== undefined && existing.name !== template.name) return false;
+    // Con opciones propias del trabajo se re-registra siempre: BullMQ las
+    // guarda transformadas y compararlas daría falsos «cambió».
+    if (template?.opts && Object.keys(template.opts).length > 0) return false;
+    return canonical(existing.template?.data ?? {}) === canonical(template?.data ?? {});
+}
+
+/**
+ * v0.1.433 — Registra (o actualiza) un horario SÓLO si cambió o si se perdió
+ * su vuelta pendiente. `upsertJobScheduler` con un `pattern` BORRA la vuelta
+ * atrasada y la reemplaza por la próxima del cron: cada reinicio que cruzaba la
+ * hora de un horario se lo comía (el resumen diario, un envío de tablero, una
+ * automatización programada). Sin re-registrar, la vuelta que quedó esperando
+ * corre UNA vez apenas el worker vuelve (las intermedias no se repiten).
+ * Devuelve true si escribió en Redis.
+ */
+export async function upsertSchedulerIfChanged(
+    queue: SchedulerQueue,
+    id: string,
+    repeat: SchedulerRepeat,
+    template?: SchedulerTemplate,
+): Promise<boolean> {
+    if (queue.getJobScheduler && queue.getJobState) {
+        const existing = await queue.getJobScheduler(id).catch(() => undefined);
+        if (existing && sameSchedule(existing, repeat, template) && existing.next) {
+            const state = await queue.getJobState(`repeat:${id}:${existing.next}`).catch(() => 'unknown' as const);
+            if (state === 'delayed' || state === 'waiting' || state === 'prioritized' || state === 'active' || state === 'waiting-children') return false;
+        }
+    }
+    await queue.upsertJobScheduler(id, repeat, template);
+    return true;
+}
 
 /**
  * Registra una tarea periódica SIN bloquear el arranque. Las conexiones de
@@ -64,9 +120,9 @@ type SchedulerTemplate = Parameters<Queue['upsertJobScheduler']>[2];
  * idempotente. Con `WORKERS=off` no registra nada.
  */
 export function registerScheduler(
-    queue: Pick<Queue, 'upsertJobScheduler'>,
+    queue: SchedulerQueue,
     id: string,
-    repeat: Omit<RepeatOptions, 'key'>,
+    repeat: SchedulerRepeat,
     template: SchedulerTemplate,
     log: Logger = logger,
 ): void {
@@ -74,7 +130,7 @@ export function registerScheduler(
     const attempt = (n: number): void => {
         if (draining) return;
         void Promise.resolve()
-            .then(() => queue.upsertJobScheduler(id, repeat, template))
+            .then(() => upsertSchedulerIfChanged(queue, id, repeat, template))
             .then(() => undefined)
             .catch((err: unknown) => {
                 log.warn(`No se pudo registrar la tarea periódica «${id}» (se reintenta): ${String(err)}`);

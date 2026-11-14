@@ -153,6 +153,7 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
     let hooksDeleted: number[];
     let hooksPatched: number;
     let hookEvents: string[];
+    let hookActive = true;
     let account1: Record<string, unknown>;
     let sendError: { status: number; body: string } | null;
     // v0.1.401 — lo que el Whats simulado guarda del resto de la API.
@@ -232,6 +233,7 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
         hooksCreated = 0;
         hooksPatched = 0;
         hookEvents = [];
+        hookActive = true;
         hooksDeleted = [];
         sendError = null;
         waContacts = [];
@@ -300,7 +302,7 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
                 // 201 con `WebhookCreated` SIN envoltorio `data` (así lo documenta la API).
                 return json(201, { id: 55, secret: HOOK_SECRET, events: body.events, url: body.url });
             }
-            if (path === '/webhooks/55' && call.method === 'GET') return json(200, { data: { id: 55, is_active: true, events: hookEvents } });
+            if (path === '/webhooks/55' && call.method === 'GET') return json(200, { data: { id: 55, is_active: hookActive, events: hookEvents } });
             if (path === '/webhooks/55' && call.method === 'PATCH') {
                 hooksPatched++;
                 hookEvents = (JSON.parse(call.body ?? '{}') as { events: string[] }).events;
@@ -647,10 +649,13 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
         expect(hookEvents.sort()).toEqual(['wa.message.canceled', 'wa.message.failed']);
         expect((await svc.connectionDetail(tenantId, admin(), id)).listening).toMatchObject({ inbound: false, statuses: false, status_lists: [] });
 
-        // La revisión de cada hora no llama a WAS si ya está como debe.
+        // La revisión de cada hora sólo pregunta si el aviso sigue activo (un
+        // GET) y no lo cambia si ya está como debe.
         const before = net.calls.length;
         expect(await svc.reconcileWebHooks()).toBe(0);
-        expect(net.calls.length).toBe(before);
+        const asked = net.calls.slice(before);
+        expect(asked).toHaveLength(1);
+        expect(asked[0]!.method).toBe('GET');
         // Un aviso registrado por una versión anterior (todos los eventos, sin la lista guardada) se ajusta.
         await withTenant(pg.db, tenantId, async (tx) => {
             const [row] = await tx.select({ config: connections.config }).from(connections).where(eq(connections.id, id));
@@ -665,6 +670,13 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
         expect(hooksPatched).toBe(patches + 1);
         expect(hookEvents.sort()).toEqual(['wa.message.canceled', 'wa.message.failed']);
         expect(hooksCreated).toBe(1);
+
+        // v0.1.433 — Whats apagó el aviso (la app no contestaba durante una
+        // caída): la revisión lo registra de nuevo.
+        hookActive = false;
+        await svc.reconcileWebHooks();
+        expect(hooksCreated).toBe(2);
+        expect(hooksDeleted).toContain(55);
     });
 
     it('v0.1.391 — tres mensajes seguidos de un número nuevo: UN registro y una línea de actividad («escribió 3 mensajes»)', async () => {

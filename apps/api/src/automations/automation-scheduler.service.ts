@@ -2,6 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { scheduleCron, scheduleTimeZone } from '@imagina-base/shared';
 import type { Queue } from 'bullmq';
 import type { AutomationRow } from './automations.repository';
+import { upsertSchedulerIfChanged } from '../redis/queue-runtime';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 
 /**
@@ -40,8 +41,14 @@ export class AutomationScheduler {
     async sync(tenantId: number, auto: AutomationRow): Promise<void> {
         if (!this.queue) return;
         try {
-            await this.remove(auto.id); // idempotente: limpio y re-creo
-            if (!auto.isActive) return;
+            // v0.1.433 — Sin borrar y re-crear: si el horario no cambió se deja
+            // como está, así la vuelta que quedó esperando durante un reinicio
+            // corre una vez al volver (antes se perdía). Sólo se quita el del
+            // otro tipo de disparador.
+            if (!auto.isActive || (auto.triggerType !== 'scheduled' && auto.triggerType !== 'due_date_reached')) {
+                await this.remove(auto.id);
+                return;
+            }
 
             if (auto.triggerType === 'scheduled') {
                 // v0.1.221 — la UI guarda frecuencia + hora + zona horaria y el
@@ -56,13 +63,17 @@ export class AutomationScheduler {
                 const cron = scheduleCron(auto.triggerConfig);
                 const tenantTz = this.timeZones ? await this.timeZones.get(tenantId) : null;
                 const { tz } = scheduleTimeZone(auto.triggerConfig, tenantTz);
-                await this.queue.upsertJobScheduler(
+                await this.queue.removeJobScheduler(dueId(auto.id)).catch(() => undefined);
+                await upsertSchedulerIfChanged(
+                    this.queue,
                     schedId(auto.id),
                     { pattern: cron, tz },
                     { name: 'scheduled', data: { tenantId, automationId: auto.id } },
                 );
-            } else if (auto.triggerType === 'due_date_reached') {
-                await this.queue.upsertJobScheduler(
+            } else {
+                await this.queue.removeJobScheduler(schedId(auto.id)).catch(() => undefined);
+                await upsertSchedulerIfChanged(
+                    this.queue,
                     dueId(auto.id),
                     { pattern: dueScanPattern(auto.id) },
                     { name: 'due', data: { tenantId, automationId: auto.id } },
