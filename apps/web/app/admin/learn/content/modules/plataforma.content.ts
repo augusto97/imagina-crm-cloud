@@ -603,6 +603,11 @@ export const articles: LearnArticle[] = [
                         tip: 'Se instala UNA vez por consola, como root, con el comando que muestra la tarjeta. **Reparar ahora** le pide que revise en el momento.',
                     },
                     {
+                        name: 'Si la app no abre',
+                        what: 'Dos salidas que no dependen de la app: la **página de rescate** (una dirección con su propio puerto y clave, que muestra lo que ve el vigilante y deja reparar, reiniciar la app, volver a la versión anterior o liberar espacio) y los comandos por SSH **imagina-estado** (dice cómo está todo) e **imagina-reparar** (arregla lo que encuentre, ya).',
+                        tip: 'La clave de la página la muestra el instalador UNA vez; si la pierdes, por SSH: imagina-rescate clave. Abre su puerto (8899) en el firewall del panel. Cada vez que alguien entra te llega un correo.',
+                    },
+                    {
                         name: 'Monitoreo externo',
                         what: 'La dirección del latido de un servicio de afuera (Better Stack, Healthchecks.io): la app le avisa cada minuto que todo está bien, y si el servidor entero se apaga, ese servicio te avisa.',
                         tip: 'Es lo único que avisa cuando el servidor no puede avisar nada. Toca **Probar** después de guardar la dirección.',

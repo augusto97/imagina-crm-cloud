@@ -20,6 +20,7 @@ describe('serverWatch (v0.1.431)', () => {
                     front: 'down',
                     disk: { ok: false, free_bytes: 500, total_bytes: 1000, free_inodes: 1, total_inodes: 2 },
                 },
+                rescue: { enabled: true, port: 8899, cert: 'domain', active: true },
                 last_action: null,
             },
             (b) => `${b} B`,

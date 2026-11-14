@@ -43,6 +43,10 @@ export const CERT_CRITICAL_DAYS = 3;
 
 /** Los eventos del guardián que piden una persona (además de los `ok: false`). */
 const ATTENTION_KINDS = new Set(['needs_attention']);
+/** v0.1.432 — Quién entró a la página de rescate: aviso aparte (no es una reparación). */
+const ACCESS_KINDS = new Set(['rescue_login', 'rescue_blocked']);
+/** La página de rescate no arranca: no es la app caída, tiene su propio aviso. */
+const RESCUE_FAIL_KIND = 'rescue_page_failed';
 
 const GUARDIAN_KIND_LABEL: Record<string, string> = {
     postgres_started: 'Base de datos encendida',
@@ -63,6 +67,14 @@ const GUARDIAN_KIND_LABEL: Record<string, string> = {
     nginx_repair_failed: 'No se pudo reponer Nginx',
     disk_cleaned: 'Espacio liberado',
     disk_still_full: 'El disco sigue lleno',
+    manual_restart: 'App reiniciada a mano',
+    manual_restart_failed: 'Se reinició la app a mano y no responde',
+    manual_rollback: 'Vuelta a la versión anterior (a mano)',
+    manual_rollback_failed: 'No se pudo volver a la versión anterior',
+    manual_cleanup: 'Espacio liberado (a mano)',
+    rescue_login: 'Entraron a la página de rescate',
+    rescue_blocked: 'Página de rescate bloqueada',
+    rescue_page_failed: 'La página de rescate no arranca',
 };
 
 export function guardianKindLabel(kind: string): string {
@@ -245,8 +257,16 @@ export class PlatformWatchService {
         }
     }
 
-    /** Un correo por tanda con lo que el guardián reparó (o no pudo). */
+    /**
+     * Un correo por tanda con lo que el guardián reparó (o no pudo). Aparte:
+     * quién entró a la página de rescate (siempre se avisa, aunque haya sido
+     * el propio operador) y la página de rescate que no arranca.
+     */
     private async mailGuardianEvents(report: GuardianReport, now: number): Promise<void> {
+        const at = new Date(now);
+        if (!report.rescue.enabled || report.rescue.active) {
+            await this.alerts.resolve('guardian:rescue', { message: 'La página de rescate volvió a funcionar.' }, at);
+        }
         const cursor = await this.redis.get(GUARDIAN_CURSOR_KEY);
         const pending = pendingGuardianEvents(this.guardian.events(), cursor, report.updated_at, now);
         if (!pending.length) {
@@ -255,11 +275,63 @@ export class PlatformWatchService {
         }
         const last = pending[pending.length - 1]!;
         await this.redis.set(GUARDIAN_CURSOR_KEY, last.at);
-        const bad = pending.filter((e) => !e.ok || ATTENTION_KINDS.has(e.kind));
-        const lines = pending.map((e) => `• ${fmtTime(e.at)} — ${guardianKindLabel(e.kind)}: ${e.message}`);
-        const at = new Date(now);
+        const line = (e: GuardianEvent) => `• ${fmtTime(e.at)} — ${guardianKindLabel(e.kind)}: ${e.message}`;
+
+        const access = pending.filter((e) => ACCESS_KINDS.has(e.kind));
+        if (access.length) {
+            const blocked = access.some((e) => e.kind === 'rescue_blocked');
+            const lastAccess = access[access.length - 1]!;
+            await this.alerts.event(
+                {
+                    key: `guardian:access:${lastAccess.id}`,
+                    source: 'guardian',
+                    severity: 'warning',
+                    title: blocked ? 'Intentaron entrar a la página de rescate con claves equivocadas' : 'Entraron a la página de rescate del servidor',
+                    detail: lastAccess.message,
+                    paragraphs: [
+                        blocked
+                            ? 'Alguien probó varias claves equivocadas en la página de rescate del servidor y quedó bloqueado 15 minutos.'
+                            : 'Alguien entró con la clave a la página de rescate del servidor.',
+                        '',
+                        ...access.map(line),
+                        '',
+                        'Si no fuiste tú, cambia la clave ahora: por SSH, como root, imagina-rescate clave (cierra las sesiones abiertas).',
+                    ],
+                },
+                at,
+            );
+        }
+
+        const rescueFail = pending.filter((e) => e.kind === RESCUE_FAIL_KIND);
+        if (rescueFail.length && report.rescue.enabled && !report.rescue.active) {
+            await this.alerts.raise(
+                {
+                    key: 'guardian:rescue',
+                    source: 'guardian',
+                    severity: 'warning',
+                    title: 'La página de rescate del servidor no arranca',
+                    detail: rescueFail[rescueFail.length - 1]!.message,
+                    paragraphs: [
+                        'La página de rescate del servidor no arranca. La app no se ve afectada, pero si se cae no tendrás esa página para repararla.',
+                        '',
+                        ...rescueFail.map(line),
+                        '',
+                        'Por SSH, como root: imagina-rescate (dice por qué) o vuelve a correr el instalador:',
+                        this.guardian.installCommand(),
+                    ],
+                    remind_hours: 24,
+                },
+                at,
+            );
+        }
+
+        const work = pending.filter((e) => !ACCESS_KINDS.has(e.kind) && e.kind !== RESCUE_FAIL_KIND);
+        if (!work.length) return;
+        const lastWork = work[work.length - 1]!;
+        const bad = work.filter((e) => !e.ok || ATTENTION_KINDS.has(e.kind));
+        const lines = work.map(line);
         if (bad.length) {
-            const attention = pending.some((e) => ATTENTION_KINDS.has(e.kind));
+            const attention = work.some((e) => ATTENTION_KINDS.has(e.kind));
             await this.alerts.raise(
                 {
                     key: 'guardian:attention',
@@ -280,14 +352,25 @@ export class PlatformWatchService {
             );
             return;
         }
+        const manual = work.every((e) => e.kind.startsWith('manual_'));
         await this.alerts.event(
             {
-                key: `guardian:event:${last.id}`,
+                key: `guardian:event:${lastWork.id}`,
                 source: 'guardian',
                 severity: 'info',
-                title: pending.length === 1 ? `El servidor se reparó solo: ${guardianKindLabel(last.kind).toLowerCase()}` : 'El servidor se reparó solo',
-                detail: last.message,
-                paragraphs: ['La reparación automática del servidor encontró algo mal y lo arregló. No hace falta hacer nada; te avisamos para que sepas qué pasó.', '', ...lines],
+                title: manual
+                    ? `Se hizo lo que pediste en el servidor: ${guardianKindLabel(lastWork.kind).toLowerCase()}`
+                    : work.length === 1
+                      ? `El servidor se reparó solo: ${guardianKindLabel(lastWork.kind).toLowerCase()}`
+                      : 'El servidor se reparó solo',
+                detail: lastWork.message,
+                paragraphs: [
+                    manual
+                        ? 'Se hizo lo que se pidió a mano (por SSH o desde la página de rescate). Te avisamos para que quede registro.'
+                        : 'La reparación automática del servidor encontró algo mal y lo arregló. No hace falta hacer nada; te avisamos para que sepas qué pasó.',
+                    '',
+                    ...lines,
+                ],
             },
             at,
         );

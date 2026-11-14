@@ -281,7 +281,11 @@ v0.1.390).
   que reescribe ServerAvatar al emitir el SSL. Estado en Plataforma →
   Diagnóstico; avisos por correo a `PLATFORM_SUPERADMINS`; latido a Better
   Stack configurado en la tarjeta «Monitoreo externo» (pasos en
-  `docs/runbook-guardian.md` §3).
+  `docs/runbook-guardian.md` §3). Desde v0.1.432 el mismo instalador deja los
+  comandos `imagina-estado` / `imagina-reparar` / `imagina-rescate` (por SSH,
+  como root) y la **página de rescate** `https://<dominio>:8899` con clave (la
+  muestra el instalador UNA vez); hay que abrir el 8899/tcp en el Firewall del
+  servidor en ServerAvatar.
 
 ### 6.2 Configuración externa ya hecha / en curso (estado conocido)
 - **Google OAuth** (Integraciones de Gmail/Calendar/Sheets): app registrada en
@@ -426,7 +430,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.431**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.432**
+(**reparar el servidor sin la app** — comandos por SSH `imagina-estado`,
+`imagina-reparar [reiniciar|version-anterior|espacio]` e `imagina-rescate`, y
+una **página de rescate** en su propio puerto (8899) y con clave que funciona
+aunque la app o Nginx no abran: muestra lo que ve el guardián y pide reparar,
+reiniciar, volver a la versión anterior o liberar espacio; correo cada vez que
+alguien entra; addendum ADR-S104). **Pendiente del usuario**: volver a correr
+el instalador como root (la consola lo avisa), guardar la clave que muestra y
+abrir el 8899/tcp en el Firewall de ServerAvatar. Antes **v0.1.431**
 (**el servidor se repara solo y avisa** — un guardián de root que revisa cada
 minuto la app, Postgres, Redis, Nginx/Caddy, la entrada por el dominio y el
 disco y repara solo (reinicia, vuelve a la versión anterior, repone el Nginx
@@ -2051,6 +2063,29 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-14 · v0.1.432** — **Reparar el servidor sin la app: comandos por
+  SSH y página de rescate** (pregunta del usuario: "¿habría una url de
+  recuperación a la cual yo pueda acceder para hacer las reparaciones? si se
+  me vuelve a caer debería poder repararla yo" → "sí, haz los 2"). Comandos
+  `imagina-estado` (sólo mira, en palabras), `imagina-reparar` (todo ya, sin
+  límites por hora; `reiniciar`, `version-anterior` con confirmación,
+  `espacio`) e `imagina-rescate` (`clave`, `apagar`, `encender`); página de
+  rescate `https://<dominio>:8899` (servicio `imagina-rescue`, node sin
+  dependencias, root sólo para leer el certificado y abrir el puerto y luego
+  `setuid` a `imagina-rescue`; deja archivos vacíos con el nombre del pedido
+  que el guardián hace; scrypt, cookie Strict 2 h, token por formulario,
+  freno 5 claves/15 min, sin JS, correo en cada ingreso). El guardián v2 busca
+  el certificado del dominio (`nginx -T`, Caddy, Let's Encrypt; si no, uno
+  propio) y reinicia la página al renovarse. Pruebas: guardián 25 + instalador
+  6 + comandos 5 + página 13 (con el servidor real por HTTPS) + vigilancia 17;
+  E2E en navegador con el proceso ya sin privilegios (escritorio y celular
+  oscuro). **Bug atrapado**: con `Referrer-Policy: no-referrer` el navegador
+  manda `Origin: null` y la página rechazaba sus propios formularios (ahora
+  `Sec-Fetch-Site`). **Pendiente del usuario**: re-correr el instalador,
+  guardar la clave, abrir el 8899 en el Firewall de ServerAvatar. **Respuesta
+  a su pregunta de las automatizaciones durante una caída** (investigada a
+  fondo, ver la entrada de v0.1.433): casi todo corre tarde una vez cuando
+  vuelve, pero hay huecos reales que se corrigen en v0.1.433.
 - **2026-11-14 · v0.1.431** — **El servidor se repara solo y avisa por correo**
   (pedido del usuario tras la caída del 403: "debería haber una herramienta de
   recuperación… es muy grave que se caiga y no tenga cómo ser reparada sino

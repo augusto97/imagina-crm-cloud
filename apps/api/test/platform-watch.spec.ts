@@ -19,7 +19,7 @@ vi.mock('../src/common/safe-fetch', async (importOriginal) => {
     };
 });
 
-import { heartbeatSupportsFail } from '@imagina-base/shared';
+import { GUARDIAN_VERSION, heartbeatSupportsFail } from '@imagina-base/shared';
 import type { Env } from '../src/config/env';
 import { GuardianService, parseGuardianEvents } from '../src/update/guardian.service';
 import { PlatformAlertsService } from '../src/update/platform-alerts.service';
@@ -33,7 +33,7 @@ const HOUR = 3600_000;
 
 function report(over: Record<string, unknown> = {}, checks: Record<string, unknown> = {}): string {
     return JSON.stringify({
-        version: 1,
+        version: GUARDIAN_VERSION,
         updated_at: '2026-11-14T12:00:00Z',
         domain: 'base.acme.co',
         web_mode: 'serveravatar',
@@ -202,7 +202,7 @@ describe('Vigilancia del servidor (v0.1.431) — con Redis real', () => {
         await watch.checkGuardian(T0);
         expect(await alerts.get('guardian:missing')).toBeNull();
         expect(subjects()).toHaveLength(1);
-        expect(guardian.status(T0)).toMatchObject({ installed: true, fresh: true, outdated: false, expected_version: 1 });
+        expect(guardian.status(T0)).toMatchObject({ installed: true, fresh: true, outdated: false, expected_version: GUARDIAN_VERSION });
     });
 
     it('lo que el guardián reparó llega en UN correo y una sola vez; lo que no pudo abre un aviso crítico', async () => {
@@ -225,6 +225,40 @@ describe('Vigilancia del servidor (v0.1.431) — con Redis real', () => {
         writeReport(report({ updated_at: '2026-11-14T12:05:00Z' }), 0, T0 + 5 * 60_000);
         await watch.checkGuardian(T0 + 5 * 60_000);
         expect(subjects().at(-1)).toBe('Ya está bien: El servidor necesita que lo revises');
+    });
+
+    it('v0.1.432 — quién entró a la página de rescate, lo hecho a mano y la página que no arranca: cada uno con su correo', async () => {
+        writeFileSync(
+            path.join(dir, 'events.jsonl'),
+            [
+                ev('2026-11-14T11:58:00Z', 'rescue_login', true, 'Alguien entró a la página de rescate desde 190.25.1.2.'),
+                ev('2026-11-14T11:59:00Z', 'manual_restart', true, 'Se reinició la app desde la página de rescate y responde.'),
+                ev('2026-11-14T11:59:30Z', 'rescue_page_failed', false, 'La página de rescate no arranca: EADDRINUSE'),
+            ].join('\n') + '\n',
+        );
+        writeReport(report({ rescue: { enabled: true, port: 8899, cert: 'domain', active: false } }));
+        await watch.checkGuardian(T0);
+        expect(subjects()).toEqual([
+            'Entraron a la página de rescate del servidor',
+            'La página de rescate del servidor no arranca',
+            'Se hizo lo que pediste en el servidor: app reiniciada a mano',
+        ]);
+        expect(mails[0]!.text).toContain('190.25.1.2');
+        expect(mails[0]!.text).toContain('imagina-rescate clave');
+        expect(await alerts.get('guardian:attention')).toBeNull();
+        expect((await alerts.get('guardian:rescue'))!.severity).toBe('warning');
+
+        writeReport(report({ updated_at: '2026-11-14T12:01:00Z', rescue: { enabled: true, port: 8899, cert: 'domain', active: true } }), 0, T0 + 60_000);
+        await watch.checkGuardian(T0 + 60_000);
+        expect(await alerts.get('guardian:rescue')).toBeNull();
+        expect(subjects().at(-1)).toBe('Ya está bien: La página de rescate del servidor no arranca');
+    });
+
+    it('claves equivocadas en la página de rescate avisan con otro título', async () => {
+        writeFileSync(path.join(dir, 'events.jsonl'), ev('2026-11-14T11:59:00Z', 'rescue_blocked', true, 'Se bloqueó por 15 minutos.') + '\n');
+        writeReport(report());
+        await watch.checkGuardian(T0);
+        expect(subjects()).toEqual(['Intentaron entrar a la página de rescate con claves equivocadas']);
     });
 
     it('un informe viejo = el guardián dejó de revisar', async () => {

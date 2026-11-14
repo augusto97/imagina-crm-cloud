@@ -15405,6 +15405,70 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         compuerta del tick), front 2 + E2E navegador 17/17 en escritorio y
         celular oscuro.
 
+  - [x] **Reparar el servidor sin la app: comandos por SSH y página de rescate
+        (v0.1.432, addendum ADR-S104, pregunta del usuario: "¿habría una url
+        de recuperación a la cual yo pueda acceder para hacer las
+        reparaciones?" → "sí, haz los 2")**. (a) **Comandos por SSH** en
+        `/usr/local/bin` (como root): `imagina-estado` (guardián
+        `--check --human`: dice en palabras lo que ve, no toca nada, ni el
+        `status.json`), `imagina-reparar [todo|reiniciar|version-anterior|
+        espacio]` (`--force`/`--restart`/`--rollback`/`--cleanup`: lo pedido a
+        mano salta los límites por hora; la vuelta atrás pide escribir SI) e
+        `imagina-rescate [clave|apagar|encender]`. Lo que hacen queda en los
+        eventos del guardián (`manual_*`, «por SSH» / «desde la página de
+        rescate»). (b) **Página de rescate** (`deploy/guardian/
+        imagina-rescue.mjs`, node sin dependencias, servicio
+        `imagina-rescue`, puerto 8899 o `--puerto`, `--sin-rescate` para no
+        instalarla): no pasa por la app ni por Nginx; arranca como root SÓLO
+        para leer el certificado y abrir el puerto y enseguida `setuid` al
+        usuario `imagina-rescue` (systemd: `ProtectSystem=strict`, escribe
+        sólo en `$STATE/rescue`). Muestra lo que ve el guardián, lo último que
+        hizo y lo último que dijo la app (`journalctl` sin lo que va después
+        de `?`), y pide Reparar ahora / Reiniciar / Volver a la versión
+        anterior (con casilla) / Liberar espacio dejando un archivo VACÍO cuyo
+        NOMBRE es el pedido (`repair-`…); el guardián lo hace sin leer el
+        contenido (un pedido con nombre de acción en la carpeta de la APP sólo
+        adelanta la revisión). Clave scrypt en `rescue.conf` (root 0600,
+        mostrada UNA vez por el instalador; se conserva al reinstalar),
+        sesión HMAC en cookie `HttpOnly`/`Secure`/`SameSite=Strict` 2 h, token
+        por formulario, `Sec-Fetch-Site`/`Origin` del mismo sitio, 5 claves
+        equivocadas bloquean la IP 15 min (y 40 en total), sin JavaScript, CSP
+        `default-src 'none'`, `noindex`. (c) **Guardián v2**
+        (`GUARDIAN_VERSION` = 2): busca el certificado del dominio en cada
+        vuelta (`nginx -T` por bloque `server`, almacén de Caddy,
+        `/etc/letsencrypt`; si no, uno propio del instalador) y lo deja en
+        `rescue-tls.conf`, reinicia la página cuando se renueva, la levanta si
+        se cae (`rescue_page_failed` una vez por hora), y pasa `audit.jsonl`
+        (quién entró, escrito por la página) a sus eventos tomando sólo campos
+        con forma conocida. `status.json` suma `rescue {enabled, port, cert,
+        active}`. (d) **Correos** (`platform-watch`): «Entraron a la página de
+        rescate del servidor» CADA vez (o «Intentaron entrar… con claves
+        equivocadas»), «Se hizo lo que pediste en el servidor» para lo hecho a
+        mano, y «La página de rescate no arranca» como aviso propio (warning,
+        se cierra solo); un `manual_*` fallido abre el crítico de siempre.
+        (e) **Instalador**: crea el usuario de sistema, carpetas y permisos,
+        certificado propio, `rescue.conf`, la unidad (node detectado del
+        servicio de la app; `ProtectHome=read-only` si vive en /home),
+        `ufw allow` si está activo, los comandos, y al final imprime la URL,
+        la clave y que hay que abrir el puerto en el Firewall de ServerAvatar
+        y del proveedor. (f) **Consola**: Plataforma → Diagnóstico →
+        Reparación automática suma «Si la app no abre» (URL copiable, estado,
+        certificado propio, firewall, comandos por SSH); con un guardián v1 el
+        aviso de versión nueva explica lo que suma. Se corrigió el texto que
+        decía que el guardián se actualiza solo (no lo hace a propósito: sería
+        root corriendo código que el usuario de la app puede escribir).
+        **Bug atrapado en el E2E**: con `Referrer-Policy: no-referrer` el
+        navegador manda `Origin: null` y la página rechazaba sus propios
+        formularios. Docs: `docs/runbook-guardian.md` §1.1-§1.2,
+        `runbook-serveravatar.md`, Aprende → consola. Sin novedad (del
+        operador). Tests: `guardian-script.spec` 36 (guardián 25: `--check`
+        no repara ni escribe, `--force` salta límites, pedidos de rescate por
+        nombre, certificado de `nginx -T` y renovación, auditoría; instalador
+        6; comandos 5), `rescue-page.spec` 13 (servidor real por HTTPS:
+        cabeceras, clave, cookie, CSRF, origen, freno, pedido vacío),
+        `platform-watch.spec` 17 — E2E navegador 20/20 con el proceso ya como
+        `nobody` (escritorio claro y celular oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
