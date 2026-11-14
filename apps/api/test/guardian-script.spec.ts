@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
@@ -320,6 +320,14 @@ describe('deploy/guardian/imagina-guardian.sh', () => {
 const INSTALLER = resolve(__dirname, '../../../deploy/install-guardian.sh');
 
 describe('deploy/install-guardian.sh', () => {
+    // Como root (el servidor) instala a nombre de root y le da `requests/` al
+    // usuario del servicio. En el CI no hay root: instala a nombre de quien corre
+    // la prueba (GUARDIAN_OWNER) y el «usuario del servicio» es ese mismo.
+    const asRoot = process.getuid?.() === 0;
+    const me = userInfo().username;
+    const appUser = asRoot ? 'nobody' : me;
+    const owner = asRoot ? 'root' : me;
+
     function install(nginxConf: string, opts: { caddy?: boolean } = {}) {
         const root = mkdtempSync(join(tmpdir(), 'ib-guardian-install-'));
         dirs.push(root);
@@ -338,7 +346,7 @@ describe('deploy/install-guardian.sh', () => {
         s(
             'systemctl',
             `case "$1" in
-  show) echo nobody ;;
+  show) echo ${appUser} ;;
   is-active) [ "\${@: -1}" = caddy ] && exit ${opts.caddy ? 0 : 3}; exit 0 ;;
   list-unit-files) [ "$2" = redis-server.service ] && echo "redis-server.service enabled enabled" ;;
 esac
@@ -354,6 +362,7 @@ exit 0`,
             GUARDIAN_CONF_DIR: join(root, 'etc'),
             GUARDIAN_STATE: join(root, 'var', 'guardian'),
             GUARDIAN_UNIT_DIR: join(root, 'units'),
+            ...(asRoot ? {} : { GUARDIAN_OWNER: me }),
         };
         mkdirSync(join(root, 'units'));
         const out = execFileSync('bash', [INSTALLER], { env, encoding: 'utf8', stdio: 'pipe' });
@@ -367,14 +376,14 @@ exit 0`,
         expect(conf).toContain('PG_CONTAINER=imagina-base-postgres-1');
         expect(conf).toContain('REDIS_SERVICE=redis-server');
         expect(conf).toContain('WEB_MODE=serveravatar');
-        expect(conf).toContain('APP_USER=nobody');
+        expect(conf).toContain(`APP_USER=${appUser}`);
         expect(existsSync(join(root, 'lib', 'imagina-guardian.sh'))).toBe(true);
         expect(existsSync(join(root, 'lib', 'serveravatar-nginx.sh'))).toBe(true);
         for (const u of ['imagina-guardian.service', 'imagina-guardian.timer', 'imagina-guardian.path']) expect(existsSync(join(root, 'units', u))).toBe(true);
         expect(calls).toContain('systemctl enable --now imagina-guardian.timer imagina-guardian.path');
-        const owner = execFileSync('stat', ['-c', '%U %a', join(root, 'var', 'guardian', 'requests')], { encoding: 'utf8' }).trim();
-        expect(owner).toBe('nobody 700');
-        expect(execFileSync('stat', ['-c', '%U', join(root, 'lib', 'imagina-guardian.sh')], { encoding: 'utf8' }).trim()).toBe('root');
+        const perm = execFileSync('stat', ['-c', '%U %a', join(root, 'var', 'guardian', 'requests')], { encoding: 'utf8' }).trim();
+        expect(perm).toBe(`${appUser} 700`);
+        expect(execFileSync('stat', ['-c', '%U', join(root, 'lib', 'imagina-guardian.sh')], { encoding: 'utf8' }).trim()).toBe(owner);
     });
 
     it('una configuración de Nginx armada a mano no se reescribe (modo nginx)', () => {

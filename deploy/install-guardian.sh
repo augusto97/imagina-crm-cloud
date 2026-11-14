@@ -11,7 +11,14 @@
 set -euo pipefail
 
 fail() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
-[ "$(id -u)" -eq 0 ] || fail "córrelo como root (el usuario de la aplicación no tiene permisos para instalarlo)."
+# Dueño de lo que se instala: root. Sólo las pruebas lo cambian (corren sin
+# root, en carpetas temporales); con otro dueño no se toca nada del sistema
+# porque las rutas también vienen de las pruebas.
+OWNER="${GUARDIAN_OWNER:-root}"
+if [ "$OWNER" = root ]; then
+    [ "$(id -u)" -eq 0 ] || fail "córrelo como root (el usuario de la aplicación no tiene permisos para instalarlo)."
+fi
+GROUP=$(id -gn "$OWNER" 2>/dev/null) || fail "no existe el usuario $OWNER."
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 BASE="${BASE_PATH:-/opt/imagina-base}"
@@ -49,8 +56,8 @@ for s in redis-server redis; do
 done
 
 mkdir -p "$LIB" "$CONF_DIR" "$STATE/requests" "$STATE/state"
-install -m 0755 -o root -g root "$HERE/guardian/imagina-guardian.sh" "$LIB/imagina-guardian.sh"
-install -m 0755 -o root -g root "$HERE/serveravatar-nginx.sh" "$LIB/serveravatar-nginx.sh"
+install -m 0755 -o "$OWNER" -g "$GROUP" "$HERE/guardian/imagina-guardian.sh" "$LIB/imagina-guardian.sh"
+install -m 0755 -o "$OWNER" -g "$GROUP" "$HERE/serveravatar-nginx.sh" "$LIB/serveravatar-nginx.sh"
 
 # Cómo se sirve la app.
 WEB_MODE=none
@@ -89,14 +96,14 @@ WEB_MODE=$WEB_MODE
 APP_USER=$APP_USER
 CONF
 chmod 0644 "$CONF_DIR/guardian.conf"
-chown root:root "$(dirname "$STATE")" "$STATE" "$STATE/state"
+chown "$OWNER:$GROUP" "$(dirname "$STATE")" "$STATE" "$STATE/state"
 chmod 0755 "$(dirname "$STATE")" "$STATE"
 chmod 0700 "$STATE/state"
 chown "$APP_USER" "$STATE/requests"
 chmod 0700 "$STATE/requests"
 
 for unit in imagina-guardian.service imagina-guardian.timer imagina-guardian.path; do
-    install -m 0644 -o root -g root "$HERE/guardian/$unit" "$UNIT_DIR/$unit"
+    install -m 0644 -o "$OWNER" -g "$GROUP" "$HERE/guardian/$unit" "$UNIT_DIR/$unit"
 done
 systemctl daemon-reload
 systemctl enable --now imagina-guardian.timer imagina-guardian.path >/dev/null
