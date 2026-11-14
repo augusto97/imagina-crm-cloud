@@ -257,8 +257,12 @@ v0.1.390).
   `imagina-api`; uploads en `shared/uploads`.
 - **Superadmin de plataforma**: los emails de `PLATFORM_SUPERADMINS` (el del
   usuario). La consola está en el riel → «Plataforma».
-- **Acceso**: Claude NO tiene SSH al servidor. El usuario entra por la consola
-  web de ServerAvatar cuando hace falta. Para diagnosticar datos reales hay un
+- **Acceso**: Claude NO tiene SSH al servidor. ServerAvatar **no tiene consola
+  web**: el usuario entra por SSH desde su computador. El usuario de la
+  aplicación que creó ServerAvatar (`L44…`) **no tiene `sudo`**: lo que toca
+  Nginx o el sistema se corre como **root**. Pegar textos largos en esa
+  terminal los muestra revueltos (el archivo igual queda bien: comprobar con
+  `bash -n` y el número de líneas antes de correrlo). Para diagnosticar datos reales hay un
   **conector MCP "Imagina Base"** (el MCP de la propia app, ADR-S21) que el
   usuario conectó a claude.ai: si está disponible en la sesión
   (`mcp__Imagina_Base_*`), sirve para LEER esquemas, automatizaciones y
@@ -2029,6 +2033,27 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-14 · sin versión** — **Producción caída con «403 Forbidden» tras
+  emitir el SSL en ServerAvatar** (el usuario sumaba el dominio de una tienda:
+  el panel no deja agregar un dominio al certificado, hay que borrarlo y
+  emitirlo con todos). Al hacerlo, ServerAvatar **reescribió el archivo de
+  Nginx de la app** con su plantilla (PHP: `location /` con
+  `try_files … /index.php`) y se perdieron los `location` de la app: la raíz
+  daba 403 y `/api` «File not found.». El document root y el API seguían bien.
+  Arreglo: `deploy/serveravatar-nginx.sh` (nuevo, viaja en el bundle desde la
+  próxima versión) — encuentra el archivo por `nginx -T`, guarda copia en
+  `/var/backups/imagina-base-nginx`, deja los `location` en
+  `/etc/nginx/imagina-base.locations` y cambia el `location /` del panel por un
+  `include`; `nginx -t` antes de recargar y vuelta atrás si falla. El usuario
+  lo pegó y lo corrió como root: verificado desde afuera (raíz, `/lists`,
+  `/api` ready con postgres y redis, socket.io, portal, assets, OAuth y el
+  sondeo de tiendas `/_imagina/site`). Lecciones: ServerAvatar no tiene consola
+  web (me equivoqué al decirlo); el usuario de la app no tiene `sudo`; **cada
+  vez que se emita el SSL hay que volver a correr el script** (runbooks
+  `serveravatar` §6/§8 y `custom-domains` Camino B al día). Queda pendiente
+  que el usuario termine de habilitar el dominio de la tienda («Comprobar» en
+  Plataforma → Dominios).
 
 - **2026-11-13 · v0.1.430** — **Lo que se pide al pagar en la tienda +
   preguntas propias** (reporte del usuario: "No veo forma donde añadir más
