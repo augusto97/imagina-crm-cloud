@@ -267,6 +267,13 @@ import {
     diskUsageSchema,
     diskCleanupResultSchema,
     walReleaseResultSchema,
+    guardianStatusSchema,
+    platformAlertsSchema,
+    monitoringStatusSchema,
+    type GuardianStatus,
+    type PlatformAlerts,
+    type MonitoringStatus,
+    type UpdateMonitoringInput,
     type DiskUsage,
     type DiskCleanupResult,
     type WalReleaseResult,
@@ -1742,6 +1749,33 @@ export class CloudClient {
     // v0.1.337 — liberar y reparar el registro de cambios (WAL) trabado.
     walRelease(): Promise<WalReleaseResult> {
         return this.request('POST', '/system/diagnostics/disk/wal-release', { schema: walReleaseResultSchema });
+    }
+    // v0.1.431 (ADR-S104) — la reparación automática, los avisos y el monitoreo externo.
+    guardianStatus(): Promise<GuardianStatus> {
+        return this.request('GET', '/system/diagnostics/guardian', { schema: guardianStatusSchema });
+    }
+    guardianRequest(): Promise<{ ok: boolean; reason: string | null }> {
+        return this.request('POST', '/system/diagnostics/guardian/request', {
+            schema: z.object({ ok: z.boolean(), reason: z.string().nullable() }),
+        });
+    }
+    platformAlerts(): Promise<PlatformAlerts> {
+        return this.request('GET', '/system/diagnostics/alerts', { schema: platformAlertsSchema });
+    }
+    platformAlertsCheck(): Promise<PlatformAlerts> {
+        return this.request('POST', '/system/diagnostics/alerts/check', { schema: platformAlertsSchema });
+    }
+    platformAlertDismiss(key: string): Promise<PlatformAlerts> {
+        return this.request('POST', `/system/diagnostics/alerts/${encodeURIComponent(key)}/dismiss`, { schema: platformAlertsSchema });
+    }
+    monitoringGet(): Promise<MonitoringStatus> {
+        return this.request('GET', '/system/diagnostics/monitoring', { schema: monitoringStatusSchema });
+    }
+    monitoringUpdate(input: UpdateMonitoringInput): Promise<MonitoringStatus> {
+        return this.request('PUT', '/system/diagnostics/monitoring', { body: input, schema: monitoringStatusSchema });
+    }
+    monitoringTest(): Promise<MonitoringStatus> {
+        return this.request('POST', '/system/diagnostics/monitoring/test', { schema: monitoringStatusSchema });
     }
 
     // --- dominios de las empresas (v0.1.246, sólo superadmin) ---

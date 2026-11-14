@@ -61,7 +61,7 @@ export const PLATFORM_TABS: ReadonlyArray<PlatformTab> = [
     { id: 'updates', label: 'Actualizaciones', icon: RefreshCw, group: 'Servidor', hint: 'Instalar versiones nuevas' },
     { id: 'backups', label: 'Copias de seguridad', icon: DatabaseBackup, group: 'Servidor', hint: 'Copias del servidor y Google Drive' },
     // v0.1.238 — correos recientes y errores del servidor, sin entrar al servidor.
-    { id: 'diagnostico', label: 'Diagnóstico', icon: Activity, group: 'Servidor', hint: 'Disco, errores y correos recientes' },
+    { id: 'diagnostico', label: 'Diagnóstico', icon: Activity, group: 'Servidor', hint: 'Avisos, reparación automática, monitoreo, disco y errores' },
 ];
 
 /** v0.1.342 — las pestañas agrupadas por tema, en orden. */

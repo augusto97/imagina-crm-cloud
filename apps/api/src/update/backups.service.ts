@@ -171,6 +171,16 @@ export class BackupsService implements OnModuleInit {
         };
     }
 
+    /**
+     * v0.1.431 — Lo que mira la vigilancia (sin listar los archivos, que lee
+     * el manifiesto de cada copia): si hay dónde copiar, los ajustes, la
+     * última copia y el último intento.
+     */
+    async health(): Promise<{ available: boolean; settings: BackupsSettings; run: BackupRun; last_snapshot_at: string | null }> {
+        const { available } = this.availability();
+        return { available, settings: await this.getSettings(), run: await this.run(), last_snapshot_at: await this.redis.get(LAST_KEY) };
+    }
+
     async run(): Promise<BackupRun> {
         const current = await this.readRun();
         if ((current.status === 'running' || current.status === 'restoring') && stuck(current.started_at)) {

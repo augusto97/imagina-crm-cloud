@@ -9,6 +9,10 @@ import { CheckUpdatesService } from './check-updates.service';
 import { ReleasesRepository } from './releases.repository';
 import { DiagnosticsController } from './diagnostics.controller';
 import { PostgresWalService } from './postgres-wal';
+import { GuardianService } from './guardian.service';
+import { PlatformAlertsService } from './platform-alerts.service';
+import { PlatformWatchQueue } from './platform-watch.queue';
+import { PlatformWatchService } from './platform-watch.service';
 import { SmtpController } from './smtp.controller';
 import { SymlinkDeployer } from './symlink-deployer.service';
 import { UpdateController } from './update.controller';
@@ -33,12 +37,17 @@ import { DEPLOYER } from './update.types';
         BackupDriveService,
         UpdateQueue,
         PostgresWalService,
+        // v0.1.431 (ADR-S104) — la reparación automática, los avisos y el monitoreo.
+        GuardianService,
+        PlatformAlertsService,
+        PlatformWatchService,
+        PlatformWatchQueue,
         {
             provide: DEPLOYER,
             inject: [ENV],
             useFactory: (env: Env) => new SymlinkDeployer(env),
         },
     ],
-    exports: [UpdateManager, BackupsService, BackupDriveService],
+    exports: [UpdateManager, BackupsService, BackupDriveService, PlatformAlertsService],
 })
 export class UpdateModule {}

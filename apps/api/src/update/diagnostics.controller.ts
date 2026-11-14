@@ -1,9 +1,23 @@
-import { Controller, Delete, Get, HttpCode, Inject, Post, UseGuards } from '@nestjs/common';
-import type { DiskCleanupResult, DiskUsage, PlatformDiagnostics, WalReleaseResult } from '@imagina-base/shared';
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Put, UseGuards } from '@nestjs/common';
+import {
+    updateMonitoringSchema,
+    type DiskCleanupResult,
+    type DiskUsage,
+    type GuardianStatus,
+    type MonitoringStatus,
+    type PlatformAlerts,
+    type PlatformDiagnostics,
+    type UpdateMonitoringInput,
+    type WalReleaseResult,
+} from '@imagina-base/shared';
 import path from 'node:path';
 import { ENV, type Env } from '../config/env';
 import { LayoutDisk, MIN_FREE_INODES, dirBytes, freeBytes, freeInodes } from './disk-space';
 import { PostgresWalService } from './postgres-wal';
+import { GuardianService } from './guardian.service';
+import { PlatformAlertsService } from './platform-alerts.service';
+import { PlatformWatchService } from './platform-watch.service';
+import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import type Redis from 'ioredis';
 import { SessionGuard } from '../auth/session.guard';
 import { SuperadminGuard } from '../authz/superadmin.guard';
@@ -27,7 +41,62 @@ export class DiagnosticsController {
         private readonly mail: MailService,
         @Inject(ENV) private readonly env: Env,
         private readonly wal: PostgresWalService,
+        private readonly guardian: GuardianService,
+        private readonly alerts: PlatformAlertsService,
+        private readonly watch: PlatformWatchService,
     ) {}
+
+    // ── v0.1.431 (ADR-S104): la reparación automática, los avisos y el monitoreo ──
+
+    @Get('guardian')
+    guardianStatus(): GuardianStatus {
+        return this.guardian.status();
+    }
+
+    /** «Reparar ahora»: el guardián revisa al instante (sólo un archivo vacío; lo que hace lo decide él). */
+    @Post('guardian/request')
+    @HttpCode(200)
+    guardianRequest(): { ok: boolean; reason: string | null } {
+        return this.guardian.requestRepair();
+    }
+
+    @Get('alerts')
+    alertsList(): Promise<PlatformAlerts> {
+        return this.alerts.list();
+    }
+
+    /** «Revisar ahora»: todas las revisiones (también las de cada 15 min y 6 h). */
+    @Post('alerts/check')
+    @HttpCode(200)
+    async alertsCheck(): Promise<PlatformAlerts> {
+        await this.watch.tick({ force: true });
+        return this.alerts.list();
+    }
+
+    @Post('alerts/:key/dismiss')
+    @HttpCode(200)
+    async alertsDismiss(@Param('key') key: string): Promise<PlatformAlerts> {
+        await this.alerts.dismiss(key.slice(0, 200));
+        return this.alerts.list();
+    }
+
+    @Get('monitoring')
+    monitoring(): Promise<MonitoringStatus> {
+        return this.watch.monitoringStatus();
+    }
+
+    @Put('monitoring')
+    monitoringUpdate(@Body(new ZodValidationPipe(updateMonitoringSchema)) patch: UpdateMonitoringInput): Promise<MonitoringStatus> {
+        return this.watch.setMonitoring(patch);
+    }
+
+    /** «Probar»: un latido ahora (aunque esté pausado) y el estado. */
+    @Post('monitoring/test')
+    @HttpCode(200)
+    async monitoringTest(): Promise<MonitoringStatus> {
+        await this.watch.heartbeat(Date.now(), { test: true });
+        return this.watch.monitoringStatus();
+    }
 
     @Get()
     async get(): Promise<PlatformDiagnostics> {

@@ -60,6 +60,7 @@ export * from './schemas/webhook-record';
 export * from './schemas/dashboard';
 export * from './schemas/dashboard-sharing';
 export * from './schemas/system';
+export * from './schemas/server-watch';
 export * from './schemas/mail-account';
 export * from './schemas/tenant-storage';
 export * from './schemas/domains';

@@ -593,6 +593,21 @@ export const articles: LearnArticle[] = [
                 title: 'Lo que muestra Plataforma → Diagnóstico',
                 rows: [
                     {
+                        name: 'Avisos del servidor',
+                        what: 'Lo que necesita tu atención: una copia que falló o se atrasó, Google Drive que hay que reconectar, una actualización que no se instaló, el certificado por vencer, la app que no abre desde afuera y lo que hizo la reparación automática. Cada aviso te llega también por correo (con recordatorio si sigue igual) y, cuando se arregla, otro correo te lo dice.',
+                        tip: '**Revisar ahora** corre todas las revisiones en el momento. **Ya lo vi** cierra un aviso sin que vuelva por 30 días.',
+                    },
+                    {
+                        name: 'Reparación automática del servidor',
+                        what: 'Un vigilante que corre en el servidor cada minuto: si la app, la base de datos, Redis o el servidor web se caen, los vuelve a levantar; si una actualización no arranca, vuelve a la versión anterior; si el panel del hosting reescribe la configuración de Nginx, la repone; y si el disco se llena, libera espacio.',
+                        tip: 'Se instala UNA vez por consola, como root, con el comando que muestra la tarjeta. **Reparar ahora** le pide que revise en el momento.',
+                    },
+                    {
+                        name: 'Monitoreo externo',
+                        what: 'La dirección del latido de un servicio de afuera (Better Stack, Healthchecks.io): la app le avisa cada minuto que todo está bien, y si el servidor entero se apaga, ese servicio te avisa.',
+                        tip: 'Es lo único que avisa cuando el servidor no puede avisar nada. Toca **Probar** después de guardar la dirección.',
+                    },
+                    {
                         name: 'Configuración del servidor',
                         what: 'Si el servidor corre en modo producción y tiene las dos claves (cifrado y firma de enlaces), cookies seguras y una dirección con https. Sin modo producción, los formularios públicos pueden quedar en blanco.',
                         tip: 'Cada actualización completa sola lo que falta. Si sigue en rojo, muestra las líneas exactas que hay que agregar al archivo de configuración del servidor.',
@@ -618,6 +633,12 @@ export const articles: LearnArticle[] = [
                         tip: '**Liberar espacio** borra versiones viejas y copias previas a cada actualización, sin tocar datos ni archivos de las empresas.',
                     },
                 ],
+            },
+            {
+                t: 'callout',
+                tone: 'warn',
+                title: 'Si la app se cae, que se levante sola',
+                md: 'Sin la reparación automática, una caída del servidor (un panel que reescribe Nginx al emitir un certificado, un servicio que no arranca) deja la app sin funcionar hasta que alguien entra por consola. Instálala una vez y suma un **monitoreo externo**: entre los dos, la app se repara sola y, si algo no tiene arreglo automático, te enteras por correo.',
             },
             {
                 t: 'callout',

@@ -295,6 +295,10 @@ const envSchema = z.object({
     // devuelve la carpeta del archivo de WAL a postgres (`docker exec -u 0`)
     // si el archivado falla por permiso.
     PG_CONTAINER: z.string().default('imagina-base-prod-postgres-1'),
+    // v0.1.431 (ADR-S104) — dónde deja su informe el guardián del servidor
+    // (`deploy/guardian`, lo instala root una vez). La app sólo LEE de aquí y
+    // escribe pedidos vacíos en `requests/`.
+    GUARDIAN_DIR: z.string().default('/var/lib/imagina-base/guardian'),
 
     // --- Copias de seguridad completas (v0.1.179, ADR-S20). En producción
     // ambos se derivan de UPDATER_BASE_PATH (shared/backups y current/deploy);

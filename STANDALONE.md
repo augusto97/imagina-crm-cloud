@@ -9445,3 +9445,61 @@ obligatorio".
 5. **El pedido** guarda cada respuesta en su columna (una lista, por el valor
    de su opción) y, en palabras, en `shop_orders.customer.answers`, que usan el
    correo de confirmación («Lo que nos contaste») y el mensaje de WhatsApp.
+
+### ADR-S104 — El servidor se repara solo y avisa: guardián root, avisos al operador y latido externo (v0.1.431)
+
+**Contexto.** Una caída real: al re-emitir el certificado de un dominio en
+ServerAvatar, el panel REESCRIBIÓ el archivo de Nginx de la app con su
+plantilla PHP (`try_files … /index.php`) y la app quedó en «403 Forbidden».
+Nada dentro de la app podía arreglarlo: el API corre como un usuario sin
+privilegios y Nginx es de root; hubo que entrar por SSH. Y, en general, lo que
+fallaba fuera de las peticiones (una copia que no salía, Drive que pedía
+reconectar, una actualización que no se instaló, el certificado por vencer) no
+le avisaba a nadie: se descubría entrando a la consola.
+
+**Decisión.**
+1. **Un guardián de root, separado de la app** (`deploy/guardian/`): un script
+   bash con un timer de systemd cada minuto (y un `.path` que lo dispara al
+   instante cuando hay un pedido). Revisa la app (`/health/live` por
+   127.0.0.1), el contenedor de Postgres, Redis, Nginx/Caddy, la entrada por el
+   dominio (forzada a 127.0.0.1 con `--resolve`, y por DNS si no) y el disco, y
+   repara con límites por hora: arranca lo detenido, reinicia la app (3/h) o —
+   si la versión tiene menos de 30 minutos — vuelve UNA vez a la anterior,
+   repone el Nginx de ServerAvatar (`serveravatar-nginx.sh`, 6/h) y libera
+   espacio sin tocar datos. Durante una actualización (symlink de menos de
+   2 minutos) no hace nada. Se instala UNA vez (`deploy/install-guardian.sh`,
+   detecta dominio, puerto, contenedor, Redis, usuario del API y modo del
+   servidor web) y se vuelve a correr si la consola dice que hay una versión
+   nueva (`GUARDIAN_VERSION` en shared vs. la del informe).
+2. **La app no le da órdenes a root.** Sólo lee su informe
+   (`status.json` + `events.jsonl` en `GUARDIAN_DIR`) y, con «Reparar ahora»,
+   escribe un archivo VACÍO en `requests/` (del usuario del API, 0700) que el
+   guardián borra sin leer. No hay forma de pasarle un comando.
+3. **Avisos al operador** (`PlatformAlertsService`, Redis `palert:open` +
+   `palert:log`): un aviso abierto manda correo a `PLATFORM_SUPERADMINS` al
+   abrirse, recuerda cada N horas si sigue igual, vuelve a avisar si sube de
+   gravedad y, al cerrarse, manda «Ya está bien»; «Ya lo vi» lo cierra y la
+   misma clave no vuelve por 30 días. Los avisos de algo que pasó (lo que
+   reparó el guardián) van en un correo por tanda.
+4. **La vigilancia en su propia cola** (`platform-watch`, cada minuto): los
+   eventos del guardián, que siga vivo y actualizado, la entrada por el dominio
+   (con el guardián al día usa lo que él vio; sin él, la app se prueba por su
+   dirección pública, 3 fallos seguidos); cada 15 min las copias (fallida, más
+   de 36 h, apagadas, sin salir del servidor), Drive, la última actualización y
+   el WAL; cada 6 h el certificado del dominio (14 días aviso, 3 urgente). No
+   va en la cola del actualizador porque ahí corren de a uno trabajos de media
+   hora y el latido se atrasaría. Lo que ya avisaba por su cuenta (el WAL y el
+   disco, la subida a Drive) sólo se refleja en el panel, sin un segundo correo.
+5. **Latido externo** (`platform:monitoring`, viaja en el snapshot): un GET
+   por minuto a la URL de heartbeat (Better Stack, Healthchecks.io…) mientras
+   todo está bien; si la base no responde, la app no abre por el dominio o el
+   disco está lleno, `…/fail` en los servicios que lo entienden y, si no,
+   silencio. Es lo único que avisa cuando el servidor entero está apagado.
+
+**Consecuencias.** Una caída como la del 403 se repara en 1-3 minutos sin
+consola y llega un correo que dice qué pasó. Un paso de root por servidor
+(instalar el guardián) y un monitor externo configurado por el operador.
+Límites: si el API está caído la app no puede mandar correos (para eso el
+latido externo); el guardián no sabe arreglar un Nginx hecho a mano (sólo lo
+reinicia) y no repara lo que requiere decisiones (una migración que falla, un
+certificado que el panel no renueva). Runbook: `docs/runbook-guardian.md`.

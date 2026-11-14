@@ -136,6 +136,12 @@ echo "$USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart imagina-api" | sudo 
    emitir el certificado**: ServerAvatar reescribe ese archivo y se pierden
    los `location` (la raíz da 403 y `/api` responde «File not found.»).
 
+   **Mejor aún, instala una vez la reparación automática** (v0.1.431, como
+   root): `bash /opt/imagina-base/current/deploy/install-guardian.sh`. Revisa
+   cada minuto la app, Postgres, Redis, Nginx, la entrada por el dominio y el
+   disco, y repone sola esta configuración si ServerAvatar la vuelve a
+   reescribir. Detalle en `docs/runbook-guardian.md`.
+
    Lo mismo a mano: abre la **config Nginx** de la app y pega los bloques `location` de
    `deploy/nginx.conf` (API, `/.well-known/oauth-` —descubrimiento OAuth del
    MCP, v0.1.184—, socket.io, /assets, /portal, /). ServerAvatar ya pone el
