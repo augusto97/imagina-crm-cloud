@@ -1,0 +1,9 @@
+[Unit]
+Description=Pedidos de revisión de la app al guardián de Imagina Base
+
+[Path]
+PathExistsGlob=/var/lib/imagina-base/guardian/requests/*
+Unit=imagina-guardian.service
+
+[Install]
+WantedBy=paths.target

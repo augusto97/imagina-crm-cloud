@@ -1,0 +1,9 @@
+[Unit]
+Description=Guardián de Imagina Base: revisa y repara el servidor
+After=network-online.target docker.service nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/imagina-base/imagina-guardian.sh
+Nice=10
+TimeoutStartSec=300

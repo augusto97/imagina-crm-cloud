@@ -137,6 +137,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Build (shared → api → web)
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
           pnpm --filter @imagina-base/shared build
           pnpm --filter @imagina-base/api build
@@ -293,7 +295,10 @@ jobs:
           cp deploy/docker-compose.prod.yml deploy/.env.production.example \
              deploy/nginx.conf deploy/imagina-api.service "$OUT/deploy/"
           # v0.1.283 — servidor nuevo en un comando + recuperación desde el Drive (ADR-S43)
-          cp deploy/install.sh deploy/recover-from-snapshot.sh deploy/snapshot-env-filter.sh deploy/Caddyfile "$OUT/deploy/"
+          cp deploy/install.sh deploy/recover-from-snapshot.sh deploy/snapshot-env-filter.sh deploy/Caddyfile deploy/serveravatar-nginx.sh deploy/install-guardian.sh "$OUT/deploy/"
+          # v0.1.431 — el guardián del servidor (ADR-S104): lo instala root una vez.
+          mkdir -p "$OUT/deploy/guardian" && cp deploy/guardian/* "$OUT/deploy/guardian/"
+          chmod +x "$OUT/deploy/guardian/imagina-guardian.sh"
           chmod +x "$OUT"/deploy/*.sh
           # install.sh también va suelto en el release: es lo que se baja con
           #   curl -fsSL https://github.com/<repo>/releases/latest/download/install.sh | sudo bash

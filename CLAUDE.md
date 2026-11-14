@@ -15342,6 +15342,69 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         45/45 en escritorio y 43/43 en celular oscuro (pago clásico, «Por
         pasos», «Dos columnas» y «Una columna» con los nombres adentro).
 
+  - [x] **El servidor se repara solo y avisa (v0.1.431, ADR-S104, pedido del
+        usuario tras una caída real: ServerAvatar reescribió el Nginx de la app
+        al emitir un SSL y quedó en «403 Forbidden» — "debería haber una
+        herramienta de recuperación o reparación… es muy grave que se caiga y
+        no tenga cómo ser reparada sino por consola" → "sí, hazlas; también que
+        si falla un backup o algo me avise por correo… tengo cuenta en
+        betteruptime")**. (a) **Guardián de root** (`deploy/guardian/`:
+        `imagina-guardian.sh` + `.service`/`.timer` cada minuto/`.path`):
+        revisa la app (`/health/live` por 127.0.0.1), el contenedor de
+        Postgres, Redis, Nginx/Caddy, la entrada por el dominio (`--resolve` a
+        127.0.0.1 y, si no, por DNS) y el disco, y repara con límites por hora:
+        arranca lo detenido, reinicia la app (3/h; después «necesita que lo
+        revises») o, si la versión tiene menos de 30 min, vuelve UNA vez a la
+        anterior, repone el Nginx de ServerAvatar (`serveravatar-nginx.sh`,
+        6/h) y libera espacio (versión actual + 2, 5 copias previas, journal,
+        apt, imágenes de Docker; nunca datos). Durante una actualización no
+        toca nada. Deja `status.json` + `events.jsonl` en
+        `/var/lib/imagina-base/guardian` (`GUARDIAN_DIR`). **Instalador**
+        `deploy/install-guardian.sh` (una vez, como root; idempotente): detecta
+        dominio, puerto, contenedor, Redis, usuario del API y modo del servidor
+        web (`serveravatar` si el sitio ya incluye `imagina-base.locations`,
+        `nginx` si es uno hecho a mano, `caddy`, o repara en el momento la
+        plantilla PHP del panel). El release lo lleva en el bundle. (b) **La
+        app no le da órdenes a root**: lee el informe (`GuardianService`) y
+        «Reparar ahora» deja un archivo VACÍO en `requests/` (del usuario del
+        API, 0700) que el guardián borra sin leer. (c) **Avisos al operador**
+        (`PlatformAlertsService`, Redis `palert:open` + `palert:log`): correo a
+        `PLATFORM_SUPERADMINS` al abrirse, recordatorio cada N horas, otra vez
+        si sube de gravedad, «Ya está bien» al cerrarse y «Ya lo vi» (30 días
+        sin reabrir la misma clave). (d) **Vigilancia en su propia cola**
+        (`PlatformWatchService` + `platform-watch`, cada minuto; la del
+        actualizador tiene trabajos de media hora): eventos del guardián (un
+        correo por tanda con lo que reparó; crítico con lo que no pudo),
+        guardián ausente/parado/desactualizado (`GUARDIAN_VERSION` en shared),
+        la entrada por el dominio (lo que vio el guardián o, sin él, la app se
+        prueba por su dirección pública; 3 fallos seguidos); cada 15 min copias
+        (fallida, más de 36 h, apagadas, sin salir del servidor), Drive, la
+        última actualización (fallida/revertida) y el WAL; cada 6 h el
+        certificado del dominio (14 días aviso, 3 urgente). Lo que ya mandaba
+        su correo (WAL, disco, subida a Drive) sólo se refleja en el panel.
+        (e) **Latido externo** (`platform:monitoring`): GET por minuto a la URL
+        de heartbeat; si la base no responde, la app no abre por el dominio o
+        el disco está lleno, `…/fail` (Better Stack, Healthchecks.io) o
+        silencio. (f) **Plataforma → Diagnóstico**: tarjetas «Avisos del
+        servidor» (abiertos, historial, «Revisar ahora», «Ya lo vi», a quién
+        llegan), «Reparación automática del servidor» (seis revisiones, lo
+        último que hizo, «Reparar ahora», comando de instalación) y «Monitoreo
+        externo» (URL validada, «Probar», último latido, la dirección
+        `/api/v1/health/ready` para el monitor por palabra clave). Endpoints
+        `system/diagnostics/{guardian, guardian/request, alerts, alerts/check,
+        alerts/:key/dismiss, monitoring, monitoring/test}` (superadmin).
+        Runbook `docs/runbook-guardian.md` (instalar, qué repara,
+        desinstalar, Better Stack). Sin migración ni novedad en el catálogo
+        (es del operador); Aprende → Consola de la plataforma suma las tres
+        tarjetas. Tests: `guardian-script.spec` (16, con dobles de curl/
+        systemctl/docker/nginx: Nginx reescrito → repuesto, vuelta atrás una
+        vez, sin cadena de vueltas, límites, disco, pedido que nunca se
+        ejecuta, instalador por modo), `platform-watch.spec` (15, Redis real:
+        avisos con recordatorio y gravedad, guardián, entrada por el dominio,
+        copias, Drive, actualización, certificado, latido con `/fail`,
+        compuerta del tick), front 2 + E2E navegador 17/17 en escritorio y
+        celular oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

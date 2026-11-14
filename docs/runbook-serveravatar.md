@@ -120,7 +120,29 @@ echo "$USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart imagina-api" | sudo 
 ## 6. Nginx (servir SPA + proxy al API) en ServerAvatar
 
 1. Applications → tu app → pon **Document Root** = `/opt/imagina-base/current/web`.
-2. Abre la **config Nginx** de la app y pega los bloques `location` de
+2. **Como root** (el usuario de la aplicación que crea ServerAvatar no tiene
+   `sudo`), corre:
+
+   ```bash
+   bash /opt/imagina-base/current/deploy/serveravatar-nginx.sh app.tu-dominio.com
+   ```
+
+   El script encuentra el archivo de Nginx de la app, guarda una copia en
+   `/var/backups/imagina-base-nginx`, deja los `location` de la app en
+   `/etc/nginx/imagina-base.locations` (un archivo que el panel no toca),
+   cambia el `location /` de la plantilla por un `include` hacia ese archivo,
+   prueba con `nginx -t` (si falla, deja todo como estaba), recarga Nginx y
+   comprueba la raíz y `/api`. **Córrelo otra vez cada vez que vuelvas a
+   emitir el certificado**: ServerAvatar reescribe ese archivo y se pierden
+   los `location` (la raíz da 403 y `/api` responde «File not found.»).
+
+   **Mejor aún, instala una vez la reparación automática** (v0.1.431, como
+   root): `bash /opt/imagina-base/current/deploy/install-guardian.sh`. Revisa
+   cada minuto la app, Postgres, Redis, Nginx, la entrada por el dominio y el
+   disco, y repone sola esta configuración si ServerAvatar la vuelve a
+   reescribir. Detalle en `docs/runbook-guardian.md`.
+
+   Lo mismo a mano: abre la **config Nginx** de la app y pega los bloques `location` de
    `deploy/nginx.conf` (API, `/.well-known/oauth-` —descubrimiento OAuth del
    MCP, v0.1.184—, socket.io, /assets, /portal, /). ServerAvatar ya pone el
    `server{}`, `listen 443 ssl` y `server_name`; tú solo agregas los
@@ -159,10 +181,12 @@ el servidor ya lo atiende. Por cada uno:
 1. Espera a que diga **«Apunta aquí»** (el CNAME de la empresa hacia
    `app.tu-dominio.com`). Sin eso, Let's Encrypt rechaza el certificado.
 2. ServerAvatar → Applications → la app de Imagina Base → agrega el dominio
-   como **alias** (dominio adicional). Usa la misma config de Nginx, con los
-   `location` que pegaste en el paso 6.
+   como **alias** (dominio adicional).
 3. **SSL** → vuelve a emitir el certificado de Let's Encrypt para que incluya
-   el alias.
+   el alias. El panel no deja sumarlo: hay que borrar el certificado y
+   emitirlo con todos los dominios, y eso **reescribe el archivo de Nginx**.
+   Después, como root, corre otra vez
+   `bash /opt/imagina-base/current/deploy/serveravatar-nginx.sh app.tu-dominio.com`.
 4. En la consola, **«Comprobar»** → cuando diga **«Responde»**, los enlaces de
    esa empresa ya salen por su dominio.
 

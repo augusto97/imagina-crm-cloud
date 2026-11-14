@@ -40,7 +40,8 @@ de las empresas no cambian.
 - **Caddy**: ya viene en el `Caddyfile` de cada release (`@site` +
   `handle_response`). Si copiaste el Caddyfile antes de v0.1.423, vuelve a
   copiarlo (paso 2 del Camino A) y recarga.
-- **ServerAvatar / nginx**: pega estos dos `location` junto a los del paso 6 de
+- **ServerAvatar / nginx**: ya los pone `deploy/serveravatar-nginx.sh` (ver el
+  Camino B, paso 3). A mano: pega estos dos `location` junto a los del paso 6 de
   `docs/runbook-serveravatar.md` (también están, listos para copiar, en
   **Plataforma → Dominios → «Tiendas con dominio propio»**):
 
@@ -145,6 +146,16 @@ Por **cada** empresa que configure un dominio, después de que ella lo verifique
    configuración de nginx que el dominio principal, incluidos los `location`
    que pegaste para el API y el portal.
 3. En **SSL**, vuelve a emitir el certificado Let's Encrypt incluyendo el alias.
+   **Ojo:** ServerAvatar no deja sumar un dominio al certificado: hay que
+   borrarlo y emitirlo de nuevo con todos, y al hacerlo **reescribe el archivo
+   de Nginx de la app** con su plantilla. Se pierden los `location` de la app:
+   la raíz da **403 Forbidden** y `/api` responde «File not found.» (pasó el
+   2026-11-14). Arreglo, como **root** (el usuario de la aplicación que crea
+   ServerAvatar no tiene `sudo`):
+   `bash /opt/imagina-base/current/deploy/serveravatar-nginx.sh app.tu-dominio.com`.
+   El script deja los `location` en `/etc/nginx/imagina-base.locations`, cambia
+   el `location /` del panel por un `include`, prueba con `nginx -t` (si falla,
+   deja todo como estaba) y recarga. Córrelo después de cada emisión.
 4. En **Plataforma → Dominios**, toca **«Comprobar»** en ese dominio: cuando
    diga **«Responde»**, los enlaces de esa empresa ya salen por su dominio.
    (También puedes abrir `https://clientes.acme.com/portal` y ver la marca.)

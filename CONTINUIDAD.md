@@ -257,8 +257,12 @@ v0.1.390).
   `imagina-api`; uploads en `shared/uploads`.
 - **Superadmin de plataforma**: los emails de `PLATFORM_SUPERADMINS` (el del
   usuario). La consola está en el riel → «Plataforma».
-- **Acceso**: Claude NO tiene SSH al servidor. El usuario entra por la consola
-  web de ServerAvatar cuando hace falta. Para diagnosticar datos reales hay un
+- **Acceso**: Claude NO tiene SSH al servidor. ServerAvatar **no tiene consola
+  web**: el usuario entra por SSH desde su computador. El usuario de la
+  aplicación que creó ServerAvatar (`L44…`) **no tiene `sudo`**: lo que toca
+  Nginx o el sistema se corre como **root**. Pegar textos largos en esa
+  terminal los muestra revueltos (el archivo igual queda bien: comprobar con
+  `bash -n` y el número de líneas antes de correrlo). Para diagnosticar datos reales hay un
   **conector MCP "Imagina Base"** (el MCP de la propia app, ADR-S21) que el
   usuario conectó a claude.ai: si está disponible en la sesión
   (`mcp__Imagina_Base_*`), sirve para LEER esquemas, automatizaciones y
@@ -271,6 +275,13 @@ v0.1.390).
   lista en Plataforma → Dominios qué alias agregar/quitar a mano.
 - **Backups**: Plataforma → Copias de seguridad (snapshots diarios
   automáticos, ADR-S20). Migración de servidor: `docs/runbook-migration.md`.
+- **Reparación automática** (ADR-S104, v0.1.431): guardián de root instalado
+  con `bash /opt/imagina-base/current/deploy/install-guardian.sh` (una vez;
+  re-correrlo si la consola dice que hay versión nueva). Repone solo el Nginx
+  que reescribe ServerAvatar al emitir el SSL. Estado en Plataforma →
+  Diagnóstico; avisos por correo a `PLATFORM_SUPERADMINS`; latido a Better
+  Stack configurado en la tarjeta «Monitoreo externo» (pasos en
+  `docs/runbook-guardian.md` §3).
 
 ### 6.2 Configuración externa ya hecha / en curso (estado conocido)
 - **Google OAuth** (Integraciones de Gmail/Calendar/Sheets): app registrada en
@@ -415,7 +426,17 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.430**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.431**
+(**el servidor se repara solo y avisa** — un guardián de root que revisa cada
+minuto la app, Postgres, Redis, Nginx/Caddy, la entrada por el dominio y el
+disco y repara solo (reinicia, vuelve a la versión anterior, repone el Nginx
+que reescribe ServerAvatar, libera espacio); correos al operador cuando una
+copia falla o se atrasa, hay que reconectar Drive, una actualización no se
+instala, vence el certificado o la app no abre desde afuera; y latido a Better
+Stack; ADR-S104, `docs/runbook-guardian.md`). **Pendiente del usuario**:
+instalar el guardián UNA vez como root
+(`bash /opt/imagina-base/current/deploy/install-guardian.sh`) y crear el
+heartbeat y el monitor por dominio en Better Stack. Antes **v0.1.430**
 (**lo que se pide al pagar en la tienda** — el celular, la cédula o NIT y las
 notas se eligen no pedirlos, opcionales u obligatorios, con su nombre
 («WhatsApp», «RUT»), y hasta 12 **preguntas propias** (texto, número, lista,
@@ -2029,6 +2050,61 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-14 · v0.1.431** — **El servidor se repara solo y avisa por correo**
+  (pedido del usuario tras la caída del 403: "debería haber una herramienta de
+  recuperación… es muy grave que se caiga y no tenga cómo ser reparada sino
+  por consola" → "sí, hazlas. también… que si falla un backup o algo me avisara
+  por correo… tengo cuenta en betteruptime"). (a) **Guardián de root**
+  (`deploy/guardian/`, timer de systemd cada minuto + `.path` para «Reparar
+  ahora»): revisa la app, Postgres, Redis, Nginx/Caddy, la entrada por el
+  dominio y el disco; arranca lo detenido, reinicia la app (3/h) o vuelve UNA
+  vez a la versión anterior si la nueva no arranca, repone el Nginx de
+  ServerAvatar (6/h), libera espacio sin tocar datos; deja `status.json` y
+  `events.jsonl`. Instalador `deploy/install-guardian.sh` (detecta dominio,
+  puerto, contenedor, Redis, usuario y modo del servidor web; idempotente). La
+  app sólo LEE el informe y deja un archivo vacío para «Reparar ahora».
+  (b) **Avisos al operador** (`PlatformAlertsService` + cola propia
+  `platform-watch`): correo al abrir, recordatorio, «Ya está bien» al cerrar,
+  «Ya lo vi»; copias (fallida, más de 36 h, apagadas, sin salir del servidor),
+  Drive, actualización fallida o revertida, certificado (14/3 días), la app que
+  no abre desde afuera, guardián ausente/parado/desactualizado y lo que
+  reparó. (c) **Latido externo**: GET por minuto a la URL de Better Stack;
+  `/fail` si la base no responde, la app no abre por el dominio o el disco
+  está lleno. (d) Plataforma → Diagnóstico: tarjetas «Avisos del servidor»,
+  «Reparación automática del servidor» y «Monitoreo externo». Sin migración ni
+  novedad en el catálogo (es del operador). Tests: `guardian-script.spec` 16,
+  `platform-watch.spec` 15, front 2 + E2E navegador 17/17 en escritorio y
+  celular oscuro. **Pendiente del usuario**: instalar el guardián como root y
+  crear el heartbeat + el monitor por dominio en Better Stack (pasos en
+  `docs/runbook-guardian.md`).
+  **De paso, el CI**: la revisión de tipos de la API se quedó sin memoria en
+  el runner (usa ~2,6 GB de heap; Node da ~2 GB por defecto con 7 GB de RAM;
+  la versión anterior medía igual: estaba al borde, no lo causó este cambio).
+  `NODE_OPTIONS=--max-old-space-size=4096` en el job de checks y en el build
+  del release, y lint/tipos/build de a una (`--concurrency=1`). Cuando vuelva a
+  apretar, el arreglo de fondo es bajar las instanciaciones de tipos (~3,4 M).
+
+- **2026-11-14 · sin versión** — **Producción caída con «403 Forbidden» tras
+  emitir el SSL en ServerAvatar** (el usuario sumaba el dominio de una tienda:
+  el panel no deja agregar un dominio al certificado, hay que borrarlo y
+  emitirlo con todos). Al hacerlo, ServerAvatar **reescribió el archivo de
+  Nginx de la app** con su plantilla (PHP: `location /` con
+  `try_files … /index.php`) y se perdieron los `location` de la app: la raíz
+  daba 403 y `/api` «File not found.». El document root y el API seguían bien.
+  Arreglo: `deploy/serveravatar-nginx.sh` (nuevo, viaja en el bundle desde la
+  próxima versión) — encuentra el archivo por `nginx -T`, guarda copia en
+  `/var/backups/imagina-base-nginx`, deja los `location` en
+  `/etc/nginx/imagina-base.locations` y cambia el `location /` del panel por un
+  `include`; `nginx -t` antes de recargar y vuelta atrás si falla. El usuario
+  lo pegó y lo corrió como root: verificado desde afuera (raíz, `/lists`,
+  `/api` ready con postgres y redis, socket.io, portal, assets, OAuth y el
+  sondeo de tiendas `/_imagina/site`). Lecciones: ServerAvatar no tiene consola
+  web (me equivoqué al decirlo); el usuario de la app no tiene `sudo`; **cada
+  vez que se emita el SSL hay que volver a correr el script** (runbooks
+  `serveravatar` §6/§8 y `custom-domains` Camino B al día). Queda pendiente
+  que el usuario termine de habilitar el dominio de la tienda («Comprobar» en
+  Plataforma → Dominios).
 
 - **2026-11-13 · v0.1.430** — **Lo que se pide al pagar en la tienda +
   preguntas propias** (reporte del usuario: "No veo forma donde añadir más
