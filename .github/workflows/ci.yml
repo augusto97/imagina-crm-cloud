@@ -19,6 +19,11 @@ jobs:
     name: lint, tipos, build y shared
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # v0.1.431 — tsc de la API (~2,6 GB), del front (~2,4 GB) y el build de la
+    # API (~2 GB) pasan el tope de heap que Node da por defecto en este runner
+    # (7 GB de RAM → ~2 GB): se sube para todo el job.
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@v4
 
@@ -36,9 +41,11 @@ jobs:
       - name: Pruebas del planificador de capturas
         run: node --test scripts/help-captures/plan.test.mjs
 
+      # v0.1.431 — de a una (--concurrency=1): lint con tipos, tsc y build
+      # usan ~2 GB cada uno y en paralelo llenarían los 7 GB del runner.
       - name: Lint + tipos + build (shared y API) + pruebas de shared
         run: >
-          pnpm turbo run lint typecheck build
+          pnpm turbo run lint typecheck build --concurrency=1
           --filter=@imagina-base/shared
           --filter=@imagina-base/api
           && pnpm turbo run test --filter=@imagina-base/shared

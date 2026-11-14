@@ -2078,6 +2078,12 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   celular oscuro. **Pendiente del usuario**: instalar el guardián como root y
   crear el heartbeat + el monitor por dominio en Better Stack (pasos en
   `docs/runbook-guardian.md`).
+  **De paso, el CI**: la revisión de tipos de la API se quedó sin memoria en
+  el runner (usa ~2,6 GB de heap; Node da ~2 GB por defecto con 7 GB de RAM;
+  la versión anterior medía igual: estaba al borde, no lo causó este cambio).
+  `NODE_OPTIONS=--max-old-space-size=4096` en el job de checks y en el build
+  del release, y lint/tipos/build de a una (`--concurrency=1`). Cuando vuelva a
+  apretar, el arreglo de fondo es bajar las instanciaciones de tipos (~3,4 M).
 
 - **2026-11-14 · sin versión** — **Producción caída con «403 Forbidden» tras
   emitir el SSL en ServerAvatar** (el usuario sumaba el dominio de una tienda:

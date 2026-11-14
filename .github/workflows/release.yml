@@ -137,6 +137,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Build (shared → api → web)
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
           pnpm --filter @imagina-base/shared build
           pnpm --filter @imagina-base/api build
