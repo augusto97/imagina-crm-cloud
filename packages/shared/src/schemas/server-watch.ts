@@ -11,7 +11,7 @@ import { z } from 'zod';
  */
 
 /** Versión del guardián que trae ESTA versión de la app (`deploy/guardian`). */
-export const GUARDIAN_VERSION = 1;
+export const GUARDIAN_VERSION = 2;
 
 export const GUARDIAN_CHECK_STATES = ['ok', 'down', 'updating', 'unknown', 'skipped', 'cert'] as const;
 export type GuardianCheckState = (typeof GUARDIAN_CHECK_STATES)[number];
@@ -51,6 +51,16 @@ export const guardianReportSchema = z.object({
             })
             .catch({ ok: true, free_bytes: 0, total_bytes: 0, free_inodes: 0, total_inodes: 0 }),
     }),
+    /** v0.1.432 — La página de rescate (puerto propio, con clave). */
+    rescue: z
+        .object({
+            enabled: z.boolean().catch(false),
+            port: z.number().int().catch(0),
+            /** domain = el certificado del dominio; self = uno propio (el navegador avisa). */
+            cert: z.enum(['domain', 'self', 'none']).catch('none'),
+            active: z.boolean().catch(false),
+        })
+        .catch({ enabled: false, port: 0, cert: 'none' as const, active: false }),
     last_action: guardianEventSchema.omit({ id: true }).nullable().catch(null),
 });
 export type GuardianReport = z.infer<typeof guardianReportSchema>;

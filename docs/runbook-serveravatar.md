@@ -140,7 +140,10 @@ echo "$USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart imagina-api" | sudo 
    root): `bash /opt/imagina-base/current/deploy/install-guardian.sh`. Revisa
    cada minuto la app, Postgres, Redis, Nginx, la entrada por el dominio y el
    disco, y repone sola esta configuración si ServerAvatar la vuelve a
-   reescribir. Detalle en `docs/runbook-guardian.md`.
+   reescribir. Detalle en `docs/runbook-guardian.md`. Desde v0.1.432 instala
+   también los comandos `imagina-estado` / `imagina-reparar` y la **página de
+   rescate** (`https://tu-dominio:8899`, con clave): abre el puerto `8899/tcp`
+   en el **Firewall** del servidor en ServerAvatar para usarla.
 
    Lo mismo a mano: abre la **config Nginx** de la app y pega los bloques `location` de
    `deploy/nginx.conf` (API, `/.well-known/oauth-` —descubrimiento OAuth del

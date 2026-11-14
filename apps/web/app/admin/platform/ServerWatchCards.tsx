@@ -11,11 +11,13 @@ import {
     HeartPulse,
     History,
     Loader2,
+    LifeBuoy,
     RefreshCw,
     ShieldCheck,
+    Terminal,
     Wrench,
 } from 'lucide-react';
-import type { GuardianEvent, PlatformAlert } from '@imagina-base/shared';
+import type { GuardianEvent, GuardianReport, PlatformAlert } from '@imagina-base/shared';
 
 import { api } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
@@ -311,11 +313,11 @@ export function GuardianCard(): JSX.Element | null {
                         {g.applicable ? (
                             <>
                                 <p>
-                                    {__('Todavía no está instalada en este servidor. Se instala UNA vez, por consola, como root (después se actualiza sola con cada versión que lo necesite):')}
+                                    {__('Todavía no está instalada en este servidor. Se instala UNA vez, por consola, como root (si una versión nueva trae mejoras, aquí te avisamos para volver a correrlo):')}
                                 </p>
                                 <CopyText text={g.install_command} testId="guardian-install-command" />
                                 <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                    {__('Entra por SSH al servidor, pasa a root (sudo -i) y pega el comando. Detecta solo tu dominio, el servidor web (ServerAvatar, Nginx o Caddy) y la base de datos.')}
+                                    {__('Entra por SSH al servidor, pasa a root (sudo -i) y pega el comando. Detecta solo tu dominio, el servidor web (ServerAvatar, Nginx o Caddy) y la base de datos. También instala los comandos por SSH y la página de rescate, y al final te muestra su clave.')}
                                 </p>
                             </>
                         ) : (
@@ -357,10 +359,15 @@ export function GuardianCard(): JSX.Element | null {
                         )}
                         {g.outdated && (
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-info/30 imcrm-bg-info/10 imcrm-p-3 imcrm-text-sm">
-                                <span>{__('Esta versión de la app trae una versión nueva de la reparación automática. Para instalarla, como root:')}</span>
+                                <span>
+                                    {r && r.version < 2
+                                        ? __('Esta versión de la app trae una versión nueva de la reparación automática: suma comandos por SSH y una página de rescate para reparar el servidor aunque la app no abra. Para instalarla, como root (al final te muestra la clave de la página):')
+                                        : __('Esta versión de la app trae una versión nueva de la reparación automática. Para instalarla, como root:')}
+                                </span>
                                 <CopyText text={g.install_command} />
                             </div>
                         )}
+                        {r && r.version >= 2 && <RescueAccess report={r} />}
                         <div>
                             <p className="imcrm-mb-1 imcrm-text-sm imcrm-font-medium">{__('Lo último que hizo')}</p>
                             {g.events.length === 0 ? (
@@ -377,6 +384,77 @@ export function GuardianCard(): JSX.Element | null {
                 )}
             </CardContent>
         </Card>
+    );
+}
+
+/**
+ * v0.1.432 — Cómo reparar el servidor si la app no abre: la página de rescate
+ * (puerto propio, con clave) y los comandos por SSH.
+ */
+const SSH_COMMANDS: Array<[string, string]> = [
+    ['imagina-estado', 'Dice en palabras cómo está el servidor (no cambia nada).'],
+    ['imagina-reparar', 'Revisa todo y arregla lo que encuentre, ya, sin los límites por hora.'],
+    ['imagina-reparar reiniciar', 'Reinicia la app.'],
+    ['imagina-reparar version-anterior', 'Vuelve a la versión anterior de la app (tus datos no se tocan).'],
+    ['imagina-reparar espacio', 'Libera espacio en el disco.'],
+    ['imagina-rescate clave', 'Crea una clave nueva para la página de rescate (cierra las sesiones abiertas).'],
+];
+
+function RescueAccess({ report }: { report: GuardianReport }): JSX.Element {
+    const rescue = report.rescue;
+    const url = report.domain && rescue.port ? `https://${report.domain}:${rescue.port}` : '';
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-rounded-md imcrm-border imcrm-border-border imcrm-p-3" data-testid="guardian-rescue" data-tour="platform-guardian-rescue">
+            <div className="imcrm-flex imcrm-items-start imcrm-gap-2">
+                <LifeBuoy className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-muted-foreground" aria-hidden />
+                <div className="imcrm-min-w-0 imcrm-flex-1">
+                    <p className="imcrm-text-sm imcrm-font-medium">{__('Si la app no abre')}</p>
+                    <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                        {__('La página de rescate es un servicio aparte, en su propio puerto y con clave: funciona aunque la app o Nginx no abran. Muestra lo que ve la reparación automática y deja reparar, reiniciar la app, volver a la versión anterior o liberar espacio.')}
+                    </p>
+                </div>
+            </div>
+            {rescue.enabled && url ? (
+                <div className="imcrm-flex imcrm-flex-col imcrm-gap-2">
+                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                        <span className="imcrm-text-sm">{__('Página de rescate')}</span>
+                        <Badge dot variant={rescue.active ? 'success' : 'warning'} data-testid="guardian-rescue-status">
+                            {rescue.active ? __('Funciona') : __('No está funcionando')}
+                        </Badge>
+                    </div>
+                    <CopyText text={url} testId="guardian-rescue-url" />
+                    <ul className="imcrm-flex imcrm-list-disc imcrm-flex-col imcrm-gap-1 imcrm-pl-5 imcrm-text-xs imcrm-text-muted-foreground">
+                        <li>{__('La clave te la mostró el instalador. Si la perdiste, por SSH: imagina-rescate clave.')}</li>
+                        <li>
+                            {sprintf(
+                                __('Si no abre desde afuera, abre el puerto %s/tcp en el firewall del panel (en ServerAvatar: el servidor → Firewall) y en el de tu proveedor si tiene uno.'),
+                                String(rescue.port),
+                            )}
+                        </li>
+                        {rescue.cert === 'self' && <li>{__('Usa un certificado propio: el navegador va a avisar «no es seguro». Ábrela igual (Avanzado → Continuar).')}</li>}
+                        <li>{__('Cada vez que alguien entra te llega un correo.')}</li>
+                    </ul>
+                </div>
+            ) : (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="guardian-rescue-off">
+                    {__('La página de rescate está apagada. Para prenderla, por SSH como root: imagina-rescate encender')}
+                </p>
+            )}
+            <div>
+                <p className="imcrm-mb-1 imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-sm imcrm-font-medium">
+                    <Terminal className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" aria-hidden />
+                    {__('Por SSH, como root')}
+                </p>
+                <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-testid="guardian-ssh-commands">
+                    {SSH_COMMANDS.map(([cmd, what]) => (
+                        <li key={cmd} className="imcrm-flex imcrm-flex-col imcrm-gap-0.5 sm:imcrm-flex-row sm:imcrm-items-baseline sm:imcrm-gap-3">
+                            <code className="imcrm-shrink-0 imcrm-font-mono imcrm-text-xs sm:imcrm-w-64">{cmd}</code>
+                            <span className="imcrm-text-xs imcrm-text-muted-foreground">{__(what)}</span>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </div>
     );
 }
 

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Arregla el servidor ya, sin esperar al guardián y sin sus límites por hora.
+# Como root:
+#   imagina-reparar                    revisa todo y arregla lo que encuentre
+#   imagina-reparar reiniciar          reinicia la app
+#   imagina-reparar version-anterior   vuelve a la versión anterior (sólo el código)
+#   imagina-reparar espacio            libera espacio en el disco
+# (Lo instala deploy/install-guardian.sh en /usr/local/bin. v0.1.432, ADR-S104.)
+set -uo pipefail
+LIB="${GUARDIAN_LIB:-@LIB@}"
+usage() {
+    cat <<'TXT'
+Uso: imagina-reparar [qué]
+
+  (nada) o todo       revisa todo y arregla lo que encuentre, ya
+  reiniciar           reinicia la app
+  version-anterior    vuelve a la versión anterior de la app (tus datos no se tocan)
+  espacio             libera espacio: versiones y copias viejas, registros, imágenes sin uso
+
+Para sólo mirar cómo está, sin arreglar nada: imagina-estado
+TXT
+}
+if [ "$(id -u)" -ne 0 ] && [ "${GUARDIAN_TEST:-}" != 1 ]; then
+    echo "Córrelo como root: sudo imagina-reparar ${1:-}"
+    exit 1
+fi
+YES=0
+WHAT=
+for arg in "$@"; do
+    case "$arg" in
+        -y|--si) YES=1 ;;
+        -h|--help|ayuda) usage; exit 0 ;;
+        *) [ -z "$WHAT" ] && WHAT=$arg || { usage; exit 2; } ;;
+    esac
+done
+case "${WHAT:-todo}" in
+    todo) flag=--force ;;
+    reiniciar|reinicia|restart) flag=--restart ;;
+    version-anterior|versión-anterior|anterior|rollback) flag=--rollback ;;
+    espacio|limpiar|cleanup) flag=--cleanup ;;
+    *) echo "No conozco «$WHAT»."; echo; usage; exit 2 ;;
+esac
+if [ "$flag" = --rollback ] && [ "$YES" != 1 ]; then
+    echo "Esto vuelve la app a la versión anterior. Sólo cambia el código: tus datos no se tocan."
+    printf 'Escribe SI para seguir: '
+    read -r answer || answer=
+    case "$answer" in SI|si|Si|sí|Sí|SÍ) ;; *) echo "No se hizo nada."; exit 1 ;; esac
+fi
+exec bash "$LIB/imagina-guardian.sh" "$flag" --human

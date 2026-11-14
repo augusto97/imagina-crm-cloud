@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# La página de rescate del servidor. Como root:
+#   imagina-rescate             la dirección y si está funcionando
+#   imagina-rescate clave       crea una clave nueva (la anterior deja de servir)
+#   imagina-rescate apagar      la apaga
+#   imagina-rescate encender    la vuelve a prender
+# (Lo instala deploy/install-guardian.sh en /usr/local/bin. v0.1.432, ADR-S104.)
+set -uo pipefail
+LIB="${GUARDIAN_LIB:-@LIB@}"
+CONF_DIR="${GUARDIAN_CONF_DIR:-@CONF_DIR@}"
+GCONF="$CONF_DIR/guardian.conf"
+RCONF="$CONF_DIR/rescue.conf"
+SERVICE=imagina-rescue
+
+if [ "$(id -u)" -ne 0 ] && [ "${GUARDIAN_TEST:-}" != 1 ]; then
+    echo "Córrelo como root: sudo imagina-rescate ${1:-}"
+    exit 1
+fi
+kv() { [ -f "$1" ] || return 0; { grep -E "^$2=" "$1" || true; } | tail -1 | cut -d= -f2-; }
+set_kv() {
+    # set_kv <archivo> <clave> <valor>: cambia la línea o la agrega.
+    local f=$1 k=$2 v=$3
+    awk -v k="$k" -v v="$v" 'BEGIN { done = 0 }
+        index($0, k "=") == 1 { print k "=" v; done = 1; next }
+        { print }
+        END { if (!done) print k "=" v }' "$f" > "$f.tmp" && cat "$f.tmp" > "$f" && rm -f "$f.tmp"
+}
+not_installed() {
+    echo "La página de rescate no está instalada. Instálala (como root) con:"
+    echo "  bash /opt/imagina-base/current/deploy/install-guardian.sh"
+    exit 1
+}
+DOMAIN=$(kv "$GCONF" DOMAIN)
+PORT=$(kv "$GCONF" RESCUE_PORT); PORT=${PORT:-8899}
+URL="https://$DOMAIN:$PORT"
+
+case "${1:-}" in
+    '')
+        [ -f "$RCONF" ] || not_installed
+        if [ "$(kv "$GCONF" RESCUE_ENABLED)" != 1 ]; then
+            echo "La página de rescate está apagada. Para prenderla: imagina-rescate encender"
+            exit 0
+        fi
+        kind=$(kv "$CONF_DIR/rescue-tls.conf" KIND)
+        if systemctl is-active --quiet "$SERVICE"; then
+            echo "Página de rescate: $URL  (funcionando)"
+        else
+            echo "Página de rescate: $URL  (NO está funcionando; el guardián la vuelve a levantar en un minuto)"
+            echo "  Lo último que dijo: journalctl -u $SERVICE -n 20"
+        fi
+        case "$kind" in
+            domain) echo "  Usa el certificado del dominio." ;;
+            self) echo "  Usa un certificado propio: el navegador avisa «no es seguro»; ábrela igual (Avanzado → Continuar)." ;;
+        esac
+        echo "  Si no abre desde afuera: abre el puerto $PORT/tcp en el firewall del panel y del proveedor."
+        echo "  ¿Perdiste la clave? imagina-rescate clave"
+        ;;
+    clave)
+        [ -f "$RCONF" ] || not_installed
+        NODE=$(kv "$RCONF" NODE); NODE=${NODE:-$(command -v node || true)}
+        [ -n "$NODE" ] || { echo "No encontré node."; exit 1; }
+        raw=$(LC_ALL=C tr -dc 'abcdefghijkmnpqrstuvwxyzACDEFGHJKLMNPQRSTUVWXYZ23456789' < /dev/urandom | head -c 20 || true)
+        pass="${raw:0:5}-${raw:5:5}-${raw:10:5}-${raw:15:5}"
+        hash=$(printf '%s' "$pass" | "$NODE" "$LIB/imagina-rescue.mjs" hash) || { echo "No pude crear la clave."; exit 1; }
+        secret=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+        set_kv "$RCONF" PASSWORD_HASH "$hash"
+        # Un secreto nuevo cierra las sesiones abiertas con la clave anterior.
+        set_kv "$RCONF" SESSION_SECRET "$secret"
+        chmod 0600 "$RCONF"
+        systemctl is-active --quiet "$SERVICE" && systemctl restart "$SERVICE"
+        echo "Clave nueva de la página de rescate ($URL):"
+        echo
+        echo "  $pass"
+        echo
+        echo "Guárdala ahora: no se vuelve a mostrar. La anterior ya no sirve y se cerraron las sesiones abiertas."
+        ;;
+    apagar)
+        [ -f "$GCONF" ] || not_installed
+        set_kv "$GCONF" RESCUE_ENABLED 0
+        systemctl disable --now "$SERVICE" >/dev/null 2>&1 || true
+        echo "Página de rescate apagada. Para prenderla: imagina-rescate encender"
+        ;;
+    encender)
+        [ -f "$RCONF" ] || not_installed
+        set_kv "$GCONF" RESCUE_ENABLED 1
+        systemctl enable "$SERVICE" >/dev/null 2>&1 || true
+        bash "$LIB/imagina-guardian.sh" >/dev/null 2>&1 || true
+        systemctl restart "$SERVICE" >/dev/null 2>&1 || true
+        echo "Página de rescate prendida: $URL"
+        ;;
+    -h|--help|ayuda)
+        sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'
+        ;;
+    *)
+        echo "No conozco «$1». Opciones: imagina-rescate [clave | apagar | encender]"
+        exit 2
+        ;;
+esac

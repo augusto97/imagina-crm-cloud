@@ -9503,3 +9503,42 @@ Límites: si el API está caído la app no puede mandar correos (para eso el
 latido externo); el guardián no sabe arreglar un Nginx hecho a mano (sólo lo
 reinicia) y no repara lo que requiere decisiones (una migración que falla, un
 certificado que el panel no renueva). Runbook: `docs/runbook-guardian.md`.
+
+**Addendum v0.1.432 — reparar sin la app: comandos por SSH y página de rescate.**
+El guardián repara solo, pero cuando hace falta una mano (una caída que no
+supera sus límites, una vuelta atrás decidida por el operador) la única salida
+era la consola, con comandos largos. Ahora hay dos, ninguna depende de la app:
+
+1. **Comandos por SSH** (`/usr/local/bin`, como root): `imagina-estado`
+   (`--check --human`: dice en palabras lo que ve y no toca nada, ni siquiera
+   `status.json`), `imagina-reparar [reiniciar|version-anterior|espacio]`
+   (`--force`/`--restart`/`--rollback`/`--cleanup`: lo pedido a mano salta los
+   límites por hora) e `imagina-rescate [clave|apagar|encender]`. Son atajos al
+   mismo guardián: lo que hacen queda en sus eventos (`manual_*`) y llega por
+   correo como «Se hizo lo que pediste en el servidor».
+2. **Página de rescate** (`imagina-rescue.mjs`, node sin dependencias, puerto
+   propio 8899 por defecto, `--puerto` / `--sin-rescate` en el instalador). No
+   pasa por la app ni por Nginx. Arranca como root SÓLO para leer el
+   certificado del dominio y abrir el puerto, y enseguida `setuid` a
+   `imagina-rescue` (systemd: `ProtectSystem=strict`, sólo escribe en
+   `$STATE/rescue`). **No ejecuta nada**: deja un archivo vacío cuyo NOMBRE es
+   el pedido (`repair-`/`restart-`/`rollback-`/`cleanup-`) en
+   `$STATE/rescue/requests` y el guardián lo hace; un pedido con nombre de
+   acción en la carpeta de la APP sólo adelanta la revisión (la app no pide
+   vueltas atrás). Clave en scrypt (`rescue.conf` de root, 0600), sesión HMAC
+   en cookie `HttpOnly`/`Secure`/`SameSite=Strict` de 2 h, token en cada
+   formulario, `Sec-Fetch-Site`/`Origin` del mismo sitio, 5 claves equivocadas
+   bloquean la IP 15 min, sin JavaScript y CSP `default-src 'none'`. Quién
+   entra lo anota la página en `audit.jsonl` (lo único que puede escribir), el
+   guardián lo pasa a sus eventos tomando sólo campos con forma conocida, y la
+   app manda un correo **cada vez** («Entraron a la página de rescate»). El
+   certificado lo busca el guardián en cada vuelta (`nginx -T`, almacén de
+   Caddy, `/etc/letsencrypt`; si no, uno propio) y reinicia la página cuando
+   se renueva; la vigila y la levanta si se cae (aviso propio, no crítico).
+   Lo último que dijo la app (`journalctl`, sin lo que va después de `?` en
+   las direcciones) queda en `app-log.txt` para leerlo desde la página.
+
+`GUARDIAN_VERSION` pasa a 2: la consola avisa para volver a correr el
+instalador (no se actualiza solo a propósito: sería root ejecutando código que
+el usuario de la app puede escribir). El puerto se abre una vez en el firewall
+del panel/proveedor. Runbook: `docs/runbook-guardian.md` §1.1 y §1.2.

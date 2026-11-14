@@ -1,4 +1,4 @@
-# Reparación automática del servidor, avisos y monitoreo externo (ADR-S104, v0.1.431)
+# Reparación automática del servidor, avisos y monitoreo externo (ADR-S104, v0.1.431 / v0.1.432)
 
 Tres piezas que se complementan:
 
@@ -10,6 +10,13 @@ Tres piezas que se complementan:
 
 La consola lo muestra todo en **Plataforma → Diagnóstico** (tarjetas *Avisos
 del servidor*, *Reparación automática del servidor* y *Monitoreo externo*).
+
+Y si la app no abre (v0.1.432), dos salidas que no dependen de ella:
+
+- **Comandos por SSH** (como root): `imagina-estado`, `imagina-reparar`,
+  `imagina-rescate` (§1.1).
+- **Página de rescate**: `https://tu-dominio:8899`, un servicio aparte con
+  clave (§1.2).
 
 ---
 
@@ -32,9 +39,13 @@ Detecta solo:
   todavía tiene la configuración PHP de ServerAvatar, la repara en el momento.
 
 Si el dominio no sale bien, pásalo: `bash …/install-guardian.sh base.tu-dominio.com`.
+Opciones: `--puerto 8898` (otro puerto para la página de rescate) y
+`--sin-rescate` (no instalarla; los comandos por SSH sí).
 
-Al terminar imprime el informe (`status.json`). En la consola, la tarjeta pasa a
-**Activa** en menos de un minuto.
+Al terminar imprime el informe (`status.json`), los comandos por SSH y la
+dirección y **la clave de la página de rescate — se muestra UNA vez**: guárdala
+en tu gestor de contraseñas. En la consola, la tarjeta pasa a **Activa** en
+menos de un minuto.
 
 **Volver a correrlo** es seguro (idempotente). Se vuelve a correr cuando la
 consola avisa «Hay una versión nueva de la reparación automática».
@@ -48,10 +59,72 @@ consola avisa «Hay una versión nueva de la reparación automática».
 | `/etc/imagina-base/guardian.conf` | Lo detectado (dominio, puertos, modo del servidor web) |
 | `/var/lib/imagina-base/guardian/status.json`, `events.jsonl` | El informe que lee la app (0644) |
 | `/var/lib/imagina-base/guardian/requests/` | Pedidos de «Reparar ahora» (del usuario de la app, 0700). El guardián los borra **sin leerlos** |
-| `imagina-guardian.service` / `.timer` / `.path` | Cada minuto + al instante cuando hay un pedido |
+| `imagina-guardian.service` / `.timer` / `.path` | Cada minuto + al instante cuando hay un pedido (de la app o de la página de rescate) |
+| `/usr/local/bin/imagina-estado`, `imagina-reparar`, `imagina-rescate` | Los comandos por SSH (v0.1.432) |
+| `/usr/local/lib/imagina-base/imagina-rescue.mjs` + `imagina-rescue.service` | La página de rescate (v0.1.432) |
+| `/etc/imagina-base/rescue.conf` (root, 0600) | Puerto, hash de la clave (scrypt) y secreto de las sesiones |
+| `/etc/imagina-base/rescue-tls.conf` | Qué certificado usa la página (lo escribe el guardián) |
+| `/var/lib/imagina-base/guardian/rescue/` (root:imagina-rescue, 0750) | Pedidos de la página (`requests/`), quién entró (`audit.jsonl`) y lo último que dijo la app (`app-log.txt`) |
 
 La app **nunca** ejecuta nada como root: sólo lee el informe y deja un archivo
 vacío para pedir una revisión.
+
+### 1.1 Comandos por SSH (v0.1.432)
+
+Entrar por SSH al servidor (como lo haces siempre) y, como root:
+
+| Comando | Qué hace |
+|---|---|
+| `imagina-estado` | Dice en palabras cómo está todo: ✓ lo que funciona, ✗ lo que no. **No cambia nada.** |
+| `imagina-reparar` | Revisa todo y arregla lo que encuentre, **ya** y sin los límites por hora del guardián |
+| `imagina-reparar reiniciar` | Reinicia la app |
+| `imagina-reparar version-anterior` | Vuelve a la versión anterior (sólo el código; pide escribir `SI`) |
+| `imagina-reparar espacio` | Libera espacio aunque el disco no esté lleno |
+| `imagina-rescate` | La dirección de la página de rescate y si funciona |
+| `imagina-rescate clave` | Clave nueva para la página (la anterior deja de servir y se cierran las sesiones) |
+| `imagina-rescate apagar` / `encender` | Apaga o prende la página de rescate |
+
+Son atajos al mismo guardián (`imagina-guardian.sh --check --human`,
+`--force`, `--restart`, `--rollback`, `--cleanup`): lo que hacen queda en sus
+eventos y llega por correo como «Se hizo lo que pediste en el servidor».
+
+### 1.2 Página de rescate (v0.1.432)
+
+`https://tu-dominio:8899` — un servicio aparte (`imagina-rescue`) que **no pasa
+por la app ni por Nginx**: si la app no abre (o Nginx quedó roto), esta página
+sí. Con la clave muestra lo que ve el guardián, lo último que hizo, lo último
+que dijo la app, y deja **Reparar ahora**, **Reiniciar la app**, **Volver a la
+versión anterior** (con confirmación) y **Liberar espacio**.
+
+**Abrir el puerto** (una vez): el instalador abre `8899/tcp` en `ufw` si está
+activo, pero el firewall del panel y el del proveedor se abren aparte:
+
+- **ServerAvatar**: el servidor → **Firewall** → agregar regla TCP, puerto `8899`.
+- Hetzner Cloud / AWS / DigitalOcean / Vultr: en el firewall de la nube, si lo usas.
+
+**Certificado**: usa el del dominio (lo encuentra en la configuración de Nginx,
+en el almacén de Caddy o en `/etc/letsencrypt`) y se reinicia sola cuando se
+renueva. Si no lo encuentra usa uno propio y el navegador avisa «no es seguro»
+(ábrela igual: Avanzado → Continuar).
+
+**Seguridad**:
+
+- No puede ejecutar nada: deja un archivo **vacío** con el nombre del pedido
+  (`repair-`, `restart-`, `rollback-`, `cleanup-`) y el guardián lo hace. El
+  contenido nunca se lee.
+- Arranca como root sólo para leer el certificado y abrir el puerto, y
+  enseguida pasa al usuario `imagina-rescue` (sin permisos; systemd además le
+  pone `ProtectSystem=strict` y sólo puede escribir en su carpeta).
+- Clave con hash scrypt; cookie `HttpOnly`, `Secure`, `SameSite=Strict`, 2 h;
+  token en cada formulario; 5 claves equivocadas bloquean esa IP 15 minutos.
+- **Cada vez que alguien entra te llega un correo** («Entraron a la página de
+  rescate del servidor», con la IP). Si no fuiste tú: `imagina-rescate clave`.
+- Sin JavaScript; CSP `default-src 'none'`; no se indexa.
+
+Si la página no arranca, el guardián la vuelve a levantar y, si sigue sin
+arrancar, llega un aviso «La página de rescate del servidor no arranca» (la app
+no se ve afectada). `journalctl -u imagina-rescue -n 20` dice por qué (lo más
+común: el puerto lo usa otro programa → reinstala con `--puerto 8898`).
 
 ### Qué repara y con qué límites
 
@@ -79,10 +152,12 @@ journalctl -u imagina-guardian.service -n 50
 ### Desinstalarlo
 
 ```bash
-systemctl disable --now imagina-guardian.timer imagina-guardian.path
-rm -f /etc/systemd/system/imagina-guardian.{service,timer,path}
+systemctl disable --now imagina-guardian.timer imagina-guardian.path imagina-rescue
+rm -f /etc/systemd/system/imagina-guardian.{service,timer,path} /etc/systemd/system/imagina-rescue.service
 systemctl daemon-reload
+rm -f /usr/local/bin/imagina-estado /usr/local/bin/imagina-reparar /usr/local/bin/imagina-rescate
 rm -rf /usr/local/lib/imagina-base /etc/imagina-base /var/lib/imagina-base/guardian
+userdel imagina-rescue
 ```
 
 ---
@@ -105,6 +180,9 @@ plataforma** (Plataforma → Correo). Si no está configurado, la tarjeta
 | La reparación automática no está instalada / dejó de revisar | Revisar | 72 h / 24 h |
 | La reparación automática no pudo arreglar algo | Urgente | 6 h |
 | El servidor se reparó solo | Para saber | — (un correo por tanda) |
+| Se hizo lo que pediste en el servidor (por SSH o la página de rescate) | Para saber | — |
+| Entraron a la página de rescate / claves equivocadas | Revisar | — (cada vez) |
+| La página de rescate no arranca | Revisar | 24 h |
 
 Cuando algo avisado se arregla, llega «Ya está bien: …». **Ya lo vi** en el
 panel cierra un aviso sin correo y la misma clave no vuelve por 30 días.
