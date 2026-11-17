@@ -15501,6 +15501,24 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         anterior) y uno actualizado, `notifications.spec` +1, `collections.spec`
         +1, `whatsapp-web.spec` actualizado, `platform-watch.spec` +2.
 
+  - [x] **Los correos salen al ritmo que acepta el SMTP (v0.1.434, addendum
+        ADR-S11, reporte del usuario con captura de Diagnóstico: avisos
+        «Falló» con «452 4.4.5 Messages per second limit exceeded (2/2)»)**:
+        ninguno se perdía (la cola reintentaba), pero la cola mandaba hasta 5
+        a la vez y los envíos directos más. (a) **Turno por servidor**
+        (`mail/mail-pacer.ts`): cada envío SMTP reserva su turno en Redis con
+        un Lua atómico (clave = hash de servidor + puerto + usuario, compartida
+        entre procesos; sin Redis, dentro del proceso), separado por
+        `1000 / correos por segundo`. (b) **«Correos por segundo»**
+        (`smtpConfigSchema.max_per_second`, 0,1-50, vacío = 1) en Plataforma →
+        Correo y Ajustes → Correo de la empresa, y `SMTP_MAX_PER_SECOND` para
+        el SMTP del `.env`. (c) **Rechazos pasajeros**: un 4xx se reintenta en
+        el lugar (2 s y 5 s) corriendo el turno de todos; 5xx y errores de
+        conexión no. La cola pasa a 5 intentos con 5 s exponencial y el
+        intento que se va a repetir queda como «Se reintenta» (`retrying`) en
+        Diagnóstico, no «Falló». El error de «Probar envío» explica el 452.
+        Tests: `mail-pacer.spec.ts` (5) + front + suites de correo; E2E 11/11.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

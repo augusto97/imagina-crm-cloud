@@ -5,6 +5,11 @@ import { z } from 'zod';
  * la usa si está presente, con fallback al transporte por env. `pass` nunca se
  * devuelve en el GET (solo el flag `configured`).
  */
+/** v0.1.434 — ritmo de envío por SMTP: sin dato, un correo por segundo. */
+export const SMTP_DEFAULT_PER_SECOND = 1;
+export const SMTP_MIN_PER_SECOND = 0.1;
+export const SMTP_MAX_PER_SECOND = 50;
+
 export const smtpConfigSchema = z.object({
     host: z.string().trim().min(1).max(255),
     port: z.coerce.number().int().min(1).max(65535).default(587),
@@ -12,6 +17,13 @@ export const smtpConfigSchema = z.object({
     user: z.string().max(255).optional().default(''),
     pass: z.string().max(2048).optional().default(''),
     from: z.string().trim().min(1).max(255),
+    /**
+     * v0.1.434 — cuántos correos por segundo acepta el servidor. Muchos
+     * proveedores rechazan lo que pasa de su límite con un «452 … limit
+     * exceeded»; la app espacia los envíos a ese servidor (entre todos los
+     * procesos) para no pasarlo. Vacío = `SMTP_DEFAULT_PER_SECOND`.
+     */
+    max_per_second: z.number().min(SMTP_MIN_PER_SECOND).max(SMTP_MAX_PER_SECOND).nullish(),
 });
 export type SmtpConfig = z.infer<typeof smtpConfigSchema>;
 
@@ -30,6 +42,7 @@ export const smtpConfigPublicSchema = z.object({
     secure: z.boolean().default(false),
     user: z.string().default(''),
     from: z.string().default(''),
+    max_per_second: z.number().nullable().default(null),
 });
 export type SmtpConfigPublic = z.infer<typeof smtpConfigPublicSchema>;
 
@@ -131,7 +144,11 @@ export const mailLogEntrySchema = z.object({
     scope: z.enum(['account', 'tenant']),
     tenant_id: z.number().nullable().default(null),
     via: z.enum(MAIL_VIAS),
-    status: z.enum(['sent', 'not_sent', 'failed']),
+    /**
+     * `retrying` (v0.1.434): el servidor lo rechazó por algo pasajero (un
+     * límite por segundo, «intenta más tarde») y la cola lo vuelve a intentar.
+     */
+    status: z.enum(['sent', 'not_sent', 'failed', 'retrying']),
     error: z.string().nullable().default(null),
 });
 export type MailLogEntry = z.infer<typeof mailLogEntrySchema>;

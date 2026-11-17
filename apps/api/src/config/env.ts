@@ -214,6 +214,12 @@ const envSchema = z.object({
     SMTP_SECURE: boolFromString,
     SMTP_USER: z.string().default(''),
     SMTP_PASS: z.string().default(''),
+    // v0.1.434 — correos por segundo que acepta ese SMTP (vacío = 1). La app
+    // espacia los envíos para no recibir «452 … limit exceeded».
+    SMTP_MAX_PER_SECOND: z.preprocess(
+        (v) => (v === '' || v === undefined || v === null ? undefined : v),
+        z.coerce.number().min(0.1).max(50).optional(),
+    ),
 
     // --- Pagos (ADR-S12). Cada proveedor se habilita al setear sus
     // credenciales; sin ellas el proveedor queda deshabilitado (no rompe).

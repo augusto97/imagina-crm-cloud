@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { explainSendError, tlsMismatch } from './smtpHelp';
+import { explainSendError, formatSmtpRate, parseSmtpRate, tlsMismatch } from './smtpHelp';
 
 describe('tlsMismatch', () => {
     it('465 sin conexión segura → avisa (es el timeout clásico)', () => {
@@ -40,5 +40,23 @@ describe('explainSendError', () => {
     it('sin error → mensaje genérico; error desconocido → tal cual', () => {
         expect(explainSendError(undefined)).toBe('No se pudo enviar la prueba.');
         expect(explainSendError('Algo raro pasó')).toBe('Algo raro pasó');
+    });
+});
+
+describe('correos por segundo (v0.1.434)', () => {
+    it('vacío = el valor por defecto; acepta coma decimal; fuera de rango = inválido', () => {
+        expect(parseSmtpRate('')).toBeNull();
+        expect(parseSmtpRate(' 2 ')).toBe(2);
+        expect(parseSmtpRate('0,5')).toBe(0.5);
+        expect(parseSmtpRate('0')).toBeUndefined();
+        expect(parseSmtpRate('100')).toBeUndefined();
+        expect(parseSmtpRate('dos')).toBeUndefined();
+        expect(formatSmtpRate(0.5)).toBe('0,5');
+        expect(formatSmtpRate(null)).toBe('');
+    });
+
+    it('el «452 … limit exceeded» del proveedor dice qué tocar', () => {
+        const msg = explainSendError('Mail command failed: 452 4.4.5 Messages per second limit exceeded (2/2)');
+        expect(msg).toContain('Correos por segundo');
     });
 });

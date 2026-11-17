@@ -35,6 +35,7 @@ import { SmtpMailTransport } from './transports/smtp.transport';
                         user: env.SMTP_USER ?? '',
                         pass: env.SMTP_PASS ?? '',
                         from: env.MAIL_FROM,
+                        max_per_second: env.SMTP_MAX_PER_SECOND ?? null,
                     });
                 }
                 if (env.MAIL_TRANSPORT === 'smtp') {

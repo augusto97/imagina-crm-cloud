@@ -55,6 +55,14 @@ export const MAIL_MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 export interface MailTransport {
     readonly name: string;
     send(message: MailMessage): Promise<void>;
+    /**
+     * v0.1.434 — ritmo de envío: los transportes SMTP dicen a qué servidor
+     * mandan (`paceKey`) y cada cuánto puede salir un correo (`paceIntervalMs`).
+     * Sin estos datos (cuentas de Google/Microsoft, transportes de prueba) no
+     * se espacia.
+     */
+    readonly paceKey?: string;
+    readonly paceIntervalMs?: number;
 }
 
 export const MAIL_TRANSPORT = Symbol('MAIL_TRANSPORT');
