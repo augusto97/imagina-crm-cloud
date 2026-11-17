@@ -430,7 +430,17 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.433**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.434**
+(**los correos salen al ritmo que acepta el SMTP** — cada envío espera su
+turno por servidor (Redis, entre todos los procesos), con «Correos por
+segundo» configurable en Plataforma → Correo y en Ajustes → Correo (vacío =
+1); un rechazo pasajero como el «452 … limit exceeded» se reintenta solo, y
+Diagnóstico lo muestra como «Se reintenta»; addendum ADR-S11). **Pendiente
+del usuario**: si su SMTP de plataforma acepta 2 por segundo, dejarlo en 1 o
+2 en Plataforma → Correo (el default ya es 1); y terminar el cambio de
+`maxmemory-policy` del Redis de ServerAvatar (le dio `NOAUTH`: se le pasó el
+comando con `-u` y la URL del `.env`; preguntar si ese Redis lo comparten
+sitios WordPress). Antes **v0.1.433**
 (**lo programado no se pierde en un reinicio o una caída** — las
 automatizaciones programadas, el resumen diario, los envíos de tableros y las
 tareas de la plataforma ya no pierden la vuelta que quedó esperando: corre una
@@ -2071,6 +2081,28 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-17 · v0.1.434** — **Los correos salen al ritmo que acepta el
+  SMTP** (reporte del usuario con captura de Plataforma → Diagnóstico tras
+  instalar 0.1.431-0.1.433: varios avisos «Falló» con «452 4.4.5 Messages per
+  second limit exceeded (2/2)»). Ninguno se perdió —la cola reintentó y todos
+  quedaron «Enviado»—, pero con 5 correos a la vez el SMTP de plataforma (2
+  por segundo) rechazaba, y un envío masivo de una empresa podía quedarse sin
+  reintentos. `MailPacer` (Redis, Lua atómico, clave por servidor + puerto +
+  usuario) espacia los envíos SMTP; `max_per_second` en el SMTP de plataforma
+  y de cada empresa (UI con «Correos por segundo», vacío = 1) y
+  `SMTP_MAX_PER_SECOND` para el del `.env`; un 4xx se reintenta en el lugar
+  (2 s, 5 s) corriendo el turno de todos; cola con 5 intentos y espera de 5 s;
+  estado nuevo `retrying` («Se reintenta») en Diagnóstico. En la misma
+  conversación: el usuario pidió el paso a paso para pasar de 0.1.430 a la
+  última (instalar el guardián, guardar la clave de la página de rescate,
+  abrir el 8899, Better Stack opcional) y corrió el `CONFIG SET` de Redis, que
+  dio `NOAUTH` (su Redis tiene clave): se le pasó el comando con
+  `redis-cli -u` tomando `REDIS_URL` del `.env`, y la advertencia de que
+  `noeviction` afecta a otros sitios si comparten ese Redis. Sólo le hace
+  falta la política de memoria (el aviso de persistencia no apareció). Tests:
+  `mail-pacer.spec.ts` (5, Redis real y un SMTP de prueba que contesta 452) +
+  `smtpHelp.test.ts` + suites de correo 72/72; E2E navegador 11/11.
 
 - **2026-11-14 · v0.1.433** — **Lo programado no se pierde en un reinicio o
   una caída** (pregunta del usuario: "mientras esté caída, ¿qué pasa con las

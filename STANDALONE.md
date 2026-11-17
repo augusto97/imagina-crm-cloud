@@ -8450,6 +8450,25 @@ las automatizaciones programadas?»):
   por correo si Redis no guarda en disco (sin AOF ni fotos) o si puede borrar
   datos al llenarse (`maxmemory` con una regla distinta de `noeviction`).
 
+**Addendum v0.1.434 (ADR-S11) — ritmo de envío por servidor SMTP.** Con
+avisos simultáneos a dos superadmins, el SMTP de plataforma del usuario
+contestó «452 4.4.5 Messages per second limit exceeded (2/2)»: la cola
+mandaba hasta 5 correos a la vez y los envíos directos (automatizaciones,
+enlaces del portal) más. Cada envío por SMTP ahora reserva su TURNO en Redis
+(`MailPacer`, Lua atómico, clave = hash de servidor + puerto + usuario, así lo
+respetan todos los procesos y la empresa que usa la misma cuenta que la
+plataforma comparte el límite), separado del anterior por
+`1000 / correos por segundo`. El límite se configura en
+`smtpConfigSchema.max_per_second` (Plataforma → Correo y Ajustes → Correo de
+la empresa; `SMTP_MAX_PER_SECOND` para el SMTP del `.env`); vacío = 1 por
+segundo. Un rechazo PASAJERO (un 4xx: límite, «intenta más tarde») se
+reintenta en el lugar dos veces (2 s y 5 s) y corre el turno de todos; los
+permanentes (5xx) y los de conexión no se reintentan ahí. La cola sube a 5
+intentos con espera de 5 s exponencial, y un intento que se va a repetir queda
+en Diagnóstico como «Se reintenta» (`retrying`), no «Falló». Las cuentas de
+Google/Microsoft (ADR-S29) tienen su propio manejo de límites y no se
+espacian.
+
 ### ADR-S99 — Widget de contacto para el sitio de la empresa (v0.1.394)
 
 **Contexto.** Pedido del usuario: «botones de contacto como los de WhatsApp o

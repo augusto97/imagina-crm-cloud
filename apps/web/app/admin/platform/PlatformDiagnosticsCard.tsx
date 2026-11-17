@@ -233,8 +233,18 @@ export function PlatformDiagnosticsCard(): JSX.Element {
 }
 
 function MailRow({ entry }: { entry: MailLogEntry }): JSX.Element {
-    const tone = entry.status === 'sent' ? 'success' : entry.status === 'not_sent' ? 'warning' : 'destructive';
-    const label = entry.status === 'sent' ? __('Enviado') : entry.status === 'not_sent' ? __('No enviado') : __('Falló');
+    // v0.1.434 — `retrying`: el servidor lo rechazó por algo pasajero y la
+    // cola lo vuelve a intentar (antes se leía «Falló» y parecía perdido).
+    const tone =
+        entry.status === 'sent' ? 'success' : entry.status === 'not_sent' || entry.status === 'retrying' ? 'warning' : 'destructive';
+    const label =
+        entry.status === 'sent'
+            ? __('Enviado')
+            : entry.status === 'not_sent'
+              ? __('No enviado')
+              : entry.status === 'retrying'
+                ? __('Se reintenta')
+                : __('Falló');
     return (
         <li className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-py-2.5 imcrm-text-sm" data-mail-status={entry.status}>
             <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">

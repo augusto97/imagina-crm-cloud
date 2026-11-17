@@ -8,7 +8,7 @@ import type {
 } from '@imagina-base/shared';
 import { Check, Copy, Mail, Stethoscope } from 'lucide-react';
 import { api, useSession } from '@/cloud/session';
-import { explainSendError, tlsMismatch } from './smtpHelp';
+import { explainSendError, tlsMismatch, formatSmtpRate, parseSmtpRate } from './smtpHelp';
 import { CloudApiError } from '@/lib/cloud/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,9 +21,11 @@ type Form = {
     user: string;
     pass: string;
     from: string;
+    /** v0.1.434 — correos por segundo (vacío = 1). */
+    rate: string;
 };
 
-const EMPTY: Form = { host: '', port: '587', secure: false, user: '', pass: '', from: '' };
+const EMPTY: Form = { host: '', port: '587', secure: false, user: '', pass: '', from: '', rate: '' };
 
 /**
  * Card "Correo (SMTP)" de Ajustes del WORKSPACE (white-label de correo): la
@@ -58,6 +60,7 @@ export function TenantSmtpPanel({ mode }: { mode?: 'platform' | 'smtp' | 'accoun
             user: c.user,
             pass: '',
             from: c.from,
+            rate: formatSmtpRate(c.max_per_second),
         });
     }, [smtpQ.data]);
 
@@ -81,6 +84,7 @@ export function TenantSmtpPanel({ mode }: { mode?: 'platform' | 'smtp' | 'accoun
                 user: form.user.trim(),
                 pass: form.pass,
                 from: form.from.trim(),
+                max_per_second: parseSmtpRate(form.rate) ?? null,
             }),
         onSuccess: () => {
             setNotice({ kind: 'ok', text: 'Configuración SMTP guardada.' });
@@ -150,7 +154,8 @@ export function TenantSmtpPanel({ mode }: { mode?: 'platform' | 'smtp' | 'accoun
 
     const c: SmtpConfigPublic = smtpQ.data;
     const busy = save.isPending || sendTest.isPending || clear.isPending || diagnose.isPending;
-    const canSave = form.host.trim().length > 0 && form.from.trim().length > 0 && !busy;
+    const rateOk = parseSmtpRate(form.rate) !== undefined;
+    const canSave = form.host.trim().length > 0 && form.from.trim().length > 0 && rateOk && !busy;
 
     return (
         <Card>
@@ -275,6 +280,28 @@ export function TenantSmtpPanel({ mode }: { mode?: 'platform' | 'smtp' | 'accoun
                         onChange={(e) => setForm((f) => ({ ...f, from: e.target.value }))}
                         placeholder="Tu Empresa <no-reply@tu-dominio.com>"
                     />
+                </Field>
+                <Field label="Correos por segundo">
+                    <input
+                        className={inputCls}
+                        value={form.rate}
+                        inputMode="decimal"
+                        placeholder="1"
+                        aria-invalid={!rateOk}
+                        data-testid="smtp-rate"
+                        onChange={(e) => setForm((f) => ({ ...f, rate: e.target.value }))}
+                    />
+                    <span
+                        className={
+                            rateOk
+                                ? 'imcrm-block imcrm-text-xs imcrm-text-muted-foreground'
+                                : 'imcrm-block imcrm-text-xs imcrm-text-rose-700 dark:imcrm-text-rose-300'
+                        }
+                    >
+                        {rateOk
+                            ? 'Los que acepta tu proveedor (vacío = 1). Los envíos se espacian para no pasarlo.'
+                            : 'Escribe un número entre 0,1 y 50.'}
+                    </span>
                 </Field>
                 <div className="imcrm-self-end">
                     <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm">

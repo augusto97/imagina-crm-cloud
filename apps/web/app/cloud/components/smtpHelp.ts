@@ -36,6 +36,11 @@ export function explainSendError(error: string | undefined): string {
     ) {
         return `${raw} — el servidor no logró conectarse al SMTP. Toca «Diagnosticar conexión» para ver qué puerto responde y por qué.`;
     }
+    // v0.1.434 — «452 … limit exceeded», «too many messages»: el proveedor
+    // acepta pocos correos por segundo.
+    if (/\b4\d\d\b/.test(low) && /limit|too many|rate|per second/.test(low)) {
+        return `${raw} — tu proveedor rechazó el envío por pasar su límite de correos por segundo. Baja «Correos por segundo» (por ejemplo a 1) y guarda.`;
+    }
     if (low.includes('invalid login') || low.includes('535') || low.includes('auth')) {
         return `${raw} — la conexión llega pero el servidor rechaza las credenciales: revisa usuario y contraseña.`;
     }
@@ -43,4 +48,21 @@ export function explainSendError(error: string | undefined): string {
         return `${raw} — el servidor rechaza el remitente: usa una dirección autorizada por tu proveedor en el campo From.`;
     }
     return raw;
+}
+
+/**
+ * v0.1.434 — lo escrito en «Correos por segundo»: vacío = el valor por defecto
+ * (`null`); acepta coma decimal («0,5»). `undefined` = inválido.
+ */
+export function parseSmtpRate(text: string): number | null | undefined {
+    const t = text.trim().replace(',', '.');
+    if (t === '') return null;
+    const n = Number(t);
+    if (!Number.isFinite(n) || n < 0.1 || n > 50) return undefined;
+    return Math.round(n * 100) / 100;
+}
+
+/** El número guardado, como se escribe en el campo (con coma decimal). */
+export function formatSmtpRate(n: number | null | undefined): string {
+    return typeof n === 'number' ? String(n).replace('.', ',') : '';
 }

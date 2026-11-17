@@ -41,6 +41,7 @@ export class SmtpController {
             secure: c?.secure ?? false,
             user: c?.user ?? '',
             from: c?.from ?? '',
+            max_per_second: c?.max_per_second ?? null,
             password_unreadable: read.state === 'unreadable',
         };
     }

@@ -71,6 +71,7 @@ export class TenantSmtpService {
                 secure: false,
                 user: '',
                 from: '',
+                max_per_second: null,
                 password_unreadable: false,
             };
         }
@@ -83,6 +84,7 @@ export class TenantSmtpService {
             secure: read.config.secure,
             user: read.config.user,
             from: read.config.from,
+            max_per_second: read.config.max_per_second ?? null,
             password_unreadable: read.state === 'unreadable',
         };
     }
@@ -118,6 +120,7 @@ export class TenantSmtpService {
             secure: input.secure,
             user: input.user,
             from: input.from,
+            max_per_second: input.max_per_second ?? null,
             pass_enc: pass !== '' ? encryptSecret(pass, this.env.SECRETS_KEY) : null,
         });
         return this.get(tenantId);

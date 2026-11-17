@@ -3277,4 +3277,33 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         ].join('\n'),
         action: { label: 'Ir a mis listas', href: '/lists' },
     },
+    {
+        key: 'v0.1.434-correos-a-su-ritmo',
+        version: '0.1.434',
+        date: '2026-11-17',
+        kind: 'improvement',
+        title: 'Los correos salen al ritmo que acepta tu proveedor',
+        summary:
+            'Si tu servidor de correo acepta pocos correos por segundo, la app ahora los espacia para no pasar ese límite, y si el proveedor rechaza uno por un momento, lo vuelve a intentar sola.',
+        media: {
+            slides: [
+                {
+                    title: 'Correos por segundo',
+                    text: 'En Ajustes → Correo (servidor SMTP) dices cuántos acepta tu proveedor. Vacío es uno por segundo, lo que aceptan casi todos.',
+                    illustration: 'correo-envio',
+                },
+                {
+                    title: 'Un rechazo pasajero se reintenta solo',
+                    text: 'Si el proveedor contesta «límite superado» o «intenta más tarde», el correo espera unos segundos y sale, sin que tengas que hacer nada.',
+                    illustration: 'correo-enviar',
+                },
+            ],
+        },
+        body: [
+            '- Sólo si usas tu propio servidor SMTP: **Ajustes → Correo → Tu servidor SMTP → Correos por segundo**.',
+            '- Si tu proveedor permite más (por ejemplo 10), escríbelo y los envíos grandes saldrán más rápido.',
+        ].join('\n'),
+        action: { label: 'Ir a Correo', href: '/settings?s=correo' },
+        audience: { roles: ['admin'] },
+    },
 ];

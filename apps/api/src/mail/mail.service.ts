@@ -29,6 +29,8 @@ import { PlatformSettingsService } from './platform-settings.service';
 import { TenantSmtpService } from './tenant-smtp.service';
 import { SmtpMailTransport } from './transports/smtp.transport';
 import { createWorker } from '../redis/queue-runtime';
+import { REDIS } from '../redis/redis.module';
+import { MailPacer, isRateLimitRejection, isTransientSmtpRejection } from './mail-pacer';
 
 export const MAIL_QUEUE = 'mail';
 
@@ -60,7 +62,55 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
         @Optional() @Inject(MAIL_ACCOUNT_SENDER) private readonly accountSender?: TenantMailAccountSender,
         // v0.1.285 (ADR-S44) — el correo de la empresa que deja de salir abre un problema.
         @Optional() private readonly incidents?: IncidentHub,
+        // v0.1.434 — el turno de cada servidor SMTP vive en Redis (lo comparten
+        // todos los procesos). Sin Redis, el ritmo vale dentro del proceso.
+        @Optional() @Inject(REDIS) private readonly redis?: IORedis,
     ) {}
+
+    private pacerInstance: MailPacer | null = null;
+    private get pacer(): MailPacer {
+        if (!this.pacerInstance) this.pacerInstance = new MailPacer(this.redis ?? null);
+        return this.pacerInstance;
+    }
+
+    /**
+     * v0.1.434 — esperas antes de volver a intentar EN EL LUGAR un rechazo
+     * pasajero del servidor (un 4xx: «452 … limit exceeded», «intenta más
+     * tarde»). Cubre también los envíos directos (automatizaciones, enlaces del
+     * portal), que no pasan por la cola. Lo que siga fallando queda para los
+     * reintentos de la cola (o, en un envío directo, sube con el motivo).
+     */
+    protected retryBackoffMs: readonly number[] = [2_000, 5_000];
+
+    /**
+     * Envía respetando el ritmo del servidor: espera su turno, y si el servidor
+     * lo rechaza por algo pasajero vuelve a intentar tras una pausa — corriendo
+     * también el turno de los demás envíos a ese servidor, para que no sigan
+     * chocando contra el mismo límite.
+     */
+    private async sendPaced(transport: MailTransport, message: MailMessage): Promise<void> {
+        const key = transport.paceKey;
+        const interval = transport.paceIntervalMs;
+        if (!key || !interval) {
+            await transport.send(message);
+            return;
+        }
+        let notBefore = 0;
+        for (let attempt = 0; ; attempt++) {
+            await this.pacer.wait(key, interval, notBefore);
+            try {
+                await transport.send(message);
+                return;
+            } catch (err) {
+                const backoff = this.retryBackoffMs[attempt];
+                if (backoff === undefined || !isTransientSmtpRejection(err)) throw err;
+                notBefore = Date.now() + backoff;
+                this.logger.warn(
+                    `El servidor de correo rechazó un envío por algo pasajero${isRateLimitRejection(err) ? ' (límite de envío)' : ''}; se reintenta en ${backoff} ms: ${errorText(err)}`,
+                );
+            }
+        }
+    }
 
     /**
      * Transporte a usar en cada envío: la config SMTP guardada por el superadmin
@@ -220,17 +270,19 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
         let reserved = false;
         try {
             if (metered) reserved = await this.quota!.reserve(message.tenantId!, recipients);
-            await transport.send(outgoing);
+            await this.sendPaced(transport, outgoing);
         } catch (err) {
             if (reserved) {
                 await this.quota!.release(message.tenantId!, recipients).catch((e: unknown) =>
                     this.logger.warn(`No se pudo devolver la cuota del tenant ${message.tenantId}: ${String(e)}`),
                 );
             }
-            recordMail({ ...base, via, status: 'failed', error: errorText(err) });
-            if (final || err instanceof EmailQuotaExceededError || err instanceof MailAccountLimitError) {
-                this.reportMail(message.tenantId, via, err);
-            }
+            // Sin cuota o con el límite diario de la cuenta no hay reintento.
+            const terminal = final || err instanceof EmailQuotaExceededError || err instanceof MailAccountLimitError;
+            // v0.1.434 — un intento que la cola va a repetir no es «Falló»:
+            // en Diagnóstico se lee «Se reintenta» (antes parecía perdido).
+            recordMail({ ...base, via, status: terminal ? 'failed' : 'retrying', error: errorText(err) });
+            if (terminal) this.reportMail(message.tenantId, via, err);
             throw err;
         }
         // v0.1.238 — el transporte de registro NO envía: se anota como "no
@@ -327,9 +379,11 @@ export class MailService implements OnModuleInit, OnApplicationShutdown {
             await this.sendNow(message);
             return;
         }
+        // v0.1.434 — más paciencia: 5 intentos (5 s, 10 s, 20 s, 40 s) además
+        // de los reintentos en el lugar para los rechazos pasajeros.
         await this.queue.add('send', message, {
-            attempts: 3,
-            backoff: { type: 'exponential', delay: 2000 },
+            attempts: 5,
+            backoff: { type: 'exponential', delay: 5000 },
             removeOnComplete: 100,
             removeOnFail: 500,
         });

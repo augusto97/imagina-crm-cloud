@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { SmtpConfig } from '@imagina-base/shared';
 import { createTransport, type Transporter } from 'nodemailer';
+import { paceIntervalMs, paceKey } from '../mail-pacer';
 import type { MailMessage, MailTransport } from '../mail.types';
 
 /**
@@ -13,13 +14,18 @@ export class SmtpMailTransport implements MailTransport {
     private readonly logger = new Logger('MailTransport');
     private readonly transporter: Transporter;
     private readonly from: string;
+    readonly paceKey: string;
+    readonly paceIntervalMs: number;
 
     /**
      * `servername`: con `host` fijado a una IP (SEC-27), el certificado TLS se
      * valida contra el NOMBRE del servidor, no contra la IP.
      */
-    constructor(config: SmtpConfig, opts: { servername?: string } = {}) {
+    constructor(config: SmtpConfig, opts: { servername?: string; perSecond?: number | null } = {}) {
         this.from = config.from;
+        // El turno es del SERVIDOR real (con el host fijado a una IP, su nombre).
+        this.paceKey = paceKey(opts.servername ?? config.host, config.port, config.user ?? '');
+        this.paceIntervalMs = paceIntervalMs(opts.perSecond !== undefined ? opts.perSecond : config.max_per_second);
         this.transporter = createTransport({
             host: config.host,
             ...(opts.servername ? { tls: { servername: opts.servername } } : {}),

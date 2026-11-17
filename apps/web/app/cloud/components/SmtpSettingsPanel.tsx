@@ -4,6 +4,7 @@ import type { SmtpConfigPublic } from '@imagina-base/shared';
 import { CloudApiError } from '@/lib/cloud/client';
 import { Mail } from 'lucide-react';
 import { api } from '@/cloud/session';
+import { formatSmtpRate, parseSmtpRate } from './smtpHelp';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,9 +16,11 @@ type Form = {
     user: string;
     pass: string;
     from: string;
+    /** v0.1.434 — correos por segundo (vacío = 1). */
+    rate: string;
 };
 
-const EMPTY: Form = { host: '', port: '587', secure: false, user: '', pass: '', from: '' };
+const EMPTY: Form = { host: '', port: '587', secure: false, user: '', pass: '', from: '', rate: '' };
 
 /**
  * Config SMTP de plataforma (ADR-S11). Sólo la ve el superadmin: si
@@ -48,6 +51,7 @@ export function SmtpSettingsPanel(): JSX.Element | null {
             user: c.user,
             pass: '',
             from: c.from,
+            rate: formatSmtpRate(c.max_per_second),
         });
     }, [smtpQ.data]);
 
@@ -60,6 +64,7 @@ export function SmtpSettingsPanel(): JSX.Element | null {
                 user: form.user.trim(),
                 pass: form.pass,
                 from: form.from.trim(),
+                max_per_second: parseSmtpRate(form.rate) ?? null,
             }),
         onSuccess: () => {
             setNotice({ kind: 'ok', text: 'Configuración SMTP guardada.' });
@@ -87,7 +92,8 @@ export function SmtpSettingsPanel(): JSX.Element | null {
     if (!smtpQ.data) return null;
 
     const c: SmtpConfigPublic = smtpQ.data;
-    const canSave = form.host.trim().length > 0 && form.from.trim().length > 0 && !save.isPending;
+    const rateOk = parseSmtpRate(form.rate) !== undefined;
+    const canSave = form.host.trim().length > 0 && form.from.trim().length > 0 && rateOk && !save.isPending;
 
     return (
         <Card>
@@ -175,6 +181,28 @@ export function SmtpSettingsPanel(): JSX.Element | null {
                         onChange={(e) => setForm((f) => ({ ...f, from: e.target.value }))}
                         placeholder="Mi empresa <no-reply@tu-dominio.com>"
                     />
+                </Field>
+                <Field label="Correos por segundo">
+                    <input
+                        className={inputCls}
+                        value={form.rate}
+                        inputMode="decimal"
+                        placeholder="1"
+                        aria-invalid={!rateOk}
+                        data-testid="smtp-rate"
+                        onChange={(e) => setForm((f) => ({ ...f, rate: e.target.value }))}
+                    />
+                    <span
+                        className={
+                            rateOk
+                                ? 'imcrm-block imcrm-text-xs imcrm-text-muted-foreground'
+                                : 'imcrm-block imcrm-text-xs imcrm-text-rose-700 dark:imcrm-text-rose-300'
+                        }
+                    >
+                        {rateOk
+                            ? 'Los que acepta tu proveedor (vacío = 1). Los envíos se espacian para no pasarlo.'
+                            : 'Escribe un número entre 0,1 y 50.'}
+                    </span>
                 </Field>
                 <label className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-self-end imcrm-text-sm">
                     <input
