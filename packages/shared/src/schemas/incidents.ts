@@ -35,6 +35,8 @@ export const INCIDENT_SOURCES = [
     'ai_agent',
     // v0.1.413 (ADR-S103) — una tienda que no pudo preparar un pago en línea.
     'shop',
+    // v0.1.442 (ADR-S105) — un webhook de eventos que se pausó por fallas.
+    'webhook',
 ] as const;
 export type IncidentSource = (typeof INCIDENT_SOURCES)[number];
 
@@ -54,6 +56,7 @@ export const INCIDENT_SOURCE_LABELS: Record<IncidentSource, string> = {
     helpdesk: 'Mesa de ayuda',
     ai_agent: 'Agente de IA',
     shop: 'Tienda online',
+    webhook: 'Webhook',
 };
 
 export interface IncidentDto {
@@ -129,6 +132,8 @@ export function incidentLink(i: Pick<IncidentDto, 'source' | 'source_id' | 'list
             return i.source_id ? `/agents/${i.source_id}` : '/agents';
         case 'shop':
             return i.source_id ? `/shops/${i.source_id}?t=payment` : '/lists';
+        case 'webhook':
+            return '/settings?s=api';
         default:
             return '/settings?s=problemas';
     }

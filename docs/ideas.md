@@ -25,8 +25,8 @@
 El usuario pidió "estabilizar y mejorar la app" y aprobó todo el plan ("Ok, has
 todos los que propones"): v0.1.435 a v0.1.440 de estabilidad (hechas; detalle
 en `CONTINUIDAD.md` §10) y después estos módulos, que salen de este banco al
-publicarse: **G1 + G2** (API pública con webhooks de eventos y la app de n8n;
-la API con tokens salió en v0.1.441, faltan los webhooks de eventos y n8n),
+publicarse: **G2** (la app de n8n; la API con tokens salió en v0.1.441 y los
+webhooks de eventos en v0.1.442),
 **E1 + E2** en parte («buscar registros», «crear o actualizar por un dato»,
 «cuando se agrega un comentario»), **A14** (duplicados y fusionar), **D6**
 (firma electrónica) y **G8** (facturación DIAN: falta elegir proveedor y tener
@@ -42,8 +42,7 @@ citas (D5) y pidió guardar el resto para después.
 
 | Idea | Qué es | Qué hay hoy | Decisiones pendientes |
 |---|---|---|---|
-| **G1 · Webhooks de eventos** (la API REST con tokens, límites y OpenAPI salió en v0.1.441) | Suscripciones a eventos (registro creado, cambiado o borrado; formulario enviado; pago recibido) firmadas y con reintentos. | Tokens personales y OAuth para el MCP (v0.1.183-184). Webhooks entrantes por automatización. «Llamar webhook» saliente. API REST con tokens (v0.1.441). | Qué eventos y con qué firma. |
-| **G2 · Apps oficiales en n8n, Make y Zapier** | Disparadores y acciones de Imagina Base en esos catálogos. Requiere G1. | — | Por dónde empezar (propuesta: n8n, como paquete de npm). Make y Zapier piden cuentas de desarrollador del usuario y pasan revisión. |
+| **G2 · Apps oficiales en n8n, Make y Zapier** | Disparadores y acciones de Imagina Base en esos catálogos. | API REST con tokens (v0.1.441) y webhooks de eventos firmados (v0.1.442). | Por dónde empezar (propuesta: n8n, como paquete de npm). Make y Zapier piden cuentas de desarrollador del usuario y pasan revisión. |
 | **D6 · Firma electrónica de documentos** | Los PDF de la app (cotización, contrato, cuenta de cobro) se firman por enlace o desde el portal. Código por correo o WhatsApp; prueba con IP, fecha, hash y una hoja de constancia. Al firmar cambia el estado y puede seguir una automatización. Es firma electrónica simple (Ley 527 de 1999, Decreto 2364 de 2012), no digital certificada. | PDF congelados al emitir, portal, correos con la marca (v0.1.266-290). | Firma propia (recomendado) o DocuSign. |
 | **G8 · Facturación electrónica DIAN** | Factura y nota crédito desde la ficha con los ítems existentes, vía un proveedor autorizado. Vuelven el CUFE, el XML y el PDF validado. Después: México (CFDI), Perú, Ecuador y Chile. | «Factura (no electrónica)» en PDF (v0.1.290). | Proveedor (Factus, Alegra, Siigo, The Factory HKA…); cuenta por empresa (recomendado). Hacen falta credenciales de prueba para probar de verdad. |
 
@@ -153,7 +152,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 ### G. Integraciones y ecosistema
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
-| G1, G2, G8 | — | Ver §1 (pospuestos). |
+| G2, G8 | — | Ver §1 (pospuestos). |
 | G3 · Google Sheets sincronizado en los dos sentidos | alto · M-L | Pospuesto por el usuario al armar la fase 6 (2026-10-26). El permiso `spreadsheets` ya está. |
 | G4 · Google Calendar / Outlook sincronizado en los dos sentidos | medio-alto · M | **En parte hecho en v0.1.350**: en la agenda de citas, mover o borrar el evento en el calendario de quien atiende mueve o cancela la cita. Falta para la vista Calendario de cualquier lista. |
 | G5 · Importadores (Airtable, Notion, ClickUp, Trello, monday) | alto · M c/u | Pospuesto por el usuario al armar la fase 6. Excel con varias hojas ya existe (v0.1.299). |

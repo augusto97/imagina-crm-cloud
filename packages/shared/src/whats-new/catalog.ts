@@ -3365,4 +3365,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a la API', href: '/settings?s=api' },
         audience: { roles: ['admin'] },
     },
+    {
+        key: 'v0.1.442-webhooks-de-eventos',
+        version: '0.1.442',
+        date: '2026-11-18',
+        kind: 'feature',
+        title: 'Avisa a n8n, Make o tu sistema cuando pasa algo',
+        summary:
+            'En Ajustes → API → Webhooks le das una dirección y te avisamos al momento cuando se crea, cambia o borra un registro, se envía un formulario o entra un pago.',
+        media: {
+            slides: [
+                {
+                    title: 'Elige cuándo avisar',
+                    text: 'Registros nuevos, cambios (con el valor de antes y el de ahora), borrados, formularios enviados y pagos recibidos, de todas tus listas o sólo de algunas.',
+                    illustration: 'auto-webhook',
+                },
+                {
+                    title: 'Firmado y con reintentos',
+                    text: 'Cada aviso va firmado con un secreto. Si el otro programa no responde, se reintenta durante el día, y en Entregas ves cada aviso y lo vuelves a enviar.',
+                    illustration: 'integ-connect-once',
+                },
+            ],
+        },
+        body: [
+            '- Toca **Probar** para mandar un aviso de prueba.',
+            '- El webhook manda sólo lo que puede ver quien lo creó.',
+            '- Si falla muchas veces seguidas se pausa solo y aparece en **Problemas**.',
+        ].join('\n'),
+        action: { label: 'Ir a Webhooks', href: '/settings?s=api' },
+        audience: { roles: ['admin'] },
+    },
 ];

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import type { BookingEventInfo, ChecklistCompletedInfo, EmailEventInfo, SlaEventInfo, SubscriptionEventInfo, WhatsappEventInfo } from '@imagina-base/shared';
+import type { BookingEventInfo, ChecklistCompletedInfo, EmailEventInfo, SlaEventInfo, SubscriptionEventInfo, WebhookEvent, WhatsappEventInfo } from '@imagina-base/shared';
 import { randomUUID } from 'node:crypto';
 import type { JobsOptions, Queue } from 'bullmq';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -7,6 +7,7 @@ import type Redis from 'ioredis';
 import type { ApprovalEventInfo } from '../approvals/approval-hub';
 import { DRIZZLE, type Db } from '../db/client';
 import { automations, fields as fieldsTable } from '../db/schema';
+import { EventWebhookHub } from '../event-webhooks/event-hub';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
 import { REDIS } from '../redis/redis.module';
 
@@ -34,6 +35,14 @@ const TRIGGER_TYPES_FOR_EVENT: Record<string, readonly string[]> = {
     sla_alert: ['sla_alert'],
     // v0.1.367 — una suscripción del registro se cobró, falló, venció, se canceló…
     subscription_event: ['subscription_event'],
+};
+
+/** v0.1.442 — Qué evento de webhook sale de cada disparo (los demás no avisan afuera). */
+const OUTGOING_EVENT: Partial<Record<TriggerEvent['trigger'], WebhookEvent>> = {
+    record_created: 'record.created',
+    record_updated: 'record.updated',
+    form_submitted: 'form.submitted',
+    payment_received: 'payment.received',
 };
 
 /** Cuánto vive en Redis la lista de disparadores activos de una lista (se invalida al guardar). */
@@ -252,6 +261,7 @@ export class AutomationDispatcher {
         @Optional() private readonly incidents?: IncidentHub,
         @Optional() @Inject(DRIZZLE) private readonly db?: Db,
         @Optional() @Inject(REDIS) private readonly redis?: Redis,
+        @Optional() private readonly eventHub?: EventWebhookHub,
     ) {}
 
     /**
@@ -524,6 +534,21 @@ export class AutomationDispatcher {
     }
 
     dispatch(event: TriggerEvent): void {
+        // v0.1.442 — lo que dispara automatizaciones también avisa a los
+        // webhooks de eventos (alta, cambio, formulario enviado, pago).
+        const outgoing = OUTGOING_EVENT[event.trigger];
+        if (outgoing && this.eventHub) {
+            this.eventHub.emit({
+                tenantId: event.tenantId,
+                event: outgoing,
+                listId: event.listId,
+                recordId: event.recordId,
+                before: event.before,
+                after: event.after,
+                ...(event.form ? { form: event.form as unknown as Record<string, unknown> } : {}),
+                ...(event.payment ? { payment: event.payment } : {}),
+            });
+        }
         const queue = this.queue;
         if (!queue) return;
         const enqueue = (): void => {

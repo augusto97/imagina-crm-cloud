@@ -430,15 +430,20 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.441**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.442**
+(**webhooks de eventos** — Ajustes → API → Webhooks: la app le avisa a otro
+programa (n8n, Make, Zapier, un ERP) con un POST firmado cuando se crea,
+cambia o borra un registro, se envía un formulario o entra un pago; actúa como
+quien lo creó, reintenta durante el día, «Entregas» con «Volver a enviar», se
+pausa solo tras 20 fallas seguidas (Problema) o si quien lo creó pierde el
+acceso. **Sigue** v0.1.443 la app de n8n). Antes **v0.1.441**
 (**API pública con tokens** — Ajustes → API: tokens propios para la API REST
 (no sirven para el MCP ni al revés), sólo leer o leer y escribir, con
 vencimiento; abren una lista blanca de rutas de la misma API de la app
 (listas, campos, vistas, registros, comentarios, búsqueda, archivos, personas
 y equipos), actúan como la persona y en su empresa, con 300 pedidos por
 minuto por token y el documento OpenAPI en `/api/v1/openapi.json`; capacidad
-nueva `use_api`; ADR-S105 y `docs/api.md`. **Siguen** v0.1.442 webhooks de
-eventos y v0.1.443 la app de n8n). Antes **v0.1.440**
+nueva `use_api`; ADR-S105 y `docs/api.md`). Antes **v0.1.440**
 (**cada copia de seguridad se prueba restaurándola** — en Plataforma → Copias
 de seguridad el escudo de cada copia la restaura en una base TEMPORAL del mismo
 Postgres (`scripts/snapshot-verify.sh`, la base de la app no se toca), revisa
@@ -2163,6 +2168,19 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-18 · v0.1.442** — **Webhooks de eventos** (G1 completo; addendum
+  ADR-S105). Suscripciones firmadas (`webhook_subscriptions` +
+  `webhook_deliveries`, migración 0129) a `record.created/updated/deleted`,
+  `form.submitted` y `payment.received`, por lista o todas, desde Ajustes →
+  API → Webhooks o por la API (`/webhooks`). Actúan con el acceso vigente de
+  quien las creó (se pausan si lo pierde), entrega durable con `SKIP LOCKED`,
+  reintentos a 1 min-12 h, 410 y 20 fallas seguidas pausan (Problema fuente
+  `webhook`), historial 30 días con «Volver a enviar». Bug del E2E: el
+  despertar de la cola usa dos ids (`kickDrain`) para que un evento que llega
+  mientras se manda otro no espere al tic. Sigue v0.1.443 (la app de n8n) y
+  después el resto del plan (automatizaciones, duplicados, firma, DIAN y modo
+  agencia: los dos últimos esperan decisiones del usuario).
 
 - **2026-11-18 · v0.1.441** — **API pública con tokens** (primer módulo
   nuevo del plan; G1, ADR-S105). `personal_access_tokens.use` (`mcp` | `api`,

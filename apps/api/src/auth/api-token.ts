@@ -57,6 +57,14 @@ export const API_TOKEN_ROUTES: readonly ApiTokenRoute[] = [
     { route: '/api/v1/me/users/:id', methods: READ },
     { route: '/api/v1/teams', methods: READ },
     { route: '/api/v1/teams/:id', methods: READ },
+    // v0.1.442 — Webhooks de eventos: un programa (n8n, Make, Zapier) registra
+    // su dirección al encender un flujo y la borra al apagarlo.
+    { route: '/api/v1/webhooks', methods: [...READ, 'POST'] },
+    { route: '/api/v1/webhooks/:id', methods: [...READ, 'PATCH', 'DELETE'] },
+    { route: '/api/v1/webhooks/:id/test', methods: ['POST'] },
+    { route: '/api/v1/webhooks/:id/rotate-secret', methods: ['POST'] },
+    { route: '/api/v1/webhooks/:id/deliveries', methods: READ },
+    { route: '/api/v1/webhooks/:id/deliveries/:deliveryId/redeliver', methods: ['POST'] },
 ];
 
 export type ApiTokenRouteVerdict = { ok: true } | { ok: false; code: 'api_route_not_allowed' | 'api_read_only'; message: string };

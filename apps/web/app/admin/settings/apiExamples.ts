@@ -32,3 +32,20 @@ export function apiExamples(base: string, token: string): ApiExample[] {
         },
     ];
 }
+
+/**
+ * v0.1.442 — Cómo comprobar la firma de un webhook (Node.js). La cabecera
+ * `X-Webhook-Signature` trae `t=<segundos>,v1=<hex>`; la firma es el HMAC-SHA256
+ * del secreto sobre `<t>.<cuerpo crudo>`. Se rechaza un aviso de más de 5 min.
+ */
+export function webhookVerifyExample(): string {
+    return [
+        "const crypto = require('crypto');",
+        '// cuerpo = el texto crudo del pedido, tal como llegó',
+        "const [t, v1] = cabecera('X-Webhook-Signature').split(',').map((p) => p.split('=')[1]);",
+        "const esperada = crypto.createHmac('sha256', SECRETO).update(`${t}.${cuerpo}`).digest('hex');",
+        'const valida = v1 && v1.length === esperada.length',
+        '  && crypto.timingSafeEqual(Buffer.from(v1), Buffer.from(esperada))',
+        '  && Math.abs(Date.now() / 1000 - Number(t)) < 300;',
+    ].join('\n');
+}

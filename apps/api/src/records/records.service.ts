@@ -84,6 +84,7 @@ import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { compileFilterTree, descriptionSearchFilterable, fieldTypedExpr, type FilterableField, type QueryClock } from './query-builder';
 import { RecurrencesService } from '../recurrences/recurrences.service';
 import { RecordChangeHub } from './record-change-hub';
+import { EventWebhookHub } from '../event-webhooks/event-hub';
 import { NotifyHub } from '../notifications/notify-hub';
 import { RecordsRepository, type RecordListRow, type RecordRow } from './records.repository';
 import { pendingApprovalCounts } from '../approvals/approval-sql';
@@ -213,6 +214,8 @@ export class RecordsService {
         // A8 — dependencias (bloqueantes abiertos del listado y reprogramación
         // en cadena). Sin estado: sin DI (specs posicionales) se crea uno.
         @Optional() depsRepo?: DependenciesRepository,
+        // v0.1.442 — el borrado avisa a los webhooks de eventos.
+        @Optional() private readonly eventHub?: EventWebhookHub,
     ) {
         this.deps = depsRepo ?? new DependenciesRepository();
     }
@@ -1889,9 +1892,11 @@ export class RecordsService {
         const listId = list.id;
         // v0.1.336 — en una lista espejo sólo se quita lo que la fuente ya borró.
         const mirror = readMirrorListMarker(list.settings);
+        let snapshot: { createdBy: number; data: Record<string, unknown> } | null = null;
         const deleted = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, listId, id);
             if (!current || !this.aclCanReach(list, actor, 'delete', current)) return false;
+            snapshot = { createdBy: current.createdBy, data: (current.data ?? {}) as Record<string, unknown> };
             if (mirror) {
                 const parent = current.parentId ? await this.repo.findById(tx, tenantId, listId, current.parentId) : null;
                 if (!rowIsGone(mirror, current.data, parent?.data ?? null)) throw mirrorStillAliveError(mirror);
@@ -1921,6 +1926,10 @@ export class RecordsService {
         });
         if (!deleted) throw recordNotFound(id);
         if (!opts.silent) this.realtime.records(tenantId, listId);
+        // v0.1.442 — el webhook decide si quien lo creó alcanzaba el registro
+        // (alcance «sólo los suyos» / «asignados») con lo que tenía al borrarse.
+        const snap = snapshot as { createdBy: number; data: Record<string, unknown> } | null;
+        this.eventHub?.emit({ tenantId, event: 'record.deleted', listId, recordId: id, ...(snap ? { row: snap } : {}) });
     }
 
     /**

@@ -80,6 +80,8 @@ import {
     recordFollows,
     reminders,
     personalAccessTokens,
+    webhookDeliveries,
+    webhookSubscriptions,
     recurrences,
     relations,
     recordDependencies,
@@ -524,6 +526,9 @@ export class PlatformService {
             await tx.delete(billingPayments).where(eq(billingPayments.tenantId, id));
             await tx.delete(billingSubscriptions).where(eq(billingSubscriptions.tenantId, id));
             await tx.delete(personalAccessTokens).where(eq(personalAccessTokens.tenantId, id));
+            // v0.1.442 — webhooks de eventos y su historial de entregas.
+            await tx.delete(webhookDeliveries).where(eq(webhookDeliveries.tenantId, id));
+            await tx.delete(webhookSubscriptions).where(eq(webhookSubscriptions.tenantId, id));
             // C1 — equipos y sus personas.
             await tx.delete(teamMembers).where(eq(teamMembers.tenantId, id));
             await tx.delete(teams).where(eq(teams.tenantId, id));

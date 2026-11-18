@@ -5,6 +5,7 @@ import {
     batchDeleteRecordsSchema,
     batchUpdateRecordsSchema,
     commentSchema,
+    createWebhookSubscriptionSchema,
     createCommentSchema,
     createFieldSchema,
     createListSchema,
@@ -20,7 +21,9 @@ import {
     updateFieldSchema,
     updateListSchema,
     updateRecordSchema,
+    updateWebhookSubscriptionSchema,
     viewSchema,
+    WEBHOOK_EVENTS,
 } from '@imagina-base/shared';
 import type { ZodTypeAny } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
@@ -64,6 +67,7 @@ const P = {
     field: pathParam('field', 'Id numérico del campo o su slug.'),
     id: pathParam('id', 'Id numérico.', 'integer'),
     recordId: pathParam('recordId', 'Id numérico del registro.', 'integer'),
+    deliveryId: pathParam('deliveryId', 'Id numérico de la entrega.', 'integer'),
 };
 
 /** Errores comunes de toda ruta con token. */
@@ -260,6 +264,57 @@ export function buildOpenApiDocument(input: OpenApiInput): Json {
         '/teams/{id}': {
             get: op('Personas', 'Un equipo', { parameters: [P.id] }, { '200': ok('El equipo.', dataOf(ref('Team'))) }),
         },
+        // v0.1.442 — webhooks de eventos: n8n, Make o Zapier registran su dirección y se enteran en el momento.
+        '/webhooks': {
+            get: op('Webhooks', 'Webhooks de eventos (los tuyos; un administrador ve todos)', {}, { '200': ok('Los webhooks.', listOf(ref('Webhook'))) }),
+            post: op('Webhooks', 'Registrar un webhook (el secreto de firma viaja sólo en esta respuesta)', { requestBody: body(ref('CreateWebhook')) }, {
+                '201': ok('El webhook con su secreto.', ref('CreatedWebhook')),
+            }),
+        },
+        '/webhooks/{id}': {
+            get: op('Webhooks', 'Un webhook', { parameters: [P.id] }, { '200': ok('El webhook.', ref('Webhook')) }),
+            patch: op('Webhooks', 'Cambiar, pausar o encender un webhook', { parameters: [P.id], requestBody: body(ref('UpdateWebhook')) }, {
+                '200': ok('El webhook.', ref('Webhook')),
+            }),
+            delete: op('Webhooks', 'Borrar un webhook (deja de avisar al instante)', { parameters: [P.id] }, { '204': noContent }),
+        },
+        '/webhooks/{id}/test': {
+            post: op('Webhooks', 'Mandar un aviso de prueba (`ping`) firmado', { parameters: [P.id] }, { '200': ok('Qué respondió la dirección.', ref('WebhookTestResult')) }),
+        },
+        '/webhooks/{id}/rotate-secret': {
+            post: op('Webhooks', 'Cambiar el secreto de firma (el nuevo viaja sólo en esta respuesta)', { parameters: [P.id] }, {
+                '200': ok('El webhook con el secreto nuevo.', ref('CreatedWebhook')),
+            }),
+        },
+        '/webhooks/{id}/deliveries': {
+            get: op('Webhooks', 'Las últimas entregas de un webhook', {
+                parameters: [P.id, queryParam('limit', 'Cuántas (1-100, 30 por defecto).', { type: 'integer' }), queryParam('before', 'Las anteriores a esta entrega (id).', { type: 'integer' })],
+            }, { '200': ok('Las entregas, de la más nueva a la más vieja.', listOf(ref('WebhookDelivery'))) }),
+        },
+        '/webhooks/{id}/deliveries/{deliveryId}/redeliver': {
+            post: op('Webhooks', 'Volver a mandar una entrega (mismo id de evento y mismo contenido)', { parameters: [P.id, P.deliveryId] }, {
+                '200': ok('La entrega, otra vez en espera.', ref('WebhookDelivery')),
+            }),
+        },
+    };
+
+    const webhookProps: Json = {
+        id: { type: 'integer' },
+        name: { type: 'string' },
+        url: { type: 'string' },
+        events: { type: 'array', items: { type: 'string', enum: [...WEBHOOK_EVENTS] } },
+        list_ids: { type: ['array', 'null'], items: { type: 'integer' }, description: '`null` = todas las listas que ve quien lo creó.' },
+        active: { type: 'boolean' },
+        disabled_reason: { type: ['string', 'null'] },
+        secret_hint: { type: 'string', description: 'Los últimos 4 caracteres del secreto.' },
+        created_by: { type: 'integer' },
+        created_by_name: { type: ['string', 'null'] },
+        source: { type: 'string', enum: ['app', 'api'] },
+        consecutive_failures: { type: 'integer' },
+        last_delivery_at: { type: ['string', 'null'] },
+        last_status: { type: ['string', 'null'] },
+        created_at: { type: 'string' },
+        updated_at: { type: 'string' },
     };
 
     const batchRowError: Json = {
@@ -281,6 +336,8 @@ export function buildOpenApiDocument(input: OpenApiInput): Json {
                 '**Valores de los registros**: van en `data` con la clave `f{id del campo}` (por ejemplo `{"f12": "Acme"}`). El id de cada campo sale de `GET /lists/{list}/fields`. Las claves no cambian aunque renombres el campo.',
                 '',
                 '**Límite**: 300 pedidos por minuto por token (cabeceras `X-RateLimit-Limit` y `X-RateLimit-Remaining`); pasado el límite, `429` con `Retry-After`.',
+                '',
+                '**Webhooks de eventos**: registra una dirección (`POST /webhooks`) y te avisamos con un `POST` cuando se crea, cambia o borra un registro, se envía un formulario o entra un pago. Cada aviso trae `X-Webhook-Signature: t=<segundos>,v1=<firma>`, donde la firma es HMAC-SHA256 en hexadecimal de `<t>.<cuerpo>` con el secreto del webhook; compárala y descarta avisos de más de 5 minutos. Responde 2xx rápido: un error o un timeout se reintenta (hasta siete intentos en unas 21 horas) y un `410` borra la suscripción. Un mismo aviso puede llegar dos veces: usa `X-Webhook-Id` para no procesarlo de nuevo.',
             ].join('\n'),
         },
         servers: [{ url: input.serverUrl }],
@@ -295,6 +352,7 @@ export function buildOpenApiDocument(input: OpenApiInput): Json {
             { name: 'Búsqueda' },
             { name: 'Archivos' },
             { name: 'Personas' },
+            { name: 'Webhooks' },
         ],
         paths,
         components: {
@@ -371,6 +429,41 @@ export function buildOpenApiDocument(input: OpenApiInput): Json {
                 },
                 User: schemaOf(meUserSummarySchema),
                 Team: schemaOf(teamSchema),
+                Webhook: { type: 'object', properties: webhookProps },
+                CreatedWebhook: {
+                    type: 'object',
+                    properties: { ...webhookProps, secret: { type: 'string', description: 'Guárdalo: no se vuelve a mostrar. Sirve para verificar la firma.' } },
+                },
+                CreateWebhook: schemaOf(createWebhookSubscriptionSchema),
+                UpdateWebhook: schemaOf(updateWebhookSubscriptionSchema),
+                WebhookTestResult: {
+                    type: 'object',
+                    properties: {
+                        ok: { type: 'boolean' },
+                        status: { type: ['integer', 'null'] },
+                        body: { type: ['string', 'null'] },
+                        error: { type: ['string', 'null'] },
+                        duration_ms: { type: 'integer' },
+                    },
+                },
+                WebhookDelivery: {
+                    type: 'object',
+                    properties: {
+                        id: { type: 'integer' },
+                        event_id: { type: 'string' },
+                        event: { type: 'string' },
+                        record_id: { type: ['integer', 'null'] },
+                        list_id: { type: ['integer', 'null'] },
+                        status: { type: 'string', enum: ['pending', 'success', 'failed', 'skipped'] },
+                        attempts: { type: 'integer' },
+                        response_status: { type: ['integer', 'null'] },
+                        response_body: { type: ['string', 'null'] },
+                        error: { type: ['string', 'null'] },
+                        created_at: { type: 'string' },
+                        delivered_at: { type: ['string', 'null'] },
+                        next_attempt_at: { type: ['string', 'null'] },
+                    },
+                },
             },
         },
     };
