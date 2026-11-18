@@ -24,6 +24,7 @@ import { PlatformDomainsCard } from './PlatformDomainsCard';
 import { PlatformHelpCard } from './PlatformHelpCard';
 import { PlatformPaymentsCard } from './PlatformPaymentsCard';
 import { PlatformIntegrationsCard } from './PlatformIntegrationsCard';
+import { PlatformIntegrationCatalogCard } from './PlatformIntegrationCatalogCard';
 import { PlatformImpersonationsCard } from './PlatformImpersonationsCard';
 import { PlatformBillingPolicyCard } from './PlatformBillingPolicyCard';
 import { PlatformPlansCard } from './PlatformPlansCard';
@@ -196,6 +197,8 @@ export function PlatformPage(): JSX.Element {
             {shown === 'integraciones' && (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-6">
                     <PlatformIntegrationsCard />
+                    {/* v0.1.438 — qué apps se ofrecen a las empresas y cuáles van en beta. */}
+                    <PlatformIntegrationCatalogCard />
                     {/* v0.1.289 — llaves de captcha para los formularios de todas las empresas. */}
                     <CaptchaKeysCard scope="platform" />
                 </div>

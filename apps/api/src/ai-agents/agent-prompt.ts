@@ -37,7 +37,9 @@ export function buildAgentSystemPrompt(p: AgentPromptInput): string {
         ? 'ESTO ES UNA PRUEBA: nada de lo que hagas se escribe. Igual llama a las herramientas como si trabajaras de verdad; el sistema muestra qué habría pasado.'
         : p.mode === 'propose'
           ? 'Tus cambios NO se aplican solos: quedan como una propuesta que una persona revisa y aplica. Igual llama a las herramientas como si los hicieras.'
-          : 'Tus cambios se aplican en el acto: revisa bien antes de escribir.';
+          : p.tools.includes('send_email')
+            ? 'Tus cambios se aplican en el acto: revisa bien antes de escribir. Los correos son la excepción: nunca salen solos, quedan como propuesta que una persona aprueba.'
+            : 'Tus cambios se aplican en el acto: revisa bien antes de escribir.';
     const tools = p.tools.map((t) => `- ${t}: ${AI_AGENT_TOOL_META[t].help}`).join('\n');
     return [
         `Eres «${p.agentName}», un agente de IA que trabaja dentro de Imagina Base, una app de listas con registros (estilo Airtable/ClickUp).`,

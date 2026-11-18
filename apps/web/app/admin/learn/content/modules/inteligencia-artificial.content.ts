@@ -334,7 +334,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Comentar', what: 'Una nota interna, o visible para el cliente si encendiste **Puede escribir comentarios visibles para el cliente (en su portal)**.' },
                     { name: 'Asignar', what: 'A una persona o a un equipo.' },
                     { name: 'Pedir una aprobación', what: 'Con uno de los flujos de la lista.' },
-                    { name: 'Mandar un correo', what: 'Al contacto del registro o a alguien del equipo.', tip: 'Viene apagada: sale de la app. Enciéndela sólo si hace falta y empieza en modo propuesta.' },
+                    { name: 'Mandar un correo', what: 'Al contacto del registro o a alguien del equipo. **Siempre queda como propuesta**: una persona lo aprueba antes de que salga, aunque el agente esté en «Hace los cambios».', tip: 'Viene apagada: sale de la app. Enciéndela sólo si hace falta.' },
                 ],
             },
             { t: 'h', text: 'Cómo aplica los cambios' },
@@ -342,7 +342,7 @@ export const articles: LearnArticle[] = [
                 t: 'cards',
                 items: [
                     { icon: 'UserCheck', title: 'Propone y una persona aprueba', md: 'Deja los cambios como propuesta en el registro; una persona los aplica o los descarta. Recomendado para empezar: ves qué decide antes de confiarle más.', tone: 'mint' },
-                    { icon: 'Zap', title: 'Hace los cambios', md: 'Cambia los registros solo, por los mismos caminos que una persona. Queda todo en la actividad con el nombre del agente.', tone: 'amber' },
+                    { icon: 'Zap', title: 'Hace los cambios', md: 'Cambia los registros solo, por los mismos caminos que una persona. Queda todo en la actividad con el nombre del agente. Los correos son la excepción: siempre esperan a que una persona los apruebe.', tone: 'amber' },
                 ],
             },
             {

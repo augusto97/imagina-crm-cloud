@@ -6,6 +6,7 @@ import { MsAdminConsentService } from './ms-admin-consent.service';
 import { GoogleWorkspaceHelpService } from './google-workspace-help.service';
 import { ConnectorsService } from './connectors.service';
 import { IntegrationAppsService } from './integration-apps.service';
+import { IntegrationCatalogService } from './integration-catalog.service';
 import { MailAccountService } from './mail-account.service';
 import { MAIL_ACCOUNT_SENDER } from '../mail/mail.types';
 import { TENANT_STORAGE } from '../files/file-storage';
@@ -37,6 +38,7 @@ import { SQL_RUNNER } from './sqlserver/sql-runner';
     providers: [
         ConnectorsService,
         IntegrationAppsService,
+        IntegrationCatalogService,
         // v0.1.363 — enlace de aprobación para el administrador de Microsoft 365.
         MsAdminConsentService,
         // v0.1.384 — lo mismo para Google Workspace (mensaje para TI).
@@ -55,6 +57,6 @@ import { SQL_RUNNER } from './sqlserver/sql-runner';
             inject: [ENV],
         },
     ],
-    exports: [ConnectorsService, IntegrationAppsService, MsAdminConsentService, GoogleWorkspaceHelpService, MailAccountService, MAIL_ACCOUNT_SENDER, TenantStorageService, TENANT_STORAGE, SQL_RUNNER],
+    exports: [ConnectorsService, IntegrationAppsService, IntegrationCatalogService, MsAdminConsentService, GoogleWorkspaceHelpService, MailAccountService, MAIL_ACCOUNT_SENDER, TenantStorageService, TENANT_STORAGE, SQL_RUNNER],
 })
 export class ConnectorsModule {}

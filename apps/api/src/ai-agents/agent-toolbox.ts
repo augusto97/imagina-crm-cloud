@@ -670,13 +670,19 @@ export class AgentToolbox {
             { label: 'Asunto', from: null, to: agentClip(input.subject, 200) },
             { label: 'Mensaje', from: null, to: agentClip(input.body, 600) },
         ];
-        if (!this.writesForReal) {
-            this.changes.push({ kind: 'send_email', list_id: this.scope.listId, record_id: this.scope.recordId, to, subject: input.subject, body: input.body, title, lines });
-            return { content: { ok: true, propuesto: true }, isError: false, kind: this.scope.simulate ? 'simulated' : 'proposed', summary: `${this.scope.simulate ? 'Mandaría' : 'Propone mandar'} un correo a ${to.join(', ')}: «${agentClip(input.subject, 80)}»` };
-        }
-        await this.deliverEmail(to, input.subject, input.body);
-        this.applied.push(`Mandó un correo a ${to.join(', ')}`);
-        return { content: { ok: true }, isError: false, kind: 'write', summary: `Mandó un correo a ${to.join(', ')}: «${agentClip(input.subject, 80)}»` };
+        // v0.1.438 — un correo NUNCA sale solo, ni en «Hace los cambios»: el
+        // texto de un registro (que escribe un cliente o un formulario) puede
+        // inducir al modelo a escribirle a alguien, y un correo enviado no se
+        // deshace. Queda como propuesta y una persona lo aprueba; los demás
+        // cambios de la corrida se aplican igual.
+        this.changes.push({ kind: 'send_email', list_id: this.scope.listId, record_id: this.scope.recordId, to, subject: input.subject, body: input.body, title, lines });
+        const verb = this.scope.simulate ? 'Mandaría' : 'Propone mandar';
+        return {
+            content: { ok: true, propuesto: true, nota: 'El correo queda como propuesta: una persona lo aprueba antes de que salga.' },
+            isError: false,
+            kind: this.scope.simulate ? 'simulated' : 'proposed',
+            summary: `${verb} un correo a ${to.join(', ')}: «${agentClip(input.subject, 80)}»`,
+        };
     }
 
     async deliverEmail(to: string[], subject: string, body: string): Promise<void> {

@@ -26,6 +26,7 @@ import {
     integrationsOverviewSchema,
     platformIntegrationAppSchema,
     platformIntegrationsSchema,
+    platformIntegrationCatalogItemSchema,
     platformLegalViewSchema,
     verifyIntegrationResultSchema,
     storeSyncStatusSchema,
@@ -116,6 +117,9 @@ import {
     type PlatformLegalView,
     type UpdatePlatformLegalInput,
     type UpdatePlatformIntegrationAppInput,
+    type PlatformIntegrationCatalogItem,
+    type UpdateIntegrationCatalogInput,
+    type IntegrationKey as CatalogIntegrationKey,
     type VerifyIntegrationInput,
     type VerifyIntegrationResult,
     connectorSettingsViewSchema,
@@ -1434,6 +1438,19 @@ export class CloudClient {
             body: input,
             schema: platformIntegrationAppSchema,
         });
+    }
+
+    /** v0.1.438 — Qué apps se ofrecen a las empresas y cuáles van marcadas beta. */
+    platformIntegrationCatalogGet(): Promise<PlatformIntegrationCatalogItem[]> {
+        return this.request('GET', '/platform/integrations/catalog', {
+            schema: z.object({ data: z.array(platformIntegrationCatalogItemSchema) }),
+        }).then((r) => r.data);
+    }
+    platformIntegrationCatalogSet(key: CatalogIntegrationKey, input: UpdateIntegrationCatalogInput): Promise<PlatformIntegrationCatalogItem> {
+        return this.request('PATCH', `/platform/integrations/catalog/${key}`, {
+            body: input,
+            schema: z.object({ data: platformIntegrationCatalogItemSchema }),
+        }).then((r) => r.data);
     }
 
     // --- asistente IA (ADR-S21, v0.1.181) ---

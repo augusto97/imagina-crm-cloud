@@ -22,6 +22,11 @@ export interface CaptchaProviderInfo {
     /** Una línea para elegir. */
     blurb: string;
     recommended: boolean;
+    /**
+     * v0.1.438 — Probado contra un simulador y la documentación, pero todavía
+     * no con llaves reales: la pantalla lo marca «Beta».
+     */
+    beta: boolean;
     /** Script del widget (se carga con `render=explicit&onload=…`). */
     script_url: string;
     /** Endpoint de verificación del token (POST x-www-form-urlencoded). */
@@ -42,6 +47,7 @@ export const CAPTCHA_PROVIDER_INFO: Record<CaptchaProvider, CaptchaProviderInfo>
         label: 'Cloudflare Turnstile',
         blurb: 'Gratis, sin imágenes que adivinar y respetuoso con la privacidad. La mayoría de las personas no ve ningún desafío.',
         recommended: true,
+        beta: false,
         script_url: 'https://challenges.cloudflare.com/turnstile/v0/api.js',
         verify_url: 'https://challenges.cloudflare.com/turnstile/v0/siteverify',
         csp: {
@@ -64,6 +70,7 @@ export const CAPTCHA_PROVIDER_INFO: Record<CaptchaProvider, CaptchaProviderInfo>
         label: 'hCaptcha',
         blurb: 'Alternativa independiente de Google, con plan gratis. Puede pedir resolver imágenes.',
         recommended: false,
+        beta: true,
         script_url: 'https://js.hcaptcha.com/1/api.js',
         verify_url: 'https://api.hcaptcha.com/siteverify',
         csp: {
@@ -86,6 +93,7 @@ export const CAPTCHA_PROVIDER_INFO: Record<CaptchaProvider, CaptchaProviderInfo>
         label: 'Google reCAPTCHA v2',
         blurb: 'La casilla «No soy un robot» de Google. Conocida por todos, pero comparte datos con Google.',
         recommended: false,
+        beta: true,
         script_url: 'https://www.google.com/recaptcha/api.js',
         verify_url: 'https://www.google.com/recaptcha/api/siteverify',
         csp: {

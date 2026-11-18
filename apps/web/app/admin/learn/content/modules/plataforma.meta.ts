@@ -74,7 +74,7 @@ export const meta: LearnModuleMeta = {
             minutes: 8,
             level: 'advanced',
             keywords:
-                'integraciones google microsoft slack client id secreto redireccion verificacion paginas publicas privacidad asistente ia clave anthropic cuota',
+                'apps beta ocultas mostrar se retira de fabrica sms galeria integraciones google microsoft slack client id secreto redireccion verificacion paginas publicas privacidad asistente ia clave anthropic cuota',
             operatorOnly: true,
         },
         {
