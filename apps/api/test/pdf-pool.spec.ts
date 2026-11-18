@@ -160,7 +160,10 @@ describe('PDF en un hilo aparte (v0.1.439)', () => {
 
     it('un PDF que tarda demasiado cierra su hilo y el siguiente usa uno nuevo', async () => {
         const before = pool.spawned;
-        await expect(pool.run({ kind: 'definition', def: buildLabelsDefinition('a4_21', []) }, { timeoutMs: 1 })).rejects.toThrow(/tardó demasiado/);
+        // Un PDF pesado (cientos de etiquetas con QR): tarda mucho más que el
+        // tope de 1 ms en cualquier máquina (uno vacío salía antes en el CI).
+        const heavy = Array.from({ length: 600 }, (_, i): LabelItem => ({ qr: `https://x.test/r/${i}`, title: `Caja ${i}`, lines: ['Bodega 2'], code: `C-${i}` }));
+        await expect(pool.run({ kind: 'definition', def: buildLabelsDefinition('a4_21', heavy) }, { timeoutMs: 1 })).rejects.toThrow(/tardó demasiado/);
         const out = await renderPlainPdfDefinition({ content: ['Después'] });
         expect(out.subarray(0, 5).toString()).toBe('%PDF-');
         expect(pool.spawned).toBe(before + 1);
