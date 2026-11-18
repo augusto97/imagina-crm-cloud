@@ -118,6 +118,11 @@ export function CaptchaKeysCard({ scope }: { scope: 'tenant' | 'platform' }): JS
                                 <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-sm imcrm-font-medium">
                                     {i.label}
                                     {i.recommended && <Badge variant="success" className="imcrm-text-[10px]">{__('Recomendado')}</Badge>}
+                                    {i.beta && (
+                                        <Badge variant="warning" className="imcrm-text-[10px]" title={__('Todavía no se probó con llaves reales: puede fallar.')}>
+                                            {__('Beta')}
+                                        </Badge>
+                                    )}
                                 </span>
                                 <span className="imcrm-text-[11px] imcrm-leading-snug imcrm-text-muted-foreground">{__(i.blurb)}</span>
                             </button>

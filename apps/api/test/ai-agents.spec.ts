@@ -464,6 +464,38 @@ describe('Agentes de IA (Postgres + Redis reales, modelo falso)', () => {
         expect(await proposals.forRecord(tenantA, ana, 'tickets', r.id)).toEqual([]);
     });
 
+    it('v0.1.438 — en «Hace los cambios» un correo NO sale solo: queda como propuesta y sale al aprobarla', async () => {
+        const a = await newAgent(ana, { mode: 'act', tools: ['read_record', 'update_fields', 'send_email'] });
+        const r = await ticket();
+        script.push(
+            {
+                tools: [
+                    { name: 'update_fields', input: { values: { prioridad: 'alta' } } },
+                    { name: 'send_email', input: { to: ['beto@acme.test'], subject: 'Ticket urgente', body: 'Revisa el ticket, por favor.' } },
+                ],
+            },
+            { text: 'Hecho.' },
+        );
+        const run = await runOf((await ask(a.id, r.id)).runId!);
+        expect(run.status).toBe('success');
+        // El cambio de campo se aplicó en el acto; el correo, no.
+        expect((await dataOf(r.id))[k('prioridad')]).toBe('alta');
+        expect((run.steps as Array<{ tool: string; kind: string }>).map((x) => [x.tool, x.kind])).toEqual([
+            ['update_fields', 'write'],
+            ['send_email', 'proposed'],
+        ]);
+        expect(mail.sent).toEqual([]);
+        // El modelo sabe que los correos esperan aprobación.
+        expect(buildAgentSystemPrompt({ agentName: 'X', instructions: 'y', mode: 'act', simulate: false, tools: ['send_email'], maxSteps: 3, listNames: ['T'], clientComments: false, today: '2026-10-26', timeZone: 'UTC' })).toMatch(
+            /correos son la excepción/,
+        );
+        const pending = await proposals.forRecord(tenantA, ana, 'tickets', r.id);
+        expect(pending).toHaveLength(1);
+        expect(JSON.stringify(pending[0]!.items)).toContain('Ticket urgente');
+        await proposals.apply(tenantA, ana, pending[0]!.id);
+        expect(mail.sent.map((m) => m.subject)).toEqual(['Ticket urgente']);
+    });
+
     it('nunca más que su dueño: un campo oculto para él y una lista fuera de alcance se bloquean', async () => {
         const a = await newAgent(beto, { mode: 'act' });
         const r = await ticket();

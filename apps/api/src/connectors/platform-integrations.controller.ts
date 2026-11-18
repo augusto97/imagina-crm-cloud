@@ -1,7 +1,11 @@
 import { BadRequestException, Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import {
+    integrationKeySchema,
     integrationProviderSchema,
+    updateIntegrationCatalogSchema,
     updatePlatformIntegrationAppSchema,
+    type PlatformIntegrationCatalogItem,
+    type UpdateIntegrationCatalogInput,
     type PlatformIntegrationApp,
     type PlatformIntegrations,
     type UpdatePlatformIntegrationAppInput,
@@ -11,6 +15,7 @@ import { SuperadminGuard } from '../authz/superadmin.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ConnectorsService } from './connectors.service';
 import { IntegrationAppsService } from './integration-apps.service';
+import { IntegrationCatalogService } from './integration-catalog.service';
 
 /**
  * Plataforma → Integraciones (superadmin, v0.1.203).
@@ -25,7 +30,26 @@ export class PlatformIntegrationsController {
     constructor(
         private readonly apps: IntegrationAppsService,
         private readonly connectors: ConnectorsService,
+        private readonly catalog: IntegrationCatalogService,
     ) {}
+
+    /** v0.1.438 — Qué apps se ofrecen a las empresas y cuáles van marcadas beta. */
+    @Get('catalog')
+    async getCatalog(): Promise<{ data: PlatformIntegrationCatalogItem[] }> {
+        return { data: await this.catalog.list() };
+    }
+
+    @Patch('catalog/:key')
+    async updateCatalog(
+        @Param('key') raw: string,
+        @Body(new ZodValidationPipe(updateIntegrationCatalogSchema)) input: UpdateIntegrationCatalogInput,
+    ): Promise<{ data: PlatformIntegrationCatalogItem }> {
+        const key = integrationKeySchema.safeParse(raw);
+        if (!key.success) {
+            throw new BadRequestException({ code: 'integration_unknown', message: 'Esa app no existe.', data: { status: 400 } });
+        }
+        return { data: await this.catalog.update(key.data, input) };
+    }
 
     @Get()
     async get(): Promise<PlatformIntegrations> {

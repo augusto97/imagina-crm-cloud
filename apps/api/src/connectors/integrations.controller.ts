@@ -73,6 +73,8 @@ export class IntegrationsController {
     ): Promise<{ data: Connection; meta: { warning: string | null } }> {
         // v0.1.338 (ADR-S87) — la app tiene que estar en el plan.
         assertReqModule(req, moduleForIntegration(parseKey(key)));
+        // v0.1.438 — una app oculta no se ofrece para conectar una nueva.
+        await this.connectors.assertIntegrationOffered(userId(req), parseKey(key), input.connection_id);
         const { connection, warning } = await this.connectors.connectIntegrationKey(
             tenantId(req),
             userId(req),
@@ -92,6 +94,7 @@ export class IntegrationsController {
         @Body(new ZodValidationPipe(authorizeIntegrationSchema)) input: AuthorizeIntegrationInput,
     ): Promise<{ data: OAuthStartResult }> {
         assertReqModule(req, moduleForIntegration(parseKey(key)));
+        await this.connectors.assertIntegrationOffered(userId(req), parseKey(key), input.connection_id);
         const data = await this.connectors.startIntegrationOAuth(
             tenantId(req),
             userId(req),

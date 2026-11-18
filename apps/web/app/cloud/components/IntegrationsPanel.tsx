@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router';
 import {
     INTEGRATIONS,
     INTEGRATION_CATEGORY_LABEL,
+    INTEGRATION_RETIRING,
     integrationDef,
     integrationMissingScopes,
     isGoogleWorkspaceBlockError,
@@ -14,9 +15,10 @@ import {
     type Connection,
     type IntegrationDef,
     type IntegrationKey,
+    type IntegrationPolicy,
     type IntegrationsOverview,
 } from '@imagina-base/shared';
-import { ArrowRightLeft, CalendarDays, Check, ChevronDown, ChevronRight, Globe, Lock, HardDrive, MessageCircle, MessageSquareText, Pencil, RefreshCw, Settings2, ShieldCheck, Wallet, X } from 'lucide-react';
+import { ArrowRightLeft, CalendarDays, Check, ChevronDown, ChevronRight, EyeOff, Globe, Lock, HardDrive, MessageCircle, MessageSquareText, Pencil, RefreshCw, Settings2, ShieldCheck, Wallet, X } from 'lucide-react';
 
 import { ConnectorsPanel } from '@/cloud/components/ConnectorsPanel';
 import { ConnectionSwapDialog, swapTargetsFor } from '@/cloud/components/ConnectionSwapDialog';
@@ -252,6 +254,16 @@ export function IntegrationsPanel(): JSX.Element | null {
                                 connection={c}
                                 swapMode={swapModeFor(c, connected)}
                                 onSwap={(mode) => setSwap(mode === 'into' ? { target: c, from: null } : { target: null, from: c })}
+                                retiring={c.integration_key !== null && info?.catalog?.[c.integration_key]?.stage === 'retiring'}
+                                replacementConnected={(() => {
+                                    const rep = c.integration_key ? INTEGRATION_RETIRING[c.integration_key as IntegrationKey]?.replacement : undefined;
+                                    return rep !== undefined && connected.some((x) => x.integration_key === rep);
+                                })()}
+                                onConnectReplacement={() => {
+                                    const rep = c.integration_key ? INTEGRATION_RETIRING[c.integration_key as IntegrationKey]?.replacement : undefined;
+                                    const def = rep ? integrationDef(rep) : null;
+                                    if (def) start(def, null);
+                                }}
                                 onReconnect={() => {
                                     const def = integrationDef(c.integration_key);
                                     if (def) start(def, c);
@@ -283,6 +295,7 @@ export function IntegrationsPanel(): JSX.Element | null {
                             def={def}
                             info={info ?? null}
                             connectedCount={connected.filter((c) => c.integration_key === def.key).length}
+                            policy={info?.catalog?.[def.key] ?? null}
                             canConnect={canConnect}
                             planOff={offModules.includes(moduleForIntegration(def.key))}
                             busy={authorize.isPending && authorize.variables?.def.key === def.key}
@@ -408,10 +421,13 @@ function AppTile({
     onAdminConsent,
     adminConsentLabel,
     planOff = false,
+    policy,
 }: {
     def: IntegrationDef;
     info: IntegrationsOverview | null;
     connectedCount: number;
+    /** v0.1.438 — beta / en retiro y si el operador la ofrece. */
+    policy: IntegrationPolicy | null;
     canConnect: boolean;
     busy: boolean;
     onConnect: () => void;
@@ -427,6 +443,13 @@ function AppTile({
     // empresa: un botón que no puede funcionar es peor que no tenerlo. El
     // operador sí la ve, con el atajo a configurarla.
     if (!available && !info?.is_platform_admin) return null;
+    // v0.1.438 — una app que el operador ocultó no se ofrece (las conexiones que
+    // ya existen siguen en «Conectadas»). El operador la ve, marcada.
+    const hidden = policy?.hidden === true;
+    if (hidden && !info?.is_platform_admin) return null;
+    const stage = policy?.stage ?? 'stable';
+    const replacement = stage === 'retiring' ? INTEGRATION_RETIRING[def.key]?.replacement : undefined;
+    const replacementName = replacement ? integrationDef(replacement)?.name : undefined;
 
     return (
         <div
@@ -444,6 +467,21 @@ function AppTile({
                                 {__('Conectada')}
                             </Badge>
                         )}
+                        {stage === 'beta' && (
+                            <Badge
+                                variant="warning"
+                                className="imcrm-text-[10px]"
+                                title={__('Todavía no se probó con una cuenta real del proveedor: puede fallar.')}
+                                data-testid="imcrm-integration-beta"
+                            >
+                                {__('Beta')}
+                            </Badge>
+                        )}
+                        {stage === 'retiring' && (
+                            <Badge variant="secondary" className="imcrm-text-[10px]" data-testid="imcrm-integration-retiring">
+                                {__('Versión anterior')}
+                            </Badge>
+                        )}
                     </p>
                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
                         {__(INTEGRATION_CATEGORY_LABEL[def.category])}
@@ -451,6 +489,22 @@ function AppTile({
                 </div>
             </div>
             <p className="imcrm-flex-1 imcrm-text-sm imcrm-text-muted-foreground">{def.tagline}</p>
+            {stage === 'beta' && (
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                    {__('En beta: todavía no se probó con una cuenta real. Pruébala con un mensaje o un cobro de prueba antes de usarla con clientes, y avísale a soporte si algo no funciona.')}
+                </p>
+            )}
+            {stage === 'retiring' && replacementName && (
+                <p className="imcrm-text-xs imcrm-text-[hsl(var(--imcrm-warning-ink))]">
+                    {__('Se retira: conecta')} {replacementName} {__('en su lugar.')}
+                </p>
+            )}
+            {hidden && (
+                <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-integration-hidden">
+                    <EyeOff className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                    {__('Oculta para las empresas (sólo la ves tú, como operador).')}
+                </p>
+            )}
             {planOff ? (
                 <p className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-xs imcrm-text-muted-foreground" data-testid="imcrm-integration-plan-off">
                     <Lock className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
@@ -515,6 +569,9 @@ function ConnectedRow({
     onReconnect,
     onDisconnect,
     busy,
+    retiring = false,
+    replacementConnected = false,
+    onConnectReplacement,
 }: {
     connection: Connection;
     swapMode: 'into' | 'from' | null;
@@ -522,6 +579,10 @@ function ConnectedRow({
     onReconnect: () => void;
     onDisconnect: () => void;
     busy: boolean;
+    /** v0.1.438 — la app se retira: se avisa y se lleva al reemplazo. */
+    retiring?: boolean;
+    replacementConnected?: boolean;
+    onConnectReplacement?: () => void;
 }): JSX.Element {
     const def = integrationDef(c.integration_key);
     // v0.1.333 — un sitio WordPress cuya contraseña de aplicación se revocó
@@ -593,6 +654,25 @@ function ConnectedRow({
                 {c.secret_state === 'unreadable' && (
                     <p className="imcrm-mt-0.5 imcrm-text-xs imcrm-text-destructive">
                         {__('La clave guardada ya no se puede leer: vuelve a cargarla.')}
+                    </p>
+                )}
+                {retiring && (
+                    <p className="imcrm-mt-1 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-gap-y-1 imcrm-rounded-md imcrm-border imcrm-border-warning/30 imcrm-bg-warning/10 imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-text-[hsl(var(--imcrm-warning-ink))]" data-testid="imcrm-integration-retiring-note">
+                        <span>
+                            {replacementConnected
+                                ? __('Esta versión se retira. Pasa tus automatizaciones a la nueva con «Pasar a otra conexión»: se cambian todas de una vez.')
+                                : __('Esta versión se retira. Conecta la nueva y después pasa tus automatizaciones con un clic.')}
+                        </span>
+                        {!replacementConnected && onConnectReplacement && c.can_edit && (
+                            <button
+                                type="button"
+                                onClick={onConnectReplacement}
+                                className="imcrm-font-medium imcrm-underline hover:imcrm-no-underline"
+                                data-testid="imcrm-integration-connect-replacement"
+                            >
+                                {__('Conectar la nueva')}
+                            </button>
+                        )}
                     </p>
                 )}
             </div>

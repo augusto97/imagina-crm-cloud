@@ -430,7 +430,18 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.437**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.438**
+(**apps en beta, SMS acotados y correos del agente con aprobación** — la
+galería de Integraciones marca «Beta» lo que todavía no se usó con una cuenta
+real (WhatsApp de Meta, Telegram, los cinco SMS, Slack, Google Calendar/Meet,
+Wompi, PayPal, reCAPTCHA y hCaptcha); de fábrica se muestran sólo Twilio y
+Onurix entre los SMS y se oculta WhatsApp (WAS anterior), que en su fila ofrece
+«Conectar la nueva». El operador decide en **Plataforma → Integraciones → Apps
+que ven las empresas** qué mostrar y qué marcar beta (Redis
+`platform:integration-catalog`, sólo las diferencias con lo de fábrica, viaja
+en las copias); ocultar no corta lo ya conectado y el operador las sigue
+viendo. Un agente de IA ya no manda correos solo: quedan como propuesta aunque
+esté en «Hace los cambios»). Antes **v0.1.437**
 (**uso por módulo en Plataforma** — pestaña **Plataforma → Uso**: por cada
 uno de los 29 módulos, cuántas empresas lo usan, cuántas tuvieron actividad en
 30 días, cuánto tienen configurado y el último uso, con «Nadie lo usa» y en qué
@@ -461,7 +472,7 @@ lo avisa) para separar los procesos (`--un-proceso` para dejarlo como está).
 **Plan aprobado el 2026-11-18** («estabilizar y mejorar», "Ok, has todos los
 que propones"), en este orden: **v0.1.436** pruebas de pantallas (hecha);
 **v0.1.437** uso por módulo en
-Plataforma (hecha); **v0.1.438** integraciones sin probar con cuenta real marcadas
+Plataforma (hecha); **v0.1.438** (hecha) integraciones sin probar con cuenta real marcadas
 «beta» con mostrar/ocultar del operador (SMS, WhatsApp de Meta, Wompi, PayPal,
 Telegram, Slack, Google Calendar/Meet, reCAPTCHA/hCaptcha), aviso de retiro de
 «WhatsApp (WAS anterior)» con la herramienta de cambio, SMS con 1-2
@@ -2123,6 +2134,31 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-18 · v0.1.438** — **Apps en beta, SMS acotados y correos del
+  agente con aprobación** (cuarta versión del plan «estabilizar y mejorar»).
+  `packages/shared/src/schemas/integration-stage.ts`: lo de fábrica
+  (`INTEGRATION_DEFAULT_BETA`, `INTEGRATION_DEFAULT_HIDDEN` —LabsMobile,
+  BulkGate, Infobip y WAS anterior—, `INTEGRATION_RETIRING` WAS → Whats) y
+  `applyIntegrationOverride` (guarda sólo diferencias; `null` vuelve a lo de
+  fábrica). `IntegrationCatalogService` (Redis `platform:integration-catalog`,
+  caché 30 s, `GET/PATCH /platform/integrations/catalog[/:key]`) y
+  `ConnectorsService.assertIntegrationOffered`: una app oculta da 403
+  `integration_hidden` al conectar una NUEVA (no al reconectar con
+  `connection_id`, ni al operador). El overview de Integraciones trae
+  `catalog`; la galería pinta «Beta» con su aviso, «Versión anterior» con
+  «Se retira: conecta … en su lugar», «Conectar la nueva» en la fila de una
+  conexión de WAS, y «Oculta para las empresas» sólo al operador. Tarjeta
+  **«Apps que ven las empresas»** en Plataforma → Integraciones con Mostrar /
+  Beta optimistas, «De fábrica» y cuántas empresas/conexiones tiene cada app.
+  Captcha: reCAPTCHA y hCaptcha con «Beta». Agentes: `send_email` es SIEMPRE
+  propuesta (`agent-toolbox.ts`, prompt y ayuda de la herramienta). Aprende
+  (integraciones, consola, IA) y novedad al día. Verificado: 5 de shared, 5 de
+  integración (`integration-catalog.spec`) + el de agentes (19/19), suites de
+  integraciones/conectores/WhatsApp 71/71, front 940 y E2E 40/40 (escritorio y
+  celular oscuro: catálogo, persistencia, galería de la empresa y del
+  operador, 403 por API, vuelta a lo de fábrica). **Siguiente**: v0.1.439
+  (PDF/Excel en hilos aparte, historial de corridas acotado, verificar copias
+  restaurándolas).
 - **2026-11-18 · v0.1.437** — **Uso por módulo en Plataforma** (tercera
   versión del plan «estabilizar y mejorar»). Pestaña **Plataforma → Uso**:
   catálogo de 29 módulos en `packages/shared/src/schemas/platform-usage.ts`

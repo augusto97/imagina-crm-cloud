@@ -7,6 +7,7 @@ import {
     integrationScopes,
     scopesForRefresh,
     isIntegrationKey,
+    integrationPolicies,
     isMailAccountIntegration,
     isSmsProvider,
     smsRecipient,
@@ -59,6 +60,7 @@ import { SMS_PROVIDERS, SMS_TEST_MESSAGE, infobipBase, smsBases } from '../sms/s
 import { decryptSecret, encryptSecret, isEncrypted } from '../common/secret-box';
 import { findConnectorAction, readConnectorActions } from './connector-actions';
 import { IntegrationAppsService } from './integration-apps.service';
+import { IntegrationCatalogService } from './integration-catalog.service';
 import {
     checkIntegrationResponse,
     identityLabel,
@@ -328,7 +330,28 @@ export class ConnectorsService {
         // v0.1.333 — borrar la conexión de una tienda o un sitio libera sus
         // listas: las pestañas abiertas tienen que dejar de mostrar los candados.
         @Optional() private readonly rt?: RealtimeService,
+        // v0.1.438 — qué apps se ofrecen (beta, ocultas, en retiro).
+        @Optional() private readonly catalog?: IntegrationCatalogService,
     ) {}
+
+    /**
+     * v0.1.438 — Una app que el operador ocultó no se ofrece para conectar una
+     * NUEVA: las que ya existen se siguen actualizando y reconectando, y el
+     * operador (superadmin) la puede conectar igual para probarla.
+     */
+    async assertIntegrationOffered(userId: number, key: IntegrationKey, connectionId: number | null | undefined): Promise<void> {
+        if (!this.catalog || connectionId) return;
+        const policy = await this.catalog.policy(key);
+        if (!policy.hidden) return;
+        const email = await this.userEmail(userId);
+        const superadmins = new Set(this.env.PLATFORM_SUPERADMINS.map((e) => e.toLowerCase()));
+        if (email !== null && superadmins.has(email)) return;
+        throw new ForbiddenException({
+            code: 'integration_hidden',
+            message: 'Esta app no está disponible para conectar en esta plataforma.',
+            data: { status: 403 },
+        });
+    }
 
     // ── Ajustes del workspace ────────────────────────────────────────────
 
@@ -1563,11 +1586,13 @@ export class ConnectorsService {
         const providers: Record<string, { configured: boolean }> = {};
         for (const [provider, ok] of Object.entries(configured)) providers[provider] = { configured: ok };
         const superadmins = new Set(this.env.PLATFORM_SUPERADMINS.map((e) => e.toLowerCase()));
+        const catalog = this.catalog ? await this.catalog.policies() : integrationPolicies();
         return {
             providers,
             can_connect_workspace: role === 'admin',
             can_connect_private: role === 'admin' || settings.allow_private,
             is_platform_admin: email !== null && superadmins.has(email),
+            catalog,
         };
     }
 

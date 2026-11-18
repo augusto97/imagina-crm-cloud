@@ -3306,4 +3306,33 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a Correo', href: '/settings?s=correo' },
         audience: { roles: ['admin'] },
     },
+    {
+        key: 'v0.1.438-apps-beta-y-correos-del-agente',
+        version: '0.1.438',
+        date: '2026-11-18',
+        kind: 'improvement',
+        title: 'Las apps nuevas dicen «Beta» y los correos de un agente esperan tu aprobación',
+        summary:
+            'En Integraciones verás la marca «Beta» en las apps que todavía no se usaron con una cuenta real, y un agente de IA ya no manda correos solo: quedan como propuesta hasta que una persona los aprueba.',
+        media: {
+            slides: [
+                {
+                    title: 'Apps en «Beta»',
+                    text: 'Funcionan igual que las demás, pero todavía nadie las usó con una cuenta real del servicio. Antes de usarlas con clientes, prueba con un mensaje o un cobro de prueba.',
+                    illustration: 'integ-connect-once',
+                },
+                {
+                    title: 'Los correos del agente, con tu visto bueno',
+                    text: 'Aunque el agente esté en «Hace los cambios», un correo queda como propuesta en el registro y sale cuando alguien lo aprueba.',
+                    illustration: 'ia-agente',
+                },
+            ],
+        },
+        body: [
+            '- **WhatsApp (WAS)** es la versión anterior: si la tienes conectada sigue funcionando, y en su fila aparece **Conectar la nueva** para pasar tus automatizaciones a **WhatsApp (Whats)**.',
+            '- Si algo de una app en «Beta» no funciona, avísale a soporte.',
+        ].join('\n'),
+        action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
+        audience: { roles: ['admin'] },
+    },
 ];

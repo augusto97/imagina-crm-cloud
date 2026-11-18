@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { idSchema } from './common';
 import { connectorVisibilitySchema } from './connector';
 import { integrationProviderSchema } from './integration-keys';
+import { integrationPolicySchema } from './integration-stage';
 
 /**
  * Los shapes de la API de integraciones (galería de la empresa y apps del
@@ -19,6 +20,11 @@ export const integrationsOverviewSchema = z.object({
     can_connect_private: z.boolean(),
     /** Superadmin de plataforma: puede ir a configurar los proveedores. */
     is_platform_admin: z.boolean(),
+    /**
+     * v0.1.438 — Por app: beta / probada / en retiro y si se ofrece para
+     * conectar una nueva (lo decide el operador).
+     */
+    catalog: z.record(integrationPolicySchema).default({}),
 });
 export type IntegrationsOverview = z.infer<typeof integrationsOverviewSchema>;
 

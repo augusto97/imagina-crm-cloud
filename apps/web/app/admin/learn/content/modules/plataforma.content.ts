@@ -758,6 +758,30 @@ export const articles: LearnArticle[] = [
                 title: 'Páginas públicas',
                 md: 'Google, Microsoft y Slack piden una página principal pública, una política de privacidad y condiciones del servicio. La plataforma ya las sirve armadas: en **Páginas públicas** completa **Nombre de la app**, **Empresa responsable**, **Correo de contacto y privacidad** y, si quieres, tu sitio y una descripción. Puedes editar los textos; los sugeridos ya explican cómo se usan los datos de cada proveedor.',
             },
+            { t: 'h', text: 'Qué apps ven las empresas' },
+            {
+                t: 'settings',
+                title: 'Plataforma → Integraciones → Apps que ven las empresas',
+                rows: [
+                    {
+                        name: 'Mostrar',
+                        what: 'Si la app se ofrece en la galería de las empresas. Apagado, nadie puede conectar una **nueva**; las conexiones que ya existen siguen funcionando y se pueden reconectar. Tú, como operador, la sigues viendo para probarla.',
+                        tip: 'De fábrica se muestran dos proveedores de SMS (Twilio y Onurix) y se ocultan los otros tres y la versión anterior de WhatsApp (WAS).',
+                    },
+                    {
+                        name: 'Beta',
+                        what: 'La marca «Beta» en la galería: la app está hecha y probada contra la documentación, pero todavía nadie la usó con una cuenta real. Apágala cuando ya la usaste con una cuenta de verdad.',
+                    },
+                    {
+                        name: 'Se retira',
+                        what: 'La versión anterior de algo que tiene reemplazo (WhatsApp WAS → WhatsApp Whats). Quien la tiene conectada ve **Conectar la nueva** y la herramienta para pasar sus automatizaciones.',
+                    },
+                    {
+                        name: 'De fábrica',
+                        what: 'Vuelve a lo que trae la app. Una versión futura puede cambiar lo de fábrica (por ejemplo, quitar la marca «Beta» a una app ya probada) sin pisar lo que elegiste a mano.',
+                    },
+                ],
+            },
             { t: 'h', text: 'El asistente de IA para las empresas' },
             {
                 t: 'anim',

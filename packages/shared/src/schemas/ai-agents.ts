@@ -94,7 +94,7 @@ export const AI_AGENT_TOOL_META: Record<AiAgentTool, AiAgentToolMeta> = {
     },
     send_email: {
         label: 'Mandar un correo',
-        help: 'Manda un correo al contacto del registro o a alguien del equipo. Sale de la app: enciéndela sólo si hace falta.',
+        help: 'Manda un correo al contacto del registro o a alguien del equipo. Siempre queda como propuesta: una persona lo aprueba antes de que salga, aunque el agente aplique solo el resto.',
         writes: true,
         risky: true,
     },

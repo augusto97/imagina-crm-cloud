@@ -32,6 +32,7 @@ import { WA_WEB_ABILITY_LABEL, WA_WEB_PERMISSION_GROUPS } from './whats-actions'
 
 export * from './integration-keys';
 export * from './integrations-api';
+export * from './integration-stage';
 import {
     INTEGRATION_PROVIDER_DEFS,
     type IntegrationCategory,

@@ -15642,6 +15642,36 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         en verde — + E2E navegador 19/19 en escritorio y celular oscuro y el
         recorrido de pantallas 124/124 con la pestaña nueva.
 
+  - [x] **Apps en beta, SMS acotados y correos del agente con aprobación
+        (v0.1.438, cuarta versión del plan «estabilizar y mejorar»)**:
+        (a) **Etapa de cada app** (`packages/shared/src/schemas/integration-stage.ts`):
+        de fábrica en **beta** las que todavía no se usaron con una cuenta
+        real (WhatsApp de Meta, Telegram, los cinco SMS, Slack, Google
+        Calendar/Meet, Wompi, PayPal), **ocultas** LabsMobile, BulkGate,
+        Infobip y WhatsApp (WAS anterior) —quedan Twilio y Onurix entre los
+        SMS— y **en retiro** WAS con su reemplazo Whats. El operador cambia
+        lo que quiera en **Plataforma → Integraciones → «Apps que ven las
+        empresas»** (`PlatformIntegrationCatalogCard`: Mostrar y Beta
+        optimistas, «De fábrica», empresas y conexiones por app); se guardan
+        sólo las DIFERENCIAS en Redis `platform:integration-catalog`
+        (`IntegrationCatalogService`, caché 30 s, viaja en las copias), así
+        una versión futura puede cambiar lo de fábrica sin pisar lo elegido.
+        (b) **Ocultar no corta nada**: `assertIntegrationOffered` da 403
+        `integration_hidden` sólo al conectar una NUEVA; reconectar
+        (`connection_id`) y el operador pasan. (c) **Galería**: «Beta» con
+        el aviso de probar antes de usar con clientes, «Versión anterior» en
+        WAS con «Se retira: conecta WhatsApp (Whats) en su lugar» y, en la
+        fila de una conexión de WAS, «Conectar la nueva»; el operador ve las
+        ocultas con «Oculta para las empresas». reCAPTCHA y hCaptcha con
+        «Beta» en las llaves del captcha. (d) **Agentes de IA**: mandar un
+        correo es SIEMPRE una propuesta que una persona aprueba, aunque el
+        agente esté en «Hace los cambios» (herramienta, prompt y ayuda).
+        Aprende (integraciones, consola, inteligencia artificial) y novedad
+        con carrusel. Tests: `integration-stage.test` (5) en shared,
+        `integration-catalog.spec` (5) y uno nuevo en `ai-agents.spec`;
+        suites relacionadas, front 940 y shared 1004 en verde — E2E navegador
+        40/40 en escritorio y celular oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

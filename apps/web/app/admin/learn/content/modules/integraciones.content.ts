@@ -52,6 +52,12 @@ export const articles: LearnArticle[] = [
             },
             {
                 t: 'callout',
+                tone: 'warn',
+                title: 'Las apps marcadas «Beta»',
+                md: 'Una app con la marca **Beta** está hecha y probada, pero todavía nadie la usó con una cuenta real de ese servicio. Funciona igual que las demás: antes de usarla con clientes, pruébala con un mensaje o un cobro de prueba y, si algo no anda, avísale a soporte. La marca se quita cuando ya se usó con cuentas reales.\n\n**WhatsApp (WAS)** es la versión anterior: ya no se ofrece para conectar. Si la tienes conectada sigue funcionando, y en su fila aparece **Conectar la nueva** para pasar tus automatizaciones a **WhatsApp (Whats)**.',
+            },
+            {
+                t: 'callout',
                 tone: 'info',
                 title: '¿No ves Gmail, Outlook, Google Calendar o Slack?',
                 md: 'Las apps que se autorizan con una cuenta de Google, Microsoft o Slack necesitan que el operador de la plataforma las haya habilitado una vez. Si no aparecen en tu galería, todavía no lo hizo: pídeselo a quien te dio acceso a la app.',
