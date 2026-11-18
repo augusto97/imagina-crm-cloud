@@ -554,6 +554,14 @@ mezcla) y los avisos por correo aceptan todos los tipos; addendum ADR-S104).
 **Pendiente del usuario**: volver a correr el instalador del guardián como
 root (`bash /opt/imagina-base/current/deploy/install-guardian.sh`; la consola
 lo avisa) para separar los procesos (`--un-proceso` para dejarlo como está).
+**2026-11-18 (22:53 UTC)**: lo corrió, pero el servidor seguía en la
+**v0.1.434** (`current_release 20261117200838_0.1.434`) → se instaló el
+guardián **v2** (sin procesos separados). Las actualizaciones las instala el
+operador en Plataforma → Actualizaciones (no se instalan solas). Falta:
+instalar la v0.1.448 desde ahí y volver a correr el instalador. La salida
+dijo «usuario de la app root» (la unidad de `imagina-api` no tiene `User=`):
+la app corre como root — recomendación pendiente, pasarla a un usuario propio
+(no se tocó; lo decide el usuario).
 **Plan aprobado el 2026-11-18** («estabilizar y mejorar», "Ok, has todos los
 que propones"), en este orden: **v0.1.436** pruebas de pantallas (hecha);
 **v0.1.437** uso por módulo en
