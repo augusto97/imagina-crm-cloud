@@ -15672,6 +15672,50 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         suites relacionadas, front 940 y shared 1004 en verde — E2E navegador
         40/40 en escritorio y celular oscuro.
 
+  - [x] **Los PDF en un hilo aparte y el historial con plazo (v0.1.439,
+        quinta versión del plan «estabilizar y mejorar»)**: (a) **PDF fuera
+        del hilo principal**: pdfmake maqueta en un tramo sincrónico y un
+        documento grande, cien etiquetas con QR o un Gantt de varias páginas
+        dejaban al proceso sin atender NADA durante segundos.
+        `documents/pdf-pool.ts` (`PdfPool` sobre `worker_threads`;
+        `PDF_WORKERS`, 1 por defecto, 0 = como antes; tope de 768 MB por
+        hilo, 60 s por PDF, se cierra a los 10 min sin uso; un hilo que se
+        cae o tarda falla sólo ese PDF y el siguiente usa uno nuevo) y
+        `documents/pdf-worker.ts`. Al hilo viajan DATOS, nunca funciones: el
+        documento se GRABA en el hilo principal (`recordDocInput`: cada texto
+        con sus variables ya resueltas, etiquetas y valores de los campos, el
+        pie) y se rearma allá (`replayDocInput`); si falta algo,
+        `PdfTaskFallback` y se arma en el hilo principal. Pasan por el hilo
+        documentos, etiquetas (`renderPlainPdfDefinition`), Gantt y tableros
+        por correo; la compuerta de `pdf-limits.ts` sigue, con la
+        concurrencia del pool. Sin el `.js` compilado no hay pool;
+        `PDF_WORKER_TS=1` lo levanta desde el `.ts` con `tsx/cjs` (sólo
+        pruebas). El Excel ya salía por páginas y el import se lee en el
+        navegador: no necesitó un hilo. (b) **Retención elegible**
+        (`packages/shared/src/schemas/platform-retention.ts`, Redis
+        `platform:retention`, viaja en las copias): el **historial de
+        corridas de automatizaciones** se guarda 90 días de fábrica (30/60/
+        90/180/365 o siempre) y nunca se borra una corrida que espera o
+        corre, la última de cada automatización, ni —en las automatizaciones
+        «por fecha de vencimiento»— una corrida sin otra más nueva y no
+        fallida del mismo registro (es lo que evita que se dispare otra vez;
+        `automationRunsRule`); la **actividad de los registros** se guarda
+        siempre de fábrica, con plazo opcional (1-5 años, con confirmación).
+        `RetentionService` suma `settings`/`setSettings`/`status`/`runNow`,
+        `tableSizes` (las tablas que más pesan con nombre legible y si se
+        limpian solas) y `pruneWithInfo` («queda más» para la próxima
+        vuelta); resultado en Redis `diag:retention:last`. Endpoints
+        `GET/PUT /system/diagnostics/retention` y `POST …/run` (superadmin).
+        Migración 0127: BRIN de `activity.created_at`. (c) **Plataforma →
+        Diagnóstico → «Tamaño de la base»** (`DbRetentionCard`): cuánto ocupa
+        la base, lo que más pesa, los dos plazos y «Limpiar ahora». Aprende
+        → consola al día; sin novedad (es del operador). Tests:
+        `pdf-pool.spec` (8: mismo resultado que en el hilo principal, el
+        hilo principal sigue libre —más de 200 ms frenado contra menos de
+        80—, errores, tope de tiempo, cierre por inactividad, fallback),
+        `retention.spec` +3, `platform-retention.test` (3), specs de PDF
+        73/73 — E2E navegador 16/16 en escritorio y celular oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

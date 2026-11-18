@@ -430,7 +430,17 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.438**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.439**
+(**los PDF en un hilo aparte y el historial con plazo** — documentos,
+etiquetas con QR, Gantt y tableros por correo se arman en un `worker_thread`
+(`PDF_WORKERS`, 1 por defecto, 0 = como antes): un PDF pesado ya no frena la
+app. Plataforma → Diagnóstico gana **«Tamaño de la base»**: lo que pesa cada
+tabla, cuánto se guarda el historial de corridas de automatizaciones (90 días
+de fábrica; nunca la última de cada automatización, las que esperan ni lo que
+evita que «por fecha de vencimiento» se dispare otra vez) y la actividad de
+los registros (siempre de fábrica; plazo opcional con confirmación), con
+«Limpiar ahora». Redis `platform:retention`. Sin novedad: es del operador).
+Antes **v0.1.438**
 (**apps en beta, SMS acotados y correos del agente con aprobación** — la
 galería de Integraciones marca «Beta» lo que todavía no se usó con una cuenta
 real (WhatsApp de Meta, Telegram, los cinco SMS, Slack, Google Calendar/Meet,
@@ -477,8 +487,10 @@ Plataforma (hecha); **v0.1.438** (hecha) integraciones sin probar con cuenta rea
 Telegram, Slack, Google Calendar/Meet, reCAPTCHA/hCaptcha), aviso de retiro de
 «WhatsApp (WAS anterior)» con la herramienta de cambio, SMS con 1-2
 proveedores a la vista y el correo de los agentes de IA sólo en «propone y
-alguien aprueba»; **v0.1.439** PDF/Excel en hilos aparte, crecimiento acotado
-de `automation_runs`/`activity` y verificación de copias restaurándolas;
+alguien aprueba»; **v0.1.439** (hecha) PDF en un hilo aparte y crecimiento
+acotado de `automation_runs`/`activity` (el Excel ya salía por páginas y el
+import se lee en el navegador: no hizo falta un hilo); **v0.1.440**
+verificación de copias restaurándolas en una base de prueba;
 después los módulos nuevos (ver `docs/ideas.md` §0: API pública + webhooks +
 n8n, acciones/disparadores que faltan, duplicados y fusionar, firma
 electrónica, DIAN —falta proveedor y credenciales de prueba— y modo agencia
@@ -2134,6 +2146,34 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-18 · v0.1.439** — **Los PDF en un hilo aparte y el historial con
+  plazo** (quinta versión del plan «estabilizar y mejorar»). (a) PDF:
+  `documents/pdf-pool.ts` (`PdfPool` sobre `worker_threads`: un hilo por
+  defecto, `PDF_WORKERS`, tope de 768 MB por hilo, 60 s por PDF, se cierra a
+  los 10 min sin uso; un hilo que se cae o tarda falla ESE PDF y el siguiente
+  usa uno nuevo) y `pdf-worker.ts`. Al hilo viajan DATOS: el documento se
+  graba en el hilo principal (`recordDocInput`: textos resueltos, etiquetas y
+  valores de los campos, pie) y se rearma allá (`replayDocInput`); si falta
+  algo, `PdfTaskFallback` y se arma aquí. Pasan por el hilo documentos,
+  etiquetas (`renderPlainPdfDefinition`), Gantt y tableros por correo; la
+  compuerta de `pdf-limits.ts` sigue (con la concurrencia del pool). Sin el
+  `.js` compilado (pruebas desde el código) no hay pool; `PDF_WORKER_TS=1`
+  lo levanta con `tsx/cjs` (con `--import tsx` el hilo no hereda los ganchos
+  de resolución). (b) Retención elegible: `platform-retention.ts` en shared y
+  `RetentionService` (`automationRunsRule` —nunca waiting/running, nunca la
+  última de cada automatización, en «por fecha de vencimiento» sólo si hay
+  otra más nueva no fallida del mismo registro o el registro ya no existe—,
+  `activityRule`, `tableSizes`, `pruneWithInfo` con «queda más»), resultado
+  en Redis `diag:retention:last`, endpoints `system/diagnostics/retention`
+  (+ `/run`), migración 0127 (BRIN de `activity.created_at`). Tarjeta
+  **«Tamaño de la base»** (`DbRetentionCard`) en Diagnóstico y Aprende →
+  consola al día. Verificado: `pdf-pool.spec` 8/8 (igual que en el hilo
+  principal, el hilo principal no se frena: >200 ms local vs <80 ms con el
+  hilo, errores, tope de tiempo, cierre por inactividad, fallback),
+  `retention.spec` 4/4, 3 de shared, specs de PDF 73/73 y E2E 16/16
+  (etiquetas por el hilo con la API respondiendo, ajustes que se guardan,
+  confirmación de la actividad, «Limpiar ahora», celular oscuro).
+  **Siguiente**: v0.1.440 (verificar las copias restaurándolas).
 - **2026-11-18 · v0.1.438** — **Apps en beta, SMS acotados y correos del
   agente con aprobación** (cuarta versión del plan «estabilizar y mejorar»).
   `packages/shared/src/schemas/integration-stage.ts`: lo de fábrica

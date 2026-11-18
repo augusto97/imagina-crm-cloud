@@ -1,5 +1,6 @@
 import { ganttTicks, type GanttBar, type GanttZoom } from '@imagina-base/shared';
 import { pdfFontFamily, renderPdfDefinition } from '../documents/document-render';
+import { renderViaPool } from '../documents/pdf-pool';
 
 /** Una fila del PDF, ya resuelta (lo mismo que se ve en la pantalla). */
 export interface GanttPdfRow {
@@ -58,7 +59,13 @@ const n = (v: number): string => (Math.round(v * 100) / 100).toString();
  * veía en la pantalla para que entre en el ancho de la hoja; el nivel de las
  * marcas baja solo si quedarían amontonadas.
  */
-export async function renderGanttPdf(input: GanttPdfInput): Promise<Buffer> {
+export function renderGanttPdf(input: GanttPdfInput): Promise<Buffer> {
+    // v0.1.439 — al hilo de PDF van los datos; el armado y la maquetación, allá.
+    return renderViaPool<Buffer>(() => ({ kind: 'gantt', input }), () => renderGanttPdfLocal(input));
+}
+
+/** El Gantt en el hilo actual (el de PDF, o el principal si no hay). */
+export async function renderGanttPdfLocal(input: GanttPdfInput): Promise<Buffer> {
     const font = pdfFontFamily('inter');
     const cols = input.columns.slice(0, 3);
     const panelW = TITLE_W + COL_W * cols.length;

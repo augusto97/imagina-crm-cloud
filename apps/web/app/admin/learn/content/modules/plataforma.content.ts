@@ -642,7 +642,18 @@ export const articles: LearnArticle[] = [
                         what: 'Espacio libre del servidor y qué ocupa: versiones de la app, copias, archivos, base de datos.',
                         tip: '**Liberar espacio** borra versiones viejas y copias previas a cada actualización, sin tocar datos ni archivos de las empresas.',
                     },
+                    {
+                        name: 'Tamaño de la base',
+                        what: 'Lo que más pesa en la base, cuánto se guarda el historial de corridas de las automatizaciones y la actividad de los registros, y la última limpieza.',
+                        tip: 'El historial de corridas se guarda **90 días** (recomendado) y la actividad **siempre**. **Limpiar ahora** no espera a la vuelta de cada hora.',
+                    },
                 ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Qué se borra solo y qué no',
+                md: 'Cada hora la app borra lo viejo que nadie vuelve a mirar: avisos leídos, Problemas resueltos, SMS terminados y las corridas de automatizaciones más viejas que el plazo que elijas. Nunca borra la última corrida de cada automatización, las que esperan, ni lo que evita que una automatización «por fecha de vencimiento» se dispare otra vez. La **actividad** de los registros es la historia de los datos de cada empresa: por defecto no se borra; ponle plazo sólo si la base crece de más.',
             },
             {
                 t: 'callout',

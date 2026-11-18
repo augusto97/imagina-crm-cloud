@@ -373,6 +373,8 @@ import {
     type PlatformDomain,
     type PlatformDomains,
     type PlatformNetworkView,
+    type PlatformRetentionStatus,
+    type UpdatePlatformRetentionInput,
     type NetworkCheckResult,
     type UpdatePlatformNetworkInput,
     type SmtpDiagnoseInput,
@@ -1762,6 +1764,16 @@ export class CloudClient {
     }
     diskCleanup(): Promise<DiskCleanupResult> {
         return this.request('POST', '/system/diagnostics/disk/cleanup', { schema: diskCleanupResultSchema });
+    }
+    // v0.1.439 — tamaño de la base y cuánto se guarda el historial.
+    retentionGet(): Promise<PlatformRetentionStatus> {
+        return this.request('GET', '/system/diagnostics/retention', { schema: z.custom<PlatformRetentionStatus>() });
+    }
+    retentionUpdate(input: UpdatePlatformRetentionInput): Promise<PlatformRetentionStatus> {
+        return this.request('PUT', '/system/diagnostics/retention', { body: input, schema: z.custom<PlatformRetentionStatus>() });
+    }
+    retentionRun(): Promise<PlatformRetentionStatus> {
+        return this.request('POST', '/system/diagnostics/retention/run', { schema: z.custom<PlatformRetentionStatus>() });
     }
     // v0.1.337 — liberar y reparar el registro de cambios (WAL) trabado.
     walRelease(): Promise<WalReleaseResult> {

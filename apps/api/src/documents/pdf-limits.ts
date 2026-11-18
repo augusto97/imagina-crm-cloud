@@ -43,10 +43,19 @@ export class PdfRenderGate {
     slowestMs = 0;
 
     constructor(
-        private readonly concurrency: number,
+        private concurrency: number,
         private readonly maxQueue: number,
         private readonly waitMs: number,
     ) {}
+
+    /** v0.1.439 — con hilos de PDF, tantos a la vez como hilos haya. */
+    setConcurrency(n: number): void {
+        this.concurrency = Math.max(1, Math.floor(n));
+        while (this.active < this.concurrency && this.waiters.length > 0) {
+            this.active += 1;
+            this.waiters.shift()!.go();
+        }
+    }
 
     get inFlight(): number {
         return this.active;

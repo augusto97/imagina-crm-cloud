@@ -60,10 +60,10 @@ export const meta: LearnModuleMeta = {
         {
             id: 'plataforma-correo-diagnostico',
             title: 'Correo de la plataforma, diagnóstico y disco',
-            summary: 'Configura el correo que usan todas las cuentas, mira qué correos salieron y qué errores hubo, y libera espacio en el servidor.',
+            summary: 'Configura el correo que usan todas las cuentas, mira qué correos salieron y qué errores hubo, libera espacio en el servidor y decide cuánto historial se guarda.',
             minutes: 6,
             level: 'intermediate',
-            keywords: 'correo smtp plataforma diagnostico errores correos recientes disco espacio liberar inodos',
+            keywords: 'correo smtp plataforma diagnostico errores correos recientes disco espacio liberar inodos tamaño base de datos tablas historial corridas actividad retencion limpieza',
             operatorOnly: true,
         },
         {
