@@ -63,15 +63,17 @@ describe('cache de lista y campos por id Y por slug', () => {
         expect(qc.getQueryData(listsKeys.detail(42))).toBe(list);
     });
 
-    it('los campos traídos por slug quedan bajo el id (del índice o de `list_id`)', () => {
+    it('los campos traídos por slug quedan bajo el id (del índice o de `list_id`), nunca bajo el slug', () => {
         const qc = new QueryClient();
         seedFieldsForList(qc, 'clientes', fields);
         expect(qc.getQueryData(['fields', '42'])).toBe(fields);
 
+        // v0.1.436 — regla de oro nº 7: pedidos por id, NO se copian bajo el
+        // slug (la misma lista quedaba dos veces en la caché).
         const withIndex = new QueryClient();
         withIndex.setQueryData(listsKeys.list(), [list]);
         seedFieldsForList(withIndex, 42, []);
-        expect(withIndex.getQueryData(['fields', 'clientes'])).toEqual([]);
+        expect(withIndex.getQueryData(['fields', 'clientes'])).toBeUndefined();
         // No toca otras listas.
         expect(withIndex.getQueryData(['fields', 'facturas'])).toBeUndefined();
     });

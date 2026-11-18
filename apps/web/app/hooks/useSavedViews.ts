@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
-import { invalidateForList } from '@/hooks/useRecords';
+import { canonicalListId, invalidateForList, joinInflight } from '@/hooks/useRecords';
 import type { SavedViewConfig, SavedViewEntity, SavedViewType } from '@/types/view';
 
 export const viewsKeys = {
@@ -10,12 +10,17 @@ export const viewsKeys = {
 };
 
 export function useSavedViews(listId: string | number | undefined) {
+    const qc = useQueryClient();
+    // v0.1.436 — regla de oro nº 7: la key por el ID aunque la pantalla abra
+    // la lista por su slug (antes quedaba guardada dos veces: por slug y por id).
+    const key = listId === undefined || listId === '' ? '' : canonicalListId(qc, listId);
     return useQuery({
-        queryKey: viewsKeys.forList(listId ?? ''),
-        queryFn: async () => {
-            const res = await api.get<SavedViewEntity[]>(`/lists/${listId}/views`);
-            return res.data;
-        },
+        queryKey: viewsKeys.forList(key),
+        queryFn: () =>
+            joinInflight(qc, viewsKeys.forList(key), viewsKeys.forList(String(listId)), async () => {
+                const res = await api.get<SavedViewEntity[]>(`/lists/${listId}/views`);
+                return res.data;
+            }),
         enabled: listId !== undefined && listId !== '',
         // Vistas guardadas rara vez cambian en una sesión. (Fase 16.D)
         staleTime: 60_000,

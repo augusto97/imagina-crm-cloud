@@ -430,7 +430,18 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.435**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.436**
+(**pruebas de pantallas en el CI** — cada PR levanta la app compilada, crea
+una empresa con cinco plantillas reales y recorre en un navegador todas las
+pantallas (listas, cada vista, la ficha, la configuración de cada lista,
+Ajustes, tableros, el celular en oscuro, el formulario público y la consola de
+Plataforma); falla si alguna se rompe, tira un error de JavaScript o un 5xx,
+o si una lista queda en la caché bajo su slug (regla de oro nº 7, medida en
+vivo). Encontró dos violaciones —vistas pedidas por slug y campos sembrados
+bajo el slug— y se corrigieron. Correrlo a mano en desarrollo:
+`PW_CHROMIUM=/opt/pw-browsers/chromium DATABASE_URL=postgres://imagina:imagina@localhost:5432/imagina_base node scripts/e2e/smoke.mjs --base http://localhost:5174 --api http://localhost:3001`;
+como en el CI: `bash scripts/e2e/ci.sh` (con `E2E_DATABASE_URL`/`E2E_REDIS_URL`
+para no levantar Docker). Sin novedad: es interno). Antes **v0.1.435**
 (**la app en dos procesos + errores de las pantallas** — `imagina-api` atiende
 y `imagina-worker` corre los trabajos en segundo plano (si hay ≥ 1,5 GB de
 RAM; el guardián v3 los vigila a los dos), los errores del navegador llegan a
@@ -441,8 +452,8 @@ mezcla) y los avisos por correo aceptan todos los tipos; addendum ADR-S104).
 root (`bash /opt/imagina-base/current/deploy/install-guardian.sh`; la consola
 lo avisa) para separar los procesos (`--un-proceso` para dejarlo como está).
 **Plan aprobado el 2026-11-18** («estabilizar y mejorar», "Ok, has todos los
-que propones"), en este orden: **v0.1.436** pruebas de pantallas (Playwright)
-en el CI + regla de oro nº 7 en ~38 hooks; **v0.1.437** uso por módulo en
+que propones"), en este orden: **v0.1.436** pruebas de pantallas (hecha);
+**v0.1.437** uso por módulo en
 Plataforma; **v0.1.438** integraciones sin probar con cuenta real marcadas
 «beta» con mostrar/ocultar del operador (SMS, WhatsApp de Meta, Wompi, PayPal,
 Telegram, Slack, Google Calendar/Meet, reCAPTCHA/hCaptcha), aviso de retiro de
@@ -2105,6 +2116,27 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-18 · v0.1.436** — **Pruebas de pantallas en el CI** (segunda
+  versión del plan «estabilizar y mejorar»). `scripts/e2e/smoke.mjs` registra
+  una empresa nueva, aplica cinco plantillas del sistema con registros
+  (facturación, proyectos, agenda, soporte, ventas), publica un formulario y
+  recorre en Chromium: listas, Mi trabajo, favoritos, tableros, agentes,
+  Aprende, ideas, novedades, avisos, cada tablero, cada lista con cada vista,
+  la ficha (modal y página), automatizaciones, las 13 secciones de la
+  configuración de una lista, las 23 de Ajustes, el alta de un registro, el
+  formulario público (crea el registro), el celular en oscuro sin scroll
+  lateral y las 16 pestañas de Plataforma con un operador. Cada pantalla falla
+  con una pantalla de error, un error de JavaScript, un 5xx o un error que la
+  app reporta a Diagnóstico. `scripts/e2e/ci.sh` lo corre como en producción
+  (API compilado + front construido + `serve-prod.mjs`) y el job nuevo
+  «pruebas de pantallas» del CI lo exige (capturas de lo que falló como
+  artefacto). **Regla de oro nº 7 medida**: `lib/queryKeyAudit.ts` (sólo con
+  `localStorage['imcrm:e2e']`) lista las claves de caché que llevan el slug de
+  una lista; encontró `views` (las vistas se pedían por slug) y `fields` (se
+  sembraban bajo el slug) — corregidas; `invalidateForList` alcanza también
+  una clave con el id numérico. De los ~38 hooks que arman claves por lista
+  sólo esos dos rompían la regla en el recorrido. Verificado: 107/107 contra
+  vite y 123/123 con `ci.sh` (incluida Plataforma). Sin novedad (interno).
 - **2026-11-18 · v0.1.435** — **La app en dos procesos + errores de las
   pantallas + dos fallas escondidas** (primera versión del plan «estabilizar
   y mejorar la app» que el usuario aprobó entero: "Ok, has todos los que

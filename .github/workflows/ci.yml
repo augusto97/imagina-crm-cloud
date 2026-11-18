@@ -96,13 +96,64 @@ jobs:
         working-directory: apps/api
         run: pnpm exec vitest run --shard=${{ matrix.shard }}/4
 
+  # v0.1.436 — Pruebas de pantallas: una empresa nueva con plantillas reales
+  # recorre la app entera en un navegador (escritorio, celular en oscuro, el
+  # formulario público y la consola de Plataforma) contra el API compilado y el
+  # front construido. Falla si una pantalla se rompe, tira un error de
+  # JavaScript o un 5xx, o si una lista queda en la caché bajo su slug (regla
+  # de oro nº 7). Las capturas de lo que falló quedan como artefacto.
+  e2e:
+    name: pruebas de pantallas
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      # Sin `tsc`: los tipos ya los revisa el job «checks».
+      - name: Compilar shared, API y front
+        run: |
+          pnpm --filter @imagina-base/shared build
+          pnpm --filter @imagina-base/api build
+          cd apps/web
+          pnpm exec vite build --config vite.cloud.config.ts
+          pnpm exec vite build --config vite.form.config.ts
+          pnpm exec vite build --config vite.widget.config.ts
+          pnpm exec vite build --config vite.shop.config.ts
+
+      - name: Recorrer las pantallas
+        run: bash scripts/e2e/ci.sh /tmp/e2e-shots
+
+      - name: Capturas de lo que falló
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pantallas-que-fallaron
+          path: |
+            /tmp/e2e-shots
+            /tmp/e2e/api.log
+          if-no-files-found: ignore
+          retention-days: 7
+
   ci:
-    needs: [checks, api-tests]
+    needs: [checks, api-tests, e2e]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Resultado
         run: |
-          echo "checks: ${{ needs.checks.result }} · api-tests: ${{ needs.api-tests.result }}"
+          echo "checks: ${{ needs.checks.result }} · api-tests: ${{ needs.api-tests.result }} · e2e: ${{ needs.e2e.result }}"
           test "${{ needs.checks.result }}" = success
           test "${{ needs.api-tests.result }}" = success
+          test "${{ needs.e2e.result }}" = success

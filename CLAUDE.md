@@ -15570,6 +15570,39 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `lists.spec` 19/19 (mezcla y tres PATCH a la vez), shared 995,
         `serverWatch.test` y `errorReporter.test` en el front.
 
+  - [x] **Pruebas de pantallas en el CI + la regla de oro nº 7 medida
+        (v0.1.436, segunda versión del plan «estabilizar y mejorar»)**.
+        (a) **`scripts/e2e/smoke.mjs`** (playwright-core, sin dependencias
+        nuevas): registra una empresa, verifica el correo por la base, aplica
+        cinco plantillas del sistema con registros (facturación, proyectos,
+        agenda, soporte, ventas), publica un formulario y recorre en Chromium
+        listas, Mi trabajo, favoritos, tableros, agentes, Aprende, ideas,
+        novedades, avisos, cada tablero, cada lista con cada vista
+        (`?view=`), la ficha (modal y página), automatizaciones, las 13
+        secciones de la configuración de una lista y las 23 de Ajustes; da de
+        alta un registro desde la tabla, envía el formulario público (crea el
+        registro; nunca llena el campo trampa), recorre el celular en oscuro
+        sin scroll lateral y, con un operador (`--operator-email`), las 16
+        pestañas de Plataforma. Cada pantalla falla con la pantalla de error,
+        un error de JavaScript, un 5xx del API o un error que la app manda a
+        Diagnóstico (`/client-errors`); `--shots` guarda capturas de lo que
+        falló. (b) **`scripts/e2e/ci.sh`**: la app como en producción
+        (Postgres + Redis en Docker, API compilado, front construido detrás de
+        `serve-prod.mjs`, operador con `prepare-operator.mjs`, el Chrome del
+        runner); job nuevo **«pruebas de pantallas»** en `ci.yml` que el job
+        `ci` exige, con las capturas y el log del API como artefacto si falla.
+        (c) **Regla de oro nº 7 medida en vivo** (`lib/queryKeyAudit.ts`, sólo
+        con `localStorage['imcrm:e2e'] = '1'`): lista las claves de caché que
+        llevan el slug de una lista (salvo el índice `lists`). Encontró dos:
+        `useSavedViews` pedía las vistas por slug (ahora `canonicalListId` +
+        `joinInflight`) y `seedFieldsForList` copiaba los campos bajo el slug
+        (ahora sólo bajo el id); `invalidateForList` alcanza además una clave
+        con el id como número. De los ~38 hooks que arman claves por lista,
+        sólo esos dos la rompían en el recorrido. Tests: 4 nuevos en
+        `queryKeys.test.ts`, `navShell.test` al día, front 937 — y el
+        recorrido 107/107 contra vite y 123/123 con `ci.sh` (con Plataforma).
+        Sin novedad (interno).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
