@@ -33,7 +33,10 @@ de eventos en v0.1.442 y la app de n8n en v0.1.443; quedan Make y Zapier),
 portal, verificar con el archivo y asistente/MCP— y v0.1.448 —el código por SMS
 o WhatsApp—) y **G8** (facturación DIAN: falta elegir proveedor y tener
 credenciales de prueba) e **I3** (modo agencia: decisiones tomadas el
-2026-11-18, ver §2; en desarrollo).
+2026-11-18, ver §2; la base salió en v0.1.449 —consola de la agencia, entrar
+con rastro, pausar, plan gestionado—; siguen la marca de la agencia en
+v0.1.450, los planes y el cobro a sus clientes en v0.1.451 y el cobro de la
+plataforma a la agencia en v0.1.452).
 
 ---
 
@@ -78,7 +81,9 @@ aquí, pospuestos:
   incluidas más un valor por cada empresa extra; la agencia entra a los datos
   de sus clientes como administradora, con rastro en la bitácora que el
   cliente puede ver; y los clientes de una agencia sólo ven la marca de la
-  agencia (white-label completo, sin la marca de la plataforma).
+  agencia (white-label completo, sin la marca de la plataforma). **Hecho en
+  v0.1.449**: el modelo, la consola de la agencia y el acceso con rastro.
+  **Queda**: la marca (v0.1.450) y los dos cobros (v0.1.451-452).
 - **G5 · Importadores**, Airtable primero (base completa con vínculos y
   adjuntos, por token de la persona); después Notion, ClickUp, Trello y monday.
 - **G3 · Google Sheets sincronizado en los dos sentidos.** La integración de

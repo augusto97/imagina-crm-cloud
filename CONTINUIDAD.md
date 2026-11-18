@@ -430,7 +430,22 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.448**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.449**
+(**modo agencia, primera parte** — el operador marca una empresa como agencia
+en Plataforma → Empresas (con el plan con que nacen sus clientes y un tope);
+sus administradores tienen la sección «Agencia» (en el celular, Más → Empresas
+cliente) para crear empresas cliente con invitación a su administrador,
+**entrar** como administradores (cada entrada queda en el Registro de
+actividad del cliente, a la vista de él), renombrarlas y pausarlas (solo
+lectura). El acceso del cliente sigue al de la agencia, su plan lo maneja la
+agencia (no ve cobros de la plataforma) y la gente de la agencia no ocupa
+usuarios ni se quita desde el cliente. Decisiones del usuario del 2026-11-18:
+la agencia cobra a su cliente con su pasarela; la plataforma cobra a la
+agencia «las dos» (plan base con N empresas + extra por empresa); acceso con
+rastro; marca sólo de la agencia. ADR-S108. **Siguen**: v0.1.450 la marca de
+la agencia (white-label), v0.1.451 planes y cobro de la agencia a sus
+clientes, v0.1.452 cobro de la plataforma a la agencia; G8 DIAN espera
+proveedor y credenciales de prueba). Antes **v0.1.448**
 (**el código de firma por SMS o WhatsApp** — al pedir una firma (en la ficha o
 en una automatización), «Cómo confirma que es quien dice ser» suma «por SMS» y
 «por WhatsApp»: se elige una conexión del equipo (Twilio/Onurix; Whats o
@@ -558,7 +573,11 @@ lo avisa) para separar los procesos (`--un-proceso` para dejarlo como está).
 **v0.1.434** (`current_release 20261117200838_0.1.434`) → se instaló el
 guardián **v2** (sin procesos separados). Las actualizaciones las instala el
 operador en Plataforma → Actualizaciones (no se instalan solas). Falta:
-instalar la v0.1.448 desde ahí y volver a correr el instalador. La salida
+instalar la v0.1.448 desde ahí y volver a correr el instalador.
+**2026-11-18 (tarde)**: el usuario instaló la **v0.1.448** y volvió a correr
+el instalador: guardián **v3** con **procesos separados** (`imagina-api`
+atiende e `imagina-worker` hace los trabajos), `current_release
+20261118225528_0.1.448`. La salida
 dijo «usuario de la app root» (la unidad de `imagina-api` no tiene `User=`):
 la app corre como root — recomendación pendiente, pasarla a un usuario propio
 (no se tocó; lo decide el usuario).
@@ -2228,6 +2247,32 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-18 · v0.1.449** — **Modo agencia, primera parte** (I3, ADR-S108).
+  Decisiones del usuario: la agencia cobra a su cliente con su pasarela; la
+  plataforma cobra a la agencia «las dos» (plan base con N empresas incluidas +
+  valor por cada extra); acceso «con rastro» (recomendado); marca «sólo la de la
+  agencia» (recomendado). Migración 0134 (`tenants.is_agency`, `agency_id` con
+  `RESTRICT`, `agency_paused_at`, `memberships.via_agency`, CHECK). Acceso del
+  cliente que sigue a la agencia en `tenantAccess` (`agency_paused`, `agency`)
+  y `agencyAccessSql` en el guard, tokens, formularios, agenda, webhooks,
+  automatizaciones y facturación. Entrar como admin `via_agency` revalidado en
+  cada pedido, `agency.access` una vez por hora en la bitácora del cliente; no
+  ocupa usuarios ni se quita desde el cliente; dejar de ser admin de la agencia
+  o desvincular borra esos accesos. Consola `/agency` (crear con plan y tope,
+  invitar al admin, entrar, renombrar, pausar). Checkout del cliente 403
+  `agency_managed`, Suscripción dice que la maneja la agencia, sin avisos de
+  prueba/vencimiento. Plataforma: «Es una agencia», plan de los clientes, tope,
+  pasar a una agencia y quitar de ella; insignias y `?agency=`. **Bug
+  encontrado por el test**: el conteo de clientes por agencia en la consola
+  daba siempre 0 (la clave bigint llegaba como texto). Guía de ayuda `agency`
+  y pantalla `agency` (sin novedad: lo enciende el operador). Tests:
+  `agency.spec` (5), 2 de shared, 14 suites relacionadas 217/217; E2E
+  navegador 28/28 (escritorio, celular oscuro). **En producción**: el usuario
+  instaló la v0.1.448 y el guardián v3 con procesos separados. **Pendientes
+  del usuario**: revisar el Redis (pasos simplificados), si publicar la app
+  de n8n en npm (`NPM_TOKEN`), proveedor y credenciales de la DIAN, y si pasar
+  la app a un usuario propio (corre como root).
 
 - **2026-11-18 · v0.1.448** — **El código de firma por SMS o WhatsApp**
   (addendum ADR-S107). `verify` suma `sms`/`whatsapp`; migración 0133
