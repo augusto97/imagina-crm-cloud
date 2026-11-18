@@ -15603,6 +15603,45 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         recorrido 107/107 contra vite y 123/123 con `ci.sh` (con Plataforma).
         Sin novedad (interno).
 
+  - [x] **Uso por módulo en Plataforma (v0.1.437, tercera versión del plan
+        «estabilizar y mejorar»: "qué empresa usa qué y cuánto, para decidir
+        con datos qué quitar y qué cobrar")**. Pestaña nueva **Plataforma →
+        Uso** (grupo Clientes). (a) **Catálogo** en
+        `packages/shared/src/schemas/platform-usage.ts`: 29 módulos en cuatro
+        grupos (Trabajo, Recibir de afuera, Conectar con otras apps, Equipo y
+        marca), cada uno con el módulo del plan que lo apaga, qué cuenta la
+        CANTIDAD (lo configurado y vivo: automatizaciones activas, formularios
+        publicados, conexiones…) y la ACTIVIDAD (lo que pasó en 30 días:
+        corridas, respuestas, pedidos, citas; la IA y el correo cuentan el mes
+        en curso); un test exige que cada `PLAN_MODULE` se mida.
+        `usageCellUsing` (usar = tener algo configurado, o actividad si el
+        módulo no tiene cantidad) y `compareUsageCells` son puros. (b)
+        **`PlatformUsageService`** (conexión base, sin RLS): una consulta
+        agrupada por empresa por módulo —sólo tablas de configuración y de
+        actividad con su índice de fecha, nunca `records`— de a 4 en paralelo;
+        una consulta que falla deja el módulo en cero y en `unmeasured` (la
+        pantalla lo avisa). La matriz se guarda en Redis `diag:usage:v1`
+        (fresca 10 min, «Actualizar» como mucho cada 30 s, otro proceso la lee
+        sin ir a la base; no es `platform:*`: no viaja en las copias). Sin las
+        empresas archivadas. `GET /platform/usage` (`?refresh=1`),
+        `/platform/usage/modules/:key` (las empresas que lo usan, de la que
+        más a la que menos, tope 300) y `/platform/usage/tenants/:id`
+        (superadmin). (c) **Pantalla** (`PlatformUsageCard`): «18 de 29
+        módulos los usa al menos una empresa», filtro Todos / En uso / Sin
+        uso, por módulo «6 de 8 empresas · 3 con actividad» con su barra, la
+        cantidad y la actividad, «Nadie lo usa» y «Apagado en: Trial»,
+        último uso, y **Apps conectadas** (empresas y conexiones por
+        integración, con «API personalizada»). Tocar un módulo abre las
+        empresas que lo usan; tocar una empresa abre su ficha
+        (`?tab=tenants&tenant=<id>`, que ahora abre la ficha directo y se
+        limpia al cerrarla), donde aparece **Qué usa** (`TenantUsageSection`).
+        Aprende → Consola de la plataforma lo explica; sin novedad (es del
+        operador). Tests: `platform-usage.spec` (3, Postgres y Redis reales:
+        conteos por módulo sin las archivadas, detalle por módulo y empresa,
+        caché y «Actualizar»), shared (4), front (3, `usageView`) — 940 front
+        en verde — + E2E navegador 19/19 en escritorio y celular oscuro y el
+        recorrido de pantallas 124/124 con la pestaña nueva.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

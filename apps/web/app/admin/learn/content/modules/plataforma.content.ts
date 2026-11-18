@@ -437,6 +437,11 @@ export const articles: LearnArticle[] = [
                 title: 'Las funciones nuevas llegan incluidas',
                 md: 'Se guarda lo que un plan NO incluye. Si una actualización trae una función nueva con su casilla, aparece incluida en todos los planes hasta que decidas lo contrario: nada desaparece solo al actualizar.',
             },
+            { t: 'h', text: 'Qué usa cada empresa' },
+            {
+                t: 'p',
+                md: 'Antes de cobrar aparte un módulo o apagarlo en un plan, mira **Plataforma → Uso**: por cada módulo dice cuántas empresas lo usan («6 de 8 empresas»), cuántas tuvieron actividad en los últimos 30 días, cuánto tienen configurado (automatizaciones activas, formularios publicados, conexiones) y cuándo fue el último uso. Un módulo que **nadie usa** lleva la marca y, si un plan lo apaga, lo dice. Toca un módulo para ver qué empresas lo usan, de la que más a la que menos, y toca una empresa para abrir su ficha, donde también aparece **Qué usa**. Abajo, **Apps conectadas** cuenta cada integración. El cálculo se guarda unos minutos; **Actualizar** lo hace de nuevo.',
+            },
             { t: 'h', text: 'Prueba y vencimientos' },
             {
                 t: 'p',

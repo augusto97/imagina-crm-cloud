@@ -430,7 +430,14 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.436**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.437**
+(**uso por módulo en Plataforma** — pestaña **Plataforma → Uso**: por cada
+uno de los 29 módulos, cuántas empresas lo usan, cuántas tuvieron actividad en
+30 días, cuánto tienen configurado y el último uso, con «Nadie lo usa» y en qué
+plan está apagado; tocar un módulo lista las empresas y tocar una abre su
+ficha con «Qué usa». Calculado en la base de una vez y guardado 10 min en
+Redis (`diag:usage:v1`); «Actualizar» lo rehace. Sirve para decidir con datos
+qué cobrar, qué marcar como beta (v0.1.438) y qué apagar). Antes **v0.1.436**
 (**pruebas de pantallas en el CI** — cada PR levanta la app compilada, crea
 una empresa con cinco plantillas reales y recorre en un navegador todas las
 pantallas (listas, cada vista, la ficha, la configuración de cada lista,
@@ -454,7 +461,7 @@ lo avisa) para separar los procesos (`--un-proceso` para dejarlo como está).
 **Plan aprobado el 2026-11-18** («estabilizar y mejorar», "Ok, has todos los
 que propones"), en este orden: **v0.1.436** pruebas de pantallas (hecha);
 **v0.1.437** uso por módulo en
-Plataforma; **v0.1.438** integraciones sin probar con cuenta real marcadas
+Plataforma (hecha); **v0.1.438** integraciones sin probar con cuenta real marcadas
 «beta» con mostrar/ocultar del operador (SMS, WhatsApp de Meta, Wompi, PayPal,
 Telegram, Slack, Google Calendar/Meet, reCAPTCHA/hCaptcha), aviso de retiro de
 «WhatsApp (WAS anterior)» con la herramienta de cambio, SMS con 1-2
@@ -2116,6 +2123,22 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-18 · v0.1.437** — **Uso por módulo en Plataforma** (tercera
+  versión del plan «estabilizar y mejorar»). Pestaña **Plataforma → Uso**:
+  catálogo de 29 módulos en `packages/shared/src/schemas/platform-usage.ts`
+  (cantidad = lo configurado y vivo; actividad = lo de los últimos 30 días, o
+  el mes en curso para la IA y el correo), `PlatformUsageService` con una
+  consulta agrupada por empresa por módulo sobre la conexión base (nunca
+  `records`), guardada en Redis `diag:usage:v1` 10 min («Actualizar» como
+  mucho cada 30 s; no viaja en las copias) y sin las empresas archivadas; una
+  consulta que falla deja el módulo en cero con aviso. Pantalla con filtro
+  Todos / En uso / Sin uso, «Nadie lo usa», «Apagado en: <plan>», Apps
+  conectadas, detalle por módulo con las empresas y la ficha de la empresa
+  con «Qué usa» (`?tab=tenants&tenant=<id>` abre la ficha). Aprende al día;
+  sin novedad (del operador). Verificado: 3 de integración, 4 de shared, 3 del
+  front, E2E 19/19 (escritorio y celular oscuro) y el recorrido de pantallas
+  124/124. **Siguiente**: v0.1.438 (integraciones beta, retiro de WAS
+  anterior, SMS acotados, correo de los agentes sólo con aprobación).
 - **2026-11-18 · v0.1.436** — **Pruebas de pantallas en el CI** (segunda
   versión del plan «estabilizar y mejorar»). `scripts/e2e/smoke.mjs` registra
   una empresa nueva, aplica cinco plantillas del sistema con registros

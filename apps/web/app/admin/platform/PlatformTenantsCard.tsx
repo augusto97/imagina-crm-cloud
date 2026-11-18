@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { daysLeft, signupAttributionLabel, signupSourceKey } from '@imagina-base/shared';
 import {
     Archive,
@@ -76,6 +77,7 @@ import { cn } from '@/lib/utils';
 import { formatDate, formatNumber } from '@/lib/tenantFormat';
 import { parseUtcDate } from '@/lib/utcDate';
 import { TenantShopsSection } from './TenantShopsSection';
+import { TenantUsageSection } from './TenantUsageSection';
 const STATUS_LABEL: Record<BillingStatus, string> = {
     trialing: __('En prueba'),
     active: __('Activa'),
@@ -175,6 +177,20 @@ export function PlatformTenantsCard(): JSX.Element {
     const update = useUpdateTenant();
     const del = useDeleteTenant();
     const [sheetId, setSheetId] = useState<number | null>(null);
+    // v0.1.437 — `?tenant=<id>` abre la ficha de esa empresa (lo usa Plataforma → Uso).
+    const [params, setParams] = useSearchParams();
+    const deepTenant = Number(params.get('tenant'));
+    useEffect(() => {
+        if (Number.isInteger(deepTenant) && deepTenant > 0) setSheetId(deepTenant);
+    }, [deepTenant]);
+    const closeSheet = (): void => {
+        setSheetId(null);
+        if (params.has('tenant')) {
+            const next = new URLSearchParams(params);
+            next.delete('tenant');
+            setParams(next, { replace: true });
+        }
+    };
     const [showNew, setShowNew] = useState(false);
     const [rowError, setRowError] = useState<string | null>(null);
     const setSearch = (v: string): void => {
@@ -448,7 +464,7 @@ export function PlatformTenantsCard(): JSX.Element {
                 {rowError !== null && <p className="imcrm-text-sm imcrm-text-destructive">{rowError}</p>}
             </CardContent>
 
-            <TenantSheet id={sheetId} onClose={() => setSheetId(null)} />
+            <TenantSheet id={sheetId} onClose={closeSheet} />
         </Card>
     );
 }
@@ -768,6 +784,9 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
                                 impersonating={impersonate.isPending}
                                 onImpersonate={(userId, who) => void doImpersonate(userId, who)}
                             />
+
+                            {/* v0.1.437 — qué módulos usa y cuánto (lo mismo que Plataforma → Uso). */}
+                            <TenantUsageSection tenantId={t.id} />
 
                             {/* v0.1.412 — tiendas (suspender una que se usa mal). */}
                             <TenantShopsSection tenantId={t.id} />

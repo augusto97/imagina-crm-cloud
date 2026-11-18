@@ -29,6 +29,7 @@ import { PlatformBillingPolicyCard } from './PlatformBillingPolicyCard';
 import { PlatformPlansCard } from './PlatformPlansCard';
 import { PlatformTenantsCard } from './PlatformTenantsCard';
 import { PlatformTransfersCard } from './PlatformTransfersCard';
+import { PlatformUsageCard } from './PlatformUsageCard';
 import { PlatformUsersCard } from './PlatformUsersCard';
 import { PlatformWhatsNewCard } from './PlatformWhatsNewCard';
 import { CaptchaKeysCard } from '@/cloud/components/CaptchaKeysCard';
@@ -182,6 +183,7 @@ export function PlatformPage(): JSX.Element {
                     <PlatformPlansCard />
                 </div>
             )}
+            {shown === 'uso' && <PlatformUsageCard />}
             {shown === 'audit' && <PlatformImpersonationsCard />}
             {shown === 'novedades' && <PlatformWhatsNewCard />}
             {shown === 'marca' && <PlatformBrandCard />}

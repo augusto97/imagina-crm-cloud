@@ -1,4 +1,4 @@
-import { Activity, ArrowRightLeft, Building2, CreditCard, DatabaseBackup, Globe, History, LifeBuoy, Mail, Megaphone, Palette, Plug, RefreshCw, Sparkles, Users, Wallet } from 'lucide-react';
+import { Activity, ArrowRightLeft, BarChart3, Building2, CreditCard, DatabaseBackup, Globe, History, LifeBuoy, Mail, Megaphone, Palette, Plug, RefreshCw, Sparkles, Users, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 /**
@@ -12,6 +12,7 @@ export type PlatformTabId =
     | 'tenants'
     | 'users'
     | 'plans'
+    | 'uso'
     | 'cobros'
     | 'audit'
     | 'novedades'
@@ -40,6 +41,8 @@ export const PLATFORM_TABS: ReadonlyArray<PlatformTab> = [
     { id: 'tenants', label: 'Empresas', icon: Building2, group: 'Clientes', hint: 'Las empresas que usan la app, su plan y su estado' },
     { id: 'users', label: 'Usuarios', icon: Users, group: 'Clientes', hint: 'Todas las cuentas: invitar, desactivar, contraseñas' },
     { id: 'plans', label: 'Planes', icon: CreditCard, group: 'Clientes', hint: 'Límites, precios, módulos y la prueba gratis' },
+    // v0.1.437 — qué módulos usa cada empresa y cuánto (para decidir qué cobrar y qué apagar).
+    { id: 'uso', label: 'Uso', icon: BarChart3, group: 'Clientes', hint: 'Qué módulos usa cada empresa y cuánto' },
     // v0.1.250 — credenciales de Mercado Pago para cobrar los planes + pagos recientes.
     { id: 'cobros', label: 'Cobros', icon: Wallet, group: 'Clientes', hint: 'Cómo cobras los planes y los pagos recientes' },
     { id: 'audit', label: 'Auditoría', icon: History, group: 'Clientes', hint: 'Quién entró como otra persona para dar soporte' },
