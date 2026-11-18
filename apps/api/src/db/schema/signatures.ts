@@ -75,6 +75,9 @@ export const signatureRequests = pgTable(
         index('signature_requests_created_by_ix').on(t.createdBy),
         index('signature_requests_voided_by_ix').on(t.voidedBy).where(sql`${t.voidedBy} IS NOT NULL`),
         index('signature_requests_pending_ix').on(t.expiresAt).where(sql`${t.status} = 'pending'`),
+        // v0.1.447: verificar subiendo el PDF (búsqueda por huella).
+        index('signature_requests_original_sha_ix').on(t.originalSha256),
+        index('signature_requests_signed_sha_ix').on(t.signedSha256).where(sql`${t.signedSha256} IS NOT NULL`),
     ],
 );
 export type SignatureRequestRow = typeof signatureRequests.$inferSelect;

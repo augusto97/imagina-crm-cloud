@@ -1,6 +1,6 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Plus, Search, Sparkles } from 'lucide-react';
-import { APPROVAL_MERGE_TAGS, BOOKING_MERGE_TAGS, COMMENT_VARIABLES, EMAIL_MERGE_TAGS, MEETING_MERGE_TAGS, PAYMENT_MERGE_TAGS, SLA_MERGE_TAGS, SUBSCRIPTION_MERGE_TAGS, WHATS_ACTION_MERGE_TAGS, WHATS_EVENT_MERGE_TAGS, WHATSAPP_MERGE_TAGS } from '@imagina-base/shared';
+import { APPROVAL_MERGE_TAGS, BOOKING_MERGE_TAGS, COMMENT_VARIABLES, EMAIL_MERGE_TAGS, MEETING_MERGE_TAGS, PAYMENT_MERGE_TAGS, SIGNATURE_MERGE_TAGS, SLA_MERGE_TAGS, SUBSCRIPTION_MERGE_TAGS, WHATS_ACTION_MERGE_TAGS, WHATS_EVENT_MERGE_TAGS, WHATSAPP_MERGE_TAGS } from '@imagina-base/shared';
 
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -247,7 +247,9 @@ export function MergeTagPicker({ fields, onPick, context = 'automation', extra: 
                 ? [{ title: __('SLA del ticket'), items: SLA_MERGE_TAGS.map((t) => ({ tag: t.tag, label: __(t.label), hint: `{{${t.tag}}}` })) }]
                 : flowTrigger === 'comment_added'
                   ? [{ title: __('Comentario'), items: COMMENT_VARIABLES.map((v) => ({ tag: `comentario.${v.key}`, label: __(v.label), hint: `{{comentario.${v.key}}}` })) }]
-                  : [];
+                  : flowTrigger === 'signature_event'
+                    ? [{ title: __('Firma'), items: SIGNATURE_MERGE_TAGS.map((t) => ({ tag: t.tag, label: __(t.label), hint: `{{${t.tag}}}` })) }]
+                    : [];
     const extra = context === 'automation' ? [...stepVars, ...helpdeskVars, ...extraProp] : extraProp;
     // v0.1.360 — el enlace para que la persona actualice su registro con un formulario.
     const automationListId = useAutomationListId();

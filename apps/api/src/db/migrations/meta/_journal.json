@@ -925,6 +925,13 @@
       "when": 1784200020000,
       "tag": "0131_signatures",
       "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "7",
+      "when": 1784300020000,
+      "tag": "0132_signature_hashes",
+      "breakpoints": true
     }
   ]
 }

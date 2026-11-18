@@ -565,6 +565,34 @@ export const articles: LearnArticle[] = [
                 t: 'p',
                 md: 'La sección **Firmas** de la ficha muestra cada solicitud con su estado y el de cada persona (**Le llegó**, **Lo abrió**, **Firmó**, **No firmó**). Desde ahí puedes **Copiar enlace**, **Reenviar** el correo, **Ver** el documento, **Descargar** el firmado o **Anular** la solicitud con un motivo: los enlaces dejan de servir al momento. Cada paso queda también en la **Actividad** del registro.',
             },
+            { t: 'h', text: 'Que pase solo: automatizaciones' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Acción «Pedir firma de un documento»', what: 'Arma el PDF de una plantilla (o toma el de un campo de archivos) y lo manda a firmar a las personas que digas, con variables como **{{correo}}**. Tiene los mismos ajustes que el botón de la ficha.', tip: 'Los pasos siguientes pueden usar **{{firma.enlace}}** (el enlace de quien firma primero) para mandarlo por WhatsApp.' },
+                    { name: 'Disparador «Cuando cambia una firma»', what: 'Corre cuando **se pidió la firma**, **alguien firmó**, **firmaron todos**, **alguien no quiso firmar**, **venció** o **se anuló**. Puedes elegir los eventos y las plantillas.', tip: 'Variables: **{{firma.titulo}}**, **{{firma.firmante}}**, **{{firma.siguiente}}**, **{{firma.enlace}}**, **{{firma.pdf}}**, **{{firma.motivo}}**, **{{firma.verificar}}** y más.' },
+                    { name: 'Condiciones', what: 'En **Continuar sólo si…** puedes mirar el estado de la firma o quién firmó, por ejemplo para avisar sólo cuando firma el cliente.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'Si tu empresa avisa a otros programas con **webhooks**, también salen los eventos de firma (alguien firmó, firmaron todos, alguien no firmó) con el estado, el código y el enlace para verificar; nunca los enlaces personales de quien firma.',
+            },
+            { t: 'h', text: 'En el portal del cliente' },
+            {
+                t: 'p',
+                md: 'Si la persona tiene acceso al portal, ve sus documentos en **Documentos para firmar**: **Firmar** abre la misma página de firma del correo y, cuando firman todos, **Bajar el firmado** descarga el PDF con su constancia. Sólo ve las firmas en las que la incluiste.',
+            },
+            { t: 'h', text: 'Comprobar un archivo firmado' },
+            {
+                t: 'p',
+                md: 'La constancia trae un código y un QR que llevan a la página de verificación. Ahí, cualquiera puede **elegir el PDF** que le mandaron y la página le dice si **coincide con el firmado**, si es **el original antes de firmar** o si **no coincide** (porque es otro documento o lo cambiaron). La huella se calcula en su equipo: el archivo no se sube a ningún lado. En la página general de verificación también se puede buscar con el archivo, sin el código.',
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                md: 'El asistente también lo hace: «¿Qué contratos de esta lista siguen esperando firmas?» o «Pídele a Ana que firme la cotización de este registro». Te muestra la propuesta y tú decides si la aplicas.',
+            },
             {
                 t: 'callout',
                 tone: 'info',
@@ -582,6 +610,7 @@ export const articles: LearnArticle[] = [
                     { q: '¿Puedo mandar el enlace por WhatsApp?', a: 'Sí: apaga **Mandar los enlaces por correo** o, en la ficha, toca **Copiar enlace** junto a cada persona.' },
                     { q: '¿Qué pasa si cambio el registro después de pedir la firma?', a: 'Nada en el documento: se firma el PDF que se armó al pedir la firma. Si hay que corregirlo, anula la solicitud y pide otra.' },
                     { q: '¿Cuánto cuesta cada firma?', a: 'No tiene costo aparte: los correos cuentan como cualquier otro correo de la empresa.' },
+                    { q: '¿Cómo sé que nadie cambió el PDF después de firmarlo?', a: 'Abre la página de verificación (está en la constancia) y elige el archivo: si cambió una sola letra, dice que no coincide.' },
                 ],
             },
             {

@@ -10,13 +10,14 @@ import { FilesModule } from '../files/files.module';
 import { ListsModule } from '../lists/lists.module';
 import { RecordsModule } from '../records/records.module';
 import { ButtonsModule } from '../buttons/buttons.module';
+import { SignaturesModule } from '../signatures/signatures.module';
 import { PortalAuthController, WorkspacePortalAuthController } from './portal-auth.controller';
 import { PortalAuthService } from './portal-auth.service';
 import { PortalController } from './portal.controller';
 import { PortalService } from './portal.service';
 
 @Module({
-    imports: [AuthModule, ListsModule, FieldsModule, FilesModule, ActivityModule, CommentsModule, AutomationsModule, DomainsModule, DashboardsModule, RecordsModule, ButtonsModule],
+    imports: [AuthModule, ListsModule, FieldsModule, FilesModule, ActivityModule, CommentsModule, AutomationsModule, DomainsModule, DashboardsModule, RecordsModule, ButtonsModule, SignaturesModule],
     controllers: [PortalController, PortalAuthController, WorkspacePortalAuthController],
     providers: [PortalService, PortalAuthService],
 })

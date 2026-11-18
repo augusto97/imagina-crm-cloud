@@ -6,6 +6,7 @@ import { RESPONSE_NAME_RE, waitConfigProblem } from './automation-flow';
 import { APPROVAL_RESULTS, waitApprovalProblem } from './approvals';
 import { WHATS_EVENT_TRIGGER, readWhatsTriggerConfig } from './whats-triggers';
 import { automationRecordActionIssues, recordActionResponseName } from './automation-records';
+import { REQUEST_SIGNATURE_ACTION, requestSignatureIssues } from './signature-automations';
 
 /**
  * Automatizaciones (CONTRACT.md §8) — modelo FLEXIBLE alineado al plugin
@@ -43,6 +44,8 @@ export const AUTOMATION_TRIGGERS = [
     'subscription_event',
     // v0.1.444 — alguien (del equipo o el cliente) agregó un comentario al registro.
     'comment_added',
+    // v0.1.447 — una firma electrónica cambió (se pidió, alguien firmó, firmaron todos…).
+    'signature_event',
 ] as const;
 export const automationTriggerSlugSchema = z.string().min(1);
 export type AutomationTriggerSlug = z.infer<typeof automationTriggerSlugSchema>;
@@ -96,6 +99,8 @@ export const AUTOMATION_ACTIONS = [
     // v0.1.444 — buscar registros y crear o actualizar uno por un dato.
     'find_records',
     'upsert_record',
+    // v0.1.447 — pedir la firma electrónica de un documento.
+    'request_signature',
 ] as const;
 
 export interface ActionSpec {
@@ -591,6 +596,9 @@ function actionIssues(actions: unknown, base: string, depth: number, out: Automa
                 }
                 break;
             }
+            case REQUEST_SIGNATURE_ACTION:
+                out.push(...requestSignatureIssues(cfg, at));
+                break;
             case 'generate_pdf':
                 if (isBlankConfig(cfg.document_template_id)) {
                     out.push({ path: `${at}.config.document_template_id`, message: 'Elige la plantilla del documento PDF.' });

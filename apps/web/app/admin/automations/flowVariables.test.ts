@@ -55,6 +55,21 @@ describe('variables del flujo (v0.1.288)', () => {
     });
 });
 
+describe('variables de «Pedir firma» (v0.1.447)', () => {
+    it('los pasos después de pedir la firma tienen {{firma.enlace}} y compañía', () => {
+        const actions: ActionSpec[] = [
+            { type: 'request_signature', config: { template_id: 3, signers: [{ name: '{{nombre}}', email: '{{correo}}' }] } },
+            { type: 'send_email', config: { to: 'a@x.com' } },
+        ];
+        expect(variablesAt(actions, [0], {}, null)).toEqual([]);
+        const after = variablesAt(actions, [1], {}, null);
+        expect(after.map((s) => s.title)).toEqual(['Firma pedida']);
+        expect(after[0]!.items.map((i) => i.tag)).toContain('firma.enlace');
+        expect(summarizeAction(actions[0]!, [], [])).toBe('Pide la firma de un documento a 1 persona');
+        expect(summarizeTrigger('signature_event', { signature_events: ['completed'] }, [])).toBe('Cuando firman todos un documento');
+    });
+});
+
 describe('resúmenes y versiones (v0.1.288)', () => {
     const fields = [field(1, 'vence', 'Vencimiento', 'date'), field(9, 'facturas', 'Facturas', 'relation')];
 

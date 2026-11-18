@@ -149,6 +149,7 @@ export class EventWebhooksService implements OnModuleInit {
         if (e.after) context.after = e.after;
         if (e.form) context.form = e.form;
         if (e.payment) context.payment = e.payment;
+        if (e.signature) context.signature = e.signature;
         if (e.row) context.row = e.row;
         const eventId = `evt_${randomUUID().replace(/-/g, '')}`;
         const now = new Date();
@@ -451,7 +452,14 @@ export class EventWebhooksService implements OnModuleInit {
             tenant: { id: tenant?.id ?? sub.tenantId, slug: tenant?.slug ?? null },
             list: { id: list.id, slug: list.slug, name: list.name },
         };
-        const ctx = (d.context ?? {}) as { before?: Record<string, unknown>; after?: Record<string, unknown>; form?: Record<string, unknown>; payment?: Record<string, unknown>; row?: { createdBy: number; data: Record<string, unknown> } };
+        const ctx = (d.context ?? {}) as {
+            before?: Record<string, unknown>;
+            after?: Record<string, unknown>;
+            form?: Record<string, unknown>;
+            payment?: Record<string, unknown>;
+            signature?: Record<string, unknown>;
+            row?: { createdBy: number; data: Record<string, unknown> };
+        };
         if (d.event === 'record.deleted') {
             if (ctx.row && !listRowInScope(list.settings, actor, 'view', { id: d.recordId ?? undefined, createdBy: ctx.row.createdBy, data: ctx.row.data })) {
                 return { kind: 'skip', reason: 'Quien creó la suscripción no alcanzaba ese registro.' };
@@ -506,6 +514,7 @@ export class EventWebhooksService implements OnModuleInit {
                 link: p.link ?? null,
             };
         }
+        if (d.event.startsWith('signature.') && ctx.signature) payload.signature = ctx.signature;
         return { kind: 'ok', payload };
     }
 

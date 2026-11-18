@@ -24,6 +24,9 @@ los agentes de IA de n8n.
 
 Al activar el flujo, registra un webhook en la app (Ajustes → API → Webhooks,
 «Lo registró un programa») con la dirección de n8n; al desactivarlo, lo borra.
+Eventos: se crea, cambia o borra un registro, se envía un formulario, se recibe
+un pago y (desde la versión 0.1.1 del paquete) alguien firma un documento,
+firman todos (con el enlace al PDF firmado) o alguien no quiere firmar.
 Cada aviso se comprueba con su firma antes de correr el flujo y uno sin firma
 válida recibe 401. El aviso de prueba («Probar» en la app) responde sin correr
 el flujo.

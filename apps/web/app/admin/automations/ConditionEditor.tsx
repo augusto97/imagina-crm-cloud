@@ -1,6 +1,6 @@
 import { useContext, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { COMMENT_VARIABLES } from '@imagina-base/shared';
+import { COMMENT_VARIABLES, SIGNATURE_MERGE_TAGS } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -50,7 +50,7 @@ function isPayloadRule(slug: string): boolean {
  * anterior con nombre (`respuestas.busqueda.cantidad`). El motor la evalúa
  * con el mismo lector que las variables de los textos.
  */
-const VARIABLE_PREFIXES = ['comentario.', 'respuestas.'] as const;
+const VARIABLE_PREFIXES = ['comentario.', 'respuestas.', 'firma.'] as const;
 
 function isVariableRule(slug: string): boolean {
     return VARIABLE_PREFIXES.some((p) => slug.startsWith(p));
@@ -169,9 +169,12 @@ export function ConditionEditor({
         ...(flow?.triggerType === 'comment_added'
             ? COMMENT_VARIABLES.map((v) => ({ tag: `comentario.${v.key}`, label: __(v.label), group: __('Comentario') }))
             : []),
+        ...(flow?.triggerType === 'signature_event'
+            ? SIGNATURE_MERGE_TAGS.map((t) => ({ tag: t.tag, label: __(t.label), group: __('Firma') }))
+            : []),
         ...stepVars.flatMap((section) =>
             section.items
-                .filter((it) => it.tag.startsWith('respuestas.'))
+                .filter((it) => it.tag.startsWith('respuestas.') || it.tag.startsWith('firma.'))
                 .map((it) => ({ tag: it.tag, label: it.label, group: section.title })),
         ),
     ];

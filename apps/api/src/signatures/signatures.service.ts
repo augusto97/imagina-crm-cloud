@@ -6,6 +6,7 @@ import {
     formatBookingWhen,
     jsonbKeyForField,
     maskEmail,
+    resolveTitleFieldId,
     signatureConsentText,
     signatureOnCompleteSchema,
     signedFilename,
@@ -15,10 +16,15 @@ import {
     type CreateSignatureRequestInput,
     type DeclineSignatureInput,
     type Field,
+    type FieldType,
     type List,
+    type PortalSignature,
     type PublicSignatureDto,
+    type SignatureEvent,
+    type SignatureEventInfo,
     type SignatureOnComplete,
     type SignatureRequestDto,
+    SIGNATURE_STATUS_LABELS,
     type SignatureRequestStatus,
     type SignerDto,
     type SignerStatus,
@@ -29,6 +35,7 @@ import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ActivityService } from '../activity/activity.service';
 import { AuditService } from '../audit/audit.service';
+import { AutomationDispatcher, type AutomationChain } from '../automations/automation-dispatcher.service';
 import { can } from '../authz/can';
 import { publicSurfaceOff, tenantAccessInTx } from '../billing/tenant-access';
 import { rateKeyForIp } from '../common/client-ip';
@@ -40,6 +47,7 @@ import { DocumentsService } from '../documents/documents.service';
 import { DomainsService } from '../domains/domains.service';
 import { FieldsService } from '../fields/fields.service';
 import { fileIdsIn, FilesService, type StoredFileRef } from '../files/files.service';
+import { listRowInScope } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { MailService } from '../mail/mail.service';
 import { NotifyHub } from '../notifications/notify-hub';
@@ -153,6 +161,7 @@ export class SignaturesService {
         @Optional() private readonly domains?: DomainsService,
         @Optional() private readonly realtime?: RealtimeService,
         @Optional() private readonly timeZones?: TenantTimeZones,
+        @Optional() private readonly dispatcher?: AutomationDispatcher,
     ) {}
 
     // ─────────────────────────── Enlaces ───────────────────────────
@@ -303,6 +312,120 @@ export class SignaturesService {
         });
     }
 
+    /**
+     * v0.1.447 — Las firmas de los registros de una lista que la persona
+     * puede ver (asistente y MCP): sin enlaces personales (son la credencial
+     * de quien firma) y sin las huellas de las personas.
+     */
+    async listForList(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        opts: { statuses?: readonly SignatureRequestStatus[]; recordId?: number; limit?: number } = {},
+    ): Promise<{ matched: number; byStatus: Partial<Record<SignatureRequestStatus, number>>; rows: Array<SignatureRequestDto & { record_title: string }> }> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const fields = await this.fields.listByListId(tenantId, list.id);
+        const titleId = resolveTitleFieldId(fields.map((f) => ({ id: f.id, type: f.type as FieldType })), list.settings);
+        const limit = Math.min(Math.max(opts.limit ?? 30, 1), 100);
+        const base = await this.base(tenantId);
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const conds = [eq(signatureRequests.tenantId, tenantId), eq(signatureRequests.listId, list.id), isNull(records.deletedAt)];
+            if (opts.recordId !== undefined) conds.push(eq(signatureRequests.recordId, opts.recordId));
+            const rows = await tx
+                .select({ r: signatureRequests, data: records.data, createdBy: records.createdBy })
+                .from(signatureRequests)
+                .innerJoin(records, eq(records.id, signatureRequests.recordId))
+                .where(and(...conds))
+                .orderBy(desc(signatureRequests.id))
+                .limit(1000);
+            const now = Date.now();
+            const statusOf = (r: SignatureRequestRow): SignatureRequestStatus =>
+                (r.status === 'pending' && r.expiresAt.getTime() <= now ? 'expired' : r.status) as SignatureRequestStatus;
+            const visible = rows.filter(
+                (x) =>
+                    listRowInScope(list.settings, actor, 'view', { id: x.r.recordId, createdBy: x.createdBy, data: (x.data ?? {}) as Record<string, unknown> }) &&
+                    (!opts.statuses?.length || opts.statuses.includes(statusOf(x.r))),
+            );
+            const byStatus: Partial<Record<SignatureRequestStatus, number>> = {};
+            for (const x of visible) byStatus[statusOf(x.r)] = (byStatus[statusOf(x.r)] ?? 0) + 1;
+            const page = visible.slice(0, limit);
+            const dtos = await this.toDtos(tx, page.map((x) => ({ ...x.r, status: statusOf(x.r) })), base, false);
+            return {
+                matched: visible.length,
+                byStatus,
+                rows: dtos.map((d, i) => {
+                    const v = titleId ? ((page[i]!.data ?? {}) as Record<string, unknown>)[jsonbKeyForField(titleId)] : null;
+                    return { ...d, record_title: typeof v === 'string' && v.trim() !== '' ? v : `Registro #${d.record_id}` };
+                }),
+            };
+        });
+    }
+
+    /**
+     * v0.1.447 — Las firmas que ve el cliente en su portal: las de SU registro
+     * en las que es una de las personas que firman (por su correo, sin
+     * mayúsculas). Las anuladas no se muestran. Su enlace personal sólo
+     * mientras le toque firmar.
+     */
+    async portalSignaturesInTx(tx: Tx, tenantId: number, recordId: number, email: string): Promise<PortalSignature[]> {
+        const mail = email.trim().toLowerCase();
+        if (mail === '') return [];
+        const mine = await tx
+            .select({ signer: signatureSigners, request: signatureRequests })
+            .from(signatureSigners)
+            .innerJoin(signatureRequests, eq(signatureRequests.id, signatureSigners.requestId))
+            .where(
+                and(
+                    eq(signatureRequests.tenantId, tenantId),
+                    eq(signatureRequests.recordId, recordId),
+                    sql`${signatureRequests.status} <> 'voided'`,
+                    sql`lower(${signatureSigners.email}) = ${mail}`,
+                ),
+            )
+            .orderBy(desc(signatureRequests.id))
+            .limit(30);
+        if (mine.length === 0) return [];
+        const ids = [...new Set(mine.map((m) => m.request.id))];
+        const all = await tx.select().from(signatureSigners).where(inArray(signatureSigners.requestId, ids));
+        const base = await this.base(tenantId);
+        const now = Date.now();
+        const seen = new Set<number>();
+        const out: PortalSignature[] = [];
+        for (const { signer, request: r } of mine) {
+            if (seen.has(r.id)) continue;
+            seen.add(r.id);
+            const status = (r.status === 'pending' && r.expiresAt.getTime() <= now ? 'expired' : r.status) as SignatureRequestStatus;
+            const siblings = all.filter((x) => x.requestId === r.id).map((x) => ({ ...x, status: x.status as SignerStatus }));
+            const due = status === 'pending' ? new Set(signersDue(r.orderMode as 'parallel' | 'sequential', siblings).map((x) => x.id)) : new Set<number>();
+            out.push({
+                id: r.id,
+                title: r.title,
+                status,
+                document_number: r.documentLabel ?? null,
+                my_status: signer.status as SignerStatus,
+                sign_url: due.has(signer.id) ? this.signUrl(base, r, signer.id) : null,
+                signed_available: status === 'completed' && r.signedFileId !== null,
+                created_at: r.createdAt.toISOString(),
+                expires_at: r.expiresAt.toISOString(),
+            });
+        }
+        return out;
+    }
+
+    /** v0.1.447 — El PDF firmado para el cliente del portal (de su registro y si firma ahí). */
+    async portalSignedPdf(tenantId: number, recordId: number, email: string, requestId: number): Promise<{ buffer: Buffer; filename: string }> {
+        const notFound = () => new NotFoundException({ code: 'not_found', message: 'Documento no encontrado', data: { status: 404 } });
+        if (!Number.isInteger(requestId) || requestId <= 0) throw notFound();
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const list = await this.portalSignaturesInTx(tx, tenantId, recordId, email);
+            const hit = list.find((x) => x.id === requestId);
+            if (!hit || !hit.signed_available) throw notFound();
+            const [r] = await tx.select().from(signatureRequests).where(and(eq(signatureRequests.tenantId, tenantId), eq(signatureRequests.id, requestId))).limit(1);
+            if (!r?.signedFileId) throw notFound();
+            return { buffer: await this.readFile(tenantId, r.signedFileId, tx), filename: signedFilename(r.title) };
+        });
+    }
+
     private async toDtos(tx: Tx, reqs: SignatureRequestRow[], base: string, withLinks: boolean): Promise<SignatureRequestDto[]> {
         if (reqs.length === 0) return [];
         const signers = await tx
@@ -383,7 +506,7 @@ export class SignaturesService {
         }
     }
 
-    async create(tenantId: number, actor: Actor, listIdOrSlug: string, input: CreateSignatureRequestInput): Promise<SignatureRequestDto> {
+    async create(tenantId: number, actor: Actor, listIdOrSlug: string, input: CreateSignatureRequestInput, opts: { chain?: AutomationChain } = {}): Promise<SignatureRequestDto> {
         const { list, fields, data } = await this.assertCanRequest(tenantId, actor, listIdOrSlug, input.record_id);
         this.checkOnComplete(fields, input.on_complete);
         const uploads: StoredFileRef[] = [];
@@ -512,10 +635,109 @@ export class SignaturesService {
             meta: { request_id: created.id, signers: input.signers.length, source: input.source.kind },
         });
         this.realtime?.records(tenantId, list.id);
+        await this.emitEvent(created, 'requested', { chain: opts.chain });
         const base = await this.base(tenantId);
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const [fresh] = await tx.select().from(signatureRequests).where(eq(signatureRequests.id, created.id)).limit(1);
             return (await this.toDtos(tx, [fresh!], base, true))[0]!;
+        });
+    }
+
+    // ─────────────────────────── Automatizaciones (v0.1.447) ───────────────────────────
+
+    /** Lo que ven las automatizaciones como `{{firma.x}}`. */
+    private async eventInfoInTx(
+        tx: Tx,
+        r: SignatureRequestRow,
+        evento: SignatureEvent,
+        extra: { who?: Pick<SignatureSignerRow, 'name' | 'email' | 'role' | 'signedName'> | null; reason?: string | null } = {},
+    ): Promise<SignatureEventInfo> {
+        const signers = await tx.select().from(signatureSigners).where(eq(signatureSigners.requestId, r.id)).orderBy(asc(signatureSigners.position));
+        const base = await this.base(r.tenantId);
+        const status = this.effectiveStatus(r);
+        const next = status === 'pending' ? (signersDue(r.orderMode as 'parallel' | 'sequential', signers.map((x) => ({ ...x, status: x.status as SignerStatus })))[0] ?? null) : null;
+        const who = extra.who ?? null;
+        return {
+            request_id: r.id,
+            evento,
+            titulo: r.title,
+            estado: SIGNATURE_STATUS_LABELS[status],
+            estado_clave: status,
+            numero: r.documentLabel ?? null,
+            firmante: who ? (who.signedName ?? who.name) : null,
+            firmante_email: who ? who.email : null,
+            firmante_rol: who ? who.role || null : null,
+            firmaron: signers.filter((x) => x.status === 'signed').length,
+            total: signers.length,
+            motivo: extra.reason ?? (evento === 'voided' ? r.voidReason : null) ?? null,
+            codigo: r.code,
+            verificar: this.verifyUrl(base, r.code),
+            siguiente: next ? next.name : null,
+            siguiente_email: next ? next.email : null,
+            enlace: next ? this.signUrl(base, r, next.id) : null,
+            pdf: status === 'completed' && r.signedFileId ? this.files.absoluteSignedUrl(r.tenantId, r.signedFileId, 30 * 24 * 3600) : null,
+            template_id: r.templateId ?? null,
+        };
+    }
+
+    /**
+     * Avisa a las automatizaciones de la lista (y a los webhooks de eventos)
+     * que pasó algo con la firma. Nunca rompe lo que hizo la persona.
+     */
+    private async emitEvent(
+        r: Pick<SignatureRequestRow, 'id' | 'tenantId' | 'listId' | 'recordId'>,
+        evento: SignatureEvent,
+        extra: { who?: Pick<SignatureSignerRow, 'name' | 'email' | 'role' | 'signedName'> | null; reason?: string | null; chain?: AutomationChain } = {},
+    ): Promise<void> {
+        if (!this.dispatcher) return;
+        try {
+            const out = await this.tenantDb.withTenant(r.tenantId, async (tx) => {
+                const [fresh] = await tx.select().from(signatureRequests).where(eq(signatureRequests.id, r.id)).limit(1);
+                if (!fresh) return null;
+                const [rec] = await tx
+                    .select({ data: records.data })
+                    .from(records)
+                    .where(and(eq(records.tenantId, r.tenantId), eq(records.id, fresh.recordId), isNull(records.deletedAt)))
+                    .limit(1);
+                if (!rec) return null;
+                return { info: await this.eventInfoInTx(tx, fresh, evento, extra), data: (rec.data ?? {}) as Record<string, unknown> };
+            });
+            if (!out) return;
+            this.dispatcher.dispatch({
+                tenantId: r.tenantId,
+                listId: r.listId,
+                recordId: r.recordId,
+                trigger: 'signature_event',
+                after: out.data,
+                signature: out.info,
+                ...(extra.chain ? { chain: extra.chain } : {}),
+            });
+        } catch (err) {
+            this.logger.warn(`Firma ${r.id}: no se pudo avisar a las automatizaciones (${evento}): ${String(err)}`);
+        }
+    }
+
+    /** Lo que deja la acción «Pedir firma» de una automatización como `{{firma.x}}`. */
+    async infoFor(tenantId: number, requestId: number, evento: SignatureEvent): Promise<SignatureEventInfo | null> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [r] = await tx.select().from(signatureRequests).where(and(eq(signatureRequests.tenantId, tenantId), eq(signatureRequests.id, requestId))).limit(1);
+            return r ? this.eventInfoInTx(tx, r, evento) : null;
+        });
+    }
+
+    /** «Probar» con el disparador de firmas: la última solicitud del registro, como llegaría. */
+    async sampleEvent(tenantId: number, recordId: number, evento: SignatureEvent): Promise<SignatureEventInfo | null> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [r] = await tx
+                .select()
+                .from(signatureRequests)
+                .where(and(eq(signatureRequests.tenantId, tenantId), eq(signatureRequests.recordId, recordId)))
+                .orderBy(desc(signatureRequests.id))
+                .limit(1);
+            if (!r) return null;
+            const signers = await tx.select().from(signatureSigners).where(eq(signatureSigners.requestId, r.id)).orderBy(asc(signatureSigners.position));
+            const who = evento === 'declined' ? signers.find((x) => x.status === 'declined') : evento === 'signed' ? [...signers].reverse().find((x) => x.status === 'signed') : null;
+            return this.eventInfoInTx(tx, r, evento, { who: who ?? null, reason: who?.declineReason ?? null });
         });
     }
 
@@ -653,6 +875,7 @@ export class SignaturesService {
             meta: { request_id: request.id },
         });
         this.realtime?.records(tenantId, list.id);
+        await this.emitEvent(request, 'voided', { reason: input.reason || null });
         const base = await this.base(tenantId);
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const [fresh] = await tx.select().from(signatureRequests).where(eq(signatureRequests.id, request.id)).limit(1);
@@ -964,9 +1187,14 @@ export class SignaturesService {
             // En orden: ahora le toca al siguiente.
             await this.dispatchDue(outcome.request.id, tenantId, { send: true });
             this.notifyRequester(outcome.request, `${input.name.trim()} firmó «${outcome.request.title}»`, 'Faltan otras firmas.');
+            await this.emitEvent(outcome.request, 'signed', { who: { ...ctx.signer, signedName: input.name.trim().slice(0, 120) } });
             return { status: 'pending', signed_available: false };
         }
         await this.afterCompleted(outcome.request, outcome.signedBytes!);
+        // «Firmaron todos» lleva a quien firmó último ({{firma.firmante}}).
+        const who = { ...ctx.signer, signedName: input.name.trim().slice(0, 120) };
+        await this.emitEvent(outcome.request, 'signed', { who });
+        await this.emitEvent(outcome.request, 'completed', { who });
         return { status: 'completed', signed_available: true };
     }
 
@@ -1071,6 +1299,7 @@ export class SignaturesService {
         await this.sendToSigners({ ...ctx.request, status: 'declined' }, others, 'declined', { declinedBy: ctx.signer.name, reason: null });
         this.notifyRequester(ctx.request, `${ctx.signer.name} no firmó «${ctx.request.title}»`, `Motivo: ${input.reason.slice(0, 200)}`);
         this.realtime?.records(tenantId, ctx.request.listId);
+        await this.emitEvent(ctx.request, 'declined', { who: ctx.signer, reason: input.reason.slice(0, 1000) });
         return { status: 'declined' };
     }
 
@@ -1107,6 +1336,42 @@ export class SignaturesService {
         };
     }
 
+    /**
+     * v0.1.447 — Verificar subiendo el PDF: la página calcula la huella en el
+     * navegador (el archivo nunca viaja) y pregunta por ella. Saber la huella
+     * exige tener el documento, así que contestar de qué firma es no revela
+     * nada nuevo. Primero el PDF firmado; si no, un original (la última que
+     * se firmó, si hay varias con el mismo documento).
+     */
+    async lookupByHash(sha256: string, meta: { ip?: string }): Promise<{
+        found: boolean;
+        which?: 'signed' | 'original';
+        code?: string;
+        title?: string;
+        company?: string;
+        status?: SignatureRequestStatus;
+    }> {
+        await this.limitIp(meta.ip, 'verify-hash', 60);
+        const hash = String(sha256 ?? '').toLowerCase().trim();
+        if (!/^[0-9a-f]{64}$/.test(hash)) return { found: false };
+        const pick = async (which: 'signed' | 'original'): Promise<SignatureRequestRow | null> => {
+            const col = which === 'signed' ? signatureRequests.signedSha256 : signatureRequests.originalSha256;
+            const rows = await this.db
+                .select()
+                .from(signatureRequests)
+                .where(eq(col, hash))
+                .orderBy(sql`CASE WHEN ${signatureRequests.status} = 'completed' THEN 0 ELSE 1 END`, desc(signatureRequests.id))
+                .limit(5);
+            for (const r of rows) if (!(await this.surfaceOff(r.tenantId))) return r;
+            return null;
+        };
+        const signed = await pick('signed');
+        const r = signed ?? (await pick('original'));
+        if (!r) return { found: false };
+        const b = await this.brand(r.tenantId);
+        return { found: true, which: signed ? 'signed' : 'original', code: r.code, title: r.title, company: b.company, status: this.effectiveStatus(r) };
+    }
+
     // ─────────────────────────── Barrido: vencer y recordar ───────────────────────────
 
     async tick(now = new Date()): Promise<{ expired: number; reminded: number }> {
@@ -1132,6 +1397,7 @@ export class SignaturesService {
                     expired += 1;
                     this.notifyRequester(done, `Venció la firma de «${done.title}»`, 'No firmaron todos a tiempo. Puedes volver a pedirla.');
                     this.realtime?.records(done.tenantId, done.listId);
+                    await this.emitEvent(done, 'expired');
                 }
             } catch (err) {
                 this.logger.warn(`Firma ${o.id}: no se pudo vencer: ${String(err)}`);

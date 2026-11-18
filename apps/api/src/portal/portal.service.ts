@@ -83,6 +83,7 @@ import { DataConsentService } from '../data-consent/data-consent.service';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { DocumentsService } from '../documents/documents.service';
+import { SignaturesService } from '../signatures/signatures.service';
 import { DomainsService } from '../domains/domains.service';
 import { RecordLayoutDataService } from '../dashboards/record-layout-data.service';
 import { documentTemplates, fields, lists, memberships, paymentLinks, portalCredentials, portalLinks, records, relations, users, tenants } from '../db/schema';
@@ -228,6 +229,8 @@ export class PortalService implements OnModuleInit {
         @Optional() private readonly buttons?: ButtonsService,
         // v0.1.368 — el bloque «Pagos» también muestra sus suscripciones.
         @Optional() private readonly subscriptionsSvc?: SubscriptionsService,
+        // v0.1.447 — los documentos que el cliente tiene que firmar.
+        @Optional() private readonly signatures?: SignaturesService,
     ) {}
 
     onModuleInit(): void {
@@ -1038,6 +1041,19 @@ export class PortalService implements OnModuleInit {
         }
         const doc = await this.documents.renderForPortal(link.tenantId, link.listId, link.recordId, templateId);
         return { buffer: doc.buffer, filename: doc.filename };
+    }
+
+    /** v0.1.447 — El PDF firmado de una firma de su registro en la que él firma. */
+    async mySignedPdf(actor: PortalActor, requestId: number): Promise<{ buffer: Buffer; filename: string }> {
+        const link = await this.requireLink(actor);
+        if (!this.signatures) throw new NotFoundException({ code: 'not_found', message: 'Documento no encontrado', data: { status: 404 } });
+        const email = await this.tenantDb.withTenant(link.tenantId, (tx) => this.userEmailInTx(tx, actor.userId));
+        return this.signatures.portalSignedPdf(link.tenantId, link.recordId, email, requestId);
+    }
+
+    private async userEmailInTx(tx: Tx, userId: number): Promise<string> {
+        const [u] = await tx.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+        return u?.email ?? '';
     }
 
     /**
@@ -2468,6 +2484,8 @@ export class PortalService implements OnModuleInit {
             // del servidor, ni su valor ni su definición.
             const rawData = record.data as Record<string, unknown>;
             const documents = this.documents ? await this.documents.portalDocumentsInTx(tx, link.tenantId, list.id) : [];
+            // v0.1.447 — firmas de SU registro en las que él firma (por su correo).
+            const signatures = this.signatures ? await this.signatures.portalSignaturesInTx(tx, link.tenantId, record.id, await this.userEmailInTx(tx, userId)) : [];
             // Campo «Botón» — su estado se calcula aquí, con el registro completo;
             // al cliente sólo le llega la parte de presentación de la config.
             const buttons = portalButtonStates(ctx, rawData, new Set(documents.map((d) => d.id)), format.timezone ?? FALLBACK_TIME_ZONE);
@@ -2491,6 +2509,7 @@ export class PortalService implements OnModuleInit {
                     // columnas" al pie del portal.
                     related_lists: [],
                     documents,
+                    signatures,
                     list_id: list.id,
                     list_slug: list.slug,
                     list_name: list.name,

@@ -7,6 +7,7 @@ import { publicBootSchema } from './domains';
 import { fieldSchema } from './field';
 import { recordSchema } from './record';
 import { recordLayoutV3Schema } from './record-layout';
+import { portalSignatureSchema } from './signatures';
 import { SUBSCRIPTION_CHARGE_STATUSES, SUBSCRIPTION_FREQUENCY_TYPES, subscriptionStatusSchema } from './subscriptions';
 import { publicBrandingSchema, tenantFormatSchema } from './tenant';
 
@@ -138,6 +139,8 @@ export const portalBootSchema = z.object({
      * `GET /portal/me/documents/:id`, siempre del registro del cliente.
      */
     documents: z.array(z.object({ id: idSchema, name: z.string() })).default([]),
+    /** v0.1.447 — documentos de su registro que tiene que firmar (o ya firmó). */
+    signatures: z.array(portalSignatureSchema).default([]),
     /**
      * Las cuentas de la persona y la primera página de comentarios viajan en
      * el MISMO request (regla de oro nº 8): antes el portal pedía /me, después

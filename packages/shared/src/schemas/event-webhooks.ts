@@ -10,7 +10,17 @@ import { z } from 'zod';
  * (igual que un token de la API): sólo manda lo que esa persona puede ver.
  */
 
-export const WEBHOOK_EVENTS = ['record.created', 'record.updated', 'record.deleted', 'form.submitted', 'payment.received'] as const;
+export const WEBHOOK_EVENTS = [
+    'record.created',
+    'record.updated',
+    'record.deleted',
+    'form.submitted',
+    'payment.received',
+    // v0.1.447 — firma electrónica (D6).
+    'signature.signed',
+    'signature.completed',
+    'signature.declined',
+] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
 export const WEBHOOK_EVENT_LABELS: Record<WebhookEvent, { label: string; description: string }> = {
@@ -19,6 +29,9 @@ export const WEBHOOK_EVENT_LABELS: Record<WebhookEvent, { label: string; descrip
     'record.deleted': { label: 'Se borra un registro', description: 'Va a la papelera. Trae el id y la lista.' },
     'form.submitted': { label: 'Se envía un formulario', description: 'Con el formulario y el registro que creó.' },
     'payment.received': { label: 'Se recibe un pago', description: 'Un link de pago se pagó: con el monto, el medio y el registro.' },
+    'signature.signed': { label: 'Alguien firma un documento', description: 'Una persona firmó: con quién, cuántos faltan y el registro.' },
+    'signature.completed': { label: 'Firman todos un documento', description: 'Con el enlace al PDF firmado (sirve 30 días) y la página para verificarlo.' },
+    'signature.declined': { label: 'Alguien no quiere firmar', description: 'Con quién y el motivo que escribió.' },
 };
 
 /** Cuántas suscripciones puede tener una empresa. */

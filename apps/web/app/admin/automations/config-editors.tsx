@@ -19,6 +19,7 @@ import { WhatsEventTriggerConfig } from './WhatsEventTriggerConfig';
 import { SmsActionConfig } from './SmsActionConfig';
 import { TeamsChannelField, TeamsChatStatus } from './TeamsChannelField';
 import { SubscriptionPlanPicker, SubscriptionTriggerConfig } from './SubscriptionAutomationParts';
+import { RequestSignatureConfig, SignatureTriggerConfig } from './SignatureAutomationParts';
 import { SubscriptionFieldsEditor } from '@/cloud/components/subscriptions/SubscriptionFieldsEditor';
 import { MergeTagInput } from './MergeTagInput';
 import { ConditionEditor, type ConditionRule } from './ConditionEditor';
@@ -221,6 +222,9 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
         if (typeof c[k] === 'string' && c[k] !== '' && c[k] !== 'any') out[k] = c[k];
     }
     if (typeof c.comment_contains === 'string' && c.comment_contains.trim() !== '') out.comment_contains = c.comment_contains.trim().slice(0, 300);
+    // v0.1.447 — «Cuando cambia una firma»: qué eventos y qué plantillas (vacío = todos).
+    if (Array.isArray(c.signature_events) && c.signature_events.length > 0) out.signature_events = c.signature_events;
+    if (Array.isArray(c.signature_template_ids) && c.signature_template_ids.length > 0) out.signature_template_ids = c.signature_template_ids;
     return out;
 }
 
@@ -263,6 +267,8 @@ export function helpForTrigger(triggerType: string): string {
             return __('Se ejecuta cuando Whats avisa que pasó algo: cambió el estado de un mensaje que enviaste, se creó o se dio de baja un contacto, empezó, se asignó o se resolvió una conversación, calificaron la atención, hicieron clic en un enlace o enviaron un formulario de Whats. La app busca en esta lista el registro con el teléfono del contacto y, si no está, lo crea o deja la corrida cancelada (tú eliges). En las acciones puedes usar {{whatsapp.evento}}, {{whatsapp.de}}, {{whatsapp.nombre}} y lo que trae cada aviso como {{payload.x}}.');
         case 'comment_added':
             return __('Se ejecuta cuando alguien comenta un registro de esta lista: el equipo desde la app o el cliente desde el portal o respondiendo un correo. Puedes elegir quién, si es una nota interna o visible para el cliente, si cuenta una respuesta en un hilo y que tenga ciertas palabras («urgente», «factura»). En las acciones usa {{comentario.texto}}, {{comentario.autor}} y {{comentario.de}}.');
+        case 'signature_event':
+            return __('Se ejecuta cuando cambia una firma electrónica de un registro de esta lista: se pidió, alguien firmó, firmaron todos, alguien no quiso firmar, venció o se anuló. Sirve para avisar al equipo, mandar el PDF firmado por WhatsApp o pasar el registro a «Firmado». Puedes usar {{firma.evento}}, {{firma.firmante}}, {{firma.siguiente}}, {{firma.enlace}}, {{firma.pdf}} y {{firma.verificar}}.');
         case 'whatsapp_message_received':
             return __('Se ejecuta cuando un contacto le escribe a tu número de WhatsApp (Whats o la cuenta oficial de Meta). La app ya lo encontró por su teléfono en la lista (o lo creó, si así está configurado) y dejó el último mensaje en su registro. En las acciones puedes usar {{whatsapp.texto}}, {{whatsapp.nombre}} y {{whatsapp.de}}. Con WAS puedes contestarle cuando quieras; con la cuenta oficial, durante 24 h con «Enviar mensaje de texto de WhatsApp».');
         default:
@@ -373,6 +379,7 @@ export function TriggerConfigEditor({
             {triggerType === 'whatsapp_message_received' && <WhatsappTriggerConfig config={config} onChange={onChange} />}
             {triggerType === 'whats_event' && <WhatsEventTriggerConfig config={config} onChange={onChange} fields={fields} />}
             {triggerType === 'subscription_event' && <SubscriptionTriggerConfig config={config} onChange={onChange} />}
+            {triggerType === 'signature_event' && <SignatureTriggerConfig config={config} onChange={onChange} />}
         </div>
     );
 }
@@ -1231,6 +1238,8 @@ export function ActionConfigEditor({
                 <ConnectorActionConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'send_email' ? (
                 <SendEmailConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'request_signature' ? (
+                <RequestSignatureConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'generate_pdf' ? (
                 <GeneratePdfConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'create_subtasks_from_template' ? (

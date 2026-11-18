@@ -30,11 +30,12 @@ import {
     MessageSquare,
     Search,
     CopyPlus,
+    FileSignature,
     Zap,
     type LucideIcon,
 } from 'lucide-react';
 
-import { APPROVAL_STATUS_LABELS, SUBSCRIPTION_EVENT_LABELS, describeCommentTrigger, readCommentTriggerConfig, readFindRecordsConfig, readUpsertRecordConfig, type SubscriptionEvent, describeWait, describeWaitApproval, describeWebhookRecord, describeWhatsTrigger, readWhatsTriggerConfig, readApprovalTriggerResults, readWebhookRecordConfig, scheduleParts } from '@imagina-base/shared';
+import { APPROVAL_STATUS_LABELS, SUBSCRIPTION_EVENT_LABELS, requestSignatureSummary, signatureTriggerSummary, describeCommentTrigger, readCommentTriggerConfig, readFindRecordsConfig, readUpsertRecordConfig, type SubscriptionEvent, describeWait, describeWaitApproval, describeWebhookRecord, describeWhatsTrigger, readWhatsTriggerConfig, readApprovalTriggerResults, readWebhookRecordConfig, scheduleParts } from '@imagina-base/shared';
 
 import { __, _n, sprintf } from '@/lib/i18n';
 import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
@@ -153,6 +154,12 @@ export const TRIGGER_META: Record<string, StepMeta> = {
         title: 'Se agrega un comentario',
         description: 'Dispara cuando alguien comenta en un registro: el equipo en la app o el cliente desde su portal o respondiendo un correo.',
     },
+    // v0.1.447 — firma electrónica de documentos.
+    signature_event: {
+        icon: FileSignature,
+        title: 'Cambia una firma',
+        description: 'Dispara cuando se pide la firma de un documento del registro, alguien firma, firman todos, alguien no quiere firmar, vence o se anula.',
+    },
     // A9 — checklists del registro.
     checklist_completed: {
         icon: ListTodo,
@@ -210,6 +217,12 @@ export const ACTION_META: Record<string, StepMeta> = {
         icon: FileText,
         title: 'Generar un PDF',
         description: 'Arma un documento (cuenta de cobro, recibo…) con los datos del registro y lo guarda o lo deja para el correo.',
+    },
+    // v0.1.447 — mandar a firmar un documento.
+    request_signature: {
+        icon: FileSignature,
+        title: 'Pedir firma de un documento',
+        description: 'Manda a firmar un PDF (una plantilla o el que está en el registro) a las personas que elijas; el enlace también queda para mandarlo por WhatsApp.',
     },
     call_webhook: {
         icon: Webhook,
@@ -445,6 +458,8 @@ export function summarizeTrigger(
             return summarizeHelpdeskTrigger(triggerType, config) ?? triggerType;
         case 'comment_added':
             return describeCommentTrigger(readCommentTriggerConfig(config));
+        case 'signature_event':
+            return signatureTriggerSummary(config);
         default:
             return triggerType;
     }
@@ -581,6 +596,8 @@ export function summarizeAction(
                 ? __('Responde por correo al hilo del ticket (escribe la respuesta)')
                 : sprintf(__('Responde por correo al hilo del ticket · «%s»'), body.length > 60 ? `${body.slice(0, 60)}…` : body);
         }
+        case 'request_signature':
+            return requestSignatureSummary(cfg);
         case 'generate_pdf': {
             const save = typeof cfg.save_field === 'string' ? cfg.save_field : '';
             if (!cfg.document_template_id) return __('Genera un PDF (elige la plantilla)');

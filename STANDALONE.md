@@ -9889,3 +9889,43 @@ con la marca de la empresa y sin otra cuenta.
 **Consecuencias.** Siguen en v0.1.447: disparador «Cuando se firma un
 documento», acción «Pedir firma», firmar desde el portal, código por WhatsApp
 o SMS, verificar subiendo el PDF, asistente/MCP y evento de webhook.
+
+**Addendum v0.1.447 — automatizaciones, portal, verificar con el archivo y
+asistente/MCP.**
+
+- **Disparador «Cuando cambia una firma»** (`signature_event`) y **acción
+  «Pedir firma de un documento»** (`request_signature`), con las reglas puras en
+  `packages/shared/src/schemas/signature-automations.ts` (lectura tolerante,
+  validación al guardar, resúmenes y variables `{{firma.*}}`). El disparador
+  filtra por evento (se pidió, alguien firmó, firmaron todos, no quiso firmar,
+  venció, se anuló) y por plantilla; `{{firma.firmante}}` es el nombre con el que
+  firmó la persona. La acción arma el PDF dentro de la corrida (mismo servicio
+  que la ficha: plantilla o campo Archivo, firmantes por variables, orden,
+  verificación, `on_complete` por slug) y deja `{{firma.enlace}}` para los pasos
+  siguientes; «Probar» la simula sin crear nada. Las condiciones de cada paso
+  pueden mirar `firma.*`. La firma sigue siendo de quien la pide (la
+  automatización corre con el acceso de su autor) y un fallo de la acción no
+  rompe la corrida entera.
+- **Evento de webhook** (`signature.signed|completed|declined`) con estado,
+  `estado_clave`, código y `verify_url`; **nunca** los enlaces personales de
+  firma. El disparador de n8n (paquete 0.1.1) los ofrece.
+- **Portal**: `portal.me` trae las firmas del registro donde el cliente es
+  firmante (por su correo, sin las anuladas) con su estado y, si le toca, su
+  enlace personal; `GET /portal/me/signatures/:id/signed.pdf` baja el firmado
+  sólo de esas. Sección «Documentos para firmar» en el portal.
+- **Verificar con el archivo**: la página de una firma suma «Comprobar un
+  archivo» y la general (`/api/v1/public/sign/verify`) busca por archivo o por
+  código. La huella SHA-256 se calcula **en el navegador** (el archivo no sale
+  del equipo) y el resultado lo dibuja el script de la página, **nunca la
+  dirección** (nadie puede mandar un enlace que diga «coincide»). La búsqueda
+  por huella (`POST …/verify-hash`, freno por IP) usa índices nuevos sobre las
+  huellas del original y del firmado (migración 0132) y sólo devuelve título,
+  empresa, código y cuál de los dos es. CSP con el hash del único script.
+- **Asistente y MCP**: `list_signature_requests` (con el ACL de quien pregunta:
+  estado, personas, código; nunca enlaces de firma) y
+  `propose_request_signature` (propuesta que la persona aplica; vuelve a
+  revisar que pueda editar el registro). `propose_create_automation` acepta el
+  disparador y la acción y traduce plantillas y campos por nombre/slug.
+
+**Queda (v0.1.448)**: código de firma por SMS o WhatsApp (teléfono por
+firmante, migración 0133).

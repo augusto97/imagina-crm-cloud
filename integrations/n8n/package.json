@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-imagina-base",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Nodos de n8n para Imagina Base: crea, busca y actualiza registros, y dispara flujos cuando algo cambia (webhooks firmados).",
   "keywords": ["n8n-community-node-package", "imagina base", "crm", "base de datos"],
   "license": "MIT",
