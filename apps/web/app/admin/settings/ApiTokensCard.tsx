@@ -255,7 +255,7 @@ export function ApiTokensCard(): JSX.Element {
     );
 }
 
-function CopyField({ label, value, copied, onCopy, testId }: { label: string; value: string; copied: boolean; onCopy: () => void; testId: string }): JSX.Element {
+export function CopyField({ label, value, copied, onCopy, testId }: { label: string; value: string; copied: boolean; onCopy: () => void; testId: string }): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
             <span className="imcrm-text-xs imcrm-font-medium">{label}</span>
@@ -271,7 +271,7 @@ function CopyField({ label, value, copied, onCopy, testId }: { label: string; va
     );
 }
 
-function Snippet({ label, text, copied, onCopy }: { label: string; text: string; copied: boolean; onCopy: (t: string) => void }): JSX.Element {
+export function Snippet({ label, text, copied, onCopy }: { label: string; text: string; copied: boolean; onCopy: (t: string) => void }): JSX.Element {
     return (
         <div className="imcrm-flex imcrm-items-start imcrm-gap-2">
             <div className="imcrm-min-w-0 imcrm-flex-1">

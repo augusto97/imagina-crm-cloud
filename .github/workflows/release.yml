@@ -287,6 +287,19 @@ jobs:
           # los servidores que todavía eligen «el primer .zip» (antes de v0.1.334).
           rm -f dist-release/check-plugin.zip
 
+          # v0.1.443 (G2) — la app de n8n: se compila, se prueba y viaja
+          # empaquetada (`npm pack`). Cada servidor la reparte en
+          # /api/v1/public/n8n/n8n-nodes-imagina-base.tgz, así un n8n propio la
+          # instala sin depender de npm; también queda como asset del release.
+          ( cd integrations/n8n && npm ci --no-audit --no-fund && npm run build && npm test && npm pack --pack-destination . >/dev/null )
+          mkdir -p "$OUT/integrations/n8n"
+          cp integrations/n8n/package.json "$OUT/integrations/n8n/package.json"
+          N8N_TGZ=$(ls integrations/n8n/n8n-nodes-imagina-base-*.tgz | head -1)
+          tar -tzf "$N8N_TGZ" | grep -q 'package/dist/nodes/ImaginaBase/ImaginaBase.node.js'
+          tar -tzf "$N8N_TGZ" | grep -q 'package/dist/nodes/ImaginaBaseTrigger/ImaginaBaseTrigger.node.js'
+          cp "$N8N_TGZ" "$OUT/integrations/n8n/n8n-nodes-imagina-base.tgz"
+          cp "$N8N_TGZ" dist-release/
+
           # scripts + config que el release necesita para instalar/rollback/servir
           cp deploy/deploy.sh deploy/finalize.sh deploy/oauth-discovery-static.sh deploy/env-heal.sh "$OUT/deploy/"
           cp scripts/backup.sh scripts/restore.sh "$OUT/deploy/"
@@ -341,3 +354,19 @@ jobs:
             dist-release/*.zip.sha256
             dist-release/*.zip.sig
             dist-release/install.sh
+            dist-release/*.tgz
+
+      # v0.1.443 — la app de n8n también en npm, si hay NPM_TOKEN (así se
+      # instala desde n8n → Ajustes → Community nodes). Una versión ya
+      # publicada no se vuelve a publicar (npm lo rechazaría).
+      - name: Publicar la app de n8n en npm (si hay NPM_TOKEN)
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN}" ]; then echo "sin NPM_TOKEN: la app de n8n no se publica en npm"; exit 0; fi
+          cd integrations/n8n
+          V=$(node -p "require('./package.json').version")
+          if npm view "n8n-nodes-imagina-base@${V}" version >/dev/null 2>&1; then echo "n8n-nodes-imagina-base@${V} ya está en npm"; exit 0; fi
+          printf '//registry.npmjs.org/:_authToken=%s\n' "$NPM_TOKEN" > .npmrc
+          npm publish --access public
+          rm -f .npmrc

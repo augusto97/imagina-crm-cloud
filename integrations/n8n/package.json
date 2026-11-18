@@ -1,0 +1,29 @@
+{
+  "name": "n8n-nodes-imagina-base",
+  "version": "0.1.0",
+  "description": "Nodos de n8n para Imagina Base: crea, busca y actualiza registros, y dispara flujos cuando algo cambia (webhooks firmados).",
+  "keywords": ["n8n-community-node-package", "imagina base", "crm", "base de datos"],
+  "license": "MIT",
+  "homepage": "https://github.com/augusto97/imagina-crm-cloud/tree/main/integrations/n8n",
+  "repository": { "type": "git", "url": "git+https://github.com/augusto97/imagina-crm-cloud.git", "directory": "integrations/n8n" },
+  "files": ["dist"],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --import tsx test/*.test.ts"
+  },
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": ["dist/credentials/ImaginaBaseApi.credentials.js"],
+    "nodes": ["dist/nodes/ImaginaBase/ImaginaBase.node.js", "dist/nodes/ImaginaBaseTrigger/ImaginaBaseTrigger.node.js"]
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "n8n-workflow": "2.16.0",
+    "tsx": "^4.19.0",
+    "typescript": "~5.6.3"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}

@@ -25,8 +25,8 @@
 El usuario pidió "estabilizar y mejorar la app" y aprobó todo el plan ("Ok, has
 todos los que propones"): v0.1.435 a v0.1.440 de estabilidad (hechas; detalle
 en `CONTINUIDAD.md` §10) y después estos módulos, que salen de este banco al
-publicarse: **G2** (la app de n8n; la API con tokens salió en v0.1.441 y los
-webhooks de eventos en v0.1.442),
+publicarse: **G2** en parte (la API con tokens salió en v0.1.441, los webhooks
+de eventos en v0.1.442 y la app de n8n en v0.1.443; quedan Make y Zapier),
 **E1 + E2** en parte («buscar registros», «crear o actualizar por un dato»,
 «cuando se agrega un comentario»), **A14** (duplicados y fusionar), **D6**
 (firma electrónica) y **G8** (facturación DIAN: falta elegir proveedor y tener
@@ -42,7 +42,7 @@ citas (D5) y pidió guardar el resto para después.
 
 | Idea | Qué es | Qué hay hoy | Decisiones pendientes |
 |---|---|---|---|
-| **G2 · Apps oficiales en n8n, Make y Zapier** | Disparadores y acciones de Imagina Base en esos catálogos. | API REST con tokens (v0.1.441) y webhooks de eventos firmados (v0.1.442). | Por dónde empezar (propuesta: n8n, como paquete de npm). Make y Zapier piden cuentas de desarrollador del usuario y pasan revisión. |
+| **G2 · Apps oficiales en Make y Zapier** | Disparadores y acciones de Imagina Base en esos catálogos. | API REST con tokens (v0.1.441), webhooks de eventos firmados (v0.1.442) y la app de n8n (v0.1.443). | Make y Zapier piden cuentas de desarrollador del usuario y pasan revisión. Publicar la de n8n en npm (secreto `NPM_TOKEN`) y pedir su verificación. |
 | **D6 · Firma electrónica de documentos** | Los PDF de la app (cotización, contrato, cuenta de cobro) se firman por enlace o desde el portal. Código por correo o WhatsApp; prueba con IP, fecha, hash y una hoja de constancia. Al firmar cambia el estado y puede seguir una automatización. Es firma electrónica simple (Ley 527 de 1999, Decreto 2364 de 2012), no digital certificada. | PDF congelados al emitir, portal, correos con la marca (v0.1.266-290). | Firma propia (recomendado) o DocuSign. |
 | **G8 · Facturación electrónica DIAN** | Factura y nota crédito desde la ficha con los ítems existentes, vía un proveedor autorizado. Vuelven el CUFE, el XML y el PDF validado. Después: México (CFDI), Perú, Ecuador y Chile. | «Factura (no electrónica)» en PDF (v0.1.290). | Proveedor (Factus, Alegra, Siigo, The Factory HKA…); cuenta por empresa (recomendado). Hacen falta credenciales de prueba para probar de verdad. |
 
