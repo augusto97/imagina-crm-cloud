@@ -42,6 +42,16 @@ import {
     type EmailEventInfo,
     type SlaEventInfo,
     type SubscriptionEventInfo,
+    type SignatureEventInfo,
+    REQUEST_SIGNATURE_ACTION,
+    SIGNATURE_EVENT_LABELS,
+    SIGNATURE_EVENT_TRIGGER,
+    readRequestSignatureConfig,
+    createSignatureRequestSchema,
+    SIGNATURE_STATUS_LABELS,
+    readSignatureTriggerEvents,
+    signatureEventValue,
+    signatureTriggerMatches,
     SUBSCRIPTION_EVENT_LABELS,
     subscriptionTriggerMatches,
     SLA_ALERT_LABELS,
@@ -124,8 +134,9 @@ import type { Tx } from '../db/client';
 import { BillingService } from '../billing/billing.service';
 import { CollectionsService } from '../collections/collections.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { SignaturesService } from '../signatures/signatures.service';
 import { subscriptionPlans, subscriptions as subscriptionsTable } from '../db/schema/subscriptions';
-import { automationRuns, comments, documentTemplates, forms, lists, memberships, records, teams, tenants, users } from '../db/schema';
+import { attachments, automationRuns, comments, documentTemplates, forms, lists, memberships, records, teams, tenants, users } from '../db/schema';
 import { editLinkFormId, editLinkMaker, readEditLinks, type EditLinkForm } from '../forms/form-edit-links';
 import { connectionModuleStepError, moduleForIntegration, planModuleOff, planModuleStepError } from '../billing/plan-module-gate';
 import { tenantIsReadOnly } from '../tenancy/read-only';
@@ -219,6 +230,8 @@ const TRIGGERS_FOR_EVENT: Record<TriggerEvent['trigger'], string[]> = {
     subscription_event: ['subscription_event'],
     // v0.1.444 — alguien (del equipo o el cliente) agregó un comentario.
     comment_added: ['comment_added'],
+    // v0.1.447 — una firma electrónica del registro cambió.
+    signature_event: ['signature_event'],
 };
 
 interface PersonInfo {
@@ -270,6 +283,11 @@ interface RunContext {
      * `subscription_event`) o la que creó una acción anterior. `{{suscripcion.x}}`.
      */
     suscripcion?: SubscriptionEventInfo;
+    /**
+     * v0.1.447 — la firma electrónica: lo que pasó (trigger `signature_event`)
+     * o la que pidió una acción anterior. `{{firma.x}}`.
+     */
+    firma?: SignatureEventInfo;
     /** v0.1.263 — zona de la empresa: `{{date.today}}` es el "hoy" de su reloj. */
     timeZone?: string;
     /**
@@ -461,6 +479,7 @@ export interface ResumeState {
         comment?: CommentEventInfo;
         sla?: SlaEventInfo;
         suscripcion?: SubscriptionEventInfo;
+        firma?: SignatureEventInfo;
         pdf?: Record<string, unknown>;
         reunion?: Record<string, string>;
         whats?: Record<string, string>;
@@ -627,6 +646,24 @@ export class AutomationEngine {
         this.subsSvc = svc;
     }
 
+    /** v0.1.447 — la firma electrónica (su módulo depende de registros, documentos y archivos). */
+    private signSvc: SignaturesService | null | undefined;
+    private signaturesSvc(): SignaturesService | null {
+        if (this.signSvc === undefined) {
+            try {
+                this.signSvc = this.moduleRef?.get(SignaturesService, { strict: false }) ?? null;
+            } catch {
+                this.signSvc = null;
+            }
+        }
+        return this.signSvc;
+    }
+
+    /** Para los specs que arman el motor a mano. */
+    setSignatures(svc: SignaturesService | null): void {
+        this.signSvc = svc;
+    }
+
     /** D3 — WhatsApp oficial (se resuelve al usarlo: su módulo depende de registros y campos). */
     private whatsappSvc: WhatsappService | null | undefined;
     private whatsapp(): WhatsappService | null {
@@ -780,6 +817,7 @@ export class AutomationEngine {
                 ...(event.comment ? { comment: event.comment } : {}),
                 ...(event.sla ? { sla: event.sla } : {}),
                 ...(event.subscription ? { suscripcion: event.subscription } : {}),
+                ...(event.signature ? { firma: event.signature } : {}),
                 ...(chain ? { chain } : {}),
             };
             if (!this.triggerMatches(auto, ctx)) continue;
@@ -1300,6 +1338,7 @@ export class AutomationEngine {
             ...(state.ctx.comment ? { comment: state.ctx.comment } : {}),
             ...(state.ctx.sla ? { sla: state.ctx.sla } : {}),
             ...(state.ctx.suscripcion ? { suscripcion: state.ctx.suscripcion } : {}),
+            ...(state.ctx.firma ? { firma: state.ctx.firma } : {}),
             ...(state.ctx.pdf ? { pdf: state.ctx.pdf } : {}),
             ...(state.ctx.reunion ? { reunion: state.ctx.reunion } : {}),
             ...(state.ctx.whats ? { whats: state.ctx.whats } : {}),
@@ -1755,6 +1794,20 @@ export class AutomationEngine {
                 );
                 break;
             }
+            case SIGNATURE_EVENT_TRIGGER: {
+                // v0.1.447 — el primer evento que escucha el disparador, con la
+                // última firma del registro (o datos de ejemplo si no tiene).
+                const evento = readSignatureTriggerEvents(cfg)[0] ?? 'completed';
+                const sample = ctx.recordId !== null ? await this.signaturesSvc()?.sampleEvent(ctx.tenantId, ctx.recordId, evento).catch(() => null) : null;
+                ctx.firma = sample ?? sampleSignatureEvent(evento);
+                if (!signatureTriggerMatches(cfg, ctx.firma)) reasons.push('la firma de este registro no es de la plantilla elegida');
+                notes.push(
+                    sample
+                        ? `Se usa la última firma de este registro («${sample.titulo}») y se asume: ${SIGNATURE_EVENT_LABELS[evento].toLowerCase()}.`
+                        : `Este registro no tiene firmas: {{firma.x}} usa datos de ejemplo (${SIGNATURE_EVENT_LABELS[evento].toLowerCase()}).`,
+                );
+                break;
+            }
             default:
                 break;
         }
@@ -1917,6 +1970,10 @@ export class AutomationEngine {
         if (auto.triggerType === 'subscription_event') {
             if (!ctx.suscripcion || !subscriptionTriggerMatches(cfg, ctx.suscripcion)) return false;
         }
+        // v0.1.447 — «Cuando cambia una firma»: los eventos y plantillas elegidos.
+        if (auto.triggerType === SIGNATURE_EVENT_TRIGGER) {
+            if (!ctx.firma || !signatureTriggerMatches(cfg, ctx.firma)) return false;
+        }
         const fv = this.accessor(ctx);
         if (!evaluateCondition(cfg.field_filters as ConditionData | undefined, fv, this.condOpts(ctx))) return false;
 
@@ -2051,6 +2108,8 @@ export class AutomationEngine {
             if (token.startsWith('sla.')) return slaValue(ctx, token.slice('sla.'.length));
             // v0.1.367 — la suscripción del registro (fechas en la zona de la empresa).
             if (token.startsWith('suscripcion.')) return subscriptionValue(ctx, token.slice('suscripcion.'.length));
+            // v0.1.447 — la firma electrónica (la del disparador o la que pidió un paso anterior).
+            if (token.startsWith('firma.')) return ctx.firma ? (signatureEventValue(ctx.firma, token.slice('firma.'.length)) ?? '') : '';
             // v0.1.266 — {{pdf.link}}, {{pdf.nombre}} del último PDF generado.
             if (token.startsWith('pdf.')) {
                 const v = ctx.pdf?.[token.slice('pdf.'.length)];
@@ -2364,6 +2423,7 @@ export class AutomationEngine {
                 ...(ctx.chain ? { chain: ctx.chain } : {}),
                 ...(ctx.approval ? { approval: ctx.approval } : {}),
                 ...(ctx.suscripcion ? { suscripcion: ctx.suscripcion } : {}),
+                ...(ctx.firma ? { firma: ctx.firma } : {}),
             },
         };
     }
@@ -2494,6 +2554,16 @@ export class AutomationEngine {
                 return { log: tag([await this.askAgent(ctx, spec.config ?? {})]) };
             } catch (err) {
                 return { log: tag([fail('ask_agent', explainError(err))]) };
+            }
+        }
+
+        // v0.1.447 — «Pedir firma»: arma el PDF y lo manda a firmar con su
+        // propio servicio (abre y confirma sus transacciones, manda los correos).
+        if (spec.type === REQUEST_SIGNATURE_ACTION) {
+            try {
+                return { log: tag([await this.requestSignature(ctx, spec.config ?? {})]) };
+            } catch (err) {
+                return { log: tag([fail(REQUEST_SIGNATURE_ACTION, explainError(err))]) };
             }
         }
 
@@ -3798,6 +3868,126 @@ export class AutomationEngine {
             return ok('reply_email', `Respondería por correo a ${c.to.join(', ')}: «${c.subject}».`, { ...details, body, _sim: 'would_run' });
         }
         return ok('reply_email', `Respondió por correo a ${c.to.join(', ')}: «${c.subject}».`, { ...details, message_id: c.messageId });
+    }
+
+    /**
+     * v0.1.447 — «Pedir firma»: arma el PDF (una plantilla de documento de la
+     * lista o el último PDF de un campo Archivo del registro) y lo manda a
+     * firmar a las personas de la acción, con nombre y correo resueltos por
+     * variables. Deja `{{firma.enlace}}` (el de quien firma primero), el código
+     * y la verificación para los pasos siguientes (mandarlo por WhatsApp, p. ej.).
+     */
+    private async requestSignature(ctx: RunContext, cfg: Record<string, unknown>): Promise<ActionLogEntry> {
+        const A = REQUEST_SIGNATURE_ACTION;
+        const svc = this.signaturesSvc();
+        if (!svc) return fail(A, 'La firma electrónica no está disponible en este servidor.');
+        if (ctx.recordId === null) return skip(A, 'Pedir una firma necesita un registro.');
+        const recordId = ctx.recordId;
+        const c = readRequestSignatureConfig(cfg);
+        const fieldIdOf = (slug: string, what: string, types: string[]): number | null => {
+            if (slug === '') return null;
+            const key = ctx.slugToKey.get(slug);
+            const f = ctx.fieldsBySlug.get(slug);
+            if (!key || !f || !types.includes(String(f.type))) throw new Error(`«${f?.label ?? slug}» no es ${what} de la lista: revisa la acción.`);
+            return Number(key.slice(1));
+        };
+        const onComplete = {
+            save_field_id: fieldIdOf(c.save_field, 'un campo Archivo', ['file']),
+            status_field_id: fieldIdOf(c.status_field, 'un campo de selección', ['select']),
+            status_value: c.status_field !== '' && c.status_value !== '' ? c.status_value : null,
+            date_field_id: fieldIdOf(c.date_field, 'un campo de fecha', ['date', 'datetime']),
+        };
+        const pre = await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+            // v0.1.338 (ADR-S87) — la firma va con «Documentos PDF» del plan.
+            const off = await planModuleStepError(tx, ctx.tenantId, 'documents');
+            if (off) return { off, name: null, fileId: null, fileName: null };
+            if (c.source === 'template') {
+                if (c.template_id === null) return { off: 'Elige la plantilla del documento que se firma.', name: null, fileId: null, fileName: null };
+                const name = await this.templateName(tx, ctx.tenantId, c.template_id);
+                if (name === null) return { off: 'La plantilla de documento de la acción ya no existe.', name: null, fileId: null, fileName: null };
+                return { off: null, name, fileId: null, fileName: null };
+            }
+            const fid = fieldIdOf(c.file_field, 'un campo Archivo', ['file']);
+            if (fid === null) return { off: 'Elige el campo Archivo con el PDF que se firma.', name: null, fileId: null, fileName: null };
+            const current = await this.recordsRepo.findById(tx, ctx.tenantId, ctx.listId, recordId);
+            const raw = (current?.data ?? ctx.data)[jsonbKeyForField(fid)];
+            const ids = (Array.isArray(raw) ? raw : raw === null || raw === undefined ? [] : [raw]).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+            if (ids.length === 0) return { off: null, name: null, fileId: null, fileName: null };
+            const rows = await tx
+                .select({ id: attachments.id, filename: attachments.filename, mime: attachments.mime })
+                .from(attachments)
+                .where(and(eq(attachments.tenantId, ctx.tenantId), inArray(attachments.id, ids)));
+            const pdfs = new Map(rows.filter((r) => r.mime === 'application/pdf' || /\.pdf$/i.test(r.filename)).map((r) => [r.id, r.filename]));
+            const last = [...ids].reverse().find((id) => pdfs.has(id)) ?? null;
+            return { off: null, name: null, fileId: last, fileName: last !== null ? (pdfs.get(last) ?? null) : null };
+        });
+        if (pre.off) return fail(A, pre.off);
+        if (c.source === 'file' && pre.fileId === null) return skip(A, 'El registro no tiene un PDF en el campo elegido: no hay qué firmar.');
+
+        const fv = this.accessor(ctx);
+        const { merge } = this.mergers(ctx, fv);
+        const signers: Array<{ name: string; email: string; role: string }> = [];
+        const seen = new Set<string>();
+        for (const [i, s] of c.signers.entries()) {
+            const email = (this.recipients(ctx, s.email, merge).split(',')[0] ?? '').trim().toLowerCase();
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                return fail(A, `La persona ${i + 1} quedó sin un correo válido con los datos de este registro («${s.email}»).`);
+            }
+            if (seen.has(email)) continue;
+            seen.add(email);
+            const name = merge(s.name).replace(/\s+/g, ' ').trim().slice(0, 120) || email.split('@')[0]!;
+            signers.push({ name, email, role: merge(s.role).trim().slice(0, 60) });
+        }
+        if (signers.length === 0) return fail(A, 'La acción no tiene personas que firmen.');
+        const title = merge(c.title).trim().slice(0, 160);
+        const parsed = createSignatureRequestSchema.safeParse({
+            record_id: recordId,
+            source: c.source === 'template' ? { kind: 'template', template_id: c.template_id } : { kind: 'file', file_id: pre.fileId },
+            title,
+            signers,
+            order: c.order,
+            message: merge(c.message).trim().slice(0, 2000),
+            expires_days: c.expires_days,
+            verify: c.verify,
+            remind_days: c.remind_days,
+            on_complete: onComplete,
+            send_email: c.send_email,
+        });
+        if (!parsed.success) return fail(A, parsed.error.issues[0]?.message ?? 'La acción está mal configurada.');
+        const doc = pre.name ? `«${pre.name}»` : pre.fileName ? `«${pre.fileName}»` : 'el documento';
+        const who = signers.map((s) => `${s.name} (${s.email})`).join(', ');
+        const inOrder = signers.length > 1 && c.order === 'sequential' ? ', en orden' : '';
+        if (ctx.sim) {
+            ctx.firma = {
+                ...sampleSignatureEvent('requested'),
+                titulo: title || pre.name || (pre.fileName ?? 'Documento').replace(/\.pdf$/i, ''),
+                total: signers.length,
+                siguiente: signers[0]!.name,
+                siguiente_email: signers[0]!.email,
+                enlace: '(se genera al correr)',
+                template_id: c.template_id,
+            };
+            return ok(
+                A,
+                `Pediría la firma de ${doc} a ${who}${inOrder}${c.send_email ? ', con el enlace por correo' : ' (sin correo: el enlace queda en {{firma.enlace}})'}. En la prueba no se pide.`,
+                { _sim: 'would_run', signers: signers.length },
+            );
+        }
+        const dto = await svc.create(ctx.tenantId, SYSTEM_ACTOR, String(ctx.listId), parsed.data, { chain: nextChain(ctx.chain, ctx.automation?.id ?? 0) });
+        ctx.firma = (await svc.infoFor(ctx.tenantId, dto.id, 'requested')) ?? {
+            ...sampleSignatureEvent('requested'),
+            request_id: dto.id,
+            titulo: dto.title,
+            estado: SIGNATURE_STATUS_LABELS[dto.status],
+            estado_clave: dto.status,
+            codigo: dto.code,
+            total: dto.signers.length,
+        };
+        return ok(
+            A,
+            `Pidió la firma de ${doc} a ${who}${inOrder}.${c.send_email ? ' Les llegó el enlace por correo.' : ' No se mandaron correos: el enlace queda en {{firma.enlace}}.'}`,
+            { request_id: dto.id, signers: signers.length, ...(dto.document_number ? { number: dto.document_number } : {}) },
+        );
     }
 
     /** C6 — «Crear un registro» con plantilla: el registro, sus subtareas y checklists en una transacción. */
@@ -5439,6 +5629,32 @@ function sampleSubscriptionEvent(evento: SubscriptionEventInfo['evento']): Subsc
         monto_cobrado: evento === 'charged' || evento === 'charge_failed' ? 50_000 : null,
         fecha_cobro: evento === 'charged' || evento === 'charge_failed' ? now.toISOString() : null,
         id: null,
+    };
+}
+
+/** v0.1.447 — una firma de ejemplo para «Probar» (el registro no tiene firmas). */
+function sampleSignatureEvent(evento: SignatureEventInfo['evento']): SignatureEventInfo {
+    const done = evento === 'completed';
+    return {
+        request_id: 0,
+        evento,
+        titulo: 'Contrato de servicios (ejemplo)',
+        estado: done ? 'Firmado' : evento === 'declined' ? 'Rechazado' : evento === 'expired' ? 'Vencido' : evento === 'voided' ? 'Anulado' : 'Esperando firmas',
+        estado_clave: done ? 'completed' : evento === 'declined' || evento === 'expired' || evento === 'voided' ? evento : 'pending',
+        numero: null,
+        firmante: evento === 'signed' || evento === 'declined' || done ? 'Ana Gómez (ejemplo)' : null,
+        firmante_email: evento === 'signed' || evento === 'declined' || done ? 'ana@ejemplo.com' : null,
+        firmante_rol: null,
+        firmaron: done ? 2 : evento === 'signed' ? 1 : 0,
+        total: 2,
+        motivo: evento === 'declined' ? 'No estoy de acuerdo con el plazo (ejemplo)' : null,
+        codigo: 'ABCDE-12345',
+        verificar: '(la página de verificación)',
+        siguiente: evento === 'requested' || evento === 'signed' ? 'Carlos Ruiz (ejemplo)' : null,
+        siguiente_email: evento === 'requested' || evento === 'signed' ? 'carlos@ejemplo.com' : null,
+        enlace: evento === 'requested' || evento === 'signed' ? '(el enlace para firmar)' : null,
+        pdf: done ? '(el PDF firmado)' : null,
+        template_id: null,
     };
 }
 

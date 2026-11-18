@@ -19,6 +19,9 @@ const EVENTS = [
     { name: 'Se borra un registro', value: 'record.deleted' },
     { name: 'Se envía un formulario', value: 'form.submitted' },
     { name: 'Se recibe un pago', value: 'payment.received' },
+    { name: 'Alguien firma un documento', value: 'signature.signed' },
+    { name: 'Firman todos un documento', value: 'signature.completed' },
+    { name: 'Alguien no quiere firmar', value: 'signature.declined' },
 ];
 
 interface Saved {

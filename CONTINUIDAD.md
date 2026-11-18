@@ -430,7 +430,16 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.446**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.447**
+(**firma electrónica, segunda parte** — automatizaciones con el disparador
+«Cuando cambia una firma» y la acción «Pedir firma de un documento» (con
+`{{firma.enlace}}` para mandarlo por WhatsApp); el cliente firma y baja el
+firmado desde el portal («Documentos para firmar»); la página de verificación
+comprueba un PDF eligiendo el archivo (huella calculada en el navegador, nunca
+viaja) y la general busca por archivo o código; el asistente y el MCP listan
+firmas y proponen pedir una; eventos de webhook `signature.*` (también en el
+disparador de n8n 0.1.1). ADR-S107 addendum. **Sigue v0.1.448**: código de
+firma por SMS o WhatsApp). Antes **v0.1.446**
 (**firma electrónica, primera parte** — en la ficha, «Pedir firma de un
 documento» (o «Pedir firma» en Generar PDF): una plantilla de la lista o un PDF
 del registro, de 1 a 10 personas a la vez o en orden, código de 6 números por
@@ -2202,6 +2211,24 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-18 · v0.1.447** — **Firma electrónica, segunda parte** (D6,
+  addendum ADR-S107). Automatizaciones: disparador `signature_event` y acción
+  `request_signature` (reglas puras en `schemas/signature-automations.ts`,
+  editor `SignatureAutomationParts.tsx`, condiciones sobre `firma.*`, «Probar»
+  sin crear nada). Portal: firmas del registro donde el cliente firma (por su
+  correo) + `GET /portal/me/signatures/:id/signed.pdf`, sección «Documentos
+  para firmar». Verificación: «Comprobar un archivo» y búsqueda general por
+  huella (`POST /public/sign/verify-hash`, índices de la migración 0132; el
+  resultado lo dibuja el script, nunca la URL). Asistente/MCP:
+  `list_signature_requests` y `propose_request_signature` (kind
+  `request_signature`, regla 23 del prompt); `propose_create_automation` con el
+  disparador y la acción. Webhooks `signature.signed|completed|declined` (sin
+  enlaces personales) y el disparador de n8n 0.1.1. Guía `e-signature`,
+  Aprende → Documentos PDF (automatizar, portal, comprobar un archivo) y
+  novedad. E2E en navegador 27/28 + 30/31 (los dos ✗ eran de la prueba).
+  **Sigue** v0.1.448 (código por SMS/WhatsApp, migración 0133); G8 e I3 esperan
+  decisiones del usuario.
 
 - **2026-11-18 · v0.1.446** — **Firma electrónica, primera parte** (D6,
   ADR-S107). Tablas `signature_requests` + `signature_signers` (migración

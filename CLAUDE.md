@@ -16066,6 +16066,69 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         --prod` otra vez en 0. Dependencia nueva `pdf-lib` 1.17.1. Sigue v0.1.447
         (automatizaciones, portal, código por WhatsApp/SMS, asistente/MCP).
 
+  - [x] **Firma electrónica, segunda parte: automatizaciones, portal,
+        verificar con el archivo y asistente/MCP (v0.1.447, addendum ADR-S107,
+        segunda parte del sexto módulo nuevo del plan: D6)**. (a) **Automatizaciones**:
+        disparador **«Cuando cambia una firma»** (`signature_event`: se pidió,
+        alguien firmó, firmaron todos, alguien no quiso firmar, venció, se
+        anuló; filtro por plantillas) y acción **«Pedir firma de un
+        documento»** (`request_signature`: plantilla de la lista o el último
+        PDF de un campo Archivo, firmantes con variables `{{cliente}}`/
+        `{{correo}}`, a la vez o en orden, código por correo o sólo el enlace,
+        mensaje, vencimiento, recordatorios, mandar o no los enlaces y «Cuando
+        firmen todos…» por slug). Reglas puras en
+        `packages/shared/src/schemas/signature-automations.ts` (lectura
+        tolerante, `requestSignatureIssues` al guardar, resúmenes «Pide la firma
+        de un documento a 1 persona», variables `{{firma.*}}`); la acción corre
+        por el mismo `SignaturesService` de la ficha dentro de la corrida y deja
+        `{{firma.enlace}}`, `{{firma.siguiente}}`, `{{firma.codigo}}` y
+        `{{firma.verificar}}` para los pasos siguientes (mandarlo por
+        WhatsApp); «Probar» la simula sin crear nada; las condiciones de cada
+        paso miran `firma.*`; `{{firma.firmante}}` es el nombre con el que
+        firmó la persona. Editor `SignatureAutomationParts.tsx`, sección
+        «Firma» en el selector de variables. (b) **Webhooks de eventos**
+        `signature.signed|completed|declined` con título, número, estado
+        (`status` y `status_label`), quién, cuántos firmaron, motivo, código,
+        `verify_url` y el PDF firmado — **nunca** los enlaces personales de
+        firma —; el disparador de n8n (paquete 0.1.1) los ofrece. (c) **Portal
+        del cliente**: `portal.me` trae las firmas del registro en las que el
+        cliente es firmante (por su correo, sin anuladas, `PortalSignature`)
+        con su estado y, si le toca, su enlace; sección **«Documentos para
+        firmar»** (`PortalSignatures.tsx`: «Firmar» abre la misma página de
+        firma, «Bajar el firmado» descarga por
+        `GET /portal/me/signatures/:id/signed.pdf` sólo de esas). (d)
+        **Verificar con el archivo** (`signatures/verify-page.ts`): la página de
+        una firma suma **«Comprobar un archivo»** (coincide con el firmado / es
+        el original antes de firmar / no coincide) y la general
+        (`/api/v1/public/sign/verify`) busca **por archivo o por código**. La
+        huella SHA-256 se calcula EN EL NAVEGADOR (el archivo no sale del
+        equipo) y el resultado lo dibuja el script, nunca la dirección (nadie
+        puede mandar un enlace que diga «coincide»); `POST
+        /public/sign/verify-hash` (freno por IP) responde sólo título, empresa,
+        código y si es el original o el firmado, con índices nuevos sobre las
+        dos huellas (migración 0132); CSP con el hash del único script. (e)
+        **Asistente y MCP** (`ai/tools/signature-tools.ts`):
+        `list_signature_requests` (con el ACL de quien pregunta: estado por
+        persona, código, plantilla; nunca enlaces de firma) y
+        `propose_request_signature` (kind `request_signature`; aplicar revisa
+        otra vez que la persona pueda editar el registro);
+        `propose_create_automation` acepta el disparador y la acción y traduce
+        plantillas y campos por nombre o slug; regla 23 del prompt. Ayuda: guía
+        `e-signature` al día, Aprende → Documentos PDF (automatizar, portal,
+        comprobar un archivo, el asistente) y novedad con carrusel
+        (ilustraciones existentes). Tests: `signature-automations.spec` (5:
+        pedir por variables y disparador al firmar y terminar, filtros por
+        evento y plantilla, «Probar», validación al guardar, asistente/MCP),
+        `signatures.spec` 6/6 con el portal y la verificación por huella,
+        `signature-automations.test` en shared, suites del asistente/MCP
+        176/176 — shared 1032, front 951 — + E2E navegador 27/28 en escritorio
+        y 30/31 en celular oscuro (los dos ✗ eran expectativas de la prueba):
+        editor con la acción y el disparador, un registro nuevo pide la firma
+        solo, el cliente firma desde el portal, «Cuando cambia una firma»
+        escribe la bitácora, «Bajar el firmado», el firmado coincide y uno
+        cambiado no, búsqueda por archivo y por código sin errores de CSP.
+        Sigue v0.1.448 (código de firma por SMS o WhatsApp, migración 0133).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -45,6 +45,8 @@ const TRIGGERS: TriggerMeta[] = [
     { slug: 'sla_alert', label: 'Cuando un SLA está en riesgo o se vence', event: 'imagina_crm/sla_alert', config_schema: {} },
     // v0.1.444 — alguien (del equipo o el cliente) agregó un comentario al registro.
     { slug: 'comment_added', label: 'Cuando se agrega un comentario', event: 'imagina_crm/comment_added', config_schema: {} },
+    // v0.1.447 — una firma electrónica del registro: se pidió, alguien firmó, firmaron todos, no quiso firmar…
+    { slug: 'signature_event', label: 'Cuando cambia una firma', event: 'imagina_crm/signature_event', config_schema: {} },
 ];
 
 const ACTIONS: ActionMeta[] = [
@@ -58,6 +60,8 @@ const ACTIONS: ActionMeta[] = [
     { slug: 'bulk_edit', label: 'Editar en lote', config_schema: {} },
     // v0.1.266 — un PDF con una plantilla de documento (cuenta de cobro, recibo).
     { slug: 'generate_pdf', label: 'Generar un PDF', config_schema: {} },
+    // v0.1.447 — mandar a firmar un documento (plantilla o PDF del registro).
+    { slug: 'request_signature', label: 'Pedir firma de un documento', config_schema: {} },
     { slug: 'if_else', label: 'Si / sino (condicional)', config_schema: {} },
     // v0.1.288 — esperar un tiempo o hasta una fecha, y repetir por cada vinculado.
     { slug: 'wait', label: 'Esperar', config_schema: {} },

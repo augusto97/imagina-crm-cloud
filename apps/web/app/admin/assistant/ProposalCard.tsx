@@ -46,6 +46,7 @@ const KIND_LABEL: Record<AiProposal['kind'], string> = {
     configure_subscription_plan: 'Plan de suscripción',
     configure_subscription_columns: 'Columnas de suscripción',
     manage_subscription: 'Suscripción',
+    request_signature: 'Pedir firma',
 };
 
 /**

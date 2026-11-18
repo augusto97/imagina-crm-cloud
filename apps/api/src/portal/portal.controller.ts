@@ -396,6 +396,19 @@ export class PortalController {
         return this.portal.pressButton(portalActor(req), fieldId);
     }
 
+    /** v0.1.447 — El PDF firmado de un documento de su registro que él firmó. */
+    @Get('portal/me/signatures/:id/signed.pdf')
+    @UseGuards(SessionGuard)
+    async mySignedPdf(@Req() req: FastifyRequest, @Res() reply: FastifyReply, @Param('id') id: string): Promise<void> {
+        const doc = await this.portal.mySignedPdf(portalActor(req), Number(id));
+        void reply
+            .header('content-type', 'application/pdf')
+            .header('content-disposition', contentDispositionHeader('attachment', doc.filename))
+            .header('x-content-type-options', 'nosniff')
+            .header('cache-control', 'private, no-store')
+            .send(doc.buffer);
+    }
+
     /** v0.1.267 — PDF publicado en el portal, del registro del cliente. */
     @Get('portal/me/documents/:id')
     @UseGuards(SessionGuard)

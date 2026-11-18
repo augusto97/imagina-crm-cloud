@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import type { BookingEventInfo, ChecklistCompletedInfo, CommentEventInfo, EmailEventInfo, SlaEventInfo, SubscriptionEventInfo, WebhookEvent, WhatsappEventInfo } from '@imagina-base/shared';
+import type { BookingEventInfo, ChecklistCompletedInfo, CommentEventInfo, EmailEventInfo, SignatureEventInfo, SlaEventInfo, SubscriptionEventInfo, WebhookEvent, WhatsappEventInfo } from '@imagina-base/shared';
 import { randomUUID } from 'node:crypto';
 import type { JobsOptions, Queue } from 'bullmq';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -36,6 +36,8 @@ const TRIGGER_TYPES_FOR_EVENT: Record<string, readonly string[]> = {
     sla_alert: ['sla_alert'],
     // v0.1.367 — una suscripción del registro se cobró, falló, venció, se canceló…
     subscription_event: ['subscription_event'],
+    // v0.1.447 — una firma electrónica del registro cambió.
+    signature_event: ['signature_event'],
 };
 
 /** v0.1.442 — Qué evento de webhook sale de cada disparo (los demás no avisan afuera). */
@@ -45,6 +47,38 @@ const OUTGOING_EVENT: Partial<Record<TriggerEvent['trigger'], WebhookEvent>> = {
     form_submitted: 'form.submitted',
     payment_received: 'payment.received',
 };
+
+/** v0.1.447 — qué evento de webhook sale de cada evento de una firma. */
+function signatureOutgoing(info: SignatureEventInfo | undefined): WebhookEvent | undefined {
+    if (!info) return undefined;
+    if (info.evento === 'signed') return 'signature.signed';
+    if (info.evento === 'completed') return 'signature.completed';
+    if (info.evento === 'declined') return 'signature.declined';
+    return undefined;
+}
+
+/**
+ * Lo que viaja de una firma a un webhook: NUNCA el enlace personal de quien
+ * tiene que firmar (es su credencial para firmar). El PDF firmado sí: lo pide
+ * quien conectó el webhook y el enlace vence a los 30 días.
+ */
+function signatureWebhookPayload(info: SignatureEventInfo): Record<string, unknown> {
+    return {
+        id: info.request_id,
+        event: info.evento,
+        title: info.titulo,
+        status: info.estado_clave,
+        status_label: info.estado,
+        document_number: info.numero,
+        signer: info.firmante ? { name: info.firmante, email: info.firmante_email, role: info.firmante_rol } : null,
+        signed: info.firmaron,
+        total: info.total,
+        reason: info.motivo,
+        code: info.codigo,
+        verify_url: info.verificar,
+        signed_pdf_url: info.pdf,
+    };
+}
 
 /** Cuánto vive en Redis la lista de disparadores activos de una lista (se invalida al guardar). */
 const TRIGGERS_CACHE_TTL_S = 300;
@@ -142,7 +176,8 @@ export interface TriggerEvent {
         | 'email_received'
         | 'sla_alert'
         | 'subscription_event'
-        | 'comment_added';
+        | 'comment_added'
+        | 'signature_event';
     /** Snapshot de `data` tras la mutación (para merge tags / condición). */
     after: Record<string, unknown>;
     /** Snapshot previo (para field_changed). */
@@ -200,6 +235,8 @@ export interface TriggerEvent {
     subscription?: SubscriptionEventInfo;
     /** v0.1.444 — el comentario que se acaba de agregar (`{{comentario.texto}}`…). */
     comment?: CommentEventInfo;
+    /** v0.1.447 — lo que pasó con una firma electrónica del registro (`{{firma.x}}`). */
+    signature?: SignatureEventInfo;
     /** Sólo estas automatizaciones (un botón que corre una puntual). */
     automation_ids?: number[];
     /** El cambio lo hizo una automatización (ver `AutomationChain`). */
@@ -585,8 +622,9 @@ export class AutomationDispatcher {
 
     dispatch(event: TriggerEvent): void {
         // v0.1.442 — lo que dispara automatizaciones también avisa a los
-        // webhooks de eventos (alta, cambio, formulario enviado, pago).
-        const outgoing = OUTGOING_EVENT[event.trigger];
+        // webhooks de eventos (alta, cambio, formulario enviado, pago y, desde
+        // v0.1.447, las firmas).
+        const outgoing = event.trigger === 'signature_event' ? signatureOutgoing(event.signature) : OUTGOING_EVENT[event.trigger];
         if (outgoing && this.eventHub) {
             this.eventHub.emit({
                 tenantId: event.tenantId,
@@ -597,6 +635,7 @@ export class AutomationDispatcher {
                 after: event.after,
                 ...(event.form ? { form: event.form as unknown as Record<string, unknown> } : {}),
                 ...(event.payment ? { payment: event.payment } : {}),
+                ...(event.signature ? { signature: signatureWebhookPayload(event.signature) } : {}),
             });
         }
         const queue = this.queue;

@@ -237,6 +237,8 @@ export const AI_PROPOSAL_KINDS = [
     'configure_subscription_plan',
     'configure_subscription_columns',
     'manage_subscription',
+    // v0.1.447 — pedir la firma electrónica de un documento de un registro.
+    'request_signature',
 ] as const;
 export const aiProposalKindSchema = z.enum(AI_PROPOSAL_KINDS);
 export type AiProposalKind = z.infer<typeof aiProposalKindSchema>;

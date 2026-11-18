@@ -1,6 +1,8 @@
 import {
     FIND_RECORDS_ACTION,
     FIND_RECORDS_OUTPUTS,
+    REQUEST_SIGNATURE_ACTION,
+    REQUEST_SIGNATURE_OUTPUTS,
     RESPONSE_NAME_RE,
     UPSERT_RECORD_ACTION,
     UPSERT_RECORD_OUTPUTS,
@@ -117,6 +119,13 @@ export function variablesAt(
     if (item) out.push(itemSection(item));
     const before = stepsBefore(actions, path);
     out.push(...recordStepSections(before, samples));
+    // v0.1.447 — «Pedir firma» deja `{{firma.x}}` (el enlace de quien firma primero, el código…).
+    if (before.some((s) => s.spec.type === REQUEST_SIGNATURE_ACTION)) {
+        out.push({
+            title: __('Firma pedida'),
+            items: REQUEST_SIGNATURE_OUTPUTS.map((o) => ({ tag: o.tag, label: __(o.label), hint: `{{${o.tag}}}` })),
+        });
+    }
     const prev = before.filter((s) => RESPONSE_STEPS.has(s.spec.type));
     if (prev.length === 0) return out;
     const last = prev[prev.length - 1]!;

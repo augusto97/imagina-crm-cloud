@@ -29,6 +29,8 @@ import { RecordsRepository } from '../src/records/records.repository';
 import { RecordsService, type Actor } from '../src/records/records.service';
 import { RelationsRepository } from '../src/records/relations.repository';
 import { verifyPage } from '../src/signatures/signatures.controller';
+import { VERIFY_SCRIPT, verifyCsp, verifyLookupPage } from '../src/signatures/verify-page';
+import { inlineScriptHash } from '../src/forms/form-page';
 import { buildSignedPdf, constanciaDefinition, pdfPageCount, stampText, winAnsiSafe } from '../src/signatures/signature-pdf';
 import { SignaturesService, signatureTokenFor } from '../src/signatures/signatures.service';
 import { renderPlainPdfDefinition } from '../src/documents/document-render';
@@ -225,6 +227,16 @@ describe('D6 — firma electrónica (Postgres + Redis reales)', () => {
         expect(dto.signers[1]!.link).toBeNull();
         expect(dto.original_sha256).toMatch(/^[0-9a-f]{64}$/);
 
+        // Portal: cada persona ve SU parte (por su correo); «Firmar» sólo a quien le toca.
+        const portalOf = (email: string) => tenantDb.withTenant(tenantId, (tx) => svc.portalSignaturesInTx(tx, tenantId, recordId, email));
+        const [pc] = await portalOf('CARLA@cliente.co');
+        expect(pc).toMatchObject({ id: dto.id, status: 'pending', my_status: 'sent', signed_available: false, document_number: 'CT-0001' });
+        expect(pc!.sign_url).toMatch(/^https:\/\/app\.test\/firmar\//);
+        const [pa] = await portalOf('ana@acme.test');
+        expect(pa).toMatchObject({ my_status: 'waiting', sign_url: null });
+        expect(await portalOf('otra@persona.co')).toEqual([]);
+        expect(await tenantDb.withTenant(tenantId, (tx) => svc.portalSignaturesInTx(tx, tenantId, recordId + 999, 'carla@cliente.co'))).toEqual([]);
+
         // Sólo le llegó a la primera persona, con el mensaje y su enlace.
         expect(mailbox.to('ana@acme.test')).toHaveLength(0);
         const first = mailbox.to('carla@cliente.co')[0];
@@ -321,6 +333,27 @@ describe('D6 — firma electrónica (Postgres + Redis reales)', () => {
         expect(html).toContain(row!.originalSha256);
         expect((await svc.verifyInfo('ZZZZZ-99999', ip)).found).toBe(false);
         expect(verifyPage({ found: false })).toContain('No encontramos esa firma');
+        // «Comprobar un archivo»: la página compara en el navegador con las dos huellas.
+        expect(html).toContain(`data-original="${row!.originalSha256}"`);
+        expect(html).toContain(`data-signed="${row!.signedSha256}"`);
+        expect(html).toContain('<script>');
+        expect(verifyCsp()).toContain(`script-src '${inlineScriptHash(VERIFY_SCRIPT)}'`);
+        expect(verifyLookupPage()).toContain('data-mode="lookup"');
+
+        // Verificar subiendo el PDF: por la huella del firmado o del original.
+        expect(await svc.lookupByHash(row!.signedSha256!, ip)).toEqual({ found: true, which: 'signed', code: row!.code, title: 'Contrato CT-0001', company: 'Acme SAS', status: 'completed' });
+        expect(await svc.lookupByHash(row!.originalSha256.toUpperCase(), ip)).toMatchObject({ found: true, which: 'original', code: row!.code });
+        expect(await svc.lookupByHash('0'.repeat(64), ip)).toEqual({ found: false });
+        expect(await svc.lookupByHash('no-es-una-huella', ip)).toEqual({ found: false });
+
+        // Portal: ya firmado, la persona lo baja; alguien ajeno no.
+        const [after] = await portalOf('carla@cliente.co');
+        expect(after).toMatchObject({ status: 'completed', my_status: 'signed', sign_url: null, signed_available: true });
+        const fromPortal = await svc.portalSignedPdf(tenantId, recordId, 'carla@cliente.co', dto.id);
+        expect(fromPortal.filename).toBe('Contrato CT-0001 - firmado.pdf');
+        expect(fromPortal.buffer.equals(signedPdf.buffer)).toBe(true);
+        await expect(svc.portalSignedPdf(tenantId, recordId, 'otra@persona.co', dto.id)).rejects.toMatchObject({ status: 404 });
+        await expect(svc.portalSignedPdf(tenantId, recordId + 999, 'carla@cliente.co', dto.id)).rejects.toMatchObject({ status: 404 });
 
         // Otra empresa no ve nada (RLS).
         expect(await withTenant(pg.db, otherTenant, (tx) => tx.select().from(signatureRequests))).toHaveLength(0);

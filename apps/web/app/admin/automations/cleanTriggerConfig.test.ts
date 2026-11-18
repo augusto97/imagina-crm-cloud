@@ -55,3 +55,13 @@ describe('cleanTriggerConfig — comentarios (v0.1.444)', () => {
         expect(cleanTriggerConfig({ comment_from: 'any', comment_contains: '   ' })).toEqual({});
     });
 });
+
+describe('cleanTriggerConfig — firmas (v0.1.447)', () => {
+    it('conserva qué eventos y qué plantillas; vacíos no dejan claves', () => {
+        expect(cleanTriggerConfig({ signature_events: ['completed'], signature_template_ids: [4], otra: 1 })).toEqual({
+            signature_events: ['completed'],
+            signature_template_ids: [4],
+        });
+        expect(cleanTriggerConfig({ signature_events: [], signature_template_ids: [] })).toEqual({});
+    });
+});

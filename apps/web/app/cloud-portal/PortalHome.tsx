@@ -6,6 +6,7 @@ import { formatValue } from '@/cloud/lib/fieldValue';
 import { PortalAccountMenu } from '@/cloud-portal/PortalAccountMenu';
 import { PortalCreateRecords } from '@/cloud-portal/PortalCreateRecords';
 import { PortalDocuments } from '@/cloud-portal/PortalDocuments';
+import { PortalSignatures } from '@/cloud-portal/PortalSignatures';
 import { PortalLayout } from '@/cloud-portal/PortalLayout';
 import { setTenantFormat } from '@/lib/tenantFormat';
 import { PortalBrandSetterContext } from '@/cloud-portal/portalBrand';
@@ -120,6 +121,8 @@ function PortalContent({
                         </dl>
                     </section>
                 )}
+
+                <PortalSignatures signatures={boot.signatures ?? []} />
 
                 <PortalDocuments documents={boot.documents ?? []} />
 

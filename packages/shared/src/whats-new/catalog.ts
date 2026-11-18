@@ -3530,4 +3530,39 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager', 'agent'] },
     },
+    {
+        key: 'v0.1.447-firma-automatizaciones-portal',
+        version: '0.1.447',
+        date: '2026-11-18',
+        kind: 'improvement',
+        title: 'Firmas automáticas, en el portal y fáciles de comprobar',
+        summary:
+            'Las automatizaciones ya pueden pedir una firma y reaccionar cuando alguien firma. Tus clientes ven en el portal lo que tienen que firmar, y cualquiera puede comprobar un PDF firmado eligiendo el archivo.',
+        media: {
+            slides: [
+                {
+                    title: 'Que pase solo',
+                    text: 'Usa la acción «Pedir firma de un documento» y el disparador «Cuando cambia una firma»: por ejemplo, pedir el contrato al ganar una venta y cambiar la etapa cuando firmen todos.',
+                    illustration: 'auto-disparadores',
+                },
+                {
+                    title: 'En el portal del cliente',
+                    text: 'En «Documentos para firmar» el cliente firma con un toque y, cuando firman todos, baja el PDF firmado.',
+                    illustration: 'portal-hero',
+                },
+                {
+                    title: 'Comprueba un archivo',
+                    text: 'En la página de verificación eliges el PDF y te dice si es el que se firmó. El archivo no se sube a ningún lado.',
+                    illustration: 'firma-electronica',
+                },
+            ],
+        },
+        body: [
+            '- En una automatización, agrega la acción **Pedir firma de un documento** o usa el disparador **Cuando cambia una firma** (alguien firmó, firmaron todos, alguien no quiso firmar, venció o se anuló).',
+            '- Los pasos siguientes pueden usar **{{firma.enlace}}**, **{{firma.firmante}}** o **{{firma.pdf}}**, por ejemplo para mandar el enlace por WhatsApp.',
+            '- El asistente también te dice qué firmas siguen pendientes y puede pedir una por ti.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager', 'agent'] },
+    },
 ];

@@ -260,3 +260,22 @@ export function signedFilename(title: string): string {
     const base = title.replace(/\.pdf$/i, '').replace(/[\\/:*?"<>|\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Documento';
     return `${base} - firmado.pdf`;
 }
+
+/**
+ * v0.1.447 — Lo que el cliente ve en su portal: los documentos de SU registro
+ * en los que es una de las personas que firman (por su correo). `sign_url` es
+ * su enlace personal mientras le toque firmar; el firmado se baja con
+ * `GET /portal/me/signatures/:id/signed.pdf`.
+ */
+export const portalSignatureSchema = z.object({
+    id: idSchema,
+    title: z.string(),
+    status: z.enum(SIGNATURE_REQUEST_STATUSES),
+    document_number: z.string().nullable(),
+    my_status: z.enum(SIGNER_STATUSES),
+    sign_url: z.string().nullable(),
+    signed_available: z.boolean(),
+    created_at: z.string(),
+    expires_at: z.string(),
+});
+export type PortalSignature = z.infer<typeof portalSignatureSchema>;

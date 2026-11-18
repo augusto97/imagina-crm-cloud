@@ -11,6 +11,7 @@ import { ListsModule } from '../lists/lists.module';
 import { PublicListsModule } from '../public-lists/public-lists.module';
 import { RecordsModule } from '../records/records.module';
 import { RecordTemplatesModule } from '../record-templates/record-templates.module';
+import { SignaturesModule } from '../signatures/signatures.module';
 import { TemplatesModule } from '../templates/templates.module';
 import { ViewsModule } from '../views/views.module';
 import { AiQuotaService } from './ai-quota.service';
@@ -31,6 +32,7 @@ import { PersonalTokensController } from './tokens.controller';
 import { ApprovalTools } from './tools/approval-tools';
 import { BookingTools } from './tools/booking-tools';
 import { DataTools } from './tools/data-tools';
+import { SignatureTools } from './tools/signature-tools';
 import { AiToolRegistry } from './tools/registry';
 import { StructureTools } from './tools/structure-tools';
 import { SubscriptionTools } from './tools/subscription-tools';
@@ -46,7 +48,7 @@ import { SubscriptionTools } from './tools/subscription-tools';
  */
 @Global()
 @Module({
-    imports: [AuthModule, ListsModule, FieldsModule, ViewsModule, AutomationsModule, DashboardsModule, TemplatesModule, BillingModule, RecordsModule, AggregateModule, CommentsModule, PublicListsModule, ApprovalsModule, RecordTemplatesModule],
+    imports: [AuthModule, ListsModule, FieldsModule, ViewsModule, AutomationsModule, DashboardsModule, TemplatesModule, BillingModule, RecordsModule, AggregateModule, CommentsModule, PublicListsModule, ApprovalsModule, RecordTemplatesModule, SignaturesModule],
     controllers: [AiController, PlatformAiController, PersonalTokensController, McpController, OauthController, WellKnownController],
     providers: [
         AiModelCatalogService,
@@ -59,10 +61,18 @@ import { SubscriptionTools } from './tools/subscription-tools';
         ApprovalTools,
         BookingTools,
         SubscriptionTools,
+        SignatureTools,
         {
             provide: AiToolRegistry,
-            inject: [StructureTools, DataTools, ApprovalTools, BookingTools, SubscriptionTools],
-            useFactory: (structure: StructureTools, data: DataTools, approvals: ApprovalTools, booking: BookingTools, subscriptions: SubscriptionTools): AiToolRegistry => {
+            inject: [StructureTools, DataTools, ApprovalTools, BookingTools, SubscriptionTools, SignatureTools],
+            useFactory: (
+                structure: StructureTools,
+                data: DataTools,
+                approvals: ApprovalTools,
+                booking: BookingTools,
+                subscriptions: SubscriptionTools,
+                signatures: SignatureTools,
+            ): AiToolRegistry => {
                 const registry = new AiToolRegistry();
                 structure.registerInto(registry);
                 data.registerInto(registry);
@@ -73,6 +83,9 @@ import { SubscriptionTools } from './tools/subscription-tools';
                 // v0.1.371 — suscripciones: leer, planes, columnas + registro de cobros, y cambiar una.
                 subscriptions.registerInto(registry);
                 registry.registerApplier(SubscriptionTools.KINDS, subscriptions);
+                // v0.1.447 — firma electrónica: leer las firmas de una lista y pedir una.
+                signatures.registerInto(registry);
+                registry.registerApplier(SignatureTools.KINDS, signatures);
                 return registry;
             },
         },

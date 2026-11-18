@@ -58,6 +58,7 @@ export * from './schemas/automation-flow';
 export * from './schemas/automation-records';
 export * from './schemas/duplicates';
 export * from './schemas/signatures';
+export * from './schemas/signature-automations';
 export * from './schemas/automation-folders';
 export * from './schemas/webhook-record';
 export * from './schemas/dashboard';

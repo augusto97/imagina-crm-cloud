@@ -151,15 +151,21 @@ la suscripción queda marcada «Lo registró un programa»).
 
 - **Eventos**: `record.created`, `record.updated` (trae `changes` con el valor
   de antes y el de ahora), `record.deleted` (va a la papelera),
-  `form.submitted` y `payment.received`. Se filtra por listas o todas las que
-  ve quien lo creó.
+  `form.submitted`, `payment.received` y, desde v0.1.447, los de la firma
+  electrónica: `signature.signed` (alguien firmó), `signature.completed`
+  (firmaron todos: trae el enlace al PDF firmado, que sirve 30 días, y la
+  página para verificarlo) y `signature.declined` (alguien no quiso firmar, con
+  el motivo). Se filtra por listas o todas las que ve quien lo creó.
 - **Actúa como quien lo creó**: sólo viaja lo que esa persona puede ver (ACL
   por lista, alcance del rol, campos ocultos fuera). Si deja la empresa, pierde
   `use_api` o su cuenta se desactiva, el webhook se pausa solo.
 - **Cuerpo**: `id` (único por aviso, se repite en los reintentos), `event`,
   `created_at`, `tenant`, `list`, `record` (como la API), `values` por
-  slug, `fields` (`f{id}` → id, slug, nombre y tipo), y `changes`, `form` o
-  `payment` según el evento.
+  slug, `fields` (`f{id}` → id, slug, nombre y tipo), y `changes`, `form`,
+  `payment` o `signature` según el evento (`signature`: `id`, `title`,
+  `document_number`, `status` en clave y `status_label`, `signer`, `signed`,
+  `total`, `reason`, `code`, `verify_url` y `signed_pdf_url`; nunca los enlaces
+  personales para firmar).
 - **Cabeceras**: `X-Webhook-Id`, `X-Webhook-Event`, `X-Webhook-Attempt` y
   `X-Webhook-Signature: t=<segundos>,v1=<hex>`, donde `v1` es el
   HMAC-SHA256 del secreto sobre `<t>.<cuerpo crudo>`. Comprobar la firma

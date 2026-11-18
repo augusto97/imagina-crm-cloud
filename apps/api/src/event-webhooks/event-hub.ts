@@ -17,6 +17,8 @@ export interface OutgoingEvent {
     after?: Record<string, unknown>;
     form?: Record<string, unknown>;
     payment?: Record<string, unknown>;
+    /** v0.1.447 — en `signature.*`: lo que pasó con la firma (sin los enlaces personales). */
+    signature?: Record<string, unknown>;
     /** Sólo en `record.deleted`: quién lo creó y sus datos al borrarse (para el alcance). */
     row?: { createdBy: number; data: Record<string, unknown> };
 }
