@@ -7,7 +7,6 @@ import {
     readDisabledModules,
     webhookRetryDelay,
     webhookShouldRetry,
-    type Capability,
     type CreateWebhookSubscriptionInput,
     type CreatedWebhookSubscriptionDto,
     type RecordDto,
@@ -31,7 +30,7 @@ import { DRIZZLE, type Db } from '../db/client';
 import { customRoles, lists, memberships, plans, tenants, users, webhookDeliveries, webhookSubscriptions } from '../db/schema';
 import { FieldsService } from '../fields/fields.service';
 import { IncidentHub } from '../incidents/incident-hub';
-import { effectivePermissions, hiddenFieldsFor, listRowInScope, type AclSubject } from '../lists/list-acl';
+import { aclExtras, effectivePermissions, hiddenFieldsFor, listRowInScope, type AclExtras, type AclSubject } from '../lists/list-acl';
 import { ListsService } from '../lists/lists.service';
 import { REDIS } from '../redis/redis.module';
 import { RecordsService } from '../records/records.service';
@@ -84,11 +83,11 @@ type SubRow = typeof webhookSubscriptions.$inferSelect;
 type DeliveryRow = typeof webhookDeliveries.$inferSelect;
 
 /** Quién pide en la API de la app (Ajustes → API o un programa con un token). */
-export interface WebhookRequester {
+/** Quien pide, con su rol y lo que resolvió el TenantGuard (`...aclOf(req)`). */
+export interface WebhookRequester extends AclExtras {
     tenantId: number;
     userId: number;
     role: Role;
-    capabilities: readonly Capability[];
     /** `api` si el pedido llegó con un token de la API (n8n registra su webhook). */
     via: 'app' | 'api';
 }
@@ -513,7 +512,7 @@ export class EventWebhooksService implements OnModuleInit {
     // ─────────────────────────── 4. Administrar ───────────────────────────
 
     private assertCanManage(r: WebhookRequester): void {
-        if (!isAdmin(r) && !r.capabilities.includes('use_api')) {
+        if (!isAdmin(r) && !(r.capabilities ?? []).includes('use_api')) {
             throw new ForbiddenException({ code: 'webhooks_forbidden', message: 'Para crear webhooks necesitas el permiso «Usar la API».', data: { status: 403 } });
         }
     }
@@ -550,7 +549,7 @@ export class EventWebhooksService implements OnModuleInit {
             tx.select({ id: lists.id, settings: lists.settings }).from(lists).where(and(eq(lists.tenantId, r.tenantId), inArray(lists.id, unique), isNull(lists.deletedAt))),
         );
         if (rows.length !== unique.length) throw this.bad('webhook_lists', 'Alguna de las listas elegidas no existe.');
-        const subject: AclSubject = { userId: r.userId, role: r.role, capabilities: r.capabilities };
+        const subject: AclSubject = { userId: r.userId, role: r.role, ...aclExtras(r) };
         for (const l of rows) {
             if (effectivePermissions((l.settings ?? {}) as Record<string, unknown>, subject).view === 'none') {
                 throw this.bad('webhook_lists', 'No puedes ver alguna de las listas elegidas.');

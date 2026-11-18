@@ -14,6 +14,7 @@ import { SessionGuard } from '../auth/session.guard';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 import { TenantGuard } from '../tenancy/tenant.guard';
+import { aclOf } from '../tenancy/acl-of';
 import { EventWebhooksService, type WebhookRequester } from './event-webhooks.service';
 
 /**
@@ -32,8 +33,7 @@ export class EventWebhooksController {
         return {
             tenantId: req.tenant!.tenantId,
             userId: req.authUserId!,
-            role: req.tenant!.role,
-            capabilities: req.tenant!.capabilities ?? [],
+            role: req.tenant!.role, ...aclOf(req),
             via: req.apiToken ? 'api' : 'app',
         };
     }

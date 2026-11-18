@@ -943,7 +943,7 @@ export const articles: LearnArticle[] = [
             },
             {
                 t: 'callout',
-                tone: 'warning',
+                tone: 'warn',
                 title: 'Si falla muchas veces seguidas, se pausa',
                 md: 'Después de 20 intentos fallidos seguidos el webhook se pausa solo y aparece en **Problemas**. Cuando el otro programa vuelva a funcionar, enciéndelo de nuevo con el botón de pausa. También se pausa si la persona que lo creó deja la empresa o pierde el permiso **Usar la API**.',
             },
