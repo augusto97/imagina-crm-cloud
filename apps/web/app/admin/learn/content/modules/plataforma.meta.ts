@@ -54,7 +54,7 @@ export const meta: LearnModuleMeta = {
             summary: 'Define los límites, lo que incluye y el precio de cada plan, cuánto dura la prueba y qué pasa al terminar o al vencer, conecta Mercado Pago y revisa los pagos.',
             minutes: 9,
             level: 'intermediate',
-            keywords: 'planes precios limites modulos que incluye prueba trial dias de prueba pausar cuenta pausada gracia vencimiento plan de prueba cobros mercado pago paypal checkout webhook clave secreta pagos recientes renovacion',
+            keywords: 'planes precios limites modulos que incluye uso por modulo que usa cada empresa prueba trial dias de prueba pausar cuenta pausada gracia vencimiento plan de prueba cobros mercado pago paypal checkout webhook clave secreta pagos recientes renovacion',
             operatorOnly: true,
         },
         {

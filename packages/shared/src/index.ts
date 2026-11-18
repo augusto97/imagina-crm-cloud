@@ -70,6 +70,7 @@ export * from './schemas/signup-attribution';
 export * from './schemas/portal';
 export * from './schemas/billing';
 export * from './schemas/plan-access';
+export * from './schemas/platform-usage';
 export * from './schemas/platform';
 export * from './schemas/payment';
 export * from './schemas/update';

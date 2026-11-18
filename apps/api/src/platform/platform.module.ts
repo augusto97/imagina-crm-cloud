@@ -6,6 +6,8 @@ import { MembersModule } from '../members/members.module';
 import { UpdateModule } from '../update/update.module';
 import { PlatformBillingPolicyController } from './billing-policy.controller';
 import { PlatformController } from './platform.controller';
+import { PlatformUsageController } from './platform-usage.controller';
+import { PlatformUsageService } from './platform-usage.service';
 import { PlatformService } from './platform.service';
 import { TenantTransferController } from './tenant-transfer.controller';
 import { TenantTransferService } from './tenant-transfer.service';
@@ -18,7 +20,7 @@ import { TransferDriveService } from './transfer-drive.service';
  */
 @Module({
     imports: [AuthModule, FilesModule, MembersModule, UpdateModule],
-    controllers: [PlatformController, PlatformBillingPolicyController, TenantTransferController],
-    providers: [PlatformService, TenantTransferService, TransferDriveService, SuperadminGuard],
+    controllers: [PlatformController, PlatformBillingPolicyController, TenantTransferController, PlatformUsageController],
+    providers: [PlatformService, TenantTransferService, TransferDriveService, PlatformUsageService, SuperadminGuard],
 })
 export class PlatformModule {}
