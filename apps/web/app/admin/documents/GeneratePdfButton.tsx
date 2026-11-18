@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
-import { Download, Eye, FileCheck2, FileDown, FileText, Link2, Loader2, Lock, Paperclip, Settings2 } from 'lucide-react';
+import { Download, Eye, FileCheck2, FileDown, FileSignature, FileText, Link2, Loader2, Lock, Paperclip, Settings2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 
@@ -29,6 +29,8 @@ import { usePlanModuleOff } from '@/components/PlanModuleNotice';
 
 // pdf.js pesa: el visor sólo se baja al abrir «Ver».
 const PdfViewDialog = lazy(() => import('./PdfViewDialog'));
+// D6 — «Pedir firma» de esta plantilla.
+const RequestSignatureDialog = lazy(() => import('../signatures/RequestSignatureDialog'));
 
 /**
  * v0.1.266 — «Generar PDF» en la ficha del registro (ADR-S35): las
@@ -59,6 +61,7 @@ function GeneratePdfButtonInner({
     // v0.1.290 — «Ver» (sin emitir) y «Documentos emitidos».
     const [viewing, setViewing] = useState<{ id: number; name: string } | null>(null);
     const [issuedOpen, setIssuedOpen] = useState(false);
+    const [signing, setSigning] = useState<number | null>(null);
     const issued = useIssuedDocuments(listId, recordId);
 
     const list = templates.data ?? [];
@@ -164,6 +167,15 @@ function GeneratePdfButtonInner({
                                         <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Sin guardar archivo: se arma al abrirlo')}</span>
                                     </span>
                                 </DropdownMenuItem>
+                                {canEdit && (
+                                    <DropdownMenuItem disabled={busy !== null} onSelect={() => setSigning(t.id)} data-doc-sign>
+                                        <FileSignature className="imcrm-h-4 imcrm-w-4" />
+                                        <span className="imcrm-flex imcrm-flex-col">
+                                            <span>{__('Pedir firma')}</span>
+                                            <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Se manda por enlace a quien firma')}</span>
+                                        </span>
+                                    </DropdownMenuItem>
+                                )}
                                 {fileFields.map((f) => (
                                     <DropdownMenuItem key={f.id} disabled={busy !== null} onSelect={() => void run(t.id, f)} data-doc-save={f.slug}>
                                         <Paperclip className="imcrm-h-4 imcrm-w-4" />
@@ -201,6 +213,24 @@ function GeneratePdfButtonInner({
             {viewing && (
                 <Suspense fallback={null}>
                     <PdfViewDialog listId={listId} templateId={viewing.id} templateName={viewing.name} recordId={recordId} onClose={() => setViewing(null)} />
+                </Suspense>
+            )}
+            {signing !== null && (
+                <Suspense fallback={null}>
+                    <RequestSignatureDialog
+                        listId={listId}
+                        recordId={recordId}
+                        fields={fields}
+                        initialTemplateId={signing}
+                        onClose={() => setSigning(null)}
+                        onCreated={(_dto, emailed) => {
+                            setSigning(null);
+                            toast.success(
+                                emailed ? __('Enviado para firmar') : __('Enlaces listos'),
+                                emailed ? __('Sigue el avance en «Firmas», en esta ficha.') : __('Cópialos desde «Firmas» y mándalos por el medio que prefieras.'),
+                            );
+                        }}
+                    />
                 </Suspense>
             )}
             {issuedOpen && <IssuedDocumentsDialog open onOpenChange={setIssuedOpen} listId={listId} listSlug={listSlug} recordId={recordId} />}

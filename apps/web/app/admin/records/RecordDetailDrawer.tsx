@@ -55,6 +55,7 @@ import { useIsGuest } from '@/lib/guest';
 import { useGuestAccess } from '@/hooks/useGuests';
 import { IssuedDocumentsSection } from '@/admin/documents/IssuedDocuments';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
+import { RecordSignaturesPanel } from '@/admin/signatures/RecordSignaturesPanel';
 import { RecordSubscriptionPanel } from '@/cloud/components/subscriptions/RecordSubscriptionPanel';
 import { SendWhatsappButton } from '@/cloud/components/whatsapp/SendWhatsappButton';
 import { SendSmsButton } from '@/cloud/components/sms/SendSmsButton';
@@ -735,6 +736,10 @@ export function RecordDetailDrawer({
                                             {/* v0.1.367 — suscripción de Mercado Pago (débito automático). */}
                                             <div className="imcrm-mt-3 empty:imcrm-hidden">
                                                 <RecordSubscriptionPanel listId={listData.data.id} recordId={record.id} />
+                                            </div>
+                                            {/* D6 — firma electrónica de documentos. */}
+                                            <div className="imcrm-mt-3 imcrm-flex imcrm-flex-col empty:imcrm-hidden">
+                                                <RecordSignaturesPanel listId={listData.data.id} recordId={record.id} fields={fields} record={record} />
                                             </div>
                                         </div>
                                     )}

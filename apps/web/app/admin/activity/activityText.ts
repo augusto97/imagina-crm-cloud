@@ -75,6 +75,12 @@ export function changesOf(entry: ActivityEntity, fields: FieldEntity[]): FieldCh
 export function actorOf(entry: ActivityEntity): string {
     // D3 — un mensaje que LLEGÓ por WhatsApp no lo hizo nadie del equipo.
     if (entry.action === 'whatsapp' && whatsappEventOf(entry).event === 'received') return __('El contacto');
+    // D6 — quien abre, firma o rechaza un documento es la persona de afuera.
+    if (entry.action === 'signature') {
+        const sig = signatureOf(entry);
+        if (sig.name && (sig.event === 'viewed' || sig.event === 'signed' || sig.event === 'declined')) return sig.name;
+        if (sig.event === 'completed' || sig.event === 'expired') return __('La firma electrónica');
+    }
     // E6 — un agente de IA: solo («El agente «X»») o por una propuesta que
     // aplicó una persona («Ana (propuesta del agente «X»)»).
     if (entry.agent) {
@@ -120,6 +126,51 @@ export function mergeText(entry: ActivityEntity): string {
     if (titles.length === 1) return sprintf(__('fusionó «%s» en este registro'), titles[0]!);
     if (titles.length > 1) return sprintf(__('fusionó %d registros en este: %s'), titles.length, titles.map((t) => `«${t}»`).join(', '));
     return __('fusionó otros registros en este');
+}
+
+interface SignatureEvent {
+    event?: string;
+    title?: string;
+    name?: string;
+    reason?: string;
+    signed?: number;
+    total?: number;
+    warning?: string;
+}
+
+function signatureOf(entry: ActivityEntity): SignatureEvent {
+    const sig = (entry.changes as { signature?: SignatureEvent } | null)?.signature;
+    return sig && typeof sig === 'object' ? sig : {};
+}
+
+/** D6 — la firma electrónica en lenguaje claro: «firmó «Contrato» (1 de 2)». */
+export function signatureText(entry: ActivityEntity): string {
+    const sig = signatureOf(entry);
+    const doc = quoted(sig.title, __('el documento'));
+    switch (sig.event) {
+        case 'requested':
+            return sig.total === 1
+                ? sprintf(__('pidió la firma de %s a 1 persona'), doc)
+                : sprintf(__('pidió la firma de %1$s a %2$d personas'), doc, sig.total ?? 0);
+        case 'viewed':
+            return sprintf(__('abrió %s para firmarlo'), doc);
+        case 'signed':
+            return sig.total && sig.total > 1
+                ? sprintf(__('firmó %1$s (%2$d de %3$d)'), doc, sig.signed ?? 0, sig.total)
+                : sprintf(__('firmó %s'), doc);
+        case 'declined':
+            return sig.reason ? sprintf(__('no firmó %1$s: «%2$s»'), doc, sig.reason) : sprintf(__('no firmó %s'), doc);
+        case 'completed':
+            return sig.warning
+                ? sprintf(__('dejó %1$s firmado, pero: %2$s'), doc, sig.warning)
+                : sprintf(__('dejó %s firmado por todos, con la constancia de las firmas'), doc);
+        case 'voided':
+            return sig.reason ? sprintf(__('anuló la solicitud de firma de %1$s: «%2$s»'), doc, sig.reason) : sprintf(__('anuló la solicitud de firma de %s'), doc);
+        case 'expired':
+            return sprintf(__('venció la solicitud de firma de %s'), doc);
+        default:
+            return sprintf(__('firma de %s'), doc);
+    }
 }
 
 function quoted(s: unknown, fallback: string): string {
@@ -393,6 +444,8 @@ export function actionText(entry: ActivityEntity, changeCount: number): string {
             return templateAppliedText(entry);
         case 'record_merged':
             return mergeText(entry);
+        case 'signature':
+            return signatureText(entry);
         case 'sms':
             return smsText(entry);
         case 'whatsapp':

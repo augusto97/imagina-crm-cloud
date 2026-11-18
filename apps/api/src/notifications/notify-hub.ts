@@ -119,6 +119,19 @@ export type NotifyEvent =
           body: string;
       }
     | {
+          /**
+           * D6 (v0.1.446) — alguien firmó o rechazó un documento que se mandó a
+           * firmar, o firmaron todos: a quien lo pidió, kind `signature`.
+           */
+          type: 'signature';
+          tenantId: number;
+          listId: number;
+          recordId: number;
+          userIds: number[];
+          title: string;
+          body: string;
+      }
+    | {
           type: 'description_mention';
           tenantId: number;
           listId: number;

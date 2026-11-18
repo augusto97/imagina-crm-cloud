@@ -160,6 +160,7 @@ const EXCLUDED = [
     'Los dispositivos con notificaciones push: el navegador se suscribió con las llaves del servidor de origen; cada persona las vuelve a activar en Ajustes → Cuenta → Avisos.',
     'La contraseña del buzón de soporte de cada lista: viaja la conexión sin ella; se vuelve a escribir en Ajustes de la lista → Correo entrante.',
     'Las estadísticas de los formularios (visitas, empezados, de dónde llegan) y los avances guardados con «Guardar y seguir después»: se cuentan de nuevo desde la llegada y los enlaces de avance apuntaban al servidor anterior.',
+    'Las solicitudes de firma electrónica (D6): sus enlaces y su verificación son del servidor de origen. Los PDF firmados que se guardaron en un campo Archivo sí viajan con el registro; las solicitudes pendientes hay que volver a enviarlas.',
 ];
 
 /** Fila cruda leída de una NDJSON (o de un `select()` sin tipar). */

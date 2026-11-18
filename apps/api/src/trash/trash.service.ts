@@ -858,6 +858,14 @@ export class TrashService {
                 SELECT to_jsonb(dn.file_id) AS v FROM document_numbers dn JOIN records r ON r.id = dn.record_id
                 WHERE dn.tenant_id = ${tenantId} AND dn.file_id IS NOT NULL AND ${which}
             `)),
+            // D6 — el original y el firmado de las firmas del registro (se van con él).
+            ...(await this.numbersIn(tx, sql`
+                SELECT to_jsonb(sr.original_file_id) AS v FROM signature_requests sr JOIN records r ON r.id = sr.record_id
+                WHERE sr.tenant_id = ${tenantId} AND ${which}
+                UNION ALL
+                SELECT to_jsonb(sr.signed_file_id) AS v FROM signature_requests sr JOIN records r ON r.id = sr.record_id
+                WHERE sr.tenant_id = ${tenantId} AND sr.signed_file_id IS NOT NULL AND ${which}
+            `)),
         );
         return out;
     }
@@ -930,6 +938,15 @@ export class TrashService {
                 await this.numbersIn(tx, sql`
                     SELECT to_jsonb(file_id) AS v FROM document_numbers
                     WHERE tenant_id = ${tenantId} AND file_id IS NOT NULL AND file_id::text IN (${cand})
+                `),
+            );
+            add(
+                await this.numbersIn(tx, sql`
+                    SELECT to_jsonb(original_file_id) AS v FROM signature_requests
+                    WHERE tenant_id = ${tenantId} AND original_file_id::text IN (${cand})
+                    UNION ALL
+                    SELECT to_jsonb(signed_file_id) AS v FROM signature_requests
+                    WHERE tenant_id = ${tenantId} AND signed_file_id IS NOT NULL AND signed_file_id::text IN (${cand})
                 `),
             );
             const docs = sql`

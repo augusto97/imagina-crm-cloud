@@ -3495,4 +3495,39 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager', 'agent'] },
     },
+    {
+        key: 'v0.1.446-firma-electronica',
+        version: '0.1.446',
+        date: '2026-11-18',
+        kind: 'feature',
+        title: 'Manda documentos a firmar',
+        summary:
+            'Pide la firma de un contrato, una cotización o un acta desde la ficha del registro. Cada persona lo firma desde su celular, sin crear una cuenta, y el PDF firmado queda guardado en el registro.',
+        media: {
+            slides: [
+                {
+                    title: 'Pídela desde la ficha',
+                    text: 'Elige una plantilla de la lista o un PDF del registro, quién firma y en qué orden. A cada persona le llega su enlace por correo, o lo copias para mandarlo por WhatsApp.',
+                    illustration: 'firma-electronica',
+                },
+                {
+                    title: 'Firma con un código',
+                    text: 'Quien firma lee el documento, pone el código de 6 números que le llegó al correo y dibuja su firma o escribe su nombre.',
+                    illustration: 'firma-electronica',
+                },
+                {
+                    title: 'El PDF firmado, con su constancia',
+                    text: 'Al final del PDF va la constancia: quién firmó, cuándo, cómo se identificó y la huella del documento. Queda en el registro y les llega a todos.',
+                    illustration: 'pdf-emitir',
+                },
+            ],
+        },
+        body: [
+            '- En la ficha de un registro, toca **Pedir firma de un documento** (necesitas una plantilla de documento o un PDF en el registro).',
+            '- En **Cuando firmen todos…** puedes guardar el PDF firmado en un campo, poner un estado como «Firmado» y la fecha de la firma.',
+            '- Sigue cada solicitud en la sección **Firmas** de la ficha: quién firmó, reenviar, copiar el enlace o anularla.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager', 'agent'] },
+    },
 ];

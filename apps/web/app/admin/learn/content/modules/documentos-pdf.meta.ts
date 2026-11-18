@@ -14,6 +14,7 @@ export const meta: LearnModuleMeta = {
         'Un editor visual con bloques: logo, datos, tabla de ítems, totales, código QR y firma',
         'Numeración consecutiva que no se repite y documentos congelados al emitirlos',
         'Que salgan solos por correo, por WhatsApp con un enlace o desde el portal del cliente',
+        'Firma electrónica: la persona firma desde su celular y el PDF firmado queda en el registro',
     ],
     articles: [
         {
@@ -66,6 +67,14 @@ export const meta: LearnModuleMeta = {
             minutes: 7,
             level: 'basic',
             keywords: 'generar pdf descargar ver enlace 30 dias guardar en archivo consecutivo numero emitir congelar anular documentos emitidos',
+        },
+        {
+            id: 'documentos-pdf-firma',
+            title: 'Pedir firma electrónica',
+            summary: 'Manda un contrato o una cotización a firmar: cada persona lo abre en su celular, confirma con un código que le llega al correo y firma; el PDF firmado queda en el registro.',
+            minutes: 7,
+            level: 'basic',
+            keywords: 'firma electronica firmar contrato cotizacion acuerdo aceptacion codigo correo constancia pdf firmado ley 527 verificar anular recordatorio',
         },
         {
             id: 'documentos-pdf-automatizar',

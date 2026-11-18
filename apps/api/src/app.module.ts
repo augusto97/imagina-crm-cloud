@@ -65,6 +65,7 @@ import { IncidentHubModule } from './incidents/incident-hub';
 import { IncidentsModule } from './incidents/incidents.module';
 import { RetentionModule } from './retention/retention.module';
 import { DocumentsModule } from './documents/documents.module';
+import { SignaturesModule } from './signatures/signatures.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordChangeHubModule } from './records/record-change-hub';
 import { EventWebhookHubModule } from './event-webhooks/event-hub';
@@ -128,6 +129,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         EventWebhooksModule,
         DuplicatesModule,
         DocumentsModule,
+        SignaturesModule,
         FormsModule,
         ContactWidgetsModule,
         ShopModule,

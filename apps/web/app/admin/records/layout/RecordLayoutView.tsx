@@ -22,6 +22,7 @@ import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
 import { RecordBookingPanel } from '@/admin/booking/RecordBookingPanel';
 import { RecordShopOrderPanel } from '@/admin/shop/RecordShopOrderPanel';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
+import { RecordSignaturesPanel } from '@/admin/signatures/RecordSignaturesPanel';
 import { RecordSubscriptionPanel } from '@/cloud/components/subscriptions/RecordSubscriptionPanel';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
 import { RecordDuplicateBanner } from '../duplicates/DuplicateHints';
@@ -178,6 +179,10 @@ function ImplicitPayments({ layout }: { layout: RecordLayoutV3 }): JSX.Element |
             <RecordPaymentsPanel listId={ctx.list.id} recordId={ctx.record.id} />
             <div className="imcrm-mt-3 empty:imcrm-hidden">
                 <RecordSubscriptionPanel listId={ctx.list.id} recordId={ctx.record.id} />
+            </div>
+            {/* D6 — firma electrónica de documentos. */}
+            <div className="imcrm-mt-3 imcrm-flex imcrm-flex-col empty:imcrm-hidden">
+                <RecordSignaturesPanel listId={ctx.list.id} recordId={ctx.record.id} fields={ctx.fields} record={ctx.record} />
             </div>
         </div>
     );

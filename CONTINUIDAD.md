@@ -430,7 +430,19 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.445**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.446**
+(**firma electrónica, primera parte** — en la ficha, «Pedir firma de un
+documento» (o «Pedir firma» en Generar PDF): una plantilla de la lista o un PDF
+del registro, de 1 a 10 personas a la vez o en orden, código de 6 números por
+correo; cada persona firma desde su celular en `/firmar/<enlace>` dibujando o
+escribiendo su firma, sin cuenta. Al firmar todos, el PDF firmado (sello en
+cada página + constancia con huella SHA-256, IP, navegador y QR de
+verificación) queda en el registro, les llega a todos y «Cuando firmen
+todos…» guarda el PDF en un campo, pone un estado y la fecha. Sección
+«Firmas» con reenviar, copiar enlace y anular; vence y recuerda solo.
+ADR-S107. **Sigue v0.1.447**: disparador y acción en automatizaciones,
+firmar desde el portal, código por WhatsApp/SMS, verificar subiendo el PDF,
+asistente/MCP y evento de webhook). Antes **v0.1.445**
 (**duplicados y fusionar** — Personalizar vista → «Buscar duplicados»: los
 registros repetidos agrupados por correo, teléfono o documento (reglas propias
 por lista, sin mayúsculas ni acentos); «Fusionar» elige cuál queda y el valor
@@ -2190,6 +2202,24 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-18 · v0.1.446** — **Firma electrónica, primera parte** (D6,
+  ADR-S107). Tablas `signature_requests` + `signature_signers` (migración
+  0131, RLS), `SignaturesService` (pedir desde plantilla o PDF del registro,
+  copia del original con SHA-256, enlace HMAC por persona que se invalida al
+  anular, código por correo en Redis, firma dibujada o escrita, constancia con
+  pdfmake en el hilo de PDF + sello con pdf-lib, «Cuando firmen todos…» fuera
+  de la transacción de la firma), cola `signature-tasks` (vencer y recordar),
+  página pública `/firmar/<token>` en el SPA y verificación HTML por código.
+  Front: sección «Firmas» en las tres fichas, «Pedir firma» en Generar PDF,
+  textos de actividad y aviso `signature` (push por defecto). Guía
+  `e-signature`, artículo «Pedir firma electrónica» en Aprende → Documentos PDF
+  con la ilustración nueva `firma-electronica`, novedad. Bug atrapado en el
+  E2E: el visor del PDF de la página de firma se volvía a cargar con cada
+  cambio de estado (`onError` inline). Dependencia nueva `pdf-lib`; avisos de
+  producción cerrados por override (`hono`, `@hono/node-server`, `qs`).
+  **Sigue** v0.1.447 (segunda parte de
+  D6); G8 e I3 esperan decisiones del usuario.
 
 - **2026-11-18 · v0.1.445** — **Duplicados y fusionar** (A14, ADR-S106).
   Reglas por lista en `lists.settings.duplicates` (sugeridas: correo, teléfono,

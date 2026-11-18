@@ -53,6 +53,8 @@ export const MOVE_STEPS: readonly MoveStep[] = [
         column: 'record_id',
         conflict: () => sql`${same('template_id')} AND x.voided_at IS NULL AND t.voided_at IS NULL`,
     },
+    // D6 — las firmas del registro (pendientes o firmadas) se van con él.
+    { key: 'signature_requests', label: 'Firmas de documentos', table: 'signature_requests', column: 'record_id' },
     { key: 'recurrences', label: 'Recurrencias', table: 'recurrences', column: 'record_id', conflict: () => same('tenant_id', 'date_field_id') },
     { key: 'portal_links', label: 'Accesos al portal', table: 'portal_links', column: 'record_id', conflict: () => same('user_id') },
     { key: 'record_shares', label: 'Personas de afuera con acceso', table: 'record_shares', column: 'record_id', conflict: () => same('user_id') },

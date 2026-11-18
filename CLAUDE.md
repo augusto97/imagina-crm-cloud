@@ -16006,6 +16006,66 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         etiquetas juntadas y teléfono completado, comentario movido, deshacer,
         aviso en el alta y en la ficha, «Fusionar» desde la selección, historial).
 
+  - [x] **Firma electrónica de documentos, primera parte (v0.1.446,
+        ADR-S107, sexto módulo nuevo del plan: D6)**: firma electrónica
+        PROPIA (simple, Ley 527 de 1999 y Decreto 2364 de 2012; no digital
+        certificada). (a) **Pedir la firma** desde la ficha («Pedir firma de un
+        documento» en la sección **Firmas** de la ficha clásica, la página y la
+        ficha diseñada, o «Pedir firma» sobre una plantilla en **Generar PDF**;
+        `RequestSignatureDialog`): una plantilla de documento de la lista (se
+        arma y emite su número si numera) o un PDF de un campo Archivo del
+        registro; de 1 a 10 personas (nombre y correo sugeridos del registro,
+        rol opcional) **a la vez o en orden**; «código por correo»
+        (recomendado) o «sólo el enlace»; mensaje; vence en 3-90 días;
+        recordatorios cada N días (máx. 3); mandar los enlaces por correo o
+        copiarlos; y **«Cuando firmen todos…»**: guardar el PDF firmado en un
+        campo Archivo, poner un estado de selección y la fecha en un campo de
+        fecha. (b) **Modelo** (`signature_requests` + `signature_signers`,
+        migración 0131, RLS; schemas en `packages/shared/src/schemas/signatures.ts`):
+        el PDF se COPIA como adjunto propio con su SHA-256 (FK `RESTRICT`; no se
+        quita del registro: `file_is_signature_document`); enlace personal
+        `firmante-HMAC(empresa, solicitud, firmante, versión)` que **anular**
+        invalida al instante (`link_version`). (c) **Página de firma**
+        (`/firmar/<token>` fuera del router, `SignPage`, sin sesión): la marca y
+        el tema de la empresa, el PDF con pdf.js y descarga, quiénes firman,
+        el nombre, la firma **dibujada o escrita**, el código de 6 números que
+        llega al correo (10 min, 5 intentos, 5 envíos por hora), la casilla de
+        consentimiento y «No firmar» con motivo; freno por IP. (d) **Al firmar
+        todos**: constancia (pdfmake en el hilo de PDF: documento, huella,
+        código de verificación con QR y por persona su firma, fecha, cómo se
+        identificó, IP, navegador y lo que aceptó) al final, sello al pie de
+        cada página del original (pdf-lib), el PDF firmado como adjunto y a
+        todos por correo; «Cuando firmen todos…» corre después y no deshace la
+        firma si falla. (e) **Verificación pública** por código
+        (`/api/v1/public/sign/verify/:code`, HTML del servidor, `noindex`).
+        (f) **Seguirla**: estado por persona (Le llegó, Lo abrió, Firmó, No
+        firmó, Le toca después), copiar enlace, reenviar, ver, descargar y
+        anular con motivo; actividad `signature` en lenguaje claro, aviso
+        `signature` a quien la pidió (campana, correo y push por defecto),
+        bitácora, cola `signature-tasks` cada 10 min (vence y recuerda). El
+        archivo del registro se abre con `?t=<empresa>` (`@AllowTenantQuery`).
+        Módulo `documents` del plan; borrar la empresa limpia las tablas;
+        migrar una empresa no lleva las solicitudes (se avisa). **Bug atrapado
+        en el E2E**: el visor del PDF de la página de firma se volvía a cargar
+        con cada cambio de estado (un `onError` nuevo en cada render). Ayuda:
+        guía `e-signature`, artículo «Pedir firma electrónica» en Aprende →
+        Documentos PDF con la ilustración nueva `firma-electronica`, anclas
+        `record-signature`, `signature-request`, `signature-signers`,
+        `signature-on-complete`, y novedad con carrusel. Tests:
+        `signatures.spec` (6: piezas puras, permisos y `on_complete`, en orden
+        con código —equivocado, vencido, sin firma— y lo que queda en el
+        registro, correos y constancia, verificación y RLS; enlace alterado;
+        PDF del registro en paralelo y «No firmar»; anular, recordatorios y
+        vencimiento) — shared 1028, front 949 — + E2E navegador 35/35 en
+        escritorio y 37/37 en celular oscuro (pedir desde la ficha, firmar en
+        otro navegador con el código del correo, el segundo en orden, PDF
+        firmado con su constancia, registro actualizado, verificación, enlace
+        alterado, sin correo con «Copiar enlace», anular). De paso, avisos
+        nuevos de dependencias de producción cerrados por override (`hono`
+        ≥4.13.16, `@hono/node-server` ≥2.1.6, `qs` ≥6.16.1): `pnpm audit
+        --prod` otra vez en 0. Dependencia nueva `pdf-lib` 1.17.1. Sigue v0.1.447
+        (automatizaciones, portal, código por WhatsApp/SMS, asistente/MCP).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.
