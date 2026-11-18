@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { bigint, char, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
 import { attachments } from './attachments';
+import { connections } from './connections';
 import { documentNumbers, documentTemplates } from './document-templates';
 import { lists } from './lists';
 import { records } from './records';
@@ -33,8 +34,12 @@ export const signatureRequests = pgTable(
         status: varchar('status', { length: 16 }).notNull().default('pending'),
         /** parallel | sequential */
         orderMode: varchar('order_mode', { length: 16 }).notNull().default('parallel'),
-        /** email | none */
+        /** email | sms | whatsapp | none */
         verify: varchar('verify', { length: 16 }).notNull().default('email'),
+        /** v0.1.448 — Conexión de SMS o WhatsApp por la que sale el código. */
+        verifyConnectionId: bigint('verify_connection_id', { mode: 'number' }).references(() => connections.id, { onDelete: 'set null' }),
+        /** v0.1.448 — `{ template: { name, language } }` con WhatsApp de Meta. */
+        verifyOptions: jsonb('verify_options').notNull().default(sql`'{}'::jsonb`),
         message: text('message').notNull().default(''),
         /** template | file */
         source: varchar('source', { length: 16 }).notNull(),
@@ -78,6 +83,7 @@ export const signatureRequests = pgTable(
         // v0.1.447: verificar subiendo el PDF (búsqueda por huella).
         index('signature_requests_original_sha_ix').on(t.originalSha256),
         index('signature_requests_signed_sha_ix').on(t.signedSha256).where(sql`${t.signedSha256} IS NOT NULL`),
+        index('signature_requests_verify_conn_ix').on(t.verifyConnectionId).where(sql`${t.verifyConnectionId} IS NOT NULL`),
     ],
 );
 export type SignatureRequestRow = typeof signatureRequests.$inferSelect;
@@ -96,6 +102,8 @@ export const signatureSigners = pgTable(
         name: varchar('name', { length: 120 }).notNull(),
         email: varchar('email', { length: 255 }).notNull(),
         role: varchar('role', { length: 60 }).notNull().default(''),
+        /** v0.1.448 — Celular para el código por SMS o WhatsApp (vacío si no se pidió). */
+        phone: varchar('phone', { length: 32 }).notNull().default(''),
         /** waiting | sent | viewed | signed | declined */
         status: varchar('status', { length: 16 }).notNull().default('waiting'),
         sentAt: timestamp('sent_at', { withTimezone: true }),
@@ -113,7 +121,7 @@ export const signatureSigners = pgTable(
         signaturePng: text('signature_png'),
         ip: varchar('ip', { length: 64 }),
         userAgent: varchar('user_agent', { length: 400 }),
-        /** email | none */
+        /** email | sms | whatsapp | none */
         verifiedBy: varchar('verified_by', { length: 16 }),
         consentText: text('consent_text'),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

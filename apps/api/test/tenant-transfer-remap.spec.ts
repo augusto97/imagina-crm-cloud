@@ -462,6 +462,28 @@ describe('remapAutomation', () => {
             { type: 'call_webhook', config: { connection_id: 150 } },
         ]);
     });
+    it('v0.1.448 — «Pedir firma»: la plantilla es de documento, la conexión del código y las plantillas del disparador también viajan', () => {
+        const m = maps();
+        m.document.set(80, 180).set(81, 181);
+        m.recordTemplate.set(80, 999);
+        const { triggerConfig, actions } = remapAutomation(
+            { signature_events: ['completed'], signature_template_ids: [80, 81, 7] },
+            [
+                { type: 'request_signature', config: { template_id: 80, verify: 'sms', verify_connection_id: 50, signers: [{ name: '{{nombre}}', email: '{{correo}}', phone: '{{celular}}' }] } },
+                { type: 'create_record', config: { template_id: 80 } },
+                { type: 'if_else', config: { then_actions: [{ type: 'request_signature', config: { template_id: 81, verify_connection_id: 9 } }] } },
+            ],
+            m,
+        );
+        // Lo que no viajó se descarta (no apunta a la plantilla de otra empresa).
+        expect(triggerConfig.signature_template_ids).toEqual([180, 181]);
+        const list = actions as Array<Record<string, Record<string, unknown>>>;
+        expect(list[0]!.config).toMatchObject({ template_id: 180, verify_connection_id: 150 });
+        // En «Crear un registro» `template_id` sigue siendo una plantilla de registro.
+        expect(list[1]!.config!.template_id).toBe(999);
+        const branch = (list[2]!.config!.then_actions as Array<Record<string, Record<string, unknown>>>)[0]!;
+        expect(branch.config).toMatchObject({ template_id: 181, verify_connection_id: null });
+    });
 });
 
 describe('v0.1.386 — origen y etiquetas de un formulario', () => {

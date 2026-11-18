@@ -171,6 +171,12 @@ function SignatureItem({ r, listId, recordId, canEdit }: { r: SignatureRequestDt
                 {r.status === 'pending' && ` · ${sprintf(__('vence el %s'), when(r.expires_at))}`}
                 {r.status === 'completed' && r.completed_at && ` · ${sprintf(__('firmado el %s'), when(r.completed_at))}`}
             </p>
+            {(r.verify === 'sms' || r.verify === 'whatsapp') && (
+                <p className="imcrm-mt-0.5 imcrm-text-xs imcrm-text-muted-foreground" data-testid="signature-code-via">
+                    {r.verify === 'sms' ? __('Código por SMS') : __('Código por WhatsApp')}
+                    {r.verify_connection_name ? ` · ${r.verify_connection_name}` : ` · ${__('la conexión ya no existe: el código no se puede mandar')}`}
+                </p>
+            )}
             {r.void_reason && <p className="imcrm-mt-1 imcrm-text-xs imcrm-text-muted-foreground">{sprintf(__('Motivo: %s'), r.void_reason)}</p>}
 
             <ul className="imcrm-mt-2 imcrm-flex imcrm-flex-col imcrm-gap-1.5">
@@ -180,6 +186,7 @@ function SignatureItem({ r, listId, recordId, canEdit }: { r: SignatureRequestDt
                         <span className="imcrm-font-medium imcrm-text-foreground">{s.signed_name ?? s.name}</span>
                         <span className="imcrm-text-muted-foreground">
                             {s.email}
+                            {s.phone ? ` · ${s.phone}` : ''}
                             {s.role ? ` · ${s.role}` : ''}
                         </span>
                         <span className="imcrm-text-muted-foreground">

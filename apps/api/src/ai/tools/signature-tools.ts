@@ -65,13 +65,26 @@ const requestSpec = z.object({
                 name: z.string().trim().min(1).max(120),
                 email: z.string().trim().email().max(254),
                 role: z.string().trim().max(60).optional().describe('«Cliente», «Representante legal»… (aparece en la constancia)'),
+                phone: z.string().trim().max(32).optional().describe('Celular (con indicativo si es de otro país). Obligatorio si verify es sms o whatsapp: ahí le llega el código.'),
             }),
         )
         .min(1)
         .max(SIGNATURE_MAX_SIGNERS)
         .describe('Quién firma (correos reales: el del registro, de un miembro…). Nunca inventes un correo.'),
     order: z.enum(SIGNATURE_ORDERS).optional().describe('parallel = todas a la vez (default); sequential = en el orden de signers'),
-    verify: z.enum(SIGNATURE_VERIFY).optional().describe('email = código de 6 números por correo antes de firmar (recomendado, default); none = sólo el enlace'),
+    verify: z
+        .enum(SIGNATURE_VERIFY)
+        .optional()
+        .describe('email = código de 6 números por correo antes de firmar (recomendado, default); sms = el código llega por SMS al celular; whatsapp = llega por WhatsApp; none = sólo el enlace'),
+    code_connection: ref
+        .optional()
+        .describe('Con verify sms o whatsapp: la conexión del equipo por la que sale el código (id o nombre; están en signature_code_channels de get_list_schema).'),
+    code_template: z
+        .string()
+        .trim()
+        .max(512)
+        .optional()
+        .describe('Con WhatsApp de Meta (API oficial): el nombre de la plantilla aprobada del código (mejor una de categoría AUTHENTICATION). Con Whats o SMS no hace falta.'),
     message: z.string().trim().max(2000).optional().describe('Mensaje del correo'),
     expires_days: z.number().int().min(1).max(180).optional().describe('Días para firmar (default 30)'),
     remind_days: z.number().int().min(0).max(30).optional().describe('Recordar cada N días a quien no firmó (0 = nunca; default 3; máx. 3 recordatorios)'),
@@ -240,15 +253,54 @@ export class SignatureTools implements AiProposalApplier {
         const saveField = oc.save_field ? field(oc.save_field, 'on_complete.save_field', ['file']) : null;
         const dateField = oc.date_field ? field(oc.date_field, 'on_complete.date_field', ['date', 'datetime']) : null;
 
+        // 3. v0.1.448 — Por dónde sale el código (SMS o WhatsApp).
+        const verify = input.verify ?? 'email';
+        let codeConnection: { id: number; name: string } | null = null;
+        let codeTemplate: { name: string; language: string } | null = null;
+        if (verify === 'sms' || verify === 'whatsapp') {
+            const label = verify === 'sms' ? 'SMS' : 'WhatsApp';
+            const channels = (await svc.codeChannels(ctx.tenantId)).filter((c) => c.channel === verify);
+            if (channels.length === 0) throw new AiToolError(`La empresa no tiene ninguna conexión de ${label} del equipo: conéctala en Ajustes → Integraciones, o usa verify email.`);
+            const want = input.code_connection;
+            const ch =
+                want === undefined
+                    ? channels.length === 1
+                        ? channels[0]
+                        : undefined
+                    : typeof want === 'number' || /^\d+$/.test(String(want))
+                      ? channels.find((c) => c.id === Number(want))
+                      : channels.find((c) => c.name.toLowerCase() === String(want).trim().toLowerCase());
+            if (!ch) throw new AiToolError(`Indica code_connection: la conexión de ${label} por la que sale el código. Opciones: ${channels.map((c) => `${c.id} «${c.name}»`).join(', ')}.`);
+            codeConnection = { id: ch.id, name: ch.name };
+            if (ch.needs_template) {
+                const usable = ch.templates.filter((t) => t.usable);
+                const tpl = input.code_template
+                    ? usable.find((t) => t.name.toLowerCase() === input.code_template!.toLowerCase())
+                    : usable.length === 1
+                      ? usable[0]
+                      : undefined;
+                if (!tpl) {
+                    throw new AiToolError(
+                        `Con «${ch.name}» (API oficial de WhatsApp) el código sale en una plantilla aprobada: indica code_template. Opciones: ${usable.map((t) => `«${t.name}» (${t.language})`).join(', ') || 'ninguna aprobada que sirva (créala en Meta, mejor de categoría Autenticación)'}.`,
+                    );
+                }
+                codeTemplate = { name: tpl.name, language: tpl.language };
+            }
+            const missing = input.signers.filter((x) => !x.phone || x.phone.trim() === '').map((x) => x.name);
+            if (missing.length > 0) throw new AiToolError(`Con verify ${verify} cada persona necesita su celular (phone). Falta el de: ${missing.join(', ')}.`);
+        }
+
         const parsed = createSignatureRequestSchema.safeParse({
             record_id: input.record_id,
             source,
             title: input.title ?? '',
-            signers: input.signers.map((s) => ({ name: s.name, email: s.email, role: s.role ?? '' })),
+            signers: input.signers.map((s) => ({ name: s.name, email: s.email, role: s.role ?? '', phone: verify === 'sms' || verify === 'whatsapp' ? (s.phone ?? '') : '' })),
             order: input.order ?? 'parallel',
             message: input.message ?? '',
             expires_days: input.expires_days ?? 30,
-            verify: input.verify ?? 'email',
+            verify,
+            verify_connection_id: codeConnection?.id ?? null,
+            verify_template: codeTemplate,
             remind_days: input.remind_days ?? 3,
             on_complete: { save_field_id: saveField?.id ?? null, status_field_id: statusField?.id ?? null, status_value: statusValue, date_field_id: dateField?.id ?? null },
             send_email: input.send_email ?? true,
@@ -257,9 +309,20 @@ export class SignatureTools implements AiProposalApplier {
         const p = parsed.data;
         const changes: AiProposalPreview['changes'] = [
             { label: 'Documento', from: null, to: docLabel },
-            ...p.signers.map((s, i) => ({ label: `Firma ${i + 1}`, from: null, to: `${s.name} <${s.email}>${s.role ? ` (${s.role})` : ''}` })),
+            ...p.signers.map((s, i) => ({ label: `Firma ${i + 1}`, from: null, to: `${s.name} <${s.email}>${s.phone ? ` · ${s.phone}` : ''}${s.role ? ` (${s.role})` : ''}` })),
             { label: 'Orden', from: null, to: p.order === 'sequential' ? 'En orden' : 'Todas a la vez' },
-            { label: 'Cómo se identifican', from: null, to: p.verify === 'email' ? 'Código por correo' : 'Sólo el enlace' },
+            {
+                label: 'Cómo se identifican',
+                from: null,
+                to:
+                    p.verify === 'email'
+                        ? 'Código por correo'
+                        : p.verify === 'sms'
+                          ? `Código por SMS (con «${codeConnection?.name ?? ''}»)`
+                          : p.verify === 'whatsapp'
+                            ? `Código por WhatsApp (con «${codeConnection?.name ?? ''}»${codeTemplate ? `, plantilla «${codeTemplate.name}»` : ''})`
+                            : 'Sólo el enlace',
+            },
             { label: 'Vence en', from: null, to: `${p.expires_days} días` },
             ...(p.send_email ? [] : [{ label: 'Correos', from: null, to: 'No se mandan (copiar los enlaces desde la ficha)' }]),
             ...(saveField ? [{ label: 'PDF firmado en', from: null, to: saveField.label }] : []),

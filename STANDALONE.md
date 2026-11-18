@@ -9929,3 +9929,35 @@ asistente/MCP.**
 
 **Queda (v0.1.448)**: código de firma por SMS o WhatsApp (teléfono por
 firmante, migración 0133).
+
+**Addendum v0.1.448 — el código de firma por SMS o por WhatsApp.**
+
+- `verify` suma `sms` y `whatsapp`. Cada firmante sigue necesitando su correo
+  (ahí llega el enlace y, al final, el PDF firmado); con SMS o WhatsApp además
+  lleva su **celular** (`signature_signers.phone`) y la solicitud guarda la
+  conexión (`signature_requests.verify_connection_id`, FK `ON DELETE SET NULL`)
+  y, con WhatsApp de Meta, la plantilla aprobada (`verify_options.template`).
+  Migración 0133.
+- **Sólo conexiones del EQUIPO** (nunca la privada de alguien ni la de «Mi
+  calendario»): SMS de cualquier proveedor y WhatsApp de Whats (texto) o de Meta
+  (plantilla aprobada sin archivo en el encabezado y con al menos una variable;
+  todas sus variables llevan el código — `whatsappCodeTemplateCheck` en shared).
+  `GET /signatures/code-channels` lista las elegibles con sus plantillas y por
+  qué una no sirve; se valida al pedir y otra vez al mandar.
+- **El código nunca se guarda**: el SMS sale sin destino de registro (no deja
+  actividad ni columnas) y el WhatsApp no se persiste. **Sin caer a otro
+  canal**: si no sale, se descarta y quien firma lee un 503
+  (`signature_code_channel`) con el celular enmascarado y «avísale a quien te
+  pidió la firma», sin el motivo técnico. Borrar la conexión deja la solicitud
+  sin canal (el mismo 503) y la ficha lo dice.
+- **Constancia**: «Código de 6 números enviado por SMS a su celular ••• ••• 233».
+- Automatizaciones (`request_signature` con `phone` por persona y variables),
+  asistente/MCP (`code_connection`, `code_template`,
+  `signature_code_channels` en `get_list_schema`) y la ficha (sección
+  «Firmas» con la conexión) al día. La conexión elegida por una automatización
+  cuenta como **en uso** (no se borra sin avisar) y migrar una empresa la
+  re-mapea (`verify_connection_id`).
+- **Bug de v0.1.447 arreglado**: al migrar una empresa, el `template_id` de
+  «Pedir firma» (una plantilla de DOCUMENTO) se traducía con el mapa de las
+  plantillas de REGISTRO, y las plantillas que filtra el disparador
+  (`signature_template_ids`) no se traducían.

@@ -90,6 +90,8 @@ const FIELD_ID_ARRAY_KEYS = new Set(['inputs']);
  */
 const EXPLICIT: Record<string, keyof IdMaps> = {
     connection_id: 'connection',
+    // v0.1.448 — la conexión de SMS o WhatsApp que manda el código de una firma.
+    verify_connection_id: 'connection',
     default_template_id: 'template',
     view_id: 'view',
     // v0.1.265 — la firma del correo de una automatización (send_email).
@@ -138,6 +140,8 @@ const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {
     escalate_team_ids: 'team',
     // E6 — quienes revisan las propuestas de un agente de IA.
     reviewer_user_ids: 'user',
+    // v0.1.447 — las plantillas de documento que filtra «Cuando cambia una firma».
+    signature_template_ids: 'document',
     // v0.1.367 — los planes que filtra el disparador «Cuando cambia una suscripción».
     plan_ids: 'subscriptionPlan',
 };
@@ -578,7 +582,29 @@ export function remapAutomation(
     // El token del webhook entrante se re-emite en el destino: la URL vieja
     // apunta a la instancia de origen.
     delete trigger.webhook_token;
-    return { triggerConfig: trigger, actions: remapJson(actions, maps) };
+    return { triggerConfig: trigger, actions: fixSignatureTemplates(actions, remapJson(actions, maps), maps) };
+}
+
+/**
+ * v0.1.448 — En «Pedir firma de un documento» (`request_signature`) la clave
+ * `template_id` es una plantilla de DOCUMENTO, no de registro (que es lo que
+ * significa en «Crear un registro»): se traduce con su mapa, también dentro de
+ * las ramas «Si / sino» y «Repetir por cada vinculado». Se recorren a la par el
+ * original y el ya re-mapeado (misma forma).
+ */
+function fixSignatureTemplates(original: unknown, remapped: unknown, maps: IdMaps): unknown {
+    if (Array.isArray(original) && Array.isArray(remapped)) {
+        return remapped.map((v, i) => fixSignatureTemplates(original[i], v, maps));
+    }
+    if (!original || typeof original !== 'object' || !remapped || typeof remapped !== 'object' || Array.isArray(remapped)) return remapped;
+    const o = original as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(remapped as Record<string, unknown>)) out[k] = fixSignatureTemplates(o[k], v, maps);
+    if (o.type === 'request_signature' && o.config && typeof o.config === 'object' && out.config && typeof out.config === 'object') {
+        const raw = (o.config as Record<string, unknown>).template_id;
+        out.config = { ...(out.config as Record<string, unknown>), template_id: raw === null || raw === undefined ? null : mapId(maps.document, raw) };
+    }
+    return out;
 }
 
 /**

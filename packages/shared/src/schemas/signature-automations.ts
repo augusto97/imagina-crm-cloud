@@ -166,6 +166,8 @@ export interface RequestSignatureSignerConfig {
     /** Correo (acepta variables o el slug de un campo correo / persona). */
     email: string;
     role: string;
+    /** v0.1.448 — Celular para el código por SMS o WhatsApp (acepta variables o el slug de un campo teléfono). */
+    phone: string;
 }
 
 export interface RequestSignatureActionConfig {
@@ -176,7 +178,11 @@ export interface RequestSignatureActionConfig {
     title: string;
     signers: RequestSignatureSignerConfig[];
     order: 'parallel' | 'sequential';
-    verify: 'email' | 'none';
+    verify: 'email' | 'sms' | 'whatsapp' | 'none';
+    /** v0.1.448 — Conexión de SMS o WhatsApp (del equipo) por la que sale el código. */
+    verify_connection_id: number | null;
+    /** v0.1.448 — Con WhatsApp de Meta: la plantilla aprobada (todas sus variables llevan el código). */
+    verify_template: { name: string; language: string } | null;
     message: string;
     expires_days: number;
     remind_days: number;
@@ -194,6 +200,14 @@ const int = (v: unknown, min: number, max: number, dflt: number): number => {
     return Number.isInteger(n) ? Math.min(max, Math.max(min, n)) : dflt;
 };
 
+function readVerifyTemplate(v: unknown): { name: string; language: string } | null {
+    if (!v || typeof v !== 'object') return null;
+    const t = v as Record<string, unknown>;
+    const name = str(t.name, 512);
+    const language = str(t.language, 16);
+    return name !== '' && language !== '' ? { name, language } : null;
+}
+
 /** Lectura tolerante de la config de la acción (lo guardado antes o a medias no rompe). */
 export function readRequestSignatureConfig(cfg: Record<string, unknown>): RequestSignatureActionConfig {
     const tpl = Number(cfg.template_id);
@@ -201,7 +215,7 @@ export function readRequestSignatureConfig(cfg: Record<string, unknown>): Reques
         ? (cfg.signers as unknown[])
               .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
               .slice(0, 10)
-              .map((s) => ({ name: str(s.name, 300), email: str(s.email, 300), role: str(s.role, 60) }))
+              .map((s) => ({ name: str(s.name, 300), email: str(s.email, 300), role: str(s.role, 60), phone: str(s.phone, 300) }))
         : [];
     return {
         source: cfg.source === 'file' ? 'file' : 'template',
@@ -210,7 +224,9 @@ export function readRequestSignatureConfig(cfg: Record<string, unknown>): Reques
         title: str(cfg.title, 160),
         signers,
         order: cfg.order === 'sequential' ? 'sequential' : 'parallel',
-        verify: cfg.verify === 'none' ? 'none' : 'email',
+        verify: cfg.verify === 'none' || cfg.verify === 'sms' || cfg.verify === 'whatsapp' ? cfg.verify : 'email',
+        verify_connection_id: Number.isInteger(Number(cfg.verify_connection_id)) && Number(cfg.verify_connection_id) > 0 ? Number(cfg.verify_connection_id) : null,
+        verify_template: readVerifyTemplate(cfg.verify_template),
         message: str(cfg.message, 2000),
         expires_days: int(cfg.expires_days, 1, 180, 30),
         remind_days: int(cfg.remind_days, 0, 30, 3),
@@ -232,7 +248,16 @@ export function requestSignatureIssues(cfg: Record<string, unknown>, at: string)
     c.signers.forEach((s, i) => {
         if (s.email === '') out.push({ path: `${at}.config.signers.${i}.email`, message: `Escribe el correo de la persona ${i + 1} (o una variable como «{{correo}}»).` });
         if (s.name === '') out.push({ path: `${at}.config.signers.${i}.name`, message: `Escribe el nombre de la persona ${i + 1} (o una variable como «{{nombre}}»).` });
+        if ((c.verify === 'sms' || c.verify === 'whatsapp') && s.phone === '') {
+            out.push({ path: `${at}.config.signers.${i}.phone`, message: `Escribe el celular de la persona ${i + 1} (o una variable como «{{celular}}»): ahí le llega el código.` });
+        }
     });
+    if ((c.verify === 'sms' || c.verify === 'whatsapp') && c.verify_connection_id === null) {
+        out.push({
+            path: `${at}.config.verify_connection_id`,
+            message: c.verify === 'sms' ? 'Elige la conexión de SMS por la que sale el código.' : 'Elige la conexión de WhatsApp por la que sale el código.',
+        });
+    }
     if ((c.status_field === '') !== (c.status_value === '')) {
         out.push({ path: `${at}.config.status_value`, message: 'Elige el campo de estado y su opción, o ninguno.' });
     }
@@ -255,5 +280,6 @@ export function requestSignatureSummary(cfg: Record<string, unknown>, templateNa
     const doc = c.source === 'file' ? 'el PDF del registro' : templateName ? `«${templateName}»` : 'un documento';
     const n = c.signers.length;
     const who = n === 0 ? '' : n === 1 ? ' a 1 persona' : ` a ${n} personas`;
-    return `Pide la firma de ${doc}${who}${n > 1 && c.order === 'sequential' ? ', en orden' : ''}`;
+    const via = c.verify === 'sms' ? ', con código por SMS' : c.verify === 'whatsapp' ? ', con código por WhatsApp' : '';
+    return `Pide la firma de ${doc}${who}${n > 1 && c.order === 'sequential' ? ', en orden' : ''}${via}`;
 }

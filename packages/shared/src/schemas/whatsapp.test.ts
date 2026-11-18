@@ -170,3 +170,22 @@ describe('WhatsApp oficial — piezas puras', () => {
         expect(whatsappStatusWanted('leido', true)).toBe(true);
     });
 });
+
+describe('v0.1.448 — plantilla para el código de una firma', () => {
+    it('sirve si todas sus variables pueden llevar el código; no con un archivo en el encabezado', async () => {
+        const { whatsappCodeTemplateCheck } = await import('./whatsapp');
+        const auth = whatsappCodeTemplateCheck(
+            [
+                { type: 'BODY', text: '*{{1}}* es tu código de verificación.' },
+                { type: 'BUTTONS', buttons: [{ type: 'OTP', otp_type: 'COPY_CODE', text: 'Copiar código' }] },
+            ],
+            'POSITIONAL',
+        );
+        expect(auth).toEqual({ usable: true, reason: null, preview: '*483921* es tu código de verificación.' });
+        const named = whatsappCodeTemplateCheck([{ type: 'BODY', text: 'Tu código: {{codigo}}' }], 'NAMED', '111 222');
+        expect(named.usable).toBe(true);
+        expect(named.preview).toBe('Tu código: 111222');
+        expect(whatsappCodeTemplateCheck([{ type: 'HEADER', format: 'IMAGE' }, { type: 'BODY', text: '{{1}}' }], 'POSITIONAL').usable).toBe(false);
+        expect(whatsappCodeTemplateCheck([{ type: 'BODY', text: 'Hola' }], 'POSITIONAL')).toMatchObject({ usable: false, reason: expect.stringContaining('ninguna variable') });
+    });
+});

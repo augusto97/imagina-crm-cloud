@@ -1,6 +1,14 @@
 import { useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { SIGNATURE_MAX_SIGNERS, createSignatureRequestSchema, type SignatureRequestDto } from '@imagina-base/shared';
+import {
+    SIGNATURE_MAX_SIGNERS,
+    SIGNATURE_VERIFY,
+    createSignatureRequestSchema,
+    signatureVerifyNeedsPhone,
+    type SignatureRequestDto,
+    type SignatureVerify,
+    type SignatureVerifyTemplate,
+} from '@imagina-base/shared';
 import { ChevronDown, ChevronUp, FileSignature, Loader2, Plus, Trash2, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -12,13 +20,23 @@ import { __ } from '@/lib/i18n';
 import type { FieldEntity } from '@/types/field';
 import type { RecordEntity } from '@/types/record';
 
+import { SignatureCodeChannelPicker } from './SignatureCodeChannelPicker';
 import { useCreateSignature, useSignatureSources } from './useSignatures';
 
 interface SignerRow {
     name: string;
     email: string;
+    phone: string;
     role: string;
 }
+
+/** Cómo confirma quien firma que es quien dice ser (v0.1.448: también por SMS o WhatsApp). */
+const VERIFY_OPTIONS: Record<SignatureVerify, string> = {
+    email: 'Con un código que le llega al correo (recomendado)',
+    sms: 'Con un código que le llega por SMS',
+    whatsapp: 'Con un código que le llega por WhatsApp',
+    none: 'Sólo con el enlace',
+};
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -26,12 +44,13 @@ function str(v: unknown): string {
     return typeof v === 'string' ? v.trim() : '';
 }
 
-/** La persona del registro: el título y el primer correo que tenga. */
+/** La persona del registro: el título, el primer correo y el primer celular que tenga. */
 function suggestedSigner(record: RecordEntity | undefined, fields: FieldEntity[]): SignerRow {
-    if (!record) return { name: '', email: '', role: '' };
+    if (!record) return { name: '', email: '', phone: '', role: '' };
     const title = fields.find((f) => f.is_primary) ?? fields.find((f) => f.type === 'text');
     const email = fields.filter((f) => f.type === 'email').map((f) => str(record.fields[f.slug])).find((v) => EMAIL_RE.test(v)) ?? '';
-    return { name: title ? str(record.fields[title.slug]).slice(0, 120) : '', email, role: '' };
+    const phone = fields.filter((f) => f.type === 'phone').map((f) => str(record.fields[f.slug])).find((v) => v !== '') ?? '';
+    return { name: title ? str(record.fields[title.slug]).slice(0, 120) : '', email, phone: phone.slice(0, 32), role: '' };
 }
 
 function errText(err: unknown): string {
@@ -66,7 +85,10 @@ export default function RequestSignatureDialog({
     const [title, setTitle] = useState('');
     const [signers, setSigners] = useState<SignerRow[]>(() => [suggestedSigner(record, fields)]);
     const [order, setOrder] = useState<'parallel' | 'sequential'>('parallel');
-    const [verify, setVerify] = useState<'email' | 'none'>('email');
+    const [verify, setVerify] = useState<SignatureVerify>('email');
+    const [codeConnection, setCodeConnection] = useState<number | null>(null);
+    const [codeTemplate, setCodeTemplate] = useState<SignatureVerifyTemplate | null>(null);
+    const needsPhone = signatureVerifyNeedsPhone(verify);
     const [message, setMessage] = useState('');
     const [expires, setExpires] = useState('30');
     const [remind, setRemind] = useState('3');
@@ -115,11 +137,13 @@ export default function RequestSignatureDialog({
             record_id: recordId,
             source: kind === 't' ? { kind: 'template', template_id: id } : { kind: 'file', file_id: id },
             title: title.trim(),
-            signers: signers.map((s) => ({ name: s.name.trim(), email: s.email.trim(), role: s.role.trim() })),
+            signers: signers.map((s) => ({ name: s.name.trim(), email: s.email.trim(), phone: needsPhone ? s.phone.trim() : '', role: s.role.trim() })),
             order,
             message: message.trim(),
             expires_days: Number(expires),
             verify,
+            verify_connection_id: needsPhone ? codeConnection : null,
+            verify_template: verify === 'whatsapp' ? codeTemplate : null,
             remind_days: Number(remind),
             on_complete: {
                 save_field_id: saveField ? Number(saveField) : null,
@@ -273,10 +297,22 @@ export default function RequestSignatureDialog({
                                             />
                                             <Input value={s.role} onChange={(e) => setSigner(i, { role: e.target.value })} placeholder={__('Rol (opcional)')} aria-label={__('Rol')} maxLength={60} />
                                         </div>
+                                        {needsPhone && (
+                                            <Input
+                                                type="tel"
+                                                className="imcrm-mt-2"
+                                                value={s.phone}
+                                                onChange={(e) => setSigner(i, { phone: e.target.value })}
+                                                placeholder={__('Celular (con indicativo, ej. +57 300 123 4567)')}
+                                                aria-label={__('Celular')}
+                                                maxLength={32}
+                                                data-testid="signature-signer-phone"
+                                            />
+                                        )}
                                     </div>
                                 ))}
                                 {signers.length < SIGNATURE_MAX_SIGNERS && (
-                                    <Button type="button" variant="outline" size="sm" className="imcrm-self-start imcrm-gap-1.5" onClick={() => setSigners((rows) => [...rows, { name: '', email: '', role: '' }])} data-testid="signature-add-signer">
+                                    <Button type="button" variant="outline" size="sm" className="imcrm-self-start imcrm-gap-1.5" onClick={() => setSigners((rows) => [...rows, { name: '', email: '', phone: '', role: '' }])} data-testid="signature-add-signer">
                                         <Plus className="imcrm-h-4 imcrm-w-4" />
                                         {__('Agregar otra persona')}
                                     </Button>
@@ -298,10 +334,29 @@ export default function RequestSignatureDialog({
 
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                                 <Label htmlFor="sig-verify">{__('Cómo confirma que es quien dice ser')}</Label>
-                                <Select id="sig-verify" value={verify} onChange={(e) => setVerify(e.target.value as 'email' | 'none')}>
-                                    <option value="email">{__('Con un código que le llega al correo (recomendado)')}</option>
-                                    <option value="none">{__('Sólo con el enlace')}</option>
+                                <Select id="sig-verify" value={verify} onChange={(e) => setVerify(e.target.value as SignatureVerify)} data-testid="signature-verify">
+                                    {SIGNATURE_VERIFY.map((v) => (
+                                        <option key={v} value={v}>
+                                            {__(VERIFY_OPTIONS[v])}
+                                        </option>
+                                    ))}
                                 </Select>
+                                {needsPhone && (
+                                    <>
+                                        <p className="imcrm-text-xs imcrm-text-muted-foreground">
+                                            {__('El código llega al celular de cada persona. El enlace para firmar le sigue llegando al correo.')}
+                                        </p>
+                                        <SignatureCodeChannelPicker
+                                            channel={verify as 'sms' | 'whatsapp'}
+                                            connectionId={codeConnection}
+                                            template={codeTemplate}
+                                            onChange={(next) => {
+                                                setCodeConnection(next.connectionId);
+                                                setCodeTemplate(next.template);
+                                            }}
+                                        />
+                                    </>
+                                )}
                             </div>
 
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">

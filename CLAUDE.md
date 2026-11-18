@@ -16129,6 +16129,49 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         cambiado no, búsqueda por archivo y por código sin errores de CSP.
         Sigue v0.1.448 (código de firma por SMS o WhatsApp, migración 0133).
 
+  - [x] **El código de firma por SMS o WhatsApp (v0.1.448, addendum ADR-S107,
+        tercera parte del sexto módulo nuevo del plan: D6)**. (a) **Modelo**
+        (migración 0133): `verify` suma `sms` y `whatsapp`; cada firmante sigue
+        con su correo (enlace y PDF firmado) y suma su **celular**
+        (`signature_signers.phone`); la solicitud guarda la conexión
+        (`verify_connection_id`, FK `ON DELETE SET NULL`) y, con WhatsApp de
+        Meta, la plantilla (`verify_options.template`). Reglas puras en shared
+        (`signatureVerifyNeedsPhone`, `signaturePhoneLooksValid`, `maskPhone`,
+        `signatureCodeText`, `whatsappCodeTemplateCheck`). (b) **Sólo
+        conexiones del EQUIPO** (nunca una privada ni la de «Mi calendario»):
+        SMS de cualquier proveedor, Whats (texto) o WhatsApp Business (plantilla
+        aprobada sin archivo en el encabezado y con al menos una variable; todas
+        llevan el código). `GET /signatures/code-channels` las lista con sus
+        plantillas y el motivo de las que no sirven; se valida al pedir y al
+        mandar. (c) **El código nunca se guarda**: el SMS sale sin registro
+        destino (sin actividad ni columnas), el WhatsApp no se persiste, y si no
+        sale **no cae a otro canal**: se descarta y quien firma lee un 503
+        `signature_code_channel` con su celular enmascarado y «avísale a quien
+        te pidió la firma», sin el motivo técnico. La constancia dice «Código de
+        6 números enviado por SMS a su celular ••• ••• 233». (d) **Front**:
+        selector compartido `SignatureCodeChannelPicker` (conexión y plantilla
+        con su vista previa, aviso con enlace a Integraciones si no hay) en el
+        diálogo «Pedir firma» (celular por persona, sugerido del primer campo
+        Teléfono del registro) y en la acción de las automatizaciones (celular
+        con variables); la página de firma dice por dónde llega el código y la
+        ficha muestra la conexión y el celular. (e) Automatizaciones,
+        asistente/MCP (`phone`, `code_connection`, `code_template`;
+        `signature_code_channels` en `get_list_schema`). La conexión elegida por
+        una automatización **cuenta como en uso** (`connectionIdOfAction`).
+        **Bug de v0.1.447 arreglado**: migrar una empresa traducía el
+        `template_id` de «Pedir firma» (plantilla de DOCUMENTO) con el mapa de
+        plantillas de REGISTRO y no traducía `signature_template_ids` del
+        disparador; ahora `fixSignatureTemplates` + `verify_connection_id` en el
+        re-mapeo. Ayuda: guía `e-signature`, Aprende → Documentos PDF y
+        novedad (ilustración existente). Tests: `signature-codes.spec` (7:
+        conexiones elegibles, validación, SMS sin rastro y constancia, SMS que
+        no sale, WhatsApp por Meta y por Whats, conexión borrada, correo igual,
+        conexión en uso), re-mapeo (+1), shared — suites relacionadas 98/98,
+        front 951 — + E2E navegador 25/25 y 27/27 en celular oscuro contra un
+        Twilio simulado (pedir con SMS, celular sugerido, sin celular no deja,
+        el código llega al proveedor, firmar con él, la actividad sin el
+        código, editor de la acción, conexión en uso).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

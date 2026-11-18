@@ -187,6 +187,9 @@ describe('URLs de archivos atadas a la sesión y freno a otros sitios (Postgres 
         const path = url.replace('https://app.test', '');
         // Un proxy de correo (sin Fetch Metadata) no cuenta para el tope.
         for (let i = 0; i < 3; i++) expect((await get(path)).status).toBe(200);
+        // El tope cuenta por minuto fijo: los 61 pedidos tienen que caer en el mismo.
+        const left = 60_000 - (Date.now() % 60_000);
+        if (left < 10_000) await new Promise((r) => setTimeout(r, left + 100));
         const first = await get(path, OTHER_SITE);
         expect(first.status).toBe(200);
         expect(first.headers.get('cross-origin-resource-policy')).toBeNull();

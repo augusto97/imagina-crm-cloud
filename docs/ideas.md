@@ -29,9 +29,9 @@ publicarse: **G2** en parte (la API con tokens salió en v0.1.441, los webhooks
 de eventos en v0.1.442 y la app de n8n en v0.1.443; quedan Make y Zapier),
 **E1 + E2** en parte («buscar registros», «crear o actualizar por un dato» y
 «cuando se agrega un comentario» salieron en v0.1.444), **A14** (duplicados y fusionar: salió en v0.1.445), **D6**
-(firma electrónica: salió en v0.1.446 y v0.1.447 —automatizaciones, portal,
-verificar con el archivo y asistente/MCP—; sigue v0.1.448 con el código por
-WhatsApp/SMS) y **G8** (facturación DIAN: falta elegir proveedor y tener
+(firma electrónica: salió completa en v0.1.446, v0.1.447 —automatizaciones,
+portal, verificar con el archivo y asistente/MCP— y v0.1.448 —el código por SMS
+o WhatsApp—) y **G8** (facturación DIAN: falta elegir proveedor y tener
 credenciales de prueba) e **I3** (modo agencia: falta decidir quién le cobra al
 cliente final).
 
@@ -45,7 +45,6 @@ citas (D5) y pidió guardar el resto para después.
 | Idea | Qué es | Qué hay hoy | Decisiones pendientes |
 |---|---|---|---|
 | **G2 · Apps oficiales en Make y Zapier** | Disparadores y acciones de Imagina Base en esos catálogos. | API REST con tokens (v0.1.441), webhooks de eventos firmados (v0.1.442) y la app de n8n (v0.1.443). | Make y Zapier piden cuentas de desarrollador del usuario y pasan revisión. Publicar la de n8n en npm (secreto `NPM_TOKEN`) y pedir su verificación. |
-| **D6 · Firma electrónica de documentos** (en parte: v0.1.446-447) | Los PDF de la app (cotización, contrato, cuenta de cobro) se firman por enlace. **Hecho en v0.1.446**: pedir firma desde la ficha (plantilla o PDF del registro), a la vez o en orden, código por correo, firma dibujada o escrita, constancia con huella SHA-256 e IP, PDF firmado al registro, estado y fecha al completar, verificación pública. **Hecho en v0.1.447**: disparador «Cuando cambia una firma» y acción «Pedir firma de un documento», firmar y bajar el firmado desde el portal, verificar eligiendo el PDF (la huella se calcula en el navegador), asistente/MCP y eventos de webhook. **Falta (v0.1.448)**: código por WhatsApp o SMS. | PDF congelados al emitir, portal, correos con la marca (v0.1.266-290). | Se eligió la firma propia. |
 | **G8 · Facturación electrónica DIAN** | Factura y nota crédito desde la ficha con los ítems existentes, vía un proveedor autorizado. Vuelven el CUFE, el XML y el PDF validado. Después: México (CFDI), Perú, Ecuador y Chile. | «Factura (no electrónica)» en PDF (v0.1.290). | Proveedor (Factus, Alegra, Siigo, The Factory HKA…); cuenta por empresa (recomendado). Hacen falta credenciales de prueba para probar de verdad. |
 
 ---

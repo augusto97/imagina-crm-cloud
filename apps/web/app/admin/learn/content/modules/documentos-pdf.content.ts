@@ -539,7 +539,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'settings',
                 rows: [
-                    { name: 'Cómo confirma que es quien dice ser', what: '**Con un código que le llega al correo** (recomendado) o **Sólo con el enlace**.', tip: 'El código es de 6 números, vence en 10 minutos y admite 5 intentos.' },
+                    { name: 'Cómo confirma que es quien dice ser', what: '**Con un código que le llega al correo** (recomendado), **por SMS**, **por WhatsApp** o **Sólo con el enlace**. Con SMS o WhatsApp eliges la conexión de tu empresa (con WhatsApp Business, una plantilla aprobada) y escribes el celular de cada persona; la app sugiere el del registro.', tip: 'El código es de 6 números, vence en 10 minutos y admite 5 intentos. Con SMS o WhatsApp el enlace para firmar le sigue llegando al correo, y la constancia dice a qué celular se mandó (solo los últimos números).' },
                     { name: 'Mensaje (opcional)', what: 'Va en el correo y arriba del documento, en la página de firma.' },
                     { name: 'Vence en', what: 'Cuántos días sirven los enlaces (de 3 a 90). Pasado ese plazo, la solicitud vence sola.' },
                     { name: 'Recordar a quien no firmó', what: 'Cada cuántos días le llega un recordatorio a quien todavía no firma (como mucho 3).' },
@@ -550,7 +550,7 @@ export const articles: LearnArticle[] = [
             { t: 'h', text: 'Lo que ve quien firma' },
             {
                 t: 'p',
-                md: 'Una página con el logo y el color de tu empresa, el documento completo para leer (y descargar) y, al lado, su nombre, la firma —la **dibuja** con el dedo o el mouse, o **escribe su nombre**—, el código del correo y la casilla para aceptar firmar por medios electrónicos. Si no está de acuerdo, puede **No firmar** y escribir el motivo: la solicitud se cierra y te avisa.',
+                md: 'Una página con el logo y el color de tu empresa, el documento completo para leer (y descargar) y, al lado, su nombre, la firma —la **dibuja** con el dedo o el mouse, o **escribe su nombre**—, el código (del correo, del SMS o del WhatsApp) y la casilla para aceptar firmar por medios electrónicos. Si no está de acuerdo, puede **No firmar** y escribir el motivo: la solicitud se cierra y te avisa.',
             },
             {
                 t: 'cards',
@@ -606,7 +606,8 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: '¿Quien firma necesita una cuenta?', a: 'No. Abre su enlace personal y firma; si elegiste el código por correo, se identifica con él.' },
+                    { q: '¿Quien firma necesita una cuenta?', a: 'No. Abre su enlace personal y firma; si elegiste el código por correo, por SMS o por WhatsApp, se identifica con él.' },
+                    { q: '¿Qué pasa si el SMS o el WhatsApp no sale?', a: 'La página le dice que no se pudo mandar el código y que avise a quien le pidió firmar. Revisa la conexión en Ajustes → Integraciones y que el celular esté bien escrito: cuando esté lista, la persona toca **Enviar otro código**. Si borraste la conexión o el celular estaba mal, anula la solicitud y pide la firma de nuevo.' },
                     { q: '¿Puedo mandar el enlace por WhatsApp?', a: 'Sí: apaga **Mandar los enlaces por correo** o, en la ficha, toca **Copiar enlace** junto a cada persona.' },
                     { q: '¿Qué pasa si cambio el registro después de pedir la firma?', a: 'Nada en el documento: se firma el PDF que se armó al pedir la firma. Si hay que corregirlo, anula la solicitud y pide otra.' },
                     { q: '¿Cuánto cuesta cada firma?', a: 'No tiene costo aparte: los correos cuentan como cualquier otro correo de la empresa.' },

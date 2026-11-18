@@ -676,6 +676,28 @@ export function buildWhatsappTemplateComponents(
     return { ok: true, components: out };
 }
 
+/**
+ * v0.1.448 — ¿Una plantilla sirve para mandar el código de firma? Todas sus
+ * variables (mensaje, encabezado de texto y botón de copiar) se llenan con el
+ * código; un encabezado con imagen, video o documento no se puede llenar.
+ * Devuelve el motivo si no sirve y la vista previa con un código de ejemplo.
+ */
+export function whatsappCodeTemplateCheck(
+    components: unknown,
+    parameterFormat: unknown,
+    sample = '483 921',
+): { usable: boolean; reason: string | null; preview: string } {
+    const shape = whatsappTemplateShape(components, parameterFormat);
+    const vars = whatsappTemplateVariables(components, parameterFormat);
+    const variables = Object.fromEntries(vars.map((v) => [v.key, sample.replace(/\s+/g, '')]));
+    const preview = renderWhatsappTemplate(components, parameterFormat, variables).text;
+    if (shape.header && shape.header.format !== 'TEXT') {
+        return { usable: false, reason: 'Tiene un archivo en el encabezado: elige una plantilla sólo con texto.', preview };
+    }
+    if (vars.length === 0) return { usable: false, reason: 'No tiene ninguna variable donde poner el código.', preview };
+    return { usable: true, reason: null, preview };
+}
+
 // ── API ──────────────────────────────────────────────────────────────────
 
 export const whatsappTemplateSchema = z.object({

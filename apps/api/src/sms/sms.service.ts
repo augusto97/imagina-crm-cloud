@@ -562,7 +562,7 @@ export class SmsService {
             sender?: string;
             stripAccents: boolean;
             respectHours: boolean;
-            source: 'manual' | 'test' | 'booking';
+            source: 'manual' | 'test' | 'booking' | 'signature';
             target: { listId: number | null; recordId: number | null; userId: number | null };
         },
     ): Promise<SmsSendResult> {

@@ -6,6 +6,7 @@ import {
     SIGNATURE_EVENTS,
     readRequestSignatureConfig,
     readSignatureTriggerEvents,
+    signatureVerifyNeedsPhone,
     type RequestSignatureSignerConfig,
     type SignatureEvent,
 } from '@imagina-base/shared';
@@ -19,6 +20,7 @@ import type { ActionSpec, TriggerConfig } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
 
 import { useDocumentTemplates } from '../documents/useDocuments';
+import { SignatureCodeChannelPicker } from '../signatures/SignatureCodeChannelPicker';
 import { AutomationEditorListContext } from './config-editors';
 import { MergeTagInput } from './MergeTagInput';
 
@@ -97,7 +99,7 @@ export function SignatureTriggerConfig({ config, onChange }: { config: TriggerCo
     );
 }
 
-const EMPTY_SIGNER: RequestSignatureSignerConfig = { name: '', email: '', role: '' };
+const EMPTY_SIGNER: RequestSignatureSignerConfig = { name: '', email: '', role: '', phone: '' };
 
 /** La acción «Pedir firma de un documento». */
 export function RequestSignatureConfig({ spec, onChange, fields }: { spec: ActionSpec; onChange: (next: ActionSpec) => void; fields: FieldEntity[] }): JSX.Element {
@@ -127,6 +129,7 @@ export function RequestSignatureConfig({ spec, onChange, fields }: { spec: Actio
         return Array.isArray(opts) ? opts : [];
     }, [selectFields, c.status_field]);
     const list = templates.data ?? [];
+    const needsPhone = signatureVerifyNeedsPhone(c.verify);
     const missingTemplate = c.source === 'template' && c.template_id !== null && templates.data !== undefined && !list.some((t) => t.id === c.template_id);
 
     return (
@@ -205,6 +208,15 @@ export function RequestSignatureConfig({ spec, onChange, fields }: { spec: Actio
                         </div>
                         <MergeTagInput value={s.name} onChange={(v) => setSigner(i, { name: v })} fields={fields} placeholder={__('Nombre o {{nombre}}')} aria-label={__('Nombre de quien firma')} />
                         <MergeTagInput value={s.email} onChange={(v) => setSigner(i, { email: v })} fields={fields} placeholder={__('Correo o {{correo}}')} aria-label={__('Correo de quien firma')} />
+                        {needsPhone && (
+                            <MergeTagInput
+                                value={s.phone}
+                                onChange={(v) => setSigner(i, { phone: v })}
+                                fields={fields}
+                                placeholder={__('Celular o {{celular}}')}
+                                aria-label={__('Celular de quien firma')}
+                            />
+                        )}
                         <Input value={s.role} onChange={(e) => setSigner(i, { role: e.target.value })} placeholder={__('Rol (opcional): Cliente, Representante legal…')} className="imcrm-h-8" aria-label={__('Rol de quien firma')} />
                     </div>
                 ))}
@@ -229,11 +241,27 @@ export function RequestSignatureConfig({ spec, onChange, fields }: { spec: Actio
                 </div>
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                     <Label className="imcrm-text-xs">{__('Para firmar piden')}</Label>
-                    <Select value={c.verify} onChange={(e) => set({ verify: e.target.value })} aria-label={__('Para firmar piden')} className="imcrm-h-8">
+                    <Select value={c.verify} onChange={(e) => set({ verify: e.target.value })} aria-label={__('Para firmar piden')} className="imcrm-h-8" data-testid="request-signature-verify">
                         <option value="email">{__('Un código que llega al correo (recomendado)')}</option>
+                        <option value="sms">{__('Un código que llega por SMS')}</option>
+                        <option value="whatsapp">{__('Un código que llega por WhatsApp')}</option>
                         <option value="none">{__('Sólo el enlace')}</option>
                     </Select>
                 </div>
+                {needsPhone && (
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1 sm:imcrm-col-span-2">
+                        <SignatureCodeChannelPicker
+                            channel={c.verify as 'sms' | 'whatsapp'}
+                            connectionId={c.verify_connection_id}
+                            template={c.verify_template}
+                            idPrefix="auto-sig-code"
+                            onChange={(next) => set({ verify_connection_id: next.connectionId, verify_template: next.template })}
+                        />
+                        <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                            {__('El código llega al celular de cada persona; el enlace para firmar, al correo. Si el celular no es válido al correr, la acción falla y lo dice en el historial.')}
+                        </p>
+                    </div>
+                )}
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">
                     <Label className="imcrm-text-xs">{__('Vence en (días)')}</Label>
                     <Input type="number" min={1} max={180} value={String(c.expires_days)} onChange={(e) => set({ expires_days: Number(e.target.value) })} className="imcrm-h-8" aria-label={__('Vence en días')} />

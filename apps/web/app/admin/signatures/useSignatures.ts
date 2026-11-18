@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import type { CreateSignatureRequestInput, SignatureRequestDto } from '@imagina-base/shared';
+import type { CreateSignatureRequestInput, SignatureCodeChannel, SignatureRequestDto } from '@imagina-base/shared';
 
 import { useSession } from '@/cloud/session';
 import { invalidateForList, recordsKeys } from '@/hooks/useRecords';
@@ -13,6 +13,8 @@ export const signatureKeys = {
     all: ['signatures'] as const,
     forRecord: (listId: number, recordId: number) => ['signatures', listId, recordId] as const,
     sources: (listId: number, recordId: number) => ['signatures', listId, recordId, 'sources'] as const,
+    /** v0.1.448 — Conexiones de la empresa que pueden mandar el código (no dependen de la lista). */
+    codeChannels: () => ['signatures', 'code-channels'] as const,
 };
 
 export interface SignatureSources {
@@ -38,6 +40,20 @@ export function useSignatureSources(listId: number, recordId: number, enabled: b
         queryFn: async () => (await api.get<SignatureSources>(`/lists/${listId}/records/${recordId}/signatures/sources`)).data,
         enabled: enabled && listId > 0 && recordId > 0,
         retry: false,
+    });
+}
+
+/**
+ * v0.1.448 — Las conexiones de SMS o WhatsApp del equipo que pueden mandar el
+ * código de firma (con las plantillas aprobadas de WhatsApp de Meta).
+ */
+export function useSignatureCodeChannels(enabled: boolean) {
+    return useQuery({
+        queryKey: signatureKeys.codeChannels(),
+        queryFn: async () => (await api.get<SignatureCodeChannel[]>('/signatures/code-channels')).data,
+        enabled,
+        retry: false,
+        staleTime: 60_000,
     });
 }
 

@@ -32,6 +32,7 @@ import {
     sameWaWebEvents,
     nextWhatsappStatus,
     whatsappTemplateManagerUrl,
+    whatsappTemplateVariables,
     whatsappWindowClosesAt,
     whatsappWindowOpen,
     writeWhatsappListFields,
@@ -1437,6 +1438,50 @@ export class WhatsappService {
                 .orderBy(asc(whatsappTemplates.name), asc(whatsappTemplates.language)),
         );
         return rows.map(toTemplateDto);
+    }
+
+    /**
+     * v0.1.448 — Manda el código de una firma (ADR-S107). Whats: un mensaje de
+     * texto; WhatsApp de Meta: la plantilla aprobada elegida, con TODAS sus
+     * variables llenas con el código. No deja rastro en el registro ni guarda
+     * el texto (un código no es parte de la conversación con el contacto).
+     */
+    async sendSignatureCode(
+        tenantId: number,
+        args: { connectionId: number; to: string; code: string; text: string; template: { name: string; language: string } | null },
+    ): Promise<{ ok: true; to: string } | { ok: false; error: string }> {
+        let prepared: PreparedSend;
+        try {
+            prepared = await this.tenantDb.withTenant(tenantId, async (tx) => {
+                const conn = await this.connRow(tx, tenantId, args.connectionId);
+                if (!conn) throw new WhatsappSendError('La conexión de WhatsApp ya no existe.', 'connection_missing');
+                if (conn.provider === 'whatsapp_web') {
+                    return this.prepareSendInTx(tx, tenantId, { connectionId: conn.id, kind: 'text', to: args.to, text: args.text });
+                }
+                if (!args.template) throw new WhatsappSendError('Falta la plantilla de WhatsApp con la que sale el código.', 'template_missing');
+                const rows = await tx
+                    .select()
+                    .from(whatsappTemplates)
+                    .where(and(eq(whatsappTemplates.tenantId, tenantId), eq(whatsappTemplates.connectionId, conn.id), eq(whatsappTemplates.name, args.template.name)));
+                const tpl = pickTemplate(rows, args.template.language);
+                const vars = tpl ? whatsappTemplateVariables(tpl.components, tpl.parameterFormat) : [];
+                const variables = Object.fromEntries(vars.map((v) => [v.key, args.code]));
+                return this.prepareSendInTx(tx, tenantId, {
+                    connectionId: conn.id,
+                    kind: 'template',
+                    to: args.to,
+                    template: args.template.name,
+                    language: args.template.language,
+                    variables,
+                });
+            });
+        } catch (err) {
+            if (err instanceof WhatsappSendError) return { ok: false, error: err.message };
+            throw err;
+        }
+        const ex = await this.execute(prepared);
+        if (!ex.ok) return { ok: false, error: this.failureText(prepared, ex) };
+        return { ok: true, to: prepared.to };
     }
 
     /** Las plantillas aprobadas de las conexiones que la persona puede usar (editor de automatizaciones). */

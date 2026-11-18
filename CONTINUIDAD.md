@@ -430,7 +430,17 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.447**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.448**
+(**el código de firma por SMS o WhatsApp** — al pedir una firma (en la ficha o
+en una automatización), «Cómo confirma que es quien dice ser» suma «por SMS» y
+«por WhatsApp»: se elige una conexión del equipo (Twilio/Onurix; Whats o
+WhatsApp Business con una plantilla aprobada) y el celular de cada persona
+(sugerido del registro). El código nunca se guarda ni deja rastro; si no sale,
+quien firma lee qué hacer y no se cae a otro canal. La constancia dice a qué
+celular se mandó. De paso: migrar una empresa traducía mal la plantilla de
+«Pedir firma» (bug de v0.1.447), y la conexión del código cuenta como «en uso».
+ADR-S107 addendum. **Siguen, esperando decisiones del usuario**: G8 DIAN e I3
+modo agencia). Antes **v0.1.447**
 (**firma electrónica, segunda parte** — automatizaciones con el disparador
 «Cuando cambia una firma» y la acción «Pedir firma de un documento» (con
 `{{firma.enlace}}` para mandarlo por WhatsApp); el cliente firma y baja el
@@ -438,8 +448,7 @@ firmado desde el portal («Documentos para firmar»); la página de verificació
 comprueba un PDF eligiendo el archivo (huella calculada en el navegador, nunca
 viaja) y la general busca por archivo o código; el asistente y el MCP listan
 firmas y proponen pedir una; eventos de webhook `signature.*` (también en el
-disparador de n8n 0.1.1). ADR-S107 addendum. **Sigue v0.1.448**: código de
-firma por SMS o WhatsApp). Antes **v0.1.446**
+disparador de n8n 0.1.1). ADR-S107 addendum). Antes **v0.1.446**
 (**firma electrónica, primera parte** — en la ficha, «Pedir firma de un
 documento» (o «Pedir firma» en Generar PDF): una plantilla de la lista o un PDF
 del registro, de 1 a 10 personas a la vez o en orden, código de 6 números por
@@ -2211,6 +2220,26 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-18 · v0.1.448** — **El código de firma por SMS o WhatsApp**
+  (addendum ADR-S107). `verify` suma `sms`/`whatsapp`; migración 0133
+  (`signature_signers.phone`, `signature_requests.verify_connection_id` con
+  `ON DELETE SET NULL`, `verify_options.template`). Sólo conexiones del equipo:
+  SMS de cualquier proveedor, Whats (texto) o Meta (plantilla aprobada sin
+  archivo y con variables; `whatsappCodeTemplateCheck`); `GET
+  /signatures/code-channels`. El código no se guarda ni deja actividad; si no
+  sale, 503 `signature_code_channel` sin el motivo técnico y sin caer a otro
+  canal. Constancia con el celular enmascarado. Front: selector compartido
+  `SignatureCodeChannelPicker` (diálogo «Pedir firma» y acción de las
+  automatizaciones), celular por persona, página de firma con el canal y la
+  ficha con la conexión. Asistente/MCP (`code_connection`, `code_template`,
+  `signature_code_channels`). **Bugs de paso**: migrar una empresa traducía el
+  `template_id` de «Pedir firma» con el mapa de plantillas de registro y no
+  traducía `signature_template_ids` (v0.1.447); la conexión del código no
+  contaba como «en uso». Tests: `signature-codes.spec` (7), remap (+1),
+  shared; E2E navegador 25/25 y 27/27 en celular oscuro contra un Twilio
+  simulado. **Siguen** G8 DIAN e I3 modo agencia (esperan decisiones del
+  usuario).
 
 - **2026-11-18 · v0.1.447** — **Firma electrónica, segunda parte** (D6,
   addendum ADR-S107). Automatizaciones: disparador `signature_event` y acción
