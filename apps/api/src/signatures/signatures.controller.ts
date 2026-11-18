@@ -132,6 +132,24 @@ export class SignaturesController {
 }
 
 /**
+ * v0.1.448 — Las conexiones del equipo que pueden mandar el código de una
+ * firma por SMS o WhatsApp (el diálogo de pedir firma y la acción de las
+ * automatizaciones). Sólo nombres, canal y plantillas aprobadas: nada secreto.
+ */
+@PlanModule('documents')
+@Controller('signatures/code-channels')
+@UseGuards(SessionGuard, TenantGuard, CapabilitiesGuard)
+export class SignatureChannelsController {
+    constructor(private readonly signatures: SignaturesService) {}
+
+    @Get()
+    @RequireCapability('edit_records', 'edit_own_records', 'manage_automations')
+    async list(@Req() req: FastifyRequest) {
+        return { data: await this.signatures.codeChannels(req.tenant!.tenantId) };
+    }
+}
+
+/**
  * La página de firma (sin sesión). El token de la URL es la credencial: un
  * HMAC por persona; cualquier cosa que no cuadre da el mismo 404.
  */

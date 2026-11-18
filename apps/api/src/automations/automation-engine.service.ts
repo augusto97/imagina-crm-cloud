@@ -3926,7 +3926,7 @@ export class AutomationEngine {
 
         const fv = this.accessor(ctx);
         const { merge } = this.mergers(ctx, fv);
-        const signers: Array<{ name: string; email: string; role: string }> = [];
+        const signers: Array<{ name: string; email: string; role: string; phone: string }> = [];
         const seen = new Set<string>();
         for (const [i, s] of c.signers.entries()) {
             const email = (this.recipients(ctx, s.email, merge).split(',')[0] ?? '').trim().toLowerCase();
@@ -3936,7 +3936,9 @@ export class AutomationEngine {
             if (seen.has(email)) continue;
             seen.add(email);
             const name = merge(s.name).replace(/\s+/g, ' ').trim().slice(0, 120) || email.split('@')[0]!;
-            signers.push({ name, email, role: merge(s.role).trim().slice(0, 60) });
+            // v0.1.448 — el celular sólo cuenta si el código sale por SMS o WhatsApp.
+            const phone = c.verify === 'sms' || c.verify === 'whatsapp' ? merge(s.phone).trim().slice(0, 32) : '';
+            signers.push({ name, email, role: merge(s.role).trim().slice(0, 60), phone });
         }
         if (signers.length === 0) return fail(A, 'La acción no tiene personas que firmen.');
         const title = merge(c.title).trim().slice(0, 160);
@@ -3949,11 +3951,18 @@ export class AutomationEngine {
             message: merge(c.message).trim().slice(0, 2000),
             expires_days: c.expires_days,
             verify: c.verify,
+            verify_connection_id: c.verify === 'sms' || c.verify === 'whatsapp' ? c.verify_connection_id : null,
+            verify_template: c.verify === 'whatsapp' ? c.verify_template : null,
             remind_days: c.remind_days,
             on_complete: onComplete,
             send_email: c.send_email,
         });
-        if (!parsed.success) return fail(A, parsed.error.issues[0]?.message ?? 'La acción está mal configurada.');
+        if (!parsed.success) {
+            const issue = parsed.error.issues[0];
+            // «Escribe el celular de esta persona»: dice de quién (el celular sale de una variable).
+            const at = issue && issue.path[0] === 'signers' && typeof issue.path[1] === 'number' ? `La persona ${issue.path[1] + 1}: ` : '';
+            return fail(A, `${at}${issue?.message ?? 'La acción está mal configurada.'}`);
+        }
         const doc = pre.name ? `«${pre.name}»` : pre.fileName ? `«${pre.fileName}»` : 'el documento';
         const who = signers.map((s) => `${s.name} (${s.email})`).join(', ');
         const inOrder = signers.length > 1 && c.order === 'sequential' ? ', en orden' : '';
@@ -3967,9 +3976,10 @@ export class AutomationEngine {
                 enlace: '(se genera al correr)',
                 template_id: c.template_id,
             };
+            const codeBy = c.verify === 'sms' ? ' El código para firmar le llegaría por SMS.' : c.verify === 'whatsapp' ? ' El código para firmar le llegaría por WhatsApp.' : '';
             return ok(
                 A,
-                `Pediría la firma de ${doc} a ${who}${inOrder}${c.send_email ? ', con el enlace por correo' : ' (sin correo: el enlace queda en {{firma.enlace}})'}. En la prueba no se pide.`,
+                `Pediría la firma de ${doc} a ${who}${inOrder}${c.send_email ? ', con el enlace por correo' : ' (sin correo: el enlace queda en {{firma.enlace}})'}.${codeBy} En la prueba no se pide.`,
                 { _sim: 'would_run', signers: signers.length },
             );
         }

@@ -3565,4 +3565,21 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager', 'agent'] },
     },
+    {
+        key: 'v0.1.448-firma-codigo-sms-whatsapp',
+        version: '0.1.448',
+        date: '2026-11-18',
+        kind: 'improvement',
+        title: 'El código para firmar, también por SMS o WhatsApp',
+        summary:
+            'Quien firma ya no necesita revisar el correo para confirmar que es quien dice ser: el código de 6 números le puede llegar por SMS o por WhatsApp, con tus conexiones.',
+        media: { illustration: 'firma-electronica' },
+        body: [
+            '- Al **Pedir firma**, en **Cómo confirma que es quien dice ser**, elige **Con un código que le llega por SMS** o **por WhatsApp**.',
+            '- Elige la conexión de SMS o de WhatsApp de tu empresa (con WhatsApp Business, una plantilla aprobada) y escribe el celular de cada persona; la app sugiere el del registro.',
+            '- La constancia del PDF firmado dice cómo se identificó cada persona («por SMS a su celular ••• ••• 233»). Funciona igual desde las automatizaciones.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager', 'agent'] },
+    },
 ];

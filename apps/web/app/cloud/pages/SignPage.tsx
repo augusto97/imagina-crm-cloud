@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SIGNER_STATUS_LABELS, type PublicSignatureDto } from '@imagina-base/shared';
+import { SIGNER_STATUS_LABELS, type PublicSignatureDto, type SignatureCodeSent } from '@imagina-base/shared';
 import { CheckCircle2, Clock, Download, Eraser, FileSignature, Loader2, PenLine, ShieldCheck, Type, XCircle } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -473,7 +473,10 @@ function SignForm({ token, doc, onDone }: { token: string; doc: PublicSignatureD
     const onDrawn = useCallback((png: string | null) => setDrawn(png), []);
 
     const typedPreview = useMemo(() => (mode === 'type' && name.trim().length >= 2 ? typedSignaturePng(name.trim()) : ''), [mode, name]);
-    const needsCode = doc.verify === 'email';
+    // v0.1.448: el código llega al correo, por SMS o por WhatsApp; sólo con el enlace no se pide.
+    const needsCode = doc.verify !== 'none';
+    const codeDest = doc.verify === 'email' ? doc.signer.email_masked : doc.signer.phone_masked ?? '';
+    const channelText = doc.verify === 'sms' ? __('por SMS') : doc.verify === 'whatsapp' ? __('por WhatsApp') : '';
     const image = mode === 'draw' ? drawn : typedPreview || null;
     const ready = name.trim().length >= 2 && image !== null && consent && (!needsCode || /^\d{6}$/.test(code.trim()));
 
@@ -481,9 +484,17 @@ function SignForm({ token, doc, onDone }: { token: string; doc: PublicSignatureD
         setBusy('code');
         setError(null);
         try {
-            const r = await call<{ sent: boolean; email_masked: string }>('POST', `${token}/code`);
+            const r = await call<SignatureCodeSent>('POST', `${token}/code`);
             setCodeSent(true);
-            setInfo(sprintf(__('Te mandamos un código de 6 números a %s. Vence en 10 minutos.'), r.email_masked));
+            const dest = r.destination || r.email_masked;
+            const minutes = r.minutes || 10;
+            setInfo(
+                r.channel === 'sms'
+                    ? sprintf(__('Te mandamos un código de 6 números por SMS al celular %s. Vence en %d minutos.'), dest, minutes)
+                    : r.channel === 'whatsapp'
+                      ? sprintf(__('Te mandamos un código de 6 números por WhatsApp al celular %s. Vence en %d minutos.'), dest, minutes)
+                      : sprintf(__('Te mandamos un código de 6 números a %s. Vence en %d minutos.'), dest, minutes),
+            );
         } catch (err) {
             setError(err instanceof Error ? err.message : String(err));
         } finally {
@@ -613,7 +624,9 @@ function SignForm({ token, doc, onDone }: { token: string; doc: PublicSignatureD
                             {!codeSent ? (
                                 <>
                                     <p className="imcrm-text-xs imcrm-text-muted-foreground">
-                                        {sprintf(__('Para confirmar que eres tú, te mandamos un código a %s.'), doc.signer.email_masked)}
+                                        {channelText
+                                            ? sprintf(__('Para confirmar que eres tú, te mandamos un código %s a tu celular %s.'), channelText, codeDest)
+                                            : sprintf(__('Para confirmar que eres tú, te mandamos un código a %s.'), codeDest)}
                                     </p>
                                     <Button type="button" variant="outline" onClick={() => void sendCode()} disabled={busy !== null} data-testid="sign-send-code">
                                         {busy === 'code' && <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />}

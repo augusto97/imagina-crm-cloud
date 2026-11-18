@@ -5,7 +5,9 @@ import { FieldsModule } from '../fields/fields.module';
 import { FilesModule } from '../files/files.module';
 import { ListsModule } from '../lists/lists.module';
 import { RecordsModule } from '../records/records.module';
-import { PublicSignaturesController, SignaturesController } from './signatures.controller';
+import { SmsModule } from '../sms/sms.module';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
+import { PublicSignaturesController, SignatureChannelsController, SignaturesController } from './signatures.controller';
 import { SignaturesService } from './signatures.service';
 import { SignatureTasksService } from './signatures-tasks.service';
 
@@ -14,8 +16,8 @@ import { SignatureTasksService } from './signatures-tasks.service';
  * llega por su módulo @Global (arma el PDF de una plantilla).
  */
 @Module({
-    imports: [AuthModule, ListsModule, FieldsModule, FilesModule, RecordsModule, ActivityModule],
-    controllers: [SignaturesController, PublicSignaturesController],
+    imports: [AuthModule, ListsModule, FieldsModule, FilesModule, RecordsModule, ActivityModule, SmsModule, WhatsappModule],
+    controllers: [SignaturesController, SignatureChannelsController, PublicSignaturesController],
     providers: [SignaturesService, SignatureTasksService],
     exports: [SignaturesService],
 })

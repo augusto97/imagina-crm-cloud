@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { maskPhone } from '@imagina-base/shared';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 /**
@@ -91,6 +92,15 @@ export async function buildSignedPdf(original: Buffer, constancia: Buffer, opts:
 
 // ─────────────────────────── Constancia ───────────────────────────
 
+/** Cómo se identificó cada persona (v0.1.448: también por SMS o WhatsApp a su celular). */
+export function identificationText(s: Pick<ConstanciaSigner, 'verifiedBy' | 'phone'>): string {
+    const cel = s.phone && s.phone.trim() !== '' ? ` ${maskPhone(s.phone)}` : '';
+    if (s.verifiedBy === 'email') return 'Código de 6 números enviado a su correo';
+    if (s.verifiedBy === 'sms') return `Código de 6 números enviado por SMS a su celular${cel}`;
+    if (s.verifiedBy === 'whatsapp') return `Código de 6 números enviado por WhatsApp a su celular${cel}`;
+    return 'Enlace personal';
+}
+
 export interface ConstanciaSigner {
     name: string;
     email: string;
@@ -98,7 +108,9 @@ export interface ConstanciaSigner {
     signedAt: string;
     ip: string;
     userAgent: string;
-    verifiedBy: 'email' | 'none';
+    verifiedBy: 'email' | 'sms' | 'whatsapp' | 'none';
+    /** v0.1.448 — Celular al que llegó el código (por SMS o WhatsApp). */
+    phone?: string;
     kind: 'drawn' | 'typed';
     /** PNG en base64 (sin el prefijo `data:`). */
     signaturePng: string;
@@ -200,7 +212,7 @@ export function constanciaDefinition(i: ConstanciaInput): Record<string, unknown
                                 kv('Correo', s.email),
                                 kv('Firmó', i.formatWhen(s.signedAt)),
                                 kv('Cómo firmó', s.kind === 'drawn' ? 'Dibujó su firma' : 'Escribió su nombre como firma'),
-                                kv('Identificación', s.verifiedBy === 'email' ? 'Código de 6 números enviado a su correo' : 'Enlace personal enviado a su correo'),
+                                kv('Identificación', identificationText(s)),
                                 kv('Dirección IP', s.ip || '—'),
                                 kv('Navegador', browserLabel(s.userAgent)),
                             ],

@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
     createSignatureRequestSchema,
     maskEmail,
+    maskPhone,
     signatureConsentText,
+    signaturePhoneLooksValid,
     signatureProgress,
     signedFilename,
     signersDue,
@@ -57,6 +59,26 @@ describe('firma electrónica — reglas puras (D6)', () => {
         expect(ok.verify).toBe('email');
         expect(ok.expires_days).toBe(30);
         expect(ok.on_complete).toEqual({ save_field_id: null, status_field_id: null, status_value: null, date_field_id: null });
+    });
+
+    it('v0.1.448: el código por SMS o WhatsApp pide la conexión y el celular de cada persona', () => {
+        const base = { record_id: 5, source: { kind: 'template', template_id: 2 } } as const;
+        const noConn = createSignatureRequestSchema.safeParse({ ...base, verify: 'sms', signers: [{ name: 'Ana', email: 'ana@x.co', phone: '300 111 2233' }] });
+        expect(noConn.success).toBe(false);
+        expect(noConn.success ? [] : noConn.error.issues.map((i) => i.path.join('.'))).toEqual(['verify_connection_id']);
+        const noPhone = createSignatureRequestSchema.safeParse({ ...base, verify: 'whatsapp', verify_connection_id: 4, signers: [{ name: 'Ana', email: 'ana@x.co' }, { name: 'Bo', email: 'bo@x.co', phone: '12' }] });
+        expect(noPhone.success ? [] : noPhone.error.issues.map((i) => i.path.join('.'))).toEqual(['signers.0.phone', 'signers.1.phone']);
+        const ok = createSignatureRequestSchema.parse({ ...base, verify: 'sms', verify_connection_id: 4, signers: [{ name: 'Ana', email: 'ana@x.co', phone: '+57 (300) 111-2233' }] });
+        expect(ok.signers[0]!.phone).toBe('+57 (300) 111-2233');
+        expect(ok.verify_template).toBeNull();
+        // Con correo, el celular no hace falta.
+        expect(createSignatureRequestSchema.parse({ ...base, signers: [{ name: 'Ana', email: 'ana@x.co' }] }).signers[0]!.phone).toBe('');
+        expect(signaturePhoneLooksValid('3001112233')).toBe(true);
+        expect(signaturePhoneLooksValid('+57 300 111 2233')).toBe(true);
+        expect(signaturePhoneLooksValid('300-abc')).toBe(false);
+        expect(signaturePhoneLooksValid('123456')).toBe(false);
+        expect(maskPhone('+573001112233')).toBe('••• ••• 233');
+        expect(maskPhone('12')).toBe('•••');
     });
 
     it('la firma tiene que venir como PNG y con la aceptación', () => {

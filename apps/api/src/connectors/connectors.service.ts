@@ -2390,9 +2390,7 @@ export class ConnectorsService {
                 // v0.1.203 — también las acciones con nombre (`connector_action`):
                 // antes sólo se contaban los webhooks y borrar una conexión usada
                 // por «Enviar WhatsApp» no avisaba nada.
-                if (!usesConnection(action.type)) return;
-                const cfg = (action.config ?? {}) as Record<string, unknown>;
-                if (Number(cfg.connection_id) === connectionId) count += 1;
+                if (connectionIdOfAction(action) === connectionId) count += 1;
             });
             if (count > 0) {
                 out.push({
@@ -2413,10 +2411,8 @@ export class ConnectorsService {
         const counts = new Map<number, number>();
         for (const row of rows) {
             walkActions(row.actions, (action) => {
-                if (!usesConnection(action.type)) return;
-                const cfg = (action.config ?? {}) as Record<string, unknown>;
-                const id = Number(cfg.connection_id);
-                if (Number.isFinite(id) && id > 0) counts.set(id, (counts.get(id) ?? 0) + 1);
+                const id = connectionIdOfAction(action);
+                if (id !== null) counts.set(id, (counts.get(id) ?? 0) + 1);
             });
         }
         return counts;
@@ -3059,6 +3055,20 @@ function signingField(def: IntegrationDef): { key: string; label: string } | nul
 /** Acciones que referencian una conexión por id. */
 function usesConnection(type: unknown): boolean {
     return type === 'call_webhook' || type === 'connector_action';
+}
+
+/**
+ * La conexión que usa una acción (o null). v0.1.448: «Pedir firma de un
+ * documento» con el código por SMS o WhatsApp también la usa
+ * (`verify_connection_id`): borrarla dejaría la automatización sin código.
+ */
+export function connectionIdOfAction(action: { type?: unknown; config?: unknown }): number | null {
+    const cfg = (action.config ?? {}) as Record<string, unknown>;
+    let raw: unknown = null;
+    if (usesConnection(action.type)) raw = cfg.connection_id;
+    else if (action.type === 'request_signature' && (cfg.verify === 'sms' || cfg.verify === 'whatsapp')) raw = cfg.verify_connection_id;
+    const id = Number(raw);
+    return Number.isInteger(id) && id > 0 ? id : null;
 }
 
 interface AutomationRow {

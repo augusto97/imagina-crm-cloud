@@ -26,9 +26,49 @@ export type SignerStatus = (typeof SIGNER_STATUSES)[number];
 export const SIGNATURE_ORDERS = ['parallel', 'sequential'] as const;
 export type SignatureOrder = (typeof SIGNATURE_ORDERS)[number];
 
-/** Cómo se identifica quien firma antes de firmar. */
-export const SIGNATURE_VERIFY = ['email', 'none'] as const;
+/**
+ * Cómo se identifica quien firma antes de firmar: un código de 6 números por
+ * correo, por SMS o por WhatsApp (v0.1.448), o sólo con el enlace.
+ */
+export const SIGNATURE_VERIFY = ['email', 'sms', 'whatsapp', 'none'] as const;
 export type SignatureVerify = (typeof SIGNATURE_VERIFY)[number];
+
+export const SIGNATURE_VERIFY_LABELS: Record<SignatureVerify, string> = {
+    email: 'Con un código que le llega al correo',
+    sms: 'Con un código que le llega por SMS',
+    whatsapp: 'Con un código que le llega por WhatsApp',
+    none: 'Sólo con el enlace',
+};
+
+/** ¿El código va al celular? (entonces cada persona necesita su número y hay que elegir la conexión). */
+export function signatureVerifyNeedsPhone(verify: SignatureVerify | string): verify is 'sms' | 'whatsapp' {
+    return verify === 'sms' || verify === 'whatsapp';
+}
+
+/**
+ * Un número que se puede usar para mandar el código: 7 a 15 dígitos, con o sin
+ * indicativo (`+57…`). La conexión le pone el indicativo de su país si falta.
+ */
+export function signaturePhoneLooksValid(raw: string): boolean {
+    const t = raw.trim();
+    if (t === '' || !/^\+?[\d\s().-]+$/.test(t)) return false;
+    const digits = t.replace(/\D/g, '');
+    return digits.length >= 7 && digits.length <= 15;
+}
+
+/** «••• ••• 812»: a qué celular se mandó el código, sin mostrar el número entero. */
+export function maskPhone(raw: string): string {
+    const digits = raw.replace(/\D/g, '');
+    if (digits.length < 4) return '•••';
+    return `••• ••• ${digits.slice(-3)}`;
+}
+
+/** Plantilla aprobada de WhatsApp (API oficial de Meta) con la que sale el código: todas sus variables llevan el código. */
+export const signatureVerifyTemplateSchema = z.object({
+    name: z.string().trim().min(1).max(512),
+    language: z.string().trim().min(2).max(16),
+});
+export type SignatureVerifyTemplate = z.infer<typeof signatureVerifyTemplateSchema>;
 
 export const SIGNATURE_MAX_SIGNERS = 10;
 /** Tope del PDF a firmar (el que se sube a un campo o el que arma una plantilla). */
@@ -41,6 +81,8 @@ export const signatureSignerInputSchema = z.object({
     email: emailSchema,
     /** «Cliente», «Representante legal»… (aparece en la constancia). */
     role: z.string().trim().max(60).optional().default(''),
+    /** v0.1.448 — Celular para el código por SMS o WhatsApp. */
+    phone: z.string().trim().max(32).optional().default(''),
 });
 export type SignatureSignerInput = z.infer<typeof signatureSignerInputSchema>;
 
@@ -76,6 +118,10 @@ export const createSignatureRequestSchema = z
         message: z.string().trim().max(2000).optional().default(''),
         expires_days: z.number().int().min(1).max(180).default(30),
         verify: z.enum(SIGNATURE_VERIFY).default('email'),
+        /** v0.1.448 — Conexión de SMS o de WhatsApp (del equipo) por la que sale el código. */
+        verify_connection_id: idSchema.nullable().default(null),
+        /** v0.1.448 — Con WhatsApp de Meta: la plantilla aprobada del código. */
+        verify_template: signatureVerifyTemplateSchema.nullable().default(null),
         /** Cada cuántos días se le recuerda a quien no firmó (0 = nunca; máximo 3 recordatorios). */
         remind_days: z.number().int().min(0).max(30).default(3),
         on_complete: signatureOnCompleteSchema.default({}),
@@ -89,6 +135,24 @@ export const createSignatureRequestSchema = z
             if (seen.has(key)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['signers', i, 'email'], message: 'Este correo ya está en la lista' });
             seen.add(key);
         });
+        if (signatureVerifyNeedsPhone(v.verify)) {
+            if (v.verify_connection_id === null) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ['verify_connection_id'],
+                    message: v.verify === 'sms' ? 'Elige la conexión de SMS por la que sale el código' : 'Elige la conexión de WhatsApp por la que sale el código',
+                });
+            }
+            v.signers.forEach((s, i) => {
+                if (!signaturePhoneLooksValid(s.phone)) {
+                    ctx.addIssue({
+                        code: z.ZodIssueCode.custom,
+                        path: ['signers', i, 'phone'],
+                        message: s.phone.trim() === '' ? 'Escribe el celular de esta persona: ahí le llega el código' : 'El celular no parece válido',
+                    });
+                }
+            });
+        }
         if ((v.on_complete.status_field_id === null) !== (v.on_complete.status_value === null || v.on_complete.status_value === '')) {
             ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['on_complete', 'status_value'], message: 'Elige el campo y la opción, o ninguno' });
         }
@@ -132,6 +196,8 @@ export interface SignerDto {
     name: string;
     email: string;
     role: string;
+    /** v0.1.448 — Celular (para el código por SMS o WhatsApp); vacío si no se pidió. */
+    phone: string;
     status: SignerStatus;
     sent_at: string | null;
     viewed_at: string | null;
@@ -153,6 +219,9 @@ export interface SignatureRequestDto {
     status: SignatureRequestStatus;
     order: SignatureOrder;
     verify: SignatureVerify;
+    /** v0.1.448 — Conexión por la que sale el código (SMS o WhatsApp) y su nombre. */
+    verify_connection_id: number | null;
+    verify_connection_name: string | null;
     message: string;
     source: 'template' | 'file';
     template_id: number | null;
@@ -184,7 +253,8 @@ export interface PublicSignatureDto {
     expires_at: string;
     pages: number;
     verify: SignatureVerify;
-    signer: { name: string; email_masked: string; status: SignerStatus; role: string };
+    /** `phone_masked`: a qué celular llega el código («••• ••• 812»), con SMS o WhatsApp. */
+    signer: { name: string; email_masked: string; phone_masked: string | null; status: SignerStatus; role: string };
     /** Las demás personas: nombre, rol y si ya firmaron. */
     others: Array<{ name: string; role: string; status: SignerStatus }>;
     /** El texto exacto de la aceptación (va también a la constancia). */
@@ -279,3 +349,35 @@ export const portalSignatureSchema = z.object({
     expires_at: z.string(),
 });
 export type PortalSignature = z.infer<typeof portalSignatureSchema>;
+
+/** Lo que responde pedir el código: por dónde salió y a qué destino (enmascarado). */
+export interface SignatureCodeSent {
+    sent: boolean;
+    channel: 'email' | 'sms' | 'whatsapp';
+    /** El correo o el celular enmascarado. */
+    destination: string;
+    /** Compatibilidad con la página de v0.1.446: el destino (correo o celular) enmascarado. */
+    email_masked: string;
+    minutes: number;
+}
+
+/**
+ * v0.1.448 — Una conexión de la empresa (del equipo) que puede mandar el
+ * código de firma: SMS o WhatsApp. Con WhatsApp de Meta hace falta una
+ * plantilla aprobada (`templates`; conviene una de categoría «Autenticación»).
+ */
+export interface SignatureCodeChannel {
+    id: number;
+    name: string;
+    channel: 'sms' | 'whatsapp';
+    /** `sms_twilio`, `whatsapp_cloud`, `whatsapp_web`… */
+    provider: string;
+    needs_template: boolean;
+    templates: Array<{ name: string; language: string; category: string; preview: string; usable: boolean; reason: string | null }>;
+}
+
+/** El texto del código cuando sale por SMS o por WhatsApp (Whats, sin plantilla). */
+export function signatureCodeText(code: string, company: string, minutes: number): string {
+    const who = company.trim() !== '' ? `${company.trim()}: ` : '';
+    return `${who}tu código para firmar es ${code}. Vence en ${minutes} minutos. No lo compartas con nadie.`;
+}

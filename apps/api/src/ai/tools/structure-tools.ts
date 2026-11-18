@@ -166,6 +166,7 @@ import { DataConsentService } from '../../data-consent/data-consent.service';
 import { TeamsService } from '../../teams/teams.service';
 import { CollectionsService } from '../../collections/collections.service';
 import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
+import { SignaturesService } from '../../signatures/signatures.service';
 import { ProposalsStore, type AiApplyOutcome, type AiProposalApplier, type StoredProposal } from '../proposals.store';
 import {
     buildCrmCustomConfig,
@@ -636,7 +637,7 @@ const automationSpec = z.object({
                 'for_each_linked {relation: slug de la lista vinculada (linked_lists de get_list_schema; o relation_field_id), via?: nombre de la relación si hay varias, filters?: [{field, op, value}] por slug de ESA lista, actions: [...]} — repite las acciones por cada registro vinculado (tope 200); adentro {{item.slug}} y {{item.record.id}} leen el vinculado, y update_field {target: "item", values: {slug de esa lista: valor}} lo cambia (sin target cambia el registro que disparó). ' +
                 'find_records {list?: slug (default la de la automatización; puede ser otra lista), conditions: [{field: slug de ESA lista, op: eq|neq|contains|not_contains|gt|gte|lt|lte|is_null|is_not_null, value (acepta variables: "{{correo}}")}], logic?: and|or, sort_field?: slug o "created_at", sort_dir?: desc|asc, limit?: 1-50 (default 10), exclude_self?: true (default: en la misma lista no cuenta al que disparó), if_none?: continue|stop, response_name?: (default "busqueda")} — BUSCA registros y los deja para los pasos siguientes: {{respuestas.<nombre>.cantidad}}, {{respuestas.<nombre>.total}}, {{respuestas.<nombre>.ids}} (sirve para un campo relación), {{respuestas.<nombre>.primero.id}}, {{respuestas.<nombre>.primero.titulo}}, {{respuestas.<nombre>.primero.<slug>}}; un if_else puede preguntar {field: "respuestas.<nombre>.cantidad", op: "gt", value: 0}. «es» sobre texto/correo/teléfono no distingue mayúsculas y el teléfono se compara por dígitos; una opción se puede escribir por su etiqueta | ' +
                 'upsert_record {list?: slug, match_by?: record_id|field, match_field? (slug de un campo «Sin repetidos» de texto, correo, teléfono, número o enlace, o un ID automático), match_value: el dato con que se busca ("{{correo}}", "{{payload.nit}}", "{{respuestas.busqueda.primero.id}}"), mode?: upsert (default: lo actualiza si existe y si no lo crea) | update_only | create_only, values: {slug: valor}, response_name?: (default "registro")} — CREA O ACTUALIZA UN registro de esa lista sin duplicar; al crearlo el campo de búsqueda queda con el dato; un valor vacío no borra lo que ya tenía; con dos registros con el mismo valor falla sin tocar ninguno. Deja {{respuestas.<nombre>.id}}, .titulo y .accion (creado|actualizado|sin_cambios|ya_existia|no_encontrado) | ' +
-                'request_signature {template: id o nombre de una plantilla de document_templates (o source: "file" + file_field: slug de un campo Archivo con el PDF), signers: [{name, email, role?}] (aceptan variables: "{{nombre}}", "{{correo}}"; email también puede ser el slug de un campo correo o persona), order?: parallel|sequential, verify?: email (código de 6 números por correo, default)|none, title?, message?, expires_days? (30), remind_days? (3), send_email?: true (false = no manda correos: usa {{firma.enlace}} en un paso siguiente, por ejemplo un WhatsApp), save_field? (campo Archivo para el PDF firmado), status_field? + status_value? (selección y su opción, valor o etiqueta), date_field? (fecha de la firma)} — PIDE LA FIRMA ELECTRÓNICA de un documento del registro y deja {{firma.enlace}}, {{firma.siguiente}}, {{firma.titulo}}, {{firma.numero}}, {{firma.codigo}} y {{firma.verificar}} para los pasos siguientes | ' +
+                'request_signature {template: id o nombre de una plantilla de document_templates (o source: "file" + file_field: slug de un campo Archivo con el PDF), signers: [{name, email, role?, phone?}] (aceptan variables: "{{nombre}}", "{{correo}}", "{{celular}}"; email también puede ser el slug de un campo correo o persona), order?: parallel|sequential, verify?: email (código de 6 números por correo, default)|sms|whatsapp (el código llega al celular: phone obligatorio en cada persona + code_connection: id o nombre de signature_code_channels de get_list_schema, y code_template con WhatsApp de Meta)|none, title?, message?, expires_days? (30), remind_days? (3), send_email?: true (false = no manda correos: usa {{firma.enlace}} en un paso siguiente, por ejemplo un WhatsApp), save_field? (campo Archivo para el PDF firmado), status_field? + status_value? (selección y su opción, valor o etiqueta), date_field? (fecha de la firma)} — PIDE LA FIRMA ELECTRÓNICA de un documento del registro y deja {{firma.enlace}}, {{firma.siguiente}}, {{firma.titulo}}, {{firma.numero}}, {{firma.codigo}} y {{firma.verificar}} para los pasos siguientes | ' +
                 'call_webhook y connector_action aceptan response_name (minúsculas/números/_): su respuesta queda para los pasos SIGUIENTES — {{webhook.status}}, {{webhook.body.pedido.items.0.id}} (del último) y {{respuestas.<response_name>.body.x}}; sobreviven a un wait. ' +
                 'send_email acepta además pdf_templates: [ids de plantillas de documento] para ADJUNTAR esos PDF. ' +
                 'Merge tags en cualquier texto: {{slug}}, {{slug|label}}, {{before.slug}}, {{record.id}}, {{date.today}}, {{fecha|+1m|-1d}}.',
@@ -811,6 +812,8 @@ export class StructureTools implements AiProposalApplier {
         @Optional() private readonly collections?: CollectionsService,
         // v0.1.367 — planes de suscripción y columnas (get_list_schema).
         @Optional() private readonly subscriptionsSvc?: SubscriptionsService,
+        // v0.1.448 — conexiones que mandan el código de una firma (SMS o WhatsApp).
+        @Optional() private readonly signaturesSvc?: SignaturesService,
     ) {}
 
     /** E6 — para sumarle a `get_list_schema` lo de otros módulos (agentes de IA). */
@@ -1593,6 +1596,15 @@ export class StructureTools implements AiProposalApplier {
                 whatsapp: await whatsappSchema(this.tenantDb, ctx.tenantId, connections, settings, fields).catch(() => null),
                 // SMS (ADR-S82): conexiones (sin credenciales) y columnas del último envío.
                 sms: smsSchema(connections, settings, fields),
+                // v0.1.448 — por dónde puede salir el código de una firma (verify sms/whatsapp).
+                signature_code_channels: this.signaturesSvc
+                    ? (await this.signaturesSvc.codeChannels(ctx.tenantId).catch(() => [])).map((c) => ({
+                          id: c.id,
+                          name: c.name,
+                          channel: c.channel,
+                          ...(c.needs_template ? { templates: c.templates.filter((t) => t.usable).map((t) => ({ name: t.name, language: t.language, category: t.category })) } : {}),
+                      }))
+                    : [],
                 // D2/E5 — mesa de ayuda: buzón de soporte (sin secretos) y política de SLA.
                 helpdesk: describeHelpdeskForModel(settings, fieldById),
                 connectors: connections
@@ -4471,6 +4483,7 @@ export class StructureTools implements AiProposalApplier {
         if (!usesAction) return;
         const bySlug = new Map(fields.map((f) => [f.slug, f]));
         const issues: string[] = [];
+        const channels = /"verify":"(sms|whatsapp)"/.test(JSON.stringify(actions)) && this.signaturesSvc ? await this.signaturesSvc.codeChannels(ctx.tenantId).catch(() => []) : [];
         const walk = (list_: unknown[], path: string): void => {
             list_.forEach((raw, i) => {
                 const a = raw as { type?: string; config?: Record<string, unknown> };
@@ -4482,6 +4495,34 @@ export class StructureTools implements AiProposalApplier {
                     return;
                 }
                 if (a?.type !== 'request_signature') return;
+                // v0.1.448 — conexión (y plantilla) del código por SMS o WhatsApp, por nombre o id.
+                if (cfg.verify === 'sms' || cfg.verify === 'whatsapp') {
+                    const wantConn = cfg.code_connection ?? cfg.verify_connection_id;
+                    const wantTpl = cfg.code_template;
+                    delete cfg.code_connection;
+                    delete cfg.code_template;
+                    const ch = channels.filter((c) => c.channel === cfg.verify);
+                    const label = cfg.verify === 'sms' ? 'SMS' : 'WhatsApp';
+                    const hit =
+                        wantConn === undefined || wantConn === null || wantConn === ''
+                            ? ch.length === 1
+                                ? ch[0]
+                                : undefined
+                            : /^\d+$/.test(String(wantConn))
+                              ? ch.find((c) => c.id === Number(wantConn))
+                              : ch.find((c) => c.name.toLowerCase() === String(wantConn).trim().toLowerCase());
+                    if (!hit) {
+                        issues.push(`acción ${at}: indica code_connection, la conexión de ${label} del equipo por la que sale el código. Opciones: ${ch.map((c) => `${c.id} «${c.name}»`).join(', ') || 'ninguna (conéctala en Ajustes → Integraciones)'}.`);
+                    } else {
+                        cfg.verify_connection_id = hit.id;
+                        if (hit.needs_template) {
+                            const usable = hit.templates.filter((t) => t.usable);
+                            const t = typeof wantTpl === 'string' && wantTpl !== '' ? usable.find((x) => x.name.toLowerCase() === wantTpl.toLowerCase()) : usable.length === 1 ? usable[0] : undefined;
+                            if (!t) issues.push(`acción ${at}: con «${hit.name}» indica code_template, la plantilla aprobada del código. Opciones: ${usable.map((x) => `«${x.name}» (${x.language})`).join(', ') || 'ninguna que sirva'}.`);
+                            else cfg.verify_template = { name: t.name, language: t.language };
+                        }
+                    }
+                }
                 const tpl = cfg.template ?? cfg.template_id;
                 delete cfg.template;
                 if (tpl !== undefined && tpl !== null && tpl !== '') cfg.template_id = findDoc(tpl, `acción ${at} (request_signature)`);

@@ -4,15 +4,21 @@ import { BadRequestException, ConflictException, ForbiddenException, GoneExcepti
 import {
     brandingSchema,
     formatBookingWhen,
+    isSmsProvider,
     jsonbKeyForField,
     maskEmail,
+    maskPhone,
     resolveTitleFieldId,
+    signatureCodeText,
     signatureConsentText,
+    signaturePhoneLooksValid,
+    signatureVerifyNeedsPhone,
     signatureOnCompleteSchema,
     signedFilename,
     signersDue,
     SIGNATURE_MAX_PDF_BYTES,
     tenantFormatSchema,
+    whatsappCodeTemplateCheck,
     type CreateSignatureRequestInput,
     type DeclineSignatureInput,
     type Field,
@@ -20,12 +26,16 @@ import {
     type List,
     type PortalSignature,
     type PublicSignatureDto,
+    type SignatureCodeChannel,
+    type SignatureCodeSent,
     type SignatureEvent,
     type SignatureEventInfo,
     type SignatureOnComplete,
     type SignatureRequestDto,
     SIGNATURE_STATUS_LABELS,
     type SignatureRequestStatus,
+    type SignatureVerify,
+    type SignatureVerifyTemplate,
     type SignerDto,
     type SignerStatus,
     type SubmitSignatureInput,
@@ -41,7 +51,7 @@ import { publicSurfaceOff, tenantAccessInTx } from '../billing/tenant-access';
 import { rateKeyForIp } from '../common/client-ip';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { attachments, documentNumbers, documentTemplates, records, signatureRequests, signatureSigners, tenants, users, type SignatureRequestRow, type SignatureSignerRow } from '../db/schema';
+import { attachments, connections, documentNumbers, documentTemplates, records, signatureRequests, signatureSigners, tenants, users, whatsappTemplates, type SignatureRequestRow, type SignatureSignerRow } from '../db/schema';
 import { renderPlainPdfDefinition } from '../documents/document-render';
 import { DocumentsService } from '../documents/documents.service';
 import { DomainsService } from '../domains/domains.service';
@@ -52,6 +62,8 @@ import { ListsService } from '../lists/lists.service';
 import { MailService } from '../mail/mail.service';
 import { NotifyHub } from '../notifications/notify-hub';
 import { senderName, type PortalEmailBrand } from '../portal/portal-email';
+import { SmsService } from '../sms/sms.service';
+import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { RecordsService, type Actor } from '../records/records.service';
 import { REDIS } from '../redis/redis.module';
@@ -140,6 +152,17 @@ async function readAll(stream: Readable, max: number): Promise<Buffer | null> {
     return Buffer.concat(chunks);
 }
 
+/**
+ * Lo que recibe `create`: el input validado por Zod, con lo de v0.1.448
+ * (celular por persona, conexión y plantilla del código) opcional para los
+ * llamadores internos que arman el objeto a mano.
+ */
+export type CreateSignatureArgs = Omit<CreateSignatureRequestInput, 'signers' | 'verify_connection_id' | 'verify_template'> & {
+    signers: Array<Omit<CreateSignatureRequestInput['signers'][number], 'phone'> & { phone?: string }>;
+    verify_connection_id?: number | null;
+    verify_template?: SignatureVerifyTemplate | null;
+};
+
 @Injectable()
 export class SignaturesService {
     private readonly logger = new Logger(SignaturesService.name);
@@ -162,6 +185,8 @@ export class SignaturesService {
         @Optional() private readonly realtime?: RealtimeService,
         @Optional() private readonly timeZones?: TenantTimeZones,
         @Optional() private readonly dispatcher?: AutomationDispatcher,
+        @Optional() private readonly sms?: SmsService,
+        @Optional() private readonly whatsapp?: WhatsappService,
     ) {}
 
     // ─────────────────────────── Enlaces ───────────────────────────
@@ -434,6 +459,10 @@ export class SignaturesService {
             .where(inArray(signatureSigners.requestId, reqs.map((r) => r.id)))
             .orderBy(asc(signatureSigners.position));
         const names = await this.userNames(tx, reqs.map((r) => r.createdBy ?? 0));
+        const connIds = [...new Set(reqs.map((r) => r.verifyConnectionId).filter((n): n is number => n !== null))];
+        const connNames = connIds.length
+            ? new Map((await tx.select({ id: connections.id, name: connections.name }).from(connections).where(inArray(connections.id, connIds))).map((c) => [c.id, c.name]))
+            : new Map<number, string>();
         const numbers = reqs.map((r) => r.documentNumberId).filter((n): n is number => n !== null);
         const labels = numbers.length
             ? new Map((await tx.select({ id: documentNumbers.id, label: documentNumbers.label }).from(documentNumbers).where(inArray(documentNumbers.id, numbers))).map((r) => [r.id, r.label]))
@@ -447,6 +476,7 @@ export class SignaturesService {
                 name: s.name,
                 email: s.email,
                 role: s.role,
+                phone: s.phone,
                 status: s.status as SignerStatus,
                 sent_at: iso(s.sentAt),
                 viewed_at: iso(s.viewedAt),
@@ -465,7 +495,9 @@ export class SignaturesService {
                 title: r.title,
                 status: r.status as SignatureRequestStatus,
                 order: r.orderMode as 'parallel' | 'sequential',
-                verify: r.verify as 'email' | 'none',
+                verify: r.verify as SignatureVerify,
+                verify_connection_id: r.verifyConnectionId,
+                verify_connection_name: r.verifyConnectionId !== null ? (connNames.get(r.verifyConnectionId) ?? null) : null,
                 message: r.message,
                 source: r.source as 'template' | 'file',
                 template_id: r.templateId,
@@ -506,7 +538,7 @@ export class SignaturesService {
         }
     }
 
-    async create(tenantId: number, actor: Actor, listIdOrSlug: string, input: CreateSignatureRequestInput, opts: { chain?: AutomationChain } = {}): Promise<SignatureRequestDto> {
+    async create(tenantId: number, actor: Actor, listIdOrSlug: string, input: CreateSignatureArgs, opts: { chain?: AutomationChain } = {}): Promise<SignatureRequestDto> {
         const { list, fields, data } = await this.assertCanRequest(tenantId, actor, listIdOrSlug, input.record_id);
         this.checkOnComplete(fields, input.on_complete);
         const uploads: StoredFileRef[] = [];
@@ -516,6 +548,8 @@ export class SignaturesService {
                 if ((await tenantAccessInTx(tx, tenantId)).state !== 'full') {
                     throw new ForbiddenException({ code: 'workspace_read_only', message: 'La empresa está en solo lectura: no se pueden pedir firmas.', data: { status: 403 } });
                 }
+                // 0. v0.1.448 — Por dónde sale el código (SMS o WhatsApp).
+                const codeVia = await this.checkCodeChannelInTx(tx, tenantId, input);
                 // 1. El PDF a firmar.
                 let pdf: Buffer;
                 let filename: string;
@@ -579,6 +613,8 @@ export class SignaturesService {
                             status: 'pending',
                             orderMode: input.order,
                             verify: input.verify,
+                            verifyConnectionId: codeVia.connectionId,
+                            verifyOptions: codeVia.template ? { template: codeVia.template } : {},
                             message: input.message,
                             source: input.source.kind,
                             templateId,
@@ -606,6 +642,7 @@ export class SignaturesService {
                         name: s.name,
                         email: s.email.toLowerCase(),
                         role: s.role ?? '',
+                        phone: signatureVerifyNeedsPhone(input.verify) ? (s.phone ?? '').trim() : '',
                         status: 'waiting',
                     })),
                 );
@@ -959,8 +996,14 @@ export class SignaturesService {
             message: request.message,
             expires_at: request.expiresAt.toISOString(),
             pages: request.pages,
-            verify: request.verify as 'email' | 'none',
-            signer: { name: signer.name, email_masked: maskEmail(signer.email), status: signer.status as SignerStatus, role: signer.role },
+            verify: request.verify as SignatureVerify,
+            signer: {
+                name: signer.name,
+                email_masked: maskEmail(signer.email),
+                phone_masked: signatureVerifyNeedsPhone(request.verify) ? maskPhone(signer.phone) : null,
+                status: signer.status as SignerStatus,
+                role: signer.role,
+            },
             others: others.filter((o) => o.id !== signer.id).map((o) => ({ name: o.name, role: o.role, status: o.status as SignerStatus })),
             consent_text: signatureConsentText(b.company),
             signed_available: request.status === 'completed' && request.signedFileId !== null,
@@ -1003,24 +1046,87 @@ export class SignaturesService {
         }
     }
 
-    async requestCode(token: string, meta: { ip?: string }): Promise<{ sent: boolean; email_masked: string; minutes: number }> {
+    async requestCode(token: string, meta: { ip?: string }): Promise<SignatureCodeSent> {
         await this.limitIp(meta.ip, 'code', 30);
         const ctx = await this.resolveToken(token);
         if (await this.surfaceOff(ctx.request.tenantId)) throw notFound();
         this.assertSignable(ctx);
         if ((await this.tenantAccessFull(ctx.request.tenantId)) === false) throw linkGone('La empresa no puede recibir firmas en este momento.', 'signature_unavailable');
+        const verify = ctx.request.verify as SignatureVerify;
+        const channel: SignatureCodeSent['channel'] = verify === 'sms' || verify === 'whatsapp' ? verify : 'email';
+        const minutes = CODE_TTL_S / 60;
         try {
             const n = await incrWithTtl(this.redis, `sign:codes:${ctx.signer.id}`, 3600);
-            if (n > CODES_PER_SIGNER_HOUR) throw tooMany('Ya pediste varios códigos. Espera un rato o revisa tu correo (también la carpeta de spam).');
+            if (n > CODES_PER_SIGNER_HOUR) {
+                throw tooMany(
+                    channel === 'email'
+                        ? 'Ya pediste varios códigos. Espera un rato o revisa tu correo (también la carpeta de spam).'
+                        : 'Ya pediste varios códigos. Espera un rato y revisa los mensajes de tu celular.',
+                );
+            }
         } catch (err) {
             if (err instanceof HttpException) throw err;
         }
         const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
         await this.redis.set(this.codeKey(ctx.signer.id), JSON.stringify({ h: createHash('sha256').update(code).digest('hex'), t: 0 }), 'EX', CODE_TTL_S);
+        const dropCode = () => this.redis.del(this.codeKey(ctx.signer.id)).catch(() => undefined);
+        const b = await this.brand(ctx.request.tenantId);
+
+        // v0.1.448 — Por SMS o WhatsApp: con la conexión de la empresa que eligió quien pidió la firma.
+        if (channel !== 'email') {
+            const phone = ctx.signer.phone.trim();
+            const dest = maskPhone(phone);
+            const connId = ctx.request.verifyConnectionId;
+            const unavailable = (why: string): never => {
+                throw new HttpException({ code: 'signature_code_channel', message: why, data: { status: 503 } }, HttpStatus.SERVICE_UNAVAILABLE);
+            };
+            if (phone === '' || connId === null) {
+                await dropCode();
+                unavailable(`No podemos mandarte el código por ${channel === 'sms' ? 'SMS' : 'WhatsApp'}: falta ${phone === '' ? 'tu celular' : 'la conexión'} en esta solicitud. Avísale a quien te pidió la firma.`);
+            }
+            const text = signatureCodeText(code, b.company, minutes);
+            let error: string | null = null;
+            if (channel === 'sms') {
+                if (!this.sms) {
+                    error = 'El envío de SMS no está disponible en este servidor.';
+                } else {
+                    const res = await this.sms.sendNow(ctx.request.tenantId, {
+                        connectionId: connId!,
+                        to: phone,
+                        message: text,
+                        stripAccents: true,
+                        respectHours: false,
+                        source: 'signature',
+                        // Sin registro: el código no deja rastro en la ficha (no es parte de la conversación).
+                        target: { listId: null, recordId: null, userId: null },
+                    });
+                    if (!res.ok) error = res.error ?? 'No se pudo enviar el SMS.';
+                }
+            } else if (!this.whatsapp) {
+                error = 'El envío por WhatsApp no está disponible en este servidor.';
+            } else {
+                const tpl = (ctx.request.verifyOptions as { template?: { name?: unknown; language?: unknown } } | null)?.template;
+                const res = await this.whatsapp.sendSignatureCode(ctx.request.tenantId, {
+                    connectionId: connId!,
+                    to: phone,
+                    code,
+                    text,
+                    template: tpl && typeof tpl.name === 'string' && typeof tpl.language === 'string' ? { name: tpl.name, language: tpl.language } : null,
+                });
+                if (!res.ok) error = res.error;
+            }
+            if (error !== null) {
+                this.logger.warn(`Firma ${ctx.request.id}: el código por ${channel} para la persona ${ctx.signer.id} no salió: ${error}`);
+                await dropCode();
+                // El motivo exacto (clave, saldo, plantilla) va al registro del servidor y a quien pidió la firma, no a quien firma.
+                unavailable(`No pudimos enviar el código por ${channel === 'sms' ? 'SMS' : 'WhatsApp'} a ${dest}. Vuelve a intentarlo en unos minutos o avísale a quien te pidió la firma.`);
+            }
+            return { sent: true, channel, destination: dest, email_masked: dest, minutes };
+        }
+
         let sent = false;
         if (this.mail) {
-            const b = await this.brand(ctx.request.tenantId);
-            const msg = signatureCodeEmail(b, { code, minutes: CODE_TTL_S / 60, title: ctx.request.title });
+            const msg = signatureCodeEmail(b, { code, minutes, title: ctx.request.title });
             try {
                 await this.mail.sendNow({
                     tenantId: ctx.request.tenantId,
@@ -1033,11 +1139,101 @@ export class SignaturesService {
                 sent = true;
             } catch (err) {
                 this.logger.warn(`Firma ${ctx.request.id}: el código para la persona ${ctx.signer.id} no salió: ${String(err)}`);
-                await this.redis.del(this.codeKey(ctx.signer.id)).catch(() => undefined);
+                await dropCode();
                 throw new HttpException({ code: 'mail_failed', message: 'No pudimos enviar el código a tu correo. Vuelve a intentarlo en unos minutos.', data: { status: 503 } }, HttpStatus.SERVICE_UNAVAILABLE);
             }
         }
-        return { sent, email_masked: maskEmail(ctx.signer.email), minutes: CODE_TTL_S / 60 };
+        const masked = maskEmail(ctx.signer.email);
+        return { sent, channel: 'email', destination: masked, email_masked: masked, minutes };
+    }
+
+    /**
+     * v0.1.448 — Las conexiones del EQUIPO que pueden mandar el código de una
+     * firma: SMS (cualquier proveedor) y WhatsApp (Whats, o Meta con una
+     * plantilla aprobada). Las privadas no: el código sale en nombre de la
+     * empresa y la solicitud dura semanas (la persona que conectó puede irse).
+     */
+    async codeChannels(tenantId: number): Promise<SignatureCodeChannel[]> {
+        const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
+            tx
+                .select({ id: connections.id, name: connections.name, provider: connections.provider, config: connections.config })
+                .from(connections)
+                .where(and(eq(connections.tenantId, tenantId), eq(connections.visibility, 'workspace')))
+                .orderBy(asc(connections.name)),
+        );
+        const out: SignatureCodeChannel[] = [];
+        for (const r of rows) {
+            if ((r.config as { purpose?: unknown } | null)?.purpose === 'agenda') continue;
+            if (isSmsProvider(r.provider)) {
+                out.push({ id: r.id, name: r.name, channel: 'sms', provider: r.provider, needs_template: false, templates: [] });
+            } else if (r.provider === 'whatsapp_web') {
+                out.push({ id: r.id, name: r.name, channel: 'whatsapp', provider: r.provider, needs_template: false, templates: [] });
+            } else if (r.provider === 'whatsapp_cloud') {
+                const templates = this.whatsapp ? await this.whatsapp.templatesOf(tenantId, r.id, true) : [];
+                out.push({
+                    id: r.id,
+                    name: r.name,
+                    channel: 'whatsapp',
+                    provider: r.provider,
+                    needs_template: true,
+                    templates: templates
+                        .map((t) => {
+                            const check = whatsappCodeTemplateCheck(t.components, t.parameter_format);
+                            return { name: t.name, language: t.language, category: t.category, preview: check.preview, usable: check.usable, reason: check.reason };
+                        })
+                        // Las de «Autenticación» primero: son las que Meta pensó para códigos.
+                        .sort((a, b) => Number(b.category === 'AUTHENTICATION') - Number(a.category === 'AUTHENTICATION')),
+                });
+            }
+        }
+        return out;
+    }
+
+    /** Valida la conexión (y la plantilla) del código al pedir la firma. */
+    private async checkCodeChannelInTx(
+        tx: Tx,
+        tenantId: number,
+        input: Pick<CreateSignatureArgs, 'verify' | 'verify_connection_id' | 'verify_template' | 'signers'>,
+    ): Promise<{ connectionId: number | null; template: { name: string; language: string } | null }> {
+        if (!signatureVerifyNeedsPhone(input.verify)) return { connectionId: null, template: null };
+        const label = input.verify === 'sms' ? 'SMS' : 'WhatsApp';
+        const connId = input.verify_connection_id ?? null;
+        if (connId === null) throw bad('signature_code_connection', `Elige la conexión de ${label} por la que sale el código.`);
+        const noPhone = input.signers.find((x) => !signaturePhoneLooksValid(x.phone ?? ''));
+        if (noPhone) throw bad('signature_code_phone', `Falta el celular de ${noPhone.name} (o no parece válido): ahí le llega el código por ${label}.`);
+        const [conn] = await tx
+            .select({ id: connections.id, provider: connections.provider, visibility: connections.visibility, config: connections.config })
+            .from(connections)
+            .where(and(eq(connections.tenantId, tenantId), eq(connections.id, connId)))
+            .limit(1);
+        const ok =
+            conn &&
+            conn.visibility === 'workspace' &&
+            (conn.config as { purpose?: unknown } | null)?.purpose !== 'agenda' &&
+            (input.verify === 'sms' ? isSmsProvider(conn.provider) : conn.provider === 'whatsapp_web' || conn.provider === 'whatsapp_cloud');
+        if (!ok) {
+            throw bad('signature_code_connection', `Esa conexión no puede mandar el código por ${label}: elige una conexión de ${label} del equipo (en Ajustes → Integraciones).`);
+        }
+        if (conn.provider !== 'whatsapp_cloud') return { connectionId: conn.id, template: null };
+        const tpl = input.verify_template ?? null;
+        if (!tpl) throw bad('signature_code_template', 'Con la API oficial de WhatsApp el código sale en una plantilla aprobada: elige cuál.');
+        const [hit] = await tx
+            .select({ name: whatsappTemplates.name, language: whatsappTemplates.language, components: whatsappTemplates.components, parameterFormat: whatsappTemplates.parameterFormat })
+            .from(whatsappTemplates)
+            .where(
+                and(
+                    eq(whatsappTemplates.tenantId, tenantId),
+                    eq(whatsappTemplates.connectionId, conn.id),
+                    eq(whatsappTemplates.name, tpl.name),
+                    eq(whatsappTemplates.language, tpl.language),
+                    eq(whatsappTemplates.status, 'APPROVED'),
+                ),
+            )
+            .limit(1);
+        if (!hit) throw bad('signature_code_template', `La plantilla «${tpl.name}» (${tpl.language}) no está aprobada en esa conexión: actualiza las plantillas o elige otra.`);
+        const check = whatsappCodeTemplateCheck(hit.components, hit.parameterFormat);
+        if (!check.usable) throw bad('signature_code_template', `La plantilla «${tpl.name}» no sirve para el código: ${check.reason}`);
+        return { connectionId: conn.id, template: { name: hit.name, language: hit.language } };
     }
 
     private async tenantAccessFull(tenantId: number): Promise<boolean> {
@@ -1068,7 +1264,7 @@ export class SignaturesService {
         if (await this.surfaceOff(ctx.request.tenantId)) throw notFound();
         this.assertSignable(ctx);
         if ((await this.tenantAccessFull(ctx.request.tenantId)) === false) throw linkGone('La empresa no puede recibir firmas en este momento.', 'signature_unavailable');
-        if (ctx.request.verify === 'email') await this.checkCode(ctx.signer.id, input.code);
+        if (ctx.request.verify !== 'none') await this.checkCode(ctx.signer.id, input.code);
         // La imagen: se normaliza a un PNG chico (sharp); sin sharp, se acepta tal cual si es PNG.
         const png = await normalizeSignaturePng(input.image);
 
@@ -1127,7 +1323,8 @@ export class SignaturesService {
                     signedAt: (x.signedAt ?? now).toISOString(),
                     ip: x.ip ?? '',
                     userAgent: x.userAgent ?? '',
-                    verifiedBy: x.verifiedBy === 'email' ? 'email' : 'none',
+                    verifiedBy: x.verifiedBy === 'email' || x.verifiedBy === 'sms' || x.verifiedBy === 'whatsapp' ? x.verifiedBy : 'none',
+                    phone: x.phone,
                     kind: x.signatureKind === 'typed' ? 'typed' : 'drawn',
                     signaturePng: x.signaturePng ?? '',
                 }));
