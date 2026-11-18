@@ -1933,6 +1933,115 @@ export class RecordsService {
     }
 
     /**
+     * A14 (v0.1.445) — FUSIONAR: en UNA transacción bloquea el que queda y los
+     * que se van (en orden de id), comprueba que quien pide pueda editar el
+     * primero y borrar los otros, corre `work` (mover comentarios, vínculos,
+     * cobros… — ver duplicates/merge-plan.ts) y manda los que se van a la
+     * papelera con su actividad. Después avisa (tiempo real y webhooks de
+     * «borrado»), igual que `remove`.
+     */
+    async absorbMerged<T>(
+        tenantId: number,
+        actor: Actor,
+        listIdOrSlug: string,
+        primaryId: number,
+        dupIds: number[],
+        work: (tx: Tx, ctx: { list: List; titleOf: (id: number) => string }) => Promise<T>,
+        titles: Map<number, string>,
+    ): Promise<T> {
+        const list = await this.lists.get(tenantId, listIdOrSlug);
+        const snapshots = new Map<number, { createdBy: number; data: Record<string, unknown> }>();
+        const out = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const ids = [primaryId, ...dupIds].sort((a, b) => a - b);
+            const rows = await tx
+                .select({ id: records.id, data: records.data, createdBy: records.createdBy, parentId: records.parentId })
+                .from(records)
+                .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), inArray(records.id, ids), isNull(records.deletedAt)))
+                .orderBy(records.id)
+                .for('update');
+            const byId = new Map(rows.map((r) => [r.id, r]));
+            const primary = byId.get(primaryId);
+            if (!primary || !this.aclCanReach(list, actor, 'edit', primary)) throw recordNotFound(primaryId);
+            for (const id of dupIds) {
+                const row = byId.get(id);
+                if (!row || !this.aclCanReach(list, actor, 'delete', row)) throw recordNotFound(id);
+                snapshots.set(id, { createdBy: row.createdBy, data: (row.data ?? {}) as Record<string, unknown> });
+            }
+            const titleOf = (id: number): string => titles.get(id) ?? `#${id}`;
+            const result = await work(tx, { list, titleOf });
+            for (const id of dupIds) {
+                await this.repo.softDelete(tx, tenantId, list.id, id, actor.userId);
+                await this.activity.logInTx(tx, {
+                    tenantId,
+                    listId: list.id,
+                    recordId: id,
+                    userId: actor.userId,
+                    action: 'record_merged',
+                    diff: { merge: { event: 'merged_into', into: primaryId, title: titleOf(primaryId) } },
+                });
+            }
+            await this.activity.logInTx(tx, {
+                tenantId,
+                listId: list.id,
+                recordId: primaryId,
+                userId: actor.userId,
+                action: 'record_merged',
+                diff: { merge: { event: 'merged', ids: dupIds, titles: dupIds.map(titleOf) } },
+            });
+            return result;
+        });
+        this.realtime.records(tenantId, list.id);
+        for (const id of dupIds) {
+            const snap = snapshots.get(id);
+            this.eventHub?.emit({ tenantId, event: 'record.deleted', listId: list.id, recordId: id, ...(snap ? { row: snap } : {}) });
+        }
+        return out;
+    }
+
+    /**
+     * A14 — Deshacer una fusión: en UNA transacción corre `work` (devolver lo
+     * movido) y saca de la papelera los que se habían ido (sólo los que siguen
+     * ahí). Devuelve los que volvieron.
+     */
+    async unabsorbMerged(
+        tenantId: number,
+        actor: Actor,
+        listId: number,
+        primaryId: number,
+        dupIds: number[],
+        work: (tx: Tx, back: number[]) => Promise<void>,
+    ): Promise<number[]> {
+        const list = await this.lists.get(tenantId, String(listId));
+        const back = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const rows = await tx
+                .select({ id: records.id, data: records.data, createdBy: records.createdBy })
+                .from(records)
+                .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), inArray(records.id, dupIds), isNotNull(records.deletedAt)))
+                .orderBy(records.id)
+                .for('update');
+            const ok = rows.filter((r) => this.aclCanReach(list, actor, 'delete', r)).map((r) => r.id);
+            await work(tx, ok);
+            if (ok.length > 0) {
+                await tx
+                    .update(records)
+                    .set({ deletedAt: null, deletedBy: null, updatedAt: sql`now()`, updatedBy: actor.userId })
+                    .where(and(eq(records.tenantId, tenantId), eq(records.listId, list.id), inArray(records.id, ok)));
+                await this.activity.logInTx(tx, {
+                    tenantId,
+                    listId: list.id,
+                    recordId: primaryId,
+                    userId: actor.userId,
+                    action: 'record_merged',
+                    diff: { merge: { event: 'unmerged', ids: ok } },
+                });
+            }
+            return ok;
+        });
+        if (back.length > 0) this.realtime.records(tenantId, list.id);
+        return back;
+    }
+
+    /**
      * Acción masiva (borrar / actualizar campos) sobre varios records. Se aplica
      * por fila reutilizando update/remove (respeta capabilities, own-scoping,
      * validación, activity y realtime); junta éxitos y fallos individuales.

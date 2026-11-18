@@ -20,7 +20,7 @@ export const BULK_HISTORY_DAYS = 30;
  * - `move` / `delete` / `duplicate` (v0.1.220): mover de padre, borrar y
  *   duplicar en lote — cada uno sabe deshacerse a su manera.
  */
-export const BULK_EDIT_KINDS = ['records', 'store', 'move', 'delete', 'duplicate', 'store_create'] as const;
+export const BULK_EDIT_KINDS = ['records', 'store', 'move', 'delete', 'duplicate', 'store_create', 'merge'] as const;
 export type BulkEditKind = (typeof BULK_EDIT_KINDS)[number];
 
 export interface BulkEditLog {

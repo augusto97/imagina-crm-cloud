@@ -27,6 +27,9 @@ export type AuditAction =
     | 'list.permissions'
     | 'list.public_enable'
     | 'list.public_disable'
+    // A14 (v0.1.445) — duplicados: reglas de la lista y fusiones.
+    | 'list.duplicates'
+    | 'records.merge'
     // v0.1.275 — formularios públicos (escriben en la lista sin cuenta).
     | 'form.publish'
     | 'form.unpublish'

@@ -15954,6 +15954,58 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         comentarios del equipo, del cliente y del agente), 6 de shared y 6 del
         front — shared 1013, front 947, suites relacionadas del API 237/237.
 
+  - [x] **Duplicados: encontrarlos, avisar y fusionar (v0.1.445, ADR-S106,
+        quinto módulo nuevo del plan: A14)**. (a) **Reglas por lista**
+        (`lists.settings.duplicates`, sin migración de esquema; shared
+        `schemas/duplicates.ts`): sin reglas propias se sugieren cada correo,
+        cada teléfono y cada texto que suena a documento o código (NIT, cédula,
+        SKU…), o el título; hasta 5 reglas de hasta 3 campos que coinciden
+        todos; interruptores «Buscar duplicados en esta lista» y «Avisar al
+        crear un registro». (b) **Una clave igual en JS y SQL**
+        (`duplicateKey` / `duplicateKeyExpr`): sin mayúsculas, espacios ni
+        acentos, teléfono por dígitos con y sin indicativo, documentos sólo
+        letras y números (verificado sobre Postgres alpine, acentos incluidos).
+        (c) **Grupos** por regla en SQL unidos con union-find, con el acceso de
+        quien mira (`readScoped`; una regla con un campo oculto no se aplica y
+        se cuenta en `hidden_rules`), y **«No son duplicados»** por pares
+        (`record_duplicate_dismissals`, migración 0130, RLS). (d) **Fusionar**
+        2 a 10 registros de primer nivel (`RecordMergeService`, una
+        transacción): el que queda conserva lo elegido campo por campo, «Juntar
+        todos» en selección múltiple, equipos y archivos, un campo vacío se
+        llena solo; los demás a la papelera y TODO lo que colgaba de ellos pasa
+        al que queda (comentarios, vínculos en los dos sentidos, subtareas,
+        checklists, tiempo, recordatorios, seguidores, cobros, suscripciones,
+        accesos al portal, tickets…). `merge-plan.ts` clasifica cada FK a
+        `records` (mover, mover con regla de conflicto, historia que se queda
+        con el que se va, o impide fusionar: cita de la agenda, pedido de la
+        tienda, dos suscripciones vivas) y `merge-plan.spec` falla si aparece
+        una columna nueva sin clasificar. Una dependencia que quedaría
+        bloqueando al mismo registro se descarta y se avisa. (e) **Deshacer**
+        desde el aviso o el historial de ediciones masivas (tipo `merge`):
+        devuelve los registros y cada fila movida. Actividad `record_merged`
+        («fusionó «X» en este registro» / «lo fusionó en «Y»») y bitácora
+        `records.merge` / `list.duplicates`. (f) **Interfaz**: Personalizar
+        vista → «Buscar duplicados» (`DuplicatesSheet`: reglas, grupos con
+        Fusionar y No son duplicados), «Fusionar» en la barra de selección
+        (2-10 filas), `MergeDialog` (cuál queda, lo distinto con «Ver todos»,
+        descripción, qué pasa al que queda, bloqueos), aviso «Posible duplicado
+        de…» en la ficha (modal, página y ficha diseñada) y aviso mientras se
+        escribe en el alta (`POST …/duplicates/check` con espera de 450 ms).
+        Ver: quien ve registros; «No son»: quien edita; fusionar: quien borra;
+        reglas: `manage_lists`. No en listas espejo ni para invitados. Ayuda:
+        guía `duplicates`, artículo «Encontrar y fusionar duplicados» en Aprende
+        → Trabajo en lote con la ilustración nueva `duplicados-fusionar`, anclas
+        `view-settings-duplicates`, `duplicates-panel`, `duplicates-rules`,
+        `merge-dialog`, `bulk-merge`, `record-duplicates`, y novedad con
+        carrusel. Tests: `duplicates.spec` (5: reglas sugeridas y paridad JS/SQL,
+        grupos/aviso/descartar/reglas/bitácora, ACL del agente con campo oculto,
+        fusión completa y deshacer, bloqueos y dependencia circular),
+        `merge-plan.spec` (3), shared `duplicates.test`, front `mergeModel.test`
+        — shared 1022, front 949 — + E2E navegador 28/28 en escritorio y 28/28 en
+        celular oscuro (panel con dos grupos, descartar uno, fusionar con
+        etiquetas juntadas y teléfono completado, comentario movido, deshacer,
+        aviso en el alta y en la ficha, «Fusionar» desde la selección, historial).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

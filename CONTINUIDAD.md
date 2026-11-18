@@ -430,7 +430,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.444**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.445**
+(**duplicados y fusionar** — Personalizar vista → «Buscar duplicados»: los
+registros repetidos agrupados por correo, teléfono o documento (reglas propias
+por lista, sin mayúsculas ni acentos); «Fusionar» elige cuál queda y el valor
+de cada campo y mueve comentarios, vínculos, subtareas y todo lo demás al que
+queda (los otros a la papelera, con Deshacer); «No son duplicados» por pares;
+aviso «Posible duplicado de…» en la ficha y mientras se escribe en el alta;
+«Fusionar» en la barra de selección. ADR-S106. **Sigue** firma electrónica
+(D6)). Antes **v0.1.444**
 (**automatizaciones que buscan y no duplican** — acciones «Buscar registros»
 (en esta lista u otra, sin mayúsculas, teléfono con o sin indicativo; deja
 cantidad, ids y el primero para los pasos siguientes) y «Crear o actualizar un
@@ -2182,6 +2190,20 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-18 · v0.1.445** — **Duplicados y fusionar** (A14, ADR-S106).
+  Reglas por lista en `lists.settings.duplicates` (sugeridas: correo, teléfono,
+  documentos; o propias de hasta 3 campos), clave igual en JS y SQL
+  (`duplicateKey` / `duplicateKeyExpr`), grupos con el ACL de quien mira, «No
+  son duplicados» por pares (`record_duplicate_dismissals`, migración 0130).
+  Fusión en una transacción (`RecordMergeService` + `merge-plan.ts`, que
+  clasifica TODA FK a `records` — un test falla si aparece una nueva sin
+  clasificar), deshacer por el historial de ediciones masivas (tipo `merge`).
+  Interfaz: panel «Buscar duplicados», ventana de fusionar, botón en la barra
+  de selección, aviso en la ficha (las tres variantes) y en el alta. Guía
+  `duplicates`, artículo «Encontrar y fusionar duplicados» en Aprende con la
+  ilustración `duplicados-fusionar`, novedad. **Sigue** D6 (firma); G8 e I3
+  esperan decisiones del usuario.
 
 - **2026-11-18 · v0.1.444** — **Buscar registros, crear o actualizar y
   comentarios en las automatizaciones** (E1 + E2 en parte; addendum ADR-S47).

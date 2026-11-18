@@ -49,6 +49,7 @@ import { useRecordDraft } from '@/admin/records/recordDraft';
 import { lockedReasonsFor, mirrorSourceOf, recordGoneInSource, StoreRulesContext, type StoreRules } from '@/admin/records/storeRules';
 import { titleFieldOf } from '@/lib/recordTitle';
 import { RecordMetaGrid } from '@/admin/records/RecordMetaGrid';
+import { RecordDuplicateBanner } from '@/admin/records/duplicates/DuplicateHints';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
@@ -425,6 +426,16 @@ export function RecordPage(): JSX.Element {
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-5 lg:imcrm-col-span-2">
                     {/* Cuándo se creó y cuándo cambió (lo que no es un campo). */}
                     <RecordMetaGrid record={rec} />
+                    {/* A14 — «Posible duplicado de X» (Fusionar / No es duplicado). */}
+                    {!isGuest && !storeRules && !rec.parent_id && (
+                        <RecordDuplicateBanner
+                            listId={listInfo.id}
+                            listSlug={listInfo.slug}
+                            recordId={rec.id}
+                            fields={fields.data ?? []}
+                            onOpenRecord={(id) => navigate(`/lists/${listInfo.slug}/records/${id}`)}
+                        />
+                    )}
                     {rec.parent_id && !isGuest && (
                         <RecordSubtasks listId={listInfo.id} listSlug={listInfo.slug} record={rec} fields={fields.data ?? []} />
                     )}

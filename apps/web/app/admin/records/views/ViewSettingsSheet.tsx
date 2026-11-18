@@ -132,6 +132,8 @@ interface ViewSettingsSheetProps {
     onPrintLabels?: () => void;
     /** v0.1.341 — sugerencias para esta lista (admin y gerente). */
     onSuggestions?: () => void;
+    /** A14 (v0.1.445) — panel «Duplicados» (buscar, fusionar, reglas). */
+    onDuplicates?: () => void;
     /** v0.1.287 — segundo nivel de agrupación («Y luego por»). */
     subGroupByFieldId?: number | null;
     onSubGroupByFieldIdChange?: (next: number | null) => void;
@@ -204,6 +206,7 @@ export function ViewSettingsSheet({
     onDeleteMatching,
     onPrintLabels,
     onSuggestions,
+    onDuplicates,
     subGroupByFieldId = null,
     onSubGroupByFieldIdChange,
     colorRules = [],
@@ -664,6 +667,18 @@ export function ViewSettingsSheet({
                                     onClick={() => {
                                         onOpenChange(false);
                                         onSuggestions();
+                                    }}
+                                />
+                            )}
+                            {onDuplicates && (
+                                <RowButton
+                                    icon={Copy}
+                                    label={__('Buscar duplicados')}
+                                    tour="view-settings-duplicates"
+                                    value={__('Fusionar en uno')}
+                                    onClick={() => {
+                                        onOpenChange(false);
+                                        onDuplicates();
                                     }}
                                 />
                             )}

@@ -438,6 +438,102 @@ export const articles: LearnArticle[] = [
     },
     // ─────────────────────────────────────────────────────────────────────
     {
+        id: 'lote-duplicados',
+        route: '/lists',
+        related: ['lote-estructura', 'lote-historial-deshacer', 'lote-papelera'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Cuando un cliente se registra dos veces, un formulario llega repetido o se importa el mismo archivo otra vez, la lista se llena de registros duplicados. La app los encuentra, te los muestra agrupados y los junta en uno sin perder nada: comentarios, vínculos, subtareas, checklists y archivos pasan al registro que queda.',
+            },
+            { t: 'anim', key: 'duplicados-fusionar', caption: 'Dos clientes con el mismo correo se fusionan en «Café Aurora»; el aviso trae Deshacer.' },
+            { t: 'h', text: 'Ver los duplicados de una lista' },
+            {
+                t: 'steps',
+                items: [
+                    'En la lista toca **Personalizar vista → Buscar duplicados**.',
+                    'Arriba ves con qué se reconocen: por ejemplo «Correo» y «Teléfono». Cada grupo dice en qué coinciden («Mismo correo»).',
+                    'En cada grupo toca **Fusionar**, o **No son duplicados** si son cosas distintas (ese par no vuelve a aparecer).',
+                    'Toca el nombre de un registro para abrirlo y revisarlo antes de decidir.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Mayúsculas, espacios y acentos no cuentan',
+                md: '«VENTAS@cafe.co» y « ventas@cafe.co » son el mismo correo; «+57 300 123 4567» y «3001234567» el mismo teléfono; «Café Aurora» y «cafe aurora» el mismo nombre. En un NIT o un documento sólo cuentan las letras y los números.',
+            },
+            { t: 'h', text: 'Cómo se reconoce un duplicado' },
+            {
+                t: 'p',
+                md: 'Si no eliges nada, la lista compara cada **correo**, cada **teléfono** y cada texto que suena a documento o código (NIT, cédula, SKU, referencia); si no tiene ninguno, el título. Quien administra la lista lo cambia en **Cambiar con qué se reconocen**: hasta 5 reglas, cada una con hasta 3 campos que tienen que coincidir **todos** (por ejemplo, «Nombre + Ciudad»). **Volver a las sugeridas** deshace lo elegido.',
+            },
+            {
+                t: 'settings',
+                title: 'Ajustes de duplicados',
+                rows: [
+                    { name: 'Buscar duplicados en esta lista', what: 'Apagado, la lista no busca ni avisa (útil en listas donde repetir es normal, como pedidos).' },
+                    { name: 'Avisar al crear un registro', what: 'Mientras alguien llena el alta, si ya existe un registro con el mismo dato aparece un aviso con el enlace para abrirlo. No impide crearlo.' },
+                    { name: 'Reglas', what: 'Qué campos se comparan. Sirven texto, correo, teléfono, enlace, número, fecha, selección y el ID automático.' },
+                ],
+            },
+            { t: 'h', text: 'Fusionar' },
+            {
+                t: 'steps',
+                items: [
+                    'Toca **Fusionar** en un grupo, en el aviso de la ficha («Posible duplicado de…») o marca de 2 a 10 filas y toca **Fusionar** en la barra de abajo.',
+                    'En **Cuál queda** elige el registro que se conserva (de entrada, el más viejo).',
+                    'Revisa los campos donde los registros tienen valores distintos: elige cuál se conserva en cada uno. En etiquetas, equipos y archivos puedes tocar **Juntar todos**; los vínculos se juntan siempre.',
+                    'Un campo vacío en el que queda se llena solo con el valor de otro. **Ver todos** muestra también los campos iguales.',
+                    'Toca **Fusionar N en «…»**: los demás van a la papelera y todo lo suyo pasa al que queda.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Qué pasa al registro que queda',
+                rows: [
+                    { name: 'Comentarios', what: 'Se mueven completos, con su fecha y autor. La actividad del que queda dice «fusionó «X» en este registro»; la historia de los otros se queda con ellos en la papelera.' },
+                    { name: 'Vínculos', what: 'Lo que apuntaba a los otros (facturas, pedidos, oportunidades de otras listas) pasa a apuntar al que queda.' },
+                    { name: 'Subtareas, checklists y tiempo', what: 'Pasan al que queda.' },
+                    { name: 'Archivos', what: 'Los del campo que elegiste; con **Juntar todos**, los de todos.' },
+                    { name: 'Seguidores, recordatorios, cobros y accesos al portal', what: 'Pasan al que queda.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'warn',
+                title: 'Cuándo no se puede fusionar',
+                md: 'Un registro que es subtarea, uno de una lista sincronizada con una tienda o un sitio, uno con una cita o un pedido de la tienda, o uno que no puedes borrar. La ventana lo dice antes de fusionar y explica por qué.',
+            },
+            {
+                t: 'example',
+                title: 'Una agencia de viajes',
+                md: 'Después de importar el archivo de una feria, «Clientes» quedó con 140 contactos repetidos. En **Buscar duplicados** aparecen 70 grupos por correo. La agencia los fusiona de a uno, junta las etiquetas («Feria 2026», «Cartagena») y conserva el teléfono que estaba completo. Las reservas vinculadas a los repetidos ahora están en un solo cliente.',
+            },
+            { t: 'h', text: 'Deshacer una fusión' },
+            {
+                t: 'p',
+                md: 'Al terminar aparece un aviso con **Deshacer**. Más tarde, en **Personalizar vista → Historial de ediciones masivas** está la fusión con su ícono: **Deshacer** devuelve los registros de la papelera y regresa los comentarios, vínculos y valores a donde estaban.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Quién puede fusionar?', a: 'Quien puede borrar los registros. Marcar «No son duplicados» lo puede hacer quien los edita, y cambiar las reglas, quien administra la lista.' },
+                    { q: '¿Veo duplicados que no puedo ver?', a: 'No: cada persona ve los grupos con los registros a los que tiene acceso. Si una regla usa un campo que tu rol no ve, esa regla no se aplica para ti.' },
+                    { q: '¿Se pueden fusionar registros de listas distintas?', a: 'No: la fusión es dentro de una misma lista.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a mis listas', to: '/lists' },
+                    { label: 'El historial de ediciones masivas', article: 'lote-historial-deshacer' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
         id: 'lote-historial-deshacer',
         route: '/lists',
         related: ['lote-editar-en-lote', 'lote-papelera', 'lote-copiar-pegar'],

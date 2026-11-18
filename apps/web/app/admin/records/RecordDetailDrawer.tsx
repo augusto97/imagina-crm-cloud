@@ -75,6 +75,7 @@ import { TimeTrackingPanel } from './time/TimeTrackingPanel';
 import { RecordTitleInput } from './RecordTitleInput';
 import { lockedReasonsFor, mirrorSourceOf, recordGoneInSource, useStoreRules } from './storeRules';
 import { titleFieldOf } from '@/lib/recordTitle';
+import { RecordDuplicateBanner } from './duplicates/DuplicateHints';
 import { RecordMetaGrid } from './RecordMetaGrid';
 import { parseUtcDate } from '@/lib/utcDate';
 import { useRecordDraft } from './recordDraft';
@@ -583,6 +584,17 @@ export function RecordDetailDrawer({
 
                                     {/* Cuándo se creó y cuándo cambió (lo que no es un campo). */}
                                     <RecordMetaGrid record={record} twoCols className="imcrm-mb-3 imcrm-mt-4" />
+                                    {/* A14 — «Posible duplicado de X» (Fusionar / No es duplicado). */}
+                                    {!isGuest && !storeRules && !record.parent_id && (
+                                        <RecordDuplicateBanner
+                                            listId={listId}
+                                            listSlug={listSlug}
+                                            recordId={record.id}
+                                            fields={fields}
+                                            onOpenRecord={openOther}
+                                            className="imcrm-mb-3"
+                                        />
+                                    )}
                                     {/* Subtarea de… (el registro es una subtarea). */}
                                     {record.parent_id && listSlug !== undefined && !isGuest && (
                                         <RecordSubtasks

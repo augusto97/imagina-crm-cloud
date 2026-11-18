@@ -47,6 +47,10 @@ export const ACTIVITY_ACTIONS = [
     // E6 — lo que hizo un agente de IA que no es un cambio de campos (una nota,
     // una propuesta, un correo). `diff.agent` = {event, agent_id, agent_name, …}.
     'ai_agent',
+    // A14 (v0.1.445) — fusionar duplicados. En el que queda: `diff.merge` =
+    // {event: 'merged', ids, titles}; en cada uno que se fue a la papelera:
+    // {event: 'merged_into', into, title}; al deshacer: {event: 'unmerged', ids}.
+    'record_merged',
 ] as const;
 export const activityActionSchema = z.enum(ACTIVITY_ACTIONS);
 export type ActivityAction = z.infer<typeof activityActionSchema>;
