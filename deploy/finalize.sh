@@ -27,6 +27,19 @@ RESTART_CMD="${RESTART_CMD:-sudo systemctl restart ${SERVICE}}"
 
 restart() { eval "${RESTART_CMD}"; }
 
+# v0.1.435 — Si la app está separada en dos procesos, los trabajos en segundo
+# plano (imagina-worker) también pasan a la versión nueva. Va AL FINAL: este
+# script puede estar corriendo dentro de ese proceso (la actualización es un
+# trabajo en segundo plano) y reiniciarlo lo corta. Si el usuario no tiene
+# permiso, no pasa nada: el proceso ve el cambio de versión y se reinicia solo.
+WORKER_SERVICE="${WORKER_SERVICE:-imagina-worker}"
+restart_worker() {
+    if systemctl cat "${WORKER_SERVICE}" >/dev/null 2>&1 && systemctl is-enabled --quiet "${WORKER_SERVICE}" 2>/dev/null; then
+        echo "→ reiniciando ${WORKER_SERVICE}"
+        sudo -n systemctl restart "${WORKER_SERVICE}" 2>/dev/null || echo "  (sin permiso: se reinicia solo al ver la versión nueva)"
+    fi
+}
+
 wait_healthy() {
     for _ in $(seq 1 "${RETRIES}"); do
         if curl -fsS "${HEALTH_URL}" >/dev/null 2>&1; then return 0; fi
@@ -44,6 +57,7 @@ if [ -z "${FORCE_ROLLBACK:-}" ]; then
         # Poda de releases viejos (deja los últimos N) — best-effort.
         KEEP="${UPDATER_KEEP_RELEASES:-3}"
         ls -1dt "${BASE_PATH}/releases/"*/ 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -rf
+        restart_worker
         exit 0
     fi
     echo "✗ health-check falló → ROLLBACK a ${PREV_RELEASE}"
@@ -63,4 +77,5 @@ if [ -n "${LAST_DUMP}" ]; then
     TARGET_DATABASE_URL="${DATABASE_URL}" "${CURRENT}/deploy/restore.sh" "${LAST_DUMP}" || true
 fi
 wait_healthy && echo "✓ rollback saludable" || echo "✗ rollback aún no saludable — revisar manualmente"
+restart_worker
 exit 1

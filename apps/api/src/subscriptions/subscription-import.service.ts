@@ -68,7 +68,7 @@ import {
     type ImportedPreapproval,
 } from './subscription-gateway';
 import { SubscriptionsService } from './subscriptions.service';
-import { isShuttingDown } from '../redis/queue-runtime';
+import { isShuttingDown, workersEnabled } from '../redis/queue-runtime';
 import { acquireRedisLock, releaseRedisLock, renewRedisLock, withRedisLock } from '../redis/redis-lock';
 import { mapLimit } from '../common/map-limit';
 
@@ -163,7 +163,7 @@ export class SubscriptionImportService implements OnModuleInit, OnApplicationShu
 
     onModuleInit(): void {
         this.subs.registerImportSink((tenantId, connectionId, preapprovalId) => this.importByExternalId(tenantId, connectionId, preapprovalId));
-        if (this.env.NODE_ENV === 'test') return;
+        if (this.env.NODE_ENV === 'test' || !workersEnabled()) return;
         this.tickTimer = setInterval(() => {
             this.scanAll().catch((err) => this.logger.warn(`Revisión de suscripciones nuevas falló: ${String(err)}`));
         }, TICK_MS);

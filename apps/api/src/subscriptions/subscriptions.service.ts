@@ -139,6 +139,7 @@ import {
     readPaypalPlanRefs,
 } from './paypal-subscriptions';
 import { acquireRedisLock, releaseRedisLock } from '../redis/redis-lock';
+import { workersEnabled } from '../redis/queue-runtime';
 
 const FETCH_TIMEOUT_MS = 15_000;
 const DAY = 24 * 60 * 60 * 1000;
@@ -262,7 +263,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         // Los avisos de Mercado Pago llegan a la URL de la conexión de cobro: los
         // que son de una suscripción se los pasa a este servicio.
         this.collections.registerSubscriptionSink((tenantId, connectionId, query, body) => this.handleNotice(tenantId, connectionId, query, body));
-        if (this.env.NODE_ENV === 'test') return;
+        if (this.env.NODE_ENV === 'test' || !workersEnabled()) return;
         this.tickTimer = setInterval(() => {
             this.tick().catch((err) => this.logger.warn(`Revisión de suscripciones falló: ${String(err)}`));
         }, TICK_MS);

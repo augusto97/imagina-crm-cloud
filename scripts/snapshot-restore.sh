@@ -67,6 +67,15 @@ UPLOADS_DIR="${UPLOADS_DIR:-${BASE_PATH:+$BASE_PATH/shared/uploads}}"
 SERVICE="${SERVICE:-imagina-api}"
 STOP_CMD="${STOP_CMD:-sudo systemctl stop $SERVICE}"
 START_CMD="${START_CMD:-sudo systemctl start $SERVICE}"
+# v0.1.435 — Con la app en dos procesos, los trabajos en segundo plano
+# (imagina-worker) también se detienen mientras se restaura: si no, una
+# automatización o una sincronización escribiría en la base a medio restaurar.
+WORKER_SERVICE="${WORKER_SERVICE:-imagina-worker}"
+worker_installed() {
+    command -v systemctl >/dev/null 2>&1 && systemctl cat "$WORKER_SERVICE" >/dev/null 2>&1 \
+        && systemctl is-enabled --quiet "$WORKER_SERVICE" 2>/dev/null
+}
+WORKER_STOPPED=0
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 
 WORK="$(mktemp -d)"
@@ -222,6 +231,11 @@ fi
 if [[ $NO_SERVICE -eq 0 ]]; then
     echo "→ deteniendo $SERVICE"
     eval "$STOP_CMD" || echo "  ⚠ no se pudo detener el servicio (¿ya estaba parado?)" >&2
+    if worker_installed; then
+        echo "→ deteniendo $WORKER_SERVICE"
+        if sudo -n systemctl stop "$WORKER_SERVICE" 2>/dev/null; then WORKER_STOPPED=1
+        else echo "  ⚠ no se pudo detener $WORKER_SERVICE (sin permiso): los trabajos siguen corriendo" >&2; fi
+    fi
 fi
 
 # ── 5. copia de seguridad de la base actual ─────────────────────────────────
@@ -355,6 +369,10 @@ fi
 if [[ $NO_SERVICE -eq 0 ]]; then
     echo "→ arrancando $SERVICE"
     eval "$START_CMD"
+    if [[ $WORKER_STOPPED -eq 1 ]]; then
+        echo "→ arrancando $WORKER_SERVICE"
+        sudo -n systemctl start "$WORKER_SERVICE" 2>/dev/null || echo "  ⚠ no se pudo arrancar $WORKER_SERVICE — 'systemctl start $WORKER_SERVICE'" >&2
+    fi
     if [[ -n "${HEALTH_URL:-}" ]]; then
         ok=0
         for _ in $(seq 1 30); do

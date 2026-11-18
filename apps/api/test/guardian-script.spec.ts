@@ -62,7 +62,7 @@ function world(): World {
         conf,
         [`BASE=${base}`, 'DOMAIN=app.example.com', 'API_PORT=3001', 'SERVICE=imagina-api', 'PG_CONTAINER=imagina-pg', 'REDIS_SERVICE=redis-server', 'WEB_MODE=serveravatar', ''].join('\n'),
     );
-    const defaults: Record<string, string> = { api: 'up', bad_release: '', front: 'ok', pg: 'true', redis: 'active', nginx: 'active', repair: 'ok', restart_fixes: '1', low_disk: '0', nginx_T: '', rescue: 'active' };
+    const defaults: Record<string, string> = { api: 'up', bad_release: '', front: 'ok', pg: 'true', redis: 'active', nginx: 'active', repair: 'ok', restart_fixes: '1', low_disk: '0', nginx_T: '', rescue: 'active', worker: 'up', worker_fixes: '1' };
     for (const [k, v] of Object.entries(defaults)) writeFileSync(join(w, k), v);
     writeFileSync(join(w, 'calls.log'), '');
 
@@ -73,6 +73,7 @@ function world(): World {
         `url="\${@: -1}"
 api_ok() { [ "$(cat "$W/api")" = up ] && [ "$(readlink -f "$BASE_DIR/current")" != "$(cat "$W/bad_release")" ]; }
 case "$url" in
+  http://127.0.0.1:3901/*) if [ "$(cat "$W/worker")" = up ]; then printf 200; exit 0; else printf 000; exit 7; fi ;;
   http://127.0.0.1:*) if api_ok; then printf 200; exit 0; else printf 000; exit 7; fi ;;
   https://*/api/v1/health/live) if [ "$(cat "$W/front")" = ok ]; then printf 200; else printf 404; fi; exit 0 ;;
   https://*/) if [ "$(cat "$W/front")" = ok ]; then printf 200; else printf 403; fi; exit 0 ;;
@@ -89,6 +90,7 @@ printf 000; exit 7`,
       redis-server) echo active > "$W/redis";;
       nginx) echo active > "$W/nginx";;
       imagina-rescue) echo active > "$W/rescue";;
+      imagina-worker) [ "$(cat "$W/worker_fixes")" = 1 ] && echo up > "$W/worker";;
     esac; exit 0 ;;
 esac
 exit 0`,
@@ -168,7 +170,8 @@ describe('deploy/guardian/imagina-guardian.sh', () => {
         const s = world();
         s.run();
         const st = s.status();
-        expect(st.version).toBe(2);
+        expect(st.version).toBe(3);
+        expect(st.worker).toEqual({ enabled: false, port: 3901, check: 'skipped' });
         expect(st.rescue).toEqual({ enabled: false, port: 8899, cert: 'none', active: false });
         expect(st.checks).toMatchObject({ api: 'ok', database: 'ok', redis: 'ok', web_server: 'ok', front: 'ok' });
         expect((st.checks.disk as { ok: boolean }).ok).toBe(true);
@@ -273,6 +276,64 @@ describe('deploy/guardian/imagina-guardian.sh', () => {
         for (let i = 0; i < 4; i++) s.run();
         expect(s.status().checks.api).toBe('updating');
         expect(s.events()).toEqual([]);
+    });
+
+    it('procesos separados: vigila los trabajos en segundo plano y los reinicia si no responden 2 minutos', () => {
+        const s = world();
+        s.conf('WORKER_ENABLED=1');
+        s.run();
+        expect(s.status().worker).toEqual({ enabled: true, port: 3901, check: 'ok' });
+        s.set('worker', 'down');
+        s.run();
+        expect(s.status().worker).toMatchObject({ check: 'down' });
+        expect(s.calls()).not.toContain('systemctl restart imagina-worker');
+        s.run();
+        expect(s.calls()).toContain('systemctl restart imagina-worker');
+        expect(s.calls()).not.toContain('systemctl restart imagina-api');
+        expect(s.status().worker).toMatchObject({ check: 'ok' });
+        expect(s.events().map((e) => e.kind)).toEqual(['worker_restarted']);
+    });
+
+    it('procesos separados: no reinicia los trabajos más de 3 veces por hora y avisa una vez', () => {
+        const s = world();
+        s.conf('WORKER_ENABLED=1');
+        s.set('worker', 'down');
+        s.set('worker_fixes', '0');
+        for (let i = 0; i < 12; i++) s.run();
+        const kinds = s.events().map((e) => e.kind);
+        expect(kinds.filter((k) => k === 'worker_restart_failed')).toHaveLength(3);
+        expect(kinds.filter((k) => k === 'worker_attention')).toHaveLength(1);
+        expect(s.status().worker).toMatchObject({ check: 'down' });
+        // La app que atiende a las personas no se toca por esto.
+        expect(s.events().some((e) => e.kind === 'api_restarted')).toBe(false);
+    });
+
+    it('procesos separados: justo después de una actualización no reinicia los trabajos (arrancan solos)', () => {
+        const s = world();
+        s.conf('WORKER_ENABLED=1');
+        execFileSync('touch', ['-h', '-d', '-30 seconds', join(s.base, 'current')]);
+        s.set('worker', 'down');
+        s.run();
+        s.run();
+        expect(s.status().worker).toMatchObject({ check: 'updating' });
+        expect(s.calls()).not.toContain('systemctl restart imagina-worker');
+    });
+
+    it('procesos separados: --restart reinicia la app y también los trabajos', () => {
+        const s = world();
+        s.conf('WORKER_ENABLED=1');
+        s.runArgs('--restart', '--human');
+        expect(s.calls()).toContain('systemctl restart imagina-api');
+        expect(s.calls()).toContain('systemctl restart imagina-worker');
+    });
+
+    it('con un solo proceso, el puerto de los trabajos nunca se consulta', () => {
+        const s = world();
+        s.set('worker', 'down');
+        s.run();
+        s.run();
+        expect(s.calls().some((c) => c.includes('3901'))).toBe(false);
+        expect(s.status().worker).toMatchObject({ enabled: false, check: 'skipped' });
     });
 
     it('la base de datos detenida se vuelve a levantar', () => {
@@ -489,7 +550,10 @@ describe('deploy/install-guardian.sh', () => {
     // El usuario de la página de rescate: uno que ya existe (no se crea).
     const rescueUser = asRoot ? 'nobody' : me;
 
-    function install(nginxConf: string, opts: { caddy?: boolean; args?: string[]; again?: string } = {}) {
+    function install(
+        nginxConf: string,
+        opts: { caddy?: boolean; args?: string[]; again?: string; memMb?: number; workerUp?: boolean } = {},
+    ) {
         const root = opts.again ?? mkdtempSync(join(tmpdir(), 'ib-guardian-install-'));
         if (!opts.again) dirs.push(root);
         const base = join(root, 'opt');
@@ -518,6 +582,13 @@ exit 0`,
         s('ufw', '[ "$1" = status ] && echo "Status: active"; exit 0');
         s('ss', 'exit 0');
         s('useradd', 'exit 1');
+        s('sleep', 'exit 0');
+        s('journalctl', 'echo "Error: Cannot find module"; exit 0');
+        s('visudo', 'exit 0');
+        // Los trabajos en segundo plano responden (o no) en su puerto.
+        s('curl', `case "$*" in *127.0.0.1:39*/api/v1/health/live*) [ "${opts.workerUp === false ? 'no' : 'si'}" = si ] && exit 0 ;; esac; exit 7`);
+        writeFileSync(join(root, 'meminfo'), `MemTotal:       ${(opts.memMb ?? 4096) * 1024} kB\n`);
+        mkdirSync(join(root, 'sudoers.d'), { recursive: true });
         const env = {
             ...process.env,
             PATH: `${bin}:${process.env.PATH}`,
@@ -528,6 +599,8 @@ exit 0`,
             GUARDIAN_UNIT_DIR: join(root, 'units'),
             GUARDIAN_BIN_DIR: join(root, 'usr-bin'),
             GUARDIAN_RESCUE_USER: rescueUser,
+            GUARDIAN_MEMINFO: join(root, 'meminfo'),
+            GUARDIAN_SUDOERS_DIR: join(root, 'sudoers.d'),
             ...(asRoot ? {} : { GUARDIAN_OWNER: me }),
         };
         mkdirSync(join(root, 'units'), { recursive: true });
@@ -618,6 +691,70 @@ exit 0`,
     it('una configuración de Nginx armada a mano no se reescribe (modo nginx)', () => {
         const { conf } = install('server {\n  server_name app.example.com;\n  location /api/ { proxy_pass http://127.0.0.1:3001; }\n}\n');
         expect(conf).toContain('WEB_MODE=nginx');
+    });
+
+    it('con RAM suficiente separa la app en dos procesos: unidad, papel de la app, permisos y reinicio', () => {
+        const { root, conf, calls, out } = install(SA);
+        expect(conf).toContain('WORKER_ENABLED=1');
+        expect(conf).toContain('WORKER_PORT=3901');
+        const unit = readFileSync(join(root, 'units', 'imagina-worker.service'), 'utf8');
+        expect(unit).toContain('Environment=IMAGINA_ROLE=worker');
+        expect(unit).toContain('Environment=IMAGINA_WORKER_PORT=3901');
+        expect(unit).toContain(`WorkingDirectory=${join(root, 'opt', 'current', 'apps', 'api')}`);
+        expect(unit).toContain(`ExecStart=${process.execPath} dist/main.js`);
+        expect(unit).toContain('Restart=always');
+        expect(unit).not.toContain('@');
+        const dropin = readFileSync(join(root, 'units', 'imagina-api.service.d', '10-imagina.conf'), 'utf8');
+        expect(dropin).toContain('Environment=IMAGINA_ROLE=api');
+        expect(dropin).toContain('KillMode=process');
+        expect(calls).toContain('systemctl enable imagina-worker');
+        expect(calls).toContain('systemctl restart imagina-worker');
+        expect(calls).toContain('systemctl restart imagina-api');
+        expect(out).toContain('separados');
+        if (appUser !== 'root') {
+            const sudoers = readFileSync(join(root, 'sudoers.d', 'imagina-base'), 'utf8');
+            expect(sudoers).toContain(`${appUser} ALL=(root) NOPASSWD:`);
+            for (const v of ['restart', 'start', 'stop']) {
+                expect(sudoers).toContain(`systemctl ${v} imagina-api`);
+                expect(sudoers).toContain(`systemctl ${v} imagina-worker`);
+            }
+            expect(execFileSync('stat', ['-c', '%a', join(root, 'sudoers.d', 'imagina-base')], { encoding: 'utf8' }).trim()).toBe('440');
+        }
+        // Volver a correrlo no reinicia la app otra vez (el papel no cambió).
+        const again = install(SA, { again: root });
+        expect(again.calls).not.toContain('systemctl restart imagina-api');
+        expect(again.conf).toContain('WORKER_ENABLED=1');
+    });
+
+    it('con poca RAM o con --un-proceso queda en un solo proceso (sin papel, con KillMode=process)', () => {
+        const small = install(SA, { memMb: 1024 });
+        expect(small.conf).toContain('WORKER_ENABLED=0');
+        expect(small.out).toContain('1024 MB de RAM');
+        expect(existsSync(join(small.root, 'units', 'imagina-worker.service'))).toBe(false);
+        const dropin = readFileSync(join(small.root, 'units', 'imagina-api.service.d', '10-imagina.conf'), 'utf8');
+        expect(dropin).not.toContain('IMAGINA_ROLE');
+        expect(dropin).toContain('KillMode=process');
+        expect(small.calls).not.toContain('systemctl restart imagina-api');
+
+        // Separado y después vuelto a uno: la app se reinicia para dejar su papel.
+        const split = install(SA);
+        expect(split.conf).toContain('WORKER_ENABLED=1');
+        const one = install(SA, { again: split.root, args: ['--un-proceso'] });
+        expect(one.conf).toContain('WORKER_ENABLED=0');
+        expect(one.calls).toContain('systemctl disable --now imagina-worker');
+        expect(one.calls).toContain('systemctl restart imagina-api');
+        expect(readFileSync(join(split.root, 'units', 'imagina-api.service.d', '10-imagina.conf'), 'utf8')).not.toContain('IMAGINA_ROLE');
+        // Y la elección se recuerda en la próxima corrida.
+        expect(install(SA, { again: split.root }).conf).toContain('WORKER_ENABLED=0');
+    });
+
+    it('si el proceso de los trabajos no arranca, vuelve a uno solo y lo dice', () => {
+        const { conf, out, calls, root } = install(SA, { workerUp: false });
+        expect(conf).toContain('WORKER_ENABLED=0');
+        expect(out).toContain('no arrancó');
+        expect(out).toContain('Cannot find module');
+        expect(calls).toContain('systemctl disable --now imagina-worker');
+        expect(readFileSync(join(root, 'units', 'imagina-api.service.d', '10-imagina.conf'), 'utf8')).not.toContain('IMAGINA_ROLE');
     });
 
     it('con Caddy, el modo es caddy', () => {

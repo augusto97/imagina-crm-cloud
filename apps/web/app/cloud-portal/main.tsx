@@ -7,6 +7,7 @@ import { AppErrorBoundary } from '@/components/ErrorBoundary';
 import { ConfirmProvider } from '@/components/ui/confirm-dialog';
 import { ToastProvider } from '@/components/ui/toast';
 import { blockCrossOriginFraming } from '@/lib/frameGuard';
+import { installErrorReporter } from '@/lib/errorReporter';
 import '@fontsource-variable/inter';
 import '@/styles/globals.css';
 
@@ -35,6 +36,9 @@ window.addEventListener('load', () => {
 const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
 });
+
+// v0.1.435 — lo que falla en la pantalla del cliente llega a Plataforma → Diagnóstico.
+installErrorReporter('portal');
 
 // Reglas propias del portal (campos a 16px en el teléfono: sin zoom de iOS).
 document.documentElement.classList.add('imcrm-portal-app');

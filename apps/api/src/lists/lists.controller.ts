@@ -160,6 +160,7 @@ export class ListsController {
     ): Promise<List> {
         return this.lists.update(tenantId(req), idOrSlug, patch, {
             actor: { userId: req.authUserId!, role: req.tenant!.role, ...aclOf(req) },
+            mergeSettings: true,
         });
     }
 

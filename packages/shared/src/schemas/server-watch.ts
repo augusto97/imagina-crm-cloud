@@ -11,7 +11,23 @@ import { z } from 'zod';
  */
 
 /** Versión del guardián que trae ESTA versión de la app (`deploy/guardian`). */
-export const GUARDIAN_VERSION = 2;
+export const GUARDIAN_VERSION = 3;
+
+/** Lo que suma cada versión del guardián (para el aviso «hay una versión nueva»). */
+export const GUARDIAN_VERSION_NOTES: Readonly<Record<number, string>> = {
+    2: 'los comandos por SSH (imagina-estado, imagina-reparar) y la página de rescate en su propio puerto.',
+    3: 'separa la app de los trabajos en segundo plano en dos procesos: si un trabajo pesado (un Excel grande, una sincronización) se traba, la app sigue atendiendo, y el guardián vigila y reinicia cada uno por su lado.',
+};
+
+/** Qué se gana actualizando desde `from` (las notas de las versiones siguientes, juntas). */
+export function guardianUpgradeNote(from: number): string | null {
+    const notes: string[] = [];
+    for (let v = from + 1; v <= GUARDIAN_VERSION; v++) {
+        const n = GUARDIAN_VERSION_NOTES[v];
+        if (n) notes.push(n);
+    }
+    return notes.length ? notes.join(' Además, ') : null;
+}
 
 export const GUARDIAN_CHECK_STATES = ['ok', 'down', 'updating', 'unknown', 'skipped', 'cert'] as const;
 export type GuardianCheckState = (typeof GUARDIAN_CHECK_STATES)[number];
@@ -51,6 +67,17 @@ export const guardianReportSchema = z.object({
             })
             .catch({ ok: true, free_bytes: 0, total_bytes: 0, free_inodes: 0, total_inodes: 0 }),
     }),
+    /**
+     * v0.1.435 — El proceso de los trabajos en segundo plano (imagina-worker),
+     * aparte del que atiende a las personas. `enabled` false = un solo proceso.
+     */
+    worker: z
+        .object({
+            enabled: z.boolean().catch(false),
+            port: z.number().int().catch(0),
+            check: checkState,
+        })
+        .catch({ enabled: false, port: 0, check: 'skipped' as const }),
     /** v0.1.432 — La página de rescate (puerto propio, con clave). */
     rescue: z
         .object({
@@ -79,10 +106,21 @@ export const guardianStatusSchema = z.object({
     request_pending: z.boolean(),
     /** El comando para instalarlo o actualizarlo (como root). */
     install_command: z.string(),
+    /**
+     * v0.1.435 — Cómo corre la app: `api` = sólo atiende (los trabajos los hace
+     * otro proceso), `all` = las dos cosas en uno. `workers` = procesos tomando
+     * trabajos en segundo plano ahora (null si no se pudo saber).
+     */
+    processes: z
+        .object({
+            role: z.enum(['api', 'worker', 'all']),
+            workers: z.number().int().nullable(),
+        })
+        .optional(),
 });
 export type GuardianStatus = z.infer<typeof guardianStatusSchema>;
 
-export const PLATFORM_ALERT_SOURCES = ['guardian', 'backups', 'drive', 'update', 'certificate', 'disk', 'database', 'front', 'monitoring'] as const;
+export const PLATFORM_ALERT_SOURCES = ['guardian', 'backups', 'drive', 'update', 'certificate', 'disk', 'database', 'front', 'monitoring', 'workers'] as const;
 export type PlatformAlertSource = (typeof PLATFORM_ALERT_SOURCES)[number];
 export const PLATFORM_ALERT_SEVERITIES = ['critical', 'warning', 'info'] as const;
 export type PlatformAlertSeverity = (typeof PLATFORM_ALERT_SEVERITIES)[number];

@@ -15519,6 +15519,57 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Diagnóstico, no «Falló». El error de «Probar envío» explica el 452.
         Tests: `mail-pacer.spec.ts` (5) + front + suites de correo; E2E 11/11.
 
+  - [x] **La app en dos procesos, errores de las pantallas y dos fallas
+        escondidas (v0.1.435, addendum ADR-S104, primera versión del plan
+        «estabilizar y mejorar la app» aprobado entero por el usuario: "Ok,
+        has todos los que propones")**. (a) **Dos procesos**:
+        `IMAGINA_ROLE` (sólo en las unidades de systemd) decide el papel —
+        `api` atiende y no registra workers, schedulers ni relojes
+        (`workersEnabled()` en `redis/queue-runtime.ts`, consultado también
+        por los `setInterval` de volcados, retención, importaciones,
+        suscripciones y cobros); `worker` corre todo eso y escucha sólo en
+        `127.0.0.1:IMAGINA_WORKER_PORT` (3901) para el guardián; sin papel,
+        un solo proceso como antes—. El worker vigila `current`
+        (`common/release-watch.ts`) y sale con 75 al cambiar la versión
+        (`Restart=always`). `install-guardian.sh` crea `imagina-worker` si hay
+        ≥ 1,5 GB de RAM (`--un-proceso` / `--procesos-separados`, recordado;
+        si no arranca, vuelve a un proceso), el drop-in
+        `imagina-api.service.d/10-imagina.conf` (`IMAGINA_ROLE=api` +
+        `KillMode=process`) y `/etc/sudoers.d/imagina-base` (validado con
+        `visudo`: sólo `systemctl restart|start|stop` de los dos servicios).
+        `finalize.sh` reinicia el worker al final y `snapshot-restore.sh` lo
+        detiene mientras restaura. Guardián v3 (`GUARDIAN_VERSION` = 3, notas
+        por versión con `guardianUpgradeNote`): revisa el worker y lo
+        reinicia tras 2 minutos (3/h, nunca durante una actualización); la app
+        avisa por correo DIRECTO (`workers:down`, sin pasar por la cola) si no
+        ve trabajos 3 minutos. Diagnóstico: fila «Trabajos en segundo plano»
+        y «Procesos separados / Un solo proceso». (b) **Errores de las
+        pantallas**: `lib/errorReporter.ts` (errores sin atrapar, promesas y
+        `ErrorBoundary`; no los del API, la red, un pedido cancelado, un
+        despliegue nuevo ni extensiones; 10 por página) → `POST
+        /client-errors` (público, 20 por IP y minuto y 600 en total) →
+        `observability/client-errors.ts` agrupa en Redis (`diag:cerr`,
+        14 días, 200 grupos) por superficie, tipo, mensaje con los números
+        cambiados, ruta normalizada (`:id`, `:token`), componente y lugar del
+        código, sin IP, usuario, consulta de la dirección ni dominio en el
+        stack, con navegador y versión. Tarjeta «Errores en las pantallas» en
+        Plataforma → Diagnóstico. (c) **Fallas escondidas**: `PATCH
+        /lists/:id` con `settings` REEMPLAZABA el objeto (un PATCH parcial por
+        API o MCP borraba ajustes y dos pantallas abiertas se pisaban) → ahora
+        mezcla por clave con la fila bloqueada (`mergeListSettings`, `null`
+        borra; los llamadores internos siguen reemplazando) y las pantallas
+        (diseño de la ficha y del portal, Apariencia, portal, título y código
+        del campo) mandan sólo lo que cambian; y
+        `updateNotificationPrefsSchema.email` era una lista escrita a mano →
+        se arma desde `NOTIFICATION_KINDS`, como el push. (d) `docs/ideas.md`
+        al día (§0 con el plan aprobado; fuera D4 y D10; G4, G12 y G15 en
+        parte). Runbook `docs/runbook-guardian.md` §1.3. Sin novedad (es del
+        operador). Tests: `process-role.spec` (7), `guardian-script.spec`
+        44/44 (worker, límites, instalador con RAM chica, sudoers y vuelta a
+        un proceso), `platform-watch.spec` 21/21, `client-errors.spec` (7),
+        `lists.spec` 19/19 (mezcla y tres PATCH a la vez), shared 995,
+        `serverWatch.test` y `errorReporter.test` en el front.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

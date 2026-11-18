@@ -184,6 +184,7 @@ export function createLimiter(now = () => Date.now()) {
 const CHECKS = [
     ['front', 'Entrada por el dominio'],
     ['api', 'La app'],
+    ['worker', 'Trabajos en segundo plano'],
     ['database', 'Base de datos'],
     ['redis', 'Redis'],
     ['web_server', 'Servidor web (Nginx o Caddy)'],
@@ -278,6 +279,10 @@ export function statusBody(cfg, sess, query) {
                 const d = st.checks.disk || {};
                 state = d.ok ? 'ok' : 'down';
                 if (d.free_bytes) detail = `${Math.round(d.free_bytes / 1024 / 1024).toLocaleString('es-CO')} MB libres`;
+            } else if (key === 'worker') {
+                // v0.1.435 — sólo si la app está separada en dos procesos.
+                if (!st.worker?.enabled) return '';
+                state = st.worker.check || 'unknown';
             } else {
                 state = st.checks[key] || 'unknown';
                 if (key === 'front' && st.domain) detail = st.domain;

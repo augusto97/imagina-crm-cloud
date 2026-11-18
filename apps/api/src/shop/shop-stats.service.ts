@@ -19,6 +19,7 @@ import { isForeignKeyViolation } from '../forms/form-stats.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
+import { workersEnabled } from '../redis/queue-runtime';
 
 /**
  * v0.1.418 (addendum ADR-S103) — Estadísticas de la tienda.
@@ -103,6 +104,7 @@ export class ShopStatsService implements OnModuleInit, OnModuleDestroy {
     ) {}
 
     onModuleInit(): void {
+        if (!workersEnabled()) return;
         this.timer = setInterval(() => {
             this.flush().catch((err: unknown) => this.logger.warn(`Volcado de estadísticas de tiendas: ${String(err)}`));
         }, FLUSH_EVERY_MS);

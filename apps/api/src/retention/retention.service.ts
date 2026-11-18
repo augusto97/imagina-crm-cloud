@@ -6,6 +6,7 @@ import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
 import { REDIS } from '../redis/redis.module';
 import { withRedisLock } from '../redis/redis-lock';
+import { workersEnabled } from '../redis/queue-runtime';
 
 /**
  * v0.1.393 — Retención de las tablas que crecían sin tope. Con miles de
@@ -77,7 +78,7 @@ export class RetentionService implements OnModuleInit, OnApplicationShutdown {
     ) {}
 
     onModuleInit(): void {
-        if (this.env.NODE_ENV === 'test') return;
+        if (this.env.NODE_ENV === 'test' || !workersEnabled()) return;
         this.timer = setInterval(() => {
             this.tick().catch((err) => this.logger.warn(`Retención de tablas falló: ${String(err)}`));
         }, EVERY_MS);

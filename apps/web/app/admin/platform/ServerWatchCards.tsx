@@ -17,7 +17,7 @@ import {
     Terminal,
     Wrench,
 } from 'lucide-react';
-import type { GuardianEvent, GuardianReport, PlatformAlert } from '@imagina-base/shared';
+import { guardianUpgradeNote, type GuardianEvent, type GuardianReport, type PlatformAlert } from '@imagina-base/shared';
 
 import { api } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
@@ -30,7 +30,7 @@ import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
 import { diskSize } from './diskSize';
-import { agoText, checkText, checkTone, guardianChecks, heartbeatProvider, severityLabel, severityVariant, type CheckTone } from './serverWatch';
+import { agoText, checkText, checkTone, guardianChecks, heartbeatProvider, processesInfo, severityLabel, severityVariant, type CheckTone } from './serverWatch';
 
 /**
  * v0.1.431 (ADR-S104) — Plataforma → Diagnóstico: los avisos del servidor
@@ -279,6 +279,7 @@ export function GuardianCard(): JSX.Element | null {
     const g = q.data;
     const r = g.report;
     const status = !g.installed ? 'missing' : !g.fresh ? 'stale' : 'ok';
+    const upgradeNote = r ? guardianUpgradeNote(r.version) : null;
     return (
         <Card data-tour="platform-guardian" data-testid="platform-guardian">
             <CardHeader>
@@ -351,6 +352,7 @@ export function GuardianCard(): JSX.Element | null {
                                 {r.current_release ? ` ${sprintf(__('Versión instalada: %s.'), r.current_release)}` : ''}
                             </p>
                         )}
+                        <ProcessesRow info={processesInfo(g.processes)} />
                         {status === 'stale' && (
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-warning/30 imcrm-bg-warning/10 imcrm-p-3 imcrm-text-sm">
                                 <span>{__('Hace más de 5 minutos que no revisa. Para volver a ponerla en marcha, como root:')}</span>
@@ -359,11 +361,13 @@ export function GuardianCard(): JSX.Element | null {
                         )}
                         {g.outdated && (
                             <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-info/30 imcrm-bg-info/10 imcrm-p-3 imcrm-text-sm">
-                                <span>
-                                    {r && r.version < 2
-                                        ? __('Esta versión de la app trae una versión nueva de la reparación automática: suma comandos por SSH y una página de rescate para reparar el servidor aunque la app no abra. Para instalarla, como root (al final te muestra la clave de la página):')
-                                        : __('Esta versión de la app trae una versión nueva de la reparación automática. Para instalarla, como root:')}
-                                </span>
+                                <span>{__('Esta versión de la app trae una versión nueva de la reparación automática. Para instalarla, como root:')}</span>
+                                {upgradeNote && (
+                                    <span className="imcrm-text-xs imcrm-text-muted-foreground" data-testid="guardian-upgrade-note">
+                                        {sprintf(__('Lo nuevo: %s'), upgradeNote)}
+                                        {r && r.version < 2 ? ` ${__('Al final te muestra la clave de la página de rescate.')}` : ''}
+                                    </span>
+                                )}
                                 <CopyText text={g.install_command} />
                             </div>
                         )}
@@ -384,6 +388,27 @@ export function GuardianCard(): JSX.Element | null {
                 )}
             </CardContent>
         </Card>
+    );
+}
+
+/** v0.1.435 — La app en uno o dos procesos (y si los trabajos están corriendo). */
+function ProcessesRow({ info }: { info: ReturnType<typeof processesInfo> }): JSX.Element | null {
+    if (!info) return null;
+    return (
+        <div
+            className={cn(
+                'imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-px-3 imcrm-py-2',
+                info.tone === 'bad' ? 'imcrm-border-destructive/30 imcrm-bg-destructive/5' : 'imcrm-border-border',
+            )}
+            data-testid="guardian-processes"
+            data-tone={info.tone}
+        >
+            <ToneIcon tone={info.tone} />
+            <div className="imcrm-min-w-0">
+                <p className="imcrm-text-sm imcrm-font-medium">{info.title}</p>
+                <p className="imcrm-text-xs imcrm-text-muted-foreground">{info.detail}</p>
+            </div>
+        </div>
     );
 }
 

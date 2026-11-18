@@ -23,6 +23,7 @@ import { GUARDIAN_VERSION, heartbeatSupportsFail } from '@imagina-base/shared';
 import type { Env } from '../src/config/env';
 import { GuardianService, parseGuardianEvents } from '../src/update/guardian.service';
 import { PlatformAlertsService } from '../src/update/platform-alerts.service';
+import { PlatformWatchQueue } from '../src/update/platform-watch.queue';
 import { PlatformWatchService, certDaysLeft, guardianAllOk, pendingGuardianEvents, redisPersistence } from '../src/update/platform-watch.service';
 import { startRedis, type TestRedis } from './helpers/containers';
 
@@ -97,6 +98,10 @@ describe('Vigilancia del servidor (v0.1.431) — piezas puras', () => {
         const r = JSON.parse(report({}, { front: 'skipped' }));
         expect(guardianAllOk(r)).toBe(true);
         expect(guardianAllOk({ ...r, checks: { ...r.checks, front: 'down' } })).toBe(false);
+        // v0.1.435 — con dos procesos, los trabajos caídos tampoco es «todo bien».
+        expect(guardianAllOk({ ...r, worker: { enabled: true, port: 3901, check: 'ok' } })).toBe(true);
+        expect(guardianAllOk({ ...r, worker: { enabled: true, port: 3901, check: 'down' } })).toBe(false);
+        expect(guardianAllOk({ ...r, worker: { enabled: false, port: 3901, check: 'down' } })).toBe(true);
         expect(heartbeatSupportsFail('https://uptime.betterstack.com/api/v1/heartbeat/abc')).toBe(true);
         expect(heartbeatSupportsFail('https://hc-ping.com/uuid')).toBe(true);
         expect(heartbeatSupportsFail('https://cronitor.link/p/x')).toBe(false);
@@ -266,6 +271,47 @@ describe('Vigilancia del servidor (v0.1.431) — con Redis real', () => {
         await watch.checkGuardian(T0 + 60_000);
         expect(await alerts.get('guardian:rescue')).toBeNull();
         expect(subjects().at(-1)).toBe('Ya está bien: La página de rescate del servidor no arranca');
+    });
+
+    it('v0.1.435 — los trabajos reiniciados llegan en el resumen; los que no vuelven abren el aviso crítico', async () => {
+        writeFileSync(
+            path.join(dir, 'events.jsonl'),
+            ev('2026-11-14T11:59:00Z', 'worker_restarted', true, 'Los trabajos en segundo plano no respondían: se reiniciaron y volvieron.') + '\n',
+        );
+        writeReport(report({ worker: { enabled: true, port: 3901, check: 'ok' } }));
+        await watch.checkGuardian(T0);
+        expect(subjects()).toEqual(['El servidor se reparó solo: trabajos en segundo plano reiniciados']);
+
+        writeFileSync(path.join(dir, 'events.jsonl'), ev('2026-11-14T12:02:00Z', 'worker_attention', false, 'Siguen sin responder después de 3 reinicios.') + '\n', { flag: 'a' });
+        writeReport(report({ updated_at: '2026-11-14T12:02:00Z', worker: { enabled: true, port: 3901, check: 'down' } }), 0, T0 + 2 * 60_000);
+        await watch.checkGuardian(T0 + 2 * 60_000);
+        expect(subjects().at(-1)).toBe('El servidor necesita que lo revises');
+        expect((await alerts.get('guardian:attention'))!.severity).toBe('critical');
+    });
+
+    it('v0.1.435 — sin nadie haciendo los trabajos 3 minutos seguidos: aviso crítico POR FUERA de la cola, y al volver se cierra', async () => {
+        const sent: string[] = [];
+        const direct = new PlatformAlertsService(redis, env, { ...mail, sendNow: vi.fn(async (m: Mail) => void sent.push(m.subject)) } as never);
+        const q = new PlatformWatchQueue(env, watch, direct);
+        let workers: number | null = 0;
+        q.workersConnected = async () => workers;
+        await q.checkPresence(new Date(T0));
+        await q.checkPresence(new Date(T0 + 60_000));
+        expect(await direct.get('workers:down')).toBeNull();
+        await q.checkPresence(new Date(T0 + 120_000));
+        expect(sent).toEqual(['Los trabajos en segundo plano están detenidos']);
+        expect(mails).toEqual([]); // no pasó por la cola de correos (nadie la atiende)
+        expect((await direct.get('workers:down'))!.severity).toBe('critical');
+        // Sin poder saberlo (Redis sin CLIENT) no se decide nada.
+        workers = null;
+        await q.checkPresence(new Date(T0 + 180_000));
+        expect((await direct.get('workers:down'))!.resolved_at ?? null).toBeNull();
+        workers = 1;
+        await q.checkPresence(new Date(T0 + 240_000));
+        expect(await direct.get('workers:down')).toBeNull();
+        // Volvieron: el «Ya está bien» ya puede ir por la cola.
+        expect(subjects()).toEqual(['Ya está bien: Los trabajos en segundo plano están detenidos']);
+        expect(sent).toHaveLength(1);
     });
 
     it('claves equivocadas en la página de rescate avisan con otro título', async () => {

@@ -27,7 +27,7 @@ import { assertNewAttachable, fileIdsUnder, type FileActor } from '../files/file
 /** Claves de `settings` (diseño de la ficha y del portal) que guardan el id de un adjunto. */
 const LIST_SETTINGS_FILE_KEYS = ['file_id', 'image_file_id'] as const;
 import type { Tx } from '../db/client';
-import { customRoles, fields, listGroups, listSlugHistory, memberships, teamMembers, teams, users } from '../db/schema';
+import { customRoles, fields, listGroups, lists, listSlugHistory, memberships, teamMembers, teams, users } from '../db/schema';
 import { resolvePermissions } from './list-acl';
 import { RealtimeService } from '../realtime/realtime.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -406,6 +406,15 @@ export class ListsService {
              * y, en el portal, para el cliente). Sin actor = uso interno.
              */
             actor?: FileActor;
+            /**
+             * v0.1.435 — Desde la app (el PATCH): `settings` trae SÓLO lo que
+             * cambia y se mezcla con lo guardado (`null` quita la clave). Antes
+             * reemplazaba el objeto entero: una pantalla con una copia vieja
+             * pisaba lo que otra (o el servidor: la tienda, la mesa de ayuda,
+             * los cobros) había guardado mientras tanto. Sin esto = reemplazo
+             * entero (los usos internos arman los ajustes completos).
+             */
+            mergeSettings?: boolean;
         } = {},
     ): Promise<List> {
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
@@ -496,7 +505,17 @@ export class ListsService {
                         });
                     }
                 }
-                changes.settings = opts.helpdeskMailbox ? patch.settings : keepHelpdeskMailbox(current.settings, patch.settings);
+                let nextSettings = patch.settings;
+                if (opts.mergeSettings) {
+                    // La fila bloqueada: dos guardados a la vez no se pisan.
+                    const [locked] = await tx
+                        .select({ settings: lists.settings })
+                        .from(lists)
+                        .where(and(eq(lists.tenantId, tenantId), eq(lists.id, current.id)))
+                        .for('update');
+                    nextSettings = mergeListSettings((locked?.settings as Record<string, unknown> | undefined) ?? current.settings ?? {}, patch.settings);
+                }
+                changes.settings = opts.helpdeskMailbox ? nextSettings : keepHelpdeskMailbox(current.settings, nextSettings);
             }
 
             if (patch.slug !== undefined && patch.slug !== current.slug) {
@@ -684,6 +703,19 @@ function notFound(idOrSlug: string) {
  */
 function ensureListSlug(slug: string): string {
     return listSlugSchema.safeParse(slug).success ? slug : `lista_${slug}`.slice(0, 63);
+}
+
+/**
+ * v0.1.435 — Mezcla de primer nivel: lo que llega pisa su clave, `null` la
+ * quita y lo que no llega queda como estaba.
+ */
+export function mergeListSettings(current: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = { ...current };
+    for (const [k, v] of Object.entries(patch)) {
+        if (v === null) delete out[k];
+        else out[k] = v;
+    }
+    return out;
 }
 
 /**

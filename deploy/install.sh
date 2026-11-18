@@ -276,6 +276,10 @@ cat <<EOF
   │  Ahí eliges: restaurar una copia de tu Google Drive o
   │  empezar de cero. Sin dominio todavía, desde esta terminal:
   │     sudo imagina-restore
+  │
+  │  Después, para la reparación automática del servidor (y separar
+  │  la app de los trabajos en segundo plano):
+  │     bash $BASE_PATH/current/deploy/install-guardian.sh
   ╰──────────────────────────────────────────────────────────────╯
 
 EOF

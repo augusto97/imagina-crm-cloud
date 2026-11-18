@@ -1,0 +1,33 @@
+# Los trabajos en segundo plano de Imagina Base (v0.1.435, ADR-S104).
+# Lo instala deploy/install-guardian.sh (como root); no hace falta tocarlo a mano.
+#
+# Es la misma app que imagina-api, con otro papel: no atiende a las personas
+# (escucha sólo en 127.0.0.1, para que el guardián vea si está viva) y hace los
+# trabajos en segundo plano — automatizaciones, correos, sincronizaciones,
+# copias. Si un trabajo pesado se traba, la app que atiende sigue respondiendo.
+#
+# Cuando una actualización cambia la versión activa, este proceso termina solo y
+# systemd lo vuelve a arrancar con la versión nueva (Restart=always).
+[Unit]
+Description=Imagina Base - trabajos en segundo plano
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@WORKDIR@
+EnvironmentFile=@ENVFILE@
+# El papel va aquí y no en el .env: un valor del .env le ganaría a la unidad.
+Environment=IMAGINA_ROLE=worker
+Environment=IMAGINA_WORKER_PORT=@PORT@
+Environment=IMAGINA_CURRENT_DIR=@WORKDIR@
+ExecStart=@NODE@ dist/main.js
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+# Los trabajos se dejan terminar en orden (WORKERS_DRAIN_MS, 14 s por defecto).
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

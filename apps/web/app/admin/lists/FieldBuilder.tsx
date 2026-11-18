@@ -238,7 +238,7 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
      */
     const makeTitle = (field: FieldEntity): void => {
         updateList.mutate(
-            { settings: { ...(listData?.settings ?? {}), title_field_id: field.id } },
+            { settings: { title_field_id: field.id } },
             { onSuccess: () => invalidateForList(qc, fieldsKeys.all, listId) },
         );
     };
@@ -250,9 +250,8 @@ export function FieldBuilder({ listId }: FieldBuilderProps): JSX.Element {
      */
     const scanFieldId = readScanFieldId(listData?.settings);
     const toggleScanCode = (field: FieldEntity): void => {
-        const { scan_field_id: _old, ...rest } = (listData?.settings ?? {}) as Record<string, unknown>;
         updateList.mutate(
-            { settings: scanFieldId === field.id ? rest : { ...rest, scan_field_id: field.id } },
+            { settings: { scan_field_id: scanFieldId === field.id ? null : field.id } },
             {
                 onSuccess: () =>
                     toast.success(scanFieldId === field.id ? __('El campo ya no es el código de la lista') : __('Campo del código guardado')),

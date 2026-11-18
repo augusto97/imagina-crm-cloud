@@ -3,6 +3,7 @@ import { RotateCw, TriangleAlert } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { __ } from '@/lib/i18n';
+import { reportClientError } from '@/lib/errorReporter';
 import { isChunkLoadError } from '@/lib/lazyWithReload';
 
 interface ErrorBoundaryProps {
@@ -49,6 +50,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     componentDidCatch(error: Error, info: ErrorInfo): void {
         // Log a la consola para diagnosticar; el usuario ve sólo el fallback.
         console.error('[app] ErrorBoundary:', error, info);
+        // v0.1.435 — y al operador, en Plataforma → Diagnóstico.
+        if (!isChunkLoadError(error)) reportClientError(error, 'render', { component: info.componentStack ?? undefined });
     }
 
     componentDidUpdate(prev: ErrorBoundaryProps): void {

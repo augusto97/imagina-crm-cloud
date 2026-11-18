@@ -119,15 +119,13 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
     };
 
     const save = useCallback(() => {
-        const settings = { ...(list.settings ?? {}) } as Record<string, unknown>;
-        if (portal) {
-            settings.portal_layout_v3 = layout;
-            // La plantilla anterior ya quedó convertida en este diseño.
-            delete settings.portal_template;
-        } else {
-            settings.record_layout = 'crm';
-            settings.record_layout_v3 = layout;
-        }
+        // v0.1.435 — sólo lo que cambia (el servidor lo mezcla con lo que ya
+        // está; `null` lo quita): un ajuste que otra pantalla guardó mientras
+        // tanto no se pisa con la copia vieja de esta.
+        const settings: Record<string, unknown> = portal
+            ? // La plantilla anterior ya quedó convertida en este diseño.
+              { portal_layout_v3: layout, portal_template: null }
+            : { record_layout: 'crm', record_layout_v3: layout };
         update.mutate(
             { settings },
             {
@@ -141,7 +139,7 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
                 onError: (err) => toast.error(__('No se pudo guardar'), err instanceof ApiError || err instanceof Error ? err.message : undefined),
             },
         );
-    }, [update, list.settings, layout, toast, portal]);
+    }, [update, layout, toast, portal]);
 
     const resetToAuto = async (): Promise<void> => {
         const ok = await confirm({
@@ -153,14 +151,9 @@ export function LayoutEditor({ list, fields, initial, origin, initialRecord, tar
             destructive: true,
         });
         if (!ok) return;
-        const settings = { ...(list.settings ?? {}) } as Record<string, unknown>;
-        if (portal) {
-            delete settings.portal_layout_v3;
-            delete settings.portal_template;
-        } else {
-            delete settings.record_layout_v3;
-            settings.crm_template_id = 'auto';
-        }
+        const settings: Record<string, unknown> = portal
+            ? { portal_layout_v3: null, portal_template: null }
+            : { record_layout_v3: null, crm_template_id: 'auto' };
         update.mutate(
             { settings },
             {

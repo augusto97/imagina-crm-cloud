@@ -54,6 +54,8 @@ export function guardianChecks(r: GuardianReport, size: (bytes: number) => strin
     return [
         { key: 'front', label: __('Entrada por el dominio'), state: c.front, detail: r.domain || undefined },
         { key: 'api', label: __('La app'), state: c.api },
+        // v0.1.435 — con la app en dos procesos, los trabajos en segundo plano por su lado.
+        ...(r.worker?.enabled ? [{ key: 'worker', label: __('Trabajos en segundo plano'), state: r.worker.check }] : []),
         { key: 'database', label: __('Base de datos'), state: c.database },
         { key: 'redis', label: 'Redis', state: c.redis },
         { key: 'web_server', label: webModeLabel(r.web_mode), state: c.web_server },
@@ -101,4 +103,41 @@ export function heartbeatProvider(url: string): string | null {
     if (host === 'hc-ping.com') return 'Healthchecks.io';
     if (host.endsWith('cronitor.link') || host.endsWith('cronitor.io')) return 'Cronitor';
     return null;
+}
+
+export interface ProcessesInfo {
+    tone: CheckTone;
+    title: string;
+    detail: string;
+}
+
+/**
+ * v0.1.435 — Cómo corre la app: en dos procesos (la que atiende y la de los
+ * trabajos en segundo plano) o en uno. `role` lo dice el proceso que responde
+ * al panel; `workers`, cuántos procesos están tomando trabajos ahora.
+ */
+export function processesInfo(p: { role: 'api' | 'worker' | 'all'; workers: number | null } | undefined): ProcessesInfo | null {
+    if (!p) return null;
+    if (p.role === 'api') {
+        if (p.workers === 0) {
+            return {
+                tone: 'bad',
+                title: __('Procesos separados: los trabajos en segundo plano están detenidos'),
+                detail: __('La app atiende, pero nadie está haciendo las automatizaciones, los correos ni las sincronizaciones. Nada se pierde: queda en espera. La reparación automática lo vuelve a arrancar; si no, por SSH: imagina-reparar.'),
+            };
+        }
+        return {
+            tone: 'ok',
+            title: __('Procesos separados'),
+            detail:
+                p.workers === null
+                    ? __('La app atiende a las personas y otro proceso hace los trabajos en segundo plano.')
+                    : __('La app atiende a las personas y otro proceso hace los trabajos en segundo plano (automatizaciones, correos, sincronizaciones, copias): si uno se traba, la app sigue respondiendo.'),
+        };
+    }
+    return {
+        tone: 'none',
+        title: __('Un solo proceso'),
+        detail: __('La app y los trabajos en segundo plano corren juntos. Con 1,5 GB de RAM o más se pueden separar: vuelve a correr el instalador de la reparación automática (lo hace solo, o con --procesos-separados).'),
+    };
 }

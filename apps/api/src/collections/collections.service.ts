@@ -104,6 +104,7 @@ import {
 } from './paypal-gateway';
 import { can } from '../authz/can';
 import { mpNotice } from '../subscriptions/subscription-gateway';
+import { workersEnabled } from '../redis/queue-runtime';
 
 /**
  * v0.1.367 — Quien procesa los avisos de SUSCRIPCIONES (el servicio de
@@ -235,7 +236,7 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
         // que la app registró en esa cuenta también se borra (si no, PayPal le
         // seguiría avisando a una URL que ya no existe).
         this.connectors.onBeforeRemove((tenantId, connectionId) => this.forgetPaypalWebhook(tenantId, connectionId));
-        if (this.env.NODE_ENV === 'test') return;
+        if (this.env.NODE_ENV === 'test' || !workersEnabled()) return;
         // Vencer los links pendientes cuya fecha pasó. Idempotente (sólo toca
         // los `pending`), así varios nodos pueden correrlo a la vez.
         this.expireTimer = setInterval(() => {

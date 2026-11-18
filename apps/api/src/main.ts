@@ -20,6 +20,8 @@ import { loadEnv } from './config/env';
 import { buildTrustProxy } from './common/trust-proxy';
 import { recordServerError } from './observability/diagnostics';
 import { RedisIoAdapter } from './realtime/redis-io.adapter';
+import { processRole } from './redis/queue-runtime';
+import { watchRelease } from './common/release-watch';
 
 // Red de seguridad: una promesa rechazada sin `catch` (p.ej. un comando Redis
 // que falla en un camino no cubierto) NO debe tumbar el servidor. Se loguea y
@@ -221,8 +223,42 @@ async function bootstrap(): Promise<void> {
 
     app.enableShutdownHooks();
 
+    // v0.1.435 — El proceso de trabajos en segundo plano (IMAGINA_ROLE=worker)
+    // no atiende a nadie: escucha sólo en 127.0.0.1, en su propio puerto, para
+    // que el guardián vea si está vivo. Se reinicia solo cuando cambia la
+    // versión activa (ver common/release-watch.ts).
+    const role = processRole();
+    if (role === 'worker') {
+        const port = workerPort();
+        await app.listen({ port, host: '127.0.0.1' });
+        Logger.log(`Proceso de trabajos en segundo plano (salud en http://127.0.0.1:${port}/api/v1/health/live)`, 'Bootstrap');
+        const watchPath = process.env.IMAGINA_CURRENT_DIR?.trim();
+        if (watchPath) {
+            watchRelease({
+                startedIn: process.cwd(),
+                watchPath,
+                onChange: (next) => {
+                    Logger.warn(`Cambió la versión activa (${next}): este proceso se reinicia para tomarla.`, 'Bootstrap');
+                    // Termina en orden (drena las colas) y sale con un código que
+                    // systemd vuelve a arrancar (Restart=always).
+                    void app
+                        .close()
+                        .catch(() => undefined)
+                        .finally(() => process.exit(75));
+                },
+            });
+        }
+        return;
+    }
+
     await app.listen({ port: env.PORT, host: '0.0.0.0' });
-    Logger.log(`API escuchando en http://localhost:${env.PORT}/api/v1`, 'Bootstrap');
+    Logger.log(`API escuchando en http://localhost:${env.PORT}/api/v1${role === 'api' ? ' (los trabajos en segundo plano corren en otro proceso)' : ''}`, 'Bootstrap');
+}
+
+/** Puerto de salud del proceso de trabajos (lo pone la unidad de systemd). */
+function workerPort(): number {
+    const n = Number(process.env.IMAGINA_WORKER_PORT);
+    return Number.isInteger(n) && n > 0 && n < 65536 ? n : 3901;
 }
 
 void bootstrap();

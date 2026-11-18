@@ -16,7 +16,21 @@
 >   `docs/estudio-funcionalidades-2026-10.md`, junto con el valor, el esfuerzo
 >   y quién la tiene en la competencia.
 >
-> Última revisión: 2026-10-26 (v0.1.310).
+> Última revisión: 2026-11-18 (v0.1.435).
+
+---
+
+## 0. Elegido el 2026-11-18 (plan para estabilizar y mejorar)
+
+El usuario pidió "estabilizar y mejorar la app" y aprobó todo el plan ("Ok, has
+todos los que propones"): v0.1.435 a v0.1.439 de estabilidad (detalle en
+`CONTINUIDAD.md` §10) y después estos módulos, que salen de este banco al
+publicarse: **G1 + G2** (API pública con webhooks de eventos y la app de n8n),
+**E1 + E2** en parte («buscar registros», «crear o actualizar por un dato»,
+«cuando se agrega un comentario»), **A14** (duplicados y fusionar), **D6**
+(firma electrónica) y **G8** (facturación DIAN: falta elegir proveedor y tener
+credenciales de prueba) e **I3** (modo agencia: falta decidir quién le cobra al
+cliente final).
 
 ---
 
@@ -113,10 +127,8 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
 | D1 · El correo de cada registro (Gmail/Outlook de cada persona en la ficha) | alto (CRM) · L | Opt-in por persona; sólo hilos con contactos de la lista. |
-| D4 · SMS (Twilio, Infobip o proveedor local) | medio · S | |
 | D8 · Encuesta NPS / satisfacción de un clic | medio · S-M | **En parte hecho en v0.1.355**: los formularios tienen la escala NPS (0 a 10) y la matriz para calificar varios aspectos. Queda responder con un clic desde el correo (cada número es un enlace). |
 | D9 · Seguimientos 1 a 1 desde una vista | medio · M | Choca con ADR-S18: sólo con correo propio y con límites. |
-| D10 · Tienda: aparecer en Google y dominio propio de la tienda | medio (comercio) · M | La tienda quedó hecha del 2026-11-12 (v0.1.412 a v0.1.419, ADR-S103: catálogo, pago en línea, variantes, envíos y cupones, digitales/servicios, suscripciones, estadísticas y conversiones, y vender en más lugares). **Pospuesto por el usuario**: el SEO (que la tienda y sus productos salgan en los buscadores: páginas por producto, sitemap, datos estructurados) y un dominio propio sólo para la tienda. Hoy la tienda lleva `noindex` a propósito. |
 
 ### E. Automatizaciones
 | Idea | Valor · esfuerzo | Nota |
@@ -142,16 +154,16 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 |---|---|---|
 | G1, G2, G8 | — | Ver §1 (pospuestos). |
 | G3 · Google Sheets sincronizado en los dos sentidos | alto · M-L | Pospuesto por el usuario al armar la fase 6 (2026-10-26). El permiso `spreadsheets` ya está. |
-| G4 · Google Calendar / Outlook sincronizado en los dos sentidos | medio-alto · M | Hoy sólo se crean eventos. |
+| G4 · Google Calendar / Outlook sincronizado en los dos sentidos | medio-alto · M | **En parte hecho en v0.1.350**: en la agenda de citas, mover o borrar el evento en el calendario de quien atiende mueve o cancela la cita. Falta para la vista Calendario de cualquier lista. |
 | G5 · Importadores (Airtable, Notion, ClickUp, Trello, monday) | alto · M c/u | Pospuesto por el usuario al armar la fase 6. Excel con varias hojas ya existe (v0.1.299). |
 | G7 · Sincronizar PostgreSQL y MySQL | medio · M | Como la de SQL Server. |
 | G9 · Contabilidad (Siigo, Alegra, World Office, QuickBooks, Xero) | medio-alto · M c/u | |
 | G10 · Más pasarelas (ePayco, PayU, Bold, Stripe fuera de Colombia, Nequi directo) | medio · S-M c/u | Hoy: Mercado Pago, Wompi y PayPal. |
 | G11 · Más tiendas (Mercado Libre, Shopify, Tiendanube) | alto (comercio) · L c/u | Reusa el motor de WooCommerce. |
-| G12 · Avisos a Teams, Google Chat y Discord | bajo-medio · S c/u | Slack ya existe. |
+| G12 · Avisos a Google Chat y Discord | bajo-medio · S c/u | Slack y Microsoft Teams ya existen (Teams desde v0.1.348). |
 | G13 · OneDrive / SharePoint y Dropbox como almacenamiento | medio · M | S3 y Google Drive ya existen. |
 | G14 · Enriquecimiento y validación (datos por dominio, email que existe) | bajo-medio · M | |
-| G15 · Días hábiles y festivos por país | medio · S | Hoy sólo Colombia. |
+| G15 · Días hábiles y festivos por país en todo | medio · S | **En parte hecho en v0.1.349**: la agenda de citas usa los festivos de 33 países. El SLA de la mesa de ayuda, las fórmulas de días hábiles y las plantillas siguen con los de Colombia. |
 
 ### H. Celular
 | Idea | Valor · esfuerzo | Nota |
@@ -253,13 +265,12 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
   la app (hoy en Meta, con enlace); una acción propia del campo Botón (hoy:
   «Al presionar el botón» + «Enviar plantilla»); probar con una cuenta real de
   Meta en el servidor.
-- **Agenda de citas (v0.1.313)**: «quién atiende» por equipo; cobrar al
-  agendar (hoy el precio es informativo; se uniría a los cobros de ADR-S31);
-  citas grupales o con capacidad mayor que 1; margen por servicio (hoy es de la
-  página); calendario propio de un recurso; sincronización inversa (mover el
-  evento en Google/Outlook mueve la cita); ver y gestionar las citas desde el
-  portal del cliente; recordatorios nativos por WhatsApp o SMS (hoy se arman
-  con el disparador).
+- **Agenda de citas (v0.1.313)**: «quién atiende» por equipo; calendario propio
+  de un recurso; ver y gestionar las citas desde el portal del cliente;
+  recordatorios nativos por WhatsApp (los de correo y SMS ya existen). Ya se
+  hicieron: cobrar al agendar (v0.1.387), citas grupales y margen por servicio
+  (v0.1.349), la vuelta desde el calendario (v0.1.350) y los recordatorios por
+  SMS (v0.1.332).
 - **Fórmulas (v0.1.304)**: operadores propios en las condiciones de las
   automatizaciones; funciones que agreguen registros vinculados.
 - **Tableros (v0.1.292)**: que el asistente/MCP publique o programe envíos;
@@ -286,12 +297,8 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
 - Dominios propios por Caddy (`on_demand_tls`) cuando haya muchos clientes.
 - Firma de los releases (opcional; `docs/runbook-updates.md`).
 - Un contexto por request en el servidor (baja prioridad desde v0.1.257).
-- `updateNotificationPrefsSchema.email` es una lista fija: cada tipo de aviso
-  nuevo hay que sumarlo a mano o se descarta en silencio (el de push ya se arma
-  desde `NOTIFICATION_KINDS`). Visto en v0.1.316.
-- `PATCH /lists/:id` con `settings` reemplaza el objeto entero: un PATCH
-  parcial por API o MCP borra ajustes (la marca del buzón de la mesa de ayuda
-  se conserva). Visto en v0.1.316.
+- Pruebas de pantallas (E2E) en el CI y la regla de oro nº 7 en ~38 hooks:
+  planificadas para v0.1.436 (plan de estabilización del 2026-11-18).
 
 ---
 

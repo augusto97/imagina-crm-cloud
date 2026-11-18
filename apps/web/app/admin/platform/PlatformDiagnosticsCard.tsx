@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, CircleAlert, CircleCheck, Loader2, Mail, RefreshCw, Trash2 } from 'lucide-react';
-import type { MailLogEntry, MailVia, ServerErrorEntry } from '@imagina-base/shared';
+import { Activity, CircleAlert, CircleCheck, Loader2, Mail, MonitorX, RefreshCw, Trash2 } from 'lucide-react';
+import type { ClientErrorEntry, MailLogEntry, MailVia, ServerErrorEntry } from '@imagina-base/shared';
 
 import { api } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
@@ -179,7 +179,7 @@ export function PlatformDiagnosticsCard(): JSX.Element {
                                 onClick={async () => {
                                     const ok = await confirm({
                                         title: __('¿Limpiar el diagnóstico?'),
-                                        description: __('Se borran los correos y errores registrados. Lo que pase desde ahora se vuelve a anotar.'),
+                                        description: __('Se borran los correos y los errores registrados (del servidor y de las pantallas). Lo que pase desde ahora se vuelve a anotar.'),
                                         confirmLabel: __('Limpiar'),
                                     });
                                     if (ok) clear.mutate();
@@ -228,7 +228,78 @@ export function PlatformDiagnosticsCard(): JSX.Element {
                     )}
                 </CardContent>
             </Card>
+
+            <ClientErrorsCard entries={q.data?.client_errors ?? []} />
         </div>
+    );
+}
+
+const CLIENT_KIND_LABEL: Record<ClientErrorEntry['kind'], string> = {
+    error: 'Error',
+    rejection: 'Promesa sin atrapar',
+    render: 'No se pudo dibujar',
+};
+
+/**
+ * v0.1.435 — Lo que falló en la PANTALLA de alguien (su navegador): antes
+ * quedaba en su consola y nadie se enteraba. Agrupado por mensaje, pantalla y
+ * lugar del código; nunca dice quién era.
+ */
+function ClientErrorsCard({ entries }: { entries: ClientErrorEntry[] }): JSX.Element {
+    return (
+        <Card data-testid="client-errors-card" data-tour="platform-client-errors">
+            <CardHeader>
+                <div className="imcrm-flex imcrm-items-start imcrm-gap-3">
+                    <span className="imcrm-flex imcrm-h-9 imcrm-w-9 imcrm-shrink-0 imcrm-items-center imcrm-justify-center imcrm-rounded-md imcrm-bg-muted/70 imcrm-text-foreground/60 imcrm-ring-1 imcrm-ring-border">
+                        <MonitorX className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                    </span>
+                    <div>
+                        <CardTitle>{__('Errores en las pantallas')}</CardTitle>
+                        <CardDescription>
+                            {__('Lo que falló en el navegador de alguien que usaba la app o el portal del cliente: la pantalla, el navegador y cuántas veces pasó. Nunca dice quién era. Los últimos 14 días.')}
+                        </CardDescription>
+                    </div>
+                </div>
+            </CardHeader>
+            <CardContent className="imcrm-pt-0">
+                {entries.length === 0 ? (
+                    <p className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-py-4 imcrm-text-sm imcrm-text-muted-foreground">
+                        <CircleCheck className="imcrm-h-4 imcrm-w-4 imcrm-text-emerald-600" aria-hidden />
+                        {__('Sin errores en las pantallas.')}
+                    </p>
+                ) : (
+                    <ul className="imcrm-divide-y imcrm-divide-border" data-testid="client-error-log">
+                        {entries.map((e) => (
+                            <li key={e.key} className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-py-2.5 imcrm-text-sm" data-testid="client-error">
+                                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                                    <Badge variant={e.kind === 'render' ? 'destructive' : 'secondary'}>{__(CLIENT_KIND_LABEL[e.kind])}</Badge>
+                                    {e.surface === 'portal' && <Badge variant="outline">{__('Portal del cliente')}</Badge>}
+                                    <code className="imcrm-text-xs imcrm-text-muted-foreground">{e.route}</code>
+                                    <span className="imcrm-ml-auto imcrm-text-xs imcrm-text-muted-foreground">
+                                        {e.count > 1 ? `${e.count} ${__('veces')} · ${__('última')} ` : ''}
+                                        {formatDateTimeStr(e.last_at)}
+                                    </span>
+                                </div>
+                                <span className="imcrm-break-words">{e.message}</span>
+                                <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                                    {[e.browser, e.version ? `${__('versión')} ${e.version}` : null, e.count > 1 ? `${__('desde')} ${formatDateTimeStr(e.first_at)}` : null]
+                                        .filter(Boolean)
+                                        .join(' · ')}
+                                </span>
+                                {(e.stack || e.component) && (
+                                    <details className="imcrm-text-xs imcrm-text-muted-foreground">
+                                        <summary className="imcrm-cursor-pointer">{__('Detalle técnico')}</summary>
+                                        <pre className="imcrm-mt-1 imcrm-whitespace-pre-wrap imcrm-break-all">
+                                            {[e.component ? `${__('Componente')}: ${e.component}` : null, e.stack].filter(Boolean).join('\n')}
+                                        </pre>
+                                    </details>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </CardContent>
+        </Card>
     );
 }
 

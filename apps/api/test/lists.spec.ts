@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { lists, records, tenants } from '../src/db/schema';
 import { withTenant } from '../src/db/tenant-tx';
 import { ListsRepository } from '../src/lists/lists.repository';
-import { ListsService } from '../src/lists/lists.service';
+import { ListsService, mergeListSettings } from '../src/lists/lists.service';
 import { TenantDb } from '../src/tenancy/tenant-db.service';
 import { RealtimeService } from '../src/realtime/realtime.service';
 import { startPostgres, type TestPg } from './helpers/containers';
@@ -67,6 +67,34 @@ describe('ListsService (Postgres real + RLS)', () => {
     it('slug generado que choca con reservado se prefija (lista "Records" → lista_records)', async () => {
         const l = await service.create(tenantA, { name: 'Records' });
         expect(l.slug).toBe('lista_records');
+    });
+
+    it('v0.1.435 — desde la app los ajustes se MEZCLAN: lo que no llega queda, null lo quita', async () => {
+        const l = await service.create(tenantA, { name: 'Ajustes' });
+        // Otra parte de la app guardó algo mientras tanto (la tienda, la mesa de ayuda…).
+        await service.update(tenantA, l.slug, { settings: { record_layout: 'classic', portal: { enabled: true }, shop_orders_of: { shop_id: 7 } } });
+        // La pantalla de Apariencia manda SÓLO lo que cambia.
+        const a = await service.update(tenantA, l.slug, { settings: { record_layout: 'crm', crm_template_custom: { blocks: [] } } }, { mergeSettings: true });
+        expect(a.settings).toMatchObject({ record_layout: 'crm', portal: { enabled: true }, shop_orders_of: { shop_id: 7 } });
+        // null quita la clave; lo demás sigue.
+        const b = await service.update(tenantA, l.slug, { settings: { crm_template_custom: null, crm_template_id: 'auto' } }, { mergeSettings: true });
+        expect(b.settings).not.toHaveProperty('crm_template_custom');
+        expect(b.settings).toMatchObject({ crm_template_id: 'auto', portal: { enabled: true }, shop_orders_of: { shop_id: 7 } });
+        // Los usos internos (sin mergeSettings) siguen reemplazando el objeto entero.
+        const c = await service.update(tenantA, l.slug, { settings: { only: 1 } });
+        expect(c.settings).toEqual({ only: 1 });
+        expect(mergeListSettings({ a: 1, b: 2 }, { b: null, c: 3 })).toEqual({ a: 1, c: 3 });
+    });
+
+    it('v0.1.435 — dos guardados a la vez con claves distintas no se pisan', async () => {
+        const l = await service.create(tenantA, { name: 'Paralelo' });
+        await Promise.all([
+            service.update(tenantA, l.slug, { settings: { title_field_id: null, portal: { enabled: true } } }, { mergeSettings: true }),
+            service.update(tenantA, l.slug, { settings: { record_layout: 'crm' } }, { mergeSettings: true }),
+            service.update(tenantA, l.slug, { settings: { dependencies: { cascade: true } } }, { mergeSettings: true }),
+        ]);
+        const fresh = await service.get(tenantA, l.slug);
+        expect(fresh.settings).toMatchObject({ portal: { enabled: true }, record_layout: 'crm', dependencies: { cascade: true } });
     });
 
     it('list devuelve las listas del tenant ordenadas por posición', async () => {

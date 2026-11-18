@@ -193,11 +193,55 @@ export const serverConfigStatusSchema = z.object({
 });
 export type ServerConfigStatus = z.infer<typeof serverConfigStatusSchema>;
 
+/**
+ * v0.1.435 — Un error que pasó en la PANTALLA de alguien (el navegador), no en
+ * el servidor: una excepción de JavaScript, una promesa rechazada o una parte
+ * de la app que no se pudo dibujar. Antes se perdían en la consola de quien los
+ * veía; ahora llegan a Plataforma → Diagnóstico, agrupados.
+ */
+export const CLIENT_ERROR_KINDS = ['error', 'rejection', 'render'] as const;
+export const CLIENT_ERROR_SURFACES = ['app', 'portal'] as const;
+
+/** Lo que manda el navegador (todo se vuelve a recortar en el servidor). */
+export const clientErrorReportSchema = z.object({
+    kind: z.enum(CLIENT_ERROR_KINDS),
+    surface: z.enum(CLIENT_ERROR_SURFACES).default('app'),
+    message: z.string().min(1).max(2000),
+    /** Ruta SIN consulta ni ancla (pueden traer tokens). */
+    route: z.string().max(500).default('/'),
+    stack: z.string().max(8000).optional(),
+    /** Primera línea del stack de componentes de React (errores de dibujo). */
+    component: z.string().max(300).optional(),
+});
+export type ClientErrorReport = z.infer<typeof clientErrorReportSchema>;
+
+/** Un error de pantalla agrupado (mismo mensaje, misma pantalla, mismo lugar). */
+export const clientErrorEntrySchema = z.object({
+    key: z.string(),
+    kind: z.enum(CLIENT_ERROR_KINDS),
+    surface: z.enum(CLIENT_ERROR_SURFACES),
+    message: z.string(),
+    /** La pantalla, con los números cambiados por `:id` (`/lists/:id/records`). */
+    route: z.string(),
+    stack: z.string().nullable().default(null),
+    component: z.string().nullable().default(null),
+    /** Navegador y sistema en una línea («Chrome 131 · Android»). */
+    browser: z.string().nullable().default(null),
+    /** Versión de la app que respondía cuando llegó. */
+    version: z.string().nullable().default(null),
+    count: z.number().int(),
+    first_at: z.string(),
+    last_at: z.string(),
+});
+export type ClientErrorEntry = z.infer<typeof clientErrorEntrySchema>;
+
 export const platformDiagnosticsSchema = z.object({
     server: serverConfigStatusSchema,
     account_mail: accountMailStatusSchema,
     mail: z.array(mailLogEntrySchema),
     errors: z.array(serverErrorEntrySchema),
+    /** v0.1.435 — los errores de las pantallas (agrupados, del más reciente al más viejo). */
+    client_errors: z.array(clientErrorEntrySchema).default([]),
 });
 export type PlatformDiagnostics = z.infer<typeof platformDiagnosticsSchema>;
 

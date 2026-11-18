@@ -15,6 +15,7 @@ import { widgetStats } from '../db/schema';
 import { isForeignKeyViolation } from '../forms/form-stats.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { workersEnabled } from '../redis/queue-runtime';
 
 /**
  * v0.1.396 (ADR-S99) — Estadísticas del widget de contacto: cuántas veces
@@ -91,6 +92,7 @@ export class WidgetStatsService implements OnModuleInit, OnModuleDestroy {
     ) {}
 
     onModuleInit(): void {
+        if (!workersEnabled()) return;
         this.timer = setInterval(() => {
             this.flush().catch((err: unknown) => this.logger.warn(`Volcado de estadísticas de widgets: ${String(err)}`));
         }, FLUSH_EVERY_MS);

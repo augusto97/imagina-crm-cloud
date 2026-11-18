@@ -64,7 +64,7 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
         const next = { ...portal, enabled };
         setPortal(next);
         try {
-            await update.mutateAsync({ settings: mergeIntoSettings(list.settings, next) });
+            await update.mutateAsync({ settings: { portal: next } });
         } catch (err) {
             setPortal(portal); // revertir
             setSubmitError(
@@ -79,7 +79,7 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
         const merged = { ...portal, creatable_lists: next };
         setPortal(merged);
         try {
-            await update.mutateAsync({ settings: mergeIntoSettings(list.settings, merged) });
+            await update.mutateAsync({ settings: { portal: merged } });
         } catch (err) {
             setPortal(previous);
             setSubmitError(err instanceof ApiError || err instanceof Error ? err.message : __('Error desconocido'));
@@ -92,7 +92,7 @@ export function PortalConfigPanel({ list }: Props): JSX.Element {
         const next = { ...portal, related_lists: ids };
         setPortal(next);
         try {
-            await update.mutateAsync({ settings: mergeIntoSettings(list.settings, next) });
+            await update.mutateAsync({ settings: { portal: next } });
         } catch (err) {
             setPortal(previous);
             setSubmitError(
@@ -346,9 +346,3 @@ function readTemplate(settings: Record<string, unknown>): PortalTemplate {
     return { blocks: [] };
 }
 
-function mergeIntoSettings(
-    current: Record<string, unknown>,
-    portal: PortalSettings,
-): Record<string, unknown> {
-    return { ...current, portal };
-}

@@ -3,6 +3,7 @@
 # ADR-S104). Se corre UNA vez como root; volver a correrlo lo actualiza:
 #
 #   bash /opt/imagina-base/current/deploy/install-guardian.sh [dominio] [--puerto 8899] [--sin-rescate]
+#                                                             [--un-proceso | --procesos-separados]
 #
 # Deja el guardián en archivos de root que la app no puede modificar
 # (/usr/local/lib/imagina-base, /etc/imagina-base) y lo programa cada minuto
@@ -14,6 +15,15 @@
 # (imagina-rescue) en su propio puerto, con clave, que funciona aunque la app o
 # Nginx no abran. Corre con un usuario sin permisos (imagina-rescue) y sólo
 # puede pedirle cosas al guardián, igual que la app.
+#
+# v0.1.435 — Separa la app en dos procesos: imagina-api atiende a las personas
+# e imagina-worker hace los trabajos en segundo plano (automatizaciones,
+# correos, sincronizaciones, copias). Si un trabajo pesado se traba, la app
+# sigue atendiendo. Se hace sólo si el servidor tiene al menos 1,5 GB de RAM
+# (cada proceso usa unos 300-500 MB); --un-proceso lo deja como antes y
+# --procesos-separados lo fuerza. También deja que la app reinicie, detenga y
+# arranque sus servicios al actualizarse o restaurar una copia (sudoers) y que
+# esos scripts no mueran con el reinicio (KillMode=process).
 set -euo pipefail
 
 fail() { printf '\nERROR: %s\n' "$*" >&2; exit 1; }
@@ -28,16 +38,19 @@ GROUP=$(id -gn "$OWNER" 2>/dev/null) || fail "no existe el usuario $OWNER."
 
 RESCUE_PORT_ARG=
 RESCUE_OFF_ARG=0
+WORKER_ARG=
 DOMAIN_ARG=
 while [ $# -gt 0 ]; do
     case "$1" in
         --puerto) RESCUE_PORT_ARG="${2:-}"; shift 2 || fail "falta el número después de --puerto." ;;
         --puerto=*) RESCUE_PORT_ARG="${1#*=}"; shift ;;
         --sin-rescate) RESCUE_OFF_ARG=1; shift ;;
+        --un-proceso) WORKER_ARG=0; shift ;;
+        --procesos-separados) WORKER_ARG=1; shift ;;
         -h|--help)
-            echo "Uso: bash $0 [dominio] [--puerto 8899] [--sin-rescate]"
+            echo "Uso: bash $0 [dominio] [--puerto 8899] [--sin-rescate] [--un-proceso | --procesos-separados]"
             exit 0 ;;
-        -*) fail "no conozco la opción $1 (las que hay: --puerto N, --sin-rescate)." ;;
+        -*) fail "no conozco la opción $1 (las que hay: --puerto N, --sin-rescate, --un-proceso, --procesos-separados)." ;;
         *) DOMAIN_ARG="$1"; shift ;;
     esac
 done
@@ -50,7 +63,10 @@ CONF_DIR="${GUARDIAN_CONF_DIR:-/etc/imagina-base}"
 STATE="${GUARDIAN_STATE:-/var/lib/imagina-base/guardian}"
 UNIT_DIR="${GUARDIAN_UNIT_DIR:-/etc/systemd/system}"
 BIN_DIR="${GUARDIAN_BIN_DIR:-/usr/local/bin}"
+SUDOERS_DIR="${GUARDIAN_SUDOERS_DIR:-/etc/sudoers.d}"
+MEMINFO="${GUARDIAN_MEMINFO:-/proc/meminfo}"
 SERVICE="${SERVICE:-imagina-api}"
+WORKER_SERVICE="${WORKER_SERVICE:-imagina-worker}"
 
 [ -f "$HERE/guardian/imagina-guardian.sh" ] || fail "no encontré $HERE/guardian/imagina-guardian.sh (¿la versión instalada es anterior a la 0.1.431?)."
 command -v systemctl >/dev/null 2>&1 || fail "este servidor no usa systemd."
@@ -89,16 +105,42 @@ if [ "$RESCUE_PORT" -lt 1024 ] || [ "$RESCUE_PORT" -gt 65535 ] || [ "$RESCUE_POR
     fail "elige otro puerto para la página de rescate: entre 1024 y 65535 y distinto del de la app ($API_PORT)."
 fi
 RESCUE_USER="${GUARDIAN_RESCUE_USER:-imagina-rescue}"
-NODE_BIN=
-if [ "$RESCUE_ENABLED" = 1 ]; then
-    # El mismo node con el que corre la app.
-    NODE_BIN=$(systemctl show -p ExecStart --value "$SERVICE" 2>/dev/null | grep -oE 'path=[^ ;]+' | head -1 | cut -d= -f2 || true)
-    case "$(basename -- "${NODE_BIN:-x}")" in node|nodejs) ;; *) NODE_BIN=$(command -v node || true) ;; esac
-    if [ -z "$NODE_BIN" ] || [ ! -x "$NODE_BIN" ]; then
-        echo "→ No encontré node en este servidor: la página de rescate queda apagada (los comandos por SSH sí funcionan)."
-        RESCUE_ENABLED=0
+# El mismo node con el que corre la app.
+NODE_BIN=$(systemctl show -p ExecStart --value "$SERVICE" 2>/dev/null | grep -oE 'path=[^ ;]+' | head -1 | cut -d= -f2 || true)
+case "$(basename -- "${NODE_BIN:-x}")" in node|nodejs) ;; *) NODE_BIN=$(command -v node || true) ;; esac
+[ -n "$NODE_BIN" ] && [ -x "$NODE_BIN" ] || NODE_BIN=
+if [ "$RESCUE_ENABLED" = 1 ] && [ -z "$NODE_BIN" ]; then
+    echo "→ No encontré node en este servidor: la página de rescate queda apagada (los comandos por SSH sí funcionan)."
+    RESCUE_ENABLED=0
+fi
+
+# ── Dos procesos: la app y los trabajos en segundo plano ──────────────────
+WORKER_ENABLED=${WORKER_ARG:-$(prev_conf WORKER_ENABLED)}
+MEM_MB=$(awk '/^MemTotal:/ { printf "%d", $2 / 1024 }' "$MEMINFO" 2>/dev/null || echo 0)
+WORKER_NOTE=
+if [ -z "$WORKER_ENABLED" ]; then
+    if [ "${MEM_MB:-0}" -ge 1536 ]; then
+        WORKER_ENABLED=1
+    else
+        WORKER_ENABLED=0
+        WORKER_NOTE="el servidor tiene ${MEM_MB:-?} MB de RAM (hacen falta 1,5 GB para dos procesos)"
     fi
 fi
+if [ "$WORKER_ENABLED" = 1 ] && [ -z "$NODE_BIN" ]; then
+    WORKER_ENABLED=0
+    WORKER_NOTE="no encontré node en este servidor"
+fi
+WORKER_PORT=$(prev_conf WORKER_PORT); WORKER_PORT=${WORKER_PORT:-3901}
+port_busy() {
+    command -v ss >/dev/null 2>&1 && ss -Hltn "( sport = :$1 )" 2>/dev/null | grep -q .
+}
+if [ "$WORKER_ENABLED" = 1 ] && ! systemctl is-active --quiet "$WORKER_SERVICE" 2>/dev/null; then
+    p=$WORKER_PORT
+    while { port_busy "$p" || [ "$p" = "$API_PORT" ] || [ "$p" = "$RESCUE_PORT" ]; } && [ "$p" -lt 3999 ]; do p=$((p + 1)); done
+    WORKER_PORT=$p
+fi
+APP_WORKDIR=$(systemctl show -p WorkingDirectory --value "$SERVICE" 2>/dev/null || true)
+case "$APP_WORKDIR" in /*) ;; *) APP_WORKDIR="$BASE/current/apps/api" ;; esac
 if [ "$RESCUE_ENABLED" = 1 ] && command -v ss >/dev/null 2>&1 \
     && ss -Hltn "( sport = :$RESCUE_PORT )" 2>/dev/null | grep -q . \
     && ! systemctl is-active --quiet imagina-rescue 2>/dev/null; then
@@ -147,6 +189,9 @@ APP_USER=$APP_USER
 RESCUE_ENABLED=$RESCUE_ENABLED
 RESCUE_PORT=$RESCUE_PORT
 RESCUE_USER=$RESCUE_USER
+WORKER_ENABLED=$WORKER_ENABLED
+WORKER_SERVICE=$WORKER_SERVICE
+WORKER_PORT=$WORKER_PORT
 CONF
 chmod 0644 "$CONF_DIR/guardian.conf"
 chown "$OWNER:$GROUP" "$(dirname "$STATE")" "$STATE" "$STATE/state"
@@ -246,7 +291,93 @@ RCONF
     fi
 fi
 
+# ── Los dos procesos (v0.1.435) ─────────────────────────────────────────────
+DROPIN_DIR="$UNIT_DIR/$SERVICE.service.d"
+DROPIN="$DROPIN_DIR/10-imagina.conf"
+mkdir -p "$DROPIN_DIR"
+OLD_DROPIN=$(cat "$DROPIN" 2>/dev/null || true)
+# $1: la línea del papel (o vacío = un solo proceso).
+api_dropin() {
+    printf '%s\n' \
+        '# Lo escribe deploy/install-guardian.sh (v0.1.435). Volver a correr el instalador lo rehace.' \
+        '[Service]'
+    [ -n "$1" ] && printf '%s\n' "$1"
+    printf '%s\n' \
+        '# Actualizar y restaurar una copia lanzan scripts que reinician este servicio:' \
+        '# con KillMode=process no mueren con él (y el health-check con vuelta atrás corre).' \
+        'KillMode=process'
+}
+if [ "$WORKER_ENABLED" = 1 ]; then
+    sed -e "s#@USER@#$APP_USER#g" -e "s#@WORKDIR@#$APP_WORKDIR#g" -e "s#@ENVFILE@#$ENV_FILE#g" \
+        -e "s#@NODE@#$NODE_BIN#g" -e "s#@PORT@#$WORKER_PORT#g" \
+        "$HERE/guardian/imagina-worker.service" > "$UNIT_DIR/$WORKER_SERVICE.service"
+    chown "$OWNER:$GROUP" "$UNIT_DIR/$WORKER_SERVICE.service"
+    chmod 0644 "$UNIT_DIR/$WORKER_SERVICE.service"
+fi
+
+# La app (su usuario, sin otra cosa de root) puede reiniciar, detener y
+# arrancar SUS servicios: lo usan la actualización (finalize.sh) y restaurar
+# una copia (snapshot-restore.sh). Se valida con visudo antes de dejarlo.
+if [ "$APP_USER" != root ] && [ -d "$SUDOERS_DIR" ]; then
+    SYSTEMCTL_BIN=$(command -v systemctl)
+    cmds=
+    for svc in "$SERVICE" "$WORKER_SERVICE"; do
+        for verb in restart start stop; do cmds="${cmds:+$cmds, }$SYSTEMCTL_BIN $verb $svc"; done
+    done
+    SUDOERS_FILE="$SUDOERS_DIR/imagina-base"
+    printf '# Lo escribe deploy/install-guardian.sh (v0.1.435).\n%s ALL=(root) NOPASSWD: %s\n' "$APP_USER" "$cmds" > "$SUDOERS_FILE.tmp"
+    chmod 0440 "$SUDOERS_FILE.tmp"
+    if ! command -v visudo >/dev/null 2>&1 || visudo -cf "$SUDOERS_FILE.tmp" >/dev/null 2>&1; then
+        mv -f "$SUDOERS_FILE.tmp" "$SUDOERS_FILE"
+    else
+        rm -f "$SUDOERS_FILE.tmp"
+        echo "→ No pude dejar el permiso para reiniciar los servicios (visudo lo rechazó): la app se reinicia sola igual."
+    fi
+fi
+
 systemctl daemon-reload
+
+wait_worker() {
+    local i
+    for i in $(seq 1 45); do
+        curl -fsS -m 3 -o /dev/null "http://127.0.0.1:$WORKER_PORT/api/v1/health/live" 2>/dev/null && return 0
+        sleep 2
+    done
+    return 1
+}
+ROLE_CHANGED=0
+if [ "$WORKER_ENABLED" = 1 ]; then
+    systemctl enable "$WORKER_SERVICE" >/dev/null 2>&1 || true
+    systemctl restart "$WORKER_SERVICE" 2>/dev/null || true
+    if wait_worker; then
+        api_dropin "Environment=IMAGINA_ROLE=api" > "$DROPIN.tmp"
+    else
+        echo "→ El proceso de los trabajos en segundo plano no arrancó: la app sigue en un solo proceso."
+        journalctl -u "$WORKER_SERVICE" -n 8 --no-pager 2>/dev/null | sed 's/^/    /' || true
+        systemctl disable --now "$WORKER_SERVICE" >/dev/null 2>&1 || true
+        WORKER_ENABLED=0
+        WORKER_NOTE="el proceso nuevo no arrancó (el detalle está arriba)"
+        sed -i 's/^WORKER_ENABLED=1$/WORKER_ENABLED=0/' "$CONF_DIR/guardian.conf"
+        api_dropin "" > "$DROPIN.tmp"
+    fi
+else
+    if [ -f "$UNIT_DIR/$WORKER_SERVICE.service" ]; then
+        systemctl disable --now "$WORKER_SERVICE" >/dev/null 2>&1 || true
+    fi
+    api_dropin "" > "$DROPIN.tmp"
+fi
+chown "$OWNER:$GROUP" "$DROPIN.tmp"
+chmod 0644 "$DROPIN.tmp"
+mv -f "$DROPIN.tmp" "$DROPIN"
+if [ "$(cat "$DROPIN")" != "$OLD_DROPIN" ]; then
+    systemctl daemon-reload
+    # El papel nuevo recién vale al reiniciar la app (unos segundos sin atender).
+    if grep -q IMAGINA_ROLE "$DROPIN" || printf '%s' "$OLD_DROPIN" | grep -q IMAGINA_ROLE; then
+        systemctl restart "$SERVICE" 2>/dev/null || true
+        ROLE_CHANGED=1
+    fi
+fi
+
 systemctl enable --now imagina-guardian.timer imagina-guardian.path >/dev/null
 if [ "$RESCUE_ENABLED" = 1 ]; then
     systemctl enable imagina-rescue >/dev/null 2>&1 || true
@@ -264,6 +395,12 @@ echo "  servidor web      $WEB_MODE"
 echo "  base de datos     ${PG_CONTAINER:-(no encontré el contenedor: no se vigila)}"
 echo "  redis             ${REDIS_SERVICE:-(no es un servicio del sistema: no se vigila)}"
 echo "  usuario de la app $APP_USER"
+if [ "$WORKER_ENABLED" = 1 ]; then
+    echo "  procesos          separados: $SERVICE atiende y $WORKER_SERVICE hace los trabajos en segundo plano"
+else
+    echo "  procesos          uno solo${WORKER_NOTE:+ ($WORKER_NOTE)}"
+fi
+[ "$ROLE_CHANGED" = 1 ] && echo "  (se reinició la app para tomar el cambio: unos segundos sin atender)"
 echo
 if [ -f "$STATE/status.json" ]; then
     echo "Primera revisión:"
