@@ -298,13 +298,13 @@ export class PlatformService {
                       .where(inArray(tenants.id, agencyIds)),
             agencyRowIds.length === 0
                 ? Promise.resolve(new Map<number, number>())
-                : this.countByTenant(
-                      this.db
-                          .select({ tid: sql<number>`${tenants.agencyId}`, n: intCount() })
-                          .from(tenants)
-                          .where(and(inArray(tenants.agencyId, agencyRowIds), isNull(tenants.archivedAt)))
-                          .groupBy(tenants.agencyId),
-                  ),
+                : this.db
+                      .select({ tid: tenants.agencyId, n: intCount() })
+                      .from(tenants)
+                      .where(and(inArray(tenants.agencyId, agencyRowIds), isNull(tenants.archivedAt)))
+                      .groupBy(tenants.agencyId)
+                      // `Number`: la clave del mapa tiene que ser el número del id, no su texto.
+                      .then((rows) => new Map(rows.map((r) => [Number(r.tid), Number(r.n)]))),
         ]);
         return { agencies: new Map(agencies.map((a) => [a.id, a])), clients: counts };
     }

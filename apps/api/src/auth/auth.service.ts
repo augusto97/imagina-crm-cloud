@@ -567,7 +567,7 @@ export class AuthService implements OnModuleInit {
             });
         }
         this.logger.log(
-            `Empresa ${result.tenantId} creada por operador (admin ${result.email}${result.invited ? ', invitado' : ''})`,
+            `Empresa ${result.tenantId} creada por ${opts.agencyId ? `la agencia ${opts.agencyId}` : 'operador'} (admin ${result.email}${result.invited ? ', invitado' : ''})`,
         );
         return { tenantId: result.tenantId, invited: result.invited };
     }
