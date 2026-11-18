@@ -287,7 +287,25 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         screens: ['settings:papelera', 'records'],
         keywords: 'papelera borrado recuperar restaurar eliminado deshacer',
         route: '/settings?s=papelera',
-        related: ['bulk-edit'],
+        related: ['bulk-edit', 'duplicates'],
+    },
+    {
+        id: 'duplicates',
+        title: '¿Cómo encuentro y junto registros duplicados?',
+        category: 'lists',
+        minutes: 2,
+        body: [
+            '1. En la lista toca **Personalizar vista → Buscar duplicados**: aparecen los grupos de registros que comparten el correo, el teléfono, el documento o lo que elijas.',
+            '2. En cada grupo toca **Fusionar** o, si no son la misma cosa, **No son duplicados** (no vuelven a aparecer juntos).',
+            '3. Al fusionar elige **cuál queda** y, campo por campo, qué valor se conserva (o **Juntar todos** en etiquetas, equipos y archivos). Los comentarios, los vínculos y las subtareas pasan al que queda; los demás van a la papelera.',
+            'También puedes marcar 2 a 10 registros y tocar **Fusionar** en la barra de abajo, y la ficha avisa cuando un registro parece repetido.',
+            'En **Cambiar con qué se reconocen** eliges qué datos se comparan (por ejemplo, Nombre + Ciudad), y con **Avisar al crear un registro** el alta avisa si ya existe uno igual.',
+        ].join('\n'),
+        tip: 'Una fusión se deshace con el aviso que aparece al terminar o desde **Personalizar vista → Historial de ediciones masivas**.',
+        screens: ['records'],
+        keywords: 'duplicados repetidos duplicado fusionar juntar combinar unir mismo correo telefono nit limpiar contactos',
+        route: '/lists/{list}/records',
+        related: ['bulk-edit', 'trash', 'import-excel'],
     },
 
     // ── Vistas ────────────────────────────────────────────────────────────

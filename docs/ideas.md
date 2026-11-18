@@ -28,7 +28,7 @@ en `CONTINUIDAD.md` §10) y después estos módulos, que salen de este banco al
 publicarse: **G2** en parte (la API con tokens salió en v0.1.441, los webhooks
 de eventos en v0.1.442 y la app de n8n en v0.1.443; quedan Make y Zapier),
 **E1 + E2** en parte («buscar registros», «crear o actualizar por un dato» y
-«cuando se agrega un comentario» salieron en v0.1.444), **A14** (duplicados y fusionar), **D6**
+«cuando se agrega un comentario» salieron en v0.1.444), **A14** (duplicados y fusionar: salió en v0.1.445), **D6**
 (firma electrónica) y **G8** (facturación DIAN: falta elegir proveedor y tener
 credenciales de prueba) e **I3** (modo agencia: falta decidir quién le cobra al
 cliente final).
@@ -84,8 +84,7 @@ aquí, pospuestos:
 **Oleada 7 · el usuario eligió el 2026-10-26 sólo «Empezar fácil»**, ampliado
 con guías y recorridos interactivos, centro de ayuda y novedades (F7 + I7 +
 I9 se publicaron en v0.1.318-v0.1.320 y salieron de este banco). Siguen aquí, sin
-elegir: E1 + E2 + E3 (automatizaciones completas), A14 (duplicados y
-fusionar), F1 + F2 + E7 + mejoras de agentes (IA en el día a día) y G4
+elegir: E1 + E2 + E3 (automatizaciones completas), F1 + F2 + E7 + mejoras de agentes (IA en el día a día) y G4
 (calendario en dos sentidos).
 
 ---
@@ -102,7 +101,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | A11 · Ubicación / dirección con autocompletado, latitud y longitud | medio · M | Base de B3 (mapa). OpenStreetMap o la clave de Google de cada empresa. |
 | A12 · Código de barras / QR como campo | medio · S | Con H3 se escanea con la cámara. **En parte hecho en v0.1.344**: cada registro tiene su QR (enlace o el valor del campo «Código»), con etiquetas en PDF y variables para correos y documentos. Lo que queda es un tipo de campo que dibuje el código de barras (EAN/Code 128) dentro de la tabla. |
 | A13 · Moneda múltiple con conversión y tasa del día | medio · M | |
-| A14 · Duplicados: avisar al crear y herramienta «Fusionar» | alto (CRM) · M-L | |
 | A15 · Etiquetas compartidas entre listas | medio · S-M | |
 | A16 · Punto de restauración de una lista («volver a como estaba ayer») | medio · M | Hoy hay copias del servidor y de una empresa, y deshacer de ediciones masivas. |
 

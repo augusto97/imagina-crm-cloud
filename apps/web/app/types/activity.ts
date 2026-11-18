@@ -8,6 +8,8 @@ export type ActivityAction =
     | 'record_updated'
     | 'record_deleted'
     | 'record_restored'
+    // A14 — fusión de duplicados: `changes.merge = {event, …}`.
+    | 'record_merged'
     // A8 — dependencias: `changes.dependency = {kind, record_id, title}`.
     | 'dependency_added'
     | 'dependency_removed'

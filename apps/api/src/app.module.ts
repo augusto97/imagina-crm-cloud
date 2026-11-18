@@ -69,6 +69,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { RecordChangeHubModule } from './records/record-change-hub';
 import { EventWebhookHubModule } from './event-webhooks/event-hub';
 import { EventWebhooksModule } from './event-webhooks/event-webhooks.module';
+import { DuplicatesModule } from './duplicates/duplicates.module';
 import { PublicCacheModule } from './public-cache/public-cache.service';
 import { RecordsModule } from './records/records.module';
 import { ButtonsModule } from './buttons/buttons.module';
@@ -125,6 +126,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         WhatsappModule,
         SmsModule,
         EventWebhooksModule,
+        DuplicatesModule,
         DocumentsModule,
         FormsModule,
         ContactWidgetsModule,

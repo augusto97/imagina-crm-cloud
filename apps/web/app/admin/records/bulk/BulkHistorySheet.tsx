@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, CornerDownRight, History, Layers, Loader2, Store, Trash2, Undo2, Wand2 } from 'lucide-react';
+import { Copy, CornerDownRight, GitMerge, History, Layers, Loader2, Store, Trash2, Undo2, Wand2 } from 'lucide-react';
 import type { BulkEditLog } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -119,6 +119,6 @@ export function BulkHistorySheet({ open, onOpenChange, listId }: BulkHistoryShee
 
 /** Icono por tipo de edición (v0.1.220 suma mover, duplicar y borrar). */
 function KindIcon({ kind }: { kind: BulkEditLog['kind'] }): JSX.Element {
-    const Icon = kind === 'store' ? Store : kind === 'store_create' ? Layers : kind === 'move' ? CornerDownRight : kind === 'duplicate' ? Copy : kind === 'delete' ? Trash2 : Wand2;
+    const Icon = kind === 'store' ? Store : kind === 'store_create' ? Layers : kind === 'move' ? CornerDownRight : kind === 'duplicate' ? Copy : kind === 'delete' ? Trash2 : kind === 'merge' ? GitMerge : Wand2;
     return <Icon className="imcrm-h-3.5 imcrm-w-3.5" />;
 }

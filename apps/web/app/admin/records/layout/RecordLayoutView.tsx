@@ -1,5 +1,5 @@
 import { Fragment, useMemo, type CSSProperties, type ReactNode } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { ArrowLeft, Check, Loader2, Paintbrush, Trash2 } from 'lucide-react';
 import type { LayoutSection, RecordLayoutV3 } from '@imagina-base/shared';
 
@@ -24,6 +24,7 @@ import { RecordShopOrderPanel } from '@/admin/shop/RecordShopOrderPanel';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
 import { RecordSubscriptionPanel } from '@/cloud/components/subscriptions/RecordSubscriptionPanel';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
+import { RecordDuplicateBanner } from '../duplicates/DuplicateHints';
 import { lockedReasonsFor, recordGoneInSource, useStoreRules } from '../storeRules';
 import { LayoutBlockView } from './LayoutBlocks';
 import { LayoutContext, useLayoutCtx, type LayoutCtx } from './LayoutContext';
@@ -192,6 +193,8 @@ function ImplicitPayments({ layout }: { layout: RecordLayoutV3 }): JSX.Element |
 function ImplicitApprovals({ layout }: { layout: RecordLayoutV3 }): JSX.Element | null {
     const ctx = useLayoutCtx();
     const isGuest = useIsGuest();
+    const navigate = useNavigate();
+    const storeRules = useStoreRules();
     const placed = layout.pages.some((p) => p.sections.some((s) => s.blocks.some((col) => col.some((b) => b.type === 'approval'))));
     // C3 — las aprobaciones son de la empresa: un invitado no las ve.
     if (isGuest) return null;
@@ -202,6 +205,17 @@ function ImplicitApprovals({ layout }: { layout: RecordLayoutV3 }): JSX.Element 
     const booking =
         ctx.preview === true ? null : (
             <>
+                {/* A14 — «Posible duplicado de X» (Fusionar / No es duplicado). */}
+                {!storeRules && ctx.mode !== 'portal' && !ctx.record.parent_id && (
+                    <RecordDuplicateBanner
+                        listId={ctx.list.id}
+                        listSlug={ctx.list.slug}
+                        recordId={ctx.record.id}
+                        fields={ctx.fields}
+                        onOpenRecord={(id) => navigate(`/lists/${ctx.list.slug}/records/${id}`)}
+                        className="imcrm-mb-3"
+                    />
+                )}
                 <RecordBookingPanel listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />
                 <RecordShopOrderPanel listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />
             </>

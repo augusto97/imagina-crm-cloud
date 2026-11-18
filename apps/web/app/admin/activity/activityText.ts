@@ -106,6 +106,22 @@ export function dependencyText(entry: ActivityEntity): string {
     return added ? sprintf(__('marcó que está bloqueado por %s'), title) : sprintf(__('quitó que estaba bloqueado por %s'), title);
 }
 
+/** A14 — fusiones: `diff.merge` = {event: merged | merged_into | unmerged, …}. */
+export function mergeText(entry: ActivityEntity): string {
+    const m = (entry.changes as { merge?: { event?: string; ids?: number[]; titles?: string[]; into?: number; title?: string } } | null)?.merge;
+    if (m?.event === 'merged_into') {
+        return sprintf(__('lo fusionó en %s (se movió a la papelera)'), quoted(m.title, m.into ? sprintf(__('el registro #%d'), m.into) : __('otro registro')));
+    }
+    if (m?.event === 'unmerged') {
+        const n = m.ids?.length ?? 0;
+        return n === 1 ? __('deshizo la fusión: volvió a separar 1 registro') : sprintf(__('deshizo la fusión: volvió a separar %d registros'), n);
+    }
+    const titles = (m?.titles ?? []).filter((t) => typeof t === 'string' && t !== '');
+    if (titles.length === 1) return sprintf(__('fusionó «%s» en este registro'), titles[0]!);
+    if (titles.length > 1) return sprintf(__('fusionó %d registros en este: %s'), titles.length, titles.map((t) => `«${t}»`).join(', '));
+    return __('fusionó otros registros en este');
+}
+
 function quoted(s: unknown, fallback: string): string {
     return typeof s === 'string' && s !== '' ? `«${s}»` : fallback;
 }
@@ -375,6 +391,8 @@ export function actionText(entry: ActivityEntity, changeCount: number): string {
         // C6 — el registro nació de una plantilla.
         case 'record_template_applied':
             return templateAppliedText(entry);
+        case 'record_merged':
+            return mergeText(entry);
         case 'sms':
             return smsText(entry);
         case 'whatsapp':

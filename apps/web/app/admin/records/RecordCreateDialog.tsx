@@ -25,6 +25,7 @@ import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import type { FieldEntity } from '@/types/field';
 
+import { CreateDuplicateHint } from './duplicates/DuplicateHints';
 import { RecordFieldsForm } from './RecordFieldsForm';
 import { RecordTitleInput } from './RecordTitleInput';
 import { titleFieldOf } from '@/lib/recordTitle';
@@ -37,6 +38,8 @@ interface RecordCreateDialogProps {
      * ("{lista} / Nuevo registro"). Opcional para retro-compatibilidad.
      */
     listName?: string;
+    /** A14 — para enlazar el aviso «ya existe uno parecido» (si no, sólo el nombre). */
+    listSlug?: string;
     fields: FieldEntity[];
     open: boolean;
     onOpenChange: (open: boolean) => void;
@@ -70,6 +73,7 @@ interface RecordCreateDialogProps {
 export function RecordCreateDialog({
     listId,
     listName,
+    listSlug,
     fields,
     open,
     onOpenChange,
@@ -363,6 +367,9 @@ export function RecordCreateDialog({
                                         hiddenSlugs={titleField ? [titleField.slug] : undefined}
                                     />
                                 </div>
+
+                                {/* A14 — mientras se escribe: ¿ya existe uno parecido? */}
+                                <CreateDuplicateHint listId={listId} listSlug={listSlug} fields={fields} values={values} />
 
                                 {error !== null && (
                                     <div className="imcrm-mt-4 imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">

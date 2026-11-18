@@ -1,4 +1,4 @@
-import { Copy, CornerDownRight, Layers, MessageSquareText, MousePointerClick, QrCode, Store, Trash2, UserPlus, Wand2, X } from 'lucide-react';
+import { Copy, CornerDownRight, GitMerge, Layers, MessageSquareText, MousePointerClick, QrCode, Store, Trash2, UserPlus, Wand2, X } from 'lucide-react';
 import type { BulkStructureAction } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,8 @@ interface BulkActionsToolbarProps {
     onSendSms?: () => void;
     /** v0.1.344 — imprimir etiquetas con el QR de cada registro seleccionado. */
     onPrintLabels?: () => void;
+    /** A14 (v0.1.445) — fusionar los seleccionados (de 2 a 10) en uno. */
+    onMerge?: () => void;
 }
 
 /**
@@ -59,6 +61,7 @@ export function BulkActionsToolbar({
     onPressButton,
     onSendSms,
     onPrintLabels,
+    onMerge,
 }: BulkActionsToolbarProps): JSX.Element | null {
     if (selectedIds.length === 0) return null;
 
@@ -246,6 +249,22 @@ export function BulkActionsToolbar({
                 >
                     <Copy className="imcrm-h-3.5 imcrm-w-3.5" />
                     <span className="imcrm-hidden sm:imcrm-inline">{__('Duplicar')}</span>
+                </Button>
+            )}
+
+            {onMerge && selectedIds.length >= 2 && selectedIds.length <= 10 && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="imcrm-gap-1.5"
+                    onClick={onMerge}
+                    data-testid="imcrm-bulk-merge-open"
+                    data-tour="bulk-merge"
+                    aria-label={__('Fusionar')}
+                    title={__('Fusionar en uno (los otros van a la papelera)')}
+                >
+                    <GitMerge className="imcrm-h-3.5 imcrm-w-3.5" />
+                    <span className="imcrm-hidden sm:imcrm-inline">{__('Fusionar')}</span>
                 </Button>
             )}
 

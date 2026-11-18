@@ -139,6 +139,9 @@ const ImportDialog = lazyWithReload(() => import('./ImportDialog').then((m) => (
 const ShareDialog = lazyWithReload(() => import('./ShareDialog').then((m) => ({ default: m.ShareDialog })));
 // v0.1.341 — sugerencias para esta lista (a pedido: sólo se baja al abrirse).
 const ListSuggestionsSheet = lazyWithReload(() => import('./suggestions/ListSuggestionsSheet').then((m) => ({ default: m.ListSuggestionsSheet })));
+// A14 (v0.1.445) — duplicados y fusionar: a pedido.
+const DuplicatesSheet = lazyWithReload(() => import('./duplicates/DuplicatesSheet').then((m) => ({ default: m.DuplicatesSheet })));
+const MergeDialog = lazyWithReload(() => import('./duplicates/MergeDialog').then((m) => ({ default: m.MergeDialog })));
 // H3 — escáner de códigos de la lista (cámara + lector): sólo se baja al abrirlo.
 // Se abren de vez en cuando y traen los editores de configuración de campos
 // (botón, reglas, IA, fórmula…): a pedido, la primera vez que se abren.
@@ -416,6 +419,8 @@ export function RecordsPage(): JSX.Element {
     // Diálogo "Compartir" (v0.1.128) — enlace del equipo + página pública.
     const [shareOpen, setShareOpen] = useState(false);
     const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+    const [duplicatesOpen, setDuplicatesOpen] = useState(false);
+    const [mergeIds, setMergeIds] = useState<number[] | null>(null);
 
     // Capability gating (Fase 7 — 1.E). El backend ya rechaza acciones
     // sin cap; aquí solo ocultamos los botones para evitar UX de
@@ -459,6 +464,10 @@ export function RecordsPage(): JSX.Element {
     const canDeleteAny = useCan(CAP.DELETE_RECORDS);
     const canDeleteOwn = useCan(CAP.DELETE_OWN_RECORDS);
     // v0.1.336 — cuántas filas ya se borraron en la tienda o el sitio (la misma consulta que el aviso).
+    // A14 — buscar duplicados lo ve quien ve la lista (no un invitado, no una
+    // lista espejo: ahí los registros se combinan en la fuente); fusionar exige borrar.
+    const duplicatesAvailable = !guest.isGuest && !mirror;
+    const canMergeRecords = duplicatesAvailable && (canDeleteAny || canDeleteOwn);
     const sourceGone = useSourceGoneCount(list.data?.id, storeRules !== null && (canDeleteAny || canDeleteOwn) && !guest.isGuest);
     // v0.1.341 (ADR-S89) — sugerencias para esta lista: sólo admin y gerente
     // (lo decide el servidor); el resumen no consulta a la IA.
@@ -1389,6 +1398,30 @@ const applyView = (view: SavedViewEntity | null): void => {
                 </Suspense>
             )}
 
+            {duplicatesOpen && fields.data && (
+                <Suspense fallback={null}>
+                    <DuplicatesSheet
+                        open={duplicatesOpen}
+                        onOpenChange={setDuplicatesOpen}
+                        list={{ id: list.data.id, slug: list.data.slug, name: list.data.name }}
+                        fields={fields.data}
+                        onOpenRecord={(id) => setDrawerRecordId(id)}
+                    />
+                </Suspense>
+            )}
+
+            {mergeIds && fields.data && (
+                <Suspense fallback={null}>
+                    <MergeDialog
+                        listId={list.data.id}
+                        fields={fields.data}
+                        ids={mergeIds}
+                        onClose={() => setMergeIds(null)}
+                        onMerged={() => setSelectedIds([])}
+                    />
+                </Suspense>
+            )}
+
             {suggestionsOpen && fields.data && (
                 <Suspense fallback={null}>
                     <ListSuggestionsSheet
@@ -1501,6 +1534,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         canBulkEdit && structureActions?.delete ? () => setStructure({ action: 'delete', matching: true }) : undefined
                     }
                     onSuggestions={suggestionsAvailable ? () => setSuggestionsOpen(true) : undefined}
+                    onDuplicates={duplicatesAvailable ? () => setDuplicatesOpen(true) : undefined}
                     onStoreBulk={canStoreBulk ? () => setStoreBulkOpen(true) : undefined}
                     onStoreVariations={canStoreBulk ? () => setVariationsOpen(true) : undefined}
                     onBulkHistory={canSeeBulkHistory ? () => setBulkHistoryOpen(true) : undefined}
@@ -1941,6 +1975,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         onPressButton={setBulkButtonId}
                         onSendSms={smsConnections.length > 0 ? () => setBulkSmsOpen(true) : undefined}
                         onPrintLabels={!guest.isGuest ? () => setLabelsFor('selection') : undefined}
+                        onMerge={canMergeRecords ? () => setMergeIds([...selectedIds]) : undefined}
                         onAssign={
                             assignField
                                 ? () => {
@@ -1972,6 +2007,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                     <RecordCreateDialog
                         listId={list.data.id}
                         listName={list.data.name}
+                        listSlug={list.data.slug}
                         fields={fields.data}
                         open={createOpen}
                         onOpenChange={setCreateOpen}

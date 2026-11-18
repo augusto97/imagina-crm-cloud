@@ -14,6 +14,7 @@ export const meta: LearnModuleMeta = {
         'Pega bloques desde Excel o Google Sheets, con revisión antes de aplicar',
         'Sube precios un %, redondea a «terminar en 900», corre fechas o calcula columnas',
         'Mueve, duplica, asigna o elimina muchos registros a la vez',
+        'Encuentra los registros repetidos y fusiónalos en uno',
         'Deshaz una edición masiva y recupera lo borrado desde la papelera',
     ],
     articles: [
@@ -56,6 +57,14 @@ export const meta: LearnModuleMeta = {
             minutes: 5,
             level: 'intermediate',
             keywords: 'mover subtareas duplicar en lote asignar eliminar en lote barra de seleccion',
+        },
+        {
+            id: 'lote-duplicados',
+            title: 'Encontrar y fusionar duplicados',
+            summary: 'Los registros repetidos aparecen agrupados por correo, teléfono o documento; se juntan en uno con todo lo que tenían, y se deshace si hace falta.',
+            minutes: 6,
+            level: 'intermediate',
+            keywords: 'duplicados repetidos fusionar juntar combinar unir mismo correo telefono nit limpiar contactos clientes repetidos',
         },
         {
             id: 'lote-historial-deshacer',

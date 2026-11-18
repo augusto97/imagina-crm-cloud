@@ -9775,3 +9775,58 @@ webhooks de arriba: no hay nada nuevo en el servidor más allá de repartirlo.
 - Probado contra n8n 2.48 de verdad (las 8 operaciones, y el disparador:
   registra, recibe firmado, rechaza firma falsa, reinicia sin duplicar, borra
   al despublicar).
+
+
+### ADR-S106 — Duplicados: reglas por lista, aviso al crear y fusión que mueve todo (v0.1.445)
+
+**Contexto.** Idea A14 del banco, del plan aprobado el 2026-11-18. Un cliente
+que se registra dos veces, un formulario repetido o el mismo Excel importado
+otra vez llenan una lista de registros repetidos; hasta acá sólo se podía
+borrar uno a mano y perder lo que tenía (comentarios, facturas vinculadas).
+
+**Decisión.**
+- **Reglas por lista** en `lists.settings.duplicates`
+  (`{enabled?, warn_on_create?, rules?: [{fields: number[]}]}`, sin
+  migración de esquema). Sin reglas propias se SUGIEREN: cada correo, cada
+  teléfono y cada texto que suena a documento o código (NIT, cédula, SKU…);
+  si no hay ninguno, el título. Hasta 5 reglas de hasta 3 campos (todos tienen
+  que coincidir). Tipos elegibles: texto, correo, teléfono, enlace, número,
+  fecha, selección e ID automático. Lectura tolerante
+  (`readDuplicateSettings`): un campo borrado o de otro tipo se descarta.
+- **Una clave por valor, igual en JS y en SQL** (`duplicateKey` en shared,
+  `duplicateKeyExpr` en la API): sin mayúsculas, espacios ni acentos; el
+  teléfono por dígitos con y sin indicativo; documentos sólo letras y números.
+  Un test compara las dos sobre Postgres (también acentos con musl).
+- **Grupos en SQL** por regla y unión de las reglas con union-find; «No son
+  duplicados» se guarda por pares (`record_duplicate_dismissals`, migración
+  0130, RLS) y separa a quienes nunca coincidieron de a dos (hasta 12
+  registros por grupo). Todo con el acceso de quien mira
+  (`RecordsService.readScoped`): una regla que usa un campo oculto para su rol
+  no se aplica (`hidden_rules`).
+- **Fusionar** (`RecordMergeService`, 2 a 10 registros de primer nivel, en una
+  transacción): el que queda conserva lo elegido campo por campo (o «juntar
+  todos» en selección múltiple, equipos múltiples y archivos; un campo vacío
+  se llena solo); los demás van a la papelera y TODO lo que colgaba de ellos
+  pasa al que queda — comentarios, vínculos en los dos sentidos (sin vincular
+  el registro consigo mismo), subtareas, checklists, tiempo, recordatorios,
+  seguidores, cobros, suscripciones, accesos al portal, tickets, mensajes,
+  autorizaciones de datos… Cada tabla con FK a `records` está clasificada en
+  `merge-plan.ts` (mover, mover con regla de conflicto, se queda como
+  historia del que se va, o impide fusionar) y un test falla si aparece una
+  columna nueva sin clasificar. Impiden fusionar: una cita de la agenda, un
+  pedido de la tienda, dos suscripciones vivas, una lista espejo, una subtarea
+  o no poder borrar.
+- **Se deshace** desde el aviso o el historial de ediciones masivas (tipo
+  `merge`, un revertidor registrado): devuelve los registros de la papelera y
+  regresa cada fila movida y los valores del que quedó. Actividad
+  `record_merged` en los dos lados y bitácora `records.merge`.
+- **Interfaz**: «Personalizar vista → Buscar duplicados» (panel con reglas,
+  grupos, Fusionar y No son duplicados), «Fusionar» en la barra de selección,
+  aviso «Posible duplicado de…» en la ficha (modal, página y ficha diseñada) y
+  aviso mientras se escribe en el alta (`POST …/duplicates/check`, con
+  debounce). Quién: verlos, quien ve registros; marcar «No son», quien edita;
+  fusionar, quien puede borrar; cambiar reglas, `manage_lists`.
+
+**Consecuencias.** Una tabla nueva con FK a `records` tiene que entrar en
+`merge-plan.ts` (el test lo obliga). La fusión no cruza listas ni sincroniza
+con WooCommerce o WordPress (en sus listas no se ofrece).

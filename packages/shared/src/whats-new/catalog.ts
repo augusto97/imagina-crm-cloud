@@ -3460,4 +3460,39 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists', tour: 'automation-basics' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.445-duplicados',
+        version: '0.1.445',
+        date: '2026-11-18',
+        kind: 'feature',
+        title: 'Encuentra y fusiona registros duplicados',
+        summary:
+            'La app agrupa los registros repetidos por correo, teléfono o documento y los junta en uno sin perder comentarios, vínculos ni subtareas. Además te avisa si estás creando uno que ya existe.',
+        media: {
+            slides: [
+                {
+                    title: 'Los repetidos, agrupados',
+                    text: 'En Personalizar vista → Buscar duplicados ves los grupos y en qué coinciden. Mayúsculas, espacios y acentos no cuentan.',
+                    illustration: 'duplicados-fusionar',
+                },
+                {
+                    title: 'Fusiona sin perder nada',
+                    text: 'Elige cuál queda y qué valor se conserva en cada campo. Los comentarios, los vínculos y las subtareas pasan al que queda; los demás van a la papelera y se puede deshacer.',
+                    illustration: 'lote-estructura',
+                },
+                {
+                    title: 'Aviso al crear',
+                    text: 'Si alguien empieza a crear un registro con un correo o teléfono que ya existe, el alta lo avisa con el enlace para abrirlo.',
+                    illustration: 'auto-crear-registro',
+                },
+            ],
+        },
+        body: [
+            '- Ábrelo en **Personalizar vista → Buscar duplicados** de cualquier lista.',
+            '- También puedes marcar de 2 a 10 filas y tocar **Fusionar** en la barra de abajo.',
+            '- La ficha de un registro avisa cuando parece repetido, con **Fusionar** y **No es duplicado**.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager', 'agent'] },
+    },
 ];

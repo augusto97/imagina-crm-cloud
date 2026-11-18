@@ -47,6 +47,7 @@ export * from './incidents';
 export * from './comment-reactions';
 export * from './time-entries';
 export * from './record-dependencies';
+export * from './duplicates';
 export * from './approvals';
 export * from './checklists';
 export * from './teams';
