@@ -65,6 +65,7 @@ export * from './schemas/mail-account';
 export * from './schemas/tenant-storage';
 export * from './schemas/domains';
 export * from './schemas/platform-network';
+export * from './schemas/platform-retention';
 export * from './schemas/platform-brand';
 export * from './schemas/signup-attribution';
 export * from './schemas/portal';

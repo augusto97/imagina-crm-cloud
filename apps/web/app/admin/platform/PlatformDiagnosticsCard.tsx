@@ -13,6 +13,7 @@ import { __ } from '@/lib/i18n';
 import { formatDateTimeStr } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
+import { DbRetentionCard } from './DbRetentionCard';
 import { DiskUsageCard } from './DiskUsageCard';
 import { ServerConfigCard } from './ServerConfigCard';
 import { GuardianCard, MonitoringCard, PlatformAlertsCard } from './ServerWatchCards';
@@ -71,6 +72,8 @@ export function PlatformDiagnosticsCard(): JSX.Element {
             <MonitoringCard />
             {q.data.server && <ServerConfigCard status={q.data.server} />}
             <DiskUsageCard />
+            {/* v0.1.439 — lo que pesa cada tabla y cuánto se guarda el historial. */}
+            <DbRetentionCard />
             <Card>
                 <CardHeader>
                     <div className="imcrm-flex imcrm-items-start imcrm-justify-between imcrm-gap-3">

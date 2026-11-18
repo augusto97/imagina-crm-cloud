@@ -1,5 +1,6 @@
 import { REPORT_LIGHT_THEME, suggestedReportHeight, widgetReportSvg, type WidgetReport } from '@imagina-base/shared';
 import { pdfFontFamily, renderPdfDefinition } from '../documents/document-render';
+import { renderViaPool } from '../documents/pdf-pool';
 
 /** A4 menos los márgenes (puntos). */
 const PAGE_W = 515;
@@ -12,12 +13,20 @@ const MAX_H = 720;
  * (`widgetReportSvg`), que pdfmake dibuja VECTORIAL — barras, donas, KPIs y
  * tablas nítidos a cualquier zoom, sin navegador ni capturas.
  */
-export async function renderDashboardPdf(input: {
+export interface DashboardPdfInput {
     title: string;
     subtitle: string;
     reports: WidgetReport[];
     accent?: string | null;
-}): Promise<Buffer> {
+}
+
+export function renderDashboardPdf(input: DashboardPdfInput): Promise<Buffer> {
+    // v0.1.439 — al hilo de PDF van los datos; el armado y la maquetación, allá.
+    return renderViaPool<Buffer>(() => ({ kind: 'dashboard', input }), () => renderDashboardPdfLocal(input));
+}
+
+/** El tablero en el hilo actual (el de PDF, o el principal si no hay). */
+export async function renderDashboardPdfLocal(input: DashboardPdfInput): Promise<Buffer> {
     const font = pdfFontFamily('inter');
     const theme = { ...REPORT_LIGHT_THEME, ...(input.accent && /^#[0-9a-f]{6}$/i.test(input.accent) ? { accent: input.accent } : {}) };
     const blocks = input.reports.map((r) => {

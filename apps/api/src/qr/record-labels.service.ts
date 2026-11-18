@@ -20,7 +20,7 @@ import {
 } from '@imagina-base/shared';
 import { eq } from 'drizzle-orm';
 import { memberships, users } from '../db/schema';
-import { renderPdfDefinition } from '../documents/document-render';
+import { renderPlainPdfDefinition } from '../documents/document-render';
 import { sanitizeFilename } from '../documents/documents.service';
 import { FieldsService } from '../fields/fields.service';
 import { ListsService } from '../lists/lists.service';
@@ -198,7 +198,7 @@ export class RecordLabelsService {
             return { qr, title, lines, code: codeText };
         });
         const def = buildLabelsDefinition(input.preset, items, input.skip);
-        const buffer = await renderPdfDefinition(def);
+        const buffer = await renderPlainPdfDefinition(def);
         return { filename: sanitizeFilename(`Etiquetas - ${list.name}`), buffer, count: items.length };
     }
 

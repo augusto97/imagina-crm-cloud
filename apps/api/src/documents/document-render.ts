@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { PDF_RENDER_GATE } from './pdf-limits';
+import { PdfTaskFallback, renderViaPool } from './pdf-pool';
 
 import {
     DESIGN_FONT_DEFS,
@@ -157,12 +158,28 @@ export function renderPdfDefinition(def: Record<string, unknown>): Promise<Buffe
 }
 
 /**
+ * v0.1.439 — Una definición que es puro dato (sin funciones: las etiquetas
+ * con QR) va entera al hilo de PDF.
+ */
+export function renderPlainPdfDefinition(def: Record<string, unknown>): Promise<Buffer> {
+    return renderViaPool<Buffer>(() => ({ kind: 'definition', def }), () => renderGated(def));
+}
+
+/**
  * TODO PDF pasa por aquí: la maquetación de pdfmake es un tramo sincrónico
  * sobre el hilo que atiende los pedidos, así que se hace de a uno, cediendo
  * el hilo entre uno y otro, con fila acotada (ver pdf-limits.ts).
  */
 function renderGated(def: Record<string, unknown>): Promise<Buffer> {
+    // En el hilo de PDF ya va de a un documento por hilo: sin compuerta.
+    if (directRender) return pdfmake().createPdf(def).getBuffer();
     return PDF_RENDER_GATE.run(() => pdfmake().createPdf(def).getBuffer());
+}
+
+let directRender = false;
+/** Lo llama el hilo de PDF al arrancar. */
+export function useDirectPdfRender(): void {
+    directRender = true;
 }
 
 /** La familia del PDF para una tipografía del diseño (Roboto si no está). */
@@ -934,7 +951,128 @@ interface StartPos {
     top: number;
 }
 
+/**
+ * v0.1.439 — El PDF de un documento. Con el hilo de PDF disponible
+ * (`pdf-pool.ts`) la maquetación corre ALLÁ y este hilo sigue atendiendo
+ * pedidos: al hilo viajan los datos de entrada, no la definición (lleva
+ * funciones — bordes de tablas, el pie con «Página x de y» — que no se
+ * pueden pasar entre hilos). Las tres funciones del input (`resolve`,
+ * `fieldLabel`, `fieldValue`) se graban aquí con un armado de prueba, que es
+ * barato: lo caro es la maquetación de pdfmake.
+ */
 export async function renderDocument(input: DocRenderInput): Promise<DocRenderOutput> {
+    return renderViaPool<DocRenderOutput>(() => ({ kind: 'document', input: recordDocInput(input) }), () => renderDocumentLocal(input));
+}
+
+/** Lo que el hilo de PDF necesita para rearmar un documento: todo dato, nada de funciones. */
+export interface RecordedDocInput {
+    design: DocDesign;
+    tagsMode: boolean;
+    items: Map<string, ItemsTable>;
+    totals: Map<string, TotalsRowResolved[]>;
+    images: Map<string, string>;
+    title: string;
+    author: string;
+    resolved: Map<string, string>;
+    labels: Map<string, string>;
+    values: Map<string, string>;
+}
+
+/** Arma el documento una vez para grabar lo que piden sus funciones. */
+export function recordDocInput(input: DocRenderInput): RecordedDocInput {
+    const resolved = new Map<string, string>();
+    const labels = new Map<string, string>();
+    const values = new Map<string, string>();
+    const recording: DocRenderInput = {
+        ...input,
+        resolve: (template) => {
+            const v = input.resolve(template);
+            resolved.set(template, v);
+            return v;
+        },
+        fieldLabel: (slug) => {
+            const v = input.fieldLabel(slug);
+            labels.set(slug, v);
+            return v;
+        },
+        fieldValue: (slug) => {
+            const v = input.fieldValue(slug);
+            values.set(slug, v);
+            return v;
+        },
+    };
+    const built = buildDocumentDefinition(recording);
+    // El pie se arma recién al maquetar: se llama aquí para grabar sus textos.
+    if (typeof built.def.footer === 'function') (built.def.footer as (c: number, n: number) => unknown)(1, 1);
+    return {
+        design: input.design,
+        tagsMode: input.tagsMode,
+        items: input.items,
+        totals: input.totals,
+        images: input.images,
+        title: input.title,
+        author: input.author,
+        resolved,
+        labels,
+        values,
+    };
+}
+
+/**
+ * En el hilo de PDF: el input con funciones que leen lo grabado. Algo que no
+ * se grabó (no debería pasar: el armado es determinístico) corta con
+ * `PdfTaskFallback` y el documento se arma en el hilo principal.
+ */
+export function replayDocInput(rec: RecordedDocInput): DocRenderInput {
+    const pick = (map: Map<string, string>, key: string): string => {
+        const v = map.get(key);
+        if (v === undefined) throw new PdfTaskFallback(`Falta «${key.slice(0, 40)}» en el documento grabado.`);
+        return v;
+    };
+    return {
+        design: rec.design,
+        tagsMode: rec.tagsMode,
+        items: rec.items,
+        totals: rec.totals,
+        images: rec.images,
+        title: rec.title,
+        author: rec.author,
+        resolve: (template) => pick(rec.resolved, template),
+        fieldLabel: (slug) => pick(rec.labels, slug),
+        fieldValue: (slug) => pick(rec.values, slug),
+    };
+}
+
+interface BuiltDocument {
+    def: Node;
+    positions: Map<string, StartPos>;
+    pageWidth: number;
+    pageHeight: number;
+    margin: number;
+    footerH: number;
+    contentW: number;
+    hasFooter: boolean;
+}
+
+/** El documento en el hilo actual (el del hilo de PDF, o el principal si no hay). */
+export async function renderDocumentLocal(input: DocRenderInput): Promise<DocRenderOutput> {
+    const built = buildDocumentDefinition(input);
+    const { def, positions, pageWidth, pageHeight, margin, footerH, contentW, hasFooter } = built;
+    const buffer = await renderGated(def);
+    // Páginas: las cuenta el propio PDF (la última pasada de maquetación manda).
+    const pages = Math.max(1, (buffer.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) ?? []).length);
+    const bottom = pageHeight - (margin + (hasFooter ? footerH - 10 : 0));
+    return {
+        buffer,
+        pages,
+        pageWidth,
+        pageHeight,
+        regions: computeRegions(input.design, positions, { margin, bottom, contentW, pages }),
+    };
+}
+
+/** La definición de pdfmake del documento (sin maquetar). */
+function buildDocumentDefinition(input: DocRenderInput): BuiltDocument {
     const { design } = input;
     const t = design.theme;
     const [w0, h0] = PAGE_PT[t.page_size];
@@ -996,17 +1134,7 @@ export async function renderDocument(input: DocRenderInput): Promise<DocRenderOu
         },
     };
 
-    const buffer = await renderGated(def);
-    // Páginas: las cuenta el propio PDF (la última pasada de maquetación manda).
-    const pages = Math.max(1, (buffer.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) ?? []).length);
-    const bottom = pageHeight - (margin + (footer.page_numbers || footer.text ? footerH - 10 : 0));
-    return {
-        buffer,
-        pages,
-        pageWidth,
-        pageHeight,
-        regions: computeRegions(design, positions, { margin, bottom, contentW, pages }),
-    };
+    return { def, positions, pageWidth, pageHeight, margin, footerH, contentW, hasFooter: !!(footer.page_numbers || footer.text) };
 }
 
 /**
