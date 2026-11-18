@@ -110,6 +110,8 @@ describe('H1 — manifiesto (puro)', () => {
             subscription: false,
             // v0.1.412 — un pedido nuevo de la tienda: hay que despacharlo.
             shop: true,
+            // v0.1.446 — alguien firmó (o no quiso firmar) lo que pediste.
+            signature: true,
         });
         expect(readNotificationPrefs({ push: { update: true } }).push).toMatchObject({ update: true, mention: true });
     });
