@@ -16,15 +16,15 @@
 >   `docs/estudio-funcionalidades-2026-10.md`, junto con el valor, el esfuerzo
 >   y quién la tiene en la competencia.
 >
-> Última revisión: 2026-11-18 (v0.1.435).
+> Última revisión: 2026-11-18 (v0.1.440).
 
 ---
 
 ## 0. Elegido el 2026-11-18 (plan para estabilizar y mejorar)
 
 El usuario pidió "estabilizar y mejorar la app" y aprobó todo el plan ("Ok, has
-todos los que propones"): v0.1.435 a v0.1.439 de estabilidad (detalle en
-`CONTINUIDAD.md` §10) y después estos módulos, que salen de este banco al
+todos los que propones"): v0.1.435 a v0.1.440 de estabilidad (hechas; detalle
+en `CONTINUIDAD.md` §10) y después estos módulos, que salen de este banco al
 publicarse: **G1 + G2** (API pública con webhooks de eventos y la app de n8n),
 **E1 + E2** en parte («buscar registros», «crear o actualizar por un dato»,
 «cuando se agrega un comentario»), **A14** (duplicados y fusionar), **D6**

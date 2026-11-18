@@ -15716,6 +15716,63 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         `retention.spec` +3, `platform-retention.test` (3), specs de PDF
         73/73 — E2E navegador 16/16 en escritorio y celular oscuro.
 
+  - [x] **Cada copia de seguridad se prueba restaurándola (v0.1.440,
+        addendum ADR-S20, sexta y última versión del plan «estabilizar y
+        mejorar»)**: una copia que no se puede restaurar da una tranquilidad
+        falsa, y hasta acá nadie lo comprobaba (el drill mensual de F5 sólo
+        miraba el dump lógico y no corría solo). (a) **`scripts/snapshot-verify.sh`**
+        (viaja en el bundle): restaura el snapshot en una base TEMPORAL
+        `imagina_verify_<fecha>_<pid>` del mismo Postgres —la base de la app
+        sólo se lee para comparar conteos—, con chequeo de disco (dump + 1,2 ×
+        base viva + `VERIFY_MIN_FREE_MB` 512), sumas de cada parte (el tar de
+        archivos subidos se recorre UNA vez con tee + fifo: suma y lista a la
+        vez), manifest, claves de Redis, claves del `.env` (sólo si existen,
+        nunca sus valores), rol `imagina_app`, `pg_restore` con tope
+        (`VERIFY_TIMEOUT`, 1 h; con un cliente más nuevo que el servidor,
+        como SQL sin `SET transaction_timeout`, igual que el restore), y mide
+        migraciones, tablas, policies, permisos y empresas/personas/listas/
+        campos/registros contra la base viva. Borra las bases temporales que
+        quedaron de una prueba cortada y, con un trap, la suya (`WITH
+        (FORCE)`) y su carpeta aunque falle. Última línea `VERIFY_JSON {…}`;
+        sale 0 (se restaura), 1 (no) o 2 (no se probó: cifrada sin
+        contraseña, sin espacio, sin permiso para `CREATE DATABASE`).
+        (b) **Veredicto puro** (`apps/api/src/update/backup-verify.ts`,
+        `buildVerifyResult`): un control por cosa —archivo completo, la base
+        se restaura, migraciones contra el manifest, tablas y permisos, los
+        datos (sin empresas con la base viva llena → falla; una copia de
+        menos de 3 días con menos de la mitad de los registros de hoy →
+        aviso), archivos subidos (S3 → viven en el bucket), ajustes de la
+        plataforma y secretos— y una línea para la persona; `ok` /
+        `warning` / `failed` / `skipped` (`backupVerifySchema` en shared).
+        (c) **Servidor**: `BackupsService.verify` con el mismo `backups:lock`
+        (nunca a la vez que una copia o una restauración), job
+        `backup-verify` de la cola del actualizador, latido cada 5 min,
+        resultado en Redis `backups:verify` (no `platform:*`: no viaja en las
+        copias; se limpia al borrar la copia); `POST
+        /system/backups/:name/verify` (202, superadmin); tras una copia
+        programada se prueba sola si `settings.verify_auto` (default sí).
+        `platform-watch`: aviso crítico `backups:verify` («Una copia de
+        seguridad no se puede restaurar», recordatorio cada 24 h) y warning si
+        la prueba programada no pudo hacerse por espacio o permisos; una
+        corrida de prueba fallida no abre `backups:failed`. (d) **Front**
+        (`BackupsPanel`): columna «Prueba» (Se restaura · Con avisos · No se
+        restaura · No se probó) que despliega el detalle control por control,
+        escudo «Probar esta copia», «Última prueba» y la casilla «Probar cada
+        copia automática». Aprende → consola y `docs/runbook-backups.md` al
+        día; sin novedad (es del operador). **De paso** (CI de v0.1.439): el
+        test del tope de tiempo del hilo de PDF usaba un PDF vacío que en el
+        CI salía en menos de 1 ms; ahora 600 etiquetas con QR. Tests:
+        `backups.spec` 15/15 (Postgres y Redis reales: prueba buena con los
+        8 controles y sin restos, copia alterada → falla el archivo, dump
+        truncado con sumas rehechas → falla la restauración, prueba
+        automática tras la copia y apagada), `backup-verify.spec` 6/6,
+        `platform-watch.spec` 22/22 — el script contra la base de desarrollo
+        (4 s, 12 empresas · 5.762 registros) y E2E navegador 13/13 en
+        escritorio y 5/5 en celular oscuro.
+
+        **Con esto queda completo el plan de estabilidad (v0.1.435-440);
+        siguen los módulos nuevos de `docs/ideas.md` §0.**
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

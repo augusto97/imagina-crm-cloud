@@ -132,6 +132,23 @@ export class BackupsController {
         return { queued, message: queued ? 'Subida encolada' : 'Cola no disponible' };
     }
 
+    /**
+     * v0.1.440 — Prueba una copia: se restaura en una base TEMPORAL aparte y
+     * se mide lo que trae (la base de la app sólo se lee). Va por la cola:
+     * una operación de copias a la vez.
+     */
+    @Post(':name/verify')
+    @HttpCode(202)
+    async verify(@Param('name') name: string): Promise<{ queued: boolean; message: string }> {
+        this.backups.resolve(name);
+        const run = await this.backups.run();
+        if (['queued', 'running', 'restoring'].includes(run.status)) return { queued: false, message: 'Ya hay una operación en curso' };
+        await this.backups.markVerifyQueued(name);
+        const queued = await this.queue.enqueueVerify(name);
+        if (!queued) await this.backups.markFailed('Cola no disponible (¿Redis caído?)');
+        return { queued, message: queued ? 'Prueba encolada: la copia se restaura en una base aparte' : 'Cola no disponible' };
+    }
+
     @Get(':name/download')
     download(@Param('name') name: string, @Res() reply: FastifyReply): void {
         const file = this.backups.resolve(name);

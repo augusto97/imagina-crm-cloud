@@ -121,7 +121,13 @@ describe('Vigilancia del servidor (v0.1.431) — con Redis real', () => {
     let alerts: PlatformAlertsService;
     let guardian: GuardianService;
     let watch: PlatformWatchService;
-    let backupsHealth: { available: boolean; settings: { enabled: boolean; hour_utc: number; keep: number; include_env: boolean }; run: Record<string, unknown>; last_snapshot_at: string | null };
+    let backupsHealth: {
+        available: boolean;
+        settings: { enabled: boolean; hour_utc: number; keep: number; include_env: boolean; verify_auto: boolean };
+        run: Record<string, unknown>;
+        last_snapshot_at: string | null;
+        last_verify?: Record<string, unknown> | null;
+    };
     let driveStatus: Record<string, unknown>;
     let updateRun: Record<string, unknown>;
     let dbDown = false;
@@ -154,7 +160,7 @@ describe('Vigilancia del servidor (v0.1.431) — con Redis real', () => {
         } as unknown as Env;
         backupsHealth = {
             available: true,
-            settings: { enabled: true, hour_utc: 3, keep: 14, include_env: true },
+            settings: { enabled: true, hour_utc: 3, keep: 14, include_env: true, verify_auto: true },
             run: { status: 'success', kind: 'snapshot', message: null, file: null, started_at: null, finished_at: null },
             last_snapshot_at: new Date(T0 - 4 * HOUR).toISOString(),
         };
@@ -363,6 +369,43 @@ describe('Vigilancia del servidor (v0.1.431) — con Redis real', () => {
         watch.frontProbe = vi.fn(async () => 'unknown' as const);
         for (let i = 0; i < 5; i++) await watch.checkFront(T0 + i * 60_000);
         expect(await redis.get('pwatch:front:bad')).toBeNull();
+    });
+
+    it('v0.1.440 — prueba de copias: la que no restaura es crítica, la que no se pudo probar avisa y una buena lo cierra', async () => {
+        const v = (over: Record<string, unknown>) => ({
+            name: 'imagina-snapshot-20261114T030500Z-v0.1.440.tar',
+            status: 'ok',
+            summary: 'La copia se restaura.',
+            verified_at: '2026-11-14T03:20:00Z',
+            trigger: 'scheduled',
+            duration_seconds: 40,
+            checks: [],
+            counts: null,
+            skip_code: null,
+            ...over,
+        });
+        // La corrida de la prueba falló: NO es «la copia falló» (tiene su aviso).
+        backupsHealth.run = { status: 'failed', kind: 'verify', message: 'Esta copia NO se puede restaurar: …', file: 'f', started_at: null, finished_at: '2026-11-14T03:20:00Z' };
+        backupsHealth.last_verify = v({ status: 'failed', summary: 'Esta copia NO se puede restaurar: La base de la copia NO se pudo restaurar: end of file' });
+        await watch.checkBackups(T0);
+        await watch.checkBackups(T0 + HOUR);
+        expect(subjects()).toEqual(['Una copia de seguridad no se puede restaurar']);
+        expect(mails[0]!.text).toContain('end of file');
+        expect((await alerts.get('backups:verify'))?.severity).toBe('critical');
+        expect(await alerts.get('backups:failed:2026-11-14T03:20:00Z')).toBeNull();
+
+        backupsHealth.last_verify = v({ status: 'ok' });
+        await watch.checkBackups(T0 + 2 * HOUR);
+        expect(subjects().at(-1)).toBe('Ya está bien: Una copia de seguridad no se puede restaurar');
+        expect(await alerts.get('backups:verify')).toBeNull();
+
+        // No se pudo probar por falta de disco (automática): aviso; una manual o cifrada, no.
+        backupsHealth.last_verify = v({ status: 'skipped', skip_code: 'encrypted', summary: 'No se probó: cifrada' });
+        await watch.checkBackups(T0 + 3 * HOUR);
+        expect(await alerts.get('backups:verify')).toBeNull();
+        backupsHealth.last_verify = v({ status: 'skipped', skip_code: 'no_space', summary: 'No se probó: Falta espacio en disco' });
+        await watch.checkBackups(T0 + 4 * HOUR);
+        expect((await alerts.get('backups:verify'))?.severity).toBe('warning');
     });
 
     it('copias: la que falló, la que falta, las apagadas y las que no salen del servidor', async () => {

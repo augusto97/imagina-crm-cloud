@@ -430,7 +430,17 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.439**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.440**
+(**cada copia de seguridad se prueba restaurándola** — en Plataforma → Copias
+de seguridad el escudo de cada copia la restaura en una base TEMPORAL del mismo
+Postgres (`scripts/snapshot-verify.sh`, la base de la app no se toca), revisa
+que el archivo esté completo, que la base cargue con todas las migraciones,
+tablas, permisos y reglas de acceso, cuenta empresas/personas/listas/registros
+y mira si trae archivos, ajustes de la plataforma y secretos; la columna
+«Prueba» dice «Se restaura / Con avisos / No se restaura / No se probó» con el
+detalle. «Probar cada copia automática» (encendido) prueba cada copia
+programada y una que no se restaura manda un correo crítico. Redis
+`backups:verify`. Sin novedad: es del operador). Antes **v0.1.439**
 (**los PDF en un hilo aparte y el historial con plazo** — documentos,
 etiquetas con QR, Gantt y tableros por correo se arman en un `worker_thread`
 (`PDF_WORKERS`, 1 por defecto, 0 = como antes): un PDF pesado ya no frena la
@@ -489,7 +499,7 @@ Telegram, Slack, Google Calendar/Meet, reCAPTCHA/hCaptcha), aviso de retiro de
 proveedores a la vista y el correo de los agentes de IA sólo en «propone y
 alguien aprueba»; **v0.1.439** (hecha) PDF en un hilo aparte y crecimiento
 acotado de `automation_runs`/`activity` (el Excel ya salía por páginas y el
-import se lee en el navegador: no hizo falta un hilo); **v0.1.440**
+import se lee en el navegador: no hizo falta un hilo); **v0.1.440** (hecha)
 verificación de copias restaurándolas en una base de prueba;
 después los módulos nuevos (ver `docs/ideas.md` §0: API pública + webhooks +
 n8n, acciones/disparadores que faltan, duplicados y fusionar, firma
@@ -2146,6 +2156,36 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-18 · v0.1.440** — **Cada copia de seguridad se prueba
+  restaurándola** (sexta y última versión del plan «estabilizar y mejorar»;
+  siguen los módulos nuevos). `scripts/snapshot-verify.sh` (viaja en el
+  bundle): restaura el snapshot en una base temporal
+  `imagina_verify_<fecha>_<pid>` del mismo Postgres (borra al empezar las que
+  quedaron de una prueba cortada; trap que la borra con `WITH (FORCE)` y la
+  carpeta `.verify-*` aunque falle), con chequeo de disco (dump + 1,2 × base
+  viva + `VERIFY_MIN_FREE_MB`), sumas de cada parte (los archivos subidos se
+  leen en una pasada con tee + fifo), manifest, Redis, claves del `.env` (sólo
+  si existen), migraciones, tablas, policies, permisos de `imagina_app` y
+  conteos contra la base viva; última línea `VERIFY_JSON {…}`; salida 0/1/2
+  (se restaura / no / no se probó). `backup-verify.ts` (puro) lo convierte en
+  controles y veredicto (`ok/warning/failed/skipped`). `BackupsService.verify`
+  con el mismo `backups:lock`, job `backup-verify` de la cola del
+  actualizador, resultado en Redis `backups:verify` (no `platform:*`: no
+  viaja en las copias; se limpia al borrar la copia), y tras una copia
+  programada si `verify_auto` (default sí). `platform-watch`: aviso crítico
+  `backups:verify` si una copia no se restaura (warning si la prueba
+  programada no pudo hacerse por espacio o permisos), y una corrida de prueba
+  no abre `backups:failed`. Front: columna «Prueba» con el detalle por fila,
+  escudo «Probar esta copia», «Última prueba» y la casilla «Probar cada copia
+  automática». Aprende → consola y `docs/runbook-backups.md` al día. De paso
+  (v0.1.439): el test del tope de tiempo del hilo de PDF usaba un PDF vacío
+  que en el CI salía antes de 1 ms; ahora 600 etiquetas con QR. Verificado:
+  `backups.spec` 15/15 (con Postgres y Redis reales: prueba buena con 8
+  controles, copia alterada → «archivo completo» falla, dump truncado → «la
+  base se restaura» falla, sin restos), `backup-verify.spec` 6/6,
+  `platform-watch.spec` 22/22, el script contra la base de desarrollo (4 s,
+  12 empresas · 5.762 registros) y E2E 13/13 + 5/5 celular oscuro.
+  **Siguiente**: módulos nuevos (`docs/ideas.md` §0).
 - **2026-11-18 · v0.1.439** — **Los PDF en un hilo aparte y el historial con
   plazo** (quinta versión del plan «estabilizar y mejorar»). (a) PDF:
   `documents/pdf-pool.ts` (`PdfPool` sobre `worker_threads`: un hilo por

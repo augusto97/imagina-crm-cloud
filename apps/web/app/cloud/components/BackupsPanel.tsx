@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { BackupRunStatus, BackupSnapshot, BackupsStatus } from '@imagina-base/shared';
-import { CloudUpload, DatabaseBackup, Download, HardDriveDownload, RotateCcw, Trash2 } from 'lucide-react';
+import type { BackupRun, BackupRunStatus, BackupSnapshot, BackupsStatus, BackupVerify } from '@imagina-base/shared';
+import { AlertTriangle, CheckCircle2, CloudUpload, DatabaseBackup, Download, HardDriveDownload, RotateCcw, ShieldCheck, Trash2, XCircle } from 'lucide-react';
 
 import { api } from '@/cloud/session';
 import { Badge } from '@/components/ui/badge';
@@ -23,6 +23,72 @@ const STATUS_LABEL: Record<BackupRunStatus, string> = {
     success: 'Listo ✓',
     failed: 'Falló',
 };
+/** v0.1.440 — La corrida de una prueba se lee distinto que la de una copia. */
+function runLabel(run: BackupRun): string {
+    if (run.kind === 'verify') {
+        if (run.status === 'running') return 'Probando la copia…';
+        if (run.status === 'success') return 'Prueba terminada';
+        if (run.status === 'failed') return 'La copia no pasó la prueba';
+    }
+    if (run.kind === 'drive_upload' && run.status === 'running') return 'Subiendo…';
+    return STATUS_LABEL[run.status];
+}
+
+const VERIFY_LABEL: Record<BackupVerify['status'], string> = {
+    ok: 'Se restaura',
+    warning: 'Con avisos',
+    failed: 'No se restaura',
+    skipped: 'No se probó',
+};
+const VERIFY_VARIANT: Record<BackupVerify['status'], 'success' | 'warning' | 'destructive' | 'secondary'> = {
+    ok: 'success',
+    warning: 'warning',
+    failed: 'destructive',
+    skipped: 'secondary',
+};
+
+function VerifyBadge({ v }: { v: BackupVerify }): JSX.Element {
+    return (
+        <Badge variant={VERIFY_VARIANT[v.status]} className="imcrm-whitespace-nowrap" data-testid="backup-verify-badge" data-status={v.status}>
+            {VERIFY_LABEL[v.status]}
+        </Badge>
+    );
+}
+
+/** El detalle de una prueba: cada cosa que se revisó, con su resultado. */
+function VerifyDetail({ v }: { v: BackupVerify }): JSX.Element {
+    return (
+        <div className="imcrm-space-y-2 imcrm-rounded-md imcrm-bg-muted/40 imcrm-p-3" data-testid="backup-verify-detail">
+            <p className="imcrm-text-sm">
+                {v.summary}{' '}
+                <span className="imcrm-text-xs imcrm-text-muted-foreground">
+                    · {v.trigger === 'scheduled' ? 'Prueba automática' : 'Prueba manual'} del {fmtWhen(v.verified_at)}
+                    {v.duration_seconds !== null ? ` · ${v.duration_seconds < 60 ? `${v.duration_seconds} s` : `${Math.round(v.duration_seconds / 60)} min`}` : ''}
+                </span>
+            </p>
+            {v.checks.length > 0 && (
+                <ul className="imcrm-space-y-1 imcrm-text-sm">
+                    {v.checks.map((c) => (
+                        <li key={c.key} className="imcrm-flex imcrm-items-start imcrm-gap-2" data-check={c.key} data-status={c.status}>
+                            {c.status === 'ok' ? (
+                                <CheckCircle2 className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-[hsl(var(--imcrm-success-ink))]" aria-label="Bien" />
+                            ) : c.status === 'warning' ? (
+                                <AlertTriangle className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-[hsl(var(--imcrm-warning-ink))]" aria-label="Aviso" />
+                            ) : (
+                                <XCircle className="imcrm-mt-0.5 imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-destructive" aria-label="Falló" />
+                            )}
+                            <span>
+                                <span className="imcrm-font-medium">{c.label}</span>
+                                {c.detail ? <span className="imcrm-text-muted-foreground"> — {c.detail}</span> : null}
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    );
+}
+
 const KIND_LABEL: Record<BackupSnapshot['kind'], string> = {
     snapshot: 'Copia completa',
     db_dump: 'Sólo base de datos',
@@ -98,6 +164,16 @@ export function BackupsPanel(): JSX.Element | null {
         },
         onError,
     });
+    const verify = useMutation({
+        mutationFn: (name: string) => api.backupVerify(name),
+        onSuccess: (r, name) => {
+            setNotice({ kind: r.queued ? 'ok' : 'err', text: r.message });
+            if (r.queued) setOpenVerify(name);
+            invalidate();
+        },
+        onError,
+    });
+    const [openVerify, setOpenVerify] = useState<string | null>(null);
     const restore = useMutation({
         mutationFn: (name: string) => api.backupsRestore(name),
         onSuccess: (r) => {
@@ -113,6 +189,7 @@ export function BackupsPanel(): JSX.Element | null {
     const [hour, setHour] = useState(3);
     const [keep, setKeep] = useState(14);
     const [includeEnv, setIncludeEnv] = useState(true);
+    const [verifyAuto, setVerifyAuto] = useState(true);
     const [touched, setTouched] = useState(false);
     useEffect(() => {
         const s = statusQ.data?.settings;
@@ -121,9 +198,10 @@ export function BackupsPanel(): JSX.Element | null {
         setHour(s.hour_utc);
         setKeep(s.keep);
         setIncludeEnv(s.include_env);
+        setVerifyAuto(s.verify_auto);
     }, [statusQ.data?.settings, touched]);
     const saveSettings = useMutation({
-        mutationFn: () => api.backupsSetSettings({ enabled, hour_utc: hour, keep, include_env: includeEnv }),
+        mutationFn: () => api.backupsSetSettings({ enabled, hour_utc: hour, keep, include_env: includeEnv, verify_auto: verifyAuto }),
         onSuccess: () => {
             setTouched(false);
             setNotice({ kind: 'ok', text: 'Ajustes guardados.' });
@@ -169,7 +247,7 @@ export function BackupsPanel(): JSX.Element | null {
                             {s.reason}
                         </div>
                     )}
-                    <dl className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-3 imcrm-text-sm sm:imcrm-grid-cols-4">
+                    <dl className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-3 imcrm-text-sm sm:imcrm-grid-cols-3 lg:imcrm-grid-cols-5">
                         <div>
                             <dt className="imcrm-text-xs imcrm-text-muted-foreground">Versión actual</dt>
                             <dd className="imcrm-font-mono">{s.current_version}</dd>
@@ -177,6 +255,19 @@ export function BackupsPanel(): JSX.Element | null {
                         <div>
                             <dt className="imcrm-text-xs imcrm-text-muted-foreground">Última copia</dt>
                             <dd data-testid="backups-last">{fmtWhen(s.last_snapshot_at)}</dd>
+                        </div>
+                        <div>
+                            <dt className="imcrm-text-xs imcrm-text-muted-foreground">Última prueba</dt>
+                            <dd data-testid="backups-last-verify" className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1">
+                                {s.last_verify ? (
+                                    <>
+                                        <VerifyBadge v={s.last_verify} />
+                                        <span className="imcrm-text-xs imcrm-text-muted-foreground">{fmtWhen(s.last_verify.verified_at)}</span>
+                                    </>
+                                ) : (
+                                    'Ninguna todavía'
+                                )}
+                            </dd>
                         </div>
                         <div>
                             <dt className="imcrm-text-xs imcrm-text-muted-foreground">Próxima automática</dt>
@@ -202,7 +293,7 @@ export function BackupsPanel(): JSX.Element | null {
                                       : 'imcrm-bg-muted/50 imcrm-text-muted-foreground',
                             ].join(' ')}
                         >
-                            <b>{s.run.kind === 'drive_upload' && s.run.status === 'running' ? 'Subiendo…' : STATUS_LABEL[s.run.status]}</b>
+                            <b>{runLabel(s.run)}</b>
                             {s.run.message ? ` — ${s.run.message}` : ''}
                             {s.run.file ? ` (${s.run.file})` : ''}
                         </div>
@@ -281,6 +372,25 @@ export function BackupsPanel(): JSX.Element | null {
                                 Incluir secretos (.env)
                             </label>
                         </div>
+                        <label className="imcrm-mt-3 imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-sm">
+                            <input
+                                type="checkbox"
+                                className="imcrm-mt-0.5"
+                                checked={verifyAuto}
+                                onChange={(e) => {
+                                    setTouched(true);
+                                    setVerifyAuto(e.target.checked);
+                                }}
+                                data-testid="backups-verify-auto"
+                            />
+                            <span>
+                                Probar cada copia automática
+                                <span className="imcrm-block imcrm-text-[11px] imcrm-text-muted-foreground">
+                                    Justo después de crearla se restaura en una base de prueba aparte y se revisa que traiga todo. Si no
+                                    se puede restaurar, te llega un correo. La app no se detiene; la prueba ocupa disco mientras corre.
+                                </span>
+                            </span>
+                        </label>
                         <p className="imcrm-mt-2 imcrm-text-[11px] imcrm-text-muted-foreground">
                             Sin los secretos del .env, las contraseñas SMTP y los códigos 2FA de la copia no se pueden leer en
                             otro servidor. Para tener una copia fuera del servidor, conecta Google Drive (abajo): se sube cifrada.
@@ -319,12 +429,14 @@ export function BackupsPanel(): JSX.Element | null {
                                         <th className="imcrm-py-1 imcrm-pr-3 imcrm-font-medium">Versión</th>
                                         <th className="imcrm-py-1 imcrm-pr-3 imcrm-font-medium">Tamaño</th>
                                         <th className="imcrm-py-1 imcrm-pr-3 imcrm-font-medium">Contenido</th>
+                                        <th className="imcrm-py-1 imcrm-pr-3 imcrm-font-medium">Prueba</th>
                                         <th className="imcrm-py-1 imcrm-font-medium"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {s.snapshots.map((b) => (
-                                        <tr key={b.name} className="imcrm-border-t imcrm-border-border" data-testid="backup-row">
+                                        <Fragment key={b.name}>
+                                        <tr className="imcrm-border-t imcrm-border-border" data-testid="backup-row" data-name={b.name}>
                                             <td className="imcrm-whitespace-nowrap imcrm-py-1.5 imcrm-pr-3">{fmtWhen(b.created_at)}</td>
                                             <td className="imcrm-whitespace-nowrap imcrm-py-1.5 imcrm-pr-3">{KIND_LABEL[b.kind]}</td>
                                             <td className="imcrm-py-1.5 imcrm-pr-3 imcrm-font-mono imcrm-text-xs">{b.app_version ?? '—'}</td>
@@ -341,8 +453,42 @@ export function BackupsPanel(): JSX.Element | null {
                                                     )}
                                                 </div>
                                             </td>
+                                            <td className="imcrm-py-1.5 imcrm-pr-3">
+                                                {b.verify ? (
+                                                    <button
+                                                        type="button"
+                                                        className="imcrm-rounded-sm focus-visible:imcrm-outline-none focus-visible:imcrm-ring-2 focus-visible:imcrm-ring-ring"
+                                                        aria-expanded={openVerify === b.name}
+                                                        title="Ver qué se revisó"
+                                                        onClick={() => setOpenVerify(openVerify === b.name ? null : b.name)}
+                                                        data-testid="backup-verify-toggle"
+                                                    >
+                                                        <VerifyBadge v={b.verify} />
+                                                    </button>
+                                                ) : s.run.kind === 'verify' && s.run.file === b.name && busy ? (
+                                                    <span className="imcrm-text-xs imcrm-text-muted-foreground">Probando…</span>
+                                                ) : b.kind === 'snapshot' ? (
+                                                    <span className="imcrm-text-xs imcrm-text-muted-foreground">Sin probar</span>
+                                                ) : (
+                                                    <span className="imcrm-text-xs imcrm-text-muted-foreground">—</span>
+                                                )}
+                                            </td>
                                             <td className="imcrm-py-1.5">
                                                 <div className="imcrm-flex imcrm-justify-end imcrm-gap-1">
+                                                    {b.kind === 'snapshot' && !b.encrypted && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            className="imcrm-h-7 imcrm-px-2"
+                                                            title="Probar: restaurarla en una base aparte (la app no se toca)"
+                                                            aria-label="Probar esta copia"
+                                                            disabled={busy || verify.isPending}
+                                                            onClick={() => verify.mutate(b.name)}
+                                                            data-testid="backup-verify"
+                                                        >
+                                                            <ShieldCheck className="imcrm-h-3.5 imcrm-w-3.5" />
+                                                        </Button>
+                                                    )}
                                                     <Button asChild size="sm" variant="ghost" className="imcrm-h-7 imcrm-px-2" title="Descargar">
                                                         <a href={api.backupDownloadUrl(b.name)} download={b.name} data-testid="backup-download">
                                                             <Download className="imcrm-h-3.5 imcrm-w-3.5" />
@@ -393,6 +539,14 @@ export function BackupsPanel(): JSX.Element | null {
                                                 </div>
                                             </td>
                                         </tr>
+                                        {b.verify && openVerify === b.name && (
+                                            <tr data-testid="backup-verify-row">
+                                                <td colSpan={7} className="imcrm-pb-2">
+                                                    <VerifyDetail v={b.verify} />
+                                                </td>
+                                            </tr>
+                                        )}
+                                        </Fragment>
                                     ))}
                                 </tbody>
                             </table>

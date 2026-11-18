@@ -7,6 +7,7 @@ import {
     backupsSettingsSchema,
     type BackupRun,
     type BackupSnapshot,
+    type BackupVerify,
     type BackupsSettings,
     type BackupsStatus,
     type UpdateBackupsSettingsInput,
@@ -15,6 +16,7 @@ import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
 import { REDIS } from '../redis/redis.module';
 import { DEPLOYER, type Deployer } from './update.types';
+import { buildVerifyResult, parseVerifyOutput } from './backup-verify';
 
 const run = promisify(execFile);
 
@@ -25,6 +27,13 @@ const LAST_KEY = 'platform:backups:last';
 const RUN_KEY = 'backups:run';
 const LOCK_KEY = 'backups:lock';
 const STUCK_MS = 60 * 60 * 1000;
+/**
+ * v0.1.440 — La última prueba de cada copia (hash nombre → JSON). Estado de
+ * ESTE servidor (se refiere a sus archivos): no viaja en las copias.
+ */
+const VERIFY_KEY = 'backups:verify';
+/** Lo más que puede tardar una prueba (el script corta la restauración a la hora). */
+const VERIFY_PROCESS_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
 const SNAPSHOT_RE = /^imagina-snapshot-(\d{8}T\d{6}Z)-v(.+?)\.tar(\.gpg)?$/;
 const DUMP_RE = /^imagina-base-(\d{8}T\d{6}Z)\.dump(\.gpg)?$/;
@@ -168,6 +177,7 @@ export class BackupsService implements OnModuleInit {
             last_snapshot_at: lastAt,
             next_run_at: nextRunAt(settings, lastAt, now),
             snapshots: available ? await this.list() : [],
+            last_verify: await this.lastVerify(),
         };
     }
 
@@ -176,9 +186,15 @@ export class BackupsService implements OnModuleInit {
      * el manifiesto de cada copia): si hay dónde copiar, los ajustes, la
      * última copia y el último intento.
      */
-    async health(): Promise<{ available: boolean; settings: BackupsSettings; run: BackupRun; last_snapshot_at: string | null }> {
+    async health(): Promise<{ available: boolean; settings: BackupsSettings; run: BackupRun; last_snapshot_at: string | null; last_verify: BackupVerify | null }> {
         const { available } = this.availability();
-        return { available, settings: await this.getSettings(), run: await this.run(), last_snapshot_at: await this.redis.get(LAST_KEY) };
+        return {
+            available,
+            settings: await this.getSettings(),
+            run: await this.run(),
+            last_snapshot_at: await this.redis.get(LAST_KEY),
+            last_verify: await this.lastVerify(),
+        };
     }
 
     async run(): Promise<BackupRun> {
@@ -213,6 +229,7 @@ export class BackupsService implements OnModuleInit {
     async list(): Promise<BackupSnapshot[]> {
         const dir = this.backupsDir;
         if (!dir || !existsSync(dir)) return [];
+        const verifies = await this.verifies();
         const out: BackupSnapshot[] = [];
         for (const name of readdirSync(dir)) {
             const parsed = parseBackupName(name);
@@ -233,8 +250,13 @@ export class BackupsService implements OnModuleInit {
                 encrypted: parsed.encrypted,
                 migrations_applied: manifest?.migrations_applied ?? null,
                 includes: manifest?.includes ?? null,
+                verify: verifies.get(name) ?? null,
             });
         }
+        // Las pruebas de copias que ya no están (las podó la retención o se
+        // borraron) no sirven para nada.
+        const gone = [...verifies.keys()].filter((n) => !out.some((b) => b.name === n));
+        if (gone.length) await this.redis.hdel(VERIFY_KEY, ...gone).catch(() => undefined);
         return out.sort((a, b) => b.created_at.localeCompare(a.created_at));
     }
 
@@ -380,8 +402,110 @@ export class BackupsService implements OnModuleInit {
         if (!isSnapshotDue(settings, lastAt, now)) return false;
         const current = await this.readRun();
         if (current.status === 'running' || current.status === 'restoring' || current.status === 'queued') return false;
-        await this.createSnapshot('scheduled');
+        const name = await this.createSnapshot('scheduled');
+        // v0.1.440 — y se prueba: una copia que no restaura se descubre hoy,
+        // no el día que hace falta.
+        // (Si la copia salió pero falló la subida a Drive, se prueba igual: ese
+        // fallo tiene su propio aviso y su estado en la tarjeta de Drive.)
+        if (name && settings.verify_auto) await this.verify(name, 'scheduled');
         return true;
+    }
+
+    // ── probar una copia (v0.1.440) ─────────────────────────────────────
+
+    async markVerifyQueued(name: string): Promise<void> {
+        await this.writeRun({ status: 'queued', kind: 'verify', message: 'En cola', file: name, started_at: nowISO(), finished_at: null });
+    }
+
+    /**
+     * Restaura la copia en una base TEMPORAL (scripts/snapshot-verify.sh) y
+     * guarda qué trae. Toma el mismo lock que las copias: nunca en paralelo
+     * con otra copia, una subida o una restauración. La base de la app sólo
+     * se lee.
+     */
+    async verify(name: string, trigger: 'manual' | 'scheduled'): Promise<BackupVerify | null> {
+        const file = this.resolve(name);
+        const parsed = parseBackupName(name)!;
+        if (parsed.kind !== 'snapshot') {
+            throw new ConflictException({ code: 'not_a_snapshot', message: 'Sólo se prueban las copias completas.', data: { status: 409 } });
+        }
+        const { available, reason } = this.availability();
+        if (!available || !existsSync(path.join(this.scriptsDir, 'snapshot-verify.sh'))) {
+            await this.writeRun({ ...idleRun, status: 'failed', kind: 'verify', message: reason ?? 'No se encuentra snapshot-verify.sh', file: name, finished_at: nowISO() });
+            return null;
+        }
+        const got = await this.redis.set(LOCK_KEY, '1', 'EX', 3600, 'NX');
+        if (got !== 'OK') {
+            this.logger.warn('Prueba de copia pospuesta: hay otra operación de copias en curso');
+            return null;
+        }
+        const message = 'Probando la copia: se restaura en una base de prueba aparte…';
+        // La restauración puede tardar más que el "colgado" (1 h): se avisa
+        // que sigue viva cada 5 minutos.
+        const beat = setInterval(() => void this.heartbeat('verify', message, name).catch(() => undefined), 5 * 60_000);
+        try {
+            await this.writeRun({ status: 'running', kind: 'verify', message, file: name, started_at: nowISO(), finished_at: null });
+            let stdout = '';
+            let processError: string | null = null;
+            try {
+                ({ stdout } = await run('bash', [path.join(this.scriptsDir, 'snapshot-verify.sh'), file], {
+                    env: {
+                        ...process.env,
+                        BASE_PATH: this.base,
+                        DATABASE_URL: this.env.DATABASE_URL,
+                        VERIFY_WORK_DIR: this.backupsDir,
+                    },
+                    maxBuffer: 10 << 20,
+                    timeout: VERIFY_PROCESS_TIMEOUT_MS,
+                }));
+            } catch (err) {
+                // Código 1 (la copia no sirve) o 2 (no se probó): el resultado
+                // viene igual en la salida.
+                const e = err as { stdout?: string; stderr?: string; message?: string };
+                stdout = e.stdout ?? '';
+                processError = String(e.stderr ?? e.message ?? '').trim().split('\n').slice(-3).join(' · ').replace(/postgres(ql)?:\/\/\S+/g, '<base>');
+            }
+            const result = buildVerifyResult(parseVerifyOutput(stdout), { name, trigger, now: new Date(), processError });
+            await this.redis.hset(VERIFY_KEY, name, JSON.stringify(result));
+            await this.writeRun({
+                status: result.status === 'failed' ? 'failed' : 'success',
+                kind: 'verify',
+                message: result.summary,
+                file: name,
+                started_at: null,
+                finished_at: nowISO(),
+            });
+            if (result.status === 'failed') this.logger.error(`Prueba de copia: ${name} NO se puede restaurar — ${result.summary}`);
+            else this.logger.log(`Prueba de copia: ${name} → ${result.status}`);
+            return result;
+        } finally {
+            clearInterval(beat);
+            await this.redis.del(LOCK_KEY);
+        }
+    }
+
+    private async verifies(): Promise<Map<string, BackupVerify>> {
+        const raw = await this.redis.hgetall(VERIFY_KEY).catch(() => ({}) as Record<string, string>);
+        const out = new Map<string, BackupVerify>();
+        for (const [k, v] of Object.entries(raw)) {
+            try {
+                out.set(k, JSON.parse(v) as BackupVerify);
+            } catch {
+                /* una entrada rota se ignora */
+            }
+        }
+        return out;
+    }
+
+    /** La prueba más reciente de una copia que todavía existe. */
+    async lastVerify(): Promise<BackupVerify | null> {
+        const dir = this.backupsDir;
+        let best: BackupVerify | null = null;
+        for (const v of (await this.verifies()).values()) {
+            if (dir && !existsSync(path.join(dir, v.name))) continue;
+            if (!best || v.verified_at > best.verified_at) best = v;
+        }
+        return best;
     }
 
     // ── archivo ─────────────────────────────────────────────────────────────

@@ -27,7 +27,7 @@ describe('Copias de seguridad completas (v0.1.179) — helpers puros', () => {
     });
 
     it('isSnapshotDue: una por día UTC a partir de la hora elegida; apagado → nunca', () => {
-        const s = { enabled: true, hour_utc: 3, keep: 14, include_env: true };
+        const s = { enabled: true, hour_utc: 3, keep: 14, include_env: true, verify_auto: true };
         const at = (iso: string) => new Date(iso);
         expect(isSnapshotDue(s, null, at('2026-09-14T02:59:00Z'))).toBe(false); // todavía no es la hora
         expect(isSnapshotDue(s, null, at('2026-09-14T03:05:00Z'))).toBe(true); // nunca corrió
@@ -37,7 +37,7 @@ describe('Copias de seguridad completas (v0.1.179) — helpers puros', () => {
     });
 
     it('nextRunAt: hoy si falta, "ahora" si está pendiente, mañana si ya corrió', () => {
-        const s = { enabled: true, hour_utc: 3, keep: 14, include_env: true };
+        const s = { enabled: true, hour_utc: 3, keep: 14, include_env: true, verify_auto: true };
         expect(nextRunAt(s, null, new Date('2026-09-14T01:00:00Z'))).toBe('2026-09-14T03:00:00.000Z');
         expect(nextRunAt(s, null, new Date('2026-09-14T05:00:00Z'))).toBe('2026-09-14T05:00:00.000Z');
         expect(nextRunAt(s, '2026-09-14T03:06:00.000Z', new Date('2026-09-14T05:00:00Z'))).toBe('2026-09-15T03:00:00.000Z');
@@ -388,13 +388,98 @@ describe('Copias de seguridad completas (v0.1.179) — snapshot real (Postgres +
     }, 180_000);
 
     it('settings: defaults, PATCH parcial persiste en Redis (platform:*), y el tick respeta la hora', async () => {
-        expect(await svc.getSettings()).toEqual({ enabled: false, hour_utc: 3, keep: 14, include_env: true });
+        expect(await svc.getSettings()).toEqual({ enabled: false, hour_utc: 3, keep: 14, include_env: true, verify_auto: true });
         const set = await svc.setSettings({ enabled: true, hour_utc: 22 });
-        expect(set).toEqual({ enabled: true, hour_utc: 22, keep: 14, include_env: true });
+        expect(set).toEqual({ enabled: true, hour_utc: 22, keep: 14, include_env: true, verify_auto: true });
         expect(await redis.get('platform:backups')).not.toBeNull();
         // Ya se hizo una copia hoy → el tick no dispara otra.
         expect(await svc.tick(new Date())).toBe(false);
     });
+
+    it('v0.1.440 — probar una copia: se restaura en una base aparte, se mide y no deja nada atrás', async () => {
+        const [snap] = await svc.list();
+        const result = await svc.verify(snap!.name, 'manual');
+        expect(result?.status).toBe('ok');
+        expect(result?.counts).toMatchObject({ tenants: 1 });
+        const byKey = Object.fromEntries((result?.checks ?? []).map((c) => [c.key, c.status]));
+        expect(byKey).toMatchObject({ checksums: 'ok', restore: 'ok', migrations: 'ok', structure: 'ok', data: 'ok', uploads: 'ok', platform: 'ok', env: 'ok' });
+        expect(result?.summary).toContain('1 empresa');
+        // Queda en la copia y como «la última prueba»; la corrida dice qué pasó.
+        const status = await svc.status();
+        expect(status.snapshots.find((b) => b.name === snap!.name)?.verify?.status).toBe('ok');
+        expect(status.last_verify?.name).toBe(snap!.name);
+        expect(status.run).toMatchObject({ status: 'success', kind: 'verify', file: snap!.name });
+        expect((await svc.health()).last_verify?.status).toBe('ok');
+        // La base temporal y lo extraído se borraron; la base de la app no se tocó.
+        const left = await pg.pool.query("select count(*)::int as n from pg_database where datname like 'imagina_verify%'");
+        expect(left.rows[0]!.n).toBe(0);
+        expect(readdirSync(path.join(dir, 'backups')).filter((n) => n.startsWith('.verify-'))).toEqual([]);
+        expect((await pg.pool.query('select count(*)::int as n from tenants')).rows[0]!.n).toBe(1);
+    }, 180_000);
+
+    it('v0.1.440 — una copia dañada o que no restaura sale «NO se puede restaurar» (con el motivo)', async () => {
+        const [snap] = await svc.list();
+        const src = svc.resolve(snap!.name);
+        const backups = path.join(dir, 'backups');
+        // 1. Alterada: las sumas no coinciden.
+        const altered = path.join(backups, 'imagina-snapshot-20200101T000001Z-v9.9.9.tar');
+        writeFileSync(altered, readFileSync(src));
+        const fd = readFileSync(altered);
+        const at = fd.indexOf(Buffer.from('PGDMP'));
+        expect(at).toBeGreaterThan(0);
+        fd.write('XXXXXXXX', at + 200);
+        writeFileSync(altered, fd);
+        const bad = await svc.verify(path.basename(altered), 'manual');
+        expect(bad?.status).toBe('failed');
+        expect(bad?.checks.find((c) => c.key === 'checksums')?.status).toBe('failed');
+        expect(bad?.summary).toMatch(/NO se puede restaurar/);
+
+        // 2. La base cortada a la mitad, con las sumas rehechas: el archivo
+        //    «está completo» pero la base no carga.
+        const work = mkdtempSync(path.join(tmpdir(), 'imagina-verify-'));
+        try {
+            execFileSync('tar', ['-xf', src, '-C', work]);
+            const inner = readdirSync(work)[0]!;
+            const root = path.join(work, inner);
+            const dump = readFileSync(path.join(root, 'db.dump'));
+            writeFileSync(path.join(root, 'db.dump'), dump.subarray(0, Math.floor(dump.length / 3)));
+            const files = readdirSync(root).filter((f) => f !== 'checksums.sha256');
+            writeFileSync(path.join(root, 'checksums.sha256'), execFileSync('sha256sum', files, { cwd: root }));
+            const cut = path.join(backups, 'imagina-snapshot-20200101T000002Z-v9.9.9.tar');
+            execFileSync('tar', ['-cf', cut, '-C', work, inner]);
+            const r = await svc.verify(path.basename(cut), 'manual');
+            expect(r?.status).toBe('failed');
+            expect(r?.checks.find((c) => c.key === 'checksums')?.status).toBe('ok');
+            expect(r?.checks.find((c) => c.key === 'restore')?.status).toBe('failed');
+            const left = await pg.pool.query("select count(*)::int as n from pg_database where datname like 'imagina_verify%'");
+            expect(left.rows[0]!.n).toBe(0);
+            svc.remove(path.basename(cut));
+        } finally {
+            rmSync(work, { recursive: true, force: true });
+            svc.remove(path.basename(altered));
+        }
+        // Las pruebas de copias borradas no quedan dando vueltas.
+        await svc.list();
+        expect(Object.keys(await redis.hgetall('backups:verify'))).toEqual([snap!.name]);
+    }, 180_000);
+
+    it('v0.1.440 — la copia automática se prueba sola (y no se prueba si está apagado)', async () => {
+        const yesterday = new Date(Date.now() - 86_400_000).toISOString();
+        await svc.setSettings({ enabled: true, hour_utc: 0, verify_auto: true });
+        await redis.set('platform:backups:last', yesterday);
+        expect(await svc.tick(new Date())).toBe(true);
+        const [newest] = await svc.list();
+        expect(newest?.verify).toMatchObject({ status: 'ok', trigger: 'scheduled' });
+        svc.remove(newest!.name);
+
+        await svc.setSettings({ verify_auto: false });
+        await redis.set('platform:backups:last', yesterday);
+        expect(await svc.tick(new Date())).toBe(true);
+        const [another] = await svc.list();
+        expect(another?.verify).toBeNull();
+        svc.remove(another!.name);
+        await svc.setSettings({ enabled: true, hour_utc: 22, verify_auto: true });
+    }, 300_000);
 
     it('resolve/remove: nombres estrictos, restore por panel rechazado sin layout, borrado real', async () => {
         const [snap] = await svc.list();

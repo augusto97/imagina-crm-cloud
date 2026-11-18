@@ -84,6 +84,32 @@ TARGET_DATABASE_URL=postgres://user:pass@host:5432/imagina_base_restore \
 ⚠️ Verifica dos veces el `TARGET_DATABASE_URL`: `--clean` sobrescribe objetos.
 Nunca apuntes a producción salvo en un DR real y planificado.
 
+> **v0.1.440 — Prueba de cada copia completa.** Desde Plataforma → Copias de
+> seguridad cada copia se puede **probar** (el escudo de su fila) y, con
+> «Probar cada copia automática» (encendido de fábrica), cada copia programada
+> se prueba sola justo después de crearse. Lo hace `scripts/snapshot-verify.sh`
+> (viaja en cada release): restaura el snapshot en una base TEMPORAL
+> `imagina_verify_<fecha>_<pid>` del mismo Postgres (la base de la app sólo se
+> lee para comparar conteos), revisa sumas, migraciones contra el manifest,
+> tablas, policies y permisos de `imagina_app`, cuenta empresas/personas/
+> listas/campos/registros, lista el tar de archivos subidos y mira qué trae el
+> `.env` (sólo si existen las claves, nunca sus valores); al terminar borra la
+> base temporal y la carpeta de trabajo, incluso si falla. Necesita libre el
+> tamaño del dump + 1,2 × el de la base + 512 MB (`VERIFY_MIN_FREE_MB`); sin
+> eso, o con una copia cifrada, o sin permiso para `CREATE DATABASE`, la
+> prueba queda «No se probó» con el motivo. Tope de 1 h (`VERIFY_TIMEOUT`).
+> El resultado queda en Redis `backups:verify` y una copia que no se restaura
+> abre el aviso crítico `backups:verify` (correo a los superadmins). A mano:
+>
+> ```bash
+> BASE_PATH=/opt/imagina-base ./current/scripts/snapshot-verify.sh /ruta/imagina-snapshot-….tar
+> ```
+>
+> Sale 0 si se restauró, 1 si no se puede restaurar y 2 si no se pudo probar;
+> la última línea (`VERIFY_JSON {…}`) trae el detalle. Esto reemplaza al drill
+> mensual de abajo para las copias completas; el drill sigue sirviendo para el
+> dump lógico.
+
 ## Restore drill (mensual)
 
 Un backup sin restore probado no es un backup. Correr **mensualmente** (cron o

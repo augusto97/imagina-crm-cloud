@@ -1655,6 +1655,12 @@ export class CloudClient {
     backupDriveDelete(id: string): Promise<void> {
         return this.request('DELETE', `/system/backups/drive/files/${encodeURIComponent(id)}`, {});
     }
+    /** v0.1.440 — probar una copia restaurándola en una base aparte (encola). */
+    backupVerify(name: string): Promise<{ queued: boolean; message: string }> {
+        return this.request('POST', `/system/backups/${encodeURIComponent(name)}/verify`, {
+            schema: z.object({ queued: z.boolean(), message: z.string() }),
+        });
+    }
     backupUploadToDrive(name: string): Promise<{ queued: boolean; message: string }> {
         return this.request('POST', `/system/backups/${encodeURIComponent(name)}/drive`, {
             schema: z.object({ queued: z.boolean(), message: z.string() }),
