@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+import { ClientErrorsController } from './client-errors.controller';
 import { MetricsController } from './metrics.controller';
 import { MetricsGuard } from './metrics.guard';
 import { MetricsInterceptor } from './metrics.interceptor';
@@ -11,7 +12,7 @@ import { MetricsService } from './metrics.service';
  * module) cubre liveness/readiness.
  */
 @Module({
-    controllers: [MetricsController],
+    controllers: [MetricsController, ClientErrorsController],
     providers: [
         MetricsService,
         MetricsGuard,

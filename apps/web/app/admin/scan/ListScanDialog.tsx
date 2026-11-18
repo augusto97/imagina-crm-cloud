@@ -125,9 +125,8 @@ export default function ListScanDialog({
     };
 
     const chooseField = (id: number): void => {
-        const { scan_field_id: _old, ...rest } = settings as Record<string, unknown>;
         updateList.mutate(
-            { settings: id > 0 ? { ...rest, scan_field_id: id } : rest },
+            { settings: { scan_field_id: id > 0 ? id : null } },
             {
                 onSuccess: () => toast.success(__('Campo del código guardado')),
                 onError: (err) => toast.error(__('No se pudo guardar'), err instanceof Error ? err.message : String(err)),

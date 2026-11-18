@@ -144,6 +144,7 @@ import { rateKeyForIp } from '../common/client-ip';
 import { CollectionError, CollectionsService } from '../collections/collections.service';
 import { SubscriptionError, SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { ContactWidgetsService } from '../contact-widgets/contact-widgets.service';
+import { workersEnabled } from '../redis/queue-runtime';
 
 /** v0.1.352 — Cuánto vale la página guardada de un formulario (y la de uno que no existe). */
 const PAGE_CACHE_TTL_MS = 30_000;
@@ -413,6 +414,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
         // Archivos subidos a un formulario que nunca se envió: no tienen que
         // quedar ocupando espacio. Cada nodo barre; ZREM decide quién borra.
         // v0.1.289 — y las respuestas que nadie confirmó en 48 h (con sus archivos).
+        // v0.1.435 — sólo el proceso que hace los trabajos en segundo plano.
+        if (!workersEnabled()) return;
         this.sweeper = setInterval(() => {
             this.sweepOrphanUploads().catch((err: unknown) => {
                 this.logger.warn(`Barrido de archivos de formularios: ${String(err)}`);

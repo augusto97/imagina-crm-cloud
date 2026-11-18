@@ -14,6 +14,7 @@ import type Redis from 'ioredis';
 import { formStats } from '../db/schema';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
+import { workersEnabled } from '../redis/queue-runtime';
 
 /**
  * v0.1.358 — Estadísticas de los formularios públicos.
@@ -102,6 +103,7 @@ export class FormStatsService implements OnModuleInit, OnModuleDestroy {
     ) {}
 
     onModuleInit(): void {
+        if (!workersEnabled()) return;
         this.timer = setInterval(() => {
             this.flush().catch((err: unknown) => this.logger.warn(`Volcado de estadísticas de formularios: ${String(err)}`));
         }, FLUSH_EVERY_MS);

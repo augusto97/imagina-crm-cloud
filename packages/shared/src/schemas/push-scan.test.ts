@@ -22,6 +22,14 @@ describe('H1 — preferencias de push', () => {
         expect(updateNotificationPrefsSchema.parse({ push: { inventado: true } })).toEqual({ push: {} });
     });
 
+    it('v0.1.435 — el correo acepta TODOS los tipos de aviso (antes era una lista escrita a mano y los nuevos se perdían)', () => {
+        for (const k of NOTIFICATION_KINDS) {
+            const parsed = updateNotificationPrefsSchema.parse({ email: { [k]: true }, push: { [k]: false } });
+            expect(parsed.email?.[k]).toBe(true);
+            expect(parsed.push?.[k]).toBe(false);
+        }
+    });
+
     it('la suscripción del navegador: endpoint URL y claves base64url', () => {
         const ok = {
             endpoint: 'https://fcm.googleapis.com/fcm/send/abc',

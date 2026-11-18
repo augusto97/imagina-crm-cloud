@@ -29,9 +29,14 @@
 #   --restart   reinicia la app
 #   --rollback  vuelve a la versión anterior (sólo el código)
 #   --cleanup   libera espacio aunque el disco no esté lleno
+#
+# v0.1.435 — Con la app separada en dos procesos (WORKER_ENABLED=1), también
+# vigila imagina-worker (los trabajos en segundo plano): si no responde 2
+# minutos seguidos lo reinicia (como mucho 3 veces por hora). Reiniciar la app
+# a mano o volver a la versión anterior reinicia los dos.
 set -uo pipefail
 
-GUARDIAN_VERSION=2
+GUARDIAN_VERSION=3
 CONF="${GUARDIAN_CONF:-/etc/imagina-base/guardian.conf}"
 STATE="${GUARDIAN_STATE:-/var/lib/imagina-base/guardian}"
 LIB="${GUARDIAN_LIB:-/usr/local/lib/imagina-base}"
@@ -76,6 +81,9 @@ RESCUE_ENABLED=0
 RESCUE_PORT=8899
 RESCUE_USER=
 RESCUE_SERVICE=imagina-rescue
+WORKER_ENABLED=0
+WORKER_SERVICE=imagina-worker
+WORKER_PORT=3901
 # shellcheck disable=SC1090
 [ -f "$CONF" ] && . "$CONF"
 CONF_DIR=$(dirname "$CONF")
@@ -133,6 +141,14 @@ wait_api() {
     return 1
 }
 tail_lines() { printf '%s' "$1" | tail -n "${2:-4}" | tr '\n' ' ' | cut -c1-400; }
+worker_live() { [ "$(http_code "http://127.0.0.1:${WORKER_PORT}/api/v1/health/live")" = "200" ]; }
+wait_worker() {
+    local i
+    for i in $(seq 1 30); do worker_live && return 0; sleep 2; done
+    return 1
+}
+# Reinicia también los trabajos en segundo plano (si están separados).
+restart_worker_too() { [ "$WORKER_ENABLED" = 1 ] && systemctl restart "$WORKER_SERVICE" 2>/dev/null; return 0; }
 
 LAST_ACTION=null
 REQUESTED=false
@@ -253,6 +269,7 @@ do_rollback() {
     note_action rollback
     ln -sfn "$prev" "$BASE/current"
     systemctl restart "$SERVICE" 2>/dev/null
+    restart_worker_too
     if wait_api; then
         CHECK_API=ok
         echo 0 > "$STATE/state/api_fail"
@@ -282,6 +299,7 @@ if [ "$FORCE_ROLLBACK" = 1 ]; then
 elif [ "$FORCE_RESTART" = 1 ]; then
     note_action api_restart
     systemctl restart "$SERVICE" 2>/dev/null
+    restart_worker_too
     if wait_api; then
         CHECK_API=ok
         echo 0 > "$STATE/state/api_fail"
@@ -342,6 +360,52 @@ else
         fi
     else
         say "  ✗ La app: no responde (se reinicia si sigue así $((3 - fails)) minuto(s) más)"
+    fi
+fi
+
+# ── 3b. Los trabajos en segundo plano (v0.1.435) ───────────────────────────
+CHECK_WORKER=skipped
+if [ "$WORKER_ENABLED" = 1 ]; then
+    if worker_live; then
+        CHECK_WORKER=ok
+        can_fix && echo 0 > "$STATE/state/worker_fail"
+        say "  ✓ Trabajos en segundo plano: funcionan"
+    elif [ "$CURRENT_AGE" -lt 120 ] || [ "$FORCE_RESTART" = 1 ] || [ "$FORCE_ROLLBACK" = 1 ]; then
+        # Se está instalando una versión, o se acaba de reiniciar todo: arranca solo.
+        CHECK_WORKER=updating
+        say "  … Trabajos en segundo plano: arrancando"
+    elif ! can_fix; then
+        CHECK_WORKER=down
+        say "  ✗ Trabajos en segundo plano: no responden"
+    else
+        wfails=$(( $(cat "$STATE/state/worker_fail" 2>/dev/null || echo 0) + 1 ))
+        echo "$wfails" > "$STATE/state/worker_fail"
+        CHECK_WORKER=down
+        if [ "$wfails" -ge 2 ] || [ "$REQUESTED" = true ]; then
+            if under_limit worker_restart 3; then
+                note_action worker_restart
+                systemctl restart "$WORKER_SERVICE" 2>/dev/null
+                if wait_worker; then
+                    CHECK_WORKER=ok
+                    echo 0 > "$STATE/state/worker_fail"
+                    event worker_restarted true "Los trabajos en segundo plano (automatizaciones, correos, sincronizaciones) no respondían: se reiniciaron y volvieron. Lo que estaba en espera se hace ahora."
+                    say "  ✓ Trabajos en segundo plano: no respondían → se reiniciaron"
+                else
+                    event worker_restart_failed false "Los trabajos en segundo plano no respondían y no volvieron después de reiniciarlos. Últimas líneas: $(tail_lines "$(journalctl -u "$WORKER_SERVICE" -n 6 --no-pager 2>/dev/null)" 6)"
+                    say "  ✗ Trabajos en segundo plano: no responden, ni después de reiniciarlos"
+                    ISSUES=$((ISSUES + 1))
+                fi
+            else
+                [ "$(recent_count worker_attention)" -eq 0 ] && {
+                    note_action worker_attention
+                    event worker_attention false "Los trabajos en segundo plano siguen sin responder después de 3 reinicios en la última hora. No se reinician más hasta que alguien los revise (journalctl -u $WORKER_SERVICE -n 50)."
+                }
+                say "  ✗ Trabajos en segundo plano: no responden (ya se reiniciaron 3 veces en la última hora)"
+                ISSUES=$((ISSUES + 1))
+            fi
+        else
+            say "  ✗ Trabajos en segundo plano: no responden (se reinician si sigue así 1 minuto más)"
+        fi
     fi
 fi
 
@@ -624,7 +688,7 @@ if [ -f "$EVENTS" ] && [ "$(wc -l < "$EVENTS")" -gt 300 ]; then
     tail -n 300 "$EVENTS" > "$EVENTS.tmp" && mv -f "$EVENTS.tmp" "$EVENTS"
 fi
 cat > "$STATE/status.json.tmp" <<JSON
-{"version":$GUARDIAN_VERSION,"updated_at":"$ISO","domain":$(json_str "$DOMAIN"),"web_mode":$(json_str "$WEB_MODE"),"requested":$REQUESTED,"current_release":$(json_str "$(basename "${CURRENT_TARGET:-}")"),"checks":{"api":"$CHECK_API","database":"$CHECK_DB","redis":"$CHECK_REDIS","web_server":"$CHECK_WEB","front":"$CHECK_FRONT","disk":{"ok":$DISK_OK,"free_bytes":$DISK_FREE,"total_bytes":$DISK_TOTAL,"free_inodes":$INO_FREE,"total_inodes":$INO_TOTAL}},"rescue":{"enabled":$([ "$RESCUE_ENABLED" = 1 ] && echo true || echo false),"port":${RESCUE_PORT:-0},"cert":"$RESCUE_CERT_KIND","active":$RESCUE_ACTIVE},"last_action":$LAST_ACTION}
+{"version":$GUARDIAN_VERSION,"updated_at":"$ISO","domain":$(json_str "$DOMAIN"),"web_mode":$(json_str "$WEB_MODE"),"requested":$REQUESTED,"current_release":$(json_str "$(basename "${CURRENT_TARGET:-}")"),"checks":{"api":"$CHECK_API","database":"$CHECK_DB","redis":"$CHECK_REDIS","web_server":"$CHECK_WEB","front":"$CHECK_FRONT","disk":{"ok":$DISK_OK,"free_bytes":$DISK_FREE,"total_bytes":$DISK_TOTAL,"free_inodes":$INO_FREE,"total_inodes":$INO_TOTAL}},"worker":{"enabled":$([ "$WORKER_ENABLED" = 1 ] && echo true || echo false),"port":${WORKER_PORT:-0},"check":"$CHECK_WORKER"},"rescue":{"enabled":$([ "$RESCUE_ENABLED" = 1 ] && echo true || echo false),"port":${RESCUE_PORT:-0},"cert":"$RESCUE_CERT_KIND","active":$RESCUE_ACTIVE},"last_action":$LAST_ACTION}
 JSON
 # El modo «sólo revisar» no deja rastro: no cambia lo que ve la app.
 if can_fix; then
@@ -636,7 +700,7 @@ fi
 
 if [ "$HUMAN" = 1 ]; then
     echo
-    if { [ "$CHECK_API" = ok ] || [ "$CHECK_API" = updating ]; } && [ "$ISSUES" -eq 0 ] && [ "$CHECK_FRONT" != down ] && [ "$CHECK_FRONT" != cert ] && [ "$CHECK_DB" != down ] && [ "$CHECK_REDIS" != down ] && [ "$CHECK_WEB" != down ] && [ "$DISK_OK" = true ]; then
+    if { [ "$CHECK_API" = ok ] || [ "$CHECK_API" = updating ]; } && [ "$ISSUES" -eq 0 ] && [ "$CHECK_FRONT" != down ] && [ "$CHECK_FRONT" != cert ] && [ "$CHECK_DB" != down ] && [ "$CHECK_REDIS" != down ] && [ "$CHECK_WEB" != down ] && [ "$CHECK_WORKER" != down ] && [ "$DISK_OK" = true ]; then
         say "Listo: todo funciona."
     elif [ "$CHECK_ONLY" = 1 ]; then
         say "Hay algo mal. Para que se arregle ahora: sudo imagina-reparar"

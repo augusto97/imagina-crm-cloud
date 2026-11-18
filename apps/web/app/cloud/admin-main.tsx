@@ -22,6 +22,7 @@ import { captureSignupAttribution } from '@/lib/signupAttribution';
 import { registerServiceWorker, takeTenantParam } from '@/lib/pwa/serviceWorker';
 import { useSession } from '@/cloud/session';
 import { installUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
+import { installErrorReporter } from '@/lib/errorReporter';
 import '@fontsource-variable/inter';
 import '@/styles/globals.css';
 
@@ -64,6 +65,7 @@ initDomainBoot();
 // tiene que quedar registrado ANTES que el del router (Chrome los corre en
 // orden de registro).
 installUnsavedChangesGuard();
+installErrorReporter('app');
 
 /**
  * Entry standalone de Imagina Base: monta la UI REAL del admin (fork pulido

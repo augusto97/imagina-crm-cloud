@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
     GUARDIAN_VERSION,
+    guardianUpgradeNote,
     heartbeatPingSchema,
     heartbeatSupportsFail,
     monitoringSettingsSchema,
@@ -42,7 +43,7 @@ export const CERT_WARN_DAYS = 14;
 export const CERT_CRITICAL_DAYS = 3;
 
 /** Los eventos del guardián que piden una persona (además de los `ok: false`). */
-const ATTENTION_KINDS = new Set(['needs_attention']);
+const ATTENTION_KINDS = new Set(['needs_attention', 'worker_attention']);
 /** v0.1.432 — Quién entró a la página de rescate: aviso aparte (no es una reparación). */
 const ACCESS_KINDS = new Set(['rescue_login', 'rescue_blocked']);
 /** La página de rescate no arranca: no es la app caída, tiene su propio aviso. */
@@ -75,6 +76,9 @@ const GUARDIAN_KIND_LABEL: Record<string, string> = {
     rescue_login: 'Entraron a la página de rescate',
     rescue_blocked: 'Página de rescate bloqueada',
     rescue_page_failed: 'La página de rescate no arranca',
+    worker_restarted: 'Trabajos en segundo plano reiniciados',
+    worker_restart_failed: 'Los trabajos en segundo plano no volvieron',
+    worker_attention: 'Los trabajos en segundo plano necesitan que los revises',
 };
 
 export function guardianKindLabel(kind: string): string {
@@ -98,7 +102,9 @@ export function pendingGuardianEvents(events: GuardianEvent[], cursor: string | 
 export function guardianAllOk(r: GuardianReport): boolean {
     const c = r.checks;
     const good = (s: string) => s === 'ok' || s === 'skipped' || s === 'updating';
-    return good(c.api) && good(c.database) && good(c.redis) && good(c.web_server) && good(c.front) && c.disk.ok;
+    // Un informe de un guardián v1-v2 no trae `worker`: un solo proceso.
+    const workerOk = !r.worker?.enabled || good(r.worker.check);
+    return good(c.api) && good(c.database) && good(c.redis) && good(c.web_server) && good(c.front) && c.disk.ok && workerOk;
 }
 
 /** Días hasta que vence un certificado (`valid_to` de node). */
@@ -240,9 +246,10 @@ export class PlatformWatchService {
                     source: 'guardian',
                     severity: 'info',
                     title: 'Hay una versión nueva de la reparación automática',
-                    detail: 'Esta versión de la app trae mejoras para el guardián del servidor.',
+                    detail: guardianUpgradeNote(report.version) ?? 'Esta versión de la app trae mejoras para el guardián del servidor.',
                     paragraphs: [
                         'Esta versión de la app trae una versión nueva de la reparación automática del servidor (el guardián).',
+                        ...(guardianUpgradeNote(report.version) ? [`Lo que suma: ${guardianUpgradeNote(report.version)}`] : []),
                         `Para instalarla, como root: ${this.guardian.installCommand()}`,
                     ],
                     remind_hours: 0,

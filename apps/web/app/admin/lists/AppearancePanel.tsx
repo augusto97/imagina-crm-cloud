@@ -48,7 +48,7 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
         if (next === currentLayout) return;
         try {
             await update.mutateAsync({
-                settings: { ...list.settings, record_layout: next },
+                settings: { record_layout: next },
             });
             // Forzamos refetch del cache de records y de la lista para
             // que cualquier RecordPage abierto en otra tab/ruta pille
@@ -76,8 +76,8 @@ export function AppearancePanel({ list }: AppearancePanelProps): JSX.Element {
             if (!ok) return;
         }
         try {
-            const next = { ...list.settings, crm_template_id: id } as Record<string, unknown>;
-            delete next.record_layout_v3;
+            // v0.1.435 — sólo lo que cambia; `null` quita el diseño del editor.
+            const next: Record<string, unknown> = { crm_template_id: id, record_layout_v3: null };
             // Mantenemos `crm_template_custom` aunque elijas un
             // built-in (no destruimos el trabajo del editor visual
             // si el user picó otra plantilla por error). El resolver

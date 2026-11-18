@@ -430,7 +430,30 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.434**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.435**
+(**la app en dos procesos + errores de las pantallas** — `imagina-api` atiende
+y `imagina-worker` corre los trabajos en segundo plano (si hay ≥ 1,5 GB de
+RAM; el guardián v3 los vigila a los dos), los errores del navegador llegan a
+Plataforma → Diagnóstico → «Errores en las pantallas», y dos fallas
+escondidas: guardar un ajuste de la lista ya no pisa los demás (PATCH que
+mezcla) y los avisos por correo aceptan todos los tipos; addendum ADR-S104).
+**Pendiente del usuario**: volver a correr el instalador del guardián como
+root (`bash /opt/imagina-base/current/deploy/install-guardian.sh`; la consola
+lo avisa) para separar los procesos (`--un-proceso` para dejarlo como está).
+**Plan aprobado el 2026-11-18** («estabilizar y mejorar», "Ok, has todos los
+que propones"), en este orden: **v0.1.436** pruebas de pantallas (Playwright)
+en el CI + regla de oro nº 7 en ~38 hooks; **v0.1.437** uso por módulo en
+Plataforma; **v0.1.438** integraciones sin probar con cuenta real marcadas
+«beta» con mostrar/ocultar del operador (SMS, WhatsApp de Meta, Wompi, PayPal,
+Telegram, Slack, Google Calendar/Meet, reCAPTCHA/hCaptcha), aviso de retiro de
+«WhatsApp (WAS anterior)» con la herramienta de cambio, SMS con 1-2
+proveedores a la vista y el correo de los agentes de IA sólo en «propone y
+alguien aprueba»; **v0.1.439** PDF/Excel en hilos aparte, crecimiento acotado
+de `automation_runs`/`activity` y verificación de copias restaurándolas;
+después los módulos nuevos (ver `docs/ideas.md` §0: API pública + webhooks +
+n8n, acciones/disparadores que faltan, duplicados y fusionar, firma
+electrónica, DIAN —falta proveedor y credenciales de prueba— y modo agencia
+—falta decidir quién cobra—). Antes **v0.1.434**
 (**los correos salen al ritmo que acepta el SMTP** — cada envío espera su
 turno por servidor (Redis, entre todos los procesos), con «Correos por
 segundo» configurable en Plataforma → Correo y en Ajustes → Correo (vacío =
@@ -2081,6 +2104,33 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-18 · v0.1.435** — **La app en dos procesos + errores de las
+  pantallas + dos fallas escondidas** (primera versión del plan «estabilizar
+  y mejorar la app» que el usuario aprobó entero: "Ok, has todos los que
+  propones"). (a) **Dos procesos** (addendum ADR-S104): `IMAGINA_ROLE`
+  (`api` / `worker` / sin papel = `all`) decide si un proceso corre colas,
+  relojes y barridos; el instalador del guardián crea `imagina-worker` si hay
+  ≥ 1,5 GB de RAM (`--un-proceso` / `--procesos-separados`, se recuerda), deja
+  un drop-in con `IMAGINA_ROLE=api` y `KillMode=process`, y un sudoers
+  validado para reiniciar/arrancar/detener los dos servicios; `finalize.sh` y
+  `snapshot-restore.sh` los manejan; el worker se reinicia solo al cambiar la
+  versión (sale con 75); guardián v3 lo reinicia tras 2 min (3/h) y la app
+  avisa por correo directo si no ve trabajos 3 min. (b) **Errores de
+  pantalla**: `POST /client-errors` público (20 por IP y minuto), agrupados en
+  Redis 14 días sin datos de la persona, tarjeta «Errores en las pantallas» en
+  Diagnóstico; los manda `lib/errorReporter.ts` (errores sin atrapar, promesas
+  y `ErrorBoundary`; no los del API, la red ni un despliegue nuevo). (c) **Dos
+  fallas escondidas**: `PATCH /lists/:id` con `settings` reemplazaba el objeto
+  entero (un PATCH parcial por API/MCP borraba ajustes, y dos pantallas a la
+  vez se pisaban) → mezcla con la fila bloqueada y `null` borra; las
+  pantallas mandan sólo lo que cambian. Y `updateNotificationPrefsSchema.email`
+  era una lista escrita a mano → se arma desde `NOTIFICATION_KINDS`.
+  (d) `docs/ideas.md` al día (fuera D4, D10; G4/G12/G15 en parte; §0 con el
+  plan). Pendiente del usuario: volver a correr el instalador del guardián.
+  Tests: `process-role.spec` (7), `guardian-script.spec` 44/44,
+  `platform-watch.spec` 21/21, `client-errors.spec` (7), `lists.spec` 19/19,
+  shared 995, front (serverWatch, errorReporter).
 
 - **2026-11-17 · v0.1.434** — **Los correos salen al ritmo que acepta el
   SMTP** (reporte del usuario con captura de Plataforma → Diagnóstico tras

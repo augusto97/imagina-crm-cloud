@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { agoText, checkTone, guardianChecks, heartbeatProvider, severityVariant } from './serverWatch';
+import { agoText, checkTone, guardianChecks, heartbeatProvider, processesInfo, severityVariant } from './serverWatch';
 
 describe('serverWatch (v0.1.431)', () => {
     it('las filas del guardián van con la entrada por el dominio primero y el disco con lo libre', () => {
@@ -20,6 +20,7 @@ describe('serverWatch (v0.1.431)', () => {
                     front: 'down',
                     disk: { ok: false, free_bytes: 500, total_bytes: 1000, free_inodes: 1, total_inodes: 2 },
                 },
+                worker: { enabled: false, port: 0, check: 'skipped' },
                 rescue: { enabled: true, port: 8899, cert: 'domain', active: true },
                 last_action: null,
             },
@@ -45,5 +46,41 @@ describe('serverWatch (v0.1.431)', () => {
         expect(heartbeatProvider('https://uptime.betterstack.com/api/v1/heartbeat/x')).toBe('Better Stack');
         expect(heartbeatProvider('https://hc-ping.com/abc')).toBe('Healthchecks.io');
         expect(heartbeatProvider('https://ejemplo.com/x')).toBeNull();
+    });
+
+    it('v0.1.435 — con dos procesos, los trabajos en segundo plano son una fila más, después de la app', () => {
+        const base = {
+            version: 3,
+            updated_at: '2026-11-14T12:00:00Z',
+            domain: 'base.acme.co',
+            web_mode: 'nginx',
+            requested: false,
+            current_release: 'r',
+            checks: {
+                api: 'ok' as const,
+                database: 'ok' as const,
+                redis: 'ok' as const,
+                web_server: 'ok' as const,
+                front: 'ok' as const,
+                disk: { ok: true, free_bytes: 5, total_bytes: 10, free_inodes: 1, total_inodes: 2 },
+            },
+            rescue: { enabled: false, port: 0, cert: 'none' as const, active: false },
+            last_action: null,
+        };
+        const split = guardianChecks({ ...base, worker: { enabled: true, port: 3901, check: 'down' } }, String);
+        expect(split.map((r) => r.key)).toEqual(['front', 'api', 'worker', 'database', 'redis', 'web_server', 'disk']);
+        expect(split[2]).toMatchObject({ label: 'Trabajos en segundo plano', state: 'down' });
+        const one = guardianChecks({ ...base, worker: { enabled: false, port: 3901, check: 'skipped' } }, String);
+        expect(one.map((r) => r.key)).not.toContain('worker');
+    });
+
+    it('v0.1.435 — cómo corre la app: separada, separada con los trabajos detenidos, o en un proceso', () => {
+        expect(processesInfo(undefined)).toBeNull();
+        expect(processesInfo({ role: 'api', workers: 1 })).toMatchObject({ tone: 'ok', title: 'Procesos separados' });
+        expect(processesInfo({ role: 'api', workers: null })!.tone).toBe('ok');
+        const stopped = processesInfo({ role: 'api', workers: 0 })!;
+        expect(stopped.tone).toBe('bad');
+        expect(stopped.detail).toContain('imagina-reparar');
+        expect(processesInfo({ role: 'all', workers: 1 })).toMatchObject({ tone: 'none', title: 'Un solo proceso' });
     });
 });

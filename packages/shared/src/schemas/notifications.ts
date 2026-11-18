@@ -201,24 +201,10 @@ export type NotificationPrefs = z.infer<typeof notificationPrefsSchema>;
 
 export const updateNotificationPrefsSchema = z
     .object({
-        email: z
-            .object({
-                mention: z.boolean(),
-                assigned: z.boolean(),
-                comment: z.boolean(),
-                update: z.boolean(),
-                reminder: z.boolean(),
-                failure: z.boolean(),
-                reply: z.boolean(),
-                consent: z.boolean(),
-                approval: z.boolean(),
-                team_assigned: z.boolean(),
-                sla: z.boolean(),
-                agent: z.boolean(),
-                subscription: z.boolean(),
-                shop: z.boolean(),
-            })
-            .partial(),
+        // v0.1.435 — armado desde NOTIFICATION_KINDS, como `push`: antes era
+        // una lista escrita a mano y un tipo de aviso nuevo que no se sumaba
+        // ahí se descartaba EN SILENCIO al guardar (Zod quita lo que no conoce).
+        email: kindFlagsPatchSchema(),
         push: kindFlagsPatchSchema(),
         digest: z.enum(['off', 'daily']),
         digest_hour: z.number().int().min(0).max(23),

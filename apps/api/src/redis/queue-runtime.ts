@@ -11,11 +11,31 @@ import { Worker, type JobsOptions, type Processor, type Queue, type RepeatOption
 const logger = new Logger('QueueRuntime');
 
 /**
+ * v0.1.435 — Papel de este proceso. `IMAGINA_ROLE` lo pone la unidad de systemd
+ * (`Environment=`), nunca el `.env`: un valor del `.env` le ganaría a la unidad
+ * y los dos procesos quedarían iguales.
+ *   · `api`    atiende pedidos; no toma trabajos en segundo plano.
+ *   · `worker` hace los trabajos en segundo plano (colas, barridos periódicos);
+ *              escucha sólo en 127.0.0.1 para que el guardián vea si está vivo.
+ *   · sin valor: las dos cosas en un solo proceso (como siempre).
+ */
+export type ProcessRole = 'api' | 'worker' | 'all';
+
+export function processRole(): ProcessRole {
+    const v = (process.env.IMAGINA_ROLE ?? '').trim().toLowerCase();
+    return v === 'api' || v === 'worker' ? v : 'all';
+}
+
+/**
  * `WORKERS=off` deja al proceso como API pura: puede ENCOLAR (las colas se
  * crean igual) pero no toma trabajos ni registra las tareas periódicas. Otro
  * proceso con `WORKERS=on` (el default) hace el trabajo en segundo plano.
+ * El papel del proceso (`IMAGINA_ROLE`) manda sobre `WORKERS`.
  */
 export function workersEnabled(): boolean {
+    const role = processRole();
+    if (role === 'api') return false;
+    if (role === 'worker') return true;
     const v = (process.env.WORKERS ?? 'on').trim().toLowerCase();
     return !(v === 'off' || v === '0' || v === 'false' || v === 'no');
 }

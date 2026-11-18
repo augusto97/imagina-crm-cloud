@@ -35,6 +35,12 @@ export interface RaiseInput {
     remind_hours?: number;
     /** false = sólo queda en el panel (otro servicio ya manda su propio correo). */
     mail?: boolean;
+    /**
+     * v0.1.435 — Mandar el correo en el acto, sin la cola de correos. Para lo
+     * que avisa justamente que la cola no se está atendiendo (los trabajos en
+     * segundo plano detenidos): por la cola ese correo no saldría nunca.
+     */
+    direct?: boolean;
 }
 
 function esc(s: string): string {
@@ -127,6 +133,7 @@ export class PlatformAlertsService {
                     ...(reminder ? ['', `Lo vimos por primera vez el ${current!.opened_at.slice(0, 16).replace('T', ' ')} UTC y sigue igual.`] : []),
                 ],
                 next,
+                input.direct === true,
             );
             if (!sent) next.notified_at = current?.notified_at ?? null;
         }
@@ -224,7 +231,7 @@ export class PlatformAlertsService {
     }
 
     /** Un correo a cada superadmin. false = no salió (sin destinatarios o sin correo). */
-    private async send(subject: string, paragraphs: string[], alert: PlatformAlert): Promise<boolean> {
+    private async send(subject: string, paragraphs: string[], alert: PlatformAlert, direct = false): Promise<boolean> {
         const to = this.env.PLATFORM_SUPERADMINS;
         if (!this.mail || to.length === 0) return false;
         const link = this.panelUrl(alert.action_path);
@@ -236,7 +243,10 @@ export class PlatformAlertsService {
             paragraphs.map((p) => (p ? `<p>${esc(p)}</p>` : '')).join('') +
             `<p><a href="${esc(link)}">${esc(label)}</a></p>`;
         try {
-            for (const address of to) await this.mail.enqueue({ to: address, subject, text, html });
+            for (const address of to) {
+                if (direct) await this.mail.sendNow({ to: address, subject, text, html });
+                else await this.mail.enqueue({ to: address, subject, text, html });
+            }
             return true;
         } catch (err) {
             this.logger.warn(`No se pudo avisar por correo (${subject}): ${(err as Error).message}`);

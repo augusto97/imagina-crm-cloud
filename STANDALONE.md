@@ -9593,3 +9593,40 @@ era la consola, con comandos largos. Ahora hay dos, ninguna depende de la app:
 instalador (no se actualiza solo a propósito: sería root ejecutando código que
 el usuario de la app puede escribir). El puerto se abre una vez en el firewall
 del panel/proveedor. Runbook: `docs/runbook-guardian.md` §1.1 y §1.2.
+
+**Addendum v0.1.435 — dos procesos: la app y los trabajos en segundo plano.**
+Hasta acá un solo proceso de node atendía a las personas y corría las colas
+(BullMQ), los relojes (`setInterval`) y los barridos: un trabajo pesado le
+robaba tiempo a las pantallas y una caída de ese proceso se llevaba todo. Ahora
+el papel lo decide `IMAGINA_ROLE`, que sólo ponen las unidades de systemd:
+
+- `api` (`imagina-api`, con un drop-in `10-imagina.conf`): atiende y **no**
+  registra workers, schedulers ni relojes de segundo plano
+  (`workersEnabled()` en `redis/queue-runtime.ts` es la única puerta, y los
+  `setInterval` de los volcados de estadísticas, retención, importaciones,
+  suscripciones y cobros la consultan).
+- `worker` (`imagina-worker`): corre todo eso y escucha sólo en
+  `127.0.0.1:IMAGINA_WORKER_PORT` (3901) para que el guardián le pregunte por
+  `/health/live`. Vigila el enlace `current` (`common/release-watch.ts`) y, si
+  apunta a otra versión, sale con 75 y systemd (`Restart=always`) lo levanta
+  con el código nuevo.
+- Sin papel = `all`: un solo proceso y manda `WORKERS`, como antes.
+
+El instalador del guardián los separa si hay al menos 1,5 GB de RAM
+(`--un-proceso` / `--procesos-separados`, se recuerda), deja `KillMode=process`
+en la app (los scripts de actualizar y restaurar sobreviven al reinicio) y un
+sudoers validado con `visudo` que sólo permite `systemctl restart|start|stop`
+de esos dos servicios. `finalize.sh` reinicia el proceso de los trabajos AL
+FINAL (puede estar corriendo dentro de su cgroup) y `snapshot-restore.sh` lo
+detiene antes de tocar la base y lo arranca al terminar. El guardián
+(`GUARDIAN_VERSION` = 3) lo reinicia tras 2 minutos sin responder (3/h, no
+durante una actualización) y la app avisa por correo **directo** (sin pasar
+por la cola, que justamente está parada) si no ve ningún worker 3 minutos.
+Diagnóstico muestra «Procesos separados» o «Un solo proceso». Runbook:
+`docs/runbook-guardian.md` §1.3.
+
+En la misma versión, los errores de las **pantallas** (lo que falla en el
+navegador) llegan a Plataforma → Diagnóstico: `POST /client-errors` (público,
+20 por IP y minuto, 600 en total), agrupados en Redis (`diag:cerr`, 14 días,
+200 grupos) sin datos de la persona — ni IP, ni usuario, ni la consulta de la
+dirección, ni el dominio en el stack.

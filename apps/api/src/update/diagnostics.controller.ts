@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Inject, Optional, Param, Post, Put, UseGuards } from '@nestjs/common';
 import {
     updateMonitoringSchema,
     type DiskCleanupResult,
@@ -15,6 +15,8 @@ import { ENV, type Env } from '../config/env';
 import { LayoutDisk, MIN_FREE_INODES, dirBytes, freeBytes, freeInodes } from './disk-space';
 import { PostgresWalService } from './postgres-wal';
 import { GuardianService } from './guardian.service';
+import { PlatformWatchQueue } from './platform-watch.queue';
+import { processRole } from '../redis/queue-runtime';
 import { PlatformAlertsService } from './platform-alerts.service';
 import { PlatformWatchService } from './platform-watch.service';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -23,6 +25,7 @@ import { SessionGuard } from '../auth/session.guard';
 import { SuperadminGuard } from '../authz/superadmin.guard';
 import { serverConfigStatus } from '../common/web-build';
 import { MailService } from '../mail/mail.service';
+import { clearClientErrors, readClientErrors } from '../observability/client-errors';
 import { clearDiagnostics, readMailLog, readServerErrors } from '../observability/diagnostics';
 import { REDIS } from '../redis/redis.module';
 
@@ -44,13 +47,16 @@ export class DiagnosticsController {
         private readonly guardian: GuardianService,
         private readonly alerts: PlatformAlertsService,
         private readonly watch: PlatformWatchService,
+        @Optional() private readonly watchQueue?: PlatformWatchQueue,
     ) {}
 
     // ── v0.1.431 (ADR-S104): la reparación automática, los avisos y el monitoreo ──
 
     @Get('guardian')
-    guardianStatus(): GuardianStatus {
-        return this.guardian.status();
+    async guardianStatus(): Promise<GuardianStatus> {
+        const status = this.guardian.status();
+        const workers = this.watchQueue ? await this.watchQueue.workersConnected() : null;
+        return { ...status, processes: { role: processRole(), workers } };
     }
 
     /** «Reparar ahora»: el guardián revisa al instante (sólo un archivo vacío; lo que hace lo decide él). */
@@ -100,12 +106,13 @@ export class DiagnosticsController {
 
     @Get()
     async get(): Promise<PlatformDiagnostics> {
-        const [account_mail, mail, errors] = await Promise.all([
+        const [account_mail, mail, errors, client_errors] = await Promise.all([
             this.mail.accountMailStatus(),
             readMailLog(this.redis, 100),
             readServerErrors(this.redis, 100),
+            readClientErrors(this.redis, 100).catch(() => []),
         ]);
-        return { server: serverConfigStatus(this.env), account_mail, mail, errors };
+        return { server: serverConfigStatus(this.env), account_mail, mail, errors, client_errors };
     }
 
     /**
@@ -182,5 +189,6 @@ export class DiagnosticsController {
     @HttpCode(204)
     async clear(): Promise<void> {
         await clearDiagnostics(this.redis);
+        await clearClientErrors(this.redis);
     }
 }
