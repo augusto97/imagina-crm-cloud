@@ -43,6 +43,7 @@ import { PortalModule } from './portal/portal.module';
 import { RecoveryModule } from './recovery/recovery.module';
 import { PublicListsModule } from './public-lists/public-lists.module';
 import { PlatformModule } from './platform/platform.module';
+import { PublicApiModule } from './public-api/public-api.module';
 import { AuditModule } from './audit/audit.service';
 import { ConnectorsModule } from './connectors/connectors.module';
 import { StoreSyncModule } from './sync/store-sync.module';
@@ -170,6 +171,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         PortalModule,
         PublicListsModule,
         PlatformModule,
+        PublicApiModule,
         BillingModule,
         PaymentsModule,
         ExportModule,

@@ -83,6 +83,10 @@ export class TenantGuard implements CanActivate {
             const q = (req.query as Record<string, unknown> | undefined)?.t;
             if (typeof q === 'string' && /^\d{1,12}$/.test(q)) value = q;
         }
+        // v0.1.441 (G1) — un token de la API es de UNA empresa: la fija él. El
+        // header es opcional y, si viene (id o slug), tiene que ser esa misma
+        // (se compara después de resolverlo).
+        if (req.apiToken && !value) value = String(req.apiToken.tenantId);
         if (!value) {
             throw new BadRequestException('Falta el header X-Tenant-Id');
         }
@@ -123,6 +127,13 @@ export class TenantGuard implements CanActivate {
             return rows[0] ?? null;
         });
 
+        if (req.apiToken && membership?.tenantId !== req.apiToken.tenantId) {
+            throw new ForbiddenException({
+                code: 'api_token_tenant_mismatch',
+                message: 'Este token es de otra empresa: quita el header X-Tenant-Id o usa el token de esa empresa.',
+                data: { status: 403 },
+            });
+        }
         if (!membership) {
             throw new ForbiddenException('No eres miembro de ese workspace');
         }

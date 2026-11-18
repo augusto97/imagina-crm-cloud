@@ -9644,3 +9644,42 @@ navegador) llegan a Plataforma → Diagnóstico: `POST /client-errors` (público
 20 por IP y minuto, 600 en total), agrupados en Redis (`diag:cerr`, 14 días,
 200 grupos) sin datos de la persona — ni IP, ni usuario, ni la consulta de la
 dirección, ni el dominio en el stack.
+
+### ADR-S105 — API pública REST con tokens: la misma API de la app, por lista blanca (v0.1.441)
+
+**Contexto.** El primer módulo del plan aprobado el 2026-11-18 (G1): que n8n,
+Make, Zapier o un programa propio lean y escriban listas y registros. Hasta
+acá la API REST sólo aceptaba la sesión del navegador, y los tokens
+personales (ADR-S21 fase 3) servían sólo para el MCP.
+
+**Decisión.**
+- **No hay una API paralela.** Un token de la API abre las MISMAS rutas que
+  usa la app, pero sólo las de una lista blanca exacta (`API_TOKEN_ROUTES`,
+  comparada contra el patrón del router con `routePath`): listas, campos,
+  vistas, registros (uno, en lote, descripción), comentarios, búsqueda,
+  archivos, personas y equipos, más `GET /whoami`. Validación, ACL por lista,
+  campos ocultos, papelera, actividad y automatizaciones son los de siempre.
+  Lo que no está (borrar listas o campos, miembros, ajustes, cobros,
+  plataforma) responde 403 antes del controller.
+- **Tokens con uso.** `personal_access_tokens.use` = `mcp` | `api`
+  (migración 0128); los de antes son `mcp` y nunca ganan acceso REST, y un
+  token de la API no entra al MCP. Capacidad nueva `use_api` (admin; un rol
+  propio puede sumarla). Alcance `read` = sólo GET/HEAD; `full` = además
+  POST/PATCH/DELETE de la lista.
+- **El token es de una persona en una empresa**, resuelto EN VIVO en cada
+  pedido (rol, rol propio, equipos, plan con el módulo `api`, cuenta activa,
+  no `client` ni `guest`). TenantGuard toma la empresa del token y rechaza un
+  `X-Tenant-Id` distinto.
+- **Freno propio** en Redis: 300/min por token y 1.200/min por empresa, con
+  `X-RateLimit-*` y 429 + `Retry-After`; falla abierto sin Redis.
+- **Documento OpenAPI 3.1** (`GET /openapi.json`, público) armado con los
+  schemas zod de `packages/shared`; un test exige que cubra exactamente la
+  lista blanca.
+- **Ajustes → API** (admins o `use_api`): crear con nombre, alcance y
+  vencimiento, el secreto una sola vez, ejemplos con la dirección real y el
+  token, el documento y revocar.
+
+**Consecuencias.** Sumar una ruta a la API es agregarla a la lista blanca (y
+al documento: el test lo obliga). Los webhooks de eventos (v0.1.442) y la app
+de n8n (v0.1.443) se apoyan en estos tokens. Detalle para quien integra en
+`docs/api.md`.

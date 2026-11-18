@@ -48,6 +48,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 
 import { formatDate, formatNumber } from '@/lib/tenantFormat';
 import { PlanModuleGate } from '@/components/PlanModuleNotice';
+import { ApiTokensCard } from '@/admin/settings/ApiTokensCard';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 const STATUS_LABEL: Record<BillingSummary['status'], string> = {
@@ -87,8 +88,9 @@ export function SettingsPage(): JSX.Element {
     const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS);
     const canManageTeams = useCan(CAP.MANAGE_TEAMS);
     const canManageForms = useCan(CAP.MANAGE_FORMS);
+    const canUseApi = useCan(CAP.USE_API);
     const isGuest = useIsGuest();
-    const groups = settingsSectionGroups({ isAdmin, canManageAutomations, canManageTeams, canManageForms, isGuest });
+    const groups = settingsSectionGroups({ isAdmin, canManageAutomations, canManageTeams, canManageForms, canUseApi, isGuest });
     const visible = groups.flatMap((g) => g.items);
     // Fallback a "plan" (admin) o "seguridad" si el param no existe o apunta a
     // una sección que este rol no ve.
@@ -229,6 +231,13 @@ export function SettingsPage(): JSX.Element {
                 {/* v0.1.338 — la galería pinta con candado lo que el plan no incluye
                     (la tienda, el sitio y SQL tienen su propio módulo). */}
                 {active === 'conectores' && <IntegrationsPanel />}
+
+                {/* v0.1.441 (G1) — tokens para conectar programas por la API REST. */}
+                {active === 'api' && (isAdmin || canUseApi) && (
+                    <PlanModuleGate module="api">
+                        <ApiTokensCard />
+                    </PlanModuleGate>
+                )}
 
                 {active === 'problemas' && <IncidentsPanel />}
                 {active === 'papelera' && <TrashPanel />}

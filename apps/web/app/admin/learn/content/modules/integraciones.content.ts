@@ -837,7 +837,7 @@ export const articles: LearnArticle[] = [
             {
                 t: 'faq',
                 items: [
-                    { q: '¿Puedo actualizar un registro existente con un webhook?', a: 'El webhook entrante no trae un registro propio: sirve para **crear** registros nuevos, mandar avisos o llamar a otro sistema con los datos que llegan. Para mantener una lista al día con otro sistema, mira las sincronizaciones de tienda o de base de datos.' },
+                    { q: '¿Puedo actualizar un registro existente con un webhook?', a: 'Sí. En el disparador elige **Qué hacer con el registro**: crear uno nuevo, actualizar uno existente (buscándolo por su id o por un campo «Sin repetidos») o actualizar o crear. Para leer y escribir registros desde otro programa sin armar una automatización, usa la **API**.' },
                     { q: 'Mi sistema manda los datos en otro formato, ¿sirve?', a: 'El webhook entrante recibe el formato estándar que usan Zapier, Make y la mayoría de las plataformas. Toca **Escuchar datos de prueba** y mira qué llega: si aparece cada dato con su valor, está todo bien.' },
                     { q: '¿Necesito una automatización activa para escuchar?', a: 'Para ver las capturas de prueba basta con guardarla; para que las acciones corran de verdad, tiene que estar **Activa**.' },
                 ],
@@ -847,6 +847,92 @@ export const articles: LearnArticle[] = [
                 items: [
                     { label: 'Ver el recorrido de automatizaciones', tour: 'automation-basics' },
                     { label: 'API personalizada', article: 'integraciones-api-personalizada' },
+                    { label: 'La API', article: 'integraciones-api' },
+                ],
+            },
+        ],
+    },
+    {
+        id: 'integraciones-api',
+        route: '/settings?s=api',
+        related: ['integraciones-webhooks', 'integraciones-api-personalizada'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'La **API** deja que otro programa trabaje con tus datos sin pasar por la pantalla: **n8n**, **Make**, **Zapier**, un script, tu ERP o la página de tu negocio leen tus listas, crean registros y los actualizan. Se conecta con un **token**: una clave larga que actúa como tú.\n\nA diferencia del **webhook entrante** (el otro sistema sólo te manda datos y una automatización decide qué hacer), con la API el otro programa **pregunta y escribe** directo: busca un registro, lo cambia, lee los comentarios.',
+            },
+            { t: 'anim', key: 'integ-api-custom', caption: 'Otro programa usa el token para leer y escribir tus registros.' },
+            { t: 'h', text: 'Crear un token' },
+            {
+                t: 'steps',
+                items: [
+                    'Ve a **Ajustes → API** y toca **Nuevo token**.',
+                    'Ponle un nombre que diga para qué es (por ejemplo «n8n de ventas»), elige **Qué puede hacer** (**Sólo leer** o **Leer y escribir**) y cuándo **vence**.',
+                    'Toca **Crear token** y cópialo: se muestra **una sola vez**. Si lo pierdes, revócalo y crea otro.',
+                    'En el otro programa, manda el token en cada pedido con la cabecera **Authorization**: la palabra **Bearer**, un espacio y el token.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Lo que hay en Ajustes → API',
+                rows: [
+                    { name: 'Dirección de la API', what: 'La dirección a la que el programa le hace los pedidos. Termina en **/api/v1**.' },
+                    { name: 'Documento OpenAPI', what: 'Describe cada ruta, qué recibe y qué devuelve. Se importa en Postman, Insomnia, n8n o un generador de clientes.' },
+                    { name: 'Primeros pasos', what: 'Pedidos listos para copiar: probar el token, ver tus listas, ver los campos con su id, leer registros, crear uno y cambiarlo.' },
+                    { name: 'Tus tokens de la API', what: 'Nombre, si sólo lee o también escribe, cuándo se usó por última vez y cuándo vence. **Revocar** lo apaga al instante.' },
+                ],
+            },
+            { t: 'h', text: 'Leer y escribir registros' },
+            {
+                t: 'p',
+                md: 'Primero prueba el token con **¿Quién soy?** (`GET /whoami`): responde tu nombre, la empresa y si el token lee o también escribe. Después:\n- `GET /lists` trae tus listas y `GET /lists/{lista}/fields` los campos de una lista, cada uno con su **id**. En `{lista}` sirve el id o el nombre interno de la lista.\n- `GET /lists/{lista}/records` trae los registros de a 50 (hasta 200 con `limit`), con búsqueda (`search`), orden y filtros.\n- `POST /lists/{lista}/records` crea uno y `PATCH /lists/{lista}/records/{id}` cambia **sólo lo que mandas**.\n\nLos valores van en **data** con la clave **f** + el id del campo: `{"data": {"f12": "Ana Gómez", "f13": "ana@ejemplo.com"}}`. La clave no cambia aunque le cambies el nombre al campo, así un programa armado hoy sigue funcionando mañana.',
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'El token actúa como tú',
+                md: 'Ve y cambia sólo lo que tú puedes, en esta empresa: si una lista tiene permisos por rol o campos ocultos para ti, el token tampoco los ve. Lo que crea o cambia queda en la actividad del registro a tu nombre, y dispara las automatizaciones igual que un cambio hecho en la pantalla.',
+            },
+            {
+                t: 'settings',
+                title: 'Límites y reglas',
+                rows: [
+                    { name: 'Pedidos por minuto', what: 'Hasta **300 por token** y 1.200 por empresa. Cada respuesta dice cuántos quedan (`X-RateLimit-Remaining`); si te pasas, la respuesta es **429** y dice cuántos segundos esperar.' },
+                    { name: 'Sólo leer', what: 'Un token de sólo lectura no puede crear, cambiar ni borrar nada.' },
+                    { name: 'Qué no hace la API', what: 'No borra listas ni campos, no invita personas ni cambia los ajustes de la empresa: eso se hace en la pantalla.' },
+                    { name: 'Lo borrado', what: 'Un registro que se borra por la API va a la **papelera**, como desde la pantalla, y se recupera durante 30 días.' },
+                    { name: 'Plan', what: 'La API viene con el módulo **API y conexión con Claude** del plan. Sin él, los tokens se conservan pero no funcionan.' },
+                ],
+            },
+            { t: 'h', text: 'Conectarla desde n8n' },
+            {
+                t: 'steps',
+                items: [
+                    'Agrega un nodo **HTTP Request**.',
+                    'En **Authentication** elige **Generic Credential Type** y después **Header Auth**.',
+                    'Crea la credencial con el nombre **Authorization** y el valor **Bearer** seguido del token.',
+                    'Pega la dirección del pedido (por ejemplo la de leer registros) y elige el método. Para crear o cambiar, en **Body** manda los valores dentro de **data**, como en los ejemplos de Ajustes → API.',
+                ],
+            },
+            {
+                t: 'example',
+                title: 'Una distribuidora de repuestos',
+                md: 'Su sistema de facturación crea cada factura en su propia base. Un flujo de **n8n** que corre cada hora busca las facturas nuevas y las crea en la lista **Facturas** con `POST /lists/facturas/records`, con el cliente, el valor y la fecha de vencimiento. Desde ahí, la automatización «por fecha de vencimiento» manda los recordatorios de pago por WhatsApp, y el tablero de cartera se actualiza solo.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Otra persona del equipo puede crear su token?', a: 'Sí, si su rol tiene **Usar la API**. Los administradores la tienen; para otro rol, un administrador crea un rol propio en **Ajustes → Roles** con esa casilla.' },
+                    { q: '¿Es el mismo token que el de la conexión con Claude?', a: 'No. Los de **Ajustes → Seguridad → Conexión MCP** sirven sólo para asistentes como Claude, y los de la API sólo para la API. Cada uno se crea en su lugar.' },
+                    { q: '¿Qué pasa si la persona que creó el token se va de la empresa?', a: 'El token deja de funcionar al instante: actúa como esa persona y ella ya no está. Para un programa que debe seguir andando, conviene crear el token con una cuenta del equipo que no se vaya a ir.' },
+                    { q: '¿Cómo se suben archivos?', a: 'Con `POST /files` (formulario con el campo `file`). Devuelve el id del archivo, que después va en el campo Archivo del registro: `{"f20": [id]}`.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a la API', to: '/settings?s=api' },
+                    { label: 'Webhooks', article: 'integraciones-webhooks' },
                 ],
             },
         ],

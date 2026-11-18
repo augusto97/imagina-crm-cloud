@@ -15,6 +15,7 @@ export const meta: LearnModuleMeta = {
         'Guardar tus archivos en tu propio Google Drive o en un bucket S3',
         'Conectar cualquier otro sistema con una API personalizada y acciones con nombre',
         'Recibir datos de tu sitio web u otra plataforma con un webhook entrante',
+        'Leer y escribir tus registros desde n8n, Make, Zapier o tus programas con la API',
     ],
     articles: [
         {
@@ -88,6 +89,15 @@ export const meta: LearnModuleMeta = {
             level: 'advanced',
             keywords: 'webhook entrante url publica escuchar datos de prueba payload llamar webhook externo zapier make formulario',
             needs: 'manage_automations',
+        },
+        {
+            id: 'integraciones-api',
+            title: 'La API: conectar n8n, Make, Zapier o tus propios programas',
+            summary: 'Con un token, otro programa lee y escribe tus listas y registros: probarlo, encontrar los ids de los campos, crear y cambiar registros, el límite de pedidos y cómo revocarlo.',
+            minutes: 8,
+            level: 'advanced',
+            keywords: 'api rest token n8n make zapier programa script desarrollador openapi postman bearer limite revocar sistema externo erp',
+            needs: 'use_api',
         },
     ],
 };

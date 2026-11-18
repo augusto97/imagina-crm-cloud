@@ -15773,6 +15773,51 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         **Con esto queda completo el plan de estabilidad (v0.1.435-440);
         siguen los módulos nuevos de `docs/ideas.md` §0.**
 
+  - [x] **API pública con tokens (v0.1.441, ADR-S105, primer módulo nuevo del
+        plan aprobado: G1)**: otro programa —n8n, Make, Zapier, un script, un
+        ERP— lee y escribe listas y registros con un token. (a) **Tokens con
+        uso** (`personal_access_tokens.use` `mcp` | `api`, migración 0128):
+        los de antes son `mcp` y nunca abren la API REST; un token de la API
+        no entra al MCP. Capacidad nueva **`use_api`** (admin de fábrica; un
+        rol propio la suma en Ajustes → Roles). (b) **La misma API de la app,
+        por lista blanca** (`API_TOKEN_ROUTES` en `auth/api-token.ts`,
+        comparada con el patrón del router de `routePath`): listas, carpetas,
+        campos (con opciones y valores), vistas, registros (uno, en lote,
+        borrado en lote, descripción), comentarios, búsqueda, archivos,
+        personas y equipos, más `GET /whoami`; fuera de la lista o con un
+        método que el alcance no permite → 403 `api_route_not_allowed` /
+        `api_read_only` antes del controller. `read` = GET/HEAD; `full` =
+        además POST/PATCH/DELETE. (c) **Actúa como la persona, en su
+        empresa**: `resolveForApi` lee en vivo rol, rol propio, equipos,
+        cuenta activa, plan con el módulo `api` y `use_api` (`client` y
+        `guest` nunca); `TenantGuard` toma la empresa del token y rechaza un
+        `X-Tenant-Id` distinto (403 `api_token_tenant_mismatch`); ACL por
+        lista, campos ocultos, papelera, actividad y automatizaciones de
+        siempre. (d) **Freno propio** en Redis: 300 pedidos/min por token y
+        1.200 por empresa (`apibud:t:`/`apibud:w:` con `incrWithTtl`, falla
+        abierto), cabeceras `X-RateLimit-Limit/Remaining/Reset` y 429
+        `api_rate_limited` con `Retry-After`. (e) **Documento OpenAPI 3.1**
+        (`GET /openapi.json`, público, `public-api/openapi.ts`) armado con los
+        schemas de `packages/shared`; un test exige que cubra exactamente la
+        lista blanca. CSRF deja pasar los pedidos sin `Origin` ni
+        `Sec-Fetch-Site` (programas). (f) **Ajustes → API** (`ApiTokensCard`,
+        admins o `use_api`, módulo `api` del plan): dirección y documento para
+        copiar, crear con nombre, alcance y vencimiento, el secreto una sola
+        vez, ejemplos con la dirección real y el token (`apiExamples.ts`:
+        probar, listas, campos, leer, crear y cambiar con `data.f{id}`), la
+        lista de tokens con último uso y **Revocar**; la tarjeta del MCP en
+        Seguridad deja de mostrar los de la API. Ayuda: guía `public-api`,
+        artículo «La API» en Aprende → Integraciones (de paso se corrigió la
+        pregunta que decía que el webhook entrante no actualiza registros,
+        falsa desde v0.1.399), novedad con carrusel y `docs/api.md`. Tests:
+        `api-tokens.spec` (6: lista blanca y sólo-lectura, el documento cubre
+        la lista, crear exige `use_api` y cada token sirve sólo para lo suyo,
+        los guards con la empresa del token y el token inválido, el freno por
+        token y por empresa, 429 con `Retry-After`), 3 del front + E2E por curl y
+        en navegador 26/26 en escritorio y celular oscuro (crear → whoami →
+        listas con `X-RateLimit-Limit: 300` → ruta fuera 403 → revocar 401).
+        Siguen v0.1.442 (webhooks de eventos) y v0.1.443 (n8n).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

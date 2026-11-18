@@ -21,6 +21,11 @@ declare module 'fastify' {
         sessionVia?: 'password' | 'portal';
         /** La sesión se abrió en la dirección de esta empresa: sólo sirve para ella. */
         boundTenantId?: number;
+        /**
+         * v0.1.441 (G1) — el pedido llegó con un token de la API REST: actúa
+         * como `authUserId` en ESA empresa (TenantGuard la fija) y con ese alcance.
+         */
+        apiToken?: { id: number; tenantId: number; scope: 'read' | 'full' };
         /** Seteado por TenantGuard. */
         tenant?: TenantContext;
     }

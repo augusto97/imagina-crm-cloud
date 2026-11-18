@@ -28,7 +28,6 @@ import { PlatformAiController } from './platform-ai.controller';
 import { ProposalsService } from './proposals.service';
 import { ProposalsStore } from './proposals.store';
 import { PersonalTokensController } from './tokens.controller';
-import { PersonalTokensService } from './tokens.service';
 import { ApprovalTools } from './tools/approval-tools';
 import { BookingTools } from './tools/booking-tools';
 import { DataTools } from './tools/data-tools';
@@ -79,7 +78,7 @@ import { SubscriptionTools } from './tools/subscription-tools';
         },
         ProposalsService,
         AssistantService,
-        PersonalTokensService,
+        // PersonalTokensService lo provee AuthModule (v0.1.441: el SessionGuard lo usa).
         McpService,
         OauthService,
     ],

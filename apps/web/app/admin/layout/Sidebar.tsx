@@ -586,6 +586,7 @@ function SettingsPanelNav({
     const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS);
     const canManageTeams = useCan(CAP.MANAGE_TEAMS);
     const canManageForms = useCan(CAP.MANAGE_FORMS);
+    const canUseApi = useCan(CAP.USE_API);
     // v0.1.196 — Conectores no es admin-only: quien arma automatizaciones
     // necesita ver el inventario de conexiones para elegir una.
     const groups = settingsSectionGroups({
@@ -593,6 +594,7 @@ function SettingsPanelNav({
         canManageAutomations: canManageAutomations,
         canManageTeams,
         canManageForms,
+        canUseApi,
     });
     const active = resolveSettingsSection(groups, requested);
     return (

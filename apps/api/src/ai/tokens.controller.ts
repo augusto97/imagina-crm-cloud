@@ -7,7 +7,6 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TenantGuard } from '../tenancy/tenant.guard';
 import { PersonalTokensService } from './tokens.service';
 import { CapabilitiesGuard } from '../authz/capabilities.guard';
-import { RequireCapability } from '../authz/require-capability.decorator';
 import { PlanModule } from '../tenancy/plan-module.decorator';
 
 /**
@@ -32,8 +31,9 @@ export class PersonalTokensController {
     @PlanModule('api')
     @Post()
     @HttpCode(201)
-    // C2 — conectar Claude/Cursor por MCP es usar el asistente.
-    @RequireCapability('use_ai_assistant')
+    // C2 — conectar Claude/Cursor por MCP es usar el asistente; v0.1.441 — un
+    // token de la API REST pide «Usar la API». Lo decide el servicio según
+    // para qué es el token (`use`).
     async create(
         @Req() req: FastifyRequest,
         @Body(new ZodValidationPipe(createPersonalTokenSchema)) input: CreatePersonalTokenInput,
@@ -46,7 +46,7 @@ export class PersonalTokensController {
             targetType: 'personal_token',
             targetId: created.token.id,
             targetLabel: created.token.name,
-            meta: { scope: created.token.scope, expires_at: created.token.expires_at, prefix: created.token.prefix },
+            meta: { scope: created.token.scope, use: created.token.use, expires_at: created.token.expires_at, prefix: created.token.prefix },
         });
         return created;
     }

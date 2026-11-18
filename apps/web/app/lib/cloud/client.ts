@@ -1535,7 +1535,7 @@ export class CloudClient {
     personalTokens(): Promise<PersonalToken[]> {
         return this.unwrap(this.request('GET', '/me/tokens', { schema: dataArray(personalTokenSchema) }));
     }
-    createPersonalToken(input: CreatePersonalTokenInput): Promise<CreatedPersonalToken> {
+    createPersonalToken(input: Omit<CreatePersonalTokenInput, 'use'> & { use?: CreatePersonalTokenInput['use'] }): Promise<CreatedPersonalToken> {
         return this.request('POST', '/me/tokens', { body: createPersonalTokenSchema.parse(input), schema: createdPersonalTokenSchema });
     }
     revokePersonalToken(id: number): Promise<PersonalToken> {
@@ -1543,8 +1543,11 @@ export class CloudClient {
     }
     /** URL absoluta del endpoint MCP (para el snippet de configuración). */
     mcpUrl(): string {
-        const base = this.baseUrl.startsWith('http') ? this.baseUrl : `${window.location.origin}${this.baseUrl}`;
-        return `${base}/mcp`;
+        return `${this.apiBaseUrl()}/mcp`;
+    }
+    /** v0.1.441 — URL absoluta de la API (`https://…/api/v1`), para los ejemplos de la API pública. */
+    apiBaseUrl(): string {
+        return this.baseUrl.startsWith('http') ? this.baseUrl : `${window.location.origin}${this.baseUrl}`;
     }
 
     // --- OAuth 2.1 del MCP (v0.1.184): la pantalla "Autorizar" ---
