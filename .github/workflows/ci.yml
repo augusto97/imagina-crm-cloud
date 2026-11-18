@@ -67,6 +67,12 @@ jobs:
       - name: Inyección de dependencias de la API
         run: node apps/api/scripts/check-di.cjs
 
+      # v0.1.443 (G2) — la app de n8n es un paquete npm aparte (fuera del
+      # workspace de pnpm): tipos, pruebas de las piezas puras y build.
+      - name: App de n8n — tipos, pruebas y build
+        working-directory: integrations/n8n
+        run: npm ci --no-audit --no-fund && npm run typecheck && npm test && npm run build
+
   api-tests:
     name: pruebas de la API (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest

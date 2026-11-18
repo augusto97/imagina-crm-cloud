@@ -17,3 +17,4 @@ apps/api/data/
 
 # v0.1.322 — capturas del centro de aprendizaje (las genera scripts/help-captures en cada release)
 apps/web/public/help-media/
+integrations/n8n/*.tgz

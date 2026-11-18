@@ -906,6 +906,25 @@ export const articles: LearnArticle[] = [
             },
             { t: 'h', text: 'Conectarla desde n8n' },
             {
+                t: 'p',
+                md: 'La forma más cómoda es la **app de n8n**: trae un nodo de **acciones** (crear, leer, buscar, cambiar y borrar registros, y agregar o listar comentarios) y un **disparador** que arranca el flujo cuando se crea, cambia o borra un registro, se envía un formulario o entra un pago. En **Ajustes → API → Conectar con n8n** está el comando para instalarla en tu n8n y el nombre exacto de la credencial.',
+            },
+            {
+                t: 'settings',
+                title: 'La app de n8n',
+                rows: [
+                    { name: 'Instalarla', what: 'En el servidor de tu n8n, en la carpeta `~/.n8n/nodes`, con el comando que copias de **Ajustes → API** (descarga la app desde tu propio servidor). Después reinicia n8n.' },
+                    { name: 'La credencial', what: 'Pide la **dirección de tu app** y un **token** de la API. Con **Test** se comprueba al toque.' },
+                    { name: 'Los campos', what: 'Al crear o cambiar un registro, n8n muestra los campos de la lista elegida con su tipo. Una opción se puede escribir por su etiqueta («Pagado»), un número como se escribe en tu país («1.250,5») y una fecha como fecha de n8n.' },
+                    { name: 'El disparador', what: 'Al **activar** el flujo registra solo su webhook en **Ajustes → API → Webhooks** («Lo registró un programa») y al **desactivarlo** lo borra. Cada aviso llega firmado y uno con la firma falsa se rechaza.' },
+                    { name: 'Agentes de IA', what: 'El nodo de acciones también sirve como herramienta de los agentes de IA de n8n.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'Si tu n8n no deja instalar apps (por ejemplo n8n en la nube), usa el nodo **HTTP Request** con el token:',
+            },
+            {
                 t: 'steps',
                 items: [
                     'Agrega un nodo **HTTP Request**.',
@@ -960,6 +979,7 @@ export const articles: LearnArticle[] = [
                     { q: '¿Qué pasa si la persona que creó el token se va de la empresa?', a: 'El token deja de funcionar al instante: actúa como esa persona y ella ya no está. Para un programa que debe seguir andando, conviene crear el token con una cuenta del equipo que no se vaya a ir.' },
                     { q: '¿Cómo se suben archivos?', a: 'Con `POST /files` (formulario con el campo `file`). Devuelve el id del archivo, que después va en el campo Archivo del registro: `{"f20": [id]}`.' },
                     { q: '¿Llegan los avisos a una dirección de mi red interna?', a: 'No: la dirección tiene que ser pública y con **https**. Para un programa dentro de tu red, publícalo detrás de una dirección pública (n8n en la nube, o un túnel).' },
+                    { q: '¿Qué pasa con el webhook del disparador de n8n si apago el flujo?', a: 'Se borra solo de **Ajustes → API → Webhooks**. Si cambias los eventos o las listas del disparador, al volver a activar el flujo se rehace con lo nuevo.' },
                 ],
             },
             {

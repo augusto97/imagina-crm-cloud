@@ -15866,6 +15866,48 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         «Volver a enviar», pausado no avisa, bitácora).
         Sigue v0.1.443 (la app de n8n).
 
+  - [x] **La app de n8n (v0.1.443, addendum ADR-S105, tercer módulo nuevo del
+        plan: G2 en parte)**: un paquete de nodos de la comunidad de n8n,
+        `n8n-nodes-imagina-base` (`integrations/n8n/`, TypeScript, MIT), sobre
+        la API con tokens y los webhooks de eventos. (a) **Credencial**
+        «Imagina Base API» (dirección de la app + token; «Test» llama a
+        `/whoami`). (b) **Acciones**: registro (crear, leer, buscar con texto,
+        filtro y subtareas, cambiar, borrar a la papelera), comentario
+        (agregar como nota interna o visible para el cliente, listar) y lista
+        (listar); los campos salen de la lista elegida (`resourceMapper` sobre
+        `/fields`), las opciones se escriben por su etiqueta («Pagado» →
+        `pagado`), los números al estilo de cada país (`parseLooseNumber`:
+        «1.250,5», «$ 1,250.50», «COP 2.000.000») y las fechas como fecha de
+        n8n; `usableAsTool` para los agentes de IA de n8n. (c) **Disparador**:
+        al activar el flujo registra su webhook (`POST /webhooks`,
+        `source: 'api'`, «n8n · …») con la dirección de n8n, eventos y listas;
+        al desactivarlo lo borra; comprueba `X-Webhook-Signature` (401 si
+        falla) y contesta el «ping» sin correr el flujo. (d) **Cada servidor
+        reparte su versión**: el release arma el paquete (`npm ci`, build,
+        tests, `npm pack`) en `integrations/n8n/` del bundle y lo adjunta al
+        release de GitHub; `GET /public/n8n` (versión, `available`,
+        `download_url`) y `GET /public/n8n/n8n-nodes-imagina-base.tgz`
+        (`n8n-package.ts`: sólo ese paquete, no vacío ni de más de 5 MB) para
+        `npm install <dirección>` en `~/.n8n/nodes`. Se publica en npm si
+        existe el secreto `NPM_TOKEN` (todavía no: decisión del usuario; n8n
+        en la nube sólo instala nodos verificados). El CI compila, prueba y
+        arma el paquete. (e) **Ajustes → API → «Conectar con n8n»**
+        (`N8nCard`, `data-tour="settings-n8n"`): el comando para instalarla con
+        la dirección de ESTE servidor, la dirección de la app para la
+        credencial y los pasos; sin el paquete, el camino del nodo HTTP
+        Request. Ayuda: guía `n8n`, sección «La app de n8n» en Aprende → La API
+        (más la pregunta de qué pasa con el webhook al apagar el flujo),
+        `docs/api.md`, README del paquete y novedad con carrusel. Tests:
+        `n8n-package.spec` (3) y `fields.test` del paquete (7) — shared 1007,
+        front 943 — + **contra un n8n 2.48.5 real** (Node 24): flujo con las 8
+        operaciones (crear con etiqueta, número, fecha, casilla y correo; leer;
+        cambiar con expresión; buscar; comentar y listar; borrar → 404;
+        listas) y el disparador (registra con dirección, evento y lista; aviso
+        → comentario en 2 s; ping 200 sin correr; firma falsa o ausente 401;
+        reinicio real sin duplicar; despublicar borra el webhook), `npm
+        install` desde la dirección de la app y E2E navegador de la tarjeta
+        12/12 en escritorio y celular oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

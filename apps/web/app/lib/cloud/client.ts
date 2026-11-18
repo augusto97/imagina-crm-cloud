@@ -1548,6 +1548,16 @@ export class CloudClient {
         return this.request('DELETE', `/me/tokens/${id}`, { schema: personalTokenSchema });
     }
     // --- v0.1.442 — webhooks de eventos (Ajustes → API) ---
+    /** v0.1.443 — La app de n8n que reparte este servidor (público). */
+    n8nPackage(): Promise<{ package: string; version: string | null; available: boolean; download_url: string | null }> {
+        return this.unwrap(
+            this.request('GET', '/public/n8n', {
+                schema: z.object({
+                    data: z.object({ package: z.string(), version: z.string().nullable(), available: z.boolean(), download_url: z.string().nullable() }),
+                }),
+            }),
+        );
+    }
     webhooks(): Promise<WebhookSubscriptionDto[]> {
         return this.unwrap(this.request('GET', '/webhooks', { schema: z.object({ data: z.array(z.custom<WebhookSubscriptionDto>()) }) }));
     }

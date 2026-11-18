@@ -49,6 +49,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { formatDate, formatNumber } from '@/lib/tenantFormat';
 import { PlanModuleGate } from '@/components/PlanModuleNotice';
 import { ApiTokensCard } from '@/admin/settings/ApiTokensCard';
+import { N8nCard } from '@/admin/settings/N8nCard';
 import { WebhooksCard } from '@/admin/settings/WebhooksCard';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
@@ -240,6 +241,7 @@ export function SettingsPage(): JSX.Element {
                         <div className="imcrm-flex imcrm-flex-col imcrm-gap-10">
                             <ApiTokensCard />
                             <WebhooksCard />
+                            <N8nCard />
                         </div>
                     </PlanModuleGate>
                 )}

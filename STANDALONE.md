@@ -9714,3 +9714,30 @@ AVISA a otro programa con un POST firmado.
 - **Lo que no**: no viaja al migrar una empresa (como los tokens); el historial
   de entregas se guarda 30 días; no hay webhooks del portal ni de la tienda
   (la tienda ya avisa por sus pedidos, que son registros).
+
+**Addendum v0.1.443 — la app de n8n.** Un paquete de nodos de la comunidad de
+n8n (`n8n-nodes-imagina-base`, en `integrations/n8n/`, MIT) sobre la API y los
+webhooks de arriba: no hay nada nuevo en el servidor más allá de repartirlo.
+- **Nodos**: la credencial (dirección de la app + token; «Test» llama a
+  `/whoami`), un nodo de **acciones** (registro: crear, leer, buscar con texto,
+  filtro y subtareas, cambiar, borrar; comentario: agregar y listar; lista:
+  listar) con los campos de la lista elegida cargados de `/fields`
+  (`resourceMapper`), y un **disparador** que al activar el flujo crea su
+  webhook (`POST /webhooks`, `source: 'api'`) con la dirección de n8n y lo
+  borra al desactivarlo, comprueba la firma de cada aviso (401 si falla) y
+  contesta el «ping» sin correr el flujo. Valores en palabras: opción por su
+  etiqueta, números al estilo de cada país (`parseLooseNumber`), fechas de n8n.
+  Sirve como herramienta de los agentes de IA de n8n (`usableAsTool`).
+- **Distribución sin depender de npm**: el release arma el paquete (`npm ci`,
+  build, tests, `npm pack`) y lo deja en el bundle
+  (`integrations/n8n/n8n-nodes-imagina-base.tgz` + su `package.json`); cada
+  servidor lo reparte en `GET /public/n8n` (versión y dirección de descarga) y
+  `GET /public/n8n/n8n-nodes-imagina-base.tgz` (público: el paquete no lleva
+  secretos), así `npm install <dirección>` en `~/.n8n/nodes` instala la
+  versión que habla con ESE servidor. Además se adjunta al release de GitHub y
+  se publica en npm si existe el secreto `NPM_TOKEN` (n8n en la nube sólo deja
+  instalar nodos verificados: ahí sigue el nodo HTTP Request con el token).
+- **CI**: un paso compila, prueba y arma el paquete en cada PR.
+- Probado contra n8n 2.48 de verdad (las 8 operaciones, y el disparador:
+  registra, recibe firmado, rechaza firma falsa, reinicia sin duplicar, borra
+  al despublicar).

@@ -117,9 +117,30 @@ validación de siempre (400 con el detalle por campo).
 
 ## n8n
 
-Nodo **HTTP Request** → Authentication **Generic Credential Type** → **Header
-Auth** (`Authorization` = `Bearer <token>`). El documento OpenAPI también se
-importa en Postman, Insomnia o un generador de clientes.
+**La app de n8n** (v0.1.443, `integrations/n8n/`): cada servidor reparte el
+paquete `n8n-nodes-imagina-base` de su misma versión. En un n8n propio:
+
+```bash
+cd ~/.n8n/nodes            # con Docker, el volumen de /home/node/.n8n
+npm install https://TU-APP/api/v1/public/n8n/n8n-nodes-imagina-base.tgz
+# y reiniciar n8n
+```
+
+`GET /api/v1/public/n8n` dice la versión y si el servidor la trae
+(`available`, `download_url`). Trae:
+
+- **Credencial**: dirección de la app + token («Test» llama a `/whoami`).
+- **Acciones**: registro (crear, leer, buscar, cambiar, borrar), comentario
+  (agregar, listar) y lista (listar). Los campos salen de la lista elegida;
+  las opciones se escriben por su etiqueta y los números como en cada país.
+- **Disparador**: al activar el flujo registra un webhook con la dirección de
+  n8n (`source: 'api'`) y lo borra al desactivarlo; comprueba la firma.
+
+Sin poder instalar apps (n8n en la nube, mientras no esté verificada): nodo
+**HTTP Request** → Authentication **Generic Credential Type** → **Header
+Auth** (`Authorization` = `Bearer <token>`), y el nodo **Webhook** con un
+webhook de la sección siguiente. El documento OpenAPI también se importa en
+Postman, Insomnia o un generador de clientes.
 
 ## Webhooks de eventos (v0.1.442)
 
@@ -156,4 +177,6 @@ la suscripción queda marcada «Lo registró un programa»).
 
 ## Pendiente
 
-- v0.1.443: la app de n8n (disparadores y acciones).
+- Publicar el paquete en npm (falta el secreto `NPM_TOKEN`) y pedir la
+  verificación de n8n para que aparezca en n8n en la nube.
+- Make y Zapier (piden cuentas de desarrollador y pasan revisión).

@@ -3395,4 +3395,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a Webhooks', href: '/settings?s=api' },
         audience: { roles: ['admin'] },
     },
+    {
+        key: 'v0.1.443-app-de-n8n',
+        version: '0.1.443',
+        date: '2026-11-18',
+        kind: 'feature',
+        title: 'Conecta n8n con tus listas en pocos minutos',
+        summary:
+            'En Ajustes → API ahora tienes la app de n8n: instálala en tu n8n y tus flujos crean, buscan y cambian registros, agregan comentarios y arrancan solos cuando pasa algo en tus listas.',
+        media: {
+            slides: [
+                {
+                    title: 'Tus listas dentro de n8n',
+                    text: 'Elige la lista y n8n te muestra sus campos: escribe las opciones por su nombre y los montos como los escribes en tu país.',
+                    illustration: 'integ-connect-once',
+                },
+                {
+                    title: 'Flujos que arrancan solos',
+                    text: 'El disparador avisa cuando se crea, cambia o borra un registro, se envía un formulario o entra un pago. Al activar el flujo se conecta solo y al apagarlo se desconecta.',
+                    illustration: 'auto-webhook',
+                },
+            ],
+        },
+        body: [
+            '- Copia el comando de **Conectar con n8n** y córrelo donde está tu n8n.',
+            '- La credencial usa la dirección de tu app y un token de **Ajustes → API**.',
+            '- Si tu n8n no deja instalar apps, el nodo **HTTP Request** con el token sigue sirviendo.',
+        ].join('\n'),
+        action: { label: 'Ir a Conectar con n8n', href: '/settings?s=api' },
+        audience: { roles: ['admin'] },
+    },
 ];

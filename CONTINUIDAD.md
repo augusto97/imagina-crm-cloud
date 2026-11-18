@@ -430,7 +430,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.442**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.443**
+(**la app de n8n** — Ajustes → API → «Conectar con n8n»: cada servidor
+reparte el paquete `n8n-nodes-imagina-base` de su versión
+(`/api/v1/public/n8n/n8n-nodes-imagina-base.tgz`); en n8n trae la credencial,
+acciones sobre registros, comentarios y listas con los campos de la lista
+elegida, y un disparador que registra y borra su webhook solo. **Pendiente del
+usuario**: si quiere publicarlo en npm (secreto `NPM_TOKEN` en GitHub) y pedir
+la verificación de n8n para que aparezca en n8n en la nube. **Siguen** las
+acciones/disparadores nuevos de automatizaciones). Antes **v0.1.442**
 (**webhooks de eventos** — Ajustes → API → Webhooks: la app le avisa a otro
 programa (n8n, Make, Zapier, un ERP) con un POST firmado cuando se crea,
 cambia o borra un registro, se envía un formulario o entra un pago; actúa como
@@ -2168,6 +2176,19 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-18 · v0.1.443** — **La app de n8n** (G2 en parte; addendum
+  ADR-S105). Paquete `n8n-nodes-imagina-base` en `integrations/n8n/`
+  (credencial, acciones de registros/comentarios/listas con `resourceMapper`,
+  disparador que registra y borra su webhook y comprueba la firma). El release
+  lo arma y lo deja en el bundle y en el release de GitHub; cada servidor lo
+  reparte en `/api/v1/public/n8n` (+ `.tgz`); npm sólo con el secreto
+  `NPM_TOKEN` (no está: lo decide el usuario). Tarjeta «Conectar con n8n» en
+  Ajustes → API. Probado contra n8n 2.48.5 real (8 operaciones + disparador:
+  firma, ping, reinicio sin duplicar, despublicar). **Siguen** «buscar
+  registros», «crear o actualizar por un dato» y «cuando se agrega un
+  comentario» en las automatizaciones; después duplicados (A14) y firma (D6).
+  DIAN (G8) y modo agencia (I3) esperan decisiones del usuario.
 
 - **2026-11-18 · v0.1.442** — **Webhooks de eventos** (G1 completo; addendum
   ADR-S105). Suscripciones firmadas (`webhook_subscriptions` +
