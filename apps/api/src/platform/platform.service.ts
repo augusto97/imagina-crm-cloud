@@ -117,6 +117,8 @@ import {
     bulkEditItems,
     bulkEdits,
     documentNumbers,
+    signatureRequests,
+    signatureSigners,
     documentTemplates,
     forms,
     bookingAppointments,
@@ -481,6 +483,10 @@ export class PlatformService {
             await tx.delete(publicLists).where(eq(publicLists.tenantId, id));
             await tx.delete(savedFilters).where(eq(savedFilters.tenantId, id));
             await tx.delete(savedViews).where(eq(savedViews.tenantId, id));
+            // D6 (v0.1.446) — firmas (antes que los números de documento y los
+            // adjuntos: los referencian).
+            await tx.delete(signatureSigners).where(eq(signatureSigners.tenantId, id));
+            await tx.delete(signatureRequests).where(eq(signatureRequests.tenantId, id));
             // v0.1.266 — plantillas de documentos PDF.
             await tx.delete(documentNumbers).where(eq(documentNumbers.tenantId, id));
             await tx.delete(documentTemplates).where(eq(documentTemplates.tenantId, id));

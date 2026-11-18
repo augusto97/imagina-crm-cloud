@@ -85,6 +85,10 @@ export function notificationTitle(
             // v0.1.412 — los pedidos de la tienda arman su propio título.
             out = `Pedido nuevo: ${rec}`;
             break;
+        case 'signature':
+            // D6 — las firmas arman su propio título (SignaturesService).
+            out = `Firmas de ${rec}`;
+            break;
     }
     return out.length > MAX_TITLE ? `${out.slice(0, MAX_TITLE - 1)}…` : out;
 }

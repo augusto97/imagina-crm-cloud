@@ -10,6 +10,8 @@ export type ActivityAction =
     | 'record_restored'
     // A14 — fusión de duplicados: `changes.merge = {event, …}`.
     | 'record_merged'
+    // D6 — firma electrónica: `changes.signature = {event, title, name?, …}`.
+    | 'signature'
     // A8 — dependencias: `changes.dependency = {kind, record_id, title}`.
     | 'dependency_added'
     | 'dependency_removed'

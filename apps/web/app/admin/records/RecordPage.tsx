@@ -26,6 +26,7 @@ import { useIsGuest } from '@/lib/guest';
 import { useGuestAccess } from '@/hooks/useGuests';
 import { IssuedDocumentsSection } from '@/admin/documents/IssuedDocuments';
 import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsPanel';
+import { RecordSignaturesPanel } from '@/admin/signatures/RecordSignaturesPanel';
 import { RecordSubscriptionPanel } from '@/cloud/components/subscriptions/RecordSubscriptionPanel';
 import { SendWhatsappButton } from '@/cloud/components/whatsapp/SendWhatsappButton';
 import { SendSmsButton } from '@/cloud/components/sms/SendSmsButton';
@@ -543,6 +544,10 @@ export function RecordPage(): JSX.Element {
                                 </div>
                                 <div className="imcrm-mt-3 empty:imcrm-hidden">
                                     <RecordSubscriptionPanel listId={listInfo.id} recordId={id} />
+                                </div>
+                                {/* D6 — firma electrónica de documentos. */}
+                                <div className="imcrm-mt-3 imcrm-flex imcrm-flex-col empty:imcrm-hidden">
+                                    <RecordSignaturesPanel listId={listInfo.id} recordId={id} fields={fields.data ?? []} record={rec} />
                                 </div>
                                 {/* v0.1.290 — documentos emitidos (numerados): congelados, anulados. */}
                                 <IssuedDocumentsSection className="imcrm-mt-4" listId={listInfo.id} listSlug={listInfo.slug} recordId={id} />

@@ -516,6 +516,85 @@ export const articles: LearnArticle[] = [
     },
     // ─────────────────────────────────────────────────────────────────────
     {
+        id: 'documentos-pdf-firma',
+        route: '/lists',
+        related: ['documentos-pdf-generar', 'documentos-pdf-galeria', 'documentos-pdf-automatizar'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Un contrato, una cotización aprobada, un acta de entrega o una autorización: lo mandas a firmar desde la ficha del registro y cada persona lo firma desde su celular o su computador, **sin crear una cuenta**. Cuando firman todos, el PDF firmado, con una página de constancia al final, queda guardado en el registro y les llega a todos por correo.',
+            },
+            { t: 'anim', key: 'firma-electronica', caption: 'Se pide la firma de un contrato; la persona pone el código del correo, dibuja su firma y la ficha pasa a «Firmado».' },
+            { t: 'h', text: 'Pedir la firma' },
+            {
+                t: 'steps',
+                items: [
+                    'Abre el registro. En la ficha, toca **Pedir firma de un documento** (o, en el botón **Generar PDF**, pasa por una plantilla y elige **Pedir firma**).',
+                    'En **Documento**, elige una plantilla de la lista o un PDF que ya esté en un campo de archivos del registro.',
+                    'Revisa **Quién firma**: la app sugiere el nombre y el correo del registro. Agrega más personas si hace falta (hasta 10), con su rol si quieres («Cliente», «Representante legal»).',
+                    'Elige el **Orden**: **Todas a la vez** o **Uno después del otro** (cada una recibe el enlace cuando firma la anterior).',
+                    'Toca **Enviar para firmar**. A cada persona le llega un correo con su enlace personal.',
+                ],
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Cómo confirma que es quien dice ser', what: '**Con un código que le llega al correo** (recomendado) o **Sólo con el enlace**.', tip: 'El código es de 6 números, vence en 10 minutos y admite 5 intentos.' },
+                    { name: 'Mensaje (opcional)', what: 'Va en el correo y arriba del documento, en la página de firma.' },
+                    { name: 'Vence en', what: 'Cuántos días sirven los enlaces (de 3 a 90). Pasado ese plazo, la solicitud vence sola.' },
+                    { name: 'Recordar a quien no firmó', what: 'Cada cuántos días le llega un recordatorio a quien todavía no firma (como mucho 3).' },
+                    { name: 'Mandar los enlaces por correo', what: 'Si lo apagas, copias el enlace de cada persona desde la ficha y se lo mandas tú, por WhatsApp por ejemplo.' },
+                    { name: 'Cuando firmen todos…', what: 'Guardar el PDF firmado en un campo de archivos, poner un estado (por ejemplo «Firmado») y escribir la fecha de la firma en un campo de fecha.' },
+                ],
+            },
+            { t: 'h', text: 'Lo que ve quien firma' },
+            {
+                t: 'p',
+                md: 'Una página con el logo y el color de tu empresa, el documento completo para leer (y descargar) y, al lado, su nombre, la firma —la **dibuja** con el dedo o el mouse, o **escribe su nombre**—, el código del correo y la casilla para aceptar firmar por medios electrónicos. Si no está de acuerdo, puede **No firmar** y escribir el motivo: la solicitud se cierra y te avisa.',
+            },
+            {
+                t: 'cards',
+                items: [
+                    { icon: 'Fingerprint', title: 'Huella del original', md: 'Antes de mandarlo, la app calcula la huella SHA-256 del PDF: cambiar una sola letra la deja de hacer coincidir.', tone: 'violet' },
+                    { icon: 'FileText', title: 'Constancia', md: 'Al final del PDF firmado: quién firmó, cuándo, cómo se identificó, desde qué dirección IP y navegador, y lo que aceptó.', tone: 'blue' },
+                    { icon: 'QrCode', title: 'Se puede verificar', md: 'Un código y un QR llevan a una página pública que confirma que el documento se firmó y con qué huella.', tone: 'mint' },
+                ],
+            },
+            { t: 'h', text: 'Seguirla desde la ficha' },
+            {
+                t: 'p',
+                md: 'La sección **Firmas** de la ficha muestra cada solicitud con su estado y el de cada persona (**Le llegó**, **Lo abrió**, **Firmó**, **No firmó**). Desde ahí puedes **Copiar enlace**, **Reenviar** el correo, **Ver** el documento, **Descargar** el firmado o **Anular** la solicitud con un motivo: los enlaces dejan de servir al momento. Cada paso queda también en la **Actividad** del registro.',
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'Es una **firma electrónica simple** (Ley 527 de 1999 y Decreto 2364 de 2012): vale para contratos, cotizaciones, actas y autorizaciones del día a día. No es una firma digital certificada por una entidad de certificación, que algunos trámites exigen.',
+            },
+            {
+                t: 'example',
+                title: 'Una agencia de marketing',
+                md: 'Al cerrar una venta, la ejecutiva abre la oportunidad, elige la plantilla «Contrato de servicios» y pide la firma del cliente y luego de la gerente, en ese orden, con **Cuando firmen todos…** poniendo la etapa en «Contrato firmado». El cliente firma desde el celular en dos minutos; la gerente recibe su enlace justo después. El contrato firmado queda en el campo «Contrato» de la oportunidad.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Quien firma necesita una cuenta?', a: 'No. Abre su enlace personal y firma; si elegiste el código por correo, se identifica con él.' },
+                    { q: '¿Puedo mandar el enlace por WhatsApp?', a: 'Sí: apaga **Mandar los enlaces por correo** o, en la ficha, toca **Copiar enlace** junto a cada persona.' },
+                    { q: '¿Qué pasa si cambio el registro después de pedir la firma?', a: 'Nada en el documento: se firma el PDF que se armó al pedir la firma. Si hay que corregirlo, anula la solicitud y pide otra.' },
+                    { q: '¿Cuánto cuesta cada firma?', a: 'No tiene costo aparte: los correos cuentan como cualquier otro correo de la empresa.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Crear una plantilla', article: 'documentos-pdf-galeria' },
+                    { label: 'Ir a mis listas', to: '/lists' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
         id: 'documentos-pdf-automatizar',
         route: '/lists',
         related: ['documentos-pdf-generar', 'correos-enviar', 'cobros-automatizar'],

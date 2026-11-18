@@ -30,6 +30,9 @@ export type AuditAction =
     // A14 (v0.1.445) — duplicados: reglas de la lista y fusiones.
     | 'list.duplicates'
     | 'records.merge'
+    // D6 (v0.1.446) — firma electrónica: pedir firmas y anular una solicitud.
+    | 'signature.request'
+    | 'signature.void'
     // v0.1.275 — formularios públicos (escriben en la lista sin cuenta).
     | 'form.publish'
     | 'form.unpublish'

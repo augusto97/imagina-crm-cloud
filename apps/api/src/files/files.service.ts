@@ -13,7 +13,7 @@ import {
 import { isImageFileMime, type Role } from '@imagina-base/shared';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { ENV, type Env } from '../config/env';
-import { attachments, dashboards, documentNumbers, fields, lists, records } from '../db/schema';
+import { attachments, dashboards, documentNumbers, fields, lists, records, signatureRequests } from '../db/schema';
 import type { Tx } from '../db/client';
 import { assignmentKeys, effectivePermissions, scopeWhere, type AclExtras } from '../lists/list-acl';
 import { TenantDb } from '../tenancy/tenant-db.service';
@@ -777,6 +777,20 @@ export class FilesService {
                 throw new ConflictException({
                     code: 'file_is_issued_document',
                     message: `Es el PDF del documento emitido ${issued.label}: no se puede borrar. Para rehacerlo, anúlalo y emítelo de nuevo desde la ficha.`,
+                    data: { status: 409 },
+                });
+            }
+            // D6 (v0.1.446) — el original y el firmado de una firma son la prueba:
+            // no se borran sueltos (se van con el registro).
+            const [signed] = await tx
+                .select({ title: signatureRequests.title })
+                .from(signatureRequests)
+                .where(and(eq(signatureRequests.tenantId, tenantId), or(eq(signatureRequests.originalFileId, found.id), eq(signatureRequests.signedFileId, found.id))))
+                .limit(1);
+            if (signed) {
+                throw new ConflictException({
+                    code: 'file_is_signature_document',
+                    message: `Es el PDF de la firma «${signed.title}»: no se puede borrar suelto. Se conserva como prueba de la firma.`,
                     data: { status: 409 },
                 });
             }

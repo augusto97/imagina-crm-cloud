@@ -9830,3 +9830,62 @@ borrar uno a mano y perder lo que tenía (comentarios, facturas vinculadas).
 **Consecuencias.** Una tabla nueva con FK a `records` tiene que entrar en
 `merge-plan.ts` (el test lo obliga). La fusión no cruza listas ni sincroniza
 con WooCommerce o WordPress (en sus listas no se ofrece).
+
+### ADR-S107 — Firma electrónica propia de documentos (v0.1.446)
+
+**Contexto.** Idea D6 del banco, del plan aprobado el 2026-11-18. Las empresas
+ya arman contratos, cotizaciones y actas en PDF (ADR-S35) pero los mandaban a
+firmar por fuera (imprimir, escanear o DocuSign). Se eligió la firma PROPIA
+(recomendada en el banco) en lugar de integrar DocuSign: sin costo por firma,
+con la marca de la empresa y sin otra cuenta.
+
+**Decisión.**
+- **Firma electrónica simple** (Ley 527 de 1999, Decreto 2364 de 2012), no
+  firma digital certificada. Lo dicen la página de firma, el correo, la
+  casilla que se acepta y la constancia.
+- **La solicitud** (`signature_requests` + `signature_signers`, migración
+  0131, RLS): un PDF de un registro —una plantilla de documento de la lista
+  (se arma y, si numera, emite su número) o un PDF de un campo Archivo— que
+  firman de 1 a 10 personas, **a la vez o en orden**. El PDF se COPIA como
+  adjunto propio al pedir la firma (FK `RESTRICT`) y se guarda su huella
+  SHA-256: lo que se firma no cambia aunque el registro o el archivo cambien.
+- **Enlace personal** `firmante-HMAC(empresa, solicitud, firmante, versión)`
+  (40 hex, comparación en tiempo constante); **anular** sube `link_version` y
+  los enlaces viejos responden 404 al instante. Página pública en el SPA
+  (`/firmar/<token>`, sin sesión, fuera del router) que habla con
+  `/api/v1/public/sign/:token` (ver, PDF, código, firmar, no firmar), con la
+  marca y el tema de la empresa; freno por IP en Redis.
+- **Identificación**: «código por correo» (recomendado, por defecto: 6
+  números, 10 minutos, 5 intentos, 5 envíos por hora, se consume al firmar) o
+  «sólo el enlace». La firma se dibuja o se escribe (PNG validado), con el
+  nombre y la aceptación del texto de consentimiento.
+- **Al firmar todos**, en una transacción: la constancia (pdfmake con datos
+  ya resueltos, armada en el hilo aparte de los PDF de v0.1.439) —documento, huella,
+  código de verificación con QR, y por persona su firma, cuándo, cómo se
+  identificó, IP y navegador, y lo que aceptó— se agrega al final y cada
+  página del original lleva un sello al pie (pdf-lib). El PDF firmado queda
+  como adjunto; después, **sin deshacer la firma si falla**, «Cuando firmen
+  todos…» lo suma a un campo Archivo, pone un estado de selección y la fecha.
+  A todos les llega el PDF firmado adjunto (hasta 8 MB; si pesa más, el
+  enlace de verificación).
+- **Verificación pública** por código (`/api/v1/public/sign/verify/:code`,
+  HTML del servidor, `noindex`): estado, firmantes, fechas y la huella.
+- **Vencimiento y recordatorios** (cola `signature-tasks`, cada 10 min):
+  vence la solicitud al plazo elegido (3-90 días) y recuerda a quien no firmó
+  cada N días (máx. 3).
+- **Ficha**: sección «Firmas» (clásica, página y diseñada) con estado por
+  persona, copiar enlace, reenviar, ver, descargar y anular con motivo;
+  «Pedir firma» también desde el menú «Generar PDF». Actividad
+  `signature` (pedido, abrió, firmó, no firmó, completado, anulado, vencido),
+  aviso `signature` a quien pidió la firma (campana, correo y push por
+  defecto) y bitácora. Permisos: pedir/anular = editar el registro; ver =
+  ver el registro; módulo `documents` del plan.
+- Los PDF original y firmado no se pueden quitar del registro mientras la
+  solicitud exista (`file_is_signature_document`); la papelera los
+  conserva; borrar la empresa limpia las tablas; migrar una empresa NO lleva
+  las solicitudes (enlaces y verificación son del servidor), sí los PDF
+  firmados guardados en campos.
+
+**Consecuencias.** Siguen en v0.1.447: disparador «Cuando se firma un
+documento», acción «Pedir firma», firmar desde el portal, código por WhatsApp
+o SMS, verificar subiendo el PDF, asistente/MCP y evento de webhook.

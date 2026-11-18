@@ -71,7 +71,7 @@ export function bookingWhenText(iso: string, companyTz: string, clientTz: string
     return `${main} (hora de ${timeZoneLabel(tz)}; en ${timeZoneLabel(companyTz)}: ${formatBookingWhen(iso, companyTz, timeFormat, { weekday: false, year: false })})`;
 }
 
-function frame(brand: PortalEmailBrand, subject: string, inner: string, footer: string): string {
+export function frame(brand: PortalEmailBrand, subject: string, inner: string, footer: string): string {
     const e = escapeHtml;
     const name = brand.name.trim();
     const color = safeColor(brand.color);

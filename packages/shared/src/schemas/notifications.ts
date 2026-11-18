@@ -54,6 +54,7 @@ export const NOTIFICATION_KINDS = [
     'agent',
     'subscription',
     'shop',
+    'signature',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
@@ -72,6 +73,7 @@ export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
     agent: 'Agentes de IA: propuestas que esperan tu revisión',
     subscription: 'Suscripciones: un cobro falla, una suscripción vence o se cancela',
     shop: 'Tienda: llega un pedido nuevo',
+    signature: 'Firmas: alguien firma o rechaza un documento que mandaste',
 };
 
 export interface NotificationDto {
@@ -124,7 +126,7 @@ export type MarkNotificationsInput = z.infer<typeof markNotificationsSchema>;
  * para push hasta que se lo agregue aquí.
  */
 // E5 — `sla` también: un ticket que vence (o venció) y te toca tiene apuro.
-export const PUSH_DEFAULT_KINDS: readonly NotificationKind[] = ['mention', 'assigned', 'approval', 'reminder', 'sla', 'shop'];
+export const PUSH_DEFAULT_KINDS: readonly NotificationKind[] = ['mention', 'assigned', 'approval', 'reminder', 'sla', 'shop', 'signature'];
 
 /** `{ mention: z.boolean().default(…), … }` para TODOS los tipos (también los que se agreguen). */
 function kindFlagsSchema(defaults: readonly NotificationKind[]) {
@@ -179,6 +181,8 @@ export const notificationPrefsSchema = z.object({
             subscription: z.boolean().default(true),
             /** v0.1.412 — un pedido nuevo de la tienda: hay que despacharlo, encendido. */
             shop: z.boolean().default(true),
+            /** v0.1.446 — alguien firmó o rechazó un documento que mandaste: encendido. */
+            signature: z.boolean().default(true),
         })
         .default({}),
     /**

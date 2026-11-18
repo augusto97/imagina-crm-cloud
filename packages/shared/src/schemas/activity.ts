@@ -51,6 +51,10 @@ export const ACTIVITY_ACTIONS = [
     // {event: 'merged', ids, titles}; en cada uno que se fue a la papelera:
     // {event: 'merged_into', into, title}; al deshacer: {event: 'unmerged', ids}.
     'record_merged',
+    // D6 (v0.1.446) — firma electrónica. `diff.signature` = {event: requested |
+    // viewed | signed | declined | completed | voided | expired, request_id,
+    // title, name? (quien firmó/rechazó), signed?, total?, reason?}.
+    'signature',
 ] as const;
 export const activityActionSchema = z.enum(ACTIVITY_ACTIONS);
 export type ActivityAction = z.infer<typeof activityActionSchema>;

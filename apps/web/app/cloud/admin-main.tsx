@@ -1,4 +1,4 @@
-import { StrictMode } from 'react';
+import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 
@@ -8,6 +8,7 @@ import { getOauthRequestId, OauthConsentPage } from '@/cloud/pages/OauthConsentP
 import { getResetToken, ResetPasswordPage } from '@/cloud/pages/ResetPasswordPage';
 import { getVerifyToken, VerifyEmailPage } from '@/cloud/pages/VerifyEmailPage';
 import { isRecoveryPath, RecoveryPage } from '@/cloud/pages/RecoveryPage';
+import { getSignToken } from '@/cloud/pages/signToken';
 import { FilePreviewHost } from '@/components/files/FilePreviewHost';
 import { AppErrorBoundary } from '@/components/ErrorBoundary';
 import { BootSplashDone } from '@/components/BootSplashDone';
@@ -73,6 +74,9 @@ installErrorReporter('app');
  * al shell mínimo `cloud/main.tsx`. Un solo `queryClient` (el del admin) para
  * el gate y la app; los providers de toast/confirm envuelven login + app.
  */
+// D6 — la página de firma se baja sólo cuando se abre un enlace de firma.
+const SignPage = lazy(() => import('@/cloud/pages/SignPage'));
+
 const container = document.getElementById('root');
 // v0.1.227 — encuadrada por otro sitio (clickjacking) la app no se monta.
 const framedByOther = container !== null && blockCrossOriginFraming(container);
@@ -88,6 +92,7 @@ if (container && !framedByOther) {
     const resetToken = getResetToken();
     const verifyToken = getVerifyToken();
     const oauthRequestId = getOauthRequestId();
+    const signToken = getSignToken();
     createRoot(container).render(
         <StrictMode>
             {/* Un error al dibujar no deja la ventana en blanco (ni la pantalla
@@ -96,7 +101,12 @@ if (container && !framedByOther) {
             <QueryClientProvider client={queryClient}>
                 <ToastProvider>
                     <ConfirmProvider>
-                        {isRecoveryPath() ? (
+                        {signToken ? (
+                            <Suspense fallback={null}>
+                                <SignPage token={signToken} />
+                                <BootSplashDone />
+                            </Suspense>
+                        ) : isRecoveryPath() ? (
                             <>
                                 <RecoveryPage />
                                 <BootSplashDone />
