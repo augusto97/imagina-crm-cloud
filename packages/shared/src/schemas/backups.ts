@@ -15,7 +15,7 @@ export type BackupRunStatus = z.infer<typeof backupRunStatusSchema>;
 
 export const backupRunSchema = z.object({
     status: backupRunStatusSchema,
-    kind: z.enum(['snapshot', 'restore', 'drive_upload']).nullable(),
+    kind: z.enum(['snapshot', 'restore', 'drive_upload', 'verify']).nullable(),
     message: z.string().nullable(),
     /** Nombre del archivo producido (snapshot) o restaurado (restore). */
     file: z.string().nullable(),
@@ -25,6 +25,55 @@ export const backupRunSchema = z.object({
 export type BackupRun = z.infer<typeof backupRunSchema>;
 
 export const BACKUP_KINDS = ['snapshot', 'db_dump', 'pre_restore'] as const;
+
+/**
+ * v0.1.440 — La PRUEBA de una copia: se restaura en una base temporal aparte
+ * (scripts/snapshot-verify.sh) y se mide lo que trae. Una copia que no se
+ * puede restaurar es peor que no tener copia: da una tranquilidad falsa.
+ *
+ * - `ok`: se restauró y trae lo esperado.
+ * - `warning`: se restaura, con algo para revisar (le falta una parte, trae
+ *   muchos menos registros que la base de hoy…).
+ * - `failed`: NO se puede restaurar (dañada, base que no carga, migraciones
+ *   que no coinciden, sin permisos del rol de la app…).
+ * - `skipped`: no se pudo probar (cifrada, sin disco, sin permiso para crear
+ *   la base temporal): no dice nada de la copia.
+ */
+export const BACKUP_VERIFY_STATUSES = ['ok', 'warning', 'failed', 'skipped'] as const;
+export type BackupVerifyStatus = (typeof BACKUP_VERIFY_STATUSES)[number];
+
+export const backupVerifyCheckSchema = z.object({
+    key: z.string(),
+    label: z.string(),
+    status: z.enum(['ok', 'warning', 'failed']),
+    detail: z.string().nullable(),
+});
+export type BackupVerifyCheck = z.infer<typeof backupVerifyCheckSchema>;
+
+export const backupVerifyCountsSchema = z.object({
+    tenants: z.number().int().nullable(),
+    users: z.number().int().nullable(),
+    lists: z.number().int().nullable(),
+    fields: z.number().int().nullable(),
+    records: z.number().int().nullable(),
+});
+export type BackupVerifyCounts = z.infer<typeof backupVerifyCountsSchema>;
+
+export const backupVerifySchema = z.object({
+    name: z.string(),
+    status: z.enum(BACKUP_VERIFY_STATUSES),
+    /** Una línea para la persona: qué salió y, si falló, por qué. */
+    summary: z.string(),
+    verified_at: z.string(),
+    trigger: z.enum(['manual', 'scheduled']),
+    duration_seconds: z.number().nullable(),
+    checks: z.array(backupVerifyCheckSchema),
+    /** Lo que trae la copia restaurada (null si no llegó a restaurarse). */
+    counts: backupVerifyCountsSchema.nullable(),
+    /** Motivo de un `skipped` (encrypted · no_space · no_scratch_db · no_tools · error). */
+    skip_code: z.string().nullable(),
+});
+export type BackupVerify = z.infer<typeof backupVerifySchema>;
 
 export const backupSnapshotSchema = z.object({
     name: z.string(),
@@ -37,6 +86,8 @@ export const backupSnapshotSchema = z.object({
     includes: z
         .object({ uploads: z.boolean(), redis: z.boolean(), env: z.boolean() })
         .nullable(),
+    /** v0.1.440 — La última prueba de esta copia (null: todavía no se probó). */
+    verify: backupVerifySchema.nullable().default(null),
 });
 export type BackupSnapshot = z.infer<typeof backupSnapshotSchema>;
 
@@ -49,6 +100,11 @@ export const backupsSettingsSchema = z.object({
     keep: z.number().int().min(1).max(90).default(14),
     /** Incluir el .env (secretos) — necesario para migrar de servidor. */
     include_env: z.boolean().default(true),
+    /**
+     * v0.1.440 — Probar cada copia automática restaurándola en una base
+     * temporal (mismo servidor de Postgres, a la hora de la copia).
+     */
+    verify_auto: z.boolean().default(true),
 });
 export type BackupsSettings = z.infer<typeof backupsSettingsSchema>;
 
@@ -68,6 +124,8 @@ export const backupsStatusSchema = z.object({
     last_snapshot_at: z.string().nullable(),
     next_run_at: z.string().nullable(),
     snapshots: z.array(backupSnapshotSchema),
+    /** v0.1.440 — La prueba más reciente (de cualquier copia). */
+    last_verify: backupVerifySchema.nullable().default(null),
 });
 export type BackupsStatus = z.infer<typeof backupsStatusSchema>;
 

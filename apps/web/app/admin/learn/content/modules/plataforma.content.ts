@@ -889,6 +889,26 @@ export const articles: LearnArticle[] = [
                 caption: 'Plataforma → Copias de seguridad: automáticas, guardadas y Google Drive.',
                 fallback: 'plat-backups',
             },
+            { t: 'h', text: 'Probar que la copia se restaura' },
+            {
+                t: 'p',
+                md: 'Una copia que no se puede restaurar es peor que no tener copia: da una tranquilidad falsa. Por eso cada copia se puede **probar**: la app la restaura en una base de datos aparte, en el mismo servidor, cuenta lo que trae y la borra. Tu base de datos de siempre no se toca.',
+            },
+            {
+                t: 'steps',
+                items: [
+                    'En **Copias guardadas**, toca el escudo **Probar esta copia** en la fila de la copia. Tarda de segundos a unos minutos, según su tamaño.',
+                    'La columna **Prueba** dice cómo salió: **Se restaura**, **Con avisos** (se restaura, pero hay algo para revisar), **No se restaura** o **No se probó** (por ejemplo, una copia cifrada o un servidor sin espacio).',
+                    'Tócala para ver el detalle: si el archivo está completo, si la base carga, si trae todas las migraciones, las tablas y permisos, cuántas empresas, personas, listas y registros trae, y si incluye los archivos subidos, los ajustes de la plataforma y los secretos.',
+                    'Deja marcado **Probar cada copia automática**: después de cada copia programada se prueba sola, y si una no se puede restaurar te llega un correo.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Cuánto espacio necesita',
+                md: 'La prueba restaura la base completa en otra base del mismo servidor, así que necesita libre al menos lo que pesa tu base de datos. Si no hay espacio, la prueba no se hace y lo dice; la copia no se toca.',
+            },
             { t: 'h', text: 'Una copia fuera del servidor: Google Drive' },
             {
                 t: 'steps',

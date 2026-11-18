@@ -842,6 +842,20 @@ viajan (el bucket es la fuente). Un snapshot incluye secretos: se guarda como
 tal (permisos 600) o cifrado. Migrar UNA empresa entre instancias (con
 re-mapeo de ids) es un problema distinto y tiene su propio ADR-S23.
 
+**Addendum v0.1.440 — Probar cada copia.** Una copia que no se restaura da
+una tranquilidad falsa. `scripts/snapshot-verify.sh` restaura el snapshot en
+una base TEMPORAL del mismo Postgres (nunca toca la de la app), revisa sumas,
+migraciones contra el manifest, tablas, policies, permisos de `imagina_app` y
+conteos contra la base viva, y la borra al terminar aunque falle. Lo decide
+una función pura (`backup-verify.ts`: `ok` / `warning` / `failed` /
+`skipped`), corre con el mismo candado de las copias y en la cola del
+updater, a mano o tras cada copia programada (`verify_auto`, encendido de
+fábrica); el resultado vive en Redis `backups:verify` (no viaja en el
+snapshot) y una copia que no se restaura abre un aviso crítico al operador.
+Se eligió la misma instancia de Postgres y no un contenedor aparte: no
+necesita Docker ni otra imagen en el servidor, y lo que se prueba es
+justamente lo que haría una restauración real allí.
+
 ### ADR-S21 — Asistente IA de estructura: propone, la persona aplica (v0.1.181)
 
 **Contexto.** La app ya ofrece todo lo que un cliente necesita para armar su

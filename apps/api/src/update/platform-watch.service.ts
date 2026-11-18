@@ -5,6 +5,7 @@ import {
     heartbeatPingSchema,
     heartbeatSupportsFail,
     monitoringSettingsSchema,
+    type BackupVerify,
     type GuardianEvent,
     type GuardianReport,
     type HeartbeatPing,
@@ -444,7 +445,11 @@ export class PlatformWatchService {
         const h = await this.backups.health();
         if (!h.available) return;
         const run = h.run;
-        if (run.status === 'failed' && run.finished_at) {
+        // v0.1.440 — la prueba de una copia tiene su propio aviso (abajo): su
+        // corrida no cuenta como «la copia falló».
+        if (run.kind === 'verify') {
+            /* nada: lo ve checkBackupVerify */
+        } else if (run.status === 'failed' && run.finished_at) {
             const key = `backups:failed:${run.finished_at}`;
             await this.alerts.resolvePrefix('backups:failed:', key, { notify: false }, at);
             const what = run.kind === 'restore' ? 'La restauración de una copia falló' : run.kind === 'drive_upload' ? 'La subida de una copia a Google Drive falló' : 'La copia de seguridad del servidor falló';
@@ -465,6 +470,7 @@ export class PlatformWatchService {
         } else if (run.status === 'success' || run.status === 'idle') {
             await this.alerts.resolvePrefix('backups:failed:', undefined, { message: 'La última copia de seguridad salió bien.' }, at);
         }
+        await this.checkBackupVerify(h.last_verify ?? null, at);
         if (h.settings.enabled) {
             await this.alerts.resolve('backups:off', { notify: false }, at);
             const last = h.last_snapshot_at ? Date.parse(h.last_snapshot_at) : null;
@@ -505,6 +511,54 @@ export class PlatformWatchService {
                 },
                 at,
             );
+        }
+    }
+
+    /**
+     * v0.1.440 — La última prueba de una copia: si NO se pudo restaurar,
+     * crítico (una copia que no sirve es peor que no tener copia: da una
+     * tranquilidad falsa). Si una prueba automática no se pudo hacer por
+     * falta de disco o de permisos, aviso. Una prueba buena lo cierra.
+     */
+    private async checkBackupVerify(v: BackupVerify | null, at: Date): Promise<void> {
+        if (v?.status === 'failed') {
+            await this.alerts.raise(
+                {
+                    key: 'backups:verify',
+                    source: 'backups',
+                    severity: 'critical',
+                    title: 'Una copia de seguridad no se puede restaurar',
+                    detail: v.summary,
+                    paragraphs: [
+                        `Se probó la copia ${v.name} restaurándola en una base aparte (${fmtTime(v.verified_at)}) y NO se pudo restaurar:`,
+                        '',
+                        v.summary,
+                        '',
+                        'Mientras no haya una copia que se pueda restaurar, no hay forma segura de volver atrás si algo se pierde. Crea una copia nueva y pruébala desde Plataforma → Copias de seguridad.',
+                    ],
+                    action_path: '/platform?tab=backups',
+                    action_label: 'Abrir Plataforma → Copias de seguridad',
+                    remind_hours: 24,
+                },
+                at,
+            );
+        } else if (v?.status === 'skipped' && v.trigger === 'scheduled' && ['no_space', 'no_scratch_db', 'error'].includes(v.skip_code ?? '')) {
+            await this.alerts.raise(
+                {
+                    key: 'backups:verify',
+                    source: 'backups',
+                    severity: 'warning',
+                    title: 'No se pudo probar la copia de seguridad',
+                    detail: v.summary,
+                    paragraphs: [`La copia automática se creó, pero no se pudo probar restaurándola (${fmtTime(v.verified_at)}):`, '', v.summary],
+                    action_path: '/platform?tab=backups',
+                    action_label: 'Abrir Plataforma → Copias de seguridad',
+                    remind_hours: 0,
+                },
+                at,
+            );
+        } else if (v && (v.status === 'ok' || v.status === 'warning')) {
+            await this.alerts.resolve('backups:verify', { message: `La copia ${v.name} se probó y se puede restaurar.` }, at);
         }
     }
 
