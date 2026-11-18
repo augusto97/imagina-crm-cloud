@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { api, rememberFieldKey } from '@/lib/api';
-import { canonicalListId, invalidateForList, joinInflight, listIdentifiersFor, recordsKeys } from '@/hooks/useRecords';
+import { canonicalListId, invalidateForList, joinInflight, recordsKeys } from '@/hooks/useRecords';
 import { isDerivedFieldType } from '@/lib/fieldTypeCatalog';
 import type { CreateFieldInput, FieldEntity, UpdateFieldInput } from '@/types/field';
 
@@ -39,12 +39,18 @@ export function useFields(listId: string | number | undefined) {
 }
 
 /**
- * Guarda los campos de una lista bajo su id y su slug. El otro identificador
- * sale del índice de listas o, si no cargó, del `list_id` de los campos.
+ * Deja los campos de una lista también bajo su ID cuando se pidieron por otro
+ * identificador. El id sale del índice de listas o, si no cargó, del
+ * `list_id` de los campos.
  */
 export function seedFieldsForList(qc: QueryClient, listKey: string | number | undefined, data: FieldEntity[]): void {
     if (listKey === undefined || listKey === '') return;
-    const keys = listIdentifiersFor(qc, listKey);
+    // v0.1.436 — regla de oro nº 7: sólo bajo el ID. Antes se sembraba también
+    // bajo el slug y la misma lista quedaba dos veces en la caché (las pruebas
+    // de pantallas lo detectan: `lib/queryKeyAudit.ts`).
+    const keys = new Set<string>();
+    const canon = canonicalListId(qc, listKey);
+    if (/^\d+$/.test(canon)) keys.add(canon);
     const first = data[0];
     if (first && typeof first.list_id === 'number') keys.add(String(first.list_id));
     keys.delete(String(listKey));

@@ -3,13 +3,14 @@ import { describe, expect, it } from 'vitest';
 
 import { activityKeys } from '@/hooks/useActivity';
 import { automationsKeys } from '@/hooks/useAutomations';
-import { fieldsKeys } from '@/hooks/useFields';
+import { fieldsKeys, seedFieldsForList } from '@/hooks/useFields';
 import { listsKeys } from '@/hooks/useLists';
 import { canonicalListId, invalidateForList, joinInflight, keepPreviousForList, listIdentifiersFor, recordsKeys } from '@/hooks/useRecords';
 import { viewsKeys } from '@/hooks/useSavedViews';
 import { descriptionKeys, setHasDescription } from '@/hooks/useRecordDescription';
 import { fieldHistoryKeys } from '@/hooks/fieldHistoryKeys';
 import { runningSeconds, timeKeys } from '@/hooks/useTimeTracking';
+import { slugKeyViolations } from '@/lib/queryKeyAudit';
 
 /**
  * v0.1.114 — Regresión de la clase de bug MÁS CARA del proyecto.
@@ -227,5 +228,41 @@ describe('v0.1.291 — cronómetro', () => {
         expect(runningSeconds({ running: true, started_at: '2026-10-21 12:00:00' }, now)).toBe(10);
         expect(runningSeconds({ running: false, started_at: '2026-10-21T12:00:00Z' }, now)).toBe(0);
         expect(runningSeconds(null, now)).toBe(0);
+    });
+});
+
+describe('v0.1.436 — la regla de oro nº 7, medida', () => {
+    it('el auditor marca las claves que llevan el slug de una lista (salvo el índice de listas)', () => {
+        const qc = clientWithLists();
+        qc.setQueryData(recordsKeys.forList('42'), { rows: 1 });
+        qc.setQueryData(viewsKeys.forList('clientes'), []);
+        qc.setQueryData(['lists', 'item', 'clientes'], { id: 42 });
+        expect(slugKeyViolations(qc)).toEqual([JSON.stringify(viewsKeys.forList('clientes'))]);
+    });
+
+    it('sin índice de listas no puede saber qué es un slug: no marca nada', () => {
+        const qc = new QueryClient();
+        qc.setQueryData(viewsKeys.forList('clientes'), []);
+        expect(slugKeyViolations(qc)).toEqual([]);
+    });
+
+    it('los campos pedidos por slug quedan SÓLO bajo el id (antes también bajo el slug)', () => {
+        const qc = clientWithLists();
+        const fields = [{ id: 1, list_id: 42, slug: 'nombre' }] as never[];
+        seedFieldsForList(qc, 'clientes', fields);
+        expect(qc.getQueryData(fieldsKeys.forList('42'))).toBe(fields);
+        expect(qc.getQueryData(fieldsKeys.forList('clientes'))).toBeUndefined();
+        // Sin índice de listas, el id sale de los campos.
+        const cold = new QueryClient();
+        seedFieldsForList(cold, 'clientes', fields);
+        expect(cold.getQueryData(fieldsKeys.forList('42'))).toBe(fields);
+        expect(slugKeyViolations(qc)).toEqual([]);
+    });
+
+    it('invalidar alcanza también una clave guardada con el id como número', () => {
+        const qc = clientWithLists();
+        qc.setQueryData(['records', 42, 'list'], { rows: 1 });
+        invalidateForList(qc, recordsKeys.all, 'clientes');
+        expect(qc.getQueryState(['records', 42, 'list'])!.isInvalidated).toBe(true);
     });
 });

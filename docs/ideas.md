@@ -297,8 +297,6 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
 - Dominios propios por Caddy (`on_demand_tls`) cuando haya muchos clientes.
 - Firma de los releases (opcional; `docs/runbook-updates.md`).
 - Un contexto por request en el servidor (baja prioridad desde v0.1.257).
-- Pruebas de pantallas (E2E) en el CI y la regla de oro nº 7 en ~38 hooks:
-  planificadas para v0.1.436 (plan de estabilización del 2026-11-18).
 
 ---
 

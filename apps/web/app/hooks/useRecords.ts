@@ -148,7 +148,8 @@ export function invalidateForList(
             const k = q.queryKey;
             if (! Array.isArray(k) || k.length < 2) return false;
             if (! namespaces.has(k[0])) return false;
-            return typeof k[1] === 'string' && ids.has(k[1]);
+            // v0.1.436 — también una key con el id como número (`['forms', 12]`).
+            return (typeof k[1] === 'string' || typeof k[1] === 'number') && ids.has(String(k[1]));
         },
     });
 }

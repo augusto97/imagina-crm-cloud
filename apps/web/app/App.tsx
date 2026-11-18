@@ -18,6 +18,8 @@ import { disableTeamsApi } from '@/hooks/useTeams';
 import { usePwaBridge } from '@/cloud/usePwaBridge';
 import { PlanModuleNotice, usePlanModuleOff } from '@/components/PlanModuleNotice';
 import type { PlanModule as PlanModuleKey } from '@imagina-base/shared';
+import { queryClient } from '@/lib/query-client';
+import { installQueryKeyAudit } from '@/lib/queryKeyAudit';
 
 // Lazy-loaded pages. React.lazy + Vite produce un chunk por cada
 // import — esos chunks viven en `dist/assets/*-<hash>.js` y se
@@ -31,6 +33,9 @@ import type { PlanModule as PlanModuleKey } from '@imagina-base/shared';
 // v0.1.256 — también la página del registro (trae el motor de la ficha
 // diseñada y sus gráficos), carpetas, favoritos y ajustes: el tronco que se
 // baja al entrar es el shell + el índice de listas + la tabla de registros.
+// v0.1.436 — las pruebas de pantallas del CI miden la regla de oro nº 7 (sólo con `imcrm:e2e`).
+installQueryKeyAudit(queryClient);
+
 const RecordPage = lazyWithReload(() => import('@/admin/records/RecordPage').then(m => ({ default: m.RecordPage })));
 const FolderPage = lazyWithReload(() => import('@/admin/lists/FolderPage').then(m => ({ default: m.FolderPage })));
 // v0.1.339 — «Crear desde un archivo» (Excel/CSV → listas, con IA opcional).
