@@ -164,6 +164,12 @@ import {
     type AiStatus,
     type CreatePersonalTokenInput,
     type CreatedPersonalToken,
+    type CreateWebhookSubscriptionInput,
+    type CreatedWebhookSubscriptionDto,
+    type UpdateWebhookSubscriptionInput,
+    type WebhookDeliveryDto,
+    type WebhookSubscriptionDto,
+    type WebhookTestResultDto,
     type OauthApproveInput,
     type OauthAuthorizationRequest,
     type OauthDecision,
@@ -1540,6 +1546,31 @@ export class CloudClient {
     }
     revokePersonalToken(id: number): Promise<PersonalToken> {
         return this.request('DELETE', `/me/tokens/${id}`, { schema: personalTokenSchema });
+    }
+    // --- v0.1.442 — webhooks de eventos (Ajustes → API) ---
+    webhooks(): Promise<WebhookSubscriptionDto[]> {
+        return this.unwrap(this.request('GET', '/webhooks', { schema: z.object({ data: z.array(z.custom<WebhookSubscriptionDto>()) }) }));
+    }
+    createWebhook(input: CreateWebhookSubscriptionInput): Promise<CreatedWebhookSubscriptionDto> {
+        return this.request('POST', '/webhooks', { body: input, schema: z.custom<CreatedWebhookSubscriptionDto>() });
+    }
+    updateWebhook(id: number, input: UpdateWebhookSubscriptionInput): Promise<WebhookSubscriptionDto> {
+        return this.request('PATCH', `/webhooks/${id}`, { body: input, schema: z.custom<WebhookSubscriptionDto>() });
+    }
+    deleteWebhook(id: number): Promise<void> {
+        return this.request('DELETE', `/webhooks/${id}`, {});
+    }
+    testWebhook(id: number): Promise<WebhookTestResultDto> {
+        return this.request('POST', `/webhooks/${id}/test`, { body: {}, schema: z.custom<WebhookTestResultDto>() });
+    }
+    rotateWebhookSecret(id: number): Promise<CreatedWebhookSubscriptionDto> {
+        return this.request('POST', `/webhooks/${id}/rotate-secret`, { body: {}, schema: z.custom<CreatedWebhookSubscriptionDto>() });
+    }
+    webhookDeliveries(id: number): Promise<WebhookDeliveryDto[]> {
+        return this.unwrap(this.request('GET', `/webhooks/${id}/deliveries`, { query: { limit: 30 }, schema: z.object({ data: z.array(z.custom<WebhookDeliveryDto>()) }) }));
+    }
+    redeliverWebhook(id: number, deliveryId: number): Promise<WebhookDeliveryDto> {
+        return this.request('POST', `/webhooks/${id}/deliveries/${deliveryId}/redeliver`, { body: {}, schema: z.custom<WebhookDeliveryDto>() });
     }
     /** URL absoluta del endpoint MCP (para el snippet de configuración). */
     mcpUrl(): string {

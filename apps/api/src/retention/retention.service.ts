@@ -63,6 +63,9 @@ export const RETENTION_RULES: readonly RetentionRule[] = [
     { table: 'ai_agent_runs', where: sql`status NOT IN ('queued', 'running') AND created_at < now() - interval '90 days'` },
     { table: 'sms_messages', where: sql`status NOT IN ('programado', 'en_cola', 'enviando') AND created_at < now() - interval '180 days'` },
     { table: 'bulk_edits', where: sql`created_at < now() - make_interval(days => ${BULK_HISTORY_DAYS})` },
+    // v0.1.442 — el historial de entregas de los webhooks de eventos: 30 días
+    // (lo que todavía espera un reintento nunca).
+    { table: 'webhook_deliveries', where: sql`status <> 'pending' AND created_at < now() - interval '30 days'` },
     // El registro dinámico de clientes OAuth (para el MCP) es abierto: un
     // cliente que se registró y nunca se usó para un token, y que no tiene
     // ningún token, no le sirve a nadie (un cliente real se registra otra vez).
@@ -129,6 +132,7 @@ const TABLE_LABELS: Record<string, string> = {
     comments: 'Comentarios',
     relations: 'Vínculos entre registros',
     sms_messages: 'SMS enviados',
+    webhook_deliveries: 'Entregas de webhooks',
     ai_agent_runs: 'Corridas de agentes de IA',
     bulk_edit_items: 'Historial de ediciones masivas',
     form_stats: 'Estadísticas de formularios',

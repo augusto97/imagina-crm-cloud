@@ -9683,3 +9683,34 @@ personales (ADR-S21 fase 3) servían sólo para el MCP.
 al documento: el test lo obliga). Los webhooks de eventos (v0.1.442) y la app
 de n8n (v0.1.443) se apoyan en estos tokens. Detalle para quien integra en
 `docs/api.md`.
+
+**Addendum v0.1.442 — webhooks de eventos.** El camino inverso: la app le
+AVISA a otro programa con un POST firmado.
+- **Suscripción** (`webhook_subscriptions`, migración 0129, RLS): dirección
+  https pública (sin usuario:contraseña; `resolvePublicHost`), eventos
+  (`record.created`, `record.updated`, `record.deleted`, `form.submitted`,
+  `payment.received`), listas (o todas las que ve quien la creó), secreto
+  `whsec_…` cifrado con `SECRETS_KEY` (se ve una vez; rotarlo lo invalida al
+  instante). Es de la EMPRESA pero actúa como quien la creó: la arma un admin o
+  quien tiene `use_api`, por Ajustes → API o por la API con un token `full`
+  (queda `source: 'api'`). Tope de 25 por empresa.
+- **Emisión sin acoplar**: `EventWebhookHub` (global, como `NotifyHub`); el
+  despachador de automatizaciones emite creado/cambiado/formulario/pago y
+  `RecordsService.remove` el borrado con una foto de la fila. El servicio lee
+  las suscripciones activas de un caché en Redis (`whsubs:v1:{tenant}`, 10 min,
+  se borra al cambiar algo) e inserta una entrega por suscripción
+  (`webhook_deliveries`); la red nunca corre dentro de la transacción del cambio.
+- **Entrega durable en Postgres**: un `drain` toma lo vencido con
+  `FOR UPDATE SKIP LOCKED` y un plazo de 2 min, de a 50 y 8 a la vez; arma el
+  cuerpo en el primer intento con el acceso VIGENTE de quien creó la
+  suscripción (membresía, cuenta activa, plan con `api`, `use_api`; ACL por
+  lista, alcance del rol y campos ocultos), y lo conserva para los reintentos
+  (mismo `X-Webhook-Id`). Firma `t=<s>,v1=HMAC-SHA256(secreto, "t.cuerpo")`.
+  Reintentos a 1 min, 5 min, 30 min, 2 h, 6 h y 12 h ante red/408/429/5xx; un
+  4xx falla; 410 pausa; 20 intentos fallidos seguidos pausan y abren un
+  Problema (fuente `webhook`). La cola `event-webhooks` sólo despierta: un
+  evento empuja un `drain` (dos ids para que uno que llega mientras se manda
+  otro no espere al tic) y un tic cada 30 s levanta reintentos y cortes.
+- **Lo que no**: no viaja al migrar una empresa (como los tokens); el historial
+  de entregas se guarda 30 días; no hay webhooks del portal ni de la tienda
+  (la tienda ya avisa por sus pedidos, que son registros).

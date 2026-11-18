@@ -1394,6 +1394,27 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         if_restricted: 'note',
     },
     {
+        // v0.1.442 — webhooks de eventos (avisos firmados a otros programas).
+        id: 'event-webhooks',
+        title: '¿Cómo le aviso a n8n, Make o mi sistema cuando pasa algo?',
+        category: 'integrations',
+        minutes: 2,
+        body: [
+            '1. En el otro programa, crea el disparador que recibe avisos y copia su dirección: en **n8n** el nodo **Webhook**, en **Make** el módulo **Custom webhook** y en **Zapier** **Catch Hook**.',
+            '2. Ve a **Ajustes → API → Webhooks** y toca **Nuevo webhook**. Pega la dirección, elige **cuándo avisar** (se crea, cambia o se borra un registro, se envía un formulario o se recibe un pago) y **de qué listas**.',
+            '3. Copia el **secreto de firma**: se muestra una sola vez. Con él, el otro programa comprueba que el aviso lo mandamos nosotros (la cabecera **X-Webhook-Signature**).',
+            '4. Toca **Probar**: llega un aviso de prueba. En **Entregas** ves cada aviso, qué respondió el otro programa y puedes **volver a enviar** uno que falló.',
+            'Si la dirección no responde, el aviso se reintenta varias veces durante el día. Si falla 20 veces seguidas, el webhook se pausa solo y aparece en **Problemas**.',
+        ].join('\n'),
+        tip: 'El webhook actúa como quien lo creó: sólo manda lo que esa persona puede ver. Si la persona deja la empresa, el webhook se pausa.',
+        screens: ['settings:api'],
+        keywords: 'webhook webhooks aviso avisos evento eventos n8n make zapier catch hook notificar sistema externo firma secreto reintento entrega',
+        route: '/settings?s=api',
+        related: ['public-api', 'integrations'],
+        admin_only: true,
+        if_restricted: 'note',
+    },
+    {
         id: 'microsoft-teams',
         title: '¿Cómo aviso a mi equipo en Microsoft Teams?',
         category: 'integrations',

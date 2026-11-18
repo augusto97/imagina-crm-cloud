@@ -67,6 +67,8 @@ import { RetentionModule } from './retention/retention.module';
 import { DocumentsModule } from './documents/documents.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { RecordChangeHubModule } from './records/record-change-hub';
+import { EventWebhookHubModule } from './event-webhooks/event-hub';
+import { EventWebhooksModule } from './event-webhooks/event-webhooks.module';
 import { PublicCacheModule } from './public-cache/public-cache.service';
 import { RecordsModule } from './records/records.module';
 import { ButtonsModule } from './buttons/buttons.module';
@@ -95,6 +97,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         DbModule,
         RedisModule,
         RecordChangeHubModule,
+        EventWebhookHubModule,
         PublicCacheModule,
         NotifyHubModule,
         // C5 — aviso en proceso de "una aprobación se resolvió" (esperas de automatizaciones).
@@ -121,6 +124,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         // D3 — WhatsApp oficial (Meta Cloud API).
         WhatsappModule,
         SmsModule,
+        EventWebhooksModule,
         DocumentsModule,
         FormsModule,
         ContactWidgetsModule,

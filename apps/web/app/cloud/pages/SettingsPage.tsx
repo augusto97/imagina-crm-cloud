@@ -49,6 +49,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { formatDate, formatNumber } from '@/lib/tenantFormat';
 import { PlanModuleGate } from '@/components/PlanModuleNotice';
 import { ApiTokensCard } from '@/admin/settings/ApiTokensCard';
+import { WebhooksCard } from '@/admin/settings/WebhooksCard';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 const STATUS_LABEL: Record<BillingSummary['status'], string> = {
@@ -232,10 +233,14 @@ export function SettingsPage(): JSX.Element {
                     (la tienda, el sitio y SQL tienen su propio módulo). */}
                 {active === 'conectores' && <IntegrationsPanel />}
 
-                {/* v0.1.441 (G1) — tokens para conectar programas por la API REST. */}
+                {/* v0.1.441 (G1) — tokens para conectar programas por la API REST.
+                    v0.1.442 — y los webhooks de eventos (avisos a otros programas). */}
                 {active === 'api' && (isAdmin || canUseApi) && (
                     <PlanModuleGate module="api">
-                        <ApiTokensCard />
+                        <div className="imcrm-flex imcrm-flex-col imcrm-gap-10">
+                            <ApiTokensCard />
+                            <WebhooksCard />
+                        </div>
                     </PlanModuleGate>
                 )}
 

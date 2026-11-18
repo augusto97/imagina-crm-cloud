@@ -121,8 +121,39 @@ Nodo **HTTP Request** → Authentication **Generic Credential Type** → **Heade
 Auth** (`Authorization` = `Bearer <token>`). El documento OpenAPI también se
 importa en Postman, Insomnia o un generador de clientes.
 
+## Webhooks de eventos (v0.1.442)
+
+El camino inverso: en vez de preguntar cada rato «¿hay algo nuevo?», el otro
+programa recibe un **POST** en el momento en que pasa algo. Se crean en
+**Ajustes → API → Webhooks** o por la API (`/webhooks`, con un token `full`;
+la suscripción queda marcada «Lo registró un programa»).
+
+- **Eventos**: `record.created`, `record.updated` (trae `changes` con el valor
+  de antes y el de ahora), `record.deleted` (va a la papelera),
+  `form.submitted` y `payment.received`. Se filtra por listas o todas las que
+  ve quien lo creó.
+- **Actúa como quien lo creó**: sólo viaja lo que esa persona puede ver (ACL
+  por lista, alcance del rol, campos ocultos fuera). Si deja la empresa, pierde
+  `use_api` o su cuenta se desactiva, el webhook se pausa solo.
+- **Cuerpo**: `id` (único por aviso, se repite en los reintentos), `event`,
+  `created_at`, `tenant`, `list`, `record` (como la API), `values` por
+  slug, `fields` (`f{id}` → id, slug, nombre y tipo), y `changes`, `form` o
+  `payment` según el evento.
+- **Cabeceras**: `X-Webhook-Id`, `X-Webhook-Event`, `X-Webhook-Attempt` y
+  `X-Webhook-Signature: t=<segundos>,v1=<hex>`, donde `v1` es el
+  HMAC-SHA256 del secreto sobre `<t>.<cuerpo crudo>`. Comprobar la firma
+  con comparación de tiempo constante y rechazar un `t` de más de 5 minutos.
+  El secreto (`whsec_…`) se ve una vez al crear o rotar.
+- **Reintentos**: si no responde 2xx en 10 s (red, 408, 429 o 5xx), se
+  reintenta a 1 min, 5 min, 30 min, 2 h, 6 h y 12 h; un 4xx no se repite.
+  **410** pausa el webhook (así se desuscribe n8n o Zapier). 20 intentos
+  fallidos seguidos lo pausan y abren un Problema. Cada entrega queda en el
+  historial 30 días, con «Volver a enviar».
+- **Tope**: 25 webhooks por empresa. Las direcciones son https públicas (sin
+  usuario y contraseña en la dirección; nunca la red interna).
+- Migrar una empresa no lleva sus webhooks (como los tokens: son credenciales
+  de esta instalación).
+
 ## Pendiente
 
-- v0.1.442: webhooks de eventos (registro creado/cambiado/borrado, formulario
-  enviado, pago recibido) firmados y con reintentos.
 - v0.1.443: la app de n8n (disparadores y acciones).

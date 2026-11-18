@@ -30,6 +30,7 @@ export * from './plans';
 export * from './impersonation-log';
 export * from './ai-usage';
 export * from './personal-tokens';
+export * from './event-webhooks';
 export * from './oauth-clients';
 export * from './store-sync';
 export * from './bulk-edits';

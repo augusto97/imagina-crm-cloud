@@ -118,6 +118,11 @@ export type AuditAction =
     | 'workspace.ai_change'
     // v0.1.183 (ADR-S21 fase 3) — tokens de acceso personal (MCP).
     | 'token.create'
+    // v0.1.442 — webhooks de eventos (sin el secreto).
+    | 'webhook.create'
+    | 'webhook.update'
+    | 'webhook.delete'
+    | 'webhook.rotate_secret'
     | 'token.revoke'
     // v0.1.196 (ADR-S22) — conectores: credenciales de servicios externos.
     // `connection.convert` es la mudanza de un secreto que estaba escrito

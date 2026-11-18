@@ -15818,6 +15818,54 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         listas con `X-RateLimit-Limit: 300` → ruta fuera 403 → revocar 401).
         Siguen v0.1.442 (webhooks de eventos) y v0.1.443 (n8n).
 
+  - [x] **Webhooks de eventos (v0.1.442, addendum ADR-S105, segundo módulo
+        nuevo del plan: G1)**: la app le AVISA a otro programa —n8n, Make,
+        Zapier, un ERP— con un POST firmado en el momento en que pasa algo.
+        (a) **Suscripciones** (`webhook_subscriptions` + `webhook_deliveries`,
+        migración 0129, RLS; schemas en `packages/shared/src/schemas/event-webhooks.ts`):
+        dirección https pública (nunca la red interna ni usuario:contraseña),
+        eventos `record.created`, `record.updated` (con `changes` antes →
+        ahora), `record.deleted`, `form.submitted` y `payment.received`,
+        listas o todas, y secreto `whsec_…` cifrado (se ve una vez; «Secreto
+        nuevo» lo cambia). Las crea un admin o quien tiene `use_api`, en
+        **Ajustes → API → Webhooks** (`WebhooksCard`) o por la API
+        (`/webhooks`, con un token `full`: queda «Lo registró un programa»;
+        rutas sumadas a la lista blanca y al OpenAPI). Tope de 25 por empresa;
+        bitácora `webhook.create|update|delete|rotate_secret`.
+        (b) **Actúa como quien la creó**: el cuerpo se arma con su acceso
+        VIGENTE —ACL por lista, alcance del rol, campos ocultos fuera,
+        registros que no alcanza se saltean— y si deja la empresa, pierde
+        `use_api` o su cuenta se desactiva, la suscripción se pausa sola.
+        (c) **Entrega durable** (`EventWebhooksService` + cola
+        `event-webhooks`): el hub (`EventWebhookHub`, global) recibe los
+        eventos del despachador de automatizaciones y del borrado, se inserta
+        una entrega por suscripción y un `drain` las toma con `FOR UPDATE SKIP
+        LOCKED`. Cuerpo con `id`, `event`, `tenant`, `list`, `record`,
+        `values` por slug, `fields` y lo del evento; cabeceras
+        `X-Webhook-Id/Event/Attempt` y `X-Webhook-Signature: t=…,v1=…`
+        (HMAC-SHA256 sobre `t.cuerpo`). Reintentos a 1 min, 5 min, 30 min, 2 h,
+        6 h y 12 h ante red/408/429/5xx; un 4xx falla; 410 pausa; 20 intentos
+        fallidos seguidos pausan y abren un Problema (fuente nueva `webhook`).
+        (d) **Pantalla**: crear con eventos y listas, el secreto una vez con
+        cómo comprobar la firma (Node.js), **Probar** (aviso «ping»),
+        **Entregas** con lo que respondió el otro lado y **Volver a enviar**,
+        pausar/encender, secreto nuevo y borrar. Historial 30 días
+        (retención). No viaja al migrar una empresa; borrarla las borra.
+        **Bug encontrado en el E2E**: un evento que llegaba mientras se
+        mandaba otro esperaba al tic de 30 s (BullMQ ignora un `add` con el id
+        de un trabajo que está corriendo) → `kickDrain` usa un segundo id.
+        Ayuda: guía `event-webhooks`, sección en Aprende → La API, `docs/api.md`
+        y novedad. Tests: `event-webhooks.spec` (9: firma, reintentos y el
+        despertar; creado/cambiado/borrado firmados con valores por slug y el
+        secreto cifrado; rol propio con `use_api`, registro ajeno saltado y
+        campo oculto fuera; 500→reintento con el mismo id, 400→falló + Problema,
+        volver a enviar, 20 fallas pausan, 410 pausa; quitar `use_api` pausa;
+        probar, secreto nuevo, filtros, validaciones, tope y RLS) — shared 1007,
+        front 943 — + E2E navegador 46/46 en escritorio y celular oscuro con un
+        receptor local (firma verificada, creado y borrado, 400 → «Falló» →
+        «Volver a enviar», pausado no avisa, bitácora).
+        Sigue v0.1.443 (la app de n8n).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

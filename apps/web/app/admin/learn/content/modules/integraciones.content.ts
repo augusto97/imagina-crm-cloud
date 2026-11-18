@@ -914,6 +914,39 @@ export const articles: LearnArticle[] = [
                     'Pega la dirección del pedido (por ejemplo la de leer registros) y elige el método. Para crear o cambiar, en **Body** manda los valores dentro de **data**, como en los ejemplos de Ajustes → API.',
                 ],
             },
+            { t: 'h', text: 'Avisos a otros programas (webhooks)' },
+            {
+                t: 'p',
+                md: 'El camino inverso: en vez de que el programa pregunte cada rato «¿hay algo nuevo?», le **avisamos** en el momento en que pasa algo. En **Ajustes → API → Webhooks** toca **Nuevo webhook**, pega la dirección que te da el otro programa (en n8n, el nodo **Webhook**; en Make, **Custom webhook**; en Zapier, **Catch Hook**), elige cuándo avisar y de qué listas.',
+            },
+            {
+                t: 'settings',
+                title: 'Lo que puede avisar',
+                rows: [
+                    { name: 'Se crea un registro', what: 'Desde la pantalla, un formulario, una automatización, la API o una importación.' },
+                    { name: 'Cambia un registro', what: 'Trae qué campos cambiaron, con el valor de antes y el de ahora.' },
+                    { name: 'Se borra un registro', what: 'Va a la papelera. Trae el id y la lista.' },
+                    { name: 'Se envía un formulario', what: 'Con el formulario y el registro que creó.' },
+                    { name: 'Se recibe un pago', what: 'Un link de pago se pagó: con el monto, el medio y el registro.' },
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Cómo llega cada aviso',
+                rows: [
+                    { name: 'Qué trae', what: 'El registro con sus valores por nombre interno del campo (`values`), la lista y, según el evento, los cambios, el formulario o el pago. Sólo lo que puede ver quien creó el webhook.' },
+                    { name: 'La firma', what: 'La cabecera `X-Webhook-Signature` trae la hora y una firma hecha con el **secreto** del webhook. Con ella el otro programa comprueba que el aviso lo mandamos nosotros. El secreto se ve una sola vez; **Secreto nuevo** lo cambia.' },
+                    { name: 'Si no responde', what: 'Si la dirección no contesta con un 2xx en 10 segundos, se reintenta a 1 min, 5 min, 30 min, 2 h, 6 h y 12 h. Un 4xx no se repite; un **410** pausa el webhook.' },
+                    { name: 'Entregas', what: 'El historial de cada aviso con lo que respondió el otro lado, y **Volver a enviar** para uno que falló. Se guarda 30 días.' },
+                    { name: 'Probar', what: 'Manda un aviso de prueba («ping») para comprobar que la dirección y la firma funcionan.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'warning',
+                title: 'Si falla muchas veces seguidas, se pausa',
+                md: 'Después de 20 intentos fallidos seguidos el webhook se pausa solo y aparece en **Problemas**. Cuando el otro programa vuelva a funcionar, enciéndelo de nuevo con el botón de pausa. También se pausa si la persona que lo creó deja la empresa o pierde el permiso **Usar la API**.',
+            },
             {
                 t: 'example',
                 title: 'Una distribuidora de repuestos',
@@ -926,6 +959,7 @@ export const articles: LearnArticle[] = [
                     { q: '¿Es el mismo token que el de la conexión con Claude?', a: 'No. Los de **Ajustes → Seguridad → Conexión MCP** sirven sólo para asistentes como Claude, y los de la API sólo para la API. Cada uno se crea en su lugar.' },
                     { q: '¿Qué pasa si la persona que creó el token se va de la empresa?', a: 'El token deja de funcionar al instante: actúa como esa persona y ella ya no está. Para un programa que debe seguir andando, conviene crear el token con una cuenta del equipo que no se vaya a ir.' },
                     { q: '¿Cómo se suben archivos?', a: 'Con `POST /files` (formulario con el campo `file`). Devuelve el id del archivo, que después va en el campo Archivo del registro: `{"f20": [id]}`.' },
+                    { q: '¿Llegan los avisos a una dirección de mi red interna?', a: 'No: la dirección tiene que ser pública y con **https**. Para un programa dentro de tu red, publícalo detrás de una dirección pública (n8n en la nube, o un túnel).' },
                 ],
             },
             {

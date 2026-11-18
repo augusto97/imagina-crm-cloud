@@ -152,6 +152,11 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'whatsapp.config': { text: 'cambió dónde caen los mensajes de WhatsApp de' },
     'whatsapp.columns': { text: 'cambió las columnas de WhatsApp de la lista' },
     'whatsapp.subscribe': { text: 'suscribió a los avisos de Meta la cuenta de WhatsApp' },
+    // v0.1.442 — webhooks de eventos.
+    'webhook.create': { text: 'creó el webhook' },
+    'webhook.update': { text: 'cambió el webhook' },
+    'webhook.delete': { text: 'borró el webhook', danger: true },
+    'webhook.rotate_secret': { text: 'creó un secreto nuevo para el webhook' },
 };
 
 function describe(entry: AuditEntry): { text: string; danger: boolean } {

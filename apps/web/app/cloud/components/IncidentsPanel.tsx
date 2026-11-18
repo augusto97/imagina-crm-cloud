@@ -17,6 +17,7 @@ import {
     ShoppingCart,
     Sparkles,
     TriangleAlert,
+    Webhook,
     Zap,
     type LucideIcon,
 } from 'lucide-react';
@@ -51,6 +52,8 @@ const SOURCE_ICON: Record<IncidentSource, LucideIcon> = {
     ai_agent: Bot,
     // v0.1.413 — una tienda que no pudo preparar un pago en línea.
     shop: ShoppingCart,
+    // v0.1.442 — un webhook de eventos que no llega o se pausó.
+    webhook: Webhook,
 };
 
 /**
