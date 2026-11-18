@@ -145,6 +145,8 @@ export class CommentsService {
             commentId: row.row.id,
             visibility: row.row.visibility === 'client' ? 'client' : 'internal',
             ...(row.row.parentId !== null ? { parentId: row.row.parentId } : {}),
+            source: 'app',
+            ...(input.metadata && typeof input.metadata === 'object' && 'agent' in input.metadata ? { fromAgent: true } : {}),
         });
         return toComment(row.row, row.name);
     }

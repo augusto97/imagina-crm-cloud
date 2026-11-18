@@ -732,6 +732,7 @@ export class HelpdeskIngestService {
             visibility: 'client',
             fromClient: true,
             clientName: customer.name || customer.email,
+            source: 'email',
         });
         this.dispatcher.dispatch({
             tenantId: ctx.tenantId,

@@ -3,6 +3,8 @@ import {
     meetingActionKind,
     describeWebhookRecord,
     describeWhatsTrigger,
+    describeCommentTrigger,
+    readCommentTriggerConfig,
     readWhatsTriggerConfig,
     readWebhookRecordConfig,
     AUTOMATION_ACTIONS,
@@ -582,7 +584,7 @@ const automationSpec = z.object({
     list: z.string().max(63).describe('Slug de la lista'),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).optional(),
-    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'whats_event', 'email_received', 'sla_alert', 'subscription_event']),
+    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'whats_event', 'email_received', 'sla_alert', 'subscription_event', 'comment_added']),
     trigger_config: z
         .record(z.unknown())
         .optional()
@@ -603,7 +605,8 @@ const automationSpec = z.object({
                 'whatsapp_message_received (un contacto escribió por WhatsApp oficial; el registro ya se encontró o creó por teléfono; las acciones usan {{whatsapp.texto}}, {{whatsapp.de}}, {{whatsapp.nombre}}): {connection_id? (de `whatsapp.connections` en get_list_schema; vacío = cualquiera), field_filters?}. ' +
                 'whats_event (algo que avisa Whats, la conexión kind "whats": la app ubica el registro de ESTA lista por teléfono y, si no está, lo crea o cancela la corrida; las acciones usan {{whatsapp.evento}}, {{whatsapp.de}}, {{whatsapp.nombre}}, {{whatsapp.correo}}, {{whatsapp.contacto_id}} y lo que trae el aviso como {{payload.x}}): {whats_event: message_status ({{whatsapp.estado}}, {{whatsapp.motivo}}) | contact_created | contact_unsubscribed | conversation ({{whatsapp.conversacion_id}}, {{whatsapp.estado_conversacion}}, {{whatsapp.asignado_a}}) | csat ({{whatsapp.calificacion}}, {{whatsapp.comentario}}) | link_clicked ({{whatsapp.enlace}}) | form ({{whatsapp.formulario}}, respuestas en {{payload.answers.x}}), statuses?: [sent|delivered|read|failed|canceled] (default [failed]), conversation_events?: [created|assigned|resolved], form_events?: [submitted|confirmed], connection_id? (una conexión kind "whats"), phone_field? (slug de un campo teléfono o texto; vacío = el de la lista), if_missing?: create|skip (contact_created y form crean por defecto), field_filters?}. ' +
                 'email_received (MESA DE AYUDA: llegó un correo al buzón de soporte de la lista — ver `helpdesk` en get_list_schema; las acciones usan {{correo.de}}, {{correo.nombre}}, {{correo.asunto}}, {{correo.texto}}, {{correo.tipo}} (nuevo|respuesta)): {email_kind?: any (default) | new (sólo tickets nuevos) | reply (sólo respuestas del cliente), field_filters?}. ' +
-                'sla_alert (un SLA de la mesa de ayuda entró en riesgo o se venció; las acciones usan {{sla.alerta}}, {{sla.objetivo}}, {{sla.vence}}, {{sla.prioridad}}, {{sla.estado}}): {sla_alerts?: [at_risk|breached] (vacío = las dos), sla_targets?: [first_response|resolution] (vacío = los dos), field_filters?}.',
+                'sla_alert (un SLA de la mesa de ayuda entró en riesgo o se venció; las acciones usan {{sla.alerta}}, {{sla.objetivo}}, {{sla.vence}}, {{sla.prioridad}}, {{sla.estado}}): {sla_alerts?: [at_risk|breached] (vacío = las dos), sla_targets?: [first_response|resolution] (vacío = los dos), field_filters?}. ' +
+                'comment_added (alguien comentó en el registro: el equipo en la app, el cliente desde el portal o respondiendo por correo; NO se dispara con lo que comenta un agente de IA; las acciones usan {{comentario.texto}}, {{comentario.autor}}, {{comentario.de}} (equipo|cliente), {{comentario.origen}} (app|portal|correo), {{comentario.visibilidad}}, {{comentario.es_respuesta}}): {comment_from?: any|team|client, comment_visibility?: any|internal|client, comment_replies?: any|top (sólo comentarios nuevos, no respuestas)|replies, comment_contains? (palabras separadas por coma: sólo si el texto contiene alguna, sin importar tildes ni mayúsculas), field_filters?}.',
         ),
     actions: z
         .array(z.record(z.unknown()))
@@ -626,6 +629,8 @@ const automationSpec = z.object({
                 'wait_approval {approval_flow?: id o nombre (sin él, la que pidió esta automatización o cualquier pendiente del registro), timeout_days?: n} — PAUSA la corrida hasta que la solicitud se resuelva y deja {{aprobacion.resultado}} (aprobada|rechazada|devuelta|cancelada, o vencida si pasaron timeout_days) para un if_else {condition: [{field: "aprobacion.resultado", op: "eq", value: "aprobada"}]}; NO dentro de for_each_linked | ' +
                 'reply_email {body, subject?, cc?} — MESA DE AYUDA: responde por correo al HILO del ticket (al cliente, con las cabeceras del hilo y el número del ticket en el asunto) desde la dirección de soporte; el body es texto con variables ({{slug}}, {{correo.asunto}}, {{ticket.numero}}, {{cliente.nombre}}); sólo en listas con buzón de soporte conectado | ' +
                 'for_each_linked {relation: slug de la lista vinculada (linked_lists de get_list_schema; o relation_field_id), via?: nombre de la relación si hay varias, filters?: [{field, op, value}] por slug de ESA lista, actions: [...]} — repite las acciones por cada registro vinculado (tope 200); adentro {{item.slug}} y {{item.record.id}} leen el vinculado, y update_field {target: "item", values: {slug de esa lista: valor}} lo cambia (sin target cambia el registro que disparó). ' +
+                'find_records {list?: slug (default la de la automatización; puede ser otra lista), conditions: [{field: slug de ESA lista, op: eq|neq|contains|not_contains|gt|gte|lt|lte|is_null|is_not_null, value (acepta variables: "{{correo}}")}], logic?: and|or, sort_field?: slug o "created_at", sort_dir?: desc|asc, limit?: 1-50 (default 10), exclude_self?: true (default: en la misma lista no cuenta al que disparó), if_none?: continue|stop, response_name?: (default "busqueda")} — BUSCA registros y los deja para los pasos siguientes: {{respuestas.<nombre>.cantidad}}, {{respuestas.<nombre>.total}}, {{respuestas.<nombre>.ids}} (sirve para un campo relación), {{respuestas.<nombre>.primero.id}}, {{respuestas.<nombre>.primero.titulo}}, {{respuestas.<nombre>.primero.<slug>}}; un if_else puede preguntar {field: "respuestas.<nombre>.cantidad", op: "gt", value: 0}. «es» sobre texto/correo/teléfono no distingue mayúsculas y el teléfono se compara por dígitos; una opción se puede escribir por su etiqueta | ' +
+                'upsert_record {list?: slug, match_by?: record_id|field, match_field? (slug de un campo «Sin repetidos» de texto, correo, teléfono, número o enlace, o un ID automático), match_value: el dato con que se busca ("{{correo}}", "{{payload.nit}}", "{{respuestas.busqueda.primero.id}}"), mode?: upsert (default: lo actualiza si existe y si no lo crea) | update_only | create_only, values: {slug: valor}, response_name?: (default "registro")} — CREA O ACTUALIZA UN registro de esa lista sin duplicar; al crearlo el campo de búsqueda queda con el dato; un valor vacío no borra lo que ya tenía; con dos registros con el mismo valor falla sin tocar ninguno. Deja {{respuestas.<nombre>.id}}, .titulo y .accion (creado|actualizado|sin_cambios|ya_existia|no_encontrado) | ' +
                 'call_webhook y connector_action aceptan response_name (minúsculas/números/_): su respuesta queda para los pasos SIGUIENTES — {{webhook.status}}, {{webhook.body.pedido.items.0.id}} (del último) y {{respuestas.<response_name>.body.x}}; sobreviven a un wait. ' +
                 'send_email acepta además pdf_templates: [ids de plantillas de documento] para ADJUNTAR esos PDF. ' +
                 'Merge tags en cualquier texto: {{slug}}, {{slug|label}}, {{before.slug}}, {{record.id}}, {{date.today}}, {{fecha|+1m|-1d}}.',
@@ -1049,7 +1054,7 @@ export class StructureTools implements AiProposalApplier {
                 name: z.string().min(1).max(190).optional(),
                 description: z.string().max(2000).nullable().optional(),
                 is_active: z.boolean().optional(),
-                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'whats_event', 'email_received', 'sla_alert', 'subscription_event']).optional(),
+                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'whats_event', 'email_received', 'sla_alert', 'subscription_event', 'comment_added']).optional(),
                 trigger_config: z.record(z.unknown()).optional(),
                 actions: z.array(z.record(z.unknown())).min(1).max(20).optional(),
             }),
@@ -4595,6 +4600,9 @@ export class StructureTools implements AiProposalApplier {
                 !s.startsWith('aprobacion.') &&
                 !s.startsWith('correo.') &&
                 !s.startsWith('sla.') &&
+                // v0.1.444 — lo que dejan «Buscar registros» / «Crear o actualizar» y el comentario del disparador.
+                !s.startsWith('respuestas.') &&
+                !s.startsWith('comentario.') &&
                 !slugs.has(s) &&
                 !/^f\d+$/.test(s)
             )
@@ -4641,6 +4649,33 @@ export class StructureTools implements AiProposalApplier {
                         const target = cfg.target_list ?? cfg.list_id;
                         if (typeof target === 'string' && !/^\d+$/.test(target)) cfg.target_list = resolveTargetList(target);
                         for (const v of Object.values((cfg.values as Record<string, unknown>) ?? {})) checkTags(v);
+                        break;
+                    }
+                    case 'find_records':
+                    case 'upsert_record': {
+                        // v0.1.444 — la lista donde se busca (slug → id). Sus campos se
+                        // validan contra esta lista sólo si es la misma.
+                        const raw = cfg.list ?? cfg.list_id ?? cfg.target_list;
+                        const other = typeof raw === 'string' && raw.trim() !== '' && !/^\d+$/.test(raw);
+                        if (other) cfg.list_id = resolveTargetList(raw as string);
+                        else if ((typeof raw === 'string' && /^\d+$/.test(raw)) || typeof raw === 'number') cfg.list_id = Number(raw);
+                        delete cfg.list;
+                        delete cfg.target_list;
+                        const sameList = !other && (raw === undefined || raw === null || raw === '');
+                        if (act.type === 'find_records') {
+                            for (const c of (cfg.conditions as Array<Record<string, unknown>> | undefined) ?? []) {
+                                if (sameList) check(c.field ?? c.slug);
+                                checkTags(c.value);
+                            }
+                            if (sameList && typeof cfg.sort_field === 'string' && cfg.sort_field !== 'created_at') check(cfg.sort_field);
+                        } else {
+                            if (sameList && cfg.match_by === 'field') check(cfg.match_field);
+                            checkTags(cfg.match_value);
+                            for (const [k, v] of Object.entries((cfg.values as Record<string, unknown>) ?? {})) {
+                                if (sameList) check(k);
+                                checkTags(v);
+                            }
+                        }
                         break;
                     }
                     case 'bulk_edit':
@@ -5240,6 +5275,8 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
                   : 'Cuando llega un correo';
         case 'sla_alert':
             return 'Cuando un SLA está en riesgo o se vence';
+        case 'comment_added':
+            return describeCommentTrigger(readCommentTriggerConfig(cfg));
         default:
             return type;
     }
@@ -5288,6 +5325,17 @@ function describeActions(
             }
             case 'reply_email':
                 return 'Responder por correo al hilo del ticket';
+            case 'find_records': {
+                const id = Number(cfg.list_id);
+                const target = Number.isInteger(id) && id > 0 ? [...lists.values()].find((l) => l.id === id) : undefined;
+                const n = Array.isArray(cfg.conditions) ? cfg.conditions.length : 0;
+                return `Buscar registros${target ? ` en «${target.name}»` : ''}${n > 0 ? ` (${n} ${n === 1 ? 'condición' : 'condiciones'})` : ''}`;
+            }
+            case 'upsert_record': {
+                const id = Number(cfg.list_id);
+                const target = Number.isInteger(id) && id > 0 ? [...lists.values()].find((l) => l.id === id) : undefined;
+                return `Crear o actualizar un registro${target ? ` en «${target.name}»` : ''}`;
+            }
             default:
                 return a.type;
         }

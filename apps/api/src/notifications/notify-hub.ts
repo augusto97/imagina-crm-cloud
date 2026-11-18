@@ -33,6 +33,14 @@ export type NotifyEvent =
           /** Nombre del cliente que comentó (si `fromClient`). */
           clientName?: string;
           /**
+           * v0.1.444 — por dónde llegó: la app, el portal del cliente o un
+           * correo a la mesa de ayuda (el disparador «Cuando se agrega un
+           * comentario» lo usa en `{{comentario.origen}}`).
+           */
+          source?: 'app' | 'portal' | 'email';
+          /** v0.1.444 — lo dejó un agente de IA: no dispara automatizaciones (evita bucles). */
+          fromAgent?: boolean;
+          /**
            * v0.1.291 — es una RESPUESTA en el hilo de este comentario raíz:
            * quienes escribieron en el hilo reciben «respondió».
            */

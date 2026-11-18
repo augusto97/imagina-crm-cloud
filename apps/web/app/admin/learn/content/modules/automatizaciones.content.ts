@@ -335,6 +335,7 @@ export const articles: LearnArticle[] = [
                     { name: 'Al presionar el botón', what: 'Alguien presionó un campo **Botón** (en la tabla, la ficha o el portal). El botón tiene que tener la acción «Correr una automatización». Variables: {{boton.nombre}}, {{boton.persona}}, {{boton.email}}.' },
                     { name: 'Cuando se aprueba o se rechaza', what: 'Se resolvió una solicitud de aprobación: aprobada, rechazada, devuelta o cancelada. Variables: {{aprobacion.resultado}}, {{aprobacion.motivo}}…' },
                     { name: 'Cuando se completa un checklist', what: 'Se marcó el último ítem pendiente: cualquier checklist, uno con un nombre («Documentación») o cuando el registro tiene **todos** completos. Variable: {{checklist.nombre}}.' },
+                    { name: 'Cuando se agrega un comentario', what: 'Alguien comentó un registro: el equipo desde la app o el cliente desde el portal o respondiendo un correo. Eliges quién, si es una nota interna o visible para el cliente, si cuenta una respuesta en un hilo y que tenga ciertas palabras («urgente, factura»: basta con una). Variables: {{comentario.texto}}, {{comentario.autor}}, {{comentario.de}}, {{comentario.origen}}.', tip: 'Lo que comenta un agente de IA nunca dispara automatizaciones: así no se arma un bucle.' },
                     { name: 'Cuando se agenda, reprograma o cancela una cita', what: 'Para listas con agenda de citas. Variables: {{cita.servicio}}, {{cita.inicio}}, {{cita.enlace_reprogramar}}…' },
                     { name: 'Cuando se recibe un pago', what: 'Un cliente pagó un link de cobro (Mercado Pago o Wompi) de un registro de la lista; la app lo confirma con el proveedor antes de disparar. Variables: {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}}.' },
                     { name: 'Cuando llega un mensaje de WhatsApp', what: 'Un contacto le escribió a tu número de WhatsApp Business; el registro ya se encontró (o creó) por su teléfono. Variables: {{whatsapp.texto}}, {{whatsapp.nombre}}, {{whatsapp.de}}.' },
@@ -416,6 +417,43 @@ export const articles: LearnArticle[] = [
                 t: 'example',
                 title: 'Una empresa de software que factura mensualidades',
                 md: 'En **Clientes** hay un campo **Próximo cobro** que se corre un mes cada vez que llega (con una recurrencia). Una automatización «**Cuando cambia** Próximo cobro» crea en **Facturas** un registro con **Cliente** = {{record.id}}, **Monto** = {{monto_mensual}}, **Período** = {{before.proximo_cobro}} (la fecha que se está cobrando), **Vence** = {{date.today|+15d}} y **Estado** = Pendiente.',
+            },
+            { t: 'h', text: 'Buscar registros' },
+            {
+                t: 'p',
+                md: 'Encuentra registros de esta lista o de otra que cumplan condiciones, y deja lo que encontró para los pasos siguientes. Sólo lee: no cambia nada. Sirve para saber si el cliente ya existe, traer sus datos a un correo o vincular lo encontrado.',
+            },
+            { t: 'anim', key: 'auto-probar', caption: 'Con «Probar» ves qué encontraría la búsqueda con un registro real, sin cambiar nada.' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'En la lista', what: '«Esta lista» u otra de la empresa.' },
+                    { name: 'Condiciones', what: 'Campo, operador (es, no es, contiene, mayor que, está vacío…) y valor con variables: correo es {{correo}}. Elige si se tienen que cumplir **todas** o **alguna**.', tip: 'El texto se compara sin mayúsculas ni espacios de más y el teléfono con o sin indicativo. Si una variable llega vacía no busca «vacío»: con «Todas» no encuentra nada y con «Alguna» esa condición se ignora.' },
+                    { name: 'Ordenar y cuántos traer', what: 'Por un campo o por la fecha de alta, y hasta 50 registros.' },
+                    { name: 'No contar el registro que disparó', what: 'En la misma lista, para buscar «otros» parecidos (duplicados) sin encontrarse a sí mismo.' },
+                    { name: 'Si no encuentra nada', what: 'Seguir con los pasos siguientes o detener la automatización.' },
+                    { name: 'Nombre del resultado', what: 'Por defecto «busqueda». Los pasos siguientes usan {{respuestas.busqueda.cantidad}}, {{respuestas.busqueda.primero.id}}, {{respuestas.busqueda.primero.titulo}}, {{respuestas.busqueda.primero.campo}} y {{respuestas.busqueda.ids}}.', tip: 'Los ids sirven para vincular: en un campo de relación pon {{respuestas.busqueda.ids}}.' },
+                ],
+            },
+            { t: 'h', text: 'Crear o actualizar un registro' },
+            {
+                t: 'p',
+                md: 'Busca un registro por un dato y, según lo que elijas, lo actualiza si existe o lo crea si no. Es la forma de no duplicar clientes cuando llegan de un formulario, un webhook o WhatsApp.',
+            },
+            { t: 'anim', key: 'auto-crear-registro', caption: 'Si el cliente con ese correo ya existe se actualiza; si no, se crea.' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Qué hacer', what: 'Actualizarlo si existe y crearlo si no, sólo actualizarlo, o sólo crearlo si no existe.' },
+                    { name: 'Buscar el registro por', what: 'Su id ({{respuestas.busqueda.primero.id}}, {{payload.id}}) o un campo **Sin repetidos**: correo, teléfono, NIT, ID automático.', tip: 'Nunca adivina: si el dato coincide con más de un registro (repetidos de antes), no toca ninguno y lo dice en el historial.' },
+                    { name: 'Qué escribir', what: 'Una fila por campo, con variables, como en «Crear un registro». Un valor que llega vacío no borra lo que el registro ya tiene.' },
+                    { name: 'Nombre del resultado', what: 'Por defecto «registro»: {{respuestas.registro.id}}, {{respuestas.registro.titulo}} y {{respuestas.registro.accion}} (creado, actualizado, sin_cambios, ya_existia).' },
+                ],
+            },
+            {
+                t: 'example',
+                title: 'Una academia que recibe inscripciones de varias fuentes',
+                md: 'Cuando llega una inscripción, la automatización usa **Crear o actualizar un registro** en **Estudiantes**, buscando por **Correo** = {{correo}}: si la persona ya estudió con ellos, actualiza su teléfono y su programa; si es nueva, la crea. Después, en la inscripción, el campo **Estudiante** = {{respuestas.registro.id}} la vincula.',
             },
             { t: 'h', text: 'Editar en lote' },
             {

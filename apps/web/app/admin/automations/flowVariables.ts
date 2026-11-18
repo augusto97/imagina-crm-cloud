@@ -1,4 +1,11 @@
-import { RESPONSE_NAME_RE } from '@imagina-base/shared';
+import {
+    FIND_RECORDS_ACTION,
+    FIND_RECORDS_OUTPUTS,
+    RESPONSE_NAME_RE,
+    UPSERT_RECORD_ACTION,
+    UPSERT_RECORD_OUTPUTS,
+    recordActionResponseName,
+} from '@imagina-base/shared';
 
 import { __, sprintf } from '@/lib/i18n';
 import type { ActionSpec } from '@/types/automation';
@@ -108,7 +115,9 @@ export function variablesAt(
 ): MergeTagSection[] {
     const out: MergeTagSection[] = [];
     if (item) out.push(itemSection(item));
-    const prev = stepsBefore(actions, path).filter((s) => RESPONSE_STEPS.has(s.spec.type));
+    const before = stepsBefore(actions, path);
+    out.push(...recordStepSections(before, samples));
+    const prev = before.filter((s) => RESPONSE_STEPS.has(s.spec.type));
     if (prev.length === 0) return out;
     const last = prev[prev.length - 1]!;
     const lastSample = parseSample(samples[pathKey(last.path)]);
@@ -133,6 +142,45 @@ export function variablesAt(
                 { tag: `respuestas.${name}.body`, label: __('Respuesta completa') },
                 ...sampleTagItems(`respuestas.${name}.body`, sample),
             ],
+        });
+    }
+    return out;
+}
+
+/**
+ * v0.1.444 — Lo que dejan «Buscar registros» y «Crear o actualizar un
+ * registro» de los pasos anteriores, con su nombre (`{{respuestas.<nombre>.x}}`).
+ * Con un resultado de «Probar», también los campos del primero encontrado.
+ */
+function recordStepSections(
+    before: ReturnType<typeof stepsBefore>,
+    samples: Record<string, unknown>,
+): MergeTagSection[] {
+    const out: MergeTagSection[] = [];
+    const seen = new Set<string>();
+    for (const step of [...before].reverse()) {
+        const type = step.spec.type;
+        if (type !== FIND_RECORDS_ACTION && type !== UPSERT_RECORD_ACTION) continue;
+        const name = recordActionResponseName(type, step.spec.config);
+        if (name === null || !RESPONSE_NAME_RE.test(name) || seen.has(name)) continue;
+        seen.add(name);
+        const outputs = type === FIND_RECORDS_ACTION ? FIND_RECORDS_OUTPUTS : UPSERT_RECORD_OUTPUTS;
+        const items: Array<{ tag: string; label: string; hint?: string }> = outputs.map((o) => ({
+            tag: `respuestas.${name}.${o.key}`,
+            label: __(o.label),
+            hint: `{{respuestas.${name}.${o.key}}}`,
+        }));
+        const sample = samples[pathKey(step.path)];
+        const first = sample && typeof sample === 'object' ? (sample as { primero?: unknown }).primero : null;
+        if (first && typeof first === 'object') {
+            const known = new Set(items.map((i) => i.tag));
+            for (const extra of sampleTagItems(`respuestas.${name}.primero`, first)) {
+                if (!known.has(extra.tag)) items.push({ ...extra, label: sprintf(__('Primero · %s'), extra.label) });
+            }
+        }
+        out.push({
+            title: type === FIND_RECORDS_ACTION ? sprintf(__('Búsqueda «%s»'), name) : sprintf(__('Registro «%s»'), name),
+            items,
         });
     }
     return out;

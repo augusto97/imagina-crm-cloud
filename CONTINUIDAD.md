@@ -430,15 +430,21 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.443**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.444**
+(**automatizaciones que buscan y no duplican** — acciones «Buscar registros»
+(en esta lista u otra, sin mayúsculas, teléfono con o sin indicativo; deja
+cantidad, ids y el primero para los pasos siguientes) y «Crear o actualizar un
+registro» (por el id o un campo «Sin repetidos»; nunca adivina entre dos), y
+el disparador «Cuando se agrega un comentario» (equipo o cliente, palabras;
+los agentes de IA no disparan). **Siguen** duplicados y fusionar (A14) y firma
+electrónica (D6)). Antes **v0.1.443**
 (**la app de n8n** — Ajustes → API → «Conectar con n8n»: cada servidor
 reparte el paquete `n8n-nodes-imagina-base` de su versión
 (`/api/v1/public/n8n/n8n-nodes-imagina-base.tgz`); en n8n trae la credencial,
 acciones sobre registros, comentarios y listas con los campos de la lista
 elegida, y un disparador que registra y borra su webhook solo. **Pendiente del
 usuario**: si quiere publicarlo en npm (secreto `NPM_TOKEN` en GitHub) y pedir
-la verificación de n8n para que aparezca en n8n en la nube. **Siguen** las
-acciones/disparadores nuevos de automatizaciones). Antes **v0.1.442**
+la verificación de n8n para que aparezca en n8n en la nube). Antes **v0.1.442**
 (**webhooks de eventos** — Ajustes → API → Webhooks: la app le avisa a otro
 programa (n8n, Make, Zapier, un ERP) con un POST firmado cuando se crea,
 cambia o borra un registro, se envía un formulario o entra un pago; actúa como
@@ -2176,6 +2182,20 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > Una entrada por release o por decisión importante. Formato: fecha · versión ·
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
+
+- **2026-11-18 · v0.1.444** — **Buscar registros, crear o actualizar y
+  comentarios en las automatizaciones** (E1 + E2 en parte; addendum ADR-S47).
+  `find_records` (sólo lee; condiciones por slug en esta lista u otra, texto
+  sin mayúsculas, teléfono con o sin indicativo, variable vacía nunca busca
+  «vacío», `if_none`), `upsert_record` (por id o campo «Sin repetidos»; dos
+  coincidencias fallan sin tocar nada; vacío no borra; sólo escribe lo que
+  cambia) y disparador `comment_added` (autor, visibilidad, hilos, palabras;
+  los comentarios de agentes de IA no disparan). Reglas en
+  `packages/shared/src/schemas/automation-records.ts`; editores en
+  `RecordActionsConfig.tsx`; las condiciones de cada paso leen
+  `comentario.*` y `respuestas.*`; «Probar» deja lo encontrado como muestra
+  para sugerir variables. Asistente/MCP al día. **Siguen** A14 (duplicados y
+  fusionar) y D6 (firma); G8 e I3 esperan decisiones del usuario.
 
 - **2026-11-18 · v0.1.443** — **La app de n8n** (G2 en parte; addendum
   ADR-S105). Paquete `n8n-nodes-imagina-base` en `integrations/n8n/`

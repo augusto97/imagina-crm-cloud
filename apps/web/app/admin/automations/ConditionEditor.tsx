@@ -1,5 +1,6 @@
 import { useContext, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
+import { COMMENT_VARIABLES } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,7 +17,7 @@ import { FilterValueInput } from '@/admin/records/FilterValueInput';
 import { valueForOperator } from '@/admin/records/filterValue';
 import { isNullaryOperator, operatorsForType } from '@/admin/records/operators';
 
-import { AutomationEditorAutomationContext, useAutomationFlow } from './flowContext';
+import { AutomationEditorAutomationContext, useAutomationFlow, useStepVariables } from './flowContext';
 import { payloadPaths } from './webhookPayload';
 
 /**
@@ -41,6 +42,24 @@ const PAYLOAD_OPS: ReadonlyArray<{ op: FilterOperator; label: string }> = [
 
 function isPayloadRule(slug: string): boolean {
     return slug.startsWith(PAYLOAD_PREFIX);
+}
+
+/**
+ * v0.1.444 — Una condición sobre una VARIABLE del flujo: el comentario que
+ * disparó la automatización (`comentario.texto`) o lo que dejó un paso
+ * anterior con nombre (`respuestas.busqueda.cantidad`). El motor la evalúa
+ * con el mismo lector que las variables de los textos.
+ */
+const VARIABLE_PREFIXES = ['comentario.', 'respuestas.'] as const;
+
+function isVariableRule(slug: string): boolean {
+    return VARIABLE_PREFIXES.some((p) => slug.startsWith(p));
+}
+
+interface VariableOption {
+    tag: string;
+    label: string;
+    group: string;
 }
 
 /** En «es alguno de» el valor es una lista: se escribe separado por comas. */
@@ -145,6 +164,17 @@ export function ConditionEditor({
     const captures = useHookCaptures(isWebhook ? automationId : undefined, false);
     const suggestions = isWebhook ? payloadPaths(captures.data?.[0]?.payload ?? {}) : [];
     const datalistId = `imcrm-payload-paths-${automationId ?? 'new'}`;
+    const stepVars = useStepVariables();
+    const variables: VariableOption[] = [
+        ...(flow?.triggerType === 'comment_added'
+            ? COMMENT_VARIABLES.map((v) => ({ tag: `comentario.${v.key}`, label: __(v.label), group: __('Comentario') }))
+            : []),
+        ...stepVars.flatMap((section) =>
+            section.items
+                .filter((it) => it.tag.startsWith('respuestas.'))
+                .map((it) => ({ tag: it.tag, label: it.label, group: section.title })),
+        ),
+    ];
 
     const commit = (next: ConditionRule[]): void => {
         setRows(next);
@@ -208,6 +238,18 @@ export function ConditionEditor({
                         />
                     );
                 }
+                if (isVariableRule(rule.slug)) {
+                    return (
+                        <VariableRuleRow
+                            key={i}
+                            rule={rule}
+                            fields={fields}
+                            variables={variables}
+                            onChange={(patch) => updateRow(i, patch)}
+                            onRemove={() => removeRow(i)}
+                        />
+                    );
+                }
                 const field = fields.find((f) => f.slug === rule.slug);
                 const operators = field ? operatorsForType(field.type, field) : [];
                 const isNullary = isNullaryOperator(rule.op);
@@ -227,6 +269,10 @@ export function ConditionEditor({
                                     const newSlug = e.target.value;
                                     if (newSlug === PAYLOAD_OPTION) {
                                         updateRow(i, { slug: PAYLOAD_PREFIX, op: 'eq', value: '' });
+                                        return;
+                                    }
+                                    if (isVariableRule(newSlug)) {
+                                        updateRow(i, { slug: newSlug, op: 'eq', value: '' });
                                         return;
                                     }
                                     const newField = fields.find((f) => f.slug === newSlug);
@@ -252,6 +298,7 @@ export function ConditionEditor({
                                         </option>
                                     ))}
                                 {isWebhook && <option value={PAYLOAD_OPTION}>{__('Un dato del JSON del webhook…')}</option>}
+                                <VariableOptions variables={variables} />
                             </Select>
 
                             {field && (
@@ -405,6 +452,109 @@ function PayloadRuleRow({
                     aria-label={__('Valor')}
                     className="imcrm-h-8 imcrm-min-w-[140px] imcrm-flex-1 imcrm-text-sm"
                     data-testid="condition-payload-value"
+                />
+            )}
+            <Button type="button" variant="ghost" size="icon" onClick={onRemove} aria-label={__('Eliminar condición')} className="imcrm-shrink-0">
+                <Trash2 className="imcrm-h-4 imcrm-w-4" />
+            </Button>
+        </div>
+    );
+}
+
+/** Las variables del flujo como opciones del selector, agrupadas. */
+function VariableOptions({ variables }: { variables: VariableOption[] }): JSX.Element | null {
+    if (variables.length === 0) return null;
+    const groups = [...new Set(variables.map((v) => v.group))];
+    return (
+        <>
+            {groups.map((g) => (
+                <optgroup key={g} label={g}>
+                    {variables
+                        .filter((v) => v.group === g)
+                        .map((v) => (
+                            <option key={v.tag} value={v.tag}>
+                                {v.label}
+                            </option>
+                        ))}
+                </optgroup>
+            ))}
+        </>
+    );
+}
+
+/** v0.1.444 — fila de una condición sobre una variable del flujo (comentario o resultado de un paso). */
+function VariableRuleRow({
+    rule,
+    fields,
+    variables,
+    onChange,
+    onRemove,
+}: {
+    rule: ConditionRule;
+    fields: FieldEntity[];
+    variables: VariableOption[];
+    onChange: (patch: Partial<ConditionRule>) => void;
+    onRemove: () => void;
+}): JSX.Element {
+    const [text, setText] = useState(() => payloadValueText(rule.value));
+    const ops = PAYLOAD_OPS.some((o) => o.op === rule.op) ? PAYLOAD_OPS : [...PAYLOAD_OPS, { op: rule.op, label: rule.op }];
+    // Una variable que ya no está a la vista (el paso se borró o cambió de nombre) se conserva.
+    const all = variables.some((v) => v.tag === rule.slug) ? variables : [...variables, { tag: rule.slug, label: rule.slug, group: __('Otra') }];
+    return (
+        <div
+            className={cn(
+                'imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2',
+                'imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card/50 imcrm-px-2 imcrm-py-2',
+            )}
+            data-testid="condition-variable-row"
+        >
+            <Select
+                value={rule.slug}
+                onChange={(e) => {
+                    const v = e.target.value;
+                    onChange({ slug: v, op: isVariableRule(v) ? rule.op : 'eq', value: isVariableRule(v) ? rule.value : '' });
+                }}
+                aria-label={__('Campo')}
+                className="imcrm-h-8 imcrm-w-auto imcrm-min-w-[170px] imcrm-flex-1"
+                data-testid="condition-variable"
+            >
+                <VariableOptions variables={all} />
+                <optgroup label={__('Campos del registro')}>
+                    {fields
+                        .filter((f) => f.type !== 'relation' && f.type !== 'button')
+                        .map((f) => (
+                            <option key={f.id} value={f.slug}>
+                                {f.label}
+                            </option>
+                        ))}
+                </optgroup>
+            </Select>
+            <Select
+                value={rule.op}
+                onChange={(e) => {
+                    const op = e.target.value as FilterOperator;
+                    onChange({ op, value: payloadValueFrom(op, text) });
+                }}
+                aria-label={__('Operador')}
+                className="imcrm-h-8 imcrm-w-auto imcrm-min-w-[120px]"
+            >
+                {ops.map((o) => (
+                    <option key={o.op} value={o.op}>
+                        {o.label}
+                    </option>
+                ))}
+            </Select>
+            {!isNullaryOperator(rule.op) && (
+                <Input
+                    value={text}
+                    placeholder={rule.op === 'in' || rule.op === 'nin' ? __('urgente, reclamo') : __('Valor')}
+                    onChange={(e) => {
+                        setText(e.target.value);
+                        onChange({ value: payloadValueFrom(rule.op, e.target.value) });
+                    }}
+                    aria-label={__('Valor')}
+                    className="imcrm-h-8 imcrm-min-w-[140px] imcrm-flex-1 imcrm-text-sm"
+                    data-testid="condition-variable-value"
                 />
             )}
             <Button type="button" variant="ghost" size="icon" onClick={onRemove} aria-label={__('Eliminar condición')} className="imcrm-shrink-0">

@@ -43,6 +43,8 @@ const TRIGGERS: TriggerMeta[] = [
     { slug: 'email_received', label: 'Cuando llega un correo', event: 'imagina_crm/email_received', config_schema: {} },
     // E5 — un SLA de la mesa de ayuda entró en riesgo o se venció.
     { slug: 'sla_alert', label: 'Cuando un SLA está en riesgo o se vence', event: 'imagina_crm/sla_alert', config_schema: {} },
+    // v0.1.444 — alguien (del equipo o el cliente) agregó un comentario al registro.
+    { slug: 'comment_added', label: 'Cuando se agrega un comentario', event: 'imagina_crm/comment_added', config_schema: {} },
 ];
 
 const ACTIONS: ActionMeta[] = [
@@ -50,6 +52,9 @@ const ACTIONS: ActionMeta[] = [
     { slug: 'call_webhook', label: 'Llamar webhook externo', config_schema: {} },
     { slug: 'update_field', label: 'Actualizar un campo', config_schema: {} },
     { slug: 'create_record', label: 'Crear un registro', config_schema: {} },
+    // v0.1.444 — buscar registros (en esta u otra lista) y crear o actualizar uno por un dato.
+    { slug: 'find_records', label: 'Buscar registros', config_schema: {} },
+    { slug: 'upsert_record', label: 'Crear o actualizar un registro', config_schema: {} },
     { slug: 'bulk_edit', label: 'Editar en lote', config_schema: {} },
     // v0.1.266 — un PDF con una plantilla de documento (cuenta de cobro, recibo).
     { slug: 'generate_pdf', label: 'Generar un PDF', config_schema: {} },

@@ -4109,6 +4109,40 @@ decide qué hacer con el registro (`trigger_config.record_mode`):
    `apps/api/scripts/check-di.cjs` sobre el build: falla si algún constructor
    quedó con un parámetro sin resolver.
 
+**Addendum v0.1.444 — buscar registros, crear o actualizar, y comentarios.**
+Dos acciones y un disparador que cierran E1/E2 en parte:
+
+1. **`find_records`** (sólo lee): condiciones `{field, op, value}` por slug
+   sobre esta lista u otra (`list_id`), «todas» o «alguna», orden por un campo
+   (`NULLS LAST`) o por id, tope 1-50, `exclude_self` y `if_none`
+   (`continue` | `stop`). La consulta la arma el motor —no el query builder—
+   porque un «es» de texto tiene que ser sin mayúsculas ni espacios
+   (`keyExpr`/`normalizeKey` de «Actualizar desde un archivo») y el teléfono
+   con o sin indicativo (`matchKeysFor`). Una variable vacía **nunca** busca
+   «vacío»: con «todas» no encuentra nada y con «alguna» esa condición se
+   cae. Deja `{cantidad, total, ids, primero, registros, lista}` con nombre
+   (`{{respuestas.busqueda.x}}`, alias de `.body.x`); en «Probar» lo
+   encontrado vuelve como muestra y el editor sugiere los campos del primero.
+2. **`upsert_record`**: busca por id (`parseRecordIdValue`, misma lista, no
+   borrado) o por un campo «Sin repetidos»/ID automático
+   (`webhookMatchFieldError`, la regla del webhook entrante) y, según el modo
+   (`upsert` | `update_only` | `create_only`), actualiza o crea por
+   `RecordsService` (ACL, actividad, automatizaciones, límite del plan, lo
+   que bloquea una lista espejo). **Nunca adivina**: dos o más coincidencias
+   fallan sin tocar ninguno. Un valor vacío no borra lo guardado y sólo se
+   escribe lo que cambia (`sin_cambios` no dispara nada). Deja
+   `{id, titulo, accion, lista}`.
+3. **`comment_added`**: el `NotifyHub` (`comment`) llega al despachador, que
+   arma `CommentEventInfo` (texto, autor, equipo/cliente, app/portal/correo,
+   visibilidad, respuesta) y despacha con turnos por empresa. Filtros por
+   autor, visibilidad, hilos y palabras (sin tildes, basta una). **Lo que
+   comenta un agente de IA nunca dispara** (`metadata.agent`): así no hay
+   bucles. Variables `{{comentario.*}}`; las condiciones de cada paso pueden
+   leer `comentario.*` y `respuestas.*` (mismo lector que las variables).
+4. Las reglas viven en `packages/shared/src/schemas/automation-records.ts`
+   (lectores tolerantes, validación al guardar, `isFindableFieldType`,
+   resúmenes): el editor, el motor y el asistente/MCP hablan lo mismo.
+
 
 ### ADR-S48 — Portal con contraseña por empresa, pagos del cliente y formularios verificados (v0.1.289)
 

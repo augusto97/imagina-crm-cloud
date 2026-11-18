@@ -18,6 +18,23 @@ import {
     BOOKING_EVENT_LABELS,
     type BookingEventInfo,
     emailTriggerMatches,
+    COMMENT_ADDED_TRIGGER,
+    FIND_RECORDS_ACTION,
+    isFindableFieldType,
+    UPSERT_RECORD_ACTION,
+    readFindRecordsConfig,
+    readUpsertRecordConfig,
+    findOperatorIsNullary,
+    type FindOperator,
+    foldSearchText,
+    webhookMatchFieldError,
+    parseRecordIdValue,
+    type FieldType,
+    type FilterOperator,
+    commentEventValue,
+    commentTriggerMatches,
+    readCommentTriggerConfig,
+    type CommentEventInfo,
     managedFieldLockMap,
     type ManagedFieldLock,
     slaTriggerMatches,
@@ -84,7 +101,7 @@ import {
     type TenantFormat,
     type WhatsappEventInfo,
 } from '@imagina-base/shared';
-import { and, asc, eq, gt, inArray, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { safeWebhookFetch, type SafeFetchResult } from '../common/safe-fetch';
 import type { ApprovalEventInfo } from '../approvals/approval-hub';
 import { ApprovalsService } from '../approvals/approvals.service';
@@ -108,7 +125,7 @@ import { BillingService } from '../billing/billing.service';
 import { CollectionsService } from '../collections/collections.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { subscriptionPlans, subscriptions as subscriptionsTable } from '../db/schema/subscriptions';
-import { automationRuns, documentTemplates, forms, lists, memberships, records, teams, tenants, users } from '../db/schema';
+import { automationRuns, comments, documentTemplates, forms, lists, memberships, records, teams, tenants, users } from '../db/schema';
 import { editLinkFormId, editLinkMaker, readEditLinks, type EditLinkForm } from '../forms/form-edit-links';
 import { connectionModuleStepError, moduleForIntegration, planModuleOff, planModuleStepError } from '../billing/plan-module-gate';
 import { tenantIsReadOnly } from '../tenancy/read-only';
@@ -122,7 +139,9 @@ import { HelpdeskReplyService } from '../helpdesk/helpdesk-reply.service';
 import type { StoredFileRef } from '../files/files.service';
 import { MAIL_MAX_ATTACHMENT_BYTES, type MailAttachment } from '../mail/mail.types';
 import { MailService } from '../mail/mail.service';
-import { fieldTypedExpr, type FilterableField } from '../records/query-builder';
+import { compileFilterTree, fieldTypedExpr, type FilterableField } from '../records/query-builder';
+import { keyExpr, normalizeKey } from '../records/record-key';
+import type { FieldRow } from '../fields/fields.repository';
 import { RecordsRepository } from '../records/records.repository';
 import { systemFieldValue } from '../records/through-fields';
 import { RecordChangeHub } from '../records/record-change-hub';
@@ -157,7 +176,7 @@ import {
     type LabelFieldLike,
 } from './merge-tags';
 import { recordLinkPrefix, recordTokenValue } from '../qr/qr-runtime';
-import { lookupWebhookRecord, type WebhookLookup } from './webhook-record-lookup';
+import { lookupWebhookRecord, matchKeysFor, type WebhookLookup } from './webhook-record-lookup';
 import { claimJobUnit, noteJobUnit } from '../redis/queue-runtime';
 
 /** Lo que dice el historial de una corrida que un reinicio cortó a mitad. */
@@ -198,6 +217,8 @@ const TRIGGERS_FOR_EVENT: Record<TriggerEvent['trigger'], string[]> = {
     sla_alert: ['sla_alert'],
     // v0.1.367 — una suscripción del registro se cobró, falló, venció, se canceló…
     subscription_event: ['subscription_event'],
+    // v0.1.444 — alguien (del equipo o el cliente) agregó un comentario.
+    comment_added: ['comment_added'],
 };
 
 interface PersonInfo {
@@ -240,6 +261,8 @@ interface RunContext {
     whatsapp?: WhatsappEventInfo;
     /** D2 — el correo que llegó (`{{correo.de}}`, `{{correo.asunto}}`, `{{correo.texto}}`). */
     email?: EmailEventInfo;
+    /** v0.1.444 — el comentario que se agregó (`{{comentario.texto}}`, `{{comentario.autor}}`…). */
+    comment?: CommentEventInfo;
     /** E5 — la alerta de SLA (`{{sla.alerta}}`, `{{sla.vence}}`…). */
     sla?: SlaEventInfo;
     /**
@@ -435,6 +458,7 @@ export interface ResumeState {
         checklist?: ChecklistCompletedInfo;
         booking?: BookingEventInfo;
         email?: EmailEventInfo;
+        comment?: CommentEventInfo;
         sla?: SlaEventInfo;
         suscripcion?: SubscriptionEventInfo;
         pdf?: Record<string, unknown>;
@@ -753,6 +777,7 @@ export class AutomationEngine {
                 ...(event.booking ? { booking: event.booking } : {}),
                 ...(event.whatsapp ? { whatsapp: event.whatsapp } : {}),
                 ...(event.email ? { email: event.email } : {}),
+                ...(event.comment ? { comment: event.comment } : {}),
                 ...(event.sla ? { sla: event.sla } : {}),
                 ...(event.subscription ? { suscripcion: event.subscription } : {}),
                 ...(chain ? { chain } : {}),
@@ -1272,6 +1297,7 @@ export class AutomationEngine {
             ...(state.ctx.checklist ? { checklist: state.ctx.checklist } : {}),
             ...(state.ctx.booking ? { booking: state.ctx.booking } : {}),
             ...(state.ctx.email ? { email: state.ctx.email } : {}),
+            ...(state.ctx.comment ? { comment: state.ctx.comment } : {}),
             ...(state.ctx.sla ? { sla: state.ctx.sla } : {}),
             ...(state.ctx.suscripcion ? { suscripcion: state.ctx.suscripcion } : {}),
             ...(state.ctx.pdf ? { pdf: state.ctx.pdf } : {}),
@@ -1650,6 +1676,33 @@ export class AutomationEngine {
                 }
                 break;
             }
+            case COMMENT_ADDED_TRIGGER: {
+                // v0.1.444 — el último comentario del registro, o uno supuesto
+                // con lo que pide el disparador.
+                const tc = readCommentTriggerConfig(cfg);
+                const last = ctx.recordId !== null ? await this.lastCommentSample(ctx.tenantId, ctx.recordId) : null;
+                const word = tc.contains.split(',')[0]?.trim() ?? '';
+                ctx.comment = last ?? {
+                    id: 0,
+                    text: word !== '' ? `(un comentario con «${word}»)` : '(el texto del comentario)',
+                    author_id: 0,
+                    author_name: tc.from === 'client' ? 'Cliente' : 'Alguien del equipo',
+                    from: tc.from === 'client' ? 'client' : 'team',
+                    source: tc.from === 'client' ? 'portal' : 'app',
+                    visibility: tc.visibility === 'client' ? 'client' : 'internal',
+                    parent_id: tc.replies === 'replies' ? 1 : null,
+                };
+                notes.push(
+                    last
+                        ? `Se usa el último comentario de este registro (de ${last.author_name}).`
+                        : 'Este registro todavía no tiene comentarios: {{comentario.x}} usa datos de ejemplo.',
+                );
+                if (last) {
+                    const m = commentTriggerMatches(tc, last);
+                    if (!m.ok) reasons.push(`con su último comentario no: ${m.reason.replace(/\.$/, '').toLowerCase()}`);
+                }
+                break;
+            }
             case 'email_received': {
                 // D2 — el último correo que llegó al ticket, o uno supuesto.
                 const kind = cfg.email_kind === 'new' ? 'nuevo' : cfg.email_kind === 'reply' ? 'respuesta' : null;
@@ -1852,6 +1905,10 @@ export class AutomationEngine {
         if (auto.triggerType === 'email_received') {
             if (!ctx.email || !emailTriggerMatches(cfg, ctx.email)) return false;
         }
+        // v0.1.444 — «Cuando se agrega un comentario»: autor, visibilidad, hilo y palabras.
+        if (auto.triggerType === COMMENT_ADDED_TRIGGER) {
+            if (!ctx.comment || !commentTriggerMatches(readCommentTriggerConfig(cfg), ctx.comment).ok) return false;
+        }
         // E5 — «Cuando un SLA está en riesgo o se vence»: las alertas y objetivos elegidos.
         if (auto.triggerType === 'sla_alert') {
             if (!ctx.sla || !slaTriggerMatches(cfg, ctx.sla)) return false;
@@ -1988,6 +2045,8 @@ export class AutomationEngine {
             }
             // D2 — el correo que llegó al buzón de soporte.
             if (token.startsWith('correo.')) return emailValue(ctx.email, token.slice('correo.'.length));
+            // v0.1.444 — el comentario que disparó la automatización.
+            if (token.startsWith('comentario.')) return ctx.comment ? (commentEventValue(ctx.comment, token.slice('comentario.'.length)) ?? '') : '';
             // E5 — la alerta de SLA (el vencimiento, en el formato y la zona de la empresa).
             if (token.startsWith('sla.')) return slaValue(ctx, token.slice('sla.'.length));
             // v0.1.367 — la suscripción del registro (fechas en la zona de la empresa).
@@ -2295,6 +2354,7 @@ export class AutomationEngine {
                 ...(ctx.checklist ? { checklist: ctx.checklist } : {}),
                 ...(ctx.booking ? { booking: ctx.booking } : {}),
                 ...(ctx.email ? { email: ctx.email } : {}),
+                ...(ctx.comment ? { comment: ctx.comment } : {}),
                 ...(ctx.sla ? { sla: ctx.sla } : {}),
                 ...(ctx.pdf ? { pdf: ctx.pdf } : {}),
                 ...(ctx.reunion ? { reunion: ctx.reunion } : {}),
@@ -2437,9 +2497,25 @@ export class AutomationEngine {
             }
         }
 
+        // v0.1.444 — «Buscar registros»: sólo lee; deja lo encontrado con un
+        // nombre y, si se pidió, detiene la automatización si no encuentra nada.
+        if (spec.type === FIND_RECORDS_ACTION) {
+            try {
+                const r = await this.findRecords(ctx, spec.config ?? {});
+                // «Probar»: lo encontrado sugiere sus rutas en el selector de variables.
+                if (ctx.sim) {
+                    const found = ctx.responses?.[readFindRecordsConfig(spec.config ?? {}).responseName];
+                    if (found) ctx.sim.responses[pathKey] = found.body;
+                }
+                return { log: tag([r.entry]), ...(r.stop ? { stop: true } : {}) };
+            } catch (err) {
+                return { log: tag([fail(FIND_RECORDS_ACTION, explainError(err))]), stop: true };
+            }
+        }
+
         // Escribir registros: por RecordsService (abre y confirma su propia
         // transacción, con actividad, tiempo real y automatizaciones).
-        if (spec.type === 'update_field' || spec.type === 'create_record' || spec.type === 'create_subtasks_from_template') {
+        if (spec.type === 'update_field' || spec.type === 'create_record' || spec.type === 'create_subtasks_from_template' || spec.type === UPSERT_RECORD_ACTION) {
             try {
                 return {
                     log: tag([
@@ -2447,7 +2523,9 @@ export class AutomationEngine {
                             ? await this.updateField(ctx, spec.config ?? {})
                             : spec.type === 'create_record'
                               ? await this.createRecord(ctx, spec.config ?? {})
-                              : await this.createSubtasksFromTemplate(ctx, spec.config ?? {}),
+                              : spec.type === UPSERT_RECORD_ACTION
+                                ? await this.upsertRecord(ctx, spec.config ?? {})
+                                : await this.createSubtasksFromTemplate(ctx, spec.config ?? {}),
                     ]),
                 };
             } catch (err) {
@@ -3188,51 +3266,8 @@ export class AutomationEngine {
             }
         }
 
-        const rawValues = (cfg.values as Record<string, unknown>) ?? {};
-        const byKey = new Map(pre.fields.map((f) => [jsonbKeyForField(f.id), f]));
-        const bySlug = new Map(pre.fields.map((f) => [f.slug, f]));
-        const data: Record<string, unknown> = {};
-        const relations: Array<{ fieldId: number; label: string; targetListId: number; ids: number[] }> = [];
-        const skipped: string[] = [];
-        for (const [k, v] of Object.entries(rawValues)) {
-            const field = /^f\d+$/.test(k) ? byKey.get(k) : bySlug.get(k);
-            if (!field) {
-                skipped.push(`${k} (campo inexistente en la lista destino)`);
-                continue;
-            }
-            if (READ_ONLY_TYPES.includes(field.type)) {
-                skipped.push(`${k} (${field.type} es solo lectura)`);
-                continue;
-            }
-            if (field.type === 'relation') {
-                const targetListId = Number((field.config as { target_list_id?: unknown }).target_list_id ?? 0);
-                const ids = parseRelationIds(this.fieldInput(ctx, v, field).value);
-                if (targetListId <= 0 || ids.length === 0) {
-                    skipped.push(`${k} (relación sin destino o sin IDs)`);
-                    continue;
-                }
-                relations.push({ fieldId: field.id, label: field.label, targetListId, ids });
-                continue;
-            }
-            const res = this.coerce(ctx, field, v);
-            if (!res.ok) {
-                skipped.push(`«${field.label}» (${res.error})`);
-                continue;
-            }
-            if (res.value !== null) data[jsonbKeyForField(field.id)] = res.value;
-        }
+        const { data, relations, skipped } = await this.resolveRecordValues(ctx, pre.fields, (cfg.values as Record<string, unknown>) ?? {});
 
-        // Vínculos: sólo a registros vivos de la lista destino del campo.
-        if (relations.length > 0) {
-            await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
-                for (const rel of relations) {
-                    const alive = await this.relationsRepo.existingInList(tx, ctx.tenantId, rel.targetListId, rel.ids);
-                    const missing = rel.ids.filter((id) => !alive.has(id));
-                    if (missing.length > 0) skipped.push(`«${rel.label}» (registros inexistentes: ${missing.join(', ')})`);
-                    rel.ids = rel.ids.filter((id) => alive.has(id));
-                }
-            });
-        }
         // C6 — «Crear un registro» desde una plantilla de la lista destino: los
         // valores de la acción pisan los de la plantilla.
         const templateId = Number(cfg.template_id);
@@ -3290,6 +3325,437 @@ export class AutomationEngine {
         const created = await this.writeCreate(ctx, targetList, data, relations.filter((r) => r.ids.length > 0));
         return ok('create_record', `Creó registro #${created.id} en lista ${targetList}.${note}${chainCutNote(ctx)}`, {
             record_id: created.id,
+            ...(skipped.length > 0 ? { warnings: skipped } : {}),
+        });
+    }
+
+    /**
+     * Los valores que una acción escribe en un registro (por slug o `f{id}`):
+     * cada uno convertido y validado para su campo (lo que no se puede, se
+     * saltea con el motivo) y los vínculos sólo a registros vivos de la lista
+     * destino del campo. Lo usan «Crear un registro» y «Crear o actualizar».
+     */
+    private async resolveRecordValues(
+        ctx: RunContext,
+        fields: readonly FieldRow[],
+        rawValues: Record<string, unknown>,
+    ): Promise<{ data: Record<string, unknown>; relations: Array<{ fieldId: number; label: string; targetListId: number; ids: number[] }>; skipped: string[] }> {
+        const byKey = new Map(fields.map((f) => [jsonbKeyForField(f.id), f]));
+        const bySlug = new Map(fields.map((f) => [f.slug, f]));
+        const data: Record<string, unknown> = {};
+        const relations: Array<{ fieldId: number; label: string; targetListId: number; ids: number[] }> = [];
+        const skipped: string[] = [];
+        for (const [k, v] of Object.entries(rawValues)) {
+            const field = /^f\d+$/.test(k) ? byKey.get(k) : bySlug.get(k);
+            if (!field) {
+                skipped.push(`${k} (campo inexistente en la lista destino)`);
+                continue;
+            }
+            if (READ_ONLY_TYPES.includes(field.type)) {
+                skipped.push(`${k} (${field.type} es solo lectura)`);
+                continue;
+            }
+            if (field.type === 'relation') {
+                const targetListId = Number((field.config as { target_list_id?: unknown }).target_list_id ?? 0);
+                const ids = parseRelationIds(this.fieldInput(ctx, v, field).value);
+                if (targetListId <= 0 || ids.length === 0) {
+                    skipped.push(`${k} (relación sin destino o sin IDs)`);
+                    continue;
+                }
+                relations.push({ fieldId: field.id, label: field.label, targetListId, ids });
+                continue;
+            }
+            const res = this.coerce(ctx, field, v);
+            if (!res.ok) {
+                skipped.push(`«${field.label}» (${res.error})`);
+                continue;
+            }
+            if (res.value !== null) data[jsonbKeyForField(field.id)] = res.value;
+        }
+
+        // Vínculos: sólo a registros vivos de la lista destino del campo.
+        if (relations.length > 0) {
+            await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+                for (const rel of relations) {
+                    const alive = await this.relationsRepo.existingInList(tx, ctx.tenantId, rel.targetListId, rel.ids);
+                    const missing = rel.ids.filter((id) => !alive.has(id));
+                    if (missing.length > 0) skipped.push(`«${rel.label}» (registros inexistentes: ${missing.join(', ')})`);
+                    rel.ids = rel.ids.filter((id) => alive.has(id));
+                }
+            });
+        }
+        return { data, relations, skipped };
+    }
+
+    /**
+     * v0.1.444 — «Buscar registros»: busca en una lista (la de la automatización
+     * u otra de la empresa) con condiciones cuyos valores aceptan variables, y
+     * deja lo encontrado con un nombre para los pasos siguientes
+     * (`{{respuestas.<nombre>.cantidad}}`, `{{respuestas.<nombre>.primero.<campo>}}`,
+     * `{{respuestas.<nombre>.ids}}`). Sólo lee: corre igual en «Probar».
+     *
+     * «es» / «no es» sobre texto, correo, enlace o teléfono compara como
+     * «Actualizar desde un archivo»: sin mayúsculas ni espacios de más, y el
+     * teléfono por sus dígitos (con o sin indicativo). Una condición cuyo valor
+     * quedó vacío (`{{correo}}` sin correo) no busca «todo»: con «todas», no
+     * encuentra nada; con «alguna», esa condición no cuenta.
+     */
+    private async findRecords(ctx: RunContext, cfg: Record<string, unknown>): Promise<{ entry: ActionLogEntry; stop: boolean }> {
+        const A = FIND_RECORDS_ACTION;
+        const c = readFindRecordsConfig(cfg);
+        const listId = c.listId ?? ctx.listId;
+        const pre = await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+            const [l] = await tx
+                .select({ name: lists.name, settings: lists.settings })
+                .from(lists)
+                .where(and(eq(lists.tenantId, ctx.tenantId), eq(lists.id, listId)))
+                .limit(1);
+            if (!l) return null;
+            return { name: l.name, settings: (l.settings ?? {}) as Record<string, unknown>, fields: await this.fields.listByList(tx, ctx.tenantId, listId) };
+        });
+        if (!pre) return { entry: fail(A, `La lista donde se busca (#${listId}) ya no existe en esta empresa.`), stop: true };
+        const bySlug = new Map(pre.fields.map((f) => [f.slug, f]));
+        const filterable = new Map<number, FilterableField>(pre.fields.map((f) => [f.id, { id: f.id, type: f.type as FieldType }]));
+        const clock = { now: new Date(), timeZone: ctx.timeZone ?? FALLBACK_TIME_ZONE };
+        const parts: SQL[] = [];
+        const notes: string[] = [];
+        let impossible = false;
+        for (const cond of c.conditions) {
+            const field = bySlug.get(cond.field);
+            if (!field) return { entry: fail(A, `El campo «${cond.field}» ya no existe en «${pre.name}»: revisa la búsqueda.`), stop: true };
+            const label = `«${field.label}»`;
+            if (!isFindableFieldType(field.type)) {
+                return { entry: fail(A, `No se puede buscar por ${label} (${field.type}): elige otro campo.`), stop: true };
+            }
+            if (findOperatorIsNullary(cond.op)) {
+                const one = compileFilterTree(filterable, { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: field.id, op: cond.op }] }, clock);
+                if (one) parts.push(one);
+                continue;
+            }
+            const resolved = this.findConditionValue(ctx, field, cond.op, cond.value);
+            if (resolved.kind === 'error') return { entry: fail(A, `${label}: ${resolved.message}`), stop: true };
+            if (resolved.kind === 'empty') {
+                notes.push(`${label} quedó vacío`);
+                if (c.logic === 'and') impossible = true;
+                continue;
+            }
+            if (resolved.kind === 'keys') {
+                const keys = resolved.keys;
+                const expr = keyExpr({ id: field.id, type: field.type as never });
+                const match = sql`${expr} IN (${sql.join(keys.map((k) => sql`${k}`), sql`, `)})`;
+                parts.push(cond.op === 'neq' ? sql`(${expr} IS NULL OR NOT (${match}))` : match);
+                continue;
+            }
+            const one = compileFilterTree(
+                filterable,
+                { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: field.id, op: cond.op as FilterOperator, value: resolved.value }] },
+                clock,
+            );
+            if (one) parts.push(one);
+        }
+        const noneUsable = c.logic === 'or' && c.conditions.length > 0 && parts.length === 0;
+        const sortField = c.sortField && c.sortField !== 'created_at' ? bySlug.get(c.sortField) : undefined;
+        const titleId = resolveTitleFieldId(pre.fields.map((f) => ({ id: f.id, type: f.type as never })), pre.settings);
+        const titleKey = titleId ? jsonbKeyForField(titleId) : null;
+        const keyToSlug = new Map(pre.fields.map((f) => [jsonbKeyForField(f.id), f.slug]));
+
+        let rows: Array<{ id: number; data: Record<string, unknown> }> = [];
+        let total = 0;
+        if (!impossible && !noneUsable) {
+            const where = and(
+                eq(records.tenantId, ctx.tenantId),
+                eq(records.listId, listId),
+                isNull(records.deletedAt),
+                c.excludeSelf && listId === ctx.listId && ctx.recordId !== null ? ne(records.id, ctx.recordId) : undefined,
+                parts.length === 0 ? undefined : c.logic === 'or' ? or(...parts) : and(...parts),
+            );
+            const sortExpr = sortField ? fieldTypedExpr({ id: sortField.id, type: sortField.type as FieldType }) : null;
+            const dir = c.sortDir === 'asc' ? asc : desc;
+            const out = await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+                const found = await tx
+                    .select({ id: records.id, data: records.data })
+                    .from(records)
+                    .where(where)
+                    .orderBy(...(sortExpr ? [sql`${sortExpr} ${sql.raw(c.sortDir === 'asc' ? 'ASC' : 'DESC')} NULLS LAST`, dir(records.id)] : [dir(records.id)]))
+                    .limit(c.limit);
+                const [n] = found.length < c.limit ? [{ n: found.length }] : await tx.select({ n: sql<number>`count(*)::int` }).from(records).where(where);
+                return { found, total: Number(n?.n ?? found.length) };
+            });
+            rows = out.found.map((r) => ({ id: r.id, data: (r.data ?? {}) as Record<string, unknown> }));
+            total = out.total;
+        }
+        const shaped = rows.map((r) => {
+            const values: Record<string, unknown> = { id: r.id, titulo: titleKey ? recordTitleText(r.data[titleKey]) : `#${r.id}` };
+            for (const [k, v] of Object.entries(r.data)) {
+                const slug = keyToSlug.get(k);
+                if (slug && !(slug in values)) values[slug] = v;
+            }
+            return values;
+        });
+        const first = shaped[0] ?? null;
+        const body = {
+            cantidad: rows.length,
+            total,
+            ids: rows.map((r) => r.id),
+            primero: first,
+            registros: shaped,
+            lista: pre.name,
+        };
+        this.rememberNamed(ctx, { response_name: c.responseName }, { status: 200, body });
+        const why = notes.length > 0 ? ` (${notes.join('; ')}: ${c.logic === 'and' ? 'no se buscó' : 'esa condición no contó'})` : '';
+        const where = `«${pre.name}»`;
+        const details: Record<string, unknown> = {
+            list: pre.name,
+            count: rows.length,
+            total,
+            ids: body.ids,
+            response_name: c.responseName,
+            ...(first ? { first: { id: first.id, titulo: first.titulo } } : {}),
+            ...(ctx.sim ? { _sim: 'info' } : {}),
+        };
+        if (rows.length === 0) {
+            const msg = `No encontró registros en ${where}${why}.`;
+            if (c.ifNone === 'stop') return { entry: skip(A, `${msg} La automatización no siguió.`), stop: true };
+            return { entry: ok(A, msg, details), stop: false };
+        }
+        const more = total > rows.length ? ` (hay ${total}: guardó los primeros ${rows.length})` : '';
+        const named = first ? `: el primero es #${first.id}${first.titulo ? ` «${String(first.titulo)}»` : ''}` : '';
+        return { entry: ok(A, `Encontró ${rows.length} registro(s) en ${where}${more}${named}.${why ? ` Nota${why}.` : ''}`, details), stop: false };
+    }
+
+    /**
+     * El valor de una condición de «Buscar registros», ya resuelto: las
+     * variables, la opción por su etiqueta, el número o la fecha en su forma, o
+     * las claves comparables de un texto (sin mayúsculas, el teléfono por dígitos).
+     */
+    private findConditionValue(
+        ctx: RunContext,
+        field: FieldRow,
+        op: FindOperator,
+        raw: unknown,
+    ): { kind: 'value'; value: unknown } | { kind: 'keys'; keys: string[] } | { kind: 'empty' } | { kind: 'error'; message: string } {
+        const input = this.fieldInput(ctx, raw, field).value;
+        const isBlankValue =
+            input === null || input === undefined || (typeof input === 'string' && input.trim() === '') || (Array.isArray(input) && input.length === 0);
+        if (isBlankValue) return { kind: 'empty' };
+        const type = field.type;
+        if (type === 'relation') {
+            const ids = parseRelationIds(input);
+            if (ids.length === 0) return { kind: 'error', message: `«${String(input)}» no es el id de un registro.` };
+            return { kind: 'value', value: ids };
+        }
+        if (type === 'select' || type === 'multi_select') {
+            const options = ((field.config as { options?: Array<{ value?: unknown; label?: unknown }> } | null)?.options ?? []).filter(
+                (o): o is { value: string; label?: unknown } => typeof o?.value === 'string',
+            );
+            const wanted = (Array.isArray(input) ? input : [input]).map((v) => String(v).trim()).filter((v) => v !== '');
+            const values: string[] = [];
+            for (const w of wanted) {
+                const folded = foldSearchText(w);
+                const opt = options.find((o) => o.value === w) ?? options.find((o) => foldSearchText(o.value) === folded || foldSearchText(String(o.label ?? '')) === folded);
+                if (!opt) {
+                    if (op === 'contains' || op === 'not_contains') {
+                        values.push(w);
+                        continue;
+                    }
+                    return { kind: 'error', message: `«${w}» no es una opción del campo.` };
+                }
+                values.push(opt.value);
+            }
+            if (values.length === 0) return { kind: 'empty' };
+            return { kind: 'value', value: values[0] };
+        }
+        const textLike = type === 'text' || type === 'long_text' || type === 'email' || type === 'url' || type === 'phone' || type === 'autonumber' || type === 'ai';
+        if (textLike) {
+            const text = Array.isArray(input) ? input.join(', ') : String(input);
+            if (op === 'eq' || op === 'neq') {
+                const keys = type === 'phone' ? matchKeysFor(field, text) : [normalizeKey({ id: field.id, type: type as never }, text)].filter((k) => k !== '');
+                if (keys.length === 0) return { kind: 'empty' };
+                return { kind: 'keys', keys };
+            }
+            return { kind: 'value', value: text.trim() };
+        }
+        // Números, fechas, casilla, persona, equipo…: convertidos como al escribir el campo.
+        const res = this.coerce(ctx, field, raw);
+        if (!res.ok) return { kind: 'error', message: res.error };
+        if (res.value === null || res.value === undefined) return { kind: 'empty' };
+        return { kind: 'value', value: res.value };
+    }
+
+    /**
+     * v0.1.444 — «Crear o actualizar un registro»: busca UN registro por su id
+     * o por un campo «Sin repetidos» y lo actualiza; si no existe, lo crea (o
+     * sólo actualiza, o sólo crea si no existe). Nunca adivina: con dos
+     * registros con el mismo valor (datos de antes de «Sin repetidos»), falla
+     * sin tocar ninguno. Un valor que quedó vacío no borra lo que ya tenía.
+     * Deja `{{respuestas.<nombre>.id}}`, `.titulo` y `.accion`.
+     */
+    private async upsertRecord(ctx: RunContext, cfg: Record<string, unknown>): Promise<ActionLogEntry> {
+        const A = UPSERT_RECORD_ACTION;
+        const c = readUpsertRecordConfig(cfg);
+        const listId = c.listId ?? ctx.listId;
+        const pre = await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+            const [l] = await tx
+                .select({ name: lists.name, settings: lists.settings })
+                .from(lists)
+                .where(and(eq(lists.tenantId, ctx.tenantId), eq(lists.id, listId)))
+                .limit(1);
+            if (!l) return null;
+            return { name: l.name, settings: (l.settings ?? {}) as Record<string, unknown>, fields: await this.fields.listByList(tx, ctx.tenantId, listId) };
+        });
+        if (!pre) return fail(A, `La lista destino (#${listId}) no existe en esta empresa.`);
+        const titleId = resolveTitleFieldId(pre.fields.map((f) => ({ id: f.id, type: f.type as never })), pre.settings);
+        const titleOf = (data: Record<string, unknown>, id: number): string => (titleId ? recordTitleText(data[jsonbKeyForField(titleId)]) : '') || `#${id}`;
+        const remember = (id: number | null, titulo: string, accion: string): void =>
+            this.rememberNamed(ctx, { response_name: c.responseName }, { status: 200, body: { id, titulo, accion, lista: pre.name } });
+
+        // 1) Con qué dato se busca (acepta variables).
+        const matchField = c.match.by === 'field' ? pre.fields.find((f) => f.slug === (c.match as { field: string }).field) : undefined;
+        if (c.match.by === 'field') {
+            const err = webhookMatchFieldError(
+                matchField ? { slug: matchField.slug, type: matchField.type, label: matchField.label, is_unique: matchField.isUnique } : undefined,
+            );
+            if (err) return fail(A, err);
+        }
+        const rawMatch = this.fieldInput(ctx, c.matchValue, matchField ?? { type: 'text', config: {} }).value;
+        const matchText = rawMatch === null || rawMatch === undefined ? '' : Array.isArray(rawMatch) ? String(rawMatch[0] ?? '') : String(rawMatch).trim();
+
+        // 2) Buscar UN registro.
+        type Found = { id: number; data: Record<string, unknown> };
+        let found: Found | null = null;
+        let lookedFor = '';
+        if (matchText !== '') {
+            if (c.match.by === 'record_id') {
+                const id = parseRecordIdValue(matchText);
+                lookedFor = `el registro #${matchText}`;
+                if (id !== null) {
+                    const [row] = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+                        tx
+                            .select({ id: records.id, data: records.data })
+                            .from(records)
+                            .where(and(eq(records.tenantId, ctx.tenantId), eq(records.listId, listId), eq(records.id, id), isNull(records.deletedAt)))
+                            .limit(1),
+                    );
+                    if (row) found = { id: row.id, data: (row.data ?? {}) as Record<string, unknown> };
+                }
+            } else if (matchField) {
+                lookedFor = `«${matchField.label}» = ${matchText}`;
+                const keys = matchKeysFor(matchField, matchText);
+                if (keys.length > 0) {
+                    const expr = keyExpr({ id: matchField.id, type: matchField.type as never });
+                    const rows = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+                        tx
+                            .select({ id: records.id, data: records.data })
+                            .from(records)
+                            .where(
+                                and(
+                                    eq(records.tenantId, ctx.tenantId),
+                                    eq(records.listId, listId),
+                                    isNull(records.deletedAt),
+                                    sql`${expr} IN (${sql.join(keys.map((k) => sql`${k}`), sql`, `)})`,
+                                ),
+                            )
+                            .orderBy(desc(records.id))
+                            .limit(4),
+                    );
+                    if (rows.length > 1) {
+                        const ids = rows.slice(0, 3).map((r) => `#${r.id}`).join(', ');
+                        return fail(A, `Hay ${rows.length > 3 ? 'más de 3' : rows.length} registros con ${lookedFor} (${ids}): no se tocó ninguno. Deja uno solo con ese valor.`);
+                    }
+                    if (rows[0]) found = { id: rows[0].id, data: (rows[0].data ?? {}) as Record<string, unknown> };
+                }
+            }
+        }
+        if (matchText === '' && c.mode === 'update_only') {
+            remember(null, '', 'no_encontrado');
+            return skip(A, 'El dato con el que se busca quedó vacío: no se buscó ningún registro.');
+        }
+
+        // 3) Los valores (convertidos y validados para cada campo).
+        const { data, relations, skipped } = await this.resolveRecordValues(ctx, pre.fields, c.values);
+        const note = skipped.length > 0 ? ` Omitidos: ${skipped.join('; ')}.` : '';
+
+        if (found) {
+            const title = titleOf(found.data, found.id);
+            if (c.mode === 'create_only') {
+                remember(found.id, title, 'ya_existia');
+                return ok(A, `Ya existía #${found.id} «${title}» (${lookedFor}): no se creó otro.`, { record_id: found.id, action: 'exists' });
+            }
+            // Sólo lo que cambia (un vínculo se escribe siempre: reemplaza los de ese campo).
+            const patch: Record<string, unknown> = {};
+            for (const [k, v] of Object.entries(data)) if (JSON.stringify(found.data[k]) !== JSON.stringify(v)) patch[k] = v;
+            for (const r of relations) if (r.ids.length > 0) patch[jsonbKeyForField(r.fieldId)] = r.ids;
+            if (Object.keys(patch).length === 0) {
+                remember(found.id, title, 'sin_cambios');
+                return ok(A, `#${found.id} «${title}» ya tenía esos valores (${lookedFor}).${note}`, { record_id: found.id, action: 'unchanged' });
+            }
+            if (ctx.sim) {
+                remember(found.id, title, 'actualizado');
+                return ok(A, `Actualizaría ${Object.keys(patch).length} campo(s) de #${found.id} «${title}» (${lookedFor}).${note}`, {
+                    _sim: 'would_run',
+                    record_id: found.id,
+                    values: Object.keys(patch).map((k) => pre.fields.find((f) => jsonbKeyForField(f.id) === k)?.label ?? k),
+                });
+            }
+            const keyToSlug = new Map(pre.fields.map((f) => [jsonbKeyForField(f.id), f.slug]));
+            const fieldsBySlug = new Map(pre.fields.map((f) => [f.slug, f as unknown as LabelFieldLike]));
+            const after = await this.writeUpdate(ctx, { listId, recordId: found.id, slugToKey: new Map([...keyToSlug].map(([k, slug]) => [slug, k])), fieldsBySlug }, patch, found.data);
+            const newTitle = titleOf(after, found.id);
+            remember(found.id, newTitle, 'actualizado');
+            return ok(A, `Actualizó ${Object.keys(patch).length} campo(s) de #${found.id} «${newTitle}» (${lookedFor}).${note}${chainCutNote(ctx)}`, {
+                record_id: found.id,
+                action: 'updated',
+                ...(skipped.length > 0 ? { warnings: skipped } : {}),
+            });
+        }
+
+        // 4) No existe.
+        if (c.mode === 'update_only') {
+            remember(null, '', 'no_encontrado');
+            return skip(A, `No encontré ${lookedFor || 'el registro'} en «${pre.name}»: no se actualizó nada.`);
+        }
+        const mirror = readMirrorListMarker(pre.settings);
+        if (mirror) {
+            remember(null, '', 'no_encontrado');
+            return skip(
+                A,
+                mirror.source === 'store'
+                    ? 'No existe y la lista está sincronizada con una tienda: los registros se crean en WooCommerce.'
+                    : 'No existe y la lista viene de un sitio WordPress: lo nuevo se crea en WordPress.',
+            );
+        }
+        // Al crearlo, el campo con el que se buscó queda con ese dato (si no se escribió otro).
+        if (matchField && matchText !== '' && !READ_ONLY_TYPES.includes(matchField.type)) {
+            const key = jsonbKeyForField(matchField.id);
+            if (data[key] === undefined) {
+                const res = this.coerce(ctx, matchField, matchText);
+                if (res.ok && res.value !== null) data[key] = res.value;
+            }
+        }
+        if (Object.keys(data).length === 0 && relations.every((r) => r.ids.length === 0)) {
+            remember(null, '', 'no_encontrado');
+            return skip(A, `No encontré ${lookedFor || 'el registro'} y no hay valores para crear uno nuevo.${note}`);
+        }
+        if (ctx.sim) {
+            remember(null, '', 'creado');
+            return ok(A, `No existe ${lookedFor || 'el registro'}: crearía uno en «${pre.name}» con ${Object.keys(data).length + relations.filter((r) => r.ids.length > 0).length} valor(es).${note}`, {
+                _sim: 'would_run',
+                action: 'create',
+            });
+        }
+        if (this.billing && !this.records()) {
+            try {
+                await this.billing.assertCanCreateRecords(ctx.tenantId, 1);
+            } catch (err) {
+                return fail(A, explainError(err) || 'Límite de registros del plan alcanzado.');
+            }
+        }
+        const created = await this.writeCreate(ctx, listId, data, relations.filter((r) => r.ids.length > 0));
+        const title = titleOf(created.data, created.id);
+        remember(created.id, title, 'creado');
+        return ok(A, `No existía ${lookedFor || 'el registro'}: creó #${created.id} «${title}» en «${pre.name}».${note}${chainCutNote(ctx)}`, {
+            record_id: created.id,
+            action: 'created',
             ...(skipped.length > 0 ? { warnings: skipped } : {}),
         });
     }
@@ -4348,6 +4814,45 @@ export class AutomationEngine {
         ctx.responses = next;
     }
 
+    /** v0.1.444 — «Probar» con el disparador de comentarios: el último del registro, como llegaría. */
+    private async lastCommentSample(tenantId: number, recordId: number): Promise<CommentEventInfo | null> {
+        return this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [c] = await tx
+                .select({
+                    id: comments.id,
+                    body: comments.body,
+                    userId: comments.userId,
+                    parentId: comments.parentId,
+                    visibility: comments.visibility,
+                    metadata: comments.metadata,
+                    name: users.name,
+                    email: users.email,
+                    role: memberships.role,
+                })
+                .from(comments)
+                .leftJoin(users, eq(users.id, comments.userId))
+                .leftJoin(memberships, and(eq(memberships.userId, comments.userId), eq(memberships.tenantId, comments.tenantId)))
+                .where(and(eq(comments.tenantId, tenantId), eq(comments.recordId, recordId), isNull(comments.deletedAt)))
+                .orderBy(desc(comments.id))
+                .limit(1);
+            if (!c) return null;
+            const meta = (c.metadata ?? {}) as { email?: { direction?: unknown; from_name?: unknown; from?: unknown } };
+            const byEmail = meta.email?.direction === 'in';
+            const fromClient = byEmail || c.role === 'client';
+            const name = byEmail ? String(meta.email?.from_name ?? meta.email?.from ?? '') : (c.name || c.email || '');
+            return {
+                id: c.id,
+                text: c.body,
+                author_id: c.userId,
+                author_name: name.trim() || (fromClient ? 'Cliente' : 'Alguien del equipo'),
+                from: fromClient ? 'client' : 'team',
+                source: byEmail ? 'email' : fromClient ? 'portal' : 'app',
+                visibility: c.visibility === 'client' ? 'client' : 'internal',
+                parent_id: c.parentId,
+            };
+        });
+    }
+
     private async templateName(tx: Tx, tenantId: number, templateId: number): Promise<string | null> {
         const [row] = await tx
             .select({ name: documentTemplates.name })
@@ -4637,6 +5142,17 @@ function isPersonType(type: string | undefined): boolean {
  * string numérico (típico de un merge tag `{{record.id}}`), lista separada
  * por comas y arrays mixtos. IDs inválidos se descartan.
  */
+/** v0.1.444 — Los campos por los que «Buscar registros» puede filtrar (viven en `data` o son vínculos). */
+
+/** El título de un registro como texto (para mostrarlo y dejarlo en `{{respuestas.x.titulo}}`). */
+function recordTitleText(raw: unknown): string {
+    if (raw === null || raw === undefined) return '';
+    if (typeof raw === 'string') return raw.trim();
+    if (typeof raw === 'number' || typeof raw === 'boolean') return String(raw);
+    if (Array.isArray(raw)) return raw.map((v) => String(v)).join(', ');
+    return '';
+}
+
 function parseRelationIds(raw: unknown): number[] {
     const candidates: unknown[] = Array.isArray(raw)
         ? raw

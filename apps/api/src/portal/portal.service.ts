@@ -1565,6 +1565,7 @@ export class PortalService implements OnModuleInit {
             fromClient: true,
             clientName,
             ...(row.parentId !== null ? { parentId: row.parentId } : {}),
+            source: 'portal',
         });
         return {
             id: row.id,

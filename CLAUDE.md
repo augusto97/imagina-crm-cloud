@@ -15908,6 +15908,52 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         install` desde la dirección de la app y E2E navegador de la tarjeta
         12/12 en escritorio y celular oscuro.
 
+  - [x] **Buscar registros, crear o actualizar y comentarios en las
+        automatizaciones (v0.1.444, addendum ADR-S47, cuarto módulo nuevo del
+        plan: E1 + E2 en parte)**. (a) **«Buscar registros»**
+        (`find_records`, sólo lee): condiciones campo/operador/valor (con
+        variables) sobre esta lista u otra, «todas» o «alguna», orden por un
+        campo o por fecha de alta, 1-50 registros, «no contar el registro que
+        disparó» y «si no encuentra nada: seguir o detener». La consulta la
+        arma el motor: el texto se compara sin mayúsculas ni espacios
+        (`keyExpr`/`normalizeKey`), el teléfono con o sin indicativo
+        (`matchKeysFor`), una opción por su nombre o su valor y una relación
+        por el id del vinculado; una variable que llega vacía **nunca** busca
+        «vacío» (con «todas» no encuentra nada, con «alguna» se cae). Deja
+        `{{respuestas.busqueda.cantidad|ids|primero.id|primero.titulo|primero.<campo>}}`
+        (los ids sirven para vincular). (b) **«Crear o actualizar un
+        registro»** (`upsert_record`): busca por el id o por un campo «Sin
+        repetidos»/ID automático (la regla del webhook entrante) y, según el
+        modo, lo actualiza si existe, lo crea si no, o sólo una de las dos;
+        **nunca adivina** (dos coincidencias fallan sin tocar nada), un valor
+        vacío no borra lo guardado y sólo escribe lo que cambia
+        (`sin_cambios` no dispara otras automatizaciones); va por
+        `RecordsService` (ACL, plan, actividad, listas espejo). Deja
+        `{{respuestas.registro.id|titulo|accion}}`. (c) **«Cuando se agrega
+        un comentario»** (`comment_added`): del equipo (app) o del cliente
+        (portal o respondiendo un correo), con filtros por autor,
+        visibilidad, hilos y palabras (sin tildes, basta una); variables
+        `{{comentario.texto|autor|de|origen|visibilidad|es_respuesta}}`; **lo
+        que comenta un agente de IA nunca dispara** (sin bucles). (d)
+        **Editor**: `RecordActionsConfig.tsx` (lista, condiciones, orden,
+        tope, si no encuentra, nombre del resultado con sus variables a la
+        vista; búsqueda por un campo con los que no sirven deshabilitados y
+        el motivo; filas campo → valor), las condiciones de cada paso pueden
+        mirar `comentario.*` y lo que dejó un paso anterior, el selector de
+        variables suma «Comentario», «Búsqueda «x»» y «Registro «x»», y
+        «Probar» deja lo encontrado como muestra (sugiere los campos del
+        primero). Reglas compartidas en
+        `packages/shared/src/schemas/automation-records.ts`
+        (`isFindableFieldType`, lectores tolerantes, validación al guardar,
+        resúmenes); asistente/MCP con las dos acciones y el disparador. Ayuda:
+        guía `automation-find-upsert`, Aprende → Automatizaciones (secciones
+        nuevas con ilustraciones que ya existían) y novedad con carrusel.
+        Tests: `automation-records.spec` (7 de integración: otra lista,
+        variable vacía y «alguna», relación y excluirse, upsert por campo y
+        por id, repetidos, «Probar» que no escribe y devuelve la muestra,
+        comentarios del equipo, del cliente y del agente), 6 de shared y 6 del
+        front — shared 1013, front 947, suites relacionadas del API 237/237.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

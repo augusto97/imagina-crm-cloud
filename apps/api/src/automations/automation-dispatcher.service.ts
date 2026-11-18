@@ -1,14 +1,15 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import type { BookingEventInfo, ChecklistCompletedInfo, EmailEventInfo, SlaEventInfo, SubscriptionEventInfo, WebhookEvent, WhatsappEventInfo } from '@imagina-base/shared';
+import type { BookingEventInfo, ChecklistCompletedInfo, CommentEventInfo, EmailEventInfo, SlaEventInfo, SubscriptionEventInfo, WebhookEvent, WhatsappEventInfo } from '@imagina-base/shared';
 import { randomUUID } from 'node:crypto';
 import type { JobsOptions, Queue } from 'bullmq';
 import { and, eq, isNull } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import type { ApprovalEventInfo } from '../approvals/approval-hub';
 import { DRIZZLE, type Db } from '../db/client';
-import { automations, fields as fieldsTable } from '../db/schema';
+import { automations, fields as fieldsTable, records as recordsTable, users as usersTable } from '../db/schema';
 import { EventWebhookHub } from '../event-webhooks/event-hub';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
+import { NotifyHub, type NotifyEvent } from '../notifications/notify-hub';
 import { REDIS } from '../redis/redis.module';
 
 /**
@@ -140,7 +141,8 @@ export interface TriggerEvent {
         | 'whatsapp_message_received'
         | 'email_received'
         | 'sla_alert'
-        | 'subscription_event';
+        | 'subscription_event'
+        | 'comment_added';
     /** Snapshot de `data` tras la mutación (para merge tags / condición). */
     after: Record<string, unknown>;
     /** Snapshot previo (para field_changed). */
@@ -196,6 +198,8 @@ export interface TriggerEvent {
      * `subscription_event`): el filtro por evento y plan, y `{{suscripcion.x}}`.
      */
     subscription?: SubscriptionEventInfo;
+    /** v0.1.444 — el comentario que se acaba de agregar (`{{comentario.texto}}`…). */
+    comment?: CommentEventInfo;
     /** Sólo estas automatizaciones (un botón que corre una puntual). */
     automation_ids?: number[];
     /** El cambio lo hizo una automatización (ver `AutomationChain`). */
@@ -262,7 +266,53 @@ export class AutomationDispatcher {
         @Optional() @Inject(DRIZZLE) private readonly db?: Db,
         @Optional() @Inject(REDIS) private readonly redis?: Redis,
         @Optional() private readonly eventHub?: EventWebhookHub,
-    ) {}
+        @Optional() notify?: NotifyHub,
+    ) {
+        // v0.1.444 — «Cuando se agrega un comentario»: el aviso de comentarios
+        // (app, portal, correo) también le llega a las automatizaciones.
+        notify?.subscribe((ev) => (ev.type === 'comment' ? this.onComment(ev) : undefined));
+    }
+
+    /**
+     * v0.1.444 — Un comentario nuevo → evento `comment_added` si alguna
+     * automatización ACTIVA de la lista lo escucha. Los que deja un agente de
+     * IA no disparan nada (un agente que comenta en respuesta a un comentario
+     * sería un bucle). El registro y el nombre de quien escribió se leen acá:
+     * el aviso no los trae.
+     */
+    private async onComment(ev: Extract<NotifyEvent, { type: 'comment' }>): Promise<void> {
+        if (ev.fromAgent || !ev.commentId || !this.db) return;
+        if (!(await this.listensTo(ev.tenantId, ev.listId, 'comment_added'))) return;
+        const [rec] = await this.db
+            .select({ data: recordsTable.data })
+            .from(recordsTable)
+            .where(and(eq(recordsTable.tenantId, ev.tenantId), eq(recordsTable.id, ev.recordId), isNull(recordsTable.deletedAt)))
+            .limit(1);
+        if (!rec) return;
+        const fromClient = ev.fromClient === true;
+        let authorName = fromClient ? (ev.clientName ?? '') : '';
+        if (!fromClient && ev.actorId > 0) {
+            const [u] = await this.db.select({ name: usersTable.name, email: usersTable.email }).from(usersTable).where(eq(usersTable.id, ev.actorId)).limit(1);
+            authorName = (u?.name || u?.email || '').trim();
+        }
+        this.dispatch({
+            tenantId: ev.tenantId,
+            listId: ev.listId,
+            recordId: ev.recordId,
+            trigger: 'comment_added',
+            after: (rec.data ?? {}) as Record<string, unknown>,
+            comment: {
+                id: ev.commentId,
+                text: ev.body.slice(0, 5000),
+                author_id: ev.actorId,
+                author_name: authorName || (fromClient ? 'Cliente' : 'Alguien del equipo'),
+                from: fromClient ? 'client' : 'team',
+                source: ev.source ?? (fromClient ? 'portal' : 'app'),
+                visibility: ev.visibility === 'client' ? 'client' : 'internal',
+                parent_id: ev.parentId ?? null,
+            },
+        });
+    }
 
     /**
      * ¿Hay alguna automatización ACTIVA de la lista que reaccione a este

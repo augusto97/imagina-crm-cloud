@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 
 import { BulkEditActionConfig } from './BulkEditActionConfig';
+import { CommentTriggerConfig, FindRecordsConfig, UpsertRecordConfig } from './RecordActionsConfig';
 import { WhatsappActionConfig, WhatsappTriggerConfig } from './WhatsappActionConfig';
 import { WhatsEventTriggerConfig } from './WhatsEventTriggerConfig';
 import { SmsActionConfig } from './SmsActionConfig';
@@ -215,6 +216,11 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
     }
     if (typeof c.phone_field_id === 'number' && c.phone_field_id > 0) out.phone_field_id = c.phone_field_id;
     if (c.if_missing === 'create' || c.if_missing === 'skip') out.if_missing = c.if_missing;
+    // v0.1.444 — «Cuando se agrega un comentario»: quién, qué tipo, hilos y palabras.
+    for (const k of ['comment_from', 'comment_visibility', 'comment_replies'] as const) {
+        if (typeof c[k] === 'string' && c[k] !== '' && c[k] !== 'any') out[k] = c[k];
+    }
+    if (typeof c.comment_contains === 'string' && c.comment_contains.trim() !== '') out.comment_contains = c.comment_contains.trim().slice(0, 300);
     return out;
 }
 
@@ -255,6 +261,8 @@ export function helpForTrigger(triggerType: string): string {
             return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones puedes usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
         case 'whats_event':
             return __('Se ejecuta cuando Whats avisa que pasó algo: cambió el estado de un mensaje que enviaste, se creó o se dio de baja un contacto, empezó, se asignó o se resolvió una conversación, calificaron la atención, hicieron clic en un enlace o enviaron un formulario de Whats. La app busca en esta lista el registro con el teléfono del contacto y, si no está, lo crea o deja la corrida cancelada (tú eliges). En las acciones puedes usar {{whatsapp.evento}}, {{whatsapp.de}}, {{whatsapp.nombre}} y lo que trae cada aviso como {{payload.x}}.');
+        case 'comment_added':
+            return __('Se ejecuta cuando alguien comenta un registro de esta lista: el equipo desde la app o el cliente desde el portal o respondiendo un correo. Puedes elegir quién, si es una nota interna o visible para el cliente, si cuenta una respuesta en un hilo y que tenga ciertas palabras («urgente», «factura»). En las acciones usa {{comentario.texto}}, {{comentario.autor}} y {{comentario.de}}.');
         case 'whatsapp_message_received':
             return __('Se ejecuta cuando un contacto le escribe a tu número de WhatsApp (Whats o la cuenta oficial de Meta). La app ya lo encontró por su teléfono en la lista (o lo creó, si así está configurado) y dejó el último mensaje en su registro. En las acciones puedes usar {{whatsapp.texto}}, {{whatsapp.nombre}} y {{whatsapp.de}}. Con WAS puedes contestarle cuando quieras; con la cuenta oficial, durante 24 h con «Enviar mensaje de texto de WhatsApp».');
         default:
@@ -361,6 +369,7 @@ export function TriggerConfigEditor({
 
             {triggerType === 'approval_resolved' && <ApprovalTriggerConfigHost config={config} onChange={onChange} />}
             {triggerType === 'checklist_completed' && <ChecklistCompletedConfig config={config} onChange={onChange} />}
+            {triggerType === 'comment_added' && <CommentTriggerConfig config={config} onChange={onChange} />}
             {triggerType === 'whatsapp_message_received' && <WhatsappTriggerConfig config={config} onChange={onChange} />}
             {triggerType === 'whats_event' && <WhatsEventTriggerConfig config={config} onChange={onChange} fields={fields} />}
             {triggerType === 'subscription_event' && <SubscriptionTriggerConfig config={config} onChange={onChange} />}
@@ -1210,6 +1219,10 @@ export function ActionConfigEditor({
                 <UpdateFieldConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'create_record' ? (
                 <CreateRecordConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'find_records' ? (
+                <FindRecordsConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'upsert_record' ? (
+                <UpsertRecordConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'bulk_edit' ? (
                 <BulkEditActionConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'call_webhook' ? (
@@ -1740,17 +1753,17 @@ function CreateRecordConfig({
 }
 
 /** Una fila «campo → valor» de «Actualizar campo» / «Crear un registro». */
-interface ValueRow {
+export interface ValueRow {
     slug: string;
     value: unknown;
 }
 
-function readValueRows(raw: unknown): ValueRow[] {
+export function readValueRows(raw: unknown): ValueRow[] {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
     return Object.entries(raw as Record<string, unknown>).map(([slug, value]) => ({ slug, value }));
 }
 
-function valueRowsToConfig(rows: ValueRow[]): Record<string, unknown> {
+export function valueRowsToConfig(rows: ValueRow[]): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     for (const r of rows) {
         if (r.slug.trim() === '') continue;
