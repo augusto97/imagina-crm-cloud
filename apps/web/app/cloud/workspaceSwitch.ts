@@ -63,3 +63,15 @@ export function roleLabel(role: MembershipSummary['role']): string {
             return 'Cliente (portal)';
     }
 }
+
+/**
+ * v0.1.449 (ADR-S108) — El rol con lo que la persona tiene que saber de la
+ * agencia: «Admin · Agencia» en la agencia misma, «Admin · por la agencia» en
+ * una empresa cliente a la que entra como parte de su agencia.
+ */
+export function membershipLabel(m: Pick<MembershipSummary, 'role' | 'is_agency' | 'via_agency'>): string {
+    const role = roleLabel(m.role);
+    if (m.via_agency) return `${role} · por la agencia`;
+    if (m.is_agency) return `${role} · Agencia`;
+    return role;
+}

@@ -22,10 +22,16 @@ export function AccessBanner(): JSX.Element | null {
     const access = membership?.access;
     if (!membership || !access || impersonating) return null;
     const admin = membership.role === 'admin';
+    // v0.1.449 (ADR-S108): el plan de una empresa cliente lo maneja su agencia.
+    const agency = membership.agency ?? null;
 
     if (access.state === 'read_only') {
         const why =
-            access.reason === 'trial_ended'
+            access.reason === 'agency_paused'
+                ? `${agency?.name ?? __('Tu agencia')} ${__('pausó la empresa: está en solo lectura.')}`
+                : access.reason === 'agency'
+                  ? __('La cuenta de tu agencia está en solo lectura, y esta empresa también.')
+                  : access.reason === 'trial_ended'
                 ? __('Terminó la prueba: la empresa está en solo lectura.')
                 : access.reason === 'plan_expired'
                   ? __('Venció el plan: la empresa está en solo lectura.')
@@ -38,15 +44,19 @@ export function AccessBanner(): JSX.Element | null {
                 <p className="imcrm-min-w-0 imcrm-flex-1">
                     <span className="imcrm-font-medium">{why}</span>{' '}
                     <span className="imcrm-text-muted-foreground">
-                        {admin ? __('Puedes ver y descargar todo; para volver a editar, elige un plan.') : __('Pídele a un administrador que elija un plan.')}
+                        {agency
+                            ? `${__('Puedes ver y descargar todo; para volver a editar, habla con')} ${agency.name}.`
+                            : admin
+                              ? __('Puedes ver y descargar todo; para volver a editar, elige un plan.')
+                              : __('Pídele a un administrador que elija un plan.')}
                     </span>
                 </p>
-                {admin && access.reason !== 'archived' && <PlanLink />}
+                {admin && !agency && access.reason !== 'archived' && <PlanLink />}
             </Bar>
         );
     }
 
-    if (access.trial && access.ends_at && admin) {
+    if (access.trial && access.ends_at && admin && !agency) {
         const left = daysLeft(access.ends_at) ?? 0;
         const soon = left <= 3;
         return (

@@ -26,6 +26,9 @@ export function MembersPanel(): JSX.Element {
         queryFn: () => api.listMembers(),
     });
     const pending = membersQ.data?.filter((m) => m.pending).length ?? 0;
+    // v0.1.449 (ADR-S108) — el equipo de la agencia va al final y aparte en la cuenta.
+    const viaAgency = membersQ.data?.filter((m) => m.via_agency).length ?? 0;
+    const sorted = membersQ.data ? [...membersQ.data.filter((m) => !m.via_agency), ...membersQ.data.filter((m) => m.via_agency)] : undefined;
     // C2 — el selector de rol ofrece también los roles propios.
     const customRoles = useCustomRoles().data?.custom ?? [];
 
@@ -62,11 +65,11 @@ export function MembersPanel(): JSX.Element {
                 <div className="imcrm-border-t imcrm-border-border imcrm-pt-3" data-tour="members-list">
                     <p className="imcrm-mb-1 imcrm-text-xs imcrm-text-muted-foreground">
                         {membersQ.data
-                            ? `${membersQ.data.length} ${membersQ.data.length === 1 ? 'persona' : 'personas'}${pending > 0 ? ` · ${pending} con invitación pendiente` : ''}`
+                            ? `${membersQ.data.length - viaAgency} ${membersQ.data.length - viaAgency === 1 ? 'persona' : 'personas'}${pending > 0 ? ` · ${pending} con invitación pendiente` : ''}${viaAgency > 0 ? ` · ${viaAgency} de la agencia` : ''}`
                             : 'Cargando…'}
                     </p>
                     <ul className="imcrm-space-y-1">
-                        {membersQ.data?.map((m) => (
+                        {sorted?.map((m) => (
                             <MemberRow
                                 key={m.user_id}
                                 member={m}

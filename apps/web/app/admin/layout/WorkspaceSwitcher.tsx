@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Building2, Check, ChevronsUpDown } from 'lucide-react';
 
-import { roleLabel, switchWorkspace, useWorkspaces } from '@/cloud/workspaceSwitch';
+import { membershipLabel, switchWorkspace, useWorkspaces } from '@/cloud/workspaceSwitch';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -43,7 +43,7 @@ export function WorkspaceMenuItems({ onSwitched }: { onSwitched?: () => void }):
                         </span>
                         <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
                             <span className={cn('imcrm-truncate', current && 'imcrm-font-semibold')}>{m.tenant_name}</span>
-                            <span className="imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">{roleLabel(m.role)}</span>
+                            <span className="imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground">{membershipLabel(m)}</span>
                         </span>
                         {current && <Check className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-primary" aria-label={__('Empresa actual')} />}
                     </DropdownMenuItem>

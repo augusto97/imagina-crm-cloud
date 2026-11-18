@@ -191,7 +191,7 @@ export class PlatformService {
      * página (`WHERE tenant_id IN (...)`), que es un lookup por índice.
      */
     async listTenants(
-        opts: { includeArchived?: boolean; limit?: number; offset?: number; search?: string } = {},
+        opts: { includeArchived?: boolean; limit?: number; offset?: number; search?: string; agencies?: boolean; agencyId?: number } = {},
     ): Promise<{ data: PlatformTenant[]; meta: { total: number; limit: number; offset: number } }> {
         const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
         const offset = Math.max(opts.offset ?? 0, 0);
@@ -199,6 +199,8 @@ export class PlatformService {
 
         const filters: SQL[] = [];
         if (!opts.includeArchived) filters.push(isNull(tenants.archivedAt));
+        if (opts.agencies) filters.push(eq(tenants.isAgency, true));
+        if (opts.agencyId !== undefined) filters.push(eq(tenants.agencyId, opts.agencyId));
         if (search !== '') {
             const term = `%${search.replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
             filters.push(sql`(${tenants.name} ILIKE ${term} OR ${tenants.slug} ILIKE ${term})`);

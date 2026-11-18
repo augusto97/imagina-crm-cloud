@@ -155,6 +155,16 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'whatsapp.config': { text: 'cambió dónde caen los mensajes de WhatsApp de' },
     'whatsapp.columns': { text: 'cambió las columnas de WhatsApp de la lista' },
     'whatsapp.subscribe': { text: 'suscribió a los avisos de Meta la cuenta de WhatsApp' },
+    // v0.1.449 (ADR-S108) — modo agencia.
+    'agency.client_create': { text: 'creó la empresa cliente' },
+    'agency.client_rename': { text: 'cambió el nombre de la empresa cliente' },
+    'agency.client_pause': { text: 'pausó (solo lectura) la empresa cliente', danger: true },
+    'agency.client_resume': { text: 'reactivó la empresa cliente' },
+    'agency.enter': { text: 'entró por primera vez como parte de la agencia a' },
+    'agency.access': { text: 'entró como parte de la agencia a' },
+    'agency.link': { text: 'quedó como empresa cliente de una agencia:' },
+    'agency.unlink': { text: 'dejó de ser empresa cliente de la agencia', danger: true },
+    'agency.settings': { text: 'cambió los ajustes de la agencia' },
     // v0.1.442 — webhooks de eventos.
     'webhook.create': { text: 'creó el webhook' },
     'webhook.update': { text: 'cambió el webhook' },
