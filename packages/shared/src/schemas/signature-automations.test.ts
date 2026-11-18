@@ -15,6 +15,7 @@ const info: SignatureEventInfo = {
     evento: 'completed',
     titulo: 'Contrato',
     estado: 'Firmado',
+    estado_clave: 'completed',
     numero: 'CT-0007',
     firmante: 'Ana Gómez',
     firmante_email: 'ana@acme.co',
