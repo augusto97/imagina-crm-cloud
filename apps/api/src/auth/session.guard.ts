@@ -2,11 +2,18 @@ import {
     CanActivate,
     ExecutionContext,
     ForbiddenException,
+    HttpException,
+    Inject,
     Injectable,
+    Optional,
     UnauthorizedException,
 } from '@nestjs/common';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
+import type Redis from 'ioredis';
+import { PersonalTokensService, TOKEN_PREFIX } from '../ai/tokens.service';
 import { routePath, type RoutePathSource } from '../common/route-path';
+import { REDIS } from '../redis/redis.module';
+import { apiTokenRouteAllowed, checkApiBudget } from './api-token';
 import { SessionService } from './session.service';
 
 export const SESSION_COOKIE = 'imbase_session';
@@ -41,7 +48,14 @@ export function isPortalPath(req: RoutePathSource): boolean {
  */
 @Injectable()
 export class SessionGuard implements CanActivate {
-    constructor(private readonly sessions: SessionService) {}
+    constructor(
+        private readonly sessions: SessionService,
+        // v0.1.441 (G1) — tokens de la API REST. Opcionales: el guard se arma
+        // a mano en algunos lugares (callback OAuth, tests) sin ellos, y ahí
+        // un token simplemente no sirve.
+        @Optional() private readonly apiTokens?: PersonalTokensService,
+        @Optional() @Inject(REDIS) private readonly redis?: Redis,
+    ) {}
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const req = context.switchToHttp().getRequest<FastifyRequest>();
@@ -49,6 +63,9 @@ export class SessionGuard implements CanActivate {
         const token = this.extractToken(req);
         if (!token) {
             throw new UnauthorizedException('Sesión requerida');
+        }
+        if (token.startsWith(TOKEN_PREFIX)) {
+            return this.activateApiToken(req, context.switchToHttp().getResponse<FastifyReply>(), token);
         }
         const session = await this.sessions.get(token);
         if (!session) {
@@ -106,6 +123,43 @@ export class SessionGuard implements CanActivate {
             message: 'Entra al portal con tu enlace de acceso',
             data: { status: 401 },
         });
+    }
+
+    /**
+     * v0.1.441 (G1) — `Authorization: Bearer ib_pat_…` de un token creado «para
+     * la API». Actúa como la persona que lo creó, en SU empresa (TenantGuard
+     * la fija), sólo en las rutas de `API_TOKEN_ROUTES` y con un freno por
+     * token y por empresa. Un token del MCP, vencido, revocado, de alguien que
+     * ya no está o de una empresa pausada da 401 sin decir por qué.
+     */
+    private async activateApiToken(req: FastifyRequest, reply: FastifyReply | undefined, secret: string): Promise<boolean> {
+        if (!this.apiTokens) throw new UnauthorizedException('Sesión requerida');
+        const resolved = await this.apiTokens.resolveForApi(secret);
+        if (!resolved) {
+            throw new UnauthorizedException({ code: 'api_token_invalid', message: 'El token no es válido, venció o fue revocado.', data: { status: 401 } });
+        }
+        const verdict = apiTokenRouteAllowed(req.method, routePath(req), resolved.scope);
+        if (!verdict.ok) throw new ForbiddenException({ code: verdict.code, message: verdict.message, data: { status: 403 } });
+        if (this.redis) {
+            const budget = await checkApiBudget(this.redis, { tokenId: resolved.tokenId, tenantId: resolved.tenantId });
+            if (budget.limit !== undefined && reply && typeof reply.header === 'function') {
+                // Pisan las del límite general por IP (que corre antes): con
+                // un token, lo que cuenta es el cupo del token.
+                reply.header('X-RateLimit-Limit', String(budget.limit));
+                reply.header('X-RateLimit-Remaining', String(budget.remaining ?? 0));
+                reply.header('X-RateLimit-Reset', String(budget.retryAfter ?? 60));
+            }
+            if (!budget.ok) {
+                if (reply && typeof reply.header === 'function') reply.header('Retry-After', String(budget.retryAfter ?? 60));
+                throw new HttpException(
+                    { code: 'api_rate_limited', message: 'Demasiados pedidos con este token: espera un minuto.', data: { status: 429, retry_after: budget.retryAfter ?? 60 } },
+                    429,
+                );
+            }
+        }
+        req.authUserId = resolved.userId;
+        req.apiToken = { id: resolved.tokenId, tenantId: resolved.tenantId, scope: resolved.scope };
+        return true;
     }
 
     private extractToken(req: FastifyRequest): string | null {

@@ -111,7 +111,7 @@ export function browserLabel(ua: string | undefined): string | null {
 }
 
 let cachedVersion: string | null = null;
-function appVersion(): string {
+export function appVersion(): string {
     if (cachedVersion) return cachedVersion;
     for (const candidate of [join(process.cwd(), '..', '..', 'VERSION'), join(process.cwd(), 'VERSION')]) {
         try {

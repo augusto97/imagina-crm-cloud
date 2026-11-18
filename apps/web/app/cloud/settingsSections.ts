@@ -1,5 +1,6 @@
 import {
     Bell,
+    Braces,
     CalendarCheck,
     CreditCard,
     DoorOpen,
@@ -50,6 +51,7 @@ export type SettingsSectionId =
     | 'problemas'
     | 'papelera'
     | 'asistente'
+    | 'api'
     | 'firma'
     | 'apariencia'
     | 'auditoria'
@@ -74,6 +76,7 @@ const ITEMS: Record<SettingsSectionId, SettingsSectionItem> = {
     correo: { id: 'correo', label: 'Correo', icon: Mail, hint: 'Desde qué cuenta salen tus correos' },
     almacenamiento: { id: 'almacenamiento', label: 'Almacenamiento', icon: HardDrive, hint: 'Dónde se guardan los archivos' },
     asistente: { id: 'asistente', label: 'Asistente IA', icon: Sparkles, hint: 'Activar el asistente y usar tu propia clave' },
+    api: { id: 'api', label: 'API', icon: Braces, hint: 'Conectar n8n, Make o tus propios programas' },
     portal: { id: 'portal', label: 'Portal y formularios', icon: DoorOpen, hint: 'Cómo entran tus clientes y el captcha' },
     widgets: { id: 'widgets', label: 'Widget de contacto', icon: MessageCircle, hint: 'Un botón en tu sitio con tu WhatsApp, tus formularios y tu agenda' },
     privacidad: { id: 'privacidad', label: 'Datos personales', icon: Scale, hint: 'Autorización de tratamiento de datos' },
@@ -99,6 +102,7 @@ export function settingsSectionGroups({
     canManageAutomations = false,
     canManageTeams = false,
     canManageForms = false,
+    canUseApi = false,
     isGuest = false,
 }: {
     isAdmin: boolean;
@@ -108,6 +112,8 @@ export function settingsSectionGroups({
     canManageTeams?: boolean;
     /** v0.1.394 — Widget de contacto: quien arma formularios. */
     canManageForms?: boolean;
+    /** v0.1.441 (G1) — API: quien tiene «Usar la API» (el admin, de fábrica). */
+    canUseApi?: boolean;
     /** C3 — un invitado de afuera sólo ve SU cuenta. */
     isGuest?: boolean;
 }): SettingsSectionGroup[] {
@@ -130,7 +136,13 @@ export function settingsSectionGroups({
             // v0.1.196 (ADR-S22) — Integraciones no es admin-only: quien arma
             // automatizaciones ve qué hay conectado (conectar lo decide el backend).
             // El id `conectores` se conserva: es la ruta del callback OAuth.
-            items: pick((isAdmin || canManageAutomations) && 'conectores', isAdmin && 'correo', isAdmin && 'almacenamiento', isAdmin && 'asistente'),
+            items: pick(
+                (isAdmin || canManageAutomations) && 'conectores',
+                isAdmin && 'correo',
+                isAdmin && 'almacenamiento',
+                isAdmin && 'asistente',
+                (isAdmin || canUseApi) && 'api',
+            ),
         },
         { label: 'Clientes', items: pick(isAdmin && 'portal', (isAdmin || canManageForms) && 'widgets', isAdmin && 'privacidad') },
         {

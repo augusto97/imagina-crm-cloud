@@ -35,6 +35,7 @@ export function RouteTracker(): null {
     const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS);
     const canManageTeams = useCan(CAP.MANAGE_TEAMS);
     const canManageForms = useCan(CAP.MANAGE_FORMS);
+    const canUseApi = useCan(CAP.USE_API);
     const lists = useLists();
     const dashboards = useDashboards();
     const groups = useListGroups();
@@ -101,7 +102,7 @@ export function RouteTracker(): null {
         if (pathname.startsWith('/settings/sms/')) return `${__('SMS')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings/widgets/')) return `${__('Widget de contacto')} · ${__('Ajustes')}`;
         if (pathname.startsWith('/settings')) {
-            const groupsS = settingsSectionGroups({ isAdmin, canManageAutomations, canManageTeams, canManageForms });
+            const groupsS = settingsSectionGroups({ isAdmin, canManageAutomations, canManageTeams, canManageForms, canUseApi });
             const id = resolveSettingsSection(groupsS, params.get('s'));
             const label = groupsS.flatMap((g) => g.items).find((i) => i.id === id)?.label;
             return label ? `${label} · ${__('Ajustes')}` : __('Ajustes');

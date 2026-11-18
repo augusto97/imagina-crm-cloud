@@ -37,7 +37,7 @@ export function PersonalTokensCard(): JSX.Element {
     const invalidate = (): Promise<void> => qc.invalidateQueries({ queryKey: ['personal-tokens', tenantId] });
     const create = useMutation({
         mutationFn: () =>
-            api.createPersonalToken({ name: name.trim(), scope, expires_in_days: expires === 'never' ? null : (Number(expires) as 7 | 30 | 90 | 365) }),
+            api.createPersonalToken({ name: name.trim(), scope, use: 'mcp', expires_in_days: expires === 'never' ? null : (Number(expires) as 7 | 30 | 90 | 365) }),
         onSuccess: (res) => {
             setCreated(res);
             setCreating(false);
@@ -61,7 +61,8 @@ export function PersonalTokensCard(): JSX.Element {
     };
 
     const mcpUrl = api.mcpUrl();
-    const list = tokens.data ?? [];
+    // v0.1.441 — los tokens de la API REST tienen su propia sección (Ajustes → API).
+    const list = (tokens.data ?? []).filter((t) => t.use !== 'api');
 
     return (
         <section className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="imcrm-tokens-card">

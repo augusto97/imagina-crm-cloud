@@ -3335,4 +3335,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
         audience: { roles: ['admin'] },
     },
+    {
+        key: 'v0.1.441-api-con-tokens',
+        version: '0.1.441',
+        date: '2026-11-18',
+        kind: 'feature',
+        title: 'Conecta n8n, Make, Zapier o tus programas por la API',
+        summary:
+            'En Ajustes → API creas un token para que otro programa lea y escriba tus listas y registros. Actúa como tú: ve y cambia sólo lo que tú puedes.',
+        media: {
+            slides: [
+                {
+                    title: 'Un token por programa',
+                    text: 'Ponle un nombre, elige si sólo lee o también escribe y cuándo vence. Se muestra una sola vez y lo revocas cuando quieras.',
+                    illustration: 'integ-connect-once',
+                },
+                {
+                    title: 'Ejemplos listos para copiar',
+                    text: 'La pantalla trae los pedidos para probar el token, ver tus listas y crear o cambiar registros, y el documento OpenAPI para importarlo en Postman o n8n.',
+                    illustration: 'auto-webhook-entrante',
+                },
+            ],
+        },
+        body: [
+            '- Los valores de un registro van en **data** con la clave **f** + el id del campo (por ejemplo **f12**).',
+            '- Cada token tiene un límite de **300 pedidos por minuto**.',
+            '- Otra persona del equipo puede crear el suyo si su rol tiene **Usar la API**.',
+        ].join('\n'),
+        action: { label: 'Ir a la API', href: '/settings?s=api' },
+        audience: { roles: ['admin'] },
+    },
 ];

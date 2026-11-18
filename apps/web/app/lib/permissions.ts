@@ -31,6 +31,8 @@ export const CAP = {
     MANAGE_DOCUMENTS: 'imcrm_manage_documents',
     // E6 — crear y administrar agentes de IA.
     MANAGE_AI_AGENTS: 'imcrm_manage_ai_agents',
+    // v0.1.441 (G1) — crear tokens de la API pública.
+    USE_API: 'imcrm_use_api',
 
     // Records
     VIEW_RECORDS: 'imcrm_view_records',

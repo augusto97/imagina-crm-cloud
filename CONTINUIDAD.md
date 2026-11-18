@@ -430,7 +430,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.440**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.441**
+(**API pública con tokens** — Ajustes → API: tokens propios para la API REST
+(no sirven para el MCP ni al revés), sólo leer o leer y escribir, con
+vencimiento; abren una lista blanca de rutas de la misma API de la app
+(listas, campos, vistas, registros, comentarios, búsqueda, archivos, personas
+y equipos), actúan como la persona y en su empresa, con 300 pedidos por
+minuto por token y el documento OpenAPI en `/api/v1/openapi.json`; capacidad
+nueva `use_api`; ADR-S105 y `docs/api.md`. **Siguen** v0.1.442 webhooks de
+eventos y v0.1.443 la app de n8n). Antes **v0.1.440**
 (**cada copia de seguridad se prueba restaurándola** — en Plataforma → Copias
 de seguridad el escudo de cada copia la restaura en una base TEMPORAL del mismo
 Postgres (`scripts/snapshot-verify.sh`, la base de la app no se toca), revisa
@@ -2156,6 +2164,24 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-18 · v0.1.441** — **API pública con tokens** (primer módulo
+  nuevo del plan; G1, ADR-S105). `personal_access_tokens.use` (`mcp` | `api`,
+  migración 0128; los de antes son `mcp`), capacidad `use_api` (admin; rol
+  propio puede sumarla). `SessionGuard` acepta `Bearer ib_pat_…` de la API
+  sólo en `API_TOKEN_ROUTES` (comparado con el patrón del router), `read` =
+  GET/HEAD, freno 300/min por token y 1.200/min por empresa en Redis con
+  `X-RateLimit-*` y 429; `TenantGuard` toma la empresa del token (un
+  `X-Tenant-Id` distinto → 403). `GET /whoami` y `GET /openapi.json` (OpenAPI
+  3.1 desde los schemas de shared; un test exige que cubra la lista blanca).
+  Front: **Ajustes → API** (`ApiTokensCard`: dirección, documento, crear con
+  alcance y vencimiento, secreto una vez, ejemplos con el token, revocar); la
+  tarjeta MCP de Seguridad ya no muestra los tokens de la API. Ayuda: guía
+  `public-api`, artículo «La API» en Aprende → Integraciones (y corregida la
+  pregunta vieja que decía que el webhook entrante no actualiza registros),
+  novedad. Verificado: `api-tokens.spec` 6/6, front y shared en verde, E2E por
+  curl y en navegador (crear → usar → límite en la cabecera → ruta fuera de la
+  lista 403 → revocar 401, escritorio y celular oscuro). **Siguen** v0.1.442
+  webhooks de eventos y v0.1.443 n8n.
 - **2026-11-18 · v0.1.440** — **Cada copia de seguridad se prueba
   restaurándola** (sexta y última versión del plan «estabilizar y mejorar»;
   siguen los módulos nuevos). `scripts/snapshot-verify.sh` (viaja en el

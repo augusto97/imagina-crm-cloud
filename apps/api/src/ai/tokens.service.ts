@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { effectiveCapabilities, readDisabledModules, type Capability, type CreatePersonalTokenInput, type CreatedPersonalToken, type PersonalToken, type PersonalTokenScope, type Role } from '@imagina-base/shared';
+import { effectiveCapabilities, readDisabledModules, type Capability, type CreatePersonalTokenInput, type CreatedPersonalToken, type PersonalToken, type PersonalTokenScope, type PersonalTokenUse, type Role } from '@imagina-base/shared';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { createHash, randomBytes } from 'node:crypto';
 import { accessOf } from '../billing/tenant-access';
@@ -145,11 +145,13 @@ export class PersonalTokensService {
     async create(
         userId: number,
         tenantId: number,
-        input: CreatePersonalTokenInput,
+        input: Omit<CreatePersonalTokenInput, 'use'> & { use?: PersonalTokenUse },
         role: Role,
         capabilities?: readonly Capability[],
     ): Promise<CreatedPersonalToken> {
-        assertNotClient(role, capabilities);
+        const use: PersonalTokenUse = input.use ?? 'mcp';
+        if (use === 'api') assertCanUseApi(role, capabilities);
+        else assertNotClient(role, capabilities);
         const secret = `${TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`;
         const expiresAt = input.expires_in_days === null ? null : new Date(Date.now() + input.expires_in_days * 86_400_000);
         const [row] = await this.db
@@ -161,6 +163,7 @@ export class PersonalTokensService {
                 prefix: secret.slice(0, TOKEN_PREFIX.length + 6),
                 tokenHash: hashToken(secret),
                 scope: input.scope,
+                use,
                 expiresAt,
             })
             .returning();
@@ -184,8 +187,25 @@ export class PersonalTokensService {
         return toDto(row);
     }
 
-    /** Secreto → quién es y qué puede. `null` = credencial inválida (sin distinguir por qué). */
+    /**
+     * Secreto → quién es y qué puede, para el servidor MCP. `null` =
+     * credencial inválida (sin distinguir por qué). Un token de la API REST
+     * (v0.1.441) no sirve aquí: cada token, para lo suyo.
+     */
     async resolve(secret: string): Promise<ResolvedToken | null> {
+        return this.resolveFor(secret, 'mcp');
+    }
+
+    /**
+     * v0.1.441 (G1) — Secreto → quién es, para la API REST. Mismas reglas que
+     * el MCP (rol en vivo, plan con «API», empresa no pausada, solo-lectura →
+     * `read`), salvo la capacidad: aquí manda «Usar la API» (`use_api`).
+     */
+    async resolveForApi(secret: string): Promise<ResolvedToken | null> {
+        return this.resolveFor(secret, 'api');
+    }
+
+    private async resolveFor(secret: string, use: PersonalTokenUse): Promise<ResolvedToken | null> {
         if (!secret.startsWith(TOKEN_PREFIX) || secret.length < TOKEN_PREFIX.length + 20 || secret.length > 200) return null;
         const [row] = await this.db
             .select({
@@ -193,6 +213,7 @@ export class PersonalTokensService {
                 userId: personalAccessTokens.userId,
                 tenantId: personalAccessTokens.tenantId,
                 scope: personalAccessTokens.scope,
+                use: personalAccessTokens.use,
                 expiresAt: personalAccessTokens.expiresAt,
                 revokedAt: personalAccessTokens.revokedAt,
                 role: memberships.role,
@@ -223,6 +244,8 @@ export class PersonalTokensService {
             .where(eq(personalAccessTokens.tokenHash, hashToken(secret)))
             .limit(1);
         if (!row || row.revokedAt || row.disabledAt || !row.role) return null;
+        // v0.1.441 — cada token sirve para lo suyo (los de antes son `mcp`).
+        if ((row.use ?? 'mcp') !== use) return null;
         // v0.1.185 — el rol `client` (portal) es "solo portal": aunque una
         // fila existiera, jamás entra al MCP (defensa en profundidad del
         // bloqueo de crear/autorizar).
@@ -235,7 +258,7 @@ export class PersonalTokensService {
         // Sin «Roles propios» en el plan, la persona usa su rol base.
         const custom = Array.isArray(row.customCaps) && !disabled.includes('custom_roles') ? row.customCaps : null;
         const capabilities = effectiveCapabilities(row.role as Role, custom);
-        if (!capabilities.includes('use_ai_assistant')) return null;
+        if (!capabilities.includes(use === 'api' ? 'use_api' : 'use_ai_assistant')) return null;
         if (row.expiresAt && row.expiresAt.getTime() < Date.now()) return null;
         void this.touch(row.id);
         // SEC-25 (v0.1.226) — ADR-S09: una empresa impaga/archivada queda en
@@ -304,6 +327,21 @@ export function assertNotClient(role: Role, capabilities?: readonly Capability[]
     }
 }
 
+/**
+ * v0.1.441 (G1) — Un token de la API REST: sólo el equipo (nunca el cliente
+ * del portal ni un invitado) y con «Usar la API» (admin de base o un rol
+ * propio que la tenga).
+ */
+export function assertCanUseApi(role: Role, capabilities?: readonly Capability[]): void {
+    if (role === 'client' || role === 'guest') {
+        throw new ForbiddenException({ code: 'api_role_not_allowed', message: 'La API es para miembros del equipo', data: { status: 403 } });
+    }
+    // Sin la lista (llamadas internas), las del rol base: nunca «permitido» por omisión.
+    if (!(capabilities ?? effectiveCapabilities(role)).includes('use_api')) {
+        throw new ForbiddenException({ code: 'api_not_allowed', message: 'Tu rol no puede usar la API: pídele a un administrador que te dé el permiso «Usar la API».', data: { status: 403 } });
+    }
+}
+
 export function hashToken(secret: string): string {
     return createHash('sha256').update(secret).digest('hex');
 }
@@ -315,6 +353,7 @@ function toDto(r: typeof personalAccessTokens.$inferSelect, clientName: string |
         name: r.name,
         prefix: `${r.prefix}…`,
         scope: r.scope as PersonalTokenScope,
+        use: (r.use === 'api' ? 'api' : 'mcp') as PersonalTokenUse,
         tenant_id: r.tenantId,
         created_at: r.createdAt.toISOString(),
         last_used_at: r.lastUsedAt ? r.lastUsedAt.toISOString() : null,

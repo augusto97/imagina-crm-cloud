@@ -438,12 +438,24 @@ export const PERSONAL_TOKEN_SCOPES = ['read', 'full'] as const;
 export const personalTokenScopeSchema = z.enum(PERSONAL_TOKEN_SCOPES);
 export type PersonalTokenScope = z.infer<typeof personalTokenScopeSchema>;
 
+/**
+ * v0.1.441 (G1) — Para qué sirve un token: `mcp` conecta Claude u otro
+ * asistente (servidor MCP); `api` conecta un programa por la API REST (n8n,
+ * Make, un script). Un token sirve SÓLO para lo suyo: los de antes son `mcp`
+ * y no ganan acceso a la API por actualizar.
+ */
+export const PERSONAL_TOKEN_USES = ['mcp', 'api'] as const;
+export const personalTokenUseSchema = z.enum(PERSONAL_TOKEN_USES);
+export type PersonalTokenUse = z.infer<typeof personalTokenUseSchema>;
+
 export const personalTokenSchema = z.object({
     id: z.number().int().positive(),
     name: z.string(),
     /** Primeros caracteres del secreto, para reconocerlo (`ib_pat_ab12…`). */
     prefix: z.string(),
     scope: personalTokenScopeSchema,
+    /** v0.1.441 — `mcp` (asistentes) o `api` (programas por la API REST). */
+    use: personalTokenUseSchema.default('mcp'),
     tenant_id: z.number().int().positive(),
     created_at: z.string(),
     last_used_at: z.string().nullable(),
@@ -492,6 +504,8 @@ export type OauthDecision = z.infer<typeof oauthDecisionSchema>;
 export const createPersonalTokenSchema = z.object({
     name: z.string().trim().min(1).max(80),
     scope: personalTokenScopeSchema.default('read'),
+    /** v0.1.441 — para qué es: asistentes (MCP) o programas (API REST). */
+    use: personalTokenUseSchema.default('mcp'),
     /** Vencimiento en días; `null` = no vence. */
     expires_in_days: z.union([z.literal(7), z.literal(30), z.literal(90), z.literal(365)]).nullable().default(90),
 });

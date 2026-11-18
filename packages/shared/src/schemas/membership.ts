@@ -46,6 +46,10 @@ export const CAPABILITIES = [
     // E6 — crear, editar y pausar agentes de IA (sólo admin de base; un rol
     // propio puede recibirla, un invitado nunca).
     'manage_ai_agents',
+    // v0.1.441 (G1) — crear tokens para la API REST (programas, n8n, Make,
+    // scripts). Sólo admin de base; un rol propio puede recibirla, un invitado
+    // o un cliente del portal nunca.
+    'use_api',
 ] as const;
 export const capabilitySchema = z.enum(CAPABILITIES);
 export type Capability = z.infer<typeof capabilitySchema>;
@@ -200,6 +204,16 @@ export const CAPABILITY_GROUPS: ReadonlyArray<{
                 capability: 'manage_ai_agents',
                 label: 'Gestionar agentes de IA',
                 help: 'Crea, cambia y pausa agentes de IA. Cada agente trabaja con el acceso de quien lo crea.',
+            },
+        ],
+    },
+    {
+        module: 'API',
+        items: [
+            {
+                capability: 'use_api',
+                label: 'Usar la API',
+                help: 'Crea tokens para conectar programas (n8n, Make, sus propios scripts) con los registros que ve.',
             },
         ],
     },

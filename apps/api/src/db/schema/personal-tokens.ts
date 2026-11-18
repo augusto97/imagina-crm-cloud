@@ -28,6 +28,8 @@ export const personalAccessTokens = pgTable(
         prefix: varchar('prefix', { length: 16 }).notNull(),
         tokenHash: varchar('token_hash', { length: 64 }).notNull(),
         scope: varchar('scope', { length: 8 }).notNull().default('read'),
+        // v0.1.441 (G1) — para qué sirve: `mcp` (asistentes) o `api` (API REST).
+        use: varchar('use', { length: 8 }).notNull().default('mcp'),
         lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
         expiresAt: timestamp('expires_at', { withTimezone: true }),
         revokedAt: timestamp('revoked_at', { withTimezone: true }),

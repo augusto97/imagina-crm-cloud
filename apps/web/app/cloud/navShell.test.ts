@@ -37,6 +37,15 @@ describe('Ajustes por rol', () => {
         expect(ids).not.toContain('plan');
         expect(resolveSettingsSection(manager, null)).toBe('seguridad');
     });
+
+    it('«API» la ve un admin o un rol propio con «Usar la API», nadie más', () => {
+        const ids = (o: Parameters<typeof settingsSectionGroups>[0]): string[] =>
+            settingsSectionGroups(o).flatMap((g) => g.items).map((i) => i.id);
+        expect(ids({ isAdmin: true })).toContain('api');
+        expect(ids({ isAdmin: false })).not.toContain('api');
+        expect(ids({ isAdmin: false, canUseApi: true })).toContain('api');
+        expect(resolveSettingsSection(settingsSectionGroups({ isAdmin: false }), 'api')).toBe('seguridad');
+    });
 });
 
 describe('reintento de queries', () => {
