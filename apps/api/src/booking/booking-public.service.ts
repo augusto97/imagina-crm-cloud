@@ -73,8 +73,9 @@ import {
     type PublicTheme,
     type RescheduleAppointmentInput,
     type TenantFormat,
+    type AgencyAccessInput,
 } from '@imagina-base/shared';
-import { accessOf } from '../billing/tenant-access';
+import { accessOf, agencyAccessSql } from '../billing/tenant-access';
 import { and, asc, desc, eq, isNull, lte, ne, notInArray, sql } from 'drizzle-orm';
 import { memberNames } from '../tenancy/member-names';
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
@@ -410,7 +411,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
     async resolve(token: string, opts: { allowDisabled?: boolean } = {}): Promise<ResolvedPage> {
         if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) throw notFound();
         const [hit] = await this.db
-            .select({ page: bookingPages, tenant: tenants })
+            .select({ page: bookingPages, tenant: tenants, agency: agencyAccessSql })
             .from(bookingPages)
             .innerJoin(tenants, eq(tenants.id, bookingPages.tenantId))
             .innerJoin(lists, and(eq(lists.id, bookingPages.listId), isNull(lists.deletedAt)))
@@ -419,12 +420,12 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
         if (!hit || (!hit.page.enabled && !opts.allowDisabled) || hit.tenant.archivedAt !== null) throw notFound();
         // v0.1.338 (ADR-S87) — plan sin «Agenda de citas»: el mismo 404 opaco.
         if (await planModuleOff(this.db, hit.tenant.id, 'booking')) throw notFound();
-        return this.toResolved(hit.page, hit.tenant);
+        return this.toResolved(hit.page, hit.tenant, hit.agency);
     }
 
     private async resolveById(pageId: number): Promise<ResolvedPage | null> {
         const [hit] = await this.db
-            .select({ page: bookingPages, tenant: tenants })
+            .select({ page: bookingPages, tenant: tenants, agency: agencyAccessSql })
             .from(bookingPages)
             .innerJoin(tenants, eq(tenants.id, bookingPages.tenantId))
             .innerJoin(lists, and(eq(lists.id, bookingPages.listId), isNull(lists.deletedAt)))
@@ -432,10 +433,10 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             .limit(1);
         if (!hit || hit.tenant.archivedAt !== null) return null;
         if (await planModuleOff(this.db, hit.tenant.id, 'booking')) return null;
-        return this.toResolved(hit.page, hit.tenant);
+        return this.toResolved(hit.page, hit.tenant, hit.agency);
     }
 
-    private async toResolved(page: BookingPageRow, tenant: typeof tenants.$inferSelect): Promise<ResolvedPage> {
+    private async toResolved(page: BookingPageRow, tenant: typeof tenants.$inferSelect, agency: AgencyAccessInput | null = null): Promise<ResolvedPage> {
         const settings = (tenant.settings as Record<string, unknown> | null) ?? {};
         const format = tenantFormatSchema.safeParse(settings.format ?? {});
         const fmt = format.success ? format.data : tenantFormatSchema.parse({});
@@ -450,7 +451,7 @@ export class BookingPublicService implements OnModuleInit, BookingSimulator {
             fields: await this.fields.listByListId(page.tenantId, page.listId),
             createdBy: page.createdBy,
             // v0.1.338 — pausada también cuenta (no tiene acceso completo).
-            readOnly: accessOf(tenant).state !== 'full',
+            readOnly: accessOf({ ...tenant, agency }).state !== 'full',
             tenantSettings: settings,
             tenantName: tenant.name,
             format: fmt,

@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { accessOf, currentBillingPolicy } from '../billing/tenant-access';
+import { accessOf, currentBillingPolicy, agencyAccessSql } from '../billing/tenant-access';
 import {
     addMonthsClamped,
     extendPaidUntil,
@@ -444,6 +444,8 @@ export class PaymentsService {
                 .select({
                     plan: tenants.plan,
                     paidUntil: tenants.paidUntil,
+                    agencyPausedAt: tenants.agencyPausedAt,
+                    agency: agencyAccessSql,
                     endsAt: tenants.subscriptionEndsAt,
                     trialEndsAt: tenants.trialEndsAt,
                     status: tenants.status,
@@ -482,6 +484,8 @@ export class PaymentsService {
                           trialEndsAt: t.trialEndsAt,
                           subscriptionEndsAt: t.endsAt,
                           paidUntil: t.paidUntil,
+                          agencyPausedAt: t.agencyPausedAt,
+                          agency: t.agency,
                       })
                     : undefined,
             };

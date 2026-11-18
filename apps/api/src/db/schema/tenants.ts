@@ -1,4 +1,4 @@
-import { bigint, jsonb, pgTable, text, timestamp, varchar } from 'drizzle-orm/pg-core';
+import { type AnyPgColumn, bigint, boolean, jsonb, pgTable, text, timestamp, varchar } from 'drizzle-orm/pg-core';
 
 export const tenants = pgTable('tenants', {
     id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
@@ -20,6 +20,12 @@ export const tenants = pgTable('tenants', {
     trialEndsAt: timestamp('trial_ends_at', { withTimezone: true }),
     // Archivada por el operador: deja de operar (solo-lectura) y se oculta de la grilla.
     archivedAt: timestamp('archived_at', { withTimezone: true }),
+    // v0.1.449 (I3, ADR-S108) — modo agencia: la empresa es una agencia, o es
+    // cliente de una (una sola; una agencia no es cliente de otra).
+    isAgency: boolean('is_agency').notNull().default(false),
+    agencyId: bigint('agency_id', { mode: 'number' }).references((): AnyPgColumn => tenants.id, { onDelete: 'restrict' }),
+    // La agencia pausó a este cliente: queda en sólo lectura.
+    agencyPausedAt: timestamp('agency_paused_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

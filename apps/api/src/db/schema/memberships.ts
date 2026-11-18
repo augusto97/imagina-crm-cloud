@@ -1,4 +1,4 @@
-import { jsonb, bigint, index, pgEnum, pgTable, primaryKey, timestamp } from 'drizzle-orm/pg-core';
+import { jsonb, bigint, boolean, index, pgEnum, pgTable, primaryKey, timestamp } from 'drizzle-orm/pg-core';
 import { ROLES } from '@imagina-base/shared';
 import { customRoles } from './custom-roles';
 import { tenants } from './tenants';
@@ -27,6 +27,12 @@ export const memberships = pgTable(
          * entonces su nombre no se muestra y su firma de correo no se usa.
          */
         joinedAt: timestamp('joined_at', { withTimezone: true }).defaultNow(),
+        /**
+         * v0.1.449 (ADR-S108) — la persona entra a esta empresa CLIENTE como
+         * parte de su agencia (admin con rastro). El guard revalida en cada
+         * pedido que siga siendo admin de la agencia de esta empresa.
+         */
+        viaAgency: boolean('via_agency').notNull().default(false),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     },

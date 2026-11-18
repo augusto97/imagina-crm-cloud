@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import type {
     AddMemberInput,
     AddMemberResult,
@@ -8,8 +8,9 @@ import type {
 import { and, eq } from 'drizzle-orm';
 import { AuthService } from '../auth/auth.service';
 import { BillingService } from '../billing/billing.service';
-import type { Tx } from '../db/client';
-import { recordShares } from '../db/schema';
+import { revokeAgencyStaffAccess } from '../agency/agency-access';
+import { DRIZZLE, type Db, type Tx } from '../db/client';
+import { recordShares, tenants } from '../db/schema';
 import { RealtimeService } from '../realtime/realtime.service';
 import { CustomRolesService } from '../roles/custom-roles.service';
 import { TeamsService } from '../teams/teams.service';
@@ -32,7 +33,25 @@ export class MembersService {
         @Optional() private readonly teams?: TeamsService,
         @Optional() private readonly roles?: CustomRolesService,
         @Optional() private readonly realtime?: RealtimeService,
+        // v0.1.449 (ADR-S108) — limpiar el acceso «por la agencia» (conexión base).
+        @Optional() @Inject(DRIZZLE) private readonly db?: Db,
     ) {}
+
+    /**
+     * v0.1.449 — Si `tenantId` es una agencia y la persona dejó de ser su
+     * admin (la quitaron o le bajaron el rol), sale de los clientes en los que
+     * entraba «por la agencia». Nunca frena el cambio.
+     */
+    private async afterAgencyStaffChange(tenantId: number, userId: number, stillAdmin: boolean): Promise<void> {
+        if (stillAdmin || !this.db) return;
+        try {
+            const [t] = await this.db.select({ isAgency: tenants.isAgency }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+            if (!t?.isAgency) return;
+            await revokeAgencyStaffAccess(this.db, tenantId, userId);
+        } catch {
+            /* El guard ya corta el acceso aunque la fila quede: esto sólo limpia. */
+        }
+    }
 
     async list(tenantId: number): Promise<WorkspaceMember[]> {
         const rows = await this.tenantDb.withTenant(tenantId, (tx) =>
@@ -99,6 +118,7 @@ export class MembersService {
             const member = await this.repo.findMembership(tx, tenantId, targetUserId);
             if (!member) throw notMember(targetUserId);
             if (member.role === 'client') throw portalClient();
+            if (member.viaAgency) throw agencyMember();
             // No dejar el workspace sin ningún admin.
             if (member.role === 'admin' && role !== 'admin') {
                 await this.assertNotLastAdmin(tx, tenantId);
@@ -124,6 +144,7 @@ export class MembersService {
         // sesión, que trae las capacidades de su rol).
         this.realtime?.lists(tenantId);
         this.realtime?.invalidate(tenantId, 'roles');
+        await this.afterAgencyStaffChange(tenantId, targetUserId, role === 'admin');
         const { promoted: _promoted, ...member } = out;
         return member;
     }
@@ -148,10 +169,17 @@ export class MembersService {
     }
 
     async remove(tenantId: number, actingUserId: number, targetUserId: number): Promise<WorkspaceMember> {
+        const removed = await this.removeInTx(tenantId, actingUserId, targetUserId);
+        await this.afterAgencyStaffChange(tenantId, targetUserId, false);
+        return removed;
+    }
+
+    private removeInTx(tenantId: number, actingUserId: number, targetUserId: number): Promise<WorkspaceMember> {
         return this.tenantDb.withTenant(tenantId, async (tx) => {
             const member = await this.repo.findMembership(tx, tenantId, targetUserId);
             if (!member) throw notMember(targetUserId);
             if (member.role === 'client') throw portalClient();
+            if (member.viaAgency) throw agencyMember();
             if (targetUserId === actingUserId) {
                 throw new ForbiddenException({
                     code: 'cannot_remove_self',
@@ -192,7 +220,17 @@ function toMember(row: MemberRow): WorkspaceMember {
         custom_role_id: row.customRoleId,
         custom_role_name: row.customRoleName,
         pending: row.invitedAt !== null,
+        ...(row.viaAgency ? { via_agency: true } : {}),
     };
+}
+
+/** v0.1.449 (ADR-S108) — la gente de la agencia no se cambia desde la empresa cliente. */
+function agencyMember() {
+    return new ForbiddenException({
+        code: 'agency_member',
+        message: 'Esta persona entra como parte de la agencia que administra la empresa: la agencia decide su acceso.',
+        data: { status: 403 },
+    });
 }
 
 function notMember(userId: number) {

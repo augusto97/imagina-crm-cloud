@@ -197,6 +197,8 @@ export class BillingRemindersService {
                 and(
                     ne(tenants.plan, TRIAL_PLAN),
                     isNull(tenants.archivedAt),
+                    // v0.1.449 (ADR-S108) — el plan de un cliente de agencia lo maneja su agencia.
+                    isNull(tenants.agencyId),
                     inArray(tenants.status, ['trialing', 'active']),
                     or(
                         and(isNotNull(tenants.paidUntil), lte(tenants.paidUntil, graceCut)),
@@ -248,7 +250,7 @@ export class BillingRemindersService {
         const rows = await this.db
             .select({ id: tenants.id, name: tenants.name, paidUntil: tenants.paidUntil })
             .from(tenants)
-            .where(and(isNotNull(tenants.paidUntil), isNull(tenants.archivedAt)));
+            .where(and(isNotNull(tenants.paidUntil), isNull(tenants.archivedAt), isNull(tenants.agencyId)));
         if (rows.length === 0) return 0;
         const renewing = new Set(
             (
@@ -278,6 +280,7 @@ export class BillingRemindersService {
                     eq(tenants.plan, TRIAL_PLAN),
                     isNotNull(tenants.trialEndsAt),
                     isNull(tenants.archivedAt),
+                    isNull(tenants.agencyId),
                     inArray(tenants.status, ['trialing', 'active']),
                     // Ventana útil: lo que termina en los próximos días o terminó hace poco.
                     lte(tenants.trialEndsAt, new Date(now.getTime() + (SOON_DAYS + 1) * DAY)),

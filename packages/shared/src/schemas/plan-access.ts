@@ -88,8 +88,12 @@ export type AccessState = (typeof ACCESS_STATES)[number];
  * - `trial_ended`: terminó su prueba.
  * - `plan_expired`: venció su plan (período pagado + gracia, o la fecha manual
  *   del operador).
+ * - `agency` (v0.1.449, ADR-S108): es cliente de una agencia y la AGENCIA no
+ *   tiene acceso completo (su prueba o su plan vencieron, o está suspendida).
+ *   El cliente queda en sólo lectura: nunca pausado (sus datos son suyos).
+ * - `agency_paused`: la agencia lo pausó (p. ej. dejó de pagarle a la agencia).
  */
-export const ACCESS_REASONS = ['archived', 'suspended', 'trial_ended', 'plan_expired'] as const;
+export const ACCESS_REASONS = ['archived', 'suspended', 'trial_ended', 'plan_expired', 'agency', 'agency_paused'] as const;
 export type AccessReason = (typeof ACCESS_REASONS)[number];
 
 export const tenantAccessSchema = z.object({
@@ -112,7 +116,24 @@ export interface TenantAccessInput {
     trial_ends_at?: string | Date | null;
     subscription_ends_at?: string | Date | null;
     paid_until?: string | Date | null;
+    /** v0.1.449 (ADR-S108) — la agencia pausó a este cliente. */
+    agency_paused_at?: string | Date | null;
+    /**
+     * v0.1.449 — las columnas de acceso de la AGENCIA cuando la empresa es su
+     * cliente (`null`/ausente = no es cliente de una agencia).
+     */
+    agency?: AgencyAccessInput | null;
     now?: Date;
+}
+
+/** Lo que decide el acceso de la agencia de un cliente. */
+export interface AgencyAccessInput {
+    plan: string;
+    status: BillingStatus | string;
+    archived_at?: string | Date | null;
+    trial_ends_at?: string | Date | null;
+    subscription_ends_at?: string | Date | null;
+    paid_until?: string | Date | null;
 }
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -155,6 +176,14 @@ export function tenantAccess(input: TenantAccessInput, policy: Pick<BillingPolic
     }
     const ends_at = endsAt === null ? null : new Date(endsAt).toISOString();
     if (input.archived_at) return { state: 'read_only', reason: 'archived', ends_at, trial };
+    // v0.1.449 (ADR-S108) — un cliente de agencia sigue a su agencia: si la
+    // agencia no tiene acceso completo, el cliente queda en sólo lectura
+    // (nunca pausado: ve y descarga lo suyo, ADR-S09).
+    if (input.agency_paused_at) return { state: 'read_only', reason: 'agency_paused', ends_at, trial };
+    if (input.agency) {
+        const agency = tenantAccess({ ...input.agency, now: input.now }, policy);
+        if (agency.state !== 'full') return { state: 'read_only', reason: 'agency', ends_at, trial };
+    }
     if (input.status !== 'trialing' && input.status !== 'active') {
         return { state: 'read_only', reason: 'suspended', ends_at, trial };
     }

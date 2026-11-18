@@ -14,6 +14,8 @@ export interface MemberRow {
     /** C2 — rol propio (sus capacidades); `role` es su base. */
     customRoleId: number | null;
     customRoleName: string | null;
+    /** v0.1.449 (ADR-S108) — entra como parte de la agencia del cliente. */
+    viaAgency: boolean;
 }
 
 /**
@@ -34,6 +36,7 @@ export class MembersRepository {
                 invitedAt: users.invitedAt,
                 customRoleId: memberships.customRoleId,
                 customRoleName: customRoles.name,
+                viaAgency: memberships.viaAgency,
             })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
@@ -60,6 +63,7 @@ export class MembersRepository {
                 invitedAt: users.invitedAt,
                 customRoleId: memberships.customRoleId,
                 customRoleName: customRoles.name,
+                viaAgency: memberships.viaAgency,
             })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
@@ -88,12 +92,16 @@ export class MembersRepository {
             .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, userId)));
     }
 
-    /** Cuenta miembros con un rol dado — para no quedarnos sin admins. */
+    /**
+     * Cuenta miembros con un rol dado — para no quedarnos sin admins. v0.1.449:
+     * la gente de la agencia no cuenta (la empresa no puede quedar SÓLO con
+     * administradores prestados por su agencia si tenía uno propio).
+     */
     async countByRole(tx: Tx, tenantId: number, role: MemberRow['role']): Promise<number> {
         const [row] = await tx
             .select({ n: count() })
             .from(memberships)
-            .where(and(eq(memberships.tenantId, tenantId), eq(memberships.role, role)));
+            .where(and(eq(memberships.tenantId, tenantId), eq(memberships.role, role), eq(memberships.viaAgency, false)));
         return row?.n ?? 0;
     }
 }

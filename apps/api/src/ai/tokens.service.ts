@@ -2,7 +2,7 @@ import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nest
 import { effectiveCapabilities, readDisabledModules, type Capability, type CreatePersonalTokenInput, type CreatedPersonalToken, type PersonalToken, type PersonalTokenScope, type PersonalTokenUse, type Role } from '@imagina-base/shared';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { createHash, randomBytes } from 'node:crypto';
-import { accessOf } from '../billing/tenant-access';
+import { accessOf, agencyAccessSql } from '../billing/tenant-access';
 import { DRIZZLE, type Db } from '../db/client';
 import { customRoles, memberships, oauthClients, personalAccessTokens, plans, tenants, users } from '../db/schema';
 
@@ -224,6 +224,8 @@ export class PersonalTokensService {
                 archivedAt: tenants.archivedAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
                 paidUntil: tenants.paidUntil,
+                agencyPausedAt: tenants.agencyPausedAt,
+                agency: agencyAccessSql,
                 // v0.1.338 (ADR-S87) — módulos que el plan no incluye.
                 disabledModules: plans.disabledModules,
                 // C2 — rol propio (capacidades) de la persona, leído en vivo.
@@ -275,6 +277,8 @@ export class PersonalTokensService {
             trialEndsAt: row.trialEndsAt,
             subscriptionEndsAt: row.subscriptionEndsAt,
             paidUntil: row.paidUntil,
+            agencyPausedAt: row.agencyPausedAt,
+            agency: row.agency,
         });
         if (access.state === 'locked') return null;
         const readOnly = access.state !== 'full';

@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { AuditService, type AuditAction } from '../audit/audit.service';
 import { MembersService } from '../members/members.service';
 import { AiQuotaService } from '../ai/ai-quota.service';
@@ -29,12 +29,15 @@ import {
     type WorkspaceMember,
     type UpdatePlatformUserInput,
     type UpdateTenantInput,
+    readAgencySettings,
+    type AgencyAccessInput,
 } from '@imagina-base/shared';
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { AuthService } from '../auth/auth.service';
 import { readLapsedFrom } from '../billing/billing.service';
 import { accessOf } from '../billing/tenant-access';
+import { revokeClientAgencyAccess } from '../agency/agency-access';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx, withoutTimeouts } from '../db/client';
 import {
@@ -143,6 +146,12 @@ import { EmailQuotaService, periodOf } from '../mail/email-quota.service';
 import { TenantSmtpService } from '../mail/tenant-smtp.service';
 import { FILE_STORAGE, type FileStorage } from '../files/file-storage';
 
+/** v0.1.449 — agencias de una página de empresas y clientes por agencia. */
+interface AgencyContext {
+    agencies: Map<number, AgencyAccessInput & { id: number; name: string }>;
+    clients: Map<number, number>;
+}
+
 /**
  * Consola de plataforma (operador SaaS). Corre sobre la conexión BASE (rol
  * dueño/superusuario, que hace bypass de RLS — igual que el DDL de índices y
@@ -214,7 +223,7 @@ export class PlatformService {
 
         const [recMap, userMap, autoMap, storageMap, emailMap, aiMap, ownerMap, guestMap] = await Promise.all([
             this.countByTenant(this.db.select({ tid: records.tenantId, n: intCount() }).from(records).where(and(isNull(records.deletedAt), inArray(records.tenantId, ids))).groupBy(records.tenantId)),
-            this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).where(and(inArray(memberships.tenantId, ids), ne(memberships.role, 'client'), ne(memberships.role, 'guest'))).groupBy(memberships.tenantId)),
+            this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).where(and(inArray(memberships.tenantId, ids), ne(memberships.role, 'client'), ne(memberships.role, 'guest'), eq(memberships.viaAgency, false))).groupBy(memberships.tenantId)),
             this.countByTenant(this.db.select({ tid: automations.tenantId, n: intCount() }).from(automations).where(and(inArray(automations.tenantId, ids), isNull(automations.deletedAt))).groupBy(automations.tenantId)),
             this.countByTenant(this.db.select({ tid: attachments.tenantId, n: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint` }).from(attachments).where(and(inArray(attachments.tenantId, ids), isNull(attachments.storageConnectionId), isNull(attachments.pendingFormId))).groupBy(attachments.tenantId)),
             // Correos de plataforma del mes en curso (ADR-S18): lookup por PK,
@@ -238,21 +247,64 @@ export class PlatformService {
             // C3 — invitados (no ocupan usuario: su propio tope).
             this.countByTenant(this.db.select({ tid: memberships.tenantId, n: intCount() }).from(memberships).where(and(inArray(memberships.tenantId, ids), eq(memberships.role, 'guest'))).groupBy(memberships.tenantId)),
         ]);
+        const agencyCtx = await this.agencyContext(rows);
 
         return {
             data: rows.map((t) =>
-                this.toPlatformTenant(t, ownerMap.get(t.id) ?? null, {
-                    records: recMap.get(t.id) ?? 0,
-                    users: userMap.get(t.id) ?? 0,
-                    automations: autoMap.get(t.id) ?? 0,
-                    storage_bytes: Number(storageMap.get(t.id) ?? 0),
-                    emails_month: Number(emailMap.get(t.id) ?? 0),
-                    ai_requests_month: Number(aiMap.get(t.id) ?? 0),
-                    guests: Number(guestMap.get(t.id) ?? 0),
-                }),
+                this.toPlatformTenant(
+                    t,
+                    ownerMap.get(t.id) ?? null,
+                    {
+                        records: recMap.get(t.id) ?? 0,
+                        users: userMap.get(t.id) ?? 0,
+                        automations: autoMap.get(t.id) ?? 0,
+                        storage_bytes: Number(storageMap.get(t.id) ?? 0),
+                        emails_month: Number(emailMap.get(t.id) ?? 0),
+                        ai_requests_month: Number(aiMap.get(t.id) ?? 0),
+                        guests: Number(guestMap.get(t.id) ?? 0),
+                    },
+                    agencyCtx,
+                ),
             ),
             meta: { total: Number(totalRow[0]?.n ?? 0), limit, offset },
         };
+    }
+
+    /**
+     * v0.1.449 (ADR-S108) — Para una página de empresas: sus agencias (nombre y
+     * columnas de acceso, para que un cliente siga a la suya) y cuántos clientes
+     * tiene cada agencia de la página. Dos consultas por PK/índice.
+     */
+    private async agencyContext(rows: Array<typeof tenants.$inferSelect>): Promise<AgencyContext> {
+        const agencyIds = [...new Set(rows.map((r) => r.agencyId).filter((v): v is number => typeof v === 'number'))];
+        const agencyRowIds = rows.filter((r) => r.isAgency).map((r) => r.id);
+        const [agencies, counts] = await Promise.all([
+            agencyIds.length === 0
+                ? Promise.resolve([])
+                : this.db
+                      .select({
+                          id: tenants.id,
+                          name: tenants.name,
+                          plan: tenants.plan,
+                          status: tenants.status,
+                          archived_at: tenants.archivedAt,
+                          trial_ends_at: tenants.trialEndsAt,
+                          subscription_ends_at: tenants.subscriptionEndsAt,
+                          paid_until: tenants.paidUntil,
+                      })
+                      .from(tenants)
+                      .where(inArray(tenants.id, agencyIds)),
+            agencyRowIds.length === 0
+                ? Promise.resolve(new Map<number, number>())
+                : this.countByTenant(
+                      this.db
+                          .select({ tid: sql<number>`${tenants.agencyId}`, n: intCount() })
+                          .from(tenants)
+                          .where(and(inArray(tenants.agencyId, agencyRowIds), isNull(tenants.archivedAt)))
+                          .groupBy(tenants.agencyId),
+                  ),
+        ]);
+        return { agencies: new Map(agencies.map((a) => [a.id, a])), clients: counts };
     }
 
     /** Fila de tenant → DTO del operador (con solo-lectura efectivo). */
@@ -260,10 +312,12 @@ export class PlatformService {
         t: typeof tenants.$inferSelect,
         owner: PlatformOwner | null,
         usage: PlatformTenant['usage'],
+        agencyCtx: AgencyContext = { agencies: new Map(), clients: new Map() },
     ): PlatformTenant {
         const status = (t.status ?? 'trialing') as BillingStatus;
         const plan = (t.plan ?? 'trial') as Plan;
-        const access = accessOf(t);
+        const agency = t.agencyId !== null ? (agencyCtx.agencies.get(t.agencyId) ?? null) : null;
+        const access = accessOf({ ...t, agency });
         return {
             id: t.id,
             slug: t.slug,
@@ -281,6 +335,11 @@ export class PlatformService {
             owner,
             usage,
             signup_source: parseStoredSignupAttribution((t.settings as Record<string, unknown> | null)?.signup),
+            is_agency: t.isAgency,
+            agency_settings: t.isAgency ? readAgencySettings((t.settings as Record<string, unknown> | null)?.agency) : null,
+            agency_clients: t.isAgency ? (agencyCtx.clients.get(t.id) ?? 0) : null,
+            agency: agency ? { id: agency.id, name: agency.name } : null,
+            agency_paused: t.agencyPausedAt !== null,
         };
     }
 
@@ -347,8 +406,8 @@ export class PlatformService {
             throw new NotFoundException({ code: 'tenant_not_found', message: `Empresa ${id} no encontrada`, data: { status: 404 } });
         }
         // El uso lo calcula BillingService (dentro del scope del tenant).
-        const summary = await this.billing.summary(id);
-        return this.toPlatformTenant(t, (await this.ownersByTenant(id)).get(id) ?? null, summary.usage);
+        const [summary, agencyCtx] = await Promise.all([this.billing.summary(id), this.agencyContext([t])]);
+        return this.toPlatformTenant(t, (await this.ownersByTenant(id)).get(id) ?? null, summary.usage, agencyCtx);
     }
 
     /**
@@ -361,7 +420,9 @@ export class PlatformService {
         if (input.plan !== undefined && !(await this.plans.exists(input.plan))) {
             throw new BadRequestException({ code: 'unknown_plan', message: `El plan '${input.plan}' no existe`, data: { status: 400, errors: { plan: 'No existe' } } });
         }
-        await this.getTenant(id); // 404 si no existe.
+        const before = await this.getTenant(id); // 404 si no existe.
+        // v0.1.449 (ADR-S108) — modo agencia (validado antes de escribir nada).
+        await this.applyAgencyChanges(id, before, input);
 
         // Campos del ciclo de vida (nombre / archivado / vencimiento) se escriben
         // directo en la fila; plan/estado reusan el camino del webhook de pago.
@@ -386,6 +447,95 @@ export class PlatformService {
     }
 
     /**
+     * v0.1.449 (ADR-S108) — Marcar/desmarcar agencia, sus ajustes y vincular
+     * (o desvincular) un cliente. Reglas: una agencia no es cliente de otra;
+     * desmarcar una agencia con clientes se rechaza; el plan de los clientes
+     * tiene que existir. Vincular o cambiar de agencia saca a la gente de la
+     * agencia anterior (vuelve a «Entrar» la nueva) y quita la pausa.
+     */
+    private async applyAgencyChanges(id: number, before: PlatformTenant, input: UpdateTenantInput): Promise<void> {
+        const bad = (code: string, message: string, status = 400) =>
+            status === 409
+                ? new ConflictException({ code, message, data: { status } })
+                : new BadRequestException({ code, message, data: { status } });
+        const willBeAgency = input.is_agency ?? before.is_agency;
+        const willHaveAgency = input.agency_id !== undefined ? input.agency_id : (before.agency?.id ?? null);
+        if (willBeAgency && willHaveAgency !== null) {
+            throw bad('agency_is_client', 'Una empresa no puede ser agencia y a la vez cliente de otra agencia.');
+        }
+        if (input.is_agency === false && before.is_agency) {
+            const [row] = await this.db.select({ n: intCount() }).from(tenants).where(eq(tenants.agencyId, id));
+            if (Number(row?.n ?? 0) > 0) {
+                throw bad('agency_has_clients', `Esta agencia todavía tiene ${row?.n} empresas cliente: desvincúlalas primero.`, 409);
+            }
+        }
+        if (input.agency_settings !== undefined && !willBeAgency) {
+            throw bad('not_agency', 'Sólo una agencia tiene ajustes de agencia.');
+        }
+        if (input.agency_settings?.client_plan && !(await this.plans.exists(input.agency_settings.client_plan))) {
+            throw bad('unknown_plan', `El plan '${input.agency_settings.client_plan}' no existe`);
+        }
+        if (input.agency_id !== undefined && input.agency_id !== null) {
+            if (input.agency_id === id) throw bad('agency_self', 'Una empresa no puede ser su propia agencia.');
+            const [ag] = await this.db
+                .select({ isAgency: tenants.isAgency, archivedAt: tenants.archivedAt })
+                .from(tenants)
+                .where(eq(tenants.id, input.agency_id))
+                .limit(1);
+            if (!ag || !ag.isAgency) throw bad('agency_not_found', 'Esa empresa no es una agencia.');
+            if (ag.archivedAt) throw bad('agency_archived', 'Esa agencia está archivada.');
+        }
+
+        const set: Partial<typeof tenants.$inferInsert> = {};
+        if (input.is_agency !== undefined) set.isAgency = input.is_agency;
+        const agencyChanged = input.agency_id !== undefined && input.agency_id !== (before.agency?.id ?? null);
+        if (agencyChanged) {
+            set.agencyId = input.agency_id;
+            set.agencyPausedAt = null;
+        }
+        const settingsPatch =
+            input.agency_settings !== undefined
+                ? input.agency_settings
+                : input.is_agency === true && !before.is_agency
+                  ? { client_plan: null, max_clients: null }
+                  : null;
+        if (Object.keys(set).length === 0 && settingsPatch === null) return;
+        await this.db.transaction(async (tx: Tx) => {
+            if (Object.keys(set).length > 0) {
+                await tx.update(tenants).set({ ...set, updatedAt: new Date() }).where(eq(tenants.id, id));
+            }
+            if (settingsPatch !== null) {
+                await tx
+                    .update(tenants)
+                    .set({ settings: sql`${tenants.settings} || jsonb_build_object('agency', ${JSON.stringify(settingsPatch)}::jsonb)`, updatedAt: new Date() })
+                    .where(eq(tenants.id, id));
+            }
+            if (agencyChanged) await revokeClientAgencyAccess(tx, id);
+        });
+        if (agencyChanged) {
+            await this.audit?.log({
+                tenantId: id,
+                userId: null,
+                action: input.agency_id === null ? 'agency.unlink' : 'agency.link',
+                targetType: 'tenant',
+                targetId: input.agency_id ?? before.agency?.id ?? null,
+                targetLabel: input.agency_id === null ? (before.agency?.name ?? '') : '',
+                meta: { by: 'platform', from_agency_id: before.agency?.id ?? null, to_agency_id: input.agency_id },
+            });
+        }
+        if (input.agency_settings !== undefined || input.is_agency !== undefined) {
+            await this.audit?.log({
+                tenantId: id,
+                userId: null,
+                action: 'agency.settings',
+                targetType: 'tenant',
+                targetId: id,
+                meta: { by: 'platform', is_agency: willBeAgency, ...(input.agency_settings ? { settings: input.agency_settings } : {}) },
+            });
+        }
+    }
+
+    /**
      * BORRA una empresa y TODOS sus datos (irreversible). Corre en la conexión
      * base (bypass RLS) y borra en orden FK-seguro: hijos → padres. `records` y
      * `public_lists` no tienen ON DELETE CASCADE a `lists`, por eso se borran
@@ -393,7 +543,19 @@ export class PlatformService {
      * empresas): sólo sus membresías.
      */
     async deleteTenant(id: number): Promise<void> {
-        await this.getTenant(id); // 404 si no existe.
+        const target = await this.getTenant(id); // 404 si no existe.
+        // v0.1.449 (ADR-S108) — una agencia con clientes no se borra: primero
+        // se desvinculan (si no, la FK RESTRICT daría un 500).
+        if (target.is_agency) {
+            const [row] = await this.db.select({ n: intCount() }).from(tenants).where(eq(tenants.agencyId, id));
+            if (Number(row?.n ?? 0) > 0) {
+                throw new ConflictException({
+                    code: 'agency_has_clients',
+                    message: `Esta agencia todavía tiene ${row?.n} empresas cliente: desvincúlalas antes de borrarla.`,
+                    data: { status: 409 },
+                });
+            }
+        }
         // Los bytes de los adjuntos viven fuera de la base: si no se borran
         // aquí quedan ocupando disco para siempre, y el operador pidió borrar
         // la empresa, no dejar sus archivos dando vueltas.

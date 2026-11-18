@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ActivityModule } from './activity/activity.module';
+import { AgencyModule } from './agency/agency.module';
 import { AggregateModule } from './aggregate/aggregate.module';
 import { AiModule } from './ai/ai.module';
 import { AgentHubModule } from './ai-agents/agent-hub';
@@ -179,6 +180,7 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         PortalModule,
         PublicListsModule,
         PlatformModule,
+        AgencyModule,
         PublicApiModule,
         BillingModule,
         PaymentsModule,
