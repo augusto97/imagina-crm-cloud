@@ -306,7 +306,7 @@ if [[ $HOST_TOOLS -eq 1 ]]; then
     CLIENT_MAJOR="$(pg_restore --version | grep -oE '[0-9]+' | head -1)"
     SERVER_MAJOR="$(( $(psql_cmd "$DATABASE_URL" -At -c 'show server_version_num') / 10000 ))"
     if [ "${CLIENT_MAJOR:-0}" -gt "$SERVER_MAJOR" ]; then
-        timeout "$TIMEOUT" bash -c 'pg_restore --no-owner --file=- "$1" | sed "/^SET transaction_timeout = /d" | psql "$2" -v ON_ERROR_STOP=1 -q >/dev/null' _ "$PARTS/db.dump" "$SCRATCH_URL" 2>"$WORK/restore.err"
+        timeout "$TIMEOUT" bash -c 'set -o pipefail; pg_restore --no-owner --file=- "$1" | sed "/^SET transaction_timeout = /d" | psql "$2" -v ON_ERROR_STOP=1 -q >/dev/null' _ "$PARTS/db.dump" "$SCRATCH_URL" 2>"$WORK/restore.err"
     else
         timeout "$TIMEOUT" pg_restore --no-owner --exit-on-error --dbname="$SCRATCH_URL" "$PARTS/db.dump" 2>"$WORK/restore.err"
     fi
