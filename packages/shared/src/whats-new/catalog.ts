@@ -3425,4 +3425,39 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a Conectar con n8n', href: '/settings?s=api' },
         audience: { roles: ['admin'] },
     },
+    {
+        key: 'v0.1.444-buscar-y-crear-o-actualizar',
+        version: '0.1.444',
+        date: '2026-11-18',
+        kind: 'feature',
+        title: 'Automatizaciones que buscan registros y no duplican clientes',
+        summary:
+            'Dos acciones nuevas: «Buscar registros» encuentra lo que necesitas en cualquier lista y «Crear o actualizar un registro» lo actualiza si ya existe o lo crea si no. Y un disparador nuevo: «Cuando se agrega un comentario».',
+        media: {
+            slides: [
+                {
+                    title: 'Busca en cualquier lista',
+                    text: 'Encuentra el cliente con el mismo correo o las facturas pendientes y usa lo que encontró en los pasos siguientes: cuántos son, el primero y sus datos, o los ids para vincularlos.',
+                    illustration: 'auto-probar',
+                },
+                {
+                    title: 'Sin clientes repetidos',
+                    text: 'Busca por un correo, un teléfono o un NIT: si existe lo actualiza, si no lo crea. Si encuentra más de uno, no toca ninguno y te lo dice.',
+                    illustration: 'auto-crear-registro',
+                },
+                {
+                    title: 'Cuando alguien comenta',
+                    text: 'El equipo o tu cliente desde el portal: elige quién, qué tipo de comentario y qué palabras («urgente», «factura») ponen a correr la automatización.',
+                    illustration: 'auto-disparadores',
+                },
+            ],
+        },
+        body: [
+            '- Las encuentras en **Agregar acción** y en el menú **Cuando…** de cualquier automatización.',
+            '- Usa **Probar** para ver qué encontraría con un registro real, sin cambiar nada.',
+            '- Las condiciones de cada paso ahora también pueden mirar el comentario o lo que encontró una búsqueda.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists', tour: 'automation-basics' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

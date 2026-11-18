@@ -27,11 +27,14 @@ import {
     Stamp,
     ListTodo,
     ListTree,
+    MessageSquare,
+    Search,
+    CopyPlus,
     Zap,
     type LucideIcon,
 } from 'lucide-react';
 
-import { APPROVAL_STATUS_LABELS, SUBSCRIPTION_EVENT_LABELS, type SubscriptionEvent, describeWait, describeWaitApproval, describeWebhookRecord, describeWhatsTrigger, readWhatsTriggerConfig, readApprovalTriggerResults, readWebhookRecordConfig, scheduleParts } from '@imagina-base/shared';
+import { APPROVAL_STATUS_LABELS, SUBSCRIPTION_EVENT_LABELS, describeCommentTrigger, readCommentTriggerConfig, readFindRecordsConfig, readUpsertRecordConfig, type SubscriptionEvent, describeWait, describeWaitApproval, describeWebhookRecord, describeWhatsTrigger, readWhatsTriggerConfig, readApprovalTriggerResults, readWebhookRecordConfig, scheduleParts } from '@imagina-base/shared';
 
 import { __, _n, sprintf } from '@/lib/i18n';
 import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
@@ -144,6 +147,12 @@ export const TRIGGER_META: Record<string, StepMeta> = {
         title: 'Un SLA está en riesgo o se vence',
         description: 'Dispara cuando el plazo de primera respuesta o de resolución de un ticket queda en riesgo o se vence.',
     },
+    // v0.1.444 — comentarios del equipo o del cliente (portal o correo).
+    comment_added: {
+        icon: MessageSquare,
+        title: 'Se agrega un comentario',
+        description: 'Dispara cuando alguien comenta en un registro: el equipo en la app o el cliente desde su portal o respondiendo un correo.',
+    },
     // A9 — checklists del registro.
     checklist_completed: {
         icon: ListTodo,
@@ -168,6 +177,17 @@ export const ACTION_META: Record<string, StepMeta> = {
         icon: FilePlus2,
         title: 'Crear un registro',
         description: 'Crea un registro nuevo en esta u otra lista, con valores del registro origen.',
+    },
+    // v0.1.444 — buscar en una lista y crear o actualizar sin duplicar.
+    find_records: {
+        icon: Search,
+        title: 'Buscar registros',
+        description: 'Busca en esta u otra lista (el cliente por su correo, las facturas pendientes…) y deja lo encontrado para los pasos siguientes.',
+    },
+    upsert_record: {
+        icon: CopyPlus,
+        title: 'Crear o actualizar un registro',
+        description: 'Busca un registro por su ID o por un dato que no se repite (correo, NIT, teléfono): si existe lo actualiza y si no lo crea, sin duplicar.',
     },
     bulk_edit: {
         icon: Wand2,
@@ -423,6 +443,8 @@ export function summarizeTrigger(
         case 'email_received':
         case 'sla_alert':
             return summarizeHelpdeskTrigger(triggerType, config) ?? triggerType;
+        case 'comment_added':
+            return describeCommentTrigger(readCommentTriggerConfig(config));
         default:
             return triggerType;
     }
@@ -512,6 +534,27 @@ export function summarizeAction(
             // C6 — con plantilla: el registro trae sus subtareas y checklists.
             const withTpl = cfg.template_id ? `${base} · ${__('desde una plantilla')}` : base;
             return values > 0 ? `${withTpl} · ${sprintf(__('%d valores'), values)}` : withTpl;
+        }
+        case 'find_records': {
+            const f = readFindRecordsConfig(cfg);
+            const listName = f.listId !== null ? lists.find((l) => l.id === f.listId)?.name : undefined;
+            const where = listName !== undefined ? sprintf(__('Busca en «%s»'), listName) : f.listId !== null ? __('Busca en otra lista') : __('Busca en esta lista');
+            const n = f.conditions.length;
+            const what = n === 0 ? __('los más recientes') : sprintf(_n('%d condición', '%d condiciones', n), n);
+            return `${where} · ${what} · {{respuestas.${f.responseName}}}`;
+        }
+        case 'upsert_record': {
+            const u = readUpsertRecordConfig(cfg);
+            const listName = u.listId !== null ? lists.find((l) => l.id === u.listId)?.name : undefined;
+            const target = listName ?? (u.listId !== null ? __('otra lista') : __('esta lista'));
+            const by = u.match.by === 'field' ? (u.listId === null ? fieldLabel(fields, u.match.field) : u.match.field) : __('su ID');
+            const verb =
+                u.mode === 'update_only'
+                    ? __('Actualiza un registro de «%1$s» buscado por %2$s')
+                    : u.mode === 'create_only'
+                      ? __('Crea un registro en «%1$s» si no hay uno con el mismo %2$s')
+                      : __('Crea o actualiza un registro de «%1$s» buscado por %2$s');
+            return sprintf(verb, target, u.match.by === 'field' ? `«${by}»` : by);
         }
         case 'create_subtasks_from_template': {
             if (!cfg.template_id) return __('Crea subtareas desde una plantilla (elige la plantilla)');

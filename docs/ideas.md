@@ -27,8 +27,8 @@ todos los que propones"): v0.1.435 a v0.1.440 de estabilidad (hechas; detalle
 en `CONTINUIDAD.md` §10) y después estos módulos, que salen de este banco al
 publicarse: **G2** en parte (la API con tokens salió en v0.1.441, los webhooks
 de eventos en v0.1.442 y la app de n8n en v0.1.443; quedan Make y Zapier),
-**E1 + E2** en parte («buscar registros», «crear o actualizar por un dato»,
-«cuando se agrega un comentario»), **A14** (duplicados y fusionar), **D6**
+**E1 + E2** en parte («buscar registros», «crear o actualizar por un dato» y
+«cuando se agrega un comentario» salieron en v0.1.444), **A14** (duplicados y fusionar), **D6**
 (firma electrónica) y **G8** (facturación DIAN: falta elegir proveedor y tener
 credenciales de prueba) e **I3** (modo agencia: falta decidir quién le cobra al
 cliente final).
@@ -133,8 +133,8 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 ### E. Automatizaciones
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
-| E1 · Disparadores que faltan | alto · M | «Cuando un registro empieza a cumplir una condición», «cuando se agrega un comentario», «cuando llega un correo», «cuando se sube un archivo». Ya existen: botón, aprobación, checklist, formulario y pago. |
-| E2 · Acciones que faltan | alto · M-L | «Buscar registros», «crear o actualizar por una clave», «asignar por turno», «notificar en la app», «copiar a otra lista», «preguntarle a la IA». Ya existen: pedir aprobación y subtareas desde plantilla. |
+| E1 · Disparadores que faltan | alto · M | «Cuando un registro empieza a cumplir una condición» y «cuando se sube un archivo». Ya existen: botón, aprobación, checklist, formulario, pago, correo entrante y comentario (v0.1.444). |
+| E2 · Acciones que faltan | alto · M-L | «Asignar por turno», «notificar en la app», «copiar a otra lista», «preguntarle a la IA». Ya existen: pedir aprobación, subtareas desde plantilla, buscar registros y crear o actualizar por un dato (v0.1.444). |
 | E3 · Varias ramas («según el valor de…»), subflujos, manejo de errores por paso, reintento de webhooks | medio · M | |
 | E4 · Scripts en JavaScript aislado | medio-bajo · L | Necesita un sandbox serio. |
 | E7 · «Describe la automatización y la armo» dentro del editor | medio · S | El asistente ya sabe crearlas. |

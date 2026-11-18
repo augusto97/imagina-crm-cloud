@@ -5,6 +5,7 @@ import { filterOperatorSchema } from './filter';
 import { RESPONSE_NAME_RE, waitConfigProblem } from './automation-flow';
 import { APPROVAL_RESULTS, waitApprovalProblem } from './approvals';
 import { WHATS_EVENT_TRIGGER, readWhatsTriggerConfig } from './whats-triggers';
+import { automationRecordActionIssues, recordActionResponseName } from './automation-records';
 
 /**
  * Automatizaciones (CONTRACT.md §8) — modelo FLEXIBLE alineado al plugin
@@ -40,6 +41,8 @@ export const AUTOMATION_TRIGGERS = [
     'sla_alert',
     // v0.1.367 — una suscripción cambió (se cobró, falló, venció, se canceló…).
     'subscription_event',
+    // v0.1.444 — alguien (del equipo o el cliente) agregó un comentario al registro.
+    'comment_added',
 ] as const;
 export const automationTriggerSlugSchema = z.string().min(1);
 export type AutomationTriggerSlug = z.infer<typeof automationTriggerSlugSchema>;
@@ -90,6 +93,9 @@ export const AUTOMATION_ACTIONS = [
     'reply_email',
     // E6 — pedirle a un agente de IA que trabaje sobre el registro.
     'ask_agent',
+    // v0.1.444 — buscar registros y crear o actualizar uno por un dato.
+    'find_records',
+    'upsert_record',
 ] as const;
 
 export interface ActionSpec {
@@ -551,6 +557,19 @@ function actionIssues(actions: unknown, base: string, depth: number, out: Automa
                 out.push({ path: `${at}.config.response_name`, message: `Ya hay otro paso que guarda su respuesta como «${name}»: usa otro nombre.` });
             } else {
                 scope.responseNames.add(name);
+            }
+        }
+        // v0.1.444 — «Buscar registros» y «Crear o actualizar»: dejan sus
+        // resultados con un nombre (por defecto «busqueda» / «registro»).
+        const recName = typeof spec.type === 'string' ? recordActionResponseName(spec.type, cfg) : null;
+        if (recName !== null) {
+            out.push(...automationRecordActionIssues(String(spec.type), cfg, at));
+            if (RESPONSE_NAME_RE.test(recName)) {
+                if (scope.responseNames.has(recName)) {
+                    out.push({ path: `${at}.config.response_name`, message: `Ya hay otro paso que guarda su resultado como «${recName}»: usa otro nombre.` });
+                } else {
+                    scope.responseNames.add(recName);
+                }
             }
         }
         switch (spec.type) {

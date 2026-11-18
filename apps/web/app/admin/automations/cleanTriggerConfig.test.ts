@@ -46,3 +46,12 @@ describe('cleanTriggerConfig — WhatsApp (v0.1.402)', () => {
         expect(out).toEqual({ whats_event: 'message_status', statuses: ['read', 'failed'], phone_field_id: 12, if_missing: 'skip', connection_id: 3 });
     });
 });
+
+describe('cleanTriggerConfig — comentarios (v0.1.444)', () => {
+    it('conserva quién, qué tipo, hilos y palabras; «cualquiera» no deja claves', () => {
+        expect(
+            cleanTriggerConfig({ comment_from: 'client', comment_visibility: 'any', comment_replies: 'top', comment_contains: '  factura, urgente ' }),
+        ).toEqual({ comment_from: 'client', comment_replies: 'top', comment_contains: 'factura, urgente' });
+        expect(cleanTriggerConfig({ comment_from: 'any', comment_contains: '   ' })).toEqual({});
+    });
+});
