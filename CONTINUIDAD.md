@@ -430,7 +430,22 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.451**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.452**
+(**la agencia cobra en línea a sus clientes** — la agencia conecta su cuenta
+de Mercado Pago, Wompi o PayPal y la elige en «Planes para tus clientes →
+Cobro en línea»: se arma en la agencia la lista «Empresas cliente» (un
+registro por cliente con su plan, estado, pagado hasta y link de pago, con
+candado en lo que escribe la agencia). Desde «Plan y pagos» se manda un link
+por N meses (uno pendiente por cliente: igual se reusa, distinto reemplaza);
+si la agencia lo permite, el cliente paga desde Ajustes → Suscripción →
+«Pagar ahora», y el aviso antes de vencer trae el link. El aviso del
+proveedor (releído) registra el pago solo: el plazo se corre y la empresa
+vuelve a funcionar al instante; un pago en línea no se deshace. De paso: la
+app abría a veces la empresa de un cliente en vez de la de la agencia (sin
+orden en las membresías). Migración 0136. ADR-S108 addendum. **La división
+creció otra vez**: v0.1.453 el débito automático (suscripción) de los
+clientes de la agencia, v0.1.454 el cobro de la plataforma a la agencia; G8
+DIAN espera proveedor y credenciales de prueba). Antes **v0.1.451**
 (**la agencia le cobra a sus clientes, primera parte** — en la consola de la
 agencia, «Planes para tus clientes» (nombre, valor, cada cuánto, qué límites de
 la plataforma dan y días de gracia/aviso) y, por cliente, «Plan y pagos»: el
@@ -2272,6 +2287,31 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.452** — **La agencia cobra en línea a sus clientes**
+  (I3, ADR-S108 addendum). `agency_billing.online` (`connection_id` de una
+  conexión de cobro del EQUIPO de la agencia, `client_can_pay`, `auto_link`);
+  un PUT sin `online` lo conserva (`keepOnline`). Lista «Empresas cliente»
+  armada con el motor de plantillas (`AgencyClientsListService`,
+  `tenants.agency_record_id`, marca `agency_clients_of` con candados en lo que
+  escribe la agencia), sincronizada al cambiar plan/pago/link y en el tic.
+  Cobros en `agency_charges` (migración 0136, RLS por la agencia): un link por
+  N meses con `CollectionsService.createForAgency`, uno pendiente por cliente
+  (candado; igual se reusa, distinto anula el anterior), creado por la agencia,
+  por el cliente (`POST /workspaces/current/agency-billing/pay`) o por el aviso
+  de vencimiento. `onLinkPaid` → `applyPaymentInTx` una sola vez (fila del
+  cobro bloqueada), correos a los dos; pago tardío también se registra; un pago
+  en línea no se deshace (409 `agency_payment_online`). Vuelta del checkout
+  (`/api/v1/public/agency-pay/:reference`) que pregunta al proveedor y lleva a
+  Suscripción con `?pago=1`. **Bugs atrapados en el E2E**: la app abría a
+  veces la empresa de un cliente (las membresías no tenían orden: ahora las
+  propias primero), la franja de solo lectura seguía tras pagar (se refresca
+  la sesión) y «¡Pago recibido!» llegaba una consulta tarde. **La división
+  creció**: v0.1.453 débito automático para los clientes de la agencia,
+  v0.1.454 cobro de la plataforma a la agencia. Sin novedad (es de agencias).
+  Tests: `agency-charges.spec` (6), suites relacionadas 93/93, front 951,
+  shared 1049; E2E navegador 40/40 en escritorio y 41/41 en celular oscuro
+  contra el Mercado Pago simulado. **Pendientes del usuario**: Redis,
+  `NPM_TOKEN`, DIAN y usuario propio para la app (sin cambios).
 - **2026-11-19 · v0.1.451** — **La agencia le cobra a sus clientes, primera
   parte** (I3, ADR-S108 addendum). Planes de la agencia en
   `tenants.settings.agency_billing` (hasta 20: nombre, valor, moneda, período

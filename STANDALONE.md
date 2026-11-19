@@ -10120,3 +10120,63 @@ plataforma a la agencia.
   sin el nombre de quien registró) y un aviso arriba 10 días antes. Los montos
   se leen con `parseLooseAmount` («1.500.000»).
 Sin novedad en el catálogo (es de agencias).
+
+**Addendum v0.1.452 — la agencia cobra EN LÍNEA a sus clientes con su propia
+cuenta.** La división creció otra vez: v0.1.452 es el cobro en línea por link,
+v0.1.453 el débito automático (suscripción) de los clientes de la agencia y
+v0.1.454 el cobro de la plataforma a la agencia.
+- **La cuenta es de la agencia** (ADR-S31): `agency_billing.online`
+  (`connection_id`, `client_can_pay`, `auto_link`; lectura tolerante) elige una
+  conexión de cobro del EQUIPO de la agencia (Mercado Pago, Wompi o PayPal; 400
+  `agency_online_connection` si no lo es) que acepte la moneda de sus planes
+  activos (400 `agency_online_currency`: Wompi sólo COP, PayPal nunca COP). El
+  dinero va a la cuenta de la agencia; la plataforma no cobra comisión. Un
+  `PUT /agency/billing` que no manda `online` lo CONSERVA (`keepOnline`): una
+  pestaña vieja o un cliente de la API no apagan el cobro.
+- **La lista «Empresas cliente»** (`AgencyClientsListService`, pack en
+  `agency-clients-pack.ts`): al elegir la cuenta se arma en la agencia una
+  lista común (no espejo) con un registro por empresa cliente —nombre, estado,
+  plan, valor, pagado hasta, último pago, link de pago, correo, notas—
+  (`tenants.agency_record_id`, migración 0136, sin FK: si se borra, la próxima
+  sincronización arma otro). Se actualiza sola al cambiar el plan, un pago o un
+  link (`onClientChanged`) y en el tic de facturación. Las columnas que escribe
+  la agencia llevan candado (`managedFieldLocks`, marca
+  `agency_clients_of` en la lista); las demás son libres. De ese registro
+  cuelgan los links (así salen en «Cobros» de la ficha y disparan «Cuando se
+  recibe un pago»).
+- **Cobros** (`agency_charges`, migración 0136, RLS por la AGENCIA): un link
+  por N meses del plan con su monto y moneda, armado con
+  `CollectionsService.createForAgency` (sobre el registro del cliente; vence a
+  los 7 días; vuelta a `/api/v1/public/agency-pay/:reference`). UNO pendiente
+  por cliente con candado: pedir lo mismo con al menos un día por delante
+  devuelve el mismo; pedir otro distinto anula el anterior y vence su link.
+  Lo crean la agencia (`POST /agency/clients/:id/charges`, con correo opcional
+  a los admins propios del cliente), el cliente desde su app si
+  `client_can_pay` (`POST /workspaces/current/agency-billing/pay {periods}`:
+  1/2/3/6/12 períodos del plan, `agencyPayablePeriods`, al valor del plan) y el
+  aviso «por vencer» si `auto_link` (el correo lleva «Pagar ahora»). Se anulan
+  con `DELETE …/charges/:id`. Bitácora `agency.charge_create` y
+  `agency.charge_cancel` en la agencia y en el cliente.
+- **El pago se registra solo**: cuando el link queda aprobado
+  (`CollectionsService.onLinkPaid`: el aviso del proveedor se RELEE, nunca se
+  le cree), el cobro pasa a `paid` y se registra en `agency_payments` con
+  `applyPaymentInTx` (medio = el proveedor, nota «Pago en línea con…») en una
+  transacción con la fila del cobro bloqueada (`payment_id` no nulo = ya
+  registrado: un aviso repetido no suma dos veces); el «pagado hasta» se
+  encadena y la empresa vuelve a funcionar al instante. Un pago que llega
+  tarde (link vencido o anulado) también se registra: el dinero entró. Un pago
+  en línea no se deshace desde la consola (409 `agency_payment_online`).
+  Correos «Recibimos tu pago» al cliente y «pagó» a la agencia.
+- **Al volver del checkout**: `returnFromCheckout` pregunta al proveedor (a lo
+  sumo cada 15 s por link) y redirige a Ajustes → Suscripción del cliente
+  (`?pago=1`), que consulta con `?refresh=1` hasta ver el pago, refresca la
+  sesión (se va la solo lectura sin recargar) y muestra «¡Pago recibido!».
+- **Orden de las empresas de una persona** (`membershipsOf`): primero las
+  propias y después las que alcanza por la agencia — la app abre la primera
+  cuando no hay una elegida, y una agencia abría a veces la de un cliente.
+- **Pantallas**: «Cobro en línea» en Planes para tus clientes (cuenta, «tus
+  clientes pueden pagar desde su app», «el aviso trae el link», la lista),
+  «Cobrar en línea» en Plan y pagos (meses, valor sugerido, mandar por correo,
+  copiar, anular y el historial de cobros) y «Pagar ahora» en la Suscripción
+  del cliente (anclas `agency-online` y `settings-agency-pay`).
+Sin novedad en el catálogo (es de agencias).
