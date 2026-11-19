@@ -53,6 +53,11 @@ export const platformTenantSchema = z.object({
     agency_settings: agencySettingsSchema.nullable().default(null),
     /** v0.1.449 — cuántas empresas cliente tiene (sólo si es agencia). */
     agency_clients: z.number().int().nullable().default(null),
+    /**
+     * v0.1.454 — de esas, cuántas se le cobran a la agencia (sin las pausadas
+     * por ella): la cuenta de las empresas extra de su plan.
+     */
+    agency_billed_clients: z.number().int().nullable().default(null),
     /** v0.1.449 — la agencia de la que es cliente. */
     agency: z.object({ id: z.number().int(), name: z.string() }).nullable().default(null),
     /** v0.1.449 — su agencia la pausó. */
@@ -138,8 +143,11 @@ export const updateTenantSchema = z
         trial_ends_at: z.string().datetime({ offset: true }).nullable().optional(),
         /** v0.1.449 (ADR-S108) — marcarla (o no) como agencia. */
         is_agency: z.boolean().optional(),
-        /** v0.1.449 — sus ajustes de agencia (plan de los clientes, tope). */
-        agency_settings: agencySettingsSchema.optional(),
+        /**
+         * v0.1.449 — sus ajustes de agencia (plan de los clientes, tope). Se
+         * mezclan con los guardados (v0.1.454): lo que no viene, no se toca.
+         */
+        agency_settings: agencySettingsSchema.partial().optional(),
         /** v0.1.449 — la agencia de la que pasa a ser cliente (`null` = ninguna). */
         agency_id: z.number().int().positive().nullable().optional(),
     })
@@ -219,6 +227,13 @@ export const platformPlanSchema = z.object({
     max_guests: z.number().int().nullable().default(null),
     price_usd: z.number().int().nullable(),
     price_cop: z.number().int().nullable(),
+    /**
+     * v0.1.454 — Para una agencia en este plan: cuántas empresas cliente
+     * incluye el precio (`null` = todas) y cuánto vale cada extra al mes.
+     */
+    agency_included_clients: z.number().int().nullable().default(null),
+    agency_extra_usd: z.number().int().nullable().default(null),
+    agency_extra_cop: z.number().int().nullable().default(null),
     is_active: z.boolean(),
     position: z.number().int(),
     /** v0.1.338 — módulos que el plan NO incluye (vacío = todos). */
@@ -255,6 +270,9 @@ export const createPlanSchema = z.object({
     max_guests: nullableLimit.default(null),
     price_usd: nullablePrice.default(null),
     price_cop: nullablePrice.default(null),
+    agency_included_clients: nullableLimit.default(null),
+    agency_extra_usd: nullablePrice.default(null),
+    agency_extra_cop: nullablePrice.default(null),
     is_active: z.boolean().default(true),
     disabled_modules: disabledModulesSchema.optional(),
 });
@@ -273,6 +291,9 @@ export const updatePlanSchema = z
         max_guests: nullableLimit,
         price_usd: nullablePrice,
         price_cop: nullablePrice,
+        agency_included_clients: nullableLimit,
+        agency_extra_usd: nullablePrice,
+        agency_extra_cop: nullablePrice,
         is_active: z.boolean(),
         disabled_modules: disabledModulesSchema,
     })

@@ -20,6 +20,7 @@ import { accessOf } from '../billing/tenant-access';
 import { AgencyBillingService } from './agency-billing.service';
 import { AgencyClientsListService } from './agency-clients-list.service';
 import { AgencyDebitService } from './agency-debit.service';
+import { PaymentsService } from '../payments/payments.service';
 import { readSupport } from '../help/help.service';
 import { DRIZZLE, type Db } from '../db/client';
 import { auditLog, memberships, plans, records, tenants, users } from '../db/schema';
@@ -47,6 +48,8 @@ export class AgencyService {
         @Optional() private readonly audit?: AuditService,
         @Optional() private readonly clientsList?: AgencyClientsListService,
         @Optional() private readonly debit?: AgencyDebitService,
+        /** v0.1.454 — lo que la plataforma le cobra a la agencia (opcional en tests). */
+        @Optional() private readonly payments?: PaymentsService,
     ) {}
 
     async overview(agencyId: number): Promise<AgencyOverview> {
@@ -69,6 +72,7 @@ export class AgencyService {
             billing,
             limit_plans: await this.billing.limitPlans(agency),
             totals: await this.billing.totals(agencyId, billing),
+            platform: await this.platformPricing(agencyId),
             // v0.1.452 — el cobro en línea: las cuentas del equipo y la lista «Empresas cliente».
             online: {
                 available: (await planModuleOffSafe(this.db, agencyId)) === false,
@@ -76,6 +80,26 @@ export class AgencyService {
                 clients_list: (await this.clientsList?.listDto(agencyId).catch(() => null)) ?? null,
             },
         };
+    }
+
+    /**
+     * v0.1.454 — Lo que la plataforma le cobra a la agencia hoy (su plan, las
+     * empresas que incluye y las extras). `null` si su plan no tiene precio.
+     */
+    private async platformPricing(agencyId: number): Promise<AgencyOverview['platform']> {
+        const p = await this.payments?.agencyPricing(agencyId).catch(() => null);
+        if (!p || (p.base_usd === null && p.base_cop === null)) return null;
+        return p;
+    }
+
+    /**
+     * v0.1.454 — Cuando cambian las empresas que cuentan (alta, pausa,
+     * reactivación), el monto de la renovación automática de la agencia se
+     * ajusta en el proveedor. En segundo plano: si falla, la revisión de cada
+     * hora lo vuelve a intentar.
+     */
+    private syncRenewal(agencyId: number): void {
+        void this.payments?.syncAgencyRenewal(agencyId).catch((err) => this.logger.warn(`renovación de la agencia ${agencyId}: ${String(err)}`));
     }
 
     /**
@@ -250,6 +274,7 @@ export class AgencyService {
         ]);
         this.logger.log(`La agencia ${agencyId} creó la empresa cliente ${tenantId}`);
         this.billing.notifyClientChanged(agencyId, tenantId);
+        this.syncRenewal(agencyId);
         const [client] = await this.listClients(agencyId, userId, tenantId);
         if (!client) throw new Error('La empresa cliente recién creada no aparece');
         return client;
@@ -282,6 +307,7 @@ export class AgencyService {
                 await Promise.all([this.audit?.log({ tenantId: clientId, ...entry }), this.audit?.log({ tenantId: agencyId, ...entry })]);
             }
             this.billing.notifyClientChanged(agencyId, clientId);
+            if (set.agencyPausedAt !== undefined) this.syncRenewal(agencyId);
         }
         const [out] = await this.listClients(agencyId, userId, clientId);
         if (!out) throw notFound();

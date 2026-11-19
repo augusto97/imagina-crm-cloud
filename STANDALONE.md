@@ -10222,3 +10222,37 @@ cada período con la cuenta de Mercado Pago o PayPal de la agencia (ADR-S96).
   automático» en Ajustes → Suscripción del cliente (anclas `agency-debit`,
   `agency-client-debit`, `settings-agency-debit`).
 Sin novedad en el catálogo (es de agencias).
+
+**Addendum v0.1.454 — lo que la plataforma le cobra a la agencia.** Decisión
+del usuario: «las dos» — un plan base que incluye N empresas cliente más un
+valor al mes por cada empresa extra. Con esto I3 queda completo.
+- **El plan lo dice** (migración 0138: `plans.agency_included_clients`,
+  `agency_extra_usd`, `agency_extra_cop`; NULL en «incluidas» = todas sin costo
+  extra). El operador lo edita en Plataforma → Planes → **Para agencias**
+  (`data-tour="platform-plan-agency"`, columna «Agencias» en la grilla) y puede
+  pisar los tres datos para UNA agencia en su ficha → Agencia → **Lo que paga a
+  la plataforma** (`tenants.settings.agency.included_clients/extra_usd/extra_cop`,
+  sin migración; el PATCH mezcla con lo guardado, así un cambio parcial no
+  borra el resto), con el total del mes en vivo.
+- **Cuentan** las empresas de la agencia sin archivar NI pausar por la agencia
+  (pausar es la forma de dejar de pagar por un cliente que se fue). Reglas
+  puras en `packages/shared/src/schemas/agency-platform.ts`
+  (`effectiveAgencyPricing`, `agencyExtraClients`, `agencyMonthlyTotal`,
+  `agencyPlatformPricing`): total = base + extras × valor por extra; si hay
+  extras y no hay valor por extra en una moneda, el plan no se vende en esa
+  moneda (cobrar sólo la base regalaría las extras) → `plan_not_sellable` con
+  el motivo.
+- **El cobro es el de siempre** (ADR-S30): `PaymentsService.config(tenantId)`
+  y el checkout usan el total de la agencia (`priceForTenant`); Ajustes →
+  Suscripción muestra el desglose (`AgencyPlanBreakdown`) y la consola de la
+  agencia el total con «Ver y pagar» (`data-tour="agency-platform-plan"`; el
+  alta de un cliente avisa si suma una extra).
+- **La renovación automática se ajusta sola**: Mercado Pago cobra un monto
+  fijo, así que crear, pausar o reactivar un cliente, o que el operador cambie
+  el plan o el trato, actualiza el monto (`syncAgencyRenewal` →
+  `PUT /preapproval/{id}` con `auto_recurring.transaction_amount`); la revisión
+  de cada hora (`syncAgencyRenewals`, registrada con `registerBillingTick` en
+  `payments/billing-ticks.ts`, que corta el import circular) recoge lo que no
+  se pudo. La renovación de los planes sólo existe con Mercado Pago (PayPal
+  cobra por meses).
+Sin novedad en el catálogo (es de agencias y del operador).

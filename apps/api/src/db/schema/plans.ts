@@ -25,6 +25,13 @@ export const plans = pgTable('plans', {
     // (enterprise = "contactar ventas"). Entero: USD sin centavos, COP sin decimales.
     priceUsd: integer('price_usd'),
     priceCop: integer('price_cop'),
+    /**
+     * v0.1.454 — Para una agencia en este plan: empresas cliente incluidas
+     * (NULL = todas) y cuánto vale cada extra al mes en USD y en COP.
+     */
+    agencyIncludedClients: integer('agency_included_clients'),
+    agencyExtraUsd: integer('agency_extra_usd'),
+    agencyExtraCop: integer('agency_extra_cop'),
     isActive: boolean('is_active').notNull().default(true),
     /** v0.1.338 (ADR-S87) — módulos que el plan NO incluye. Vacío = todos. */
     disabledModules: jsonb('disabled_modules').$type<string[]>().notNull().default([]),

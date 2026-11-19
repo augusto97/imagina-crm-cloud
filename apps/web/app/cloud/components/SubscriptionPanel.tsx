@@ -343,6 +343,8 @@ function PayCard({
                                                 .filter(Boolean)
                                                 .join(' · ')}
                                         </span>
+                                        {/* v0.1.454 — a una agencia: el precio con sus empresas cliente extra. */}
+                                        {p.agency && <AgencyPlanBreakdown pricing={p.agency} />}
                                         {/* v0.1.338 — qué incluye el plan, para elegir con la información a la vista. */}
                                         <PlanIncludes plan={p} />
                                     </button>
@@ -434,6 +436,9 @@ function PayCard({
                                             Mercado Pago cobra <strong>{COP.format(selected.cop ?? 0)}</strong> a tu tarjeta todos los meses
                                             {firstCharge ? `, empezando el ${fmtDate(firstCharge)} (cuando vence lo que ya pagaste)` : ', empezando hoy'}.
                                             Se cancela cuando quieras.
+                                            {selected.agency && selected.agency.included !== null && (
+                                                <> El monto se ajusta solo si sumas, pausas o archivas empresas cliente.</>
+                                            )}
                                         </p>
                                         <label className="imcrm-block imcrm-max-w-sm imcrm-space-y-1 imcrm-text-sm">
                                             <span className="imcrm-font-medium">Correo de tu cuenta de Mercado Pago</span>
@@ -512,6 +517,26 @@ function HistoryCard({ payments }: { payments: BillingPayment[] }): JSX.Element 
 }
 
 /** v0.1.338 (ADR-S87) — Usuarios del plan y lo que NO incluye (si algo). */
+/**
+ * v0.1.454 (ADR-S108) — Lo que paga una agencia por un plan: la base con las
+ * empresas cliente que incluye y cada extra. Las pausadas y las archivadas no
+ * cuentan.
+ */
+function AgencyPlanBreakdown({ pricing }: { pricing: NonNullable<PlanPrice['agency']> }): JSX.Element {
+    const each = [pricing.extra_cop !== null ? `${COP.format(pricing.extra_cop)}` : null, pricing.extra_usd !== null ? `${USD.format(pricing.extra_usd)}` : null]
+        .filter(Boolean)
+        .join(' · ');
+    return (
+        <span className="imcrm-block imcrm-text-xs imcrm-text-muted-foreground" data-testid="pay-plan-agency">
+            {pricing.included === null
+                ? `Incluye todas tus empresas cliente (tienes ${pricing.clients}).`
+                : `Incluye ${pricing.included} empresas cliente · tienes ${pricing.clients}${
+                      pricing.extras > 0 ? ` · ${pricing.extras} ${pricing.extras === 1 ? 'extra' : 'extras'} a ${each} c/u` : ''
+                  }.`}
+        </span>
+    );
+}
+
 function PlanIncludes({ plan }: { plan: PlanPrice }): JSX.Element {
     const off = readDisabledModules(plan.disabled_modules ?? []);
     const users =

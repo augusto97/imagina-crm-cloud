@@ -80,8 +80,8 @@ export class PaymentsController {
     @Get('payments/config')
     @AllowLocked()
     @UseGuards(SessionGuard, TenantGuard)
-    config(): Promise<PaymentConfig> {
-        return this.payments.config();
+    config(@Req() req: FastifyRequest): Promise<PaymentConfig> {
+        return this.payments.config(req.tenant?.tenantId);
     }
 
     @Post('checkout')

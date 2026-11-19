@@ -12,6 +12,9 @@ import { billingSubscriptions, memberships, tenants, users } from '../db/schema'
 import { escapeHtml } from '../legal/legal-page';
 import { MailService } from '../mail/mail.service';
 import { PaymentsReconcileService } from './payments-reconcile.service';
+import { extraBillingTicks } from './billing-ticks';
+
+export { registerBillingTick } from './billing-ticks';
 import { REDIS } from '../redis/redis.module';
 import { QUEUE_JOB_RETENTION, guardRedis } from '../redis/redis.util';
 import { createWorker, registerScheduler } from '../redis/queue-runtime';
@@ -154,12 +157,6 @@ export interface ReminderDedupStore {
  *    vez por fecha (clave en Redis) y por la vía de correo de la PLATAFORMA:
  *    es un correo nuestro a nuestro cliente, no de la empresa.
  */
-/** v0.1.451 — Avisos de cobro de otros módulos que corren con el reloj de éste (cada hora). */
-const extraBillingTicks: Array<(now: Date) => Promise<number>> = [];
-
-export function registerBillingTick(fn: (now: Date) => Promise<number>): void {
-    if (!extraBillingTicks.includes(fn)) extraBillingTicks.push(fn);
-}
 
 @Injectable()
 export class BillingRemindersService {

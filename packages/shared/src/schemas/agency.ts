@@ -9,6 +9,7 @@ import {
     agencyClientsListSchema,
     agencyCollectionConnectionSchema,
 } from './agency-billing';
+import { agencyPlatformPricingSchema } from './agency-platform';
 import { tenantAccessSchema } from './plan-access';
 import { SUBSCRIPTION_STATUSES } from './subscriptions';
 
@@ -35,10 +36,28 @@ export const agencySettingsSchema = z.object({
      * sus clientes (en sus propios planes). Siempre puede usar el de arriba.
      */
     client_plans: z.array(z.string().trim().min(1).max(32)).max(20).default([]),
+    /**
+     * v0.1.454 — Un trato propio con la plataforma (pisa lo del plan de la
+     * agencia; `null` = lo del plan): cuántas empresas cliente incluye y cuánto
+     * vale cada extra al mes en USD y en COP.
+     */
+    included_clients: z.number().int().min(0).max(100_000).nullable().default(null),
+    extra_usd: z.number().int().min(0).max(100_000_000).nullable().default(null),
+    extra_cop: z.number().int().min(0).max(100_000_000_000).nullable().default(null),
 });
 export type AgencySettings = z.infer<typeof agencySettingsSchema>;
 
-export const DEFAULT_AGENCY_SETTINGS: AgencySettings = { client_plan: null, max_clients: null, client_plans: [] };
+export const DEFAULT_AGENCY_SETTINGS: AgencySettings = {
+    client_plan: null,
+    max_clients: null,
+    client_plans: [],
+    included_clients: null,
+    extra_usd: null,
+    extra_cop: null,
+};
+
+const tolerantInt = (v: unknown, max: number): number | null =>
+    typeof v === 'number' && Number.isInteger(v) && v >= 0 ? Math.min(v, max) : null;
 
 /** Lectura tolerante de `tenants.settings.agency` (nunca falla). */
 export function readAgencySettings(raw: unknown): AgencySettings {
@@ -58,7 +77,14 @@ export function readAgencySettings(raw: unknown): AgencySettings {
             if (extra.length >= 20) break;
         }
     }
-    return { client_plan: plan, max_clients: max, client_plans: extra };
+    return {
+        client_plan: plan,
+        max_clients: max,
+        client_plans: extra,
+        included_clients: tolerantInt(r.included_clients, 100_000),
+        extra_usd: tolerantInt(r.extra_usd, 100_000_000),
+        extra_cop: tolerantInt(r.extra_cop, 100_000_000_000),
+    };
 }
 
 /** Una empresa cliente vista desde su agencia. */
@@ -103,6 +129,12 @@ export const agencyOverviewSchema = z.object({
     /** Los planes de la plataforma que puede usar como límites de sus planes. */
     limit_plans: z.array(z.object({ slug: z.string(), name: z.string() })),
     totals: agencyBillingTotalsSchema,
+    /**
+     * v0.1.454 — Lo que la plataforma le cobra a la agencia: su plan, cuántas
+     * empresas incluye y cuánto suma cada extra. `null` = la agencia no tiene
+     * plan con precio.
+     */
+    platform: agencyPlatformPricingSchema.extend({ plan: z.string(), plan_name: z.string() }).nullable().default(null),
     /** v0.1.452 — el cobro en línea con la cuenta de la agencia. */
     online: z.object({
         /** El plan de la agencia incluye las integraciones (los cobros por Mercado Pago, Wompi o PayPal). */

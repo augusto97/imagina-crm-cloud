@@ -30,6 +30,7 @@ import {
     type UpdatePlatformUserInput,
     type UpdateTenantInput,
     readAgencySettings,
+    DEFAULT_AGENCY_SETTINGS,
     type AgencyAccessInput,
 } from '@imagina-base/shared';
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
@@ -144,6 +145,7 @@ import {
 } from '../db/schema';
 import { BillingService } from '../billing/billing.service';
 import { PlansService } from '../billing/plans.service';
+import { PaymentsService } from '../payments/payments.service';
 import { EmailQuotaService, periodOf } from '../mail/email-quota.service';
 import { TenantSmtpService } from '../mail/tenant-smtp.service';
 import { FILE_STORAGE, type FileStorage } from '../files/file-storage';
@@ -152,6 +154,8 @@ import { FILE_STORAGE, type FileStorage } from '../files/file-storage';
 interface AgencyContext {
     agencies: Map<number, AgencyAccessInput & { id: number; name: string }>;
     clients: Map<number, number>;
+    /** v0.1.454 — las que se le cobran a la agencia (sin las pausadas). */
+    billed: Map<number, number>;
 }
 
 /**
@@ -180,6 +184,9 @@ export class PlatformService {
         // v0.1.240 — gestión de miembros de cualquier empresa desde la consola.
         @Optional() private readonly members?: MembersService,
         @Optional() private readonly audit?: AuditService,
+        // v0.1.454 — ajustar la renovación automática de una agencia cuando
+        // cambia lo que se le cobra.
+        @Optional() private readonly payments?: PaymentsService,
     ) {}
 
     /**
@@ -299,16 +306,23 @@ export class PlatformService {
                       .from(tenants)
                       .where(inArray(tenants.id, agencyIds)),
             agencyRowIds.length === 0
-                ? Promise.resolve(new Map<number, number>())
+                ? Promise.resolve([] as Array<{ tid: number | null; n: number; billed: number }>)
                 : this.db
-                      .select({ tid: tenants.agencyId, n: intCount() })
+                      .select({
+                          tid: tenants.agencyId,
+                          n: intCount(),
+                          billed: sql<number>`count(*) filter (where ${tenants.agencyPausedAt} is null)::int`,
+                      })
                       .from(tenants)
                       .where(and(inArray(tenants.agencyId, agencyRowIds), isNull(tenants.archivedAt)))
-                      .groupBy(tenants.agencyId)
-                      // `Number`: la clave del mapa tiene que ser el número del id, no su texto.
-                      .then((rows) => new Map(rows.map((r) => [Number(r.tid), Number(r.n)]))),
+                      .groupBy(tenants.agencyId),
         ]);
-        return { agencies: new Map(agencies.map((a) => [a.id, a])), clients: counts };
+        // `Number`: la clave del mapa tiene que ser el número del id, no su texto.
+        return {
+            agencies: new Map(agencies.map((a) => [a.id, a])),
+            clients: new Map(counts.map((r) => [Number(r.tid), Number(r.n)])),
+            billed: new Map(counts.map((r) => [Number(r.tid), Number(r.billed)])),
+        };
     }
 
     /** Fila de tenant → DTO del operador (con solo-lectura efectivo). */
@@ -316,7 +330,7 @@ export class PlatformService {
         t: typeof tenants.$inferSelect,
         owner: PlatformOwner | null,
         usage: PlatformTenant['usage'],
-        agencyCtx: AgencyContext = { agencies: new Map(), clients: new Map() },
+        agencyCtx: AgencyContext = { agencies: new Map(), clients: new Map(), billed: new Map() },
     ): PlatformTenant {
         const status = (t.status ?? 'trialing') as BillingStatus;
         const plan = (t.plan ?? 'trial') as Plan;
@@ -342,6 +356,7 @@ export class PlatformService {
             is_agency: t.isAgency,
             agency_settings: t.isAgency ? readAgencySettings((t.settings as Record<string, unknown> | null)?.agency) : null,
             agency_clients: t.isAgency ? (agencyCtx.clients.get(t.id) ?? 0) : null,
+            agency_billed_clients: t.isAgency ? (agencyCtx.billed.get(t.id) ?? 0) : null,
             agency: agency ? { id: agency.id, name: agency.name } : null,
             agency_paused: t.agencyPausedAt !== null,
         };
@@ -447,6 +462,17 @@ export class PlatformService {
         if (input.plan !== undefined || input.status !== undefined) {
             await this.billing.setBilling(id, { plan: input.plan, status: input.status });
         }
+        // v0.1.454 — lo que la plataforma le cobra a una agencia depende de su
+        // plan, su trato propio y cuántas empresas cliente tiene: si algo de eso
+        // cambió, el monto de su renovación automática se ajusta (en segundo
+        // plano; la revisión de cada hora lo reintenta).
+        const touched = new Set<number>();
+        if (before.is_agency && (input.plan !== undefined || input.agency_settings !== undefined)) touched.add(id);
+        if (input.archived !== undefined || input.agency_id !== undefined) {
+            if (before.agency) touched.add(before.agency.id);
+            if (input.agency_id) touched.add(input.agency_id);
+        }
+        for (const agencyId of touched) void this.payments?.syncAgencyRenewal(agencyId).catch(() => undefined);
         return this.getTenant(id);
     }
 
@@ -502,11 +528,13 @@ export class PlatformService {
             // El plan y el «pagado hasta» son de la agencia anterior (v0.1.451).
             set.agencyPaidUntil = null;
         }
+        // v0.1.454 — los ajustes que llegan se mezclan con los guardados (un
+        // PATCH con sólo el trato propio no borra el plan de los clientes).
         const settingsPatch =
             input.agency_settings !== undefined
-                ? input.agency_settings
+                ? { ...(before.agency_settings ?? DEFAULT_AGENCY_SETTINGS), ...input.agency_settings }
                 : input.is_agency === true && !before.is_agency
-                  ? { client_plan: null, max_clients: null, client_plans: [] }
+                  ? { ...DEFAULT_AGENCY_SETTINGS }
                   : null;
         if (Object.keys(set).length === 0 && settingsPatch === null) return;
         await this.db.transaction(async (tx: Tx) => {

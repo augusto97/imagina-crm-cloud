@@ -154,6 +154,9 @@ describe('Módulos del plan (Postgres real)', () => {
             max_guests: null,
             price_usd: null,
             price_cop: null,
+            agency_included_clients: null,
+            agency_extra_usd: null,
+            agency_extra_cop: null,
             is_active: true,
         });
         const [t] = await pg.db

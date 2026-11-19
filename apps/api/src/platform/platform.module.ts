@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { SuperadminGuard } from '../authz/superadmin.guard';
 import { FilesModule } from '../files/files.module';
 import { MembersModule } from '../members/members.module';
+import { PaymentsModule } from '../payments/payments.module';
 import { UpdateModule } from '../update/update.module';
 import { PlatformBillingPolicyController } from './billing-policy.controller';
 import { PlatformController } from './platform.controller';
@@ -19,7 +20,7 @@ import { TransferDriveService } from './transfer-drive.service';
  * DbModule @Global.
  */
 @Module({
-    imports: [AuthModule, FilesModule, MembersModule, UpdateModule],
+    imports: [AuthModule, FilesModule, MembersModule, UpdateModule, PaymentsModule],
     controllers: [PlatformController, PlatformBillingPolicyController, TenantTransferController, PlatformUsageController],
     providers: [PlatformService, TenantTransferService, TransferDriveService, PlatformUsageService, SuperadminGuard],
 })

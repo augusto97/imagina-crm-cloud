@@ -1,7 +1,8 @@
 import { forwardRef, useMemo, useState } from 'react';
 import * as RDialog from '@radix-ui/react-dialog';
+import { Link } from 'react-router';
 import { Building2, Clock, CreditCard, Loader2, LogIn, MoreHorizontal, PauseCircle, Pencil, PlayCircle, Plus, Receipt, Search, Users, X } from 'lucide-react';
-import type { AgencyClient, AgencyOverview } from '@imagina-base/shared';
+import { agencyPlatformPricing, type AgencyClient, type AgencyOverview } from '@imagina-base/shared';
 
 import { relativeTime } from '@/admin/activity/activityText';
 import { initials } from '@/admin/layout/WorkspaceSwitcher';
@@ -120,6 +121,8 @@ export function AgencyPage(): JSX.Element {
                 </div>
             )}
 
+            {o?.platform && <PlatformPlanNote platform={o.platform} />}
+
             {(clients.data ?? []).length > 6 && (
                 <label className="imcrm-relative imcrm-block imcrm-max-w-sm">
                     <Search className="imcrm-pointer-events-none imcrm-absolute imcrm-left-2.5 imcrm-top-1/2 imcrm-h-4 imcrm-w-4 imcrm--translate-y-1/2 imcrm-text-muted-foreground" aria-hidden />
@@ -169,10 +172,49 @@ export function AgencyPage(): JSX.Element {
 
             <AgencyBrandCard />
 
-            {creating && <CreateClientDialog onClose={() => setCreating(false)} />}
+            {creating && <CreateClientDialog platform={o?.platform ?? null} onClose={() => setCreating(false)} />}
             {billingClient && o && <ClientBillingDialog client={billingClient} overview={o} onClose={() => setBillingId(null)} />}
             {renaming && <RenameClientDialog client={renaming} onClose={() => setRenaming(null)} />}
         </div>
+    );
+}
+
+type PlatformPricing = NonNullable<AgencyOverview['platform']>;
+
+/** «US$ 79 · $ 316.000 COP» con lo que se vende en cada moneda. */
+function platformTotal(p: Pick<PlatformPricing, 'total_usd' | 'total_cop'>): string {
+    const parts = [p.total_cop !== null ? formatMoney(p.total_cop, 'COP') : null, p.total_usd !== null ? formatMoney(p.total_usd, 'USD') : null].filter(
+        (v): v is string => v !== null,
+    );
+    return parts.length > 0 ? parts.join(' · ') : '—';
+}
+
+/**
+ * v0.1.454 (ADR-S108) — Lo que la agencia le paga a la plataforma: el precio de
+ * su plan con las empresas cliente que incluye y las extras. Se paga desde
+ * Ajustes → Suscripción.
+ */
+function PlatformPlanNote({ platform: p }: { platform: PlatformPricing }): JSX.Element {
+    const detail =
+        p.included === null
+            ? __('Incluye todas tus empresas cliente.')
+            : `${__('Incluye')} ${formatNumber(p.included)} ${__('empresas cliente; tienes')} ${formatNumber(p.clients)}${
+                  p.extras > 0 ? ` · ${formatNumber(p.extras)} ${p.extras === 1 ? __('extra') : __('extras')}` : ''
+              }. ${__('Las pausadas y archivadas no cuentan.')}`;
+    return (
+        <Card className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-between imcrm-gap-3 imcrm-px-4 imcrm-py-3" data-testid="agency-platform-plan" data-tour="agency-platform-plan">
+            <div className="imcrm-min-w-0">
+                <p className="imcrm-text-sm">
+                    {__('Tu plan')} <strong>{p.plan_name}</strong>: <strong data-testid="agency-platform-total">{platformTotal(p)}</strong> {__('al mes')}
+                </p>
+                <p className="imcrm-text-[12px] imcrm-text-muted-foreground">{detail}</p>
+            </div>
+            <Button asChild size="sm" variant="outline" className="imcrm-gap-1.5">
+                <Link to="/settings?s=suscripcion">
+                    <CreditCard className="imcrm-h-3.5 imcrm-w-3.5" /> {__('Ver y pagar')}
+                </Link>
+            </Button>
+        </Card>
     );
 }
 
@@ -353,8 +395,23 @@ function ClientRow({ client: c, onRename, onBilling }: { client: AgencyClient; o
     );
 }
 
-function CreateClientDialog({ onClose }: { onClose: () => void }): JSX.Element {
+function CreateClientDialog({ platform, onClose }: { platform: PlatformPricing | null; onClose: () => void }): JSX.Element {
     const create = useCreateAgencyClient();
+    // v0.1.454 — si esta empresa pasa las que incluye el plan, se avisa cuánto suma.
+    const next = platform
+        ? agencyPlatformPricing(
+              {
+                  price_usd: platform.base_usd,
+                  price_cop: platform.base_cop,
+                  agency_included_clients: platform.included,
+                  agency_extra_usd: platform.extra_usd,
+                  agency_extra_cop: platform.extra_cop,
+              },
+              null,
+              platform.clients + 1,
+          )
+        : null;
+    const addsCost = next !== null && next.extras > (platform?.extras ?? 0);
     const toast = useToast();
     const [name, setName] = useState('');
     const [invite, setInvite] = useState(false);
@@ -421,6 +478,12 @@ function CreateClientDialog({ onClose }: { onClose: () => void }): JSX.Element {
                             <Input value={adminName} onChange={(e) => setAdminName(e.target.value)} />
                         </label>
                     </div>
+                )}
+                {addsCost && next && (
+                    <p className="imcrm-rounded-md imcrm-bg-warning/10 imcrm-px-3 imcrm-py-2 imcrm-text-[12px]" data-testid="agency-create-extra">
+                        {`${__('Tu plan incluye')} ${formatNumber(platform?.included ?? 0)} ${__('empresas cliente: con esta, tu plan pasa a')} `}
+                        <strong>{platformTotal(next)}</strong> {__('al mes. Pausarla después deja de sumar.')}
+                    </p>
                 )}
                 {error && <p className="imcrm-text-sm imcrm-text-destructive" role="alert">{error}</p>}
                 <div className="imcrm-flex imcrm-flex-wrap imcrm-justify-end imcrm-gap-2 imcrm-border-t imcrm-border-border imcrm-pt-3">
