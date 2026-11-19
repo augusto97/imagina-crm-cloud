@@ -16172,6 +16172,61 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         el código llega al proveedor, firmar con él, la actividad sin el
         código, editor de la acción, conexión en uso).
 
+  - [x] **Modo agencia, primera parte (v0.1.449, ADR-S108, séptimo módulo
+        nuevo del plan: I3)**. Decisiones del usuario: la agencia le cobra a su
+        cliente con su propia pasarela; la plataforma le cobra a la agencia
+        «las dos» (plan base con N empresas incluidas + un valor por cada
+        empresa extra); la agencia entra **como administradora con rastro**;
+        y la marca de sus clientes es **sólo la de la agencia**. Se parte en
+        cuatro versiones (base, marca, cobro de la agencia, cobro a la
+        agencia); ésta es la base. (a) **Modelo** (migración 0134):
+        `tenants.is_agency`, `tenants.agency_id` (UNA agencia por cliente; FK
+        `RESTRICT`), `tenants.agency_paused_at`, `memberships.via_agency` y un
+        CHECK (una agencia no es cliente de nadie). Ajustes de la agencia en
+        `tenants.settings.agency` (`client_plan`, `max_clients`) con lectura
+        tolerante (`packages/shared/src/schemas/agency.ts`). (b) **El acceso
+        del cliente sigue a la agencia** (`tenantAccess`): pausado →
+        solo lectura `agency_paused`; agencia sin acceso completo → solo
+        lectura `agency`; `agencyAccessSql` (subconsulta correlacionada) en el
+        guard, tokens/MCP, formularios, agenda, webhooks, automatizaciones y
+        facturación. (c) **Entrar con rastro** (`POST /agency/clients/:id/
+        enter`): membresía admin `via_agency`, revalidada en CADA pedido por el
+        `TenantGuard` (sigue siendo admin de la agencia y el cliente sigue
+        vinculado, si no 403 `agency_access_revoked`); `agency.access` en la
+        bitácora del CLIENTE una vez por hora y persona (Redis `SET NX`); no
+        ocupa usuarios del plan, no se le cambia el rol ni se quita desde el
+        cliente (403 `agency_member`); dejar de ser admin de la agencia o que
+        el operador desvincule al cliente borra esos accesos
+        (`revokeAgencyStaffAccess`/`revokeClientAgencyAccess`). (d) **Consola
+        de la agencia** (`AgencyService`/`AgencyController`, `/agency` con
+        `AgencyPage`, ítem «Agencia» del riel y «Empresas cliente» en Más):
+        sólo admins propios (ni tokens ni gente de otra agencia); crear empresa
+        cliente con el plan del operador y el tope (`agency_client_limit`),
+        con invitación opcional a su administrador; entrar (refresca la sesión
+        y cambia de empresa); renombrar; pausar y reactivar; cada acción a la
+        bitácora del cliente (el alta también a la de la agencia). (e) **El
+        cliente no le paga a la plataforma**: checkout 403 `agency_managed`,
+        Ajustes → Suscripción dice que la maneja la agencia, banners sin
+        «Elegir plan», sin avisos de prueba/vencimiento; Miembros con «Equipo
+        de la agencia» al final. (f) **Plataforma**: sección «Agencia» en la
+        ficha de la empresa (`TenantAgencySection`: «Es una agencia», plan de
+        los clientes, tope, pasar a una agencia, quitar de ella), insignias y
+        `?agency=all|<id>` en el listado; reglas `agency_has_clients` y
+        `agency_is_client`. **Bug encontrado por el test**: el conteo de
+        clientes por agencia en la consola daba siempre 0 (la clave bigint del
+        mapa llegaba como texto). Ayuda: guía `agency` y pantalla de ayuda
+        `agency` (sin novedad: lo enciende el operador). Tests: `agency.spec`
+        (5: crear con plan/tope/invitación, entrar con rastro y revalidación,
+        acceso que sigue a la agencia, miembros de la agencia, plataforma),
+        `plan-access.test` +2, suites relacionadas 217/217 + E2E navegador
+        28/28 (registrar → el operador la marca con tope 2 → crear cliente con
+        invitación → entrar con rastro → Miembros y Suscripción del cliente →
+        pausar → el cliente en solo lectura en el celular oscuro, sin «elegir
+        plan» y con 403 al escribir → reactivar → consola con la insignia → Más
+        → Empresas cliente). Siguen v0.1.450 (marca de la agencia), v0.1.451
+        (planes y cobro de la agencia a sus clientes) y v0.1.452 (cobro de la
+        plataforma a la agencia).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -51,6 +51,20 @@ function assertAdmin(req: FastifyRequest): void {
 }
 
 /**
+ * v0.1.449 (ADR-S108) — El plan de una empresa cliente lo gestiona su agencia:
+ * la empresa no le paga a la plataforma (la agencia le cobra por su cuenta).
+ */
+function assertNotAgencyClient(req: FastifyRequest): void {
+    if (req.tenant!.agencyId) {
+        throw new ForbiddenException({
+            code: 'agency_managed',
+            message: 'El plan de esta empresa lo gestiona su agencia: habla con ella para cambiarlo.',
+            data: { status: 403 },
+        });
+    }
+}
+
+/**
  * Cobro de los planes (ADR-S12, v0.1.250). Todo lo de la empresa se permite en
  * solo-lectura (`@AllowReadOnly`): una empresa vencida tiene que poder pagar.
  * Los avisos son públicos por proveedor: la autenticidad la verifica cada
@@ -79,6 +93,7 @@ export class PaymentsController {
         @Body(new ZodValidationPipe(createCheckoutSchema)) input: CreateCheckoutInput,
     ): Promise<CheckoutResult> {
         assertAdmin(req);
+        assertNotAgencyClient(req);
         let email = input.payer_email;
         if (!email) {
             const [u] = await this.db.select({ email: users.email }).from(users).where(eq(users.id, req.authUserId!)).limit(1);

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { emailSchema } from './auth';
 import { billingStatusSchema, planSchema, usageSchema, type BillingStatus, type Plan } from './billing';
 import { idSchema } from './common';
+import { agencySettingsSchema } from './agency';
 import { billingPolicySchema, disabledModulesSchema, tenantAccessSchema } from './plan-access';
 import { storedSignupAttributionSchema } from './signup-attribution';
 
@@ -46,6 +47,16 @@ export const platformTenantSchema = z.object({
     access: tenantAccessSchema.optional(),
     /** v0.1.338 — pasó a prueba por no renovar: de qué plan venía y cuándo. */
     lapsed_from: z.object({ plan: z.string(), at: z.string() }).nullable().default(null),
+    /** v0.1.449 (ADR-S108) — la empresa es una agencia. */
+    is_agency: z.boolean().default(false),
+    /** v0.1.449 — sus ajustes de agencia (sólo si es agencia). */
+    agency_settings: agencySettingsSchema.nullable().default(null),
+    /** v0.1.449 — cuántas empresas cliente tiene (sólo si es agencia). */
+    agency_clients: z.number().int().nullable().default(null),
+    /** v0.1.449 — la agencia de la que es cliente. */
+    agency: z.object({ id: z.number().int(), name: z.string() }).nullable().default(null),
+    /** v0.1.449 — su agencia la pausó. */
+    agency_paused: z.boolean().default(false),
 });
 export type PlatformTenant = z.infer<typeof platformTenantSchema>;
 
@@ -125,6 +136,12 @@ export const updateTenantSchema = z
         subscription_ends_at: z.string().datetime({ offset: true }).nullable().optional(),
         /** v0.1.338 — fin de la prueba (extender, acortar o `null` = sin fin). */
         trial_ends_at: z.string().datetime({ offset: true }).nullable().optional(),
+        /** v0.1.449 (ADR-S108) — marcarla (o no) como agencia. */
+        is_agency: z.boolean().optional(),
+        /** v0.1.449 — sus ajustes de agencia (plan de los clientes, tope). */
+        agency_settings: agencySettingsSchema.optional(),
+        /** v0.1.449 — la agencia de la que pasa a ser cliente (`null` = ninguna). */
+        agency_id: z.number().int().positive().nullable().optional(),
     })
     .refine(
         (v) =>
@@ -133,7 +150,10 @@ export const updateTenantSchema = z
             v.status !== undefined ||
             v.archived !== undefined ||
             v.subscription_ends_at !== undefined ||
-            v.trial_ends_at !== undefined,
+            v.trial_ends_at !== undefined ||
+            v.is_agency !== undefined ||
+            v.agency_settings !== undefined ||
+            v.agency_id !== undefined,
         { message: 'Indica al menos un campo a cambiar' },
     );
 export type UpdateTenantInput = z.infer<typeof updateTenantSchema>;

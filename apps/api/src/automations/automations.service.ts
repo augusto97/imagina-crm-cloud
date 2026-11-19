@@ -44,7 +44,7 @@ import {
     zonedToday,
 } from '@imagina-base/shared';
 import { connectionModuleStepError, planModuleOff } from '../billing/plan-module-gate';
-import { accessOf } from '../billing/tenant-access';
+import { accessOf, agencyAccessSql } from '../billing/tenant-access';
 import { and, desc, eq, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import { safeWebhookFetch } from '../common/safe-fetch';
 import { maskHeaders, redactValues, type ConnectionParts } from '../connectors/connection-parts';
@@ -1418,6 +1418,8 @@ export class AutomationsService {
                 archivedAt: tenants.archivedAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
                 paidUntil: tenants.paidUntil,
+                agencyPausedAt: tenants.agencyPausedAt,
+                agency: agencyAccessSql,
                 plan: tenants.plan,
                 trialEndsAt: tenants.trialEndsAt,
             })

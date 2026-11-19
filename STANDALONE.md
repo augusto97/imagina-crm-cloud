@@ -9961,3 +9961,65 @@ firmante, migración 0133).
   «Pedir firma» (una plantilla de DOCUMENTO) se traducía con el mapa de las
   plantillas de REGISTRO, y las plantillas que filtra el disparador
   (`signature_template_ids`) no se traducían.
+
+### ADR-S108 — Modo agencia: una empresa que administra las empresas de sus clientes (v0.1.449)
+
+**Contexto.** Idea I3 del banco, del plan aprobado el 2026-11-18. Agencias y
+consultores le arman la app a varios clientes y hoy lo hacen con una cuenta por
+cliente, una contraseña distinta en cada una y sin saber qué tocó la agencia.
+Decisiones del usuario (2026-11-18): la agencia **le cobra a su cliente** con su
+propia pasarela; la plataforma le cobra a la agencia «las dos» (plan base con N
+empresas incluidas + un valor por cada empresa de más); la agencia **entra como
+administradora con rastro** visible para el cliente; y la **marca es sólo la de
+la agencia** (white-label completo). Se parte en versiones: v0.1.449 la base,
+v0.1.450 la marca, v0.1.451 los planes y el cobro de la agencia a sus clientes,
+v0.1.452 el cobro de la plataforma a la agencia.
+
+**Decisión.**
+- **Modelo** (migración 0134): `tenants.is_agency`, `tenants.agency_id` (un
+  cliente pertenece a UNA agencia; FK `RESTRICT`: borrar una agencia con
+  clientes se rechaza), `tenants.agency_paused_at` y `memberships.via_agency`.
+  Un CHECK impide que una agencia sea cliente de otra o de sí misma. Los
+  ajustes de la agencia (`tenants.settings.agency`: `client_plan` y
+  `max_clients`) los pone el operador; schemas en
+  `packages/shared/src/schemas/agency.ts` con lectura tolerante.
+- **El acceso del cliente sigue a la agencia** (`tenantAccess`, la única
+  fuente): pausado por la agencia → solo lectura con motivo `agency_paused`; si
+  la agencia no está en acceso completo, el cliente queda en solo lectura con
+  motivo `agency`. En el servidor `agencyAccessSql` lee el estado de la agencia
+  en la MISMA consulta (subconsulta correlacionada) en el guard, el MCP/tokens,
+  formularios, agenda, webhooks, automatizaciones y facturación, así no hay un
+  camino que se salte la regla.
+- **Entrar con rastro**: la gente de la agencia entra al cliente como
+  administradora con `via_agency`. El guard la **revalida en cada pedido**
+  (tiene que seguir siendo admin de la agencia y el cliente seguir vinculado;
+  si no, 403 `agency_access_revoked`), anota `agency.access` en la bitácora del
+  CLIENTE como mucho una vez por hora y persona (Redis `SET NX`), y una
+  impersonación no la anota. No ocupa un usuario del plan del cliente, no se le
+  cambia el rol ni se quita desde el cliente (`agency_member`), y si deja de ser
+  admin de la agencia o el operador desvincula al cliente, sus membresías se
+  borran (`revokeAgencyStaffAccess`, `revokeClientAgencyAccess`).
+- **Consola de la agencia** (`/agency`, sección «Agencia» del riel y «Empresas
+  cliente» en Más): sólo admins propios de la agencia (no un token de API ni
+  alguien que entró por otra agencia). Crear empresa cliente (con el plan que
+  fijó el operador, respetando el tope `agency_client_limit`, con o sin
+  invitación a su administrador), entrar, renombrar, pausar y reactivar; cada
+  acción queda en la bitácora del cliente y el alta también en la de la
+  agencia. Un cliente del portal o invitado de esa empresa no puede «entrar»
+  como agencia (`agency_member_conflict`).
+- **El cliente no le paga a la plataforma**: su checkout responde 403
+  `agency_managed`, Ajustes → Suscripción dice que el plan lo maneja la agencia
+  y los avisos de prueba/vencimiento no le llegan (son de la agencia).
+- **Consola de la plataforma**: en la ficha de cada empresa, «Es una agencia»
+  (con su plan para los clientes y el tope), «Pasarla a una agencia» y «Quitar
+  de la agencia» (que corta el acceso de la agencia al instante y lo anota);
+  insignias y filtro `?agency=all|<id>` en el listado. Reglas: una agencia con
+  clientes no deja de serlo (`agency_has_clients`) y un cliente no puede ser
+  agencia (`agency_is_client`).
+
+**Consecuencias.** Lo que hace la agencia queda a la vista del cliente sin
+hacer nada extra. Queda para las versiones siguientes: la marca de la agencia
+en el login, los correos y la app de sus clientes (v0.1.450); los planes que la
+agencia le vende a cada cliente y su cobro con la pasarela de la agencia
+(v0.1.451); y el cobro de la plataforma a la agencia por empresas incluidas y
+extra (v0.1.452).

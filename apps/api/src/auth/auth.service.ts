@@ -33,7 +33,7 @@ import type Redis from 'ioredis';
 import { decryptSecret, encryptSecret } from '../common/secret-box';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
-import { accessOf, newTrialEndsAt } from '../billing/tenant-access';
+import { accessOf, newTrialEndsAt, agencyAccessSql } from '../billing/tenant-access';
 import { customRoles, impersonationLog, memberships, personalAccessTokens, plans, tenants, users } from '../db/schema';
 import { withUser } from '../db/tenant-tx';
 import { MailService } from '../mail/mail.service';
@@ -413,9 +413,61 @@ export class AuthService implements OnModuleInit {
             admin_name: string;
             plan: string;
         },
-        opts: { allowReserved?: boolean } = {},
+        opts: {
+            allowReserved?: boolean;
+            /**
+             * v0.1.449 (ADR-S108) — la empresa nace CLIENTE de esta agencia: sin
+             * fecha de fin de prueba (sigue a su agencia) y con quien la creó
+             * (`agencyCreatorId`) adentro como parte de la agencia.
+             */
+            agencyId?: number;
+            agencyCreatorId?: number;
+        } = {},
+    ): Promise<{ tenantId: number; invited: boolean }> {
+        return this.createTenantWith(input, opts);
+    }
+
+    /**
+     * v0.1.449 (ADR-S108) — Una agencia crea una empresa cliente. Con
+     * `adminEmail` la persona queda como su administradora (invitación si no
+     * tiene cuenta); sin él, la empresa nace sin equipo propio y la agencia la
+     * arma. Quien la crea queda adentro «por la agencia».
+     */
+    async agencyCreateTenant(input: {
+        workspaceName: string;
+        adminEmail: string | null;
+        adminName: string | null;
+        plan: string;
+        agencyId: number;
+        creatorId: number;
+    }): Promise<{ tenantId: number; invited: boolean }> {
+        return this.createTenantWith(
+            {
+                workspace_name: input.workspaceName,
+                admin_email: input.adminEmail ?? '',
+                admin_name: input.adminName ?? '',
+                plan: input.plan,
+            },
+            { agencyId: input.agencyId, agencyCreatorId: input.creatorId },
+        );
+    }
+
+    private async createTenantWith(
+        input: {
+            workspace_name: string;
+            admin_email: string;
+            admin_name: string;
+            plan: string;
+        },
+        opts: { allowReserved?: boolean; agencyId?: number; agencyCreatorId?: number },
     ): Promise<{ tenantId: number; invited: boolean }> {
         const email = input.admin_email.trim().toLowerCase();
+        if (!email) {
+            if (opts.agencyId === undefined || opts.agencyCreatorId === undefined) {
+                throw new BadRequestException('Falta el correo del administrador');
+            }
+            return this.createAgencyClientOnly(input, opts.agencyId, opts.agencyCreatorId);
+        }
         // v0.1.293 — la consola de plataforma (sólo superadmins) SÍ puede crearle
         // una empresa a un superadmin: si no, uno que se quedó sin empresas no
         // tenía forma de volver a tener una (ni de abrir la app).
@@ -475,9 +527,21 @@ export class AuthService implements OnModuleInit {
             const slug = await this.availableTenantSlug(tx, slugifyTenant(input.workspace_name));
             // v0.1.338 — una empresa en prueba que da de alta el operador también
             // tiene fecha de fin; la de un superadmin no (es la del operador).
+            // v0.1.449 — la de una agencia tampoco: el cliente sigue a su agencia.
             const trialEndsAt =
-                input.plan === 'trial' && !this.env.PLATFORM_SUPERADMINS.includes(email) ? newTrialEndsAt() : null;
-            const [tenant] = await tx.insert(tenants).values({ slug, name: input.workspace_name, plan: input.plan, trialEndsAt }).returning();
+                input.plan === 'trial' && opts.agencyId === undefined && !this.env.PLATFORM_SUPERADMINS.includes(email)
+                    ? newTrialEndsAt()
+                    : null;
+            const [tenant] = await tx
+                .insert(tenants)
+                .values({
+                    slug,
+                    name: input.workspace_name,
+                    plan: input.plan,
+                    trialEndsAt,
+                    ...(opts.agencyId !== undefined ? { agencyId: opts.agencyId, status: 'active' } : {}),
+                })
+                .returning();
             if (!tenant) throw new Error('Insert de tenant no devolvió fila');
 
             // Membership admin bajo el rol de app + contexto RLS (WITH CHECK real).
@@ -485,6 +549,13 @@ export class AuthService implements OnModuleInit {
             await tx.execute(sql`select set_config('app.user_id', ${String(userId)}, true)`);
             await tx.execute(sql`select set_config('app.tenant_id', ${String(tenant.id)}, true)`);
             await tx.insert(memberships).values({ userId, tenantId: tenant.id, role: 'admin' });
+            // v0.1.449 — quien la crea desde la agencia queda adentro «por la agencia».
+            if (opts.agencyCreatorId !== undefined && opts.agencyCreatorId !== userId) {
+                await tx
+                    .insert(memberships)
+                    .values({ userId: opts.agencyCreatorId, tenantId: tenant.id, role: 'admin', viaAgency: true })
+                    .onConflictDoNothing();
+            }
 
             return { tenantId: tenant.id, userId, invited, reclaimed, email, name };
         });
@@ -496,9 +567,32 @@ export class AuthService implements OnModuleInit {
             });
         }
         this.logger.log(
-            `Empresa ${result.tenantId} creada por operador (admin ${result.email}${result.invited ? ', invitado' : ''})`,
+            `Empresa ${result.tenantId} creada por ${opts.agencyId ? `la agencia ${opts.agencyId}` : 'operador'} (admin ${result.email}${result.invited ? ', invitado' : ''})`,
         );
         return { tenantId: result.tenantId, invited: result.invited };
+    }
+
+    /** v0.1.449 — Empresa cliente sin administrador propio: sólo la agencia adentro. */
+    private async createAgencyClientOnly(
+        input: { workspace_name: string; plan: string },
+        agencyId: number,
+        creatorId: number,
+    ): Promise<{ tenantId: number; invited: boolean }> {
+        const tenantId = await this.db.transaction(async (tx) => {
+            const slug = await this.availableTenantSlug(tx, slugifyTenant(input.workspace_name));
+            const [tenant] = await tx
+                .insert(tenants)
+                .values({ slug, name: input.workspace_name, plan: input.plan, status: 'active', trialEndsAt: null, agencyId })
+                .returning({ id: tenants.id });
+            if (!tenant) throw new Error('Insert de tenant no devolvió fila');
+            await tx.execute(sql`set local role imagina_app`);
+            await tx.execute(sql`select set_config('app.user_id', ${String(creatorId)}, true)`);
+            await tx.execute(sql`select set_config('app.tenant_id', ${String(tenant.id)}, true)`);
+            await tx.insert(memberships).values({ userId: creatorId, tenantId: tenant.id, role: 'admin', viaAgency: true });
+            return tenant.id;
+        });
+        this.logger.log(`Empresa ${tenantId} creada por la agencia ${agencyId} (sin administrador propio)`);
+        return { tenantId, invited: false };
     }
 
     /** Reset de contraseña disparado por el operador (envía el email). */
@@ -1565,7 +1659,14 @@ export class AuthService implements OnModuleInit {
                     trialEndsAt: tenants.trialEndsAt,
                     subscriptionEndsAt: tenants.subscriptionEndsAt,
                     paidUntil: tenants.paidUntil,
+                    agencyPausedAt: tenants.agencyPausedAt,
+                    agency: agencyAccessSql,
                     disabledModules: plans.disabledModules,
+                    // v0.1.449 (ADR-S108) — modo agencia.
+                    isAgency: tenants.isAgency,
+                    agencyId: tenants.agencyId,
+                    agencyName: sql<string | null>`(SELECT ag.name FROM tenants ag WHERE ag.id = ${tenants.agencyId})`,
+                    viaAgency: memberships.viaAgency,
                 })
                 .from(memberships)
                 .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
@@ -1581,6 +1682,9 @@ export class AuthService implements OnModuleInit {
                         ne(memberships.role, 'client'),
                         // Sesión atada a una empresa: sólo esa.
                         typeof onlyTenantId === 'number' ? eq(memberships.tenantId, onlyTenantId) : undefined,
+                        // v0.1.449 — el acceso «por la agencia» sólo mientras siga
+                        // siendo admin de esa agencia (mismo criterio del guard).
+                        sql`(NOT ${memberships.viaAgency} OR EXISTS (SELECT 1 FROM memberships am WHERE am.tenant_id = ${tenants.agencyId} AND am.user_id = ${memberships.userId} AND am.role = 'admin'))`,
                     ),
                 );
             return rows.map((r) => {
@@ -1598,6 +1702,9 @@ export class AuthService implements OnModuleInit {
                     capabilities: effectiveCapabilities(r.role, custom),
                     access: accessOf(r),
                     disabled_modules: disabled,
+                    is_agency: r.isAgency,
+                    agency: r.agencyId !== null && r.agencyName !== null ? { id: r.agencyId, name: r.agencyName } : null,
+                    via_agency: r.viaAgency,
                 };
             });
         });

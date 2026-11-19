@@ -146,6 +146,8 @@ export const HELP_SCREENS = [
     // v0.1.342 — las pestañas del celular.
     { id: 'inbox', label: 'Avisos' },
     { id: 'menu', label: 'Más (menú del celular)' },
+    // v0.1.449 — modo agencia (ADR-S108).
+    { id: 'agency', label: 'Agencia (empresas cliente)' },
 ] as const;
 export type HelpScreenId = (typeof HELP_SCREENS)[number]['id'];
 
@@ -186,6 +188,7 @@ export function helpScreensFor(pathname: string, search = ''): string[] {
     if (path === '/menu/barra') out.push('menu', 'menu:barra');
     if (/^\/dashboards(\/.*)?$/.test(path)) out.push('dashboards');
     if (/^\/agents(\/.*)?$/.test(path)) out.push('agents');
+    if (path === '/agency') out.push('agency');
     if (/^\/settings(\/.*)?$/.test(path)) {
         out.push('settings');
         if (params.s) out.push(`settings:${params.s}`);

@@ -4,6 +4,7 @@ import { Link, useLocation, useSearchParams } from 'react-router';
 import {
     BarChart3,
     Bot,
+    Building2,
     ChevronsLeft,
     ChevronsRight,
     AlarmClock,
@@ -52,6 +53,8 @@ import { ViewSwitch } from '@/components/ui/view-switch';
 import { FolderSquare } from '@/admin/lists/FolderBadge';
 import { isPlatformTab, platformTabGroups } from '@/admin/platform/platformTabs';
 import { AgentsPanel } from '@/admin/agents/AgentsPanel';
+import { AgencyPanel } from '@/admin/agency/AgencyPanel';
+import { useIsAgencyAdmin } from '@/admin/agency/useAgency';
 
 import { DashboardPanelItem } from './DashboardPanelItem';
 import { DashboardsPanelList } from './DashboardsPanelList';
@@ -73,7 +76,7 @@ function readCollapsedPref(): boolean {
 }
 
 /** Sección del riel activa — derivada de la RUTA (no estado aparte). */
-type RailSection = 'home' | 'mywork' | 'favorites' | 'dashboards' | 'agents' | 'learn' | 'settings' | 'platform';
+type RailSection = 'home' | 'mywork' | 'favorites' | 'dashboards' | 'agents' | 'agency' | 'learn' | 'settings' | 'platform';
 
 // v0.1.322 — el índice del manual se baja sólo al abrir el centro de aprendizaje.
 const LearnPanelNav = lazy(() => import('@/admin/learn/LearnNav'));
@@ -83,6 +86,7 @@ function railSectionFromPath(pathname: string): RailSection {
     if (pathname.startsWith('/favorites')) return 'favorites';
     if (pathname.startsWith('/dashboards')) return 'dashboards';
     if (pathname.startsWith('/agents')) return 'agents';
+    if (pathname.startsWith('/agency')) return 'agency';
     if (pathname.startsWith('/aprende') || pathname.startsWith('/ideas')) return 'learn';
     if (pathname.startsWith('/settings')) return 'settings';
     if (pathname.startsWith('/platform')) return 'platform';
@@ -219,6 +223,7 @@ export function Sidebar(): JSX.Element {
     const canManageDashboards = useCan(CAP.MANAGE_DASHBOARDS);
     // E6 — «Agentes» sólo para quien los administra.
     const canManageAgents = useCan(CAP.MANAGE_AI_AGENTS);
+    const isAgencyAdmin = useIsAgencyAdmin();
     const canAccessAdmin = useCan(CAP.ACCESS_ADMIN);
     const canManageLists = useCan(CAP.MANAGE_LISTS);
     // C2 — «Ver tableros» es una capacidad (rol propio); los roles base la tienen.
@@ -243,6 +248,8 @@ export function Sidebar(): JSX.Element {
                   ? __('Mi trabajo')
                   : sec === 'agents'
                     ? __('Agentes de IA')
+                    : sec === 'agency'
+                    ? __('Agencia')
                     : sec === 'learn'
                       ? __('Aprende')
                       : workspaceTitle;
@@ -300,6 +307,8 @@ export function Sidebar(): JSX.Element {
             {sec === 'mywork' && <MyWorkPanelSummary />}
 
             {sec === 'agents' && <AgentsPanel pathname={pathname} />}
+
+            {sec === 'agency' && <AgencyPanel pathname={pathname} />}
 
             {sec === 'learn' && (
                 <Suspense fallback={null}>
@@ -427,6 +436,19 @@ export function Sidebar(): JSX.Element {
                         label={__('Tableros')}
                         hint={__('Dashboards')}
                         onPeek={() => peek('dashboards')}
+                        onUnpeek={unpeek}
+                    />
+                )}
+                {/* v0.1.449 (ADR-S108) — la consola de la agencia. */}
+                {isAgencyAdmin && (
+                    <RailItem
+                        to="/agency"
+                        tour="rail-agency"
+                        active={section === 'agency'}
+                        icon={Building2}
+                        label={__('Agencia')}
+                        hint={__('Empresas cliente de tu agencia')}
+                        onPeek={() => peek('agency')}
                         onUnpeek={unpeek}
                     />
                 )}

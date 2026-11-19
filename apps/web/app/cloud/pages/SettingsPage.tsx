@@ -73,6 +73,8 @@ const STATUS_LABEL: Record<BillingSummary['status'], string> = {
  */
 export function SettingsPage(): JSX.Element {
     const tenantId = useSession((s) => s.activeTenantId);
+    // v0.1.449 (ADR-S108) — empresa cliente de una agencia: el plan lo maneja ella.
+    const agencyName = useSession((s) => s.memberships.find((m) => m.tenant_id === s.activeTenantId)?.agency?.name ?? null);
     const isAdmin = useSession(
         (s) => s.memberships.find((m) => m.tenant_id === s.activeTenantId)?.role === 'admin',
     );
@@ -165,7 +167,18 @@ export function SettingsPage(): JSX.Element {
                         {billing.data && <BillingCard summary={billing.data} />}
                     </>
                 )}
-                {active === 'suscripcion' && isAdmin && (
+                {active === 'suscripcion' && isAdmin && agencyName !== null && (
+                    <div
+                        className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-p-4 imcrm-text-sm"
+                        data-testid="settings-agency-managed"
+                    >
+                        <p className="imcrm-font-medium">{`El plan de esta empresa lo maneja ${agencyName}.`}</p>
+                        <p className="imcrm-mt-1 imcrm-text-muted-foreground">
+                            Para cambiarlo o pagarlo, habla con tu agencia. En «Plan y uso» ves qué incluye y cuánto llevas usado.
+                        </p>
+                    </div>
+                )}
+                {active === 'suscripcion' && isAdmin && agencyName === null && (
                     <>
                         {billingSkeleton}
                         {billing.data && <SubscriptionPanel currentPlan={billing.data.plan} />}

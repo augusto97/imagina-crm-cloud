@@ -86,13 +86,18 @@ export class PlatformController {
         @Query('limit') limit?: string,
         @Query('offset') offset?: string,
         @Query('q') q?: string,
+        @Query('agency') agency?: string,
     ): Promise<PlatformTenantsResponse> {
         const withArchived = includeArchived === '1' || includeArchived === 'true';
+        // v0.1.449 (ADR-S108): `agency=all` = sólo agencias; `agency=<id>` = sus clientes.
+        const agencyId = agency && /^\d+$/.test(agency) ? Number(agency) : undefined;
         return this.platform.listTenants({
             includeArchived: withArchived,
             limit: limit ? Number(limit) : undefined,
             offset: offset ? Number(offset) : undefined,
             search: q,
+            agencies: agency === 'all',
+            agencyId,
         });
     }
 

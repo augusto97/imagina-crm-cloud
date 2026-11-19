@@ -10,7 +10,7 @@ import { and, eq, inArray, isNull, notExists, sql } from 'drizzle-orm';
 import { SessionGuard } from '../auth/session.guard';
 import { SuperadminGuard } from '../authz/superadmin.guard';
 import { BillingPolicyService } from '../billing/billing-policy.service';
-import { accessOf } from '../billing/tenant-access';
+import { accessOf, agencyAccessSql } from '../billing/tenant-access';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db } from '../db/client';
@@ -89,6 +89,8 @@ export class PlatformBillingPolicyController {
                 trialEndsAt: tenants.trialEndsAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
                 paidUntil: tenants.paidUntil,
+                agencyPausedAt: tenants.agencyPausedAt,
+                agency: agencyAccessSql,
             })
             .from(tenants);
         return {

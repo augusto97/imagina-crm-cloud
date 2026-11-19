@@ -3,7 +3,10 @@ import {
     CanActivate,
     ExecutionContext,
     ForbiddenException,
+    Inject,
     Injectable,
+    Logger,
+    Optional,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import {
@@ -18,7 +21,10 @@ import {
 } from '@imagina-base/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
-import { accessOf, planModuleDisabled } from '../billing/tenant-access';
+import type Redis from 'ioredis';
+import { AuditService } from '../audit/audit.service';
+import { accessOf, agencyAccessSql, planModuleDisabled } from '../billing/tenant-access';
+import { REDIS } from '../redis/redis.module';
 import { memberships, plans, recordShares, tenants } from '../db/schema';
 import type { GuestShares } from '../lists/list-acl';
 import { ALLOW_GUEST } from './allow-guest.decorator';
@@ -50,7 +56,19 @@ export interface TenantContext {
     plan?: string;
     access?: TenantAccess;
     disabledModules?: PlanModule[];
+    /**
+     * v0.1.449 (ADR-S108) — la persona entra a esta empresa CLIENTE como parte
+     * de su agencia (`agencyId`). Ya se revalidó que siga siendo admin de ella.
+     */
+    viaAgency?: boolean;
+    /** v0.1.449 — la agencia de la que esta empresa es cliente (null = ninguna). */
+    agencyId?: number | null;
+    /** v0.1.449 — la empresa es una agencia. */
+    isAgency?: boolean;
 }
+
+/** v0.1.449 — Cada cuánto se anota en la bitácora del cliente que alguien de la agencia entró. */
+const AGENCY_ACCESS_LOG_SECONDS = 60 * 60;
 
 /** Los magic-link / consumo del portal no pasan por aquí; sí las mutaciones. */
 const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
@@ -63,9 +81,15 @@ const MUTATING_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
  */
 @Injectable()
 export class TenantGuard implements CanActivate {
+    private readonly logger = new Logger(TenantGuard.name);
+    /** Respaldo sin Redis: la última vez que se anotó cada entrada de agencia. */
+    private readonly agencyNoted = new Map<string, number>();
+
     constructor(
         private readonly tenantDb: TenantDb,
         private readonly reflector: Reflector,
+        @Optional() private readonly audit?: AuditService,
+        @Optional() @Inject(REDIS) private readonly redis?: Redis,
     ) {}
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -104,6 +128,16 @@ export class TenantGuard implements CanActivate {
                     trialEndsAt: tenants.trialEndsAt,
                     subscriptionEndsAt: tenants.subscriptionEndsAt,
                     paidUntil: tenants.paidUntil,
+                    // v0.1.449 (ADR-S108) — modo agencia: el cliente sigue a su
+                    // agencia, y quien entra «por la agencia» tiene que seguir
+                    // siendo admin de ESA agencia (`memberships_self` deja leer
+                    // la propia membresía en la agencia sin empresa activa).
+                    agencyPausedAt: tenants.agencyPausedAt,
+                    agency: agencyAccessSql,
+                    agencyId: tenants.agencyId,
+                    isAgency: tenants.isAgency,
+                    viaAgency: memberships.viaAgency,
+                    agencyAdmin: sql<boolean>`EXISTS (SELECT 1 FROM memberships am WHERE am.tenant_id = ${tenants.agencyId} AND am.user_id = ${memberships.userId} AND am.role = 'admin')`,
                     // v0.1.338 — los módulos que el plan no incluye (misma consulta).
                     disabledModules: plans.disabledModules,
                     // C1 — `team_members_self` deja leer los equipos propios
@@ -142,6 +176,17 @@ export class TenantGuard implements CanActivate {
         // contra las otras empresas de la persona.
         if (req.boundTenantId !== undefined && membership.tenantId !== req.boundTenantId) {
             throw sessionTenantScope();
+        }
+        // v0.1.449 (ADR-S108) — el acceso «por la agencia» vale mientras la
+        // persona siga siendo admin de la agencia de ESTA empresa (la sacaron
+        // de la agencia, le bajaron el rol o el operador desvinculó al cliente
+        // → se corta al instante, aunque la fila todavía exista).
+        if (membership.viaAgency && (membership.agencyId === null || membership.agencyAdmin !== true)) {
+            throw new ForbiddenException({
+                code: 'agency_access_revoked',
+                message: 'Ya no tienes acceso a esta empresa como parte de su agencia.',
+                data: { status: 403 },
+            });
         }
         // SEC-24 (v0.1.225): el rol `client` es SÓLO portal. Sus endpoints
         // (`/portal/*`) resuelven la empresa por el vínculo, nunca por este
@@ -227,6 +272,9 @@ export class TenantGuard implements CanActivate {
                 )
                 .catch(() => undefined);
         }
+        if (membership.viaAgency && req.impersonatedBy === undefined) {
+            void this.noteAgencyAccess(membership.tenantId, userId, membership.agencyId, req);
+        }
         req.tenant = {
             tenantId: membership.tenantId,
             tenantSlug: membership.tenantSlug,
@@ -238,9 +286,45 @@ export class TenantGuard implements CanActivate {
             plan: membership.plan,
             access,
             disabledModules,
+            viaAgency: membership.viaAgency === true,
+            agencyId: membership.agencyId ?? null,
+            isAgency: membership.isAgency === true,
             ...(membership.role === 'guest' ? { shares: await this.guestShares(membership.tenantId, userId) } : {}),
         };
         return true;
+    }
+
+    /**
+     * v0.1.449 (ADR-S108) — Rastro de la agencia en la bitácora del CLIENTE: a
+     * lo sumo una entrada por persona y hora (Redis `SET NX EX`; sin Redis,
+     * en memoria del proceso). Nunca frena el pedido.
+     */
+    private async noteAgencyAccess(tenantId: number, userId: number, agencyId: number | null, req: FastifyRequest): Promise<void> {
+        if (!this.audit) return;
+        const key = `agacc:${tenantId}:${userId}`;
+        try {
+            if (this.redis) {
+                const ok = await this.redis.set(key, '1', 'EX', AGENCY_ACCESS_LOG_SECONDS, 'NX');
+                if (ok !== 'OK') return;
+            } else {
+                const now = Date.now();
+                const last = this.agencyNoted.get(key) ?? 0;
+                if (now - last < AGENCY_ACCESS_LOG_SECONDS * 1000) return;
+                if (this.agencyNoted.size > 5000) this.agencyNoted.clear();
+                this.agencyNoted.set(key, now);
+            }
+            const path = (req.url ?? '').split('?')[0]?.slice(0, 200) ?? '';
+            await this.audit.log({
+                tenantId,
+                userId,
+                action: 'agency.access',
+                targetType: 'tenant',
+                targetId: tenantId,
+                meta: { agency_id: agencyId, method: req.method, path, via: req.apiToken ? 'api_token' : 'app' },
+            });
+        } catch (err) {
+            this.logger.warn(`No se pudo anotar la entrada de la agencia: ${err instanceof Error ? err.message : String(err)}`);
+        }
     }
 
     /** C3 — Registros sueltos compartidos con el invitado (tope por persona). */

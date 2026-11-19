@@ -78,6 +78,7 @@ import { formatDate, formatNumber } from '@/lib/tenantFormat';
 import { parseUtcDate } from '@/lib/utcDate';
 import { TenantShopsSection } from './TenantShopsSection';
 import { TenantUsageSection } from './TenantUsageSection';
+import { TenantAgencySection } from './TenantAgencySection';
 const STATUS_LABEL: Record<BillingStatus, string> = {
     trialing: __('En prueba'),
     active: __('Activa'),
@@ -315,8 +316,18 @@ export function PlatformTenantsCard(): JSX.Element {
                                                                 <Archive className="imcrm-h-2.5 imcrm-w-2.5" /> {__('Archivada')}
                                                             </Badge>
                                                         )}
+                                                        {/* v0.1.449 (ADR-S108) — agencias y sus clientes. */}
+                                                        {t.is_agency && (
+                                                            <Badge variant="info" className="imcrm-px-1.5 imcrm-py-0 imcrm-text-[10px]" data-testid="tenant-badge-agency">
+                                                                {__('Agencia')}
+                                                                {(t.agency_clients ?? 0) > 0 ? ` · ${t.agency_clients}` : ''}
+                                                            </Badge>
+                                                        )}
                                                     </div>
-                                                    <div className="imcrm-truncate imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground">{t.slug}</div>
+                                                    <div className="imcrm-truncate imcrm-font-mono imcrm-text-[11px] imcrm-text-muted-foreground">
+                                                        {t.slug}
+                                                        {t.agency && <span className="imcrm-font-sans">{` · ${__('cliente de')} ${t.agency.name}`}</span>}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </td>
@@ -740,6 +751,9 @@ function TenantSheet({ id, onClose }: { id: number | null; onClose: () => void }
                                 )}
                             </section>
 
+                            {/* v0.1.449 (ADR-S108) — modo agencia. */}
+                            <TenantAgencySection t={t} busy={busy} onUpdate={run} />
+
                             {/* Uso vs. límites */}
                             <section className="imcrm-flex imcrm-flex-col imcrm-gap-3">
                                 <h3 className="imcrm-text-xs imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
@@ -900,6 +914,9 @@ function AccessLine({ t }: { t: PlatformTenant }): JSX.Element | null {
     if (a.state === 'locked') {
         text = a.reason === 'trial_ended' ? __('Pausada · terminó la prueba') : __('Pausada · venció el plan');
         tone = 'imcrm-text-destructive';
+    } else if (a.state === 'read_only' && (a.reason === 'agency' || a.reason === 'agency_paused')) {
+        text = a.reason === 'agency_paused' ? __('Solo lectura · la pausó su agencia') : __('Solo lectura · por su agencia');
+        tone = 'imcrm-text-warning';
     } else if (a.trial) {
         const left = daysLeft(a.ends_at);
         text = left === null ? __('Prueba sin fecha de fin') : left === 1 ? __('Prueba · queda 1 día') : `${__('Prueba · quedan')} ${left} ${__('días')}`;

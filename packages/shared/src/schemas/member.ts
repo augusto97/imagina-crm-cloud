@@ -21,6 +21,11 @@ export const workspaceMemberSchema = z.object({
      * (no puede entrar hasta abrir el enlace del correo).
      */
     pending: z.boolean().optional(),
+    /**
+     * v0.1.449 (ADR-S108) — entra como parte de la agencia que administra la
+     * empresa: no ocupa un usuario del plan y no se cambia desde aquí.
+     */
+    via_agency: z.boolean().optional(),
 });
 export type WorkspaceMember = z.infer<typeof workspaceMemberSchema>;
 

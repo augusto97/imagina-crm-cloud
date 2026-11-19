@@ -22,7 +22,7 @@ import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { AuditService } from '../audit/audit.service';
-import { accessOf } from '../billing/tenant-access';
+import { accessOf, agencyAccessSql } from '../billing/tenant-access';
 import { decryptSecret, encryptSecret } from '../common/secret-box';
 import { bareHost, devPrivateEgressAllowed, resolvePublicHost, safeWebhookFetch } from '../common/safe-fetch';
 import { ENV, type Env } from '../config/env';
@@ -397,6 +397,8 @@ export class EventWebhooksService implements OnModuleInit {
                 trialEndsAt: tenants.trialEndsAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
                 paidUntil: tenants.paidUntil,
+                agencyPausedAt: tenants.agencyPausedAt,
+                agency: agencyAccessSql,
             })
             .from(memberships)
             .innerJoin(users, eq(users.id, memberships.userId))
@@ -407,7 +409,7 @@ export class EventWebhooksService implements OnModuleInit {
             .limit(1);
         const gone = 'Quien creó la suscripción ya no es del equipo de la empresa (o su cuenta está desactivada).';
         if (!row || row.disabledAt || row.role === 'client' || row.role === 'guest') return { actor: null, reason: gone, locked: false };
-        const access = accessOf({ plan: row.plan, status: row.status, archivedAt: row.archivedAt, trialEndsAt: row.trialEndsAt, subscriptionEndsAt: row.subscriptionEndsAt, paidUntil: row.paidUntil });
+        const access = accessOf({ plan: row.plan, status: row.status, archivedAt: row.archivedAt, trialEndsAt: row.trialEndsAt, subscriptionEndsAt: row.subscriptionEndsAt, paidUntil: row.paidUntil, agencyPausedAt: row.agencyPausedAt, agency: row.agency });
         if (access.state === 'locked') return { actor: null, reason: 'La cuenta de la empresa está pausada.', locked: true };
         const disabled = readDisabledModules(row.disabledModules ?? []);
         if (disabled.includes('api')) return { actor: null, reason: 'El plan de la empresa ya no incluye la API.', locked: true };

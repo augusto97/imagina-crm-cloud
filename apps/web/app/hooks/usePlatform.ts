@@ -87,14 +87,16 @@ export function usePlatformStats() {
  * respuesta para mostrar el conteo y avanzar de página.
  */
 export function usePlatformTenants(
-    opts: { includeArchived?: boolean; limit?: number; offset?: number; search?: string } = {},
+    opts: { includeArchived?: boolean; limit?: number; offset?: number; search?: string; agency?: 'all' | number; enabled?: boolean } = {},
 ) {
-    const { includeArchived = false, limit = 50, offset = 0, search = '' } = opts;
+    const { includeArchived = false, limit = 50, offset = 0, search = '', agency, enabled = true } = opts;
     return useQuery({
-        queryKey: [...platformKeys.tenants(), { includeArchived, limit, offset, search }],
+        queryKey: [...platformKeys.tenants(), { includeArchived, limit, offset, search, agency: agency ?? null }],
+        enabled,
         queryFn: async () => {
             const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
             if (includeArchived) params.set('include_archived', '1');
+            if (agency !== undefined) params.set('agency', String(agency));
             if (search.trim() !== '') params.set('q', search.trim());
             const res = await api.get<PlatformTenant[]>(`/platform/tenants?${params.toString()}`);
             const meta = (res as { meta?: { total: number } }).meta;

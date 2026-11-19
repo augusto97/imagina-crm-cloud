@@ -105,3 +105,24 @@ describe('módulos por plan', () => {
         expect(moduleForIntegration(null)).toBe('integrations');
     });
 });
+
+describe('tenantAccess con agencia (ADR-S108)', () => {
+    const client = { plan: 'pro', status: 'active' as const, now: NOW };
+    const agencyOk = { plan: 'pro', status: 'active' as const };
+
+    it('el cliente sigue a la agencia, pero nunca queda pausado por ella', () => {
+        expect(tenantAccess({ ...client, agency: agencyOk }, lock).state).toBe('full');
+        const agencyEnded = { plan: 'trial', status: 'trialing' as const, trial_ends_at: '2026-10-01T00:00:00Z' };
+        expect(tenantAccess({ ...client, agency: agencyEnded }, lock)).toMatchObject({ state: 'read_only', reason: 'agency' });
+        expect(tenantAccess({ ...client, agency: { ...agencyOk, status: 'unpaid' as const } }, lock)).toMatchObject({ state: 'read_only', reason: 'agency' });
+        expect(tenantAccess({ ...client, agency: { ...agencyOk, archived_at: '2026-10-01T00:00:00Z' } }, lock)).toMatchObject({ state: 'read_only', reason: 'agency' });
+    });
+
+    it('pausada por la agencia = solo lectura; archivada gana a todo', () => {
+        expect(tenantAccess({ ...client, agency: agencyOk, agency_paused_at: '2026-10-20T00:00:00Z' }, lock)).toMatchObject({
+            state: 'read_only',
+            reason: 'agency_paused',
+        });
+        expect(tenantAccess({ ...client, archived_at: '2026-10-01T00:00:00Z', agency_paused_at: '2026-10-20T00:00:00Z' }, lock).reason).toBe('archived');
+    });
+});

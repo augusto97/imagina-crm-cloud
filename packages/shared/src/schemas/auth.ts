@@ -71,6 +71,12 @@ export const membershipSummarySchema = z.object({
      */
     access: tenantAccessSchema.optional(),
     disabled_modules: z.array(z.string()).optional(),
+    /** v0.1.449 (ADR-S108) — la empresa es una agencia (administra clientes). */
+    is_agency: z.boolean().optional(),
+    /** v0.1.449 — la empresa es cliente de esta agencia. */
+    agency: z.object({ id: idSchema, name: z.string() }).nullable().optional(),
+    /** v0.1.449 — la persona entra a esta empresa como parte de su agencia. */
+    via_agency: z.boolean().optional(),
 });
 export type MembershipSummary = z.infer<typeof membershipSummarySchema>;
 

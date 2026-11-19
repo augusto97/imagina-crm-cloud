@@ -266,7 +266,20 @@ export type AuditAction =
     // consentimiento en línea), lo aplicado y el modo de la empresa.
     | 'list_suggestions.ai_request'
     | 'list_suggestion.apply'
-    | 'list_suggestions.mode';
+    | 'list_suggestions.mode'
+    // I3 (v0.1.449, ADR-S108) — modo agencia. En la bitácora del CLIENTE:
+    // quién de la agencia lo creó, entró (`agency.access`, a lo sumo una vez
+    // por hora y persona), lo pausó o lo reactivó, y si el operador lo
+    // vinculó o desvinculó. En la de la AGENCIA: el alta del cliente.
+    | 'agency.client_create'
+    | 'agency.client_rename'
+    | 'agency.client_pause'
+    | 'agency.client_resume'
+    | 'agency.enter'
+    | 'agency.access'
+    | 'agency.link'
+    | 'agency.unlink'
+    | 'agency.settings';
 
 export interface AuditEntryDto {
     id: number;

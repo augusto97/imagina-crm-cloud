@@ -562,6 +562,26 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         requires: ['manage_lists'],
         if_restricted: 'note',
     },
+    {
+        id: 'agency',
+        title: '¿Cómo manejo las empresas de mis clientes como agencia?',
+        category: 'team',
+        minutes: 2,
+        body: [
+            'Si tu empresa está marcada como **agencia**, en el menú aparece **Agencia** (en el celular, **Más → Empresas cliente**).',
+            '1. Toca **Nueva empresa cliente**, escribe su nombre y, si quieres, el correo de quien la va a administrar: le llega una invitación.',
+            '2. Para trabajar en ella, toca **Entrar**: quedas como administrador y cada entrada queda en su **Registro de actividad**, a la vista de tu cliente.',
+            '3. Desde el menú de la fila le cambias el nombre o la **pausas**: queda en solo lectura hasta que la reactives y sus datos no se tocan.',
+            'El plan de tus clientes lo maneja tu agencia: si la tuya queda en solo lectura o se pausa, las de tus clientes también.',
+        ].join('\n'),
+        tip: 'Quien atiende de tu agencia no ocupa un usuario de la empresa cliente y no se puede quitar desde allá: se quita desde tu agencia.',
+        screens: ['agency', 'settings:miembros'],
+        keywords: 'agencia clientes empresas cliente revendedor varias empresas administrar entrar marca blanca',
+        route: '/agency',
+        related: ['invite-team', 'roles'],
+        admin_only: true,
+        if_restricted: 'note',
+    },
 
     // ── Automatizaciones y agentes ────────────────────────────────────────
     {

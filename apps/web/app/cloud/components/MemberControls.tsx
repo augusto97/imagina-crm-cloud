@@ -241,6 +241,8 @@ export interface MemberRowData {
     /** C2 — su rol propio (si tiene uno). */
     custom_role_id?: number | null;
     custom_role_name?: string | null;
+    /** v0.1.449 (ADR-S108) — entra como parte de la agencia de la empresa. */
+    via_agency?: boolean;
 }
 
 /**
@@ -271,7 +273,9 @@ export function MemberRow({
     const [busy, setBusy] = useState<null | 'role' | 'resend' | 'remove'>(null);
     const [error, setError] = useState<string | null>(null);
     const [resent, setResent] = useState(false);
-    const staff = member.role !== 'client' && member.role !== 'guest';
+    // v0.1.449 — a quien entra por la agencia lo maneja la agencia: sin acciones acá.
+    const viaAgency = member.via_agency === true;
+    const staff = member.role !== 'client' && member.role !== 'guest' && !viaAgency;
 
     const run = async (kind: 'role' | 'resend' | 'remove', fn: () => Promise<unknown>): Promise<boolean> => {
         setBusy(kind);
@@ -314,6 +318,11 @@ export function MemberRow({
                                 {__('Invitación pendiente')}
                             </Badge>
                         )}
+                        {viaAgency && (
+                            <Badge variant="info" className="imcrm-px-1.5 imcrm-py-0 imcrm-text-[10px]" data-testid="member-via-agency">
+                                {__('Equipo de la agencia')}
+                            </Badge>
+                        )}
                         {member.disabled && (
                             <Badge variant="destructive" className="imcrm-px-1.5 imcrm-py-0 imcrm-text-[10px]">
                                 {__('Desactivada')}
@@ -348,6 +357,13 @@ export function MemberRow({
                         disabled={busy !== null}
                         label={`${__('Rol de')} ${member.name}`}
                     />
+                ) : viaAgency ? (
+                    <span
+                        className="imcrm-text-xs imcrm-text-muted-foreground"
+                        title={__('Entra como administrador por la agencia. Cada vez que entra queda en el registro de actividad; su acceso lo maneja la agencia.')}
+                    >
+                        {__('Admin · por la agencia')}
+                    </span>
                 ) : (
                     <span className="imcrm-text-xs imcrm-text-muted-foreground">{ROLE_LABELS[member.role] ?? member.role}</span>
                 )}

@@ -4,6 +4,7 @@ import {
     planModuleLabel,
     readDisabledModules,
     tenantAccess,
+    type AgencyAccessInput,
     type BillingPolicy,
     type PlanModule,
     type TenantAccess,
@@ -32,6 +33,14 @@ export function currentBillingPolicy(): BillingPolicy {
     return current;
 }
 
+/**
+ * v0.1.449 (I3, ADR-S108) — Las columnas de acceso de la AGENCIA de un
+ * cliente, en una subconsulta correlacionada (JSON; `null` si la empresa no es
+ * cliente de una agencia). `tenants` no tiene RLS: se lee igual con cualquier
+ * scope. Va dentro de un `select` cuya fuente incluye `tenants`.
+ */
+export const agencyAccessSql = sql<AgencyAccessInput | null>`(SELECT json_build_object('plan', ag.plan, 'status', ag.status, 'archived_at', ag.archived_at, 'trial_ends_at', ag.trial_ends_at, 'subscription_ends_at', ag.subscription_ends_at, 'paid_until', ag.paid_until) FROM tenants ag WHERE ag.id = ${tenants.agencyId})`;
+
 /** Las columnas de `tenants` que deciden el acceso (para los `select`). */
 export const accessColumns = {
     plan: tenants.plan,
@@ -40,6 +49,9 @@ export const accessColumns = {
     trialEndsAt: tenants.trialEndsAt,
     subscriptionEndsAt: tenants.subscriptionEndsAt,
     paidUntil: tenants.paidUntil,
+    // v0.1.449 — un cliente de agencia sigue a su agencia (y la agencia lo puede pausar).
+    agencyPausedAt: tenants.agencyPausedAt,
+    agency: agencyAccessSql,
 };
 
 export interface AccessRow {
@@ -49,6 +61,10 @@ export interface AccessRow {
     trialEndsAt: Date | null;
     subscriptionEndsAt: Date | null;
     paidUntil: Date | null;
+    /** v0.1.449 — la agencia pausó al cliente. */
+    agencyPausedAt?: Date | null;
+    /** v0.1.449 — el acceso de su agencia (`agencyAccessSql`); ausente = no se miró. */
+    agency?: AgencyAccessInput | null;
 }
 
 export function accessOf(row: AccessRow, now?: Date): TenantAccess {
@@ -60,6 +76,8 @@ export function accessOf(row: AccessRow, now?: Date): TenantAccess {
             trial_ends_at: row.trialEndsAt,
             subscription_ends_at: row.subscriptionEndsAt,
             paid_until: row.paidUntil,
+            agency_paused_at: row.agencyPausedAt ?? null,
+            agency: row.agency ?? null,
             now,
         },
         current,

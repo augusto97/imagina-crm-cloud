@@ -5,6 +5,7 @@ import {
     BarChart3,
     Bell,
     Bot,
+    Building2,
     Check,
     ChevronRight,
     CircleHelp,
@@ -35,7 +36,7 @@ import { shellActions } from '@/admin/layout/shellActions';
 import { logoutAndReload } from '@/admin/layout/logout';
 import { initials } from '@/admin/layout/WorkspaceSwitcher';
 import { useSession } from '@/cloud/session';
-import { roleLabel, switchWorkspace, useWorkspaces } from '@/cloud/workspaceSwitch';
+import { membershipLabel, switchWorkspace, useWorkspaces } from '@/cloud/workspaceSwitch';
 import { InstallAppDialog } from '@/components/pwa/InstallAppDialog';
 import { needsEntities, useMobileNav, useMobileNavContext } from '@/hooks/useMobileNav';
 import { useIncidents, useNotifications } from '@/hooks/useNotifications';
@@ -44,6 +45,7 @@ import { useWhatsNewFeed } from '@/hooks/useWhatsNew';
 import { moduleEnabled } from '@/lib/cloudFeatures';
 import { __, sprintf } from '@/lib/i18n';
 import { CAP, useCan } from '@/lib/permissions';
+import { useIsAgencyAdmin } from '@/admin/agency/useAgency';
 import { currentAppName } from '@/lib/pwa/appMeta';
 import { promptInstall, useInstallMode } from '@/lib/pwa/install';
 import { useTheme, type ThemeMode } from '@/lib/theme';
@@ -76,6 +78,7 @@ export function MenuPage(): JSX.Element | null {
     const canViewDashboards = useCan(CAP.VIEW_DASHBOARDS);
     const canAccessAdmin = useCan(CAP.ACCESS_ADMIN);
     const canManageAgents = useCan(CAP.MANAGE_AI_AGENTS);
+    const isAgencyAdmin = useIsAgencyAdmin();
     const canManageAutomations = useCan(CAP.MANAGE_AUTOMATIONS);
     const canSeeDashboards = (canManageDashboards || (canAccessAdmin && canViewDashboards)) && moduleEnabled('dashboards');
     const incidents = useIncidents('open', isAdmin || canManageAutomations);
@@ -147,7 +150,7 @@ export function MenuPage(): JSX.Element | null {
                                     </span>
                                     <span className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
                                         <span className={cn('imcrm-truncate imcrm-text-[15px]', current && 'imcrm-font-semibold')}>{m.tenant_name}</span>
-                                        <span className="imcrm-text-[12px] imcrm-text-muted-foreground">{roleLabel(m.role)}</span>
+                                        <span className="imcrm-text-[12px] imcrm-text-muted-foreground">{membershipLabel(m)}</span>
                                     </span>
                                     {current && canSwitch && <Check className="imcrm-h-5 imcrm-w-5 imcrm-shrink-0 imcrm-text-primary" aria-label={__('Empresa actual')} />}
                                 </button>
@@ -180,6 +183,8 @@ export function MenuPage(): JSX.Element | null {
                 {canSeeDashboards && !onBar.has('dashboards') && (
                     <MenuLink to="/dashboards" icon={BarChart3} label={__('Tableros')} hint={__('Dashboards con cifras y gráficos de tus listas')} testId="menu-dashboards" />
                 )}
+                {/* v0.1.449 (ADR-S108) — la consola de la agencia. */}
+                {isAgencyAdmin && <MenuLink to="/agency" icon={Building2} label={__('Empresas cliente')} hint={__('Las empresas de los clientes de tu agencia')} testId="menu-agency" />}
                 {canManageAgents && !onBar.has('agents') && <MenuLink to="/agents" icon={Bot} label={__('Agentes de IA')} hint={__('Compañeros que trabajan solos')} />}
                 {!onBar.has('learn') && <MenuLink to="/aprende" icon={GraduationCap} label={__('Aprende')} hint={__('El manual de cada parte de la app')} testId="menu-learn" />}
                 {!onBar.has('ideas') && <MenuLink to="/ideas" icon={Lightbulb} label={__('Ideas para tu negocio')} hint={__('Automatizaciones listas para activar')} />}

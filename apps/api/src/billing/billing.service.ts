@@ -5,6 +5,7 @@ import {
     type Plan,
     type SetBillingInput,
     type Usage,
+    type AgencyAccessInput,
 } from '@imagina-base/shared';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { AiQuotaService } from '../ai/ai-quota.service';
@@ -16,7 +17,7 @@ import { TenantSmtpService } from '../mail/tenant-smtp.service';
 import { REDIS } from '../redis/redis.module';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { PlansService } from './plans.service';
-import { accessOf } from './tenant-access';
+import { accessOf, agencyAccessSql } from './tenant-access';
 
 /** v0.1.338 — de qué plan venía una empresa que pasó a prueba por no renovar. */
 export function readLapsedFrom(settings: unknown): { plan: string; at: string } | null {
@@ -310,7 +311,15 @@ export class BillingService {
         const [u] = await tx
             .select({ n: sql<number>`count(*)::int` })
             .from(memberships)
-            .where(and(eq(memberships.tenantId, tenantId), ne(memberships.role, 'client'), ne(memberships.role, 'guest')));
+            .where(
+                and(
+                    eq(memberships.tenantId, tenantId),
+                    ne(memberships.role, 'client'),
+                    ne(memberships.role, 'guest'),
+                    // v0.1.449 (ADR-S108) — la gente de la agencia no ocupa usuarios del plan del cliente.
+                    eq(memberships.viaAgency, false),
+                ),
+            );
         return u?.n ?? 0;
     }
 
@@ -366,6 +375,8 @@ export class BillingService {
         paidUntil: Date | null;
         trialEndsAt: Date | null;
         settings: unknown;
+        agencyPausedAt: Date | null;
+        agency: AgencyAccessInput | null;
     }> {
         const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const [t] = await tx
@@ -375,6 +386,8 @@ export class BillingService {
                     archivedAt: tenants.archivedAt,
                     subscriptionEndsAt: tenants.subscriptionEndsAt,
                     paidUntil: tenants.paidUntil,
+                    agencyPausedAt: tenants.agencyPausedAt,
+                    agency: agencyAccessSql,
                     trialEndsAt: tenants.trialEndsAt,
                     settings: tenants.settings,
                 })
@@ -391,6 +404,8 @@ export class BillingService {
             paidUntil: row?.paidUntil ?? null,
             trialEndsAt: row?.trialEndsAt ?? null,
             settings: row?.settings ?? {},
+            agencyPausedAt: row?.agencyPausedAt ?? null,
+            agency: row?.agency ?? null,
         };
     }
 

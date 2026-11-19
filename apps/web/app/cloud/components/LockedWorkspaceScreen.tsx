@@ -29,10 +29,13 @@ export function LockedWorkspaceScreen({ membership }: { membership: MembershipSu
     const qc = useQueryClient();
     const [refreshing, setRefreshing] = useState(false);
     const admin = membership.role === 'admin';
+    // v0.1.449 (ADR-S108): con agencia, el plan lo maneja ella — no hay pago acá.
+    const agency = membership.agency ?? null;
+    const canPay = admin && !agency;
     const access = membership.access;
     const trial = access?.reason === 'trial_ended';
     const ended = access?.ends_at ? formatDate(new Date(access.ends_at)) : null;
-    const billing = useQuery({ queryKey: ['billing', membership.tenant_id], queryFn: () => api.billing(), enabled: admin });
+    const billing = useQuery({ queryKey: ['billing', membership.tenant_id], queryFn: () => api.billing(), enabled: canPay });
     const others = memberships.filter((m) => m.tenant_id !== membership.tenant_id);
 
     const refresh = async (): Promise<void> => {
@@ -59,7 +62,9 @@ export function LockedWorkspaceScreen({ membership }: { membership: MembershipSu
                                 {trial
                                     ? `La prueba terminó${ended ? ` el ${ended}` : ''} y la cuenta quedó pausada.`
                                     : `El plan no se renovó${ended ? ` (venció el ${ended})` : ''} y la cuenta quedó pausada.`}{' '}
-                                {admin
+                                {agency
+                                    ? `Para seguir usándola, habla con ${agency.name}: es quien maneja el plan de esta empresa.`
+                                    : admin
                                     ? 'Elige un plan para seguir: todo lo que armaste vuelve a funcionar al instante.'
                                     : 'Para seguir usándola, un administrador de la empresa tiene que elegir un plan.'}
                             </p>
@@ -70,8 +75,8 @@ export function LockedWorkspaceScreen({ membership }: { membership: MembershipSu
                     </div>
                 </header>
 
-                {admin && billing.data && <SubscriptionPanel currentPlan={billing.data.plan} />}
-                {admin && billing.isLoading && (
+                {canPay && billing.data && <SubscriptionPanel currentPlan={billing.data.plan} />}
+                {canPay && billing.isLoading && (
                     <div className="imcrm-h-56 imcrm-animate-pulse imcrm-rounded-xl imcrm-border imcrm-border-border imcrm-bg-muted/40" />
                 )}
 

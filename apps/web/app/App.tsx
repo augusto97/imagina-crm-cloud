@@ -44,6 +44,7 @@ const MyWorkPage = lazyWithReload(() => import('@/admin/mywork/MyWorkPage').then
 // C5 — la pantalla a la que llevan los botones Aprobar / Rechazar del correo.
 const ApprovalConfirmPage = lazyWithReload(() => import('@/admin/approvals/ApprovalConfirmPage').then(m => ({ default: m.ApprovalConfirmPage })));
 // E6 — agentes de IA (índice con plantillas y el editor con sus pestañas).
+const AgencyPage = lazyWithReload(() => import('@/admin/agency/AgencyPage').then(m => ({ default: m.AgencyPage })));
 const AgentsPage = lazyWithReload(() => import('@/admin/agents/AgentsPage').then(m => ({ default: m.AgentsPage })));
 const AgentEditorPage = lazyWithReload(() => import('@/admin/agents/AgentEditorPage').then(m => ({ default: m.AgentEditorPage })));
 // Fase 7 — historial de novedades.
@@ -172,6 +173,9 @@ export function App(): JSX.Element {
                 } />
                 <Route path="approvals/:approvalId" element={
                     <Suspense fallback={<RouteFallback />}><ApprovalConfirmPage /></Suspense>
+                } />
+                <Route path="agency" element={
+                    <Suspense fallback={<RouteFallback />}><AgencyPage /></Suspense>
                 } />
                 <Route path="agents" element={
                     <RouteModuleGate module="ai"><Suspense fallback={<RouteFallback />}><AgentsPage /></Suspense></RouteModuleGate>

@@ -110,7 +110,7 @@ import {
     type ConversionResult,
 } from '@imagina-base/shared';
 import { attributionColumnIds, attributionRecordData, cleanAttributionSettings, conversionResult, publicConversion } from './form-conversion';
-import { accessOf } from '../billing/tenant-access';
+import { accessOf, agencyAccessSql } from '../billing/tenant-access';
 import { and, asc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { ENV, type Env } from '../config/env';
@@ -788,6 +788,8 @@ export class FormsService implements OnModuleInit, OnModuleDestroy {
                 archivedAt: tenants.archivedAt,
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
                 paidUntil: tenants.paidUntil,
+                agencyPausedAt: tenants.agencyPausedAt,
+                agency: agencyAccessSql,
                 plan: tenants.plan,
                 trialEndsAt: tenants.trialEndsAt,
                 tenantSettings: tenants.settings,

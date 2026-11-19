@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Download, Keyboard, ListChecks, LogOut, Megaphone, Moon, Settings, Sun, UserRound } from 'lucide-react';
 
-import { roleLabel, useWorkspaces } from '@/cloud/workspaceSwitch';
+import { membershipLabel, useWorkspaces } from '@/cloud/workspaceSwitch';
 import { useSession } from '@/cloud/session';
 import {
     DropdownMenu,
@@ -108,7 +108,7 @@ export function UserMenu({ onShowShortcuts }: { onShowShortcuts?: () => void }):
                     active && (
                         <div className="imcrm-flex imcrm-flex-col imcrm-px-2 imcrm-pb-1.5 imcrm-text-sm" data-testid="user-menu-workspace">
                             <span className="imcrm-truncate imcrm-font-medium">{active.tenant_name}</span>
-                            <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{roleLabel(active.role)}</span>
+                            <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{membershipLabel(active)}</span>
                         </div>
                     )
                 )}
