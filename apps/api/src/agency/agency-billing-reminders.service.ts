@@ -11,6 +11,7 @@ import { registerBillingTick, type ReminderDedupStore } from '../payments/billin
 import { REDIS } from '../redis/redis.module';
 import { agencyTimeZone, clientsWithAgencyPlan } from './agency-billing.service';
 import { AgencyChargesService } from './agency-charges.service';
+import { AgencyDebitService } from './agency-debit.service';
 
 /**
  * v0.1.451 (I3, ADR-S108) — Avisos del cobro de una agencia a sus clientes:
@@ -132,6 +133,7 @@ export class AgencyBillingRemindersService implements OnModuleInit {
         private readonly mail: MailService,
         @Optional() private readonly domains?: DomainsService,
         @Optional() private readonly charges?: AgencyChargesService,
+        @Optional() private readonly debit?: AgencyDebitService,
     ) {}
 
     onModuleInit(): void {
@@ -158,6 +160,10 @@ export class AgencyBillingRemindersService implements OnModuleInit {
             if (!plan || !c.agencyPaidUntil) continue;
             const hit = agencyReminderKindFor(settings, c.agencyPaidUntil, now);
             if (!hit) continue;
+            // v0.1.453 — con el débito automático cobrando, el «por vencer» sobra (se paga solo)
+            // y los avisos no llevan link (cobraría dos veces).
+            const charging = this.debit ? await this.debit.isCharging(agency.id, c.id).catch(() => false) : false;
+            if (charging && hit.kind === 'soon') continue;
             const key = `agbill:${c.id}:${hit.kind}:${c.agencyPaidUntil.toISOString()}`;
             const first = await this.dedup.set(key, '1', 'EX', 90 * 24 * 60 * 60, 'NX').catch(() => null);
             if (first !== 'OK') continue;
@@ -171,7 +177,7 @@ export class AgencyBillingRemindersService implements OnModuleInit {
             if (settings.notify_client) {
                 const brand = await this.brand(c.id);
                 // v0.1.452 — si la agencia cobra en línea, el aviso trae el link para pagar.
-                const payUrl = this.charges
+                const payUrl = this.charges && !charging
                     ? await this.charges.autoLink(agency.id, c.id).catch((err: unknown) => {
                           this.logger.warn(`aviso de pago de agencia: no se armó el link de la empresa ${c.id}: ${String(err)}`);
                           return null;

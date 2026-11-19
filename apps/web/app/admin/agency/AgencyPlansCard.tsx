@@ -5,6 +5,7 @@ import {
     AGENCY_PLAN_PERIODS,
     COLLECTION_PROVIDER_LABEL,
     agencyBillingSettingsSchema,
+    agencyDebitProviderOk,
     agencyPeriodText,
     agencyPlanIdFor,
     collectionCurrencyError,
@@ -68,6 +69,7 @@ export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview;
     const [connectionId, setConnectionId] = useState(overview.billing.online.connection_id ? String(overview.billing.online.connection_id) : '');
     const [clientCanPay, setClientCanPay] = useState(overview.billing.online.client_can_pay);
     const [autoLink, setAutoLink] = useState(overview.billing.online.auto_link);
+    const [debit, setDebit] = useState(overview.billing.online.debit);
     const [dirty, setDirty] = useState(false);
     const [errors, setErrors] = useState<string[]>([]);
     const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -81,6 +83,7 @@ export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview;
         setConnectionId(overview.billing.online.connection_id ? String(overview.billing.online.connection_id) : '');
         setClientCanPay(overview.billing.online.client_can_pay);
         setAutoLink(overview.billing.online.auto_link);
+        setDebit(overview.billing.online.debit);
     }, [overview.billing, dirty]);
 
     const touch = (): void => {
@@ -117,6 +120,9 @@ export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview;
 
     const usedBy = (id: string): number => usage[id] ?? 0;
 
+    const connection = overview.online.connections.find((c) => String(c.id) === connectionId) ?? null;
+    const debitAllowed = !!connection && agencyDebitProviderOk(connection.provider);
+
     const submit = (e: React.FormEvent): void => {
         e.preventDefault();
         const problems: string[] = [];
@@ -141,7 +147,13 @@ export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview;
             grace_days: Number.isFinite(graceN) ? graceN : -1,
             remind_days: Number.isFinite(remindN) ? remindN : -1,
             notify_client: notify,
-            online: { connection_id: connectionId ? Number(connectionId) : null, client_can_pay: clientCanPay, auto_link: autoLink },
+            online: {
+                connection_id: connectionId ? Number(connectionId) : null,
+                client_can_pay: clientCanPay,
+                auto_link: autoLink,
+                // El débito automático sólo existe con Mercado Pago o PayPal (el servidor también lo revisa).
+                debit: debit && debitAllowed,
+            },
         });
         if (!parsed.success) {
             for (const issue of parsed.error.issues) {
@@ -167,7 +179,6 @@ export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview;
     };
 
     const platformDefault = overview.limit_plans[0]?.name ?? null;
-    const connection = overview.online.connections.find((c) => String(c.id) === connectionId) ?? null;
     // Lo que la cuenta elegida no puede cobrar (Wompi sólo pesos colombianos; PayPal no pesos).
     const provider = connection && isCollectionProvider(connection.provider) ? connection.provider : null;
     const currencyIssues = provider
@@ -316,10 +327,13 @@ export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview;
                         connectionId={connectionId}
                         clientCanPay={clientCanPay}
                         autoLink={autoLink}
+                        debit={debit}
+                        debitAllowed={debitAllowed}
                         currencyIssues={currencyIssues}
                         onConnection={(v) => (touch(), setConnectionId(v))}
                         onClientCanPay={(v) => (touch(), setClientCanPay(v))}
                         onAutoLink={(v) => (touch(), setAutoLink(v))}
+                        onDebit={(v) => (touch(), setDebit(v))}
                         dirty={dirty}
                     />
 
@@ -362,10 +376,13 @@ function OnlineSection(props: {
     connectionId: string;
     clientCanPay: boolean;
     autoLink: boolean;
+    debit: boolean;
+    debitAllowed: boolean;
     currencyIssues: string[];
     onConnection: (v: string) => void;
     onClientCanPay: (v: boolean) => void;
     onAutoLink: (v: boolean) => void;
+    onDebit: (v: boolean) => void;
     dirty: boolean;
 }): JSX.Element {
     const { overview, connectionId } = props;
@@ -438,6 +455,27 @@ function OnlineSection(props: {
                                     {__('Mandar el link de pago en los avisos de vencimiento')}
                                     <span className="imcrm-block imcrm-text-[12px] imcrm-text-muted-foreground">
                                         {__('Antes de vencer se arma el link solo y el correo trae el botón «Pagar ahora».')}
+                                    </span>
+                                </span>
+                            </label>
+                            <label
+                                className={`imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-sm${props.debitAllowed ? '' : ' imcrm-opacity-60'}`}
+                                data-tour="agency-debit"
+                            >
+                                <input
+                                    type="checkbox"
+                                    className="imcrm-mt-0.5"
+                                    checked={props.debit && props.debitAllowed}
+                                    disabled={!props.debitAllowed}
+                                    onChange={(e) => props.onDebit(e.target.checked)}
+                                    data-testid="agency-online-debit"
+                                />
+                                <span>
+                                    {__('Ofrecer débito automático')}
+                                    <span className="imcrm-block imcrm-text-[12px] imcrm-text-muted-foreground">
+                                        {props.debitAllowed
+                                            ? __('La empresa autoriza su tarjeta una sola vez y se le cobra el plan cada período, dos días antes de que venza. Cada cobro se registra solo.')
+                                            : __('Sólo con Mercado Pago o PayPal: Wompi no tiene cobros recurrentes.')}
                                     </span>
                                 </span>
                             </label>

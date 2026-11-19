@@ -269,7 +269,7 @@ export class AgencyChargesService implements OnModuleInit {
 
     /** Lo que ve el cliente del cobro en línea. Con `refresh`, le pregunta al proveedor por el link pendiente. */
     async onlineFor(clientTenantId: number, opts: { refresh?: boolean } = {}): Promise<MyAgencyOnline> {
-        const off: MyAgencyOnline = { enabled: false, provider: null, periods: [], pending: null };
+        const off: MyAgencyOnline = { enabled: false, provider: null, periods: [], pending: null, debit: { available: false, current: null } };
         const [client] = await this.db
             .select({ agencyId: tenants.agencyId, settings: tenants.settings })
             .from(tenants)
@@ -301,6 +301,8 @@ export class AgencyChargesService implements OnModuleInit {
             provider: COLLECTION_PROVIDER_LABEL[conn.provider],
             periods: agencyPayablePeriods(plan.period_months),
             pending: dto && dto.status === 'pending' ? dto : null,
+            // v0.1.453 — lo completa el servicio del débito automático.
+            debit: { available: false, current: null },
         };
     }
 
@@ -412,7 +414,7 @@ export class AgencyChargesService implements OnModuleInit {
         };
     }
 
-    private async brand(tenantId: number): Promise<{ name: string; base: string }> {
+    async brand(tenantId: number): Promise<{ name: string; base: string }> {
         try {
             if (this.domains) return await this.domains.accountBrand({ tenantId });
         } catch {
@@ -421,7 +423,7 @@ export class AgencyChargesService implements OnModuleInit {
         return { name: '', base: this.env.APP_BASE_URL.replace(/\/+$/, '') };
     }
 
-    private async adminEmails(tenantId: number): Promise<string[]> {
+    async adminEmails(tenantId: number): Promise<string[]> {
         const rows = await this.db
             .select({ email: users.email })
             .from(memberships)
@@ -430,7 +432,7 @@ export class AgencyChargesService implements OnModuleInit {
         return rows.map((r) => r.email);
     }
 
-    private async names(agencyId: number, clientId: number): Promise<{ agency: string; client: string }> {
+    async names(agencyId: number, clientId: number): Promise<{ agency: string; client: string }> {
         const rows = await this.db.select({ id: tenants.id, name: tenants.name }).from(tenants).where(sql`${tenants.id} IN (${agencyId}, ${clientId})`);
         return { agency: rows.find((r) => r.id === agencyId)?.name ?? '', client: rows.find((r) => r.id === clientId)?.name ?? '' };
     }
@@ -444,10 +446,10 @@ export class AgencyChargesService implements OnModuleInit {
         }
     }
 
-    private async sendPaidEmails(
+    async sendPaidEmails(
         agencyId: number,
         clientId: number,
-        p: { amount: number; currency: string; months: number; to: Date; method: AgencyPaymentMethod },
+        p: { amount: number; currency: string; months: number; to: Date; method: AgencyPaymentMethod; debit?: boolean },
     ): Promise<void> {
         const n = await this.names(agencyId, clientId);
         const agency = await this.billing.agencyRow(agencyId);
@@ -459,13 +461,19 @@ export class AgencyChargesService implements OnModuleInit {
         const agencyBrand = await this.brand(agencyId);
         const toClient = simpleEmail(
             `Recibimos tu pago a ${n.agency}`,
-            [`Recibimos el pago de «${n.client}» por ${money} (${agencyMonthsText(p.months)}) con ${method}.`, `Tu plan queda pagado hasta el ${until}.`],
+            [
+                `Recibimos el pago de «${n.client}» por ${money} (${agencyMonthsText(p.months)}) ${p.debit ? `con el débito automático de ${method}` : `con ${method}`}.`,
+                `Tu plan queda pagado hasta el ${until}.`,
+            ],
             'Ver mi plan',
             `${clientBrand.base}/#/settings?s=suscripcion`,
         );
         const toAgency = simpleEmail(
             `«${n.client}» pagó ${money}`,
-            [`«${n.client}» pagó ${money} (${agencyMonthsText(p.months)}) en línea con ${method}.`, `Ya quedó registrado: la empresa está pagada hasta el ${until}.`],
+            [
+                `«${n.client}» pagó ${money} (${agencyMonthsText(p.months)}) ${p.debit ? `con el débito automático de ${method}` : `en línea con ${method}`}.`,
+                `Ya quedó registrado: la empresa está pagada hasta el ${until}.`,
+            ],
             'Ver en la agencia',
             `${agencyBrand.base}/#/agency`,
         );
@@ -496,7 +504,7 @@ export function agencyLinkEmail(o: { agencyName: string; clientName: string; amo
     );
 }
 
-function simpleEmail(subject: string, lines: string[], cta: string, link: string): { subject: string; text: string; html: string } {
+export function simpleEmail(subject: string, lines: string[], cta: string, link: string): { subject: string; text: string; html: string } {
     const text = `${lines.join('\n\n')}\n\n${cta}: ${link}`;
     const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.55;color:#1f2937">
 ${lines.map((l) => `<p style="margin:0 0 14px">${escapeHtml(l)}</p>`).join('\n')}

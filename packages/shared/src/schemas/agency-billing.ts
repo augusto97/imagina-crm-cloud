@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { idSchema } from './common';
 import { helpSupportSchema } from './help';
+import { SUBSCRIPTION_STATUSES, isSubscriptionProvider } from './subscriptions';
 
 /**
  * v0.1.451 (I3, ADR-S108) — La agencia le cobra a sus clientes.
@@ -81,8 +82,13 @@ export const agencyBillingSettingsSchema = z
                 client_can_pay: z.boolean().default(true),
                 /** Antes de vencer, crear el link solo y mandarlo en los avisos de pago. */
                 auto_link: z.boolean().default(true),
+                /**
+                 * v0.1.453 — Ofrecer débito automático (sólo Mercado Pago o PayPal):
+                 * el cliente autoriza su tarjeta una vez y cada período se paga solo.
+                 */
+                debit: z.boolean().default(false),
             })
-            .default({ connection_id: null, client_can_pay: true, auto_link: true }),
+            .default({ connection_id: null, client_can_pay: true, auto_link: true, debit: false }),
     })
     .superRefine((v, ctx) => {
         const seen = new Set<string>();
@@ -95,7 +101,7 @@ export type AgencyBillingSettings = z.infer<typeof agencyBillingSettingsSchema>;
 
 export type AgencyOnlineBilling = AgencyBillingSettings['online'];
 
-export const DEFAULT_AGENCY_ONLINE: AgencyOnlineBilling = { connection_id: null, client_can_pay: true, auto_link: true };
+export const DEFAULT_AGENCY_ONLINE: AgencyOnlineBilling = { connection_id: null, client_can_pay: true, auto_link: true, debit: false };
 
 export const DEFAULT_AGENCY_BILLING: AgencyBillingSettings = {
     plans: [],
@@ -113,6 +119,7 @@ function readOnline(raw: unknown): AgencyOnlineBilling {
         connection_id: typeof id === 'number' && Number.isInteger(id) && id > 0 ? id : null,
         client_can_pay: typeof r.client_can_pay === 'boolean' ? r.client_can_pay : DEFAULT_AGENCY_ONLINE.client_can_pay,
         auto_link: typeof r.auto_link === 'boolean' ? r.auto_link : DEFAULT_AGENCY_ONLINE.auto_link,
+        debit: typeof r.debit === 'boolean' ? r.debit : DEFAULT_AGENCY_ONLINE.debit,
     };
 }
 
@@ -411,6 +418,74 @@ export function agencyMonthsText(months: number): string {
     return months === 1 ? '1 mes' : `${months} meses`;
 }
 
+// ─────────────────────────── Débito automático (v0.1.453) ───────────────────────────
+
+/**
+ * v0.1.453 (I3, ADR-S108) — El débito automático de un cliente de la agencia:
+ * una suscripción (ADR-S96) en la cuenta de Mercado Pago o PayPal de la
+ * agencia, colgada del registro del cliente en «Empresas cliente». Cada cuota
+ * cobrada se registra sola como pago y corre el «pagado hasta».
+ */
+export const agencyDebitSchema = z.object({
+    subscription_id: idSchema,
+    status: z.enum(SUBSCRIPTION_STATUSES),
+    /** «Mercado Pago» / «PayPal». */
+    provider: z.string().nullable(),
+    amount: z.number(),
+    currency: z.string(),
+    /** Cada cuántos meses se cobra (el período del plan). */
+    months: z.number().int(),
+    payer_email: z.string().nullable(),
+    /** El link para autorizar la tarjeta (sólo mientras está por autorizar). */
+    url: z.string().nullable(),
+    next_charge_at: z.string().nullable(),
+    last_failure_reason: z.string().nullable(),
+    created_at: z.string(),
+});
+export type AgencyDebit = z.infer<typeof agencyDebitSchema>;
+
+/** Estados en los que el débito sigue vivo (uno por cliente). */
+export const AGENCY_DEBIT_LIVE_STATUSES = ['pending', 'active', 'retrying', 'past_due', 'paused'] as const;
+
+export function isLiveAgencyDebit(d: Pick<AgencyDebit, 'status'> | null | undefined): boolean {
+    return !!d && (AGENCY_DEBIT_LIVE_STATUSES as readonly string[]).includes(d.status);
+}
+
+/** El débito ya cobra solo (autorizado y sin problemas graves): no hace falta mandar links. */
+export function agencyDebitCharges(d: Pick<AgencyDebit, 'status'> | null | undefined): boolean {
+    return !!d && (d.status === 'active' || d.status === 'retrying');
+}
+
+/** El débito automático sólo existe con Mercado Pago o PayPal (Wompi no tiene suscripciones). */
+export function agencyDebitProviderOk(provider: string | null | undefined): boolean {
+    return isSubscriptionProvider(provider);
+}
+
+const debitEmailSchema = z.string().trim().toLowerCase().email('Escribe un correo válido').max(254);
+
+/** La agencia arma el débito de un cliente (el link para que autorice su tarjeta). */
+export const startAgencyDebitSchema = z.object({
+    /** El correo de quien paga (el de su cuenta de Mercado Pago o PayPal). Por defecto, el del administrador del cliente. */
+    email: debitEmailSchema.optional(),
+    /** Mandarles el link por correo a los administradores del cliente. */
+    send_email: z.boolean().default(true),
+});
+export type StartAgencyDebitInput = z.infer<typeof startAgencyDebitSchema>;
+
+/** El cliente activa el débito desde su app. */
+export const startMyAgencyDebitSchema = z.object({
+    email: debitEmailSchema,
+});
+export type StartMyAgencyDebitInput = z.infer<typeof startMyAgencyDebitSchema>;
+
+/** Lo que el cliente ve del débito automático en su app. */
+export const myAgencyDebitSchema = z.object({
+    /** La agencia lo ofrece y su cuenta lo permite (Mercado Pago o PayPal, en la moneda del plan). */
+    available: z.boolean(),
+    current: agencyDebitSchema.nullable(),
+});
+export type MyAgencyDebit = z.infer<typeof myAgencyDebitSchema>;
+
 /** Lo que el cliente ve del cobro en línea en su app. */
 export const myAgencyOnlineSchema = z.object({
     /** La agencia cobra en línea y deja que el cliente pague desde la app. */
@@ -420,6 +495,8 @@ export const myAgencyOnlineSchema = z.object({
     periods: z.array(z.number().int()),
     /** Un link que ya está esperando el pago (para no crear otro). */
     pending: agencyChargeSchema.nullable(),
+    /** v0.1.453 — El débito automático. */
+    debit: myAgencyDebitSchema.default({ available: false, current: null }),
 });
 export type MyAgencyOnline = z.infer<typeof myAgencyOnlineSchema>;
 

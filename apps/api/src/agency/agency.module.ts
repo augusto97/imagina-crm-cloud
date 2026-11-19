@@ -5,6 +5,7 @@ import { DomainsModule } from '../domains/domains.module';
 import { RecordsModule } from '../records/records.module';
 import { AgencyChargesService } from './agency-charges.service';
 import { AgencyClientsListService } from './agency-clients-list.service';
+import { AgencyDebitService } from './agency-debit.service';
 import { AgencyBillingService } from './agency-billing.service';
 import { AgencyBillingRemindersService } from './agency-billing-reminders.service';
 import { AgencyClientBillingController, AgencyController, PublicAgencyPayController } from './agency.controller';
@@ -14,7 +15,7 @@ import { AgencyService } from './agency.service';
 @Module({
     imports: [AuthModule, DomainsModule, ActivityModule, RecordsModule],
     controllers: [AgencyController, AgencyClientBillingController, PublicAgencyPayController],
-    providers: [AgencyService, AgencyBillingService, AgencyBillingRemindersService, AgencyClientsListService, AgencyChargesService],
+    providers: [AgencyService, AgencyBillingService, AgencyBillingRemindersService, AgencyClientsListService, AgencyChargesService, AgencyDebitService],
     exports: [AgencyService, AgencyBillingService],
 })
 export class AgencyModule {}

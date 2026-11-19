@@ -19,6 +19,7 @@ import { PlansService } from '../billing/plans.service';
 import { accessOf } from '../billing/tenant-access';
 import { AgencyBillingService } from './agency-billing.service';
 import { AgencyClientsListService } from './agency-clients-list.service';
+import { AgencyDebitService } from './agency-debit.service';
 import { readSupport } from '../help/help.service';
 import { DRIZZLE, type Db } from '../db/client';
 import { auditLog, memberships, plans, records, tenants, users } from '../db/schema';
@@ -45,6 +46,7 @@ export class AgencyService {
         private readonly billing: AgencyBillingService,
         @Optional() private readonly audit?: AuditService,
         @Optional() private readonly clientsList?: AgencyClientsListService,
+        @Optional() private readonly debit?: AgencyDebitService,
     ) {}
 
     async overview(agencyId: number): Promise<AgencyOverview> {
@@ -122,6 +124,7 @@ export class AgencyService {
                 paidUntil: tenants.paidUntil,
                 agencyPausedAt: tenants.agencyPausedAt,
                 agencyPaidUntil: tenants.agencyPaidUntil,
+                agencyRecordId: tenants.agencyRecordId,
                 clientSettings: tenants.settings,
                 createdAt: tenants.createdAt,
             })
@@ -177,6 +180,9 @@ export class AgencyService {
                 .where(and(inArray(auditLog.tenantId, ids), inArray(auditLog.action, ['agency.access', 'agency.enter', 'agency.client_create'])))
                 .groupBy(auditLog.tenantId),
         ]);
+        // v0.1.453 — el débito automático de cada cliente (una consulta para todos).
+        const recordIds = new Map(rows.filter((r) => r.agencyRecordId !== null).map((r) => [r.id, r.agencyRecordId!]));
+        const debits = this.debit ? await this.debit.statusesFor(agencyId, recordIds).catch(() => new Map()) : new Map();
         const usersBy = new Map(userCounts.map((r) => [Number(r.tid), Number(r.n)]));
         const recordsBy = new Map(recordCounts.map((r) => [Number(r.tid), Number(r.n)]));
         const enteredSet = new Set(entered.map((r) => Number(r.tid)));
@@ -208,6 +214,7 @@ export class AgencyService {
                 settings: r.clientSettings as Record<string, unknown> | null,
                 agencyPaidUntil: r.agencyPaidUntil,
             }),
+            debit_status: debits.get(r.id) ?? null,
         }));
     }
 
