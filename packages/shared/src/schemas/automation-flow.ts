@@ -141,7 +141,7 @@ export function mapFlowChildLists<T>(node: T, fn: (actions: unknown[], branch: F
     if (kids.length === 0) return node;
     const cfg = n.config && typeof n.config === 'object' ? { ...(n.config as Record<string, unknown>) } : {};
     let onError = n.on_error && typeof n.on_error === 'object' ? { ...(n.on_error as Record<string, unknown>) } : undefined;
-    let cases = Array.isArray(cfg.cases) ? [...cfg.cases] : undefined;
+    const cases = Array.isArray(cfg.cases) ? [...cfg.cases] : undefined;
     for (const k of kids) {
         const next = fn(k.actions, k.branch);
         if (k.branch === 'fail' && onError) onError = { ...onError, actions: next };
