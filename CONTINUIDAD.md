@@ -441,7 +441,7 @@ automática de Mercado Pago el monto se ajusta solo al crear, pausar o
 reactivar un cliente (y la revisión de cada hora recoge lo que falló). Sin
 valor por extra en una moneda, el plan no se vende en esa moneda. Migración
 0138. ADR-S108 addendum. **Con esto I3 (modo agencia) queda completo**; G8 DIAN
-espera proveedor y credenciales de prueba). Antes **v0.1.453**
+la dejó el usuario para después el 2026-11-19 y sigue en `docs/ideas.md` §1). Antes **v0.1.453**
 (**débito automático para los clientes de la agencia** — con Mercado Pago o
 PayPal, la agencia marca «Ofrecer débito automático» en Cobro en línea; desde
 «Plan y pagos» arma el débito (o el cliente lo activa en Ajustes →
@@ -2309,6 +2309,12 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · conversación** — Publicada y verificada v0.1.454 (zip,
+  sha256, install.sh y n8n). El plan aprobado el 2026-11-18 quedó completo
+  salvo G8: el usuario dejó la facturación DIAN para después ("Ok dejalo
+  para después") y pidió qué más puede seguir del banco de ideas; se le
+  propuso una tanda nueva desde `docs/ideas.md` y queda esperando su
+  elección. Siguen pendientes de su lado: el chequeo de Redis y `NPM_TOKEN`.
 - **2026-11-19 · v0.1.454** — **La plataforma le cobra a la agencia** (I3,
   ADR-S108 addendum; decisión del usuario «las dos»). Migración 0138:
   `plans.agency_included_clients/agency_extra_usd/agency_extra_cop` (NULL en
