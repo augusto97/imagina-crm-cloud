@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Copy, FilePlus2, FileSpreadsheet, LayoutTemplate, Sparkles, X } from 'lucide-react';
+import { ArrowRight, Copy, Database, FilePlus2, FileSpreadsheet, LayoutTemplate, Sparkles, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +30,7 @@ interface ListCreateDialogProps {
     initialMode?: Mode;
 }
 
-type Mode = 'blank' | 'template' | 'duplicate' | 'file';
+type Mode = 'blank' | 'template' | 'duplicate' | 'file' | 'airtable';
 
 /**
  * "Nueva lista" (v0.1.166): tres caminos, como al crear en ClickUp o
@@ -83,6 +83,7 @@ export function ListCreateDialog({ open, onOpenChange, groupId, groupName, initi
                                 {mode === 'template' && __('Elige una plantilla: nace con campos, vistas y automatizaciones listos.')}
                                 {mode === 'duplicate' && __('Una copia de una lista que ya tienes.')}
                                 {mode === 'file' && __('Sube un Excel o un CSV y la lista se arma sola con tus datos.')}
+                                {mode === 'airtable' && __('Trae una base completa de Airtable: cada tabla llega como una lista, con sus vínculos.')}
                             </Dialog.Description>
                         </div>
                         <Dialog.Close asChild>
@@ -93,11 +94,12 @@ export function ListCreateDialog({ open, onOpenChange, groupId, groupName, initi
                     </div>
 
                     {/* Selector de camino */}
-                    <div className="imcrm-mt-4 imcrm-grid imcrm-grid-cols-2 imcrm-gap-1 imcrm-rounded-lg imcrm-bg-muted imcrm-p-1 sm:imcrm-grid-cols-4" data-tour="list-create-modes">
+                    <div className="imcrm-mt-4 imcrm-grid imcrm-grid-cols-2 imcrm-gap-1 imcrm-rounded-lg imcrm-bg-muted imcrm-p-1 sm:imcrm-grid-cols-3" data-tour="list-create-modes">
                         <ModeButton active={mode === 'template'} onClick={() => setMode('template')} icon={LayoutTemplate} label={__('Plantilla')} />
                         <ModeButton active={mode === 'file'} onClick={() => setMode('file')} icon={FileSpreadsheet} label={__('Desde un archivo')} testId="list-create-mode-file" />
                         <ModeButton active={mode === 'blank'} onClick={() => setMode('blank')} icon={FilePlus2} label={__('En blanco')} />
                         <ModeButton active={mode === 'duplicate'} onClick={() => setMode('duplicate')} icon={Copy} label={__('Duplicar')} />
+                        <ModeButton active={mode === 'airtable'} onClick={() => setMode('airtable')} icon={Database} label={__('De Airtable')} testId="list-create-mode-airtable" />
                     </div>
 
                     <div className="imcrm-mt-4 imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-flex-col" data-tour="list-create-body">
@@ -135,6 +137,27 @@ export function ListCreateDialog({ open, onOpenChange, groupId, groupName, initi
                                 >
                                     <Sparkles className="imcrm-h-4 imcrm-w-4" />
                                     {__('Subir un archivo')}
+                                </Button>
+                            </div>
+                        )}
+                        {mode === 'airtable' && (
+                            <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="list-create-airtable">
+                                <ul className="imcrm-flex imcrm-flex-col imcrm-gap-1.5 imcrm-text-sm imcrm-text-muted-foreground">
+                                    <li>{__('• Conectas con un token de Airtable (te explicamos cómo crearlo) y eliges la base.')}</li>
+                                    <li>{__('• Cada tabla llega como una lista: campos con su tipo, opciones con su color, vínculos entre tablas y, si quieres, los adjuntos.')}</li>
+                                    <li>{__('• Revisas todo antes de crear. El token se usa sólo durante la importación y no se guarda.')}</li>
+                                </ul>
+                                <Button
+                                    className="imcrm-gap-2 imcrm-self-start"
+                                    onClick={() => {
+                                        onOpenChange(false);
+                                        navigate(`/lists/new/airtable${groupId ? `?carpeta=${groupId}` : ''}`);
+                                    }}
+                                    data-testid="list-create-airtable-go"
+                                    data-tour="list-create-airtable"
+                                >
+                                    {__('Importar de Airtable')}
+                                    <ArrowRight className="imcrm-h-4 imcrm-w-4" />
                                 </Button>
                             </div>
                         )}

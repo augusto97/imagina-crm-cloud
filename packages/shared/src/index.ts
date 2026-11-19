@@ -186,6 +186,7 @@ export * from './schemas/help';
 export * from './help/system-guides';
 // v0.1.339 (ADR-S88) — «Crear desde un archivo»: perfil, borrador y plan de importación.
 export * from './file-import';
+export * from './airtable-import';
 // v0.1.341 (ADR-S89) — sugerencias por lista: perfil, reglas gratis y esquema de la IA a pedido.
 export * from './list-suggestions';
 // v0.1.456 (ADR-S109) — IA en el día a día: resumen del registro, escribir con IA y agentes desde la ficha.

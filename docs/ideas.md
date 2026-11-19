@@ -74,8 +74,10 @@ aquí, pospuestos:
   por empresa. Costo que queda: cada texto nuevo en tres idiomas. Decisión
   pendiente: quién revisa las traducciones (conviene un nativo para el
   portugués).
-- **G5 · Importadores**, Airtable primero (base completa con vínculos y
-  adjuntos, por token de la persona); después Notion, ClickUp, Trello y monday.
+- **G5 · Importadores de Notion, ClickUp, Trello y monday.** Airtable salió
+  en v0.1.458 (base completa con vínculos, opciones y adjuntos, por token de
+  la persona): estos pueden reusar su forma (leer → revisar → importar en
+  segundo plano) y el mapeo de tipos.
 - **G3 · Google Sheets sincronizado en los dos sentidos.** La integración de
   Sheets ya tiene el permiso `spreadsheets` (lectura y escritura): no hace falta
   pedir uno nuevo a Google.
@@ -148,7 +150,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | G2, G8 | — | Ver §1 (pospuestos). |
 | G3 · Google Sheets sincronizado en los dos sentidos | alto · M-L | Pospuesto por el usuario al armar la fase 6 (2026-10-26). El permiso `spreadsheets` ya está. |
 | G4 · Google Calendar / Outlook sincronizado en los dos sentidos | medio-alto · M | **En parte hecho en v0.1.350**: en la agenda de citas, mover o borrar el evento en el calendario de quien atiende mueve o cancela la cita. Falta para la vista Calendario de cualquier lista. |
-| G5 · Importadores (Airtable, Notion, ClickUp, Trello, monday) | alto · M c/u | Pospuesto por el usuario al armar la fase 6. Excel con varias hojas ya existe (v0.1.299). |
+| G5 · Importadores (Notion, ClickUp, Trello, monday) | alto · M c/u | **Airtable salió en v0.1.458**; quedan estos cuatro. Excel con varias hojas ya existe (v0.1.299). |
 | G7 · Sincronizar PostgreSQL y MySQL | medio · M | Como la de SQL Server. |
 | G9 · Contabilidad (Siigo, Alegra, World Office, QuickBooks, Xero) | medio-alto · M c/u | |
 | G10 · Más pasarelas (ePayco, PayU, Bold, Stripe fuera de Colombia, Nequi directo) | medio · S-M c/u | Hoy: Mercado Pago, Wompi y PayPal. |

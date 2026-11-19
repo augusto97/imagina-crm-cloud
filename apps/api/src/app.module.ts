@@ -7,6 +7,7 @@ import { AgentHubModule } from './ai-agents/agent-hub';
 import { AiAgentsModule } from './ai-agents/ai-agents.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { FileImportModule } from './file-import/file-import.module';
+import { AirtableImportModule } from './airtable-import/airtable-import.module';
 import { ListSuggestionsModule } from './list-suggestions/list-suggestions.module';
 import { AiAssistModule } from './ai-assist/ai-assist.module';
 import { ApprovalHubModule } from './approvals/approval-hub';
@@ -206,6 +207,8 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         // F7 — «Empezar fácil»: bienvenida, datos de ejemplo y primeros pasos.
         OnboardingModule,
         FileImportModule,
+        // v0.1.458 — «Importar de Airtable».
+        AirtableImportModule,
         // v0.1.341 (ADR-S89) — sugerencias por lista (reglas gratis + IA a pedido).
         ListSuggestionsModule,
         // v0.1.456 (ADR-S109) — IA en el día a día (resumen, escribir, agentes desde la ficha).

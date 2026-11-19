@@ -55,6 +55,12 @@ const envSchema = z.object({
     /** D5 — APIs de calendario de la agenda (horarios ocupados y eventos); los tests apuntan a un falso. */
     GOOGLE_CALENDAR_API_URL: z.string().default('https://www.googleapis.com'),
     MS_GRAPH_API_URL: z.string().default('https://graph.microsoft.com'),
+    /**
+     * v0.1.458 — API de Airtable («Importar de Airtable»). Sólo los tests y el
+     * entorno de desarrollo la apuntan a un doble (`scripts/dev/fake-airtable.mjs`):
+     * en producción se IGNORA y siempre es `https://api.airtable.com`.
+     */
+    AIRTABLE_API_URL: z.string().default(''),
     /** v0.1.349 — De dónde se bajan los festivos por país (iCal de Google); los tests apuntan a un falso. */
     HOLIDAYS_ICS_BASE: z.string().default('https://calendar.google.com'),
     /**

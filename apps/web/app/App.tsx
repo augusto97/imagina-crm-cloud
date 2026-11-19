@@ -40,6 +40,8 @@ const RecordPage = lazyWithReload(() => import('@/admin/records/RecordPage').the
 const FolderPage = lazyWithReload(() => import('@/admin/lists/FolderPage').then(m => ({ default: m.FolderPage })));
 // v0.1.339 — «Crear desde un archivo» (Excel/CSV → listas, con IA opcional).
 const FileImportPage = lazyWithReload(() => import('@/admin/file-import/FileImportPage').then(m => ({ default: m.FileImportPage })));
+// v0.1.458 — «Importar de Airtable» (una base completa → listas vinculadas).
+const AirtableImportPage = lazyWithReload(() => import('@/admin/airtable-import/AirtableImportPage').then(m => ({ default: m.AirtableImportPage })));
 const MyWorkPage = lazyWithReload(() => import('@/admin/mywork/MyWorkPage').then(m => ({ default: m.MyWorkPage })));
 // C5 — la pantalla a la que llevan los botones Aprobar / Rechazar del correo.
 const ApprovalConfirmPage = lazyWithReload(() => import('@/admin/approvals/ApprovalConfirmPage').then(m => ({ default: m.ApprovalConfirmPage })));
@@ -140,6 +142,9 @@ export function App(): JSX.Element {
                 <Route path="lists" element={<ListsIndexPage />} />
                 <Route path="lists/new/file" element={
                     <Suspense fallback={<RouteFallback />}><FileImportPage /></Suspense>
+                } />
+                <Route path="lists/new/airtable" element={
+                    <Suspense fallback={<RouteFallback />}><AirtableImportPage /></Suspense>
                 } />
                 <Route path="lists/:listSlug/edit" element={
                     <Suspense fallback={<RouteFallback />}><ListBuilderPage /></Suspense>

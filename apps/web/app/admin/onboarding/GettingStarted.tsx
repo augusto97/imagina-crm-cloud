@@ -69,7 +69,8 @@ export function GettingStarted({ onCreateList }: { onCreateList: () => void }): 
     const finished = data ? data.complete && data.prefs.celebrated : false;
     const onWelcomePage = data?.welcome === true && (location.pathname === '/lists' || location.pathname === '/');
     // v0.1.339 — «Crear desde un archivo» tiene su propia barra fija abajo (con «Crear»): el botón no la tapa.
-    const ownBottomBar = location.pathname.startsWith('/lists/new/file');
+    // v0.1.458 — «Importar de Airtable» también («Importar»).
+    const ownBottomBar = location.pathname.startsWith('/lists/new/file') || location.pathname.startsWith('/lists/new/airtable');
     const visible = hasSteps && !onWelcomePage && (forced || (!ownBottomBar && !data!.prefs.hidden && !finished));
     const live = hasSteps && !finished;
 

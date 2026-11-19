@@ -16732,6 +16732,91 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         agente con candado en tabla y ficha, 403 por API) y 16/16 de los
         editores.
 
+  - [x] **Importar una base completa de Airtable (v0.1.458, ADR-S111, idea G5
+        del banco, sólo Airtable)**: quien viene de Airtable trae su base en un
+        paso. **Nueva lista → De Airtable** (también desde «Nueva lista aquí» de
+        una carpeta, con `?carpeta=`, y un enlace en la bienvenida de una
+        empresa sin listas) lleva a `/lists/new/airtable`
+        (`AirtableImportPage`, a pedido). (a) **Conectar** con un token
+        personal de Airtable (`data.records:read` + `schema.bases:read`): la
+        pantalla explica cómo crearlo y se verifica en el momento
+        (`/v0/meta/whoami` + las bases) con el motivo en palabras (token
+        inválido, permiso que falta nombrado, base sin acceso, ninguna base).
+        **El token no se guarda en la base**: vive sólo en Redis, cifrado con
+        `SECRETS_KEY`, con el vencimiento de la sesión (2 h) y se borra al
+        terminar, al cancelar o al cortarse la importación. (b) **Leer la base**
+        en segundo plano: tablas, campos y cuántos registros y adjuntos tiene
+        cada tabla (sólo se piden los campos que hace falta medir: adjuntos,
+        personas y números automáticos). (c) **Revisión** (`AirtableImportReview`):
+        qué tablas traer, el nombre de cada lista y de cada campo, el tipo con
+        el que llega (sólo los tipos a los que se puede convertir), el título,
+        lo que queda fuera con su motivo, la carpeta, si traer los adjuntos y,
+        ANTES de crear, el aviso del límite de registros del plan (con «importar
+        sólo los primeros N») y del almacenamiento. Las reglas de tipo son una
+        sola función pura en shared (`describeAirtableField`,
+        `resolveAirtablePlan`), la misma en la pantalla y en el servidor.
+        (d) **Mapeo de tipos** (tabla completa en el ADR): un vínculo entre
+        tablas llega como **UNA** relación (la del lado que vincula a un
+        registro; la otra cara se ve sola), adjuntos → Archivo (≤15 MB, cuentan
+        para el almacenamiento, sólo si se eligen), colaboradores → Persona si
+        todos son del equipo y si no texto con el nombre, fórmula/resumen/
+        búsqueda/conteo → su valor de hoy como dato fijo (con aviso), número
+        automático → ID automático conservando los números (el contador sigue
+        desde el último), fecha de creación → la del registro, botones y tipos
+        desconocidos fuera con el motivo, selecciones de más de 60 opciones →
+        texto. (e) **Importar** en segundo plano con avance por tabla, total y
+        adjuntos, y «Detener»: 100 registros por página con `offset`, como
+        mucho ~4,5 pedidos por segundo (Airtable admite 5 por base) y ante un
+        429 espera `Retry-After` (o 30 s) y sigue; listas creadas con el motor
+        de plantillas (`buildCreateListBlueprint` + `materialize`, en una
+        carpeta si son varias), registros por tandas de 100 insertados directo
+        (la primera carga **no dispara automatizaciones**), una celda que no
+        encaja queda vacía con aviso y nunca frena la importación, y una
+        segunda pasada arma los vínculos. Una importación a la vez por empresa
+        (candado en Redis), solo-lectura (ADR-S09), módulo `integrations` del
+        plan y `manage_lists` + `manage_fields` + `create_records`. Al terminar:
+        el enlace a cada lista, lo que conviene revisar y las celdas que
+        quedaron vacías; bitácora `airtable_import.apply`. (f) **Doble de
+        Airtable** para desarrollo y pruebas (`scripts/dev/fake-airtable.mjs`,
+        puerto 4896, `AIRTABLE_API_URL` sólo fuera de producción): una agencia
+        con Clientes/Proyectos/Tareas vinculadas, 150 registros, adjuntos (uno
+        de 40 MB), colaboradores del equipo y de afuera, fórmulas, rollup,
+        conteo, botón, un tipo desconocido, y 429 a pedido (`POST /__control`).
+        **Encontrado en el E2E**: el botón «Primeros pasos» tapaba «Importar»
+        en la barra fija (se oculta en esta pantalla, como en «Desde un
+        archivo»), y los textos decían «1 tablas» / «Se crean 1 listas». Además,
+        una corrida cortada por un reinicio del servidor dejaba la pantalla
+        esperando para siempre: ahora un estado quieto por más de 10 minutos
+        sin la corrida en el proceso pasa a «se cortó» con el motivo.
+        Ayuda: guía `import-airtable`, artículo «Traer tu base de Airtable» en
+        Aprende → Importar, exportar y plantillas (ilustración existente
+        `archivo-a-lista`), anclas `list-create-airtable`, `welcome-airtable`,
+        `airtable-token-steps`, `airtable-token`, `airtable-connect`,
+        `airtable-bases`, `airtable-review-summary`, `airtable-attachments`,
+        `airtable-fields`, `airtable-import-apply` y `airtable-done`, y novedad
+        con carrusel (sólo admins). G5 queda en `docs/ideas.md` sólo con Notion,
+        ClickUp, Trello y monday. Tests: `airtable-import.test.ts` en shared (17:
+        vínculos de un lado, tipos, colores y moneda, conversión de valores,
+        plan y sus errores) — shared 1071 en verde —, `airtable-import.spec.ts`
+        en la API (10, Postgres y Redis reales con el Airtable simulado: 429 con
+        Retry-After y el intervalo entre pedidos, token inválido o sin permiso
+        sin dejar nada en Redis, vista previa, importación completa —carpeta,
+        una relación por vínculo, opciones con color, fecha y fecha con zona,
+        persona del equipo y de afuera, fórmula fija, número automático que
+        sigue la cuenta, adjuntos que cuentan almacenamiento, ninguna
+        automatización, token borrado, RLS—, 429 a mitad, límite del plan y del
+        almacenamiento, una a la vez/permisos/solo-lectura/plan inválido,
+        cancelar, corrida cortada) + specs afectados (archivo, novedades, ayuda,
+        bitácora, rutas y módulos del plan) en verde, `airtablePlanEdit.test`
+        en el front (4; front 955 en verde) — E2E navegador 49/49 contra el
+        Airtable simulado: escritorio claro (diálogo → token malo y sin permiso
+        con su motivo → bases → revisión con moneda, relación, valor fijo y lo
+        que queda fuera → renombrar → importar con dos 429 → 150 registros, 142
+        vínculos, 7 adjuntos y el de 40 MB avisado → token fuera de Redis →
+        abrir la lista) y celular 390×844 oscuro (empresa nueva → bienvenida →
+        Inventario → una lista sin carpeta → cancelar mientras lee borra el
+        token), sin scroll lateral ni errores de JS.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

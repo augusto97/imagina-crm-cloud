@@ -102,6 +102,92 @@ export const articles: LearnArticle[] = [
     },
     // ─────────────────────────────────────────────────────────────────────
     {
+        id: 'importar-exportar-airtable',
+        route: '/lists/new/airtable',
+        related: ['importar-exportar-desde-archivo', 'listas-y-campos-crear', 'importar-exportar-importar'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Si tu empresa trabaja en Airtable, no hace falta exportar tabla por tabla: conectas una vez y traes la **base completa**. Cada tabla llega como una lista con sus registros, los campos con el tipo que mejor les queda, las selecciones con sus colores y los vínculos entre tablas ya armados. Antes de crear nada ves qué va a llegar y lo ajustas.',
+            },
+            { t: 'anim', key: 'archivo-a-lista', caption: 'De una base con clientes, proyectos y tareas salen tres listas vinculadas, cada una con sus campos y sus opciones de color.' },
+            { t: 'h', text: 'Antes de empezar: el token de Airtable' },
+            {
+                t: 'steps',
+                items: [
+                    'En Airtable entra a **airtable.com/create/tokens** y toca **Create new token**.',
+                    'Ponle un nombre y en **Scopes** agrega **data.records:read** (leer los registros) y **schema.bases:read** (leer las tablas y los campos).',
+                    'En **Access** agrega la base que quieres traer (o todas las que vas a migrar).',
+                    'Toca **Create token** y copia el token: lo vas a pegar en el siguiente paso.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                title: 'El token no se guarda',
+                md: 'Se usa sólo mientras dura la importación, guardado cifrado y por poco tiempo, y se borra al terminar o al cancelar. Cuando termines puedes revocarlo en Airtable.',
+            },
+            { t: 'h', text: 'Paso a paso' },
+            {
+                t: 'steps',
+                items: [
+                    'Toca **Nueva lista** y elige **De Airtable**. Si todavía no tienes listas, también está en la bienvenida; desde **Nueva lista aquí** de una carpeta, las listas nacen dentro de ella.',
+                    'Pega el token y toca **Conectar**. Se comprueba en el momento: si le falta un permiso o no ve ninguna base, te dice exactamente qué agregar.',
+                    'Elige la base y toca **Leer esta base**. Se cuentan los registros y los adjuntos de cada tabla; todavía no se crea nada.',
+                    'Revisa cada tabla: si la traes, el nombre de la lista, el campo que hace de título y, por campo, si lo traes, su nombre y su tipo. Lo que no se puede traer aparece aparte, con el motivo.',
+                    'Decide si traes los **adjuntos** y toca **Importar**. Ves el avance tabla por tabla y puedes **Detener** cuando quieras.',
+                    'Al terminar tienes el enlace a cada lista, lo que conviene revisar y las celdas que quedaron vacías porque su valor no encajaba.',
+                ],
+            },
+            { t: 'h', text: 'Cómo llega cada tipo de campo' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Texto, número, moneda, porcentaje, fecha, casilla, correo, teléfono, enlace', what: 'Llegan con el mismo tipo. La moneda toma el símbolo de Airtable, el porcentaje se guarda de 0 a 100 y las fechas con hora respetan la zona horaria del campo.' },
+                    { name: 'Selección y selección múltiple', what: 'Con las mismas opciones y sus colores (hasta 60; con más, el campo llega como texto).' },
+                    { name: 'Vínculo a otra tabla', what: 'Llega como **una sola** relación, del lado que vincula a un registro; la otra cara se ve sola desde la otra lista. Si no traes la otra tabla, el vínculo queda fuera.' },
+                    { name: 'Adjuntos', what: 'Se bajan a la app como archivos y cuentan para el almacenamiento de tu plan. Un archivo de más de 15 MB queda fuera y se avisa.' },
+                    { name: 'Colaborador', what: 'Si es alguien de tu equipo (por su correo), llega como persona; si no, como texto con su nombre.' },
+                    { name: 'Fórmula, resumen, búsqueda y conteo', what: 'Llegan con el **valor que tienen hoy**, como dato fijo: aquí ya no se recalculan. Si quieres que sigan calculándose, después puedes crear el campo equivalente.', tip: 'El campo queda marcado como «Valor fijo» en la revisión para que lo sepas.' },
+                    { name: 'Número automático', what: 'Conserva sus números y los registros nuevos siguen la cuenta desde el último.' },
+                    { name: 'Creado y modificado', what: 'La fecha de creación de cada registro se conserva, y los campos de fecha de creación o de última edición llegan como fecha fija. «Creado por» y «Modificado por» llegan como persona si es alguien de tu equipo; si no, como texto con el nombre.' },
+                    { name: 'Botones y tipos que la app no tiene', what: 'Quedan fuera, con el motivo a la vista.' },
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Límites',
+                rows: [
+                    { name: 'Tamaño', what: 'Hasta 20 tablas por importación, 60 campos por lista y 100.000 registros en total.' },
+                    { name: 'Registros del plan', what: 'Si la base trae más registros de los que le quedan a tu plan, te avisa antes de importar y puedes traer sólo los que entran.' },
+                    { name: 'Almacenamiento', what: 'Los adjuntos cuentan para el espacio del plan. Si no entran, apaga los adjuntos o deja fuera ese campo.' },
+                    { name: 'Velocidad', what: 'Airtable permite pocos pedidos por segundo: una base grande tarda unos minutos. Puedes dejar la pantalla abierta o volver más tarde.' },
+                ],
+            },
+            {
+                t: 'example',
+                title: 'Una agencia que se muda de Airtable',
+                md: 'Tenía «Clientes», «Proyectos» y «Tareas» vinculadas, con archivos en las tareas y fórmulas de margen. Conectó su token, revisó que «Presupuesto» llegara como moneda y que el margen quedara como valor fijo, y en unos minutos tenía las tres listas en una carpeta, cada tarea vinculada a su proyecto y cada proyecto a su cliente, con los archivos adentro.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿Se disparan automatizaciones al importar?', a: 'No: la importación es la primera carga y no corre ninguna automatización. Las que armes después funcionan con lo que llegue o cambie desde ese momento.' },
+                    { q: '¿Puedo importar otra vez la misma base?', a: 'Sí, pero crea listas nuevas: no actualiza las que ya trajiste. Si sólo quieres cambiar algunos datos, usa **Actualizar desde un archivo** en la lista.' },
+                    { q: '¿Qué pasa con las vistas y automatizaciones de Airtable?', a: 'Se traen los datos y la estructura de las tablas. Las vistas, automatizaciones e interfaces de Airtable se arman de nuevo aquí con las herramientas de la app.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Importar de Airtable', to: '/lists/new/airtable' },
+                    { label: 'Crear desde un Excel', article: 'importar-exportar-desde-archivo' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
         id: 'importar-exportar-importar',
         route: '/lists',
         related: ['importar-exportar-actualizar', 'importar-exportar-exportar', 'listas-y-campos-crear', 'listas-y-campos-reglas'],

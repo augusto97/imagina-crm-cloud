@@ -430,7 +430,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.457**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.458**
+(**importar una base completa de Airtable** — «Nueva lista → De Airtable»: token
+personal verificado que no se guarda en la base, revisión de tipos y límites
+del plan antes de crear, importación en segundo plano con avance, una relación
+por vínculo, adjuntos opcionales, fórmulas como valor fijo, sin disparar
+automatizaciones; sin migración; ADR-S111). Antes **v0.1.457**
 (**campos que aparecen según otros y campos de sólo lectura por rol** —
 «Mostrar sólo si…» por campo (alta, ficha, tabla, servidor, import y portal) y,
 en Permisos, «Puede ver y cambiar / Sólo ver / No lo ve» por campo y por rol
@@ -2324,6 +2329,31 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.458** — **Importar una base completa de Airtable** (G5,
+  sólo Airtable; ADR-S111). «Nueva lista → De Airtable» (y desde una carpeta
+  y la bienvenida) → `/lists/new/airtable`: token personal de Airtable
+  (`data.records:read` + `schema.bases:read`) verificado al conectar, que NO
+  se guarda en la base (Redis cifrado con `SECRETS_KEY`, 2 h, se borra al
+  terminar/cancelar/cortarse); lectura de la base en segundo plano; revisión
+  con tipos, título, lo que queda fuera y los límites del plan ANTES de crear;
+  importación en segundo plano con avance (100 por página, ~4,5 pedidos/s,
+  429 con Retry-After), listas por el motor de plantillas, una relación por
+  vínculo, adjuntos opcionales al módulo de archivos, fórmulas como valor
+  fijo, número automático conservado, sin automatizaciones, una a la vez por
+  empresa. Módulo `integrations` del plan; `manage_lists` + `manage_fields` +
+  `create_records`. Sin migración. Doble de desarrollo
+  `scripts/dev/fake-airtable.mjs` (puerto 4896, `AIRTABLE_API_URL` sólo fuera
+  de producción; `slot.sh` lo exporta). Ayuda, Aprende y novedad al día; G5
+  queda en ideas con Notion, ClickUp, Trello y monday. Tests: shared 17,
+  API 10, front 4 — E2E 49/49 (escritorio claro y celular oscuro). **Queda**:
+  la importación corre dentro del proceso del API (no en una cola): un
+  reinicio la corta y la pantalla lo dice a los 10 minutos; si se vuelve un
+  problema con bases grandes, pasarla a BullMQ. No probado contra Airtable
+  real (el sandbox no llega a api.airtable.com). **Numeración**: Airtable
+  terminó antes que las otras entregas de la tanda y salió como v0.1.458; las
+  que siguen corren su número (automatizaciones parte 2, Sheets, describir la
+  automatización, períodos y pronóstico, informes, pulido y Zod 4 se publican
+  en el orden en que terminan).
 - **2026-11-19 · v0.1.457** — **Campos que aparecen según otros y campos de
   sólo lectura por rol** (A7 + C4; ADR-S110; sin migración). «Mostrar sólo
   si…» por campo en `field.config.show_if` (por `field_id`, hasta 10 reglas);
