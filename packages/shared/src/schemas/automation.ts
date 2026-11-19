@@ -85,7 +85,7 @@ export type ConditionRule = z.infer<typeof conditionRuleSchema>;
 
 export const conditionDataSchema = z.union([
     z.array(conditionRuleSchema),
-    z.record(z.unknown()),
+    z.record(z.string(), z.unknown()),
 ]);
 export type ConditionData = z.infer<typeof conditionDataSchema>;
 
@@ -141,12 +141,12 @@ interface ActionSpecInput {
     on_error?: Record<string, unknown> | null;
 }
 
-export const actionSpecSchema: z.ZodType<ActionSpec, z.ZodTypeDef, ActionSpecInput> = z.lazy(() =>
+export const actionSpecSchema: z.ZodType<ActionSpec, ActionSpecInput> = z.lazy(() =>
     z.object({
         type: z.string().min(1),
-        config: z.record(z.unknown()).default({}),
+        config: z.record(z.string(), z.unknown()).prefault({}),
         condition: conditionDataSchema.nullish(),
-        on_error: z.record(z.unknown()).nullish(),
+        on_error: z.record(z.string(), z.unknown()).nullish(),
     }),
 );
 
@@ -256,7 +256,7 @@ export const actionLogEntrySchema = z.object({
     action: z.string(),
     status: actionLogStatusSchema,
     message: z.string().nullable(),
-    details: z.record(z.unknown()).default({}),
+    details: z.record(z.string(), z.unknown()).prefault({}),
 });
 export type ActionLogEntry = z.infer<typeof actionLogEntrySchema>;
 
@@ -281,14 +281,14 @@ export const triggerMetaSchema = z.object({
     slug: z.string(),
     label: z.string(),
     event: z.string(),
-    config_schema: z.record(z.record(z.unknown())),
+    config_schema: z.record(z.string(), z.record(z.string(), z.unknown())),
 });
 export type TriggerMeta = z.infer<typeof triggerMetaSchema>;
 
 export const actionMetaSchema = z.object({
     slug: z.string(),
     label: z.string(),
-    config_schema: z.record(z.record(z.unknown())),
+    config_schema: z.record(z.string(), z.record(z.string(), z.unknown())),
     /**
      * v0.1.198 — acciones con NOMBRE de un conector. Cuando viene, el ítem del
      * menú no es un tipo de acción sino una acción concreta de una conexión
@@ -312,7 +312,7 @@ export type ActionMeta = z.infer<typeof actionMetaSchema>;
 // Los últimos payloads recibidos en `POST /public/hooks/:token`, para que el
 // editor muestre qué llega y ayude a mapear claves → campos/merge tags.
 export const hookCaptureSchema = z.object({
-    payload: z.record(z.unknown()),
+    payload: z.record(z.string(), z.unknown()),
     received_at: z.string(),
     /**
      * v0.1.399 — qué haría el disparador con el registro si este dato llegara
@@ -338,7 +338,7 @@ export type HookCapture = z.infer<typeof hookCaptureSchema>;
  */
 export const webhookTestInputSchema = z.object({
     /** El `config` de la acción `call_webhook` tal cual se está editando. */
-    config: z.record(z.unknown()),
+    config: z.record(z.string(), z.unknown()),
     /** Registro de muestra para resolver las variables. Default: el último. */
     record_id: z.number().int().positive().optional(),
 });
@@ -350,7 +350,7 @@ export type WebhookTestInput = z.infer<typeof webhookTestInputSchema>;
  */
 export const emailTestInputSchema = z.object({
     /** El `config` de la acción `send_email` tal cual se está editando. */
-    config: z.record(z.unknown()),
+    config: z.record(z.string(), z.unknown()),
     record_id: z.number().int().positive().optional(),
     /** false = sólo arma el correo (vista previa con datos reales). */
     send: z.boolean().default(false),
@@ -375,7 +375,7 @@ export const webhookTestResultSchema = z.object({
     request: z.object({
         url: z.string(),
         method: z.string(),
-        headers: z.record(z.string()),
+        headers: z.record(z.string(), z.string()),
         body: z.string().nullable().default(null),
     }),
     /** `null` si no se llegó a conectar (ver `error`). */
@@ -802,7 +802,7 @@ export function automationConfigIssues(input: {
 // los webhooks/conectores que la persona marque para ejecutar de verdad.
 export const automationTestRunInputSchema = z.object({
     trigger_type: automationTriggerSlugSchema,
-    trigger_config: triggerConfigSchema.default({}),
+    trigger_config: triggerConfigSchema.prefault({}),
     actions: z.array(actionSpecSchema).max(60).default([]),
     /** Registro de prueba. Default: el último de la lista. */
     record_id: z.number().int().positive().optional(),
@@ -867,7 +867,7 @@ export const automationVersionSchema = z.object({
     name: z.string(),
     description: z.string().nullable(),
     trigger_type: z.string(),
-    trigger_config: z.record(z.unknown()),
+    trigger_config: z.record(z.string(), z.unknown()),
     actions: z.array(actionSpecSchema),
     is_active: z.boolean(),
     author: z.object({ id: idSchema, name: z.string() }).nullable(),

@@ -24,7 +24,7 @@ const storedAppSchema = z.object({
     client_id: z.string().default(''),
     client_secret_enc: z.string().nullable().default(null),
 });
-const storedSchema = z.record(storedAppSchema);
+const storedSchema = z.record(z.string(), storedAppSchema);
 type StoredApp = z.infer<typeof storedAppSchema>;
 
 /** App del proveedor lista para usar (secreto en claro). */

@@ -30,7 +30,7 @@ export const platformLegalSchema = z.object({
         .refine((v) => v === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), { message: 'Correo inválido' })
         .default(''),
     /** Sitio web de la empresa operadora (opcional, se enlaza en el pie). */
-    website_url: httpsUrl.default(''),
+    website_url: httpsUrl.prefault(''),
     /** Descripción de la app para la página principal. Vacío = la sugerida. */
     description: z.string().trim().max(3000).default(''),
     /** `null` = usar el texto sugerido (y recibir sus mejoras con cada versión). */

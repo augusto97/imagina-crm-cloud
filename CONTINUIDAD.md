@@ -430,7 +430,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.464**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.465**
+(**migración a Zod 4** — la librería de validación de todo el monorepo pasa de
+la 3.25 a la 4.6: sale la última excepción de auditoría que no era de mssql,
+el servidor valida mucho más rápido —una automatización de 14 pasos en 8 µs en
+vez de 537— y el arranque del front pesa ~14 KB gzip más; sin cambios
+visibles; addendum ADR-S38). Antes **v0.1.464**
 (**informes con bloques de varias listas** — sección «Informes» en Tableros:
 documentos con títulos, textos con variables, cifras, gráficos y tablas de
 cualquier lista, con su período, comparación y filtros; se descargan en PDF y
@@ -2343,10 +2348,9 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   - `GHSA-xcx6-jx8p-x3h5` (`@azure/msal-node` <7.1.0, vía mssql→tedious→
     `@azure/identity`; sólo afecta al flujo `auth_code` y el conector SQL usa
     usuario y contraseña). Sacarla cuando `@azure/identity` acepte msal-node 7.1.
-  - `GHSA-mrhx-c7xc-m3w5` (`zod` <4.6.6; el parche sólo corta arrays con
-    `.max()`). Cerrado en la entrada con el tope de 100.000 elementos de array
-    por cuerpo (413 `too_many_items`, v0.1.308). Sacarla con la **migración a
-    Zod 4** (~100 archivos), planificada para después de integrar la fase 3.
+  - (`GHSA-mrhx-c7xc-m3w5`, de `zod`, salió en v0.1.465 con la migración a
+    Zod 4. El tope de 100.000 elementos de array por cuerpo de v0.1.308 se
+    queda igual.)
 - Rol de Postgres no superusuario para la conexión base (necesita BYPASSRLS y
   migrar cada instalación por consola).
 - `style-src 'unsafe-inline'` en la CSP (React escribe `style=""`).
@@ -2362,6 +2366,30 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.465** — **Migración a Zod 4** (último ítem de la tanda
+  aprobada el 2026-11-19; addendum ADR-S38; sin migración de base). Zod 3.25 →
+  4.6 en shared, API y front (~90 archivos; se hizo SIN agentes en paralelo,
+  como estaba planeado). Se fueron `zod-to-json-schema` (el JSON Schema de las
+  herramientas de la IA, el MCP, los agentes y el OpenAPI sale de
+  `z.toJSONSchema` por `apps/api/src/common/zod-json-schema.ts`, que mantiene
+  `additionalProperties: false`) y `@hookform/resolvers` (sin uso). Sale
+  `GHSA-mrhx-c7xc-m3w5` de `ignoreGhsas`. Cambios de comportamiento de Zod 4
+  y cómo se resolvieron, en el addendum: `.default` de objetos y arreglos →
+  `.prefault` (~325), `z.record(V)` → `z.record(z.string(), V)`, records con
+  clave de enum → `z.partialRecord`. **Encontrado en el camino**: en el
+  navegador Zod 4 prueba `new Function` y la CSP lo prohíbe → violación de la
+  política en cada pantalla; se apaga con `z.config({ jitless: true })` en
+  `apps/web/app/lib/zodSetup.ts`, PRIMER import de las tres entradas (app,
+  portal, tablero público), y las pruebas de pantallas del CI ahora fallan con
+  cualquier violación de CSP. **Costo medido**: +14 KB gzip en el arranque
+  (login 262 → 276, app 811 → 824; presupuesto subido a 285/830 con el motivo
+  en `check-bundle-size.mjs`). **Ganancia medida** en el servidor: una
+  automatización de 14 pasos se valida en 8 µs (antes 537) y la query del
+  listado en 3 µs (antes 17). Las páginas públicas siguen sin Zod.
+  **Con esto la tanda del 2026-11-19 (v0.1.455-465) queda completa.**
+  Siguen pendientes del lado del usuario: confirmar los modelos de IA de
+  v0.1.456, el chequeo de Redis, `NPM_TOKEN` para publicar el paquete de n8n
+  y el proveedor para la factura electrónica DIAN (G8, pospuesta).
 - **2026-11-19 · v0.1.464** — **Informes con bloques de varias listas** (J1;
   ADR-S114; migración **0142**: tabla `reports` con RLS y `report_id` en
   `dashboard_subscriptions` con CHECK «tablero o informe»). Un documento en

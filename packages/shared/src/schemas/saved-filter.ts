@@ -27,7 +27,7 @@ export type SavedFilter = z.infer<typeof savedFilterSchema>;
 /** Alta de un filtro guardado. */
 export const createSavedFilterSchema = z.object({
     name: z.string().trim().min(1).max(120),
-    scope: savedFilterScopeSchema.default('personal'),
+    scope: savedFilterScopeSchema.prefault('personal'),
     filter_tree: filterTreeSchema,
 });
 export type CreateSavedFilterInput = z.infer<typeof createSavedFilterSchema>;

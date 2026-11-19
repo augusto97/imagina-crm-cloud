@@ -103,12 +103,12 @@ export type TemplateChecklist = z.infer<typeof templateChecklistSchema>;
  */
 export const templateSubtaskSchema = z.object({
     title: z.string().trim().min(1).max(500),
-    values: templateValuesSchema.default({}),
+    values: templateValuesSchema.prefault({}),
 });
 export type TemplateSubtask = z.infer<typeof templateSubtaskSchema>;
 
 export const recordTemplateContentSchema = z.object({
-    values: templateValuesSchema.default({}),
+    values: templateValuesSchema.prefault({}),
     subtasks: z.array(templateSubtaskSchema).max(RECORD_TEMPLATE_MAX_SUBTASKS).default([]),
     checklists: z.array(templateChecklistSchema).max(RECORD_TEMPLATE_MAX_CHECKLISTS).default([]),
     /** Descripción del registro (documento). El servidor la sanea al guardar. */
@@ -135,12 +135,12 @@ export type RecordTemplate = z.infer<typeof recordTemplateSchema>;
 const templateName = z.string().trim().min(1, 'Ponle un nombre').max(120);
 
 export const createRecordTemplateSchema = z.object({
-    kind: recordTemplateKindSchema.default('record'),
+    kind: recordTemplateKindSchema.prefault('record'),
     name: templateName,
     description: z.string().trim().max(500).nullable().optional(),
     icon: z.string().max(64).nullable().optional(),
     color: z.string().max(32).nullable().optional(),
-    content: recordTemplateContentSchema.default({}),
+    content: recordTemplateContentSchema.prefault({}),
 });
 export type CreateRecordTemplateInput = z.infer<typeof createRecordTemplateSchema>;
 
@@ -173,7 +173,7 @@ export const recordTemplateFromRecordSchema = z.object({
             checklists: z.boolean().default(true),
             description: z.boolean().default(true),
         })
-        .default({}),
+        .prefault({}),
 });
 export type RecordTemplateFromRecordInput = z.infer<typeof recordTemplateFromRecordSchema>;
 
@@ -191,7 +191,7 @@ export type ChecklistTemplateFromChecklistInput = z.infer<typeof checklistTempla
  */
 export const createFromTemplateSchema = z.object({
     template_id: idSchema,
-    data: recordDataSchema.default({}),
+    data: recordDataSchema.prefault({}),
     parent_id: idSchema.nullable().optional(),
 });
 export type CreateFromTemplateInput = z.infer<typeof createFromTemplateSchema>;

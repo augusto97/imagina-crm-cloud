@@ -62,7 +62,7 @@ export const sheetSyncKeySchema = z.discriminatedUnion('mode', [
     z.object({
         /** La app escribe el número del registro en esta columna (recomendado). */
         mode: z.literal('app_id'),
-        column: z.string().trim().min(1).max(100).default(SHEET_SYNC_ID_COLUMN),
+        column: z.string().trim().min(1).max(100).prefault(SHEET_SYNC_ID_COLUMN),
     }),
     z.object({
         /** Una columna de la hoja que coincide con un campo de la lista (email, NIT…). */
@@ -104,14 +104,14 @@ const sheetSyncBase = {
 
 export const createSheetSyncSchema = z.object({
     ...sheetSyncBase,
-    header_row: sheetSyncBase.header_row.default(1),
-    direction: sheetSyncBase.direction.default('both'),
-    key: sheetSyncBase.key.default({ mode: 'app_id', column: SHEET_SYNC_ID_COLUMN }),
-    columns: sheetSyncBase.columns.default([]),
-    on_sheet_delete: sheetSyncBase.on_sheet_delete.default('ignore'),
-    on_app_delete: sheetSyncBase.on_app_delete.default('ignore'),
-    interval_minutes: sheetSyncBase.interval_minutes.default(15),
-    enabled: sheetSyncBase.enabled.default(true),
+    header_row: sheetSyncBase.header_row.prefault(1),
+    direction: sheetSyncBase.direction.prefault('both'),
+    key: sheetSyncBase.key.prefault({ mode: 'app_id', column: SHEET_SYNC_ID_COLUMN }),
+    columns: sheetSyncBase.columns.prefault([]),
+    on_sheet_delete: sheetSyncBase.on_sheet_delete.prefault('ignore'),
+    on_app_delete: sheetSyncBase.on_app_delete.prefault('ignore'),
+    interval_minutes: sheetSyncBase.interval_minutes.prefault(15),
+    enabled: sheetSyncBase.enabled.prefault(true),
 });
 export type CreateSheetSyncInput = z.infer<typeof createSheetSyncSchema>;
 

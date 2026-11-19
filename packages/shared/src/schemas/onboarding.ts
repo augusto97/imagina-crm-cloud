@@ -63,7 +63,7 @@ export const onboardingAiRequestSchema = z.object({
      * proveedor de IA aunque la empresa no haya activado el asistente
      * (ADR-S21 exige opt-in para el asistente; esto no lo activa).
      */
-    consent: z.literal(true, { errorMap: () => ({ message: 'Hace falta tu consentimiento para enviar la descripción.' }) }),
+    consent: z.literal(true, { error: 'Hace falta tu consentimiento para enviar la descripción.' }),
 });
 export type OnboardingAiRequest = z.infer<typeof onboardingAiRequestSchema>;
 
@@ -103,15 +103,15 @@ export const blueprintEditsSchema = z.object({
     /** Keys de listas que no se crean. */
     exclude_lists: z.array(z.string().min(1).max(63)).max(20).default([]),
     /** key de la lista → slugs de campos que no se crean. */
-    exclude_fields: z.record(z.array(z.string().min(1).max(63)).max(100)).default({}),
+    exclude_fields: z.record(z.string(), z.array(z.string().min(1).max(63)).max(100)).prefault({}),
     /** key de la lista → índices de sus vistas que no se crean. */
-    exclude_views: z.record(z.array(z.number().int().min(0).max(50)).max(50)).default({}),
+    exclude_views: z.record(z.string(), z.array(z.number().int().min(0).max(50)).max(50)).prefault({}),
     /** key de la lista → índices de sus automatizaciones que no se crean. */
-    exclude_automations: z.record(z.array(z.number().int().min(0).max(50)).max(50)).default({}),
+    exclude_automations: z.record(z.string(), z.array(z.number().int().min(0).max(50)).max(50)).prefault({}),
     /** Índices de los tableros que no se crean. */
     exclude_dashboards: z.array(z.number().int().min(0).max(20)).max(20).default([]),
     /** key de la lista → nombre nuevo. */
-    rename_lists: z.record(z.string().trim().min(1).max(190)).default({}),
+    rename_lists: z.record(z.string(), z.string().trim().min(1).max(190)).prefault({}),
 });
 export type BlueprintEdits = z.infer<typeof blueprintEditsSchema>;
 
@@ -126,7 +126,7 @@ export const onboardingApplySchema = z.discriminatedUnion('source', [
         proposal_id: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/),
         folder_name: folderNameSchema.optional(),
         include_samples: z.boolean().default(true),
-        edits: blueprintEditsSchema.default({}),
+        edits: blueprintEditsSchema.prefault({}),
     }),
     z.object({
         source: z.literal('templates'),

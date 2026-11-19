@@ -25,8 +25,8 @@ import {
     viewSchema,
     WEBHOOK_EVENTS,
 } from '@imagina-base/shared';
-import type { ZodTypeAny } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import type { ZodType as ZodTypeAny } from 'zod';
+import { zodToJson } from '../common/zod-json-schema';
 
 /**
  * v0.1.441 (G1) — El documento OpenAPI 3.1 de la API pública: las MISMAS rutas
@@ -39,10 +39,7 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
 type Json = Record<string, unknown>;
 
 function schemaOf(schema: ZodTypeAny): Json {
-    const convert = zodToJsonSchema as unknown as (s: ZodTypeAny, o: Record<string, unknown>) => Json;
-    const json = convert(schema, { $refStrategy: 'none', target: 'openApi3' });
-    delete json.$schema;
-    return json;
+    return zodToJson(schema, 'openapi-3.0');
 }
 
 const ref = (name: string): Json => ({ $ref: `#/components/schemas/${name}` });

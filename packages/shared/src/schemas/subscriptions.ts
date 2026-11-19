@@ -75,12 +75,12 @@ export const createSubscriptionPlanSchema = z
     .object({
         connection_id: idSchema,
         ...planFields,
-        currency: currencySchema.default('COP'),
-        frequency: planFields.frequency.default(1),
-        frequency_type: planFields.frequency_type.default('months'),
-        trial_days: planFields.trial_days.default(0),
-        grace_days: planFields.grace_days.default(10),
-        on_expire: planFields.on_expire.default('mark'),
+        currency: currencySchema.prefault('COP'),
+        frequency: planFields.frequency.prefault(1),
+        frequency_type: planFields.frequency_type.prefault('months'),
+        trial_days: planFields.trial_days.prefault(0),
+        grace_days: planFields.grace_days.prefault(10),
+        on_expire: planFields.on_expire.prefault('mark'),
     })
     .refine(frequencyOk, FREQUENCY_MESSAGE);
 export type CreateSubscriptionPlanInput = z.infer<typeof createSubscriptionPlanSchema>;

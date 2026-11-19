@@ -20,8 +20,8 @@ import {
     type RecordDto,
 } from '@imagina-base/shared';
 import { and, eq, isNull, ne } from 'drizzle-orm';
-import { z, type ZodTypeAny } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import { z, type ZodType as ZodTypeAny } from 'zod';
+import { toolInputSchema } from '../common/zod-json-schema';
 import type { ActivityService } from '../activity/activity.service';
 import { displayValue, mapOptionValue } from '../ai/tools/data-tools';
 import { rulesToFilterTree, type FilterRuleSpec } from '../ai/tools/structure-tools';
@@ -117,8 +117,7 @@ interface ListCtx {
 // ─────────────────────────── Esquemas de entrada ───────────────────────────
 
 const recordIdSpec = z.number().int().positive().optional().describe('Id del registro (sin él, el registro sobre el que te pidieron trabajar)');
-const valuesSpec = z
-    .record(z.unknown())
+const valuesSpec = z.record(z.string(), z.unknown())
     .describe('Mapa slug → valor. Selección: value o etiqueta de una opción; fechas AAAA-MM-DD; casilla true/false; persona: id numérico.');
 
 const filterSpec = z.object({
@@ -183,12 +182,7 @@ const TOOL_DESCRIPTIONS: Record<AiAgentTool, string> = {
 
 /** Definiciones para el modelo (sólo las herramientas ofrecidas). */
 export function agentToolDefinitions(tools: readonly AiAgentTool[]): Array<{ name: string; description: string; input_schema: Record<string, unknown> }> {
-    const convert = zodToJsonSchema as unknown as (s: ZodTypeAny, o: Record<string, unknown>) => Record<string, unknown>;
-    return tools.map((t) => {
-        const json = convert(AGENT_TOOL_INPUTS[t], { $refStrategy: 'none', target: 'jsonSchema7' });
-        delete json.$schema;
-        return { name: t, description: TOOL_DESCRIPTIONS[t], input_schema: json.type === 'object' ? json : { type: 'object', properties: {}, ...json } };
-    });
+    return tools.map((t) => ({ name: t, description: TOOL_DESCRIPTIONS[t], input_schema: toolInputSchema(AGENT_TOOL_INPUTS[t]) }));
 }
 
 /** Lo que necesita cada herramienta del DUEÑO (su ACL de lista decide además fila por fila). */

@@ -37,7 +37,7 @@ export const blueprintFieldSchema = z.object({
     label: z.string().min(1).max(190),
     slug: z.string().min(1).max(63),
     type: fieldTypeSchema,
-    config: z.record(z.unknown()).default({}),
+    config: z.record(z.string(), z.unknown()).prefault({}),
     is_required: z.boolean().default(false),
     is_unique: z.boolean().default(false),
     is_indexed: z.boolean().default(false),
@@ -48,7 +48,7 @@ export type BlueprintField = z.infer<typeof blueprintFieldSchema>;
 export const blueprintViewSchema = z.object({
     name: z.string().min(1).max(190),
     type: viewTypeSchema,
-    config: z.record(z.unknown()).default({}),
+    config: z.record(z.string(), z.unknown()).prefault({}),
     is_default: z.boolean().default(false),
     /** v0.1.259 — icono y color de la pestaña. */
     icon: z.string().max(64).optional(),
@@ -60,7 +60,7 @@ export const blueprintAutomationSchema = z.object({
     name: z.string().min(1).max(190),
     description: z.string().max(2000).nullable().default(null),
     trigger_type: z.string().min(1),
-    trigger_config: z.record(z.unknown()).default({}),
+    trigger_config: z.record(z.string(), z.unknown()).prefault({}),
     actions: z.array(z.unknown()).min(1),
     is_active: z.boolean().default(true),
 });
@@ -73,14 +73,14 @@ export type BlueprintAutomation = z.infer<typeof blueprintAutomationSchema>;
  */
 export const blueprintRecordSchema = z.object({
     key: z.string().min(1).optional(),
-    data: z.record(z.unknown()).default({}),
+    data: z.record(z.string(), z.unknown()).prefault({}),
     parent_key: z.string().min(1).optional(),
     /**
      * slug del campo relation → destinos: una `key` de registro del pack, o
      * el id numérico de un registro que ya existe (sólo vale dentro del
      * mismo workspace, o sea al duplicar).
      */
-    relations: z.record(z.array(z.union([z.string(), z.number()]))).optional(),
+    relations: z.record(z.string(), z.array(z.union([z.string(), z.number()]))).optional(),
     /**
      * A8 — los registros de la MISMA lista que lo bloquean, por `key` (y el
      * desfase en días). Al materializar se re-mapean a los ids nuevos.
@@ -115,7 +115,7 @@ export const blueprintRecordTemplateSchema = z.object({
     description: z.string().max(500).nullable().default(null),
     icon: z.string().max(64).nullable().default(null),
     color: z.string().max(32).nullable().default(null),
-    content: z.record(z.unknown()).default({}),
+    content: z.record(z.string(), z.unknown()).prefault({}),
 });
 export type BlueprintRecordTemplate = z.infer<typeof blueprintRecordTemplateSchema>;
 
@@ -126,7 +126,7 @@ export type BlueprintRecordTemplate = z.infer<typeof blueprintRecordTemplateSche
  */
 export const blueprintBookingPageSchema = z.object({
     name: z.string().min(1).max(120),
-    config: z.record(z.unknown()).default({}),
+    config: z.record(z.string(), z.unknown()).prefault({}),
 });
 export type BlueprintBookingPage = z.infer<typeof blueprintBookingPageSchema>;
 
@@ -136,7 +136,7 @@ export const blueprintListSchema = z.object({
     name: z.string().min(1).max(190),
     icon: z.string().max(64).nullable().default(null),
     color: z.string().max(32).nullable().default(null),
-    settings: z.record(z.unknown()).default({}),
+    settings: z.record(z.string(), z.unknown()).prefault({}),
     fields: z.array(blueprintFieldSchema).default([]),
     views: z.array(blueprintViewSchema).default([]),
     automations: z.array(blueprintAutomationSchema).default([]),
@@ -158,7 +158,7 @@ export const blueprintWidgetSchema = z.object({
     type: z.string().min(1),
     list: z.union([listRefSchema, z.literal(0)]),
     title: z.string().default(''),
-    config: z.record(z.unknown()).default({}),
+    config: z.record(z.string(), z.unknown()).prefault({}),
     layout: z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() }),
 });
 export type BlueprintWidget = z.infer<typeof blueprintWidgetSchema>;
@@ -168,7 +168,7 @@ export const blueprintDashboardSchema = z.object({
     name: z.string().min(1).max(190),
     description: z.string().max(2000).nullable().default(null),
     widgets: z.array(blueprintWidgetSchema).default([]),
-    settings: z.record(z.unknown()).default({}),
+    settings: z.record(z.string(), z.unknown()).prefault({}),
 });
 export type BlueprintDashboard = z.infer<typeof blueprintDashboardSchema>;
 
@@ -193,7 +193,7 @@ export type BlueprintInclude = z.infer<typeof blueprintIncludeSchema>;
 /** `POST /lists/:id/duplicate` */
 export const duplicateListSchema = z.object({
     name: z.string().trim().min(1).max(190).optional(),
-    include: blueprintIncludeSchema.default({}),
+    include: blueprintIncludeSchema.prefault({}),
 });
 export type DuplicateListInput = z.infer<typeof duplicateListSchema>;
 
@@ -220,7 +220,7 @@ export const listTemplateSummarySchema = z.object({
     description: z.string().max(2000).nullable().default(null),
     icon: z.string().max(64).nullable().default(null),
     color: z.string().max(32).nullable().default(null),
-    category: templateCategorySchema.default('otros'),
+    category: templateCategorySchema.prefault('otros'),
     /** Para la vista previa de la galería sin bajar el blueprint entero. */
     lists: z.array(
         z.object({
@@ -245,7 +245,7 @@ export const createListTemplateSchema = z.object({
     name: z.string().trim().min(1).max(190),
     description: z.string().max(2000).nullish(),
     category: templateCategorySchema.optional(),
-    include: blueprintIncludeSchema.default({}),
+    include: blueprintIncludeSchema.prefault({}),
 });
 export type CreateListTemplateInput = z.infer<typeof createListTemplateSchema>;
 

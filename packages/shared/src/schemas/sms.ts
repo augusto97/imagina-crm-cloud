@@ -475,7 +475,7 @@ export type SmsSendInput = z.infer<typeof smsSendSchema>;
  */
 export const smsTestSendSchema = z.object({
     connection_id: idSchema,
-    values: z.record(z.unknown()).default({}),
+    values: z.record(z.string(), z.unknown()).prefault({}),
     record_id: z.number().int().positive().optional(),
     send: z.boolean().default(false),
     /** Número propio para «Enviarme una prueba». */

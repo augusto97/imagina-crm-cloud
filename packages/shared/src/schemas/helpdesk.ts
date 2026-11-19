@@ -129,7 +129,7 @@ export const helpdeskMailboxInputSchema = z.object({
     username: z.string().trim().min(1, 'Escribe el usuario del buzón').max(255),
     /** Vacío u omitido = conservar la guardada. */
     password: z.string().max(500).optional(),
-    folder: z.string().trim().min(1).max(255).default(DEFAULT_IMAP_FOLDER),
+    folder: z.string().trim().min(1).max(255).prefault(DEFAULT_IMAP_FOLDER),
     /** La dirección que ven los clientes (y a la que responden). */
     support_address: z.string().trim().toLowerCase().email('Escribe la dirección de soporte (soporte@tuempresa.com)').max(255),
     /** Marcar como leídos los correos que se procesan (por defecto no se toca nada del buzón). */
@@ -220,9 +220,9 @@ const hhmmSchema = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/, 'Hora
 
 export const businessCalendarSchema = z.object({
     /** Días laborables (0 = domingo … 6 = sábado). */
-    days: z.array(z.number().int().min(0).max(6)).max(7).default([1, 2, 3, 4, 5]),
-    start: hhmmSchema.default('08:00'),
-    end: hhmmSchema.default('18:00'),
+    days: z.array(z.number().int().min(0).max(6)).max(7).prefault([1, 2, 3, 4, 5]),
+    start: hhmmSchema.prefault('08:00'),
+    end: hhmmSchema.prefault('18:00'),
     /** Festivos que no cuentan: los de Colombia (calculados) o ninguno. */
     holidays: z.enum(['co', 'none']).default('co'),
 });
@@ -246,7 +246,7 @@ export const slaPolicySchema = z.object({
     /** Campo de prioridad (selección); null = una sola política para todos. */
     priority_field_id: idSchema.nullable().default(null),
     targets: z.array(slaTargetSchema).max(30).default([]),
-    calendar: businessCalendarSchema.default({}),
+    calendar: businessCalendarSchema.prefault({}),
     /** Al cuánto por ciento del tiempo se avisa «en riesgo». */
     at_risk_percent: z.number().int().min(10).max(99).default(75),
     // A quién se avisa (en riesgo y vencido).
@@ -304,7 +304,7 @@ export const helpdeskSettingsSchema = z.object({
     reply_templates: z.array(replyTemplateSchema).max(50).default([]),
     /** Firma del que responde (la de Ajustes → Firma de email) al final de cada respuesta. */
     include_signature: z.boolean().default(true),
-    sla: slaPolicySchema.default({}),
+    sla: slaPolicySchema.prefault({}),
 });
 export type HelpdeskSettings = z.infer<typeof helpdeskSettingsSchema>;
 

@@ -317,7 +317,7 @@ export const formFieldItemSchema = z.object({
      */
     display: z.enum(FORM_FIELD_DISPLAYS).catch('auto').default('auto'),
     /** v0.1.355 — Escala o deslizador: mínimo, máximo, paso y etiquetas. */
-    range: formRangeSchema.catch(() => formRangeSchema.parse({})).default({}),
+    range: formRangeSchema.catch(() => formRangeSchema.parse({})).prefault({}),
     /** v0.1.355 — Sí / No: los textos de los dos botones (vacío = «Sí» y «No»). */
     yes_label: z.string().max(40).catch('').default(''),
     no_label: z.string().max(40).catch('').default(''),
@@ -344,7 +344,7 @@ export const formFieldItemSchema = z.object({
         .record(z.string().max(200), z.number().int().positive())
         .refine((r) => Object.keys(r).length <= 60, 'Demasiadas imágenes')
         .catch({})
-        .default({}),
+        .prefault({}),
 });
 export type FormFieldItem = z.infer<typeof formFieldItemSchema>;
 
@@ -486,7 +486,7 @@ export const formCalcPartSchema = z.object({
     points: z
         .record(z.string().max(200), z.number().finite().min(-1_000_000).max(1_000_000))
         .refine((r) => Object.keys(r).length <= 300, 'Demasiadas opciones con puntos.')
-        .default({}),
+        .prefault({}),
     multiplier: z.number().finite().min(-10_000).max(10_000).nullable().default(null),
 });
 export type FormCalcPart = z.infer<typeof formCalcPartSchema>;
@@ -767,23 +767,23 @@ export const formSettingsSchema = z.object({
     /** v0.1.357 — Cálculos (puntaje, total…). Uno roto se descarta sin tirar los demás. */
     calcs: tolerantArray(() => formCalcSchema, FORM_MAX_CALCS),
     /** v0.1.357 — Pantalla de bienvenida. */
-    welcome: formWelcomeSchema.catch(FORM_WELCOME_DEFAULT).default(FORM_WELCOME_DEFAULT),
+    welcome: formWelcomeSchema.catch(FORM_WELCOME_DEFAULT).prefault(FORM_WELCOME_DEFAULT),
     /** v0.1.357 — Todo a la vista o una pregunta por pantalla (lo desconocido = el de siempre). */
     layout: z.enum(FORM_LAYOUTS).catch('classic').default('classic'),
     /** v0.1.358 — Guardar el avance (en el dispositivo y/o con un enlace al correo). */
-    save_progress: formSaveProgressSchema.catch(FORM_SAVE_PROGRESS_DEFAULT).default(FORM_SAVE_PROGRESS_DEFAULT),
+    save_progress: formSaveProgressSchema.catch(FORM_SAVE_PROGRESS_DEFAULT).prefault(FORM_SAVE_PROGRESS_DEFAULT),
     /** v0.1.360 — Enlaces para que alguien actualice su registro con este formulario. */
-    edit_links: formEditLinksSchema.catch(FORM_EDIT_LINKS_DEFAULT).default(FORM_EDIT_LINKS_DEFAULT),
+    edit_links: formEditLinksSchema.catch(FORM_EDIT_LINKS_DEFAULT).prefault(FORM_EDIT_LINKS_DEFAULT),
     /** v0.1.361 — Cobrar al enviar. */
-    payment: formPaymentSchema.catch(FORM_PAYMENT_DEFAULT).default(FORM_PAYMENT_DEFAULT),
+    payment: formPaymentSchema.catch(FORM_PAYMENT_DEFAULT).prefault(FORM_PAYMENT_DEFAULT),
     /** v0.1.368 — Suscribir al enviar (débito automático de Mercado Pago). */
-    subscription: formSubscriptionSchema.catch(FORM_SUBSCRIPTION_DEFAULT).default(FORM_SUBSCRIPTION_DEFAULT),
+    subscription: formSubscriptionSchema.catch(FORM_SUBSCRIPTION_DEFAULT).prefault(FORM_SUBSCRIPTION_DEFAULT),
     /** v0.1.374 (ADR-S97) — Medir conversiones en el sitio donde está insertado. */
-    conversion: conversionSettingsSchema.catch(CONVERSION_SETTINGS_DEFAULT).default(CONVERSION_SETTINGS_DEFAULT),
+    conversion: conversionSettingsSchema.catch(CONVERSION_SETTINGS_DEFAULT).prefault(CONVERSION_SETTINGS_DEFAULT),
     /** v0.1.374 — Guardar de dónde vino cada registro (campaña, clic del anuncio, página). */
-    attribution: attributionSettingsSchema.catch(ATTRIBUTION_SETTINGS_DEFAULT).default(ATTRIBUTION_SETTINGS_DEFAULT),
+    attribution: attributionSettingsSchema.catch(ATTRIBUTION_SETTINGS_DEFAULT).prefault(ATTRIBUTION_SETTINGS_DEFAULT),
     /** v0.1.386 — Origen y etiquetas: el nombre del formulario y valores fijos en cada registro. */
-    record_values: formRecordValuesSchema.catch(FORM_RECORD_VALUES_DEFAULT).default(FORM_RECORD_VALUES_DEFAULT),
+    record_values: formRecordValuesSchema.catch(FORM_RECORD_VALUES_DEFAULT).prefault(FORM_RECORD_VALUES_DEFAULT),
 });
 export type FormSettings = z.infer<typeof formSettingsSchema>;
 
@@ -791,7 +791,7 @@ export const FORM_MAX_ITEMS = 120;
 
 export const formConfigSchema = z.object({
     items: z.array(formItemSchema).max(FORM_MAX_ITEMS).default([]),
-    settings: formSettingsSchema.default({}),
+    settings: formSettingsSchema.prefault({}),
 });
 export type FormConfig = z.infer<typeof formConfigSchema>;
 
@@ -1138,9 +1138,9 @@ export interface PublicFormEnding {
 
 export const submitFormSchema = z.object({
     /** Clave = id del campo como texto (`"12"`). */
-    values: z.record(z.string().regex(/^\d{1,12}$/), z.unknown()).default({}),
+    values: z.record(z.string().regex(/^\d{1,12}$/), z.unknown()).prefault({}),
     /** Archivos subidos antes: clave = id del campo, valor = sus comprobantes. */
-    uploads: z.record(z.string().regex(/^\d{1,12}$/), z.array(z.string().max(300)).max(20)).default({}),
+    uploads: z.record(z.string().regex(/^\d{1,12}$/), z.array(z.string().max(300)).max(20)).prefault({}),
     stamp: z.string().max(200),
     /** Campo trampa: una persona nunca lo ve ni lo llena. */
     hp: z.string().max(500).optional(),

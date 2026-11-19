@@ -271,7 +271,7 @@ const countryCode = z.string().regex(/^[A-Z]{2}$/);
 
 const bookingAvailabilityObject = z.object({
     /** 7 días, índice = día de la semana de JS (0 = domingo … 6 = sábado). */
-    week: z.array(dayScheduleSchema).length(7).default(defaultBookingWeek),
+    week: z.array(dayScheduleSchema).length(7).prefault(defaultBookingWeek),
     exceptions: z.array(bookingExceptionSchema).max(366).default([]),
     /**
      * v0.1.349 — País de los festivos que NO atiende (null = atiende en
@@ -317,7 +317,7 @@ export const bookingLocationSchema = z.object({
     kind: z.enum(BOOKING_LOCATION_KINDS).default('page'),
     video: z.enum(BOOKING_VIDEO_PROVIDERS).default('auto'),
     address: z.string().trim().max(500).default(''),
-    url: httpsOrEmpty.default(''),
+    url: httpsOrEmpty.prefault(''),
     phone: z.enum(['client', 'company']).default('client'),
     phone_number: z.string().trim().max(60).default(''),
     /** Indicaciones («Toca el timbre del 302», «Ten a mano tu cédula»). */
@@ -330,7 +330,7 @@ export const bookingServiceSchema = z.object({
     id: itemIdSchema,
     name: z.string().trim().min(1).max(120),
     /** La duración por defecto (la que se elige sola). */
-    duration_min: durationMin.default(30),
+    duration_min: durationMin.prefault(30),
     /**
      * v0.1.349 — Otras duraciones que el cliente puede elegir («30 o 60
      * minutos»). Vacío = sólo `duration_min`.
@@ -367,7 +367,7 @@ export const bookingServiceSchema = z.object({
         .nullable()
         .default(null),
     /** v0.1.350 — Dónde es la cita (por defecto, lo que dice la página). */
-    location: bookingLocationSchema.default({}),
+    location: bookingLocationSchema.prefault({}),
     /** v0.1.353 — Aprobación propia del servicio (`inherit` = la de la página). */
     approval: z.enum(['inherit', ...BOOKING_APPROVAL_MODES]).default('inherit'),
     /** v0.1.387 — `none` = este servicio no se cobra aunque la agenda cobre. */
@@ -396,7 +396,7 @@ const bookingStaffObject = z.object({
     priority: z.number().int().min(1).max(5).default(3),
     /** Servicios que ofrece (vacío = todos). */
     services: z.array(itemIdSchema).max(BOOKING_MAX_SERVICES).default([]),
-    availability: bookingAvailabilitySchema.default({}),
+    availability: bookingAvailabilitySchema.prefault({}),
     /**
      * v0.1.350 — De dónde sale su calendario:
      *  - `person`: el que la persona conectó ella misma en «Mi calendario»
@@ -420,7 +420,7 @@ const bookingStaffObject = z.object({
      * se usa cuando el servicio es por videollamada y su calendario no puede
      * generar una.
      */
-    meeting_url: httpsOrEmpty.default(''),
+    meeting_url: httpsOrEmpty.prefault(''),
     active: z.boolean().default(true),
 });
 
@@ -523,7 +523,7 @@ export const bookingNotificationsSchema = z.object({
     reminders: z
         .array(bookingReminderSchema)
         .max(5)
-        .default(() => [
+        .prefault(() => [
             { id: 'rem24h', minutes_before: 24 * 60 },
             { id: 'rem1h', minutes_before: 60 },
         ]),
@@ -540,10 +540,10 @@ export const bookingNotificationsSchema = z.object({
         .object({
             enabled: z.boolean().default(false),
             connection_id: z.number().int().positive().nullable().default(null),
-            text: z.string().max(1000).default(SMS_BOOKING_REMINDER_DEFAULT),
+            text: z.string().max(1000).prefault(SMS_BOOKING_REMINDER_DEFAULT),
             strip_accents: z.boolean().default(true),
         })
-        .default({}),
+        .prefault({}),
 });
 export type BookingNotifications = z.infer<typeof bookingNotificationsSchema>;
 
@@ -643,9 +643,9 @@ export const bookingSettingsSchema = z.object({
      */
     theme: publicThemeSchema.nullable().catch(null).default(null),
     /** v0.1.354 — Qué se muestra y cómo se distribuye la página. */
-    display: bookingDisplaySchema.catch(() => bookingDisplaySchema.parse({})).default({}),
+    display: bookingDisplaySchema.catch(() => bookingDisplaySchema.parse({})).prefault({}),
     /** v0.1.378 — Los títulos de cada paso, el botón y la confirmación (vacío = el de siempre). */
-    labels: bookingLabelsSchema.catch(() => bookingLabelsSchema.parse({})).default({}),
+    labels: bookingLabelsSchema.catch(() => bookingLabelsSchema.parse({})).prefault({}),
     /**
      * v0.1.374 — Al agendar, llevar a esta página de gracias (https, con
      * variables `{{cita.servicio}}`, `{{cita.fecha}}`… después del dominio).
@@ -655,9 +655,9 @@ export const bookingSettingsSchema = z.object({
     /** v0.1.374 — Segundos que se ve la confirmación antes de ir a la dirección. */
     redirect_delay: redirectDelaySchema,
     /** v0.1.374 (ADR-S97) — Medir conversiones en el sitio donde está insertada. */
-    conversion: conversionSettingsSchema.catch(CONVERSION_SETTINGS_DEFAULT).default(CONVERSION_SETTINGS_DEFAULT),
+    conversion: conversionSettingsSchema.catch(CONVERSION_SETTINGS_DEFAULT).prefault(CONVERSION_SETTINGS_DEFAULT),
     /** v0.1.374 — Guardar de dónde vino cada cita (campaña, clic del anuncio, página). */
-    attribution: attributionSettingsSchema.catch(ATTRIBUTION_SETTINGS_DEFAULT).default(ATTRIBUTION_SETTINGS_DEFAULT),
+    attribution: attributionSettingsSchema.catch(ATTRIBUTION_SETTINGS_DEFAULT).prefault(ATTRIBUTION_SETTINGS_DEFAULT),
 });
 export type BookingSettings = z.infer<typeof bookingSettingsSchema>;
 
@@ -789,18 +789,18 @@ export function bookingPaymentAmount(
 }
 
 export const bookingConfigSchema = z.object({
-    settings: bookingSettingsSchema.default({}),
+    settings: bookingSettingsSchema.prefault({}),
     services: z.array(bookingServiceSchema).max(BOOKING_MAX_SERVICES).default([]),
     staff: z.array(bookingStaffSchema).max(BOOKING_MAX_STAFF).default([]),
-    rules: bookingRulesSchema.default({}),
-    mapping: bookingMappingSchema.default({}),
+    rules: bookingRulesSchema.prefault({}),
+    mapping: bookingMappingSchema.prefault({}),
     questions: z.array(bookingQuestionSchema).max(BOOKING_MAX_QUESTIONS).default([]),
-    notifications: bookingNotificationsSchema.default({}),
-    calendar_sync: bookingCalendarSyncSchema.default({}),
+    notifications: bookingNotificationsSchema.prefault({}),
+    calendar_sync: bookingCalendarSyncSchema.prefault({}),
     /** v0.1.353 */
-    approval: bookingApprovalSchema.default({}),
+    approval: bookingApprovalSchema.prefault({}),
     /** v0.1.387 */
-    payment: bookingPaymentSchema.default({}),
+    payment: bookingPaymentSchema.prefault({}),
 });
 export type BookingConfig = z.infer<typeof bookingConfigSchema>;
 
@@ -1048,7 +1048,7 @@ export const bookAppointmentSchema = z.object({
     email: z.string().trim().email().max(320),
     phone: z.string().trim().max(60).optional(),
     /** Preguntas extra: clave = id del campo como texto. */
-    values: z.record(z.string().regex(/^\d{1,12}$/), z.unknown()).default({}),
+    values: z.record(z.string().regex(/^\d{1,12}$/), z.unknown()).prefault({}),
     stamp: z.string().max(200),
     /** Campo trampa: una persona nunca lo ve ni lo llena. */
     hp: z.string().max(500).optional(),

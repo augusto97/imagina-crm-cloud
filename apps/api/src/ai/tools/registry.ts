@@ -1,6 +1,6 @@
 import type { AiProposal, Capability, Role } from '@imagina-base/shared';
-import type { ZodTypeAny } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import type { ZodType as ZodTypeAny } from 'zod';
+import { toolInputSchema } from '../../common/zod-json-schema';
 import type { AclExtras } from '../../lists/list-acl';
 import { can, canAny } from '../../authz/can';
 import type { AiProposalApplier } from '../proposals.store';
@@ -186,14 +186,7 @@ export class AiToolRegistry {
 }
 
 function toInputSchema(schema: ZodTypeAny): Record<string, unknown> {
-    // El tipo de retorno de la librería es un unión gigante que TypeScript
-    // no llega a instanciar: aquí sólo importa que sea un objeto JSON.
-    const convert = zodToJsonSchema as unknown as (s: ZodTypeAny, o: Record<string, unknown>) => Record<string, unknown>;
-    const json = convert(schema, { $refStrategy: 'none', target: 'jsonSchema7' });
-    // La API pide un objeto raíz sin `$schema`.
-    delete json.$schema;
-    if (json.type !== 'object') return { type: 'object', properties: {}, ...json };
-    return json;
+    return toolInputSchema(schema);
 }
 
 function describeHttpError(err: unknown): string {

@@ -8,7 +8,7 @@ export const listSchema = z.object({
     name: z.string().min(1).max(190),
     icon: z.string().max(64).nullable().default(null),
     color: z.string().max(32).nullable().default(null),
-    settings: z.record(z.unknown()).default({}),
+    settings: z.record(z.string(), z.unknown()).prefault({}),
     position: z.number().int().nonnegative().default(0),
     /** Carpeta del menú, o null = cuelga de la raíz (v0.1.130). */
     group_id: idSchema.nullable().default(null),
@@ -48,7 +48,7 @@ export const updateListSchema = z
         position: z.number().int().nonnegative(),
         /** `null` saca la lista de su carpeta y la devuelve a la raíz. */
         group_id: idSchema.nullable(),
-        settings: z.record(z.unknown()),
+        settings: z.record(z.string(), z.unknown()),
     })
     .partial()
     .refine((patch) => Object.keys(patch).length > 0, {

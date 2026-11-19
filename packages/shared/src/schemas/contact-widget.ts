@@ -201,9 +201,9 @@ export const widgetHoursSchema = z.object({
     holiday_country: z.string().regex(/^[A-Z]{2}$/).nullable().catch(null).default(null),
     /** «● En línea» / «Fuera de horario» en el saludo del panel. */
     show_status: z.boolean().catch(true).default(true),
-    online_label: z.string().trim().max(40).catch(WIDGET_DEFAULT_ONLINE_LABEL).default(WIDGET_DEFAULT_ONLINE_LABEL),
+    online_label: z.string().trim().max(40).catch(WIDGET_DEFAULT_ONLINE_LABEL).prefault(WIDGET_DEFAULT_ONLINE_LABEL),
     /** Lo que dice el panel fuera de horario. */
-    closed_message: z.string().trim().max(200).catch(WIDGET_DEFAULT_CLOSED_MESSAGE).default(WIDGET_DEFAULT_CLOSED_MESSAGE),
+    closed_message: z.string().trim().max(200).catch(WIDGET_DEFAULT_CLOSED_MESSAGE).prefault(WIDGET_DEFAULT_CLOSED_MESSAGE),
 });
 export type WidgetHours = z.infer<typeof widgetHoursSchema>;
 
@@ -325,8 +325,8 @@ export const contactWidgetConfigSchema = z.object({
     /** Texto al lado del ícono del botón redondo (vacío = sólo el ícono). */
     launcher_label: z.string().trim().max(40).catch('').default(''),
     /** El saludo del panel. */
-    title: z.string().trim().max(80).catch(WIDGET_DEFAULT_TITLE).default(WIDGET_DEFAULT_TITLE),
-    subtitle: z.string().trim().max(200).catch(WIDGET_DEFAULT_SUBTITLE).default(WIDGET_DEFAULT_SUBTITLE),
+    title: z.string().trim().max(80).catch(WIDGET_DEFAULT_TITLE).prefault(WIDGET_DEFAULT_TITLE),
+    subtitle: z.string().trim().max(200).catch(WIDGET_DEFAULT_SUBTITLE).prefault(WIDGET_DEFAULT_SUBTITLE),
     /** El logo de la marca en el panel. */
     show_logo: z.boolean().catch(true).default(true),
     /** En el celular: una barra fija abajo con los botones, en vez del botón redondo. */
@@ -335,11 +335,11 @@ export const contactWidgetConfigSchema = z.object({
     /** Los sitios que pueden mostrarlo (vacío = cualquiera). */
     allowed_domains: z.array(z.string().trim().max(200)).max(20).catch([]).default([]),
     /** v0.1.395 — Horario de atención: qué botones se ven y el aviso fuera de horario. */
-    hours: widgetHoursSchema.catch(defaultWidgetHours).default(defaultWidgetHours),
+    hours: widgetHoursSchema.catch(defaultWidgetHours).prefault(defaultWidgetHours),
     /** v0.1.396 — En qué páginas y dispositivos aparece, y cuándo. */
-    display: widgetDisplaySchema.catch(defaultWidgetDisplay).default(defaultWidgetDisplay),
+    display: widgetDisplaySchema.catch(defaultWidgetDisplay).prefault(defaultWidgetDisplay),
     /** v0.1.396 — El saludo que se adelanta junto al botón. */
-    greeting: widgetGreetingSchema.catch(defaultWidgetGreeting).default(defaultWidgetGreeting),
+    greeting: widgetGreetingSchema.catch(defaultWidgetGreeting).prefault(defaultWidgetGreeting),
 });
 export type ContactWidgetConfig = z.infer<typeof contactWidgetConfigSchema>;
 

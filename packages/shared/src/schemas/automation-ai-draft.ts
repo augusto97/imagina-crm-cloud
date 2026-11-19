@@ -34,8 +34,8 @@ export const automationAiDraftCurrentSchema = z.object({
     name: z.string().max(190).default(''),
     description: z.string().max(2000).nullish(),
     trigger_type: automationTriggerSlugSchema,
-    trigger_config: z.record(z.unknown()).default({}),
-    actions: z.array(z.record(z.unknown())).max(60).default([]),
+    trigger_config: z.record(z.string(), z.unknown()).prefault({}),
+    actions: z.array(z.record(z.string(), z.unknown())).max(60).default([]),
     is_active: z.boolean().optional(),
 });
 export type AutomationAiDraftCurrent = z.infer<typeof automationAiDraftCurrentSchema>;

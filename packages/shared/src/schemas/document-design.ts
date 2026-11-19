@@ -55,12 +55,12 @@ export const docThemeSchema = z.object({
     margin: z.enum(['narrow', 'normal', 'wide']).default('normal'),
     /** Tamaño base del texto en puntos. */
     font_size: z.number().int().min(8).max(13).default(10),
-    text: hex.default('#1f2937'),
-    muted: hex.default('#6b7280'),
+    text: hex.prefault('#1f2937'),
+    muted: hex.prefault('#6b7280'),
     /** Títulos, encabezado de la tabla, total. */
-    accent: hex.default('#0e7490'),
+    accent: hex.prefault('#0e7490'),
     /** Líneas de tablas y recuadros. */
-    border: hex.default('#e5e7eb'),
+    border: hex.prefault('#e5e7eb'),
     /**
      * v0.1.272 — Tipografía del documento (embebida en el PDF) y la de los
      * títulos (vacío = la misma). `modern` es Roboto: lo de siempre.
@@ -106,7 +106,7 @@ const headerBlock = z.object({
     type: z.literal('header'),
     /** split: logo y empresa a la izquierda, título a la derecha. */
     layout: z.enum(['split', 'centered', 'band']).default('split'),
-    logo: docImageSchema.default({}),
+    logo: docImageSchema.prefault({}),
     logo_width: z.number().int().min(30).max(240).default(110),
     /** Quien emite: una línea por renglón (la primera va en negrita). */
     company: z.string().max(1000).default(''),
@@ -122,7 +122,7 @@ const headingBlock = z.object({
     type: z.literal('heading'),
     text: z.string().max(400).default(''),
     level: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(2),
-    align: align.default('left'),
+    align: align.prefault('left'),
     color: optionalHex,
 });
 
@@ -223,7 +223,7 @@ export const docItemsColumnSchema = z
         slug: z.string().min(1).max(80),
         /** Vacío = el nombre del campo. */
         label: z.string().max(80).default(''),
-        align: align.default('left'),
+        align: align.prefault('left'),
         /** fill: toma el ancho que sobra (la descripción). */
         width: z.enum(['auto', 'fill']).default('auto'),
         /** v0.1.290 — `computed`: el valor sale de `expr` (sin campo detrás). */
@@ -337,10 +337,10 @@ const totalsBlock = z.object({
 const imageBlock = z.object({
     ...blockBase,
     type: z.literal('image'),
-    src: docImageSchema.default({}),
+    src: docImageSchema.prefault({}),
     /** Ancho en % del área de contenido. */
     width: z.number().int().min(5).max(100).default(40),
-    align: align.default('center'),
+    align: align.prefault('center'),
     /** Borde de la imagen (en el PDF no hay esquinas redondeadas ni sombra). */
     frame: elementStyleSchema.optional(),
 });
@@ -373,7 +373,7 @@ const qrBlock = z.object({
     value: z.string().max(1000).default(''),
     /** Lado del cuadrado en puntos (72 pt = 2,54 cm). */
     size: z.number().int().min(40).max(240).default(96),
-    align: align.default('left'),
+    align: align.prefault('left'),
     /** Una línea debajo: "Escanea para pagar". */
     caption: z.string().max(200).default(''),
 });
@@ -392,10 +392,10 @@ export const docSignerSchema = z.object({
 const signatureBlock = z.object({
     ...blockBase,
     type: z.literal('signature'),
-    signers: z.array(docSignerSchema).min(1).max(3).default([{ name: '', detail: '' }]),
-    align: align.default('left'),
+    signers: z.array(docSignerSchema).min(1).max(3).prefault([{ name: '', detail: '' }]),
+    align: align.prefault('left'),
     /** Firma escaneada (encima de la línea del primer firmante). */
-    image: docImageSchema.default({}),
+    image: docImageSchema.prefault({}),
     line: z.boolean().default(true),
 });
 
@@ -485,10 +485,10 @@ export function formatDocNumber(n: number, numbering: Pick<DocNumbering, 'prefix
 }
 
 export const docDesignSchema = z.object({
-    version: z.literal(DOC_DESIGN_VERSION).default(DOC_DESIGN_VERSION),
-    theme: docThemeSchema.default({}),
-    footer: docFooterSchema.default({}),
-    numbering: docNumberingSchema.default({}),
+    version: z.literal(DOC_DESIGN_VERSION).prefault(DOC_DESIGN_VERSION),
+    theme: docThemeSchema.prefault({}),
+    footer: docFooterSchema.prefault({}),
+    numbering: docNumberingSchema.prefault({}),
     blocks: z.array(docBlockSchema).max(DOC_MAX_BLOCKS).default([]),
 });
 export type DocDesign = z.infer<typeof docDesignSchema>;

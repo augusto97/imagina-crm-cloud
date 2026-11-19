@@ -96,7 +96,7 @@ export const dashboardSubscriptionInputSchema = z
         enabled: z.boolean().default(true),
         frequency: z.enum(SUBSCRIPTION_FREQUENCIES).default('weekly'),
         /** Días de la semana (1 = lunes … 7 = domingo) para `weekly`. */
-        weekdays: z.array(z.number().int().min(1).max(7)).max(7).default([1]),
+        weekdays: z.array(z.number().int().min(1).max(7)).max(7).prefault([1]),
         /** Día del mes (1-28) o -1 = el último, para `monthly`. */
         month_day: z.number().int().min(-1).max(28).refine((n) => n !== 0, 'Elige un día del mes.').default(1),
         hour: z.number().int().min(0).max(23).default(8),

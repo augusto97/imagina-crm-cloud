@@ -27,7 +27,7 @@ export const saveFormDraftSchema = z.object({
     stamp: z.string().max(200),
     hp: z.string().max(500).optional(),
     email: z.string().trim().toLowerCase().email().max(320),
-    values: z.record(z.string().regex(/^\d{1,12}$/), z.unknown()).default({}),
+    values: z.record(z.string().regex(/^\d{1,12}$/), z.unknown()).prefault({}),
     /** El paso donde quedó (0 = el primero). */
     page: z.number().int().min(0).max(FORM_STAT_MAX_STEP).default(0),
     /** Si ya tenía un enlace: se actualiza el mismo, sin mandar otro correo. */

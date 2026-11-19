@@ -84,13 +84,13 @@ export type EmailPadding = z.infer<typeof padding>;
 
 export const emailThemeSchema = z.object({
     /** Fondo de afuera (lo que rodea al correo). */
-    background: hex.default('#f4f5f7'),
+    background: hex.prefault('#f4f5f7'),
     /** Fondo de la "hoja" del correo. */
-    surface: hex.default('#ffffff'),
-    text: hex.default('#1f2937'),
-    muted: hex.default('#6b7280'),
+    surface: hex.prefault('#ffffff'),
+    text: hex.prefault('#1f2937'),
+    muted: hex.prefault('#6b7280'),
     /** Botones, enlaces y detalles. */
-    accent: hex.default('#0e7490'),
+    accent: hex.prefault('#0e7490'),
     font: z.enum(EMAIL_FONTS).default('modern'),
     /** Ancho de la hoja en px (600 es el estándar de facto). */
     width: z.number().int().min(480).max(720).default(600),
@@ -124,12 +124,12 @@ export const emailThemeSchema = z.object({
     dark: z
         .object({
             enabled: z.boolean().default(false),
-            background: hex.default('#0f1115'),
-            surface: hex.default('#1b1d22'),
-            text: hex.default('#e8eaed'),
-            muted: hex.default('#a1a7b3'),
+            background: hex.prefault('#0f1115'),
+            surface: hex.prefault('#1b1d22'),
+            text: hex.prefault('#e8eaed'),
+            muted: hex.prefault('#a1a7b3'),
         })
-        .default({}),
+        .prefault({}),
 });
 export type EmailTheme = z.infer<typeof emailThemeSchema>;
 
@@ -147,7 +147,7 @@ const headingBlock = z.object({
     type: z.literal('heading'),
     text: z.string().max(400).default(''),
     level: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(1),
-    align: align.default('left'),
+    align: align.prefault('left'),
     color: optionalHex,
 });
 
@@ -156,7 +156,7 @@ const textBlock = z.object({
     type: z.literal('text'),
     /** Árbol ProseMirror (el mismo formato que la descripción del registro). */
     doc: richDocSchema.nullable().default(null),
-    align: align.default('left'),
+    align: align.prefault('left'),
     size: z.enum(['sm', 'md', 'lg']).default('md'),
     color: optionalHex,
     /** Espacio entre párrafos en px (vacío = proporcional al tamaño). */
@@ -168,7 +168,7 @@ const buttonBlock = z.object({
     type: z.literal('button'),
     label: z.string().max(120).default(''),
     url: z.string().max(2048).default(''),
-    align: align.default('center'),
+    align: align.prefault('center'),
     color: optionalHex,
     text_color: optionalHex,
     full_width: z.boolean().default(false),
@@ -184,7 +184,7 @@ const imageBlock = z.object({
     alt: z.string().max(200).default(''),
     /** Ancho en % del área de contenido. */
     width: z.number().int().min(10).max(100).default(100),
-    align: align.default('center'),
+    align: align.prefault('center'),
     link: z.string().max(2048).default(''),
     /** Sin márgenes laterales: de borde a borde (cabeceras). */
     bleed: z.boolean().default(false),
@@ -286,8 +286,8 @@ export type EmailBlockType = EmailBlock['type'];
 export type EmailInnerBlockType = EmailInnerBlock['type'];
 
 export const emailDesignSchema = z.object({
-    version: z.literal(EMAIL_DESIGN_VERSION).default(EMAIL_DESIGN_VERSION),
-    theme: emailThemeSchema.default({}),
+    version: z.literal(EMAIL_DESIGN_VERSION).prefault(EMAIL_DESIGN_VERSION),
+    theme: emailThemeSchema.prefault({}),
     blocks: z.array(emailBlockSchema).max(EMAIL_DESIGN_MAX_BLOCKS).default([]),
 });
 export type EmailDesign = z.infer<typeof emailDesignSchema>;

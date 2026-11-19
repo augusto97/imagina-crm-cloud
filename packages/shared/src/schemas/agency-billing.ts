@@ -49,8 +49,8 @@ export const agencyPlanSchema = z.object({
     name: z.string().trim().min(1, 'Ponle un nombre al plan').max(60),
     description: z.string().trim().max(200).nullable().default(null),
     price: z.number().min(0, 'El valor no puede ser negativo').max(AGENCY_MAX_PRICE),
-    currency: currencySchema.default('COP'),
-    period_months: periodSchema.default(1),
+    currency: currencySchema.prefault('COP'),
+    period_months: periodSchema.prefault(1),
     /**
      * El plan de la PLATAFORMA que le da sus límites (registros, usuarios,
      * módulos). `null` = el plan con el que nacen los clientes de la agencia.
@@ -88,7 +88,7 @@ export const agencyBillingSettingsSchema = z
                  */
                 debit: z.boolean().default(false),
             })
-            .default({ connection_id: null, client_can_pay: true, auto_link: true, debit: false }),
+            .prefault({ connection_id: null, client_can_pay: true, auto_link: true, debit: false }),
     })
     .superRefine((v, ctx) => {
         const seen = new Set<string>();
@@ -496,7 +496,7 @@ export const myAgencyOnlineSchema = z.object({
     /** Un link que ya está esperando el pago (para no crear otro). */
     pending: agencyChargeSchema.nullable(),
     /** v0.1.453 — El débito automático. */
-    debit: myAgencyDebitSchema.default({ available: false, current: null }),
+    debit: myAgencyDebitSchema.prefault({ available: false, current: null }),
 });
 export type MyAgencyOnline = z.infer<typeof myAgencyOnlineSchema>;
 

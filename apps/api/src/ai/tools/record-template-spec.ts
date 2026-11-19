@@ -53,7 +53,7 @@ const valueSpec = z
         'Valor fijo (como en propose_create_records), o {"date": {"days": 7, "from"?: slug, "business_days"?: true, "time"?: "09:00"}} para una fecha relativa, o {"person": "creator" | id | {"field": slug}} para una persona',
     );
 
-const valuesSpec = z.record(valueSpec).describe('Mapa slug → valor de la plantilla');
+const valuesSpec = z.record(z.string(), valueSpec).describe('Mapa slug → valor de la plantilla');
 
 const itemSpec = z.object({
     text: z.string().min(1).max(CHECKLIST_ITEM_TEXT_MAX),

@@ -72,18 +72,18 @@ export const recordViewBundleSchema = z.object({
         z.object({
             relation_field_id: idSchema,
             list_id: idSchema,
-            records: z.object({ data: z.array(recordSchema), meta: z.record(z.unknown()) }),
+            records: z.object({ data: z.array(recordSchema), meta: z.record(z.string(), z.unknown()) }),
         }),
     ),
     /** Subtareas de este registro (o null si es una subtarea). */
-    subtasks: z.object({ data: z.array(recordSchema), meta: z.record(z.unknown()) }).nullable(),
+    subtasks: z.object({ data: z.array(recordSchema), meta: z.record(z.string(), z.unknown()) }).nullable(),
     comments: z.array(commentSchema).nullable(),
     activity: z.array(activitySchema).nullable(),
     /**
      * Datos de los bloques de la ficha diseñada GUARDADA (`record_layout_v3`)
      * con la firma de sus bloques; el front sólo los usa si su firma coincide.
      */
-    layout_data: z.object({ sig: z.string(), data: z.record(z.unknown()) }).nullable(),
+    layout_data: z.object({ sig: z.string(), data: z.record(z.string(), z.unknown()) }).nullable(),
     /**
      * v0.1.291 — el tiempo registrado del registro (total, por persona, las
      * últimas entradas y el cronómetro en curso de quien mira).

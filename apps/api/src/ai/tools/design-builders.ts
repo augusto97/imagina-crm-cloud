@@ -89,17 +89,17 @@ export const DOC_DESIGN_GUIDE =
 
 export const emailDesignInput = z
     .object({
-        theme: z.record(z.unknown()).optional(),
-        blocks: z.array(z.record(z.unknown())).min(1).max(60),
+        theme: z.record(z.string(), z.unknown()).optional(),
+        blocks: z.array(z.record(z.string(), z.unknown())).min(1).max(60),
     })
     .describe(EMAIL_DESIGN_DOC);
 
 export const docDesignInput = z
     .object({
-        theme: z.record(z.unknown()).optional(),
-        footer: z.record(z.unknown()).optional(),
-        numbering: z.record(z.unknown()).optional(),
-        blocks: z.array(z.record(z.unknown())).min(1).max(80),
+        theme: z.record(z.string(), z.unknown()).optional(),
+        footer: z.record(z.string(), z.unknown()).optional(),
+        numbering: z.record(z.string(), z.unknown()).optional(),
+        blocks: z.array(z.record(z.string(), z.unknown())).min(1).max(80),
     })
     .describe(DOC_DESIGN_DOC);
 

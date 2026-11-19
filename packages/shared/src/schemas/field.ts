@@ -279,7 +279,7 @@ export const fieldConfigSchemas = {
         result_type: z.enum(FORMULA_RESULT_TYPES).optional(),
         currency: z.string().length(3).optional(),
         precision: z.number().int().min(0).max(10).optional(),
-        labels: z.record(z.string().max(190)).optional(),
+        labels: z.record(z.string(), z.string().max(190)).optional(),
     }),
     /**
      * C5 — «Aprobación»: `approval_flow_id` = el flujo cuyo estado muestra
@@ -314,7 +314,7 @@ export function isUserWritableType(type: FieldType): boolean {
  * y `validation`, ver field-rules.ts); los demás las pierden.
  */
 export function parseFieldConfig(type: FieldType, config: unknown): Record<string, unknown> {
-    const base = fieldConfigSchemas[type] as z.AnyZodObject;
+    const base = fieldConfigSchemas[type] as z.ZodObject;
     const schema = isUserWritableType(type) ? base.merge(fieldRulesSchema) : base;
     return schema.parse(config ?? {}) as Record<string, unknown>;
 }
@@ -424,7 +424,7 @@ export const throughInfoSchema = z.object({
             id: idSchema,
             label: z.string(),
             type: fieldTypeSchema,
-            config: z.record(z.unknown()).default({}),
+            config: z.record(z.string(), z.unknown()).prefault({}),
         })
         .nullable(),
 });
@@ -440,7 +440,7 @@ export const formulaInfoSchema = z.object({
     display: z.string(),
     result_type: z.enum(FORMULA_RESULT_TYPES),
     inferred_type: z.enum(FORMULA_RESULT_TYPES),
-    display_config: z.record(z.unknown()).default({}),
+    display_config: z.record(z.string(), z.unknown()).prefault({}),
     sql: z.boolean(),
     sql_reason: z.string().nullable(),
     error: z.string().nullable(),
@@ -454,7 +454,7 @@ export const fieldSchema = z.object({
     slug: fieldSlugSchema,
     label: z.string().min(1).max(190),
     type: fieldTypeSchema,
-    config: z.record(z.unknown()).default({}),
+    config: z.record(z.string(), z.unknown()).prefault({}),
     is_required: z.boolean().default(false),
     is_unique: z.boolean().default(false),
     is_indexed: z.boolean().default(false),
@@ -514,7 +514,7 @@ export const createFieldSchema = z.object({
     label: z.string().trim().min(1).max(190),
     type: fieldTypeSchema,
     slug: fieldSlugSchema.optional(),
-    config: z.record(z.unknown()).optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
     is_required: z.boolean().optional(),
     is_unique: z.boolean().optional(),
     is_indexed: z.boolean().optional(),
@@ -542,7 +542,7 @@ export const updateFieldSchema = z
          * convierten (su almacenamiento difiere) — 400.
          */
         type: fieldTypeSchema,
-        config: z.record(z.unknown()),
+        config: z.record(z.string(), z.unknown()),
         is_required: z.boolean(),
         is_unique: z.boolean(),
         is_indexed: z.boolean(),

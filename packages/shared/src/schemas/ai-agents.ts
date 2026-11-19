@@ -156,12 +156,12 @@ export const createAiAgentSchema = z.object({
     instructions: z.string().trim().min(1, 'Escribe qué hace el agente').max(6000),
     list_ids: z.array(idSchema).min(1, 'Elige al menos una lista').max(AI_AGENT_MAX_LISTS),
     tools: z.array(aiAgentToolSchema).min(1, 'Elige al menos una herramienta').max(AI_AGENT_TOOLS.length),
-    mode: aiAgentModeSchema.default('propose'),
-    settings: aiAgentSettingsSchema.default({}),
-    max_steps: z.number().int().min(1).max(AI_AGENT_MAX_STEPS).default(AI_AGENT_DEFAULTS.max_steps),
-    max_runs_per_day: z.number().int().min(1).max(10_000).default(AI_AGENT_DEFAULTS.max_runs_per_day),
+    mode: aiAgentModeSchema.prefault('propose'),
+    settings: aiAgentSettingsSchema.prefault({}),
+    max_steps: z.number().int().min(1).max(AI_AGENT_MAX_STEPS).prefault(AI_AGENT_DEFAULTS.max_steps),
+    max_runs_per_day: z.number().int().min(1).max(10_000).prefault(AI_AGENT_DEFAULTS.max_runs_per_day),
     /** Tokens por mes (entrada + salida). null = sin tope propio (manda la cuota del plan). */
-    monthly_token_budget: z.number().int().min(1_000).max(1_000_000_000).nullable().default(AI_AGENT_DEFAULTS.monthly_token_budget),
+    monthly_token_budget: z.number().int().min(1_000).max(1_000_000_000).nullable().prefault(AI_AGENT_DEFAULTS.monthly_token_budget),
     is_active: z.boolean().default(true),
     /** La plantilla de la que salió (sólo para la nota de la versión). */
     template_key: z.string().max(40).optional(),

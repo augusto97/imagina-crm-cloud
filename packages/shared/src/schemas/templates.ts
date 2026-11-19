@@ -74,7 +74,7 @@ export const dashboardTemplateSchema = z.object({
     version: z.literal(BLUEPRINT_VERSION),
     lists: z.array(templateRoleListSchema).min(1).max(5),
     widgets: z.array(blueprintWidgetSchema).min(1),
-    settings: z.record(z.unknown()).default({}),
+    settings: z.record(z.string(), z.unknown()).prefault({}),
 });
 export type DashboardTemplate = z.infer<typeof dashboardTemplateSchema>;
 
@@ -83,7 +83,7 @@ export const dashboardTemplateSummarySchema = z.object({
     source: z.enum(['system', 'workspace']),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).nullable().default(null),
-    category: templateCategorySchema.default('otros'),
+    category: templateCategorySchema.prefault('otros'),
     /** Icono del catálogo de listas (v0.1.168; null = genérico de tablero). */
     icon: z.string().max(64).nullable().default(null),
     color: z.string().max(32).nullable().default(null),
@@ -106,7 +106,7 @@ export type CreateDashboardTemplateInput = z.infer<typeof createDashboardTemplat
 /** Mapeo de UN rol de lista: la lista elegida y el campo por cada rol de campo. */
 export const roleListMappingSchema = z.object({
     list_id: idSchema,
-    fields: z.record(idSchema).default({}),
+    fields: z.record(z.string(), idSchema).prefault({}),
 });
 export type RoleListMapping = z.infer<typeof roleListMappingSchema>;
 
@@ -117,7 +117,7 @@ export const applyDashboardTemplateSchema = z.object({
     visibility: dashboardVisibilitySchema.optional(),
     allowed_roles: z.array(z.string()).max(10).optional(),
     /** key del rol de lista → mapeo. */
-    lists: z.record(roleListMappingSchema),
+    lists: z.record(z.string(), roleListMappingSchema),
 });
 export type ApplyDashboardTemplateInput = z.infer<typeof applyDashboardTemplateSchema>;
 
@@ -139,7 +139,7 @@ export const automationTemplateSchema = z.object({
     name: z.string().min(1).max(190),
     description: z.string().max(2000).nullable().default(null),
     trigger_type: z.string().min(1),
-    trigger_config: z.record(z.unknown()).default({}),
+    trigger_config: z.record(z.string(), z.unknown()).prefault({}),
     actions: z.array(z.unknown()).min(1),
 });
 export type AutomationTemplate = z.infer<typeof automationTemplateSchema>;
@@ -149,7 +149,7 @@ export const automationTemplateSummarySchema = z.object({
     source: z.enum(['system', 'workspace']),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).nullable().default(null),
-    category: automationTemplateCategorySchema.default('otros'),
+    category: automationTemplateCategorySchema.prefault('otros'),
     template: automationTemplateSchema,
     created_at: isoDateTimeSchema.nullable().default(null),
 });

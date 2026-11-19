@@ -14,7 +14,7 @@ import { idSchema, isoDateTimeSchema } from './common';
 /** Sube de número cuando el formato del archivo deja de ser compatible. */
 export const TENANT_TRANSFER_FORMAT = 1;
 
-export const tenantTransferCountsSchema = z.record(z.number().int().min(0));
+export const tenantTransferCountsSchema = z.record(z.string(), z.number().int().min(0));
 export type TenantTransferCounts = z.infer<typeof tenantTransferCountsSchema>;
 
 export const tenantTransferManifestSchema = z.object({

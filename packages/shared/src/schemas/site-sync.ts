@@ -164,11 +164,11 @@ export const setupSiteSyncSchema = z.object({
     objects: z.array(objectChoiceSchema).min(1).max(10),
     /** «Editar desde la app»: sin esto, todas las columnas del sitio son de sólo lectura. */
     write_back: z.boolean().default(true),
-    interval_minutes: storeSyncIntervalSchema.default(60),
+    interval_minutes: storeSyncIntervalSchema.prefault(60),
     /** En tiempo real (necesita el complemento): el sitio avisa cada cambio y se revisa todo cada hora. */
     mode: z.enum(SITE_SYNC_MODES).default('interval'),
     /** v0.1.336 — lo que se borre en WordPress: conservarlo marcado o quitarlo de la app. */
-    on_source_delete: sourceDeleteModeSchema.default('keep'),
+    on_source_delete: sourceDeleteModeSchema.prefault('keep'),
 });
 export type SetupSiteSyncInput = z.infer<typeof setupSiteSyncSchema>;
 
@@ -332,7 +332,7 @@ export const siteSyncStatusSchema = z.object({
     effective_mode: z.enum(SITE_SYNC_MODES),
     write_back: z.boolean(),
     /** v0.1.336 — lo que se borra en WordPress: conservarlo marcado o quitarlo de la app. */
-    on_source_delete: sourceDeleteModeSchema.default('keep'),
+    on_source_delete: sourceDeleteModeSchema.prefault('keep'),
     /** v0.1.336 — por lista: cuántas filas ya se borraron en WordPress. */
     gone: z.array(sourceGoneCountSchema).default([]),
     /** v0.1.336 — tipos de contenido y columnas que aparecieron en el sitio desde la última vez. */
@@ -396,7 +396,7 @@ export const siteListMarkerSchema = z.object({
     /** «Editar desde la app» activado. */
     write_back: z.boolean().default(false),
     /** clave de columna → id del campo: las columnas que vienen del sitio. */
-    fields: z.record(z.string(), idSchema).default({}),
+    fields: z.record(z.string(), idSchema).prefault({}),
     /** Columnas que se PUEDEN habilitar para editar. */
     can_edit: z.array(z.string()).default([]),
     /** Columnas habilitadas para editar desde la app. */

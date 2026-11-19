@@ -54,7 +54,7 @@ export const portalTemplateBlockSchema = z
     .object({
         id: z.string().min(1).max(80),
         type: portalBlockTypeSchema,
-        config: z.record(z.unknown()).default({}),
+        config: z.record(z.string(), z.unknown()).prefault({}),
         x: z.number().int().min(0).max(11).optional(),
         y: z.number().int().min(0).optional(),
         w: z.number().int().min(1).max(12).optional(),
@@ -68,7 +68,7 @@ export const portalTemplateSchema = z
     .object({
         blocks: z.array(portalTemplateBlockSchema).max(80),
         /** v0.1.94 — ajustes de página del portal (fondo, ancho, tipografía). Opaco aquí. */
-        page: z.record(z.unknown()).optional(),
+        page: z.record(z.string(), z.unknown()).optional(),
     })
     .passthrough();
 export type PortalTemplate = z.infer<typeof portalTemplateSchema>;
@@ -167,7 +167,7 @@ export const crmBlockSchema = z
         w: z.number().int().min(1).max(12),
         h: z.number().int().min(1),
         pos: z.number().int().min(0).optional(),
-        config: z.record(z.unknown()).default({}),
+        config: z.record(z.string(), z.unknown()).prefault({}),
     })
     .passthrough();
 export type CrmBlock = z.infer<typeof crmBlockSchema>;

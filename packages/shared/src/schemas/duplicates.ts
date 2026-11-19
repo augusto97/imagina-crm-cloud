@@ -184,7 +184,7 @@ export function duplicateRuleLabel(rule: readonly number[], fields: ReadonlyArra
 export const duplicateCheckSchema = z
     .object({
         /** Lo que se está escribiendo, por slug o por `f{id}`. */
-        values: z.record(z.unknown()),
+        values: z.record(z.string(), z.unknown()),
         /** El registro que se está editando (no se compara consigo mismo). */
         exclude_id: idSchema.optional(),
     })
@@ -209,7 +209,7 @@ export type MergePreviewInput = z.infer<typeof mergePreviewSchema>;
 export const mergeRecordsSchema = mergePreviewSchema
     .extend({
         /** Por id de campo: de qué registro se toma el valor, o «juntar». */
-        choices: z.record(z.union([idSchema, z.literal(MERGE_CHOICE_UNION)])).optional(),
+        choices: z.record(z.string(), z.union([idSchema, z.literal(MERGE_CHOICE_UNION)])).optional(),
         /** De qué registro se toma la descripción (por defecto: la primera que tenga). */
         description_from: idSchema.optional(),
     })

@@ -98,7 +98,7 @@ export const ICON_SCALE_MAX = 1.4;
 
 export const iconDesignSchema = z.object({
     art: z.enum(ICON_ART_KINDS).default('logo'),
-    bg_from: hexColorSchema.default('#0f766e'),
+    bg_from: hexColorSchema.prefault('#0f766e'),
     /** Segundo color del degradado (null = color sólido). */
     bg_to: hexColorSchema.nullable().default(null),
     /** Hacia dónde va el degradado, en grados (0 = a la derecha, 90 = hacia abajo). */
@@ -115,7 +115,7 @@ export function iconDesignBackground(design: IconDesign): { from: string; to: st
 }
 
 export const platformBrandSchema = z.object({
-    app_name: z.string().trim().min(1).max(60).default(DEFAULT_PLATFORM_APP_NAME),
+    app_name: z.string().trim().min(1).max(60).prefault(DEFAULT_PLATFORM_APP_NAME),
     /** Logo horizontal (login, pantalla de arranque). */
     logo_url: brandImageUrl.nullable().default(null),
     /** Versión para fondos oscuros (opcional; sin ella se usa el logo normal). */
@@ -128,7 +128,7 @@ export const platformBrandSchema = z.object({
     /** El ícono en todos sus tamaños (null = el ícono neutro de fábrica). */
     icons: platformIconSetSchema.nullable().default(null),
     /** Fondo del ícono (el teléfono recorta el ícono en círculo o cuadrado). */
-    icon_background: hexColorSchema.default('#ffffff'),
+    icon_background: hexColorSchema.prefault('#ffffff'),
     /**
      * v0.1.329 — true = el fondo del ícono es el MISMO que el de la app
      * (blanco en claro, #121212 en oscuro): al abrir la app instalada, Android

@@ -11,13 +11,13 @@ import { checklistProgressSchema } from './checklist';
 export const recordSchema = z.object({
     id: idSchema,
     list_id: idSchema,
-    data: z.record(z.unknown()),
+    data: z.record(z.string(), z.unknown()),
     /**
      * Targets de los campos `relation`, keyed por `f{field_id}` (igual que
      * `data`). Viven en la tabla `relations`, no en el JSONB; el backend los
      * adjunta en cada lectura (batch por página).
      */
-    relations: z.record(z.array(idSchema)).optional(),
+    relations: z.record(z.string(), z.array(idSchema)).optional(),
     /**
      * Registro padre dentro de la MISMA lista (subtareas, v0.1.132). `null`
      * = registro de primer nivel. Un solo nivel de anidado: una subtarea no
@@ -76,7 +76,7 @@ export const recordSchema = z.object({
      * motivo: la celda muestra «#ERROR» y el motivo al pasar el mouse. El
      * valor de esas claves en `data` es null.
      */
-    formula_errors: z.record(z.string()).optional(),
+    formula_errors: z.record(z.string(), z.string()).optional(),
 });
 export type RecordDto = z.infer<typeof recordSchema>;
 
@@ -84,7 +84,7 @@ export type RecordDto = z.infer<typeof recordSchema>;
 export const recordDataSchema = z.record(z.string().regex(/^f\d+$/), z.unknown());
 
 export const createRecordSchema = z.object({
-    data: recordDataSchema.default({}),
+    data: recordDataSchema.prefault({}),
     /** Crea el registro como subtarea de otro de la misma lista. */
     parent_id: idSchema.nullable().optional(),
 });
@@ -111,8 +111,8 @@ export const sortDirSchema = z.enum(['asc', 'desc']);
  */
 export const listRecordsQuerySchema = z.object({
     cursor: queryIdSchema.optional(),
-    limit: z.coerce.number().int().positive().max(MAX_RECORDS_LIMIT).default(DEFAULT_RECORDS_LIMIT),
-    sort_dir: sortDirSchema.default('asc'),
+    limit: z.coerce.number().int().positive().max(MAX_RECORDS_LIMIT).prefault(DEFAULT_RECORDS_LIMIT),
+    sort_dir: sortDirSchema.prefault('asc'),
     /**
      * Orden por CAMPO (`field_{id}:{asc|desc}`, multi separado por coma) —
      * lo manda la tabla al clickear un header. Con sort por campo la
@@ -181,7 +181,7 @@ export type ListRecordsQuery = z.infer<typeof listRecordsQuerySchema>;
 export const bulkRecordsSchema = z.object({
     action: z.enum(['delete', 'update']),
     ids: z.array(idSchema).min(1).max(500),
-    values: z.record(z.unknown()).default({}),
+    values: z.record(z.string(), z.unknown()).prefault({}),
 });
 export type BulkRecordsInput = z.infer<typeof bulkRecordsSchema>;
 

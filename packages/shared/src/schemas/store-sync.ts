@@ -74,16 +74,16 @@ export const setupStoreSyncSchema = z.object({
             products: z.boolean().default(true),
             orders: z.boolean().default(true),
         })
-        .default({}),
+        .prefault({}),
     /** Pedidos creados desde esta fecha (AAAA-MM-DD). null = todo el histórico. */
     orders_since: z
         .string()
         .regex(/^\d{4}-\d{2}-\d{2}$/)
         .nullish(),
-    mode: storeSyncModeSchema.default('interval'),
-    interval_minutes: storeSyncIntervalSchema.default(15),
+    mode: storeSyncModeSchema.prefault('interval'),
+    interval_minutes: storeSyncIntervalSchema.prefault(15),
     /** v0.1.336 — lo que se borre en la tienda: conservarlo marcado o quitarlo de la app. */
-    on_source_delete: sourceDeleteModeSchema.default('keep'),
+    on_source_delete: sourceDeleteModeSchema.prefault('keep'),
 });
 export type SetupStoreSyncInput = z.infer<typeof setupStoreSyncSchema>;
 
@@ -233,7 +233,7 @@ export const storeListMarkerSchema = z.object({
     /** «Editar desde la app» activado: sin eso, TODA columna de la tienda es de sólo lectura. */
     write_back: z.boolean().default(false),
     /** slug del pack → id del campo: las columnas que son de la tienda. */
-    fields: z.record(z.string(), idSchema).default({}),
+    fields: z.record(z.string(), idSchema).prefault({}),
     /** Campos de otros plugins traídos a columnas (también de la tienda). */
     meta_fields: z.array(idSchema).default([]),
     /**
@@ -282,16 +282,16 @@ export const storeSyncStatusSchema = z.object({
     interval_minutes: z.number().int(),
     write_back: z.boolean(),
     /** v0.1.336 — lo que se borra en la tienda: conservarlo marcado o quitarlo de la app. */
-    on_source_delete: sourceDeleteModeSchema.default('keep'),
+    on_source_delete: sourceDeleteModeSchema.prefault('keep'),
     /** v0.1.336 — por lista: cuántas filas ya se borraron en la tienda. */
     gone: z.array(sourceGoneCountSchema).default([]),
     /** v0.1.214 — columnas habilitadas para editar desde la app, por lista. */
     editable: z
         .object({ customers: z.array(z.string()), products: z.array(z.string()), orders: z.array(z.string()) })
-        .default({ customers: [], products: [], orders: [] }),
+        .prefault({ customers: [], products: [], orders: [] }),
     orders_since: z.string().nullable(),
     resources: z.object({ customers: z.boolean(), products: z.boolean(), orders: z.boolean() }),
-    lists: z.record(storeSyncResourceSchema, listRefSchema),
+    lists: z.partialRecord(storeSyncResourceSchema, listRefSchema),
     dashboard_id: idSchema.nullable(),
     /** v0.1.208 — tablero de inventario. */
     inventory_dashboard_id: idSchema.nullable().default(null),
@@ -299,7 +299,7 @@ export const storeSyncStatusSchema = z.object({
     running: z.boolean(),
     /** Qué está haciendo ahora («Trayendo pedidos…»). */
     current: storeSyncResourceSchema.nullable(),
-    progress: z.record(storeSyncResourceSchema, storeSyncResourceStateSchema),
+    progress: z.partialRecord(storeSyncResourceSchema, storeSyncResourceStateSchema),
     initial_done: z.boolean(),
     last_run_at: z.string().nullable(),
     last_success_at: z.string().nullable(),
@@ -307,7 +307,7 @@ export const storeSyncStatusSchema = z.object({
     last_error: z.string().nullable(),
     /** Avisos no bloqueantes de la última corrida (valores que no se pudieron guardar). */
     warnings: z.array(z.string()),
-    meta_keys: z.record(storeMetaResourceSchema, z.array(storeMetaKeySchema)),
+    meta_keys: z.partialRecord(storeMetaResourceSchema, z.array(storeMetaKeySchema)),
     /** Fase 3: tiempo real. */
     realtime: z.object({
         active: z.boolean(),
@@ -326,6 +326,6 @@ export const storeSyncStatusSchema = z.object({
             last_at: z.string().nullable(),
             last_error: z.string().nullable(),
         })
-        .default({ pushed: 0, failed: 0, last_at: null, last_error: null }),
+        .prefault({ pushed: 0, failed: 0, last_at: null, last_error: null }),
 });
 export type StoreSyncStatus = z.infer<typeof storeSyncStatusSchema>;

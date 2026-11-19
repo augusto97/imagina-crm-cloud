@@ -101,7 +101,7 @@ export const widgetSpecSchema = z.object({
     /** 0 = widget de contenido (sin lista). */
     list_id: z.number().int().nonnegative(),
     title: z.string().max(500).default(''),
-    config: z.record(z.unknown()).default({}),
+    config: z.record(z.string(), z.unknown()).prefault({}),
     layout: widgetLayoutSchema,
 });
 export type WidgetSpec = z.infer<typeof widgetSpecSchema>;
@@ -121,7 +121,7 @@ export type DashboardVisibility = z.infer<typeof dashboardVisibilitySchema>;
  * los ajustes de página del portal ({bg, max_width, font}) — lo lee
  * `readPageSettings` en el front. Permisivo para claves futuras.
  */
-export const dashboardSettingsSchema = z.record(z.unknown());
+export const dashboardSettingsSchema = z.record(z.string(), z.unknown());
 
 export const dashboardSchema = z.object({
     id: idSchema,
@@ -129,10 +129,10 @@ export const dashboardSchema = z.object({
     name: z.string(),
     description: z.string().nullable(),
     widgets: z.array(widgetSpecSchema),
-    settings: dashboardSettingsSchema.default({}),
+    settings: dashboardSettingsSchema.prefault({}),
     is_default: z.boolean(),
     position: z.number().int(),
-    visibility: dashboardVisibilitySchema.default('workspace'),
+    visibility: dashboardVisibilitySchema.prefault('workspace'),
     allowed_roles: z.array(z.string()).default([]),
     created_by: idSchema,
     created_at: isoDateTimeSchema,

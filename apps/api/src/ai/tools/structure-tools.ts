@@ -567,8 +567,8 @@ export const listSpec = z.object({
                 name: z.string().min(1).max(190),
                 description: z.string().max(2000).optional(),
                 trigger_type: z.string().min(1),
-                trigger_config: z.record(z.unknown()).optional(),
-                actions: z.array(z.record(z.unknown())).min(1),
+                trigger_config: z.record(z.string(), z.unknown()).optional(),
+                actions: z.array(z.record(z.string(), z.unknown())).min(1),
                 is_active: z.boolean().optional(),
             }),
         )
@@ -576,7 +576,7 @@ export const listSpec = z.object({
         .optional()
         .describe('Automatizaciones de la lista (mismo shape que propose_create_automation)'),
     sample_records: z
-        .array(z.record(z.unknown()))
+        .array(z.record(z.string(), z.unknown()))
         .max(20)
         .optional()
         .describe('Registros de ejemplo como {slug: valor}. Sólo si la persona los pidió.'),
@@ -620,8 +620,7 @@ const widgetSpecInput = z.object({
     compare_to_date: z.boolean().optional().describe('Con compare (default true): si el período no terminó, el anterior se corta en el mismo punto (hoy es 19 → el 1–19 del mes anterior)'),
     compare_invert: z.boolean().optional().describe('Con compare: menos es mejor (costos, tickets abiertos): una baja se pinta en verde'),
     stage_field: fieldSlugSchema.optional().describe('forecast (obligatorio): la ETAPA del negocio (selección)'),
-    stage_probabilities: z
-        .record(z.number().min(0).max(100))
+    stage_probabilities: z.record(z.string(), z.number().min(0).max(100))
         .optional()
         .describe('forecast: probabilidad de cierre por etapa {valor o etiqueta de la opción: 0-100}. 100 = ganada, 0 = perdida. Sin esto se sugiere por el nombre (Ganado 100, Perdido 0, las abiertas repartidas)'),
     time_bucket: timeBucketSchema.optional().describe(`Granularidad temporal: ${TIME_BUCKETS.join(' | ')} (default month)`),
@@ -645,8 +644,7 @@ export const automationSpec = z.object({
     name: z.string().min(1).max(190),
     description: z.string().max(2000).optional(),
     trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'whats_event', 'email_received', 'sla_alert', 'subscription_event', 'comment_added', 'signature_event', 'record_matches', 'file_added']),
-    trigger_config: z
-        .record(z.unknown())
+    trigger_config: z.record(z.string(), z.unknown())
         .optional()
         .describe(
             'record_updated: {changed_fields: [slugs], field_filters: [{field, op, value}]}. ' +
@@ -672,7 +670,7 @@ export const automationSpec = z.object({
                 'file_added (se subió un archivo a un campo de archivos del registro; las acciones usan {{archivo.nombre}}, {{archivo.tipo}}, {{archivo.tamano}}, {{archivo.campo}}, {{archivo.enlace}} (enlace firmado que sirve en un correo, dura 30 días), {{archivo.cantidad}}): {file_field?: slug de un campo de archivos (vacío = cualquiera), file_kind?: any|image|pdf, field_filters?}.',
         ),
     actions: z
-        .array(z.record(z.unknown()))
+        .array(z.record(z.string(), z.unknown()))
         .min(1)
         .max(20)
         .describe(
@@ -938,7 +936,7 @@ export class StructureTools implements AiProposalApplier {
                 add_options: z.array(optionSpec).max(60).optional().describe('select/multi_select: opciones a AGREGAR a las existentes'),
                 replace_options: z.array(optionSpec).max(60).optional().describe('select/multi_select: reemplazar TODAS las opciones (ojo: los valores guardados que no estén quedan huérfanos)'),
                 formula: fieldSpec.shape.formula.describe('Sólo campos formula: la fórmula nueva (por NOMBRE de campo) y cómo mostrarla'),
-                config: z.record(z.unknown()).optional().describe('Reemplazo completo de la configuración (avanzado)'),
+                config: z.record(z.string(), z.unknown()).optional().describe('Reemplazo completo de la configuración (avanzado)'),
                 button: buttonSpec.optional().describe('Sólo campos button: reemplaza lo que hace el botón (mismo vocabulario que propose_add_fields)'),
                 show_if: fieldSpec.shape.show_if.describe('«Mostrar sólo si…»: el campo aparece sólo cuando otros campos cumplen esto (mismo vocabulario que propose_add_fields). null la quita.'),
             }),
@@ -1136,8 +1134,8 @@ export class StructureTools implements AiProposalApplier {
                 description: z.string().max(2000).nullable().optional(),
                 is_active: z.boolean().optional(),
                 trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'whats_event', 'email_received', 'sla_alert', 'subscription_event', 'comment_added', 'signature_event', 'record_matches', 'file_added']).optional(),
-                trigger_config: z.record(z.unknown()).optional(),
-                actions: z.array(z.record(z.unknown())).min(1).max(20).optional(),
+                trigger_config: z.record(z.string(), z.unknown()).optional(),
+                actions: z.array(z.record(z.string(), z.unknown())).min(1).max(20).optional(),
             }),
             run: (ctx, input) => this.proposeUpdateAutomation(ctx, input as UpdateAutomationSpec),
         });
@@ -1219,8 +1217,7 @@ export class StructureTools implements AiProposalApplier {
             capability: 'manage_lists',
             input: z.object({
                 list: z.string().max(63),
-                roles: z
-                    .record(z.enum(CONFIGURABLE_ROLES), permissionSpec)
+                roles: z.partialRecord(z.enum(CONFIGURABLE_ROLES), permissionSpec)
                     .optional()
                     .describe('Permisos por rol; sólo los roles que se mandan cambian'),
                 users: z

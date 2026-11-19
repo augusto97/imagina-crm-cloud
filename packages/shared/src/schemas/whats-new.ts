@@ -247,11 +247,11 @@ const contentShape = {
     body: z.string().max(WHATS_NEW_LIMITS.body).default(''),
     image_url: imageUrlSchema.nullable().default(null),
     video_url: videoUrlSchema.nullable().default(null),
-    media: whatsNewMediaSchema.default(EMPTY_WHATS_NEW_MEDIA),
+    media: whatsNewMediaSchema.prefault(EMPTY_WHATS_NEW_MEDIA),
     action: whatsNewActionSchema.nullable().default(null),
     version: versionSchema.nullable().default(null),
     featured: z.boolean().default(false),
-    audience: whatsNewAudienceSchema.default({ roles: [], plans: [] }),
+    audience: whatsNewAudienceSchema.prefault({ roles: [], plans: [] }),
     /** Sobre todo para avisos: a partir de cuándo deja de verse. */
     expires_at: isoDateTime.nullable().default(null),
 };

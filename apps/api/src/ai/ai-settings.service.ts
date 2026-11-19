@@ -49,13 +49,13 @@ const storedPlatformSchema = z.object({
     model_choice: lenientChoice,
     model: lenientLegacy,
     // v0.1.306 — antes de poder elegirlo el asistente pedía `medium`.
-    effort: aiEffortSchema.catch(DEFAULT_AI_EFFORT).default(DEFAULT_AI_EFFORT),
+    effort: aiEffortSchema.catch(DEFAULT_AI_EFFORT).prefault(DEFAULT_AI_EFFORT),
     share_platform_key: z.boolean().catch(true).default(true),
     allow_tenant_keys: z.boolean().catch(true).default(true),
     // v0.1.339 (ADR-S88) — cupo de análisis con IA para «Crear desde un archivo».
     import_ai_monthly: z.number().int().min(0).max(1000).catch(3).default(3),
     // v0.1.341 (ADR-S89) — cupo de «Recomendar con IA» por lista.
-    list_suggest_ai_monthly: z.number().int().min(0).max(1000).catch(DEFAULT_LIST_SUGGEST_AI_MONTHLY).default(DEFAULT_LIST_SUGGEST_AI_MONTHLY),
+    list_suggest_ai_monthly: z.number().int().min(0).max(1000).catch(DEFAULT_LIST_SUGGEST_AI_MONTHLY).prefault(DEFAULT_LIST_SUGGEST_AI_MONTHLY),
 });
 type StoredPlatform = z.infer<typeof storedPlatformSchema>;
 

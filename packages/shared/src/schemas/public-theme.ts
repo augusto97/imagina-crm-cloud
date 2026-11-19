@@ -53,14 +53,14 @@ export const DEFAULT_LIGHT_PALETTE: Record<PublicPaletteKey, string> = {
 export const PUBLIC_ROUND_RADIUS = 999;
 
 export const publicPaletteSchema = z.object({
-    background: color.default(DEFAULT_LIGHT_PALETTE.background),
-    card: color.default(DEFAULT_LIGHT_PALETTE.card),
-    text: color.default(DEFAULT_LIGHT_PALETTE.text),
-    muted: color.default(DEFAULT_LIGHT_PALETTE.muted),
-    border: color.default(DEFAULT_LIGHT_PALETTE.border),
-    input_bg: color.default(DEFAULT_LIGHT_PALETTE.input_bg),
-    input_border: color.default(DEFAULT_LIGHT_PALETTE.input_border),
-    error: color.default(DEFAULT_LIGHT_PALETTE.error),
+    background: color.prefault(DEFAULT_LIGHT_PALETTE.background),
+    card: color.prefault(DEFAULT_LIGHT_PALETTE.card),
+    text: color.prefault(DEFAULT_LIGHT_PALETTE.text),
+    muted: color.prefault(DEFAULT_LIGHT_PALETTE.muted),
+    border: color.prefault(DEFAULT_LIGHT_PALETTE.border),
+    input_bg: color.prefault(DEFAULT_LIGHT_PALETTE.input_bg),
+    input_border: color.prefault(DEFAULT_LIGHT_PALETTE.input_border),
+    error: color.prefault(DEFAULT_LIGHT_PALETTE.error),
     /** Botón y detalles; null = el del formulario (o el de la marca). */
     accent: color.nullable().default(null),
     /** Texto sobre el acento; null = blanco o tinta según el contraste. */
@@ -94,9 +94,9 @@ export const publicTypographySchema = z.object({
     /** Tamaño del texto (px). */
     base_size: z.number().min(12).max(22).default(15),
     title_size: z.number().min(16).max(64).default(24),
-    title_weight: weight.default(700),
+    title_weight: weight.prefault(700),
     question_size: z.number().min(12).max(30).default(15),
-    question_weight: weight.default(600),
+    question_weight: weight.prefault(600),
     /** Interlineado (1,5 = 150 %). */
     line_height: z.number().min(1.1).max(2.2).default(1.5),
     /** Espaciado entre letras de los títulos (px). */
@@ -329,20 +329,20 @@ export const publicThemeSchema = z.object({
     /** Plantilla de la que salió (para marcarla en la galería); null = propio. */
     preset: z.string().max(40).nullable().catch(null).default(null),
     mode: z.enum(PUBLIC_THEME_MODES).catch('light').default('light'),
-    colors: publicPaletteSchema.catch(publicPaletteSchema.parse({})).default({}),
+    colors: publicPaletteSchema.catch(publicPaletteSchema.parse({})).prefault({}),
     /** Colores del modo oscuro; null = calculados solos a partir de los claros. */
     dark_colors: darkPaletteSchema.nullable().catch(null).default(null),
-    typography: publicTypographySchema.catch(publicTypographySchema.parse({})).default({}),
-    layout: publicLayoutSchema.catch(publicLayoutSchema.parse({})).default({}),
-    cover: publicCoverSchema.catch(publicCoverSchema.parse({})).default({}),
-    split: publicSplitSchema.catch(publicSplitSchema.parse({})).default({}),
-    background: publicBackgroundSchema.catch(publicBackgroundSchema.parse({})).default({}),
-    card: publicCardSchema.catch(publicCardSchema.parse({})).default({}),
-    inputs: publicInputsSchema.catch(publicInputsSchema.parse({})).default({}),
-    choices: publicChoicesSchema.catch(publicChoicesSchema.parse({})).default({}),
-    button: publicButtonSchema.catch(publicButtonSchema.parse({})).default({}),
+    typography: publicTypographySchema.catch(publicTypographySchema.parse({})).prefault({}),
+    layout: publicLayoutSchema.catch(publicLayoutSchema.parse({})).prefault({}),
+    cover: publicCoverSchema.catch(publicCoverSchema.parse({})).prefault({}),
+    split: publicSplitSchema.catch(publicSplitSchema.parse({})).prefault({}),
+    background: publicBackgroundSchema.catch(publicBackgroundSchema.parse({})).prefault({}),
+    card: publicCardSchema.catch(publicCardSchema.parse({})).prefault({}),
+    inputs: publicInputsSchema.catch(publicInputsSchema.parse({})).prefault({}),
+    choices: publicChoicesSchema.catch(publicChoicesSchema.parse({})).prefault({}),
+    button: publicButtonSchema.catch(publicButtonSchema.parse({})).prefault({}),
     /** v0.1.377 — Colores por elemento (vacío = el de la paleta). */
-    elements: publicElementColorsSchema.catch(publicElementColorsSchema.parse({})).default({}),
+    elements: publicElementColorsSchema.catch(publicElementColorsSchema.parse({})).prefault({}),
     /** CSS propio (sólo administradores; se limpia al guardar y al servir). */
     custom_css: z.string().max(PUBLIC_CSS_MAX).catch('').default(''),
 });

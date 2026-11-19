@@ -11,8 +11,8 @@ import {
 } from '@imagina-base/shared';
 import type Redis from 'ioredis';
 import { randomBytes } from 'node:crypto';
-import type { ZodTypeAny } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
+import type { ZodType as ZodTypeAny } from 'zod';
+import { zodToJson } from '../common/zod-json-schema';
 import { AiQuotaExceededError, AiQuotaService } from '../ai/ai-quota.service';
 import { AiSettingsService, AiUnavailableError, type ResolvedAiAccess } from '../ai/ai-settings.service';
 import { AI_CLIENT_FACTORY, defaultClientFactory, type AiClientFactory } from '../ai/assistant.service';
@@ -420,8 +420,5 @@ export function jsonFromText(content: ReadonlyArray<{ type: string; text?: strin
 }
 
 function toInputSchema(schema: ZodTypeAny): Record<string, unknown> {
-    const convert = zodToJsonSchema as unknown as (s: ZodTypeAny, o: Record<string, unknown>) => Record<string, unknown>;
-    const json = convert(schema, { $refStrategy: 'none', target: 'jsonSchema7' });
-    delete json.$schema;
-    return json;
+    return zodToJson(schema);
 }

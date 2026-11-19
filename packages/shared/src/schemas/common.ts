@@ -29,7 +29,7 @@ export const apiErrorSchema = z.object({
     message: z.string(),
     data: z.object({
         status: z.number().int(),
-        errors: z.record(z.string()).optional(),
+        errors: z.record(z.string(), z.string()).optional(),
     }),
 });
 export type ApiError = z.infer<typeof apiErrorSchema>;

@@ -97,7 +97,7 @@ export const dataConsentResponsibleSchema = z.object({
     id_number: z.string().trim().max(60).default(''),
     address: z.string().trim().max(300).default(''),
     city: z.string().trim().max(120).default(''),
-    email: optionalEmail.default(''),
+    email: optionalEmail.prefault(''),
     phone: z.string().trim().max(60).default(''),
 });
 export type DataConsentResponsible = z.infer<typeof dataConsentResponsibleSchema>;
@@ -107,13 +107,13 @@ export const DATA_CONSENT_MAX_PURPOSES = 20;
 export const dataConsentConfigSchema = z.object({
     /** Pedir la autorización (en los formularios y, si se elige, en el portal). */
     enabled: z.boolean().default(false),
-    responsible: dataConsentResponsibleSchema.default({}),
+    responsible: dataConsentResponsibleSchema.prefault({}),
     purposes: z
         .array(z.string().trim().min(1).max(500))
         .max(DATA_CONSENT_MAX_PURPOSES)
-        .default([...DEFAULT_DATA_CONSENT_PURPOSES]),
+        .prefault([...DEFAULT_DATA_CONSENT_PURPOSES]),
     /** Enlace a la política completa de la empresa (https). */
-    policy_url: optionalHttps.default(''),
+    policy_url: optionalHttps.prefault(''),
     /** `null` = la plantilla sugerida (y recibe sus mejoras con cada versión de la app). */
     template: z.string().max(20000).nullable().default(null),
     /** Texto corto junto a la casilla. `null` = el sugerido. */

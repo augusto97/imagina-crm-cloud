@@ -74,7 +74,7 @@ export const activitySchema = z.object({
     /** Nombre de quien hizo el cambio (v0.1.149); null si lo hizo el sistema. */
     user_name: z.string().nullable().default(null),
     action: activityActionSchema,
-    diff: z.record(z.unknown()),
+    diff: z.record(z.string(), z.unknown()),
     created_at: isoDateTimeSchema,
     /**
      * E6 — el agente de IA que hizo (o propuso) el cambio. Con `user_id`, una
@@ -117,7 +117,7 @@ export const auditEntrySchema = z.object({
     target_type: z.string(),
     target_id: z.number().nullable(),
     target_label: z.string(),
-    meta: z.record(z.unknown()),
+    meta: z.record(z.string(), z.unknown()),
     user_id: z.number().nullable(),
     user_name: z.string().nullable(),
     created_at: z.string(),
