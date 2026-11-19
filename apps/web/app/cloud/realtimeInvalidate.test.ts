@@ -7,11 +7,15 @@ import { listsKeys } from '@/hooks/useLists';
 import { AGGREGATES_NS, recordsKeys } from '@/hooks/useRecords';
 import { activityKeys } from '@/hooks/useActivity';
 
+import { notificationKeys } from '@/hooks/useNotifications';
+
 import {
     DERIVED_WINDOW_MS,
     RECORDS_WINDOW_MS,
     createRealtimeInvalidator,
+    isOwnEcho,
     layoutDataTouchesList,
+    mergeRtEvents,
 } from './realtimeInvalidate';
 
 const A = 12; // la lista que cambia (slug «clientes»)
@@ -123,6 +127,109 @@ describe('realtime — qué se vuelve a pedir con un aviso de registros', () => 
         rt.handle({ topic: 'lists' });
         expect(stale(qc, listsKeys.list())).toBe(true);
         rt.dispose();
+    });
+});
+
+describe('realtime — el eco de la propia edición (v0.1.461)', () => {
+    const OWN = 'tab:mi-pestana-123';
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    /** Esta pestaña acaba de editar la lista A (su mutación ya la refrescó). */
+    const withLocalEdit = (qc: QueryClient) =>
+        createRealtimeInvalidator(qc, {
+            isHidden: () => false,
+            ownOrigin: OWN,
+            isLocalRecordsChange: (id) => id === A,
+            isLocalListsChange: () => true,
+        });
+
+    it('mi edición: su eco NO vuelve a pedir la tabla (la mutación ya la refrescó)', () => {
+        const { qc, keys } = seed();
+        const rt = withLocalEdit(qc);
+        rt.handle({ topic: 'records', listId: A, origin: OWN });
+        expect(stale(qc, keys.tableBySlug)).toBe(false);
+        expect(stale(qc, keys.tableById)).toBe(false);
+        expect(stale(qc, keys.aggregates)).toBe(false);
+        rt.dispose();
+    });
+
+    it('la automatización que disparó mi edición: SÍ se pide, aunque llegue en el mismo instante', () => {
+        const { qc, keys } = seed();
+        const rt = withLocalEdit(qc);
+        rt.handle({ topic: 'records', listId: A, origin: OWN });
+        rt.handle({ topic: 'records', listId: A, origin: 'job:automations' });
+        expect(stale(qc, keys.tableBySlug)).toBe(true);
+        expect(stale(qc, keys.tableById)).toBe(true);
+        expect(stale(qc, keys.activity)).toBe(true);
+        rt.dispose();
+    });
+
+    it('otra pestaña, otra persona, la API o un aviso juntado sin origen: también entran', () => {
+        for (const origin of ['tab:otra-pestana-999', 'request', 'system', undefined]) {
+            const { qc, keys } = seed();
+            const rt = withLocalEdit(qc);
+            rt.handle({ topic: 'records', listId: A, ...(origin ? { origin } : {}) });
+            expect(stale(qc, keys.tableBySlug)).toBe(true);
+            rt.dispose();
+        }
+    });
+
+    it('lo que mi pedido cambió de rebote en OTRA lista no es eco (mi mutación no la refrescó)', () => {
+        const { qc, keys } = seed();
+        const rt = withLocalEdit(qc);
+        rt.handle({ topic: 'records', listId: B, origin: OWN });
+        expect(stale(qc, keys.otherTable)).toBe(true);
+        rt.dispose();
+    });
+
+    it('«Mi trabajo» se refresca con lo que cambió otro (una automatización), no con mi eco', () => {
+        const { qc } = seed();
+        qc.setQueryData(notificationKeys.work, {});
+        const rt = withLocalEdit(qc);
+        rt.handle({ topic: 'records', listId: A, origin: OWN });
+        expect(stale(qc, notificationKeys.work)).toBe(false);
+        rt.handle({ topic: 'records', listId: A, origin: 'job:automations' });
+        expect(stale(qc, notificationKeys.work)).toBe(true);
+        rt.dispose();
+    });
+
+    it('con la pestaña oculta, el eco y la automatización guardados juntos se aplican al volver', () => {
+        const { qc, keys } = seed();
+        let hidden = true;
+        const rt = createRealtimeInvalidator(qc, {
+            isHidden: () => hidden,
+            ownOrigin: OWN,
+            isLocalRecordsChange: () => true,
+        });
+        rt.handle({ topic: 'records', listId: A, origin: 'job:automations' });
+        rt.handle({ topic: 'records', listId: A, origin: OWN }); // llega después y no pisa al anterior
+        hidden = false;
+        rt.onVisible();
+        expect(stale(qc, keys.tableBySlug)).toBe(true);
+        rt.dispose();
+    });
+
+    it('índice de listas: mi eco no se pide; el de otro sí', () => {
+        const { qc } = seed();
+        const rt = withLocalEdit(qc);
+        rt.handle({ topic: 'lists', origin: OWN });
+        expect(stale(qc, listsKeys.list())).toBe(false);
+        rt.handle({ topic: 'lists', origin: 'job:automations' });
+        expect(stale(qc, listsKeys.list())).toBe(true);
+        rt.dispose();
+    });
+
+    it('isOwnEcho y mergeRtEvents', () => {
+        expect(isOwnEcho({ origin: OWN }, OWN, true)).toBe(true);
+        expect(isOwnEcho({ origin: OWN }, OWN, false)).toBe(false);
+        expect(isOwnEcho({ origin: 'job:automations' }, OWN, true)).toBe(false);
+        expect(isOwnEcho({}, OWN, true)).toBe(false);
+        const own = { topic: 'records' as const, listId: A, origin: OWN };
+        expect(mergeRtEvents(undefined, own)).toEqual(own);
+        expect(mergeRtEvents(own, own)).toEqual(own);
+        expect(mergeRtEvents(own, { topic: 'records', listId: A, origin: 'job:automations' })).toEqual({ topic: 'records', listId: A });
+        expect(mergeRtEvents({ topic: 'records', listId: A, origin: 'job:automations' }, own)).toEqual({ topic: 'records', listId: A });
     });
 });
 

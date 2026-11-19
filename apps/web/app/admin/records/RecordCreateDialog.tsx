@@ -260,6 +260,17 @@ export function RecordCreateDialog({
                 <div className="imcrm-fixed imcrm-inset-0 imcrm-z-50 imcrm-flex imcrm-items-center imcrm-justify-center">
                     <DialogPrimitive.Content
                         ref={contentRef}
+                        // Al abrir, el foco va al TÍTULO y no al primer botón
+                        // de la barra («Cerrar»): abierto desde un menú, el
+                        // espacio de lo que se tipea apenas se abre cerraba el
+                        // alta (v0.1.461). Sin título editable, lo de siempre.
+                        onOpenAutoFocus={(e) => {
+                            const title = contentRef.current?.querySelector<HTMLInputElement>('[data-imcrm-title-input]');
+                            if (title) {
+                                e.preventDefault();
+                                title.focus();
+                            }
+                        }}
                         // Esc con el foco en un campo sale del campo; con algo
                         // escrito, pregunta antes de descartar el alta.
                         onEscapeKeyDown={(e) => {

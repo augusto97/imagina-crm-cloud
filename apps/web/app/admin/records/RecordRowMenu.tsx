@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
     ArrowDownToLine,
     Check,
@@ -109,6 +109,20 @@ export function RecordRowMenu({
     // v0.1.344 — el diálogo del QR sobrevive al cierre del menú.
     const [qrFor, setQrFor] = useState<number | null>(null);
     const isGuest = useIsGuest();
+    /**
+     * v0.1.461 — Una opción que abre un diálogo (el alta de una subtarea, el
+     * registro, el QR, una columna, confirmar el borrado) se abre cuando el
+     * menú ya soltó el foco, y al cerrarse el menú el foco NO vuelve a la
+     * tabla ni al disparador: si no, la trampa de foco del menú le robaba el
+     * cursor al título (quedaba en «Cerrar» y el primer espacio cerraba el
+     * alta) o el foco rebotaba y seleccionaba lo ya escrito (la letra
+     * siguiente lo reemplazaba). Mismo arreglo que «Nuevo registro ▾».
+     */
+    const opensDialog = useRef(false);
+    const thenOpen = (open: () => void): void => {
+        opensDialog.current = true;
+        window.setTimeout(open, 0);
+    };
     const qrDialog =
         qrFor !== null ? <RecordQrDialog listId={listId} recordId={qrFor} fields={fields} onClose={() => setQrFor(null)} /> : null;
 
@@ -199,6 +213,11 @@ export function RecordRowMenu({
                 // Sobre celdas el foco vuelve a la TABLA (no al disparador
                 // invisible del menú): así Ctrl+V / flechas siguen andando.
                 onCloseAutoFocus={(e) => {
+                    if (opensDialog.current) {
+                        opensDialog.current = false;
+                        e.preventDefault();
+                        return;
+                    }
                     if (!target.cell || !cellActions) return;
                     e.preventDefault();
                     cellActions.restoreFocus();
@@ -256,7 +275,7 @@ export function RecordRowMenu({
                         <DropdownMenuLabel className="imcrm-text-xs imcrm-font-medium imcrm-text-muted-foreground">{__('Registro')}</DropdownMenuLabel>
                     </>
                 )}
-                <DropdownMenuItem onSelect={() => onOpen(record)}>
+                <DropdownMenuItem onSelect={() => thenOpen(() => onOpen(record))}>
                     <SquareArrowOutUpRight className="imcrm-h-3.5 imcrm-w-3.5" />
                     {__('Abrir registro')}
                 </DropdownMenuItem>
@@ -277,7 +296,7 @@ export function RecordRowMenu({
                     {__('Copiar ID')}
                 </DropdownMenuItem>
                 {!isGuest && (
-                    <DropdownMenuItem onSelect={() => setQrFor(record.id)} data-testid="imcrm-row-menu-qr">
+                    <DropdownMenuItem onSelect={() => thenOpen(() => setQrFor(record.id))} data-testid="imcrm-row-menu-qr">
                         <QrCode className="imcrm-h-3.5 imcrm-w-3.5" />
                         {__('Código QR')}
                     </DropdownMenuItem>
@@ -285,7 +304,7 @@ export function RecordRowMenu({
 
                 {(canCreate || onAddColumn) && <DropdownMenuSeparator />}
                 {canCreate && onCreateSubtask && record.parent_id === null && (
-                    <DropdownMenuItem onSelect={() => onCreateSubtask(record)}>
+                    <DropdownMenuItem onSelect={() => thenOpen(() => onCreateSubtask(record))} data-testid="imcrm-row-menu-subtask">
                         <ListTree className="imcrm-h-3.5 imcrm-w-3.5" />
                         {__('Crear subtarea')}
                     </DropdownMenuItem>
@@ -310,7 +329,7 @@ export function RecordRowMenu({
                     )
                 )}
                 {onAddColumn && (
-                    <DropdownMenuItem onSelect={onAddColumn}>
+                    <DropdownMenuItem onSelect={() => thenOpen(onAddColumn)}>
                         <Columns3 className="imcrm-h-3.5 imcrm-w-3.5" />
                         {__('Agregar una columna')}
                     </DropdownMenuItem>
@@ -319,7 +338,7 @@ export function RecordRowMenu({
                 {allowDelete && (
                     <>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem danger onSelect={() => void del()} data-testid="imcrm-row-menu-delete">
+                        <DropdownMenuItem danger onSelect={() => thenOpen(() => void del())} data-testid="imcrm-row-menu-delete">
                             <Trash2 className="imcrm-h-3.5 imcrm-w-3.5" />
                             {gone ? __('Quitar de la app') : __('Eliminar')}
                         </DropdownMenuItem>

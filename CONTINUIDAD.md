@@ -430,7 +430,11 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.460**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.461**
+(**pulido**: lo que cambia una automatización por una edición de la pestaña se
+ve al momento —cada aviso del realtime dice quién lo originó y la pestaña sólo
+ignora su propio eco— y el foco va al nombre al crear una subtarea o un registro
+desde un menú; sin migración; addendum ADR-S06). Antes **v0.1.460**
 (**automatizaciones, parte 2** — «Según el valor de…» (hasta 12 ramas más «En
 otro caso»), «Preguntarle a la IA» (respuesta validada que queda en
 `{{respuestas.<nombre>.*}}` o en un campo, con la cuota de la IA) y «Si este
@@ -2342,6 +2346,22 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.461** — **Lo que hace una automatización se ve al
+  momento + foco al crear una subtarea desde el menú** (pulido; addendum
+  ADR-S06; sin migración). El realtime ignoraba 2,5 s todo aviso de una lista
+  que la pestaña acababa de cambiar (v0.1.253) y se comía el de la
+  automatización que esa edición disparaba (checklist completo → aprobación y
+  estado: la ficha no lo mostraba hasta recargar). Ahora cada aviso lleva su
+  origen (`tab:<id>` por el encabezado `X-Rt-Origin` de cada pestaña,
+  `request` para API/MCP/formularios, `job:<cola>` para BullMQ, `system`) y la
+  pestaña ignora SÓLO su propio eco; avisos de orígenes distintos juntados en
+  la ventana de 1 s salen sin origen (nadie los ignora). «Crear subtarea» del
+  click derecho perdía el foco del título (iba a «Cerrar»): el menú abre el
+  alta en el tick siguiente y el alta enfoca el título al abrirse; mismo
+  arreglo en los menús de columna y tarjeta del kanban. Pendiente/dudoso: un
+  `fetch` crudo que cambie registros sin pasar por `lib/api.ts` no manda el
+  encabezado y su eco recargaría la lista una vez de más (hoy no hay ninguno);
+  el presupuesto del bundle de la app queda en 817 de 820 KB gz.
 - **2026-11-19 · v0.1.460** — **Varias ramas, preguntarle a la IA y «Si este
   paso falla»** (E2 + E3; addendum ADR-S47). Sin migración: la corrida suma el
   estado `with_errors` («Con errores», ámbar) que NO abre Problema. Paso

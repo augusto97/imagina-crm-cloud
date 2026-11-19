@@ -63,6 +63,7 @@ export function RecordTitleInput({
             type="text"
             value={draft}
             autoFocus={autoFocus}
+            data-imcrm-title-input=""
             aria-label={field.label}
             placeholder={field.label}
             onFocus={() => {

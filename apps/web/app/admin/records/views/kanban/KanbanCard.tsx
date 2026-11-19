@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useRef } from 'react';
 import { ArrowRightLeft, ClipboardCheck, ExternalLink, ListTodo, Lock, MoreHorizontal, Rows3 } from 'lucide-react';
 
 import { renderCellValue } from '@/admin/records/renderCellValue';
@@ -97,6 +97,20 @@ function KanbanCardImpl({
     const amount = valueField && !metaFields.some((f) => f.id === valueField.id) ? record.fields[valueField.slug] : undefined;
     const amountNum = typeof amount === 'number' ? amount : amount !== undefined && amount !== null && amount !== '' ? Number(amount) : NaN;
     const canMove = (columnTargets.length > 0 || (laneTargets?.length ?? 0) > 0) && lockReason === null;
+    // «Abrir» abre la ficha y un movimiento puede abrir el diálogo de lo que
+    // pide la columna: se abren en el tick siguiente y el menú no devuelve el
+    // foco al botón «…» (si no, la trampa de foco del diálogo se lo disputaba
+    // y se perdían las primeras letras — v0.1.461, mismo patrón que la fila).
+    const opensDialog = useRef(false);
+    const thenOpen = (open: () => void): void => {
+        opensDialog.current = true;
+        window.setTimeout(open, 0);
+    };
+    // Mover sólo a veces abre un diálogo (si la columna pide datos): se
+    // difiere igual, pero el foco vuelve al «…» cuando no hay diálogo.
+    const later = (fn: () => void): void => {
+        window.setTimeout(fn, 0);
+    };
 
     return (
         <article
@@ -200,8 +214,14 @@ function KanbanCardImpl({
                             align="end"
                             className="imcrm-max-h-[min(70vh,var(--radix-dropdown-menu-content-available-height))] imcrm-overflow-y-auto"
                             onClick={(e) => e.stopPropagation()}
+                            onCloseAutoFocus={(e) => {
+                                if (opensDialog.current) {
+                                    opensDialog.current = false;
+                                    e.preventDefault();
+                                }
+                            }}
                         >
-                            <DropdownMenuItem onSelect={() => onOpen(record)}>
+                            <DropdownMenuItem onSelect={() => thenOpen(() => onOpen(record))}>
                                 <ExternalLink className="imcrm-h-3.5 imcrm-w-3.5" />
                                 {__('Abrir')}
                             </DropdownMenuItem>
@@ -216,7 +236,7 @@ function KanbanCardImpl({
                                         {__('Mover a…')}
                                     </DropdownMenuLabel>
                                     {columnTargets.map((t) => (
-                                        <DropdownMenuItem key={t.key} onSelect={() => onMoveColumn(record, t.key)}>
+                                        <DropdownMenuItem key={t.key} onSelect={() => later(() => onMoveColumn(record, t.key))}>
                                             <Dot color={t.color} />
                                             {t.label}
                                         </DropdownMenuItem>
@@ -231,7 +251,7 @@ function KanbanCardImpl({
                                         {__('Mover a carril…')}
                                     </DropdownMenuLabel>
                                     {laneTargets.map((t) => (
-                                        <DropdownMenuItem key={t.key} onSelect={() => onMoveLane(record, t.key)}>
+                                        <DropdownMenuItem key={t.key} onSelect={() => later(() => onMoveLane(record, t.key))}>
                                             <Dot color={t.color} />
                                             {t.label}
                                         </DropdownMenuItem>

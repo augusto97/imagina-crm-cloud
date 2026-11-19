@@ -1,6 +1,7 @@
 import { FormulaErrorValue } from '@/lib/formulaError';
 import { getBootData } from '@/lib/boot';
 import { CLOUD_WIRED } from '@/lib/cloudFeatures';
+import { rtOriginHeaders } from '@/lib/rtOrigin';
 
 /**
  * Error tipado que devuelve la REST API. Mapea el shape estándar:
@@ -523,6 +524,8 @@ async function request<T>(method: Method, path: string, opts: RequestOptions = {
 
     const headers: Record<string, string> = {
         Accept: 'application/json',
+        // v0.1.461 — qué pestaña hizo el pedido: el realtime ignora SÓLO su eco.
+        ...rtOriginHeaders(),
     };
     // Auth: cookie de sesión httpOnly + workspace activo por header.
     if (boot.tenantId !== null) headers['X-Tenant-Id'] = String(boot.tenantId);
