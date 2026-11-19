@@ -2313,8 +2313,21 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   sha256, install.sh y n8n). El plan aprobado el 2026-11-18 quedó completo
   salvo G8: el usuario dejó la facturación DIAN para después ("Ok dejalo
   para después") y pidió qué más puede seguir del banco de ideas; se le
-  propuso una tanda nueva desde `docs/ideas.md` y queda esperando su
-  elección. Siguen pendientes de su lado: el chequeo de Redis y `NPM_TOKEN`.
+  propuso una tanda nueva desde `docs/ideas.md` y la aprobó COMPLETA ("Me
+  gustaron todas estas que comentas. Hazlas"). Plan por versiones: v0.1.455
+  automatizaciones parte 1 (disparadores «empieza a cumplir una condición» y
+  «se sube un archivo»; acciones avisar en la app, asignar por turno, copiar a
+  otra lista), v0.1.456 IA en el día a día (resumen del registro, escribir con
+  IA, pedir al agente, agente en lote), v0.1.457 campos que aparecen según
+  otros (A7) + campos de sólo lectura por rol (C4), v0.1.458 automatizaciones
+  parte 2 (preguntarle a la IA, ramas según el valor, qué hacer si un paso
+  falla), v0.1.459 «describe la automatización y la armo», v0.1.460 Google
+  Sheets en los dos sentidos, v0.1.461 importar de Airtable, v0.1.462
+  comparar períodos + pronóstico, v0.1.463 informes, v0.1.464 pulido
+  (realtime de la ficha, foco de subtarea), v0.1.465 Zod 4. Las tres primeras
+  se hacen en paralelo en worktrees (slots 1-3; migraciones 0139-0141) y se
+  integran en orden; cada una deja sus textos de docs en `docs/pending/`.
+  Siguen pendientes de su lado: el chequeo de Redis y `NPM_TOKEN`.
 - **2026-11-19 · v0.1.454** — **La plataforma le cobra a la agencia** (I3,
   ADR-S108 addendum; decisión del usuario «las dos»). Migración 0138:
   `plans.agency_included_clients/agency_extra_usd/agency_extra_cop` (NULL en
