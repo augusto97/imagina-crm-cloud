@@ -2376,6 +2376,7 @@ export class ConnectorsService {
         this.incidents?.resolvePrefix(tenantId, `store_sync:${id}:`);
         this.incidents?.resolvePrefix(tenantId, `site_sync:${id}:`);
         this.incidents?.resolvePrefix(tenantId, `sql_sync:${id}:`);
+        this.incidents?.resolvePrefix(tenantId, `sheet_sync:${id}:`);
         this.incidents?.resolvePrefix(tenantId, `collections:${id}:`);
     }
 

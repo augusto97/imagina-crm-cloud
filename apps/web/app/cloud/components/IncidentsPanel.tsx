@@ -8,6 +8,7 @@ import {
     ClipboardList,
     CreditCard,
     Database,
+    FileSpreadsheet,
     Globe,
     Inbox,
     Mail,
@@ -38,6 +39,7 @@ const SOURCE_ICON: Record<IncidentSource, LucideIcon> = {
     mail: Mail,
     connection: Plug,
     sql_sync: Database,
+    sheet_sync: FileSpreadsheet,
     store_sync: ShoppingBag,
     // v0.1.333 — un sitio WordPress sincronizado.
     site_sync: Globe,

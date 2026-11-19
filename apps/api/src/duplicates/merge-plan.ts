@@ -109,6 +109,10 @@ export const LEFT_BEHIND: ReadonlyArray<readonly [string, string]> = [
     ['record_duplicate_dismissals', 'record_high'],
     // Listas espejo (tienda, sitio): no se fusionan (la fuente manda).
     ['sync_links', 'record_id'],
+    // v0.1.459 — la fila de Google Sheets es del registro que se va: su vínculo
+    // se queda con él (si la sincronización borra filas, la próxima corrida la
+    // borra; si no, la fila queda y deja de sincronizarse).
+    ['sheet_sync_rows', 'record_id'],
 ];
 
 /** El registro ES otra cosa: no se fusiona (se dice por qué). */

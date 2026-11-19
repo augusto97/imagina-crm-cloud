@@ -177,7 +177,7 @@ export function IntegrationsPanel(): JSX.Element | null {
             description:
                 c.integration_key === 'woocommerce'
                     ? `${usage} ${__('Si la tienda se sincroniza, deja de actualizarse; las listas y sus datos quedan en tu empresa.')}`
-                    : c.integration_key === 'sqlserver'
+                    : c.integration_key === 'sqlserver' || c.integration_key === 'google_sheets'
                       ? `${usage} ${__('Sus sincronizaciones se borran y dejan de traer datos; lo que ya se cargó en tus listas queda.')}`
                       : c.integration_key === 'wordpress'
                         ? `${usage} ${__('El sitio deja de sincronizarse; las listas y sus datos quedan en tu empresa y se pueden editar libremente. La app borra su contraseña de aplicación de tu WordPress (si el sitio no responde, bórrala desde tu perfil).')}`
@@ -737,6 +737,14 @@ function ConnectedRow({
                     <Link to={`/settings/sql/${c.id}`} data-testid="imcrm-sql-sync-open">
                         <RefreshCw className="imcrm-h-3.5 imcrm-w-3.5" />
                         {__('Sincronizaciones')}
+                    </Link>
+                </Button>
+            )}
+            {c.integration_key === 'google_sheets' && c.can_edit && (
+                <Button size="sm" variant="outline" asChild>
+                    <Link to={`/settings/sheets/${c.id}`} data-testid="imcrm-sheet-sync-open" data-tour="integrations-sheets-open">
+                        <RefreshCw className="imcrm-h-3.5 imcrm-w-3.5" />
+                        {__('Sincronizar con una lista')}
                     </Link>
                 </Button>
             )}

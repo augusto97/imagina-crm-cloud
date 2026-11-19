@@ -42,7 +42,7 @@ export const articles: LearnArticle[] = [
                     { name: 'El lápiz junto al nombre', what: 'Le pone un nombre propio a la conexión («WhatsApp ventas», «Gmail de facturación»). Con varias cuentas de la misma app es lo que dice cuál es cuál, aquí y al elegirla en una automatización. «Volver al nombre automático» deja otra vez el de la app y la cuenta.' },
                     { name: 'Reconectar / Actualizar clave', what: 'Vuelve a autorizar la cuenta (apps de Google, Microsoft y Slack) o carga una clave nueva (apps con clave). La conexión es la misma: las automatizaciones no se tocan.' },
                     { name: 'Desconectar', what: 'Borra la conexión. Si alguna automatización la usa, te avisa cuántas acciones van a fallar y te pide confirmar.' },
-                    { name: 'Botones propios', what: 'Algunas apps traen su propia pantalla: **Sincronizar tienda** (WooCommerce), **Cobros** (Mercado Pago y Wompi), **Configurar WhatsApp** (WhatsApp oficial), **Sincronizaciones** (SQL Server) y **Almacenamiento** (Google Drive y S3).' },
+                    { name: 'Botones propios', what: 'Algunas apps traen su propia pantalla: **Sincronizar tienda** (WooCommerce), **Cobros** (Mercado Pago y Wompi), **Configurar WhatsApp** (WhatsApp oficial), **Sincronizaciones** (SQL Server), **Sincronizar con una lista** (Google Sheets) y **Almacenamiento** (Google Drive y S3).' },
                 ],
             },
             { t: 'h', text: 'Quién puede conectar apps' },
@@ -395,6 +395,45 @@ export const articles: LearnArticle[] = [
             {
                 t: 'p',
                 md: 'La acción **Agregar fila en Google Sheets** suma una fila al final de una planilla. Pide la **Hoja de cálculo** (pegas el enlace de la planilla), la **Pestaña** (vacío = la primera) y los **Valores de la fila**: uno por renglón, en el orden de las columnas A, B, C…\n\nUn valor que empieza con `=`, `+` o `@` se escribe como texto, nunca como fórmula: un dato de un cliente no puede meterle cálculos a tu planilla (y un teléfono no pierde su `+`).',
+            },
+            { t: 'h', text: 'Google Sheets: una lista y una pestaña siempre iguales' },
+            {
+                t: 'p',
+                md: 'Además de sumar filas, una pestaña de tu planilla se puede **sincronizar** con una lista: lo que cambia en un lado llega al otro. En la fila de Google Sheets, en **Ajustes → Integraciones**, toca **Sincronizar con una lista**.',
+            },
+            { t: 'anim', key: 'ie-importar', caption: 'Cada columna de la hoja va a un campo de la lista: uno que ya existe, uno nuevo con el tipo sugerido o ninguno.' },
+            {
+                t: 'steps',
+                items: [
+                    'Toca **Nueva sincronización**, pega el **enlace de la planilla** y toca **Abrir**. Aparecen sus pestañas, sus columnas y las primeras filas.',
+                    'Elige la **pestaña**, la **fila de los títulos** (casi siempre la 1) y la **lista**.',
+                    'Elige **cómo se emparejan** las filas con los registros: una columna **«ID»** que escribe la app (lo más seguro: no la borres ni la edites) o una columna que no se repite, como un email o un NIT (conviene que el campo esté marcado **Sin repetidos**).',
+                    'En **Qué columna va a qué campo**, cada columna va a un campo que ya existe, a uno nuevo (con el tipo que sugieren sus valores) o a ninguno. Si la app escribe en la hoja, puedes llevar también campos de la lista que la hoja no tiene: la app agrega su columna al final.',
+                    'Elige **en qué sentido**, qué pasa cuando se borra una fila o un registro y **cada cuánto**, y toca **Guardar**. La primera sincronización corre enseguida.',
+                ],
+            },
+            {
+                t: 'settings',
+                title: 'Lo que se elige al sincronizar',
+                rows: [
+                    { name: 'En los dos sentidos', what: 'Lo que cambia en la hoja llega a la lista y lo que cambia en la lista llega a la hoja. Si la misma celda cambió en los dos lados desde la última vez, gana la app y queda anotado en **Ver conflictos**.' },
+                    { name: 'De la hoja a la app', what: 'La hoja manda: la lista se pone igual a la hoja. Nada se escribe en la hoja.' },
+                    { name: 'De la app a la hoja', what: 'La lista manda: la hoja queda como una copia que se mantiene sola. Sirve también para listas de una tienda o un sitio.' },
+                    { name: 'Si se borra una fila de la hoja', what: '**No tocar el registro** o **Mandar el registro a la papelera** (se recupera desde la papelera de la app).' },
+                    { name: 'Si se borra un registro de la lista', what: '**Dejar la fila** o **Borrar la fila de la hoja**.' },
+                    { name: 'Cada cuánto', what: 'Cada cuánto se trae lo que cambió en la hoja (de 5 minutos a una vez por día). Lo que cambias en la lista llega a la hoja a los pocos segundos.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Qué pasa en cada sincronización',
+                md: '- La **primera** no dispara automatizaciones (para no mandar cientos de correos de golpe); las siguientes sí, con el valor anterior y el nuevo, y quedan en la actividad del registro.\n- Una celda que el campo no acepta (un texto en un campo de número) queda vacía en un registro nuevo, o deja el valor que tenía la app, y aparece en **Ver filas con error**.\n- En la hoja se escriben sólo las celdas que cambiaron, siempre como valores: un dato que empieza con `=` nunca se vuelve una fórmula.\n- Sólo viajan los campos que ve quien arma la sincronización. Los calculados, los archivos y las relaciones no se sincronizan.\n- Si Google deja de dar acceso (la autorización venció o la planilla ya no está compartida), aparece en **Problemas** y se cierra solo cuando se arregla.',
+            },
+            {
+                t: 'example',
+                title: 'Una distribuidora',
+                md: 'El equipo de ventas carga los pedidos en la lista **Pedidos**; la gerente prefiere su planilla **Pedidos 2026**. Con una sincronización en los dos sentidos, cada pedido nuevo aparece en la planilla con su número en la columna «ID», y cuando la gerente corrige un precio en la planilla, la lista se actualiza y la automatización «Precio cambiado» le avisa al vendedor con el valor anterior y el nuevo.',
             },
             {
                 t: 'example',

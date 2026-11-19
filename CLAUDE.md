@@ -16817,6 +16817,91 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         Inventario → una lista sin carpeta → cancelar mientras lee borra el
         token), sin scroll lateral ni errores de JS.
 
+  - [x] **Una lista y una pestaña de Google Sheets sincronizadas (v0.1.459,
+        ADR-S112, idea G3 del banco)**: la conexión de Google Sheets (la de
+        las automatizaciones, `spreadsheets`) ahora también **mantiene una
+        pestaña y una lista iguales**, en uno o en los dos sentidos.
+        (a) **Configurar** desde Integraciones → Google Sheets → **«Sincronizar
+        con una lista»** (página `/settings/sheets/:connectionId`, el patrón
+        del conector SQL): se pega el enlace de la planilla (el permiso
+        `spreadsheets` no deja listar las planillas de la cuenta: hay que
+        pegarlo, y el `#gid=` elige la pestaña), **Abrir** muestra título,
+        pestañas y una vista previa con el tipo sugerido de cada columna, fila
+        de los títulos, la lista, **la clave** —la columna «ID» que escribe la
+        app (recomendada; se sugiere sola, o la que ya está en la hoja) o una
+        columna que coincide con un campo «Sin repetidos» de la lista y no se
+        repite en la muestra—, **qué columna va a qué campo** (un campo
+        existente, **crear uno** con el tipo sugerido, o no sincronizar), los
+        campos de la lista sin columna que se pueden agregar a la hoja, **el
+        sentido** (de la hoja a la app, de la app a la hoja, en los dos),
+        **qué hacer si se borra una fila** (nada o mandar el registro a la
+        papelera) y **si se borra un registro** (nada o borrar su fila), y
+        **cada cuánto** (5 min a 1 día). Varias sincronizaciones por conexión
+        (`sheet_syncs` + `sheet_sync_rows`, migración 0141, RLS).
+        (b) **Motor** (`apps/api/src/sheet-sync/`, cola BullMQ `sheet-sync`):
+        lee la pestaña en tandas (`UNFORMATTED_VALUE` + `SERIAL_NUMBER`: las
+        fechas llegan como fecha, los números como número), empareja por la
+        clave normalizada y guarda por fila un **instantáneo por celda**
+        (`{s, a}`: lo último que vio en la hoja y en la app) — así en «los dos
+        sentidos» sabe qué lado cambió. Cada celda pasa por el validador
+        compartido (`validateFieldValue`, la opción por su etiqueta, números con
+        el formato de la empresa, fechas en su zona): una celda inválida en un
+        alta deja el campo vacío con aviso y la fila igual entra; en una
+        actualización el campo **conserva su valor**. **De la app a la hoja**
+        por el `RecordChangeHub` y el `record.deleted` de los eventos: una
+        corrida corta (espera de 10 s, una por sincronización) que escribe
+        **sólo las celdas que cambiaron** (`values:batchUpdate` con `RAW`:
+        un texto que empieza con «=» nunca se vuelve fórmula), agrega al final
+        los registros nuevos con su ID y borra filas con `deleteDimension`. Si
+        la misma celda cambió en los dos lados, **gana la app** y queda anotado
+        como conflicto (dónde, qué campo, qué quedó y qué se reemplazó). La
+        primera carga no dispara automatizaciones ni deja actividad; las
+        siguientes sí, con el antes y el después. Respeta el límite de registros
+        del plan (lo que no entra se dice y la corrida termina con aviso), el
+        solo-lectura por impago (ADR-S09) y el módulo `integrations` del plan.
+        Un candado en Redis por sincronización. Autorización vencida o permiso
+        faltante → la corrida falla con el motivo y abre un **Problema**
+        (ADR-S44, fuente nueva `sheet_sync`) que se cierra solo cuando vuelve a
+        funcionar.
+        (c) **Seguridad**: se configura con una conexión del equipo o propia
+        (`editableConnection`) y corre con el acceso VIGENTE de quien la guardó
+        por última vez: un campo que esa persona no ve nunca viaja a la hoja
+        (ni se acepta en el mapeo); una lista espejo (tienda, sitio) sólo se
+        copia «de la app a la hoja». Migrar una empresa no la lleva (se avisa:
+        la conexión vuelve sin tokens); borrar la empresa la borra.
+        (d) **Pantalla**: tarjeta por sincronización con el estado en vivo
+        («Sincronizando…», «Al día», «Con avisos», «Con error», «En pausa»),
+        lo que hizo la última corrida (filas leídas, creados, actualizados,
+        celdas escritas, filas agregadas y borradas, a la papelera, sin cambios,
+        conflictos, con error), «Ver filas con error» y «Ver conflictos» con la
+        explicación, **Sincronizar ahora**, **Probar** (lo que haría sin escribir
+        nada), editar, pausar y borrar (los datos quedan en los dos lados).
+        (e) El asistente y el MCP la ven en `get_list_schema` (planilla, pestaña,
+        sentido, clave, columnas y estado; nunca el token). Doble de desarrollo
+        `scripts/dev/fake-sheets.mjs` (el mismo de los tests) y env
+        `GOOGLE_SHEETS_API_URL` (sólo desarrollo y pruebas).
+        **Bug encontrado en el E2E**: el mapeo se sugería antes de que llegaran
+        los campos de la lista recién elegida y por un instante todo decía
+        «Crear campo…» — un «Guardar» rápido habría creado campos repetidos.
+        Ahora espera los campos y no deja guardar mientras tanto. Ayuda: guía
+        `google-sheets-sync`, sección «Google Sheets: una lista y una pestaña
+        siempre iguales» en Aprende → Integraciones, anclas
+        `integrations-sheets-open`, `sheet-sync-new`, `sheet-sync-card`,
+        `sheet-sync-key`, `sheet-sync-direction`, y novedad con carrusel.
+        Tests: `sheet-sync.spec` (18, Postgres + Redis reales y Sheets simulado:
+        vista previa y validación, primera carga con ID y sin automatizaciones,
+        segunda corrida que no escribe, cambio de la hoja con actividad, cambio
+        de la app que escribe UNA celda RAW, alta con «=…» como texto,
+        conflicto, celda inválida, fila borrada → papelera, registro borrado →
+        fila borrada, límite del plan, autorización vencida con Problema que se
+        cierra, candado, clave por campo, RLS, MCP, borrar),
+        `sheet-sync-plan.spec` (11, el planificador puro y la API de Sheets),
+        `sheet-sync.test.ts` en shared (5), `sheetSyncForm.test.ts` (3) —
+        specs tocados (merge-plan, platform, tenant-transfer, connectors,
+        incidents, fk-indexes, sql-sync) 100/100, shared 1059, front 954 — +
+        E2E navegador 43/43 contra el Sheets simulado (escritorio claro y
+        celular 390×844 oscuro, tres corridas seguidas).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

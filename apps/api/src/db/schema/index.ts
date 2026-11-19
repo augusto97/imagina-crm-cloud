@@ -33,6 +33,7 @@ export * from './personal-tokens';
 export * from './event-webhooks';
 export * from './oauth-clients';
 export * from './store-sync';
+export * from './sheet-sync';
 export * from './bulk-edits';
 export * from './billing-payments';
 export * from './collections';

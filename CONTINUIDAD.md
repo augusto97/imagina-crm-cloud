@@ -430,7 +430,13 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.458**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.459**
+(**una lista y una pestaña de Google Sheets sincronizadas** — Integraciones →
+Google Sheets → «Sincronizar con una lista»: en un sentido o en los dos, con
+columna clave (ID que escribe la app o un campo «Sin repetidos»), mapeo de
+columnas a campos, qué hacer al borrar, «Probar» sin escribir, conflictos
+(gana la app y queda anotado) y un Problema si vence la autorización;
+migración 0141; ADR-S112). Antes **v0.1.458**
 (**importar una base completa de Airtable** — «Nueva lista → De Airtable»: token
 personal verificado que no se guarda en la base, revisión de tipos y límites
 del plan antes de crear, importación en segundo plano con avance, una relación
@@ -2329,6 +2335,26 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.459** — **Google Sheets sincronizado con una lista** (G3,
+  ADR-S112). La conexión de Google Sheets suma «Sincronizar con una lista»
+  (Integraciones → Google Sheets): pegar el enlace, elegir la pestaña, la lista,
+  la clave (columna «ID» que escribe la app o un campo «Sin repetidos»), el
+  mapeo (campo existente, crear uno o no sincronizar), el sentido (hoja → app,
+  app → hoja, los dos), qué hacer al borrar en cada lado y cada cuánto. Motor
+  con instantáneo por celda: en los dos sentidos sabe qué lado cambió; si
+  cambiaron los dos, gana la app y se anota el conflicto. De la app a la hoja
+  sale a los pocos segundos y escribe sólo las celdas que cambiaron (RAW). La
+  primera carga no dispara automatizaciones; las siguientes sí. Límite del plan,
+  solo-lectura y módulo `integrations` respetados; autorización vencida → un
+  Problema que se cierra solo. Migración 0141 (`sheet_syncs`,
+  `sheet_sync_rows`, RLS). No viaja al migrar una empresa (se avisa). Bug del
+  E2E arreglado: el mapeo se sugería antes de cargar los campos de la lista
+  (todo «Crear campo») — ahora espera. Tests: sheet-sync 18, plan 11, shared 5,
+  front 3; E2E 43/43 contra el Sheets simulado.
+  **Pendiente**: probarlo con una planilla real de Google (el sandbox no llega
+  a sheets.googleapis.com). Para probar en dev: `node scripts/dev/fake-sheets.mjs`
+  y levantar el slot con `GOOGLE_SHEETS_API_URL=http://127.0.0.1:9931`
+  (`slot.sh` no lo pasa solo). G3 sale de `docs/ideas.md`.
 - **2026-11-19 · v0.1.458** — **Importar una base completa de Airtable** (G5,
   sólo Airtable; ADR-S111). «Nueva lista → De Airtable» (y desde una carpeta
   y la bienvenida) → `/lists/new/airtable`: token personal de Airtable

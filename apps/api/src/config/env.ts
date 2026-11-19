@@ -54,6 +54,8 @@ const envSchema = z.object({
     GOOGLE_OAUTH_URL: z.string().default('https://oauth2.googleapis.com'),
     /** D5 — APIs de calendario de la agenda (horarios ocupados y eventos); los tests apuntan a un falso. */
     GOOGLE_CALENDAR_API_URL: z.string().default('https://www.googleapis.com'),
+    /** v0.1.459 (G3) — API de Google Sheets (sincronizar una lista con una hoja); los tests apuntan a un falso. */
+    GOOGLE_SHEETS_API_URL: z.string().default('https://sheets.googleapis.com'),
     MS_GRAPH_API_URL: z.string().default('https://graph.microsoft.com'),
     /**
      * v0.1.458 — API de Airtable («Importar de Airtable»). Sólo los tests y el

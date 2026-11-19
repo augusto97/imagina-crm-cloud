@@ -1616,6 +1616,28 @@ export const SYSTEM_GUIDES: readonly HelpGuide[] = /* @__PURE__ */ (() => [
         if_restricted: 'note',
     },
     {
+        // v0.1.459 — sincronizar una lista con una hoja de Google Sheets.
+        id: 'google-sheets-sync',
+        title: '¿Cómo mantengo una lista y una hoja de Google Sheets al día?',
+        category: 'integrations',
+        minutes: 3,
+        body: [
+            '1. Ve a **Ajustes → Integraciones**, conecta **Google Sheets** con la cuenta que puede abrir (y editar) la planilla, y toca **Sincronizar con una lista**.',
+            '2. Toca **Nueva sincronización**, pega el **enlace de la planilla**, toca **Abrir** y elige la **pestaña** y la **lista**.',
+            '3. Elige **cómo se emparejan** las filas: una columna **«ID»** que escribe la app (lo más seguro) o una columna que no se repite, como un email o un NIT.',
+            '4. Elige **qué columna va a qué campo** (un campo que ya existe, uno nuevo o ninguno) y **en qué sentido**: de la hoja a la lista, de la lista a la hoja o en los dos.',
+            '5. Decide qué pasa cuando se **borra una fila** o un **registro**, cada cuánto se trae lo de la hoja, y toca **Guardar**. **Probar** muestra lo que haría sin escribir nada.',
+            'Lo que cambias en la lista llega a la hoja a los pocos segundos. Si la misma celda cambió en los dos lados, gana la app y lo ves en **Ver conflictos**. Una celda que el campo no acepta queda vacía y aparece en **Ver filas con error**.',
+        ].join('\n'),
+        tip: 'La primera carga no dispara automatizaciones; las siguientes sí, con el valor anterior y el nuevo. Si la autorización de Google vence, aparece en **Problemas**.',
+        screens: ['settings:conectores'],
+        keywords: 'google sheets hoja de calculo planilla excel sincronizar sincronizacion dos sentidos importar exportar columnas fila lista conectar spreadsheet',
+        route: '/settings?s=conectores',
+        related: ['integrations'],
+        admin_only: true,
+        if_restricted: 'note',
+    },
+    {
         id: 'microsoft-teams',
         title: '¿Cómo aviso a mi equipo en Microsoft Teams?',
         category: 'integrations',
