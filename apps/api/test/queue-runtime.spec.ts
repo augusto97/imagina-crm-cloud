@@ -252,7 +252,10 @@ describe('Colas: piezas comunes (Redis real)', () => {
         const plain = new Queue(qname(), { connection: conn() });
         await plain.upsertJobScheduler('h', { pattern: '* * * * * *' }, { name: 'tick', data: { a: 1 } });
         const before = await pending(plain, 'h');
-        expect(before?.state).toBe('delayed');
+        // Pendiente: «delayed» o, si el registro cayó justo en el cambio de
+        // segundo, ya «waiting» (BullMQ la promueve). Lo que importa es que
+        // todavía no corrió.
+        expect(['delayed', 'waiting']).toContain(before?.state);
         await sleep(1_600);
         await plain.upsertJobScheduler('h', { pattern: '* * * * * *' }, { name: 'tick', data: { a: 1 } });
         const after = await pending(plain, 'h');
