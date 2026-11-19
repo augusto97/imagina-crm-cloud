@@ -3582,4 +3582,44 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager', 'agent'] },
     },
+    {
+        key: 'v0.1.455-condicion-archivos-avisos-turnos-copias',
+        version: '0.1.455',
+        date: '2026-11-19',
+        kind: 'feature',
+        title: 'Automatizaciones que reaccionan a una condición, avisan en la app y reparten el trabajo',
+        summary:
+            'Dos disparadores nuevos («Cuando un registro empieza a cumplir una condición» y «Cuando se sube un archivo») y tres acciones: «Avisar en la app», «Asignar por turno» y «Copiar a otra lista».',
+        media: {
+            slides: [
+                {
+                    title: 'Cuando entra en una condición',
+                    text: 'Arma la condición como un filtro de la tabla («vence antes de hoy y no está pagada»). Dispara una sola vez cuando el registro la empieza a cumplir, también por el paso del tiempo.',
+                    illustration: 'auto-disparadores',
+                },
+                {
+                    title: 'Avisa en la campana',
+                    text: 'Un aviso con enlace al registro para la persona del registro, un equipo o quien elijas, y en el celular si lo tienen activado.',
+                    illustration: 'dia-campana',
+                },
+                {
+                    title: 'Reparte el trabajo',
+                    text: 'Llena el responsable por turnos entre las personas de un equipo, o a quien tenga menos registros abiertos.',
+                    illustration: 'vistas-carga',
+                },
+                {
+                    title: 'Copia a otra lista',
+                    text: 'Un negocio ganado pasa a Proyectos con sus datos y queda vinculado al original.',
+                    illustration: 'auto-crear-registro',
+                },
+            ],
+        },
+        body: [
+            '- Los encuentras en el menú **Cuando…** y en **Agregar acción** de cualquier automatización.',
+            '- Al guardar «Cuando un registro empieza a cumplir una condición», los registros que ya la cumplen no disparan: así no llegan cien avisos de golpe.',
+            '- «Cuando se sube un archivo» puede mirar un campo puntual y sólo imágenes o sólo PDF, y te deja usar **{{archivo.nombre}}** y **{{archivo.enlace}}**.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists', tour: 'automation-basics' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

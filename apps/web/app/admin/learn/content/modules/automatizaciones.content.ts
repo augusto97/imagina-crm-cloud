@@ -336,6 +336,8 @@ export const articles: LearnArticle[] = [
                     { name: 'Cuando se aprueba o se rechaza', what: 'Se resolvió una solicitud de aprobación: aprobada, rechazada, devuelta o cancelada. Variables: {{aprobacion.resultado}}, {{aprobacion.motivo}}…' },
                     { name: 'Cuando se completa un checklist', what: 'Se marcó el último ítem pendiente: cualquier checklist, uno con un nombre («Documentación») o cuando el registro tiene **todos** completos. Variable: {{checklist.nombre}}.' },
                     { name: 'Cuando se agrega un comentario', what: 'Alguien comentó un registro: el equipo desde la app o el cliente desde el portal o respondiendo un correo. Eliges quién, si es una nota interna o visible para el cliente, si cuenta una respuesta en un hilo y que tenga ciertas palabras («urgente, factura»: basta con una). Variables: {{comentario.texto}}, {{comentario.autor}}, {{comentario.de}}, {{comentario.origen}}.', tip: 'Lo que comenta un agente de IA nunca dispara automatizaciones: así no se arma un bucle.' },
+                    { name: 'Cuando un registro empieza a cumplir una condición', what: 'Arma la condición con las mismas reglas de los filtros de la tabla («Estado es Urgente», «Vence antes de hoy y no está pagada»). Dispara **una sola vez** cuando un registro pasa a cumplirla: porque alguien lo editó, porque se creó así o porque pasó el tiempo (se revisa cada 15 minutos). Mientras la siga cumpliendo no vuelve a dispararse; si deja de cumplirla y la cumple otra vez, sí.', tip: 'Al guardar (y al cambiar la condición), los registros que YA la cumplen se toman como punto de partida y no disparan: así no llegan cien avisos de golpe.' },
+                    { name: 'Cuando se sube un archivo', what: 'Alguien agregó un archivo a un campo de archivos del registro (desde la app, un formulario, el portal o una automatización). Eliges el campo (o cualquiera) y si cuentan **sólo imágenes** o **sólo PDF**. Si llegan varios juntos, dispara una vez. Variables: {{archivo.nombre}}, {{archivo.tipo}}, {{archivo.tamano}}, {{archivo.campo}}, {{archivo.enlace}}, {{archivo.cantidad}}.' },
                     { name: 'Cuando se agenda, reprograma o cancela una cita', what: 'Para listas con agenda de citas. Variables: {{cita.servicio}}, {{cita.inicio}}, {{cita.enlace_reprogramar}}…' },
                     { name: 'Cuando se recibe un pago', what: 'Un cliente pagó un link de cobro (Mercado Pago o Wompi) de un registro de la lista; la app lo confirma con el proveedor antes de disparar. Variables: {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}}.' },
                     { name: 'Cuando llega un mensaje de WhatsApp', what: 'Un contacto le escribió a tu número de WhatsApp Business; el registro ya se encontró (o creó) por su teléfono. Variables: {{whatsapp.texto}}, {{whatsapp.nombre}}, {{whatsapp.de}}.' },
@@ -454,6 +456,58 @@ export const articles: LearnArticle[] = [
                 t: 'example',
                 title: 'Una academia que recibe inscripciones de varias fuentes',
                 md: 'Cuando llega una inscripción, la automatización usa **Crear o actualizar un registro** en **Estudiantes**, buscando por **Correo** = {{correo}}: si la persona ya estudió con ellos, actualiza su teléfono y su programa; si es nueva, la crea. Después, en la inscripción, el campo **Estudiante** = {{respuestas.registro.id}} la vincula.',
+            },
+            { t: 'h', text: 'Avisar en la app' },
+            {
+                t: 'p',
+                md: 'Manda un aviso a la campana de la app (y al celular, si la persona activó las notificaciones) con un enlace al registro. Para avisos internos que no merecen un correo: «Llegó un pedido urgente», «Se subió el contrato firmado».',
+            },
+            { t: 'anim', key: 'dia-campana', caption: 'El aviso llega a la campana de cada persona, con el enlace al registro.' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Título y mensaje', what: 'Con variables: «Nuevo pedido de {{cliente}}».' },
+                    { name: 'A quién', what: 'La persona de un campo del registro («Responsable», «Creado por»), las personas de un **equipo** (las de ese momento), personas puntuales y, si quieres, quien hizo el cambio.', tip: 'Sólo lo reciben quienes pueden ver el registro; nunca invitados ni clientes del portal. Si el aviso usa un campo que alguien no puede ver, a esa persona le llega sin ese dato.' },
+                    { name: 'Preferencias', what: 'Cada persona decide en **Ajustes → Cuenta → Avisos** («Automatizaciones») si lo recibe también en el celular (encendido de fábrica) o por correo (apagado de fábrica).' },
+                ],
+            },
+            { t: 'h', text: 'Asignar por turno' },
+            {
+                t: 'p',
+                md: 'Llena un campo Persona repartiendo los registros entre varias personas o las de un equipo, para que nadie quede con todo y nadie sin nada.',
+            },
+            { t: 'anim', key: 'vistas-carga', caption: 'Cada registro nuevo le toca a la siguiente persona, o a quien tenga menos abiertos.' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Llenar el campo', what: 'El campo Persona del registro («Responsable», «Vendedor»).' },
+                    { name: 'Entre', what: 'Personas que eliges o las de un **equipo** (si entra alguien nuevo al equipo, ya recibe registros).' },
+                    { name: 'Cómo', what: '**Por turnos**: uno cada vez, en orden. **A quien tenga menos registros abiertos en esta lista**: cuenta los asignados que no están terminados (el criterio de «Mi trabajo»).', tip: 'Quien no puede ver y editar el registro, o tiene la cuenta desactivada, se salta.' },
+                    { name: 'Sólo si el campo está vacío', what: 'Encendido de fábrica: no le quita el registro a nadie que ya lo tenga.' },
+                    { name: 'Lo que deja', what: '{{asignado.nombre}}, {{asignado.email}} y {{asignado.id}} para los pasos siguientes (por ejemplo, un aviso a esa persona).' },
+                ],
+            },
+            {
+                t: 'example',
+                title: 'Una agencia que reparte los prospectos',
+                md: 'Cuando llega un prospecto por el formulario de la página, **Asignar por turno** llena **Vendedor** entre las personas del equipo **Ventas**, y **Avisar en la app** le avisa a la persona del campo **Vendedor**: «Nuevo prospecto: {{nombre}}».',
+            },
+            { t: 'h', text: 'Copiar a otra lista' },
+            {
+                t: 'p',
+                md: 'Crea una copia del registro en otra lista: un negocio ganado pasa a **Proyectos**, un ticket a **Garantías**. El original no cambia.',
+            },
+            { t: 'anim', key: 'auto-crear-registro', caption: 'La copia nace con los campos del mismo nombre y queda vinculada al original.' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Copiar a la lista', what: 'Cualquier lista de la empresa (también la misma, para duplicar).' },
+                    { name: 'Copiar solos los campos que se llaman igual', what: 'Los que tienen el mismo nombre y un tipo compatible pasan solos; una opción de selección se copia por su nombre. El editor te muestra cuáles.' },
+                    { name: 'Valores a mano', what: 'Campo de la copia → valor o variable. Ganan sobre los copiados.' },
+                    { name: 'Copiar también los archivos', what: 'Encendido de fábrica.' },
+                    { name: 'Vincular la copia con el original', what: 'Si hay un campo de relación entre las dos listas (en cualquiera de las dos), quedan vinculadas.' },
+                    { name: 'Nombre del resultado', what: 'Por defecto «copia»: {{respuestas.copia.id}}, {{respuestas.copia.titulo}} y {{respuestas.copia.lista}}.', tip: 'Respeta el límite de registros del plan, y no crea nada en una lista que viene de una tienda o un sitio.' },
+                ],
             },
             { t: 'h', text: 'Editar en lote' },
             {

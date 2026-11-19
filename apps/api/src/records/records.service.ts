@@ -452,6 +452,8 @@ export class RecordsService {
             recordId: row.id,
             trigger: 'record_created',
             after: row.data,
+            // v0.1.455 — quién lo hizo («Avisar en la app» puede avisarle).
+            ...(actor.userId > 0 && !opts.automationChain ? { actor_id: actor.userId } : {}),
             ...(opts.automationChain ? { chain: opts.automationChain } : {}),
         });
         // v0.1.209 — también las altas (las compras completan una línea nueva).
@@ -534,6 +536,35 @@ export class RecordsService {
         });
         if (!found) return new Set();
         return new Set(actors.filter((a) => this.aclCanReach(found.list, a, 'view', found.row)).map((a) => a.userId));
+    }
+
+    /**
+     * v0.1.455 — «Asignar por turno»: de estas personas, ¿quiénes podrían
+     * VER y EDITAR el registro si quedaran asignadas? `patchFor` arma los valores con
+     * cada una puesta (con «los asignados», la persona asignada lo alcanza).
+     * Una lectura de la lista y de la fila para todas.
+     */
+    async editorsOf(
+        tenantId: number,
+        listId: number,
+        recordId: number,
+        actors: readonly Actor[],
+        patchFor: (actor: Actor) => Record<string, unknown>,
+    ): Promise<Set<number>> {
+        if (actors.length === 0) return new Set();
+        const found = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const list = await this.lists.getWithinTx(tx, tenantId, String(listId)).catch(() => null);
+            if (!list) return null;
+            const row = await this.repo.findById(tx, tenantId, list.id, recordId);
+            return row ? { list, row } : null;
+        });
+        if (!found) return new Set();
+        const out = new Set<number>();
+        for (const a of actors) {
+            const row = { ...found.row, data: { ...((found.row.data ?? {}) as Record<string, unknown>), ...patchFor(a) } };
+            if (this.aclCanReach(found.list, a, 'view', row) && this.aclCanReach(found.list, a, 'edit', row)) out.add(a.userId);
+        }
+        return out;
     }
 
     async list(
@@ -1284,6 +1315,7 @@ export class RecordsService {
                 trigger: 'record_updated',
                 after: changed.after,
                 before: changed.before, // para changed_fields
+                ...(actor.userId > 0 && !opts.automationChain ? { actor_id: actor.userId } : {}),
                 ...(opts.automationChain ? { chain: opts.automationChain } : {}),
             });
             // v0.1.207 — aviso en proceso (edición en los dos sentidos de las tiendas).

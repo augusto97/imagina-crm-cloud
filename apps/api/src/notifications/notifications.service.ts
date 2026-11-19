@@ -448,7 +448,7 @@ export class NotificationsService implements OnModuleInit {
              * VE ese destinatario («Registro #12» si el campo de título está
              * oculto para él).
              */
-            title: string | ((recordTitle: string) => string);
+            title: string | ((recordTitle: string, hiddenFieldIds: ReadonlySet<number>) => string);
             /**
              * Con `ctx`, puede ser una función de los campos OCULTOS para ese
              * destinatario (ids); `null` = no hay nada que contarle.
@@ -463,11 +463,15 @@ export class NotificationsService implements OnModuleInit {
              * dominio de la empresa. Llevan a la app, nunca deciden solas.
              */
             mail?: { actions: Array<{ label: string; path: string; tone?: 'primary' | 'danger' | 'neutral' }> };
+            /** v0.1.455 — a quiénes les quedó el aviso (el historial de la automatización los nombra). */
+            onDelivered?: (userIds: number[]) => void;
+            /** v0.1.455 — sin invitados (un aviso de automatización es del equipo). */
+            excludeGuests?: boolean;
         },
     ): Promise<number> {
         const ids = [...new Set(rawRecipients)].filter((u) => Number.isInteger(u) && u > 0 && u !== n.actorId).slice(0, MAX_RECIPIENTS);
         if (ids.length === 0) return 0;
-        const recipients = await this.recipients(tenantId, ids);
+        const recipients = (await this.recipients(tenantId, ids)).filter((r) => !n.excludeGuests || r.role !== 'guest');
         // C3 — a un invitado le cuenta el registro suelto que le compartieron.
         const guestShares =
             n.recordId !== null && recipients.some((r) => r.role === 'guest')
@@ -511,7 +515,7 @@ export class NotificationsService implements OnModuleInit {
             if (text === undefined) {
                 const recordTitle =
                     n.ctx && titleFieldId !== null && hidden.has(titleFieldId) ? `Registro #${n.recordId ?? ''}`.trim() : (n.ctx?.title ?? '');
-                const title = typeof n.title === 'function' ? n.title(recordTitle) : n.title;
+                const title = typeof n.title === 'function' ? n.title(recordTitle, hidden) : n.title;
                 const rawBody = typeof n.body === 'function' ? n.body(hidden) : n.body;
                 text = rawBody === null ? null : { title, body: rawBody.slice(0, 2000) };
                 bySignature.set(signature, text);
@@ -520,6 +524,7 @@ export class NotificationsService implements OnModuleInit {
         }
         const allowed: Recipient[] = canView.filter((r) => texts.has(r.userId));
         if (allowed.length === 0) return 0;
+        n.onDelivered?.(allowed.map((r) => r.userId));
 
         await this.tenantDb.withTenant(tenantId, async (tx) => {
             for (const r of allowed) {
@@ -606,6 +611,60 @@ export class NotificationsService implements OnModuleInit {
             }
         }
         return allowed.length;
+    }
+
+    /**
+     * v0.1.455 — «Avisar en la app» de una automatización: el aviso (campana,
+     * push y, si la persona lo pidió, correo) a las personas elegidas que
+     * PUEDEN ver el registro — nunca a un invitado ni a un cliente del portal.
+     * El título y el texto se arman por destinatario sin los campos que tiene
+     * ocultos (`render(plantilla, ocultos)`). Con `dryRun` sólo dice a quiénes
+     * les llegaría («Probar»). Devuelve los ids de quienes lo recibieron.
+     */
+    async automationNotice(
+        tenantId: number,
+        n: {
+            listId: number;
+            recordId: number;
+            userIds: readonly number[];
+            title: (hiddenFieldIds: ReadonlySet<number>) => string;
+            body: (hiddenFieldIds: ReadonlySet<number>) => string;
+            dryRun?: boolean;
+        },
+    ): Promise<number[]> {
+        const ids = [...new Set(n.userIds)].filter((u) => Number.isInteger(u) && u > 0).slice(0, MAX_RECIPIENTS);
+        if (ids.length === 0) return [];
+        if (n.dryRun) {
+            const recipients = (await this.recipients(tenantId, ids)).filter((r) => r.role !== 'guest');
+            const viewers = await this.records.viewersOf(
+                tenantId,
+                n.listId,
+                n.recordId,
+                recipients.map((r) => ({ userId: r.userId, role: r.role, teamIds: r.teamIds, customRoleId: r.customRoleId })),
+            );
+            return recipients.filter((r) => viewers.has(r.userId)).map((r) => r.userId);
+        }
+        const ctx = await this.recordCtx(tenantId, n.listId, n.recordId);
+        if (!ctx) return [];
+        let delivered: number[] = [];
+        await this.deliver(tenantId, 'automation', ids, {
+            listId: n.listId,
+            recordId: n.recordId,
+            actorId: null,
+            ctx,
+            title: (_recordTitle, hidden) => n.title(hidden).slice(0, 280) || 'Aviso de una automatización',
+            body: (hidden) => n.body(hidden),
+            excludeGuests: true,
+            onDelivered: (got) => {
+                delivered = got;
+            },
+        });
+        return delivered;
+    }
+
+    /** v0.1.455 — los nombres de unas personas (para el historial de una automatización). */
+    async namesOf(ids: number[]): Promise<Map<number, string>> {
+        return this.userNames(ids);
     }
 
     /**

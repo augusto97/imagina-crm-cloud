@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { AlarmClock, AtSign, Bell, Bot, CheckCheck, ClipboardCheck, FileSignature, ListChecks, MessageSquare, PenLine, Repeat, Reply, Scale, Settings2, ShoppingBag, Timer, TriangleAlert, UserPlus, Users, type LucideIcon } from 'lucide-react';
+import { AlarmClock, AtSign, Bell, Bot, CheckCheck, ClipboardCheck, FileSignature, ListChecks, MessageSquare, PenLine, Repeat, Reply, Scale, Settings2, ShoppingBag, Timer, TriangleAlert, UserPlus, Users, Zap, type LucideIcon } from 'lucide-react';
 import type { NotificationDto, NotificationKind } from '@imagina-base/shared';
 
 import { relativeTime } from '@/admin/activity/activityText';
@@ -32,6 +32,8 @@ const KIND_ICON: Record<NotificationKind, LucideIcon> = {
     shop: ShoppingBag,
     // D6 — alguien firmó, rechazó o terminaron de firmar un documento.
     signature: FileSignature,
+    // v0.1.455 — «Avisar en la app» de una automatización.
+    automation: Zap,
 };
 
 /** A dónde lleva cada aviso al abrirlo. */

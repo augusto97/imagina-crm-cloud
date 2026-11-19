@@ -49,6 +49,7 @@ import {
     automationRuns,
     automations,
     automationVersions,
+    automationMatches,
     aiAgentLists,
     aiAgentProposals,
     aiAgentRuns,
@@ -663,6 +664,8 @@ export class PlatformService {
             await tx.delete(automationRuns).where(eq(automationRuns.tenantId, id));
             // v0.1.288 — historial de versiones (antes que las automatizaciones).
             await tx.delete(automationVersions).where(eq(automationVersions.tenantId, id));
+            // v0.1.455 — quién cumple la condición de «empieza a cumplir» (antes que automatizaciones y registros).
+            await tx.delete(automationMatches).where(eq(automationMatches.tenantId, id));
             await tx.delete(automations).where(eq(automations.tenantId, id));
             // v0.1.291 — antes que comentarios y registros (FK).
             await tx.delete(commentReactions).where(eq(commentReactions.tenantId, id));

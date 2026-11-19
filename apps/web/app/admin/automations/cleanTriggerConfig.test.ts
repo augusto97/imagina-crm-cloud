@@ -65,3 +65,16 @@ describe('cleanTriggerConfig — firmas (v0.1.447)', () => {
         expect(cleanTriggerConfig({ signature_events: [], signature_template_ids: [] })).toEqual({});
     });
 });
+
+describe('cleanTriggerConfig — condición y archivos (v0.1.455)', () => {
+    it('conserva el árbol, «al crear» apagado, el campo y el tipo; lo de fábrica no deja claves', () => {
+        const tree = { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 4, op: 'eq', value: 'x' }] };
+        expect(cleanTriggerConfig({ match_filter: tree, match_on_create: false, file_field_id: 9, file_kind: 'pdf', otra: 1 })).toEqual({
+            match_filter: tree,
+            match_on_create: false,
+            file_field_id: 9,
+            file_kind: 'pdf',
+        });
+        expect(cleanTriggerConfig({ match_filter: [], match_on_create: true, file_field_id: 0, file_kind: 'any' })).toEqual({});
+    });
+});

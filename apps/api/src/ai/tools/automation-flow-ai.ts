@@ -34,7 +34,7 @@ export interface FlowTranslateCtx {
 const DATE_TYPES = ['date', 'datetime'];
 
 /** Reglas por slug → filter tree con ids (y opciones por etiqueta → value). */
-function rulesTree(rules: FilterRuleSpec[], fields: Field[], where: string) {
+export function rulesTree(rules: FilterRuleSpec[], fields: Field[], where: string) {
     const bySlug = new Map(fields.map((f) => [f.slug, f]));
     return rulesToFilterTree(
         rules.map((r) => {

@@ -47,6 +47,10 @@ const TRIGGERS: TriggerMeta[] = [
     { slug: 'comment_added', label: 'Cuando se agrega un comentario', event: 'imagina_crm/comment_added', config_schema: {} },
     // v0.1.447 — una firma electrónica del registro: se pidió, alguien firmó, firmaron todos, no quiso firmar…
     { slug: 'signature_event', label: 'Cuando cambia una firma', event: 'imagina_crm/signature_event', config_schema: {} },
+    // v0.1.455 — un registro EMPIEZA a cumplir una condición (por una edición o por el paso del tiempo).
+    { slug: 'record_matches', label: 'Cuando un registro empieza a cumplir una condición', event: 'imagina_crm/record_matches', config_schema: {} },
+    // v0.1.455 — se subió un archivo a un campo de archivos del registro.
+    { slug: 'file_added', label: 'Cuando se sube un archivo', event: 'imagina_crm/file_added', config_schema: {} },
 ];
 
 const ACTIONS: ActionMeta[] = [
@@ -57,6 +61,10 @@ const ACTIONS: ActionMeta[] = [
     // v0.1.444 — buscar registros (en esta u otra lista) y crear o actualizar uno por un dato.
     { slug: 'find_records', label: 'Buscar registros', config_schema: {} },
     { slug: 'upsert_record', label: 'Crear o actualizar un registro', config_schema: {} },
+    // v0.1.455 — copiar el registro a otra lista, asignar por turno y avisar en la app.
+    { slug: 'copy_record', label: 'Copiar a otra lista', config_schema: {} },
+    { slug: 'assign_round_robin', label: 'Asignar por turno', config_schema: {} },
+    { slug: 'notify_in_app', label: 'Avisar en la app', config_schema: {} },
     { slug: 'bulk_edit', label: 'Editar en lote', config_schema: {} },
     // v0.1.266 — un PDF con una plantilla de documento (cuenta de cobro, recibo).
     { slug: 'generate_pdf', label: 'Generar un PDF', config_schema: {} },

@@ -32,9 +32,15 @@ import {
     CopyPlus,
     FileSignature,
     Zap,
+    Filter,
+    Paperclip,
+    BellRing,
+    Shuffle,
+    CopyCheck,
     type LucideIcon,
 } from 'lucide-react';
 
+import { ASSIGN_MODE_LABELS, describeFileTrigger, describeRecordMatchesTrigger, readAssignRoundRobinConfig, readCopyRecordConfig, readFileAddedConfig, readNotifyInAppConfig, readRecordMatchesConfig } from '@imagina-base/shared';
 import { APPROVAL_STATUS_LABELS, SUBSCRIPTION_EVENT_LABELS, requestSignatureSummary, signatureTriggerSummary, describeCommentTrigger, readCommentTriggerConfig, readFindRecordsConfig, readUpsertRecordConfig, type SubscriptionEvent, describeWait, describeWaitApproval, describeWebhookRecord, describeWhatsTrigger, readWhatsTriggerConfig, readApprovalTriggerResults, readWebhookRecordConfig, scheduleParts } from '@imagina-base/shared';
 
 import { __, _n, sprintf } from '@/lib/i18n';
@@ -166,6 +172,17 @@ export const TRIGGER_META: Record<string, StepMeta> = {
         title: 'Se completa un checklist',
         description: 'Dispara cuando se marca el último ítem de un checklist de un registro (cualquiera, uno por nombre o todos).',
     },
+    // v0.1.455 — entra a una condición (por edición, al crearse o por el paso del tiempo).
+    record_matches: {
+        icon: Filter,
+        title: 'Un registro empieza a cumplir una condición',
+        description: 'Dispara UNA vez cuando un registro pasa a cumplir la condición (al editarlo, al crearlo o porque llegó una fecha); vuelve a disparar sólo si deja de cumplirla y la cumple otra vez.',
+    },
+    file_added: {
+        icon: Paperclip,
+        title: 'Se sube un archivo',
+        description: 'Dispara cuando se agrega un archivo a un campo de archivos del registro (cualquiera, sólo imágenes o sólo PDF).',
+    },
 };
 
 export const ACTION_META: Record<string, StepMeta> = {
@@ -184,6 +201,22 @@ export const ACTION_META: Record<string, StepMeta> = {
         icon: FilePlus2,
         title: 'Crear un registro',
         description: 'Crea un registro nuevo en esta u otra lista, con valores del registro origen.',
+    },
+    // v0.1.455 — avisar al equipo, repartir el trabajo y copiar a otra lista.
+    notify_in_app: {
+        icon: BellRing,
+        title: 'Avisar en la app',
+        description: 'Manda un aviso a la campana (y al celular, si lo tienen activado) de las personas que elijas: del registro, un equipo o puntuales.',
+    },
+    assign_round_robin: {
+        icon: Shuffle,
+        title: 'Asignar por turno',
+        description: 'Llena un campo Persona repartiendo entre varias personas o un equipo: por turnos o a quien tenga menos registros abiertos.',
+    },
+    copy_record: {
+        icon: CopyCheck,
+        title: 'Copiar a otra lista',
+        description: 'Crea una copia del registro en otra lista con los campos del mismo nombre (y los que elijas), y puede dejarlas vinculadas.',
     },
     // v0.1.444 — buscar en una lista y crear o actualizar sin duplicar.
     find_records: {
@@ -460,6 +493,13 @@ export function summarizeTrigger(
             return describeCommentTrigger(readCommentTriggerConfig(config));
         case 'signature_event':
             return signatureTriggerSummary(config);
+        case 'record_matches':
+            return describeRecordMatchesTrigger(readRecordMatchesConfig(config));
+        case 'file_added': {
+            const c = readFileAddedConfig(config);
+            const label = c.fieldId !== null ? fields.find((f) => f.id === c.fieldId)?.label : undefined;
+            return describeFileTrigger(c, label ?? null);
+        }
         default:
             return triggerType;
     }
@@ -549,6 +589,32 @@ export function summarizeAction(
             // C6 — con plantilla: el registro trae sus subtareas y checklists.
             const withTpl = cfg.template_id ? `${base} · ${__('desde una plantilla')}` : base;
             return values > 0 ? `${withTpl} · ${sprintf(__('%d valores'), values)}` : withTpl;
+        }
+        case 'notify_in_app': {
+            const n = readNotifyInAppConfig(cfg);
+            const who: string[] = [];
+            for (const id of n.personFieldIds) {
+                const f = fields.find((x) => x.id === id);
+                if (f) who.push(`«${f.label}»`);
+            }
+            if (n.teamIds.length > 0) who.push(sprintf(_n('%d equipo', '%d equipos', n.teamIds.length), n.teamIds.length));
+            if (n.userIds.length > 0) who.push(sprintf(_n('%d persona', '%d personas', n.userIds.length), n.userIds.length));
+            if (n.includeActor) who.push(__('quien hizo el cambio'));
+            const title = n.title.trim() !== '' ? `«${n.title.trim().slice(0, 60)}»` : __('(sin título)');
+            return who.length === 0 ? sprintf(__('Avisa en la app: %s'), title) : sprintf(__('Avisa en la app a %1$s: %2$s'), who.join(', '), title);
+        }
+        case 'assign_round_robin': {
+            const a = readAssignRoundRobinConfig(cfg);
+            const f = a.personFieldId !== null ? fields.find((x) => x.id === a.personFieldId) : undefined;
+            const among = a.teamId !== null ? __('un equipo') : sprintf(_n('%d persona', '%d personas', a.userIds.length), a.userIds.length);
+            const field = f ? `«${f.label}»` : __('un campo Persona');
+            return sprintf(__('Asigna %1$s entre %2$s · %3$s'), field, among, __(ASSIGN_MODE_LABELS[a.mode]).toLowerCase());
+        }
+        case 'copy_record': {
+            const c = readCopyRecordConfig(cfg);
+            const listName = c.listId !== null ? lists.find((l) => l.id === c.listId)?.name : undefined;
+            const base = listName !== undefined ? sprintf(__('Copia el registro a «%s»'), listName) : __('Copia el registro a otra lista (elige la lista)');
+            return `${base} · {{respuestas.${c.responseName}.id}}`;
         }
         case 'find_records': {
             const f = readFindRecordsConfig(cfg);

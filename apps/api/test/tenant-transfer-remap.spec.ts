@@ -198,6 +198,26 @@ describe('remapJson', () => {
         });
     });
 
+    it('v0.1.455 — condición, archivo, avisos, turnos y copias apuntan a lo NUEVO', () => {
+        const m = maps();
+        m.team.set(5, 105);
+        const trigger = { match_filter: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 10, op: 'eq', value: 'x' }] }, file_field_id: 11 };
+        expect(remapJson(trigger, m)).toEqual({
+            match_filter: { type: 'group', logic: 'and', children: [{ type: 'condition', field_id: 110, op: 'eq', value: 'x' }] },
+            file_field_id: 111,
+        });
+        const actions = [
+            { type: 'notify_in_app', config: { title: 'Hola', notify_user_ids: [30, 999], person_field_ids: [10, 999], notify_team_ids: [5, 6] } },
+            { type: 'assign_round_robin', config: { person_field_id: 12, assignee_user_ids: [31, 30, 999], team_id: 5 } },
+            { type: 'copy_record', config: { target_list_id: 2, link_field_id: 11, values: { titulo: '{{titulo}}' } } },
+        ];
+        expect(remapJson(actions, m)).toEqual([
+            { type: 'notify_in_app', config: { title: 'Hola', notify_user_ids: [130], person_field_ids: [110], notify_team_ids: [105] } },
+            { type: 'assign_round_robin', config: { person_field_id: 112, assignee_user_ids: [131, 130], team_id: 105 } },
+            { type: 'copy_record', config: { target_list_id: 102, link_field_id: 111, values: { titulo: '{{titulo}}' } } },
+        ]);
+    });
+
     it('B4 — calendario: fin, fuentes adicionales, campo de color y reglas por convención', () => {
         const types = new Map<number, string>([[10, 'datetime'], [11, 'datetime'], [12, 'select']]);
         const out = remapViewConfig(

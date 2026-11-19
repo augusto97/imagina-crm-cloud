@@ -7,6 +7,7 @@ import { APPROVAL_RESULTS, waitApprovalProblem } from './approvals';
 import { WHATS_EVENT_TRIGGER, readWhatsTriggerConfig } from './whats-triggers';
 import { automationRecordActionIssues, recordActionResponseName } from './automation-records';
 import { REQUEST_SIGNATURE_ACTION, requestSignatureIssues } from './signature-automations';
+import { automationExtraActionIssues, automationExtraTriggerIssues, extraActionResponseName } from './automation-extras';
 
 /**
  * Automatizaciones (CONTRACT.md §8) — modelo FLEXIBLE alineado al plugin
@@ -46,6 +47,9 @@ export const AUTOMATION_TRIGGERS = [
     'comment_added',
     // v0.1.447 — una firma electrónica cambió (se pidió, alguien firmó, firmaron todos…).
     'signature_event',
+    // v0.1.455 — un registro empezó a cumplir una condición / se subió un archivo.
+    'record_matches',
+    'file_added',
 ] as const;
 export const automationTriggerSlugSchema = z.string().min(1);
 export type AutomationTriggerSlug = z.infer<typeof automationTriggerSlugSchema>;
@@ -101,6 +105,10 @@ export const AUTOMATION_ACTIONS = [
     'upsert_record',
     // v0.1.447 — pedir la firma electrónica de un documento.
     'request_signature',
+    // v0.1.455 — avisar en la app, asignar por turno y copiar a otra lista.
+    'notify_in_app',
+    'assign_round_robin',
+    'copy_record',
 ] as const;
 
 export interface ActionSpec {
@@ -566,7 +574,9 @@ function actionIssues(actions: unknown, base: string, depth: number, out: Automa
         }
         // v0.1.444 — «Buscar registros» y «Crear o actualizar»: dejan sus
         // resultados con un nombre (por defecto «busqueda» / «registro»).
-        const recName = typeof spec.type === 'string' ? recordActionResponseName(spec.type, cfg) : null;
+        const recName = typeof spec.type === 'string' ? (recordActionResponseName(spec.type, cfg) ?? extraActionResponseName(spec.type, cfg)) : null;
+        // v0.1.455 — «Avisar en la app», «Asignar por turno» y «Copiar a otra lista».
+        if (typeof spec.type === 'string') out.push(...automationExtraActionIssues(spec.type, cfg, at));
         if (recName !== null) {
             out.push(...automationRecordActionIssues(String(spec.type), cfg, at));
             if (RESPONSE_NAME_RE.test(recName)) {
@@ -725,6 +735,8 @@ export function automationConfigIssues(input: {
     if (input.trigger_type === WHATS_EVENT_TRIGGER && readWhatsTriggerConfig(cfg) === null) {
         out.push({ path: 'trigger_config.whats_event', message: 'Elige qué evento de Whats dispara la automatización.' });
     }
+    // v0.1.455 — «Cuando un registro empieza a cumplir una condición» sin condición no tiene sentido.
+    out.push(...automationExtraTriggerIssues(input.trigger_type, cfg));
     if (input.actions !== undefined) actionIssues(input.actions, 'actions', 0, out, { inLoop: false, responseNames: new Set() });
     return out;
 }

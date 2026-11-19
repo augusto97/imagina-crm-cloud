@@ -1,6 +1,6 @@
 import { useContext, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
-import { COMMENT_VARIABLES, SIGNATURE_MERGE_TAGS } from '@imagina-base/shared';
+import { COMMENT_VARIABLES, FILE_VARIABLES, SIGNATURE_MERGE_TAGS } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -172,9 +172,13 @@ export function ConditionEditor({
         ...(flow?.triggerType === 'signature_event'
             ? SIGNATURE_MERGE_TAGS.map((t) => ({ tag: t.tag, label: __(t.label), group: __('Firma') }))
             : []),
+        // v0.1.455 — el archivo que se subió (su tipo, su nombre, cuántos llegaron).
+        ...(flow?.triggerType === 'file_added'
+            ? FILE_VARIABLES.map((v) => ({ tag: `archivo.${v.key}`, label: __(v.label), group: __('Archivo subido') }))
+            : []),
         ...stepVars.flatMap((section) =>
             section.items
-                .filter((it) => it.tag.startsWith('respuestas.') || it.tag.startsWith('firma.'))
+                .filter((it) => it.tag.startsWith('respuestas.') || it.tag.startsWith('firma.') || it.tag.startsWith('asignado.'))
                 .map((it) => ({ tag: it.tag, label: it.label, group: section.title })),
         ),
     ];
