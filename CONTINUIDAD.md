@@ -430,7 +430,15 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.454**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.455**
+(**automatizaciones, parte 1** de la tanda aprobada el 2026-11-19 — disparadores
+«Cuando un registro empieza a cumplir una condición» (dispara una vez al entrar,
+con línea de base sin disparar al crearla y revisión cada 15 min; migración
+0139 `automation_matches`) y «Cuando se sube un archivo»; acciones «Avisar en la
+app» (aviso nuevo `automation`), «Asignar por turno» (por turnos o a quien tenga
+menos abiertos) y «Copiar a otra lista». Addendum ADR-S47. Siguen en orden
+v0.1.456 (IA en el día a día) y v0.1.457 (campos condicionales y de sólo
+lectura), ya hechas en worktrees). Antes **v0.1.454**
 (**la plataforma le cobra a la agencia** — decisión del usuario «las dos»: el
 plan de la plataforma dice en «Para agencias» cuántas empresas cliente incluye
 y cuánto vale cada una de más (USD y COP); el operador puede ponerle a una
@@ -441,7 +449,7 @@ automática de Mercado Pago el monto se ajusta solo al crear, pausar o
 reactivar un cliente (y la revisión de cada hora recoge lo que falló). Sin
 valor por extra en una moneda, el plan no se vende en esa moneda. Migración
 0138. ADR-S108 addendum. **Con esto I3 (modo agencia) queda completo**; G8 DIAN
-espera proveedor y credenciales de prueba). Antes **v0.1.453**
+la dejó el usuario para después el 2026-11-19 y sigue en `docs/ideas.md` §1). Antes **v0.1.453**
 (**débito automático para los clientes de la agencia** — con Mercado Pago o
 PayPal, la agencia marca «Ofrecer débito automático» en Cobro en línea; desde
 «Plan y pagos» arma el débito (o el cliente lo activa en Ajustes →
@@ -2309,6 +2317,42 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.455** — **Disparadores «empieza a cumplir una condición»
+  y «se sube un archivo»; acciones «Avisar en la app», «Asignar por turno» y
+  «Copiar a otra lista»** (E1 + E2; addendum ADR-S47). Migración **0139**
+  (`automation_matches`, RLS): la transición «no estaba → está» la decide un
+  `INSERT … ON CONFLICT DO NOTHING RETURNING`; revisión cada 15 min
+  (`match:<id>`) para lo que entra por el paso del tiempo; línea de base sin
+  disparar al crear/activar/cambiar la condición. Aviso nuevo `automation`
+  (push de fábrica, correo apagado). Turnos con contador en Redis
+  (`autorr:<tenant>:<auto>:<paso>`) o «menos abiertos» con el criterio de «Mi
+  trabajo»; `editorsOf` ahora exige ver Y editar. Copia con
+  `autoMapCopyFields` + valores a mano + vínculo en cualquier sentido. Reglas
+  en `packages/shared/src/schemas/automation-extras.ts`; editores en
+  `ExtraAutomationParts.tsx`; asistente/MCP en `automation-extras-ai.ts`.
+  Queda de E2: «preguntarle a la IA» dentro de una automatización.
+  **Bug de prueba encontrado**: el conteo de «menos abiertos» agrupaba por una
+  expresión con un parámetro distinto en SELECT y GROUP BY (Postgres lo
+  rechaza): se agrupa por posición.
+- **2026-11-19 · conversación** — Publicada y verificada v0.1.454 (zip,
+  sha256, install.sh y n8n). El plan aprobado el 2026-11-18 quedó completo
+  salvo G8: el usuario dejó la facturación DIAN para después ("Ok dejalo
+  para después") y pidió qué más puede seguir del banco de ideas; se le
+  propuso una tanda nueva desde `docs/ideas.md` y la aprobó COMPLETA ("Me
+  gustaron todas estas que comentas. Hazlas"). Plan por versiones: v0.1.455
+  automatizaciones parte 1 (disparadores «empieza a cumplir una condición» y
+  «se sube un archivo»; acciones avisar en la app, asignar por turno, copiar a
+  otra lista), v0.1.456 IA en el día a día (resumen del registro, escribir con
+  IA, pedir al agente, agente en lote), v0.1.457 campos que aparecen según
+  otros (A7) + campos de sólo lectura por rol (C4), v0.1.458 automatizaciones
+  parte 2 (preguntarle a la IA, ramas según el valor, qué hacer si un paso
+  falla), v0.1.459 «describe la automatización y la armo», v0.1.460 Google
+  Sheets en los dos sentidos, v0.1.461 importar de Airtable, v0.1.462
+  comparar períodos + pronóstico, v0.1.463 informes, v0.1.464 pulido
+  (realtime de la ficha, foco de subtarea), v0.1.465 Zod 4. Las tres primeras
+  se hacen en paralelo en worktrees (slots 1-3; migraciones 0139-0141) y se
+  integran en orden; cada una deja sus textos de docs en `docs/pending/`.
+  Siguen pendientes de su lado: el chequeo de Redis y `NPM_TOKEN`.
 - **2026-11-19 · v0.1.454** — **La plataforma le cobra a la agencia** (I3,
   ADR-S108 addendum; decisión del usuario «las dos»). Migración 0138:
   `plans.agency_included_clients/agency_extra_usd/agency_extra_cop` (NULL en

@@ -212,6 +212,10 @@ const ACTION_LABELS: Record<string, string> = {
     request_signature: __('Pedir firma'),
     find_records: __('Buscar registros'),
     upsert_record: __('Crear o actualizar un registro'),
+    // v0.1.455
+    notify_in_app: __('Avisar en la app'),
+    assign_round_robin: __('Asignar por turno'),
+    copy_record: __('Copiar a otra lista'),
     create_subtasks_from_template: __('Crear subtareas desde una plantilla'),
     bulk_edit: __('Editar en lote'),
     if_else: __('Condición'),

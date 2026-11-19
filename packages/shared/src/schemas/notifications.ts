@@ -38,6 +38,8 @@ import { idSchema } from './common';
  * personas que revisan sus propuestas o, si no hay, a su dueño).
  * v0.1.367 — `subscription`: una suscripción de un cliente falló un cobro, entró
  * en mora, venció o se canceló (a quien la creó y a quienes siguen el registro).
+ * v0.1.455 — `automation`: el aviso que manda la acción «Avisar en la app» de una
+ * automatización (título y texto los arma quien la configuró).
  */
 export const NOTIFICATION_KINDS = [
     'mention',
@@ -55,6 +57,7 @@ export const NOTIFICATION_KINDS = [
     'subscription',
     'shop',
     'signature',
+    'automation',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
@@ -74,6 +77,7 @@ export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
     subscription: 'Suscripciones: un cobro falla, una suscripción vence o se cancela',
     shop: 'Tienda: llega un pedido nuevo',
     signature: 'Firmas: alguien firma o rechaza un documento que mandaste',
+    automation: 'Automatizaciones: avisos que manda una automatización («Avisar en la app»)',
 };
 
 export interface NotificationDto {
@@ -126,7 +130,8 @@ export type MarkNotificationsInput = z.infer<typeof markNotificationsSchema>;
  * para push hasta que se lo agregue aquí.
  */
 // E5 — `sla` también: un ticket que vence (o venció) y te toca tiene apuro.
-export const PUSH_DEFAULT_KINDS: readonly NotificationKind[] = ['mention', 'assigned', 'approval', 'reminder', 'sla', 'shop', 'signature'];
+// v0.1.455 — `automation` también: quien armó la automatización eligió avisarte.
+export const PUSH_DEFAULT_KINDS: readonly NotificationKind[] = ['mention', 'assigned', 'approval', 'reminder', 'sla', 'shop', 'signature', 'automation'];
 
 /** `{ mention: z.boolean().default(…), … }` para TODOS los tipos (también los que se agreguen). */
 function kindFlagsSchema(defaults: readonly NotificationKind[]) {
@@ -183,6 +188,12 @@ export const notificationPrefsSchema = z.object({
             shop: z.boolean().default(true),
             /** v0.1.446 — alguien firmó o rechazó un documento que mandaste: encendido. */
             signature: z.boolean().default(true),
+            /**
+             * v0.1.455 — «Avisar en la app» de una automatización: APAGADO. La
+             * acción es un aviso en la app (para un correo está «Enviar email»);
+             * quien lo quiera también por correo lo enciende.
+             */
+            automation: z.boolean().default(false),
         })
         .default({}),
     /**

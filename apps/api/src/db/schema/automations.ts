@@ -1,6 +1,7 @@
-import { bigint, boolean, jsonb, pgTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
+import { bigint, boolean, index, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
 import type { ActionLogEntry, ActionSpec, TriggerConfig } from '@imagina-base/shared';
 import { lists } from './lists';
+import { records } from './records';
 import { tenants } from './tenants';
 import { users } from './users';
 
@@ -105,4 +106,31 @@ export const automationHooks = pgTable(
         secretHint: varchar('secret_hint', { length: 8 }),
     },
     (t) => [uniqueIndex('automation_hooks_automation_ux').on(t.automationId)],
+);
+
+/**
+ * v0.1.455 — «Cuando un registro empieza a cumplir una condición» (0139, RLS).
+ * Una fila por (automatización, registro) mientras el registro cumple la
+ * condición: el disparo es la transición «no estaba → está» (`INSERT … ON
+ * CONFLICT DO NOTHING RETURNING`), y la fila se borra cuando deja de cumplirla.
+ */
+export const automationMatches = pgTable(
+    'automation_matches',
+    {
+        tenantId: bigint('tenant_id', { mode: 'number' })
+            .notNull()
+            .references(() => tenants.id, { onDelete: 'cascade' }),
+        automationId: bigint('automation_id', { mode: 'number' })
+            .notNull()
+            .references(() => automations.id, { onDelete: 'cascade' }),
+        recordId: bigint('record_id', { mode: 'number' })
+            .notNull()
+            .references(() => records.id, { onDelete: 'cascade' }),
+        matchedAt: timestamp('matched_at', { withTimezone: true }).notNull().defaultNow(),
+    },
+    (t) => [
+        primaryKey({ name: 'automation_matches_pk', columns: [t.automationId, t.recordId] }),
+        index('automation_matches_record_ix').on(t.recordId),
+        index('automation_matches_tenant_ix').on(t.tenantId),
+    ],
 );

@@ -133,6 +133,8 @@ const EXPLICIT_ARRAYS: Record<string, keyof IdMaps> = {
     pdf_templates: 'document',
     // C5 — las personas que aprueban un paso de un flujo de aprobación.
     approver_user_ids: 'user',
+    // v0.1.455 — entre quiénes reparte «Asignar por turno».
+    assignee_user_ids: 'user',
     // D2/E5 — a quién avisa y a quién escala el SLA de la mesa de ayuda.
     notify_user_ids: 'user',
     escalate_user_ids: 'user',

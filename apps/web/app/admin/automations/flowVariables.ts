@@ -1,4 +1,8 @@
 import {
+    ASSIGN_OUTPUTS,
+    ASSIGN_ROUND_ROBIN_ACTION,
+    COPY_RECORD_ACTION,
+    COPY_RECORD_OUTPUTS,
     FIND_RECORDS_ACTION,
     FIND_RECORDS_OUTPUTS,
     REQUEST_SIGNATURE_ACTION,
@@ -6,6 +10,7 @@ import {
     RESPONSE_NAME_RE,
     UPSERT_RECORD_ACTION,
     UPSERT_RECORD_OUTPUTS,
+    extraActionResponseName,
     recordActionResponseName,
 } from '@imagina-base/shared';
 
@@ -119,6 +124,13 @@ export function variablesAt(
     if (item) out.push(itemSection(item));
     const before = stepsBefore(actions, path);
     out.push(...recordStepSections(before, samples));
+    // v0.1.455 — «Asignar por turno» deja `{{asignado.x}}` (la persona elegida).
+    if (before.some((s) => s.spec.type === ASSIGN_ROUND_ROBIN_ACTION)) {
+        out.push({
+            title: __('Persona asignada'),
+            items: ASSIGN_OUTPUTS.map((o) => ({ tag: `asignado.${o.key}`, label: __(o.label), hint: `{{asignado.${o.key}}}` })),
+        });
+    }
     // v0.1.447 — «Pedir firma» deja `{{firma.x}}` (el enlace de quien firma primero, el código…).
     if (before.some((s) => s.spec.type === REQUEST_SIGNATURE_ACTION)) {
         out.push({
@@ -157,8 +169,8 @@ export function variablesAt(
 }
 
 /**
- * v0.1.444 — Lo que dejan «Buscar registros» y «Crear o actualizar un
- * registro» de los pasos anteriores, con su nombre (`{{respuestas.<nombre>.x}}`).
+ * v0.1.444 — Lo que dejan «Buscar registros», «Crear o actualizar un
+ * registro» (y, desde v0.1.455, «Copiar a otra lista») de los pasos anteriores, con su nombre (`{{respuestas.<nombre>.x}}`).
  * Con un resultado de «Probar», también los campos del primero encontrado.
  */
 function recordStepSections(
@@ -169,11 +181,11 @@ function recordStepSections(
     const seen = new Set<string>();
     for (const step of [...before].reverse()) {
         const type = step.spec.type;
-        if (type !== FIND_RECORDS_ACTION && type !== UPSERT_RECORD_ACTION) continue;
-        const name = recordActionResponseName(type, step.spec.config);
+        if (type !== FIND_RECORDS_ACTION && type !== UPSERT_RECORD_ACTION && type !== COPY_RECORD_ACTION) continue;
+        const name = type === COPY_RECORD_ACTION ? extraActionResponseName(type, step.spec.config) : recordActionResponseName(type, step.spec.config);
         if (name === null || !RESPONSE_NAME_RE.test(name) || seen.has(name)) continue;
         seen.add(name);
-        const outputs = type === FIND_RECORDS_ACTION ? FIND_RECORDS_OUTPUTS : UPSERT_RECORD_OUTPUTS;
+        const outputs = type === FIND_RECORDS_ACTION ? FIND_RECORDS_OUTPUTS : type === COPY_RECORD_ACTION ? COPY_RECORD_OUTPUTS : UPSERT_RECORD_OUTPUTS;
         const items: Array<{ tag: string; label: string; hint?: string }> = outputs.map((o) => ({
             tag: `respuestas.${name}.${o.key}`,
             label: __(o.label),
@@ -188,7 +200,12 @@ function recordStepSections(
             }
         }
         out.push({
-            title: type === FIND_RECORDS_ACTION ? sprintf(__('Búsqueda «%s»'), name) : sprintf(__('Registro «%s»'), name),
+            title:
+                type === FIND_RECORDS_ACTION
+                    ? sprintf(__('Búsqueda «%s»'), name)
+                    : type === COPY_RECORD_ACTION
+                      ? sprintf(__('Copia «%s»'), name)
+                      : sprintf(__('Registro «%s»'), name),
             items,
         });
     }

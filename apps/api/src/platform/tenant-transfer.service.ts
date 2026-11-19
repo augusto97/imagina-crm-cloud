@@ -47,6 +47,7 @@ import {
     attachments,
     auditLog,
     automationHooks,
+    automationMatches,
     automationRuns,
     automations,
     automationVersions,
@@ -359,6 +360,13 @@ export class TenantTransferService {
             await dump('automations', await this.byTenant(automations, tenantId, sql`${automations.deletedAt} IS NULL`));
             // v0.1.288 — historial de versiones (fotos sin secretos).
             await dump('automation_versions', await this.byTenant(automationVersions, tenantId, liveAutomation(automationVersions.automationId)));
+            // v0.1.455 — quién cumple YA la condición de «Cuando un registro empieza
+            // a cumplir una condición»: sin esto, la primera revisión en el
+            // destino dispararía por todos los que ya la cumplían.
+            await dump(
+                'automation_matches',
+                await this.byTenant(automationMatches, tenantId, and(liveAutomation(automationMatches.automationId), liveRecord(automationMatches.recordId))),
+            );
             // E6 — agentes de IA y sus listas (las de la papelera no viajan).
             // Sus corridas y propuestas NO viajan: son historia de este
             // servidor (los registros que tocaron sí, con su actividad).
@@ -1782,6 +1790,14 @@ export class TenantTransferService {
                 note: (v.note as string | null) ?? null,
                 createdAt: this.date(v.createdAt) ?? new Date(),
             };
+        });
+
+        // v0.1.455 — el estado de «empieza a cumplir una condición» (sin disparar nada).
+        counts.automation_matches = await this.insertPlain(tx, rows('automation_matches'), automationMatches, (m) => {
+            const automationId = mapId(autoMap, m.automationId);
+            const recordId = mapId(maps.record, m.recordId);
+            if (automationId === null || recordId === null) return null;
+            return { tenantId, automationId, recordId, matchedAt: this.date(m.matchedAt) ?? new Date() };
         });
 
         // v0.1.292 — con mapa (los envíos programados y los enlaces públicos

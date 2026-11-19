@@ -89,6 +89,10 @@ export function notificationTitle(
             // D6 — las firmas arman su propio título (SignaturesService).
             out = `Firmas de ${rec}`;
             break;
+        case 'automation':
+            // v0.1.455 — «Avisar en la app»: el título lo arma la automatización.
+            out = `Aviso sobre ${rec}`;
+            break;
     }
     return out.length > MAX_TITLE ? `${out.slice(0, MAX_TITLE - 1)}…` : out;
 }

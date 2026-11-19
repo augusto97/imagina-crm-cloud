@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { REDIS } from '../redis/redis.module';
 import { ModuleRef } from '@nestjs/core';
@@ -33,6 +33,29 @@ import {
     type FilterOperator,
     commentEventValue,
     commentTriggerMatches,
+    // v0.1.455 — «empieza a cumplir una condición», «se sube un archivo» y tres acciones.
+    RECORD_MATCHES_TRIGGER,
+    FILE_ADDED_TRIGGER,
+    NOTIFY_IN_APP_ACTION,
+    ASSIGN_ROUND_ROBIN_ACTION,
+    COPY_RECORD_ACTION,
+    RECORD_MATCHES_SWEEP_MAX,
+    readRecordMatchesConfig,
+    countFilterConditions,
+    readFileAddedConfig,
+    fileKindMatches,
+    addedFileIds,
+    fileEventValue,
+    humanFileSize,
+    type FileEventInfo,
+    readNotifyInAppConfig,
+    NOTIFY_IN_APP_MAX_RECIPIENTS,
+    readAssignRoundRobinConfig,
+    pickRoundRobin,
+    pickLeastOpen,
+    readCopyRecordConfig,
+    autoMapCopyFields,
+    doneRuleFor,
     readCommentTriggerConfig,
     type CommentEventInfo,
     managedFieldLockMap,
@@ -136,7 +159,9 @@ import { CollectionsService } from '../collections/collections.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { SignaturesService } from '../signatures/signatures.service';
 import { subscriptionPlans, subscriptions as subscriptionsTable } from '../db/schema/subscriptions';
-import { attachments, automationRuns, comments, documentTemplates, forms, lists, memberships, records, teams, tenants, users } from '../db/schema';
+import { attachments, automationRuns, comments, documentTemplates, forms, lists, memberships, records, teamMembers, teams, tenants, users } from '../db/schema';
+import { enterMatch, leaveMatch, matchesNow, seedBaseline, sweepMatches } from './automation-matches';
+import { NotificationsService } from '../notifications/notifications.service';
 import { editLinkFormId, editLinkMaker, readEditLinks, type EditLinkForm } from '../forms/form-edit-links';
 import { connectionModuleStepError, moduleForIntegration, planModuleOff, planModuleStepError } from '../billing/plan-module-gate';
 import { tenantIsReadOnly } from '../tenancy/read-only';
@@ -181,6 +206,7 @@ import { coerceFieldValue, READ_ONLY_TYPES, type CoercibleField } from './field-
 import {
     applyMergeTags,
     escapeHtml,
+    labelForFieldValue,
     labelResolverFor,
     regionalFormatterFor,
     singleTagToken,
@@ -206,8 +232,9 @@ const DEFAULT_FORMAT: Pick<TenantFormat, 'number_format' | 'date_format' | 'time
 
 /** Qué trigger_types reaccionan a cada evento de record. */
 const TRIGGERS_FOR_EVENT: Record<TriggerEvent['trigger'], string[]> = {
-    record_created: ['record_created'],
-    record_updated: ['record_updated', 'field_changed'],
+    // v0.1.455 — «empieza a cumplir una condición» y «se sube un archivo» miran altas y cambios.
+    record_created: ['record_created', RECORD_MATCHES_TRIGGER, FILE_ADDED_TRIGGER],
+    record_updated: ['record_updated', 'field_changed', RECORD_MATCHES_TRIGGER, FILE_ADDED_TRIGGER],
     // v0.1.251 — un cliente pagó un link de Mercado Pago o Wompi.
     payment_received: ['payment_received'],
     // v0.1.275 — alguien completó un formulario público de la lista.
@@ -359,6 +386,12 @@ interface RunContext {
     item?: ItemContext;
     /** v0.1.288 — «Probar»: simulación sin efectos (ver `simulate`). */
     sim?: SimulationState;
+    /** v0.1.455 — quién hizo el cambio que disparó (alta o edición de una persona). */
+    actorId?: number;
+    /** v0.1.455 — el archivo que se subió (`{{archivo.nombre}}`, `{{archivo.enlace}}`…). */
+    file?: FileEventInfo;
+    /** v0.1.455 — la persona que asignó «Asignar por turno» (`{{asignado.nombre}}`…). */
+    asignado?: Record<string, string>;
 }
 
 /** v0.1.288 — una respuesta HTTP guardada para los pasos siguientes. */
@@ -487,6 +520,9 @@ export interface ResumeState {
         responses?: Record<string, ResponseInfo>;
         chain?: AutomationChain;
         approval?: ApprovalEventInfo;
+        actor_id?: number;
+        file?: FileEventInfo;
+        asignado?: Record<string, string>;
     };
 }
 
@@ -545,6 +581,9 @@ const ACTION_NAMES: Record<string, string> = {
     wait_approval: 'Esperar aprobación',
     reply_email: 'Responder por correo',
     ask_agent: 'Pedirle a un agente',
+    notify_in_app: 'Avisar en la app',
+    assign_round_robin: 'Asignar por turno',
+    copy_record: 'Copiar a otra lista',
     engine: 'Motor de automatizaciones',
 };
 
@@ -784,16 +823,20 @@ export class AutomationEngine {
             // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
             if ((await tenantIsReadOnly(tx, event.tenantId)) || (await planModuleOff(tx, event.tenantId, 'automations'))) return null;
             const triggerTypes = TRIGGERS_FOR_EVENT[event.trigger];
-            const autos = (
-                await this.automations.activeByTriggers(tx, event.tenantId, event.listId, triggerTypes)
-            )
-                .filter((a) => !chain || !chain.automation_ids.includes(a.id)) // nunca se re-dispara a sí misma
+            const all = (await this.automations.activeByTriggers(tx, event.tenantId, event.listId, triggerTypes))
                 // Un botón que corre UNA automatización puntual.
                 .filter((a) => !event.automation_ids || event.automation_ids.includes(a.id));
-            if (autos.length === 0) return null;
-            return { autos, maps: await this.fieldMaps(tx, event.tenantId, event.listId) };
+            const autos = all.filter((a) => !chain || !chain.automation_ids.includes(a.id)); // nunca se re-dispara a sí misma
+            // v0.1.455 — las «empieza a cumplir» de la cadena no disparan, pero su
+            // estado sí se actualiza (si no, una que el propio paso sacó de la
+            // condición seguiría anotada como adentro).
+            const tracked = all.filter((a) => a.triggerType === RECORD_MATCHES_TRIGGER && !autos.includes(a));
+            if (autos.length === 0 && tracked.length === 0) return null;
+            return { autos, tracked, maps: await this.fieldMaps(tx, event.tenantId, event.listId) };
         });
         if (!prep) return [];
+        for (const auto of prep.tracked) await this.matchTransition(auto, event.recordId, false).catch(() => undefined);
+        if (prep.autos.length === 0) return [];
         const runs: EventRunRef[] = [];
         // v0.1.300 — «Creado por», «Fecha de creación»…: las columnas de sistema no
         // viven en `data`; se leen UNA vez para las condiciones y variables.
@@ -818,8 +861,27 @@ export class AutomationEngine {
                 ...(event.sla ? { sla: event.sla } : {}),
                 ...(event.subscription ? { suscripcion: event.subscription } : {}),
                 ...(event.signature ? { firma: event.signature } : {}),
+                ...(event.actor_id ? { actorId: event.actor_id } : {}),
                 ...(chain ? { chain } : {}),
             };
+            // v0.1.455 — «empieza a cumplir una condición»: sólo la ENTRADA dispara
+            // (lo decide el estado guardado, con la condición evaluada sobre el
+            // registro tal como está AHORA en la base).
+            if (auto.triggerType === RECORD_MATCHES_TRIGGER) {
+                const fire = event.trigger !== 'record_created' || readRecordMatchesConfig(auto.triggerConfig).onCreate;
+                const t = await this.matchTransition(auto, event.recordId, fire).catch((err: unknown) => {
+                    this.logger.warn(`Automatización ${auto.id}: no se pudo evaluar la condición: ${String(err)}`);
+                    return null;
+                });
+                if (!t?.fire) continue;
+                ctx.data = { ...t.data, ...sysData };
+            }
+            // v0.1.455 — «Cuando se sube un archivo»: sólo si llegó uno del tipo elegido.
+            if (auto.triggerType === FILE_ADDED_TRIGGER) {
+                const file = await this.addedFile(auto, ctx, event.before, event.after);
+                if (!file) continue;
+                ctx.file = file;
+            }
             if (!this.triggerMatches(auto, ctx)) continue;
             const runId = await this.runOne(ctx, auto);
             if (runId !== null) runs.push({ automation_id: auto.id, run_id: runId });
@@ -921,7 +983,8 @@ export class AutomationEngine {
             // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
             if ((await tenantIsReadOnly(tx, tenantId)) || (await planModuleOff(tx, tenantId, 'automations'))) return null;
             const auto = await this.automations.findById(tx, tenantId, automationId);
-            if (!auto || !auto.isActive || auto.triggerType !== 'scheduled') return null;
+            // v0.1.455 — también las tandas de la revisión de «empieza a cumplir una condición».
+            if (!auto || !auto.isActive || (auto.triggerType !== 'scheduled' && auto.triggerType !== RECORD_MATCHES_TRIGGER)) return null;
             const rows = await tx
                 .select({ id: records.id, data: records.data })
                 .from(records)
@@ -933,6 +996,151 @@ export class AutomationEngine {
         for (const rec of prep.rows) {
             await this.runOne({ tenantId, listId: prep.auto.listId, recordId: rec.id, data: rec.data, ...prep.maps }, prep.auto);
         }
+    }
+
+    // ─────────── v0.1.455 — «Cuando un registro empieza a cumplir una condición» ───────────
+
+    /**
+     * Corre `fn` con la condición del disparador compilada por el MISMO motor de
+     * filtros de la tabla (para el sistema: sin alcance de rol ni campos
+     * ocultos). null = no hay con qué evaluar (sin servicio de registros, la
+     * lista ya no existe, o la condición quedó sin ninguna regla válida — un
+     * campo borrado —: en ese caso NO se dispara por todos).
+     */
+    private async withMatchWhere<T>(auto: Pick<AutomationRow, 'tenantId' | 'listId' | 'triggerConfig'>, fn: (tx: Tx, where: SQL) => Promise<T>): Promise<T | null> {
+        const svc = this.records();
+        if (!svc) return null;
+        const cfg = readRecordMatchesConfig(auto.triggerConfig);
+        if (countFilterConditions(cfg.filter) === 0) return null;
+        const parsed = filterTreeSchema.safeParse(cfg.filter);
+        if (!parsed.success) return null;
+        try {
+            return await svc.readScoped(auto.tenantId, SYSTEM_ACTOR, String(auto.listId), async (tx, scope) => {
+                const where = scope.where({ filter_tree: parsed.data });
+                return where ? fn(tx, where) : null;
+            });
+        } catch (err) {
+            // La lista ya no existe (o se fue a la papelera): no hay con qué evaluar.
+            if (err instanceof NotFoundException) return null;
+            throw err;
+        }
+    }
+
+    /**
+     * Un evento del registro: ¿entró ahora en la condición? Anota o borra su
+     * estado y dice si dispara (`fire` = false: sólo se actualiza el estado —
+     * un alta con «también al crear» apagado, una automatización de la cadena).
+     */
+    private async matchTransition(
+        auto: Pick<AutomationRow, 'id' | 'tenantId' | 'listId' | 'triggerConfig'>,
+        recordId: number,
+        fire: boolean,
+    ): Promise<{ fire: boolean; data: Record<string, unknown> } | null> {
+        return this.withMatchWhere(auto, async (tx, where) => {
+            const now = await matchesNow(tx, auto.tenantId, auto.listId, recordId, where);
+            // En la papelera (o ya no existe): no entra ni sale.
+            if (!now) return { fire: false, data: {} };
+            if (!now.matches) {
+                await leaveMatch(tx, auto.tenantId, auto.id, recordId);
+                return { fire: false, data: now.data };
+            }
+            const entered = await enterMatch(tx, auto.tenantId, auto.id, recordId);
+            return { fire: fire && entered, data: now.data };
+        });
+    }
+
+    /** La línea de base (al activarla o cambiar la condición): los que YA la cumplen, sin disparar. */
+    async seedMatches(tenantId: number, automationId: number): Promise<number> {
+        const auto = await this.tenantDb.withTenant(tenantId, (tx) => this.automations.findById(tx, tenantId, automationId));
+        if (!auto || auto.triggerType !== RECORD_MATCHES_TRIGGER) return 0;
+        return (await this.withMatchWhere(auto, (tx, where) => seedBaseline(tx, tenantId, automationId, auto.listId, where))) ?? 0;
+    }
+
+    /**
+     * La revisión periódica (cada 15 minutos): quién ENTRÓ por el paso del
+     * tiempo («vence en 3 días») o por un campo calculado, y quién salió.
+     * Los que entraron disparan en tandas, como un horario «para cada
+     * registro»; si son más que el tope, el resto entra en la revisión
+     * siguiente (nada se pierde).
+     */
+    async runMatchScan(tenantId: number, automationId: number): Promise<void> {
+        const auto = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            // SEC-34: empresa en solo-lectura (impaga/archivada) → no corre nada.
+            if ((await tenantIsReadOnly(tx, tenantId)) || (await planModuleOff(tx, tenantId, 'automations'))) return null;
+            const a = await this.automations.findById(tx, tenantId, automationId);
+            return a && a.isActive && a.triggerType === RECORD_MATCHES_TRIGGER ? a : null;
+        });
+        if (!auto) return;
+        const swept = await this.withMatchWhere(auto, (tx, where) => sweepMatches(tx, tenantId, auto.id, auto.listId, where, RECORD_MATCHES_SWEEP_MAX));
+        if (swept === null) {
+            this.incidents?.report({
+                tenantId,
+                key: `automation:${auto.id}`,
+                source: 'automation',
+                sourceId: auto.id,
+                listId: auto.listId,
+                title: `Falló la automatización «${auto.name}»`,
+                message: 'La condición de «Cuando un registro empieza a cumplir una condición» quedó sin reglas válidas (¿se borró un campo?). Revísala en el editor.',
+            });
+            return;
+        }
+        if (swept.more) this.logger.log(`Automatización ${auto.id}: más de ${RECORD_MATCHES_SWEEP_MAX} registros entraron; el resto, en la próxima revisión.`);
+        for (let i = 0; i < swept.entered.length; i += SCHEDULED_EACH_BATCH) {
+            const batch = swept.entered.slice(i, i + SCHEDULED_EACH_BATCH);
+            const queued = this.dispatcher?.dispatchScheduledBatch({ tenantId, automationId: auto.id, recordIds: batch }) ?? false;
+            if (!queued) await this.runScheduledBatch(tenantId, auto.id, batch);
+        }
+    }
+
+    // ─────────── v0.1.455 — «Cuando se sube un archivo» ───────────
+
+    /**
+     * El primer archivo que llegó en el cambio (en el campo elegido o en
+     * cualquiera de archivos), del tipo elegido. null = no llegó ninguno.
+     */
+    private async addedFile(
+        auto: Pick<AutomationRow, 'triggerConfig'>,
+        ctx: RunContext,
+        before: Record<string, unknown> | undefined,
+        after: Record<string, unknown>,
+    ): Promise<FileEventInfo | null> {
+        const cfg = readFileAddedConfig(auto.triggerConfig);
+        const candidates: Array<{ key: string; fieldId: number; label: string }> = [];
+        for (const [slug, f] of ctx.fieldsBySlug) {
+            if (f.type !== 'file') continue;
+            const key = ctx.slugToKey.get(slug);
+            if (!key) continue;
+            const fieldId = Number(key.slice(1));
+            if (cfg.fieldId !== null && fieldId !== cfg.fieldId) continue;
+            candidates.push({ key, fieldId, label: f.label ?? slug });
+        }
+        const added: Array<{ id: number; fieldId: number; label: string }> = [];
+        for (const c of candidates) for (const id of addedFileIds(before?.[c.key], after[c.key])) added.push({ id, fieldId: c.fieldId, label: c.label });
+        if (added.length === 0) return null;
+        const rows = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+            tx
+                .select({ id: attachments.id, filename: attachments.filename, mime: attachments.mime, size: attachments.sizeBytes })
+                .from(attachments)
+                .where(and(eq(attachments.tenantId, ctx.tenantId), inArray(attachments.id, added.map((a) => a.id)))),
+        );
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        const matching = added.filter((a) => {
+            const r = byId.get(a.id);
+            return r !== undefined && fileKindMatches(cfg.kind, r.mime, r.filename);
+        });
+        const first = matching[0];
+        if (!first) return null;
+        const r = byId.get(first.id)!;
+        return {
+            id: r.id,
+            name: r.filename,
+            mime: r.mime,
+            size: Number(r.size) || 0,
+            field_id: first.fieldId,
+            field_label: first.label,
+            link: this.documents?.fileLink(ctx.tenantId, r.id) ?? '',
+            count: matching.length,
+        };
     }
 
     /**
@@ -1346,6 +1554,9 @@ export class AutomationEngine {
             ...(state.ctx.responses ? { responses: state.ctx.responses } : {}),
             ...(state.ctx.chain ? { chain: state.ctx.chain } : {}),
             ...(state.ctx.approval ? { approval: state.ctx.approval } : {}),
+            ...(state.ctx.actor_id ? { actorId: state.ctx.actor_id } : {}),
+            ...(state.ctx.file ? { file: state.ctx.file } : {}),
+            ...(state.ctx.asignado ? { asignado: state.ctx.asignado } : {}),
             automation: { id: auto.id, name: auto.name },
         };
         const prior = run.actionsLog ?? [];
@@ -1808,6 +2019,35 @@ export class AutomationEngine {
                 );
                 break;
             }
+            case RECORD_MATCHES_TRIGGER: {
+                // v0.1.455 — si el registro cumple HOY la condición (con el mismo
+                // motor de filtros de la tabla). La prueba no anota nada.
+                if (ctx.recordId === null) break;
+                const recordId = ctx.recordId;
+                const now = await this.withMatchWhere({ tenantId: ctx.tenantId, listId: auto.listId, triggerConfig: cfg }, (tx, where) =>
+                    matchesNow(tx, ctx.tenantId, auto.listId, recordId, where),
+                );
+                if (now === null) reasons.push('la condición no tiene reglas válidas (o el registro está en la papelera)');
+                else if (!now.matches) reasons.push('este registro no cumple la condición');
+                else notes.push('Este registro cumple la condición: dispara en el momento en que la EMPIEZA a cumplir, no otra vez mientras la siga cumpliendo.');
+                notes.push('Se revisa al crear o cambiar un registro y, además, cada 15 minutos (para lo que entra por el paso del tiempo, como «vence en 3 días»).');
+                break;
+            }
+            case FILE_ADDED_TRIGGER: {
+                // v0.1.455 — el último archivo del campo elegido, como si acabara de llegar.
+                const fc = readFileAddedConfig(cfg);
+                if (ctx.recordId !== null) {
+                    const sample = await this.addedFile(auto, ctx, {}, ctx.data);
+                    if (sample) {
+                        ctx.file = sample;
+                        notes.push(`Se usa «${sample.name}» (${humanFileSize(sample.size)}) como si se acabara de subir.`);
+                        break;
+                    }
+                }
+                ctx.file = { id: 0, name: 'documento.pdf', mime: 'application/pdf', size: 245_000, field_id: fc.fieldId ?? 0, field_label: 'Archivos', link: '', count: 1 };
+                notes.push('Este registro no tiene archivos de ese tipo: {{archivo.x}} usa datos de ejemplo.');
+                break;
+            }
             default:
                 break;
         }
@@ -2075,6 +2315,9 @@ export class AutomationEngine {
             if (token.startsWith('reunion.')) return ctx.reunion?.[token.slice('reunion.'.length)] ?? '';
             // v0.1.401 — {{whats.contacto_id}}, {{whats.ejecucion_id}}… de una acción de Whats anterior.
             if (token.startsWith('whats.')) return ctx.whats?.[token.slice('whats.'.length)] ?? '';
+            // v0.1.455 — el archivo que se subió y la persona que asignó «Asignar por turno».
+            if (token.startsWith('archivo.')) return fileEventValue(ctx.file, token.slice('archivo.'.length)) ?? '';
+            if (token.startsWith('asignado.')) return ctx.asignado?.[token.slice('asignado.'.length)] ?? '';
             // v0.1.275 — {{formulario.nombre}} del formulario que se envió.
             if (token === 'formulario.nombre') return ctx.form?.name ?? '';
             // v0.1.386 — su título y de dónde llegó.
@@ -2424,6 +2667,9 @@ export class AutomationEngine {
                 ...(ctx.approval ? { approval: ctx.approval } : {}),
                 ...(ctx.suscripcion ? { suscripcion: ctx.suscripcion } : {}),
                 ...(ctx.firma ? { firma: ctx.firma } : {}),
+                ...(ctx.actorId ? { actor_id: ctx.actorId } : {}),
+                ...(ctx.file ? { file: ctx.file } : {}),
+                ...(ctx.asignado ? { asignado: ctx.asignado } : {}),
             },
         };
     }
@@ -2580,6 +2826,26 @@ export class AutomationEngine {
                 return { log: tag([r.entry]), ...(r.stop ? { stop: true } : {}) };
             } catch (err) {
                 return { log: tag([fail(FIND_RECORDS_ACTION, explainError(err))]), stop: true };
+            }
+        }
+
+        // v0.1.455 — avisar, asignar por turno y copiar: escriben por sus
+        // servicios (avisos, registros), fuera de una transacción del motor.
+        if (spec.type === NOTIFY_IN_APP_ACTION || spec.type === ASSIGN_ROUND_ROBIN_ACTION || spec.type === COPY_RECORD_ACTION) {
+            try {
+                const entry =
+                    spec.type === NOTIFY_IN_APP_ACTION
+                        ? await this.notifyInApp(ctx, spec.config ?? {})
+                        : spec.type === ASSIGN_ROUND_ROBIN_ACTION
+                          ? await this.assignRoundRobin(ctx, spec.config ?? {}, pathKey)
+                          : await this.copyRecord(ctx, spec.config ?? {});
+                if (ctx.sim && spec.type === COPY_RECORD_ACTION) {
+                    const copied = ctx.responses?.[readCopyRecordConfig(spec.config ?? {}).responseName];
+                    if (copied) ctx.sim.responses[pathKey] = copied.body;
+                }
+                return { log: tag([entry]) };
+            } catch (err) {
+                return { log: tag([fail(spec.type, explainError(err))]) };
             }
         }
 
@@ -3826,6 +4092,459 @@ export class AutomationEngine {
         return ok(A, `No existía ${lookedFor || 'el registro'}: creó #${created.id} «${title}» en «${pre.name}».${note}${chainCutNote(ctx)}`, {
             record_id: created.id,
             action: 'created',
+            ...(skipped.length > 0 ? { warnings: skipped } : {}),
+        });
+    }
+
+    // ─────────── v0.1.455 — «Avisar en la app», «Asignar por turno», «Copiar a otra lista» ───────────
+
+    /** El servicio de avisos (vive en su módulo, que depende de registros): se resuelve al usarlo. */
+    private notifySvc: NotificationsService | null | undefined;
+    private notifications(): NotificationsService | null {
+        if (this.notifySvc === undefined) {
+            try {
+                this.notifySvc = this.moduleRef?.get(NotificationsService, { strict: false }) ?? null;
+            } catch {
+                this.notifySvc = null;
+            }
+        }
+        return this.notifySvc;
+    }
+
+    /** Para los specs que arman el motor a mano. */
+    setNotifications(svc: NotificationsService | null): void {
+        this.notifySvc = svc;
+    }
+
+    /** El slug de un campo por su id (`f{id}`) en la lista del registro. */
+    private slugOfFieldId(ctx: RunContext, fieldId: number): string | null {
+        const key = jsonbKeyForField(fieldId);
+        for (const [slug, k] of ctx.slugToKey) if (k === key) return slug;
+        return null;
+    }
+
+    /**
+     * Las personas del EQUIPO de trabajo de la empresa (nunca clientes del
+     * portal, invitados, gente de una agencia que entra a administrar ni
+     * cuentas desactivadas), armadas como «actor» para el ACL de la lista:
+     * rol, rol propio y equipos. Una lectura para todas.
+     */
+    private async staffActors(tenantId: number, userIds: readonly number[]): Promise<Map<number, { actor: Actor; name: string; email: string }>> {
+        const ids = [...new Set(userIds)].filter((u) => Number.isInteger(u) && u > 0);
+        const out = new Map<number, { actor: Actor; name: string; email: string }>();
+        if (ids.length === 0) return out;
+        await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const rows = await tx
+                .select({ id: users.id, name: users.name, email: users.email, role: memberships.role, customRoleId: memberships.customRoleId })
+                .from(memberships)
+                .innerJoin(users, eq(users.id, memberships.userId))
+                .where(
+                    and(
+                        eq(memberships.tenantId, tenantId),
+                        inArray(memberships.userId, ids),
+                        inArray(memberships.role, ['admin', 'manager', 'agent', 'viewer']),
+                        eq(memberships.viaAgency, false),
+                        isNull(users.disabledAt),
+                    ),
+                );
+            if (rows.length === 0) return;
+            const tm = await tx
+                .select({ userId: teamMembers.userId, teamId: teamMembers.teamId })
+                .from(teamMembers)
+                .where(and(eq(teamMembers.tenantId, tenantId), inArray(teamMembers.userId, rows.map((r) => r.id))));
+            const teamsOf = new Map<number, number[]>();
+            for (const t of tm) teamsOf.set(t.userId, [...(teamsOf.get(t.userId) ?? []), t.teamId]);
+            for (const r of rows) {
+                out.set(r.id, {
+                    actor: { userId: r.id, role: r.role as Actor['role'], customRoleId: r.customRoleId ?? null, teamIds: teamsOf.get(r.id) ?? [] },
+                    name: (r.name ?? '').trim() || r.email,
+                    email: r.email,
+                });
+            }
+        });
+        return out;
+    }
+
+    /** Las personas de unos equipos HOY (en el orden del equipo, sin repetir). */
+    private async teamMemberIds(tenantId: number, teamIds: readonly number[]): Promise<{ ids: number[]; names: Map<number, string> }> {
+        const names = new Map<number, string>();
+        if (teamIds.length === 0) return { ids: [], names };
+        const rows = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const ts = await tx.select({ id: teams.id, name: teams.name }).from(teams).where(and(eq(teams.tenantId, tenantId), inArray(teams.id, [...teamIds])));
+            for (const t of ts) names.set(t.id, t.name);
+            if (ts.length === 0) return [];
+            return tx
+                .select({ userId: teamMembers.userId })
+                .from(teamMembers)
+                .where(and(eq(teamMembers.tenantId, tenantId), inArray(teamMembers.teamId, ts.map((t) => t.id))))
+                .orderBy(asc(teamMembers.teamId), asc(teamMembers.userId));
+        });
+        return { ids: [...new Set(rows.map((r) => r.userId))], names };
+    }
+
+    /**
+     * v0.1.455 — «Avisar en la app»: un aviso en la campana (y en el teléfono,
+     * según lo que cada persona eligió) con un título y un mensaje con
+     * variables y el enlace al registro. Sólo le llega a quien puede VER el
+     * registro, nunca a un invitado ni a un cliente del portal, y cada uno lo
+     * lee sin los campos que tiene ocultos.
+     */
+    private async notifyInApp(ctx: RunContext, cfg: Record<string, unknown>): Promise<ActionLogEntry> {
+        const A = NOTIFY_IN_APP_ACTION;
+        const c = readNotifyInAppConfig(cfg);
+        if (ctx.recordId === null) return skip(A, 'Sin registro en contexto: el aviso lleva al registro.');
+        if (c.title.trim() === '') return fail(A, 'El aviso no tiene título.');
+        const svc = this.notifications();
+        if (!svc) return fail(A, 'Los avisos no están disponibles en este servidor.');
+        // A quiénes: personas elegidas + las de campos Persona + las de equipos + quien hizo el cambio.
+        const wanted: number[] = [...c.userIds];
+        const notes: string[] = [];
+        for (const fieldId of c.personFieldIds) {
+            const slug = this.slugOfFieldId(ctx, fieldId);
+            if (!slug) {
+                notes.push(`un campo Persona elegido ya no existe`);
+                continue;
+            }
+            const raw = ctx.data[jsonbKeyForField(fieldId)];
+            const vals = Array.isArray(raw) ? raw : [raw];
+            for (const v of vals) {
+                const n = Number(v);
+                if (Number.isInteger(n) && n > 0) wanted.push(n);
+            }
+        }
+        if (c.teamIds.length > 0) wanted.push(...(await this.teamMemberIds(ctx.tenantId, c.teamIds)).ids);
+        if (c.includeActor) {
+            if (ctx.actorId && ctx.actorId > 0) wanted.push(ctx.actorId);
+            else notes.push('el cambio no lo hizo una persona (lo hizo una automatización, un formulario o el sistema)');
+        }
+        const ids = [...new Set(wanted)].slice(0, NOTIFY_IN_APP_MAX_RECIPIENTS);
+        if (ids.length === 0) return skip(A, `No hay a quién avisar${notes.length > 0 ? `: ${notes.join('; ')}` : ' (los campos Persona están vacíos)'}.`);
+
+        // Cada destinatario lo lee sin los campos que tiene ocultos.
+        const render = (template: string, hidden: ReadonlySet<number>): string => {
+            const fv = this.accessor(ctx);
+            const guarded =
+                hidden.size === 0
+                    ? fv
+                    : (token: string): unknown => {
+                          const t = token.startsWith('before.') ? token.slice('before.'.length) : token;
+                          const key = ctx.slugToKey.get(t.split('.')[0] ?? '');
+                          if (key && hidden.has(Number(key.slice(1)))) return '';
+                          return fv(token);
+                      };
+            return this.mergers(ctx, guarded).merge(template).trim();
+        };
+        const recordId = ctx.recordId;
+        const title = (hidden: ReadonlySet<number>): string => render(c.title, hidden);
+        const body = (hidden: ReadonlySet<number>): string => render(c.message, hidden);
+        const sent = await svc.automationNotice(ctx.tenantId, { listId: ctx.listId, recordId, userIds: ids, title, body, dryRun: Boolean(ctx.sim) });
+        const names = await svc.namesOf(sent);
+        const who = sent.map((u) => names.get(u) ?? `#${u}`);
+        const left = ids.length - sent.length;
+        const leftNote = left > 0 ? ` ${left} persona(s) no lo recibieron: no pueden ver el registro, no son del equipo o están desactivadas.` : '';
+        const note = notes.length > 0 ? ` Nota: ${notes.join('; ')}.` : '';
+        const shown = `«${title(new Set())}»`;
+        if (sent.length === 0) return skip(A, `Nadie recibió el aviso ${shown}: ninguna de las personas puede ver el registro.${note}`);
+        const list = who.slice(0, 8).join(', ') + (who.length > 8 ? ` y ${who.length - 8} más` : '');
+        if (ctx.sim) {
+            return ok(A, `Le avisaría a ${list}: ${shown}.${leftNote}${note}`, { _sim: 'would_run', recipients: who, title: title(new Set()), message: body(new Set()) });
+        }
+        return ok(A, `Avisó a ${list}: ${shown}.${leftNote}${note}`, { recipients: who, user_ids: sent });
+    }
+
+    /**
+     * v0.1.455 — «Asignar por turno»: llena un campo Persona con una persona
+     * de un grupo (elegidas o las de un equipo HOY), por turnos (un contador
+     * atómico por automatización y paso) o a quien tenga menos registros
+     * abiertos en la lista («abierto» = el criterio de «Mi trabajo»). Saltea a
+     * quien no podría ver y editar el registro ya asignado, a las cuentas
+     * desactivadas y a quien ya no es de la empresa. Deja `{{asignado.x}}`.
+     */
+    private async assignRoundRobin(ctx: RunContext, cfg: Record<string, unknown>, pathKey: string): Promise<ActionLogEntry> {
+        const A = ASSIGN_ROUND_ROBIN_ACTION;
+        const c = readAssignRoundRobinConfig(cfg);
+        if (ctx.recordId === null) return skip(A, 'Sin registro en contexto.');
+        if (c.personFieldId === null) return fail(A, 'Elige el campo Persona que se llena.');
+        const slug = this.slugOfFieldId(ctx, c.personFieldId);
+        const field = slug ? ctx.fieldsBySlug.get(slug) : undefined;
+        if (!slug || !field || field.type !== 'user') return fail(A, 'El campo elegido ya no existe o no es de tipo Persona.');
+        const label = `«${field.label ?? slug}»`;
+        const key = jsonbKeyForField(c.personFieldId);
+        const lock = await this.managedLockOf(ctx, ctx.listId, c.personFieldId);
+        if (lock) return skip(A, `${label}: ${lock.reason}`);
+        const recordId = ctx.recordId;
+        const current = ctx.sim
+            ? ctx.data
+            : (await this.tenantDb.withTenant(ctx.tenantId, (tx) => this.recordsRepo.findById(tx, ctx.tenantId, ctx.listId, recordId)))?.data;
+        if (!current) return skip(A, 'El registro ya no existe.');
+        const currentId = Number(current[key]);
+        const hasCurrent = Number.isInteger(currentId) && currentId > 0;
+
+        // Entre quiénes.
+        let ids = c.userIds;
+        let teamName: string | null = null;
+        if (ids.length === 0 && c.teamId !== null) {
+            const t = await this.teamMemberIds(ctx.tenantId, [c.teamId]);
+            teamName = t.names.get(c.teamId) ?? null;
+            if (teamName === null) return fail(A, 'El equipo elegido ya no existe.');
+            ids = t.ids;
+        }
+        if (ids.length === 0) return skip(A, teamName ? `El equipo «${teamName}» no tiene personas: no se asignó a nadie.` : 'No hay personas entre las cuales repartir.');
+        const people = await this.staffActors(ctx.tenantId, [...ids, ...(hasCurrent ? [currentId] : [])]);
+
+        if (c.onlyIfEmpty && hasCurrent) {
+            const p = people.get(currentId);
+            if (p) ctx.asignado = { nombre: p.name, email: p.email, id: String(currentId) };
+            return skip(A, `${label} ya tiene a ${p?.name ?? `#${currentId}`}: no se cambió (sólo asigna si está vacío).`);
+        }
+
+        const actors = ids.map((id) => people.get(id)?.actor).filter((a): a is Actor => a !== undefined);
+        const svc = this.records();
+        const reach = svc
+            ? await svc.editorsOf(ctx.tenantId, ctx.listId, recordId, actors, (a) => ({ [key]: a.userId }))
+            : new Set(actors.map((a) => a.userId));
+        const eligible = ids.filter((id) => reach.has(id)).map((id) => ({ userId: id, ...people.get(id)! }));
+        const excluded = ids.filter((id) => !reach.has(id));
+        const excludedNote =
+            excluded.length > 0
+                ? ` Se saltó a ${excluded.length} persona(s): ${excluded
+                      .slice(0, 5)
+                      .map((id) => people.get(id)?.name ?? `#${id}`)
+                      .join(', ')} (no pueden ver o editar el registro, no son del equipo o están desactivadas).`
+                : '';
+        if (eligible.length === 0) {
+            return fail(A, `Ninguna de las personas puede ver y editar este registro (o ya no están en la empresa): no se asignó a nadie.${excludedNote}`);
+        }
+
+        let chosen: (typeof eligible)[number] | null = null;
+        let how = '';
+        if (c.mode === 'least_open') {
+            const open = await this.openCountsByPerson(ctx, c.personFieldId, eligible.map((p) => p.userId));
+            chosen = pickLeastOpen(eligible.map((p) => ({ ...p, open: open.get(p.userId) ?? 0 })));
+            if (chosen) how = ` (tenía ${open.get(chosen.userId) ?? 0} abierto(s), la que menos)`;
+        } else {
+            const rrKey = `autorr:${ctx.tenantId}:${ctx.automation?.id ?? 0}:${pathKey || '0'}`;
+            let n = 0;
+            try {
+                if (ctx.sim) n = Number((await this.redis?.get(rrKey)) ?? 0) || 0;
+                else if (this.redis) {
+                    n = (await this.redis.incr(rrKey)) - 1;
+                    await this.redis.expire(rrKey, 180 * 86_400).catch(() => undefined);
+                } else n = Math.floor(Math.random() * eligible.length);
+            } catch {
+                n = Math.floor(Math.random() * eligible.length);
+            }
+            chosen = pickRoundRobin(eligible, n);
+            how = ' (por turnos)';
+        }
+        if (!chosen) return fail(A, 'No se pudo elegir a nadie.');
+        ctx.asignado = { nombre: chosen.name, email: chosen.email, id: String(chosen.userId) };
+        if (hasCurrent && currentId === chosen.userId) return skip(A, `${label} ya era ${chosen.name}.`);
+        if (ctx.sim) {
+            ctx.data = { ...ctx.data, [key]: chosen.userId };
+            return ok(A, `Asignaría ${label} a ${chosen.name}${how}.${excludedNote}`, {
+                _sim: 'would_run',
+                user_id: chosen.userId,
+                person: chosen.name,
+                candidates: eligible.map((p) => p.name),
+            });
+        }
+        const after = await this.writeUpdate(ctx, { listId: ctx.listId, recordId, slugToKey: ctx.slugToKey, fieldsBySlug: ctx.fieldsBySlug }, { [key]: chosen.userId }, current);
+        ctx.data = after;
+        return ok(A, `Asignó ${label} a ${chosen.name}${how}.${excludedNote}${chainCutNote(ctx)}`, { user_id: chosen.userId, person: chosen.name });
+    }
+
+    /** Cuántos registros ABIERTOS (sin terminar, como en «Mi trabajo») tiene cada persona en el campo. */
+    private async openCountsByPerson(ctx: RunContext, personFieldId: number, userIds: number[]): Promise<Map<number, number>> {
+        const out = new Map<number, number>();
+        if (userIds.length === 0) return out;
+        const fields = [...ctx.fieldsBySlug].map(([slug, f]) => ({
+            id: Number((ctx.slugToKey.get(slug) ?? 'f0').slice(1)),
+            slug,
+            type: f.type,
+            label: f.label ?? slug,
+            config: f.config as Record<string, unknown> | undefined,
+        }));
+        const rule = doneRuleFor(fields as never);
+        const person = sql`(${records.data} ->> ${jsonbKeyForField(personFieldId)})`;
+        const notDone = rule
+            ? sql`((${records.data} ->> ${jsonbKeyForField(rule.fieldId)}) IS NULL OR (${records.data} ->> ${jsonbKeyForField(rule.fieldId)}) NOT IN (${sql.join(
+                  rule.values.map((v) => sql`${v}`),
+                  sql`, `,
+              )}))`
+            : sql`true`;
+        const rows = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+            tx
+                .select({ uid: sql<string>`${person}`, n: sql<number>`count(*)::int` })
+                .from(records)
+                .where(
+                    and(
+                        eq(records.tenantId, ctx.tenantId),
+                        eq(records.listId, ctx.listId),
+                        isNull(records.deletedAt),
+                        sql`${person} IN (${sql.join(userIds.map((u) => sql`${String(u)}`), sql`, `)})`,
+                        notDone,
+                    ),
+                )
+                // Por posición: la clave del campo va como parámetro y Postgres no
+                // reconoce dos parámetros iguales como la misma expresión.
+                .groupBy(sql.raw('1')),
+        );
+        for (const r of rows) out.set(Number(r.uid), Number(r.n));
+        return out;
+    }
+
+    /**
+     * v0.1.455 — «Copiar a otra lista»: crea un registro en otra lista (o en
+     * la misma) con los campos que se llaman igual y son compatibles, más los
+     * valores elegidos a mano (por el slug de la lista destino, con
+     * variables), y opcionalmente lo vincula con el original. Respeta el límite
+     * de registros del plan y las listas espejo. Deja `{{respuestas.<nombre>.id}}`.
+     */
+    private async copyRecord(ctx: RunContext, cfg: Record<string, unknown>): Promise<ActionLogEntry> {
+        const A = COPY_RECORD_ACTION;
+        const c = readCopyRecordConfig(cfg);
+        if (ctx.recordId === null) return skip(A, 'Sin registro en contexto: no hay qué copiar.');
+        if (c.listId === null) return fail(A, 'Elige la lista donde se crea la copia.');
+        const targetListId = c.listId;
+        const recordId = ctx.recordId;
+        const pre = await this.tenantDb.withTenant(ctx.tenantId, async (tx) => {
+            const [l] = await tx
+                .select({ name: lists.name, settings: lists.settings })
+                .from(lists)
+                .where(and(eq(lists.tenantId, ctx.tenantId), eq(lists.id, targetListId), isNull(lists.deletedAt)))
+                .limit(1);
+            if (!l) return null;
+            const target = await this.fields.listByList(tx, ctx.tenantId, targetListId);
+            const source = await this.fields.listByList(tx, ctx.tenantId, ctx.listId);
+            const row = await this.recordsRepo.findById(tx, ctx.tenantId, ctx.listId, recordId);
+            const relIds = source.filter((f) => f.type === 'relation').map((f) => f.id);
+            const rel = row ? await this.relationsRepo.batchTargets(tx, ctx.tenantId, [recordId], relIds) : new Map<number, Map<number, number[]>>();
+            return { name: l.name, settings: (l.settings ?? {}) as Record<string, unknown>, target, source, row, rel: rel.get(recordId) ?? new Map<number, number[]>() };
+        });
+        if (!pre) return fail(A, `La lista destino (#${targetListId}) no existe en esta empresa.`);
+        if (!pre.row) return skip(A, 'El registro ya no existe.');
+        const mirror = readMirrorListMarker(pre.settings);
+        if (mirror) {
+            return skip(
+                A,
+                mirror.source === 'store'
+                    ? 'La lista destino está sincronizada con una tienda: los registros se crean en WooCommerce.'
+                    : 'La lista destino viene de un sitio WordPress: lo nuevo se crea en WordPress.',
+            );
+        }
+        if (this.billing && !this.records()) {
+            try {
+                await this.billing.assertCanCreateRecords(ctx.tenantId, 1);
+            } catch (err) {
+                return fail(A, explainError(err) || 'Límite de registros del plan alcanzado.');
+            }
+        }
+        const srcData = ctx.sim ? ctx.data : ((pre.row.data ?? {}) as Record<string, unknown>);
+        const targetOf = (f: { config: unknown }): number => Number((f.config as { target_list_id?: unknown } | null)?.target_list_id ?? 0);
+        const data: Record<string, unknown> = {};
+        const relations = new Map<number, { fieldId: number; label: string; targetListId: number; ids: number[] }>();
+        const copied: string[] = [];
+        const skipped: string[] = [];
+        if (c.autoMap) {
+            const pairs = autoMapCopyFields(
+                pre.source.map((f) => ({ id: f.id, label: f.label, type: f.type, config: f.config })),
+                pre.target.map((f) => ({ id: f.id, label: f.label, type: f.type, config: f.config })),
+                { copyFiles: c.copyFiles },
+            );
+            const srcById = new Map(pre.source.map((f) => [f.id, f]));
+            const tgtById = new Map(pre.target.map((f) => [f.id, f]));
+            for (const { from, to } of pairs) {
+                if (to.id === c.linkFieldId) continue;
+                const fromF = srcById.get(from.id)!;
+                const toF = tgtById.get(to.id)!;
+                if (fromF.type === 'relation') {
+                    const ids = pre.rel.get(from.id) ?? [];
+                    if (ids.length > 0) {
+                        relations.set(toF.id, { fieldId: toF.id, label: toF.label, targetListId: targetOf(toF), ids });
+                        copied.push(toF.label);
+                    }
+                    continue;
+                }
+                const raw = srcData[jsonbKeyForField(from.id)];
+                if (isBlank(raw)) continue;
+                let input: unknown = raw;
+                if (fromF.type === 'select' || fromF.type === 'multi_select') {
+                    const labeled = labelForFieldValue({ type: fromF.type, config: fromF.config }, raw);
+                    input = toF.type === 'select' || toF.type === 'multi_select' ? labeled : Array.isArray(labeled) ? labeled.join(', ') : labeled;
+                }
+                const res = coerceFieldValue(toF, input, { timeZone: ctx.timeZone, format: ctx.format ?? DEFAULT_FORMAT, fromVariable: false });
+                if (!res.ok) {
+                    skipped.push(`«${toF.label}» (${res.error})`);
+                    continue;
+                }
+                if (res.value === null) continue;
+                data[jsonbKeyForField(toF.id)] = res.value;
+                copied.push(toF.label);
+            }
+        }
+        // Los valores a mano pisan lo copiado solo.
+        if (Object.keys(c.values).length > 0) {
+            const r = await this.resolveRecordValues(ctx, pre.target, c.values);
+            Object.assign(data, r.data);
+            for (const rel of r.relations) if (rel.ids.length > 0) relations.set(rel.fieldId, rel);
+            skipped.push(...r.skipped);
+        }
+        // El vínculo con el original: una relación de la destino que apunta aquí,
+        // o una de esta lista que apunta a la destino (se le suma la copia).
+        let backLink: { fieldId: number; ids: number[] } | null = null;
+        let linkNote = '';
+        if (c.linkFieldId !== null) {
+            const tf = pre.target.find((f) => f.id === c.linkFieldId);
+            const sf = pre.source.find((f) => f.id === c.linkFieldId);
+            if (tf && tf.type === 'relation' && targetOf(tf) === ctx.listId) {
+                relations.set(tf.id, { fieldId: tf.id, label: tf.label, targetListId: ctx.listId, ids: [recordId] });
+                linkNote = ` vinculado al original por «${tf.label}»`;
+            } else if (sf && sf.type === 'relation' && targetOf(sf) === targetListId) {
+                backLink = { fieldId: sf.id, ids: [...(pre.rel.get(sf.id) ?? [])] };
+                linkNote = ` y sumado a «${sf.label}» del original`;
+            } else {
+                skipped.push('el campo para vincular ya no es una relación entre las dos listas');
+            }
+        }
+        const rels = [...relations.values()].filter((r) => r.ids.length > 0);
+        if (Object.keys(data).length === 0 && rels.length === 0) {
+            return skip(A, `No hay nada que copiar a «${pre.name}»: ningún campo se llama igual y no se eligió ninguno a mano.${skipped.length > 0 ? ` Omitidos: ${skipped.join('; ')}.` : ''}`);
+        }
+        const titleId = resolveTitleFieldId(pre.target.map((f) => ({ id: f.id, type: f.type as never })), pre.settings);
+        const titleOf = (d: Record<string, unknown>, id: number | null): string => (titleId ? recordTitleText(d[jsonbKeyForField(titleId)]) : '') || (id ? `#${id}` : '');
+        const note = skipped.length > 0 ? ` Omitidos: ${skipped.join('; ')}.` : '';
+        const count = Object.keys(data).length + rels.length;
+        if (ctx.sim) {
+            const byKey = new Map(pre.target.map((f) => [jsonbKeyForField(f.id), f]));
+            const shown = [
+                ...Object.entries(data).map(([k, v]) => ({ field: byKey.get(k)?.slug ?? k, label: byKey.get(k)?.label ?? k, value: v })),
+                ...rels.map((r) => ({ field: jsonbKeyForField(r.fieldId), label: r.label, value: r.ids })),
+            ];
+            this.rememberNamed(ctx, { response_name: c.responseName }, { status: 200, body: { id: null, titulo: titleOf(data, null), lista: pre.name } });
+            return ok(A, `Copiaría el registro a «${pre.name}» con ${count} valor(es)${linkNote}.${note}`, {
+                _sim: 'would_run',
+                list: pre.name,
+                values: shown,
+                ...(skipped.length > 0 ? { warnings: skipped } : {}),
+            });
+        }
+        const created = await this.writeCreate(ctx, targetListId, data, rels);
+        if (backLink) {
+            const after = await this.writeUpdate(
+                ctx,
+                { listId: ctx.listId, recordId, slugToKey: ctx.slugToKey, fieldsBySlug: ctx.fieldsBySlug },
+                { [jsonbKeyForField(backLink.fieldId)]: [...backLink.ids.filter((id) => id !== created.id), created.id] },
+                srcData,
+            );
+            ctx.data = after;
+        }
+        const title = titleOf(created.data, created.id);
+        this.rememberNamed(ctx, { response_name: c.responseName }, { status: 200, body: { id: created.id, titulo: title, lista: pre.name } });
+        return ok(A, `Copió el registro a «${pre.name}»: #${created.id} «${title}» con ${count} valor(es)${linkNote}.${note}${chainCutNote(ctx)}`, {
+            record_id: created.id,
+            list: pre.name,
+            copied,
             ...(skipped.length > 0 ? { warnings: skipped } : {}),
         });
     }

@@ -4143,6 +4143,51 @@ Dos acciones y un disparador que cierran E1/E2 en parte:
    (lectores tolerantes, validación al guardar, `isFindableFieldType`,
    resúmenes): el editor, el motor y el asistente/MCP hablan lo mismo.
 
+**Addendum v0.1.455 — condición, archivo subido, avisos, turnos y copias.**
+Cierra E1/E2 salvo «preguntarle a la IA»:
+
+1. **`record_matches`** («Cuando un registro empieza a cumplir una
+   condición»): `trigger_config.match_filter` es un árbol de filtros por
+   `field_id` compilado por el MISMO motor de la tabla (`RecordsService.
+   readScoped` + `scope.where`), así calculados, fórmulas y fechas relativas
+   valen igual que en una vista. El estado vive en `automation_matches`
+   (tenant, automatización, registro, `matched_at`; PK por automatización y
+   registro; RLS): **dispara la transición**, decidida por `INSERT … ON
+   CONFLICT DO NOTHING RETURNING` (concurrencia segura sin candados); salir
+   borra la fila. Tres entradas: el evento de crear (si `match_on_create`) o
+   cambiar un registro, y una **revisión cada 15 min** (`match:<id>`,
+   `matchScanPattern` reparte el minuto) que inserta los que entraron y
+   borra los que salieron en una sola pasada, dispara en tandas como
+   «para cada registro» y deja el resto (tope 1.000) para la vuelta
+   siguiente. **Línea de base**: al crearla, activarla o cambiar la condición
+   se siembran sin disparar los que ya la cumplen (si no, guardar una regla
+   sobre una lista grande dispararía para todos). La papelera no entra ni
+   sale; migrar una empresa lleva las filas re-mapeadas para que el destino
+   no re-dispare. Una condición sin reglas válidas abre un Problema.
+2. **`file_added`**: compara los ids de archivo antes/después por campo
+   (`addedFileIds`), filtra por campo y por tipo (`fileKindMatches`: MIME o
+   extensión) y dispara una vez por guardado con el primero como
+   `{{archivo.*}}` y la cantidad.
+3. **`notify_in_app`**: tipo de aviso `automation` en la bandeja de ADR-S40
+   (`NotificationsService.automationNotice`). Destinatarios = personas +
+   campos Persona + equipos (EN VIVO) + quien hizo el cambio, tope 50,
+   filtrados por quien ve el registro con su ACL (nunca `guest` ni
+   `client`); el texto se arma POR destinatario sin los campos que tiene
+   ocultos (SEC-25). En «Probar» no se entrega (`dryRun`).
+4. **`assign_round_robin`**: candidatas = personas elegidas o el equipo HOY;
+   se descartan las que no podrían ver Y editar el registro ya asignado
+   (`editorsOf`, con el valor nuevo aplicado) o están desactivadas. Por
+   turnos: `INCR` en Redis por automatización y paso (sin Redis, al azar);
+   «menos abiertos»: un `count` agrupado sobre la lista con el criterio de
+   terminado de «Mi trabajo». `only_if_empty` de fábrica; escribe por el
+   camino del motor (actividad, cadena) y deja `{{asignado.*}}`.
+5. **`copy_record`**: crea en otra lista (o la misma) con
+   `autoMapCopyFields` (mismo nombre sin tildes + tipo compatible; la
+   opción por su etiqueta; una relación sólo si apunta a la misma lista;
+   archivos si `copy_files`) más valores a mano por slug de la destino, y
+   vínculo por `link_field_id` en cualquiera de las dos listas. Respeta el
+   límite del plan y las listas espejo; deja `{{respuestas.<nombre>.*}}`.
+
 
 ### ADR-S48 — Portal con contraseña por empresa, pagos del cliente y formularios verificados (v0.1.289)
 

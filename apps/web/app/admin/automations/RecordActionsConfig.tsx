@@ -83,7 +83,7 @@ function ListPicker({ value, onChange, testId }: { value: number | null; onChang
 }
 
 /** El nombre con que quedan los resultados para los pasos siguientes. */
-function ResultName({
+export function ResultName({
     spec,
     onChange,
     fallback,

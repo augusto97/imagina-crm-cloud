@@ -17,8 +17,9 @@ import { REDIS } from '../redis/redis.module';
  * usa el motor al procesarlo). Un evento que no está aquí se encola siempre.
  */
 const TRIGGER_TYPES_FOR_EVENT: Record<string, readonly string[]> = {
-    record_created: ['record_created'],
-    record_updated: ['record_updated', 'field_changed'],
+    // v0.1.455 — «empieza a cumplir una condición» y «se sube un archivo» miran altas y cambios.
+    record_created: ['record_created', 'record_matches', 'file_added'],
+    record_updated: ['record_updated', 'field_changed', 'record_matches', 'file_added'],
     payment_received: ['payment_received'],
     form_submitted: ['form_submitted'],
     button_pressed: ['button_pressed'],
@@ -239,6 +240,11 @@ export interface TriggerEvent {
     signature?: SignatureEventInfo;
     /** Sólo estas automatizaciones (un botón que corre una puntual). */
     automation_ids?: number[];
+    /**
+     * v0.1.455 — quién hizo el cambio (alta o edición de una persona): «Avisar
+     * en la app» puede avisarle. No viene cuando lo hizo una automatización.
+     */
+    actor_id?: number;
     /** El cambio lo hizo una automatización (ver `AutomationChain`). */
     chain?: AutomationChain;
 }
@@ -404,16 +410,28 @@ export class AutomationDispatcher {
         const types = [...new Set(rows.map((r) => r.type))];
         const onUpdate = rows.filter((r) => UPDATE_TRIGGER_TYPES.includes(r.type));
         let watch: string[] | null = null;
-        if (onUpdate.length > 0) {
-            const wantedSlugs = onUpdate.map((r) => watchedSlugs((r.config ?? {}) as Record<string, unknown>));
-            if (wantedSlugs.every((w) => w.length > 0)) {
+        // v0.1.455 — «empieza a cumplir una condición» reacciona a CUALQUIER
+        // cambio (un campo calculado o una relación también lo pueden meter).
+        if (onUpdate.length > 0 && !onUpdate.some((r) => r.type === 'record_matches')) {
+            const wanted = onUpdate.map((r) => watchedSlugs((r.config ?? {}) as Record<string, unknown>));
+            const files = onUpdate.filter((r) => r.type === 'file_added');
+            if (wanted.every((w, i) => w.length > 0 || onUpdate[i]!.type === 'file_added')) {
                 const fieldRows = await db
-                    .select({ id: fieldsTable.id, slug: fieldsTable.slug })
+                    .select({ id: fieldsTable.id, slug: fieldsTable.slug, type: fieldsTable.type })
                     .from(fieldsTable)
                     .where(and(eq(fieldsTable.tenantId, tenantId), eq(fieldsTable.listId, listId), isNull(fieldsTable.deletedAt)));
                 const keyOf = new Map(fieldRows.map((f) => [f.slug, `f${f.id}`]));
-                const slugs = [...new Set(wantedSlugs.flat())];
-                if (slugs.every((sl) => keyOf.has(sl))) watch = slugs.map((sl) => keyOf.get(sl)!);
+                const slugs = [...new Set(wanted.flat())];
+                if (slugs.every((sl) => keyOf.has(sl))) {
+                    const keys = new Set(slugs.map((sl) => keyOf.get(sl)!));
+                    // «Cuando se sube un archivo»: el campo elegido o todos los de archivos.
+                    for (const r of files) {
+                        const id = Number((r.config as Record<string, unknown> | null)?.file_field_id);
+                        if (Number.isInteger(id) && id > 0) keys.add(`f${id}`);
+                        else for (const f of fieldRows) if (f.type === 'file') keys.add(`f${f.id}`);
+                    }
+                    watch = [...keys];
+                }
             }
         }
         return { v, types, watch };

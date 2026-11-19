@@ -16498,6 +16498,82 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         con el desglose, checkout de 3 meses por 714.000 con la referencia del
         monto, trato propio que en vivo vuelve a la base y la agencia lo ve).
 
+  - [x] **Automatizaciones: entra en una condición, se sube un archivo,
+        avisar en la app, asignar por turno y copiar a otra lista (v0.1.455,
+        addendum ADR-S47, E1 + E2 del banco de ideas)**. Dos disparadores y
+        tres acciones nuevos, con las reglas en
+        `packages/shared/src/schemas/automation-extras.ts` (lectores
+        tolerantes, validación al guardar, mapeo para copiar, elección por
+        turno, resúmenes): editor, motor y asistente/MCP hablan lo mismo.
+        (a) **«Cuando un registro empieza a cumplir una condición»**
+        (`record_matches`): la condición es un árbol de filtros por
+        `field_id` (`trigger_config.match_filter`, el mismo motor de filtros
+        de la tabla: calculados, fórmulas, fechas relativas en la zona de la
+        empresa) y dispara UNA vez en la transición «no la cumplía → la
+        cumple»; vuelve a disparar sólo si sale y vuelve a entrar. El estado
+        vive en `automation_matches` (migración 0139, RLS; una fila por
+        automatización y registro mientras la cumple) y la transición la
+        decide `INSERT … ON CONFLICT DO NOTHING RETURNING`: tres eventos a la
+        vez disparan una sola corrida. Se mira al crear (`match_on_create`,
+        encendido de fábrica) y al cambiar un registro, y una **revisión cada
+        15 minutos** (`match:<id>` en la cola de automatizaciones, tope 1.000
+        por vuelta, en tandas como un horario «para cada registro») atrapa lo
+        que entra por el paso del tiempo y borra a los que salieron. **Línea
+        de base**: al crearla, activarla o cambiar la condición, los registros
+        que YA la cumplen se siembran sin disparar (el editor lo dice). La
+        papelera no entra ni sale (restaurar no re-dispara); solo-lectura,
+        plan, cadena y caché `listensTo` como el resto. Si la condición queda
+        sin reglas válidas (se borró el campo), la revisión abre un Problema.
+        (b) **«Cuando se sube un archivo»** (`file_added`): un campo de
+        archivos (o cualquiera) y `file_kind` cualquiera / sólo imágenes /
+        sólo PDF (por MIME o extensión); dispara una vez por guardado aunque
+        lleguen varios; `{{archivo.nombre|tipo|tamano|campo|enlace|cantidad}}`
+        (el enlace es la URL firmada de vida larga de los documentos).
+        (c) **«Avisar en la app»** (`notify_in_app`): título y mensaje con
+        variables y enlace al registro; a personas puntuales, a quien esté en
+        campos Persona del registro, a las personas de equipos (las de ESE
+        momento) y, opcional, a quien hizo el cambio; tope 50. Sólo quien ve
+        el registro (nunca invitados ni clientes del portal) y cada persona lo
+        lee sin los campos que tiene ocultos. Tipo de aviso nuevo
+        `automation` (campana + push de fábrica; correo apagado de fábrica).
+        (d) **«Asignar por turno»** (`assign_round_robin`): llena un campo
+        Persona entre personas elegidas o las de un equipo, **por turnos**
+        (contador atómico en Redis por automatización y paso) o **a quien
+        tenga menos registros abiertos** en la lista (criterio de «Mi
+        trabajo»); salta a quien no podría ver Y editar el registro ya
+        asignado (`RecordsService.editorsOf` ahora exige las dos) o está
+        desactivado; `only_if_empty` encendido de fábrica; deja
+        `{{asignado.nombre|email|id}}`.
+        (e) **«Copiar a otra lista»** (`copy_record`): campos con el mismo
+        nombre y tipo compatible (`autoMapCopyFields`: texto ← correo/enlace/
+        teléfono/opción, número ↔ moneda, la opción por su etiqueta, la
+        relación sólo si apunta a la misma lista), valores a mano por slug que
+        ganan, archivos opcionales, y vínculo con el original por una relación
+        en cualquiera de las dos listas; límite del plan y listas espejo
+        respetados; deja `{{respuestas.copia.id|titulo|lista}}`.
+        Editor: `ExtraAutomationParts.tsx` (condición con `FilterGroupView` y
+        el aviso de la línea de base, campo y tipo de archivo, destinatarios
+        con equipos y personas, reparto por personas o equipo, vista previa de
+        lo que se copia solo), resúmenes en palabras, variables por paso
+        (`asignado.*`, `respuestas.<nombre>.*`, `archivo.*`) también en las
+        condiciones de cada paso, y «Probar» que simula sin escribir («Le
+        avisaría a…», «Asignaría…», «Copiaría…»). Asistente/MCP:
+        `match_filters`/`file_field`/`person_fields`/`teams`/`team`/`list`/
+        `link_field` por slug o nombre (`automation-extras-ai.ts`); migrar
+        una empresa re-mapea campos, listas, equipos y personas y lleva el
+        estado de `automation_matches` (así la primera revisión en el destino
+        no re-dispara); borrarla lo limpia. Ayuda: guía
+        `automation-matches-assign`, Aprende → Automatizaciones (dos
+        disparadores y tres secciones nuevas) y novedad con carrusel.
+        Tests: `automation-triggers-actions.spec` (11: entrar/salir/volver a
+        entrar, línea de base, al crear y concurrencia, revisión por tiempo y
+        re-siembra al cambiar la condición, archivo PDF con variables, avisos
+        con campos ocultos, turnos y «menos abiertos», copia con mapeo/vínculo
+        y límite del plan, «Probar», validación al guardar, asistente/MCP,
+        RLS), re-mapeo +1, shared +4, front +3 (64 del editor de
+        automatizaciones) — E2E navegador 35/35 (armado por la interfaz,
+        corridas reales, campana, archivo, celular oscuro).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

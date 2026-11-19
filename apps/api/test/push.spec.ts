@@ -112,6 +112,8 @@ describe('H1 — manifiesto (puro)', () => {
             shop: true,
             // v0.1.446 — alguien firmó (o no quiso firmar) lo que pediste.
             signature: true,
+            // v0.1.455 — «Avisar en la app» de una automatización: a quien se eligió.
+            automation: true,
         });
         expect(readNotificationPrefs({ push: { update: true } }).push).toMatchObject({ update: true, mention: true });
     });

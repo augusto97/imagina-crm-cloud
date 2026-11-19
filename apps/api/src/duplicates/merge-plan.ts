@@ -97,6 +97,8 @@ export const SPECIAL_MOVES = [
 export const LEFT_BEHIND: ReadonlyArray<readonly [string, string]> = [
     ['activity', 'record_id'],
     ['automation_runs', 'record_id'],
+    // v0.1.455 — el estado de «empieza a cumplir una condición» (el que queda se evalúa solo).
+    ['automation_matches', 'record_id'],
     ['webhook_deliveries', 'record_id'],
     ['bulk_edit_items', 'record_id'],
     ['gantt_baseline_items', 'record_id'],

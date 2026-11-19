@@ -17,8 +17,21 @@ export function dueScanPattern(automationId: number): string {
     return `${minute}-59/5 * * * *`;
 }
 
+/**
+ * v0.1.455 — «Cuando un registro empieza a cumplir una condición»: además de
+ * los cambios, cada 15 minutos se revisa quién ENTRÓ por el paso del tiempo
+ * («vence en 3 días») o por un campo calculado. Repartidas como las de
+ * vencimiento: la automatización 7 revisa en los minutos 7, 22, 37 y 52.
+ */
+export function matchScanPattern(automationId: number): string {
+    const minute = Math.abs(Math.trunc(automationId)) % 15;
+    return `${minute}-59/15 * * * *`;
+}
+
 const schedId = (id: number) => `sched:${id}`;
 const dueId = (id: number) => `due:${id}`;
+const matchId = (id: number) => `match:${id}`;
+const TIMED_TRIGGERS = ['scheduled', 'due_date_reached', 'record_matches'];
 
 /**
  * Registra los jobs repeatable de BullMQ para los triggers temporales
@@ -45,10 +58,24 @@ export class AutomationScheduler {
             // como está, así la vuelta que quedó esperando durante un reinicio
             // corre una vez al volver (antes se perdía). Sólo se quita el del
             // otro tipo de disparador.
-            if (!auto.isActive || (auto.triggerType !== 'scheduled' && auto.triggerType !== 'due_date_reached')) {
+            if (!auto.isActive || !TIMED_TRIGGERS.includes(auto.triggerType)) {
                 await this.remove(auto.id);
                 return;
             }
+            if (auto.triggerType === 'record_matches') {
+                await Promise.all([
+                    this.queue.removeJobScheduler(schedId(auto.id)).catch(() => undefined),
+                    this.queue.removeJobScheduler(dueId(auto.id)).catch(() => undefined),
+                ]);
+                await upsertSchedulerIfChanged(
+                    this.queue,
+                    matchId(auto.id),
+                    { pattern: matchScanPattern(auto.id) },
+                    { name: 'matches', data: { tenantId, automationId: auto.id } },
+                );
+                return;
+            }
+            await this.queue.removeJobScheduler(matchId(auto.id)).catch(() => undefined);
 
             if (auto.triggerType === 'scheduled') {
                 // v0.1.221 — la UI guarda frecuencia + hora + zona horaria y el
@@ -99,6 +126,7 @@ export class AutomationScheduler {
         await Promise.all([
             this.queue.removeJobScheduler(schedId(automationId)).catch(() => undefined),
             this.queue.removeJobScheduler(dueId(automationId)).catch(() => undefined),
+            this.queue.removeJobScheduler(matchId(automationId)).catch(() => undefined),
         ]);
     }
 }

@@ -4,6 +4,10 @@ import {
     describeWebhookRecord,
     describeWhatsTrigger,
     describeCommentTrigger,
+    describeFileTrigger,
+    describeRecordMatchesTrigger,
+    readFileAddedConfig,
+    readRecordMatchesConfig,
     requestSignatureIssues,
     requestSignatureSummary,
     SIGNATURE_EVENTS,
@@ -180,6 +184,7 @@ import {
     type PortalBuildContext,
 } from './list-config';
 import { translateBulkEditActions } from './bulk-ops';
+import { translateExtraActions, translateExtraTrigger, type ExtraTranslateCtx } from './automation-extras-ai';
 import { assertFlowIssues, translateFlowActions, translateScheduledEach, type FlowTranslateCtx } from './automation-flow-ai';
 import {
     DOC_DESIGN_DOC,
@@ -589,7 +594,7 @@ const automationSpec = z.object({
     list: z.string().max(63).describe('Slug de la lista'),
     name: z.string().min(1).max(190),
     description: z.string().max(2000).optional(),
-    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'whats_event', 'email_received', 'sla_alert', 'subscription_event', 'comment_added', 'signature_event']),
+    trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'whats_event', 'email_received', 'sla_alert', 'subscription_event', 'comment_added', 'signature_event', 'record_matches', 'file_added']),
     trigger_config: z
         .record(z.unknown())
         .optional()
@@ -612,7 +617,9 @@ const automationSpec = z.object({
                 'email_received (MESA DE AYUDA: llegó un correo al buzón de soporte de la lista — ver `helpdesk` en get_list_schema; las acciones usan {{correo.de}}, {{correo.nombre}}, {{correo.asunto}}, {{correo.texto}}, {{correo.tipo}} (nuevo|respuesta)): {email_kind?: any (default) | new (sólo tickets nuevos) | reply (sólo respuestas del cliente), field_filters?}. ' +
                 'sla_alert (un SLA de la mesa de ayuda entró en riesgo o se venció; las acciones usan {{sla.alerta}}, {{sla.objetivo}}, {{sla.vence}}, {{sla.prioridad}}, {{sla.estado}}): {sla_alerts?: [at_risk|breached] (vacío = las dos), sla_targets?: [first_response|resolution] (vacío = los dos), field_filters?}. ' +
                 'comment_added (alguien comentó en el registro: el equipo en la app, el cliente desde el portal o respondiendo por correo; NO se dispara con lo que comenta un agente de IA; las acciones usan {{comentario.texto}}, {{comentario.autor}}, {{comentario.de}} (equipo|cliente), {{comentario.origen}} (app|portal|correo), {{comentario.visibilidad}}, {{comentario.es_respuesta}}): {comment_from?: any|team|client, comment_visibility?: any|internal|client, comment_replies?: any|top (sólo comentarios nuevos, no respuestas)|replies, comment_contains? (palabras separadas por coma: sólo si el texto contiene alguna, sin importar tildes ni mayúsculas), field_filters?}. ' +
-                'signature_event (cambió una FIRMA ELECTRÓNICA de un documento del registro; las acciones usan {{firma.evento}}, {{firma.titulo}}, {{firma.numero}}, {{firma.estado}}, {{firma.firmante}}, {{firma.firmante_email}}, {{firma.firmaron}}, {{firma.total}}, {{firma.motivo}}, {{firma.siguiente}}, {{firma.siguiente_email}}, {{firma.enlace}} (el de quien firma ahora), {{firma.pdf}} (el firmado, cuando firmaron todos), {{firma.verificar}}, {{firma.codigo}}): {signature_events?: [requested|signed|completed|declined|expired|voided] (vacío = todos; completed = firmaron todos), signature_templates?: [id o nombre de las plantillas de documento_templates: sólo las firmas de esos documentos], field_filters?}.',
+                'signature_event (cambió una FIRMA ELECTRÓNICA de un documento del registro; las acciones usan {{firma.evento}}, {{firma.titulo}}, {{firma.numero}}, {{firma.estado}}, {{firma.firmante}}, {{firma.firmante_email}}, {{firma.firmaron}}, {{firma.total}}, {{firma.motivo}}, {{firma.siguiente}}, {{firma.siguiente_email}}, {{firma.enlace}} (el de quien firma ahora), {{firma.pdf}} (el firmado, cuando firmaron todos), {{firma.verificar}}, {{firma.codigo}}): {signature_events?: [requested|signed|completed|declined|expired|voided] (vacío = todos; completed = firmaron todos), signature_templates?: [id o nombre de las plantillas de documento_templates: sólo las firmas de esos documentos], field_filters?}. ' +
+                'record_matches (un registro EMPIEZA a cumplir una condición: por una edición, al crearse o por el paso del tiempo con fechas relativas — se revisa cada 15 minutos; dispara UNA vez por entrada y no otra vez mientras la siga cumpliendo; si sale y vuelve a entrar, dispara de nuevo; al activarla, los que YA la cumplen no disparan): {match_filters: [{field: slug, op, value}] (todas se tienen que cumplir; ej. [{field: "estado", op: "eq", value: "pendiente"}, {field: "vence", op: "between_relative", value: "next_7_days"}]), match_on_create?: true (default: también cuando el registro se crea ya cumpliéndola)}. ' +
+                'file_added (se subió un archivo a un campo de archivos del registro; las acciones usan {{archivo.nombre}}, {{archivo.tipo}}, {{archivo.tamano}}, {{archivo.campo}}, {{archivo.enlace}} (enlace firmado que sirve en un correo, dura 30 días), {{archivo.cantidad}}): {file_field?: slug de un campo de archivos (vacío = cualquiera), file_kind?: any|image|pdf, field_filters?}.',
         ),
     actions: z
         .array(z.record(z.unknown()))
@@ -637,6 +644,9 @@ const automationSpec = z.object({
                 'for_each_linked {relation: slug de la lista vinculada (linked_lists de get_list_schema; o relation_field_id), via?: nombre de la relación si hay varias, filters?: [{field, op, value}] por slug de ESA lista, actions: [...]} — repite las acciones por cada registro vinculado (tope 200); adentro {{item.slug}} y {{item.record.id}} leen el vinculado, y update_field {target: "item", values: {slug de esa lista: valor}} lo cambia (sin target cambia el registro que disparó). ' +
                 'find_records {list?: slug (default la de la automatización; puede ser otra lista), conditions: [{field: slug de ESA lista, op: eq|neq|contains|not_contains|gt|gte|lt|lte|is_null|is_not_null, value (acepta variables: "{{correo}}")}], logic?: and|or, sort_field?: slug o "created_at", sort_dir?: desc|asc, limit?: 1-50 (default 10), exclude_self?: true (default: en la misma lista no cuenta al que disparó), if_none?: continue|stop, response_name?: (default "busqueda")} — BUSCA registros y los deja para los pasos siguientes: {{respuestas.<nombre>.cantidad}}, {{respuestas.<nombre>.total}}, {{respuestas.<nombre>.ids}} (sirve para un campo relación), {{respuestas.<nombre>.primero.id}}, {{respuestas.<nombre>.primero.titulo}}, {{respuestas.<nombre>.primero.<slug>}}; un if_else puede preguntar {field: "respuestas.<nombre>.cantidad", op: "gt", value: 0}. «es» sobre texto/correo/teléfono no distingue mayúsculas y el teléfono se compara por dígitos; una opción se puede escribir por su etiqueta | ' +
                 'upsert_record {list?: slug, match_by?: record_id|field, match_field? (slug de un campo «Sin repetidos» de texto, correo, teléfono, número o enlace, o un ID automático), match_value: el dato con que se busca ("{{correo}}", "{{payload.nit}}", "{{respuestas.busqueda.primero.id}}"), mode?: upsert (default: lo actualiza si existe y si no lo crea) | update_only | create_only, values: {slug: valor}, response_name?: (default "registro")} — CREA O ACTUALIZA UN registro de esa lista sin duplicar; al crearlo el campo de búsqueda queda con el dato; un valor vacío no borra lo que ya tenía; con dos registros con el mismo valor falla sin tocar ninguno. Deja {{respuestas.<nombre>.id}}, .titulo y .accion (creado|actualizado|sin_cambios|ya_existia|no_encontrado) | ' +
+                'notify_in_app {title, message? (los dos con variables {{slug}}), users?: [ids de list_members], person_fields?: [slugs de campos Persona del registro], teams?: [id o nombre de list_teams], include_actor?: true (a quien hizo el cambio)} — AVISO EN LA CAMPANA de la app (y en el teléfono, según lo que cada persona eligió) con el enlace al registro; sólo le llega a quien puede ver el registro (nunca a invitados ni clientes del portal) | ' +
+                'assign_round_robin {person_field: slug de un campo Persona, assignees?: [ids de list_members] o team?: id o nombre de list_teams (sus personas de HOY), assign_mode?: round_robin (por turnos, default) | least_open (a quien tenga menos registros abiertos en la lista), only_if_empty?: true (default: no le quita el registro a nadie)} — ASIGNA el registro a una persona del grupo, saltando a quien no podría verlo y editarlo; deja {{asignado.nombre}}, {{asignado.email}}, {{asignado.id}} | ' +
+                'copy_record {list: slug de la lista destino (puede ser la misma), auto_map?: true (default: copia solos los campos que se llaman igual y son compatibles), values?: {slug DE LA LISTA DESTINO: valor con variables} (pisan lo copiado), link_field?: slug de una relación que vincula la copia con el original (de la lista destino apuntando a ésta, o de ésta apuntando a la destino), copy_files?: true, response_name?: (default "copia")} — COPIA el registro a otra lista; deja {{respuestas.<nombre>.id}}, .titulo y .lista | ' +
                 'request_signature {template: id o nombre de una plantilla de document_templates (o source: "file" + file_field: slug de un campo Archivo con el PDF), signers: [{name, email, role?, phone?}] (aceptan variables: "{{nombre}}", "{{correo}}", "{{celular}}"; email también puede ser el slug de un campo correo o persona), order?: parallel|sequential, verify?: email (código de 6 números por correo, default)|sms|whatsapp (el código llega al celular: phone obligatorio en cada persona + code_connection: id o nombre de signature_code_channels de get_list_schema, y code_template con WhatsApp de Meta)|none, title?, message?, expires_days? (30), remind_days? (3), send_email?: true (false = no manda correos: usa {{firma.enlace}} en un paso siguiente, por ejemplo un WhatsApp), save_field? (campo Archivo para el PDF firmado), status_field? + status_value? (selección y su opción, valor o etiqueta), date_field? (fecha de la firma)} — PIDE LA FIRMA ELECTRÓNICA de un documento del registro y deja {{firma.enlace}}, {{firma.siguiente}}, {{firma.titulo}}, {{firma.numero}}, {{firma.codigo}} y {{firma.verificar}} para los pasos siguientes | ' +
                 'call_webhook y connector_action aceptan response_name (minúsculas/números/_): su respuesta queda para los pasos SIGUIENTES — {{webhook.status}}, {{webhook.body.pedido.items.0.id}} (del último) y {{respuestas.<response_name>.body.x}}; sobreviven a un wait. ' +
                 'send_email acepta además pdf_templates: [ids de plantillas de documento] para ADJUNTAR esos PDF. ' +
@@ -1064,7 +1074,7 @@ export class StructureTools implements AiProposalApplier {
                 name: z.string().min(1).max(190).optional(),
                 description: z.string().max(2000).nullable().optional(),
                 is_active: z.boolean().optional(),
-                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'whats_event', 'email_received', 'sla_alert', 'subscription_event', 'comment_added', 'signature_event']).optional(),
+                trigger_type: z.enum(['record_created', 'record_updated', 'due_date_reached', 'scheduled', 'incoming_webhook', 'payment_received', 'form_submitted', 'button_pressed', 'approval_resolved', 'checklist_completed', 'booking_event', 'whatsapp_message_received', 'whats_event', 'email_received', 'sla_alert', 'subscription_event', 'comment_added', 'signature_event', 'record_matches', 'file_added']).optional(),
                 trigger_config: z.record(z.unknown()).optional(),
                 actions: z.array(z.record(z.unknown())).min(1).max(20).optional(),
             }),
@@ -1864,6 +1874,14 @@ export class StructureTools implements AiProposalApplier {
                 if (/"request_signature"/.test(JSON.stringify(parsed.data.actions)) || parsed.data.trigger_type === 'signature_event') {
                     throw new AiToolError(`Automatización «${a.name}»: la firma electrónica necesita la lista ya creada (y su plantilla de documento). Crea primero la lista y después propón la automatización con propose_create_automation.`);
                 }
+                // v0.1.455 — condiciones, archivos, avisos, turnos y copias necesitan los campos ya creados.
+                if (
+                    parsed.data.trigger_type === 'record_matches' ||
+                    parsed.data.trigger_type === 'file_added' ||
+                    /"(notify_in_app|assign_round_robin|copy_record)"/.test(JSON.stringify(parsed.data.actions))
+                ) {
+                    throw new AiToolError(`Automatización «${a.name}»: necesita los campos ya creados. Crea primero la lista y después propón la automatización con propose_create_automation.`);
+                }
                 // Campo «Botón»: el disparador «Al presionar el botón» por slug.
                 translateButtonTrigger(parsed.data.trigger_type, (parsed.data.trigger_config ??= {}) as Record<string, unknown>, (s) =>
                     fieldTypeBySlug.get(s) === 'button' ? { $field: s } : undefined,
@@ -2330,6 +2348,24 @@ export class StructureTools implements AiProposalApplier {
         };
     }
 
+    /** v0.1.455 — lo que necesita traducir «Avisar en la app», «Asignar por turno» y «Copiar a otra lista». */
+    private async extraCtx(
+        ctx: AiToolContext,
+        list: { id: number; name: string },
+        fields: Field[],
+        lists: Array<{ id: number; slug: string; name: string }>,
+    ): Promise<ExtraTranslateCtx> {
+        const teams = this.teams ? await this.teams.list(ctx.tenantId).catch(() => []) : [];
+        return {
+            listId: list.id,
+            listName: list.name,
+            fields,
+            lists: lists.map((l) => ({ id: l.id, slug: l.slug, name: l.name })),
+            fieldsOf: (id) => this.fields.listByListId(ctx.tenantId, id),
+            teams: teams.map((t) => ({ id: t.id, name: t.name })),
+        };
+    }
+
     private async proposeCreateAutomation(ctx: AiToolContext, input: AutomationSpec): Promise<AiToolResult> {
         const list = await this.resolveList(ctx, input.list);
         await this.automations.assertWholeList(ctx.tenantId, String(list.id), ctx).catch((err: Error) => {
@@ -2355,6 +2391,9 @@ export class StructureTools implements AiProposalApplier {
         translateScheduledEach(parsed.data.trigger_type, parsed.data.trigger_config, fields, list.name);
         translateButtonTrigger(parsed.data.trigger_type, parsed.data.trigger_config, buttonFieldResolver(fields));
         translateWhatsTrigger(parsed.data.trigger_type, parsed.data.trigger_config, fields, list.name);
+        // v0.1.455 — condición por slug, campo de archivos, avisos, turnos y copias.
+        translateExtraTrigger(parsed.data.trigger_type, parsed.data.trigger_config, fields, list.name);
+        await translateExtraActions(parsed.data.actions as unknown[], await this.extraCtx(ctx, list, fields, lists));
         // v0.1.399 — webhook entrante con registro: la búsqueda tiene que poder correr.
         parsed.data.trigger_config = webhookConfigForModel(parsed.data.trigger_type, parsed.data.trigger_config, fields);
         // C5 — flujos de aprobación por id o nombre → `approval_flow_id`.
@@ -2900,6 +2939,8 @@ export class StructureTools implements AiProposalApplier {
             translateScheduledEach(merged.data.trigger_type, merged.data.trigger_config, fields, list.name);
             translateButtonTrigger(merged.data.trigger_type, merged.data.trigger_config, buttonFieldResolver(fields));
             translateWhatsTrigger(merged.data.trigger_type, merged.data.trigger_config, fields, list.name);
+            translateExtraTrigger(merged.data.trigger_type, merged.data.trigger_config, fields, list.name);
+            if (input.actions !== undefined) await translateExtraActions(merged.data.actions as unknown[], await this.extraCtx(ctx, list, fields, lists));
             merged.data.trigger_config = webhookConfigForModel(merged.data.trigger_type, merged.data.trigger_config, fields);
             if (input.actions !== undefined || input.trigger_config !== undefined || input.trigger_type !== undefined) {
                 await this.translateApprovalRefs(ctx, list, merged.data.trigger_type, merged.data.trigger_config, merged.data.actions as unknown[]);
@@ -4746,6 +4787,9 @@ export class StructureTools implements AiProposalApplier {
                 !s.startsWith('comentario.') &&
                 // v0.1.447 — lo que deja el disparador de firma o «Pedir firma».
                 !s.startsWith('firma.') &&
+                // v0.1.455 — el archivo del disparador y la persona que asignó «Asignar por turno».
+                !s.startsWith('archivo.') &&
+                !s.startsWith('asignado.') &&
                 !slugs.has(s) &&
                 !/^f\d+$/.test(s)
             )
@@ -4821,6 +4865,10 @@ export class StructureTools implements AiProposalApplier {
                         }
                         break;
                     }
+                    case 'copy_record':
+                        // v0.1.455 — las claves son de la lista DESTINO (validadas en translateExtraActions).
+                        for (const v of Object.values((cfg.values as Record<string, unknown>) ?? {})) checkTags(v);
+                        break;
                     case 'bulk_edit':
                         // Ya traducida a ids por translateBulkEditActions.
                         break;
@@ -5435,6 +5483,12 @@ function triggerLabel(type: string, cfg: Record<string, unknown>, fields: Field[
             return describeCommentTrigger(readCommentTriggerConfig(cfg));
         case 'signature_event':
             return signatureTriggerSummary(cfg);
+        case 'record_matches':
+            return describeRecordMatchesTrigger(readRecordMatchesConfig(cfg));
+        case 'file_added': {
+            const fc = readFileAddedConfig(cfg);
+            return describeFileTrigger(fc, fc.fieldId ? fields.find((f) => f.id === fc.fieldId)?.label : null);
+        }
         default:
             return type;
     }
@@ -5496,6 +5550,15 @@ function describeActions(
             }
             case 'request_signature':
                 return requestSignatureSummary(cfg);
+            case 'notify_in_app':
+                return `Avisar en la app: «${String(cfg.title ?? '')}»`;
+            case 'assign_round_robin':
+                return cfg.assign_mode === 'least_open' ? 'Asignar a quien tenga menos registros abiertos' : 'Asignar por turno';
+            case 'copy_record': {
+                const id = Number(cfg.target_list_id);
+                const target = [...lists.values()].find((l) => l.id === id);
+                return `Copiar a «${target?.name ?? String(cfg.target_list_id ?? '')}»`;
+            }
             default:
                 return a.type;
         }

@@ -56,6 +56,7 @@ export * from './schemas/aggregate';
 export * from './schemas/automation';
 export * from './schemas/automation-flow';
 export * from './schemas/automation-records';
+export * from './schemas/automation-extras';
 export * from './schemas/duplicates';
 export * from './schemas/signatures';
 export * from './schemas/signature-automations';

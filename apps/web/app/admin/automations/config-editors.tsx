@@ -14,6 +14,7 @@ import { IntegrationLogo } from '@/cloud/components/IntegrationLogo';
 
 import { BulkEditActionConfig } from './BulkEditActionConfig';
 import { CommentTriggerConfig, FindRecordsConfig, UpsertRecordConfig } from './RecordActionsConfig';
+import { AssignRoundRobinConfig, CopyRecordConfig, FileAddedTriggerConfig, NotifyInAppConfig, RecordMatchesTriggerConfig } from './ExtraAutomationParts';
 import { WhatsappActionConfig, WhatsappTriggerConfig } from './WhatsappActionConfig';
 import { WhatsEventTriggerConfig } from './WhatsEventTriggerConfig';
 import { SmsActionConfig } from './SmsActionConfig';
@@ -225,6 +226,12 @@ export function cleanTriggerConfig(c: TriggerConfig): TriggerConfig {
     // v0.1.447 — «Cuando cambia una firma»: qué eventos y qué plantillas (vacío = todos).
     if (Array.isArray(c.signature_events) && c.signature_events.length > 0) out.signature_events = c.signature_events;
     if (Array.isArray(c.signature_template_ids) && c.signature_template_ids.length > 0) out.signature_template_ids = c.signature_template_ids;
+    // v0.1.455 — «Cuando un registro empieza a cumplir una condición»: el árbol y si cuenta al crear.
+    if (c.match_filter && typeof c.match_filter === 'object' && !Array.isArray(c.match_filter)) out.match_filter = c.match_filter;
+    if (c.match_on_create === false) out.match_on_create = false;
+    // v0.1.455 — «Cuando se sube un archivo»: el campo (sin él, cualquiera) y el tipo.
+    if (typeof c.file_field_id === 'number' && c.file_field_id > 0) out.file_field_id = c.file_field_id;
+    if (c.file_kind === 'image' || c.file_kind === 'pdf') out.file_kind = c.file_kind;
     return out;
 }
 
@@ -265,6 +272,10 @@ export function helpForTrigger(triggerType: string): string {
             return __('Se ejecuta cuando un cliente paga un link de cobro (Mercado Pago o Wompi) creado desde un registro de esta lista. La app lo confirma con el proveedor antes de disparar. En las acciones puedes usar {{pago.monto_pagado}}, {{pago.metodo}}, {{pago.fecha}} y {{pago.link}}.');
         case 'whats_event':
             return __('Se ejecuta cuando Whats avisa que pasó algo: cambió el estado de un mensaje que enviaste, se creó o se dio de baja un contacto, empezó, se asignó o se resolvió una conversación, calificaron la atención, hicieron clic en un enlace o enviaron un formulario de Whats. La app busca en esta lista el registro con el teléfono del contacto y, si no está, lo crea o deja la corrida cancelada (tú eliges). En las acciones puedes usar {{whatsapp.evento}}, {{whatsapp.de}}, {{whatsapp.nombre}} y lo que trae cada aviso como {{payload.x}}.');
+        case 'record_matches':
+            return __('Se ejecuta UNA vez cuando un registro empieza a cumplir la condición: porque alguien lo editó, porque se creó así o porque pasó el tiempo (por ejemplo, «la fecha de vencimiento ya pasó»). Mientras la siga cumpliendo no vuelve a dispararse; si deja de cumplirla y la vuelve a cumplir, sí. Al guardar, los registros que ya la cumplen no disparan.');
+        case 'file_added':
+            return __('Se ejecuta cuando alguien agrega un archivo a un campo de archivos del registro (desde la app, un formulario, el portal o una automatización). Puedes elegir el campo y si cuentan sólo imágenes o sólo PDF. En las acciones usa {{archivo.nombre}}, {{archivo.tipo}} y {{archivo.enlace}}.');
         case 'comment_added':
             return __('Se ejecuta cuando alguien comenta un registro de esta lista: el equipo desde la app o el cliente desde el portal o respondiendo un correo. Puedes elegir quién, si es una nota interna o visible para el cliente, si cuenta una respuesta en un hilo y que tenga ciertas palabras («urgente», «factura»). En las acciones usa {{comentario.texto}}, {{comentario.autor}} y {{comentario.de}}.');
         case 'signature_event':
@@ -305,7 +316,9 @@ export function TriggerConfigEditor({
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-3">
             {/* Un horario no tiene registro: su filtro es el de «para cada registro». */}
-            {triggerType !== 'scheduled' && (
+            {/* v0.1.455 — «empieza a cumplir» ES una condición: tiene su propio editor. */}
+            {triggerType === 'record_matches' && <RecordMatchesTriggerConfig config={config} onChange={onChange} fields={fields} />}
+            {triggerType !== 'scheduled' && triggerType !== 'record_matches' && (
                 <ConditionEditor
                     value={config.field_filters as ConditionRule[] | Record<string, unknown> | undefined}
                     onChange={(next) => onChange({ ...config, field_filters: next })}
@@ -376,6 +389,7 @@ export function TriggerConfigEditor({
             {triggerType === 'approval_resolved' && <ApprovalTriggerConfigHost config={config} onChange={onChange} />}
             {triggerType === 'checklist_completed' && <ChecklistCompletedConfig config={config} onChange={onChange} />}
             {triggerType === 'comment_added' && <CommentTriggerConfig config={config} onChange={onChange} />}
+            {triggerType === 'file_added' && <FileAddedTriggerConfig config={config} onChange={onChange} fields={fields} />}
             {triggerType === 'whatsapp_message_received' && <WhatsappTriggerConfig config={config} onChange={onChange} />}
             {triggerType === 'whats_event' && <WhatsEventTriggerConfig config={config} onChange={onChange} fields={fields} />}
             {triggerType === 'subscription_event' && <SubscriptionTriggerConfig config={config} onChange={onChange} />}
@@ -1226,6 +1240,12 @@ export function ActionConfigEditor({
                 <UpdateFieldConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'create_record' ? (
                 <CreateRecordConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'notify_in_app' ? (
+                <NotifyInAppConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'assign_round_robin' ? (
+                <AssignRoundRobinConfig spec={spec} onChange={onChange} fields={fields} />
+            ) : spec.type === 'copy_record' ? (
+                <CopyRecordConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'find_records' ? (
                 <FindRecordsConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'upsert_record' ? (

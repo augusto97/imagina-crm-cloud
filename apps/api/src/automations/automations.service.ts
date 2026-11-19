@@ -413,7 +413,7 @@ export class AutomationsService {
             .select()
             .from(automations)
             // Conexión base (sin RLS): lo que está en la papelera se filtra a mano.
-            .where(and(eq(automations.isActive, true), isNull(automations.deletedAt), inArray(automations.triggerType, ['scheduled', 'due_date_reached'])));
+            .where(and(eq(automations.isActive, true), isNull(automations.deletedAt), inArray(automations.triggerType, ['scheduled', 'due_date_reached', 'record_matches'])));
         // v0.1.393 — varios a la vez (cada uno es esperar a Redis) y uno que
         // falla no corta a los demás (antes, en fila y el primero que fallaba
         // dejaba sin registrar a todos los que venían después).
@@ -543,9 +543,35 @@ export class AutomationsService {
             await this.recordVersion(tx, tenantId, inserted, opts.actorId ?? null, opts.note ?? 'Creó la automatización');
             return inserted;
         });
+        // v0.1.455 — «empieza a cumplir una condición»: los que YA la cumplen no disparan.
+        if (row.isActive && row.triggerType === 'record_matches') await this.seedMatches(tenantId, row.id);
         await this.dispatcher?.invalidate(tenantId, list.id);
         await this.scheduler.sync(tenantId, row);
         return toAutomation(await this.syncHook(tenantId, row));
+    }
+
+    /**
+     * v0.1.455 — La línea de base de «Cuando un registro empieza a cumplir una
+     * condición»: al activarla (o cambiar la condición) se anotan los que YA
+     * la cumplen SIN disparar. Si falla, se avisa: sin línea de base la
+     * próxima revisión dispararía por todos ellos.
+     */
+    private async seedMatches(tenantId: number, automationId: number): Promise<void> {
+        if (!this.engine) return;
+        try {
+            await this.engine.seedMatches(tenantId, automationId);
+        } catch (err) {
+            this.logger.error(`Línea de base de la automatización ${automationId}: ${String(err)}`);
+            this.incidents?.report({
+                tenantId,
+                key: `automation:${automationId}`,
+                source: 'automation',
+                sourceId: automationId,
+                listId: null,
+                title: 'Una automatización no pudo preparar su condición',
+                message: 'No se pudo anotar qué registros ya cumplían la condición. Guárdala otra vez; si sigue, revisa la condición.',
+            });
+        }
     }
 
     /**
@@ -743,7 +769,7 @@ export class AutomationsService {
         let patch: Omit<UpdateAutomationInput, 'restored_from'> = rest;
         if (patch.actions !== undefined) normalizeEmailDesigns(patch.actions);
         const restoredNote = restoredFrom !== undefined ? await this.restoredNote(tenantId, id, restoredFrom) : null;
-        const row = await this.tenantDb.withTenant(tenantId, async (tx) => {
+        const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
             const current = await this.repo.findById(tx, tenantId, id);
             if (!current || current.listId !== list.id) throw notFound(id);
             // v0.1.288 — una versión restaurada (o una config leída por el MCP)
@@ -811,8 +837,18 @@ export class AutomationsService {
                 await this.repo.cancelWaiting(tx, tenantId, id, 'Se pausó la automatización: la espera no siguió.');
             }
             await this.recordVersion(tx, tenantId, updated, opts.actorId ?? null, restoredNote ?? opts.note ?? null);
-            return updated;
+            // v0.1.455 — al activarla o cambiar la condición, la línea de base se rehace.
+            const reseed =
+                updated.isActive &&
+                updated.triggerType === 'record_matches' &&
+                (activating ||
+                    current.triggerType !== 'record_matches' ||
+                    JSON.stringify((current.triggerConfig as Record<string, unknown>)?.match_filter ?? null) !==
+                        JSON.stringify((updated.triggerConfig as Record<string, unknown>)?.match_filter ?? null));
+            return { updated, reseed };
         });
+        if (result.reseed) await this.seedMatches(tenantId, result.updated.id);
+        const row = result.updated;
         await this.dispatcher?.invalidate(tenantId, list.id);
         await this.scheduler.sync(tenantId, row);
         return toAutomation(await this.syncHook(tenantId, row));
