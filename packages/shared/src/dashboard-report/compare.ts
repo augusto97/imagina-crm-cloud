@@ -481,3 +481,8 @@ export function alignComparedSeries(args: {
     }
     return out;
 }
+
+/** v0.1.464 (J1) — El nombre de un período (preset) legible, o `null` si no es uno conocido. */
+export function periodPresetName(preset: string | undefined): string | null {
+    return presetName(preset);
+}

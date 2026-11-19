@@ -10,3 +10,4 @@ export { xmlEscape } from './xml';
 export * from './reader';
 export * from './import-table';
 export * from './writer';
+export * from './workbook';

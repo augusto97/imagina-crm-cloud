@@ -14,8 +14,14 @@ import { api } from '@/lib/api';
  */
 export const dashboardSharingKeys = {
     public: (id: number) => ['dashboards', 'sharing', String(id), 'public'] as const,
-    subscriptions: (id: number) => ['dashboards', 'sharing', String(id), 'subscriptions'] as const,
+    subscriptions: (id: number, base: SharingBase = 'dashboards') => [base, 'sharing', String(id), 'subscriptions'] as const,
 };
+
+/**
+ * v0.1.464 (J1) — Los envíos programados son de un tablero o de un informe:
+ * la misma API bajo `/dashboards/:id` o `/reports/:id`.
+ */
+export type SharingBase = 'dashboards' | 'reports';
 
 export interface SubscriptionSendResult {
     status: 'sent' | 'failed' | 'skipped';
@@ -48,49 +54,49 @@ export function useRegeneratePublicDashboard(id: number) {
     });
 }
 
-export function useDashboardSubscriptions(id: number, enabled: boolean) {
+export function useDashboardSubscriptions(id: number, enabled: boolean, base: SharingBase = 'dashboards') {
     return useQuery({
-        queryKey: dashboardSharingKeys.subscriptions(id),
-        queryFn: async () => (await api.get<DashboardSubscription[]>(`/dashboards/${id}/subscriptions`)).data,
+        queryKey: dashboardSharingKeys.subscriptions(id, base),
+        queryFn: async () => (await api.get<DashboardSubscription[]>(`/${base}/${id}/subscriptions`)).data,
         enabled,
         staleTime: 10_000,
     });
 }
 
-export function useSaveDashboardSubscription(id: number) {
+export function useSaveDashboardSubscription(id: number, base: SharingBase = 'dashboards') {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async ({ sid, input }: { sid: number | null; input: DashboardSubscriptionInput }) =>
             sid === null
-                ? (await api.post<DashboardSubscription>(`/dashboards/${id}/subscriptions`, input)).data
-                : (await api.patch<DashboardSubscription>(`/dashboards/${id}/subscriptions/${sid}`, input)).data,
-        onSuccess: () => void qc.invalidateQueries({ queryKey: dashboardSharingKeys.subscriptions(id) }),
+                ? (await api.post<DashboardSubscription>(`/${base}/${id}/subscriptions`, input)).data
+                : (await api.patch<DashboardSubscription>(`/${base}/${id}/subscriptions/${sid}`, input)).data,
+        onSuccess: () => void qc.invalidateQueries({ queryKey: dashboardSharingKeys.subscriptions(id, base) }),
     });
 }
 
-export function useDeleteDashboardSubscription(id: number) {
+export function useDeleteDashboardSubscription(id: number, base: SharingBase = 'dashboards') {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async (sid: number) => {
-            await api.delete(`/dashboards/${id}/subscriptions/${sid}`);
+            await api.delete(`/${base}/${id}/subscriptions/${sid}`);
         },
-        onSuccess: () => void qc.invalidateQueries({ queryKey: dashboardSharingKeys.subscriptions(id) }),
+        onSuccess: () => void qc.invalidateQueries({ queryKey: dashboardSharingKeys.subscriptions(id, base) }),
     });
 }
 
 /** «Enviarme una prueba ahora» (con lo que está en el formulario, sin guardar). */
-export function useTestDashboardSubscription(id: number) {
+export function useTestDashboardSubscription(id: number, base: SharingBase = 'dashboards') {
     return useMutation({
         mutationFn: async (input: DashboardSubscriptionInput) =>
-            (await api.post<SubscriptionSendResult>(`/dashboards/${id}/subscriptions/test`, input)).data,
+            (await api.post<SubscriptionSendResult>(`/${base}/${id}/subscriptions/test`, input)).data,
     });
 }
 
 /** «Enviar ahora» un envío guardado. */
-export function useSendDashboardSubscription(id: number) {
+export function useSendDashboardSubscription(id: number, base: SharingBase = 'dashboards') {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: async (sid: number) => (await api.post<SubscriptionSendResult>(`/dashboards/${id}/subscriptions/${sid}/send`)).data,
-        onSettled: () => void qc.invalidateQueries({ queryKey: dashboardSharingKeys.subscriptions(id) }),
+        mutationFn: async (sid: number) => (await api.post<SubscriptionSendResult>(`/${base}/${id}/subscriptions/${sid}/send`)).data,
+        onSettled: () => void qc.invalidateQueries({ queryKey: dashboardSharingKeys.subscriptions(id, base) }),
     });
 }

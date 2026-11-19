@@ -3872,4 +3872,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists', tour: 'automation-basics' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.464-informes-varias-listas',
+        version: '0.1.464',
+        date: '2026-11-19',
+        kind: 'feature',
+        title: 'Informes con datos de varias listas',
+        summary:
+            'Arma un documento con títulos, textos e indicadores, gráficos o tablas de VARIAS listas a la vez, descárgalo en PDF o Excel y mándalo por correo cada semana o cada mes.',
+        media: {
+            slides: [
+                {
+                    title: 'Un informe, varias listas',
+                    text: 'Cada bloque sale de su propia lista: las ventas, los gastos y los clientes en un solo documento, con el período y la comparación del informe para todos.',
+                    illustration: 'tab-explorar',
+                },
+                {
+                    title: 'PDF, Excel y por correo',
+                    text: 'Descárgalo en PDF (con portada y saltos de página) o en Excel (una hoja por bloque), o programa su envío por correo para que llegue solo a tu equipo.',
+                    illustration: 'tab-configurar',
+                },
+            ],
+        },
+        body: [
+            '- Está en **Tableros → Informes**. Crea uno y agrega bloques: títulos, textos, separadores, saltos de página e indicadores, gráficos o tablas de cualquiera de tus listas.',
+            '- Junta dos o tres bloques de datos **lado a lado**; en el celular se apilan solos.',
+            '- Cada persona ve sólo lo que su acceso le permite: un campo oculto no se suma y una lista sin acceso lo dice.',
+            '- **Envío por correo** lo manda solo cada semana o cada mes, con el PDF adjunto; **Enviarme una prueba** te muestra cómo llega.',
+        ].join('\n'),
+        action: { label: 'Ir a Informes', href: '/dashboards?tab=informes' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

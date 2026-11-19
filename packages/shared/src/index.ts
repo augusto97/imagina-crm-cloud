@@ -66,6 +66,8 @@ export * from './schemas/automation-folders';
 export * from './schemas/webhook-record';
 export * from './schemas/dashboard';
 export * from './schemas/dashboard-sharing';
+// v0.1.464 (J1) — informes con bloques de varias listas.
+export * from './schemas/report';
 export * from './schemas/system';
 export * from './schemas/server-watch';
 export * from './schemas/mail-account';
@@ -157,6 +159,7 @@ export * from './dashboard-report/report';
 export * from './dashboard-report/report-svg';
 export * from './dashboard-report/report-csv';
 export * from './dashboard-report/report-email';
+export * from './dashboard-report/report-xlsx';
 export * from './schemas/trash';
 export * from './schemas/kanban';
 export * from './schemas/calendar';

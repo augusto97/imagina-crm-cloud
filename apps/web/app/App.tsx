@@ -72,6 +72,9 @@ const AutomationsPage = lazyWithReload(() => import('@/admin/automations/Automat
 const AutomationEditorPage = lazyWithReload(() => import('@/admin/automations/AutomationEditorPage').then(m => ({ default: m.AutomationEditorPage })));
 const DashboardsIndexPage = lazyWithReload(() => import('@/admin/dashboards/DashboardsIndexPage').then(m => ({ default: m.DashboardsIndexPage })));
 const DashboardPage = lazyWithReload(() => import('@/admin/dashboards/DashboardPage').then(m => ({ default: m.DashboardPage })));
+// v0.1.464 (J1) — informes: la página y el editor se bajan a pedido.
+const ReportPage = lazyWithReload(() => import('@/admin/reports/ReportPage').then(m => ({ default: m.ReportPage })));
+const ReportEditorPage = lazyWithReload(() => import('@/admin/reports/ReportEditorPage').then(m => ({ default: m.ReportEditorPage })));
 const PlatformPage = lazyWithReload(() => import('@/admin/platform/PlatformPage').then(m => ({ default: m.PlatformPage })));
 const StoreSyncPage = lazyWithReload(() => import('@/cloud/pages/StoreSyncPage').then(m => ({ default: m.StoreSyncPage })));
 const SqlSyncPage = lazyWithReload(() => import('@/cloud/pages/SqlSyncPage').then(m => ({ default: m.SqlSyncPage })));
@@ -232,6 +235,12 @@ export function App(): JSX.Element {
                 } />
                 <Route path="dashboards/:dashboardId" element={
                     <Suspense fallback={<RouteFallback />}><DashboardPage /></Suspense>
+                } />
+                <Route path="reports/:reportId" element={
+                    <Suspense fallback={<RouteFallback />}><ReportPage /></Suspense>
+                } />
+                <Route path="reports/:reportId/edit" element={
+                    <Suspense fallback={<RouteFallback />}><ReportEditorPage /></Suspense>
                 } />
                 <Route path="settings" element={
                     <Suspense fallback={<RouteFallback />}><CloudSettingsPage /></Suspense>

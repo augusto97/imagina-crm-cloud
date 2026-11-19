@@ -188,7 +188,7 @@ describe('v0.1.462 — la comparación y el pronóstico viajan en el reporte', (
         );
         expect(none?.kind === 'kpi' && none.compare).toBeNull();
         const csv = widgetReportCsv(r, { number_format: 'dot_comma' });
-        expect(csv).toContain('Antes (1–19 nov 2026 vs. 1–19 oct 2026);1000000');
+        expect(csv).toContain('Antes (1–19 oct 2026);1000000');
         expect(csv).toContain('Variación (%);25');
     });
 

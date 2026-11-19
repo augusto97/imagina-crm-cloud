@@ -10,10 +10,12 @@ import {
     type Dashboard,
     type DashboardBundleRequest,
     type Field,
+    type ReportContext,
     type ReportField,
     type Role,
     type TenantFormat,
     type WidgetReport,
+    type WidgetSpec,
 } from '@imagina-base/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { memberNames } from '../tenancy/member-names';
@@ -24,9 +26,12 @@ import { FieldsService } from '../fields/fields.service';
 import { TenantDb } from '../tenancy/tenant-db.service';
 import { aclExtras } from '../lists/list-acl';
 
-/** Lo que hace falta para mostrar un tablero FUERA de la app (sin sesión o por correo). */
-export interface DashboardSnapshot {
-    dashboard: Dashboard;
+/**
+ * v0.1.464 (J1) — Unos widgets calculados con el acceso de una persona, con
+ * todo lo que hace falta para mostrarlos FUERA de la app (el tablero de un
+ * enlace público o de un correo, y los bloques de un informe).
+ */
+export interface WidgetsSnapshot {
     /** `{ [widgetId]: data }`, igual que el bundle de la app. */
     data: Record<string, unknown>;
     /** Campos que USAN los widgets y que quien mira puede ver, por lista. */
@@ -37,6 +42,11 @@ export interface DashboardSnapshot {
     format: TenantFormat;
     tenantName: string;
     branding: Branding;
+}
+
+/** Lo que hace falta para mostrar un tablero FUERA de la app (sin sesión o por correo). */
+export interface DashboardSnapshot extends WidgetsSnapshot {
+    dashboard: Dashboard;
 }
 
 /** Claves de config de un widget que apuntan a un campo. */
@@ -120,7 +130,27 @@ export class DashboardSnapshotService {
         // 404 si quien mira ya no puede ver el tablero (visibilidad, borrado).
         const dashboard = await this.dashboards.get(tenantId, dashboardId, viewer);
         const data = await this.dashboards.evaluateDashboard(tenantId, dashboard, viewer, body);
-        const dataWidgets = dashboard.widgets.filter((w) => !CONTENT_WIDGET_TYPES.includes(w.type) && w.list_id > 0);
+        return { dashboard, ...(await this.describe(tenantId, dashboard.widgets, data, viewer)) };
+    }
+
+    /**
+     * v0.1.464 (J1) — Widgets sueltos (los bloques de un informe) calculados
+     * con el acceso de `viewer`, con sus campos, listas, personas, formato y
+     * marca. Mismo motor y mismo ACL que un tablero.
+     */
+    async snapshotWidgets(
+        tenantId: number,
+        widgets: WidgetSpec[],
+        viewer: DashboardViewer,
+        body: DashboardBundleRequest = {},
+    ): Promise<WidgetsSnapshot> {
+        const data = await this.dashboards.evaluateWidgets(tenantId, viewer, widgets, body);
+        return this.describe(tenantId, widgets, data, viewer);
+    }
+
+    /** Lo que acompaña a los datos ya calculados: campos visibles, listas, personas, formato y marca. */
+    async describe(tenantId: number, widgets: WidgetSpec[], data: Record<string, unknown>, viewer: DashboardViewer): Promise<WidgetsSnapshot> {
+        const dataWidgets = widgets.filter((w) => !CONTENT_WIDGET_TYPES.includes(w.type) && w.list_id > 0);
         const listIds = [...new Set(dataWidgets.map((w) => w.list_id))];
 
         // Campos: sólo los que usan los widgets (no el esquema entero de la
@@ -164,7 +194,6 @@ export class DashboardSnapshotService {
         const fmt = tenantFormatSchema.safeParse(settings.format ?? {});
         const brand = brandingSchema.safeParse(settings.branding ?? {});
         return {
-            dashboard,
             data,
             fields: fieldsByList,
             lists: listRows,
@@ -175,17 +204,22 @@ export class DashboardSnapshotService {
         };
     }
 
-    /** Los widgets con datos como reportes legibles, en el orden en que se ven (fila, columna). */
-    reports(snap: DashboardSnapshot): WidgetReport[] {
+    /** El contexto de `buildWidgetReport` para unos datos ya calculados. */
+    reportContext(snap: WidgetsSnapshot): ReportContext {
         const byId = new Map<number, Field>();
         for (const fs of snap.fields.values()) for (const f of fs) byId.set(f.id, f);
         const listName = new Map(snap.lists.map((l) => [l.id, l.name]));
-        const ctx = {
+        return {
             field: (id: unknown) => byId.get(Number(id)) as unknown as ReportField | undefined,
             userName: (id: number) => snap.users.get(id) ?? null,
             format: snap.format,
             listName: (id: number) => listName.get(id) ?? null,
         };
+    }
+
+    /** Los widgets con datos como reportes legibles, en el orden en que se ven (fila, columna). */
+    reports(snap: DashboardSnapshot): WidgetReport[] {
+        const ctx = this.reportContext(snap);
         return [...snap.dashboard.widgets]
             .filter((w) => !CONTENT_WIDGET_TYPES.includes(w.type))
             .sort((a, b) => a.layout.y - b.layout.y || a.layout.x - b.layout.x)

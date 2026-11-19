@@ -39,6 +39,8 @@ export const INCIDENT_SOURCES = [
     'webhook',
     // v0.1.459 (G3) — una hoja de Google Sheets sincronizada con una lista.
     'sheet_sync',
+    // v0.1.464 (J1) — el envío programado de un informe.
+    'report',
 ] as const;
 export type IncidentSource = (typeof INCIDENT_SOURCES)[number];
 
@@ -60,6 +62,7 @@ export const INCIDENT_SOURCE_LABELS: Record<IncidentSource, string> = {
     shop: 'Tienda online',
     webhook: 'Webhook',
     sheet_sync: 'Google Sheets',
+    report: 'Informe',
 };
 
 export interface IncidentDto {
@@ -131,6 +134,8 @@ export function incidentLink(i: Pick<IncidentDto, 'source' | 'source_id' | 'list
             return list ? `${list}/records` : '/lists';
         case 'dashboard':
             return i.source_id ? `/dashboards/${i.source_id}?share=email` : '/dashboards';
+        case 'report':
+            return i.source_id ? `/reports/${i.source_id}?share=email` : '/dashboards?tab=informes';
         case 'helpdesk':
             return list ? `${list}/edit?s=correo` : '/lists';
         case 'ai_agent':

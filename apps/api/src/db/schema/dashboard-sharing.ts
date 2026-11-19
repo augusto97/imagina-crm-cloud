@@ -1,5 +1,6 @@
 import { bigint, boolean, index, jsonb, pgTable, smallint, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
 import { dashboards } from './dashboards';
+import { reports } from './reports';
 import { tenants } from './tenants';
 import { users } from './users';
 
@@ -36,7 +37,11 @@ export const publicDashboards = pgTable(
     ],
 );
 
-/** v0.1.292 (ADR-S50) — Envío programado del tablero por correo (RLS). */
+/**
+ * v0.1.292 (ADR-S50) — Envío programado del tablero por correo (RLS).
+ * v0.1.464 (J1) — también de un INFORME: cada fila manda un tablero o un
+ * informe (CHECK: exactamente uno de los dos).
+ */
 export const dashboardSubscriptions = pgTable(
     'dashboard_subscriptions',
     {
@@ -44,9 +49,8 @@ export const dashboardSubscriptions = pgTable(
         tenantId: bigint('tenant_id', { mode: 'number' })
             .notNull()
             .references(() => tenants.id, { onDelete: 'cascade' }),
-        dashboardId: bigint('dashboard_id', { mode: 'number' })
-            .notNull()
-            .references(() => dashboards.id, { onDelete: 'cascade' }),
+        dashboardId: bigint('dashboard_id', { mode: 'number' }).references(() => dashboards.id, { onDelete: 'cascade' }),
+        reportId: bigint('report_id', { mode: 'number' }).references(() => reports.id, { onDelete: 'cascade' }),
         ownerId: bigint('owner_id', { mode: 'number' })
             .notNull()
             .references(() => users.id, { onDelete: 'cascade' }),
@@ -72,5 +76,6 @@ export const dashboardSubscriptions = pgTable(
         index('dashboard_subscriptions_dashboard_ix').on(t.tenantId, t.dashboardId),
         index('dashboard_subscriptions_dashboard_fk_ix').on(t.dashboardId),
         index('dashboard_subscriptions_owner_ix').on(t.ownerId),
+        index('dashboard_subscriptions_report_ix').on(t.reportId),
     ],
 );

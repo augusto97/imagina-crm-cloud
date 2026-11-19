@@ -802,4 +802,85 @@ export const articles: LearnArticle[] = [
             },
         ],
     },
+    // ─────────────────────────────────────────────────────────────────────
+    {
+        id: 'tableros-informes',
+        route: '/dashboards?tab=informes',
+        related: ['tableros-comparar-y-pronostico', 'tableros-compartir', 'tableros-configurar-widget'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Un tablero se mira en pantalla; un **informe** se lee de arriba hacia abajo, como un documento. Junta en un solo lugar indicadores, gráficos y tablas de **varias listas** a la vez (las ventas, los gastos y los clientes), con títulos y textos que los explican, y se descarga en PDF o Excel o llega solo por correo.',
+            },
+            { t: 'anim', key: 'tab-explorar', caption: 'Cada bloque de datos sale de su propia lista: ventas, gastos y clientes en un mismo documento.' },
+            { t: 'h', text: 'Crear un informe' },
+            {
+                t: 'steps',
+                items: [
+                    'Ve a **Tableros** y abre la pestaña **Informes**.',
+                    'Toca **Nuevo informe**, ponle un nombre (por ejemplo, «Resumen del mes») y toca **Crear y armar**.',
+                    'Se abre el editor: a la izquierda los bloques para **Agregar**, al centro el informe con tus datos reales y a la derecha los ajustes de lo que elijas.',
+                ],
+            },
+            { t: 'h', text: 'Los bloques' },
+            {
+                t: 'cards',
+                items: [
+                    { icon: 'BarChart3', title: 'Datos de una lista', md: 'Un indicador, un medidor, barras, dona, embudo, línea, área, una tabla, una tabla dinámica o el pronóstico de ventas. Cada uno con **su lista**, sus filtros, su período y su comparación, igual que un widget de un tablero.' },
+                    { icon: 'Type', title: 'Título', md: 'Un título de sección con una línea opcional debajo.' },
+                    { icon: 'PenLine', title: 'Texto', md: 'Un párrafo con formato sencillo: **negrita**, *cursiva*, viñetas, subtítulos y enlaces. Para explicar los números.' },
+                    { icon: 'Layers', title: 'Separador', md: 'Una línea para separar partes del informe.' },
+                    { icon: 'FileText', title: 'Salto de página', md: 'En el PDF, lo que sigue empieza en una hoja nueva. En la pantalla no se ve.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'Para **ordenar** los bloques, arrástralos o usa las flechas de cada uno; también puedes **duplicar** o **eliminar** un bloque. Para poner dos o tres bloques de datos **lado a lado**, elige el primero y toca **Poner al lado del siguiente**; en el celular se ven uno debajo del otro. Un informe lleva hasta 40 bloques.',
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                md: 'Mientras editas, **Deshacer** y **Rehacer** (o Ctrl+Z y Ctrl+Shift+Z) recorren tus cambios. Si sales con cambios sin guardar, la app te avisa.',
+            },
+            { t: 'h', text: 'Un período para todo el informe' },
+            {
+                t: 'p',
+                md: 'Sin ningún bloque elegido, a la derecha están los **Ajustes del informe**. En **Período y comparación** eliges, por ejemplo, «Este mes» comparado con el período anterior, y eso vale para todos los bloques que tienen un campo de fecha. Si lo dejas en «Cada bloque con su período», cada uno usa el suyo. Quien lee el informe también puede cambiarlos arriba sin tocar lo guardado.',
+            },
+            { t: 'h', text: 'Descargar y recibir por correo' },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Descargar → PDF', what: 'Una portada con el nombre, el período y la fecha, y los bloques en orden, con los saltos de página y el pie «Página x de y».', tip: 'Ideal para imprimir o mandar a la junta directiva.' },
+                    { name: 'Descargar → Excel', what: 'Una hoja de portada con el índice y una hoja por cada bloque de datos, con sus números; si compara, con las columnas **Antes** y **Variación (%)**.' },
+                    { name: 'Envío por correo', what: 'Toca **Programar un envío**: todos los días, cada semana o cada mes, a la hora que elijas, a personas del equipo y a correos de afuera, con el PDF adjunto.', tip: 'Antes de guardar, **Enviarme una prueba ahora** te lo manda a ti.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'Cada persona ve el informe con **su** acceso: un campo que tiene oculto no se suma ni sale en las tablas, y un bloque de una lista que no puede ver dice «No tienes acceso a esta lista» sin mostrar los datos. El envío por correo usa lo que ve quien lo programó.',
+            },
+            {
+                t: 'example',
+                title: 'Una distribuidora de alimentos',
+                md: 'La gerente arma «Cierre del mes»: un título, los indicadores de **Ventas** y **Gastos** lado a lado, una dona de gastos por categoría, la tabla de los diez clientes que más compraron (de la lista **Clientes**) y un texto con sus comentarios. Elige «El mes pasado» comparado con el período anterior y programa el envío para el día 1 a las 8:00, con el PDF, a los socios y al contador.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿En qué se diferencia de un tablero?', a: 'El tablero es una grilla para mirar en pantalla y explorar con clics. El informe es un documento que se lee en orden, mezcla varias listas con textos y se descarga en PDF o Excel.' },
+                    { q: '¿Quién puede ver un informe?', a: 'Igual que un tablero: todo el equipo, sólo tú o ciertos roles. Lo cambia quien lo creó o un administrador.' },
+                    { q: '¿Y si un bloque está mal armado?', a: 'Ese bloque dice por qué no se pudo calcular y el resto del informe se dibuja igual.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Ir a Informes', to: '/dashboards?tab=informes' },
+                    { label: 'Comparar con el período anterior', article: 'tableros-comparar-y-pronostico' },
+                ],
+            },
+        ],
+    },
 ];

@@ -17260,6 +17260,126 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         deshabilitado con el motivo y 503 del servidor; celular 390×844 oscuro
         sin scroll lateral).
 
+  - [x] **Informes con bloques de varias listas, en PDF, Excel y por correo
+        (v0.1.464, ADR-S114, idea J1 del banco)**: un documento propio —no
+        un tablero— que junta en una sola página datos de VARIAS listas
+        («Resumen comercial»: ventas de Facturas, gastos de Gastos, nómina de
+        Personal), se descarga en PDF o Excel y se manda por correo cada día,
+        semana o mes.
+        (a) **Modelo**: tabla `reports` (migración 0142, RLS por empresa, como
+        `dashboards`): nombre, descripción, `blocks` (jsonb), `settings`
+        (período y comparación del informe, icono y color), visibilidad
+        (`workspace` / `private` / `roles` con `allowed_roles`), posición y
+        autor. Bloques (`packages/shared/src/schemas/report.ts`): **título**,
+        **texto** (formato sencillo, hasta 20.000 caracteres), **dato**
+        (indicador, medidor, delta, barras, dona, línea, área, embudo, tabla,
+        tabla dinámica o pronóstico, cada uno con SU lista y su configuración de
+        widget), **columnas** (2 o 3 bloques de dato lado a lado), separador y
+        salto de página. Topes: 40 bloques y 60 bloques de datos; ids únicos
+        también dentro de las columnas. Lectura tolerante (`readReportBlocks`):
+        un bloque roto se descarta y se cuenta, y una fila de columnas con un
+        solo bloque sano queda suelta.
+        (b) **Se calcula con el motor de los tableros**
+        (`DashboardsService.evaluateWidgets`) en UN pedido
+        (`GET|POST /reports/:id/bundle`): ACL de quien mira (alcance del rol,
+        campos ocultos, ACL por lista), zona horaria de la empresa, cada bloque
+        aislado (uno mal armado dice por qué y el resto sale). **Período y
+        comparación del informe** pisan los de cada bloque (los mismos de
+        ADR-S113: período anterior, año pasado o un rango; «hasta el mismo
+        día»), con un selector arriba que los cambia sin guardar (lo de cada
+        bloque / un período / un rango) y que se guarda como el del informe.
+        **Una lista que quien mira no ve** («Sin acceso» para su rol, persona o
+        equipos) NO se calcula: el bloque dice «No tienes acceso a esta lista.»
+        (en un tablero un widget así da cero; en un informe que junta listas
+        conviene decirlo), y tampoco viajan sus campos ni sus nombres al PDF ni
+        al Excel. Guardar con una lista de otra empresa → 400.
+        (c) **Editor a pantalla completa** (`/reports/:id/edit`,
+        `ReportEditorPage`, kit de los constructores): biblioteca a la
+        izquierda (título, texto, dato, separador, salto de página), el
+        documento REAL al centro con los datos en vivo mientras se arma
+        (`POST /reports/preview`, sin guardar), y el bloque elegido a la
+        derecha; el dato se arma con el MISMO diálogo de los widgets de los
+        tableros (`WidgetFormDialog` con `report`: elige la lista, sin la
+        sección de estilo ni los widgets de contenido). Arrastrar o
+        subir/bajar, duplicar, quitar, **«Poner al lado del siguiente»** (arma
+        o agranda una fila de columnas), «Agregar a esta fila» y «Uno debajo
+        del otro», deshacer/rehacer (Ctrl/⌘+Z, Ctrl+Y) y Ctrl/⌘+S; aviso al
+        salir con cambios. En el celular: pestañas Bloques · Vista
+        previa · Editar. Operaciones puras con tests (`reportEditor.ts`).
+        (d) **Ver** (`/reports/:id`, `ReportPage`): el documento con su
+        cabecera, el selector de período/comparación, **Descargar** (PDF o
+        Excel), **Envío por correo**, Editar, Duplicar y Eliminar. En el
+        celular las columnas se apilan.
+        (e) **PDF** (`report-pdf.ts`, en el hilo de PDF de v0.1.439 con el tipo
+        de tarea nuevo `report`): portada con nombre, período, comparación y
+        fecha, cada bloque con el MISMO modelo de reporte de los tableros
+        (`buildWidgetReport`: indicadores, gráficos vectoriales con el SVG de
+        siempre, tablas), columnas lado a lado y saltos de página; nombre
+        `<nombre>-<fecha>.pdf`. **Excel** (`buildXlsxWorkbook`, nuevo en
+        `packages/shared/src/xlsx/workbook.ts`, y `reportWorkbookSheets`):
+        hoja **Informe** (portada con el índice de bloques y el motivo de los
+        que no salieron) + **una hoja por bloque de datos** con números como
+        números, etiquetas de las opciones, «Antes» y «Variación (%)» si
+        compara; nombres de hoja únicos (31 caracteres, sin `/\?*[]:`) y textos
+        que empiezan con `= + - @` como texto. Endpoint
+        `GET /reports/:id/export?format=pdf|xlsx` con el período/comparación
+        elegidos.
+        (f) **Envío por correo**: la tabla `dashboard_subscriptions` se
+        generaliza (columna `report_id`, `dashboard_id` pasa a opcional y un
+        CHECK exige uno de los dos): mismo horario en la zona de la empresa,
+        cola `dashboard-reports` (`dashsub:<id>`), destinatarios (miembros que
+        pueden ver el informe + correos externos), cuota de correos, Problemas
+        y «Enviarme una prueba» de ADR-S50; el correo dice «Ver el informe» y
+        lleva el PDF del informe (activado de fábrica). El panel es el mismo de
+        los tableros (`EmailSubscriptionsPanel` con `kind="report"`).
+        (g) **Dónde vive**: pestaña **Informes** en Tableros
+        (`/dashboards?tab=informes`, `ReportsIndex` con buscador y tarjetas),
+        sección **Informes** en el panel lateral de Tableros
+        (`ReportsPanelSection`, a pedido), la barra de abajo del celular marca
+        Tableros. Ver: `view_dashboards`; crear, editar, borrar y programar:
+        `manage_dashboards` (y quien lo creó o un admin para cambiarlo: 403
+        `report_not_owner`). Duplicar copia los bloques sin los envíos.
+        Bitácora `report.create|update|delete|duplicate` y
+        `report.subscription_create|update|delete`. Migrar una empresa
+        lleva los informes con sus bloques re-mapeados (listas y campos nuevos)
+        y sus envíos **pausados** con las personas re-apuntadas; borrarla los
+        borra. Problemas con el icono del informe.
+        **Decisiones**: un informe es un objeto APARTE de los tableros (otra
+        tabla, otra pantalla): un tablero es una grilla viva para mirar; un
+        informe es un documento en orden para leer, imprimir y mandar. Los
+        bloques de datos reusan el widget de los tableros por completo (mismo
+        cálculo, mismo dibujo, mismo modelo de reporte), así no hay un segundo
+        motor. La fuente de los envíos de informes se registra al arrancar
+        (`ReportsService.onModuleInit` → `subs.registerSource('report', …)`)
+        para no armar un ciclo de inyección entre tableros e informes. Borrar
+        un informe es definitivo (sin papelera) y se lleva sus envíos en
+        cascada; no hay módulo del plan propio (va con los tableros).
+        **Encontrado en el camino**: un bloque de una lista sin acceso daba
+        cero en silencio (lo dice ahora, también en el PDF y el Excel); y la
+        fila «Antes» del Excel/CSV de un indicador o un pronóstico decía las
+        DOS ventanas («1–19 nov 2026 vs. 1–19 oct 2026», desde v0.1.462):
+        ahora sólo la anterior.
+        Ayuda: guía `reports`, artículo «Informes con datos de varias listas»
+        en Aprende → Tableros (ilustraciones existentes `tab-explorar` y
+        `tab-configurar`), pantalla de ayuda `/reports/*` → `dashboards`,
+        anclas `dashboards-tabs`, `reports-new`, `report-card`, `report-edit`,
+        `report-editor-blocks`, `report-add-data`, `report-export` y
+        `report-schedule`, y novedad con carrusel. Tests: `reports.spec` (8,
+        Postgres + Redis reales y un SMTP de prueba: bundle con período y
+        comparación de dos listas, ACL —lista sin acceso, campo oculto, admin—,
+        bloque roto aislado, período/comparación pisados y vista previa, PDF y
+        Excel con sus hojas y valores, envío programado con PDF y prueba,
+        visibilidad/duplicar/borrar con el scheduler y la bitácora, RLS),
+        `report.test` en shared (5), `reportEditor.test` en el front, re-mapeo
+        del informe y su envío en `tenant-transfer.spec` (8/8); 24 specs de la
+        API relacionados 257/257, shared 1139, front 1016 — bundle de la app
+        811/820 KB gz — + E2E navegador 35/35 en escritorio claro y celular
+        390×844 oscuro (crear desde Tableros → Informes, 7 bloques de dos
+        listas, columnas, deshacer/rehacer, guardar, ver, PDF de 3 páginas y
+        Excel de 4 hojas, «Enviarme una prueba» y «Enviar ahora» a 2
+        destinatarios con el PDF, columnas apiladas en el celular, sin scroll
+        lateral ni errores de JS).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

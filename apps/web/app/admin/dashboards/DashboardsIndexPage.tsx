@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
-import { AlertCircle, BarChart3, Copy, Lock, Plus, Users } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router';
+import { AlertCircle, BarChart3, Copy, FileText, Lock, Plus, Users } from 'lucide-react';
 
+import { ReportsIndex } from '@/admin/reports/ReportsIndex';
 import { Badge } from '@/components/ui/badge';
+import { ViewSwitch } from '@/components/ui/view-switch';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import {
@@ -26,6 +28,16 @@ export function DashboardsIndexPage(): JSX.Element {
     const duplicate = useDuplicateDashboard();
     const toast = useToast();
     const [createOpen, setCreateOpen] = useState(false);
+    // v0.1.464 (J1) — pestañas «Tableros» e «Informes» (`?tab=informes`).
+    const [params, setParams] = useSearchParams();
+    const tab: 'tableros' | 'informes' = params.get('tab') === 'informes' ? 'informes' : 'tableros';
+    const setTab = (t: 'tableros' | 'informes'): void => {
+        const p = new URLSearchParams(params);
+        if (t === 'informes') p.set('tab', 'informes');
+        else p.delete('tab');
+        setParams(p, { replace: true });
+    };
+    const [reportCreateOpen, setReportCreateOpen] = useState(false);
     // v0.1.286 — crear y duplicar exigen `manage_dashboards` (un viewer o un
     // agente veía los botones y terminaba en 403).
     const canManage = useCan(CAP.MANAGE_DASHBOARDS);
@@ -49,19 +61,45 @@ export function DashboardsIndexPage(): JSX.Element {
             <header className="imcrm-flex imcrm-flex-col imcrm-gap-3 sm:imcrm-flex-row sm:imcrm-items-start sm:imcrm-justify-between sm:imcrm-gap-4">
                 <div className="imcrm-min-w-0">
                     <h1 className="imcrm-text-xl imcrm-font-semibold imcrm-tracking-tight">
-                        {__('Dashboards')}
+                        {tab === 'informes' ? __('Informes') : __('Dashboards')}
                     </h1>
                     <p className="imcrm-mt-1 imcrm-text-sm imcrm-text-muted-foreground">
-                        {__('Indicadores y gráficos sobre tus listas. Comparte un dashboard con tu equipo o créalo solo para ti.')}
+                        {tab === 'informes'
+                            ? __('Documentos con indicadores, gráficos y tablas de varias listas: para leer, descargar en PDF o Excel y mandar por correo.')
+                            : __('Indicadores y gráficos sobre tus listas. Comparte un dashboard con tu equipo o créalo solo para ti.')}
                     </p>
                 </div>
-                {canManage && (
+                {canManage && tab === 'tableros' && (
                     <Button className="imcrm-shrink-0 imcrm-gap-2 imcrm-self-start" onClick={() => setCreateOpen(true)} data-tour="dashboards-new">
                         <Plus className="imcrm-h-4 imcrm-w-4" />
                         {__('Nuevo dashboard')}
                     </Button>
                 )}
+                {canManage && tab === 'informes' && (
+                    <Button className="imcrm-shrink-0 imcrm-gap-2 imcrm-self-start" onClick={() => setReportCreateOpen(true)} data-tour="reports-new" data-testid="reports-new">
+                        <Plus className="imcrm-h-4 imcrm-w-4" />
+                        {__('Nuevo informe')}
+                    </Button>
+                )}
             </header>
+
+            <div data-tour="dashboards-tabs">
+                <ViewSwitch
+                    label={__('Qué ver')}
+                    value={tab}
+                    onChange={setTab}
+                    testId="dashboards-tabs"
+                    options={[
+                        { value: 'tableros', label: __('Tableros'), icon: BarChart3 },
+                        { value: 'informes', label: __('Informes'), icon: FileText },
+                    ]}
+                />
+            </div>
+
+            {tab === 'informes' ? (
+                <ReportsIndex canManage={canManage} createOpen={reportCreateOpen} onCreateOpenChange={setReportCreateOpen} />
+            ) : (
+            <>
 
             {dashboards.isError && (
                 <div className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-destructive/40 imcrm-bg-destructive/10 imcrm-p-3 imcrm-text-sm imcrm-text-destructive">
@@ -140,6 +178,8 @@ export function DashboardsIndexPage(): JSX.Element {
             )}
 
             {canManage && <DashboardCreateDialog open={createOpen} onOpenChange={setCreateOpen} />}
+            </>
+            )}
         </div>
     );
 }

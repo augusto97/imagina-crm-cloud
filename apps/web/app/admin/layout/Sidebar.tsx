@@ -80,11 +80,14 @@ type RailSection = 'home' | 'mywork' | 'favorites' | 'dashboards' | 'agents' | '
 
 // v0.1.322 — el índice del manual se baja sólo al abrir el centro de aprendizaje.
 const LearnPanelNav = lazy(() => import('@/admin/learn/LearnNav'));
+// v0.1.464 (J1) — los informes del panel de Tableros, a pedido.
+const ReportsPanelSection = lazy(() => import('@/admin/reports/ReportsPanelSection'));
 
 function railSectionFromPath(pathname: string): RailSection {
     if (pathname.startsWith('/my-work')) return 'mywork';
     if (pathname.startsWith('/favorites')) return 'favorites';
-    if (pathname.startsWith('/dashboards')) return 'dashboards';
+    // v0.1.464 (J1) — los informes viven dentro de Tableros.
+    if (pathname.startsWith('/dashboards') || pathname.startsWith('/reports')) return 'dashboards';
     if (pathname.startsWith('/agents')) return 'agents';
     if (pathname.startsWith('/agency')) return 'agency';
     if (pathname.startsWith('/aprende') || pathname.startsWith('/ideas')) return 'learn';
@@ -300,6 +303,9 @@ export function Sidebar(): JSX.Element {
                         </PanelSection>
                     )}
                     {dashboards.isLoading && <PanelLoading />}
+                    <Suspense fallback={null}>
+                        <ReportsPanelSection pathname={pathname} NavItem={PanelNavItem} Section={PanelSection} />
+                    </Suspense>
                 </>
             )}
 

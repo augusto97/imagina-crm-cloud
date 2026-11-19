@@ -430,7 +430,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.463**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.464**
+(**informes con bloques de varias listas** — sección «Informes» en Tableros:
+documentos con títulos, textos con variables, cifras, gráficos y tablas de
+cualquier lista, con su período, comparación y filtros; se descargan en PDF y
+Excel y se mandan por correo programado; migración 0142; ADR-S114). Antes
+**v0.1.463**
 (**«Describe la automatización y la armo»** — «Describir con IA» en el índice
 y en la barra del editor de automatizaciones, y «Pedir un cambio con IA» en una
 que ya existe: la IA arma o cambia la automatización con los campos de la lista
@@ -2357,6 +2362,34 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.464** — **Informes con bloques de varias listas** (J1;
+  ADR-S114; migración **0142**: tabla `reports` con RLS y `report_id` en
+  `dashboard_subscriptions` con CHECK «tablero o informe»). Un documento en
+  orden (título, texto, datos —indicador, gráfico, tabla, dinámica,
+  pronóstico— de CUALQUIER lista, columnas de 2-3 datos, separador, salto de
+  página) que se calcula con el motor de los tableros en un pedido (ACL, zona
+  horaria, bloque roto aislado), con período y comparación del informe que
+  pisan los de cada bloque. Editor a pantalla completa con la vista en vivo,
+  descarga en **PDF** (hilo de PDF, tipo `report`) y **Excel** (portada + una
+  hoja por bloque; escritor nuevo `buildXlsxWorkbook` en shared) y envío
+  programado por correo con el mismo motor de ADR-S50 (el correo dice «Ver el
+  informe» y lleva el PDF). Pestaña **Informes** en Tableros y sección en el
+  panel lateral. Un bloque de una lista que quien mira no ve dice «No tienes
+  acceso a esta lista.» (no calcula ni manda sus campos). Decisiones: objeto
+  aparte de los tableros; la fuente de envíos de informes se registra al
+  arrancar para no armar un ciclo de inyección; borrar es definitivo (sin
+  papelera) y en cascada con sus envíos; sin módulo del plan propio. Migrar
+  una empresa los lleva re-mapeados con los envíos pausados.
+  De paso, la fila «Antes» de un indicador o del pronóstico en el Excel y el
+  CSV decía «Antes (1–19 nov 2026 vs. 1–19 oct 2026)» (arrastraba la
+  comparación completa desde v0.1.462): ahora dice sólo la ventana anterior.
+  Pendiente: sin papelera; no hay plantillas de informes ni
+  herramientas del asistente/MCP para leerlos o proponerlos (`list_reports`,
+  `propose_create_report`) — candidatos para una versión siguiente. En el E2E
+  el puerto 5182 del slot 2 lo tenía un vite de otro worktree: se probó con un
+  vite propio en el 5192 contra el API del slot; la empresa 1 del slot estaba
+  en el límite de 500 registros del trial y se subió de plan durante la prueba
+  (se restauró al terminar).
 - **2026-11-19 · v0.1.463** — **«Describe la automatización y la armo» en el
   editor** (E7; addendum ADR-S21 y ADR-S47). Sin migración. «Describir con IA»
   en el índice de automatizaciones (`?ai=1` abre el diálogo en el editor nuevo)

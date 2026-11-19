@@ -132,7 +132,10 @@ export type DashboardSubscriptionInputRaw = z.input<typeof dashboardSubscription
 
 export interface DashboardSubscription extends DashboardSubscriptionInput {
     id: number;
+    /** El tablero que se manda (0 si el envío es de un informe). */
     dashboard_id: number;
+    /** v0.1.464 (J1) — el informe que se manda (null si es de un tablero). */
+    report_id: number | null;
     owner: { id: number; name: string };
     /** Zona en la que corre de verdad (la propia o la de la empresa). */
     effective_time_zone: string;

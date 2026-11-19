@@ -198,6 +198,14 @@ export type AuditAction =
     | 'dashboard.subscription_create'
     | 'dashboard.subscription_update'
     | 'dashboard.subscription_delete'
+    // v0.1.464 (J1) — informes: crear, cambiar, duplicar, borrar y sus envíos programados.
+    | 'report.create'
+    | 'report.update'
+    | 'report.delete'
+    | 'report.duplicate'
+    | 'report.subscription_create'
+    | 'report.subscription_update'
+    | 'report.subscription_delete'
     // Papelera: devolver algo a la vida, borrarlo para siempre a mano y
     // vaciarla entera (el barrido automático de los 30 días no deja rastro
     // por cada cosa: deja uno por corrida).
