@@ -744,6 +744,68 @@ describe('Asistente IA (Postgres + Redis reales, modelo falso)', () => {
         expect(JSON.stringify(listed.content)).toContain('"breakdown_by":"zona"');
     });
 
+    it('v0.1.462 — pronóstico ponderado y «Comparar con…» (y sus errores corregibles)', async () => {
+        const list = await lists.create(tenantId, { name: 'Negocios' });
+        const etapa = await fields.create(tenantId, String(list.id), {
+            label: 'Etapa',
+            type: 'select',
+            config: { options: [{ value: 'prospecto', label: 'Prospecto' }, { value: 'propuesta', label: 'Propuesta' }, { value: 'ganado', label: 'Ganado' }, { value: 'perdido', label: 'Perdido' }] },
+        });
+        const valor = await fields.create(tenantId, String(list.id), { label: 'Valor', type: 'currency' });
+        const cierre = await fields.create(tenantId, String(list.id), { label: 'Cierre', type: 'date' });
+
+        const sinEtapa = await registry.execute(ctx, 'propose_create_dashboard', { name: 'Mal', widgets: [{ type: 'forecast', list: 'negocios', metric_field: 'valor' }] });
+        expect(JSON.stringify(sinEtapa.content)).toContain('stage_field');
+        const etapaRara = await registry.execute(ctx, 'propose_create_dashboard', {
+            name: 'Mal',
+            widgets: [{ type: 'forecast', list: 'negocios', metric_field: 'valor', stage_field: 'etapa', stage_probabilities: { cerrado: 100 } }],
+        });
+        expect(JSON.stringify(etapaRara.content)).toContain('no es una opción');
+        const sinPeriodo = await registry.execute(ctx, 'propose_create_dashboard', { name: 'Mal', widgets: [{ type: 'kpi', list: 'negocios', compare: 'previous' }] });
+        expect(JSON.stringify(sinPeriodo.content)).toContain('necesita un período');
+        const conDesglose = await registry.execute(ctx, 'propose_create_dashboard', {
+            name: 'Mal',
+            widgets: [{ type: 'chart_bar', list: 'negocios', group_by: 'etapa', breakdown_by: 'etapa', period: 'this_month', period_field: 'cierre', compare: 'previous' }],
+        });
+        expect(conDesglose.isError).toBe(true);
+
+        const ok = await registry.execute(ctx, 'propose_create_dashboard', {
+            name: 'Pronóstico',
+            widgets: [
+                {
+                    type: 'forecast',
+                    list: 'negocios',
+                    title: 'Pronóstico del trimestre',
+                    metric_field: 'valor',
+                    stage_field: 'etapa',
+                    date_field: 'cierre',
+                    stage_probabilities: { Propuesta: 60 },
+                    period: 'this_quarter',
+                    compare: 'last_year',
+                    goal: 50000,
+                },
+                { type: 'kpi', list: 'negocios', title: 'Ventas del mes', metric: 'sum', metric_field: 'valor', period: 'this_month', period_field: 'cierre', compare: 'previous', compare_to_date: false },
+            ],
+        });
+        expect(ok.isError).toBeFalsy();
+        await proposals.apply(ctx, ok.proposal!.id);
+        const all = await dashboards.list(tenantId, { userId, role: 'admin' });
+        const dash = all.find((d) => d.name === 'Pronóstico')!;
+        expect(dash.widgets[0]).toMatchObject({ type: 'forecast', layout: { w: 8, h: 5 } });
+        expect(dash.widgets[0]!.config).toMatchObject({
+            metric: 'sum',
+            metric_field_id: valor.id,
+            stage_field_id: etapa.id,
+            date_field_id: cierre.id,
+            time_bucket: 'month',
+            stage_probabilities: { propuesta: 60 },
+            period: { field_id: cierre.id, preset: 'this_quarter' },
+            compare: { mode: 'last_year', to_date: true },
+            goal: 50000,
+        });
+        expect(dash.widgets[1]!.config).toMatchObject({ period: { field_id: cierre.id, preset: 'this_month' }, compare: { mode: 'previous', to_date: false } });
+    });
+
     it('el rol manda: un manager no ve las herramientas de estructura y no puede aplicar una propuesta ajena a su rol', async () => {
         const manager: AiToolContext = { ...ctx, role: 'manager' };
         const names = registry.toAnthropicTools('manager').map((t) => t.name);

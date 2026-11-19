@@ -21,6 +21,8 @@ import {
     type ChartSort,
 } from './useChartColors';
 import { formatMetricValue } from './widgetFormat';
+import { CompareBadge, RowDelta, rowCompareTitle } from './CompareParts';
+import { isAdditiveMetric, isReadyCompare, previousByKey, previousTotal, widgetCompareOf, type ReadyCompare } from './compareView';
 import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
@@ -57,10 +59,21 @@ export function FunnelWidget({ dashboardId, widget }: FunnelWidgetProps): JSX.El
     const metricField = fields.data?.find((f) => f.id === widget.config.metric_field_id);
     const metric = typeof widget.config.metric === 'string' ? widget.config.metric : 'count';
     const fmt = (n: number): string => formatMetricValue(n, metric, metricField);
+    // v0.1.462 — «Comparar con…»: cada etapa contra la de antes.
+    const compare = widgetCompareOf(data.data);
+    const ready = isReadyCompare(compare) ? compare : null;
+    const before = previousByKey(ready);
+    const nowRows = data.data && 'data' in data.data ? data.data.data : [];
+    const total = ready && isAdditiveMetric(metric)
+        ? {
+              current: nowRows.reduce((s, r) => s + (typeof r.value === 'number' ? r.value : 0), 0),
+              previous: previousTotal(ready, nowRows.reduce((s, r) => s + (before.get(r.label) ?? 0), 0)),
+          }
+        : null;
 
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-3">
-            <WidgetHeader title={widget.title || __('Embudo')} subtitle={subtitle} />
+            <WidgetHeader title={widget.title || __('Embudo')} subtitle={subtitle} right={<CompareBadge compare={compare} total={total} format={fmt} />} />
 
             {/* Ver nota en BarChartWidget: my-auto en vez de justify-center
               * para que el scroll no recorte las primeras filas. */}
@@ -91,6 +104,8 @@ export function FunnelWidget({ dashboardId, widget }: FunnelWidgetProps): JSX.El
                         colorMap={colorMap}
                         labelMap={labelMap}
                         onSegment={onSegment}
+                        compare={ready}
+                        before={before}
                     />
                 ) : (
                     <p className="imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">
@@ -108,6 +123,8 @@ function FunnelRows({
     labelMap,
     onSegment,
     format,
+    compare,
+    before,
 }: {
     rows: Array<{ label: string; value: number; others?: number }>;
     colorMap: Map<string, string>;
@@ -115,8 +132,10 @@ function FunnelRows({
     labelMap: Map<string, string>;
     onSegment: ((label: string) => void) | null;
     format: (n: number) => string;
+    compare: ReadyCompare | null;
+    before: Map<string, number | null>;
 }): JSX.Element {
-    const max = Math.max(...rows.map((r) => r.value), 1);
+    const max = Math.max(...rows.map((r) => Math.max(r.value, compare ? (before.get(r.label) ?? 0) : 0)), 1);
     const first = rows[0]?.value ?? 0;
 
     return (
@@ -133,13 +152,24 @@ function FunnelRows({
                     <div
                         key={row.label}
                         className={`imcrm-group/stage imcrm-flex imcrm-items-center imcrm-gap-2${navigable ? ' imcrm-cursor-pointer hover:imcrm-bg-accent/40 imcrm-rounded' : ''}`}
-                        title={`${name}: ${format(row.value)} (${convPct.toFixed(1)}% ${__('de la primera etapa')})${navigable ? ` — ${__('click para ver los registros')}` : ''}`}
+                        title={compare
+                            ? `${rowCompareTitle(compare, name, row.value, before.get(row.label), format)}\n${convPct.toFixed(1)}% ${__('de la primera etapa')}${navigable ? `\n${__('Click para ver los registros')}` : ''}`
+                            : `${name}: ${format(row.value)} (${convPct.toFixed(1)}% ${__('de la primera etapa')})${navigable ? ` — ${__('click para ver los registros')}` : ''}`}
                         onClick={navigable && onSegment !== null ? () => onSegment(row.label) : undefined}
                     >
                         <span className="imcrm-w-24 imcrm-shrink-0 imcrm-truncate imcrm-text-right imcrm-text-xs imcrm-text-muted-foreground">
                             {name}
                         </span>
                         <div className="imcrm-relative imcrm-flex imcrm-h-7 imcrm-flex-1 imcrm-items-center imcrm-justify-center">
+                            {compare && (
+                                // La etapa de antes: el contorno punteado detrás.
+                                <div
+                                    className="imcrm-pointer-events-none imcrm-absolute imcrm-inset-y-0 imcrm-rounded imcrm-border imcrm-border-dashed imcrm-border-muted-foreground/60"
+                                    style={{ width: `${((before.get(row.label) ?? 0) / max) * 100}%` }}
+                                    data-testid="imcrm-funnel-previous"
+                                    aria-hidden
+                                />
+                            )}
                             {/* Barra centrada — la forma del embudo emerge del
                               * estrechamiento progresivo de las etapas. */}
                             {/* v0.1.286 — la cifra con la tinta de mayor
@@ -152,9 +182,13 @@ function FunnelRows({
                                 {format(row.value)}
                             </div>
                         </div>
-                        <span className="imcrm-w-10 imcrm-shrink-0 imcrm-text-right imcrm-text-[10px] imcrm-tabular-nums imcrm-text-muted-foreground">
-                            {i === 0 ? '100%' : `${convPct.toFixed(0)}%`}
-                        </span>
+                        {compare ? (
+                            <RowDelta current={row.value} previous={before.get(row.label)} invert={compare.invert === true} className="imcrm-w-12 imcrm-shrink-0 imcrm-text-right imcrm-text-[10px]" />
+                        ) : (
+                            <span className="imcrm-w-10 imcrm-shrink-0 imcrm-text-right imcrm-text-[10px] imcrm-tabular-nums imcrm-text-muted-foreground">
+                                {i === 0 ? '100%' : `${convPct.toFixed(0)}%`}
+                            </span>
+                        )}
                     </div>
                 );
             })}

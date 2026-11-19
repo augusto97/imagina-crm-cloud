@@ -1,3 +1,5 @@
+import { lazy, Suspense } from 'react';
+
 import type { WidgetSpec } from '@/types/dashboard';
 
 import { BarChartWidget } from './BarChartWidget';
@@ -16,6 +18,9 @@ import { PieChartWidget } from './PieChartWidget';
 import { PivotWidget } from './PivotWidget';
 import { StatDeltaWidget } from './StatDeltaWidget';
 import { TableWidget } from './TableWidget';
+
+// v0.1.462 — el pronóstico se carga a pedido (sólo lo usa quien lo agrega).
+const ForecastWidget = lazy(() => import('./ForecastWidget').then((m) => ({ default: m.ForecastWidget })));
 
 /**
  * Elige el componente de un widget por su tipo. Compartido por los tableros
@@ -58,6 +63,12 @@ export function WidgetRenderer({
             return <FunnelWidget dashboardId={dashboardId} widget={widget} />;
         case 'pivot':
             return <PivotWidget dashboardId={dashboardId} widget={widget} />;
+        case 'forecast':
+            return (
+                <Suspense fallback={null}>
+                    <ForecastWidget dashboardId={dashboardId} widget={widget} />
+                </Suspense>
+            );
         case 'chart_line':
         default:
             return <LineChartWidget dashboardId={dashboardId} widget={widget} />;

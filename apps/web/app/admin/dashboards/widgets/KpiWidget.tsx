@@ -45,6 +45,8 @@ import type { WidgetSpec } from '@/types/dashboard';
 import type { FieldEntity } from '@/types/field';
 
 import { formatMetricValue } from './widgetFormat';
+import { CompareDeltaLine } from './CompareParts';
+import { widgetCompareOf } from './compareView';
 
 import { WidgetError } from './WidgetError';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
@@ -172,6 +174,7 @@ export function KpiWidget({ dashboardId, widget }: KpiWidgetProps): JSX.Element 
                         suffix={suffix}
                         goal={goal}
                         field={metricField}
+                        compare={widgetCompareOf(data.data)}
                     />
                 ) : null}
             </div>
@@ -187,6 +190,7 @@ function Body({
     suffix,
     goal,
     field,
+    compare,
 }: {
     value: number | string;
     metric: string;
@@ -195,6 +199,7 @@ function Body({
     suffix: string;
     goal: number | undefined;
     field: FieldEntity | undefined;
+    compare: ReturnType<typeof widgetCompareOf>;
 }): JSX.Element {
     const formatted = formatMetricValue(value, metric, field, { withSymbol: prefix === '' });
     const numeric = typeof value === 'number' ? value : null;
@@ -220,6 +225,14 @@ function Body({
             >
                 {withAffixes(formatted, prefix, suffix)}
             </span>
+
+            {/* v0.1.462 — «+12 % vs. mes anterior». */}
+            <CompareDeltaLine
+                compare={compare}
+                current={value}
+                format={(n) => formatMetricValue(n, metric, field, { withSymbol: prefix === '' })}
+                affix={(s) => withAffixes(s, prefix, suffix)}
+            />
 
             {goal !== undefined && pct !== null && (
                 <div className="imcrm-flex imcrm-flex-col imcrm-gap-1">

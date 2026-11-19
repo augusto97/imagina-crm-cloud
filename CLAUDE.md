@@ -17071,6 +17071,108 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         da 10/14 (modal, fila y página sin el cambio); sin el filtro, 2 GET por
         edición; con el código viejo del menú, el foco termina fuera del alta.
 
+  - [x] **Comparar períodos en los gráficos de los tableros + pronóstico de
+        ventas con embudo ponderado (v0.1.462, ADR-S113, ideas J2 y J3 del
+        banco)**. Sin migración: todo vive en la config del widget y en el
+        bundle del tablero.
+        (a) **«Comparar con…»** por widget (`config.compare {mode, from, to,
+        to_date, invert}`, `readCompareConfig` en
+        `packages/shared/src/dashboard-report/compare.ts`, lectura tolerante):
+        **el período anterior** de la misma duración (por meses de calendario
+        cuando el período es un mes, un trimestre o un año; por días si no),
+        **el mismo período del año pasado** o **un rango elegido**.
+        «Hasta el mismo día» (encendido de fábrica): si el período actual no
+        terminó, el anterior se corta en el mismo punto (hoy 19 → el 1–19 del
+        mes anterior); los meses se recortan al último día (31 mar − 1 mes =
+        28/29 feb). «Menos es mejor» pinta una baja en verde (costos, tickets
+        abiertos). Necesita un período (el del widget o el del tablero); sin
+        período, o con «Desglosar por», el widget lo dice en vez de inventar.
+        (b) **El servidor lo calcula en el MISMO bundle** con los mismos
+        filtros (widget y tablero), el ACL de quien mira, la zona horaria de la
+        empresa y `between_relative` sobre la ventana anterior; cada
+        comparación corre en un savepoint (`safeCompare`): si falla, el widget
+        se dibuja igual con el motivo. Etiquetas armadas en shared
+        (`compareLabels`): «Este mes vs. mes anterior», «2026 vs. 2025»,
+        «vs. noviembre 2025», con el detalle de fechas en el tooltip.
+        (c) **Cómo se ve**: indicador y medidor con «▲ +12 % vs. mes anterior
+        ($1.200.000)» en verde/rojo y la marca de dónde estaba antes en el
+        medidor; barras con la barra fantasma de antes y la variación por
+        fila (`Nuevo` si antes era 0); dona y embudo con la variación por fila
+        (el embudo con el contorno punteado de antes); línea y área con el
+        período anterior **completo punteado y alineado por posición** (el 3
+        de noviembre con el 3 de octubre) y tooltip con ahora, antes y la
+        diferencia (con el dedo también: un toque lo muestra); tabla con el
+        pie «Registros: 3 · antes 2 · +50 %» y las sumas; tabla dinámica con
+        columnas «Antes» y «Variación». La cabecera de cada gráfico dice el
+        total y «Este mes vs. mes anterior»; el total de antes de un gráfico
+        por categorías lo manda el servidor con TODOS sus grupos (también los
+        que hoy no aparecen o caen en «Otros»), así cuadra con el indicador.
+        (d) **«Comparar» del tablero** (`data-tour="dashboard-compare"`): lo de
+        cada widget, no comparar, el período anterior, el año pasado o un
+        rango, recordado por tablero en el dispositivo; viaja como `compare`
+        en el bundle y pisa la de cada widget con período (respetando su
+        «hasta el mismo día»).
+        (e) **Pronóstico de ventas** (widget nuevo `forecast`,
+        `data-tour="dashboard-forecast"`, a pedido en su propio chunk): monto
+        (moneda o número), etapa (selección) y fecha de cierre esperada, por
+        semana, mes o trimestre. Las probabilidades se **sugieren por el
+        nombre** de cada etapa (`suggestStageProbabilities`: «Ganado» 100 %,
+        «Perdido» 0 %, las abiertas repartidas en su orden) y se ajustan una
+        por una en el diálogo con «Volver a las sugeridas». Reglas puras
+        (`weightForecast` en `dashboard-report/forecast.ts`): 100 % = ganado,
+        0 % = perdido (no cuenta), entre 1 y 99 % = abierto con «monto ×
+        probabilidad» al ponderado; pronóstico = ganado + ponderado. El
+        servidor arma monto por (período, etapa) en UNA consulta (agrupado en
+        dos niveles de v0.1.287) con ACL y filtros, y rellena los períodos sin
+        negocios. Muestra el pronóstico, ganado, ponderado y abierto, la meta
+        (`goal`) con su barra, una columna por período (ganado + ponderado +
+        el resto de lo abierto punteado) y la comparación con el período
+        anterior completo; tocar un período abre la lista con ESOS negocios
+        (`segmentScopeChildren`, extraído de `useSegmentNav`). La plantilla de
+        tablero **«Embudo de ventas»** lo trae («Pronóstico del trimestre»,
+        este trimestre contra el anterior).
+        (f) **Viaja a todo lo que ya existía**: el modelo de reporte
+        compartido (`buildWidgetReport`) lleva la comparación y el pronóstico
+        al **PNG**, al **CSV** («Antes (1–19 oct 2026)» y «Variación (%)»), al
+        **correo programado** y al **PDF**; el **enlace público** del tablero
+        la calcula igual (con el acceso de quien publicó).
+        (g) **Asistente y MCP**: `propose_create_dashboard` acepta
+        `compare` (previous | last_year), `compare_to_date`, `compare_invert`
+        y el widget `forecast` (`metric_field` = monto, `stage_field`,
+        `date_field` = cierre, `stage_probabilities` por valor o etiqueta),
+        validados al proponer.
+        **Bugs atrapados en el E2E**: la etiqueta del período del widget
+        («Este mes») se montaba encima de la comparación de la cabecera (ahora
+        el período se oculta cuando la cabecera ya dice «Este mes vs. mes
+        anterior»); en pantallas táctiles los botones del widget tapaban lo de
+        la derecha de la cabecera — también el «Promedio» de antes — (ahora
+        baja debajo del título); el eje de una línea comparada terminaba en una
+        fecha del período ANTERIOR (2026-10-31) cuando octubre tiene más días
+        que noviembre (ahora rotula el último punto del actual donde está); con
+        el dedo, el tooltip de la línea se abría y se cerraba en el mismo
+        toque; el total del pronóstico decía «(—)» en vez de comparar.
+        Ayuda: guías `dashboard-compare` y `sales-forecast`, artículo «Comparar períodos y pronosticar
+        ventas» en Aprende → Tableros (ilustraciones existentes `tab-explorar`
+        y `tab-configurar`), anclas `dashboard-compare`, `widget-compare`,
+        `widget-forecast` y `dashboard-forecast`, y novedad con carrusel.
+        Tests: shared 1132 (nuevos `compare.test.ts` y casos en
+        `report.test.ts`), front 1000 (nuevo `compareForecast.test.ts`, 11), API
+        `dashboards-compare.spec` 9/9 con números hechos a mano (Bogotá, día
+        19: mes vs. mes hasta el mismo día, completo y año pasado; filtro y
+        ACL en la ventana anterior; fecha y hora en la zona; febrero bisiesto;
+        barras/serie alineada; tabla y dinámica; sin período o con desglose;
+        pronóstico por mes; pronóstico mal armado y vista previa) + specs
+        tocados (dashboard-sharing, dashboards-breakdown/bundle/visibility/
+        widgets, help, templates, whats-new, ai-assistant) en verde — bundle de la app
+        810/820 KB gz — + E2E
+        navegador 41/41 en escritorio claro y 34/34 en celular 390×844 oscuro
+        (KPI +200 % y +900 %, barras/dona con el total de antes 2.000.000,
+        línea punteada con 31 puntos y tooltip, tabla, pronóstico 6.600.000 =
+        2.300.000 ganado + 4.300.000 ponderado con 66 % de la meta, «Comparar»
+        del tablero, CSV con «Antes» y «Variación (%),200», diálogo con
+        probabilidades 25/50/75/100/0 y vista previa 6.800.000 con Propuesta
+        al 60 %, click en noviembre → sólo sus 3 negocios, sin errores de JS).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

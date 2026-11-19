@@ -22,6 +22,8 @@ import {
     type ChartSort,
 } from './useChartColors';
 import { formatMetricValue } from './widgetFormat';
+import { CompareBadge, RowDelta, rowCompareTitle } from './CompareParts';
+import { isAdditiveMetric, isReadyCompare, previousByKey, previousTotal, widgetCompareOf, type ReadyCompare } from './compareView';
 import { useContainerWidth } from './useContainerWidth';
 import { useSegmentNav } from './useSegmentNav';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
@@ -71,10 +73,21 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
     const metricField = fields.data?.find((f) => f.id === widget.config.metric_field_id);
     const metric = typeof widget.config.metric === 'string' ? widget.config.metric : 'count';
     const fmt = (n: number): string => formatMetricValue(n, metric, metricField);
+    // v0.1.462 — «Comparar con…»: el valor de antes de cada sector.
+    const compare = widgetCompareOf(data.data);
+    const ready = isReadyCompare(compare) ? compare : null;
+    const before = previousByKey(ready);
+    const nowRows = data.data && 'data' in data.data ? data.data.data : [];
+    const total = ready && isAdditiveMetric(metric)
+        ? {
+              current: nowRows.reduce((s, r) => s + (typeof r.value === 'number' ? r.value : 0), 0),
+              previous: previousTotal(ready, nowRows.reduce((s, r) => s + (before.get(r.label) ?? 0), 0)),
+          }
+        : null;
 
     return (
         <div ref={measureRef} className="imcrm-flex imcrm-h-full imcrm-flex-col imcrm-gap-2 imcrm-min-h-0">
-            <WidgetHeader title={widget.title || __('Distribución')} subtitle={subtitle} />
+            <WidgetHeader title={widget.title || __('Distribución')} subtitle={subtitle} right={<CompareBadge compare={compare} total={total} format={fmt} />} />
 
             <div className="imcrm-flex imcrm-flex-1 imcrm-items-center imcrm-justify-center imcrm-min-h-0">
                 {data.isLoading ? (
@@ -101,6 +114,8 @@ export function PieChartWidget({ dashboardId, widget }: PieChartWidgetProps): JS
                         colorMap={colorMap}
                         labelMap={labelMap}
                         onSegment={onSegment}
+                        compare={ready}
+                        before={before}
                         centerLabel={
                             typeof (widget.config as { center_label?: unknown }).center_label === 'string'
                                 && ((widget.config as { center_label?: string }).center_label ?? '').trim() !== ''
@@ -131,9 +146,12 @@ interface DonutProps {
     onSegment: ((label: string) => void) | null;
     /** v0.1.105 — texto bajo la cifra del centro (config.center_label). */
     centerLabel: string;
+    /** v0.1.462 — con «Comparar con…»: la variación de cada categoría en la leyenda. */
+    compare: ReadyCompare | null;
+    before: Map<string, number | null>;
 }
 
-function Donut({ rows, format, showLabels, showLegend, narrow, ringMax, colorMap, labelMap, onSegment, centerLabel }: DonutProps): JSX.Element {
+function Donut({ rows, format, showLabels, showLegend, narrow, ringMax, colorMap, labelMap, onSegment, centerLabel, compare, before }: DonutProps): JSX.Element {
     // 0.57.40 — leyenda clicable: el usuario puede ocultar/mostrar
     // categorías. El donut y el total se recalculan con las visibles.
     const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -324,7 +342,9 @@ function Donut({ rows, format, showLabels, showLegend, narrow, ringMax, colorMap
                                 <button
                                     type="button"
                                     onClick={() => toggleLabel(row.label)}
-                                    title={isHidden ? __('Mostrar categoría') : __('Ocultar categoría')}
+                                    title={compare
+                                        ? `${rowCompareTitle(compare, othersAwareLabel(row, labelMap), row.value, before.get(row.label), format)}\n${isHidden ? __('Click para mostrar la categoría') : __('Click para ocultar la categoría')}`
+                                        : isHidden ? __('Mostrar categoría') : __('Ocultar categoría')}
                                     className={cn(
                                         'imcrm-flex imcrm-w-full imcrm-items-center imcrm-gap-2 imcrm-rounded imcrm-px-1 imcrm-py-0.5 imcrm-text-left imcrm-transition-colors hover:imcrm-bg-accent/50',
                                         isHidden && 'imcrm-opacity-45',
@@ -349,9 +369,13 @@ function Donut({ rows, format, showLabels, showLegend, narrow, ringMax, colorMap
                                     <span className="imcrm-shrink-0 imcrm-tabular-nums imcrm-font-semibold imcrm-text-foreground">
                                         {format(row.value)}
                                     </span>
-                                    <span className="imcrm-w-9 imcrm-shrink-0 imcrm-text-right imcrm-tabular-nums imcrm-text-[10px] imcrm-text-muted-foreground">
-                                        {isHidden ? '—' : `${pct.toFixed(0)}%`}
-                                    </span>
+                                    {compare ? (
+                                        <RowDelta current={row.value} previous={before.get(row.label)} invert={compare.invert === true} className="imcrm-w-12 imcrm-shrink-0 imcrm-text-right imcrm-text-[10px]" />
+                                    ) : (
+                                        <span className="imcrm-w-9 imcrm-shrink-0 imcrm-text-right imcrm-tabular-nums imcrm-text-[10px] imcrm-text-muted-foreground">
+                                            {isHidden ? '—' : `${pct.toFixed(0)}%`}
+                                        </span>
+                                    )}
                                 </button>
                             </li>
                         );

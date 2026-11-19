@@ -4,6 +4,7 @@ import { ArrowLeft, BarChart3, CalendarRange, Copy, Filter, LayoutTemplate, Load
 
 import { WidgetExportMenu } from '@/admin/dashboards/widgets/WidgetExportMenu';
 import { WidgetRenderer } from '@/admin/dashboards/widgets/WidgetRenderer';
+import { isReadyCompare, widgetCompareOf } from '@/admin/dashboards/widgets/compareView';
 import { DATE_RANGE_PRESETS } from '@/admin/records/dateRangePresets';
 import { PortalPageSettingsButton } from '@/admin/lists/portal-template-editor/PortalPageSettings';
 
@@ -34,6 +35,7 @@ import {
     useDashboard,
     useDeleteDashboard,
     useUpdateDashboard,
+    useWidgetData,
     type DashboardBundleScope,
 } from '@/hooks/useDashboards';
 import { useTrashedToast } from '@/hooks/useTrash';
@@ -162,9 +164,27 @@ function DashboardView({ id }: { id: number }): JSX.Element {
         () => readDashboardFilterDefs(dashboard.data?.settings),
         [dashboard.data?.settings],
     );
+    // v0.1.462 — «Comparar con…» GLOBAL del tablero (persistido por
+    // dashboard): '' = lo de cada widget; `previous`/`last_year` = todos los
+    // widgets con período; `none` = ninguno.
+    const [globalCompare, setGlobalCompare] = useState<string>(() => {
+        try {
+            const v = localStorage.getItem(`imcrm-dash-compare-${id}`) ?? '';
+            return v === 'previous' || v === 'last_year' || v === 'none' ? v : '';
+        } catch {
+            return '';
+        }
+    });
+    const changeGlobalCompare = (v: string): void => {
+        setGlobalCompare(v);
+        try {
+            if (v === '') localStorage.removeItem(`imcrm-dash-compare-${id}`);
+            else localStorage.setItem(`imcrm-dash-compare-${id}`, v);
+        } catch { /* storage lleno/privado — sólo pierde persistencia */ }
+    };
     const scope = useMemo<DashboardBundleScope>(
-        () => ({ period: globalPeriod, filters: activeFilterValues(filterDefs, filterValues) }),
-        [globalPeriod, filterDefs, filterValues],
+        () => ({ period: globalPeriod, filters: activeFilterValues(filterDefs, filterValues), compare: globalCompare }),
+        [globalPeriod, filterDefs, filterValues, globalCompare],
     );
     // v0.1.105 — período PERSONALIZADO (rango fijo): el valor viaja como
     // `custom:YYYY-MM-DD:YYYY-MM-DD` en el mismo string del período global.
@@ -499,6 +519,20 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                             />
                         </span>
                     )}
+                    <Select
+                        value={globalCompare}
+                        onChange={(e) => changeGlobalCompare(e.target.value)}
+                        className="imcrm-h-8 imcrm-w-auto imcrm-text-[13px]"
+                        aria-label={__('Comparar con')}
+                        data-tour="dashboard-compare"
+                        data-testid="imcrm-dashboard-compare"
+                        title={__('Compara todos los widgets con período contra otro período (lo calcula el servidor con los mismos filtros)')}
+                    >
+                        <option value="">{__('Comparar: lo de cada widget')}</option>
+                        <option value="previous">{__('Comparar con el período anterior')}</option>
+                        <option value="last_year">{__('Comparar con el año pasado')}</option>
+                        <option value="none">{__('No comparar')}</option>
+                    </Select>
                     {unaffected.length > 0 && (
                         <span
                             className="imcrm-max-w-[16rem] imcrm-truncate imcrm-text-[11px] imcrm-text-muted-foreground"
@@ -655,7 +689,7 @@ function DashboardView({ id }: { id: number }): JSX.Element {
                                 dragWhole={editing && isContentWidget(widget.type)}
                                 overlay={
                                     <>
-                                        <PeriodBadge widget={widget} globalPeriod={globalPeriod} />
+                                        <PeriodBadge dashboardId={id} widget={widget} globalPeriod={globalPeriod} />
                                         {(editing || (!tvMode && !isContentWidget(widget.type))) && (
                                             <div className="imcrm-no-drag imcrm-absolute imcrm-right-2 imcrm-top-2 imcrm-z-10 imcrm-flex imcrm-gap-1 imcrm-rounded imcrm-bg-card/90 imcrm-opacity-0 imcrm-transition-opacity group-hover:imcrm-opacity-100 focus-within:imcrm-opacity-100 [@media(hover:none)]:imcrm-opacity-100">
                                                 {!tvMode && <WidgetExportMenu dashboardId={id} widget={widget} />}
@@ -722,7 +756,14 @@ function DashboardView({ id }: { id: number }): JSX.Element {
  * v0.1.286 — con un período GLOBAL activo muestra el que de verdad aplica
  * (el global, resaltado) en los widgets con campo de fecha.
  */
-function PeriodBadge({ widget, globalPeriod }: { widget: WidgetSpec; globalPeriod: string }): JSX.Element | null {
+/** Los widgets que muestran la comparación en su cabecera (no debajo de la cifra). */
+const HEADER_COMPARE_TYPES = new Set<string>(['chart_bar', 'chart_pie', 'chart_line', 'chart_area', 'funnel', 'table', 'pivot', 'forecast']);
+
+function PeriodBadge({ dashboardId, widget, globalPeriod }: { dashboardId: number; widget: WidgetSpec; globalPeriod: string }): JSX.Element | null {
+    const data = useWidgetData(dashboardId, widget.id);
+    // v0.1.462 — con una comparación lista, la cabecera del gráfico ya dice
+    // «Este mes vs. mes anterior»: la etiqueta del período la taparía.
+    if (HEADER_COMPARE_TYPES.has(widget.type) && isReadyCompare(widgetCompareOf(data.data))) return null;
     const period = widget.config.period;
     const overridden = globalPeriod !== '' && periodApplies(widget);
     const preset = overridden ? globalPeriod : period?.preset;

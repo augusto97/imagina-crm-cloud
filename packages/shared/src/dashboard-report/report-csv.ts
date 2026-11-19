@@ -73,23 +73,76 @@ export function widgetReportCsv(report: WidgetReport, format: Pick<ReportFormat,
                 rows.push([`Período anterior (${report.delta.periodDays} días)`, valueCell(report.delta.previous, report.delta.previousText)]);
                 if (report.delta.pct !== null) rows.push(['Variación (%)', Math.round(report.delta.pct * 10) / 10]);
             }
+            if (report.compare) {
+                rows.push([`Antes (${report.compare.detail || report.compare.label})`, valueCell(report.compare.previous, report.compare.previousText)]);
+                if (report.compare.pct !== null) rows.push(['Variación (%)', report.compare.pct]);
+            }
             return csv(rows, d);
         }
-        case 'categories':
+        case 'categories': {
+            if (report.trend) {
+                // v0.1.462 — serie comparada: una fila por posición (el día 1 con el día 1).
+                return csv([
+                    [report.dimension, report.metricName, 'Período anterior', 'Antes', 'Variación (%)'],
+                    ...report.trend.map((p) => {
+                        const pct = p.value !== null && p.previous !== null && p.previous !== 0 ? Math.round(((p.value - p.previous) / Math.abs(p.previous)) * 1000) / 10 : null;
+                        return [p.label, p.value, p.prevLabel, p.previous, pct];
+                    }),
+                ], d);
+            }
+            if (report.compare) {
+                return csv([
+                    [report.dimension, report.metricName, 'Antes', 'Variación (%)'],
+                    ...report.rows.map((r) => [r.label, valueCell(r.raw, r.text), r.previous ?? null, r.deltaText !== undefined ? (r.pct ?? null) : null]),
+                ], d);
+            }
             return csv([[report.dimension, report.metricName], ...report.rows.map((r) => [r.label, valueCell(r.raw, r.text)])], d);
+        }
         case 'stacked': {
             const header: Cell[] = [report.dimension, ...report.series.map((s) => s.label), 'Total'];
             const body = report.groups.map((g) => [g.label, ...g.values, g.total]);
             return csv([header, ...body], d);
         }
-        case 'table':
-            return csv([report.columns, ...report.rawRows], d);
+        case 'table': {
+            const rows: Cell[][] = [report.columns, ...report.rawRows];
+            if (report.totals) {
+                rows.push([]);
+                rows.push(['Totales del período', 'Ahora', 'Antes', 'Variación (%)']);
+                for (const t of report.totals) rows.push([t.label, t.value, t.previous, t.pct]);
+            }
+            return csv(rows, d);
+        }
         case 'pivot': {
             const corner = [report.rowHeader, report.colHeader].filter(Boolean).join(' \\ ');
-            const header: Cell[] = [corner || report.metricName, ...report.cols.map((c) => c.label), 'Total'];
-            const body: Cell[][] = report.rows.map((r) => [r.label, ...r.cells.map((c) => valueCell(c.value, c.text)), valueCell(r.total, r.totalText)]);
-            const footer: Cell[] = ['Total', ...report.cols.map((c) => valueCell(c.total, c.totalText)), valueCell(report.total, report.totalText)];
+            const withCmp = report.compare !== null;
+            const header: Cell[] = [corner || report.metricName, ...report.cols.map((c) => c.label), 'Total', ...(withCmp ? ['Antes', 'Variación (%)'] : [])];
+            const before = (t: string): Cell => (t === '—' ? null : t);
+            const body: Cell[][] = report.rows.map((r) => [
+                r.label,
+                ...r.cells.map((c) => valueCell(c.value, c.text)),
+                valueCell(r.total, r.totalText),
+                ...(withCmp ? [before(r.delta?.previousText ?? '—'), r.delta?.pct ?? null] : []),
+            ]);
+            const footer: Cell[] = [
+                'Total',
+                ...report.cols.map((c) => valueCell(c.total, c.totalText)),
+                valueCell(report.total, report.totalText),
+                ...(withCmp ? [before(report.compare!.previousText), report.compare!.pct] : []),
+            ];
             return csv([header, ...body, footer], d);
+        }
+        case 'forecast': {
+            const rows: Cell[][] = [['Período', 'Ganado', 'Ponderado', 'Abierto', 'Pronóstico']];
+            for (const b of report.buckets) rows.push([b.label, b.won, b.weighted, b.open, b.forecast]);
+            const t = report.totals;
+            rows.push(['Total', t.won, t.weighted, t.open, t.forecast]);
+            if (report.compare) rows.push([`Pronóstico antes (${report.compare.detail || report.compare.label})`, null, null, null, report.compare.previousText, report.compare.pct]);
+            if (report.stages.length > 0) {
+                rows.push([]);
+                rows.push(['Etapa', 'Probabilidad (%)', 'Monto']);
+                for (const st of report.stages) rows.push([st.label, st.probability, st.amountText]);
+            }
+            return csv(rows, d);
         }
     }
 }

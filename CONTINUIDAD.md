@@ -430,7 +430,12 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.461**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.462**
+(**comparar períodos en los tableros + pronóstico de ventas** — «Comparar
+con…» en cada widget (período anterior, año pasado o un rango; «hasta el mismo
+día») y «Comparar» del tablero, calculado en el servidor en el mismo bundle;
+widget nuevo «Pronóstico de ventas» con el embudo ponderado por etapa; sin
+migración; ADR-S113). Antes **v0.1.461**
 (**pulido**: lo que cambia una automatización por una edición de la pestaña se
 ve al momento —cada aviso del realtime dice quién lo originó y la pestaña sólo
 ignora su propio eco— y el foco va al nombre al crear una subtarea o un registro
@@ -2346,6 +2351,29 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.462** — **Comparar períodos en los tableros + pronóstico
+  de ventas** (J2 + J3; ADR-S113; sin migración). «Comparar con…» en cada
+  widget (período anterior, año pasado o un rango; «hasta el mismo día»;
+  «menos es mejor») y «Comparar» del tablero que lo pisa en todos, calculado
+  en el servidor en el MISMO bundle con los filtros, el ACL y la zona horaria
+  (savepoint por comparación: si falla, el widget sigue y lo dice). Indicador y
+  medidor con la variación, barras con la barra de antes, dona/embudo por fila,
+  línea/área con el período anterior completo punteado y alineado por
+  posición, tabla y dinámica con «Antes» y «Variación». Widget nuevo
+  **Pronóstico de ventas** (monto × probabilidad de la etapa por
+  semana/mes/trimestre, sugeridas por el nombre, con meta y comparación; la
+  plantilla «Embudo de ventas» lo trae; tocar un período abre esos negocios).
+  La comparación viaja al PNG, CSV, correo, PDF y enlace público; el
+  asistente/MCP propone `compare` y `forecast`. Reglas puras en
+  `packages/shared/src/dashboard-report/compare.ts` y `forecast.ts`.
+  Decisiones: los gráficos por categorías comparan los MISMOS grupos (el total
+  de antes viene del servidor con todos); con «Desglosar por» no se compara (se
+  dice); el pronóstico compara contra el período anterior completo.
+  Pendiente/dudoso: con «hasta el mismo día» el período actual cuenta lo que
+  tiene fecha futura dentro del período (un negocio que cierra el 25 suma hoy,
+  día 19) y el anterior se corta en el mismo día, así que un mes con muchos
+  negocios a futuro se ve «mejor» de lo que va (es lo que ya hacía el
+  indicador sin comparar); comparar con «Desglosar por» quedó fuera.
 - **2026-11-19 · v0.1.461** — **Lo que hace una automatización se ve al
   momento + foco al crear una subtarea desde el menú** (pulido; addendum
   ADR-S06; sin migración). El realtime ignoraba 2,5 s todo aviso de una lista
@@ -2361,7 +2389,7 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   arreglo en los menús de columna y tarjeta del kanban. Pendiente/dudoso: un
   `fetch` crudo que cambie registros sin pasar por `lib/api.ts` no manda el
   encabezado y su eco recargaría la lista una vez de más (hoy no hay ninguno);
-  el presupuesto del bundle de la app queda en 817 de 820 KB gz.
+  el bundle de la app queda en 810 de 820 KB gz.
 - **2026-11-19 · v0.1.460** — **Varias ramas, preguntarle a la IA y «Si este
   paso falla»** (E2 + E3; addendum ADR-S47). Sin migración: la corrida suma el
   estado `with_errors` («Con errores», ámbar) que NO abre Problema. Paso

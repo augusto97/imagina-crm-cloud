@@ -11,7 +11,8 @@ export const meta: LearnModuleMeta = {
     hero: 'tab-hero',
     highlights: [
         'Arma un tablero en un minuto desde una plantilla, sobre tus propias listas',
-        'Indicadores con meta, medidores, barras, donas, embudos, tendencias y tablas dinámicas',
+        'Indicadores con meta, medidores, barras, donas, embudos, tendencias, tablas dinámicas y pronóstico de ventas',
+        'Compara cada gráfico con el período anterior o el año pasado y mira la variación',
         'Filtra por período o por persona y haz clic en un gráfico para ver los registros que lo forman',
         'Compártelo con un enlace público o recíbelo por correo cada semana con su PDF',
     ],
@@ -49,6 +50,15 @@ export const meta: LearnModuleMeta = {
             minutes: 6,
             level: 'advanced',
             keywords: 'desglosar desglose series apiladas 100 por ciento lado a lado tabla dinamica pivot filas columnas totales mapa de calor cruce',
+            needs: 'manage_dashboards',
+        },
+        {
+            id: 'tableros-comparar-y-pronostico',
+            title: 'Comparar con el período anterior y pronosticar ventas',
+            summary: 'Cada gráfico contra el mes anterior o el año pasado con su variación, y el pronóstico de ventas que pondera tu embudo por la probabilidad de cada etapa.',
+            minutes: 7,
+            level: 'intermediate',
+            keywords: 'comparar periodo anterior año pasado variacion porcentaje vs versus pronostico forecast ventas embudo ponderado probabilidad etapa meta cierre',
             needs: 'manage_dashboards',
         },
         {

@@ -107,7 +107,7 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
     dash(
         'embudo-de-ventas',
         'Embudo de ventas',
-        'Pipeline por etapa con monto total, ticket promedio, embudo y cierres del mes. Para una lista de oportunidades.',
+        'Pipeline por etapa con monto total, ticket promedio, embudo, cierres del mes y el pronóstico ponderado del trimestre. Para una lista de oportunidades.',
         'ventas',
         'target',
         '#a855f7',
@@ -121,7 +121,18 @@ export const SYSTEM_DASHBOARD_TEMPLATES: readonly SystemDashboardTemplate[] = [
             w('chart_bar', 'Monto por etapa', { metric: 'sum', metric_field_id: ref('monto'), group_by_field_id: ref('etapa') }, 6, 2, 6, 5),
             w('chart_bar', 'Monto por responsable', { metric: 'sum', metric_field_id: ref('monto'), group_by_field_id: ref('responsable'), hide_zero_groups: true }, 0, 7, 6, 4),
             w('chart_line', 'Cierres por mes', { metric: 'sum', metric_field_id: ref('monto'), date_field_id: ref('cierre'), time_bucket: 'month' }, 6, 7, 6, 4),
-            w('table', 'Próximos cierres', { limit: 8, sort_field_id: ref('cierre'), sort_dir: 'asc', period: fromToday('cierre') }, 0, 11, 12, 4),
+            // v0.1.462 — pronóstico ponderado del trimestre (monto × probabilidad de la
+            // etapa), comparado con el trimestre anterior.
+            w('forecast', 'Pronóstico del trimestre', {
+                metric: 'sum',
+                metric_field_id: ref('monto'),
+                stage_field_id: ref('etapa'),
+                date_field_id: ref('cierre'),
+                time_bucket: 'month',
+                period: { field_id: ref('cierre'), preset: 'this_quarter' },
+                compare: { mode: 'previous', to_date: false },
+            }, 0, 11, 12, 5),
+            w('table', 'Próximos cierres', { limit: 8, sort_field_id: ref('cierre'), sort_dir: 'asc', period: fromToday('cierre') }, 0, 16, 12, 4),
         ],
     ),
     dash(

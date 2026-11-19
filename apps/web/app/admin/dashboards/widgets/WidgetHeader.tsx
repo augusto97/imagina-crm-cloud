@@ -25,8 +25,11 @@ export function WidgetHeader({
     subtitle?: string | null;
     right?: React.ReactNode;
 }): JSX.Element {
+    // v0.1.462 — en pantallas táctiles los botones del widget quedan siempre
+    // visibles arriba a la derecha: lo de la derecha (la comparación, el
+    // promedio) baja debajo del título para que no lo tapen.
     return (
-        <header className="imcrm-drag-handle imcrm-flex imcrm-shrink-0 imcrm-cursor-grab imcrm-select-none imcrm-items-start imcrm-justify-between imcrm-gap-2 active:imcrm-cursor-grabbing">
+        <header className="imcrm-drag-handle imcrm-flex imcrm-shrink-0 imcrm-cursor-grab imcrm-select-none imcrm-items-start imcrm-justify-between imcrm-gap-2 active:imcrm-cursor-grabbing [@media(hover:none)]:imcrm-flex-col [@media(hover:none)]:imcrm-gap-1">
             <div className="imcrm-min-w-0">
                 <h3 className="imcrm-truncate imcrm-text-[13px] imcrm-font-semibold imcrm-leading-tight imcrm-text-foreground">
                     {title}

@@ -423,6 +423,102 @@ export const articles: LearnArticle[] = [
     },
     // ─────────────────────────────────────────────────────────────────────
     {
+        id: 'tableros-comparar-y-pronostico',
+        route: '/dashboards',
+        related: ['tableros-configurar-widget', 'tableros-explorar'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'Un número solo dice poco: *¿vendimos $40 millones este mes?* La pregunta de verdad es *¿es más o menos que antes?* Cada widget puede compararse con otro período, y el **Pronóstico de ventas** te dice cuánto vas a cerrar según tu embudo.',
+            },
+            { t: 'h', text: 'Comparar con otro período' },
+            { t: 'anim', key: 'tab-explorar', caption: 'Elige el período del widget y con qué compararlo: aparece la variación junto al valor.' },
+            {
+                t: 'steps',
+                items: [
+                    'Toca el lápiz del widget y, en **Período**, elige el campo de fecha y el rango (por ejemplo, «Este mes»).',
+                    'En **Comparar con…** elige **El período anterior (misma duración)**, **El mismo período del año pasado** o **Un rango que elijas**.',
+                    'Guarda. La vista previa ya muestra la comparación con tus datos.',
+                ],
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'El período anterior (misma duración)', what: '«Este mes» contra el mes anterior; «Últimos 30 días» contra los 30 de antes.', tip: 'Los meses se comparan como meses: febrero contra enero aunque tengan distinta cantidad de días.' },
+                    { name: 'El mismo período del año pasado', what: 'Noviembre de este año contra noviembre del año pasado.', tip: 'Ideal para negocios de temporada: diciembre siempre vende más que noviembre.' },
+                    { name: 'Un rango que elijas', what: 'Dos fechas fijas: la temporada pasada, el mes de una campaña.' },
+                    { name: 'Hasta el mismo día', what: 'Si el período no terminó, el anterior se corta en el mismo punto: del 1 al 19 de este mes contra el 1 al 19 del anterior.', tip: 'Viene encendido. Sin él, medio mes contra un mes entero siempre se ve como una caída.' },
+                    { name: 'Menos es mejor', what: 'Para costos, devoluciones o tickets abiertos: una baja se pinta en verde y una subida en rojo.' },
+                ],
+            },
+            {
+                t: 'cards',
+                items: [
+                    { title: 'Indicador y medidor', md: 'Debajo del número: «+12 % vs. mes anterior ($35.700.000)». El medidor marca con una rayita dónde estabas antes.' },
+                    { title: 'Línea y área', md: 'El período anterior se dibuja **punteado**, alineado día con día: el 1 con el 1. Pasa el mouse para ver los dos valores y la diferencia.' },
+                    { title: 'Barras, dona y embudo', md: 'Cada categoría con su valor de antes y su variación; arriba, la variación del total.' },
+                    { title: 'Tablas', md: 'La tabla suma los totales de ahora y de antes; la tabla dinámica agrega las columnas **Antes** y **Variación**.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'Para comparar hace falta un período: el del widget o el que elijas arriba para todo el tablero. El selector **Comparar** de arriba aplica la misma comparación a todos los widgets con período. Con **Desglosar por** no se compara.',
+            },
+            { t: 'h', text: 'El pronóstico de ventas' },
+            { t: 'anim', key: 'tab-configurar', caption: 'Monto, etapa y fecha de cierre: el pronóstico pondera cada negocio por su probabilidad.' },
+            {
+                t: 'p',
+                md: 'Agrega un widget **Pronóstico de ventas · Embudo ponderado** sobre tu lista de oportunidades. Para cada mes (o semana, o trimestre) de la **fecha de cierre esperada**, suma lo que ya ganaste y lo que probablemente vas a ganar.',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Monto del negocio', what: 'El campo de moneda o número con el valor de cada oportunidad.' },
+                    { name: 'Etapa (campo de selección)', what: 'El campo con las etapas del embudo: Prospecto, Propuesta, Negociación, Ganado, Perdido.' },
+                    { name: 'Fecha de cierre esperada', what: 'Reparte el pronóstico por período. Sin fecha, muestra un total por etapa.' },
+                    { name: 'Probabilidad de cierre por etapa', what: 'Qué tan probable es cerrar un negocio en cada etapa. La sugerimos por el nombre: Ganado 100 %, Perdido 0 % y las demás repartidas en orden.', tip: 'Ajústala con tu historia: si de cada diez propuestas cierras cuatro, pon 40 %.' },
+                    { name: 'Meta (opcional)', what: 'Muestra una barra con cuánto del objetivo cubre el pronóstico.' },
+                ],
+            },
+            {
+                t: 'cards',
+                items: [
+                    { title: 'Ganado', md: 'La suma de los negocios en etapas de 100 %.' },
+                    { title: 'Ponderado', md: 'Cada negocio abierto × la probabilidad de su etapa: una propuesta de $10 millones al 40 % suma $4 millones.' },
+                    { title: 'Abierto', md: 'Todo el embudo abierto sin ponderar: lo máximo que podrías cerrar.' },
+                    { title: 'Pronóstico', md: 'Ganado + ponderado: la cifra para planear.' },
+                ],
+            },
+            {
+                t: 'example',
+                title: 'Una agencia de software',
+                md: 'La directora comercial agrega el pronóstico sobre **Oportunidades** con el período «Este trimestre», meta de $300 millones y **Comparar con…** el trimestre anterior. Ve $120 millones ganados, $95 millones ponderados (pronóstico de $215 millones, el 72 % de la meta) y un «+18 % vs. trimestre anterior». Toca diciembre y se abre la lista con los negocios que cierran ese mes para repasarlos con su equipo.',
+            },
+            {
+                t: 'callout',
+                tone: 'tip',
+                md: 'La plantilla de tablero **Embudo de ventas** ya trae el pronóstico del trimestre comparado con el anterior: aplícala sobre tu lista y ajusta las probabilidades.',
+            },
+            {
+                t: 'faq',
+                items: [
+                    { q: '¿La comparación usa los mismos filtros?', a: 'Sí: los filtros del widget, los del tablero y lo que puedes ver con tu rol. Sólo cambia el período.' },
+                    { q: '¿Sale en el correo programado y en el enlace público?', a: 'Sí: la variación viaja en la imagen, el CSV, el correo con su PDF y el enlace público.' },
+                    { q: '¿Qué pasa con un negocio sin etapa?', a: 'No suma al pronóstico; el widget te dice cuánto monto quedó sin etapa para que lo corrijas.' },
+                ],
+            },
+            {
+                t: 'actions',
+                items: [
+                    { label: 'Configurar un widget', article: 'tableros-configurar-widget' },
+                    { label: 'Ir a Tableros', to: '/dashboards' },
+                ],
+            },
+        ],
+    },
+    // ─────────────────────────────────────────────────────────────────────
+    {
         id: 'tableros-diseno',
         route: '/dashboards',
         related: ['tableros-tipos-de-widget', 'tableros-explorar', 'tableros-compartir'],

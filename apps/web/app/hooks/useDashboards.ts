@@ -27,8 +27,8 @@ export const dashboardsKeys = {
      * v0.1.100 — incluye el período GLOBAL activo; v0.1.286 — y los filtros
      * del tablero (cambiarlos refetchea el bundle completo).
      */
-    widgetsData: (dashboardId: string | number, period = '', filters = '') =>
-        [...dashboardsKeys.all, 'widgets-data', String(dashboardId), period, filters] as const,
+    widgetsData: (dashboardId: string | number, period = '', filters = '', compare = '') =>
+        [...dashboardsKeys.all, 'widgets-data', String(dashboardId), period, filters, compare] as const,
     /** v0.1.286 — vista previa de un widget sin guardar. */
     preview: (dashboardId: string | number, body: string) =>
         [...dashboardsKeys.all, 'widgets-data', String(dashboardId), 'preview', body] as const,
@@ -43,6 +43,12 @@ export const dashboardsKeys = {
 export interface DashboardBundleScope {
     period: string;
     filters: DashboardFilterValue[];
+    /**
+     * v0.1.462 — «Comparar con…» del tablero: '' = lo de cada widget,
+     * `none` = sin comparar, `previous` / `last_year` = todos los widgets
+     * con período.
+     */
+    compare?: string;
 }
 export const DashboardBundleContext = createContext<DashboardBundleScope>({ period: '', filters: [] });
 
@@ -55,6 +61,7 @@ export function bundleBody(scope: DashboardBundleScope): Record<string, unknown>
     const body: Record<string, unknown> = {};
     if (scope.period !== '') body.period_preset = scope.period;
     if (scope.filters.length > 0) body.filters = scope.filters;
+    if (scope.compare !== undefined && scope.compare !== '') body.compare = scope.compare;
     return body;
 }
 
@@ -266,7 +273,7 @@ export function useWidgetData(dashboardId: number | undefined, widgetId: string 
     const override = useContext(WidgetDataOverrideContext);
     const filtersKey = scope.filters.length > 0 ? JSON.stringify(scope.filters) : '';
     const query = useQuery({
-        queryKey: dashboardsKeys.widgetsData(dashboardId ?? 0, scope.period, filtersKey),
+        queryKey: dashboardsKeys.widgetsData(dashboardId ?? 0, scope.period, filtersKey, scope.compare ?? ''),
         queryFn: async () => {
             const res = await api.post<Record<string, WidgetData>>(
                 `/dashboards/${dashboardId}/widgets/data`,

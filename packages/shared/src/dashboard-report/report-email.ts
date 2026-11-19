@@ -134,6 +134,9 @@ function kpiGrid(reports: Array<Extract<WidgetReport, { kind: 'kpi' }>>, accent:
             if (r.goal) {
                 const pct = Math.round(r.goal.pct);
                 extra = `<p style="margin:6px 0 4px;font-family:${FONT};font-size:12px;color:${MUTED};">${pct} % de la meta (${esc(r.goal.text)})</p>${barCells([{ frac: r.goal.pct / 100, color: r.goal.pct >= 100 ? '#10b77f' : accent }])}`;
+            } else if (r.compare) {
+                const color = toneColor(r.compare.tone);
+                extra = `<p style="margin:6px 0 0;font-family:${FONT};font-size:12px;color:${MUTED};"><span style="color:${color};font-weight:700;">${esc(r.compare.deltaText)}</span> ${esc(r.compare.short)} (${esc(r.compare.previousText)})</p>`;
             } else if (r.delta) {
                 const p = r.delta.pct;
                 const color = p === null || p === 0 ? MUTED : p > 0 ? '#0f9d63' : '#d9304f';
@@ -147,6 +150,17 @@ function kpiGrid(reports: Array<Extract<WidgetReport, { kind: 'kpi' }>>, accent:
         rows.push(`<tr>${cells.join('')}</tr>`);
     }
     return `<table ${TABLE.replace('border-collapse:collapse;', 'border-collapse:collapse;table-layout:fixed;')}>${rows.join('')}</table>`;
+}
+
+/** v0.1.462 — Color de una variación (verde bueno, rojo malo). */
+function toneColor(tone: 'good' | 'bad' | 'neutral'): string {
+    return tone === 'good' ? '#0f9d63' : tone === 'bad' ? '#d9304f' : MUTED;
+}
+
+/** v0.1.462 — «Este mes vs. mes anterior · 1–19 nov vs. 1–19 oct», debajo del título. */
+function compareNote(c: { label: string; detail: string } | null): string {
+    if (!c) return '';
+    return `<p style="margin:-6px 0 8px;font-family:${FONT};font-size:12px;line-height:16px;color:${MUTED};">${esc(c.label)}${c.detail ? ` · ${esc(c.detail)}` : ''}</p>`;
 }
 
 function dataTable(head: string[], rows: string[][], opts: { numericFrom?: number; footer?: string[]; cellBg?: (ri: number, ci: number) => string | null } = {}): string {
@@ -185,6 +199,25 @@ export function reportEmailHtml(r: WidgetReport, accent: string): string {
             return kpiGrid([r], accent);
         case 'categories': {
             if (r.rows.length === 0) return header(r) + emptyNote();
+            if (r.trend) {
+                // v0.1.462 — serie comparada: la grilla actual / antes por posición.
+                const pts = r.trend.filter((p) => p.value !== null || p.previous !== null).slice(-MAX_ROWS);
+                const table = dataTable(
+                    ['Período', r.metricName, 'Antes'],
+                    pts.map((p) => [p.label || '—', p.text || '—', p.previousText ? `${p.previousText} (${p.prevLabel})` : '—']),
+                    { numericFrom: 1 },
+                );
+                return `${header(r)}${compareNote(r.compare)}${table}`;
+            }
+            if (r.compare) {
+                const rows = r.rows.slice(0, MAX_ROWS);
+                const table = dataTable(
+                    [r.dimension, r.metricName, 'Antes', 'Variación'],
+                    rows.map((x) => [x.label, x.text, x.previousText ?? '—', x.deltaText ?? '—']),
+                    { numericFrom: 1 },
+                );
+                return `${header(r)}${compareNote(r.compare)}${table}${more(r.rows.length - rows.length)}`;
+            }
             const timeline = r.chart === 'line' || r.chart === 'area';
             // Una tendencia: los últimos períodos (lo más reciente importa más).
             const rows = timeline ? r.rows.slice(-MAX_ROWS) : r.rows.slice(0, MAX_ROWS);
@@ -228,7 +261,22 @@ export function reportEmailHtml(r: WidgetReport, accent: string): string {
             if (r.rows.length === 0) return header(r) + emptyNote();
             const cols = Math.min(6, r.columns.length);
             const rows = r.rows.slice(0, MAX_ROWS).map((row) => row.slice(0, cols));
-            return `${header(r)}${dataTable(r.columns.slice(0, cols), rows)}${more(r.rows.length - rows.length)}`;
+            const totals = r.totals
+                ? `<div style="height:10px;line-height:10px;font-size:0;">&nbsp;</div>${compareNote(r.compare)}${dataTable(['Totales', 'Ahora', 'Antes', 'Variación'], r.totals.map((t) => [t.label, t.valueText, t.previousText, t.deltaText]), { numericFrom: 1 })}`
+                : '';
+            return `${header(r)}${dataTable(r.columns.slice(0, cols), rows)}${more(r.rows.length - rows.length)}${totals}`;
+        }
+        case 'forecast': {
+            const t = r.totals;
+            const head = `<p style="margin:0;font-family:${FONT};font-size:24px;line-height:30px;font-weight:700;color:${TEXT};">${esc(t.forecastText)}</p>
+<p style="margin:2px 0 10px;font-family:${FONT};font-size:12px;line-height:16px;color:${MUTED};">Ganado ${esc(t.wonText)} · Ponderado ${esc(t.weightedText)} · Abierto ${esc(t.openText)}${r.compare ? ` · <span style="color:${toneColor(r.compare.tone)};font-weight:700;">${esc(r.compare.deltaText)}</span> ${esc(r.compare.short)}` : ''}</p>`;
+            const rows = r.buckets.slice(0, MAX_ROWS);
+            const table = dataTable(
+                ['Período', 'Ganado', 'Ponderado', 'Abierto', 'Pronóstico'],
+                rows.map((b) => [b.label, b.wonText, b.weightedText, b.openText, b.forecastText]),
+                { numericFrom: 1, footer: ['Total', t.wonText, t.weightedText, t.openText, t.forecastText] },
+            );
+            return `${header(r)}${head}${table}${more(r.buckets.length - rows.length)}`;
         }
         case 'pivot': {
             if (r.rows.length === 0) return header(r) + emptyNote();
@@ -236,9 +284,10 @@ export function reportEmailHtml(r: WidgetReport, accent: string): string {
             const cols = r.cols.slice(0, maxCols);
             const rows = r.rows.slice(0, 12);
             const span = r.max - Math.min(r.min, 0);
-            const head = [[r.rowHeader, r.colHeader].filter(Boolean).join(' \\ '), ...cols.map((c) => c.label), 'Total'];
-            const body = rows.map((row) => [row.label, ...row.cells.slice(0, maxCols).map((c) => c.text), row.totalText]);
-            const footer = ['Total', ...cols.map((c) => c.totalText), r.totalText];
+            const withCmp = r.compare !== null;
+            const head = [[r.rowHeader, r.colHeader].filter(Boolean).join(' \\ '), ...cols.map((c) => c.label), 'Total', ...(withCmp ? ['Antes', 'Var.'] : [])];
+            const body = rows.map((row) => [row.label, ...row.cells.slice(0, maxCols).map((c) => c.text), row.totalText, ...(withCmp ? [row.delta?.previousText ?? '—', row.delta?.deltaText ?? '—'] : [])]);
+            const footer = ['Total', ...cols.map((c) => c.totalText), r.totalText, ...(withCmp ? [r.compare!.previousText, r.compare!.deltaText] : [])];
             const table = dataTable(head, body, {
                 numericFrom: 1,
                 footer,
@@ -250,7 +299,7 @@ export function reportEmailHtml(r: WidgetReport, accent: string): string {
                 },
             });
             const cut = rows.length < r.rows.length || cols.length < r.cols.length;
-            return `${header(r)}${table}${cut ? `<p style="margin:6px 0 0;font-family:${FONT};font-size:12px;color:${MUTED};">Se muestran ${rows.length} de ${r.rows.length} filas y ${cols.length} de ${r.cols.length} columnas.</p>` : ''}`;
+            return `${header(r)}${compareNote(r.compare)}${table}${cut ? `<p style="margin:6px 0 0;font-family:${FONT};font-size:12px;color:${MUTED};">Se muestran ${rows.length} de ${r.rows.length} filas y ${cols.length} de ${r.cols.length} columnas.</p>` : ''}`;
         }
     }
 }

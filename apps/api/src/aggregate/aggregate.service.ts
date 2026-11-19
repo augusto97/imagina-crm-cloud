@@ -185,20 +185,7 @@ export class AggregateService {
         }
         this.assertMetricCompat(req.metric, field, fieldsById);
 
-        const filterWhere = compileFilterTree(fieldsById, req.filter_tree, clock);
-        const baseWhere = and(
-            eq(records.tenantId, tenantId),
-            eq(records.listId, ctx.list.id),
-            isNull(records.deletedAt),
-            opts.rootsOnly ? isNull(records.parentId) : undefined,
-            ctx.scope,
-            filterWhere,
-            // v0.1.286 — la búsqueda de la tabla (vista agrupada), sólo sobre
-            // los campos que quien pregunta puede ver.
-            compileSearch(ctx.fields.filter((f) => !ctx.hidden.has(f.id)), opts.search),
-            // v0.1.230 — sólo los vinculados a un registro (bloques de la ficha).
-            opts.related ? relatedScopeSql(tenantId, opts.related) : undefined,
-        );
+        const baseWhere = this.baseWhere(tenantId, ctx, req.filter_tree, opts);
 
         const aggExpr = this.metricExpr(req.metric, field, fieldsById);
 
@@ -219,6 +206,22 @@ export class AggregateService {
                 return this.twoLevelGroups(tx, baseWhere, groupExpr, subExpr, aggExpr, req.metric, opts);
             }
 
+            if (opts.keepKeys) {
+                // v0.1.462 — los MISMOS grupos que otra consulta (el período
+                // con el que se compara): las claves pedidas y el resto en
+                // "Otros", calculado sobre sus registros.
+                const grp = othersCase(sql`((${groupExpr})::text)`, opts.keepKeys);
+                const kept = await tx
+                    .select({ grp, val: aggExpr })
+                    .from(records)
+                    .where(baseWhere)
+                    .groupBy(sql`1`);
+                return {
+                    metric: req.metric,
+                    value: null,
+                    groups: kept.map((r) => ({ group: keyOf(r.grp), value: normalize(r.val) })),
+                };
+            }
             if (opts.top) {
                 return {
                     metric: req.metric,
@@ -247,6 +250,65 @@ export class AggregateService {
 
         const [row] = await tx.select({ val: aggExpr }).from(records).where(baseWhere);
         return { metric: req.metric, value: normalize(row?.val) };
+    }
+
+    /** El WHERE de un agregado: empresa, lista, papelera, primer nivel, ACL, filtro, búsqueda y vinculados. */
+    private baseWhere(
+        tenantId: number,
+        ctx: AggregateListContext,
+        filterTree: AggregateRequest['filter_tree'],
+        opts: Pick<AggregateRunOptions, 'rootsOnly' | 'search' | 'related'>,
+    ): SQL | undefined {
+        return and(
+            eq(records.tenantId, tenantId),
+            eq(records.listId, ctx.list.id),
+            isNull(records.deletedAt),
+            opts.rootsOnly ? isNull(records.parentId) : undefined,
+            ctx.scope,
+            compileFilterTree(ctx.fieldsById, filterTree, ctx.clock),
+            // v0.1.286 — la búsqueda de la tabla (vista agrupada), sólo sobre
+            // los campos que quien pregunta puede ver.
+            compileSearch(ctx.fields.filter((f) => !ctx.hidden.has(f.id)), opts.search),
+            // v0.1.230 — sólo los vinculados a un registro (bloques de la ficha).
+            opts.related ? relatedScopeSql(tenantId, opts.related) : undefined,
+        );
+    }
+
+    /**
+     * v0.1.462 — Totales de un conjunto de registros en UNA consulta: cuántos
+     * son y la suma de cada campo numérico pedido (el pie de la tabla de un
+     * tablero que compara períodos). Un campo que no se puede sumar (oculto
+     * para quien pregunta, ya no numérico) se ignora.
+     */
+    async totalsIn(
+        tx: Tx,
+        tenantId: number,
+        ctx: AggregateListContext,
+        fieldIds: readonly number[],
+        filterTree: AggregateRequest['filter_tree'],
+        opts: Pick<AggregateRunOptions, 'rootsOnly' | 'search' | 'related'> = {},
+    ): Promise<{ count: number; sums: Map<number, number> }> {
+        const summable: Field[] = [];
+        for (const id of fieldIds) {
+            const f = ctx.byId.get(id);
+            if (!f) continue;
+            try {
+                this.assertMetricCompat('sum', f, ctx.fieldsById);
+                summable.push(f);
+            } catch {
+                // no se suma
+            }
+        }
+        const where = this.baseWhere(tenantId, ctx, filterTree, opts) ?? sql`true`;
+        const cols = [sql`count(*) as cnt`, ...summable.map((f, i) => sql`${this.metricExpr('sum', f, ctx.fieldsById)} as ${sql.identifier(`s${i}`)}`)];
+        const res = await tx.execute(sql`select ${sql.join(cols, sql`, `)} from ${records} where ${where}`);
+        const row = (res.rows as Array<Record<string, unknown>>)[0] ?? {};
+        const sums = new Map<number, number>();
+        summable.forEach((f, i) => {
+            const v = normalize(row[`s${i}`]);
+            sums.set(f.id, typeof v === 'number' ? v : 0);
+        });
+        return { count: Number(row.cnt ?? 0), sums };
     }
 
     /**
@@ -867,6 +929,11 @@ export interface AggregateRunOptions {
      * registros (`sub_totals`) y el total general (`value`).
      */
     withTotals?: boolean;
+    /**
+     * v0.1.462 — un nivel: agrupar SÓLO por estas claves y el resto en
+     * "Otros" (el período con el que se compara usa los grupos del actual).
+     */
+    keepKeys?: Array<string | null>;
 }
 
 export interface DeltaOptions {

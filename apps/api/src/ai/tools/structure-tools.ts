@@ -55,6 +55,9 @@ import {
     FIELD_METRICS,
     TIME_BUCKETS,
     aggregateMetricSchema,
+    dateRangePresetSchema,
+    resolveStageProbabilities,
+    stageOptionsOf,
     createAutomationSchema,
     createDashboardSchema,
     createViewSchema,
@@ -580,14 +583,16 @@ export const listSpec = z.object({
 });
 export type ListSpec = z.infer<typeof listSpec>;
 
-const AI_WIDGET_TYPES = ['kpi', 'gauge', 'stat_delta', 'chart_bar', 'chart_pie', 'chart_line', 'chart_area', 'funnel', 'table', 'pivot', 'heading', 'text'] as const;
+const AI_WIDGET_TYPES = ['kpi', 'gauge', 'stat_delta', 'chart_bar', 'chart_pie', 'chart_line', 'chart_area', 'funnel', 'table', 'pivot', 'forecast', 'heading', 'text'] as const;
+/** v0.1.462 — widgets que comparan períodos (`compare`). */
+const AI_COMPARABLE = new Set(['kpi', 'gauge', 'chart_bar', 'chart_pie', 'chart_line', 'chart_area', 'funnel', 'table', 'pivot', 'forecast']);
 
 const widgetSpecInput = z.object({
     type: z.enum(AI_WIDGET_TYPES),
     title: z.string().max(190).default(''),
     list: z.string().max(63).optional().describe('Slug de la lista (obligatorio salvo heading/text)'),
     metric: aggregateMetricSchema.optional().describe(`Default count. ${AGGREGATE_METRICS.join(' | ')}`),
-    metric_field: fieldSlugSchema.optional().describe('Campo de la métrica (obligatorio para sum/avg/min/max/count_unique/count_empty/count_true/count_false)'),
+    metric_field: fieldSlugSchema.optional().describe('Campo de la métrica (obligatorio para sum/avg/min/max/count_unique/count_empty/count_true/count_false); forecast: el MONTO del negocio (moneda o número)'),
     group_by: fieldSlugSchema.optional().describe('chart_bar/chart_pie/funnel: campo por el que se agrupa (select, user, checkbox…); pivot: el campo de las FILAS'),
     breakdown_by: fieldSlugSchema
         .optional()
@@ -603,7 +608,22 @@ const widgetSpecInput = z.object({
     rows_limit: z.number().int().min(1).max(200).optional().describe('pivot: filas a mostrar (las mayores; el resto en «Otros»). Default 20'),
     columns_limit: z.number().int().min(1).max(50).optional().describe('pivot: columnas a mostrar (las mayores; el resto en «Otros»). Default 12'),
     heatmap: z.boolean().optional().describe('pivot: mapa de calor (más intenso = mayor valor)'),
-    date_field: fieldSlugSchema.optional().describe('chart_line/chart_area/stat_delta: campo de fecha del eje temporal'),
+    date_field: fieldSlugSchema.optional().describe('chart_line/chart_area/stat_delta: campo de fecha del eje temporal; forecast: la FECHA DE CIERRE esperada (agrupa por mes, semana o trimestre)'),
+    period: dateRangePresetSchema
+        .optional()
+        .describe('Período del widget (filtra por period_field): today, this_week, this_month, last_month, this_quarter, this_year, last_7_days, last_30_days, last_90_days…'),
+    period_field: fieldSlugSchema.optional().describe('Campo de fecha del período (default date_field)'),
+    compare: z
+        .enum(['previous', 'last_year'])
+        .optional()
+        .describe('Comparar con el período anterior (misma duración) o con el mismo período del año pasado. Necesita period. KPI/medidor: «+12 % vs. mes anterior»; barras/dona/embudo: la barra de antes; línea/área: serie punteada alineada día a día; tabla y pivot: «Antes» y «Variación». No aplica con breakdown_by ni a stat_delta'),
+    compare_to_date: z.boolean().optional().describe('Con compare (default true): si el período no terminó, el anterior se corta en el mismo punto (hoy es 19 → el 1–19 del mes anterior)'),
+    compare_invert: z.boolean().optional().describe('Con compare: menos es mejor (costos, tickets abiertos): una baja se pinta en verde'),
+    stage_field: fieldSlugSchema.optional().describe('forecast (obligatorio): la ETAPA del negocio (selección)'),
+    stage_probabilities: z
+        .record(z.number().min(0).max(100))
+        .optional()
+        .describe('forecast: probabilidad de cierre por etapa {valor o etiqueta de la opción: 0-100}. 100 = ganada, 0 = perdida. Sin esto se sugiere por el nombre (Ganado 100, Perdido 0, las abiertas repartidas)'),
     time_bucket: timeBucketSchema.optional().describe(`Granularidad temporal: ${TIME_BUCKETS.join(' | ')} (default month)`),
     filters: z.array(filterRuleSpec).max(20).optional(),
     limit: z.number().int().min(1).max(50).optional().describe('table: filas'),
@@ -946,7 +966,9 @@ export class StructureTools implements AiProposalApplier {
             name: 'propose_create_dashboard',
             label: 'Armando el tablero',
             description:
-                'Propone un tablero (dashboard) con widgets sobre una o varias listas existentes: KPIs, medidores, gráficos por categoría o en el tiempo, embudos, tablas y tablas dinámicas (pivot: filas = group_by, columnas = breakdown_by, la métrica en cada cruce con totales). Las barras, áreas y líneas se pueden DESGLOSAR por un segundo campo (breakdown_by) en series apiladas o lado a lado. El layout se arma solo.',
+                'Propone un tablero (dashboard) con widgets sobre una o varias listas existentes: KPIs, medidores, gráficos por categoría o en el tiempo, embudos, tablas y tablas dinámicas (pivot: filas = group_by, columnas = breakdown_by, la métrica en cada cruce con totales). Las barras, áreas y líneas se pueden DESGLOSAR por un segundo campo (breakdown_by) en series apiladas o lado a lado. ' +
+                'Cada widget con período (period + period_field) puede COMPARARSE (compare: previous | last_year) con el período anterior o el mismo del año pasado. ' +
+                'forecast = pronóstico de ventas: metric_field (monto), stage_field (etapa, selección), date_field (fecha de cierre) y stage_probabilities; muestra ganado, ponderado (monto × probabilidad) y abierto por mes. El layout se arma solo.',
             capability: 'manage_dashboards',
             input: z.object({
                 name: z.string().min(1).max(190),
@@ -2282,7 +2304,8 @@ export class StructureTools implements AiProposalApplier {
                 if (types && !types.includes(f.type)) throw new AiToolError(`${where}: ${what} «${slug}» es ${f.type}; se esperaba ${types.join('/')}.`);
                 return f;
             };
-            const metric = w.metric ?? 'count';
+            const metric = w.type === 'forecast' ? 'sum' : (w.metric ?? 'count');
+            if (w.type === 'forecast' && !w.metric_field) throw new AiToolError(`${where}: forecast necesita metric_field (el monto del negocio).`);
             const metricField = need(w.metric_field, 'el campo de la métrica');
             if (FIELD_METRICS.includes(metric) && !metricField) {
                 throw new AiToolError(`${where}: la métrica ${metric} necesita metric_field.`);
@@ -2371,6 +2394,30 @@ export class StructureTools implements AiProposalApplier {
                 if (w.suffix) config.suffix = w.suffix;
                 if (w.type === 'gauge' && w.goal === undefined) throw new AiToolError(`${where}: gauge necesita goal (meta).`);
             }
+            if (w.type === 'forecast') {
+                // v0.1.462 — pronóstico: monto × probabilidad de la etapa.
+                const st = need(w.stage_field, 'el campo de etapa', ['select']);
+                if (!st) throw new AiToolError(`${where}: forecast necesita stage_field (la etapa, un campo selección).`);
+                config.stage_field_id = st.id;
+                const close = need(w.date_field, 'la fecha de cierre', DATE_TYPES);
+                if (close) config.date_field_id = close.id;
+                const bucket = w.time_bucket === 'week' || w.time_bucket === 'quarter' ? w.time_bucket : 'month';
+                config.time_bucket = bucket;
+                const options = stageOptionsOf(st.config as Record<string, unknown>);
+                if (w.stage_probabilities) {
+                    const out: Record<string, number> = {};
+                    for (const [k, v] of Object.entries(w.stage_probabilities)) {
+                        const opt = options.find((o) => o.value === k || o.label.toLowerCase() === k.toLowerCase());
+                        if (!opt) throw new AiToolError(`${where}: la etapa «${k}» no es una opción de «${st.label}». Opciones: ${options.map((o) => o.label).join(', ')}.`);
+                        out[opt.value] = Math.round(v);
+                    }
+                    config.stage_probabilities = out;
+                }
+                const probs = resolveStageProbabilities(options, config.stage_probabilities);
+                if (w.goal !== undefined) config.goal = w.goal;
+                detail.splice(0, detail.length, `monto: ${metricField!.label}`, `etapa: ${st.label} (${options.map((o) => `${o.label} ${probs[o.value] ?? 0} %`).join(', ')})`);
+                if (close) detail.push(`por ${timeBucketLabel(bucket)} de ${close.label}`);
+            }
             if (w.type === 'table') {
                 config.limit = w.limit ?? 10;
                 const s = need(w.sort_field, 'el campo de orden');
@@ -2384,6 +2431,20 @@ export class StructureTools implements AiProposalApplier {
             if (w.filters?.length) {
                 config.filter_tree = this.buildFilterTree(w.filters, (slug) => need(slug, 'el campo del filtro')!.id);
                 detail.push(`${w.filters.length} filtro${w.filters.length === 1 ? '' : 's'}`);
+            }
+            // v0.1.462 — período del widget y «Comparar con…».
+            if (w.period) {
+                const pf = need(w.period_field ?? w.date_field, 'el campo del período', DATE_TYPES);
+                if (!pf) throw new AiToolError(`${where}: period necesita period_field (un campo de fecha).`);
+                config.period = { field_id: pf.id, preset: w.period };
+            }
+            if (w.compare) {
+                if (!AI_COMPARABLE.has(w.type)) throw new AiToolError(`${where}: compare no aplica a ${w.type}.`);
+                if (w.breakdown_by && w.type !== 'pivot') throw new AiToolError(`${where}: compare no aplica con breakdown_by.`);
+                if (!config.period) throw new AiToolError(`${where}: compare necesita un período (period + period_field) con el que comparar.`);
+                config.compare = { mode: w.compare, to_date: w.compare_to_date !== false };
+                if (w.compare_invert) config.compare_invert = true;
+                detail.push(w.compare === 'last_year' ? 'vs. mismo período del año pasado' : 'vs. período anterior');
             }
             const defaults = DEFAULT_SIZE[w.type] ?? { w: 6, h: 4 };
             const layout = place(w.width ?? defaults.w, defaults.h);
@@ -5182,6 +5243,8 @@ const DEFAULT_SIZE: Partial<Record<string, { w: number; h: number }>> = {
     chart_area: { w: 6, h: 4 },
     funnel: { w: 6, h: 4 },
     table: { w: 12, h: 4 },
+    // v0.1.462 — pronóstico: totales arriba y barras por mes.
+    forecast: { w: 8, h: 5 },
 };
 
 /** Slug snake_case desde un texto humano (sin acentos, arranca con letra). */

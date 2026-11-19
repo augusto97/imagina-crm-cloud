@@ -140,10 +140,14 @@ export function widgetReportSvg(report: WidgetReport, opts: ReportSvgOptions): s
             drawStacked(c, report);
             break;
         case 'table':
+            drawTableTotals(c, report);
             drawTable(c, report.columns, report.rows);
             break;
         case 'pivot':
             drawPivot(c, report);
+            break;
+        case 'forecast':
+            drawForecast(c, report);
             break;
     }
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${c.out.join('')}</svg>`;
@@ -182,6 +186,17 @@ function drawKpi(c: Ctx, r: Extract<WidgetReport, { kind: 'kpi' }>): void {
     const y = c.top + size + 4;
     text(c, c.pad, y, r.valueText, { size, weight: 700 });
     let y2 = y + 22;
+    if (r.compare) {
+        // v0.1.462 — «+12 % vs. mes anterior ($1.200)».
+        const fill = toneFill(c, r.compare.tone);
+        text(c, c.pad, y2, r.compare.deltaText, { size: 12, weight: 700, fill });
+        text(c, c.pad + r.compare.deltaText.length * 12 * 0.6 + 8, y2, `${r.compare.short} (${r.compare.previousText})`, {
+            size: 11,
+            fill: c.t.muted,
+            maxWidth: c.W - c.pad * 2 - r.compare.deltaText.length * 8,
+        });
+        y2 += 20;
+    }
     if (r.delta) {
         const pct = r.delta.pct;
         const up = pct !== null && pct > 0;
@@ -204,8 +219,21 @@ function drawKpi(c: Ctx, r: Extract<WidgetReport, { kind: 'kpi' }>): void {
     }
 }
 
+/** v0.1.462 — Color de una variación. */
+function toneFill(c: Ctx, tone: 'good' | 'bad' | 'neutral' | undefined): string {
+    return tone === 'good' ? GOOD : tone === 'bad' ? BAD : c.t.muted;
+}
+
+/** v0.1.462 — «Este mes vs. mes anterior», arriba del gráfico; devuelve lo que ocupó. */
+function compareCaption(c: Ctx, cmp: { label: string; detail: string } | null): number {
+    if (!cmp) return 0;
+    text(c, c.pad, c.top + 12, `${cmp.label}${cmp.detail ? ` · ${cmp.detail}` : ''}`, { size: 10, fill: c.t.muted, maxWidth: c.W - c.pad * 2 });
+    return 18;
+}
+
 function drawBars(c: Ctx, r: Extract<WidgetReport, { kind: 'categories' }>): void {
     if (r.rows.length === 0) return emptyNote(c);
+    c.top += compareCaption(c, r.compare);
     const rowH = 24;
     const fit = Math.max(1, Math.floor((c.bottom - c.top) / rowH));
     const rows = r.rows.length > fit ? r.rows.slice(0, fit - 1) : r.rows;
@@ -214,17 +242,28 @@ function drawBars(c: Ctx, r: Extract<WidgetReport, { kind: 'categories' }>): voi
     const valueW = Math.min(110, Math.max(...rows.map((x) => x.text.length)) * 11 * 0.6 + 8);
     const x0 = c.pad + labelW + 8;
     const barW = Math.max(20, c.W - c.pad - valueW - x0);
-    const max = Math.max(...rows.map((x) => x.value), 1);
+    const max = Math.max(...rows.map((x) => Math.max(x.value, x.previous ?? 0)), 1);
+    const withCmp = r.compare !== null;
     rows.forEach((row, i) => {
         const y = c.top + i * rowH;
         text(c, c.pad, y + 15, row.label, { size: 11, fill: c.t.muted, maxWidth: labelW });
         const w = (Math.max(0, row.value) / max) * barW;
-        if (r.chart === 'funnel') rect(c, x0 + (barW - w) / 2, y + 4, w, 15, row.color, { rx: 3 });
+        const barH = withCmp ? 11 : 15;
+        if (r.chart === 'funnel') rect(c, x0 + (barW - w) / 2, y + 4, w, barH, row.color, { rx: 3 });
         else {
-            rect(c, x0, y + 4, barW, 15, c.t.border, { rx: 3, opacity: 0.45 });
-            rect(c, x0, y + 4, w, 15, row.color, { rx: 3 });
+            rect(c, x0, y + 4, barW, barH, c.t.border, { rx: 3, opacity: 0.45 });
+            rect(c, x0, y + 4, w, barH, row.color, { rx: 3 });
         }
-        text(c, c.W - c.pad, y + 15, row.text, { size: 11, weight: 700, anchor: 'end' });
+        if (withCmp) {
+            // La barra de antes: delgada y tenue, debajo.
+            const pw = (Math.max(0, row.previous ?? 0) / max) * barW;
+            if (r.chart === 'funnel') rect(c, x0 + (barW - pw) / 2, y + 17, pw, 4, c.t.muted, { rx: 2, opacity: 0.55 });
+            else rect(c, x0, y + 17, pw, 4, c.t.muted, { rx: 2, opacity: 0.55 });
+            text(c, c.W - c.pad, y + 11, row.text, { size: 11, weight: 700, anchor: 'end' });
+            text(c, c.W - c.pad, y + 22, row.deltaText ?? '', { size: 9, weight: 700, anchor: 'end', fill: toneFill(c, row.tone) });
+        } else {
+            text(c, c.W - c.pad, y + 15, row.text, { size: 11, weight: 700, anchor: 'end' });
+        }
     });
     if (rest > 0) text(c, c.pad, c.top + rows.length * rowH + 15, `y ${rest} más…`, { size: 11, fill: c.t.muted });
 }
@@ -261,7 +300,7 @@ function drawDonut(c: Ctx, r: Extract<WidgetReport, { kind: 'categories' }>): vo
         const y = y0 + i * rowH;
         rect(c, lx, y - 9, 10, 10, row.color, { rx: 2 });
         const pct = `${Math.round((row.value / total) * 100)}%`;
-        const valueText = `${row.text} · ${pct}`;
+        const valueText = row.deltaText !== undefined ? `${row.text} · ${row.deltaText}` : `${row.text} · ${pct}`;
         text(c, lx + 16, y, row.label, { size: 11, fill: c.t.text, maxWidth: Math.max(30, lw - 16 - valueText.length * 6.2) });
         text(c, c.W - c.pad, y, valueText, { size: 11, fill: c.t.muted, anchor: 'end' });
     });
@@ -269,6 +308,7 @@ function drawDonut(c: Ctx, r: Extract<WidgetReport, { kind: 'categories' }>): vo
 }
 
 function drawTrend(c: Ctx, r: Extract<WidgetReport, { kind: 'categories' }>): void {
+    if (r.trend && r.trend.length > 0) return drawComparedTrend(c, r, r.trend);
     const pts = r.rows;
     if (pts.length === 0) return emptyNote(c);
     const left = c.pad;
@@ -289,6 +329,88 @@ function drawTrend(c: Ctx, r: Extract<WidgetReport, { kind: 'categories' }>): vo
     pts.forEach((p, i) => c.out.push(`<circle cx="${n2(xAt(i))}" cy="${n2(yAt(p.value))}" r="2.5" fill="${esc(c.t.accent)}"/>`));
     text(c, left, c.bottom, pts[0]!.label, { size: 10, fill: c.t.muted });
     if (pts.length > 1) text(c, right, c.bottom, pts[pts.length - 1]!.label, { size: 10, fill: c.t.muted, anchor: 'end' });
+}
+
+/** v0.1.462 — La serie actual (sólida) y la anterior (punteada), alineadas por posición. */
+function drawComparedTrend(c: Ctx, r: Extract<WidgetReport, { kind: 'categories' }>, pts: NonNullable<Extract<WidgetReport, { kind: 'categories' }>['trend']>): void {
+    const legendH = legend(c, [
+        { label: r.compare?.label.split(' vs. ')[0] ?? 'Ahora', color: c.t.accent },
+        { label: r.compare?.short.replace(/^vs\. /, '') ?? 'Antes', color: c.t.muted },
+    ], c.pad, c.top + 10, c.W - c.pad);
+    const left = c.pad;
+    const right = c.W - c.pad;
+    const top = c.top + legendH + 8;
+    const bottom = c.bottom - 16;
+    const max = Math.max(...pts.map((p) => Math.max(p.value ?? 0, p.previous ?? 0)), 1);
+    const n = pts.length;
+    const xAt = (i: number): number => (n === 1 ? (left + right) / 2 : left + (i / (n - 1)) * (right - left));
+    const yAt = (v: number): number => bottom - (Math.max(0, v) / max) * (bottom - top);
+    for (const f of [0.25, 0.5, 0.75]) line(c, left, yAt(max * f), right, yAt(max * f), c.t.border, { opacity: 0.8 });
+    const segment = (key: 'value' | 'previous'): string[] => {
+        const out: string[] = [];
+        let cur: string[] = [];
+        pts.forEach((p, i) => {
+            const v = p[key];
+            if (v === null) {
+                if (cur.length > 0) out.push(cur.join(' '));
+                cur = [];
+            } else cur.push(`${n2(xAt(i))},${n2(yAt(v))}`);
+        });
+        if (cur.length > 0) out.push(cur.join(' '));
+        return out;
+    };
+    for (const poly of segment('previous')) {
+        c.out.push(`<polyline points="${poly}" fill="none" stroke="${esc(c.t.muted)}" stroke-width="1.6" stroke-dasharray="5 4" stroke-linejoin="round"/>`);
+    }
+    for (const poly of segment('value')) {
+        c.out.push(`<polyline points="${poly}" fill="none" stroke="${esc(c.t.accent)}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`);
+    }
+    const first = pts[0]!;
+    const last = pts[n - 1]!;
+    text(c, left, c.bottom, first.label || first.prevLabel, { size: 10, fill: c.t.muted });
+    if (n > 1) text(c, right, c.bottom, last.label || last.prevLabel, { size: 10, fill: c.t.muted, anchor: 'end' });
+}
+
+/** v0.1.462 — Pronóstico: el total arriba y, por período, ganado + ponderado sobre el abierto. */
+function drawForecast(c: Ctx, r: Extract<WidgetReport, { kind: 'forecast' }>): void {
+    const t = r.totals;
+    text(c, c.pad, c.top + 26, t.forecastText, { size: 26, weight: 700 });
+    text(c, c.pad, c.top + 44, `Ganado ${t.wonText} · Ponderado ${t.weightedText} · Abierto ${t.openText}`, { size: 11, fill: c.t.muted, maxWidth: c.W - c.pad * 2 });
+    let top = c.top + 52;
+    if (r.compare) {
+        text(c, c.pad, top + 12, r.compare.deltaText, { size: 11, weight: 700, fill: toneFill(c, r.compare.tone) });
+        text(c, c.pad + r.compare.deltaText.length * 11 * 0.6 + 8, top + 12, `${r.compare.short} (${r.compare.previousText})`, { size: 11, fill: c.t.muted, maxWidth: c.W - c.pad * 2 - 80 });
+        top += 18;
+    }
+    if (r.goal) {
+        const w = c.W - c.pad * 2;
+        rect(c, c.pad, top + 6, w, 6, c.t.border, { rx: 3 });
+        rect(c, c.pad, top + 6, (w * Math.max(0, Math.min(100, r.goal.pct))) / 100, 6, r.goal.pct >= 100 ? GOOD : WARN, { rx: 3 });
+        text(c, c.pad, top + 26, `${Math.round(r.goal.pct)}% de la meta (${r.goal.text})`, { size: 10, fill: c.t.muted });
+        top += 30;
+    }
+    top += legend(c, [
+        { label: 'Ganado', color: GOOD },
+        { label: 'Ponderado', color: c.t.accent },
+        { label: 'Abierto', color: c.t.border },
+    ], c.pad, top + 14, c.W - c.pad) + 4;
+    if (r.buckets.length === 0) return;
+    const rowH = 24;
+    const fit = Math.max(1, Math.floor((c.bottom - top) / rowH));
+    const rows = r.buckets.slice(0, fit);
+    const labelW = Math.min(110, (c.W - c.pad * 2) * 0.22);
+    const valueW = Math.min(110, Math.max(...rows.map((b) => b.forecastText.length)) * 11 * 0.6 + 8);
+    const x0 = c.pad + labelW + 8;
+    const barW = Math.max(20, c.W - c.pad - valueW - x0);
+    const max = Math.max(...rows.map((b) => b.won + b.open), 1);
+    rows.forEach((b, i) => {
+        const y = top + i * rowH;
+        text(c, c.pad, y + 15, b.label, { size: 11, fill: c.t.muted, maxWidth: labelW });
+        rect(c, x0, y + 4, ((b.won + b.open) / max) * barW, 15, c.t.border, { rx: 3, opacity: 0.7 });
+        rect(c, x0, y + 4, (b.won / max) * barW, 15, GOOD, { rx: 3 });
+        rect(c, x0 + (b.won / max) * barW, y + 4, (b.weighted / max) * barW, 15, c.t.accent, { opacity: 0.85 });
+        text(c, c.W - c.pad, y + 15, b.forecastText, { size: 11, weight: 700, anchor: 'end' });
+    });
 }
 
 function drawStacked(c: Ctx, r: Extract<WidgetReport, { kind: 'stacked' }>): void {
@@ -381,6 +503,24 @@ function drawStacked(c: Ctx, r: Extract<WidgetReport, { kind: 'stacked' }>): voi
     if (groups.length < r.groups.length) text(c, c.pad, top + groups.length * rowH + 15, `y ${r.groups.length - groups.length} más…`, { size: 11, fill: c.t.muted });
 }
 
+/** v0.1.462 — Los totales comparados de una tabla, al pie. */
+function drawTableTotals(c: Ctx, r: Extract<WidgetReport, { kind: 'table' }>): void {
+    if (!r.totals || r.totals.length === 0) return;
+    const rowH = 18;
+    const h = (r.totals.length + 1) * rowH + 6;
+    const y0 = c.bottom - h;
+    line(c, c.pad, y0, c.W - c.pad, y0, c.t.border);
+    text(c, c.pad, y0 + 13, r.compare ? `Totales · ${r.compare.label}` : 'Totales', { size: 10, weight: 700, fill: c.t.muted, maxWidth: c.W - c.pad * 2 });
+    r.totals.forEach((t, i) => {
+        const y = y0 + (i + 2) * rowH - 4;
+        text(c, c.pad, y, t.label, { size: 11, maxWidth: (c.W - c.pad * 2) * 0.4 });
+        text(c, c.W - c.pad - 150, y, t.valueText, { size: 11, weight: 700, anchor: 'end' });
+        text(c, c.W - c.pad - 60, y, t.previousText, { size: 11, fill: c.t.muted, anchor: 'end' });
+        text(c, c.W - c.pad, y, t.deltaText, { size: 11, weight: 700, anchor: 'end', fill: toneFill(c, t.tone) });
+    });
+    c.bottom = y0 - 4;
+}
+
 function drawTable(c: Ctx, columns: string[], rows: string[][]): void {
     if (rows.length === 0) return emptyNote(c);
     const rowH = 22;
@@ -400,19 +540,25 @@ function drawTable(c: Ctx, columns: string[], rows: string[][]): void {
 
 function drawPivot(c: Ctx, r: Extract<WidgetReport, { kind: 'pivot' }>): void {
     if (r.rows.length === 0) return emptyNote(c);
+    c.top += compareCaption(c, r.compare);
+    const extra = r.compare ? 2 : 0;
     const rowH = 22;
     const fitRows = Math.max(1, Math.floor((c.bottom - c.top) / rowH) - 2);
     const rows = r.rows.length > fitRows ? r.rows.slice(0, fitRows) : r.rows;
     const firstW = Math.min(170, (c.W - c.pad * 2) * 0.28);
     const area = c.W - c.pad * 2 - firstW;
-    const colW = Math.max(56, area / (r.cols.length + 1));
-    const maxCols = Math.max(1, Math.floor(area / colW) - 1);
+    const colW = Math.max(56, area / (r.cols.length + 1 + extra));
+    const maxCols = Math.max(1, Math.floor(area / colW) - 1 - extra);
     const cols = r.cols.slice(0, maxCols);
     const xCol = (i: number): number => c.pad + firstW + (i + 1) * colW;
     text(c, c.pad, c.top + 14, r.rowHeader, { size: 10, weight: 700, fill: c.t.muted, maxWidth: firstW - 6 });
     cols.forEach((col, i) => text(c, xCol(i) - 4, c.top + 14, col.label, { size: 10, weight: 700, fill: c.t.muted, anchor: 'end', maxWidth: colW - 6 }));
     const totalX = xCol(cols.length);
     text(c, totalX - 4, c.top + 14, 'Total', { size: 10, weight: 700, anchor: 'end' });
+    if (extra) {
+        text(c, totalX + colW - 4, c.top + 14, 'Antes', { size: 10, weight: 700, fill: c.t.muted, anchor: 'end' });
+        text(c, totalX + colW * 2 - 4, c.top + 14, 'Var.', { size: 10, weight: 700, fill: c.t.muted, anchor: 'end' });
+    }
     line(c, c.pad, c.top + 20, c.W - c.pad, c.top + 20, c.t.border);
     const span = r.max - Math.min(r.min, 0);
     rows.forEach((row, ri) => {
@@ -427,12 +573,20 @@ function drawPivot(c: Ctx, r: Extract<WidgetReport, { kind: 'pivot' }>): void {
             text(c, xCol(ci) - 4, y - 6, cell.text, { size: 11, anchor: 'end', maxWidth: colW - 6 });
         });
         text(c, totalX - 4, y - 6, row.totalText, { size: 11, weight: 700, anchor: 'end', maxWidth: colW - 6 });
+        if (extra && row.delta) {
+            text(c, totalX + colW - 4, y - 6, row.delta.previousText, { size: 11, fill: c.t.muted, anchor: 'end', maxWidth: colW - 6 });
+            text(c, totalX + colW * 2 - 4, y - 6, row.delta.deltaText, { size: 11, weight: 700, anchor: 'end', fill: toneFill(c, row.delta.tone), maxWidth: colW - 6 });
+        }
         line(c, c.pad, y, c.W - c.pad, y, c.t.border, { opacity: 0.6 });
     });
     const yt = c.top + 20 + (rows.length + 1) * rowH;
     text(c, c.pad, yt - 6, 'Total', { size: 11, weight: 700 });
     cols.forEach((col, ci) => text(c, xCol(ci) - 4, yt - 6, col.totalText, { size: 11, weight: 700, anchor: 'end', maxWidth: colW - 6 }));
     text(c, totalX - 4, yt - 6, r.totalText, { size: 11, weight: 700, anchor: 'end', maxWidth: colW - 6 });
+    if (extra && r.compare) {
+        text(c, totalX + colW - 4, yt - 6, r.compare.previousText, { size: 11, fill: c.t.muted, anchor: 'end', maxWidth: colW - 6 });
+        text(c, totalX + colW * 2 - 4, yt - 6, r.compare.deltaText, { size: 11, weight: 700, anchor: 'end', fill: toneFill(c, r.compare.tone), maxWidth: colW - 6 });
+    }
     if (rows.length < r.rows.length || cols.length < r.cols.length) {
         text(c, c.pad, Math.min(c.H - 4, yt + 14), `Se muestran ${rows.length} de ${r.rows.length} filas y ${cols.length} de ${r.cols.length} columnas.`, { size: 10, fill: c.t.muted });
     }
@@ -449,14 +603,17 @@ export function suggestedReportHeight(report: WidgetReport, opts: { bare?: boole
     let body: number;
     switch (report.kind) {
         case 'kpi':
-            body = report.gauge ? 170 : 60 + (report.delta ? 22 : 0) + (report.goal ? 36 : 0);
+            body = report.gauge ? 170 : 60 + (report.delta ? 22 : 0) + (report.compare ? 20 : 0) + (report.goal ? 36 : 0);
+            break;
+        case 'forecast':
+            body = 90 + (report.compare ? 18 : 0) + (report.goal ? 30 : 0) + Math.max(1, report.buckets.length) * 24;
             break;
         case 'categories':
             body = report.chart === 'pie'
                 ? Math.max(200, Math.min(report.rows.length, 14) * 18 + 30)
                 : report.chart === 'line' || report.chart === 'area'
-                  ? 220
-                  : Math.max(1, report.rows.length) * 24 + 16;
+                  ? 220 + (report.trend ? 20 : 0)
+                  : Math.max(1, report.rows.length) * 24 + 16 + (report.compare ? 18 : 0);
             break;
         case 'stacked': {
             const legendRows = Math.ceil(report.series.length / 4);
@@ -466,10 +623,10 @@ export function suggestedReportHeight(report: WidgetReport, opts: { bare?: boole
             break;
         }
         case 'table':
-            body = (Math.max(1, report.rows.length) + 2) * 22;
+            body = (Math.max(1, report.rows.length) + 2) * 22 + (report.totals ? (report.totals.length + 1) * 18 + 10 : 0);
             break;
         case 'pivot':
-            body = (Math.max(1, report.rows.length) + 3) * 22 + 10;
+            body = (Math.max(1, report.rows.length) + 3) * 22 + 10 + (report.compare ? 18 : 0);
             break;
     }
     return Math.min(max, Math.round(head + body + 16));

@@ -3807,4 +3807,35 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
             '- Y al crear una subtarea desde el menú de una fila (clic derecho), lo que escribes va directo al nombre: ya no se pierden las primeras letras.',
         ].join('\n'),
     },
+    {
+        key: 'v0.1.462-comparar-periodos-pronostico',
+        version: '0.1.462',
+        date: '2026-11-19',
+        kind: 'feature',
+        title: 'Compara con el mes anterior y pronostica tus ventas',
+        summary:
+            'Cada gráfico de un tablero puede compararse con el período anterior o el año pasado y mostrar la variación, y un widget nuevo pronostica las ventas ponderando tu embudo.',
+        media: {
+            slides: [
+                {
+                    title: '«+12 % vs. mes anterior»',
+                    text: 'En el widget eliges «Comparar con…»: el período anterior, el mismo del año pasado o un rango. El número muestra la variación en verde o rojo y las líneas dibujan el período anterior punteado.',
+                    illustration: 'tab-explorar',
+                },
+                {
+                    title: 'Pronóstico de ventas',
+                    text: 'Monto, etapa y fecha de cierre: ves lo ganado, lo ponderado (cada negocio por la probabilidad de su etapa) y el pronóstico de cada mes, con tu meta.',
+                    illustration: 'tab-configurar',
+                },
+            ],
+        },
+        body: [
+            '- **Comparar con…** está al editar un widget (indicador, medidor, barras, dona, embudo, línea, área, tablas y pronóstico). Necesita un período: el del widget o el del tablero.',
+            '- Arriba del tablero, **Comparar** aplica la misma comparación a todos los widgets con período.',
+            '- **Pronóstico de ventas** es un tipo de widget nuevo; la plantilla **Embudo de ventas** ya lo trae. Toca un mes para ver esos negocios.',
+            '- La comparación también sale en la imagen, el CSV, el correo programado y el enlace público.',
+        ].join('\n'),
+        action: { label: 'Ir a Tableros', href: '/dashboards' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

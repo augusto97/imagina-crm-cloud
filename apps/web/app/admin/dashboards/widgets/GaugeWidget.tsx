@@ -8,6 +8,8 @@ import type { WidgetSpec } from '@/types/dashboard';
 
 import { WidgetError } from './WidgetError';
 import { formatMetricValue } from './widgetFormat';
+import { CompareDeltaLine } from './CompareParts';
+import { widgetCompareOf } from './compareView';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
 
 interface GaugeWidgetProps {
@@ -43,13 +45,27 @@ export function GaugeWidget({ dashboardId, widget }: GaugeWidgetProps): JSX.Elem
                 ) : data.isError ? (
                     <WidgetError error={data.error} />
                 ) : data.data && 'value' in data.data ? (
-                    <Gauge
-                        value={typeof data.data.value === 'number' ? data.data.value : 0}
-                        goal={goal}
-                        prefix={prefix}
-                        suffix={suffix}
-                        fmt={fmt}
-                    />
+                    <div className="imcrm-flex imcrm-h-full imcrm-w-full imcrm-flex-col imcrm-items-center imcrm-justify-center imcrm-gap-1 imcrm-min-h-0">
+                        <div className="imcrm-flex imcrm-w-full imcrm-flex-1 imcrm-items-center imcrm-justify-center imcrm-min-h-0">
+                            <Gauge
+                                value={typeof data.data.value === 'number' ? data.data.value : 0}
+                                previous={(() => {
+                                    const c = widgetCompareOf(data.data);
+                                    return c && typeof c.value === 'number' ? c.value : null;
+                                })()}
+                                goal={goal}
+                                prefix={prefix}
+                                suffix={suffix}
+                                fmt={fmt}
+                            />
+                        </div>
+                        <CompareDeltaLine
+                            compare={widgetCompareOf(data.data)}
+                            current={data.data.value}
+                            format={fmt}
+                            affix={(s) => withAffixes(s, prefix, suffix)}
+                        />
+                    </div>
                 ) : null}
             </div>
         </div>
@@ -58,12 +74,15 @@ export function GaugeWidget({ dashboardId, widget }: GaugeWidgetProps): JSX.Elem
 
 function Gauge({
     value,
+    previous,
     goal,
     prefix,
     suffix,
     fmt,
 }: {
     value: number;
+    /** v0.1.462 — el valor del período con el que se compara (una marca en el arco). */
+    previous: number | null;
     goal: number;
     prefix: string;
     suffix: string;
@@ -103,6 +122,20 @@ function Gauge({
                     stroke={color}
                     strokeDasharray={`${(pct * halfCirc).toFixed(1)} ${halfCirc.toFixed(1)}`}
                 />
+                {previous !== null && (() => {
+                    // Marca de «antes» sobre el arco: dónde llegaba el período anterior.
+                    const p = Math.max(0, Math.min(1, previous / goal));
+                    const a = Math.PI * (1 - p);
+                    const x1 = cx + (r - 7) * Math.cos(a);
+                    const y1 = cy - (r - 7) * Math.sin(a);
+                    const x2 = cx + (r + 7) * Math.cos(a);
+                    const y2 = cy - (r + 7) * Math.sin(a);
+                    return (
+                        <line x1={x1} y1={y1} x2={x2} y2={y2} strokeWidth="1.6" strokeDasharray="2 1.5" className="imcrm-stroke-muted-foreground" data-testid="imcrm-gauge-previous">
+                            <title>{`${__('Antes')}: ${withAffixes(fmt(previous), prefix, suffix)}`}</title>
+                        </line>
+                    );
+                })()}
                 <text
                     x={cx}
                     y={cy - 8}

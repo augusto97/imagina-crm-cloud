@@ -13,6 +13,8 @@ import { displayGroupLabel, othersAwareLabel, sortChartRows, useGroupLabelMap, u
 import { useSegmentNav, type SegmentNav } from './useSegmentNav';
 import { formatMetricValue } from './widgetFormat';
 import { useWidgetSubtitle, WidgetHeader } from './WidgetHeader';
+import { CompareBadge, RowDelta, rowCompareTitle } from './CompareParts';
+import { isAdditiveMetric, isReadyCompare, widgetCompareOf, type ReadyCompare } from './compareView';
 
 /**
  * v0.1.292 — Tabla dinámica: filas = un campo, columnas = otro, la métrica en
@@ -56,9 +58,20 @@ export function PivotWidget({ dashboardId, widget }: { dashboardId: number; widg
         });
     }, [pivot, rowLabels, colLabels, rowOrder, colOrder, rowField?.type, colField?.type, widget.config.sort, widget.config.col_sort]);
 
+    // v0.1.462 — «Comparar con…»: el total de cada fila contra el de antes.
+    const compare = widgetCompareOf(data.data);
+    const ready = isReadyCompare(compare) ? compare : null;
+    const nowTotal = typeof model?.total === 'number' ? model.total : null;
+    const beforeTotal = ready && typeof ready.total === 'number' ? ready.total : null;
+    const badgeTotal = ready && isAdditiveMetric(metric) && nowTotal !== null && beforeTotal !== null ? { current: nowTotal, previous: beforeTotal } : null;
+
     return (
         <div className="imcrm-flex imcrm-h-full imcrm-min-h-0 imcrm-flex-col imcrm-gap-3">
-            <WidgetHeader title={widget.title || __('Tabla dinámica')} subtitle={subtitle} />
+            <WidgetHeader
+                title={widget.title || __('Tabla dinámica')}
+                subtitle={subtitle}
+                right={<CompareBadge compare={compare} total={badgeTotal} format={(n) => fmt(n)} />}
+            />
             <div className="imcrm-flex imcrm-min-h-0 imcrm-flex-1 imcrm-flex-col">
                 {data.isLoading ? (
                     <div className="imcrm-flex imcrm-flex-1 imcrm-items-center imcrm-justify-center">
@@ -74,6 +87,7 @@ export function PivotWidget({ dashboardId, widget }: { dashboardId: number; widg
                         totals={widget.config.show_totals !== false}
                         rowHeader={rowField?.label ?? ''}
                         onCell={onCell}
+                        compare={ready}
                     />
                 ) : (
                     <p className="imcrm-py-6 imcrm-text-center imcrm-text-xs imcrm-text-muted-foreground">{__('Sin datos.')}</p>
@@ -95,6 +109,7 @@ function PivotTable({
     totals,
     rowHeader,
     onCell,
+    compare,
 }: {
     model: PivotModel;
     format: (v: number | string) => string;
@@ -102,8 +117,14 @@ function PivotTable({
     totals: boolean;
     rowHeader: string;
     onCell: SegmentNav | null;
+    compare: ReadyCompare | null;
 }): JSX.Element {
     const cellText = (v: number | string | null): string => (v === null ? '—' : format(v));
+    const before = new Map<string, number | null>((compare?.rows ?? []).map((r) => [r.key, typeof r.value === 'number' ? r.value : null]));
+    const beforeTotal = compare && typeof compare.total === 'number' ? compare.total : null;
+    const fmtN = (n: number): string => format(n);
+    const headCls = 'imcrm-sticky imcrm-top-0 imcrm-z-[2] imcrm-whitespace-nowrap imcrm-border-b imcrm-border-border imcrm-bg-canvas imcrm-px-2.5 imcrm-py-1.5 imcrm-text-right imcrm-text-[11px] imcrm-font-semibold imcrm-text-muted-foreground';
+    const footCls = 'imcrm-sticky imcrm-bottom-0 imcrm-z-[2] imcrm-whitespace-nowrap imcrm-border-t imcrm-border-border imcrm-bg-muted imcrm-px-2.5 imcrm-py-1.5 imcrm-text-right imcrm-tabular-nums';
     return (
         <div className="imcrm-min-h-0 imcrm-flex-1 imcrm-overflow-auto imcrm-rounded-lg imcrm-border imcrm-border-border" data-testid="imcrm-pivot">
             <table className="imcrm-w-max imcrm-min-w-full imcrm-border-separate imcrm-border-spacing-0 imcrm-text-[12px]">
@@ -129,6 +150,12 @@ function PivotTable({
                             <th scope="col" className="imcrm-sticky imcrm-top-0 imcrm-z-[2] imcrm-whitespace-nowrap imcrm-border-b imcrm-border-l imcrm-border-border imcrm-bg-canvas imcrm-px-2.5 imcrm-py-1.5 imcrm-text-right imcrm-text-[11px] imcrm-font-semibold imcrm-text-foreground">
                                 {__('Total')}
                             </th>
+                        )}
+                        {compare && (
+                            <>
+                                <th scope="col" className={headCls} title={compare.label}>{__('Antes')}</th>
+                                <th scope="col" className={headCls}>{__('Variación')}</th>
+                            </>
                         )}
                     </tr>
                 </thead>
@@ -172,6 +199,21 @@ function PivotTable({
                                     {cellText(r.total)}
                                 </td>
                             )}
+                            {compare && (() => {
+                                const now = typeof r.total === 'number' ? r.total : null;
+                                const prev = before.get(r.key) ?? null;
+                                const title = now !== null ? rowCompareTitle(compare, r.label, now, prev, fmtN) : compare.label;
+                                return (
+                                    <>
+                                        <td className="imcrm-whitespace-nowrap imcrm-border-b imcrm-border-border/60 imcrm-px-2.5 imcrm-py-1 imcrm-text-right imcrm-tabular-nums imcrm-text-muted-foreground" title={title} data-testid="imcrm-pivot-before">
+                                            {cellText(prev)}
+                                        </td>
+                                        <td className="imcrm-whitespace-nowrap imcrm-border-b imcrm-border-border/60 imcrm-px-2.5 imcrm-py-1 imcrm-text-right" title={title}>
+                                            {now !== null ? <RowDelta current={now} previous={prev} invert={compare.invert === true} /> : '—'}
+                                        </td>
+                                    </>
+                                );
+                            })()}
                         </tr>
                     ))}
                 </tbody>
@@ -189,6 +231,16 @@ function PivotTable({
                             <td className="imcrm-sticky imcrm-bottom-0 imcrm-z-[2] imcrm-whitespace-nowrap imcrm-border-l imcrm-border-t imcrm-border-border imcrm-bg-muted imcrm-px-2.5 imcrm-py-1.5 imcrm-text-right imcrm-font-bold imcrm-tabular-nums" data-testid="imcrm-pivot-total">
                                 {cellText(model.total)}
                             </td>
+                            {compare && (
+                                <>
+                                    <td className={`${footCls} imcrm-font-semibold imcrm-text-muted-foreground`} data-testid="imcrm-pivot-before-total">
+                                        {cellText(beforeTotal)}
+                                    </td>
+                                    <td className={footCls}>
+                                        {typeof model.total === 'number' ? <RowDelta current={model.total} previous={beforeTotal} invert={compare.invert === true} /> : '—'}
+                                    </td>
+                                </>
+                            )}
                         </tr>
                     </tfoot>
                 )}

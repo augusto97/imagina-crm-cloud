@@ -178,8 +178,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
 | J1 · Informes armados (texto, tablas y gráficos de varias listas, exportables y programables) | medio · M | |
-| J2 · Comparar períodos en cualquier gráfico | medio · S-M | Hoy sólo el KPI con variación. |
-| J3 · Pronóstico de ventas (embudo ponderado) | medio · S-M | |
 
 ---
 
