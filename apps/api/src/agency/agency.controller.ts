@@ -1,11 +1,13 @@
-import { Body, Controller, ForbiddenException, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import {
     createAgencyClientSchema,
+    helpSupportSchema,
     updateAgencyClientSchema,
     type AgencyClient,
     type AgencyEnterResult,
     type AgencyOverview,
     type CreateAgencyClientInput,
+    type HelpSupport,
     type UpdateAgencyClientInput,
 } from '@imagina-base/shared';
 import type { FastifyRequest } from 'fastify';
@@ -41,6 +43,20 @@ export class AgencyController {
     @Get()
     overview(@Req() req: FastifyRequest): Promise<{ data: AgencyOverview }> {
         return this.agency.overview(assertAgencyAdmin(req)).then((data) => ({ data }));
+    }
+
+    /** v0.1.450 — el contacto de soporte que ven sus clientes en «Ayuda». */
+    @Get('support')
+    support(@Req() req: FastifyRequest): Promise<{ data: HelpSupport }> {
+        return this.agency.support(assertAgencyAdmin(req)).then((data) => ({ data }));
+    }
+
+    @Put('support')
+    setSupport(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(helpSupportSchema)) input: HelpSupport,
+    ): Promise<{ data: HelpSupport }> {
+        return this.agency.setSupport(assertAgencyAdmin(req), req.authUserId!, input).then((data) => ({ data }));
     }
 
     @Get('clients')

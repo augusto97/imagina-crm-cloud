@@ -26,9 +26,10 @@ import {
     type TotpSetup,
     type VerifyTwoFactorInput,
     readDisabledModules,
+    DEFAULT_PLATFORM_APP_NAME,
 } from '@imagina-base/shared';
 import * as argon2 from 'argon2';
-import { and, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { decryptSecret, encryptSecret } from '../common/secret-box';
 import { ENV, type Env } from '../config/env';
@@ -148,6 +149,47 @@ export class AuthService implements OnModuleInit {
     ) {}
 
     /**
+     * v0.1.450 (ADR-S108) — nombre y dirección de los correos de la CUENTA.
+     * Lo registra DomainsService (su módulo importa éste): una empresa cliente
+     * de una agencia recibe la marca de la agencia, un pedido desde el dominio
+     * de una empresa sale con esa empresa, y si no, el nombre de la plataforma.
+     */
+    private accountBrandResolver: ((q: { tenantId?: number | null; host?: string }) => Promise<{ name: string; base: string }>) | null = null;
+
+    registerAccountBrandResolver(fn: (q: { tenantId?: number | null; host?: string }) => Promise<{ name: string; base: string }>): void {
+        this.accountBrandResolver = fn;
+    }
+
+    /**
+     * v0.1.450 — La empresa cuya marca llevan los correos de la cuenta de una
+     * persona: la que la app tiene abierta (si es suya) o, si sólo trabaja en
+     * una, esa. Con varias y sin pista, ninguna (la marca de la plataforma).
+     */
+    private async brandTenantForUser(userId: number, hint?: number | null): Promise<number | null> {
+        const rows = await withUser(this.db, userId, (tx) =>
+            tx
+                .select({ tenantId: memberships.tenantId })
+                .from(memberships)
+                .where(and(eq(memberships.userId, userId), ne(memberships.role, 'client'), eq(memberships.viaAgency, false)))
+                .limit(50),
+        ).catch(() => [] as Array<{ tenantId: number }>);
+        if (typeof hint === 'number' && rows.some((r) => r.tenantId === hint)) return hint;
+        return rows.length === 1 ? rows[0]!.tenantId : null;
+    }
+
+    private async accountBrand(q: { tenantId?: number | null; host?: string } = {}): Promise<{ name: string; base: string }> {
+        if (this.accountBrandResolver) {
+            try {
+                const b = await this.accountBrandResolver(q);
+                return { name: mailLabel(b.name), base: b.base.replace(/\/+$/, '') };
+            } catch (err) {
+                this.logger.warn(`Marca de la cuenta no disponible: ${(err as Error).message}`);
+            }
+        }
+        return { name: DEFAULT_PLATFORM_APP_NAME, base: this.env.APP_BASE_URL.replace(/\/+$/, '') };
+    }
+
+    /**
      * SEC-04: pre-provisiona en el arranque una cuenta por cada email de
      * `PLATFORM_SUPERADMINS` que aún no exista. Así el email de superadmin no
      * puede ser "reclamado" por un atacante vía el registro público, y el
@@ -191,7 +233,7 @@ export class AuthService implements OnModuleInit {
      * Redis (TTL 30 min) y manda el link por email. Responde igual exista o no
      * el usuario (no filtra qué emails están registrados).
      */
-    async requestPasswordReset(email: string): Promise<void> {
+    async requestPasswordReset(email: string, meta: { host?: string } = {}): Promise<void> {
         // v0.1.238 — sin un correo de plataforma configurado el enlace no
         // tiene por dónde salir: se dice ANTES de buscar la cuenta (así no
         // revela si el email existe) en vez de responder "listo" y no mandar
@@ -212,10 +254,14 @@ export class AuthService implements OnModuleInit {
         const token = randomBytes(32).toString('base64url');
         await this.redis.set(resetKey(token), String(user.id), 'EX', RESET_TTL_SECONDS);
 
-        const link = `${this.env.APP_BASE_URL.replace(/\/$/, '')}/reset?token=${token}`;
+        // v0.1.450 — pedido desde el dominio de una empresa (o de su agencia):
+        // el enlace vuelve ahí y el correo lleva esa marca; si no, la de la
+        // empresa donde trabaja la persona (la de su agencia, si es cliente).
+        const brand = await this.accountBrand({ host: meta.host, tenantId: await this.brandTenantForUser(user.id) });
+        const link = `${brand.base}/reset?token=${token}`;
         await this.mail.enqueue({
             to: user.email,
-            subject: 'Restablecer tu contraseña — Imagina Base',
+            subject: `Restablecer tu contraseña — ${oneLine(brand.name)}`,
             html: `<p>Hola ${escapeHtml(user.name)},</p><p>Recibimos un pedido para restablecer tu contraseña. El enlace vence en 30 minutos:</p><p><a href="${link}">Restablecer contraseña</a></p><p>Si no lo pediste, ignora este correo.</p>`,
             text: `Restablece tu contraseña (vence en 30 min): ${link}`,
         });
@@ -564,6 +610,7 @@ export class AuthService implements OnModuleInit {
         if (result.invited) {
             await this.issueSetupLink(result.userId, result.email, result.name, 'invite', {
                 tenantName: input.workspace_name,
+                tenantId: result.tenantId,
             });
         }
         this.logger.log(
@@ -700,7 +747,7 @@ export class AuthService implements OnModuleInit {
         email: string,
         name: string,
         kind: 'invite' | 'reset',
-        opts: { tenantName?: string; invitedBy?: string | null; shared?: { label: string } | null } = {},
+        opts: { tenantName?: string; tenantId?: number | null; invitedBy?: string | null; shared?: { label: string } | null } = {},
     ): Promise<void> {
         const token = randomBytes(32).toString('base64url');
         const invite = kind === 'invite';
@@ -714,7 +761,9 @@ export class AuthService implements OnModuleInit {
         await this.redis.set(resetKey(token), String(userId), 'EX', invite ? INVITE_TTL_SECONDS : RESET_TTL_SECONDS);
         // `invite=1` sólo cambia los textos de la pantalla ("Define tu
         // contraseña" en vez de "Nueva contraseña"); el token es el mismo.
-        const link = `${this.env.APP_BASE_URL.replace(/\/$/, '')}/reset?token=${token}${invite ? '&invite=1' : ''}`;
+        const brand = await this.accountBrand({ tenantId: opts.tenantId ?? null });
+        const app = escapeHtml(brand.name);
+        const link = `${brand.base}/reset?token=${token}${invite ? '&invite=1' : ''}`;
         const expires = invite ? '7 días' : '30 minutos';
         let subject: string;
         let intro: string;
@@ -722,16 +771,16 @@ export class AuthService implements OnModuleInit {
             // C3 — invitado externo: el correo dice QUÉ le compartieron.
             const who = opts.invitedBy ? `${escapeHtml(opts.invitedBy)} compartió contigo` : 'Compartieron contigo';
             subject = `${opts.invitedBy ? `${oneLine(opts.invitedBy)} compartió contigo` : 'Compartieron contigo'} «${oneLine(opts.shared.label)}»`;
-            intro = `${who} «${escapeHtml(opts.shared.label)}» de «${escapeHtml(opts.tenantName)}» en Imagina Base. Define tu contraseña para entrar`;
+            intro = `${who} «${escapeHtml(opts.shared.label)}» de «${escapeHtml(opts.tenantName)}» en ${app}. Define tu contraseña para entrar`;
         } else if (invite && opts.tenantName) {
             const who = opts.invitedBy ? `${escapeHtml(opts.invitedBy)} te invitó` : 'Te invitaron';
-            subject = `Te invitaron a «${oneLine(opts.tenantName)}» en Imagina Base`;
-            intro = `${who} a sumarte a «${escapeHtml(opts.tenantName)}» en Imagina Base. Define tu contraseña para entrar`;
+            subject = `Te invitaron a «${oneLine(opts.tenantName)}» en ${oneLine(brand.name)}`;
+            intro = `${who} a sumarte a «${escapeHtml(opts.tenantName)}» en ${app}. Define tu contraseña para entrar`;
         } else if (invite) {
-            subject = 'Te crearon una cuenta en Imagina Base';
-            intro = 'Se creó una cuenta para ti en Imagina Base. Define tu contraseña para entrar';
+            subject = `Te crearon una cuenta en ${oneLine(brand.name)}`;
+            intro = `Se creó una cuenta para ti en ${app}. Define tu contraseña para entrar`;
         } else {
-            subject = 'Restablecer tu contraseña — Imagina Base';
+            subject = `Restablecer tu contraseña — ${oneLine(brand.name)}`;
             intro = 'Se solicitó restablecer tu contraseña';
         }
         const cta = invite ? 'Definir contraseña' : 'Restablecer contraseña';
@@ -949,6 +998,7 @@ export class AuthService implements OnModuleInit {
         } else if (invited) {
             await this.issueSetupLink(user.id, user.email, user.name, 'invite', {
                 tenantName: tenant.name,
+                tenantId,
                 invitedBy,
                 shared,
             });
@@ -958,12 +1008,13 @@ export class AuthService implements OnModuleInit {
             // un enlace nuevo, así no queda con uno vencido.
             await this.issueSetupLink(user.id, user.email, user.name, 'invite', {
                 tenantName: tenant.name,
+                tenantId,
                 invitedBy,
                 shared,
             }).catch(() => undefined);
             notified = true;
         } else if (opts.skipMailBudget || (await this.inviteMailAllowed(tenantId, email))) {
-            notified = await this.notifyAddedToTenant(user, tenant.name, invitedBy, shared);
+            notified = await this.notifyAddedToTenant(user, tenant.name, invitedBy, shared, tenantId);
         }
         // (Sin cupo, una cuenta que ya existía queda sumada igual y sin correo:
         // el aviso es una cortesía, `notified` lo dice.)
@@ -1025,7 +1076,7 @@ export class AuthService implements OnModuleInit {
                 429,
             );
         }
-        await this.issueSetupLink(user.id, user.email, user.name, 'invite', { tenantName });
+        await this.issueSetupLink(user.id, user.email, user.name, 'invite', { tenantName, tenantId });
         return { email: user.email };
     }
 
@@ -1038,6 +1089,7 @@ export class AuthService implements OnModuleInit {
         tenantName: string,
         invitedBy: string | null,
         shared: { label: string } | null = null,
+        tenantId: number | null = null,
     ): Promise<boolean> {
         try {
             const status = await this.mail.accountMailStatus();
@@ -1045,14 +1097,15 @@ export class AuthService implements OnModuleInit {
             tenantName = mailLabel(tenantName);
             invitedBy = invitedBy ? mailLabel(invitedBy) : null;
             user = { ...user, name: mailLabel(user.name) };
-            const base = this.env.APP_BASE_URL.replace(/\/$/, '');
-            if (shared) return await this.sendSharedMail(user, tenantName, invitedBy, shared.label, base);
+            const brand = await this.accountBrand({ tenantId });
+            const base = brand.base;
+            if (shared) return await this.sendSharedMail(user, tenantName, invitedBy, shared.label, base, brand.name);
             const who = invitedBy ? `${escapeHtml(invitedBy)} te sumó` : 'Te sumaron';
             await this.mail.enqueue({
                 to: user.email,
-                subject: `Te sumaron a «${oneLine(tenantName)}» en Imagina Base`,
-                html: `<p>Hola ${escapeHtml(user.name)},</p><p>${who} a «${escapeHtml(tenantName)}» en Imagina Base. Entra con tu cuenta de siempre y elige la empresa en el selector de arriba.</p><p><a href="${base}/">Entrar</a></p>`,
-                text: `${invitedBy ? `${invitedBy} te sumó` : 'Te sumaron'} a «${tenantName}» en Imagina Base. Entra: ${base}/`,
+                subject: `Te sumaron a «${oneLine(tenantName)}» en ${oneLine(brand.name)}`,
+                html: `<p>Hola ${escapeHtml(user.name)},</p><p>${who} a «${escapeHtml(tenantName)}» en ${escapeHtml(brand.name)}. Entra con tu cuenta de siempre y elige la empresa en el selector de arriba.</p><p><a href="${base}/">Entrar</a></p>`,
+                text: `${invitedBy ? `${invitedBy} te sumó` : 'Te sumaron'} a «${tenantName}» en ${brand.name}. Entra: ${base}/`,
             });
             return true;
         } catch (err) {
@@ -1077,7 +1130,8 @@ export class AuthService implements OnModuleInit {
             const status = await this.mail.accountMailStatus();
             if (!status.available) return false;
             if (tenantId !== undefined && !(await this.inviteMailAllowed(tenantId, user.email))) return false;
-            return await this.sendSharedMail(user, tenantName, invitedBy, label, this.env.APP_BASE_URL.replace(/\/$/, ''));
+            const brand = await this.accountBrand({ tenantId: tenantId ?? null });
+            return await this.sendSharedMail(user, tenantName, invitedBy, label, brand.base, brand.name);
         } catch (err) {
             this.logger.warn(`No se pudo avisar a ${user.email} de lo compartido en «${tenantName}»: ${(err as Error).message}`);
             return false;
@@ -1090,6 +1144,7 @@ export class AuthService implements OnModuleInit {
         invitedBy: string | null,
         label: string,
         base: string,
+        appName: string,
     ): Promise<boolean> {
         tenantName = mailLabel(tenantName);
         label = mailLabel(label, 120);
@@ -1098,8 +1153,8 @@ export class AuthService implements OnModuleInit {
         await this.mail.enqueue({
             to: user.email,
             subject: `${who} «${oneLine(label)}»`,
-            html: `<p>Hola ${escapeHtml(user.name)},</p><p>${escapeHtml(who)} «${escapeHtml(label)}» de «${escapeHtml(tenantName)}» en Imagina Base. Entra con tu cuenta y elige «${escapeHtml(tenantName)}» en el selector de arriba.</p><p><a href="${base}/">Entrar</a></p>`,
-            text: `${who} «${label}» de «${tenantName}» en Imagina Base. Entra: ${base}/`,
+            html: `<p>Hola ${escapeHtml(user.name)},</p><p>${escapeHtml(who)} «${escapeHtml(label)}» de «${escapeHtml(tenantName)}» en ${escapeHtml(appName)}. Entra con tu cuenta y elige «${escapeHtml(tenantName)}» en el selector de arriba.</p><p><a href="${base}/">Entrar</a></p>`,
+            text: `${who} «${label}» de «${tenantName}» en ${appName}. Entra: ${base}/`,
         });
         return true;
     }
@@ -1172,7 +1227,7 @@ export class AuthService implements OnModuleInit {
         // igual: bloquear el primer uso mata la activación. La interfaz avisa
         // que falta confirmar. Best-effort: un fallo de correo no rompe el
         // registro (se puede reenviar desde Ajustes).
-        void this.sendEmailVerification(result.user.id).catch(() => undefined);
+        void this.sendEmailVerification(result.user.id, { host: meta.host }).catch(() => undefined);
 
         // Registrarse desde la dirección de una empresa: la sesión queda atada a
         // la empresa recién creada (no vale para las que se sumen después).
@@ -1389,7 +1444,7 @@ export class AuthService implements OnModuleInit {
      * usuario confirme un código — así un alta abandonada no deja la cuenta con
      * un factor que nadie puede usar.
      */
-    async setupTwoFactor(userId: number): Promise<TotpSetup> {
+    async setupTwoFactor(userId: number, meta: { host?: string; tenantId?: number | null } = {}): Promise<TotpSetup> {
         const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
         if (!user) throw new NotFoundException('Usuario no encontrado');
         if (user.totpEnabledAt !== null) {
@@ -1403,7 +1458,13 @@ export class AuthService implements OnModuleInit {
         await this.redis.set(totpPendingKey(userId), secret, 'EX', TOTP_PENDING_TTL_SECONDS);
         return {
             secret,
-            otpauth_uri: otpauthUri('Imagina Base', user.email, secret),
+            // v0.1.450 — el nombre que muestra la app del teléfono es el de la
+            // marca de la persona (su agencia, su empresa o la plataforma).
+            otpauth_uri: otpauthUri(
+                (await this.accountBrand({ host: meta.host, tenantId: await this.brandTenantForUser(userId, meta.tenantId) })).name,
+                user.email,
+                secret,
+            ),
         };
     }
 
@@ -1515,16 +1576,16 @@ export class AuthService implements OnModuleInit {
     }
 
     /** v0.1.238 — "Reenviar": igual que el alta, pero dice si no hay correo. */
-    async resendEmailVerification(userId: number): Promise<void> {
+    async resendEmailVerification(userId: number, meta: { host?: string; tenantId?: number | null } = {}): Promise<void> {
         await this.mail.assertAccountMailAvailable();
-        await this.sendEmailVerification(userId);
+        await this.sendEmailVerification(userId, meta);
     }
 
     /**
      * v0.1.118 — Manda (o remanda) el correo de verificación del alta.
      * Silencioso si el email ya está verificado: no filtra estado ni molesta.
      */
-    async sendEmailVerification(userId: number): Promise<void> {
+    async sendEmailVerification(userId: number, meta: { host?: string; tenantId?: number | null } = {}): Promise<void> {
         const [user] = await this.db.select().from(users).where(eq(users.id, userId)).limit(1);
         if (!user || user.emailVerifiedAt !== null) return;
         // SEC-26: registrarse con la dirección de otra persona y apretar
@@ -1533,10 +1594,11 @@ export class AuthService implements OnModuleInit {
 
         const token = randomBytes(32).toString('base64url');
         await this.redis.set(verifyKey(token), String(user.id), 'EX', VERIFY_TTL_SECONDS);
-        const link = `${this.env.APP_BASE_URL.replace(/\/$/, '')}/verify?token=${token}`;
+        const brand = await this.accountBrand({ host: meta.host, tenantId: await this.brandTenantForUser(user.id, meta.tenantId) });
+        const link = `${brand.base}/verify?token=${token}`;
         await this.mail.enqueue({
             to: user.email,
-            subject: 'Confirma tu email — Imagina Base',
+            subject: `Confirma tu email — ${oneLine(brand.name)}`,
             html: `<p>Hola ${escapeHtml(user.name)},</p><p>Confirma tu dirección de correo para activar del todo tu cuenta. El enlace vence en 48 horas:</p><p><a href="${link}">Confirmar mi email</a></p><p>Si no creaste esta cuenta, ignora este mensaje.</p>`,
             text: `Confirma tu email (vence en 48 h): ${link}`,
         });
@@ -1680,8 +1742,11 @@ export class AuthService implements OnModuleInit {
                     and(
                         eq(memberships.userId, userId),
                         ne(memberships.role, 'client'),
-                        // Sesión atada a una empresa: sólo esa.
-                        typeof onlyTenantId === 'number' ? eq(memberships.tenantId, onlyTenantId) : undefined,
+                        // Sesión atada a una empresa: sólo esa (v0.1.450: si es una
+                        // agencia, también sus empresas cliente — ADR-S108).
+                        typeof onlyTenantId === 'number'
+                            ? or(eq(memberships.tenantId, onlyTenantId), eq(tenants.agencyId, onlyTenantId))
+                            : undefined,
                         // v0.1.449 — el acceso «por la agencia» sólo mientras siga
                         // siendo admin de esa agencia (mismo criterio del guard).
                         sql`(NOT ${memberships.viaAgency} OR EXISTS (SELECT 1 FROM memberships am WHERE am.tenant_id = ${tenants.agencyId} AND am.user_id = ${memberships.userId} AND am.role = 'admin'))`,

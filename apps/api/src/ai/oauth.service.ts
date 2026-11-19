@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { tenantInBoundScope } from '../auth/host-tenant';
 import { rateKeyForIp } from '../common/client-ip';
 import { incrWithTtl } from '../redis/redis.util';
 import { effectiveCapabilities, type OauthApproveInput, type OauthAuthorizationRequest, type OauthDecision, type PersonalTokenScope, type Role } from '@imagina-base/shared';
@@ -125,6 +126,11 @@ export class OauthService {
         @Inject(REDIS) private readonly redis: Redis,
         private readonly tokens: PersonalTokensService,
     ) {}
+
+    /** v0.1.450 — ¿la sesión atada a `bound` puede autorizar para `tenantId`? (ADR-S108). */
+    inBoundScope(bound: number, tenantId: number): Promise<boolean> {
+        return tenantInBoundScope(this.db, bound, tenantId);
+    }
 
     // ── Metadata (RFC 8414 / RFC 9728) ────────────────────────────────────
 

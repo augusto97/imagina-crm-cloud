@@ -10,7 +10,7 @@ import { WhatsNewButton } from '@/admin/whats-new/WhatsNewButton';
 import { useSession } from '@/cloud/session';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
-import { useBrandingData } from '@/hooks/useBranding';
+import { useBrandingData, workspaceTitleFor } from '@/hooks/useBranding';
 import { useAppIdentity } from '@/hooks/useAppIdentity';
 import { BrandMark } from '@/components/BrandMark';
 import { moduleEnabled } from '@/lib/cloudFeatures';
@@ -63,7 +63,7 @@ export function Topbar({
     const memberships = useSession((s) => s.memberships);
     const membership = memberships.find((m) => m.tenant_id === activeTenantId);
     const identity = useAppIdentity({ workspaceName: membership?.tenant_name ?? null });
-    const workspaceTitle = branding.data?.app_name ?? membership?.tenant_name ?? identity.name;
+    const workspaceTitle = workspaceTitleFor(branding.data, membership?.tenant_name ?? null, identity.name);
     // C2 — «Usar el asistente IA» (rol propio); C3 — un invitado no lo usa.
     const canUseAssistant = useCan(CAP.USE_AI_ASSISTANT);
     const isGuest = useIsGuest();
@@ -86,6 +86,7 @@ export function Topbar({
                 {/* Marca de la empresa (sólo celular); con varias empresas, tocarla cambia de empresa. */}
                 <MobileWorkspaceTitle
                     markUrl={identity.markUrl}
+                    markName={branding.data?.inherited ? identity.name : workspaceTitle}
                     title={workspaceTitle}
                     switchable={hasTabBar}
                 />
@@ -182,10 +183,13 @@ export function Topbar({
  */
 function MobileWorkspaceTitle({
     markUrl,
+    markName,
     title,
     switchable,
 }: {
     markUrl: string | null;
+    /** v0.1.450 — las iniciales de la marca (la de la agencia en una empresa cliente). */
+    markName: string;
     title: string;
     switchable: boolean;
 }): JSX.Element {
@@ -193,7 +197,7 @@ function MobileWorkspaceTitle({
     const canSwitch = switchable && memberships.length > 1 && !locked;
     const body = (
         <>
-            <BrandMark url={markUrl} name={title} className="imcrm-h-7 imcrm-w-7 imcrm-text-[11px]" />
+            <BrandMark url={markUrl} name={markName} className="imcrm-h-7 imcrm-w-7 imcrm-text-[11px]" />
             <span className="imcrm-truncate imcrm-text-[15px] imcrm-font-semibold imcrm-text-foreground">{title}</span>
         </>
     );

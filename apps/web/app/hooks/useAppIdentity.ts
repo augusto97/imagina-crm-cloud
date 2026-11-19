@@ -1,3 +1,4 @@
+import { appBranding } from '@imagina-base/shared';
 import { useSession } from '@/cloud/session';
 import { useBrandingData } from '@/hooks/useBranding';
 
@@ -36,9 +37,12 @@ export function useAppIdentity(opts: { workspaceName?: string | null } = {}): Ap
     const branding = useBrandingData();
     const domainTenant = useSession((s) => s.domainTenant);
     const platform = useSession((s) => s.platformBrand);
-    const whiteLabel = domainTenant !== null;
-    const tenantLogo = branding.data !== undefined ? (branding.data.logo_url ?? null) : (domainTenant?.logo_url ?? null);
-    const tenantAppName = branding.data !== undefined ? (branding.data.app_name ?? null) : (domainTenant?.app_name ?? null);
+    // v0.1.450 (ADR-S108) — una empresa cliente de una agencia ve la marca de
+    // la agencia y nunca la de la plataforma (ni su logo ni su sitio).
+    const app = branding.data !== undefined ? appBranding(branding.data) : null;
+    const whiteLabel = domainTenant !== null || app?.white_label === true;
+    const tenantLogo = app !== null ? app.logo_url : (domainTenant?.logo_url ?? null);
+    const tenantAppName = app !== null ? app.app_name : (domainTenant?.app_name ?? null);
     const platformName = platform.app_name;
     const name =
         tenantAppName?.trim() ||

@@ -97,6 +97,13 @@ describe('H1 — puente con el service worker', () => {
         expect(link.getAttribute('href')).toBe('/api/v1/public/manifest.webmanifest?scheme=dark');
         applyManifestScheme('light');
         expect(link.getAttribute('href')).toBe('/api/v1/public/manifest.webmanifest');
+        // v0.1.450 — la empresa cliente de una agencia suma la llave de la marca;
+        // una llave con otra forma no viaja.
+        const brand = `12.${'a'.repeat(32)}`;
+        applyManifestScheme('dark', document, brand);
+        expect(link.getAttribute('href')).toBe(`/api/v1/public/manifest.webmanifest?scheme=dark&b=${brand}`);
+        expect(manifestHref('light', brand)).toBe(`/api/v1/public/manifest.webmanifest?b=${brand}`);
+        expect(manifestHref('light', '12.<script>')).toBe('/api/v1/public/manifest.webmanifest');
         link.remove();
     });
 

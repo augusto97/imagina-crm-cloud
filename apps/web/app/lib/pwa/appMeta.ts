@@ -42,14 +42,22 @@ export function applyAppMeta(barColor: string | null, appName: string | null, do
  */
 export const MANIFEST_PATH = '/api/v1/public/manifest.webmanifest';
 
-export function manifestHref(theme: 'light' | 'dark'): string {
-    return theme === 'dark' ? `${MANIFEST_PATH}?scheme=dark` : MANIFEST_PATH;
+/**
+ * v0.1.450 (ADR-S108) — `brand`: la llave firmada de la marca de la AGENCIA
+ * (`branding.manifest_brand`): en la dirección de la plataforma, una empresa
+ * cliente instala la app con el nombre de su agencia.
+ */
+export function manifestHref(theme: 'light' | 'dark', brand: string | null = null): string {
+    const params: string[] = [];
+    if (theme === 'dark') params.push('scheme=dark');
+    if (brand && /^[0-9]+\.[0-9a-f]{32}$/.test(brand)) params.push(`b=${brand}`);
+    return params.length > 0 ? `${MANIFEST_PATH}?${params.join('&')}` : MANIFEST_PATH;
 }
 
-export function applyManifestScheme(theme: 'light' | 'dark', doc: Document = document): void {
+export function applyManifestScheme(theme: 'light' | 'dark', doc: Document = document, brand: string | null = null): void {
     const link = doc.querySelector<HTMLLinkElement>('link[rel="manifest"]');
     if (!link) return;
-    const href = manifestHref(theme);
+    const href = manifestHref(theme, brand);
     if (link.getAttribute('href') !== href) link.setAttribute('href', href);
 }
 

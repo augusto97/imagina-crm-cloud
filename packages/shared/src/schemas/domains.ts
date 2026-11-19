@@ -179,6 +179,16 @@ export const publicBootSchema = z.object({
              * que abre el portal directo y nunca la app del equipo).
              */
             surface: z.enum(['app', 'portal']).default('app'),
+            /**
+             * v0.1.450 (ADR-S108) — la empresa del dominio es una AGENCIA: en
+             * su dominio también entran a sus empresas cliente (con su marca).
+             */
+            is_agency: z.boolean().default(false),
+            /**
+             * v0.1.450 — la marca de la app es la de la agencia de esta empresa
+             * (nunca la de la plataforma).
+             */
+            white_label: z.boolean().default(false),
         })
         .nullable(),
     /**

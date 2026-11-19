@@ -75,6 +75,9 @@ export function BrandingPanel(): JSX.Element {
     const qc = useQueryClient();
     const tenantId = useSession((s) => s.activeTenantId);
     const brandingQ = useBrandingData();
+    // v0.1.450 (ADR-S108) — empresa cliente de una agencia: su equipo ve la app
+    // con la marca de la agencia.
+    const inheritedBrand = brandingQ.data?.inherited ?? null;
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
     const [appName, setAppName] = useState('');
@@ -213,14 +216,31 @@ export function BrandingPanel(): JSX.Element {
                     <div>
                         <CardTitle>Marca</CardTitle>
                         <CardDescription>
-                            Personaliza el nombre, los colores (primario, barra lateral y barras del teléfono) y el logo. Tu
-                            equipo los ve en la app, y tus clientes en su portal y en los correos de acceso: ahí no
-                            aparece nada de la plataforma.
+                            {inheritedBrand
+                                ? 'El nombre, el color y el logo que ven tus clientes: en su portal, en tus formularios, tu agenda y tu tienda, y en los correos que les llegan.'
+                                : 'Personaliza el nombre, los colores (primario, barra lateral y barras del teléfono) y el logo. Tu equipo los ve en la app, y tus clientes en su portal y en los correos de acceso: ahí no aparece nada de la plataforma.'}
                         </CardDescription>
                     </div>
                 </div>
             </CardHeader>
             <CardContent className="imcrm-space-y-4 imcrm-pt-0">
+                {inheritedBrand && (
+                    // v0.1.450 (ADR-S108) — empresa cliente de una agencia: la
+                    // app se ve con la marca de la agencia; la de acá vale para
+                    // lo que ven SUS clientes (portal, formularios, agenda…).
+                    <div
+                        className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-muted/40 imcrm-p-3 imcrm-text-sm"
+                        data-testid="branding-inherited"
+                    >
+                        <p className="imcrm-font-medium">
+                            {`Tu equipo ve la app con la marca de ${inheritedBrand.name}.`}
+                        </p>
+                        <p className="imcrm-mt-0.5 imcrm-text-[12px] imcrm-text-muted-foreground">
+                            Lo que elijas aquí es lo que ven tus clientes: el portal, los formularios, la agenda, la
+                            tienda, el widget de contacto y los correos que les llegan.
+                        </p>
+                    </div>
+                )}
                 <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-2">
                     <label className="imcrm-block imcrm-space-y-1 sm:imcrm-col-span-2">
                         <span className="imcrm-text-xs imcrm-text-muted-foreground">Nombre de la app</span>
@@ -250,9 +270,12 @@ export function BrandingPanel(): JSX.Element {
                             />
                         </div>
                         <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
-                            Botones, enlaces y acentos de toda la app.
+                            {inheritedBrand
+                                ? 'Botones y acentos de tu portal, formularios, agenda y tienda.'
+                                : 'Botones, enlaces y acentos de toda la app.'}
                         </p>
                     </div>
+                    {!inheritedBrand && (
                     <div className="imcrm-space-y-1" data-testid="branding-sidebar-color">
                         <span className="imcrm-text-xs imcrm-text-muted-foreground">Color de la barra lateral</span>
                         <div className="imcrm-flex imcrm-items-center imcrm-gap-2">
@@ -290,8 +313,12 @@ export function BrandingPanel(): JSX.Element {
                             ajusta solo (claro sobre un fondo oscuro, oscuro sobre uno claro).
                         </p>
                     </div>
+                    )}
                 </div>
 
+                {/* v0.1.450 — en una empresa cliente de una agencia, la barra
+                    lateral y las barras del teléfono son las de la agencia. */}
+                {!inheritedBrand && (
                 <fieldset className="imcrm-space-y-2" data-testid="branding-app-bar">
                     <legend className="imcrm-text-xs imcrm-text-muted-foreground">Barras del teléfono (app instalada)</legend>
                     <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
@@ -356,6 +383,7 @@ export function BrandingPanel(): JSX.Element {
                         inmediato, quita la app del teléfono y vuelve a instalarla.
                     </p>
                 </fieldset>
+                )}
 
                 <div className="imcrm-space-y-1">
                     <span className="imcrm-text-xs imcrm-text-muted-foreground">Logo</span>

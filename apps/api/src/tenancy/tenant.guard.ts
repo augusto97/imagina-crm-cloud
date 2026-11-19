@@ -173,8 +173,10 @@ export class TenantGuard implements CanActivate {
         }
         // Una sesión abierta en la dirección de UNA empresa (su dominio propio)
         // sólo sirve para esa empresa: quien maneja ese dominio no puede usarla
-        // contra las otras empresas de la persona.
-        if (req.boundTenantId !== undefined && membership.tenantId !== req.boundTenantId) {
+        // contra las otras empresas de la persona. v0.1.450 (ADR-S108): la
+        // dirección de una AGENCIA también vale para sus empresas cliente (la
+        // agencia ya las administra: no ve nada que no pueda ver).
+        if (req.boundTenantId !== undefined && membership.tenantId !== req.boundTenantId && membership.agencyId !== req.boundTenantId) {
             throw sessionTenantScope();
         }
         // v0.1.449 (ADR-S108) — el acceso «por la agencia» vale mientras la

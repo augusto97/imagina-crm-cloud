@@ -10023,3 +10023,45 @@ en el login, los correos y la app de sus clientes (v0.1.450); los planes que la
 agencia le vende a cada cliente y su cobro con la pasarela de la agencia
 (v0.1.451); y el cobro de la plataforma a la agencia por empresas incluidas y
 extra (v0.1.452).
+
+**Addendum v0.1.450 — la marca de la agencia en sus clientes.** Decisión del
+usuario: «sólo la de la agencia». Se interpreta así: lo que ve el **equipo** de
+una empresa cliente (la app: riel, nombre, logo, colores, pestaña, ícono de la
+app instalable, correos de su cuenta y contacto de la Ayuda) lleva la marca de
+la AGENCIA y nunca la de la plataforma; lo que ven los **clientes de la
+empresa** (portal, formularios, agenda, tienda, widget, firmas, listas
+públicas y los correos que les llegan) sigue con la marca propia de la empresa
+(`settings.branding`), que la empresa conserva y edita.
+- **Marca heredada** (`agency-brand.ts`, conexión base): la marca que la
+  agencia eligió para sí en Ajustes → Marca. `GET /workspaces/current/branding`
+  suma `inherited` (nombre, nombre de app, colores, logo firmado con el id de la
+  AGENCIA) y `manifest_brand`; `appBranding()` (shared) decide la marca de la
+  app y el front la usa en todo el chrome. El título del panel de una empresa
+  cliente es el nombre de la EMPRESA (no su nombre de app propio, que es para
+  sus clientes; y la gente de la agencia distingue a sus clientes por nombre);
+  las iniciales del riel, las de la agencia. Ajustes → Marca del cliente lo
+  explica y oculta lo que sólo afecta a la app (barra lateral, barras del
+  teléfono).
+- **Pantalla de entrar**: el boot por el subdominio o el dominio del EQUIPO de
+  una empresa cliente devuelve la marca de la agencia (`white_label: true`); el
+  dominio de su portal, la propia.
+- **App instalable**: `manifest_brand` es una llave `<tenantId>.<HMAC>`
+  (`FilesService.signParts('appbrand', id)`, 32 hex) que el front agrega al
+  manifiesto (`?b=`); el manifiesto revisa la firma, que la empresa siga siendo
+  cliente y devuelve sólo nombre y color de la agencia. En el dominio de una
+  empresa manda ese dominio.
+- **Dominio de la agencia**: una sesión abierta en el dominio de la agencia
+  (`boundTenantId` = agencia) sirve también para sus empresas cliente
+  (`membershipsOf`, `TenantGuard`, aprobar el OAuth del MCP), y los enlaces de
+  la app de una empresa cliente sin dominio propio salen por el de la agencia
+  si responde (`baseUrlFor`). El portal nunca.
+- **Correos de la cuenta** (restablecer contraseña, invitación, verificación,
+  2FA): con el nombre y la dirección de la agencia (`accountBrand`, resolver que
+  `DomainsService` registra en `AuthService`); quien trabaja en la agencia toma
+  la marca de su agencia (no la de un cliente al que entró).
+- **Ayuda**: el equipo de una empresa cliente ve el contacto de SU agencia
+  (`tenants.settings.agency_support`, editable en la consola de la agencia →
+  «Lo que ven tus clientes», `GET/PUT /agency/support`, bitácora
+  `agency.support`) y no los videos ni las guías propias del operador.
+Sin migración. Sin novedad en el catálogo: es de agencias (lo enciende el
+operador) y el catálogo no puede apuntar sólo a ellas.

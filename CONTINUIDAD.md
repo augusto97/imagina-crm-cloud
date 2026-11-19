@@ -430,7 +430,20 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.449**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.450**
+(**la marca de la agencia en sus clientes** — el equipo de una empresa cliente
+ve la app con la marca de su agencia (nombre, logo, colores, pestaña, ícono de
+la app instalable, correos de su cuenta y el contacto de soporte en la Ayuda),
+nunca la de la plataforma; lo que ven los clientes de la empresa (portal,
+formularios, agenda, tienda) sigue con la marca propia de la empresa. La
+consola de la agencia suma «Lo que ven tus clientes» (enlace a su Marca y el
+correo/WhatsApp de soporte). La pantalla de entrar por el subdominio de un
+cliente sale con la marca de la agencia, una sesión abierta en el dominio de la
+agencia sirve para sus clientes y los enlaces de la app de un cliente salen
+por el dominio de la agencia si responde. Sin migración ni novedad (es de
+agencias). ADR-S108 addendum. **Siguen**: v0.1.451 planes y cobro de la
+agencia a sus clientes, v0.1.452 cobro de la plataforma a la agencia; G8 DIAN
+espera proveedor y credenciales de prueba). Antes **v0.1.449**
 (**modo agencia, primera parte** — el operador marca una empresa como agencia
 en Plataforma → Empresas (con el plan con que nacen sus clientes y un tope);
 sus administradores tienen la sección «Agencia» (en el celular, Más → Empresas
@@ -2248,6 +2261,27 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.450** — **La marca de la agencia en sus clientes** (I3,
+  ADR-S108 addendum). Interpretación de «sólo la de la agencia»: la app que ve
+  el EQUIPO del cliente (riel, nombre, logo, colores, pestaña, manifiesto de la
+  app instalable con la llave firmada `?b=`, correos de su cuenta, contacto de
+  la Ayuda) lleva la marca de la agencia; lo que ven SUS clientes conserva la
+  marca propia de la empresa. Pantalla de entrar por el subdominio/dominio del
+  equipo del cliente con la marca de la agencia (el del portal, con la propia).
+  Una sesión abierta en el dominio de la agencia sirve para sus clientes
+  (`membershipsOf`, guard, OAuth del MCP) y los enlaces de la app de un cliente
+  salen por el dominio de la agencia si responde. Consola de la agencia: «Lo
+  que ven tus clientes» (`GET/PUT /agency/support`, bitácora `agency.support`).
+  Ajustes → Marca del cliente explica que su marca es para sus clientes y
+  oculta barra lateral y barras del teléfono. **Atrapado en el E2E**: el título
+  del panel y la barra del celular mostraban el nombre de app PROPIO del
+  cliente (el de sus clientes) y las iniciales del riel salían de la empresa,
+  no de la agencia; y los correos de cuenta de alguien de la agencia que había
+  entrado a un cliente podían tomar la marca de ese cliente. Sin migración ni
+  novedad (es de agencias). Tests: `agency-brand.spec` (7), 3 de shared, 1 del
+  front; suites relacionadas 211/211; E2E navegador 32/32 (escritorio, celular
+  oscuro). **Pendientes del usuario**: Redis, `NPM_TOKEN`, DIAN y usuario
+  propio para la app (sin cambios).
 - **2026-11-18 · v0.1.449** — **Modo agencia, primera parte** (I3, ADR-S108).
   Decisiones del usuario: la agencia cobra a su cliente con su pasarela; la
   plataforma cobra a la agencia «las dos» (plan base con N empresas incluidas +

@@ -1479,7 +1479,7 @@ export class NotificationsService implements OnModuleInit {
 
     private async tenantName(tenantId: number): Promise<string> {
         const [row] = await this.db.select({ name: tenants.name }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
-        return row?.name ?? 'Imagina Base';
+        return row?.name ?? 'tu empresa';
     }
 
     private async links(tenantId: number, listId: number | null): Promise<{ base: string; settings: string; listSlug: string | null }> {

@@ -44,7 +44,9 @@ export function useWorkspaces(): {
     const activeTenantId = useSession((s) => s.activeTenantId);
     const domainTenant = useSession((s) => s.domainTenant);
     const active = memberships.find((m) => m.tenant_id === activeTenantId) ?? null;
-    const locked = domainTenant !== null && memberships.some((m) => m.tenant_id === domainTenant.id);
+    // v0.1.450 — en el dominio de una AGENCIA se puede pasar a sus clientes
+    // (el servidor ya sólo devuelve esas empresas en una sesión de ese dominio).
+    const locked = domainTenant !== null && !domainTenant.is_agency && memberships.some((m) => m.tenant_id === domainTenant.id);
     return { memberships, active, locked };
 }
 

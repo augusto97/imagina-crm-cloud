@@ -62,3 +62,14 @@ export function sessionTenantScope(): ForbiddenException {
         data: { status: 403 },
     });
 }
+
+/**
+ * v0.1.450 (ADR-S108) — ¿una sesión atada a `boundTenantId` sirve para
+ * `tenantId`? Para la misma empresa sí; y si la atada es una AGENCIA, también
+ * para sus empresas cliente (la agencia ya las administra).
+ */
+export async function tenantInBoundScope(db: Db, boundTenantId: number, tenantId: number): Promise<boolean> {
+    if (boundTenantId === tenantId) return true;
+    const [row] = await db.select({ agencyId: tenants.agencyId }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
+    return row?.agencyId === boundTenantId;
+}

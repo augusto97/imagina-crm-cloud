@@ -4,6 +4,7 @@ import type {
     AgencyEnterResult,
     AgencyOverview,
     CreateAgencyClientInput,
+    HelpSupport,
     UpdateAgencyClientInput,
 } from '@imagina-base/shared';
 
@@ -20,6 +21,7 @@ export const agencyKeys = {
     all: ['agency'] as const,
     overview: ['agency', 'overview'] as const,
     clients: ['agency', 'clients'] as const,
+    support: ['agency', 'support'] as const,
 };
 
 /** La empresa activa es una agencia y la persona es su admin directo. */
@@ -85,5 +87,28 @@ export function useEnterAgencyClient() {
             qc.setQueryData(['me'], session);
             switchWorkspace(res.tenant_id, qc);
         },
+    });
+}
+
+
+/**
+ * v0.1.450 (ADR-S108) — El contacto de soporte que ven las empresas cliente
+ * en su Ayuda («¿Necesitas más ayuda?»): el de la agencia, nunca el de la
+ * plataforma.
+ */
+export function useAgencySupport(enabled = true) {
+    return useQuery({
+        queryKey: agencyKeys.support,
+        queryFn: async () => (await api.get<HelpSupport>('/agency/support')).data,
+        enabled,
+        staleTime: 60_000,
+    });
+}
+
+export function useUpdateAgencySupport() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (input: HelpSupport) => (await api.put<HelpSupport>('/agency/support', input)).data,
+        onSuccess: (data) => qc.setQueryData(agencyKeys.support, data),
     });
 }

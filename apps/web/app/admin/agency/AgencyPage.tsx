@@ -25,6 +25,7 @@ import {
     useIsAgencyAdmin,
     useUpdateAgencyClient,
 } from './useAgency';
+import { AgencyBrandCard } from './AgencyBrandCard';
 import { clientStateLabel } from './agencyUi';
 
 /**
@@ -142,6 +143,8 @@ export function AgencyPage(): JSX.Element {
                     </ul>
                 </Card>
             )}
+
+            <AgencyBrandCard />
 
             {creating && <CreateClientDialog onClose={() => setCreating(false)} />}
             {renaming && <RenameClientDialog client={renaming} onClose={() => setRenaming(null)} />}

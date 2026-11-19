@@ -4,7 +4,7 @@ import { CheckCheck, Megaphone } from 'lucide-react';
 
 import { useSession } from '@/cloud/session';
 import { Sheet, SheetBody, SheetCloseButton, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { useBrandingData } from '@/hooks/useBranding';
+import { useAppName } from '@/hooks/useBranding';
 import { useMarkWhatsNewSeen, useWhatsNewEvent, useWhatsNewFeed } from '@/hooks/useWhatsNew';
 import { __, _n, sprintf } from '@/lib/i18n';
 import { parseUtcDate } from '@/lib/utcDate';
@@ -24,7 +24,7 @@ export function WhatsNewPanel(): JSX.Element {
     const markSeen = useMarkWhatsNewSeen();
     const event = useWhatsNewEvent();
     const impersonating = useSession((s) => s.impersonating);
-    const appName = useBrandingData().data?.app_name ?? null;
+    const appName = useAppName();
     const items = useMemo(() => feed.data?.items ?? [], [feed.data]);
     // Lo nuevo AL ABRIR (se congela mientras el panel siga abierto).
     const [newAtOpen, setNewAtOpen] = useState<Set<number>>(new Set());

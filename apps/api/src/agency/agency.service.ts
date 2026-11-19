@@ -1,6 +1,8 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import {
+    helpSupportSchema,
     readAgencySettings,
+    type HelpSupport,
     type AgencyClient,
     type AgencyEnterResult,
     type AgencyOverview,
@@ -13,6 +15,7 @@ import { AuditService } from '../audit/audit.service';
 import { AuthService } from '../auth/auth.service';
 import { PlansService } from '../billing/plans.service';
 import { accessOf } from '../billing/tenant-access';
+import { readSupport } from '../help/help.service';
 import { DRIZZLE, type Db } from '../db/client';
 import { auditLog, memberships, plans, records, tenants, users } from '../db/schema';
 
@@ -55,6 +58,36 @@ export class AgencyService {
             clients,
             can_create: settings.max_clients === null || clients < settings.max_clients,
         };
+    }
+
+    /**
+     * v0.1.450 (ADR-S108) — El contacto de soporte que la agencia les da a sus
+     * clientes (lo ven en «Ayuda» en lugar del de la plataforma). Vive en
+     * `tenants.settings.agency_support` de la AGENCIA.
+     */
+    async support(agencyId: number): Promise<HelpSupport> {
+        const agency = await this.agencyRow(agencyId);
+        return readSupport(agency.settings?.agency_support);
+    }
+
+    async setSupport(agencyId: number, userId: number, input: HelpSupport): Promise<HelpSupport> {
+        await this.agencyRow(agencyId);
+        const next = helpSupportSchema.parse(input);
+        await this.db.transaction(async (tx) => {
+            const [row] = await tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, agencyId)).for('update').limit(1);
+            const settings = { ...((row?.settings as Record<string, unknown> | null) ?? {}) };
+            settings.agency_support = next;
+            await tx.update(tenants).set({ settings, updatedAt: new Date() }).where(eq(tenants.id, agencyId));
+        });
+        await this.audit?.log({
+            tenantId: agencyId,
+            userId,
+            action: 'agency.support',
+            targetType: 'tenant',
+            targetId: agencyId,
+            meta: { email: next.email !== null, whatsapp: next.whatsapp !== null, url: next.url !== null },
+        });
+        return next;
     }
 
     async listClients(agencyId: number, userId: number, onlyId?: number): Promise<AgencyClient[]> {

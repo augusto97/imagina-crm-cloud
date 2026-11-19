@@ -1,11 +1,15 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
+    helpSupportSchema,
     parsePlatformHelp,
     SYSTEM_GUIDE_IDS,
     type HelpConfigView,
+    type HelpSupport,
     type PlatformHelp,
     type UpdatePlatformHelpInput,
 } from '@imagina-base/shared';
+import { agencyOf } from '../agency/agency-brand';
+import { DRIZZLE, type Db } from '../db/client';
 import { REDIS } from '../redis/redis.module';
 
 /** Subconjunto de ioredis: se testea con un fake en memoria. */
@@ -27,7 +31,11 @@ export const HELP_KEY = 'platform:help';
 export class HelpService {
     private readonly logger = new Logger(HelpService.name);
 
-    constructor(@Inject(REDIS) private readonly redis: HelpStore) {}
+    constructor(
+        @Inject(REDIS) private readonly redis: HelpStore,
+        // v0.1.450 — para saber si la empresa es cliente de una agencia.
+        @Optional() @Inject(DRIZZLE) private readonly db?: Db,
+    ) {}
 
     /** La configuración completa (consola del operador). */
     async get(): Promise<PlatformHelp> {
@@ -51,15 +59,31 @@ export class HelpService {
      * rol (una guía sin roles es para todos). `role` es el rol BASE: un rol
      * propio cuenta como el suyo.
      */
-    async forMember(role: string): Promise<HelpConfigView> {
+    async forMember(role: string, tenantId?: number): Promise<HelpConfigView> {
         const cfg = await this.read();
+        // v0.1.450 (ADR-S108) — el equipo de una empresa cliente pide ayuda a
+        // SU agencia: su contacto, y nada del operador (guías propias y videos
+        // pueden mostrar la marca de la plataforma). Las guías del sistema
+        // quedan (no nombran la plataforma).
+        const agency = this.db && tenantId !== undefined ? await agencyOf(this.db, tenantId).catch(() => null) : null;
+        if (agency) {
+            return {
+                support: readSupport((agency.settings as Record<string, unknown> | null)?.agency_support),
+                videos: {},
+                hidden: cfg.hidden,
+                custom: [],
+                support_name: agency.name,
+            };
+        }
         return {
             support: cfg.support,
             videos: cfg.videos,
             hidden: cfg.hidden,
             custom: cfg.custom.filter((g) => g.roles.length === 0 || (g.roles as string[]).includes(role)),
+            support_name: null,
         };
     }
+
 
     private async read(): Promise<PlatformHelp> {
         let raw: string | null;
@@ -78,4 +102,9 @@ export class HelpService {
             return parsePlatformHelp({});
         }
     }
+}
+
+export function readSupport(raw: unknown): HelpSupport {
+    const parsed = helpSupportSchema.safeParse(raw ?? {});
+    return parsed.success ? parsed.data : helpSupportSchema.parse({});
 }

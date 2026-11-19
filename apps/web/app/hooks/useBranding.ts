@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { resolveAppBarColor, type BrandingResponse } from '@imagina-base/shared';
+import { appBranding, resolveAppBarColor, type BrandingResponse } from '@imagina-base/shared';
 
 import { api, useSession } from '@/cloud/session';
 import { applyFavicon } from '@/lib/favicon';
@@ -195,6 +195,29 @@ export function brandVars(
     };
 }
 
+/**
+ * v0.1.450 (ADR-S108) — El nombre de la APP que ve quien trabaja en la empresa
+ * activa: el propio o, si es cliente de una agencia, el de la agencia. Para
+ * los textos de la app (Ayuda, Novedades); lo que ven los clientes de la
+ * empresa (portal, formularios) usa `app_name` directo.
+ */
+export function useAppName(): string | null {
+    const data = useBrandingData().data;
+    return data ? appBranding(data).app_name : null;
+}
+
+/**
+ * v0.1.450 — El título del panel y de la barra superior: el nombre de app
+ * propio de la empresa o, si es cliente de una agencia, el nombre de la
+ * EMPRESA (la marca de la agencia ya está en el logo, el color y la pestaña;
+ * y quien trabaja en varios clientes los distingue por nombre). Nunca el
+ * nombre de app propio de una empresa cliente: ese es para SUS clientes.
+ */
+export function workspaceTitleFor(data: BrandingResponse | undefined, workspaceName: string | null, fallback: string): string {
+    if (data && !data.inherited && data.app_name) return data.app_name;
+    return workspaceName ?? (data ? appBranding(data).app_name : null) ?? fallback;
+}
+
 /** Query del branding del tenant activo (comparte cache con `useBranding`). */
 export function useBrandingData() {
     const tenantId = useSession((s) => s.activeTenantId);
@@ -237,9 +260,12 @@ export function useBrandingData() {
  */
 export function useBranding() {
     const query = useBrandingData();
+    // v0.1.450 (ADR-S108) — la marca de la APP: la de la empresa o, si es
+    // cliente de una agencia, la de la agencia (nunca la de la plataforma).
+    const app = query.data !== undefined ? appBranding(query.data) : null;
     const domainColor = useSession((s) => s.domainTenant?.primary_color ?? null);
-    const primaryColor = query.data !== undefined ? (query.data.primary_color ?? null) : domainColor;
-    const sidebarColor = query.data !== undefined ? (query.data.sidebar_color ?? null) : null;
+    const primaryColor = app !== null ? app.primary_color : domainColor;
+    const sidebarColor = app !== null ? app.sidebar_color : null;
     // v0.1.112 — al cambiar de tema hay que RE-derivar los tokens de marca
     // (la fórmula es distinta en claro y en oscuro).
     const { resolved } = useTheme();
@@ -272,15 +298,17 @@ export function useBranding() {
     const domainLogo = useSession((s) => s.domainTenant?.logo_url ?? null);
     const domainName = useSession((s) => s.domainTenant?.app_name ?? null);
     const domainTenantName = useSession((s) => s.domainTenant?.name ?? null);
-    const whiteLabel = useSession((s) => s.domainTenant !== null);
+    const onTenantDomain = useSession((s) => s.domainTenant !== null);
+    const whiteLabel = onTenantDomain || app?.white_label === true;
+    const manifestBrand = query.data?.manifest_brand ?? null;
     const domainAppBar = useSession((s) => s.domainTenant?.app_bar_color ?? null);
     // v0.1.327 — la marca de la plataforma (Plataforma → Marca): vale fuera del
     // dominio de una empresa y cuando la empresa no subió la suya.
     const platform = useSession((s) => s.platformBrand);
-    const appBarSetting = query.data !== undefined ? (query.data.app_bar_color ?? null) : domainAppBar;
-    const logoUrl = query.data !== undefined ? (query.data.logo_url ?? null) : domainLogo;
-    const appName = query.data !== undefined ? (query.data.app_name ?? null) : domainName;
-    const baseName = appName ?? (whiteLabel ? domainTenantName : null) ?? platform.app_name;
+    const appBarSetting = app !== null ? app.app_bar_color : domainAppBar;
+    const logoUrl = app !== null ? app.logo_url : domainLogo;
+    const appName = app !== null ? app.app_name : domainName;
+    const baseName = appName ?? (onTenantDomain ? domainTenantName : null) ?? platform.app_name;
     const platformIcons = whiteLabel ? null : platform.icons;
     useEffect(() => {
         if (logoUrl) applyFavicon(logoUrl);
@@ -293,14 +321,14 @@ export function useBranding() {
         // sistema. v0.1.326: neutro por defecto (sigue el tema), o el que
         // eligió la empresa en Ajustes → Marca.
         applyAppMeta(resolveAppBarColor(appBarSetting, primaryColor, resolved), baseName);
-        applyManifestScheme(resolved);
+        applyManifestScheme(resolved, document, onTenantDomain ? null : manifestBrand);
         // v0.1.329 — la próxima apertura arma el contorno de la app con los
         // colores reales del riel y de la línea de carga en este tema.
         rememberSplashColors(resolved, {
             rail: resolveThemeColor('--imcrm-sidebar'),
             accent: resolveThemeColor('--imcrm-primary'),
         });
-    }, [logoUrl, baseName, primaryColor, sidebarColor, appBarSetting, resolved, platformIcons]);
+    }, [logoUrl, baseName, primaryColor, sidebarColor, appBarSetting, resolved, platformIcons, manifestBrand, onTenantDomain]);
 
     return query;
 }

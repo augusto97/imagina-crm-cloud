@@ -23,7 +23,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useSession } from '@/cloud/session';
 import { DEFAULT_LIST_ICON, listColor, listIcon } from '@/lib/listIcons';
 import { resolveSettingsSection, settingsSectionGroups } from '@/cloud/settingsSections';
-import { useBrandingData } from '@/hooks/useBranding';
+import { useBrandingData, workspaceTitleFor } from '@/hooks/useBranding';
 import { useAppIdentity } from '@/hooks/useAppIdentity';
 import { BrandMark } from '@/components/BrandMark';
 import { useDashboards } from '@/hooks/useDashboards';
@@ -204,7 +204,6 @@ export function Sidebar(): JSX.Element {
     // Branding white-label del tenant (logo + nombre). Lee del query cache
     // que puebla `useBranding` en AdminCloudApp; nulls → marca por defecto.
     const branding = useBrandingData();
-    const brandAppName = branding.data?.app_name ?? null;
 
     // Workspace activo de la sesión (nombre del tenant para el header del
     // panel). Si el branding define un app_name white-label, manda ese.
@@ -214,7 +213,7 @@ export function Sidebar(): JSX.Element {
     const workspaceName = membership?.tenant_name ?? null;
     const isAdmin = membership?.role === 'admin';
     const identity = useAppIdentity({ workspaceName });
-    const workspaceTitle = brandAppName ?? workspaceName ?? identity.name;
+    const workspaceTitle = workspaceTitleFor(branding.data, workspaceName, identity.name);
 
     // Gating por capability (Fase 7 — 1.E). El backend ya filtra GET /lists
     // a las visibles para el user, así que "Tus listas" se auto-recorta.
@@ -368,7 +367,7 @@ export function Sidebar(): JSX.Element {
             >
                 {/* Marca: sólo el cuadrado/logo (el nombre vive en el panel). */}
                 <div className="imcrm-mb-1 imcrm-flex imcrm-shrink-0 imcrm-justify-center">
-                    <BrandMark url={identity.markUrl} name={workspaceTitle} tone="rail" className="imcrm-h-9 imcrm-w-9" />
+                    <BrandMark url={identity.markUrl} name={branding.data?.inherited ? identity.name : workspaceTitle} tone="rail" className="imcrm-h-9 imcrm-w-9" />
                 </div>
 
                 {/* Con el panel CERRADO, el botón de abrirlo vive arriba del

@@ -4,7 +4,7 @@ import { WHATS_NEW_KINDS, type WhatsNewKind } from '@imagina-base/shared';
 
 import { useSession } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
-import { useBrandingData } from '@/hooks/useBranding';
+import { useAppName } from '@/hooks/useBranding';
 import { useMarkWhatsNewSeen, useWhatsNewEvent, useWhatsNewHistory } from '@/hooks/useWhatsNew';
 import { __, sprintf } from '@/lib/i18n';
 import { parseUtcDate } from '@/lib/utcDate';
@@ -26,7 +26,7 @@ export function WhatsNewPage(): JSX.Element {
     const markSeen = useMarkWhatsNewSeen();
     const event = useWhatsNewEvent();
     const impersonating = useSession((s) => s.impersonating);
-    const appName = useBrandingData().data?.app_name ?? null;
+    const appName = useAppName();
     const items = useMemo(() => (history.data?.pages ?? []).flatMap((p) => p.items), [history.data]);
     const groups = useMemo(() => groupByMonth(items, parseUtcDate), [items]);
     const [newIds, setNewIds] = useState<Set<number>>(new Set());

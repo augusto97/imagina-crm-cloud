@@ -99,7 +99,8 @@ export class OauthController {
         @Body(new ZodValidationPipe(oauthApproveInputSchema)) input: OauthApproveInput,
     ): Promise<OauthDecision> {
         // Una sesión atada a una empresa no autoriza un conector para OTRA.
-        if (req.boundTenantId !== undefined && input.tenant_id !== req.boundTenantId) throw sessionTenantScope();
+        // v0.1.450: la dirección de una agencia también vale para sus clientes.
+        if (req.boundTenantId !== undefined && !(await this.oauth.inBoundScope(req.boundTenantId, input.tenant_id))) throw sessionTenantScope();
         const request = await this.oauth.getRequest(id);
         const decision = await this.oauth.approve(id, req.authUserId!, input);
         await this.audit.log({
