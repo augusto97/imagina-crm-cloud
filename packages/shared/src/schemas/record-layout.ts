@@ -91,6 +91,8 @@ export const LAYOUT_BLOCK_TYPES = [
     'approval',
     // A9 — checklists del registro (progreso, ítems con responsable y fecha).
     'checklist',
+    // v0.1.456 — «Resumir con IA»: lo que pasó, lo pendiente y lo que viene.
+    'ai_summary',
 ] as const;
 export const layoutBlockTypeSchema = z.enum(LAYOUT_BLOCK_TYPES);
 export type LayoutBlockType = z.infer<typeof layoutBlockTypeSchema>;

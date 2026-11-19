@@ -3,6 +3,7 @@ import type { ViewColorRule } from '@imagina-base/shared';
 import { Link } from 'react-router';
 import {
     ArchiveRestore,
+    Bot,
     CalendarDays,
     Check,
     Columns3,
@@ -134,6 +135,8 @@ interface ViewSettingsSheetProps {
     onSuggestions?: () => void;
     /** A14 (v0.1.445) — panel «Duplicados» (buscar, fusionar, reglas). */
     onDuplicates?: () => void;
+    /** v0.1.456 — pedirle a un agente de IA que trabaje en todo lo que coincide (en lote). */
+    onAskAgent?: () => void;
     /** v0.1.287 — segundo nivel de agrupación («Y luego por»). */
     subGroupByFieldId?: number | null;
     onSubGroupByFieldIdChange?: (next: number | null) => void;
@@ -207,6 +210,7 @@ export function ViewSettingsSheet({
     onPrintLabels,
     onSuggestions,
     onDuplicates,
+    onAskAgent,
     subGroupByFieldId = null,
     onSubGroupByFieldIdChange,
     colorRules = [],
@@ -750,6 +754,18 @@ export function ViewSettingsSheet({
                                     onClick={() => {
                                         onOpenChange(false);
                                         onCsvUpdate();
+                                    }}
+                                />
+                            )}
+                            {onAskAgent && (
+                                <RowButton
+                                    icon={Bot}
+                                    label={__('Pedir a un agente')}
+                                    tour="view-settings-agent"
+                                    value={__('Todo lo que coincide')}
+                                    onClick={() => {
+                                        onOpenChange(false);
+                                        onAskAgent();
                                     }}
                                 />
                             )}

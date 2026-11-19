@@ -8,6 +8,7 @@ import { CommentContent } from '@/admin/comments/CommentContent';
 import { CommentThreadFooter, DeletedCommentPlaceholder } from '@/admin/comments/CommentThread';
 import { repliesByRoot } from '@/admin/comments/commentThreads';
 import { ClientVisibilityToggle, ClientVisibleBadge, useListPortalEnabled } from '@/admin/comments/clientVisibility';
+import { SuggestReplyButton } from '@/admin/comments/SuggestReplyButton';
 import { EmailCommentMeta, emailOf } from '@/admin/helpdesk/EmailCommentMeta';
 import { TicketMailPanel } from '@/admin/helpdesk/TicketMailPanel';
 import { Button } from '@/components/ui/button';
@@ -282,6 +283,15 @@ function Composer({ listId, recordId, portalEnabled }: { listId: number; recordI
                         </button>
                     );
                 })}
+                {/* v0.1.456 — un borrador de la IA (nunca se envía solo). */}
+                <SuggestReplyButton
+                    listId={listId}
+                    recordId={recordId}
+                    forClient={portalEnabled && forClient}
+                    draft={draft}
+                    onSuggest={setDraft}
+                    disabled={create.isPending}
+                />
                 <span className="imcrm-flex-1" />
                 {portalEnabled && <ClientVisibilityToggle checked={forClient} onChange={setForClient} disabled={create.isPending} />}
                 <Button type="button" variant="ghost" size="sm" className="imcrm-h-7" onClick={reset}>

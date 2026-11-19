@@ -10,17 +10,21 @@ import {
     Link2,
     Link2Off,
     RemoveFormatting,
+    Sparkles,
     Strikethrough,
     Underline as UnderlineIcon,
 } from 'lucide-react';
 
-import { resolveEmbed } from '@imagina-base/shared';
+import { RECORD_AI_REWRITE_META, RECORD_AI_TEXT_MAX, markdownToRichDoc, resolveEmbed, richDocToMarkdown, type RecordAiRewriteAction } from '@imagina-base/shared';
 
+import { useRecordAiGate } from '@/admin/records/ai/RecordAi';
 import { api } from '@/cloud/session';
+import { usePlanModuleOff } from '@/components/PlanModuleNotice';
 import { FLOATING_MENU_ATTR } from '@/lib/escapeGuard';
 import { __ } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 
+import { AI_REWRITE_GROUPS, AiWritePanel, type AiWriteRequest } from './AiWritePanel';
 import { SubtaskPrompt } from './SubtaskPrompt';
 import { RecordPickerDialog } from './RecordPickerDialog';
 import { UserMentionMenu } from './UserMentionMenu';
@@ -35,6 +39,11 @@ interface DescriptionEditorProps {
     listSlug?: string;
     /** Registro dueño del documento (para crear subtareas desde el menú). */
     recordId?: number;
+    /**
+     * v0.1.456 — Lista del registro (id o slug) para «Escribir con IA». Sin
+     * esto (o sin permiso de usar la IA) el menú no ofrece la IA.
+     */
+    aiListKey?: string | number;
     /**
      * `fromUser` distingue una edición real de la normalización que hace el
      * propio editor al cargar (agrega el párrafo final, completa atributos por
@@ -81,6 +90,7 @@ export function DescriptionEditor({
     editable,
     listSlug,
     recordId,
+    aiListKey,
     onChange,
     onBlurFlush,
 }: DescriptionEditorProps): JSX.Element {
@@ -105,7 +115,19 @@ export function DescriptionEditor({
     const [slash, setSlash] = useState<SlashState>(CLOSED);
     const slashRef = useRef(slash);
     slashRef.current = slash;
-    const commands = useMemo(() => filterCommands(slash.query), [slash.query]);
+    // v0.1.456 — «Escribir con IA»: el menú «/» y la barra flotante. Sólo si
+    // la persona puede usar la IA y el plan la incluye (el porqué de una IA
+    // apagada o sin cuota lo dice el propio panel).
+    const aiGate = useRecordAiGate();
+    const aiPlanOff = usePlanModuleOff('ai');
+    const aiOn = editable && aiGate.show && !aiPlanOff && aiListKey !== undefined && recordId !== undefined;
+    const [aiPanel, setAiPanel] = useState<(AiWriteRequest & { from: number; to: number; tooLong?: boolean }) | null>(null);
+    const aiPanelRef = useRef(aiPanel);
+    aiPanelRef.current = aiPanel;
+    const commands = useMemo(
+        () => filterCommands(slash.query).filter((c) => c.action !== 'aiWrite' || aiOn),
+        [slash.query, aiOn],
+    );
     const commandsRef = useRef(commands);
     commandsRef.current = commands;
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -158,6 +180,11 @@ export function DescriptionEditor({
             setNewSubtask('');
             return;
         }
+        if (cmd.action === 'aiWrite') {
+            const pos = editor.state.selection.from;
+            setAiPanel({ mode: 'compose', ...promptPosition(editor), from: pos, to: pos });
+            return;
+        }
         if (cmd.action === 'mentionUser') {
             // Se escribe el `@` y el propio trigger abre el buscador.
             editor.chain().focus().insertContent('@').run();
@@ -165,6 +192,75 @@ export function DescriptionEditor({
         }
         cmd.run(editor);
     }, []);
+
+    const closeAi = useCallback(() => {
+        setAiPanel(null);
+        editorRef.current?.chain().focus().run();
+    }, []);
+
+    /** Abre el panel de la IA sobre lo seleccionado (barra flotante). */
+    const openRewrite = useCallback((ed: Editor, action: RecordAiRewriteAction) => {
+        const { from, to } = ed.state.selection;
+        if (from === to) return;
+        let text = '';
+        try {
+            const { doc } = ed.state;
+            const $from = doc.resolve(from);
+            const $to = doc.resolve(to);
+            // Dentro de un mismo renglón (un ítem de lista, un título) viaja
+            // sólo el texto con su formato: sin el «- » ni el «## » del bloque
+            // que lo contiene, que la IA devolvería pegado al reemplazo.
+            const json =
+                $from.sameParent($to) && $from.parent.isTextblock
+                    ? {
+                          type: 'doc',
+                          content: [{ type: 'paragraph', content: $from.parent.slice($from.parentOffset, $to.parentOffset).content.toJSON() ?? [] }],
+                      }
+                    : doc.cut(from, to).toJSON();
+            text = richDocToMarkdown(json as never);
+        } catch {
+            text = '';
+        }
+        if (text.trim() === '') text = ed.state.doc.textBetween(from, to, '\n\n');
+        setAiPanel({ mode: 'rewrite', action, text, ...promptPosition(ed), from, to, tooLong: text.length > RECORD_AI_TEXT_MAX });
+    }, []);
+
+    /**
+     * Lo que escribió la IA entra al documento como bloques del editor (el
+     * formato sencillo → nodos). Un solo párrafo dentro de un renglón entra en
+     * línea (reemplazar unas palabras no parte el párrafo).
+     */
+    const insertAi = useCallback(
+        (ed: Editor, text: string, how: 'at' | 'below' | 'replace') => {
+            const panel = aiPanelRef.current;
+            setAiPanel(null);
+            if (panel === null || text.trim() === '') return;
+            const nodes = (markdownToRichDoc(text).content ?? []) as JSONContent[];
+            if (nodes.length === 0) return;
+            const { doc } = ed.state;
+            const max = doc.content.size;
+            const from = Math.min(panel.from, max);
+            const to = Math.min(panel.to, max);
+            applyUiEdit(() => {
+                if (how === 'below') {
+                    const $to = doc.resolve(to);
+                    const at = $to.depth >= 1 ? $to.after(1) : max;
+                    ed.chain().focus().insertContentAt(at, nodes).run();
+                    return;
+                }
+                const $from = doc.resolve(from);
+                const $to = doc.resolve(to);
+                const first = nodes[0]!;
+                const inline =
+                    nodes.length === 1 && first.type === 'paragraph' && $from.parent.isTextblock && $from.sameParent($to) && $from.parent.content.size > 0;
+                ed.chain()
+                    .focus()
+                    .insertContentAt({ from, to }, inline ? (first.content ?? []) : nodes)
+                    .run();
+            });
+        },
+        [applyUiEdit],
+    );
 
     const editor = useEditor(
         {
@@ -366,9 +462,15 @@ export function DescriptionEditor({
                     data-imcrm-popup=""
                     className="imcrm-z-50 imcrm-flex imcrm-items-center imcrm-gap-0.5 imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-1 imcrm-shadow-imcrm-lg"
                     shouldShow={({ editor: ed, from, to }) =>
-                        from !== to && ed.isEditable && !ed.isActive('codeBlock')
+                        from !== to && ed.isEditable && !ed.isActive('codeBlock') && aiPanelRef.current === null
                     }
                 >
+                    {aiOn && (
+                        <>
+                            <AiMenu onPick={(action) => openRewrite(editor, action)} />
+                            <span className="imcrm-mx-0.5 imcrm-h-4 imcrm-w-px imcrm-bg-border" />
+                        </>
+                    )}
                     <MarkButton
                         icon={Bold}
                         label={__('Negrita')}
@@ -514,6 +616,25 @@ export function DescriptionEditor({
                         setUserQuery(null);
                     }}
                     onClose={() => setUserQuery(null)}
+                />
+            )}
+
+            {/* ——— Escribir con IA (v0.1.456) ——— */}
+            {aiPanel !== null && aiListKey !== undefined && recordId !== undefined && (
+                <AiWritePanel
+                    listKey={aiListKey}
+                    recordId={recordId}
+                    request={aiPanel}
+                    unavailable={
+                        aiPanel.tooLong
+                            ? __('Lo seleccionado es muy largo para la IA: elige una parte más corta (hasta 8.000 caracteres).')
+                            : aiGate.ready && !aiGate.available
+                              ? aiGate.reason
+                              : null
+                    }
+                    onInsert={(text) => insertAi(editor, text, aiPanel.mode === 'rewrite' ? 'below' : 'at')}
+                    onReplace={aiPanel.mode === 'rewrite' ? (text) => insertAi(editor, text, 'replace') : undefined}
+                    onClose={closeAi}
                 />
             )}
 
@@ -685,6 +806,65 @@ function MarkButton({
         >
             <Icon className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
         </button>
+    );
+}
+
+/**
+ * v0.1.456 — «IA» en la barra flotante: mejorar, acortar, alargar, corregir,
+ * cambiar el tono o traducir lo seleccionado (con vista previa).
+ */
+function AiMenu({ onPick }: { onPick: (action: RecordAiRewriteAction) => void }): JSX.Element {
+    const [open, setOpen] = useState(false);
+    return (
+        <span className="imcrm-relative" data-tour="description-ai-bubble">
+            <button
+                type="button"
+                title={__('Escribir con IA')}
+                aria-label={__('Escribir con IA')}
+                aria-expanded={open}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setOpen((v) => !v)}
+                className={cn(
+                    'imcrm-flex imcrm-h-7 imcrm-items-center imcrm-gap-1 imcrm-rounded-md imcrm-px-1.5 imcrm-text-xs imcrm-font-medium imcrm-transition-colors',
+                    open ? 'imcrm-bg-accent imcrm-text-foreground' : 'imcrm-text-primary hover:imcrm-bg-accent/60',
+                )}
+                data-testid="imcrm-ai-bubble"
+            >
+                <Sparkles className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                {__('IA')}
+            </button>
+            {open && (
+                <div
+                    {...FLOATING}
+                    role="menu"
+                    className="imcrm-absolute imcrm-left-0 imcrm-top-8 imcrm-z-50 imcrm-flex imcrm-w-52 imcrm-flex-col imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-popover imcrm-p-1 imcrm-shadow-imcrm-lg"
+                    data-testid="imcrm-ai-bubble-menu"
+                >
+                    {AI_REWRITE_GROUPS.map((g) => (
+                        <div key={g.title}>
+                            <div className="imcrm-px-2 imcrm-pb-0.5 imcrm-pt-1.5 imcrm-text-[10px] imcrm-font-semibold imcrm-uppercase imcrm-tracking-wide imcrm-text-muted-foreground">
+                                {g.title}
+                            </div>
+                            {g.actions.map((a) => (
+                                <button
+                                    key={a}
+                                    type="button"
+                                    role="menuitem"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => {
+                                        setOpen(false);
+                                        onPick(a);
+                                    }}
+                                    className="imcrm-flex imcrm-w-full imcrm-rounded-md imcrm-px-2 imcrm-py-1 imcrm-text-left imcrm-text-xs hover:imcrm-bg-accent/60"
+                                >
+                                    {__(RECORD_AI_REWRITE_META[a].label)}
+                                </button>
+                            ))}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </span>
     );
 }
 

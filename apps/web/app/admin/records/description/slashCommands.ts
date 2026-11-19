@@ -18,6 +18,7 @@ import {
     TableOfContents,
     Video,
     Type,
+    Sparkles,
     type LucideIcon,
 } from 'lucide-react';
 import type { Editor } from '@tiptap/react';
@@ -31,7 +32,7 @@ export interface SlashCommand {
      * antes (subir un archivo, elegir una persona o un registro). El editor
      * los intercepta y abre lo que corresponda.
      */
-    action?: 'image' | 'file' | 'mentionUser' | 'mentionRecord' | 'embed' | 'subtask';
+    action?: 'image' | 'file' | 'mentionUser' | 'mentionRecord' | 'embed' | 'subtask' | 'aiWrite';
     /** Grupo del menú (el orden de aparición lo da el array). */
     group: string;
     label: string;
@@ -52,6 +53,17 @@ export interface SlashCommand {
  * ponerlos.
  */
 export const SLASH_COMMANDS: SlashCommand[] = [
+    // v0.1.456 — redactar con la IA (sólo aparece si la persona puede usarla).
+    {
+        id: 'ai-write',
+        group: __('Inteligencia artificial'),
+        label: __('Escribir con IA'),
+        hint: __('Pídele un texto y lo revisas antes de insertarlo'),
+        icon: Sparkles,
+        keywords: 'ia inteligencia artificial escribir redactar ai asistente generar texto',
+        action: 'aiWrite',
+        run: () => {},
+    },
     {
         id: 'paragraph',
         group: __('Texto'),

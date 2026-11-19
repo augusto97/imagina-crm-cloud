@@ -290,6 +290,7 @@ export function RecordDescription({
                         editable={editable}
                         listSlug={listSlug ?? (typeof listKey === 'string' ? listKey : undefined)}
                         recordId={recordId}
+                        aiListKey={listKey}
                         onChange={handleChange}
                         onBlurFlush={draft ? undefined : flush}
                     />

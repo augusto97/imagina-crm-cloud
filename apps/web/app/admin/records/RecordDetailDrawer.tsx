@@ -70,6 +70,7 @@ import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
 import { RecordBookingPanel } from '@/admin/booking/RecordBookingPanel';
 import { RecordShopOrderPanel } from '@/admin/shop/RecordShopOrderPanel';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
+import { RecordAgentRuns, RecordAiSummaryCard, RecordAskAgentButton } from './ai/RecordAi';
 import { RecordChecklists } from './checklists/RecordChecklists';
 import { SaveRecordAsTemplateButton } from './templates/SaveRecordAsTemplateButton';
 import { TimeTrackingPanel } from './time/TimeTrackingPanel';
@@ -493,6 +494,8 @@ export function RecordDetailDrawer({
                             {view.ready && (
                                 <div className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-2" data-tour="record-toolbar">
                                     {!isGuest && <RecordFollowControls listId={listId} recordId={record.id} compact />}
+                                    {/* v0.1.456 — pedirle a un agente de IA que trabaje en este registro. */}
+                                    {!isGuest && <RecordAskAgentButton listId={listId} recordId={record.id} compact />}
                                     {!isGuest && (
                                         <GeneratePdfButton listId={listId} listSlug={listSlug} recordId={record.id} fields={fields} compact />
                                     )}
@@ -611,6 +614,9 @@ export function RecordDetailDrawer({
                                     {/* C5 — aprobación: «Pendiente de tu aprobación», las
                                         solicitudes y «Pedir aprobación». Sin flujos, no ocupa lugar. */}
                                     {/* E6 — lo que propone un agente de IA (Aplicar / Descartar). */}
+                                    {/* v0.1.456 — «Resumir con IA» y lo que se le pidió a un agente. */}
+                                    {view.ready && !isGuest && <RecordAiSummaryCard listId={listId} recordId={record.id} className="imcrm-mb-4" />}
+                                    {view.ready && !isGuest && <RecordAgentRuns listId={listId} recordId={record.id} className="imcrm-mb-4" />}
                                     {view.ready && !isGuest && <RecordAgentProposals listId={listId} recordId={record.id} className="imcrm-mb-5" />}
                                     {view.ready && !isGuest && <RecordApprovals listId={listId} recordId={record.id} className="imcrm-mb-5" />}
                                     {/* v0.1.353 — la cita de la agenda: aprobar o rechazar si está por confirmar. */}

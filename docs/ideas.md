@@ -83,7 +83,8 @@ aquí, pospuestos:
 **Oleada 7 · el usuario eligió el 2026-10-26 sólo «Empezar fácil»**, ampliado
 con guías y recorridos interactivos, centro de ayuda y novedades (F7 + I7 +
 I9 se publicaron en v0.1.318-v0.1.320 y salieron de este banco). Siguen aquí, sin
-elegir: E1 + E2 + E3 (automatizaciones completas), F1 + F2 + E7 + mejoras de agentes (IA en el día a día) y G4
+elegir: E1 + E2 + E3 (automatizaciones completas), E7 y G4 (la «IA en el día a día» —F1, F2 y pedir
+al agente desde la ficha o en lote— salió en v0.1.456)
 (calendario en dos sentidos).
 
 ---
@@ -138,8 +139,6 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 ### F. Inteligencia artificial
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
-| F1 · Resumen del registro («¿qué pasó con este cliente?») | medio-alto · S | |
-| F2 · IA al escribir (/ia en la descripción, sugerir respuestas) | medio · S-M | |
 | F3 · De documento a registro | alto · M | Pospuesto por el usuario al armar la fase 5 (2026-10-26). Los campos con IA ya leen PDF; reenviar por correo depende de D2. |
 | F4 · Preguntas sobre los datos que arman el widget del tablero | medio · M | |
 | F5 · Notas de voz a texto | medio · M | |
@@ -243,9 +242,8 @@ Combinaciones que se pueden vender como solución completa, con su plantilla:
   migración de empresa (hoy, tras migrar, quedan como datos normales); que los
   toasts no tapen el botón flotante de «Primeros pasos»; reusar `TemplateCard`
   en la galería por tipo de negocio.
-- **Agentes de IA (v0.1.317)**: un botón «Pedir al agente» en la ficha (hoy
-  sólo trabaja cuando lo llama una automatización); correr un agente en lote
-  sobre registros que ya existen; memoria entre corridas (hoy cada corrida
+- **Agentes de IA (v0.1.317)**: (pedir al agente desde la ficha y correrlo en
+  lote salieron en v0.1.456) memoria entre corridas (hoy cada corrida
   arranca de cero); elegir el modelo por agente (hoy usa el del asistente de
   la empresa); que el asistente/MCP cambie o pause un agente (hoy sólo lo
   crea).

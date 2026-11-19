@@ -1,4 +1,4 @@
-import { Copy, CornerDownRight, GitMerge, Layers, MessageSquareText, MousePointerClick, QrCode, Store, Trash2, UserPlus, Wand2, X } from 'lucide-react';
+import { Bot, Copy, CornerDownRight, GitMerge, Layers, MessageSquareText, MousePointerClick, QrCode, Store, Trash2, UserPlus, Wand2, X } from 'lucide-react';
 import type { BulkStructureAction } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -32,6 +32,8 @@ interface BulkActionsToolbarProps {
     onPrintLabels?: () => void;
     /** A14 (v0.1.445) — fusionar los seleccionados (de 2 a 10) en uno. */
     onMerge?: () => void;
+    /** v0.1.456 — pedirle a un agente de IA que trabaje en cada seleccionado (en lote). */
+    onAskAgent?: () => void;
 }
 
 /**
@@ -62,6 +64,7 @@ export function BulkActionsToolbar({
     onSendSms,
     onPrintLabels,
     onMerge,
+    onAskAgent,
 }: BulkActionsToolbarProps): JSX.Element | null {
     if (selectedIds.length === 0) return null;
 
@@ -171,6 +174,22 @@ export function BulkActionsToolbar({
                 >
                     <MessageSquareText className="imcrm-h-3.5 imcrm-w-3.5" />
                     <span className="imcrm-hidden sm:imcrm-inline">{__('SMS')}</span>
+                </Button>
+            )}
+
+            {onAskAgent && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="imcrm-gap-1.5"
+                    onClick={onAskAgent}
+                    data-testid="imcrm-bulk-agent-open"
+                    data-tour="bulk-agent"
+                    aria-label={__('Pedir a un agente')}
+                    title={__('Pedir a un agente')}
+                >
+                    <Bot className="imcrm-h-3.5 imcrm-w-3.5" />
+                    <span className="imcrm-hidden sm:imcrm-inline">{__('Agente')}</span>
                 </Button>
             )}
 

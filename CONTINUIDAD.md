@@ -430,15 +430,18 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.455**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.456**
+(**IA en el día a día** — resumir el registro, escribir con IA en la
+descripción, sugerir respuesta en los comentarios, pedirle al agente desde la
+ficha y correrlo en lote; misma clave, cuota y consentimiento que el
+asistente; migración 0140; ADR-S109). Antes **v0.1.455**
 (**automatizaciones, parte 1** de la tanda aprobada el 2026-11-19 — disparadores
 «Cuando un registro empieza a cumplir una condición» (dispara una vez al entrar,
 con línea de base sin disparar al crearla y revisión cada 15 min; migración
 0139 `automation_matches`) y «Cuando se sube un archivo»; acciones «Avisar en la
 app» (aviso nuevo `automation`), «Asignar por turno» (por turnos o a quien tenga
-menos abiertos) y «Copiar a otra lista». Addendum ADR-S47. Siguen en orden
-v0.1.456 (IA en el día a día) y v0.1.457 (campos condicionales y de sólo
-lectura), ya hechas en worktrees). Antes **v0.1.454**
+menos abiertos) y «Copiar a otra lista». Addendum ADR-S47. Sigue v0.1.457
+(campos condicionales y de sólo lectura)). Antes **v0.1.454**
 (**la plataforma le cobra a la agencia** — decisión del usuario «las dos»: el
 plan de la plataforma dice en «Para agencias» cuántas empresas cliente incluye
 y cuánto vale cada una de más (USD y COP); el operador puede ponerle a una
@@ -2317,6 +2320,24 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.456** — **IA en el día a día** (F1 + F2 y las mejoras
+  de agentes; ADR-S109). «Resumir con IA» en la ficha (modal, página y bloque
+  «Resumen con IA» de la ficha diseñada; caché de 7 días por huella), «Escribir
+  con IA» en la descripción («/» y botón «IA» al seleccionar), «Sugerir
+  respuesta» en los comentarios (borrador que nunca se envía solo), «Pedir al
+  agente» desde la ficha con el estado en vivo y agente en lote (hasta 200, de a
+  3, con vista previa de topes y cuota). Misma clave, modelo, esfuerzo, cuota y
+  consentimiento que el asistente; sólo viaja lo que la persona ve; invitados y
+  portal, nada. Migración **0140** (`ai_agent_batches`, RLS +
+  `ai_agent_runs.batch_id`). Bugs del E2E arreglados: el «- » de una lista
+  viajaba al reescribir; el error de una corrida de agente salía con el JSON
+  del SDK; la vista previa de lo escrito no tenía formato. **Decisión a
+  confirmar con el usuario**: escribir y responder usan el modelo rápido de la
+  misma clave (como los campos con IA); el resumen, el del asistente. Pendiente:
+  un lote queda «corriendo» si una corrida se cuelga en el worker y nadie abre
+  el lote (se cura al abrirlo). El proveedor simulado
+  (`scripts/dev/fake-anthropic.mjs`) responde ahora resumen, escribir, responder
+  y un agente con herramientas.
 - **2026-11-19 · v0.1.455** — **Disparadores «empieza a cumplir una condición»
   y «se sube un archivo»; acciones «Avisar en la app», «Asignar por turno» y
   «Copiar a otra lista»** (E1 + E2; addendum ADR-S47). Migración **0139**

@@ -61,6 +61,8 @@ export const RETENTION_RULES: readonly RetentionRule[] = [
     { table: 'reminders', where: sql`(fired_at IS NOT NULL OR done_at IS NOT NULL) AND created_at < now() - interval '180 days'` },
     { table: 'incidents', where: sql`resolved_at IS NOT NULL AND resolved_at < now() - interval '90 days'` },
     { table: 'ai_agent_runs', where: sql`status NOT IN ('queued', 'running') AND created_at < now() - interval '90 days'` },
+    // v0.1.456 — los lotes de agentes terminados, con el mismo plazo que sus corridas.
+    { table: 'ai_agent_batches', where: sql`status <> 'running' AND created_at < now() - interval '90 days'` },
     { table: 'sms_messages', where: sql`status NOT IN ('programado', 'en_cola', 'enviando') AND created_at < now() - interval '180 days'` },
     { table: 'bulk_edits', where: sql`created_at < now() - make_interval(days => ${BULK_HISTORY_DAYS})` },
     // v0.1.442 — el historial de entregas de los webhooks de eventos: 30 días
@@ -134,6 +136,7 @@ const TABLE_LABELS: Record<string, string> = {
     sms_messages: 'SMS enviados',
     webhook_deliveries: 'Entregas de webhooks',
     ai_agent_runs: 'Corridas de agentes de IA',
+    ai_agent_batches: 'Lotes de agentes de IA',
     bulk_edit_items: 'Historial de ediciones masivas',
     form_stats: 'Estadísticas de formularios',
     shop_orders: 'Pedidos de las tiendas',

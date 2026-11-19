@@ -8,6 +8,7 @@ import { AiAgentsModule } from './ai-agents/ai-agents.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { FileImportModule } from './file-import/file-import.module';
 import { ListSuggestionsModule } from './list-suggestions/list-suggestions.module';
+import { AiAssistModule } from './ai-assist/ai-assist.module';
 import { ApprovalHubModule } from './approvals/approval-hub';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { HelpdeskModule } from './helpdesk/helpdesk.module';
@@ -207,6 +208,8 @@ import { WhatsNewModule } from './whats-new/whats-new.module';
         FileImportModule,
         // v0.1.341 (ADR-S89) — sugerencias por lista (reglas gratis + IA a pedido).
         ListSuggestionsModule,
+        // v0.1.456 (ADR-S109) — IA en el día a día (resumen, escribir, agentes desde la ficha).
+        AiAssistModule,
         // Fase 7 — novedades (catálogo de cada versión + lo que publica el operador).
         WhatsNewModule,
     ],

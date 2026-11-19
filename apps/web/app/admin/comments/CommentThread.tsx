@@ -8,6 +8,7 @@ import { MentionAutocomplete } from '@/admin/comments/MentionAutocomplete';
 import { Button } from '@/components/ui/button';
 import { useConfirm } from '@/components/ui/confirm-dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { SuggestReplyButton } from '@/admin/comments/SuggestReplyButton';
 import { useToast } from '@/components/ui/toast';
 import { useCreateComment, useDeleteComment, useToggleCommentReaction, useUpdateComment } from '@/hooks/useComments';
 import { useGuestCanComment } from '@/hooks/useGuests';
@@ -317,6 +318,16 @@ function ReplyComposer({
                     {forClient ? __('El cliente también verá tu respuesta.') : __('Respuesta interna: sólo la ve el equipo.')}
                 </span>
                 <span className="imcrm-flex-1" />
+                {/* v0.1.456 — un borrador de la IA para este hilo (nunca se envía solo). */}
+                <SuggestReplyButton
+                    listId={listId}
+                    recordId={recordId}
+                    commentId={rootId}
+                    forClient={forClient}
+                    draft={draft}
+                    onSuggest={setDraft}
+                    disabled={create.isPending}
+                />
                 <Button type="button" size="sm" variant="ghost" className="imcrm-h-7" onClick={onDone}>
                     {__('Cancelar')}
                 </Button>

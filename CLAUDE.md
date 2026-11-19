@@ -16574,6 +16574,92 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         automatizaciones) — E2E navegador 35/35 (armado por la interfaz,
         corridas reales, campana, archivo, celular oscuro).
 
+  - [x] **IA en el día a día: resumir, escribir y pedirle al agente desde la
+        ficha (v0.1.456, ADR-S109, F1 + F2 + las mejoras de agentes del banco
+        de ideas)**: la IA deja de vivir sólo en el asistente ✨ y en las
+        automatizaciones. Todo usa la MISMA resolución de clave, modelo,
+        esfuerzo, cuota del plan y consentimiento del asistente
+        (`AiSettingsService.resolve` + `AiQuotaService.reserve/settle`), nada
+        llama al proveedor por fuera, y lo del registro viaja como DATO.
+        (a) **Resumir con IA** (`POST /lists/:l/records/:id/ai/summary`,
+        `use_ai_assistant` + ver el registro): arriba de los campos en el modal
+        y la página (`RecordAiSummaryCard`, `data-tour="record-ai-summary"`) y
+        como bloque **«Resumen con IA»** (`ai_summary`) de la ficha diseñada v3
+        —sin el bloque aparece solo arriba de la primera pestaña; nunca en el
+        portal—. Lee SÓLO lo que la persona ve (`RecordAiContextService`:
+        campos que su rol ve, últimos 15 comentarios, actividad, subtareas,
+        hasta 5 listas vinculadas con 8 filas y sus totales, checklists,
+        aprobaciones, cobros y citas; valores recortados a 300 caracteres) y
+        devuelve en qué está, puntos, «Pendiente» y «Lo que viene». UN pedido
+        de la cuota; queda en Redis 7 días bajo una huella del contexto + el
+        modelo (`airsum:{tenant}:{record}:{huella}`): mientras el registro no
+        cambie, volver a pedirlo no gasta; «Actualizar» lo rehace.
+        (b) **Escribir con IA** (`POST …/ai/write`, + poder editar): en la
+        descripción, «/» → **Escribir con IA** (pedido → vista previa con
+        formato → Insertar) y, al seleccionar, botón **IA** en la barra flotante
+        (Mejorar, Más corto, Más largo, Corregir ortografía, Tono formal o
+        cercano, Traducir al inglés/portugués/español) con **Reemplazar /
+        Insertar debajo / Descartar** (`AiWritePanel`). El texto entra como
+        bloques del editor (`markdownToRichDoc`); un solo párrafo dentro de un
+        renglón entra en línea. Nada se guarda sin la persona (la descripción
+        sigue con «Guardar cambios» de v0.1.420).
+        (c) **Sugerir respuesta** (`POST …/ai/reply`, + ver): en la caja de
+        comentarios, en la Actividad de la ficha diseñada y al responder un
+        hilo (`SuggestReplyButton`): deja un BORRADOR editable en la caja
+        (nunca se envía solo), toma lo ya escrito como lo que se quiere decir y
+        «Deshacer» devuelve lo anterior; si la respuesta es visible para el
+        cliente, la IA no ve las notas internas.
+        (d) **Pedir al agente** desde la ficha (botón del robot en la barra,
+        `data-tour="record-ask-agent"`; `GET/POST /lists/:l/records/:id/agents|
+        agent-runs`): los agentes ACTIVOS que trabajan en esa lista, para quien
+        puede usar la IA y editar ESE registro; indicación opcional; la corrida
+        entra a la cola de siempre (`AgentRunner.enqueueForRecord`, etiqueta
+        «Pedido desde la ficha») con el acceso de su dueño, sus topes y su
+        modo, y el estado se ve sin recargar (en cola → trabajando → terminó
+        con los cambios o la propuesta → falló con el motivo); la ficha lista
+        las corridas de las últimas 24 h.
+        (e) **Agente en lote** (`AgentBatchDialog`, «Agente» en la barra de
+        selección y **Personalizar vista → Pedir a un agente** para todos los
+        que coinciden; `bulk_actions` + `use_ai_assistant`): sólo registros de
+        primer nivel que la persona puede editar, tope 200. Antes de arrancar,
+        cuántos coinciden, cuántos corren y por qué no todos (corridas que le
+        quedan hoy al agente, pedidos de la IA del plan, presupuesto de tokens);
+        corre de a 3 a la vez (`ai_agent_batches`, migración 0140, RLS, y
+        `ai_agent_runs.batch_id`) con la fila del lote bloqueada al crear cada
+        tanda, se detiene con el motivo si se acaban los topes o la IA, se
+        puede «Detener» (lo que no arrancó queda «No corrió»), y termina con
+        terminaron / fallaron (con el motivo) / propuestas por revisar /
+        registros cambiados. Bitácora `ai_agent.batch`; borrar la empresa y la
+        retención los limpian.
+        **Decisiones**: el resumen usa el modelo del asistente de la empresa;
+        escribir y responder, el modelo rápido de la misma clave con esfuerzo
+        bajo (como los campos con IA); el asistente/MCP no suma herramientas
+        (sólo acepta el bloque `ai_summary` en `propose_configure_record_layout`):
+        resumir o redactar ya lo hace el chat, y aprobar un lote de agentes por
+        un token no corresponde. Las claves de caché del front de corridas,
+        lotes y resúmenes viven en el espacio `ai-assist` (la invalidación por
+        lista de `records` las recargaba en bucle).
+        **Bugs encontrados en el E2E**: reescribir algo dentro de un ítem de
+        lista o un título mandaba el «- » del bloque y volvía pegado al
+        reemplazo (ahora viaja sólo el texto con su formato); el error de una
+        corrida del agente mostraba el JSON crudo del SDK («400 {"type":
+        "error",…}») en la ficha y en el historial del agente (`providerDetail`
+        deja el motivo); y la vista previa de «Escribir con IA» mostraba el
+        formato sencillo sin dibujar (ahora con `ChatMarkdown`). El diálogo de
+        «Pedir al agente» va en su propio chunk (app 811 KB gz de 820).
+        Ayuda: guía `ai-daily`, artículo «La IA en tu día a día» en Aprende →
+        Inteligencia artificial (ilustración `ia-chat`) y novedad con carrusel;
+        F1 y F2 salen de `docs/ideas.md`. Tests: `ai-assist.spec` (12, Postgres +
+        Redis reales con un modelo falso: contexto con campos ocultos fuera y
+        caché, motivos sin IA, reserva devuelta si el proveedor falla, escribir
+        con poder editar, respuesta sin notas internas para el cliente, pedir
+        al agente y 403, lote con topes, cuota, pausa a mitad y «Detener», RLS
+        de los lotes) + specs tocados (ai-agents, ai-list-config, record-layout,
+        retention, rls, merge-plan, platform, tenant-transfer, whats-new: 12
+        archivos, 178 tests) — shared 1054, front 954 — + E2E navegador 46/46
+        contra el proveedor simulado (escritorio claro y celular 390×844
+        oscuro, sin errores de JS).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -3622,4 +3622,40 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists', tour: 'automation-basics' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.456-ia-en-el-dia-a-dia',
+        version: '0.1.456',
+        date: '2026-11-19',
+        kind: 'feature',
+        title: 'La IA dentro de cada registro: resumir, escribir y pedirle al agente',
+        summary:
+            'Toca «Resumir con IA» en un registro para saber qué pasó, escribe o mejora la descripción con IA, pide una respuesta sugerida en los comentarios y pon a un agente a trabajar en uno o en muchos registros.',
+        media: {
+            slides: [
+                {
+                    title: '¿Qué pasó con este cliente?',
+                    text: '«Resumir con IA» lee lo que tú puedes ver del registro y te dice en qué está, lo pendiente y lo que viene.',
+                    illustration: 'ia-chat',
+                },
+                {
+                    title: 'Escribe y responde mejor',
+                    text: 'En la descripción, «/» → «Escribir con IA» o selecciona un texto y toca «IA». En los comentarios, «Sugerir respuesta» deja un borrador que revisas.',
+                    illustration: 'ia-asistente',
+                },
+                {
+                    title: 'Un agente, en uno o en muchos',
+                    text: 'Con el botón del robot un agente trabaja en el registro; marca varios y toca «Agente» para correrlo en todos, viendo antes cuántos y qué topes usa.',
+                    illustration: 'ia-agente',
+                },
+            ],
+        },
+        body: [
+            '- **Resumir con IA** está arriba de los campos de cada registro; si el registro no cambió, volver a pedirlo no gasta otro pedido.',
+            '- **Escribir con IA**: en la descripción escribe **/** o selecciona un texto y toca **IA** (mejorar, más corto, más largo, corregir, tono, traducir). Nada se guarda sin que lo apruebes.',
+            '- **Sugerir respuesta** en los comentarios deja un borrador en la caja: nunca se envía solo.',
+            '- **Pedir al agente** (botón del robot) y, para varios registros, **Agente** en la barra de selección o **Personalizar vista → Pedir a un agente**.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists' },
+        audience: { roles: ['admin', 'manager', 'agent'] },
+    },
 ];

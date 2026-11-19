@@ -10301,3 +10301,46 @@ valor al mes por cada empresa extra. Con esto I3 queda completo.
   se pudo. La renovación de los planes sólo existe con Mercado Pago (PayPal
   cobra por meses).
 Sin novedad en el catálogo (es de agencias y del operador).
+
+### ADR-S109 — IA en el día a día: resumir, escribir y pedirle al agente desde la ficha (v0.1.456)
+
+**Contexto.** F1 + F2 del banco de ideas y las mejoras de agentes que quedaron
+de ADR-S71 («pedir al agente» desde la ficha y correrlo en lote). La IA vivía
+en el asistente, los campos con IA, las sugerencias de lista y los agentes
+llamados por automatizaciones; nada de eso servía para «¿qué pasó con este
+cliente?» ni para redactar dentro del registro.
+
+**Decisión.**
+1. **Una sola puerta a la IA**: todo pasa por `AiSettingsService.resolve` (clave
+   de la plataforma con cuota del plan, o la propia de la empresa; opt-in de la
+   empresa; modelo y esfuerzo) y `AiQuotaService.reserve/settle` (un pedido por
+   acción; si el proveedor no responde, la reserva se devuelve). El resumen
+   usa el modelo del asistente; escribir y responder, el modelo rápido de la
+   misma clave con esfuerzo bajo, como los campos con IA. Sin IA, la respuesta
+   es 503 `ai_unavailable` con el motivo exacto y la UI lo muestra.
+2. **El contexto lo arma el servidor con el ACL de quien pide**
+   (`RecordAiContextService`): campos visibles para su rol, comentarios,
+   actividad, subtareas, vinculados con totales, checklists, aprobaciones,
+   cobros y citas, recortados y enviados como datos etiquetados (nunca como
+   instrucciones). Para una respuesta visible al cliente, sin notas internas.
+3. **Caché por huella**: el resumen se guarda en Redis 7 días con una huella del
+   contexto y el modelo; un registro que no cambió no gasta otro pedido.
+4. **Permisos**: resumir y sugerir = `use_ai_assistant` + ver; escribir y pedir
+   al agente = `use_ai_assistant` + editar el registro (el agente igual trabaja
+   con el acceso de su dueño, sus topes y su modo); lote = `use_ai_assistant` +
+   `bulk_actions`, sólo registros que la persona puede editar. Módulo `ai` del
+   plan; nunca invitados ni el portal.
+5. **Lote durable** (`ai_agent_batches`, RLS): guarda los registros elegidos
+   (tope 200) y crea las corridas por tandas de hasta 3 en vuelo con la fila
+   del lote bloqueada, empujado por el fin de cada corrida
+   (`AgentRunner.onRunFinished`) y, si quedó quieto, por la consulta de su
+   estado. Se detiene con el motivo cuando se acaban las corridas del día, el
+   presupuesto de tokens, la cuota o la IA; «Detener» marca lo que no arrancó.
+6. **El asistente/MCP no suma herramientas**: sólo el bloque `ai_summary` en el
+   diseño de la ficha.
+
+**Consecuencias.** Cada resumen, texto o respuesta nuevos cuentan en la cuota
+del plan (con clave propia no hay tope); un lote de 200 puede gastar 200
+corridas del agente y otros tantos pedidos, por eso la vista previa los dice
+antes. Un lote cuya corrida se cuelga en el worker queda «corriendo» hasta que
+alguien abre su estado.

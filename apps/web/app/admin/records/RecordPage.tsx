@@ -41,6 +41,7 @@ import { RecordApprovals } from '@/admin/approvals/RecordApprovals';
 import { RecordBookingPanel } from '@/admin/booking/RecordBookingPanel';
 import { RecordShopOrderPanel } from '@/admin/shop/RecordShopOrderPanel';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
+import { RecordAgentRuns, RecordAiSummaryCard, RecordAskAgentButton } from './ai/RecordAi';
 import { RecordChecklists } from '@/admin/records/checklists/RecordChecklists';
 import { SaveRecordAsTemplateButton } from '@/admin/records/templates/SaveRecordAsTemplateButton';
 import { TimeTrackingPanel } from '@/admin/records/time/TimeTrackingPanel';
@@ -266,6 +267,7 @@ export function RecordPage(): JSX.Element {
                         <>
                             {/* Seguir / recordarme y el PDF, en la barra de la ficha. */}
                             {!isGuest && <RecordFollowControls listId={list.data.id} recordId={record.data.id} compact />}
+                            {!isGuest && <RecordAskAgentButton listId={list.data.id} recordId={record.data.id} compact />}
                             {!isGuest && (
                                 <GeneratePdfButton
                                     listId={list.data.id}
@@ -368,6 +370,8 @@ export function RecordPage(): JSX.Element {
                     </Button>
                     <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-end imcrm-gap-1.5">
                         {!isGuest && <RecordFollowControls listId={listInfo.id} recordId={rec.id} compact />}
+                        {/* v0.1.456 — pedirle a un agente de IA que trabaje en este registro. */}
+                        {!isGuest && <RecordAskAgentButton listId={listInfo.id} recordId={rec.id} compact />}
                         {!isGuest && (
                             <GeneratePdfButton listId={listInfo.id} listSlug={listInfo.slug} recordId={rec.id} fields={fields.data ?? []} compact />
                         )}
@@ -443,6 +447,9 @@ export function RecordPage(): JSX.Element {
 
                     {/* C5 — aprobación (sin flujos en la lista, no aparece; no para un invitado). */}
                     {/* E6 — lo que propone un agente de IA. */}
+                    {/* v0.1.456 — «Resumir con IA» y lo que se le pidió a un agente. */}
+                    {!isGuest && <RecordAiSummaryCard listId={listInfo.id} recordId={rec.id} />}
+                    {!isGuest && <RecordAgentRuns listId={listInfo.id} recordId={rec.id} />}
                     {!isGuest && <RecordAgentProposals listId={listInfo.id} recordId={rec.id} />}
                     {!isGuest && <RecordApprovals listId={listInfo.id} recordId={rec.id} />}
                     {!isGuest && <RecordBookingPanel listId={listInfo.id} recordId={rec.id} />}
