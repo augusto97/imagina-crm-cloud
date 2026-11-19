@@ -10344,3 +10344,39 @@ del plan (con clave propia no hay tope); un lote de 200 puede gastar 200
 corridas del agente y otros tantos pedidos, por eso la vista previa los dice
 antes. Un lote cuya corrida se cuelga en el worker queda «corriendo» hasta que
 alguien abre su estado.
+
+### ADR-S110 — Campos condicionales («Mostrar sólo si…») y campos de sólo lectura por acceso (v0.1.457)
+
+**Contexto.** Las listas con muchos campos mostraban todo a todos: el NIT de una
+persona natural, el motivo de pérdida de un negocio abierto. Y el acceso por
+lista sólo sabía ocultar un campo; no había forma de que un rol lo viera sin
+poder cambiarlo (el monto aprobado, la fecha de facturación).
+
+**Decisión.**
+1. **La condición es del CAMPO** (`config.show_if`, junto a `validation`):
+   `{logic, conditions:[{field_id, op, value}]}`, hasta 10 reglas sobre otros
+   campos de la misma lista, por id. Operadores de los filtros según el tipo
+   del campo de la condición, sin los relativos al reloj, para que el navegador
+   y el servidor decidan igual con los mismos datos.
+2. **Una sola evaluación** en shared (`fieldsHiddenByCondition`) con cascada
+   (lo que depende de un campo oculto también se oculta) y tolerante a ciclos;
+   los ciclos se rechazan al guardar.
+3. **Ocultar no borra**: un campo oculto por su condición no se exige (ni su
+   «obligatorio si…») y su valor guardado se conserva. Se decide con lo que VE
+   quien guarda (sus campos ocultos por permisos cuentan como vacíos).
+4. **La tabla no esconde columnas por fila**: la celda que no aplica se atenúa
+   con el motivo. La forma de ocultar una columna sigue siendo la vista.
+5. **Sólo lectura es un nivel del acceso** (`readonly_field_ids`, por id, en el
+   rol, la persona y el equipo), con la misma prioridad que el resto del ACL
+   (persona > equipo > rol; varios equipos: lo más permisivo, o sea sólo
+   lectura sólo si todos lo marcan) y ocultar por encima. Aplica a los caminos
+   HUMANOS; el sistema y el admin escriben siempre. El mismo valor no es un
+   cambio. La lista informa a quien pregunta `my_access.readonly_field_ids`
+   (nunca los ajustes de permisos a quien no administra la lista).
+
+**Consecuencias.** Plantillas, duplicar y migrar empresa re-apuntan las dos
+cosas por convención de claves (`*_field_id`, `*_field_ids`). Lo que guarde un
+campo oculto puede seguir leyéndose en exportaciones, tableros y
+automatizaciones (decisión: es dato, no se borra). La condición no aplica a
+los formularios públicos ni al portal, que deciden qué se pregunta o se
+muestra con su propio diseño.
