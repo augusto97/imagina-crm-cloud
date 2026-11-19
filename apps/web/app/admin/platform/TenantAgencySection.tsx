@@ -33,16 +33,19 @@ export function TenantAgencySection({
     const [clientPlan, setClientPlan] = useState<string>(t.agency_settings?.client_plan ?? '');
     const [maxClients, setMaxClients] = useState<string>(t.agency_settings?.max_clients != null ? String(t.agency_settings.max_clients) : '');
     const [assignTo, setAssignTo] = useState<string>('');
+    const [extraPlans, setExtraPlans] = useState<string[]>(t.agency_settings?.client_plans ?? []);
 
     useEffect(() => {
         setClientPlan(t.agency_settings?.client_plan ?? '');
         setMaxClients(t.agency_settings?.max_clients != null ? String(t.agency_settings.max_clients) : '');
+        setExtraPlans(t.agency_settings?.client_plans ?? []);
     }, [t.agency_settings]);
 
     const maxValid = maxClients.trim() === '' || /^\d+$/.test(maxClients.trim());
     const settingsDirty =
         (clientPlan || null) !== (t.agency_settings?.client_plan ?? null) ||
-        (maxClients.trim() === '' ? null : Number(maxClients)) !== (t.agency_settings?.max_clients ?? null);
+        (maxClients.trim() === '' ? null : Number(maxClients)) !== (t.agency_settings?.max_clients ?? null) ||
+        [...extraPlans].sort().join(',') !== [...(t.agency_settings?.client_plans ?? [])].sort().join(',');
 
     const toggleAgency = async (on: boolean): Promise<void> => {
         if (!on) {
@@ -157,6 +160,29 @@ export function TenantAgencySection({
                         </div>
                     </div>
                     {!maxValid && <p className="imcrm-text-[12px] imcrm-text-destructive">{__('El tope tiene que ser un número entero.')}</p>}
+                    {/* v0.1.451 — planes de la plataforma que la agencia puede usar como límites de los suyos. */}
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-1" data-testid="tenant-agency-client-plans">
+                        <Label className="imcrm-text-xs">{__('Otros planes que la agencia puede dar a sus clientes')}</Label>
+                        <p className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                            {__('Al vender sus planes, la agencia elige con qué límites queda cada empresa: el plan con el que nacen y los que marques aquí.')}
+                        </p>
+                        <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-x-4 imcrm-gap-y-1">
+                            {(plans.data ?? [])
+                                .filter((p) => p.slug !== (clientPlan || t.plan))
+                                .map((p) => (
+                                    <label key={p.slug} className="imcrm-flex imcrm-items-center imcrm-gap-1.5 imcrm-text-sm">
+                                        <input
+                                            type="checkbox"
+                                            checked={extraPlans.includes(p.slug)}
+                                            onChange={(e) =>
+                                                setExtraPlans((list) => (e.target.checked ? [...list, p.slug] : list.filter((x) => x !== p.slug)))
+                                            }
+                                        />
+                                        {p.name}
+                                    </label>
+                                ))}
+                        </div>
+                    </div>
                     <div className="imcrm-flex imcrm-justify-end">
                         <Button
                             size="sm"
@@ -168,6 +194,7 @@ export function TenantAgencySection({
                                     agency_settings: {
                                         client_plan: clientPlan || null,
                                         max_clients: maxClients.trim() === '' ? null : Number(maxClients.trim()),
+                                        client_plans: extraPlans.slice(0, 20),
                                     },
                                 })
                             }

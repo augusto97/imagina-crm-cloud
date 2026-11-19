@@ -154,6 +154,13 @@ export interface ReminderDedupStore {
  *    vez por fecha (clave en Redis) y por la vía de correo de la PLATAFORMA:
  *    es un correo nuestro a nuestro cliente, no de la empresa.
  */
+/** v0.1.451 — Avisos de cobro de otros módulos que corren con el reloj de éste (cada hora). */
+const extraBillingTicks: Array<(now: Date) => Promise<number>> = [];
+
+export function registerBillingTick(fn: (now: Date) => Promise<number>): void {
+    if (!extraBillingTicks.includes(fn)) extraBillingTicks.push(fn);
+}
+
 @Injectable()
 export class BillingRemindersService {
     private readonly logger = new Logger(BillingRemindersService.name);
@@ -172,7 +179,16 @@ export class BillingRemindersService {
 
     async tick(now = new Date()): Promise<number> {
         await this.lapse(now);
-        return (await this.paidReminders(now)) + (await this.trialReminders(now));
+        let sent = (await this.paidReminders(now)) + (await this.trialReminders(now));
+        // v0.1.451 — otros avisos de cobro que corren con el mismo reloj (los
+        // de las agencias a sus clientes), sin que este módulo dependa de ellos.
+        for (const extra of extraBillingTicks) {
+            sent += await extra(now).catch((err: unknown) => {
+                this.logger.warn(`aviso de cobro extra falló: ${String(err)}`);
+                return 0;
+            });
+        }
+        return sent;
     }
 
     /**

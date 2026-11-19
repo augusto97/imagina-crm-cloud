@@ -278,6 +278,10 @@ export type AuditAction =
     | 'agency.enter'
     | 'agency.access'
     | 'agency.support'
+    | 'agency.billing'
+    | 'agency.client_billing'
+    | 'agency.payment'
+    | 'agency.payment_undo'
     | 'agency.link'
     | 'agency.unlink'
     | 'agency.settings';

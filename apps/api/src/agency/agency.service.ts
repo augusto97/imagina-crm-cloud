@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import {
     helpSupportSchema,
+    readAgencyBilling,
     readAgencySettings,
     type HelpSupport,
     type AgencyClient,
@@ -15,6 +16,7 @@ import { AuditService } from '../audit/audit.service';
 import { AuthService } from '../auth/auth.service';
 import { PlansService } from '../billing/plans.service';
 import { accessOf } from '../billing/tenant-access';
+import { AgencyBillingService } from './agency-billing.service';
 import { readSupport } from '../help/help.service';
 import { DRIZZLE, type Db } from '../db/client';
 import { auditLog, memberships, plans, records, tenants, users } from '../db/schema';
@@ -38,6 +40,7 @@ export class AgencyService {
         @Inject(DRIZZLE) private readonly db: Db,
         private readonly auth: AuthService,
         private readonly plans: PlansService,
+        private readonly billing: AgencyBillingService,
         @Optional() private readonly audit?: AuditService,
     ) {}
 
@@ -51,12 +54,16 @@ export class AgencyService {
         const clients = Number(count?.n ?? 0);
         const planSlug = await this.clientPlan(agency.plan, settings.client_plan);
         const planName = (await this.plans.list()).find((p) => p.slug === planSlug)?.name ?? planSlug;
+        const billing = readAgencyBilling(agency.settings.agency_billing);
         return {
             agency: { id: agency.id, name: agency.name },
             settings,
             client_plan: { slug: planSlug, name: planName },
             clients,
             can_create: settings.max_clients === null || clients < settings.max_clients,
+            billing,
+            limit_plans: await this.billing.limitPlans(agency),
+            totals: await this.billing.totals(agencyId, billing),
         };
     }
 
@@ -105,6 +112,8 @@ export class AgencyService {
                 subscriptionEndsAt: tenants.subscriptionEndsAt,
                 paidUntil: tenants.paidUntil,
                 agencyPausedAt: tenants.agencyPausedAt,
+                agencyPaidUntil: tenants.agencyPaidUntil,
+                clientSettings: tenants.settings,
                 createdAt: tenants.createdAt,
             })
             .from(tenants)
@@ -114,6 +123,7 @@ export class AgencyService {
             .limit(MAX_LISTED_CLIENTS);
         const ids = rows.map((r) => r.id);
         if (ids.length === 0) return [];
+        const billingSettings = readAgencyBilling(agency.settings.agency_billing);
         const agencyAccess = {
             plan: agency.plan,
             status: agency.status,
@@ -121,6 +131,7 @@ export class AgencyService {
             trial_ends_at: agency.trialEndsAt,
             subscription_ends_at: agency.subscriptionEndsAt,
             paid_until: agency.paidUntil,
+            client_grace_days: billingSettings.grace_days,
         };
 
         const [userCounts, recordCounts, admins, entered, lastAccess] = await Promise.all([
@@ -175,7 +186,7 @@ export class AgencyService {
             plan: r.plan,
             plan_name: r.planName ?? null,
             status: (r.status ?? 'active') as BillingStatus,
-            access: accessOf({ ...r, agency: agencyAccess }),
+            access: accessOf({ ...r, agency: { ...agencyAccess, client_paid_until: r.agencyPaidUntil } }),
             paused: r.agencyPausedAt !== null,
             archived: r.archivedAt !== null,
             created_at: r.createdAt.toISOString(),
@@ -184,7 +195,18 @@ export class AgencyService {
             admins: adminsBy.get(r.id) ?? [],
             entered: enteredSet.has(r.id),
             last_agency_access_at: lastBy.get(r.id) ?? null,
+            billing: this.billing.clientBilling(billingSettings, {
+                settings: r.clientSettings as Record<string, unknown> | null,
+                agencyPaidUntil: r.agencyPaidUntil,
+            }),
         }));
+    }
+
+    /** Una empresa cliente con su estado y su cobro (404 si no es de esta agencia). */
+    async clientOf(agencyId: number, userId: number, clientId: number): Promise<AgencyClient> {
+        const [out] = await this.listClients(agencyId, userId, clientId);
+        if (!out) throw notFound();
+        return out;
     }
 
     async createClient(agencyId: number, userId: number, input: CreateAgencyClientInput): Promise<AgencyClient> {

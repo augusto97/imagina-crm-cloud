@@ -1,10 +1,15 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type {
+    AgencyBillingSettings,
     AgencyClient,
     AgencyEnterResult,
     AgencyOverview,
+    AgencyPayment,
     CreateAgencyClientInput,
     HelpSupport,
+    MyAgencyBilling,
+    RegisterAgencyPaymentInput,
+    SetAgencyClientBillingInput,
     UpdateAgencyClientInput,
 } from '@imagina-base/shared';
 
@@ -22,6 +27,9 @@ export const agencyKeys = {
     overview: ['agency', 'overview'] as const,
     clients: ['agency', 'clients'] as const,
     support: ['agency', 'support'] as const,
+    payments: (clientId: number) => ['agency', 'payments', clientId] as const,
+    /** Lo que ve la empresa CLIENTE de su cobro (otra clave: no es de la agencia). */
+    mine: ['agency-billing', 'mine'] as const,
 };
 
 /** La empresa activa es una agencia y la persona es su admin directo. */
@@ -110,5 +118,66 @@ export function useUpdateAgencySupport() {
     return useMutation({
         mutationFn: async (input: HelpSupport) => (await api.put<HelpSupport>('/agency/support', input)).data,
         onSuccess: (data) => qc.setQueryData(agencyKeys.support, data),
+    });
+}
+
+// ── v0.1.451 — el cobro de la agencia a sus clientes ────────────────────
+
+/** Guardar los planes de la agencia y sus reglas (gracia, avisos). */
+export function useUpdateAgencyBilling() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (input: AgencyBillingSettings) => (await api.put<AgencyOverview>('/agency/billing', input)).data,
+        onSuccess: (data) => {
+            qc.setQueryData(agencyKeys.overview, data);
+            void qc.invalidateQueries({ queryKey: agencyKeys.clients });
+        },
+    });
+}
+
+/** Asignar o quitar el plan de un cliente, su valor o su «pagado hasta». */
+export function useSetClientBilling() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, input }: { id: number; input: SetAgencyClientBillingInput }) =>
+            (await api.patch<AgencyClient>(`/agency/clients/${id}/billing`, input)).data,
+        onSuccess: () => refresh(qc),
+    });
+}
+
+export function useClientPayments(clientId: number, enabled = true) {
+    return useQuery({
+        queryKey: agencyKeys.payments(clientId),
+        queryFn: async () => (await api.get<AgencyPayment[]>(`/agency/clients/${clientId}/payments`)).data,
+        enabled,
+        staleTime: 10_000,
+    });
+}
+
+export function useRegisterClientPayment() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, input }: { id: number; input: RegisterAgencyPaymentInput }) =>
+            (await api.post<{ payment: AgencyPayment; client: AgencyClient }>(`/agency/clients/${id}/payments`, input)).data,
+        onSuccess: () => refresh(qc),
+    });
+}
+
+export function useUndoClientPayment() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, paymentId }: { id: number; paymentId: number }) =>
+            (await api.delete<AgencyClient>(`/agency/clients/${id}/payments/${paymentId}`)).data,
+        onSuccess: () => refresh(qc),
+    });
+}
+
+/** La empresa cliente: su plan con la agencia, hasta cuándo está pagado y sus pagos. */
+export function useMyAgencyBilling(enabled = true) {
+    return useQuery({
+        queryKey: agencyKeys.mine,
+        queryFn: async () => (await api.get<MyAgencyBilling | null>('/workspaces/current/agency-billing')).data,
+        enabled,
+        staleTime: 60_000,
     });
 }

@@ -16273,6 +16273,67 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         211/211, shared 1040, front 951 — + E2E navegador 32/32 en escritorio y
         celular oscuro.
 
+  - [x] **Modo agencia, tercera parte: la agencia le cobra a sus clientes con
+        planes y pagos registrados a mano (v0.1.451, addendum ADR-S108)**. La
+        división creció: el cobro EN LÍNEA con la cuenta de la agencia pasa a
+        v0.1.452 y el cobro de la plataforma a la agencia a v0.1.453.
+        (a) **Planes de la agencia** (`tenants.settings.agency_billing`,
+        `agencyBillingSettingsSchema` en
+        `packages/shared/src/schemas/agency-billing.ts`, lectura tolerante):
+        hasta 20 con id estable, nombre, descripción, valor, moneda, período
+        (1/3/6/12 meses), qué límites de la plataforma dan (`limits_plan`, sólo
+        el plan de los clientes o los que el operador habilita en
+        `settings.agency.client_plans` desde la ficha de la empresa; 400
+        `agency_limits_plan`) y activo; más días de gracia (5), días de aviso
+        (3) y si avisar también al cliente. `PUT /agency/billing`.
+        (b) **Plan y «pagado hasta» de cada cliente**: el plan se COPIA en
+        `tenants.settings.agency_plan` del cliente (valor ajustable por
+        cliente; cambiar el plan de la agencia no cambia lo que paga quien ya
+        lo tiene) y la fecha va en la columna `tenants.agency_paid_until`
+        (migración 0135). Asignar el primer plan deja pagado un período desde
+        hoy; pasar la empresa a otra agencia o sacarla borra plan y fecha.
+        `PATCH /agency/clients/:id/billing`.
+        (c) **El acceso sigue al pago**: `agencyClientAccess` (shared) y
+        `agencyAccessSql` (trae `client_paid_until` y `client_grace_days`)
+        dejan a la empresa en solo lectura con motivo nuevo `agency_unpaid`
+        pasada la fecha + la gracia, en todos los caminos que ya respetaban a
+        la agencia.
+        (d) **Pagos a mano** (`agency_payments`, RLS por la agencia): monto,
+        moneda, meses (1-36), medio, nota y fecha (ni futura —
+        `agency_payment_future`— ni de más de 5 años); el período se encadena
+        desde la fecha o desde hoy si venció (`extendPaidUntil` en la zona de
+        la agencia), con la fila del cliente bloqueada; registrarlo reactiva
+        al instante. Sólo el último se deshace (`agency_payment_not_last`;
+        `agency_payment_changed` si alguien cambió la fecha entre medio).
+        `GET/POST /agency/clients/:id/payments`, `DELETE …/:paymentId`.
+        Bitácora `agency.billing`, `agency.client_billing`, `agency.payment` y
+        `agency.payment_undo` (en la agencia y en el cliente).
+        (e) **Avisos** (`AgencyBillingRemindersService`, tic de facturación):
+        N días antes sólo a la empresa (si se elige), al vencer y al cortar a
+        los admins de la agencia y de la empresa, uno por fecha (Redis
+        `agbill:`), con la marca de la agencia.
+        (f) **Pantallas**: «Planes para tus clientes» en la consola de la
+        agencia (`AgencyPlansCard`, `data-tour="agency-plans"`), resumen
+        (empresas, al día, por cobrar, cuánto entra al mes), «Plan y pagos»
+        por cliente (`ClientBillingDialog`: plan, valor, pagado hasta,
+        registrar un pago con vista previa del período, historial con
+        deshacer; a pantalla completa en el celular), Ajustes → Suscripción de
+        la empresa cliente (`MyAgencyBillingPanel`,
+        `GET /workspaces/current/agency-billing`, sólo admins, sin el nombre
+        de quien registró) y un aviso arriba 10 días antes del vencimiento;
+        Plataforma → ficha de la empresa → Agencia elige los planes extra.
+        **Atrapado en el E2E**: «1.500.000» no pasaba con el lector del formato
+        regional (los montos usan `parseLooseAmount`), el selector del plan se
+        cortaba y «Tus pagos» salía vacío con sólo pagos deshechos. Guía
+        `agency` al día; sin novedad (es de agencias). Tests:
+        `agency-billing.spec` (4: planes y límites permitidos, asignar,
+        totales; gracia y `agency_unpaid` en el guard, pagos encadenados,
+        deshacer sólo el último, fecha futura, lo que ve el cliente; otra
+        agencia 404, cambio de agencia que limpia, borrado de empresa; avisos
+        con dedup), `agency-billing.test` (6) y `plan-access.test` en shared,
+        suites relacionadas 161/161, RLS 8/8 + E2E navegador 33/33 en
+        escritorio y celular oscuro.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import Redis from 'ioredis';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyRequest } from 'fastify';
+import { AgencyBillingService } from '../src/agency/agency-billing.service';
 import { AgencyService } from '../src/agency/agency.service';
 import { AuditService } from '../src/audit/audit.service';
 import { AuthService } from '../src/auth/auth.service';
@@ -52,7 +53,7 @@ describe('Modo agencia (Postgres real)', () => {
         const billing = new BillingService(tenantDb, plans, emailQuota, tenantSmtp);
         const audit = new AuditService(tenantDb);
         members = new MembersService(tenantDb, new MembersRepository(), auth, billing, undefined, undefined, undefined, pg.db);
-        agencySvc = new AgencyService(pg.db, auth, plans, audit);
+        agencySvc = new AgencyService(pg.db, auth, plans, new AgencyBillingService(pg.db, plans, audit), audit);
         platform = new PlatformService(pg.db, env, billing, auth, plans, emailQuota, tenantSmtp, undefined, undefined, undefined, members, audit);
         guard = new TenantGuard(tenantDb, new Reflector(), audit, redis);
     });
@@ -220,7 +221,7 @@ describe('Modo agencia (Postgres real)', () => {
         const agency = await makeTenant({ name: 'Agencia Sur' });
         const admin = await makeUser('sur');
         await addMember(agency, admin, 'admin');
-        const t = await platform.updateTenant(agency, { is_agency: true, agency_settings: { client_plan: null, max_clients: 5 } });
+        const t = await platform.updateTenant(agency, { is_agency: true, agency_settings: { client_plan: null, max_clients: 5, client_plans: [] } });
         expect(t).toMatchObject({ is_agency: true, agency_settings: { max_clients: 5 } });
 
         const client = await makeTenant({ name: 'Floristería' });

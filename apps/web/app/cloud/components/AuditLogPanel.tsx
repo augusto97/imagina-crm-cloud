@@ -166,6 +166,10 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'agency.link': { text: 'quedó como empresa cliente de una agencia:' },
     'agency.unlink': { text: 'dejó de ser empresa cliente de la agencia', danger: true },
     'agency.settings': { text: 'cambió los ajustes de la agencia' },
+    'agency.billing': { text: 'cambió los planes y las reglas de cobro de la agencia' },
+    'agency.client_billing': { text: 'cambió el plan o el «pagado hasta» de la empresa cliente' },
+    'agency.payment': { text: 'registró un pago de la empresa cliente' },
+    'agency.payment_undo': { text: 'deshizo un pago de la empresa cliente', danger: true },
     // v0.1.442 — webhooks de eventos.
     'webhook.create': { text: 'creó el webhook' },
     'webhook.update': { text: 'cambió el webhook' },

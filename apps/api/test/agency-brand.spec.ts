@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyRequest } from 'fastify';
 import { appBranding, DEFAULT_PLATFORM_APP_NAME } from '@imagina-base/shared';
 import { manifestBrandToken } from '../src/agency/agency-brand';
+import { AgencyBillingService } from '../src/agency/agency-billing.service';
 import { AgencyService } from '../src/agency/agency.service';
 import { AuditService } from '../src/audit/audit.service';
 import { AuthService } from '../src/auth/auth.service';
@@ -92,7 +93,8 @@ describe('Modo agencia — la marca de la agencia (Postgres real)', () => {
         helpStore = new MemStore();
         help = new HelpService(helpStore, pg.db);
         const audit = new AuditService(tenantDb);
-        agencySvc = new AgencyService(pg.db, auth, new PlansService(pg.db), audit);
+        const plans = new PlansService(pg.db);
+        agencySvc = new AgencyService(pg.db, auth, plans, new AgencyBillingService(pg.db, plans, audit), audit);
         guard = new TenantGuard(tenantDb, new Reflector(), audit, redis);
 
         const [a] = await pg.db

@@ -126,3 +126,38 @@ describe('tenantAccess con agencia (ADR-S108)', () => {
         expect(tenantAccess({ ...client, archived_at: '2026-10-01T00:00:00Z', agency_paused_at: '2026-10-20T00:00:00Z' }, lock).reason).toBe('archived');
     });
 });
+
+describe('tenantAccess con el cobro de la agencia (v0.1.451)', () => {
+    const client = { plan: 'pro', status: 'active' as const, now: NOW };
+    const agencyOk = { plan: 'pro', status: 'active' as const };
+
+    it('pasado el «pagado hasta» + la gracia de la agencia: sólo lectura (nunca pausada)', () => {
+        const due = new Date(NOW.getTime() - 3 * 86_400_000).toISOString();
+        // Dentro de la gracia por defecto (5 días): acceso completo, con la fecha de corte.
+        const inGrace = tenantAccess({ ...client, agency: { ...agencyOk, client_paid_until: due } }, lock);
+        expect(inGrace.state).toBe('full');
+        expect(inGrace.ends_at).toBe(new Date(new Date(due).getTime() + 5 * 86_400_000).toISOString());
+        // Con 2 días de gracia ya pasó el corte.
+        expect(tenantAccess({ ...client, agency: { ...agencyOk, client_paid_until: due, client_grace_days: 2 } }, lock)).toMatchObject({
+            state: 'read_only',
+            reason: 'agency_unpaid',
+        });
+    });
+
+    it('la prueba y el período de la PLATAFORMA no cuentan para un cliente de agencia', () => {
+        const ended = { ...client, plan: 'trial', status: 'trialing' as const, trial_ends_at: '2026-01-01T00:00:00Z', paid_until: '2026-01-01T00:00:00Z' };
+        expect(tenantAccess({ ...ended, agency: agencyOk }, lock).state).toBe('full');
+        // Sin agencia, esa misma empresa estaría pausada.
+        expect(tenantAccess(ended, lock).state).toBe('locked');
+    });
+
+    it('la agencia sin acceso y la pausa ganan al pago al día', () => {
+        const future = new Date(NOW.getTime() + 30 * 86_400_000).toISOString();
+        expect(
+            tenantAccess({ ...client, agency: { ...agencyOk, status: 'unpaid' as const, client_paid_until: future } }, lock),
+        ).toMatchObject({ reason: 'agency' });
+        expect(tenantAccess({ ...client, agency: { ...agencyOk, client_paid_until: future }, agency_paused_at: NOW.toISOString() }, lock)).toMatchObject({
+            reason: 'agency_paused',
+        });
+    });
+});

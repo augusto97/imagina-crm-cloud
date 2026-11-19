@@ -10065,3 +10065,58 @@ públicas y los correos que les llegan) sigue con la marca propia de la empresa
   `agency.support`) y no los videos ni las guías propias del operador.
 Sin migración. Sin novedad en el catálogo: es de agencias (lo enciende el
 operador) y el catálogo no puede apuntar sólo a ellas.
+
+**Addendum v0.1.451 — la agencia le cobra a sus clientes: planes, «pagado
+hasta» y pagos registrados a mano.** La división de versiones creció: v0.1.451
+es la base del cobro (planes y pagos a mano), v0.1.452 el cobro EN LÍNEA con la
+cuenta de Mercado Pago o PayPal de la agencia, y v0.1.453 el cobro de la
+plataforma a la agencia.
+- **Planes de la agencia** (`tenants.settings.agency_billing` de la AGENCIA,
+  `agencyBillingSettingsSchema` en `packages/shared/src/schemas/agency-billing.ts`,
+  lectura tolerante): hasta 20 planes con id estable, nombre, descripción,
+  valor, moneda, período (1, 3, 6 o 12 meses), qué límites de la plataforma
+  usan (`limits_plan`: el plan de la plataforma que le da a la empresa sus
+  registros, usuarios y módulos; `null` = el de nacimiento) y si están activos;
+  más días de gracia (0-60, 5), cuántos días antes avisar (0-30, 3) y si el
+  aviso llega también a la empresa cliente. `limits_plan` sólo puede ser el plan
+  de los clientes o uno de los que el operador le habilita
+  (`settings.agency.client_plans`, ficha de la empresa en Plataforma; 400
+  `agency_limits_plan`). `PUT /agency/billing`.
+- **Plan y fecha de cada cliente**: el plan elegido se COPIA en
+  `tenants.settings.agency_plan` del CLIENTE (nombre, valor —que se puede
+  ajustar por cliente—, moneda y período: cambiar el plan de la agencia no
+  cambia lo que paga quien ya lo tiene) y la fecha va en la columna
+  `tenants.agency_paid_until` (migración 0135) porque la lee el cálculo del
+  acceso en cada pedido. Asignar el primer plan deja pagado un período desde
+  hoy (se corrige con la fecha). Pasar la empresa a otra agencia o sacarla de
+  la agencia borra plan y fecha. `PATCH /agency/clients/:id/billing`.
+- **El acceso sigue al pago** (`agencyClientAccess` en `plan-access.ts`,
+  `agencyAccessSql` ahora trae `client_paid_until` y `client_grace_days`): sin
+  plan, como antes; vencida la fecha corre la gracia y después la empresa queda
+  en sólo lectura con motivo `agency_unpaid` (los datos intactos y
+  descargables), en todos los caminos que ya respetaban a la agencia.
+- **Pagos a mano** (`agency_payments`, RLS por la AGENCIA; `client_id` la
+  empresa que pagó): monto, moneda, meses (1-36), medio (transferencia,
+  efectivo, tarjeta, consignación, otro), nota y fecha del pago (no futura, no
+  más de 5 años atrás). El período se ENCADENA: desde el «pagado hasta» si no
+  venció, desde hoy si ya venció (`extendPaidUntil`, en la zona de la
+  agencia), con la fila del cliente bloqueada; registrar uno reactiva al
+  cliente al instante. Sólo el ÚLTIMO se deshace (409 `agency_payment_not_last`),
+  y devuelve la fecha anterior (`prev_paid_until`) si nadie la cambió entre
+  medio (409 `agency_payment_changed`). Bitácora `agency.billing`,
+  `agency.client_billing`, `agency.payment` y `agency.payment_undo` en la
+  agencia y en el cliente.
+- **Avisos** (`AgencyBillingRemindersService` sobre el tic de facturación):
+  N días antes sólo a la empresa cliente (si `notify_client`); al vencer y al
+  pasar a sólo lectura, a los administradores de la agencia y de la empresa;
+  uno por fecha (Redis `agbill:{cliente}:{tipo}:{fecha}`). Con la marca y la
+  dirección de la agencia.
+- **Pantallas**: consola de la agencia con «Planes para tus clientes»
+  (`AgencyPlansCard`), resumen (empresas, al día, por cobrar, cuánto entra al
+  mes) y «Plan y pagos» por cliente (`ClientBillingDialog`: plan, valor,
+  pagado hasta, registrar un pago con vista previa del período, historial con
+  deshacer). La empresa cliente ve su plan, hasta cuándo pagó y sus pagos en
+  Ajustes → Suscripción (`GET /workspaces/current/agency-billing`, sólo admins,
+  sin el nombre de quien registró) y un aviso arriba 10 días antes. Los montos
+  se leen con `parseLooseAmount` («1.500.000»).
+Sin novedad en el catálogo (es de agencias).
