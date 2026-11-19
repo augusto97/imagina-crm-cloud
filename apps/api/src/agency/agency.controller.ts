@@ -234,10 +234,13 @@ export class AgencyClientBillingController {
     @AllowReadOnly()
     async mine(@Req() req: FastifyRequest, @Query('refresh') refresh?: string): Promise<{ data: MyAgencyBilling | null }> {
         const t = assertClientAdmin(req);
-        const base = await this.billing.mine(t);
-        if (!base) return { data: null };
-        // v0.1.452 — con `refresh` (volvió de pagar) se le pregunta al proveedor por el link pendiente.
-        return { data: { ...base, online: await this.charges.onlineFor(t, { refresh: refresh === '1' }) } };
+        const first = await this.billing.mine(t);
+        if (!first) return { data: null };
+        // v0.1.452 — con `refresh` (volvió de pagar) se le pregunta al proveedor por el link
+        // pendiente; si con eso entró el pago, se relee para que ya venga en «Tus pagos».
+        const online = await this.charges.onlineFor(t, { refresh: refresh === '1' });
+        const base = refresh === '1' ? ((await this.billing.mine(t)) ?? first) : first;
+        return { data: { ...base, online } };
     }
 
     /**

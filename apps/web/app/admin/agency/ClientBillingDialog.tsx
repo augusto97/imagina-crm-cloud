@@ -385,7 +385,8 @@ function OnlineChargeSection({ client, overview }: { client: AgencyClient; overv
     const list = charges.data ?? [];
     const pending = list.find((c) => c.status === 'pending' && c.url) ?? null;
     const past = list.filter((c) => c.status !== 'pending');
-    const hasAdmins = client.admins.some((a) => !a.pending);
+    // Los invitados que todavía no entraron también lo reciben: el link no pide iniciar sesión.
+    const hasAdmins = client.admins.length > 0;
 
     const submit = (e: React.FormEvent): void => {
         e.preventDefault();
@@ -515,7 +516,7 @@ function OnlineChargeSection({ client, overview }: { client: AgencyClient; overv
                             {__('Mandárselo por correo a sus administradores')}
                             {!hasAdmins && (
                                 <span className="imcrm-block imcrm-text-[12px] imcrm-text-muted-foreground">
-                                    {__('Esta empresa todavía no tiene administradores con cuenta: copia el link y mándaselo tú.')}
+                                    {__('Esta empresa todavía no tiene administradores: copia el link y mándaselo tú.')}
                                 </span>
                             )}
                         </span>

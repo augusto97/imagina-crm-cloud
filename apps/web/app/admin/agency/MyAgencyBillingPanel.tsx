@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router';
 import {
     AGENCY_PAYMENT_METHOD_LABELS,
@@ -21,10 +22,36 @@ import { cn } from '@/lib/utils';
 
 import { billingStateLabel, planPriceText } from './agencyUi';
 import { StateBadge } from './ClientBillingDialog';
-import { useMyAgencyBilling, usePayMyAgencyPlan } from './useAgency';
+import { refreshSessionAfterPayment, useMyAgencyBilling, usePayMyAgencyPlan } from './useAgency';
 
 const ONLINE_METHODS = new Set(['mercadopago', 'wompi', 'paypal']);
 const CONFIRM_FOR_MS = 120_000;
+const PAID_KEY = 'imcrm:agency-paid';
+
+/**
+ * El «¡Pago recibido!» se recuerda unos minutos en la pestaña: al confirmarse
+ * el pago se trae la sesión de nuevo (la empresa sale de solo lectura) y la
+ * pantalla se vuelve a montar; sin esto, el aviso se perdería en el camino.
+ */
+function rememberPaid(periodTo: string): void {
+    try {
+        sessionStorage.setItem(PAID_KEY, JSON.stringify({ period_to: periodTo, at: Date.now() }));
+    } catch {
+        /* sin almacenamiento: sólo se pierde el aviso */
+    }
+}
+
+function recentPaid(): string | null {
+    try {
+        const raw = sessionStorage.getItem(PAID_KEY);
+        if (!raw) return null;
+        const v = JSON.parse(raw) as { period_to?: unknown; at?: unknown };
+        if (typeof v.period_to !== 'string' || typeof v.at !== 'number' || Date.now() - v.at > 5 * 60_000) return null;
+        return v.period_to;
+    } catch {
+        return null;
+    }
+}
 
 /**
  * v0.1.451 (I3, ADR-S108) — Lo que ve el administrador de una empresa
@@ -36,9 +63,10 @@ const CONFIRM_FOR_MS = 120_000;
  */
 export function MyAgencyBillingPanel({ agencyName }: { agencyName: string }): JSX.Element {
     const [params, setParams] = useSearchParams();
+    const qc = useQueryClient();
     const [checking, setChecking] = useState(() => params.get('pago') === '1');
     const [startedAt] = useState(() => Date.now());
-    const [confirmed, setConfirmed] = useState<string | null>(null);
+    const [confirmed, setConfirmed] = useState<string | null>(() => recentPaid());
     const [timedOut, setTimedOut] = useState(false);
     const q = useMyAgencyBilling(true, { refresh: checking, pollMs: checking ? 4000 : 0 });
 
@@ -50,6 +78,8 @@ export function MyAgencyBillingPanel({ agencyName }: { agencyName: string }): JS
         if (!q.data.online.pending && recent) {
             setChecking(false);
             setConfirmed(recent.period_to);
+            rememberPaid(recent.period_to);
+            void refreshSessionAfterPayment(qc).catch(() => undefined);
             setParams((prev) => {
                 const next = new URLSearchParams(prev);
                 next.delete('pago');
@@ -59,7 +89,7 @@ export function MyAgencyBillingPanel({ agencyName }: { agencyName: string }): JS
             setChecking(false);
             setTimedOut(true);
         }
-    }, [checking, q.data, startedAt, setParams]);
+    }, [checking, q.data, startedAt, setParams, qc]);
 
     if (q.isLoading) {
         return (
@@ -104,7 +134,9 @@ export function MyAgencyBillingPanel({ agencyName }: { agencyName: string }): JS
                         {state && plan && <StateBadge tone={state.tone} label={state.label} />}
                     </CardTitle>
                     <CardDescription>
-                        {`${__('El plan de esta empresa lo maneja')} ${name}. ${__('Para cambiarlo o pagarlo, habla con tu agencia. En «Plan y uso» ves qué incluye y cuánto llevas usado.')}`}
+                        {data?.online.enabled
+                            ? `${__('El plan de esta empresa lo maneja')} ${name}. ${__('Puedes pagarlo aquí; para cambiarlo, habla con tu agencia. En «Plan y uso» ves qué incluye y cuánto llevas usado.')}`
+                            : `${__('El plan de esta empresa lo maneja')} ${name}. ${__('Para cambiarlo o pagarlo, habla con tu agencia. En «Plan y uso» ves qué incluye y cuánto llevas usado.')}`}
                     </CardDescription>
                 </CardHeader>
                 {plan && state && (

@@ -229,6 +229,17 @@ export function useCancelClientCharge() {
     });
 }
 
+/**
+ * Tras confirmarse un pago, la sesión se trae de nuevo: el acceso de la
+ * empresa (solo lectura → completo) vive en la membresía de la sesión, y el
+ * aviso de arriba y los botones de edición dependen de él.
+ */
+export async function refreshSessionAfterPayment(qc: QueryClient): Promise<void> {
+    const session = await cloudApi.me();
+    useSession.getState().setSession(session);
+    qc.setQueryData(['me'], session);
+}
+
 /** La empresa cliente paga desde su app: N períodos del plan (el valor lo decide el servidor). */
 export function usePayMyAgencyPlan() {
     const qc = useQueryClient();
