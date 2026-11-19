@@ -369,6 +369,8 @@ export function remapListSettings(
     // llegan como listas comunes (sin columnas protegidas por una tienda que
     // no existe en este servidor).
     delete out.shop_orders_of;
+    // v0.1.452 — tampoco la lista de cobro de una agencia (la agencia no viaja).
+    delete out.agency_clients_of;
 
     // v0.1.371 — las columnas de cobro (v0.1.365), de suscripción (v0.1.367) y
     // del registro de cobros (v0.1.371) son mapas `dato → id de campo` cuyas

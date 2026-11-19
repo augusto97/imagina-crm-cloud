@@ -21,7 +21,7 @@ import { readSubscriptionFields, type SubscriptionFieldRole } from './subscripti
  * Una regla PURA sobre `lists.settings`: la usan el servidor (rechaza la
  * edición) y la interfaz (candado con el motivo).
  */
-export type ManagedFieldSource = 'helpdesk' | 'collections' | 'subscriptions' | 'subscription_import' | 'charge_log' | 'shop';
+export type ManagedFieldSource = 'helpdesk' | 'collections' | 'subscriptions' | 'subscription_import' | 'charge_log' | 'shop' | 'agency';
 
 export interface ManagedFieldLock {
     field_id: number;
@@ -97,6 +97,33 @@ export function readShopListMarker(settings: unknown): ShopListMarker | null {
     return { shop_ids: [...new Set(shopIds)], role: m.role === 'lines' ? 'lines' : 'orders', field_ids: [...new Set(ids)] };
 }
 
+/**
+ * v0.1.452 (I3, ADR-S108) — Marca de la lista «Empresas cliente» de una
+ * agencia: qué columnas escribe la agencia con el plan y los pagos de cada
+ * empresa (el nombre, el estado del pago, el plan, el valor, el «pagado
+ * hasta», el último pago y el link para pagar). El correo, el teléfono y las
+ * notas son de la agencia: se editan libremente.
+ */
+export const AGENCY_CLIENTS_MARKER_KEY = 'agency_clients_of';
+
+export interface AgencyClientsMarker {
+    agency_id: number;
+    field_ids: number[];
+}
+
+export function readAgencyClientsMarker(settings: unknown): AgencyClientsMarker | null {
+    const raw = (settings as Record<string, unknown> | null | undefined)?.[AGENCY_CLIENTS_MARKER_KEY];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const m = raw as Record<string, unknown>;
+    const agency = Number(m.agency_id);
+    if (!Number.isInteger(agency) || agency <= 0) return null;
+    const id = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v > 0 ? v : null);
+    const ids = Array.isArray(m.field_ids) ? m.field_ids.map(id).filter((v): v is number => v !== null) : [];
+    return { agency_id: agency, field_ids: [...new Set(ids)] };
+}
+
+const AGENCY_REASON = 'Lo escribe tu agencia con el plan y los pagos de cada empresa: no se edita a mano. Cámbialo en Agencia → «Plan y pagos» de la empresa.';
+
 const SHOP_REASON = 'Lo escribe la tienda con cada pedido: no se edita a mano.';
 
 const PAYMENT_REASON = 'Lo escribe el pago (Mercado Pago, PayPal o Wompi) cuando llega el aviso: no se edita a mano.';
@@ -171,6 +198,10 @@ export function managedFieldLocks(listSettings: unknown): ManagedFieldLock[] {
     // v0.1.412 — lo que escribe la tienda en Pedidos y Líneas de pedido.
     const shop = readShopListMarker(listSettings);
     if (shop) for (const id of shop.field_ids) add(id, 'shop', SHOP_REASON, null);
+
+    // v0.1.452 — lo que escribe la agencia en su lista «Empresas cliente».
+    const agency = readAgencyClientsMarker(listSettings);
+    if (agency) for (const id of agency.field_ids) add(id, 'agency', AGENCY_REASON, null);
     return out;
 }
 

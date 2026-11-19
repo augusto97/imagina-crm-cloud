@@ -29,7 +29,7 @@ import {
     DEFAULT_PLATFORM_APP_NAME,
 } from '@imagina-base/shared';
 import * as argon2 from 'argon2';
-import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import type Redis from 'ioredis';
 import { decryptSecret, encryptSecret } from '../common/secret-box';
 import { ENV, type Env } from '../config/env';
@@ -1751,7 +1751,12 @@ export class AuthService implements OnModuleInit {
                         // siendo admin de esa agencia (mismo criterio del guard).
                         sql`(NOT ${memberships.viaAgency} OR EXISTS (SELECT 1 FROM memberships am WHERE am.tenant_id = ${tenants.agencyId} AND am.user_id = ${memberships.userId} AND am.role = 'admin'))`,
                     ),
-                );
+                )
+                // v0.1.452 — Orden estable: primero las empresas PROPIAS (la app abre
+                // la primera cuando no hay una elegida) y después las de clientes a
+                // las que entra por la agencia. Sin orden, una agencia podía abrir
+                // la app en la empresa de un cliente.
+                .orderBy(asc(memberships.viaAgency), asc(memberships.createdAt), asc(memberships.tenantId));
             return rows.map((r) => {
                 const disabled = readDisabledModules(r.disabledModules);
                 // C2 — sin «Roles propios» en el plan, la persona usa su rol base.

@@ -28,6 +28,8 @@ export const tenants = pgTable('tenants', {
     agencyPausedAt: timestamp('agency_paused_at', { withTimezone: true }),
     // v0.1.451 — hasta cuándo pagó este cliente a su agencia (lo lleva la agencia).
     agencyPaidUntil: timestamp('agency_paid_until', { withTimezone: true }),
+    /** v0.1.452 — El registro de esta empresa en la lista «Empresas cliente» de su agencia (sin FK: se rearma si falta). */
+    agencyRecordId: bigint('agency_record_id', { mode: 'number' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

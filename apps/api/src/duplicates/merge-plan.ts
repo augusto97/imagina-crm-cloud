@@ -110,9 +110,13 @@ export const LEFT_BEHIND: ReadonlyArray<readonly [string, string]> = [
 ];
 
 /** El registro ES otra cosa: no se fusiona (se dice por qué). */
-export const BLOCKING: ReadonlyArray<{ table: string; column: string; message: string }> = [
+export const BLOCKING: ReadonlyArray<{ table: string; column: string; message: string; tenantColumn?: string }> = [
     { table: 'booking_appointments', column: 'record_id', message: 'es una cita de la agenda' },
     { table: 'shop_orders', column: 'record_id', message: 'es un pedido de la tienda' },
+    // I3 — el registro de una empresa cliente en la lista «Empresas cliente» de
+    // su agencia: cada uno ES una empresa (la fila de `tenants` es del cliente;
+    // la lista, de la agencia).
+    { table: 'tenants', column: 'agency_record_id', tenantColumn: 'agency_id', message: 'es una empresa cliente de la agencia' },
 ];
 
 /** Cuántas filas movería cada paso (para la vista previa). */
@@ -276,7 +280,7 @@ export async function mergeBlockers(tx: Tx, tenantId: number, primary: number, d
     const out: string[] = [];
     for (const b of BLOCKING) {
         for (const d of dups) {
-            const res = await tx.execute(sql`SELECT 1 FROM ${sql.identifier(b.table)} WHERE tenant_id = ${tenantId} AND ${sql.identifier(b.column)} = ${d} LIMIT 1`);
+            const res = await tx.execute(sql`SELECT 1 FROM ${sql.identifier(b.table)} WHERE ${sql.identifier(b.tenantColumn ?? 'tenant_id')} = ${tenantId} AND ${sql.identifier(b.column)} = ${d} LIMIT 1`);
             if (res.rows.length > 0) out.push(`«${titleOf(d)}» ${b.message}: no se fusiona.`);
         }
     }

@@ -2,7 +2,13 @@ import { z } from 'zod';
 import { emailSchema } from './auth';
 import { billingStatusSchema } from './billing';
 import { idSchema } from './common';
-import { agencyBillingSettingsSchema, agencyBillingTotalsSchema, agencyClientBillingSchema } from './agency-billing';
+import {
+    agencyBillingSettingsSchema,
+    agencyBillingTotalsSchema,
+    agencyClientBillingSchema,
+    agencyClientsListSchema,
+    agencyCollectionConnectionSchema,
+} from './agency-billing';
 import { tenantAccessSchema } from './plan-access';
 
 /**
@@ -94,6 +100,15 @@ export const agencyOverviewSchema = z.object({
     /** Los planes de la plataforma que puede usar como límites de sus planes. */
     limit_plans: z.array(z.object({ slug: z.string(), name: z.string() })),
     totals: agencyBillingTotalsSchema,
+    /** v0.1.452 — el cobro en línea con la cuenta de la agencia. */
+    online: z.object({
+        /** El plan de la agencia incluye las integraciones (los cobros por Mercado Pago, Wompi o PayPal). */
+        available: z.boolean(),
+        /** Sus cuentas de cobro del equipo. */
+        connections: z.array(agencyCollectionConnectionSchema),
+        /** La lista «Empresas cliente» (donde cuelgan los links), si ya existe. */
+        clients_list: agencyClientsListSchema.nullable(),
+    }),
 });
 export type AgencyOverview = z.infer<typeof agencyOverviewSchema>;
 

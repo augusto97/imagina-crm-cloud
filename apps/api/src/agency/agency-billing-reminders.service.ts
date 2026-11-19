@@ -10,6 +10,7 @@ import { MailService } from '../mail/mail.service';
 import { registerBillingTick, type ReminderDedupStore } from '../payments/billing-reminders.service';
 import { REDIS } from '../redis/redis.module';
 import { agencyTimeZone, clientsWithAgencyPlan } from './agency-billing.service';
+import { AgencyChargesService } from './agency-charges.service';
 
 /**
  * v0.1.451 (I3, ADR-S108) — Avisos del cobro de una agencia a sus clientes:
@@ -33,6 +34,8 @@ export interface AgencyReminderEmailOpts {
     cutAt: Date;
     timeZone: string;
     link: string;
+    /** v0.1.452 — el link para pagar en línea (sólo para el cliente). */
+    payUrl?: string | null;
 }
 
 /** El correo de un aviso (puro, para las pruebas). */
@@ -86,11 +89,19 @@ export function agencyReminderEmail(kind: AgencyReminderKind, o: AgencyReminderE
         },
     };
     const m = copy[kind][o.audience];
-    const cta = o.audience === 'agency' ? 'Registrar el pago' : 'Ver mi plan';
-    const text = `${m.lines.join('\n\n')}\n\n${cta}: ${o.link}`;
+    const pay = o.audience === 'client' && o.payUrl ? o.payUrl : null;
+    // Con el link en línea, el aviso no dice «la agencia lo registra»: se paga ahí mismo.
+    const lines = pay
+        ? m.lines.map((l) => (l.startsWith('Si ya pagaste') ? `Puedes pagar en línea con el botón de abajo: se registra solo y tu plan queda al día al instante.` : l))
+        : m.lines;
+    const cta = o.audience === 'agency' ? 'Registrar el pago' : pay ? 'Pagar ahora' : 'Ver mi plan';
+    const href = pay ?? o.link;
+    const text = `${lines.join('\n\n')}\n\n${cta}: ${href}${pay ? `\n\nVer mi plan: ${o.link}` : ''}`;
     const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.55;color:#1f2937">
-${m.lines.map((l) => `<p style="margin:0 0 14px">${escapeHtml(l)}</p>`).join('\n')}
-<p style="margin:22px 0"><a href="${escapeHtml(o.link)}" style="background:#0e7490;color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;display:inline-block">${cta}</a></p>
+${lines.map((l) => `<p style="margin:0 0 14px">${escapeHtml(l)}</p>`).join('\n')}
+<p style="margin:22px 0"><a href="${escapeHtml(href)}" style="background:#0e7490;color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;display:inline-block">${cta}</a></p>${
+        pay ? `\n<p style="margin:0;font-size:13px"><a href="${escapeHtml(o.link)}" style="color:#0e7490">Ver mi plan</a></p>` : ''
+    }
 </div>`;
     return { subject: m.subject, text, html };
 }
@@ -120,6 +131,7 @@ export class AgencyBillingRemindersService implements OnModuleInit {
         @Inject(ENV) private readonly env: Env,
         private readonly mail: MailService,
         @Optional() private readonly domains?: DomainsService,
+        @Optional() private readonly charges?: AgencyChargesService,
     ) {}
 
     onModuleInit(): void {
@@ -158,7 +170,14 @@ export class AgencyBillingRemindersService implements OnModuleInit {
             }
             if (settings.notify_client) {
                 const brand = await this.brand(c.id);
-                sent += await this.send(c.id, agencyReminderEmail(hit.kind, { ...base, audience: 'client', link: `${brand.base}/#/settings?s=suscripcion` }), brand.name);
+                // v0.1.452 — si la agencia cobra en línea, el aviso trae el link para pagar.
+                const payUrl = this.charges
+                    ? await this.charges.autoLink(agency.id, c.id).catch((err: unknown) => {
+                          this.logger.warn(`aviso de pago de agencia: no se armó el link de la empresa ${c.id}: ${String(err)}`);
+                          return null;
+                      })
+                    : null;
+                sent += await this.send(c.id, agencyReminderEmail(hit.kind, { ...base, audience: 'client', link: `${brand.base}/#/settings?s=suscripcion`, payUrl }), brand.name);
             }
         }
         return sent;

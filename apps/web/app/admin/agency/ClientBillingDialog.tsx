@@ -3,18 +3,25 @@ import * as RDialog from '@radix-ui/react-dialog';
 import {
     AGENCY_MANUAL_PAYMENT_METHODS,
     AGENCY_PAYMENT_METHOD_LABELS,
+    COLLECTION_PROVIDER_LABEL,
+    agencyChargeAmount,
+    agencyMonthsText,
+    agencyPayablePeriods,
+    collectionCurrencyError,
     extendPaidUntil,
+    isCollectionProvider,
     resolveTimeZone,
     zonedDayAndMinute,
     zonedInstant,
     zonedToday,
+    type AgencyCharge,
     type AgencyClient,
     type AgencyOverview,
     type AgencyPayment,
     type SetAgencyClientBillingInput,
     parseLooseAmount,
 } from '@imagina-base/shared';
-import { Loader2, Undo2, X } from 'lucide-react';
+import { Copy, ExternalLink, Link2, Loader2, Undo2, X } from 'lucide-react';
 
 import { formatMoney } from '@/cloud/components/payments/paymentUi';
 import { Badge } from '@/components/ui/badge';
@@ -28,7 +35,15 @@ import { browserTimeZone, formatDate, formatNumber, getTenantTimeZone } from '@/
 import { cn } from '@/lib/utils';
 
 import { billingStateLabel, planPriceText } from './agencyUi';
-import { useClientPayments, useRegisterClientPayment, useSetClientBilling, useUndoClientPayment } from './useAgency';
+import {
+    useCancelClientCharge,
+    useClientCharges,
+    useClientPayments,
+    useCreateClientCharge,
+    useRegisterClientPayment,
+    useSetClientBilling,
+    useUndoClientPayment,
+} from './useAgency';
 
 const NO_PLAN = '__none__';
 
@@ -72,6 +87,9 @@ export function ClientBillingDialog({ client, overview, onClose }: { client: Age
                     </div>
                     <div className="imcrm-mt-4 imcrm-flex imcrm-flex-col imcrm-gap-5">
                         <PlanSection client={client} overview={overview} />
+                        {b.plan && overview.online.available && overview.billing.online.connection_id !== null && (
+                            <OnlineChargeSection client={client} overview={overview} />
+                        )}
                         {b.plan && <PaymentSection client={client} />}
                         <HistorySection client={client} />
                     </div>
@@ -315,6 +333,225 @@ function PaymentSection({ client }: { client: AgencyClient }): JSX.Element {
                     </Button>
                 </div>
             </form>
+        </Section>
+    );
+}
+
+const CHARGE_STATUS_LABEL: Record<AgencyCharge['status'], string> = {
+    pending: 'Esperando el pago',
+    paid: 'Pagado',
+    expired: 'Venció sin pagarse',
+    cancelled: 'Anulado',
+};
+
+const CHARGE_VIA_LABEL: Record<AgencyCharge['via'], string> = {
+    agency: 'Lo creó tu agencia',
+    client: 'Lo pidió la empresa desde su app',
+    auto: 'Aviso automático antes de vencer',
+};
+
+async function copy(text: string): Promise<boolean> {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * v0.1.452 (I3, ADR-S108) — Un link de pago con la cuenta de cobro de la
+ * agencia: se copia y se manda por donde sea (o por correo a los
+ * administradores del cliente). Cuando paga, el pago se registra solo.
+ */
+function OnlineChargeSection({ client, overview }: { client: AgencyClient; overview: AgencyOverview }): JSX.Element {
+    const plan = client.billing.plan!;
+    const charges = useClientCharges(client.id);
+    const create = useCreateClientCharge();
+    const cancel = useCancelClientCharge();
+    const confirm = useConfirm();
+    const toast = useToast();
+    const monthOptions = useMemo(() => agencyPayablePeriods(plan.period_months).map((n) => n * plan.period_months), [plan.period_months]);
+    const [months, setMonths] = useState<number>(plan.period_months);
+    const [amount, setAmount] = useState('');
+    const [sendEmail, setSendEmail] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const conn = overview.online.connections.find((c) => c.id === overview.billing.online.connection_id) ?? null;
+    const provider = conn && isCollectionProvider(conn.provider) ? conn.provider : null;
+    const providerName = provider ? COLLECTION_PROVIDER_LABEL[provider] : (conn?.provider ?? '');
+    const currencyErr = provider ? collectionCurrencyError(provider, plan.currency) : null;
+    const suggested = agencyChargeAmount(plan, months);
+    const list = charges.data ?? [];
+    const pending = list.find((c) => c.status === 'pending' && c.url) ?? null;
+    const past = list.filter((c) => c.status !== 'pending');
+    // Los invitados que todavía no entraron también lo reciben: el link no pide iniciar sesión.
+    const hasAdmins = client.admins.length > 0;
+
+    const submit = (e: React.FormEvent): void => {
+        e.preventDefault();
+        setError(null);
+        const amountN = amount.trim() === '' ? undefined : parseLooseAmount(amount);
+        if (amountN === null || (amountN !== undefined && amountN <= 0)) {
+            setError(__('Escribe el valor a cobrar (sólo números).'));
+            return;
+        }
+        create.mutate(
+            { id: client.id, input: { months, ...(amountN !== undefined ? { amount: amountN } : {}), send_email: sendEmail && hasAdmins } },
+            {
+                onSuccess: async (res) => {
+                    const copied = res.charge.url ? await copy(res.charge.url) : false;
+                    toast.success(
+                        res.reused ? __('Ya había un link igual esperando el pago') : __('Link de pago listo'),
+                        copied ? __('Quedó copiado: pégalo donde quieras.') : undefined,
+                    );
+                    setAmount('');
+                    void charges.refetch();
+                },
+                onError: (err) => setError(err instanceof Error ? err.message : String(err)),
+            },
+        );
+    };
+
+    const doCancel = async (c: AgencyCharge): Promise<void> => {
+        const ok = await confirm({
+            title: __('¿Anular este link de pago?'),
+            description: __('El link deja de servir. Si tu cliente ya pagó, el pago igual se registra.'),
+            confirmLabel: __('Anular'),
+            destructive: true,
+        });
+        if (!ok) return;
+        cancel.mutate(
+            { id: client.id, chargeId: c.id },
+            {
+                onSuccess: () => {
+                    toast.success(__('Link anulado'));
+                    void charges.refetch();
+                },
+                onError: (err) => toast.error(__('No se pudo anular'), err instanceof Error ? err.message : String(err)),
+            },
+        );
+    };
+
+    return (
+        <Section
+            title={__('Cobrar en línea')}
+            hint={`${__('Un link de pago con tu cuenta de')} ${providerName}. ${__('Cuando paga, el pago se registra solo y corre el «pagado hasta».')}`}
+        >
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="agency-online-charge">
+                {currencyErr && (
+                    <p className="imcrm-rounded-md imcrm-bg-warning/10 imcrm-px-3 imcrm-py-2 imcrm-text-sm" role="alert">
+                        {`${__('El plan de esta empresa cobra en')} ${plan.currency}: ${currencyErr}`}
+                    </p>
+                )}
+                {pending && (
+                    <div
+                        className="imcrm-flex imcrm-flex-col imcrm-gap-2 imcrm-rounded-md imcrm-border imcrm-border-primary/30 imcrm-bg-primary/5 imcrm-p-3"
+                        data-testid="agency-charge-pending"
+                    >
+                        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-3 imcrm-gap-y-1 imcrm-text-sm">
+                            <Link2 className="imcrm-h-4 imcrm-w-4 imcrm-text-primary" aria-hidden />
+                            <span className="imcrm-font-medium">{formatMoney(pending.amount, pending.currency)}</span>
+                            <span className="imcrm-text-muted-foreground">{`${__('Cubre')} ${__(agencyMonthsText(pending.months))}`}</span>
+                            {pending.expires_at && (
+                                <span className="imcrm-text-muted-foreground">{`${__('Sirve hasta el')} ${formatDate(new Date(pending.expires_at))}`}</span>
+                            )}
+                        </div>
+                        <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={async () => {
+                                    if (await copy(pending.url!)) toast.success(__('Link copiado'));
+                                    else toast.error(__('No se pudo copiar'), pending.url!);
+                                }}
+                                data-testid="agency-charge-copy"
+                            >
+                                <Copy className="imcrm-h-4 imcrm-w-4" />
+                                {__('Copiar link')}
+                            </Button>
+                            <Button size="sm" variant="outline" asChild>
+                                <a href={pending.url!} target="_blank" rel="noopener noreferrer" data-testid="agency-charge-open">
+                                    <ExternalLink className="imcrm-h-4 imcrm-w-4" />
+                                    {__('Abrir')}
+                                </a>
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => void doCancel(pending)} disabled={cancel.isPending} data-testid="agency-charge-cancel">
+                                {__('Anular')}
+                            </Button>
+                        </div>
+                    </div>
+                )}
+                <form className="imcrm-flex imcrm-flex-col imcrm-gap-3" onSubmit={submit} noValidate data-testid="agency-charge-form">
+                    <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-3 sm:imcrm-grid-cols-2">
+                        <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-sm">
+                            <span className="imcrm-font-medium">{__('Cubre')}</span>
+                            <Select value={months} onChange={(e) => setMonths(Number(e.target.value))} data-testid="agency-charge-months">
+                                {monthOptions.map((m) => (
+                                    <option key={m} value={m}>{__(agencyMonthsText(m))}</option>
+                                ))}
+                            </Select>
+                        </label>
+                        <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-sm">
+                            <span className="imcrm-font-medium">{`${__('Valor a cobrar')} (${plan.currency})`}</span>
+                            <Input
+                                inputMode="decimal"
+                                value={amount}
+                                onChange={(e) => setAmount(e.target.value)}
+                                placeholder={formatNumber(suggested, { maxFrac: 2 })}
+                                data-testid="agency-charge-amount"
+                            />
+                        </label>
+                    </div>
+                    <label className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-sm">
+                        <input
+                            type="checkbox"
+                            className="imcrm-mt-0.5"
+                            checked={sendEmail && hasAdmins}
+                            disabled={!hasAdmins}
+                            onChange={(e) => setSendEmail(e.target.checked)}
+                            data-testid="agency-charge-email"
+                        />
+                        <span>
+                            {__('Mandárselo por correo a sus administradores')}
+                            {!hasAdmins && (
+                                <span className="imcrm-block imcrm-text-[12px] imcrm-text-muted-foreground">
+                                    {__('Esta empresa todavía no tiene administradores: copia el link y mándaselo tú.')}
+                                </span>
+                            )}
+                        </span>
+                    </label>
+                    {error && <p className="imcrm-text-sm imcrm-text-destructive" role="alert">{error}</p>}
+                    <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2">
+                        <Button type="submit" size="sm" disabled={create.isPending || Boolean(currencyErr)} data-testid="agency-charge-create">
+                            {create.isPending && <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />}
+                            {pending ? __('Crear otro link') : __('Crear el link de pago')}
+                        </Button>
+                        <span className="imcrm-text-[12px] imcrm-text-muted-foreground">
+                            {amount.trim() === '' ? formatMoney(suggested, plan.currency) : null}
+                        </span>
+                    </div>
+                </form>
+                {past.length > 0 && (
+                    <ul className="imcrm-divide-y imcrm-divide-border imcrm-border-t imcrm-border-border" data-testid="agency-charges">
+                        {past.map((c) => (
+                            <li key={c.id} className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-3 imcrm-gap-y-1 imcrm-py-2 imcrm-text-sm" data-testid="agency-charge">
+                                <span className="imcrm-font-medium">{formatMoney(c.amount, c.currency)}</span>
+                                <span className="imcrm-text-muted-foreground">{__(agencyMonthsText(c.months))}</span>
+                                <Badge
+                                    variant="outline"
+                                    className={cn('imcrm-font-normal', c.status === 'paid' && 'imcrm-border-success/40 imcrm-text-success')}
+                                >
+                                    {__(CHARGE_STATUS_LABEL[c.status])}
+                                </Badge>
+                                <span className="imcrm-ml-auto imcrm-text-[12px] imcrm-text-muted-foreground">
+                                    {__(CHARGE_VIA_LABEL[c.via])} · {formatDate(new Date(c.paid_at ?? c.created_at))}
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
         </Section>
     );
 }

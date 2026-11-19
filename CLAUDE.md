@@ -16334,6 +16334,65 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         suites relacionadas 161/161, RLS 8/8 + E2E navegador 33/33 en
         escritorio y celular oscuro.
 
+  - [x] **Modo agencia, cuarta parte: la agencia cobra EN LÍNEA a sus clientes
+        con su propia cuenta (v0.1.452, addendum ADR-S108)**. La división
+        creció otra vez: v0.1.453 el débito automático de los clientes de la
+        agencia y v0.1.454 el cobro de la plataforma a la agencia.
+        (a) **La cuenta** (`agency_billing.online`: `connection_id`,
+        `client_can_pay`, `auto_link`; lectura tolerante): una conexión de
+        cobro del EQUIPO de la agencia (Mercado Pago, Wompi o PayPal; 400
+        `agency_online_connection`) que acepte la moneda de sus planes activos
+        (400 `agency_online_currency`). El dinero va a la cuenta de la agencia,
+        sin comisión. Un `PUT /agency/billing` sin `online` lo conserva
+        (`keepOnline`).
+        (b) **Lista «Empresas cliente»** en la agencia
+        (`AgencyClientsListService` + `agency-clients-pack.ts`, armada con el
+        motor de plantillas al elegir la cuenta o con `POST
+        /agency/clients-list`): un registro por cliente (nombre, estado, plan,
+        valor, pagado hasta, último pago, link de pago, correo, notas;
+        `tenants.agency_record_id`, migración 0136) sincronizado al cambiar el
+        plan, un pago o un link y en el tic; las columnas que escribe la
+        agencia llevan candado (marca `agency_clients_of` en
+        `managedFieldLocks`). De ese registro cuelgan los links (salen en
+        «Cobros» de la ficha y disparan «Cuando se recibe un pago»).
+        (c) **Cobros** (`agency_charges`, RLS por la agencia;
+        `AgencyChargesService`): un link por N meses del plan
+        (`CollectionsService.createForAgency`, 7 días, vuelta a
+        `/api/v1/public/agency-pay/:reference`), UNO pendiente por cliente con
+        candado (igual se reusa; distinto anula el anterior y vence su link).
+        Lo crean la agencia (`GET|POST /agency/clients/:id/charges`, con
+        correo opcional; `DELETE …/:chargeId` lo anula), el cliente desde su
+        app si `client_can_pay` (`POST /workspaces/current/agency-billing/pay
+        {periods}`: 1/2/3/6/12 períodos al valor del plan) y el aviso «por
+        vencer» si `auto_link` (botón «Pagar ahora»). Bitácora
+        `agency.charge_create|charge_cancel`.
+        (d) **El pago se registra solo**: `CollectionsService.onLinkPaid`
+        (el aviso del proveedor se RELEE) → `applyPaymentInTx` con la fila del
+        cobro bloqueada (un aviso repetido no suma dos veces), el «pagado
+        hasta» se encadena y la empresa vuelve a funcionar al instante; un
+        pago tardío también se registra; correos a la empresa y a la agencia;
+        un pago en línea no se deshace (409 `agency_payment_online`). La
+        vuelta del checkout pregunta al proveedor (a lo sumo cada 15 s) y lleva
+        a Suscripción con `?pago=1`, que consulta con `?refresh=1`.
+        (e) **Pantallas**: «Cobro en línea» en Planes para tus clientes
+        (`data-tour="agency-online"`), «Cobrar en línea» en Plan y pagos
+        (meses, valor sugerido, correo, copiar, anular, historial) y «Pagar
+        ahora» en Ajustes → Suscripción del cliente
+        (`data-tour="settings-agency-pay"`): «Estamos confirmando…» →
+        «¡Pago recibido!», sin recargar y sin la franja de solo lectura.
+        (f) **Bugs atrapados en el E2E**: la app abría a veces la empresa de un
+        cliente en vez de la de la agencia (`membershipsOf` sin orden: ahora
+        las propias primero), la franja de solo lectura quedaba tras pagar (se
+        refresca la sesión) y «¡Pago recibido!» llegaba una consulta tarde.
+        Guía `agency` al día; sin novedad (es de agencias). Tests:
+        `agency-charges.spec` (6: lista al elegir la cuenta y `keepOnline`,
+        moneda/cuenta ajena, link reusado/reemplazado/anulado con la columna
+        del link, aviso que paga una vez y corre la fecha, pago en línea que no
+        se deshace, el cliente paga desde su app y la vuelta del checkout,
+        aviso con el link, orden de las empresas) + suites relacionadas 93/93,
+        front 951, shared 1049 — E2E navegador 40/40 en escritorio y 41/41 en
+        celular oscuro contra el Mercado Pago simulado.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

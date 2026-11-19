@@ -578,6 +578,63 @@ export class CollectionsService implements OnModuleInit, OnApplicationShutdown {
     }
 
     /**
+     * v0.1.452 (ADR-S108) — Una agencia cobra en línea a una empresa cliente: el
+     * link cuelga del registro del cliente en la lista «Empresas cliente» de la
+     * AGENCIA y sale con su cuenta de cobro del equipo. Lanza `CollectionError`
+     * si no se puede.
+     */
+    async createForAgency(
+        tenantId: number,
+        opts: {
+            connectionId: number;
+            listId: number;
+            recordId: number;
+            title: string;
+            amount: number;
+            currency: string;
+            payerEmail: string | null;
+            expiresAt: Date;
+            returnUrlFor: (reference: string) => string | null;
+            userId: number | null;
+            clientId: number;
+        },
+    ): Promise<{ id: number; url: string; amount: number; currency: string; reference: string; provider: string }> {
+        if (await planModuleOff(this.db, tenantId, 'integrations')) {
+            throw new CollectionError('El plan de la agencia no incluye los cobros por integraciones.');
+        }
+        const team = await this.teamConnections(tenantId);
+        if (!team.some((c) => c.id === opts.connectionId)) {
+            throw new CollectionError('La cuenta de cobro de la agencia ya no existe o no es del equipo.');
+        }
+        const created = await this.tenantDb.withTenant(tenantId, (tx) =>
+            this.createLinkInTx(tx, tenantId, {
+                connectionId: opts.connectionId,
+                listId: opts.listId,
+                recordId: opts.recordId,
+                title: opts.title,
+                amount: opts.amount,
+                currency: opts.currency,
+                payerEmail: opts.payerEmail,
+                expiresDays: null,
+                expiresAt: opts.expiresAt,
+                userId: opts.userId,
+                returnUrlFor: opts.returnUrlFor,
+            }),
+        );
+        this.afterWrite(tenantId, created.write);
+        await this.audit.log({
+            tenantId,
+            userId: opts.userId,
+            action: 'payment_link.create',
+            targetType: 'record',
+            targetId: opts.recordId,
+            targetLabel: created.link.title,
+            meta: { provider: created.link.provider, amount: created.link.amount, currency: created.link.currency, list_id: opts.listId, via: 'agency', client_id: opts.clientId },
+        });
+        return { id: created.link.id, url: created.link.url, amount: created.link.amount, currency: created.link.currency, reference: created.reference, provider: created.link.provider };
+    }
+
+    /**
      * v0.1.387 — Cómo está el link de una cita. Con `refresh`, si sigue
      * pendiente se le pregunta al proveedor (a lo sumo cada 15 s): el aviso a
      * veces llega después que la persona, o no llega.

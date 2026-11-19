@@ -3,8 +3,12 @@ import {
     addDaysYmd,
     addMonthsClamped,
     agencyBillingSettingsSchema,
+    AGENCY_MANUAL_PAYMENT_METHODS,
+    AGENCY_PAYMENT_METHOD_LABELS,
     agencyBillingState,
     agencyMonthlyAmount,
+    collectionCurrencyError,
+    isCollectionProvider,
     extendPaidUntil,
     readAgencyBilling,
     readAgencyClientPlan,
@@ -25,6 +29,7 @@ import {
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { PlansService } from '../billing/plans.service';
+import { CollectionsService } from '../collections/collections.service';
 import { DRIZZLE, type Db, type Tx } from '../db/client';
 import { agencyPayments, tenants, users } from '../db/schema';
 import { readSupport } from '../help/help.service';
@@ -49,7 +54,32 @@ export class AgencyBillingService {
         @Inject(DRIZZLE) private readonly db: Db,
         private readonly plans: PlansService,
         @Optional() private readonly audit?: AuditService,
+        @Optional() private readonly collections?: CollectionsService,
     ) {}
+
+    // ── v0.1.452 — avisos a quien sigue a los clientes (la lista «Empresas cliente») ──
+
+    private readonly clientListeners: Array<(agencyId: number, clientId: number | null) => unknown> = [];
+
+    /** `clientId` null = cambió algo de TODOS los clientes (los planes, las reglas). */
+    onClientChanged(fn: (agencyId: number, clientId: number | null) => unknown): void {
+        this.clientListeners.push(fn);
+    }
+
+    notifyClientChanged(agencyId: number, clientId: number | null): void {
+        for (const fn of this.clientListeners) {
+            void Promise.resolve()
+                .then(() => fn(agencyId, clientId))
+                .catch(() => undefined);
+        }
+    }
+
+    /** Las cuentas de cobro del EQUIPO de la agencia (Mercado Pago, Wompi, PayPal). */
+    async collectionConnections(agencyId: number): Promise<Array<{ id: number; name: string; provider: string }>> {
+        if (!this.collections) return [];
+        const team = await this.collections.teamConnections(agencyId).catch(() => []);
+        return team.filter((c) => isCollectionProvider(c.provider)).map((c) => ({ id: c.id, name: c.name, provider: c.provider }));
+    }
 
     // ── ajustes de la agencia ───────────────────────────────────────────
 
@@ -65,9 +95,10 @@ export class AgencyBillingService {
         });
     }
 
-    async updateSettings(agencyId: number, userId: number, input: AgencyBillingSettings): Promise<AgencyBillingSettings> {
+    async updateSettings(agencyId: number, userId: number, input: AgencyBillingSettings, opts: { keepOnline?: boolean } = {}): Promise<AgencyBillingSettings> {
         const next = agencyBillingSettingsSchema.parse(input);
         const agency = await this.agencyRow(agencyId);
+        if (opts.keepOnline) next.online = readAgencyBilling(agency.settings.agency_billing).online;
         const allowed = new Set((await this.limitPlans(agency)).map((p) => p.slug));
         for (const p of next.plans) {
             if (p.limits_plan !== null && !allowed.has(p.limits_plan)) {
@@ -76,6 +107,19 @@ export class AgencyBillingService {
                     message: `El plan «${p.name}» usa límites que la plataforma no le permite a tu agencia.`,
                     data: { status: 400 },
                 });
+            }
+        }
+        // v0.1.452 — la cuenta de cobro tiene que ser del EQUIPO de la agencia y
+        // cobrar en la moneda de sus planes activos (Wompi sólo pesos; PayPal no pesos).
+        if (next.online.connection_id !== null) {
+            const conn = (await this.collectionConnections(agencyId)).find((c) => c.id === next.online.connection_id);
+            if (!conn) {
+                throw bad('agency_online_connection', 'Esa cuenta de cobro ya no existe o no es del equipo de la agencia.');
+            }
+            for (const p of next.plans) {
+                if (!p.active || !isCollectionProvider(conn.provider)) continue;
+                const err = collectionCurrencyError(conn.provider, p.currency);
+                if (err) throw bad('agency_online_currency', `El plan «${p.name}» cobra en ${p.currency}: ${err}`);
             }
         }
         await this.db.transaction(async (tx) => {
@@ -90,8 +134,15 @@ export class AgencyBillingService {
             action: 'agency.billing',
             targetType: 'tenant',
             targetId: agencyId,
-            meta: { plans: next.plans.map((p) => ({ id: p.id, name: p.name, price: p.price, currency: p.currency, period_months: p.period_months })), grace_days: next.grace_days, remind_days: next.remind_days, notify_client: next.notify_client },
+            meta: {
+                plans: next.plans.map((p) => ({ id: p.id, name: p.name, price: p.price, currency: p.currency, period_months: p.period_months })),
+                grace_days: next.grace_days,
+                remind_days: next.remind_days,
+                notify_client: next.notify_client,
+                online: next.online,
+            },
         });
+        this.notifyClientChanged(agencyId, null);
         return next;
     }
 
@@ -227,6 +278,7 @@ export class AgencyBillingService {
             };
             await Promise.all([this.audit?.log({ tenantId: clientId, ...entry }), this.audit?.log({ tenantId: agencyId, ...entry })]);
         }
+        this.notifyClientChanged(agencyId, clientId);
     }
 
     // ── pagos ────────────────────────────────────────────────────────────
@@ -248,53 +300,84 @@ export class AgencyBillingService {
         const paidOn = input.paid_on ?? today;
         if (paidOn > today) throw bad('agency_payment_future', 'La fecha del pago no puede ser futura.');
         if (paidOn < addDaysYmd(today, -366 * 5)) throw bad('agency_payment_old', 'La fecha del pago es demasiado antigua.');
-        let created: { id: number; name: string; amount: number; currency: string; months: number; to: Date } | null = null;
-        await this.db.transaction(async (tx) => {
-            const client = await this.lockClient(tx, agencyId, clientId);
-            const plan = readAgencyClientPlan((client.settings as Record<string, unknown> | null)?.agency_plan);
-            if (!plan) throw bad('agency_no_plan', 'Primero asígnale un plan a esta empresa.');
-            const amount = input.amount ?? Math.round((plan.price * input.months * 100) / plan.period_months) / 100;
-            const todayEnd = endOfDay(today, tz);
-            const from = client.agencyPaidUntil && client.agencyPaidUntil.getTime() > todayEnd.getTime() ? client.agencyPaidUntil : todayEnd;
-            const to = extendPaidUntil(client.agencyPaidUntil, todayEnd, input.months);
-            const [row] = await tx
-                .insert(agencyPayments)
-                .values({
-                    tenantId: agencyId,
-                    clientId,
-                    amount,
-                    currency: plan.currency,
-                    months: input.months,
-                    method: input.method,
-                    note: input.note?.trim() || null,
-                    paidOn,
-                    periodFrom: from,
-                    periodTo: to,
-                    prevPaidUntil: client.agencyPaidUntil,
-                    createdBy: userId,
-                })
-                .returning({ id: agencyPayments.id });
-            await tx
-                .update(tenants)
-                .set({ agencyPaidUntil: to, updatedAt: new Date() })
-                .where(and(eq(tenants.id, clientId), eq(tenants.agencyId, agencyId)));
-            created = { id: row!.id, name: client.name, amount, currency: plan.currency, months: input.months, to };
-        });
-        const c = created as { id: number; name: string; amount: number; currency: string; months: number; to: Date } | null;
-        if (!c) throw new Error('El pago no se registró');
+        const c = await this.db.transaction((tx) =>
+            this.applyPaymentInTx(tx, agencyId, clientId, {
+                months: input.months,
+                amount: input.amount,
+                method: input.method,
+                note: input.note,
+                paidOn,
+                userId,
+                tz,
+            }),
+        );
+        await this.logPayment(agencyId, clientId, userId, c, { method: input.method });
+        this.notifyClientChanged(agencyId, clientId);
+        const list = await this.listPayments(agencyId, clientId);
+        const out = list.find((p) => p.id === c.id);
+        if (!out) throw new Error('El pago registrado no aparece');
+        return out;
+    }
+
+    /**
+     * v0.1.452 — Registrar un pago dentro de una transacción (con el cliente
+     * bloqueado): lo usan el registro a mano y el cobro en línea. Extiende el
+     * «pagado hasta» desde donde termina (si no venció) o desde hoy.
+     */
+    async applyPaymentInTx(
+        tx: Tx,
+        agencyId: number,
+        clientId: number,
+        input: { months: number; amount?: number; method: AgencyPaymentMethod; note?: string | null; paidOn: string; userId: number | null; tz: string },
+    ): Promise<{ id: number; name: string; amount: number; currency: string; months: number; to: Date }> {
+        const client = await this.lockClient(tx, agencyId, clientId);
+        const plan = readAgencyClientPlan((client.settings as Record<string, unknown> | null)?.agency_plan);
+        if (!plan) throw bad('agency_no_plan', 'Primero asígnale un plan a esta empresa.');
+        const amount = input.amount ?? Math.round((plan.price * input.months * 100) / plan.period_months) / 100;
+        const todayEnd = endOfDay(zonedToday(input.tz), input.tz);
+        const from = client.agencyPaidUntil && client.agencyPaidUntil.getTime() > todayEnd.getTime() ? client.agencyPaidUntil : todayEnd;
+        const to = extendPaidUntil(client.agencyPaidUntil, todayEnd, input.months);
+        const [row] = await tx
+            .insert(agencyPayments)
+            .values({
+                tenantId: agencyId,
+                clientId,
+                amount,
+                currency: plan.currency,
+                months: input.months,
+                method: input.method,
+                note: input.note?.trim() || null,
+                paidOn: input.paidOn,
+                periodFrom: from,
+                periodTo: to,
+                prevPaidUntil: client.agencyPaidUntil,
+                createdBy: input.userId,
+            })
+            .returning({ id: agencyPayments.id });
+        await tx
+            .update(tenants)
+            .set({ agencyPaidUntil: to, updatedAt: new Date() })
+            .where(and(eq(tenants.id, clientId), eq(tenants.agencyId, agencyId)));
+        return { id: row!.id, name: client.name, amount, currency: plan.currency, months: input.months, to };
+    }
+
+    /** La bitácora de un pago, en la agencia y en el cliente. */
+    async logPayment(
+        agencyId: number,
+        clientId: number,
+        userId: number | null,
+        c: { id: number; name: string; amount: number; currency: string; months: number; to: Date },
+        extra: Record<string, unknown>,
+    ): Promise<void> {
         const entry = {
             userId,
             action: 'agency.payment' as const,
             targetType: 'tenant',
             targetId: clientId,
             targetLabel: c.name,
-            meta: { agency_id: agencyId, payment_id: c.id, amount: c.amount, currency: c.currency, months: c.months, method: input.method, paid_until: c.to.toISOString() },
+            meta: { agency_id: agencyId, payment_id: c.id, amount: c.amount, currency: c.currency, months: c.months, paid_until: c.to.toISOString(), ...extra },
         };
         await Promise.all([this.audit?.log({ tenantId: clientId, ...entry }), this.audit?.log({ tenantId: agencyId, ...entry })]);
-        const list = await this.listPayments(agencyId, clientId);
-        const out = list.find((p) => p.id === c.id);
-        if (!out) throw new Error('El pago registrado no aparece');
-        return out;
     }
 
     /**
@@ -317,6 +400,15 @@ export class AgencyBillingService {
             if (!last || last.id !== paymentId) {
                 throw new ConflictException({ code: 'agency_payment_not_last', message: 'Sólo se puede deshacer el último pago.', data: { status: 409 } });
             }
+            // v0.1.452 — un pago en línea lo confirmó el proveedor: no se deshace
+            // desde aquí (si se devolvió el dinero, se corrige el «pagado hasta»).
+            if (!isManualMethod(last.method)) {
+                throw new ConflictException({
+                    code: 'agency_payment_online',
+                    message: `Este pago entró por ${AGENCY_PAYMENT_METHOD_LABELS[last.method as AgencyPaymentMethod] ?? 'el cobro en línea'}: no se deshace. Si devolviste el dinero, corrige el «pagado hasta» de la empresa.`,
+                    data: { status: 409 },
+                });
+            }
             if (client.agencyPaidUntil?.getTime() !== last.periodTo.getTime()) {
                 throw new ConflictException({
                     code: 'agency_payment_changed',
@@ -333,6 +425,7 @@ export class AgencyBillingService {
         });
         const entry = { userId, action: 'agency.payment_undo' as const, targetType: 'tenant', targetId: clientId, targetLabel: label, meta };
         await Promise.all([this.audit?.log({ tenantId: clientId, ...entry }), this.audit?.log({ tenantId: agencyId, ...entry })]);
+        this.notifyClientChanged(agencyId, clientId);
     }
 
     /** Lo que ve la empresa CLIENTE de su cobro (Ajustes → Suscripción). `null` si no es cliente de una agencia. */
@@ -360,6 +453,8 @@ export class AgencyBillingService {
             billing,
             payments: await this.paymentsOf(clientTenantId, client.agencyPaidUntil, { tenantId: client.agencyId, withNames: false }),
             support: support.email || support.whatsapp || support.url ? support : null,
+            // v0.1.452 — lo completa el servicio de cobros en línea.
+            online: { enabled: false, provider: null, periods: [], pending: null },
         };
     }
 
@@ -392,11 +487,11 @@ export class AgencyBillingService {
             created_at: p.createdAt.toISOString(),
             created_by_name: opts.withNames ? (creator ?? null) : null,
             undone_at: p.undoneAt ? p.undoneAt.toISOString() : null,
-            can_undo: opts.withNames && lastActive?.id === p.id && paidUntil?.getTime() === p.periodTo.getTime(),
+            can_undo: opts.withNames && isManualMethod(p.method) && lastActive?.id === p.id && paidUntil?.getTime() === p.periodTo.getTime(),
         }));
     }
 
-    private async agencyRow(agencyId: number): Promise<AgencyRowLite> {
+    async agencyRow(agencyId: number): Promise<AgencyRowLite> {
         const [row] = await this.db
             .select({ id: tenants.id, name: tenants.name, plan: tenants.plan, isAgency: tenants.isAgency, settings: tenants.settings })
             .from(tenants)
@@ -418,7 +513,7 @@ export class AgencyBillingService {
         return row;
     }
 
-    private async lockClient(tx: Tx, agencyId: number, clientId: number) {
+    async lockClient(tx: Tx, agencyId: number, clientId: number) {
         const [row] = await tx
             .select({ id: tenants.id, name: tenants.name, plan: tenants.plan, settings: tenants.settings, agencyPaidUntil: tenants.agencyPaidUntil })
             .from(tenants)
@@ -462,6 +557,10 @@ export function agencyTimeZone(settings: Record<string, unknown>): string {
 /** El último instante de un día en una zona: «pagado hasta el 15» incluye el 15. */
 export function endOfDay(ymd: string, tz: string): Date {
     return zonedInstant(ymd, tz, { h: 23, m: 59, s: 59 });
+}
+
+function isManualMethod(method: string): boolean {
+    return (AGENCY_MANUAL_PAYMENT_METHODS as readonly string[]).includes(method);
 }
 
 function bad(code: string, message: string): BadRequestException {

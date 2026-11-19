@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import {
     AGENCY_MAX_PLANS,
     AGENCY_PLAN_PERIODS,
+    COLLECTION_PROVIDER_LABEL,
     agencyBillingSettingsSchema,
     agencyPeriodText,
     agencyPlanIdFor,
+    collectionCurrencyError,
+    isCollectionProvider,
     type AgencyOverview,
     type AgencyPlan,
     parseLooseAmount,
 } from '@imagina-base/shared';
-import { Plus, Receipt, Trash2 } from 'lucide-react';
+import { CreditCard, ListChecks, Loader2, Plus, Receipt, Trash2 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,7 +23,7 @@ import { Select } from '@/components/ui/select';
 import { __ } from '@/lib/i18n';
 import { formatNumber } from '@/lib/tenantFormat';
 
-import { useUpdateAgencyBilling } from './useAgency';
+import { useEnsureAgencyClientsList, useUpdateAgencyBilling } from './useAgency';
 
 const CURRENCIES = ['COP', 'USD', 'MXN', 'PEN', 'CLP', 'ARS', 'EUR'];
 
@@ -50,9 +54,10 @@ function toDraft(p: AgencyPlan): PlanDraft {
 /**
  * v0.1.451 (I3, ADR-S108) — Los planes que la agencia le vende a sus
  * clientes y las reglas del cobro: cuántos días de gracia hay después de que
- * vence el pago y cuántos días antes se avisa. El cobro lo hace la agencia
- * (por su cuenta, o en línea desde la próxima versión); la app lleva el
- * «pagado hasta» de cada cliente y lo pasa a solo lectura si no paga.
+ * vence el pago y cuántos días antes se avisa. La agencia registra los pagos
+ * que le llegan por fuera o, desde v0.1.452, cobra en línea con su cuenta; la
+ * app lleva el «pagado hasta» de cada cliente y lo pasa a solo lectura si no
+ * paga.
  */
 export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview; usage: Record<string, number> }): JSX.Element {
     const save = useUpdateAgencyBilling();
@@ -60,6 +65,9 @@ export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview;
     const [grace, setGrace] = useState(String(overview.billing.grace_days));
     const [remind, setRemind] = useState(String(overview.billing.remind_days));
     const [notify, setNotify] = useState(overview.billing.notify_client);
+    const [connectionId, setConnectionId] = useState(overview.billing.online.connection_id ? String(overview.billing.online.connection_id) : '');
+    const [clientCanPay, setClientCanPay] = useState(overview.billing.online.client_can_pay);
+    const [autoLink, setAutoLink] = useState(overview.billing.online.auto_link);
     const [dirty, setDirty] = useState(false);
     const [errors, setErrors] = useState<string[]>([]);
     const [notice, setNotice] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -70,6 +78,9 @@ export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview;
         setGrace(String(overview.billing.grace_days));
         setRemind(String(overview.billing.remind_days));
         setNotify(overview.billing.notify_client);
+        setConnectionId(overview.billing.online.connection_id ? String(overview.billing.online.connection_id) : '');
+        setClientCanPay(overview.billing.online.client_can_pay);
+        setAutoLink(overview.billing.online.auto_link);
     }, [overview.billing, dirty]);
 
     const touch = (): void => {
@@ -130,6 +141,7 @@ export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview;
             grace_days: Number.isFinite(graceN) ? graceN : -1,
             remind_days: Number.isFinite(remindN) ? remindN : -1,
             notify_client: notify,
+            online: { connection_id: connectionId ? Number(connectionId) : null, client_can_pay: clientCanPay, auto_link: autoLink },
         });
         if (!parsed.success) {
             for (const issue of parsed.error.issues) {
@@ -155,6 +167,16 @@ export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview;
     };
 
     const platformDefault = overview.limit_plans[0]?.name ?? null;
+    const connection = overview.online.connections.find((c) => String(c.id) === connectionId) ?? null;
+    // Lo que la cuenta elegida no puede cobrar (Wompi sólo pesos colombianos; PayPal no pesos).
+    const provider = connection && isCollectionProvider(connection.provider) ? connection.provider : null;
+    const currencyIssues = provider
+        ? plans.flatMap((p) => {
+              if (!p.active) return [];
+              const err = collectionCurrencyError(provider, p.currency);
+              return err ? [`${p.name || __('Un plan')} (${p.currency}): ${err}`] : [];
+          })
+        : [];
 
     return (
         <Card data-testid="agency-plans-card" data-tour="agency-plans">
@@ -164,7 +186,7 @@ export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview;
                     {__('Tus planes y el cobro')}
                 </CardTitle>
                 <CardDescription>
-                    {__('Lo que le cobras a cada empresa cliente y cada cuánto. Cada empresa lleva su «pagado hasta»: cuando vence y pasan los días de gracia, queda en solo lectura (sus datos se conservan) hasta que registres el pago.')}
+                    {__('Lo que le cobras a cada empresa cliente y cada cuánto. Cada empresa lleva su «pagado hasta»: cuando vence y pasan los días de gracia, queda en solo lectura (sus datos se conservan) hasta que pague.')}
                 </CardDescription>
             </CardHeader>
             <CardContent>
@@ -289,6 +311,18 @@ export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview;
                         </label>
                     </div>
 
+                    <OnlineSection
+                        overview={overview}
+                        connectionId={connectionId}
+                        clientCanPay={clientCanPay}
+                        autoLink={autoLink}
+                        currencyIssues={currencyIssues}
+                        onConnection={(v) => (touch(), setConnectionId(v))}
+                        onClientCanPay={(v) => (touch(), setClientCanPay(v))}
+                        onAutoLink={(v) => (touch(), setAutoLink(v))}
+                        dirty={dirty}
+                    />
+
                     {errors.length > 0 && (
                         <ul className="imcrm-list-disc imcrm-pl-5 imcrm-text-sm imcrm-text-destructive" role="alert" data-testid="agency-plans-errors">
                             {errors.map((e) => (
@@ -310,5 +344,147 @@ export function AgencyPlansCard({ overview, usage }: { overview: AgencyOverview;
                 </form>
             </CardContent>
         </Card>
+    );
+}
+
+function providerName(provider: string): string {
+    return isCollectionProvider(provider) ? COLLECTION_PROVIDER_LABEL[provider] : provider;
+}
+
+/**
+ * v0.1.452 (I3, ADR-S108) — Cobrar en línea con la cuenta de cobro de la
+ * agencia (Mercado Pago, Wompi o PayPal, ADR-S31): la plata va a la cuenta de
+ * la agencia y, cuando entra el pago, se registra solo y corre el «pagado
+ * hasta». Los links quedan en la lista «Empresas cliente» de la agencia.
+ */
+function OnlineSection(props: {
+    overview: AgencyOverview;
+    connectionId: string;
+    clientCanPay: boolean;
+    autoLink: boolean;
+    currencyIssues: string[];
+    onConnection: (v: string) => void;
+    onClientCanPay: (v: boolean) => void;
+    onAutoLink: (v: boolean) => void;
+    dirty: boolean;
+}): JSX.Element {
+    const { overview, connectionId } = props;
+    const ensure = useEnsureAgencyClientsList();
+    const [ensureError, setEnsureError] = useState<string | null>(null);
+    const online = overview.online;
+    const saved = overview.billing.online.connection_id;
+    const list = online.clients_list;
+
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-pt-4" data-tour="agency-online" data-testid="agency-online">
+            <span className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-medium">
+                <CreditCard className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" aria-hidden />
+                {__('Cobrar en línea')}
+            </span>
+            <p className="imcrm-text-[12px] imcrm-text-muted-foreground">
+                {__('Con tu cuenta de Mercado Pago, Wompi o PayPal: el dinero llega a tu cuenta y, cuando entra el pago, se registra solo y la empresa queda pagada por el período que pagó.')}
+            </p>
+            {!online.available ? (
+                <p className="imcrm-rounded-md imcrm-bg-muted imcrm-px-3 imcrm-py-2 imcrm-text-sm" data-testid="agency-online-unavailable">
+                    {__('Tu plan no incluye las integraciones de cobro. Puedes seguir registrando los pagos a mano.')}
+                </p>
+            ) : online.connections.length === 0 ? (
+                <p className="imcrm-rounded-md imcrm-bg-muted imcrm-px-3 imcrm-py-2 imcrm-text-sm" data-testid="agency-online-no-connections">
+                    {__('Primero conecta tu cuenta de cobro como del equipo en')}{' '}
+                    <Link to="/settings?s=conectores" className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline">
+                        {__('Ajustes → Integraciones')}
+                    </Link>
+                    {` ${__('(Mercado Pago, Wompi o PayPal) y vuelve aquí.')}`}
+                </p>
+            ) : (
+                <>
+                    <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-sm sm:imcrm-max-w-md">
+                        <span>{__('Cuenta de cobro')}</span>
+                        <Select value={connectionId} onChange={(e) => props.onConnection(e.target.value)} data-testid="agency-online-connection">
+                            <option value="">{__('No cobrar en línea')}</option>
+                            {online.connections.map((c) => (
+                                <option key={c.id} value={String(c.id)}>
+                                    {c.name} · {providerName(c.provider)}
+                                </option>
+                            ))}
+                        </Select>
+                    </label>
+                    {connectionId !== '' && (
+                        <>
+                            <label className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-sm">
+                                <input
+                                    type="checkbox"
+                                    className="imcrm-mt-0.5"
+                                    checked={props.clientCanPay}
+                                    onChange={(e) => props.onClientCanPay(e.target.checked)}
+                                    data-testid="agency-online-client-can-pay"
+                                />
+                                <span>
+                                    {__('Mis clientes pueden pagar desde su app')}
+                                    <span className="imcrm-block imcrm-text-[12px] imcrm-text-muted-foreground">
+                                        {__('En Ajustes → Suscripción ven «Pagar ahora» y eligen cuántos períodos pagar. El valor lo pone tu plan.')}
+                                    </span>
+                                </span>
+                            </label>
+                            <label className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-sm">
+                                <input
+                                    type="checkbox"
+                                    className="imcrm-mt-0.5"
+                                    checked={props.autoLink}
+                                    onChange={(e) => props.onAutoLink(e.target.checked)}
+                                    data-testid="agency-online-auto-link"
+                                />
+                                <span>
+                                    {__('Mandar el link de pago en los avisos de vencimiento')}
+                                    <span className="imcrm-block imcrm-text-[12px] imcrm-text-muted-foreground">
+                                        {__('Antes de vencer se arma el link solo y el correo trae el botón «Pagar ahora».')}
+                                    </span>
+                                </span>
+                            </label>
+                        </>
+                    )}
+                    {props.currencyIssues.length > 0 && (
+                        <ul className="imcrm-list-disc imcrm-rounded-md imcrm-bg-warning/10 imcrm-py-2 imcrm-pl-7 imcrm-pr-3 imcrm-text-sm" data-testid="agency-online-currency">
+                            {props.currencyIssues.map((t) => (
+                                <li key={t}>{t}</li>
+                            ))}
+                        </ul>
+                    )}
+                    {saved !== null && !props.dirty && (
+                        <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-2 imcrm-text-sm" data-testid="agency-online-list">
+                            <ListChecks className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" aria-hidden />
+                            {list ? (
+                                <span>
+                                    {__('Tus clientes, su estado y sus links de pago están en la lista')}{' '}
+                                    <Link to={`/lists/${list.slug}/records`} className="imcrm-font-medium imcrm-text-primary hover:imcrm-underline">
+                                        {`«${list.name}»`}
+                                    </Link>
+                                    {`. ${__('Ahí puedes armar vistas o automatizaciones (por ejemplo, avisar por WhatsApp a quien está por vencer).')}`}
+                                </span>
+                            ) : (
+                                <>
+                                    <span className="imcrm-text-muted-foreground">{__('Falta la lista «Empresas cliente», donde quedan los links de pago.')}</span>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={ensure.isPending}
+                                        onClick={() => {
+                                            setEnsureError(null);
+                                            ensure.mutate(undefined, { onError: (err) => setEnsureError(err instanceof Error ? err.message : String(err)) });
+                                        }}
+                                        data-testid="agency-online-create-list"
+                                    >
+                                        {ensure.isPending && <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />}
+                                        {__('Crear la lista')}
+                                    </Button>
+                                </>
+                            )}
+                            {ensureError && <span className="imcrm-basis-full imcrm-text-destructive">{ensureError}</span>}
+                        </div>
+                    )}
+                </>
+            )}
+        </div>
     );
 }

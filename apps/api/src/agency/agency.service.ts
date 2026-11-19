@@ -14,9 +14,11 @@ import {
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { AuditService } from '../audit/audit.service';
 import { AuthService } from '../auth/auth.service';
+import { planModuleOff } from '../billing/plan-module-gate';
 import { PlansService } from '../billing/plans.service';
 import { accessOf } from '../billing/tenant-access';
 import { AgencyBillingService } from './agency-billing.service';
+import { AgencyClientsListService } from './agency-clients-list.service';
 import { readSupport } from '../help/help.service';
 import { DRIZZLE, type Db } from '../db/client';
 import { auditLog, memberships, plans, records, tenants, users } from '../db/schema';
@@ -42,6 +44,7 @@ export class AgencyService {
         private readonly plans: PlansService,
         private readonly billing: AgencyBillingService,
         @Optional() private readonly audit?: AuditService,
+        @Optional() private readonly clientsList?: AgencyClientsListService,
     ) {}
 
     async overview(agencyId: number): Promise<AgencyOverview> {
@@ -64,6 +67,12 @@ export class AgencyService {
             billing,
             limit_plans: await this.billing.limitPlans(agency),
             totals: await this.billing.totals(agencyId, billing),
+            // v0.1.452 — el cobro en línea: las cuentas del equipo y la lista «Empresas cliente».
+            online: {
+                available: (await planModuleOffSafe(this.db, agencyId)) === false,
+                connections: await this.billing.collectionConnections(agencyId),
+                clients_list: (await this.clientsList?.listDto(agencyId).catch(() => null)) ?? null,
+            },
         };
     }
 
@@ -233,6 +242,7 @@ export class AgencyService {
             this.audit?.log({ tenantId: agencyId, userId, action: 'agency.client_create', targetType: 'tenant', targetId: tenantId, targetLabel: input.name, meta }),
         ]);
         this.logger.log(`La agencia ${agencyId} creó la empresa cliente ${tenantId}`);
+        this.billing.notifyClientChanged(agencyId, tenantId);
         const [client] = await this.listClients(agencyId, userId, tenantId);
         if (!client) throw new Error('La empresa cliente recién creada no aparece');
         return client;
@@ -264,6 +274,7 @@ export class AgencyService {
                 } as const;
                 await Promise.all([this.audit?.log({ tenantId: clientId, ...entry }), this.audit?.log({ tenantId: agencyId, ...entry })]);
             }
+            this.billing.notifyClientChanged(agencyId, clientId);
         }
         const [out] = await this.listClients(agencyId, userId, clientId);
         if (!out) throw notFound();
@@ -360,4 +371,13 @@ export function notAgency(): ForbiddenException {
         message: 'Esta empresa no es una agencia. Pídele a la plataforma que la habilite como agencia.',
         data: { status: 403 },
     });
+}
+
+/** v0.1.452 — `true` si el plan de la agencia no incluye los cobros por integraciones. */
+async function planModuleOffSafe(db: Db, tenantId: number): Promise<boolean> {
+    try {
+        return await planModuleOff(db, tenantId, 'integrations');
+    } catch {
+        return true;
+    }
 }
