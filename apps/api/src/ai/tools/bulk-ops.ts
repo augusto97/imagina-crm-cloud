@@ -1,4 +1,4 @@
-import { BULK_EDIT_MAX_OPERATIONS, BULK_OPS, bulkOperationSchema, fieldSlugSchema, type BulkOperation, type Field } from '@imagina-base/shared';
+import { BULK_EDIT_MAX_OPERATIONS, BULK_OPS, bulkOperationSchema, fieldSlugSchema, flowChildLists, type BulkOperation, type Field } from '@imagina-base/shared';
 import { z } from 'zod';
 import { AiToolError } from './registry';
 import { filterRuleSpec, rulesToFilterTree, type FilterRuleSpec } from './structure-tools';
@@ -106,11 +106,8 @@ export function translateBulkEditActions(actions: unknown[], fields: Field[], li
         if (!a || typeof a !== 'object') continue;
         const act = a as { type?: unknown; config?: Record<string, unknown> };
         const cfg = act.config ?? {};
-        if (act.type === 'if_else') {
-            translateBulkEditActions(Array.isArray(cfg.then_actions) ? cfg.then_actions : [], fields, listName);
-            translateBulkEditActions(Array.isArray(cfg.else_actions) ? cfg.else_actions : [], fields, listName);
-            continue;
-        }
+        // Las ramas (si/sino, «Según el valor de…», «Si falla»).
+        for (const kid of flowChildLists(act)) translateBulkEditActions(kid.actions, fields, listName);
         if (act.type !== 'bulk_edit') continue;
         // Ya en ids (una automatización existente que el modelo copió tal cual): se deja.
         if (z.array(bulkOperationSchema).min(1).safeParse(cfg.operations).success) continue;

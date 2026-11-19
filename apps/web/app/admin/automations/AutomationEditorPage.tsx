@@ -58,6 +58,8 @@ import { ActionTypeMenu } from './ActionTypeMenu';
 import { AutomationRunsDrawer } from './AutomationRunsDrawer';
 import {
     actionConditionCount,
+    onErrorBadge,
+    onErrorTitle,
     actionMetaFor,
     summarizeAction,
     summarizeTrigger,
@@ -806,6 +808,7 @@ function EditorBody({
                     {state.actions.map((spec, i) => {
                         const meta = actionMetaFor(spec.type);
                         const condCount = actionConditionCount(spec);
+                        const failBadge = onErrorBadge(spec);
                         return (
                             <div key={i} className="imcrm-flex imcrm-flex-col">
                                 <FlowConnector
@@ -822,14 +825,23 @@ function EditorBody({
                                     icon={<meta.icon className="imcrm-h-4 imcrm-w-4" />}
                                     title={summarizeAction(spec, fields, lists, actionsCatalog, relationPaths.data)}
                                     badges={
-                                        condCount > 0 ? (
-                                            <Badge variant="outline" className="imcrm-shrink-0">
-                                                {sprintf(
-                                                    /* translators: %d: condition count */
-                                                    __('%d cond.'),
-                                                    condCount,
+                                        condCount > 0 || failBadge ? (
+                                            <>
+                                                {condCount > 0 && (
+                                                    <Badge variant="outline" className="imcrm-shrink-0">
+                                                        {sprintf(
+                                                            /* translators: %d: condition count */
+                                                            __('%d cond.'),
+                                                            condCount,
+                                                        )}
+                                                    </Badge>
                                                 )}
-                                            </Badge>
+                                                {failBadge && (
+                                                    <Badge variant="warning" className="imcrm-shrink-0" title={onErrorTitle(spec)} data-testid="on-error-badge">
+                                                        {failBadge}
+                                                    </Badge>
+                                                )}
+                                            </>
                                         ) : undefined
                                     }
                                     expanded={expanded.has(`action-${i}`)}
@@ -1004,12 +1016,17 @@ function FlowCard({
                     {icon}
                 </span>
                 <div className="imcrm-flex imcrm-min-w-0 imcrm-flex-1 imcrm-flex-col">
-                    <span className="imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">
-                        {overline}
+                    <span className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-1.5">
+                        <span className="imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-[0.08em] imcrm-text-muted-foreground">
+                            {overline}
+                        </span>
+                        {/* En el celular los chips van junto a «Paso N»: al lado del
+                            título, con la barra de botones, el título no se leía. */}
+                        {badges && <span className="imcrm-flex imcrm-items-center imcrm-gap-1.5 sm:imcrm-hidden">{badges}</span>}
                     </span>
                     <span className="imcrm-truncate imcrm-text-sm imcrm-font-medium">{title}</span>
                 </div>
-                {badges}
+                {badges && <span className="imcrm-hidden imcrm-shrink-0 imcrm-items-center imcrm-gap-1.5 sm:imcrm-flex">{badges}</span>}
                 {toolbar && (
                     <div
                         className="imcrm-flex imcrm-shrink-0 imcrm-items-center imcrm-gap-0.5"
@@ -1255,13 +1272,18 @@ function ActiveTogglePill({
 function describeIssue(issue: AutomationConfigIssue, prefix: string): string {
     const rest = issue.path.startsWith(prefix) ? issue.path.slice(prefix.length) : issue.path;
     const parts: string[] = [];
-    const re = /(?:^|\.)(config\.)?(actions|then_actions|else_actions)\.(\d+)/g;
+    // v0.1.460 — también las ramas de «Según el valor de…» (`config.cases.N.actions`,
+    // `config.default_actions`) y los pasos de «Si falla» (`on_error.actions`).
+    const re = /(?:^|\.)(config\.|on_error\.|config\.cases\.(\d+)\.)?(actions|then_actions|else_actions|default_actions)\.(\d+)/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(rest)) !== null) {
-        const n = Number(m[3]) + 1;
+        const n = Number(m[4]) + 1;
+        if (m[2] !== undefined) parts.push(sprintf(__('rama %1$d, paso %2$d'), Number(m[2]) + 1, n));
+        else if (m[1] === 'on_error.') parts.push(sprintf(__('si falla, paso %d'), n));
+        else if (m[3] === 'default_actions') parts.push(sprintf(__('«En otro caso», paso %d'), n));
         // v0.1.288 — `config.actions` es el cuerpo de una repetición.
-        if (m[2] === 'actions') parts.push(m[1] ? sprintf(__('repetición, paso %d'), n) : sprintf(__('Paso %d'), n));
-        else parts.push(sprintf(m[2] === 'then_actions' ? __('rama «Sí», paso %d') : __('rama «No», paso %d'), n));
+        else if (m[3] === 'actions') parts.push(m[1] ? sprintf(__('repetición, paso %d'), n) : sprintf(__('Paso %d'), n));
+        else parts.push(sprintf(m[3] === 'then_actions' ? __('rama «Sí», paso %d') : __('rama «No», paso %d'), n));
     }
     if (parts.length === 0 && rest.startsWith('trigger_config') && prefix === '') parts.push(__('Disparador'));
     return parts.length > 0 ? `${parts.join(' › ')}: ${issue.message}` : issue.message;

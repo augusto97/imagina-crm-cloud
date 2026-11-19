@@ -789,7 +789,12 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
     // ── v0.1.401: el conector completo ───────────────────────────────
 
     /** Una automatización «al crear» con esas acciones, corrida sobre el registro. */
-    async function runActions(listId: number, recordId: number, actions: Array<{ action_key: string; values: Record<string, string> }>, connId: number) {
+    async function runActions(
+        listId: number,
+        recordId: number,
+        actions: Array<{ action_key: string; values: Record<string, string>; on_error?: Record<string, unknown> }>,
+        connId: number,
+    ) {
         const [auto] = await withTenant(pg.db, tenantId, (tx) =>
             tx
                 .insert(automations)
@@ -799,7 +804,11 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
                     name: 'Whats completo',
                     triggerType: 'record_created',
                     triggerConfig: {},
-                    actions: actions.map((a) => ({ type: 'connector_action', config: { connection_id: connId, action_key: a.action_key, values: a.values } })),
+                    actions: actions.map((a) => ({
+                        type: 'connector_action',
+                        config: { connection_id: connId, action_key: a.action_key, values: a.values },
+                        ...(a.on_error ? { on_error: a.on_error } : {}),
+                    })),
                     isActive: true,
                 })
                 .returning(),
@@ -907,7 +916,8 @@ describe('WhatsApp — WAS v1 (v0.1.389)', () => {
             listId,
             recId,
             [
-                { action_key: 'trigger_flow', values: { recipient: '{{telefono}}', flow: '32', flow_label: 'Encuesta' } },
+                // v0.1.460 — sin «Si este paso falla: seguir», la corrida se detendría en el primer paso.
+                { action_key: 'trigger_flow', values: { recipient: '{{telefono}}', flow: '32', flow_label: 'Encuesta' }, on_error: { mode: 'continue' } },
                 { action_key: 'reply_conversation', values: { recipient: '{{telefono}}', message: 'Hola' } },
             ],
             id,

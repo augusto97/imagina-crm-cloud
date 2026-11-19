@@ -14,7 +14,7 @@ import type {
     UpdateAiAgentTriggerInput,
 } from '@imagina-base/shared';
 
-import { rememberAgentNames } from '@/admin/automations/automationMeta';
+import { rememberAgentNames } from '@/admin/automations/agentNames';
 import { invalidateForList, recordsKeys } from '@/hooks/useRecords';
 import { api } from '@/lib/api';
 import { useIsGuest } from '@/lib/guest';

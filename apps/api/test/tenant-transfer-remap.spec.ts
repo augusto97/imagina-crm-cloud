@@ -218,6 +218,40 @@ describe('remapJson', () => {
         ]);
     });
 
+    it('v0.1.460 — «Según el valor de…», «Preguntarle a la IA» y «Si este paso falla» apuntan a los campos NUEVOS', () => {
+        const m = maps();
+        const actions = [
+            {
+                type: 'switch',
+                config: {
+                    source_field_id: 10,
+                    cases: [{ label: 'A', op: 'eq', value: 'a', actions: [{ type: 'notify_in_app', config: { person_field_ids: [12] } }] }],
+                    default_actions: [{ type: 'assign_round_robin', config: { person_field_id: 12, assignee_user_ids: [30] } }],
+                },
+            },
+            {
+                type: 'ask_ai',
+                config: { instruction: 'Clasifica', output: 'fields', choices_field_id: 11, save_field_id: 12, items: [{ key: 'nit', field_id: 10 }] },
+                on_error: { mode: 'steps', actions: [{ type: 'notify_in_app', config: { notify_user_ids: [31], person_field_ids: [12] } }] },
+            },
+        ];
+        expect(remapJson(actions, m)).toEqual([
+            {
+                type: 'switch',
+                config: {
+                    source_field_id: 110,
+                    cases: [{ label: 'A', op: 'eq', value: 'a', actions: [{ type: 'notify_in_app', config: { person_field_ids: [112] } }] }],
+                    default_actions: [{ type: 'assign_round_robin', config: { person_field_id: 112, assignee_user_ids: [130] } }],
+                },
+            },
+            {
+                type: 'ask_ai',
+                config: { instruction: 'Clasifica', output: 'fields', choices_field_id: 111, save_field_id: 112, items: [{ key: 'nit', field_id: 110 }] },
+                on_error: { mode: 'steps', actions: [{ type: 'notify_in_app', config: { notify_user_ids: [131], person_field_ids: [112] } }] },
+            },
+        ]);
+    });
+
     it('B4 — calendario: fin, fuentes adicionales, campo de color y reglas por convención', () => {
         const types = new Map<number, string>([[10, 'datetime'], [11, 'datetime'], [12, 'select']]);
         const out = remapViewConfig(

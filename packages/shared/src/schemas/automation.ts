@@ -8,6 +8,16 @@ import { WHATS_EVENT_TRIGGER, readWhatsTriggerConfig } from './whats-triggers';
 import { automationRecordActionIssues, recordActionResponseName } from './automation-records';
 import { REQUEST_SIGNATURE_ACTION, requestSignatureIssues } from './signature-automations';
 import { automationExtraActionIssues, automationExtraTriggerIssues, extraActionResponseName } from './automation-extras';
+import {
+    ASK_AI_ACTION,
+    ON_ERROR_FORBIDDEN_INSIDE,
+    SWITCH_ACTION,
+    askAiIssues,
+    onErrorIssues,
+    readAskAiConfig,
+    readOnError,
+    switchIssues,
+} from './automation-control';
 
 /**
  * Automatizaciones (CONTRACT.md §8) — modelo FLEXIBLE alineado al plugin
@@ -109,17 +119,26 @@ export const AUTOMATION_ACTIONS = [
     'notify_in_app',
     'assign_round_robin',
     'copy_record',
+    // v0.1.460 — preguntarle a la IA y varias ramas por el valor de algo.
+    'ask_ai',
+    'switch',
 ] as const;
 
 export interface ActionSpec {
     type: string;
     config: Record<string, unknown>;
     condition?: ConditionData | null;
+    /**
+     * v0.1.460 — «Si este paso falla» (ver `automation-control.ts`): detener
+     * (sin nada), seguir, reintentar o hacer otros pasos (`actions`).
+     */
+    on_error?: Record<string, unknown> | null;
 }
 interface ActionSpecInput {
     type: string;
     config?: Record<string, unknown>;
     condition?: ConditionData | null;
+    on_error?: Record<string, unknown> | null;
 }
 
 export const actionSpecSchema: z.ZodType<ActionSpec, z.ZodTypeDef, ActionSpecInput> = z.lazy(() =>
@@ -127,6 +146,7 @@ export const actionSpecSchema: z.ZodType<ActionSpec, z.ZodTypeDef, ActionSpecInp
         type: z.string().min(1),
         config: z.record(z.unknown()).default({}),
         condition: conditionDataSchema.nullish(),
+        on_error: z.record(z.unknown()).nullish(),
     }),
 );
 
@@ -223,7 +243,9 @@ export type UpdateAutomationInput = z.infer<typeof updateAutomationSchema>;
 // v0.1.288 — `waiting`: la corrida está en pausa en un «Esperar» y se reanuda
 // sola a su hora; `cancelled`: no siguió (se canceló la espera, se pausó la
 // automatización, se borró el registro…), con el motivo en `error`.
-export const AUTOMATION_RUN_STATUSES = ['pending', 'running', 'success', 'failed', 'waiting', 'cancelled'] as const;
+// v0.1.460 — `with_errors`: terminó, pero algún paso falló y su «Si este paso
+// falla» decía seguir o hacer otros pasos (no es éxito ni falla total).
+export const AUTOMATION_RUN_STATUSES = ['pending', 'running', 'success', 'failed', 'waiting', 'cancelled', 'with_errors'] as const;
 export const automationRunStatusSchema = z.enum(AUTOMATION_RUN_STATUSES);
 export type AutomationRunStatus = z.infer<typeof automationRunStatusSchema>;
 
@@ -547,6 +569,8 @@ const isBlankConfig = (v: unknown): boolean =>
 interface IssueScope {
     /** Dentro de «Repetir por cada registro vinculado». */
     inLoop: boolean;
+    /** v0.1.460 — dentro de la rama «Si este paso falla». */
+    inFail?: boolean;
     /** Nombres de respuesta ya usados (para avisar de repetidos). */
     responseNames: Set<string>;
 }
@@ -555,9 +579,28 @@ function actionIssues(actions: unknown, base: string, depth: number, out: Automa
     if (!Array.isArray(actions) || depth > 6) return;
     actions.forEach((a, i) => {
         if (!a || typeof a !== 'object') return;
-        const spec = a as { type?: unknown; config?: unknown };
+        const spec = a as { type?: unknown; config?: unknown; on_error?: unknown };
         const cfg = (spec.config && typeof spec.config === 'object' ? spec.config : {}) as Record<string, unknown>;
         const at = `${base}.${i}`;
+        // v0.1.460 — «Si este paso falla»: lo que corre si falla no puede esperar.
+        if (scope.inFail && typeof spec.type === 'string' && ON_ERROR_FORBIDDEN_INSIDE.includes(spec.type)) {
+            out.push({ path: `${at}.type`, message: 'Dentro de «Si falla» no se puede esperar: pon la espera en el flujo principal.' });
+        }
+        out.push(...onErrorIssues(spec.type, spec.on_error, at, scope.inFail === true));
+        if (spec.on_error && typeof spec.on_error === 'object') {
+            const oe = readOnError(spec.on_error);
+            if (oe.actions.length > 0) actionIssues(oe.actions, `${at}.on_error.actions`, depth + 1, out, { ...scope, inFail: true });
+        }
+        // v0.1.460 — «Preguntarle a la IA» deja su respuesta con un nombre.
+        if (spec.type === ASK_AI_ACTION) {
+            out.push(...askAiIssues(cfg, at));
+            const name = readAskAiConfig(cfg).responseName;
+            if (scope.responseNames.has(name)) {
+                out.push({ path: `${at}.config.response_name`, message: `Ya hay otro paso que guarda su resultado como «${name}»: usa otro nombre.` });
+            } else {
+                scope.responseNames.add(name);
+            }
+        }
         // v0.1.288 — una respuesta con nombre (`{{respuestas.<nombre>.body}}`).
         if ((spec.type === 'call_webhook' || spec.type === 'connector_action') && !isBlankConfig(cfg.response_name)) {
             const name = String(cfg.response_name).trim();
@@ -693,6 +736,17 @@ function actionIssues(actions: unknown, base: string, depth: number, out: Automa
                 actionIssues(cfg.then_actions, `${at}.config.then_actions`, depth + 1, out, scope);
                 actionIssues(cfg.else_actions, `${at}.config.else_actions`, depth + 1, out, scope);
                 break;
+            case SWITCH_ACTION: {
+                // v0.1.460 — «Según el valor de…»: cada rama y «En otro caso».
+                out.push(...switchIssues(cfg, at));
+                const cases = Array.isArray(cfg.cases) ? cfg.cases : [];
+                cases.forEach((c, ci) => {
+                    const acts = c && typeof c === 'object' ? (c as Record<string, unknown>).actions : undefined;
+                    actionIssues(acts, `${at}.config.cases.${ci}.actions`, depth + 1, out, scope);
+                });
+                actionIssues(cfg.default_actions, `${at}.config.default_actions`, depth + 1, out, scope);
+                break;
+            }
             default:
                 break;
         }

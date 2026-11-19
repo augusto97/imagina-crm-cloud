@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 import type { MessageParam, MessageStreamEvent, Message, ContentBlockParam } from '@anthropic-ai/sdk/resources/messages';
 import {
     FALLBACK_TIME_ZONE,
@@ -12,6 +11,7 @@ import {
     type AiStep,
 } from '@imagina-base/shared';
 import { randomBytes } from 'node:crypto';
+import { AI_CLIENT_FACTORY, defaultClientFactory, type AiClientFactory } from './ai-client';
 import { AiQuotaExceededError, AiQuotaService } from './ai-quota.service';
 import { AiSettingsService, AiUnavailableError } from './ai-settings.service';
 import { ConversationsStore, dropLastTurn, prepareHistoryForNewTurn, type ApiMessage, type StoredConversation } from './conversations.store';
@@ -22,13 +22,8 @@ import { can } from '../authz/can';
 
 /** Vueltas máximas del bucle de herramientas por mensaje (cada una = 1 llamada al modelo). */
 export const MAX_TOOL_ITERATIONS = 8;
-/**
- * Cliente del proveedor, inyectable para testear el bucle con un fake (los
- * tests NO hablan con la API real). En producción es el SDK oficial.
- */
-export type AiClientFactory = (apiKey: string) => Pick<Anthropic, 'messages'>;
-export const AI_CLIENT_FACTORY = Symbol('AI_CLIENT_FACTORY');
-export const defaultClientFactory: AiClientFactory = (apiKey) => new Anthropic({ apiKey, maxRetries: 2, timeout: 120_000 });
+// El cliente del proveedor (inyectable con un fake en los tests) vive en `ai-client.ts`.
+export { AI_CLIENT_FACTORY, defaultClientFactory, type AiClientFactory } from './ai-client';
 
 /**
  * El asistente (ADR-S21): recibe un mensaje, decide con qué clave hablar,

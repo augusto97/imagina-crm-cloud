@@ -86,6 +86,8 @@ export const AutomationRow = memo(function AutomationRow({
 }: AutomationRowProps): JSX.Element {
     const triggerMeta = triggerMetaFor(a.trigger_type);
     const failed = a.last_run?.status === 'failed';
+    // v0.1.460 — «con errores»: falló un paso manejado por «Si este paso falla».
+    const withErrors = a.last_run?.status === 'with_errors';
     const waiting = a.waiting_runs ?? 0;
     const shown = summary.actions.slice(0, 2);
     const extra = summary.actions.length - shown.length;
@@ -182,15 +184,18 @@ export const AutomationRow = memo(function AutomationRow({
                     )}
                     {summary.actions.length === 0 && <span>{__('→ sin acciones')}</span>}
                 </div>
-                {failed && a.last_run?.error && (
+                {(failed || withErrors) && a.last_run?.error && (
                     <button
                         type="button"
-                        className="imcrm-mt-0.5 imcrm-flex imcrm-w-fit imcrm-max-w-full imcrm-items-start imcrm-gap-1 imcrm-text-left imcrm-text-xs imcrm-text-destructive hover:imcrm-underline"
+                        className={cn(
+                            'imcrm-mt-0.5 imcrm-flex imcrm-w-fit imcrm-max-w-full imcrm-items-start imcrm-gap-1 imcrm-text-left imcrm-text-xs hover:imcrm-underline',
+                            failed ? 'imcrm-text-destructive' : 'imcrm-text-warning',
+                        )}
                         onClick={(e) => {
                             e.stopPropagation();
                             onShowRuns(a);
                         }}
-                        data-testid="automation-last-failed"
+                        data-testid={failed ? 'automation-last-failed' : 'automation-last-errors'}
                     >
                         <AlertCircle className="imcrm-mt-px imcrm-h-3 imcrm-w-3 imcrm-shrink-0" aria-hidden />
                         <span className="imcrm-line-clamp-1">{a.last_run.error}</span>
@@ -292,15 +297,17 @@ function LastRun({ automation: a, onShowRuns }: { automation: AutomationEntity; 
         );
     }
     const failed = run.status === 'failed';
-    const tone = failed ? 'imcrm-text-destructive' : 'imcrm-text-muted-foreground';
+    const tone = failed ? 'imcrm-text-destructive' : run.status === 'with_errors' ? 'imcrm-text-warning' : 'imcrm-text-muted-foreground';
     const dot =
         failed ? 'imcrm-bg-destructive'
         : run.status === 'success' ? 'imcrm-bg-success'
+        : run.status === 'with_errors' ? 'imcrm-bg-warning'
         : run.status === 'cancelled' ? 'imcrm-bg-muted-foreground/40'
         : 'imcrm-bg-amber-400';
     const when = relativeTime(run.at);
     const label =
         run.status === 'failed' ? sprintf(__('Falló %s'), when)
+        : run.status === 'with_errors' ? sprintf(__('Con errores %s'), when)
         : run.status === 'success' ? sprintf(__('Corrió %s'), when)
         : run.status === 'waiting' ? sprintf(__('En espera · %s'), when)
         : run.status === 'cancelled' ? sprintf(__('Cancelada · %s'), when)

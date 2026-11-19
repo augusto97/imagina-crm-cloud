@@ -3757,4 +3757,39 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a Integraciones', href: '/settings?s=conectores' },
         audience: { roles: ['admin'] },
     },
+    {
+        key: 'v0.1.460-ramas-ia-si-falla',
+        version: '0.1.460',
+        date: '2026-11-19',
+        kind: 'feature',
+        title: 'Automatizaciones con varias ramas, preguntas a la IA y un plan si algo falla',
+        summary:
+            'Tres pasos nuevos: «Según el valor de…» abre una rama por cada valor, «Preguntarle a la IA» clasifica, resume o extrae datos, y cada paso dice qué hacer si falla.',
+        media: {
+            slides: [
+                {
+                    title: 'Una rama por cada valor',
+                    text: 'Elige un campo (o una variable) y arma una rama por opción, con «En otro caso» para lo demás. Se ven en columnas en el lienzo.',
+                    illustration: 'auto-lienzo',
+                },
+                {
+                    title: 'Pregúntale a la IA',
+                    text: 'Clasifica un mensaje entre tus opciones, saca un monto o una fecha, o resume el registro. La respuesta queda en una variable o en un campo.',
+                    illustration: 'ia-campo',
+                },
+                {
+                    title: 'Si un paso falla',
+                    text: 'Detente, sigue con el resto, reintenta hasta 3 veces o haz otros pasos, como avisarle a alguien con el mensaje del error.',
+                    illustration: 'auto-historial',
+                },
+            ],
+        },
+        body: [
+            '- Los dos pasos nuevos están en **Agregar acción**; **Si este paso falla** está al pie de cada paso.',
+            '- **Ojo**: ahora, si un paso falla, la automatización se detiene ahí (antes seguía con los pasos de abajo). Si prefieres que siga, elige **Seguir con el resto** en ese paso.',
+            '- Cuando un paso falla y lo manejaste, la corrida queda **con errores** en el historial (en ámbar) y no abre un problema.',
+        ].join('\n'),
+        action: { label: 'Ir a mis listas', href: '/lists', tour: 'automation-basics' },
+        audience: { roles: ['admin', 'manager'] },
+    },
 ];

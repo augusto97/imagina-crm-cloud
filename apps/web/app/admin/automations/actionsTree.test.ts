@@ -8,6 +8,7 @@ import {
     getNode,
     ifElseDepth,
     insertAt,
+    insideFail,
     insideLoop,
     removeAt,
     stepsBefore,
@@ -104,5 +105,57 @@ describe('actionsTree — repetir por cada vinculado (v0.1.288)', () => {
         expect(stepsBefore(t, [1, 'each', 0]).map((a) => a.spec.type)).toEqual(['call_webhook']);
         expect(stepsBefore(t, [2]).map((a) => a.spec.type)).toEqual(['call_webhook', 'for_each_linked', 'send_email']);
         expect(stepsBefore(t, [2]).map((a) => a.path.join('.'))).toEqual(['0', '1', '1.each.0']);
+    });
+});
+
+describe('actionsTree — «Según el valor de…» y «Si este paso falla» (v0.1.460)', () => {
+    const flow = (): ActionSpec[] => [
+        {
+            type: 'switch',
+            config: {
+                source_field_id: 7,
+                cases: [
+                    { label: 'Nuevo', op: 'eq', value: 'nuevo', actions: [email('nuevo@x.com')] },
+                    { label: 'Viejo', op: 'eq', value: 'viejo', actions: [] },
+                ],
+                default_actions: [email('otro@x.com')],
+            },
+        },
+        {
+            type: 'call_webhook',
+            config: { url: 'https://a.example', response_name: 'erp' },
+            on_error: { mode: 'steps', actions: [email('error@x.com')] },
+        },
+        email('fin@x.com'),
+    ];
+
+    it('cada rama del switch y «En otro caso» se direccionan', () => {
+        const t = flow();
+        expect(getNode(t, [0, 'case0', 0])?.config.to).toBe('nuevo@x.com');
+        expect(getNode(t, [0, 'default', 0])?.config.to).toBe('otro@x.com');
+        const ins = insertAt(t, [0, 'case1'], 0, email('viejo@x.com'));
+        expect(branchOf(ins[0]!, 'case1').map((a) => a.config.to)).toEqual(['viejo@x.com']);
+        // Inmutable: la rama original sigue vacía y las demás intactas.
+        expect(branchOf(t[0]!, 'case1')).toHaveLength(0);
+        expect(branchOf(ins[0]!, 'case0').map((a) => a.config.to)).toEqual(['nuevo@x.com']);
+        const rem = removeAt(t, [0, 'default', 0]);
+        expect(branchOf(rem[0]!, 'default')).toHaveLength(0);
+        expect(ifElseDepth([0, 'case1'])).toBe(1);
+    });
+
+    it('los pasos de «Si falla» viven en on_error.actions', () => {
+        const t = flow();
+        expect(getNode(t, [1, 'fail', 0])?.config.to).toBe('error@x.com');
+        const ins = insertAt(t, [1, 'fail'], 1, email('soporte@x.com'));
+        expect((ins[1]!.on_error as { actions: ActionSpec[] }).actions.map((a) => a.config.to)).toEqual(['error@x.com', 'soporte@x.com']);
+        expect((ins[1]!.on_error as { mode: string }).mode).toBe('steps');
+        expect(insideFail([1, 'fail'])).toBe(true);
+        expect(insideFail([0, 'case0'])).toBe(false);
+    });
+
+    it('stepsBefore: dentro de «Si falla» cuenta el paso que falló; después, las ramas previas', () => {
+        const t = flow();
+        expect(stepsBefore(t, [1, 'fail', 0]).map((s) => s.path.join('.'))).toEqual(['0', '0.case0.0', '0.default.0', '1']);
+        expect(stepsBefore(t, [2]).map((s) => s.path.join('.'))).toEqual(['0', '0.case0.0', '0.default.0', '1', '1.fail.0']);
     });
 });

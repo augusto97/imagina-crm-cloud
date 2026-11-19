@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import type { AutomationEntity } from '@/types/automation';
 
+import { onErrorBadge } from './automationMeta';
 import {
     groupAutomations,
+    lastRunHadErrors,
     matchesAutomationQuery,
     matchesStatus,
     moveFolder,
@@ -86,5 +88,22 @@ describe('índice de automatizaciones', () => {
     it('sube y baja carpetas', () => {
         expect(moveFolder(['A', 'B', 'C'], 'b', -1)).toEqual(['B', 'A', 'C']);
         expect(moveFolder(['A', 'B', 'C'], 'C', 1)).toEqual(['A', 'B', 'C']);
+    });
+});
+
+describe('«con errores» y «Si este paso falla» (v0.1.460)', () => {
+    it('una corrida «con errores» cuenta en «Con fallas» pero no es una falla', () => {
+        const a = auto(1, { last_run: { status: 'with_errors', error: 'El webhook respondió 500', at: '2026-11-10T08:00:00Z' } });
+        expect(lastRunHadErrors(a)).toBe(true);
+        expect(matchesStatus(a, 'failed')).toBe(true);
+        expect(statusCounts([a, auto(2)]).failed).toBe(1);
+    });
+
+    it('la etiqueta del paso dice qué hace si falla (y nada con lo de siempre)', () => {
+        expect(onErrorBadge({ type: 'call_webhook', config: {} })).toBeNull();
+        expect(onErrorBadge({ type: 'call_webhook', config: {}, on_error: { mode: 'stop' } })).toBeNull();
+        expect(onErrorBadge({ type: 'call_webhook', config: {}, on_error: { mode: 'retry', retries: 2 } })).toBe('Reintenta 2');
+        expect(onErrorBadge({ type: 'send_email', config: {}, on_error: { mode: 'continue' } })).toBe('Si falla, sigue');
+        expect(onErrorBadge({ type: 'send_email', config: {}, on_error: { mode: 'steps', actions: [] } })).toBe('Pasos si falla');
     });
 });

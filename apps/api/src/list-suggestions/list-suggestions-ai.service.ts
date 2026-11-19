@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
 import type { ContentBlockParam, Message, MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import {
+    flowChildLists,
     LIST_SUGGESTIONS_AI_MAX,
     LIST_SUGGESTIONS_REANALYZE_DAYS,
     hashString,
@@ -33,7 +34,7 @@ export const AI_SUGGEST_TOOLS: Record<string, ListSuggestionCategory> = {
     propose_update_field: 'field',
 };
 /** Acciones de automatización que una sugerencia puede traer: nada que hable con un servicio externo. */
-const SAFE_ACTIONS = new Set(['send_email', 'update_field', 'if_else', 'wait', 'create_record']);
+const SAFE_ACTIONS = new Set(['send_email', 'update_field', 'if_else', 'switch', 'wait', 'create_record']);
 export const SUBMIT_TOOL = 'submit_suggestions';
 export const LIST_SUGGEST_MAX_TURNS = 6;
 export const LIST_SUGGEST_MAX_TOKENS = 16_000;
@@ -326,9 +327,8 @@ function unsafeActions(tool: string, input: Record<string, unknown>): string | n
         for (const a of actions) {
             const type = String((a as { type?: unknown })?.type ?? '');
             if (!SAFE_ACTIONS.has(type)) bad.add(type || '(sin tipo)');
-            const cfg = ((a as { config?: unknown })?.config ?? a) as Record<string, unknown>;
-            walk(cfg.then_actions);
-            walk(cfg.else_actions);
+            // Las ramas (si/sino, «Según el valor de…» y «Si falla»).
+            for (const kid of flowChildLists(a)) walk(kid.actions);
         }
     };
     walk(input.actions);

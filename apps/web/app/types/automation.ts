@@ -38,6 +38,11 @@ export interface ActionSpec {
      * `status: 'skipped'`. Misma shape que `TriggerConfig.field_filters`.
      */
     condition?: ConditionData;
+    /**
+     * v0.1.460 — «Si este paso falla»: detener (por defecto), seguir,
+     * reintentar o hacer otros pasos (`actions`). Ver `readOnError` en shared.
+     */
+    on_error?: Record<string, unknown> | null;
 }
 
 /**
@@ -118,7 +123,8 @@ export interface ActionMeta {
     };
 }
 
-export type AutomationRunStatus = 'pending' | 'running' | 'success' | 'failed' | 'waiting' | 'cancelled';
+/** v0.1.460 — `with_errors`: falló un paso cuyo «Si este paso falla» decía seguir o hacer otros pasos. */
+export type AutomationRunStatus = 'pending' | 'running' | 'success' | 'failed' | 'with_errors' | 'waiting' | 'cancelled';
 
 export type ActionLogStatus = 'success' | 'failed' | 'skipped';
 

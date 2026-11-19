@@ -1,4 +1,4 @@
-import { acceptsWasApiCalls, convertWasApiCall, integrationDef, readWasApiCall } from '@imagina-base/shared';
+import { ON_ERROR_EXEMPT_ACTIONS, acceptsWasApiCalls, convertWasApiCall, integrationDef, isRetryableAction, readOnError, readWasApiCall } from '@imagina-base/shared';
 import type { ActionMeta, ActionSpec } from '@/types/automation';
 
 /**
@@ -113,6 +113,12 @@ function connectorApp(spec: ActionSpec, catalog: ActionMeta[]): string | null {
 export function carryOverSpec(prev: ActionSpec | null, next: ActionSpec, catalog: ActionMeta[]): ActionSpec {
     if (!prev) return next;
     const out: ActionSpec = prev.condition !== undefined ? { ...next, condition: prev.condition } : { ...next };
+    // v0.1.460 — «Si este paso falla» también se conserva, salvo en un
+    // contenedor (no falla por sí mismo) o un «Reintentar» que el paso nuevo
+    // no admite (no llama a otro servicio).
+    if (prev.on_error && !ON_ERROR_EXEMPT_ACTIONS.includes(next.type) && (readOnError(prev.on_error).mode !== 'retry' || isRetryableAction(next.type))) {
+        out.on_error = prev.on_error;
+    }
     if (next.type !== 'connector_action') return out;
     const nextApp = connectorApp(next, catalog);
     const nextKey = String(next.config.action_key ?? '');

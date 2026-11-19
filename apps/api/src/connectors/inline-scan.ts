@@ -1,4 +1,4 @@
-import type { ConnectorAuthType, ConnectorPair } from '@imagina-base/shared';
+import { flowChildLists, type ConnectorAuthType, type ConnectorPair } from '@imagina-base/shared';
 
 /**
  * Detección de credenciales escritas DENTRO de una acción `call_webhook`
@@ -239,12 +239,7 @@ export function walkActions(
         if (raw === null || typeof raw !== 'object') continue;
         const action = raw as Record<string, unknown>;
         visit(action);
-        const cfg = action.config;
-        if (cfg !== null && typeof cfg === 'object') {
-            const c = cfg as Record<string, unknown>;
-            walkActions(c.then_actions, visit);
-            walkActions(c.else_actions, visit);
-            if (action.type === 'for_each_linked') walkActions(c.actions, visit);
-        }
+        // v0.1.460 — también las ramas de «Según el valor de…» y los pasos de «Si falla».
+        for (const kid of flowChildLists(action)) walkActions(kid.actions, visit);
     }
 }

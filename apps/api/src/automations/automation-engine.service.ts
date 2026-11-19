@@ -86,6 +86,25 @@ import {
     type SystemFieldType,
     filterTreeSchema,
     flowBranch,
+    // v0.1.460 — «Preguntarle a la IA», «Según el valor de…» y «Si este paso falla».
+    caseBranch,
+    isFlowBranch,
+    ASK_AI_ACTION,
+    ASK_AI_FIELD_CHARS,
+    ASK_AI_MAX_TOKENS,
+    ASK_AI_RECORD_CHARS,
+    SWITCH_ACTION,
+    ON_ERROR_EXEMPT_ACTIONS,
+    askAiFormatInstruction,
+    isRetryableAction,
+    onErrorFinal,
+    parseAskAiAnswer,
+    pickSwitchCase,
+    readAskAiConfig,
+    readOnError,
+    readSwitchConfig,
+    retryDelayMs,
+    switchCaseLabel,
     flowNodeAt,
     flowPathKey,
     formatEmailFieldValue,
@@ -187,6 +206,8 @@ import { TenantDb } from '../tenancy/tenant-db.service';
 import { TenantTimeZones } from '../tenancy/tenant-time-zone.service';
 import { IncidentHub, errorText } from '../incidents/incident-hub';
 import { AgentHub } from '../ai-agents/agent-hub';
+import { AutomationAskAiService } from '../ai/automation-ask-ai.service';
+import { buildAskAiPrompt, type AskAiRecordField } from './ask-ai-prompt';
 import { wrapMergedValue } from '../ai-agents/agent-prompt';
 import { AutomationsRepository, type AutomationRow } from './automations.repository';
 import {
@@ -392,6 +413,8 @@ interface RunContext {
     file?: FileEventInfo;
     /** v0.1.455 — la persona que asignó «Asignar por turno» (`{{asignado.nombre}}`…). */
     asignado?: Record<string, string>;
+    /** v0.1.460 — dentro de la rama «Si falla»: qué falló (`{{error.mensaje}}`, `{{error.paso}}`). */
+    error?: { mensaje: string; paso: string };
 }
 
 /** v0.1.288 — una respuesta HTTP guardada para los pasos siguientes. */
@@ -499,6 +522,8 @@ export interface ResumeState {
     /** C5 — «Esperar aprobación» (ver `ApprovalWaitState`). */
     approval_wait?: ApprovalWaitState | null;
     had_fail: boolean;
+    /** v0.1.460 — antes de la espera falló algún paso con «seguir» o «hacer otros pasos». */
+    had_errors?: boolean;
     ctx: {
         data: Record<string, unknown>;
         before?: Record<string, unknown>;
@@ -584,6 +609,11 @@ const ACTION_NAMES: Record<string, string> = {
     notify_in_app: 'Avisar en la app',
     assign_round_robin: 'Asignar por turno',
     copy_record: 'Copiar a otra lista',
+    find_records: 'Buscar registros',
+    upsert_record: 'Crear o actualizar un registro',
+    request_signature: 'Pedir firma',
+    ask_ai: 'Preguntarle a la IA',
+    switch: 'Según el valor de…',
     engine: 'Motor de automatizaciones',
 };
 
@@ -666,6 +696,33 @@ export class AutomationEngine {
         }
         return this.approvalsSvc;
     }
+
+    /**
+     * v0.1.460 — «Preguntarle a la IA». Vive en el módulo de IA (que importa a
+     * éste): se resuelve al usarlo, sin ciclo de DI.
+     */
+    private askAiSvc: AutomationAskAiService | null | undefined;
+    private askAiService(): AutomationAskAiService | null {
+        if (this.askAiSvc === undefined) {
+            try {
+                this.askAiSvc = this.moduleRef?.get(AutomationAskAiService, { strict: false }) ?? null;
+            } catch {
+                this.askAiSvc = null;
+            }
+        }
+        return this.askAiSvc;
+    }
+
+    /** Para los specs que arman el motor a mano. */
+    setAskAi(svc: AutomationAskAiService | null): void {
+        this.askAiSvc = svc;
+    }
+
+    /**
+     * v0.1.460 — cuánto se espera antes de cada reintento de «Si este paso
+     * falla → Reintentar» (los specs lo acortan).
+     */
+    retryDelay: (attempt: number) => number = retryDelayMs;
 
     /** v0.1.367 — las suscripciones (viven en el módulo de cobros, global). */
     private subsSvc: SubscriptionsService | null | undefined;
@@ -1586,7 +1643,7 @@ export class AutomationEngine {
                 flowA = { log: [{ action: 'engine', status: 'failed', message: errorText(err, 2000), details: {} }] };
             }
             const logA = [...prior, resumedApproval, ...flowA.log];
-            await this.finalize(ctx, auto, runId, logA, flowA.pause ?? null, state.had_fail || flowA.log.some((l) => l.status === 'failed'));
+            await this.finalize(ctx, auto, runId, logA, flowA.pause ?? null, state.had_fail || hasUnhandledFail(flowA.log), state.had_errors === true || hasHandledFail(flowA.log));
             return;
         }
 
@@ -1599,7 +1656,7 @@ export class AutomationEngine {
             });
             if (!target.ok) {
                 const entry = skip('wait', `${target.message} La automatización no siguió.`);
-                return this.finalize(ctx, auto, runId, [...prior, { ...entry, details: { path: waitKey } }], null, state.had_fail);
+                return this.finalize(ctx, auto, runId, [...prior, { ...entry, details: { path: waitKey } }], null, state.had_fail, state.had_errors === true);
             }
             if (target.at.getTime() > now.getTime() + 30_000) {
                 await this.tenantDb.withTenant(tenantId, (tx) =>
@@ -1617,7 +1674,7 @@ export class AutomationEngine {
         const cond = state.wait.resume_condition as ConditionData | undefined;
         if (cond && !evaluateCondition(cond, this.accessor(ctx), this.condOpts(ctx))) {
             const entry = skip('wait', 'Al terminar la espera, el registro ya no cumplía la condición: la automatización no siguió.');
-            return this.finalize(ctx, auto, runId, [...prior, { ...entry, details: { path: waitKey } }], null, state.had_fail);
+            return this.finalize(ctx, auto, runId, [...prior, { ...entry, details: { path: waitKey } }], null, state.had_fail, state.had_errors === true);
         }
         const resumed = ok('wait', 'Terminó la espera: siguió con los pasos siguientes.', { path: waitKey });
         let flow: Flow;
@@ -1627,7 +1684,7 @@ export class AutomationEngine {
             flow = { log: [{ action: 'engine', status: 'failed', message: errorText(err, 2000), details: {} }] };
         }
         const log = [...prior, resumed, ...flow.log];
-        await this.finalize(ctx, auto, runId, log, flow.pause ?? null, state.had_fail || flow.log.some((l) => l.status === 'failed'));
+        await this.finalize(ctx, auto, runId, log, flow.pause ?? null, state.had_fail || hasUnhandledFail(flow.log), state.had_errors === true || hasHandledFail(flow.log));
     }
 
     private async cancelResumed(tenantId: number, runId: number, prior: ActionLogEntry[], reason: string): Promise<void> {
@@ -1760,7 +1817,7 @@ export class AutomationEngine {
         }
         if (sim.unknownTokens.size > 0) {
             trigger.notes.push(
-                `Estas variables quedarían vacías en la prueba porque su webhook no se ejecutó de verdad: ${[...sim.unknownTokens].map((t) => `{{${t}}}`).join(', ')}. Marca «Ejecutar de verdad» en ese paso para usarlas.`,
+                `Estas variables quedarían vacías en la prueba porque el paso que las deja (un webhook, una app conectada o la IA) no se ejecutó de verdad: ${[...sim.unknownTokens].map((t) => `{{${t}}}`).join(', ')}. Marca «Ejecutar de verdad» en ese paso para usarlas.`,
             );
         }
         let record: SimulationResult['record'] = null;
@@ -2259,6 +2316,9 @@ export class AutomationEngine {
                 return opts.isoNow ? now : now.slice(0, 19).replace('T', ' ');
             }
             if (token === 'date.today') return zonedToday(ctx.timeZone ?? FALLBACK_TIME_ZONE);
+            // v0.1.460 — dentro de «Si falla»: qué falló y en qué paso.
+            if (token === 'error.mensaje') return ctx.error?.mensaje ?? '';
+            if (token === 'error.paso') return ctx.error?.paso ?? '';
             // v0.1.344 — {{registro.enlace}} y {{registro.qr}} (la imagen de su QR).
             const recordToken = recordTokenValue(token, ctx.recordLinkPrefix && ctx.recordId ? `${ctx.recordLinkPrefix}${ctx.recordId}` : '');
             if (recordToken !== undefined) return recordToken;
@@ -2593,7 +2653,7 @@ export class AutomationEngine {
             this.logger.error(`Automatización ${auto.id} falló: ${String(err)}`);
         }
         const log = opts.preLog && opts.preLog.length > 0 ? [...opts.preLog, ...flow.log] : flow.log;
-        await this.finalize(ctx, auto, runId, log, flow.pause ?? null, log.some((l) => l.status === 'failed'));
+        await this.finalize(ctx, auto, runId, log, flow.pause ?? null, hasUnhandledFail(log), hasHandledFail(log));
         return runId;
     }
 
@@ -2609,21 +2669,26 @@ export class AutomationEngine {
         log: ActionLogEntry[],
         pause: Pause | null,
         hadFail: boolean,
+        /** v0.1.460 — falló algún paso cuyo «Si este paso falla» decía seguir o hacer otros pasos. */
+        hadErrors = false,
     ): Promise<void> {
-        const firstFail = log.find((l) => l.status === 'failed')?.message ?? 'Falló una acción';
+        // El motivo que se muestra: el del paso que detuvo la corrida (o el primero que falló).
+        const firstFail =
+            log.find((l) => l.status === 'failed' && !isHandledFail(l))?.message ?? log.find((l) => l.status === 'failed')?.message ?? 'Falló una acción';
+        const status: AutomationRunStatus = hadFail ? 'failed' : hadErrors ? 'with_errors' : 'success';
         try {
             await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
                 pause
                     ? this.automations.pauseRun(tx, ctx.tenantId, runId, {
                           actionsLog: capLog(log),
                           resumeAt: pause.at,
-                          resumeState: this.resumeStateOf(ctx, pause, hadFail) as unknown as Record<string, unknown>,
-                          error: hadFail ? firstFail : null,
+                          resumeState: this.resumeStateOf(ctx, pause, hadFail, hadErrors) as unknown as Record<string, unknown>,
+                          error: hadFail || hadErrors ? firstFail : null,
                       })
                     : this.automations.finishRun(tx, ctx.tenantId, runId, {
-                          status: (hadFail ? 'failed' : 'success') satisfies AutomationRunStatus,
+                          status,
                           actionsLog: capLog(log),
-                          error: hadFail ? firstFail : null,
+                          error: hadFail || hadErrors ? firstFail : null,
                           finishedAt: new Date(),
                       }),
             );
@@ -2632,11 +2697,13 @@ export class AutomationEngine {
         }
         // Una pausa no es éxito ni falla: sólo se avisa si ya falló algo antes.
         if (pause && !hadFail) return;
+        // «Con errores» no abre un problema: quien armó la automatización ya
+        // decidió qué hacer si ese paso falla (seguir, o sus pasos de «Si falla»).
         this.reportRun(ctx, auto, hadFail ? log : null);
     }
 
     /** Lo que se persiste de una corrida en espera (ver `ResumeState`). */
-    private resumeStateOf(ctx: RunContext, pause: Pause, hadFail: boolean): ResumeState {
+    private resumeStateOf(ctx: RunContext, pause: Pause, hadFail: boolean, hadErrors = false): ResumeState {
         return {
             v: 1,
             wait_path: pause.waitPath,
@@ -2645,6 +2712,7 @@ export class AutomationEngine {
             wait_field: pause.waitField,
             ...(pause.approvalWait ? { approval_wait: pause.approvalWait } : {}),
             had_fail: hadFail,
+            ...(hadErrors ? { had_errors: true } : {}),
             ctx: {
                 // Con registro, al reanudar se RELEE: la foto sólo hace falta sin él.
                 data: ctx.recordId === null ? ctx.data : {},
@@ -2684,7 +2752,7 @@ export class AutomationEngine {
             this.incidents?.resolve(ctx.tenantId, key);
             return;
         }
-        const failed = failedLog.find((l) => l.status === 'failed');
+        const failed = failedLog.find((l) => l.status === 'failed' && !isHandledFail(l)) ?? failedLog.find((l) => l.status === 'failed');
         const step = failed ? (ACTION_NAMES[failed.action] ?? failed.action) : 'Acción';
         const where = ctx.recordId !== null ? ` (registro #${ctx.recordId})` : '';
         this.incidents?.report({
@@ -2724,15 +2792,87 @@ export class AutomationEngine {
     private async resumeFrom(ctx: RunContext, actions: readonly ActionSpec[], resumePath: FlowPath, base: FlowPath, depth: number): Promise<Flow> {
         if (resumePath.length === 1) return this.runSteps(ctx, actions, base, resumePath[0] as number, depth);
         const idx = resumePath[0] as number;
-        const branch = resumePath[1] as FlowBranch;
-        const node = actions[idx];
-        if (!node || node.type !== 'if_else' || (branch !== 'then' && branch !== 'else')) {
+        const branch = resumePath[1];
+        const node = normalizeSpec(actions[idx]);
+        // v0.1.460 — también una rama de «Según el valor de…» (y, por si acaso, «Si falla»).
+        if (!node || !isFlowBranch(branch) || !branchBelongsTo(node.type, branch)) {
             throw new Error('La automatización cambió mientras esperaba: no se encontró dónde seguir.');
         }
         const inner = await this.resumeFrom(ctx, flowBranch(node, branch) as ActionSpec[], resumePath.slice(2), [...base, idx, branch], depth + 1);
         if (inner.pause || inner.stop) return inner;
+        // Después de los pasos de «Si falla», lo que decía el paso: seguir o terminar.
+        if (branch === 'fail' && readOnError(node.on_error).afterSteps === 'stop') return { ...inner, stop: true };
         const rest = await this.runSteps(ctx, actions, base, idx + 1, depth);
         return { log: [...inner.log, ...rest.log], ...(rest.pause ? { pause: rest.pause } : {}), ...(rest.stop ? { stop: true } : {}) };
+    }
+
+    /**
+     * v0.1.460 — Un paso con su «Si este paso falla». Sin nada configurado, un
+     * paso que falla DETIENE la corrida (antes seguía con los demás y quedaba
+     * «falló»: los pasos siguientes corrían con datos que nunca llegaron).
+     * «Seguir» y «Hacer otros pasos» dejan la falla manejada: la corrida
+     * termina «con errores». «Reintentar» repite el paso (sólo los que llaman
+     * a otro servicio) con esperas que crecen; «Probar» no reintenta.
+     */
+    private async runStep(ctx: RunContext, spec: ActionSpec, path: FlowPath, depth: number): Promise<Flow> {
+        const pathKey = flowPathKey(path);
+        let flow = await this.runStepBody(ctx, spec, path, depth);
+        if (flow.pause) return flow;
+        // Los contenedores (si/sino, «Según el valor de…») no fallan por sí
+        // mismos: cada paso de adentro maneja lo suyo.
+        if (ON_ERROR_EXEMPT_ACTIONS.includes(spec.type)) return flow;
+        let failure = stepFailure(flow, pathKey);
+        if (!failure) return flow;
+        const oe = readOnError(spec.on_error);
+        const retriedErrors: string[] = [];
+        if (oe.mode === 'retry' && isRetryableAction(spec.type)) {
+            if (ctx.sim) {
+                flow = {
+                    ...flow,
+                    log: markStepFailure(flow.log, pathKey, {
+                        retry_note: `En una corrida real se reintentaría hasta ${oe.retries === 1 ? '1 vez' : `${oe.retries} veces`} («Probar» no reintenta).`,
+                    }),
+                };
+            } else {
+                for (let attempt = 1; attempt <= oe.retries && failure; attempt++) {
+                    retriedErrors.push((failure.message ?? '').slice(0, 300));
+                    await sleep(this.retryDelay(attempt));
+                    flow = await this.runStepBody(ctx, spec, path, depth);
+                    if (flow.pause) return flow;
+                    failure = stepFailure(flow, pathKey);
+                }
+                if (!failure) {
+                    const attempts = retriedErrors.length + 1;
+                    return {
+                        ...flow,
+                        log: flow.log.map((e) =>
+                            ((e.details as { path?: unknown } | undefined)?.path ?? '') === pathKey && e.status !== 'failed'
+                                ? { ...e, message: `${e.message ?? ''} (salió al intento ${attempts})`.trim(), details: { ...(e.details ?? {}), attempts, retried_errors: retriedErrors } }
+                                : e,
+                        ),
+                    };
+                }
+            }
+        }
+        if (!failure) return flow;
+        const retryInfo = retriedErrors.length > 0 ? { attempts: retriedErrors.length + 1, retried_errors: retriedErrors } : {};
+        const mode = onErrorFinal(oe);
+        if (mode === 'stop') return { log: markStepFailure(flow.log, pathKey, retryInfo), stop: true };
+        const handledLog = markStepFailure(flow.log, pathKey, { ...retryInfo, handled: mode });
+        if (mode === 'continue') return { log: handledLog };
+        // «Hacer otros pasos»: la rama «Si falla», con `{{error.mensaje}}` y `{{error.paso}}`.
+        const saved = ctx.error;
+        ctx.error = { mensaje: failure.message ?? 'Falló el paso.', paso: ACTION_NAMES[spec.type] ?? spec.type };
+        let branch: Flow;
+        try {
+            branch = await this.runSteps(ctx, oe.actions as ActionSpec[], [...path, 'fail'], 0, depth + 1);
+        } finally {
+            ctx.error = saved;
+        }
+        const log = [...handledLog, ...branch.log];
+        if (branch.pause) return { log, pause: branch.pause };
+        if (branch.stop || oe.afterSteps === 'stop') return { log, stop: true };
+        return { log };
     }
 
     /**
@@ -2740,7 +2880,7 @@ export class AutomationEngine {
      * bucle), esperar → acción concreta. Cada entrada del log lleva la ruta del
      * paso (`details.path`): el historial y «Probar» la usan para ubicarlo.
      */
-    private async runStep(ctx: RunContext, spec: ActionSpec, path: FlowPath, depth: number): Promise<Flow> {
+    private async runStepBody(ctx: RunContext, spec: ActionSpec, path: FlowPath, depth: number): Promise<Flow> {
         const pathKey = flowPathKey(path);
         const tag = (entries: ActionLogEntry[]): ActionLogEntry[] =>
             entries.map((e) => (e.details && 'path' in e.details ? e : { ...e, details: { ...(e.details ?? {}), path: pathKey } }));
@@ -2758,7 +2898,18 @@ export class AutomationEngine {
         }
 
         if (spec.type === 'if_else') return this.executeIfElse(ctx, spec.config ?? {}, path, depth);
+        // v0.1.460 — «Según el valor de…»: varias ramas por el valor de un campo o una variable.
+        if (spec.type === SWITCH_ACTION) return this.executeSwitch(ctx, spec.config ?? {}, path, depth);
         if (spec.type === 'for_each_linked') return this.executeLoop(ctx, spec.config ?? {}, path, depth);
+        // v0.1.460 — «Preguntarle a la IA»: su propio pedido (fuera de una
+        // transacción del motor: el proveedor puede tardar varios segundos).
+        if (spec.type === ASK_AI_ACTION) {
+            try {
+                return { log: tag([await this.askAi(ctx, spec.config ?? {}, pathKey)]) };
+            } catch (err) {
+                return { log: tag([fail(ASK_AI_ACTION, explainError(err) || errorText(err, 500))]) };
+            }
+        }
         if (spec.type === 'wait') {
             const flow = this.executeWait(ctx, spec.config ?? {}, path);
             return { ...flow, log: tag(flow.log) };
@@ -2926,6 +3077,187 @@ export class AutomationEngine {
         if (depth >= MAX_IF_ELSE_DEPTH) return { log: [summary] };
         const inner = await this.runSteps(ctx, list, [...path, branch], 0, depth + 1);
         return { log: [summary, ...inner.log], ...(inner.pause ? { pause: inner.pause } : {}), ...(inner.stop ? { stop: true } : {}) };
+    }
+
+    /**
+     * v0.1.460 — «Según el valor de…». Lee el valor de un campo (por id: si lo
+     * renombran no se rompe) o de una variable (`{{respuestas.ia.valor}}`,
+     * `{{payload.estado}}`) y corre la PRIMERA rama que coincide; si ninguna,
+     * «En otro caso». Las reglas usan el mismo evaluador que las condiciones.
+     */
+    private async executeSwitch(ctx: RunContext, config: Record<string, unknown>, path: FlowPath, depth: number): Promise<Flow> {
+        const pathKey = flowPathKey(path);
+        const sw = readSwitchConfig(config);
+        const fv = this.accessor(ctx);
+        let actual: unknown;
+        let sourceText: string;
+        let labelOf: ((v: string) => string) | undefined;
+        if (sw.source.kind === 'field') {
+            const slug = slugOfFieldId(ctx, sw.source.fieldId);
+            const def = slug ? ctx.fieldsBySlug.get(slug) : undefined;
+            if (!slug || !def) {
+                return { log: [fail(SWITCH_ACTION, 'El campo del que dependen las ramas ya no existe: revisa «Según el valor de…» en el editor.', { path: pathKey })], stop: true };
+            }
+            actual = fv(slug);
+            sourceText = `«${def.label ?? slug}»`;
+            const options = optionLabelsOf(def);
+            if (options.size > 0) labelOf = (v) => options.get(v) ?? v;
+        } else if (sw.source.kind === 'variable') {
+            actual = fv(sw.source.path.split('|')[0]!.trim());
+            sourceText = `{{${sw.source.path}}}`;
+        } else {
+            return { log: [fail(SWITCH_ACTION, 'Falta elegir de qué depende cada rama: revisa «Según el valor de…» en el editor.', { path: pathKey })], stop: true };
+        }
+        const pick = pickSwitchCase(sw.cases, actual, this.condOpts(ctx), labelOf);
+        const branch: FlowBranch = pick.index >= 0 ? caseBranch(pick.index) : 'default';
+        const list = (pick.index >= 0 ? sw.cases[pick.index]!.actions : sw.defaultActions) as ActionSpec[];
+        const label = pick.index >= 0 ? switchCaseLabel(sw.cases[pick.index]!, pick.index, labelOf) : 'En otro caso';
+        const shown = displaySwitchValue(actual, labelOf);
+        const summary: ActionLogEntry = {
+            action: SWITCH_ACTION,
+            status: 'success',
+            message: `${sourceText} ${shown === '' ? 'está vacío' : `es «${shown}»`} → rama «${label}»`,
+            details: {
+                branch,
+                branch_label: label,
+                count: list.length,
+                path: pathKey,
+                ...(ctx.sim ? { _sim: 'info', value: shown, cases: pick.checks } : {}),
+            },
+        };
+        if (depth >= MAX_IF_ELSE_DEPTH) return { log: [summary] };
+        const inner = await this.runSteps(ctx, list, [...path, branch], 0, depth + 1);
+        return { log: [summary, ...inner.log], ...(inner.pause ? { pause: inner.pause } : {}), ...(inner.stop ? { stop: true } : {}) };
+    }
+
+    /**
+     * v0.1.460 — «Preguntarle a la IA». La instrucción (con sus variables) y,
+     * si se pidió, los datos del registro como DATOS etiquetados; la respuesta
+     * se valida contra el tipo pedido (una opción fuera de la lista o un número
+     * que no se lee hacen fallar el paso con el motivo) y queda en
+     * `{{respuestas.<nombre>.texto|valor|…}}`. Opcionalmente se guarda en un
+     * campo por el mismo camino que «Actualizar un campo».
+     *
+     * En «Probar» no llama a la IA (cuesta un pedido de la cuota) salvo que se
+     * marque «Ejecutar de verdad»: muestra la instrucción ya resuelta.
+     */
+    private async askAi(ctx: RunContext, cfg: Record<string, unknown>, pathKey: string): Promise<ActionLogEntry> {
+        const c = readAskAiConfig(cfg);
+        const fv = this.accessor(ctx);
+        const instruction = String(this.mergers(ctx, fv).merge(c.instruction) ?? '').trim();
+        if (instruction === '') return fail(ASK_AI_ACTION, 'La instrucción para la IA quedó vacía: revisa el texto y sus variables.');
+        let choices = c.choices;
+        if (c.output === 'choice' && c.choicesFieldId !== null) {
+            const slug = slugOfFieldId(ctx, c.choicesFieldId);
+            const def = slug ? ctx.fieldsBySlug.get(slug) : undefined;
+            if (!def) return fail(ASK_AI_ACTION, 'El campo de donde salen las opciones ya no existe: revisa el paso en el editor.');
+            choices = [...optionLabelsOf(def).values()];
+        }
+        if (c.output === 'choice' && choices.length < 2) return fail(ASK_AI_ACTION, 'Hacen falta al menos dos opciones para que la IA elija.');
+        const format = askAiFormatInstruction(c, choices);
+        const record = c.includeRecord && ctx.recordId !== null ? this.askAiRecordFields(ctx) : null;
+        const [listRow] = await this.tenantDb.withTenant(ctx.tenantId, (tx) =>
+            tx.select({ name: lists.name }).from(lists).where(and(eq(lists.tenantId, ctx.tenantId), eq(lists.id, ctx.listId))).limit(1),
+        );
+        const tz = ctx.timeZone ?? FALLBACK_TIME_ZONE;
+        const prompt = buildAskAiPrompt({ instruction, format, listName: listRow?.name ?? 'la lista', record, today: zonedToday(tz), timeZone: tz });
+        const saveTarget = this.askAiSaveTargets(ctx, c);
+        if ('error' in saveTarget) return fail(ASK_AI_ACTION, saveTarget.error);
+
+        const sim = ctx.sim;
+        if (sim && !sim.realSteps.has(pathKey)) {
+            // Sin respuesta real: las variables de la respuesta quedan vacías (y se avisa).
+            ctx.responses = { ...(ctx.responses ?? {}), [c.responseName]: { status: 200, body: { texto: '', valor: '' }, simulated: true } };
+            return ok(
+                ASK_AI_ACTION,
+                `Le preguntaría a la IA: «${shortLine(instruction, 160)}». Marca «Ejecutar de verdad» para ver su respuesta (cuenta como un pedido de la IA).`,
+                {
+                    _sim: 'would_run',
+                    instruction,
+                    format,
+                    ...(record ? { record_fields: record.map((f) => f.label) } : {}),
+                    ...(saveTarget.labels.length > 0 ? { save_to: saveTarget.labels } : {}),
+                },
+            );
+        }
+        const svc = this.askAiService();
+        if (!svc) return fail(ASK_AI_ACTION, 'La IA no está disponible en este servidor.');
+        let reply: Awaited<ReturnType<AutomationAskAiService['ask']>>;
+        try {
+            const answerTokens = c.output === 'text' ? ASK_AI_MAX_TOKENS[c.length] : c.output === 'fields' ? 1_000 : 200;
+            reply = await svc.ask({ tenantId: ctx.tenantId, system: prompt.system, user: prompt.user, quality: c.quality, answerTokens });
+        } catch (err) {
+            return fail(ASK_AI_ACTION, aiErrorText(err));
+        }
+        if (reply.stopReason === 'refusal') return fail(ASK_AI_ACTION, 'La IA no quiso responder este pedido.', { model: reply.model });
+        if (reply.stopReason === 'max_tokens' && c.output !== 'text') {
+            return fail(ASK_AI_ACTION, 'La respuesta de la IA quedó cortada (pide algo más corto).', { model: reply.model, answer: reply.text.slice(0, 500) });
+        }
+        const ans = parseAskAiAnswer(c, reply.text, choices);
+        if (!ans.ok) return fail(ASK_AI_ACTION, ans.error, { model: reply.model, answer: ans.text.slice(0, 500) });
+        const body: Record<string, unknown> = { texto: ans.text, valor: ans.value ?? '', ...ans.fields };
+        ctx.responses = { ...(ctx.responses ?? {}), [c.responseName]: { status: 200, body } };
+        if (sim) sim.responses[pathKey] = body;
+
+        // Guardar en campos: los valores ya leídos, tal cual (sin interpretar `{{…}}` del texto de la IA).
+        const values: Record<string, unknown> = {};
+        if (c.output === 'fields') {
+            for (const it of c.items) {
+                const slug = it.fieldId !== null ? slugOfFieldId(ctx, it.fieldId) : null;
+                const v = ans.fields[it.key];
+                if (slug && v !== null && v !== undefined) values[slug] = v;
+            }
+        } else if (saveTarget.slugs[0] && ans.value !== null && ans.value !== '') {
+            values[saveTarget.slugs[0]] = ans.value;
+        }
+        const answerText = shortLine(ans.text, 160);
+        const details: Record<string, unknown> = { answer: ans.text.slice(0, 2_000), value: ans.value, ...(c.output === 'fields' ? { fields: ans.fields } : {}), model: reply.model };
+        if (sim) details._sim = 'ran';
+        let saved = '';
+        if (Object.keys(values).length > 0) {
+            const write = await this.updateField(ctx, { values }, { literal: true });
+            if (write.status === 'failed') {
+                return fail(ASK_AI_ACTION, `La IA respondió «${answerText}», pero no se pudo guardar: ${write.message ?? ''}`.trim(), details);
+            }
+            saved = write.status === 'success' ? ` Lo guardó en ${Object.keys(values).map((slug) => `«${ctx.fieldsBySlug.get(slug)?.label ?? slug}»`).join(', ')}.` : ` ${write.message ?? ''}`;
+            if (write.details && 'changes' in write.details) details.changes = write.details.changes;
+        } else if (saveTarget.slugs.length > 0 && (ans.value === null || ans.value === '')) {
+            saved = ' La IA no encontró el dato: no se guardó nada.';
+        }
+        return ok(ASK_AI_ACTION, `La IA respondió «${answerText}».${saved}`.replace(/\.\./g, '.'), details);
+    }
+
+    /** v0.1.460 — Los campos del registro que se le pasan a la IA (legibles y recortados). */
+    private askAiRecordFields(ctx: RunContext): AskAiRecordField[] {
+        const { merge } = this.mergers(ctx);
+        const out: AskAiRecordField[] = [];
+        let total = 0;
+        for (const [slug, def] of ctx.fieldsBySlug) {
+            if (ASK_AI_SKIPPED_TYPES.has(def.type) || SECRET_FIELD_RE.test(slug) || SECRET_FIELD_RE.test(def.label ?? '')) continue;
+            const key = ctx.slugToKey.get(slug);
+            const raw = key !== undefined ? ctx.data[key] : undefined;
+            if (raw === undefined || raw === null || raw === '' || (Array.isArray(raw) && raw.length === 0)) continue;
+            const tag = isPersonType(def.type) ? `{{${slug}.nombre}}` : def.type === 'team' ? `{{${slug}.nombre}}` : `{{${slug}|label}}`;
+            let text = String(merge(tag) ?? '').trim();
+            if (text === '') continue;
+            if (text.length > ASK_AI_FIELD_CHARS) text = `${text.slice(0, ASK_AI_FIELD_CHARS - 1)}…`;
+            if (total + text.length > ASK_AI_RECORD_CHARS) break;
+            total += text.length;
+            out.push({ label: def.label ?? slug, text });
+        }
+        return out;
+    }
+
+    /** v0.1.460 — Dónde guarda la respuesta (por id → slug de ahora) o el motivo si el campo ya no está. */
+    private askAiSaveTargets(ctx: RunContext, c: ReturnType<typeof readAskAiConfig>): { slugs: string[]; labels: string[] } | { error: string } {
+        const ids = c.output === 'fields' ? c.items.map((it) => it.fieldId).filter((id): id is number => id !== null) : c.saveFieldId !== null ? [c.saveFieldId] : [];
+        const slugs: string[] = [];
+        for (const id of ids) {
+            const slug = slugOfFieldId(ctx, id);
+            if (!slug) return { error: 'Un campo donde se guarda la respuesta ya no existe: revisa el paso en el editor.' };
+            slugs.push(slug);
+        }
+        return { slugs, labels: slugs.map((slug) => ctx.fieldsBySlug.get(slug)?.label ?? slug) };
     }
 
     /**
@@ -3247,7 +3579,8 @@ export class AutomationEngine {
                 if (ctx.sim && i > 0) break;
                 ctx.item = { listId: other.id, listName: other.name, recordId: rec.id, data: rec.data, ...maps };
                 const flow = await this.runSteps(ctx, inner, [...path, 'each'], 0, depth + 1);
-                const failedEntry = flow.log.find((l) => l.status === 'failed');
+                // v0.1.460 — una falla manejada («seguir», «Si falla») no cuenta como falla del vinculado.
+                const failedEntry = flow.log.find((l) => l.status === 'failed' && !isHandledFail(l));
                 const status = failedEntry ? 'failed' : flow.log.length > 0 && flow.log.every((l) => l.status === 'skipped') ? 'skipped' : 'success';
                 summary.processed++;
                 if (status === 'failed') summary.failed++;
@@ -3408,7 +3741,7 @@ export class AutomationEngine {
      * devuelve el antes → después (y se aplica en memoria, para que los pasos
      * siguientes lo vean como en una corrida real).
      */
-    private async updateField(ctx: RunContext, cfg: Record<string, unknown>): Promise<ActionLogEntry> {
+    private async updateField(ctx: RunContext, cfg: Record<string, unknown>, opts: { literal?: boolean } = {}): Promise<ActionLogEntry> {
         const onItem = cfg.target === 'item';
         if (onItem && !ctx.item) return skip('update_field', '«El registro vinculado» sólo existe dentro de «Repetir por cada registro vinculado».');
         const target = onItem
@@ -3432,7 +3765,7 @@ export class AutomationEngine {
                 continue;
             }
             if (field.type === 'relation') {
-                const input = this.fieldInput(ctx, raw, field);
+                const input = opts.literal ? { value: raw } : this.fieldInput(ctx, raw, field);
                 const ids = parseRelationIds(input.value);
                 if (ids.length === 0 && !isBlank(input.value)) {
                     invalid.push(`${slug} («${String(input.value)}» no son ids de registros)`);
@@ -3444,10 +3777,14 @@ export class AutomationEngine {
             }
             // v0.1.365 — una variable que no existe (o vacía) dejaba el campo
             // igual y el log decía «ya tenían esos valores»: ahora se nombra.
-            if (typeof raw === 'string' && raw.includes('{{') && isBlank(this.fieldInput(ctx, raw, field).value)) {
+            if (!opts.literal && typeof raw === 'string' && raw.includes('{{') && isBlank(this.fieldInput(ctx, raw, field).value)) {
                 emptyVars.push(`«${field.label ?? slug}» (${raw.trim()} quedó vacía)`);
             }
-            const res = this.coerce(ctx, field, raw);
+            // v0.1.460 — un valor ya leído (la respuesta de la IA) se guarda tal cual:
+            // un `{{…}}` que escribió la IA no es una variable.
+            const res = opts.literal
+                ? coerceFieldValue(field, raw, { timeZone: ctx.timeZone, format: ctx.format ?? DEFAULT_FORMAT, fromVariable: true })
+                : this.coerce(ctx, field, raw);
             if (!res.ok) {
                 invalid.push(`«${field.label ?? slug}» (${res.error})`);
                 continue;
@@ -5935,6 +6272,32 @@ function skip(action: string, message: string): ActionLogEntry {
     return { action, status: 'skipped', message, details: {} };
 }
 
+/**
+ * v0.1.460 — Una falla «manejada»: su «Si este paso falla» decía seguir o
+ * hacer otros pasos. No detiene la corrida; la deja «con errores».
+ */
+function isHandledFail(e: ActionLogEntry): boolean {
+    return e.status === 'failed' && Boolean((e.details as { handled?: unknown } | undefined)?.handled);
+}
+function hasUnhandledFail(log: readonly ActionLogEntry[]): boolean {
+    return log.some((l) => l.status === 'failed' && !isHandledFail(l));
+}
+function hasHandledFail(log: readonly ActionLogEntry[]): boolean {
+    return log.some((l) => isHandledFail(l));
+}
+
+/** La falla (sin manejar) de ESTE paso, no la de un paso de adentro. */
+function stepFailure(flow: Flow, pathKey: string): ActionLogEntry | null {
+    return flow.log.find((e) => e.status === 'failed' && !isHandledFail(e) && ((e.details as { path?: unknown } | undefined)?.path ?? '') === pathKey) ?? null;
+}
+
+/** Suma `extra` a los detalles de las entradas fallidas de un paso. */
+function markStepFailure(log: ActionLogEntry[], pathKey: string, extra: Record<string, unknown>): ActionLogEntry[] {
+    return log.map((e) =>
+        e.status === 'failed' && ((e.details as { path?: unknown } | undefined)?.path ?? '') === pathKey ? { ...e, details: { ...(e.details ?? {}), ...extra } } : e,
+    );
+}
+
 /** Respuesta HTTP no exitosa: falla con el código y un pedacito de lo que contestaron. */
 function httpFail(action: string, what: string, status: number, body: string | undefined): ActionLogEntry {
     const snippet = (body ?? '').replace(/\s+/g, ' ').trim();
@@ -6153,15 +6516,80 @@ function pdfTemplateIds(cfg: Record<string, unknown>): number[] {
         : [];
 }
 
+/** v0.1.460 — espera sin bloquear (entre reintentos). */
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
+
+/** v0.1.460 — ¿esa rama es de ese tipo de paso? (para retomar tras una espera). */
+function branchBelongsTo(type: string, branch: FlowBranch): boolean {
+    if (branch === 'fail') return true;
+    if (branch === 'then' || branch === 'else') return type === 'if_else';
+    if (branch === 'each') return false;
+    return type === SWITCH_ACTION;
+}
+
+/** El slug de AHORA de un campo de la lista (por id), o null si ya no está. */
+function slugOfFieldId(ctx: RunContext, fieldId: number): string | null {
+    const key = `f${fieldId}`;
+    for (const [slug, k] of ctx.slugToKey) if (k === key) return slug;
+    return null;
+}
+
+/** Las opciones de un campo de selección: value → etiqueta. */
+function optionLabelsOf(def: LabelFieldLike): Map<string, string> {
+    const opts = (def.config as { options?: unknown } | undefined)?.options;
+    const out = new Map<string, string>();
+    if (!Array.isArray(opts)) return out;
+    for (const o of opts) {
+        if (!o || typeof o !== 'object') continue;
+        const value = String((o as { value?: unknown }).value ?? '');
+        const label = String((o as { label?: unknown }).label ?? value);
+        if (value !== '') out.set(value, label || value);
+    }
+    return out;
+}
+
+/** El valor que decidió la rama, legible («Pagada», «A, B»). */
+function displaySwitchValue(actual: unknown, labelOf?: (v: string) => string): string {
+    if (actual === null || actual === undefined) return '';
+    const one = (v: unknown): string => (labelOf ? labelOf(String(v)) : typeof v === 'object' ? JSON.stringify(v) : String(v));
+    if (Array.isArray(actual)) return actual.map(one).join(', ');
+    return one(actual).slice(0, 120);
+}
+
+/** Un texto en una línea, recortado. */
+function shortLine(s: string, max: number): string {
+    const one = s.replace(/\s+/g, ' ').trim();
+    return one.length > max ? `${one.slice(0, max - 1)}…` : one;
+}
+
+/** v0.1.460 — los campos que nunca viajan a la IA (archivos, botones, vínculos) y los que parecen secretos. */
+const ASK_AI_SKIPPED_TYPES = new Set(['file', 'button', 'relation']);
+const SECRET_FIELD_RE = /contrase|password|passwd|token|secret|api[_ ]?key|clave/i;
+
+/** v0.1.460 — Por qué no se pudo preguntar a la IA, en palabras. */
+function aiErrorText(err: unknown): string {
+    const code = (err as { code?: unknown } | null)?.code;
+    const message = err instanceof Error ? err.message : String(err);
+    if (code === 'ai_unavailable') return `La IA no está disponible: ${message}`;
+    if (code === 'ai_quota_reached') return message;
+    const status = (err as { status?: unknown } | null)?.status;
+    if (typeof status === 'number') return `La IA no respondió (error ${status}): ${shortLine(message, 200)}`;
+    return `No se pudo preguntar a la IA: ${shortLine(message, 200)}`;
+}
+
 /** v0.1.288 — un paso del árbol con su forma normal (o null si no es un paso). */
 function normalizeSpec(raw: unknown): ActionSpec | null {
     if (!raw || typeof raw !== 'object') return null;
-    const r = raw as { type?: unknown; config?: unknown; condition?: unknown };
+    const r = raw as { type?: unknown; config?: unknown; condition?: unknown; on_error?: unknown };
     if (typeof r.type !== 'string' || r.type === '') return null;
     return {
         type: r.type,
         config: r.config && typeof r.config === 'object' ? (r.config as Record<string, unknown>) : {},
         condition: (r.condition as ConditionData | null | undefined) ?? null,
+        // v0.1.460 — «Si este paso falla».
+        ...(r.on_error && typeof r.on_error === 'object' ? { on_error: r.on_error as Record<string, unknown> } : {}),
     };
 }
 
@@ -6429,6 +6857,7 @@ function readResumeState(raw: unknown): ResumeState | null {
         wait_field: wf && typeof wf.key === 'string' ? { key: wf.key, label: typeof wf.label === 'string' ? wf.label : wf.key } : null,
         approval_wait: readApprovalWait(r.approval_wait),
         had_fail: r.had_fail === true,
+        had_errors: r.had_errors === true,
         ctx: { ...ctx, data: ctx.data && typeof ctx.data === 'object' ? ctx.data : {} },
     };
 }

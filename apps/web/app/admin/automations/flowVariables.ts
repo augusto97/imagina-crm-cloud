@@ -1,8 +1,10 @@
 import {
+    ASK_AI_ACTION,
     ASSIGN_OUTPUTS,
     ASSIGN_ROUND_ROBIN_ACTION,
     COPY_RECORD_ACTION,
     COPY_RECORD_OUTPUTS,
+    ERROR_VARIABLES,
     FIND_RECORDS_ACTION,
     FIND_RECORDS_OUTPUTS,
     REQUEST_SIGNATURE_ACTION,
@@ -10,7 +12,9 @@ import {
     RESPONSE_NAME_RE,
     UPSERT_RECORD_ACTION,
     UPSERT_RECORD_OUTPUTS,
+    askAiVariables,
     extraActionResponseName,
+    readAskAiConfig,
     recordActionResponseName,
 } from '@imagina-base/shared';
 
@@ -121,9 +125,17 @@ export function variablesAt(
     item: LoopItemInfo | null,
 ): MergeTagSection[] {
     const out: MergeTagSection[] = [];
+    // v0.1.460 — dentro de «Si este paso falla»: qué falló y en qué paso.
+    if (path.includes('fail')) {
+        out.push({
+            title: __('El error'),
+            items: ERROR_VARIABLES.map((v) => ({ tag: v.key, label: __(v.label), hint: `{{${v.key}}}` })),
+        });
+    }
     if (item) out.push(itemSection(item));
     const before = stepsBefore(actions, path);
     out.push(...recordStepSections(before, samples));
+    out.push(...askAiSections(before));
     // v0.1.455 — «Asignar por turno» deja `{{asignado.x}}` (la persona elegida).
     if (before.some((s) => s.spec.type === ASSIGN_ROUND_ROBIN_ACTION)) {
         out.push({
@@ -163,6 +175,23 @@ export function variablesAt(
                 { tag: `respuestas.${name}.body`, label: __('Respuesta completa') },
                 ...sampleTagItems(`respuestas.${name}.body`, sample),
             ],
+        });
+    }
+    return out;
+}
+
+/** v0.1.460 — Lo que deja «Preguntarle a la IA» (`{{respuestas.<nombre>.texto|valor|…}}`). */
+function askAiSections(before: ReturnType<typeof stepsBefore>): MergeTagSection[] {
+    const out: MergeTagSection[] = [];
+    const seen = new Set<string>();
+    for (const step of [...before].reverse()) {
+        if (step.spec.type !== ASK_AI_ACTION) continue;
+        const name = readAskAiConfig(step.spec.config).responseName;
+        if (!RESPONSE_NAME_RE.test(name) || seen.has(name)) continue;
+        seen.add(name);
+        out.push({
+            title: sprintf(__('Respuesta de la IA «%s»'), name),
+            items: askAiVariables(step.spec.config).map((v) => ({ tag: v.key, label: __(v.label), hint: `{{${v.key}}}` })),
         });
     }
     return out;

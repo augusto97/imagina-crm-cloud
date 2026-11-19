@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { isFlowBranch } from '@imagina-base/shared';
 import { AlertTriangle, CheckCircle2, ChevronRight, Hourglass, MinusCircle, RotateCw, XCircle } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +26,7 @@ import type {
 import { parseUtcDate } from '@/lib/utcDate';
 
 import { formatDateTime } from '@/lib/tenantFormat';
+import { cn } from '@/lib/utils';
 /**
  * Drawer lateral que muestra el historial reciente de ejecuciones de una
  * automatización. Cada run lista su status final, timestamps y el log
@@ -183,7 +185,13 @@ function RunCard({ run, automationId }: { run: AutomationRunEntity; automationId
                 </ol>
             )}
             {run.error && (
-                <div className="imcrm-rounded imcrm-bg-destructive/10 imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-text-destructive">
+                // v0.1.460 — «Con errores»: la falla se manejó, va en ámbar (no en rojo).
+                <div
+                    className={cn(
+                        'imcrm-rounded imcrm-px-2 imcrm-py-1 imcrm-text-xs',
+                        run.status === 'with_errors' ? 'imcrm-bg-warning/10 imcrm-text-warning' : 'imcrm-bg-destructive/10 imcrm-text-destructive',
+                    )}
+                >
                     {run.error}
                 </div>
             )}
@@ -194,6 +202,8 @@ function RunCard({ run, automationId }: { run: AutomationRunEntity; automationId
 function RunStatusBadge({ status }: { status: AutomationRunStatus }): JSX.Element {
     if (status === 'success') return <Badge variant="success">{__('Éxito')}</Badge>;
     if (status === 'failed') return <Badge variant="destructive">{__('Fallida')}</Badge>;
+    // v0.1.460 — falló un paso cuyo «Si este paso falla» decía seguir o hacer otros pasos.
+    if (status === 'with_errors') return <Badge variant="warning">{__('Con errores')}</Badge>;
     if (status === 'running') return <Badge variant="warning">{__('Ejecutando')}</Badge>;
     if (status === 'waiting') return <Badge variant="info">{__('En espera')}</Badge>;
     if (status === 'cancelled') return <Badge variant="secondary">{__('Cancelada')}</Badge>;
@@ -219,16 +229,27 @@ const ACTION_LABELS: Record<string, string> = {
     create_subtasks_from_template: __('Crear subtareas desde una plantilla'),
     bulk_edit: __('Editar en lote'),
     if_else: __('Condición'),
+    // v0.1.460
+    switch: __('Según el valor de…'),
+    ask_ai: __('Preguntarle a la IA'),
     wait: __('Esperar'),
     for_each_linked: __('Repetir por cada registro vinculado'),
     engine: __('Motor de automatizaciones'),
 };
 
-/** Profundidad de un paso por su ruta (`2.then.0` → 1): sangría en el log. */
+/** Profundidad de un paso por su ruta (`2.then.0` → 1, `1.case0.0.fail.0` → 2): sangría en el log. */
 function depthOf(entry: ActionLogEntry): number {
     const path = (entry.details as { path?: unknown } | undefined)?.path;
     if (typeof path !== 'string' || path === '') return 0;
-    return path.split('.').filter((p) => p === 'then' || p === 'else' || p === 'each').length;
+    return path.split('.').filter((p) => isFlowBranch(p)).length;
+}
+
+/** v0.1.460 — Lo que pasó con «Si este paso falla» en una entrada del log. */
+interface FailInfo {
+    handled?: 'continue' | 'steps';
+    attempts?: number;
+    retried_errors?: string[];
+    retry_note?: string;
 }
 
 interface LoopSummary {
@@ -242,6 +263,8 @@ function ActionLogRow({ entry }: { entry: ActionLogEntry }): JSX.Element {
         ? ((entry.details as { warnings: unknown[] }).warnings.map(String))
         : [];
     const loop = entry.action === 'for_each_linked' ? (entry.details as LoopSummary) : null;
+    const fail = (entry.details ?? {}) as FailInfo;
+    const retried = Array.isArray(fail.retried_errors) ? fail.retried_errors.map(String) : [];
     return (
         <li className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-xs" style={{ marginLeft: Math.min(depthOf(entry), 4) * 12 }}>
             <ActionStatusIcon status={entry.status} warned={warnings.length > 0} />
@@ -254,6 +277,31 @@ function ActionLogRow({ entry }: { entry: ActionLogEntry }): JSX.Element {
                     <span className="imcrm-mt-0.5 imcrm-rounded imcrm-bg-warning/10 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-warning" data-testid="imcrm-run-warnings">
                         {sprintf(_n('%d valor no se escribió', '%d valores no se escribieron', warnings.length), warnings.length)}
                     </span>
+                )}
+                {entry.status === 'failed' && (fail.handled === 'continue' || fail.handled === 'steps') && (
+                    <span className="imcrm-mt-0.5 imcrm-w-fit imcrm-rounded imcrm-bg-warning/10 imcrm-px-1.5 imcrm-py-0.5 imcrm-text-warning" data-testid="imcrm-run-handled">
+                        {fail.handled === 'continue'
+                            ? __('Si falla: siguió con el resto')
+                            : __('Si falla: hizo los pasos de «Si falla»')}
+                    </span>
+                )}
+                {retried.length > 0 && (
+                    <span className="imcrm-mt-0.5 imcrm-flex imcrm-flex-col imcrm-gap-0.5 imcrm-text-muted-foreground" data-testid="imcrm-run-retries">
+                        <span className="imcrm-flex imcrm-items-center imcrm-gap-1 imcrm-font-medium">
+                            <RotateCw className="imcrm-h-3 imcrm-w-3" />
+                            {entry.status === 'failed'
+                                ? sprintf(_n('Se reintentó %d vez y siguió fallando', 'Se reintentó %d veces y siguió fallando', retried.length), retried.length)
+                                : sprintf(_n('Salió tras %d reintento', 'Salió tras %d reintentos', retried.length), retried.length)}
+                        </span>
+                        {retried.map((m, j) => (
+                            <span key={j} className="imcrm-truncate" title={m}>
+                                {sprintf(__('Intento %d: %s'), j + 1, m)}
+                            </span>
+                        ))}
+                    </span>
+                )}
+                {typeof fail.retry_note === 'string' && fail.retry_note !== '' && (
+                    <span className="imcrm-mt-0.5 imcrm-text-muted-foreground">{fail.retry_note}</span>
                 )}
                 {loop && Array.isArray(loop.items) && loop.items.length > 0 && <LoopItems summary={loop} />}
             </div>

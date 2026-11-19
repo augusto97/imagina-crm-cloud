@@ -30,8 +30,9 @@ de eventos en v0.1.442 y la app de n8n en v0.1.443; quedan Make y Zapier),
 **E1 + E2** («buscar registros», «crear o actualizar por un dato» y
 «cuando se agrega un comentario» salieron en v0.1.444; «cuando un registro
 empieza a cumplir una condición», «cuando se sube un archivo», «avisar en la
-app», «asignar por turno» y «copiar a otra lista» en v0.1.455; queda
-«preguntarle a la IA»), **A14** (duplicados y fusionar: salió en v0.1.445), **D6**
+app», «asignar por turno» y «copiar a otra lista» en v0.1.455, y «preguntarle a
+la IA» en v0.1.460, junto con E3 —varias ramas «según el valor de…» y «si este
+paso falla» con reintentos—; de E3 quedan los subflujos), **A14** (duplicados y fusionar: salió en v0.1.445), **D6**
 (firma electrónica: salió completa en v0.1.446, v0.1.447 —automatizaciones,
 portal, verificar con el archivo y asistente/MCP— y v0.1.448 —el código por SMS
 o WhatsApp—) y **G8** (facturación DIAN: el usuario la dejó para después el
@@ -82,7 +83,7 @@ aquí, pospuestos:
 **Oleada 7 · el usuario eligió el 2026-10-26 sólo «Empezar fácil»**, ampliado
 con guías y recorridos interactivos, centro de ayuda y novedades (F7 + I7 +
 I9 se publicaron en v0.1.318-v0.1.320 y salieron de este banco). Siguen aquí, sin
-elegir: E1 + E2 + E3 (automatizaciones completas), E7 y G4 (la «IA en el día a día» —F1, F2 y pedir
+elegir: lo que queda de E3 (los subflujos), E7 y G4 (la «IA en el día a día» —F1, F2 y pedir
 al agente desde la ficha o en lote— salió en v0.1.456)
 (calendario en dos sentidos).
 
@@ -128,8 +129,7 @@ Valor y esfuerzo según el estudio (S < M < L < XL).
 ### E. Automatizaciones
 | Idea | Valor · esfuerzo | Nota |
 |---|---|---|
-| E2 · Acciones que faltan | alto · M | «Preguntarle a la IA» dentro de una automatización. Ya existen: pedir aprobación, subtareas desde plantilla, buscar registros y crear o actualizar por un dato (v0.1.444), avisar en la app, asignar por turno y copiar a otra lista (v0.1.455). Los disparadores que faltaban (condición y archivo subido) salieron en v0.1.455. |
-| E3 · Varias ramas («según el valor de…»), subflujos, manejo de errores por paso, reintento de webhooks | medio · M | |
+| E3 · Subflujos (una automatización que llama a otra, con sus datos) | medio · M | **Lo demás de E3 salió en v0.1.460**: «Según el valor de…» (varias ramas) y «Si este paso falla» (detener, seguir, reintentar hasta 3 veces u otros pasos). E2 salió completa: «Preguntarle a la IA» también en v0.1.460. |
 | E4 · Scripts en JavaScript aislado | medio-bajo · L | Necesita un sandbox serio. |
 | E7 · «Describe la automatización y la armo» dentro del editor | medio · S | El asistente ya sabe crearlas. |
 

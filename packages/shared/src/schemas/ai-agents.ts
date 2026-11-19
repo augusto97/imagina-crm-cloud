@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { idSchema } from './common';
 import { zonedInstant, zonedToday } from './timezone';
+import { flowChildLists } from './automation-flow';
 
 /**
  * E6 — Agentes de IA (ADR-S67).
@@ -504,9 +505,7 @@ export function agentIdsInActions(actions: unknown, depth = 0): number[] {
             const id = readAskAgentConfig(cfg).agent_id;
             if (id !== null) out.push(id);
         }
-        out.push(...agentIdsInActions(cfg.then_actions, depth + 1));
-        out.push(...agentIdsInActions(cfg.else_actions, depth + 1));
-        out.push(...agentIdsInActions(cfg.actions, depth + 1));
+        for (const kid of flowChildLists(a)) out.push(...agentIdsInActions(kid.actions, depth + 1));
     }
     return [...new Set(out)];
 }

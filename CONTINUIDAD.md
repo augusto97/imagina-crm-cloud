@@ -430,7 +430,14 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.459**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.460**
+(**automatizaciones, parte 2** — «Según el valor de…» (hasta 12 ramas más «En
+otro caso»), «Preguntarle a la IA» (respuesta validada que queda en
+`{{respuestas.<nombre>.*}}` o en un campo, con la cuota de la IA) y «Si este
+paso falla» en cada paso (detener, seguir, reintentar u otros pasos; la corrida
+queda «Con errores»). **Cambio de conducta**: sin «Si este paso falla», un paso
+que falla DETIENE la automatización (antes seguía). Sin migración; addendum
+ADR-S47). Antes **v0.1.459**
 (**una lista y una pestaña de Google Sheets sincronizadas** — Integraciones →
 Google Sheets → «Sincronizar con una lista»: en un sentido o en los dos, con
 columna clave (ID que escribe la app o un campo «Sin repetidos»), mapeo de
@@ -2335,6 +2342,32 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.460** — **Varias ramas, preguntarle a la IA y «Si este
+  paso falla»** (E2 + E3; addendum ADR-S47). Sin migración: la corrida suma el
+  estado `with_errors` («Con errores», ámbar) que NO abre Problema. Paso
+  `switch` («Según el valor de…»: campo por id o variable, hasta 12 ramas +
+  «En otro caso», gana la primera), paso `ask_ai` (`AutomationAskAiService`
+  con la resolución/cuota de ADR-S21, respuesta validada a
+  `{{respuestas.<nombre>.texto|valor|<dato>}}`, guardar en un campo, «Probar»
+  sin llamar a la IA) y `on_error` en cada paso (detener / seguir /
+  reintentar 1-3 con 3-10-30 s / otros pasos con `{{error.*}}`). Reglas en
+  `packages/shared/src/schemas/automation-control.ts`; el árbol en
+  `automation-flow.ts` (`flowChildLists`) y lo recorren motor, editor,
+  lienzo, historial, versiones, asistente/MCP, secretos y migración.
+  **Cambio de comportamiento a recordar**: sin «Si falla» configurado, un
+  paso que falla DETIENE la corrida (antes seguían los de abajo). Lo
+  atraparon dos tests viejos (`whatsapp-web.spec` «flujo inactivo» e
+  `incidents.spec` «savepoint»), ajustados. Reintentar duerme en el worker
+  (hasta ~43 s, sin transacción abierta: cada acción va en la suya). El E2E
+  atrapó que `fromAutomation` (editor) perdía `on_error` al reabrir (y
+  guardar lo borraba): arreglado con test. **Pendiente**: subflujos (E3);
+  los valores de una rama que comparan contra ids de PERSONAS no se re-mapean
+  al migrar una empresa; el campo con la IA manda TODOS los campos legibles
+  (no se eligen) salvo los que parecen secretos — el filtro por nombre
+  (`clave`) también deja afuera p. ej. «Palabra clave». Al integrar el
+  bundle inicial dio 821/820 KB gz: `useAiAgents` importaba todo
+  `automationMeta` sólo para registrar los nombres de los agentes; se
+  mudaron a `automations/agentNames.ts` y la app bajó a 810/820 KB gz.
 - **2026-11-19 · v0.1.459** — **Google Sheets sincronizado con una lista** (G3,
   ADR-S112). La conexión de Google Sheets suma «Sincronizar con una lista»
   (Integraciones → Google Sheets): pegar el enlace, elegir la pestaña, la lista,

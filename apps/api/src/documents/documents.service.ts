@@ -16,6 +16,7 @@ import { REDIS } from '../redis/redis.module';
 import { DOC_MAX_RENDER_CELLS, HitLimiter, LiveLinkCache, tooManyRequests } from './pdf-limits';
 import {
     effectiveCapabilities,
+    flowChildLists,
     type Role,
     DOC_MAX_PDF_BYTES,
     FALLBACK_TIME_ZONE,
@@ -409,8 +410,8 @@ export class DocumentsService {
                 const cfg = act?.config ?? {};
                 if (act?.type === 'generate_pdf' && Number(cfg.document_template_id) === templateId) return true;
                 if (act?.type === 'send_email' && Array.isArray(cfg.pdf_templates) && cfg.pdf_templates.map(Number).includes(templateId)) return true;
-                if (act?.type === 'if_else') return uses(cfg.then_actions) || uses(cfg.else_actions);
-                return false;
+                // Las ramas (si/sino, bucle, «Según el valor de…» y «Si falla»).
+                return flowChildLists(act).some((kid) => uses(kid.actions));
             });
         };
         return rows.filter((r) => uses(r.actions)).map((r) => r.name);

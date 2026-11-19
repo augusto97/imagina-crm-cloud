@@ -1,4 +1,5 @@
 import {
+    mapFlowChildLists,
     BLUEPRINT_VERSION,
     COLOR_PRESETS,
     ONBOARDING_FOCUS_LABELS,
@@ -295,13 +296,14 @@ function normalizeActions(actions: unknown, own: Map<string, PackField>, pack: P
                 c.values = next;
             }
             if (c.condition) c.condition = normalizeRules(c.condition, own);
-            for (const branch of ['then_actions', 'else_actions', 'then', 'else'] as const) {
+            for (const branch of ['then', 'else'] as const) {
                 if (Array.isArray(c[branch])) c[branch] = normalizeActions(c[branch], own, pack);
             }
             spec.config = c;
         }
         if (spec.condition) spec.condition = normalizeRules(spec.condition, own);
-        return spec;
+        // Las ramas (si/sino, «Según el valor de…» y «Si falla»).
+        return mapFlowChildLists(spec, (list) => normalizeActions(list, own, pack) as unknown[]);
     });
 }
 

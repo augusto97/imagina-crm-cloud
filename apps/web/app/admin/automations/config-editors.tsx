@@ -77,7 +77,8 @@ import { useBookingPages } from '../booking/useBookingPages';
 import { EmailReceivedTriggerConfig, ReplyEmailActionConfig, SlaAlertTriggerConfig, cleanHelpdeskTriggerConfig } from '../helpdesk/helpdeskAutomation';
 import { useRecordTemplates } from '@/hooks/useRecordTemplates';
 import { ActionTypeMenu } from './ActionTypeMenu';
-import { ifElseDepth, insideLoop, type SeqPath } from './actionsTree';
+import { ifElseDepth, insideFail, insideLoop, type SeqPath } from './actionsTree';
+import { AskAiConfig, OnErrorEditor, SwitchConfig } from './FlowControlParts';
 import { LoopItemProvider, StepScope, useAutomationFlow, useLoopItem, useRememberSample, useStepPath } from './flowContext';
 import {
     ApprovalTriggerConfig,
@@ -139,10 +140,13 @@ export function fromAutomation(a: AutomationEntity): AutomationFormState {
         // {type, config} hacía que al REABRIR el editor la condición por
         // acción desapareciera (y un re-guardado la borraba de la DB en
         // silencio).
+        // v0.1.460 — y `on_error` («Si este paso falla»), por la misma razón:
+        // sin esto, reabrir el editor lo perdía y guardar lo borraba.
         actions: a.actions.map((s) => ({
             type: s.type,
             config: { ...s.config },
             ...(s.condition !== undefined && s.condition !== null ? { condition: s.condition } : {}),
+            ...(s.on_error !== undefined && s.on_error !== null ? { on_error: s.on_error } : {}),
         })),
         isActive: a.is_active,
     };
@@ -1098,9 +1102,11 @@ interface ActionsEditorProps {
 /** Lo que no se puede agregar en una secuencia (anidado máximo, bucle). */
 export function excludedActionsAt(seqPath: SeqPath): string[] {
     const out: string[] = [];
-    if (ifElseDepth(seqPath) >= 4) out.push('if_else', 'for_each_linked');
+    if (ifElseDepth(seqPath) >= 4) out.push('if_else', 'switch', 'for_each_linked');
     // Dentro de un bucle no se espera ni se repite otra vez.
     if (insideLoop(seqPath)) out.push('wait', 'wait_approval', 'for_each_linked');
+    // v0.1.460 — en los pasos de «Si falla» no se espera (la corrida ya está fallando).
+    if (insideFail(seqPath)) out.push('wait', 'wait_approval');
     return [...new Set(out)];
 }
 
@@ -1271,6 +1277,10 @@ export function ActionConfigEditor({
                     fields={fields}
                     actionsCatalog={actionsCatalog ?? []}
                 />
+            ) : spec.type === 'switch' ? (
+                <SwitchConfig spec={spec} onChange={onChange} fields={fields} actionsCatalog={actionsCatalog ?? []} nestedInline={nestedInline} />
+            ) : spec.type === 'ask_ai' ? (
+                <AskAiConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'wait' ? (
                 <WaitConfig spec={spec} onChange={onChange} fields={fields} />
             ) : spec.type === 'ask_agent' ? (
@@ -1290,9 +1300,11 @@ export function ActionConfigEditor({
             {/* La condición a-nivel-acción no aplica a if_else (la lógica
                  de branch ya vive dentro de su propio config.condition) ni a
                  «Esperar», que tiene su «continuar sólo si…». */}
-            {spec.type !== 'if_else' && spec.type !== 'wait' && spec.type !== 'wait_approval' && (
+            {spec.type !== 'if_else' && spec.type !== 'switch' && spec.type !== 'wait' && spec.type !== 'wait_approval' && (
                 <ActionConditionEditor spec={spec} onChange={onChange} fields={fields} />
             )}
+            {/* v0.1.460 — «Si este paso falla» (los contenedores no fallan por sí mismos). */}
+            <OnErrorEditor spec={spec} onChange={onChange} fields={fields} actionsCatalog={actionsCatalog ?? []} nestedInline={nestedInline} />
         </div>
     );
 }

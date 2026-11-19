@@ -71,6 +71,10 @@ const ACTIONS: ActionMeta[] = [
     // v0.1.447 — mandar a firmar un documento (plantilla o PDF del registro).
     { slug: 'request_signature', label: 'Pedir firma de un documento', config_schema: {} },
     { slug: 'if_else', label: 'Si / sino (condicional)', config_schema: {} },
+    // v0.1.460 — varias ramas según el valor de un campo o una variable.
+    { slug: 'switch', label: 'Según el valor de…', config_schema: {} },
+    // v0.1.460 — pedirle algo a la IA y usar su respuesta en los pasos siguientes.
+    { slug: 'ask_ai', label: 'Preguntarle a la IA', config_schema: {} },
     // v0.1.288 — esperar un tiempo o hasta una fecha, y repetir por cada vinculado.
     { slug: 'wait', label: 'Esperar', config_schema: {} },
     { slug: 'for_each_linked', label: 'Repetir por cada registro vinculado', config_schema: {} },

@@ -16902,6 +16902,107 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         E2E navegador 43/43 contra el Sheets simulado (escritorio claro y
         celular 390×844 oscuro, tres corridas seguidas).
 
+  - [x] **Automatizaciones, parte 2: varias ramas, preguntarle a la IA y qué
+        hacer si un paso falla (v0.1.460, addendum ADR-S47, E2 + E3 del banco
+        de ideas)**. Sin migración (`automation_runs.status` es texto: suma
+        `with_errors`). Reglas en `packages/shared/src/schemas/automation-control.ts`
+        (lectores tolerantes, validación al guardar, `pickSwitchCase`,
+        `readOnError`, `readAskAiConfig`, lectura de las respuestas de la IA) y
+        el árbol del flujo en `automation-flow.ts` (`flowChildLists`,
+        `mapFlowChildLists`, `flowBranch`, `caseBranch`): el motor, el editor,
+        el lienzo, el historial, las versiones, el asistente/MCP, los secretos,
+        el escaneo de conexiones y la migración de empresa recorren las ramas
+        nuevas con las mismas funciones.
+        (a) **«Según el valor de…»** (`switch`): depende de un campo de la
+        lista (por id: `source_field_id`) o de una variable
+        (`source_variable`, p. ej. `respuestas.ia.valor`); hasta 12 ramas
+        (`cases[{label, op, value, actions}]`, operadores de los filtros: es,
+        no es, es alguno de, contiene, mayor, menor, vacío…) más **«En otro
+        caso»** (`default_actions`). Gana la PRIMERA que coincide; con un campo
+        de selección se compara por el valor de la opción y el editor ofrece
+        **«Una rama por cada opción»**. Se anida (hasta 4 niveles) y una espera
+        dentro de una rama se retoma ahí. En el flujo, una tarjeta por rama; en
+        el lienzo, columnas en paralelo con la etiqueta de cada rama que
+        convergen en el paso siguiente. «Probar» dice qué rama tomaría, con qué
+        valor y cuál rama se revisó y no coincidió (`SwitchChecks`).
+        (b) **«Preguntarle a la IA»** (`ask_ai`): instrucción con variables;
+        con «Incluir los datos del registro» (encendido de fábrica) sus campos
+        —sin archivos, botones, vínculos ni los que por nombre parecen un
+        secreto: contraseña, token, clave…— viajan como DATOS etiquetados y
+        recortados, nunca como instrucciones (`ask-ai-prompt.ts`); la
+        respuesta es texto, una de
+        tus opciones (o las de un campo de selección), un número, sí/no, una
+        fecha o varios datos con nombre (hasta 12). La respuesta se VALIDA
+        (`parseAiNumber`/`parseAiDate` aceptan un único número o fecha dentro
+        del texto; dos o más, ambiguo → falla) y queda en
+        `{{respuestas.<nombre>.texto}}`, `.valor` y un `.<dato>` por dato; se
+        puede guardar en un campo (`updateField` literal: actividad, cadena).
+        Usa la MISMA resolución de clave, modelo y cuota que el resto de la IA
+        (`AiSettingsService.resolve` + `AiQuotaService.reserve/settle`; el
+        pedido se devuelve si el proveedor no contesta), el modelo rápido de
+        fábrica (o el del asistente), el módulo `ai` del plan; sin IA, sin
+        cuota o con el plan sin el módulo, el paso falla con el motivo.
+        «Probar» no llama a la IA salvo con **Ejecutar de verdad**.
+        `AutomationAskAiService` (módulo de IA) se pide perezosamente por el
+        ModuleRef; el cliente del proveedor se mudó a `ai/ai-client.ts`.
+        (c) **«Si este paso falla»** (`on_error` en CADA paso, al pie de su
+        tarjeta): **Detener la automatización** (lo que pasa si no se elige
+        nada), **Seguir con el resto**, **Reintentar** 1-3 veces con esperas de
+        3 s, 10 s y 30 s (sólo pasos que llaman a otro servicio: webhook,
+        conectores, correo, responder un correo, IA, pedir firma; «Probar» no
+        reintenta y lo dice) con qué hacer si sigue fallando, o **Hacer otros
+        pasos** (hasta 10, con `{{error.mensaje}}` y `{{error.paso}}`, y
+        después detener o seguir). Una falla manejada (seguir u otros pasos)
+        deja la corrida **«Con errores»** (`with_errors`, ámbar en el historial
+        y en el índice, filtro «Con fallas» la incluye) y NO abre un Problema;
+        una falla sin manejar la deja «Falló» y abre el Problema de siempre
+        (ADR-S44). El historial muestra los reintentos con el error de cada
+        intento y «(salió al intento N)». **Cambio de comportamiento**: antes,
+        un paso que fallaba dejaba seguir a los de abajo (que corrían con datos
+        que nunca llegaron); ahora la corrida se detiene ahí salvo que el paso
+        diga otra cosa (se avisa en la novedad y en Aprende).
+        (d) Asistente/MCP: `propose_create_automation`/`update` aceptan
+        `switch` (`field` por slug o etiqueta, valores de opción por etiqueta,
+        o `variable`), `ask_ai` (`choices_field`, `save_to` e `items[].field` por
+        slug) y `on_error`
+        (también dentro de los pasos de «Si falla»), traducidos a ids por
+        `translateFlowActions`; `docs/mcp.md` al día. Migrar una empresa
+        re-mapea `source_field_id`, los campos de la IA (de dónde salen las
+        opciones, dónde se guarda, cada dato) y lo que hay dentro de las ramas
+        y de `on_error.actions`.
+        Ayuda: guía `automation-branches-errors`, Aprende → Automatizaciones
+        (lógica: «Según el valor de…» y «Si este paso falla»; acciones:
+        «Preguntarle a la IA»; historial: «Con errores»), anclas
+        `automation-switch`, `automation-ask-ai`, `automation-on-error`, y
+        novedad con carrusel (ilustraciones `auto-lienzo`, `ia-campo`,
+        `auto-historial`). E2 sale de `docs/ideas.md`; de E3 queda
+        «subflujos». Tests: `automation-flow-control.spec` (16, Postgres +
+        Redis reales, un servidor http local y un modelo falso), casos en
+        `tenant-transfer-remap.spec`, `incidents.spec` y `whatsapp-web.spec`
+        ajustados al nuevo «detener» (el primero ahora prueba las dos cosas:
+        sin «Si falla» se detiene y abre el Problema; con «Seguir» corre el
+        paso siguiente, queda «con errores» y lo cierra),
+        `automation-control.test` (15) en shared y `actionsTree`/
+        `flowVariables`/`automationIndex`/`actionTypeOptions`/
+        `cleanTriggerConfig` en el front — shared 1073, front 964, 97 specs de
+        la API relacionados (1168 tests) en verde — + E2E navegador 36/36
+        (armado por la interfaz, corrida real con «Si falla» y la rama tomada,
+        «Probar», historial, índice, lienzo, la IA sin llamarla en «Probar»,
+        celular 390×844 oscuro). **Bugs atrapados en el E2E**: (1) al reabrir
+        el editor se PERDÍA «Si este paso falla» del primer nivel
+        (`fromAutomation` reconstruía cada paso con `type`/`config`/`condition`)
+        y guardar lo borraba — la misma clase de bug de v0.1.88; también se
+        conserva al cambiar el tipo de acción (`carryOverSpec`); (2) en el
+        lienzo, con 3+ ramas las etiquetas salían del mismo punto y se pisaban
+        (ahora van arriba de su columna); (3) en el celular el chip «Pasos si
+        falla» dejaba el título del paso en «P…» (ahora va junto a «Paso N»);
+        (4) el motivo de una corrida «con errores» salía en rojo (ahora ámbar).
+        **Al integrar** el bundle inicial pasó el presupuesto (821/820 KB gz):
+        `useAiAgents` (que carga la ficha) importaba `automationMeta` sólo
+        para `rememberAgentNames` y arrastraba el catálogo entero de pasos a
+        la carga inicial. Los nombres de los agentes pasaron a
+        `automations/agentNames.ts` y la app bajó a 810/820 KB gz.
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

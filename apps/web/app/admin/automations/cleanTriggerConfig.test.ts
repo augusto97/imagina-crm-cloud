@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { cleanTriggerConfig } from './config-editors';
+import type { AutomationEntity } from '@/types/automation';
+
+import { cleanTriggerConfig, fromAutomation } from './config-editors';
 
 describe('cleanTriggerConfig — webhook entrante (v0.1.399)', () => {
     it('conserva el modo, la búsqueda y la clave del registro al guardar', () => {
@@ -76,5 +78,27 @@ describe('cleanTriggerConfig — condición y archivos (v0.1.455)', () => {
             file_kind: 'pdf',
         });
         expect(cleanTriggerConfig({ match_filter: [], match_on_create: true, file_field_id: 0, file_kind: 'any' })).toEqual({});
+    });
+});
+
+describe('fromAutomation — reabrir el editor (v0.1.460)', () => {
+    it('conserva «Si este paso falla» y la condición de cada paso', () => {
+        const onError = { mode: 'steps', actions: [{ type: 'update_field', config: { values: { nota: '{{error.paso}}' } } }], after_steps: 'continue' };
+        const state = fromAutomation({
+            id: 1,
+            list_id: 2,
+            name: 'Ramas',
+            description: null,
+            trigger_type: 'record_created',
+            trigger_config: {},
+            actions: [
+                { type: 'call_webhook', config: { url: 'https://a.example' }, on_error: onError },
+                { type: 'switch', config: { source_field_id: 5, cases: [{ op: 'eq', value: 'a', actions: [] }] }, condition: [{ field: 'x', op: 'eq', value: 1 }] },
+            ],
+            is_active: true,
+        } as unknown as AutomationEntity);
+        expect(state.actions[0]!.on_error).toEqual(onError);
+        expect(state.actions[1]!.on_error).toBeUndefined();
+        expect(state.actions[1]!.condition).toEqual([{ field: 'x', op: 'eq', value: 1 }]);
     });
 });

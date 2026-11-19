@@ -536,6 +536,30 @@ export const articles: LearnArticle[] = [
                 t: 'p',
                 md: 'Después de este paso tienes {{pdf.link}}, {{pdf.nombre}} y {{pdf.numero}} (si la plantilla numera) para un correo o un WhatsApp. También puedes adjuntar el PDF directamente en **Enviar email**.',
             },
+            { t: 'h', text: 'Preguntarle a la IA' },
+            {
+                t: 'p',
+                md: 'Le pides algo a la IA con tus palabras y usas su respuesta en los pasos de abajo: clasificar un mensaje entre tus opciones, sacar un monto o una fecha de un texto, resumir el registro o redactar una respuesta. Usa la IA de tu empresa (la misma del asistente) y cada vez que corre cuenta un pedido de la cuota.',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Qué le pides', what: 'La instrucción, con variables: «Clasifica este mensaje: {{mensaje}}».' },
+                    { name: 'Incluir los datos del registro', what: 'Le pasa los campos del registro como datos (nunca archivos ni contraseñas), para que pueda leerlos.' },
+                    { name: 'Qué te devuelve', what: '**Un texto**, **Una de estas opciones** (una lista o las opciones de un campo de selección), **Un número**, **Sí o no**, **Una fecha** o **Varios datos** con nombre (NIT, monto, ciudad…).', tip: 'Si la respuesta no sirve (una opción que no está, un número que no se lee), el paso falla con el motivo. Combínalo con **Si este paso falla**.' },
+                    { name: 'Guardarla en un campo (opcional)', what: 'La escribe en un campo del registro, como «Actualizar un campo».' },
+                    { name: 'Calidad', what: '**Rápida** (de fábrica, más barata) o **La del asistente** para pedidos más difíciles.' },
+                ],
+            },
+            {
+                t: 'p',
+                md: 'La respuesta queda en {{respuestas.ia.texto}} y, si pediste un tipo, en {{respuestas.ia.valor}} (con «Varios datos», {{respuestas.ia.nit}}, {{respuestas.ia.monto}}…). Si cambias el nombre del resultado, cambia el «ia». En **Probar** no se llama a la IA salvo que marques **Ejecutar de verdad**.',
+            },
+            {
+                t: 'example',
+                title: 'Una empresa de soporte',
+                md: 'Llega un correo → **Preguntarle a la IA** «¿De qué trata? Ventas, Soporte o Facturación» → **Según el valor de** {{respuestas.ia.valor}}: cada rama asigna al equipo que corresponde.',
+            },
             { t: 'h', text: 'Subtareas, aprobaciones, agentes y respuestas' },
             { t: 'anim', key: 'aprob-automatizacion', caption: 'Un gasto grande pide la aprobación, la espera y sigue por un camino distinto según la decisión.' },
             {
@@ -728,7 +752,7 @@ export const articles: LearnArticle[] = [
         blocks: [
             {
                 t: 'p',
-                md: 'Con cuatro piezas una automatización deja de ser una lista fija de pasos y empieza a decidir: hacer algo distinto según el caso, saltarse un paso, esperar unos días antes de seguir o repetir unos pasos por cada factura de un cliente.',
+                md: 'Con estas piezas una automatización deja de ser una lista fija de pasos y empieza a decidir: hacer algo distinto según el caso, saltarse un paso, esperar unos días antes de seguir, repetir unos pasos por cada factura de un cliente o decidir qué hacer si un paso falla.',
             },
             { t: 'h', text: 'Si / sino (condicional)' },
             {
@@ -738,6 +762,29 @@ export const articles: LearnArticle[] = [
             {
                 t: 'p',
                 md: 'Las condiciones usan los mismos operadores que los filtros de las vistas: es, no es, contiene, mayor que, menor que, está vacío, hoy, esta semana… En el Lienzo, las ramas Sí y No se ven lado a lado y se editan ahí mismo.',
+            },
+            { t: 'h', text: 'Según el valor de… (varias ramas)' },
+            {
+                t: 'p',
+                md: 'Cuando hay más de dos caminos, en vez de encadenar «Si / sino» usa **Según el valor de…**: eliges **de qué depende** (un campo del registro o una variable, como la respuesta de la IA) y armas una **rama por cada valor**. Gana la **primera** rama que coincide; si ninguna coincide, corre **En otro caso**. En el Lienzo cada rama es una columna.',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Depende de', what: 'Un campo del registro (selección, texto, número, fecha, persona…) o **Una variable** ({{respuestas.ia.valor}}, {{payload.tipo}}…).' },
+                    { name: 'Una rama por cada opción', what: 'Con un campo de selección, crea de una vez una rama por cada opción, con su nombre.', tip: 'Las opciones se guardan por su valor: si cambias la etiqueta de una opción, la rama sigue funcionando.' },
+                    { name: 'Cada rama', what: 'Una regla (es, no es, es alguno de, contiene, mayor que, menor que, está vacío…), un nombre opcional y sus pasos.' },
+                    { name: 'En otro caso', what: 'Los pasos para lo que no entra en ninguna rama. Puede quedar vacío.' },
+                ],
+            },
+            {
+                t: 'example',
+                title: 'Una agencia de viajes',
+                md: '**Según el valor de** «Destino»: rama **Nacional** → asigna al equipo nacional y manda la cotización en pesos; rama **Internacional** → pide el pasaporte por WhatsApp; rama **Crucero** → crea las tres subtareas del crucero; **En otro caso** → avisa al coordinador para que lo revise.',
+            },
+            {
+                t: 'p',
+                md: 'Dentro de una rama puedes **Esperar**: al terminar la espera, la automatización sigue en esa misma rama y después con el paso de abajo. **Probar** te dice qué rama tomaría con un registro real y por qué las demás no coincidieron.',
             },
             { t: 'h', text: 'Condición de ejecución de un paso' },
             {
@@ -785,10 +832,30 @@ export const articles: LearnArticle[] = [
                 title: 'Una distribuidora',
                 md: 'Cada lunes, para cada cliente con saldo, **Repetir por cada registro vinculado** de **Facturas** que cumplan «Estado es Vencida» → agrega una línea al **Estado de cuenta** y marca la factura como «Notificada». Al final, un solo correo al cliente con el resumen.',
             },
+            { t: 'h', text: 'Si este paso falla' },
+            {
+                t: 'p',
+                md: 'Al pie de cada paso está **Si este paso falla**. Sin tocar nada, un paso que falla **detiene la automatización** ahí (los pasos de abajo no corren con datos que nunca llegaron) y la corrida queda **Fallida**. Puedes elegir otra cosa:',
+            },
+            {
+                t: 'settings',
+                rows: [
+                    { name: 'Detener la automatización', what: 'Lo de siempre: termina ahí, queda **Fallida** y abre un problema.' },
+                    { name: 'Seguir con el resto', what: 'Anota la falla y sigue con el paso de abajo. La corrida queda **Con errores**.' },
+                    { name: 'Reintentar', what: 'Repite el paso 1, 2 o 3 veces, esperando cada vez un poco más (3, 10 y 30 segundos). Sólo en pasos que llaman a otro servicio: webhooks, apps conectadas, correos, WhatsApp, SMS, la IA. Si sigue fallando, eliges qué hacer.', tip: 'Ideal para un servicio que a veces tarda o se cae un momento.' },
+                    { name: 'Hacer otros pasos', what: 'Corre una lista de pasos sólo cuando falla: avisarle a alguien, marcar el registro, crear una tarea. Ahí tienes {{error.mensaje}} (qué falló) y {{error.paso}} (en qué paso). Después, sigue con el resto o termina ahí.' },
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                md: 'Una corrida **Con errores** no abre un problema: tú ya decidiste qué hacer si ese paso falla. En el historial se ve en ámbar, con cada intento y el motivo.',
+            },
             {
                 t: 'faq',
                 items: [
-                    { q: '¿Es mejor un filtro en el disparador o un «Si / sino»?', a: 'Si en los otros casos no hay que hacer nada, el filtro del disparador es más simple. Si hay algo distinto que hacer en cada caso, usa «Si / sino».' },
+                    { q: '¿Es mejor un filtro en el disparador o un «Si / sino»?', a: 'Si en los otros casos no hay que hacer nada, el filtro del disparador es más simple. Si hay algo distinto que hacer en cada caso, usa «Si / sino»; si son más de dos casos, «Según el valor de…».' },
+                    { q: 'Antes, si un paso fallaba, seguían los de abajo. ¿Por qué ahora se detiene?', a: 'Porque los pasos de abajo suelen usar lo que hizo el que falló (un número de factura, una respuesta). Si en tu caso no importa, en ese paso elige **Si este paso falla → Seguir con el resto**.' },
                     { q: '¿Cuántas corridas pueden estar esperando a la vez?', a: 'Todas las que hagan falta: cada registro tiene su propia corrida y su propia espera.' },
                 ],
             },
@@ -926,6 +993,7 @@ export const articles: LearnArticle[] = [
                 rows: [
                     { name: 'Éxito', what: 'Todos los pasos terminaron bien. Ábrela para ver el detalle de cada paso.' },
                     { name: 'Fallida', what: 'Algún paso no pudo hacerse; dice cuál y por qué (sin destinatario, valor inválido, la otra app respondió con error…).' },
+                    { name: 'Con errores', what: 'Falló un paso cuyo **Si este paso falla** decía seguir o hacer otros pasos: la automatización siguió. Se ve en ámbar, con los reintentos y su motivo.' },
                     { name: 'En espera', what: 'Está en un paso «Esperar» o «Esperar aprobación». Muestra hasta cuándo y trae **Cancelar espera**.' },
                     { name: 'Ejecutando / Pendiente', what: 'Está corriendo o en cola.' },
                     { name: 'Cancelada', what: 'Se canceló la espera, se borró el registro o se pausó la automatización.' },

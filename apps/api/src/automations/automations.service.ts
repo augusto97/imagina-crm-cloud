@@ -27,6 +27,8 @@ import {
     AUTOMATION_FOLDERS_MAX,
     AUTOMATION_VERSIONS_KEPT,
     automationConfigIssues,
+    flowChildLists,
+    flowPathDepth,
     cleanFolderName,
     folderKey,
     matchFolder,
@@ -747,7 +749,7 @@ export class AutomationsService {
                         : 'info';
             return {
                 path: pathKey,
-                depth: pathKey === '' ? 0 : pathKey.split('.').filter((p) => p === 'then' || p === 'else' || p === 'each').length,
+                depth: flowPathDepth(pathKey),
                 action: entry.action,
                 status,
                 message: entry.message ?? '',
@@ -1741,13 +1743,10 @@ function normalizeEmailDesigns(actions: unknown, depth = 0): void {
     for (const a of actions) {
         if (!a || typeof a !== 'object') continue;
         const spec = a as { type?: unknown; config?: Record<string, unknown> };
+        // v0.1.460 — también en las ramas de «Según el valor de…», el bucle y «Si falla».
+        for (const kid of flowChildLists(spec)) normalizeEmailDesigns(kid.actions, depth + 1);
         const cfg = spec.config;
         if (!cfg || typeof cfg !== 'object') continue;
-        if (spec.type === 'if_else') {
-            normalizeEmailDesigns(cfg.then_actions, depth + 1);
-            normalizeEmailDesigns(cfg.else_actions, depth + 1);
-            continue;
-        }
         if (spec.type !== 'send_email' || cfg.body_mode !== 'design') continue;
         const design = parseEmailDesign(cfg.design);
         if (!design) {
