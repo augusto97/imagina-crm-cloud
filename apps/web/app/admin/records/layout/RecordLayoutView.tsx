@@ -25,6 +25,7 @@ import { RecordPaymentsPanel } from '@/cloud/components/payments/RecordPaymentsP
 import { RecordSignaturesPanel } from '@/admin/signatures/RecordSignaturesPanel';
 import { RecordSubscriptionPanel } from '@/cloud/components/subscriptions/RecordSubscriptionPanel';
 import { RecordAgentProposals } from '@/admin/agents/AgentProposals';
+import { RecordAgentRuns, RecordAiSummaryCard } from '@/admin/records/ai/RecordAi';
 import { RecordDuplicateBanner } from '../duplicates/DuplicateHints';
 import { lockedReasonsFor, recordGoneInSource, useStoreRules } from '../storeRules';
 import { LayoutBlockView } from './LayoutBlocks';
@@ -205,7 +206,22 @@ function ImplicitApprovals({ layout }: { layout: RecordLayoutV3 }): JSX.Element 
     if (isGuest) return null;
     // E6 — las propuestas de los agentes de IA van siempre debajo de la cabecera
     // (no tienen bloque propio: son algo que decidir, no parte del diseño).
-    const proposals = ctx.preview === true ? null : <RecordAgentProposals listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />;
+    // v0.1.456 — «Resumir con IA» (si el diseño no lo ubicó en un bloque) y lo
+    // que se le pidió a un agente desde la ficha.
+    const aiPlaced = layout.pages.some((p) => p.sections.some((s) => s.blocks.some((col) => col.some((b) => b.type === 'ai_summary'))));
+    const ai =
+        ctx.preview === true || ctx.mode === 'portal' ? null : (
+            <>
+                {!aiPlaced && <RecordAiSummaryCard listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />}
+                <RecordAgentRuns listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />
+            </>
+        );
+    const proposals = ctx.preview === true ? null : (
+        <>
+            {ai}
+            <RecordAgentProposals listId={ctx.list.id} recordId={ctx.record.id} className="imcrm-mb-3" />
+        </>
+    );
     // v0.1.353 — una cita por confirmar se decide arriba, como una aprobación.
     const booking =
         ctx.preview === true ? null : (

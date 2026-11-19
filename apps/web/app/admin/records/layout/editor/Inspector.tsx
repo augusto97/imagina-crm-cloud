@@ -90,7 +90,7 @@ function HeadButton({ label, onClick, danger = false, children }: { label: strin
 
 // ── Bloque ───────────────────────────────────────────────────────────────
 
-const TITLED = new Set(['fields', 'files', 'chart', 'related', 'field', 'notice', 'record_stats', 'activity', 'comments', 'description', 'stages', 'image', 'gallery', 'embed', 'time_tracking', 'dependencies', 'approval', 'checklist']);
+const TITLED = new Set(['fields', 'files', 'chart', 'related', 'field', 'notice', 'record_stats', 'activity', 'comments', 'description', 'stages', 'image', 'gallery', 'embed', 'time_tracking', 'dependencies', 'approval', 'checklist', 'ai_summary']);
 
 function BlockInspector({ block }: { block: LayoutBlock }): JSX.Element {
     const ed = useEditor();
@@ -202,6 +202,8 @@ function BlockForm(props: FormProps): JSX.Element | null {
             return <InfoForm text={__('Muestra las solicitudes de aprobación del registro con sus pasos y motivos, el aviso «Pendiente de tu aprobación» a quien le toca decidir y el botón «Pedir aprobación». Los flujos se configuran en Ajustes de la lista → Aprobaciones.')} />;
         case 'checklist':
             return <InfoForm text={__('Los checklists del registro: cada uno con su barra de progreso y sus ítems (casilla, responsable y fecha). Se agregan escribiendo y apretando Enter, se reordenan arrastrando y un ítem se puede convertir en subtarea. Para verlo en la tabla, agrega a la lista un campo «Progreso del checklist».')} />;
+        case 'ai_summary':
+            return <InfoForm text={__('El botón «Resumir con IA»: lee lo que la persona puede ver del registro (campos, comentarios, actividad, vinculados, checklists, cobros) y escribe en qué está, qué quedó pendiente y lo que viene. Cada resumen nuevo usa un pedido de la IA; mientras el registro no cambie, se reutiliza sin gastar otro. Sólo lo ve quien puede usar la IA.')} />;
         case 'subtasks':
             return <InfoForm text={__('Las subtareas del registro con su estado y una fila para agregar otra. Si el registro es una subtarea, muestra el vínculo a su padre.')} />;
         case 'payments':

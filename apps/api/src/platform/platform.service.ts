@@ -50,6 +50,7 @@ import {
     automations,
     automationVersions,
     automationMatches,
+    aiAgentBatches,
     aiAgentLists,
     aiAgentProposals,
     aiAgentRuns,
@@ -657,6 +658,8 @@ export class PlatformService {
             // E6 — agentes de IA (propuestas y corridas antes que registros y listas).
             await tx.delete(aiAgentProposals).where(eq(aiAgentProposals.tenantId, id));
             await tx.delete(aiAgentRuns).where(eq(aiAgentRuns.tenantId, id));
+            // v0.1.456 — lotes de agentes (después de sus corridas).
+            await tx.delete(aiAgentBatches).where(eq(aiAgentBatches.tenantId, id));
             await tx.delete(aiAgentVersions).where(eq(aiAgentVersions.tenantId, id));
             await tx.delete(aiAgentLists).where(eq(aiAgentLists.tenantId, id));
             await tx.delete(aiAgents).where(eq(aiAgents.tenantId, id));

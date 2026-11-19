@@ -6,6 +6,7 @@ import { CommentThreadFooter, DeletedCommentPlaceholder } from '@/admin/comments
 import { buildThreads } from '@/admin/comments/commentThreads';
 import { ClientVisibilityToggle, ClientVisibleBadge, useListPortalEnabled } from '@/admin/comments/clientVisibility';
 import { MentionAutocomplete } from '@/admin/comments/MentionAutocomplete';
+import { SuggestReplyButton } from '@/admin/comments/SuggestReplyButton';
 import { EmailCommentMeta, emailOf } from '@/admin/helpdesk/EmailCommentMeta';
 import { TicketMailPanel } from '@/admin/helpdesk/TicketMailPanel';
 import { Button } from '@/components/ui/button';
@@ -247,7 +248,21 @@ export function CommentsPanel({
                 {submitError && (
                     <p className="imcrm-text-xs imcrm-text-destructive">{submitError}</p>
                 )}
-                <div className="imcrm-flex imcrm-items-center imcrm-justify-end imcrm-gap-2">
+                <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-justify-end imcrm-gap-2">
+                    {/* v0.1.456 — un borrador de la IA (nunca se envía solo). */}
+                    <SuggestReplyButton
+                        listId={listId}
+                        recordId={recordId}
+                        forClient={portalEnabled && forClient}
+                        draft={draft}
+                        onSuggest={(text) => {
+                            setDraft(text);
+                            setCursor(text.length);
+                            requestAnimationFrame(() => textareaRef.current?.focus());
+                        }}
+                        disabled={create.isPending}
+                    />
+                    <span className="imcrm-flex-1" />
                     {portalEnabled && <ClientVisibilityToggle checked={forClient} onChange={setForClient} disabled={create.isPending} />}
                     <Button
                         type="submit"

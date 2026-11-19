@@ -37,6 +37,7 @@ import {
     Timer,
     ClipboardCheck,
     GitBranch,
+    Sparkles,
     type LucideIcon,
     ListTodo,
 } from 'lucide-react';
@@ -247,6 +248,15 @@ export const BLOCK_CATALOG: CatalogEntry[] = [
         description: __('Los checklists del registro: progreso, ítems con responsable y fecha.'),
         icon: ListTodo,
         create: () => block('checklist'),
+    },
+    {
+        key: 'ai_summary',
+        type: 'ai_summary',
+        category: 'record',
+        label: __('Resumen con IA'),
+        description: __('«Resumir con IA»: lo que pasó con el registro, lo pendiente y lo que viene.'),
+        icon: Sparkles,
+        create: () => block('ai_summary'),
     },
     // Vinculados
     related('related_table', 'table', __('Tabla de vinculados'), __('Los registros de otra lista vinculados a éste.'), Table2),

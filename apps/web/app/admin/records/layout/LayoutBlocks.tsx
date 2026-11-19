@@ -21,6 +21,7 @@ import {
     MousePointerClick,
     Paperclip,
     Pencil,
+    Sparkles,
     StickyNote,
     Tag,
     Target,
@@ -72,6 +73,7 @@ import type { RecordEntity } from '@/types/record';
 import { ButtonFieldControl, usePortalButtonHidden } from '@/admin/records/buttons/ButtonFieldControl';
 
 import { ActivityFeed } from './ActivityFeed';
+import { RecordAiSummaryCard } from '../ai/RecordAi';
 import { FieldDisplay, optionsOf } from './FieldDisplay';
 import { fieldEditable, useLayoutCtx } from './LayoutContext';
 import { surfaceClass, tint } from './layoutTheme';
@@ -108,6 +110,7 @@ const TYPE_ICONS: Partial<Record<string, LucideIcon>> = {
     description: AlignLeft,
     dependencies: GitBranch,
     approval: ClipboardCheck,
+    ai_summary: Sparkles,
 };
 
 function blockIcon(block: LayoutBlock): LucideIcon | null {
@@ -126,6 +129,7 @@ const GUEST_HIDDEN_BLOCKS = new Set<string>([
     'subtasks',
     'approval',
     'checklist',
+    'ai_summary',
 ]);
 
 /**
@@ -267,6 +271,8 @@ function blockTitle(block: LayoutBlock, fieldsById: Map<number, FieldEntity>): s
             return __('Aprobación');
         case 'checklist':
             return __('Checklists');
+        case 'ai_summary':
+            return __('Resumen con IA');
         default:
             return null;
     }
@@ -408,6 +414,17 @@ function BlockBody({ block }: { block: LayoutBlock }): JSX.Element | null {
                     hideHeading
                 />
             );
+        case 'ai_summary':
+            // v0.1.456 — el resumen es del equipo (usa la cuota de la IA): el portal no lo muestra.
+            if (ctx.mode === 'portal') return null;
+            if (ctx.preview === true) {
+                return (
+                    <p className="imcrm-text-sm imcrm-text-muted-foreground">
+                        {__('Aquí aparece el botón «Resumir con IA»: lo que pasó con el registro, lo pendiente y lo que viene.')}
+                    </p>
+                );
+            }
+            return <RecordAiSummaryCard listId={ctx.list.id} recordId={ctx.record.id} bare />;
         case 'subtasks':
             if (ctx.mode === 'portal') return null;
             return (

@@ -213,6 +213,43 @@ export class AgentRunnerService implements AgentHandler, OnModuleInit, OnApplica
         return { run_id: runId };
     }
 
+    /**
+     * v0.1.456 (ADR-S109) — «Pedir al agente» desde la ficha: una corrida
+     * como la de una automatización, pero pedida por una persona (queda como
+     * `created_by`). Quien llama ya revisó que la persona puede editar el
+     * registro y que el agente está activo y trabaja en esa lista.
+     */
+    async enqueueForRecord(p: {
+        tenantId: number;
+        agentId: number;
+        listId: number;
+        recordId: number;
+        instruction: string;
+        mode: AiAgentMode;
+        createdBy: number;
+        triggerLabel: string;
+    }): Promise<number> {
+        const runId = await this.createRun({ ...p, automation: null, simulated: false });
+        await this.dispatch(p.tenantId, runId);
+        return runId;
+    }
+
+    /** v0.1.456 — Manda a la cola una corrida ya creada (las de un lote). */
+    async dispatchRun(tenantId: number, runId: number): Promise<void> {
+        await this.dispatch(tenantId, runId);
+    }
+
+    /**
+     * v0.1.456 — Avisos al terminar una corrida (el lote crea la siguiente
+     * tanda). Un callback y no una dependencia: el servicio de lotes depende
+     * del motor, no al revés.
+     */
+    onRunFinished(fn: (tenantId: number, run: { id: number; batchId: number | null }) => Promise<void>): void {
+        this.finishedHooks.push(fn);
+    }
+
+    private readonly finishedHooks: Array<(tenantId: number, run: { id: number; batchId: number | null }) => Promise<void>> = [];
+
     private async createRun(p: {
         tenantId: number;
         agentId: number;
@@ -296,6 +333,13 @@ export class AgentRunnerService implements AgentHandler, OnModuleInit, OnApplica
                 .where(and(eq(aiAgentRuns.tenantId, tenantId), eq(aiAgentRuns.id, runId))),
         );
         if (out.touched && run.listId !== null) this.realtime.records(tenantId, run.listId);
+        for (const hook of this.finishedHooks) {
+            try {
+                await hook(tenantId, { id: run.id, batchId: run.batchId ?? null });
+            } catch (err) {
+                this.logger.warn(`Aviso de fin de la corrida ${run.id} falló: ${String(err)}`);
+            }
+        }
     }
 
     private async work(tenantId: number, run: AiAgentRunRow): Promise<RunOutcome> {
@@ -592,8 +636,25 @@ function providerError(err: unknown): string {
     if (e.status === 401) return 'El proveedor de IA rechazó la clave. Revísala en Ajustes → Asistente IA.';
     if (e.status === 429) return 'El proveedor de IA está limitando los pedidos. Se puede reintentar en un rato.';
     if (e.status === 529 || e.status === 503) return 'El proveedor de IA está saturado. Se puede reintentar en un rato.';
-    if (typeof e.status === 'number' && e.status >= 400) return `La IA no respondió (${e.status}): ${agentClip(e.message ?? '', 300)}`;
+    if (typeof e.status === 'number' && e.status >= 400) return `La IA no respondió (${e.status}): ${agentClip(providerDetail(e.message ?? ''), 300)}`;
     return `La IA no respondió: ${errorText(err, 400)}`;
+}
+
+/**
+ * v0.1.456 — El SDK arma el mensaje como «400 {"type":"error","error":{…}}»:
+ * a la persona (en la ficha y en el historial) le sirve el motivo, no el JSON.
+ */
+export function providerDetail(message: string): string {
+    const brace = message.indexOf('{');
+    if (brace < 0) return message;
+    try {
+        const body = JSON.parse(message.slice(brace)) as { error?: { message?: unknown }; message?: unknown };
+        const inner = body.error?.message ?? body.message;
+        if (typeof inner === 'string' && inner.trim() !== '') return inner.trim();
+    } catch {
+        // No era JSON: queda el mensaje tal cual.
+    }
+    return message;
 }
 
 export type { AiAgentTool };

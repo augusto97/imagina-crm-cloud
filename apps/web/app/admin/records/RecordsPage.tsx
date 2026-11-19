@@ -43,6 +43,8 @@ import { parseMultiBucket } from '@/lib/multiBucket';
 import { __, sprintf } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { moduleEnabled } from '@/lib/cloudFeatures';
+import { usePlanModuleOff } from '@/components/PlanModuleNotice';
+import { useListAgents } from '@/hooks/useRecordAi';
 import { CAP, useCan, useCanAny } from '@/lib/permissions';
 import { useGuestAccess } from '@/hooks/useGuests';
 import type { FieldEntity } from '@/types/field';
@@ -130,6 +132,7 @@ const BulkEditDialog = lazyWithReload(() => import('./bulk/BulkEditDialog').then
 const BulkHistorySheet = lazyWithReload(() => import('./bulk/BulkHistorySheet').then((m) => ({ default: m.BulkHistorySheet })));
 const BulkStructureDialog = lazyWithReload(() => import('./bulk/BulkStructureDialog').then((m) => ({ default: m.BulkStructureDialog })));
 const RecordLabelsDialog = lazyWithReload(() => import('@/admin/qr/RecordLabelsDialog'));
+const AgentBatchDialog = lazyWithReload(() => import('./bulk/AgentBatchDialog').then((m) => ({ default: m.AgentBatchDialog })));
 const CsvUpdateDialog = lazyWithReload(() => import('./bulk/CsvUpdateDialog').then((m) => ({ default: m.CsvUpdateDialog })));
 const StoreBulkDialog = lazyWithReload(() => import('./bulk/StoreBulkDialog').then((m) => ({ default: m.StoreBulkDialog })));
 const ButtonBulkDialog = lazyWithReload(() => import('./buttons/ButtonBulkDialog').then((m) => ({ default: m.ButtonBulkDialog })));
@@ -402,6 +405,8 @@ export function RecordsPage(): JSX.Element {
     const [csvUpdateOpen, setCsvUpdateOpen] = useState(false);
     // v0.1.344 — etiquetas con QR: de la selección o de todo lo que muestra la vista.
     const [labelsFor, setLabelsFor] = useState<'selection' | 'matching' | null>(null);
+    // v0.1.456 — pedirle a un agente de IA que trabaje en la selección o en todo lo que coincide.
+    const [agentBatchFor, setAgentBatchFor] = useState<'selection' | 'matching' | null>(null);
     // v0.1.220 — mover como subtareas / duplicar / borrar en lote, y el
     // atajo «Asignar» (la edición masiva ya apuntada al campo de persona).
     const [structure, setStructure] = useState<{ action: BulkStructureAction; matching: boolean } | null>(null);
@@ -452,6 +457,12 @@ export function RecordsPage(): JSX.Element {
     const canImportRecords = useCan(CAP.IMPORT_RECORDS) && !mirror;
     const canExportRecords = useCan(CAP.EXPORT_RECORDS);
     const canBulkEdit = useCan(CAP.BULK_ACTIONS);
+    // v0.1.456 — el agente en lote: usar la IA + acciones masivas, plan con la IA
+    // y al menos un agente activo que trabaje en esta lista.
+    const canUseAi = useCan(CAP.USE_AI_ASSISTANT);
+    const aiPlanOff = usePlanModuleOff('ai');
+    const batchAgents = useListAgents(list.data?.id ?? 0, canUseAi && canBulkEdit && !aiPlanOff && !guest.isGuest);
+    const canAgentBatch = canUseAi && canBulkEdit && !aiPlanOff && !guest.isGuest && (batchAgents.data?.length ?? 0) > 0;
     const canEditAny = useCan(CAP.EDIT_RECORDS);
     const canEditOwn = useCan(CAP.EDIT_OWN_RECORDS);
     const canSeeBulkHistory = canEditAny || canEditOwn;
@@ -1540,6 +1551,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                     onBulkHistory={canSeeBulkHistory ? () => setBulkHistoryOpen(true) : undefined}
                     onCsvUpdate={canCsvUpdate ? () => setCsvUpdateOpen(true) : undefined}
                     onPrintLabels={!guest.isGuest ? () => setLabelsFor('matching') : undefined}
+                    onAskAgent={canAgentBatch ? () => setAgentBatchFor('matching') : undefined}
                     onConfigureBoard={
                         isKanban && activeView && canManageViews && canWriteView(activeView)
                             ? () => {
@@ -1680,6 +1692,25 @@ const applyView = (view: SavedViewEntity | null): void => {
                         canActMatching={canBulkEdit}
                         goneFrom={{ source: mirrorSourceName(storeRules.marker), statusFieldId: mirrorGoneFieldId(storeRules.marker)!, count: sourceGone.data ?? 0 }}
                         onDone={() => setSelectedIds([])}
+                    />
+                </Suspense>
+            )}
+
+            {list.data && agentBatchFor !== null && (
+                <Suspense fallback={null}>
+                    <AgentBatchDialog
+                        listId={list.data.id}
+                        target={
+                            agentBatchFor === 'selection'
+                                ? { ids: selectedIds }
+                                : {
+                                      filter_tree: state.filterTree,
+                                      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+                                      include_subtasks: false,
+                                  }
+                        }
+                        count={agentBatchFor === 'selection' ? selectedIds.length : (matchingCount ?? null)}
+                        onClose={() => setAgentBatchFor(null)}
                     />
                 </Suspense>
             )}
@@ -1976,6 +2007,7 @@ const applyView = (view: SavedViewEntity | null): void => {
                         onSendSms={smsConnections.length > 0 ? () => setBulkSmsOpen(true) : undefined}
                         onPrintLabels={!guest.isGuest ? () => setLabelsFor('selection') : undefined}
                         onMerge={canMergeRecords ? () => setMergeIds([...selectedIds]) : undefined}
+                        onAskAgent={canAgentBatch ? () => setAgentBatchFor('selection') : undefined}
                         onAssign={
                             assignField
                                 ? () => {

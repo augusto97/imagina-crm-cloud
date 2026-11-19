@@ -205,6 +205,87 @@ export const articles: LearnArticle[] = [
             },
         ],
     },
+    // ───────────────────────────── IA en el día a día ─────────────────────────────
+    {
+        id: 'ia-dia-a-dia',
+        route: '/lists',
+        related: ['ia-asistente', 'ia-agentes-trabajo', 'ia-clave-privacidad'],
+        blocks: [
+            {
+                t: 'p',
+                md: 'No hace falta abrir el asistente para usar la IA: está **dentro de la ficha de cada registro**. Puedes pedirle que te resuma qué pasó con un cliente, que escriba o mejore la descripción, que te sugiera cómo responder un comentario, o ponerle a trabajar a un **agente** en ese registro o en muchos a la vez. Todo usa la misma IA de tu empresa, con su cuota y sus reglas.',
+            },
+            { t: 'anim', key: 'ia-chat', caption: 'Un pedido, una respuesta para revisar: nada se guarda ni se envía hasta que tú lo decides.' },
+            { t: 'h', text: 'Resumir un registro' },
+            {
+                t: 'steps',
+                items: [
+                    'Abre un registro (en la ventana o en su página completa).',
+                    'Arriba de los campos, toca **Resumir con IA**.',
+                    'En unos segundos ves en qué está el registro, lo más importante que pasó, lo **Pendiente** y **Lo que viene**.',
+                    'Si el registro cambió, toca **Actualizar** para que lo vuelva a leer.',
+                ],
+            },
+            {
+                t: 'p',
+                md: 'El resumen lee **sólo lo que tú puedes ver**: los campos visibles para tu rol, los últimos comentarios, la actividad, las subtareas, los registros vinculados (con sus totales), los checklists, las aprobaciones, los cobros y las citas. Si a tu rol le ocultan un campo, la IA tampoco lo ve. Mientras el registro no cambie, volver a pedirlo **no gasta otro pedido**: se reutiliza el que ya estaba. En una ficha diseñada, agrega el bloque **Resumen con IA** donde quieras que aparezca.',
+            },
+            { t: 'h', text: 'Escribir con IA en la descripción' },
+            {
+                t: 'cards',
+                items: [
+                    {
+                        icon: 'Sparkles',
+                        title: 'Escribir algo nuevo',
+                        md: 'En la descripción escribe **/** y elige **Escribir con IA**. Cuéntale qué necesitas («un resumen de la propuesta con los próximos pasos») y revisa el texto antes de tocar **Insertar**. Puede usar los datos del registro.',
+                        tone: 'violet',
+                    },
+                    {
+                        icon: 'Wand2',
+                        title: 'Reescribir lo seleccionado',
+                        md: 'Selecciona un texto y, en la barra que aparece, toca **IA**: **Mejorar la redacción**, **Más corto**, **Más largo**, **Corregir ortografía**, **Tono formal** o **cercano**, o **Traducir** al inglés, al portugués o al español. Elige **Reemplazar**, **Insertar debajo** o **Descartar**.',
+                        tone: 'blue',
+                    },
+                ],
+            },
+            { t: 'h', text: 'Sugerir una respuesta' },
+            {
+                t: 'p',
+                md: 'En la caja de comentarios (y al responder un hilo) toca **Sugerir respuesta**: la IA lee la conversación y el registro y deja un **borrador** en la caja. Si ya habías escrito algo, lo toma como lo que quieres decir y lo mejora. Nunca se envía solo: lo revisas, lo cambias y tocas **Enviar**. Si no te gusta, **Deshacer** devuelve lo que tenías. Cuando la respuesta es **visible para el cliente**, la IA no ve las notas internas del equipo.',
+            },
+            { t: 'h', text: 'Pedirle a un agente' },
+            {
+                t: 'steps',
+                items: [
+                    'En la barra de arriba de la ficha, toca el botón del robot (**Pedir al agente**). Aparece si hay agentes activos que trabajan en esa lista y puedes editar el registro.',
+                    'Elige el agente y, si quieres, escribe una **indicación para esta vez**.',
+                    'Toca **Pedírselo**. En la ficha ves si está en cola, trabajando, si terminó (con los cambios que hizo o la propuesta que dejó) o por qué falló, sin recargar.',
+                ],
+            },
+            {
+                t: 'callout',
+                tone: 'info',
+                title: 'Con el acceso de su dueño',
+                md: 'El agente trabaja como siempre: con sus instrucciones, sus herramientas y el acceso de quien lo configuró, y con sus topes de corridas por día y de tokens. Si su modo es **Propone y una persona aprueba**, deja una propuesta arriba en la ficha para aplicar o descartar.',
+            },
+            { t: 'h', text: 'Un agente en muchos registros' },
+            {
+                t: 'p',
+                md: 'Marca varios registros y toca **Agente** en la barra de abajo, o en **Personalizar vista** elige **Pedir a un agente** para todos los que coinciden con la vista (hasta 200 por vez). Antes de arrancar ves cuántos van a correr y qué usa: las **corridas que le quedan hoy al agente**, los **pedidos de la IA** de tu plan y su presupuesto de tokens. Si no alcanza para todos, corre en los primeros y te dice por qué. Mientras trabaja ves el avance y al final cuántos terminaron, cuántos fallaron (con el motivo) y cuántas propuestas quedan por revisar. Puedes **Detener** el lote cuando quieras.',
+            },
+            {
+                t: 'settings',
+                title: 'Quién puede usar cada cosa',
+                rows: [
+                    { name: 'Resumir y sugerir respuesta', what: 'Quien puede usar la IA y ver el registro.' },
+                    { name: 'Escribir con IA', what: 'Quien puede usar la IA y editar el registro.' },
+                    { name: 'Pedir al agente', what: 'Quien puede usar la IA y editar ese registro.' },
+                    { name: 'Agente en lote', what: 'Quien puede usar la IA y hacer acciones en lote; sólo corre en los registros que puede editar.' },
+                    { name: 'Cuando no hay IA', what: 'Si la IA está apagada, sin cuota, sin clave o tu plan no la incluye, el botón te dice por qué.', tip: 'Cada resumen, texto o respuesta nuevos cuentan como un pedido de la cuota de tu plan; con una clave propia no hay tope.' },
+                ],
+            },
+        ],
+    },
     {
         id: 'ia-campos',
         route: '/lists',

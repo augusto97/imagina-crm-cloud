@@ -252,6 +252,8 @@ export type AuditAction =
     | 'ai_agent.update'
     | 'ai_agent.delete'
     | 'ai_agent.trigger_add'
+    // v0.1.456 (ADR-S109) — un agente corrido en lote sobre registros existentes.
+    | 'ai_agent.batch'
     // F7 (ADR-S72) — «Empezar fácil»: el pedido único a la IA (con su
     // consentimiento en línea), lo que se creó con la bienvenida y el borrado
     // de los datos de ejemplo.

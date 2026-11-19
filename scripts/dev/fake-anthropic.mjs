@@ -20,6 +20,15 @@
  *     reintenta dos veces solo; la tercera falla llega a la persona y la
  *     cuarta —su «Reintentar»— sale bien); si dice «lento», los pedazos llegan de a uno cada 700 ms
  *     (para probar «Detener» y el texto en vivo).
+ *   - v0.1.456 (IA en el día a día), según el sistema del pedido:
+ *       · resumen del registro → el JSON {headline, points, pending, next} con
+ *         el título del registro que viaja en los datos;
+ *       · escribir con IA → un texto en el formato sencillo (redactar) o el
+ *         seleccionado transformado (traducir → «[EN] …», mejorar → «Mejorado: …»);
+ *       · sugerir respuesta → un borrador corto (otro si es para el cliente);
+ *       · un agente de IA → primero `update_fields` (la prioridad en «alta»,
+ *         si la lista tiene ese campo) o `comment`, y después el resumen. Si la
+ *         instrucción dice «falla», responde 400 (el agente falla con motivo).
  *   - cualquier otra: un texto corto.
  *
  * Uso:  node scripts/dev/fake-anthropic.mjs [puerto=4899]
@@ -175,6 +184,51 @@ function lastUserText(p) {
 
 const failures = new Map();
 
+/** v0.1.456 — el sistema del pedido (texto plano o bloques). */
+function systemText(p) {
+    if (typeof p.system === 'string') return p.system;
+    return (p.system ?? []).map((b) => b.text ?? '').join('\n');
+}
+
+/** v0.1.456 — Respuestas de la IA en el día a día (resumen, escribir, responder). */
+function dailyAnswer(sys, user) {
+    if (/«¿qué pasó con esto\?»/.test(sys)) {
+        const title = /"titulo":\s*"([^"]*)"/.exec(user)?.[1] ?? 'el registro';
+        const comments = (user.match(/"texto":/g) ?? []).length;
+        return JSON.stringify({
+            headline: `«${title}» está en seguimiento: hay ${comments} comentario(s) y cosas por cerrar.`,
+            points: ['Se actualizó hace poco.', comments > 0 ? 'El último comentario pide revisar la propuesta.' : 'Todavía no hay conversación.'],
+            pending: ['Confirmar el siguiente paso con el cliente.'],
+            next: ['Revisar el registro esta semana.'],
+        });
+    }
+    if (/Redactas texto para la descripción/.test(sys)) {
+        return '## Próximos pasos\n\n- Llamar al cliente el lunes\n- Enviar la **propuesta** actualizada';
+    }
+    if (/<texto>/.test(user)) {
+        const text = /<texto>\n?([\s\S]*?)\n?<\/texto>/.exec(user)?.[1]?.trim() ?? '';
+        if (/inglés/i.test(sys)) return `[EN] ${text}`;
+        if (/portugués/i.test(sys)) return `[PT] ${text}`;
+        return `Mejorado: ${text}`;
+    }
+    if (/respuesta a un hilo de comentarios/.test(sys)) {
+        return /CLIENTE/.test(sys) ? 'Hola, gracias por escribirnos. Ya revisamos tu caso y te contamos mañana.' : 'Lo reviso hoy y les aviso.';
+    }
+    return null;
+}
+
+/** v0.1.456 — un agente de IA (el que se pide desde la ficha o en lote). */
+function agentTurn(p, user) {
+    const last = p.messages[p.messages.length - 1];
+    const firstTurn = typeof last.content === 'string' || !last.content.some((b) => b.type === 'tool_result');
+    const tools = (p.tools ?? []).map((t) => t.name);
+    if (!firstTurn) return { text: 'Listo: revisé el registro y dejé la prioridad al día.' };
+    const prio = /"slug":"prioridad"/.test(user);
+    if (prio && tools.includes('update_fields')) return { tool: 'update_fields', input: { values: { prioridad: 'alta' } } };
+    if (tools.includes('comment')) return { tool: 'comment', input: { body: 'Revisé el registro: todo en orden.' } };
+    return { text: 'No tengo herramientas para cambiar este registro.' };
+}
+
 function chatAnswer(p) {
     const last = p.messages[p.messages.length - 1];
     let lists = [];
@@ -219,6 +273,19 @@ createServer((req, res) => {
             const sugg = (p.tools ?? []).find((t) => t.name === 'submit_suggestions');
             const chat = !sugg && !tool && (p.tools ?? []).some((t) => t.name === 'list_lists');
             const asked = lastUserText(p);
+            const sys = systemText(p);
+            const firstUser = (() => {
+                const u = p.messages.find((m) => m.role === 'user');
+                if (!u) return '';
+                return typeof u.content === 'string' ? u.content : u.content.map((b) => b.text ?? '').join('');
+            })();
+            const isAgent = !chat && /un agente de IA que trabaja dentro de/.test(sys);
+            const daily = !chat && !sugg && !tool && !isAgent ? dailyAnswer(sys, firstUser) : null;
+            if (isAgent && /falla/i.test(firstUser)) {
+                res.writeHead(400, { 'content-type': 'application/json' });
+                res.end(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'Simulación: el modelo rechazó el pedido.' } }));
+                return;
+            }
             let gap = 0;
             if (chat && /falla/i.test(asked) && (failures.get(asked) ?? 0) < 3) {
                 failures.set(asked, (failures.get(asked) ?? 0) + 1);
@@ -277,6 +344,24 @@ createServer((req, res) => {
                 events.push(['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: input } }]);
                 events.push(['content_block_stop', { type: 'content_block_stop', index: 0 }]);
                 events.push(['message_delta', { type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 300 } }]);
+            } else if (isAgent) {
+                const turn = agentTurn(p, firstUser);
+                if (turn.tool) {
+                    events.push(['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: `toolu_agent_${Date.now()}`, name: turn.tool, input: {} } }]);
+                    events.push(['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: JSON.stringify(turn.input) } }]);
+                    events.push(['content_block_stop', { type: 'content_block_stop', index: 0 }]);
+                    events.push(['message_delta', { type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null }, usage: { output_tokens: 60 } }]);
+                } else {
+                    events.push(['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }]);
+                    events.push(['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: turn.text } }]);
+                    events.push(['content_block_stop', { type: 'content_block_stop', index: 0 }]);
+                    events.push(['message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 30 } }]);
+                }
+            } else if (daily !== null) {
+                events.push(['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }]);
+                events.push(['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: daily } }]);
+                events.push(['content_block_stop', { type: 'content_block_stop', index: 0 }]);
+                events.push(['message_delta', { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null }, usage: { output_tokens: 120 } }]);
             } else {
                 events.push(['content_block_start', { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }]);
                 events.push(['content_block_delta', { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hola (respuesta simulada).' } }]);

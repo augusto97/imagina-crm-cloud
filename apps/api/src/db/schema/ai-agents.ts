@@ -56,6 +56,42 @@ export const aiAgentLists = pgTable(
     (t) => [primaryKey({ columns: [t.agentId, t.listId] }), index('ai_agent_lists_list_ix').on(t.tenantId, t.listId), index('ai_agent_lists_list_fk_ix').on(t.listId)],
 );
 
+/**
+ * v0.1.456 (ADR-S109) — un agente corrido en lote sobre registros que ya
+ * existen (RLS). Las corridas se crean por tandas (`dispatched` de `total`)
+ * respetando los topes del agente y la cuota; cada una lleva `batch_id`.
+ */
+export const aiAgentBatches = pgTable(
+    'ai_agent_batches',
+    {
+        id: bigint('id', { mode: 'number' }).generatedAlwaysAsIdentity().primaryKey(),
+        tenantId: bigint('tenant_id', { mode: 'number' })
+            .notNull()
+            .references(() => tenants.id, { onDelete: 'cascade' }),
+        agentId: bigint('agent_id', { mode: 'number' })
+            .notNull()
+            .references(() => aiAgents.id, { onDelete: 'cascade' }),
+        listId: bigint('list_id', { mode: 'number' }).references(() => lists.id, { onDelete: 'set null' }),
+        createdBy: bigint('created_by', { mode: 'number' }).references(() => users.id, { onDelete: 'set null' }),
+        instruction: text('instruction').notNull().default(''),
+        recordIds: jsonb('record_ids').$type<number[]>().notNull().default([]),
+        total: integer('total').notNull().default(0),
+        dispatched: integer('dispatched').notNull().default(0),
+        status: varchar('status', { length: 12 }).notNull().default('running'),
+        stoppedReason: text('stopped_reason'),
+        createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+        finishedAt: timestamp('finished_at', { withTimezone: true }),
+    },
+    (t) => [
+        index('ai_agent_batches_tenant_ix').on(t.tenantId, sql`${t.id} DESC`),
+        index('ai_agent_batches_agent_ix').on(t.agentId),
+        index('ai_agent_batches_list_ix').on(t.listId),
+        index('ai_agent_batches_created_by_ix').on(t.createdBy),
+        index('ai_agent_batches_running_ix').on(t.status).where(sql`${t.status} = 'running'`),
+    ],
+);
+export type AiAgentBatchRow = typeof aiAgentBatches.$inferSelect;
+
 /** Una corrida de un agente (RLS): pasos resumidos, tokens y estado. */
 export const aiAgentRuns = pgTable(
     'ai_agent_runs',
@@ -84,11 +120,14 @@ export const aiAgentRuns = pgTable(
         outputTokens: bigint('output_tokens', { mode: 'number' }).notNull().default(0),
         error: text('error'),
         createdBy: bigint('created_by', { mode: 'number' }).references(() => users.id, { onDelete: 'set null' }),
+        /** v0.1.456: el lote al que pertenece (agente en lote). */
+        batchId: bigint('batch_id', { mode: 'number' }).references(() => aiAgentBatches.id, { onDelete: 'set null' }),
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         startedAt: timestamp('started_at', { withTimezone: true }),
         finishedAt: timestamp('finished_at', { withTimezone: true }),
     },
     (t) => [
+        index('ai_agent_runs_batch_ix').on(t.batchId).where(sql`${t.batchId} IS NOT NULL`),
         index('ai_agent_runs_agent_ix').on(t.tenantId, t.agentId, sql`${t.id} DESC`),
         index('ai_agent_runs_agent_time_ix').on(t.agentId, t.createdAt),
         index('ai_agent_runs_record_ix').on(t.recordId),

@@ -12,6 +12,7 @@ export const meta: LearnModuleMeta = {
     highlights: [
         'Un asistente que arma listas, vistas, tableros y automatizaciones con lo que le pidas',
         'Sugerencias para cada lista sacadas de tus propios datos, con un análisis con IA cuando lo pides',
+        'Resúmenes de un registro, textos y respuestas escritos con IA, y agentes que trabajan en uno o muchos registros',
         'Campos que resumen, clasifican, extraen datos o traducen solos, también desde PDF e imágenes',
         'Agentes que trabajan sobre tus registros con las herramientas y el acceso que elijas',
         'Conecta Claude u otro asistente a tus datos con un clic',
@@ -34,6 +35,15 @@ export const meta: LearnModuleMeta = {
             minutes: 6,
             level: 'basic',
             keywords: 'sugerencias recomendaciones ideas lista analizar con ia vista tablero automatizacion convertir seleccion repetidos vencidos cupo mes apagar ocultar aviso',
+        },
+        {
+            id: 'ia-dia-a-dia',
+            title: 'La IA en tu día a día: resumir, escribir y pedirle al agente',
+            summary: 'Resume un registro en un vistazo, escribe o reescribe la descripción, sugiere respuestas a comentarios y pon a un agente a trabajar en un registro o en muchos.',
+            minutes: 7,
+            level: 'basic',
+            keywords: 'resumir con ia resumen registro que paso cliente escribir con ia reescribir mejorar mas corto traducir tono sugerir respuesta comentario pedir al agente lote varios registros',
+            needs: 'use_ai_assistant',
         },
         {
             id: 'ia-campos',
