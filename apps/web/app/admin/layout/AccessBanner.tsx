@@ -31,6 +31,8 @@ export function AccessBanner(): JSX.Element | null {
                 ? `${agency?.name ?? __('Tu agencia')} ${__('pausó la empresa: está en solo lectura.')}`
                 : access.reason === 'agency'
                   ? __('La cuenta de tu agencia está en solo lectura, y esta empresa también.')
+                  : access.reason === 'agency_unpaid'
+                    ? `${__('Venció el pago a')} ${agency?.name ?? __('tu agencia')}${__(': la empresa está en solo lectura.')}`
                   : access.reason === 'trial_ended'
                 ? __('Terminó la prueba: la empresa está en solo lectura.')
                 : access.reason === 'plan_expired'
@@ -54,6 +56,30 @@ export function AccessBanner(): JSX.Element | null {
                 {admin && !agency && access.reason !== 'archived' && <PlanLink />}
             </Bar>
         );
+    }
+
+    // v0.1.451 (ADR-S108): el pago a la agencia por vencer (los admins del cliente).
+    if (agency && admin && access.ends_at) {
+        const left = daysLeft(access.ends_at) ?? 0;
+        if (left <= 10) {
+            return (
+                <Bar tone="warn" testId="access-banner-agency-due">
+                    <Clock className="imcrm-h-4 imcrm-w-4 imcrm-shrink-0 imcrm-text-warning" aria-hidden />
+                    <p className="imcrm-min-w-0 imcrm-flex-1">
+                        <span className="imcrm-font-medium">{`${__('Si no se registra el pago a')} ${agency.name}${__(', la empresa pasa a solo lectura el')} ${formatDate(new Date(access.ends_at))}.`}</span>{' '}
+                        <span className="imcrm-text-muted-foreground">{__('Si ya pagaste, tu agencia lo registra y este aviso se va.')}</span>
+                    </p>
+                    <Link
+                        to="/settings?s=suscripcion"
+                        data-testid="access-banner-agency-plan"
+                        className="imcrm-inline-flex imcrm-shrink-0 imcrm-items-center imcrm-rounded-md imcrm-border imcrm-border-border imcrm-bg-card imcrm-px-2.5 imcrm-py-1 imcrm-text-xs imcrm-font-medium hover:imcrm-bg-accent"
+                    >
+                        {__('Ver mi plan')}
+                    </Link>
+                </Bar>
+            );
+        }
+        return null;
     }
 
     if (access.trial && access.ends_at && admin && !agency) {

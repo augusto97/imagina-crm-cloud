@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { emailSchema } from './auth';
 import { billingStatusSchema } from './billing';
 import { idSchema } from './common';
+import { agencyBillingSettingsSchema, agencyBillingTotalsSchema, agencyClientBillingSchema } from './agency-billing';
 import { tenantAccessSchema } from './plan-access';
 
 /**
@@ -22,10 +23,15 @@ export const agencySettingsSchema = z.object({
     client_plan: z.string().trim().min(1).max(32).nullable().default(null),
     /** Cuántas empresas cliente puede tener. `null` = sin tope. */
     max_clients: z.number().int().min(0).max(100_000).nullable().default(null),
+    /**
+     * v0.1.451 — Otros planes de la plataforma que la agencia puede darles a
+     * sus clientes (en sus propios planes). Siempre puede usar el de arriba.
+     */
+    client_plans: z.array(z.string().trim().min(1).max(32)).max(20).default([]),
 });
 export type AgencySettings = z.infer<typeof agencySettingsSchema>;
 
-export const DEFAULT_AGENCY_SETTINGS: AgencySettings = { client_plan: null, max_clients: null };
+export const DEFAULT_AGENCY_SETTINGS: AgencySettings = { client_plan: null, max_clients: null, client_plans: [] };
 
 /** Lectura tolerante de `tenants.settings.agency` (nunca falla). */
 export function readAgencySettings(raw: unknown): AgencySettings {
@@ -36,7 +42,16 @@ export function readAgencySettings(raw: unknown): AgencySettings {
         typeof r.max_clients === 'number' && Number.isInteger(r.max_clients) && r.max_clients >= 0
             ? Math.min(r.max_clients, 100_000)
             : null;
-    return { client_plan: plan, max_clients: max };
+    const extra: string[] = [];
+    if (Array.isArray(r.client_plans)) {
+        for (const v of r.client_plans) {
+            if (typeof v !== 'string') continue;
+            const slug = v.trim().slice(0, 32);
+            if (slug && !extra.includes(slug)) extra.push(slug);
+            if (extra.length >= 20) break;
+        }
+    }
+    return { client_plan: plan, max_clients: max, client_plans: extra };
 }
 
 /** Una empresa cliente vista desde su agencia. */
@@ -61,6 +76,8 @@ export const agencyClientSchema = z.object({
     entered: z.boolean(),
     /** Última vez que alguien de la agencia entró (bitácora del cliente). */
     last_agency_access_at: z.string().nullable(),
+    /** v0.1.451 — su plan con la agencia y cómo va el pago. */
+    billing: agencyClientBillingSchema,
 });
 export type AgencyClient = z.infer<typeof agencyClientSchema>;
 
@@ -72,6 +89,11 @@ export const agencyOverviewSchema = z.object({
     clients: z.number().int(),
     /** Puede crear otra empresa cliente (no llegó al tope). */
     can_create: z.boolean(),
+    /** v0.1.451 — los planes de la agencia y sus reglas de cobro. */
+    billing: agencyBillingSettingsSchema,
+    /** Los planes de la plataforma que puede usar como límites de sus planes. */
+    limit_plans: z.array(z.object({ slug: z.string(), name: z.string() })),
+    totals: agencyBillingTotalsSchema,
 });
 export type AgencyOverview = z.infer<typeof agencyOverviewSchema>;
 

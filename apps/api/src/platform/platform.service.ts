@@ -42,6 +42,7 @@ import { ENV, type Env } from '../config/env';
 import { DRIZZLE, type Db, type Tx, withoutTimeouts } from '../db/client';
 import {
     activity,
+    agencyPayments,
     attachments,
     automationRuns,
     automations,
@@ -477,6 +478,9 @@ export class PlatformService {
         if (input.agency_settings?.client_plan && !(await this.plans.exists(input.agency_settings.client_plan))) {
             throw bad('unknown_plan', `El plan '${input.agency_settings.client_plan}' no existe`);
         }
+        for (const slug of input.agency_settings?.client_plans ?? []) {
+            if (!(await this.plans.exists(slug))) throw bad('unknown_plan', `El plan '${slug}' no existe`);
+        }
         if (input.agency_id !== undefined && input.agency_id !== null) {
             if (input.agency_id === id) throw bad('agency_self', 'Una empresa no puede ser su propia agencia.');
             const [ag] = await this.db
@@ -494,12 +498,14 @@ export class PlatformService {
         if (agencyChanged) {
             set.agencyId = input.agency_id;
             set.agencyPausedAt = null;
+            // El plan y el «pagado hasta» son de la agencia anterior (v0.1.451).
+            set.agencyPaidUntil = null;
         }
         const settingsPatch =
             input.agency_settings !== undefined
                 ? input.agency_settings
                 : input.is_agency === true && !before.is_agency
-                  ? { client_plan: null, max_clients: null }
+                  ? { client_plan: null, max_clients: null, client_plans: [] }
                   : null;
         if (Object.keys(set).length === 0 && settingsPatch === null) return;
         await this.db.transaction(async (tx: Tx) => {
@@ -512,7 +518,13 @@ export class PlatformService {
                     .set({ settings: sql`${tenants.settings} || jsonb_build_object('agency', ${JSON.stringify(settingsPatch)}::jsonb)`, updatedAt: new Date() })
                     .where(eq(tenants.id, id));
             }
-            if (agencyChanged) await revokeClientAgencyAccess(tx, id);
+            if (agencyChanged) {
+                await tx
+                    .update(tenants)
+                    .set({ settings: sql`${tenants.settings} - 'agency_plan'` })
+                    .where(eq(tenants.id, id));
+                await revokeClientAgencyAccess(tx, id);
+            }
         });
         if (agencyChanged) {
             await this.audit?.log({
@@ -587,6 +599,8 @@ export class PlatformService {
             // v0.1.285 — problemas (la FK a lists/users se borra antes que ellas).
             await tx.delete(incidents).where(eq(incidents.tenantId, id));
             // v0.1.251 — cobros de la empresa (links de pago y su URL de avisos).
+            // v0.1.451 — pagos registrados por una agencia (como agencia o como cliente).
+            await tx.delete(agencyPayments).where(or(eq(agencyPayments.tenantId, id), eq(agencyPayments.clientId, id)));
             await tx.delete(paymentLinks).where(eq(paymentLinks.tenantId, id));
             await tx.delete(collectionHooks).where(eq(collectionHooks.tenantId, id));
             // v0.1.367 — suscripciones (los cobros caen en cascada; los planes después).

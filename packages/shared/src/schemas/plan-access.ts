@@ -92,8 +92,11 @@ export type AccessState = (typeof ACCESS_STATES)[number];
  *   tiene acceso completo (su prueba o su plan vencieron, o está suspendida).
  *   El cliente queda en sólo lectura: nunca pausado (sus datos son suyos).
  * - `agency_paused`: la agencia lo pausó (p. ej. dejó de pagarle a la agencia).
+ * - `agency_unpaid` (v0.1.451): pasó su «pagado hasta» con la agencia más los
+ *   días de gracia de la agencia. Sólo lectura hasta que la agencia registre
+ *   el pago.
  */
-export const ACCESS_REASONS = ['archived', 'suspended', 'trial_ended', 'plan_expired', 'agency', 'agency_paused'] as const;
+export const ACCESS_REASONS = ['archived', 'suspended', 'trial_ended', 'plan_expired', 'agency', 'agency_paused', 'agency_unpaid'] as const;
 export type AccessReason = (typeof ACCESS_REASONS)[number];
 
 export const tenantAccessSchema = z.object({
@@ -134,7 +137,17 @@ export interface AgencyAccessInput {
     trial_ends_at?: string | Date | null;
     subscription_ends_at?: string | Date | null;
     paid_until?: string | Date | null;
+    /**
+     * v0.1.451 — El «pagado hasta» del CLIENTE con su agencia (columna
+     * `tenants.agency_paid_until` del cliente) y los días de gracia de la
+     * agencia. Viajan aquí porque salen de la misma subconsulta.
+     */
+    client_paid_until?: string | Date | null;
+    client_grace_days?: number | null;
 }
+
+/** Días de gracia de una agencia cuando no los configuró. */
+export const DEFAULT_AGENCY_GRACE_DAYS = 5;
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -179,11 +192,8 @@ export function tenantAccess(input: TenantAccessInput, policy: Pick<BillingPolic
     // v0.1.449 (ADR-S108) — un cliente de agencia sigue a su agencia: si la
     // agencia no tiene acceso completo, el cliente queda en sólo lectura
     // (nunca pausado: ve y descarga lo suyo, ADR-S09).
+    if (input.agency) return agencyClientAccess(input, input.agency, policy, manual, now, trial);
     if (input.agency_paused_at) return { state: 'read_only', reason: 'agency_paused', ends_at, trial };
-    if (input.agency) {
-        const agency = tenantAccess({ ...input.agency, now: input.now }, policy);
-        if (agency.state !== 'full') return { state: 'read_only', reason: 'agency', ends_at, trial };
-    }
     if (input.status !== 'trialing' && input.status !== 'active') {
         return { state: 'read_only', reason: 'suspended', ends_at, trial };
     }
@@ -195,6 +205,38 @@ export function tenantAccess(input: TenantAccessInput, policy: Pick<BillingPolic
             trial,
         };
     }
+    return { state: 'full', reason: null, ends_at, trial };
+}
+
+/**
+ * v0.1.451 — El acceso de una empresa CLIENTE de una agencia. La plataforma
+ * no le cobra (ni su prueba ni su período pagado cuentan): mandan la agencia
+ * (su propio acceso y su pausa) y el «pagado hasta» que lleva la agencia, con
+ * los días de gracia de la agencia. Al vencer queda en sólo lectura, nunca
+ * pausada (sus datos son suyos, ADR-S09). La fecha manual del operador sigue
+ * valiendo como corte.
+ */
+function agencyClientAccess(
+    input: TenantAccessInput,
+    agency: AgencyAccessInput,
+    policy: Pick<BillingPolicy, 'on_end' | 'grace_days'>,
+    manual: number | null,
+    now: number,
+    trial: boolean,
+): TenantAccess {
+    const graceRaw = agency.client_grace_days;
+    const grace =
+        typeof graceRaw === 'number' && Number.isInteger(graceRaw) && graceRaw >= 0 && graceRaw <= 60 ? graceRaw : DEFAULT_AGENCY_GRACE_DAYS;
+    const paid = asTime(agency.client_paid_until);
+    const cut = paid === null ? null : paid + grace * DAY;
+    const endsAt = cut === null ? manual : manual === null ? cut : Math.min(cut, manual);
+    const ends_at = endsAt === null ? null : new Date(endsAt).toISOString();
+    if (input.agency_paused_at) return { state: 'read_only', reason: 'agency_paused', ends_at, trial };
+    const own = tenantAccess({ ...agency, now: input.now }, policy);
+    if (own.state !== 'full') return { state: 'read_only', reason: 'agency', ends_at, trial };
+    if (input.status !== 'trialing' && input.status !== 'active') return { state: 'read_only', reason: 'suspended', ends_at, trial };
+    if (cut !== null && cut <= now) return { state: 'read_only', reason: 'agency_unpaid', ends_at, trial };
+    if (manual !== null && manual <= now) return { state: 'read_only', reason: 'plan_expired', ends_at, trial };
     return { state: 'full', reason: null, ends_at, trial };
 }
 

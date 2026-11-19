@@ -26,6 +26,8 @@ export const tenants = pgTable('tenants', {
     agencyId: bigint('agency_id', { mode: 'number' }).references((): AnyPgColumn => tenants.id, { onDelete: 'restrict' }),
     // La agencia pausó a este cliente: queda en sólo lectura.
     agencyPausedAt: timestamp('agency_paused_at', { withTimezone: true }),
+    // v0.1.451 — hasta cuándo pagó este cliente a su agencia (lo lleva la agencia).
+    agencyPaidUntil: timestamp('agency_paid_until', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

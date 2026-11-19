@@ -1,7 +1,7 @@
 import { forwardRef, useMemo, useState } from 'react';
 import * as RDialog from '@radix-ui/react-dialog';
-import { Building2, Clock, Loader2, LogIn, MoreHorizontal, PauseCircle, Pencil, PlayCircle, Plus, Search, Users, X } from 'lucide-react';
-import type { AgencyClient } from '@imagina-base/shared';
+import { Building2, Clock, Loader2, LogIn, MoreHorizontal, PauseCircle, Pencil, PlayCircle, Plus, Receipt, Search, Users, X } from 'lucide-react';
+import type { AgencyClient, AgencyOverview } from '@imagina-base/shared';
 
 import { relativeTime } from '@/admin/activity/activityText';
 import { initials } from '@/admin/layout/WorkspaceSwitcher';
@@ -26,7 +26,10 @@ import {
     useUpdateAgencyClient,
 } from './useAgency';
 import { AgencyBrandCard } from './AgencyBrandCard';
-import { clientStateLabel } from './agencyUi';
+import { AgencyPlansCard } from './AgencyPlansCard';
+import { billingStateLabel, clientStateLabel } from './agencyUi';
+import { ClientBillingDialog } from './ClientBillingDialog';
+import { formatMoney } from '@/cloud/components/payments/paymentUi';
 
 /**
  * v0.1.449 (I3, ADR-S108) — «Agencia»: las empresas de los clientes de la
@@ -40,6 +43,17 @@ export function AgencyPage(): JSX.Element {
     const [query, setQuery] = useState('');
     const [creating, setCreating] = useState(false);
     const [renaming, setRenaming] = useState<AgencyClient | null>(null);
+    const [billingId, setBillingId] = useState<number | null>(null);
+    // El diálogo sigue a la lista: al guardar se ve el estado nuevo sin cerrarlo.
+    const billingClient = billingId === null ? null : ((clients.data ?? []).find((c) => c.id === billingId) ?? null);
+    const usage = useMemo(() => {
+        const out: Record<string, number> = {};
+        for (const c of clients.data ?? []) {
+            const id = c.billing.plan?.plan_id;
+            if (id) out[id] = (out[id] ?? 0) + 1;
+        }
+        return out;
+    }, [clients.data]);
 
     const shown = useMemo(() => {
         const q = normalize(query);
@@ -88,14 +102,21 @@ export function AgencyPage(): JSX.Element {
             </header>
 
             {o && (
-                <div className="imcrm-grid imcrm-grid-cols-1 imcrm-gap-2 sm:imcrm-grid-cols-3" data-testid="agency-summary">
+                <div className="imcrm-grid imcrm-grid-cols-2 imcrm-gap-2 lg:imcrm-grid-cols-4" data-testid="agency-summary">
                     <Summary label={__('Empresas cliente')} value={limitText ?? formatNumber(o.clients)} hint={limitText ? __('con el tope de tu agencia') : __('sin tope')} />
-                    <Summary label={__('Nacen con el plan')} value={o.client_plan?.name ?? '—'} hint={__('lo elige la plataforma')} />
+                    <Summary label={__('Al día')} value={formatNumber(o.totals.ok)} hint={o.totals.none > 0 ? `${formatNumber(o.totals.none)} ${__('sin plan')}` : __('con el pago al día')} />
                     <Summary
-                        label={__('Con actividad de la agencia')}
-                        value={formatNumber((clients.data ?? []).filter((c) => c.last_agency_access_at).length)}
-                        hint={__('alguien de tu equipo entró')}
+                        label={__('Por cobrar')}
+                        value={formatNumber(o.totals.due_soon + o.totals.grace + o.totals.unpaid)}
+                        hint={
+                            o.totals.unpaid > 0
+                                ? `${formatNumber(o.totals.unpaid)} ${__('en solo lectura')}`
+                                : __('por vencer o vencidos')
+                        }
+                        tone={o.totals.unpaid > 0 ? 'bad' : o.totals.grace + o.totals.due_soon > 0 ? 'warn' : undefined}
+                        testId="agency-summary-due"
                     />
+                    <Summary label={__('Al mes')} value={monthlyText(o)} hint={__('lo que suman tus planes')} testId="agency-summary-monthly" />
                 </div>
             )}
 
@@ -135,7 +156,7 @@ export function AgencyPage(): JSX.Element {
                 <Card>
                     <ul className="imcrm-divide-y imcrm-divide-border" data-testid="agency-clients" data-tour="agency-clients">
                         {shown.map((c) => (
-                            <ClientRow key={c.id} client={c} onRename={() => setRenaming(c)} />
+                            <ClientRow key={c.id} client={c} onRename={() => setRenaming(c)} onBilling={() => setBillingId(c.id)} />
                         ))}
                         {shown.length === 0 && (
                             <li className="imcrm-p-4 imcrm-text-sm imcrm-text-muted-foreground">{__('Ninguna empresa coincide con la búsqueda.')}</li>
@@ -144,30 +165,60 @@ export function AgencyPage(): JSX.Element {
                 </Card>
             )}
 
+            {o && <AgencyPlansCard overview={o} usage={usage} />}
+
             <AgencyBrandCard />
 
             {creating && <CreateClientDialog onClose={() => setCreating(false)} />}
+            {billingClient && o && <ClientBillingDialog client={billingClient} overview={o} onClose={() => setBillingId(null)} />}
             {renaming && <RenameClientDialog client={renaming} onClose={() => setRenaming(null)} />}
         </div>
     );
 }
 
-function Summary({ label, value, hint }: { label: string; value: string; hint: string }): JSX.Element {
+/** «$1.200.000 COP» por mes (y si hay varias monedas, separadas). */
+function monthlyText(o: AgencyOverview): string {
+    if (o.totals.monthly.length === 0) return '—';
+    return o.totals.monthly.map((m) => formatMoney(m.amount, m.currency)).join(' · ');
+}
+
+function Summary({
+    label,
+    value,
+    hint,
+    tone,
+    testId,
+}: {
+    label: string;
+    value: string;
+    hint: string;
+    tone?: 'warn' | 'bad';
+    testId?: string;
+}): JSX.Element {
     return (
-        <div className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-px-3.5 imcrm-py-3">
+        <div className="imcrm-rounded-lg imcrm-border imcrm-border-border imcrm-bg-card imcrm-px-3.5 imcrm-py-3" data-testid={testId}>
             <div className="imcrm-text-[12px] imcrm-text-muted-foreground">{label}</div>
-            <div className="imcrm-mt-0.5 imcrm-truncate imcrm-text-lg imcrm-font-semibold">{value}</div>
+            <div
+                className={cn(
+                    'imcrm-mt-0.5 imcrm-truncate imcrm-text-lg imcrm-font-semibold',
+                    tone === 'warn' && 'imcrm-text-warning',
+                    tone === 'bad' && 'imcrm-text-destructive',
+                )}
+            >
+                {value}
+            </div>
             <div className="imcrm-text-[11px] imcrm-text-muted-foreground">{hint}</div>
         </div>
     );
 }
 
-function ClientRow({ client: c, onRename }: { client: AgencyClient; onRename: () => void }): JSX.Element {
+function ClientRow({ client: c, onRename, onBilling }: { client: AgencyClient; onRename: () => void; onBilling: () => void }): JSX.Element {
     const enter = useEnterAgencyClient();
     const update = useUpdateAgencyClient();
     const confirm = useConfirm();
     const toast = useToast();
     const state = clientStateLabel(c);
+    const bill = billingStateLabel(c.billing);
     const admin = c.admins[0] ?? null;
 
     const togglePause = async (): Promise<void> => {
@@ -212,8 +263,28 @@ function ClientRow({ client: c, onRename }: { client: AgencyClient; onRename: ()
                     >
                         {state.label}
                     </Badge>
-                    {c.plan_name && <span className="imcrm-text-[12px] imcrm-text-muted-foreground">{c.plan_name}</span>}
+                    {c.plan_name && !c.billing.plan && <span className="imcrm-text-[12px] imcrm-text-muted-foreground">{c.plan_name}</span>}
                 </div>
+                <button
+                    type="button"
+                    onClick={onBilling}
+                    className="imcrm-mt-0.5 imcrm-flex imcrm-max-w-full imcrm-flex-wrap imcrm-items-center imcrm-gap-x-2 imcrm-text-left imcrm-text-[12px] hover:imcrm-underline"
+                    data-testid="agency-client-billing"
+                >
+                    <span
+                        className={cn(
+                            'imcrm-inline-flex imcrm-items-center imcrm-gap-1 imcrm-font-medium',
+                            bill.tone === 'ok' && 'imcrm-text-success',
+                            bill.tone === 'warn' && 'imcrm-text-warning',
+                            bill.tone === 'bad' && 'imcrm-text-destructive',
+                            bill.tone === 'muted' && 'imcrm-text-muted-foreground',
+                        )}
+                    >
+                        <Receipt className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                        {c.billing.plan ? `${c.billing.plan.name} · ${bill.label}` : bill.label}
+                    </span>
+                    {c.billing.plan && <span className="imcrm-text-muted-foreground">{bill.detail}</span>}
+                </button>
                 <div className="imcrm-mt-0.5 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-3 imcrm-gap-y-0.5 imcrm-text-[12px] imcrm-text-muted-foreground">
                     <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1">
                         <Users className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
@@ -251,6 +322,10 @@ function ClientRow({ client: c, onRename }: { client: AgencyClient; onRename: ()
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={onBilling} data-testid="agency-client-billing-menu">
+                            <Receipt className="imcrm-h-4 imcrm-w-4" />
+                            {c.billing.plan ? __('Cobro y pagos') : __('Asignar un plan')}
+                        </DropdownMenuItem>
                         <DropdownMenuItem onSelect={onRename}>
                             <Pencil className="imcrm-h-4 imcrm-w-4" />
                             {__('Cambiar el nombre')}

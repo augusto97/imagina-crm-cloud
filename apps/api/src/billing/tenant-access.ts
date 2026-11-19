@@ -38,8 +38,13 @@ export function currentBillingPolicy(): BillingPolicy {
  * cliente, en una subconsulta correlacionada (JSON; `null` si la empresa no es
  * cliente de una agencia). `tenants` no tiene RLS: se lee igual con cualquier
  * scope. Va dentro de un `select` cuya fuente incluye `tenants`.
+ *
+ * v0.1.451 — También lleva el «pagado hasta» del CLIENTE con su agencia (la
+ * columna del cliente, correlacionada) y los días de gracia de la agencia:
+ * así todo lugar que ya calculaba el acceso con esta subconsulta respeta el
+ * cobro de la agencia sin tocarlo.
  */
-export const agencyAccessSql = sql<AgencyAccessInput | null>`(SELECT json_build_object('plan', ag.plan, 'status', ag.status, 'archived_at', ag.archived_at, 'trial_ends_at', ag.trial_ends_at, 'subscription_ends_at', ag.subscription_ends_at, 'paid_until', ag.paid_until) FROM tenants ag WHERE ag.id = ${tenants.agencyId})`;
+export const agencyAccessSql = sql<AgencyAccessInput | null>`(SELECT json_build_object('plan', ag.plan, 'status', ag.status, 'archived_at', ag.archived_at, 'trial_ends_at', ag.trial_ends_at, 'subscription_ends_at', ag.subscription_ends_at, 'paid_until', ag.paid_until, 'client_paid_until', ${tenants.agencyPaidUntil}, 'client_grace_days', ag.settings->'agency_billing'->'grace_days') FROM tenants ag WHERE ag.id = ${tenants.agencyId})`;
 
 /** Las columnas de `tenants` que deciden el acceso (para los `select`). */
 export const accessColumns = {
