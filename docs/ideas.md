@@ -16,7 +16,7 @@
 >   `docs/estudio-funcionalidades-2026-10.md`, junto con el valor, el esfuerzo
 >   y quién la tiene en la competencia.
 >
-> Última revisión: 2026-11-18 (v0.1.440).
+> Última revisión: 2026-11-19 (v0.1.454).
 
 ---
 
@@ -31,8 +31,8 @@ de eventos en v0.1.442 y la app de n8n en v0.1.443; quedan Make y Zapier),
 «cuando se agrega un comentario» salieron en v0.1.444), **A14** (duplicados y fusionar: salió en v0.1.445), **D6**
 (firma electrónica: salió completa en v0.1.446, v0.1.447 —automatizaciones,
 portal, verificar con el archivo y asistente/MCP— y v0.1.448 —el código por SMS
-o WhatsApp—) y **G8** (facturación DIAN: falta elegir proveedor y tener
-credenciales de prueba) e **I3** (modo agencia: salió completo entre
+o WhatsApp—) y **G8** (facturación DIAN: el usuario la dejó para después el
+2026-11-19 —"Ok dejalo para después"—; sigue en §1) e **I3** (modo agencia: salió completo entre
 v0.1.449 y v0.1.454 —consola de la agencia y acceso con rastro, su marca en
 sus clientes, sus planes con pagos a mano, en línea y con débito automático, y
 el cobro de la plataforma a la agencia por las empresas que maneja—).
