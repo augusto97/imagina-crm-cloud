@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Copy, Maximize, Minus, Plus, Trash2, ZoomIn } from 'lucide-react';
 
+import { caseBranch, onErrorUsesSteps, readOnError, readSwitchConfig, switchCaseLabel } from '@imagina-base/shared';
+
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import {
@@ -19,6 +21,7 @@ import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
 
 import { ActionTypeMenu } from './ActionTypeMenu';
+import { fieldOptions } from './FlowControlParts';
 import {
     branchOf,
     duplicateAt,
@@ -27,11 +30,13 @@ import {
     pathKey,
     removeAt,
     updateNode,
+    type BranchKey,
     type NodePath,
     type SeqPath,
 } from './actionsTree';
 import {
     actionConditionCount,
+    onErrorBadge,
     actionMetaFor,
     summarizeAction,
     summarizeTrigger,
@@ -91,7 +96,12 @@ interface LNode {
     spec?: ActionSpec;
 }
 
-type EdgeLabel = 'si' | 'no' | 'cada';
+/** El tono de la etiqueta de una conexión (Sí / No / Cada uno / una rama / En otro caso / Si falla). */
+type EdgeTone = 'si' | 'no' | 'cada' | 'rama' | 'otro' | 'falla';
+interface EdgeLabel {
+    tone: EdgeTone;
+    text: string;
+}
 
 interface LEdge {
     id: string;
@@ -129,15 +139,89 @@ interface Layout {
     height: number;
 }
 
-function widthOfSpec(spec: ActionSpec): number {
-    if (spec.type === 'for_each_linked') return Math.max(NODE_W, widthOfSeq(branchOf(spec, 'each')) + FRAME_PAD * 2);
-    if (spec.type !== 'if_else') return NODE_W;
-    return widthOfSeq(branchOf(spec, 'then')) + GAP_X + widthOfSeq(branchOf(spec, 'else'));
+/** Lo que el layout necesita saber de los campos (las etiquetas de las ramas). */
+type LabelOf = (fieldId: number) => ((value: string) => string) | undefined;
+
+interface Branch {
+    key: BranchKey;
+    seq: ActionSpec[];
+    label: EdgeLabel;
 }
 
-function widthOfSeq(seq: ActionSpec[]): number {
+/**
+ * Las ramas que se dibujan en columnas paralelas: Sí / No de un si/sino y,
+ * v0.1.460, cada rama de «Según el valor de…» más «En otro caso».
+ */
+function columnBranches(spec: ActionSpec, labelOf: LabelOf): Branch[] | null {
+    if (spec.type === 'if_else') {
+        return [
+            { key: 'then', seq: branchOf(spec, 'then'), label: { tone: 'si', text: __('Sí') } },
+            { key: 'else', seq: branchOf(spec, 'else'), label: { tone: 'no', text: __('No') } },
+        ];
+    }
+    if (spec.type === 'switch') {
+        const sw = readSwitchConfig(spec.config);
+        const lo = sw.source.kind === 'field' ? labelOf(sw.source.fieldId) : undefined;
+        const out: Branch[] = sw.cases.map((c, i) => ({
+            key: caseBranch(i),
+            seq: c.actions as ActionSpec[],
+            label: { tone: 'rama', text: switchCaseLabel(c, i, lo).slice(0, 28) },
+        }));
+        out.push({ key: 'default', seq: sw.defaultActions as ActionSpec[], label: { tone: 'otro', text: __('En otro caso') } });
+        return out;
+    }
+    return null;
+}
+
+/** v0.1.460 — Los pasos de «Si falla» de un paso (null si no tiene: se detiene, sigue o reintenta). */
+function failBranch(spec: ActionSpec): ActionSpec[] | null {
+    if (spec.type === 'if_else' || spec.type === 'switch') return null;
+    const oe = readOnError(spec.on_error);
+    return onErrorUsesSteps(oe) ? (oe.actions as ActionSpec[]) : null;
+}
+
+function baseWidth(spec: ActionSpec, labelOf: LabelOf): number {
+    if (spec.type === 'for_each_linked') return Math.max(NODE_W, widthOfSeq(branchOf(spec, 'each'), labelOf) + FRAME_PAD * 2);
+    const cols = columnBranches(spec, labelOf);
+    if (!cols) return NODE_W;
+    return cols.reduce((sum, b, i) => sum + widthOfSeq(b.seq, labelOf) + (i > 0 ? GAP_X : 0), 0);
+}
+
+function widthOfSpec(spec: ActionSpec, labelOf: LabelOf): number {
+    const base = baseWidth(spec, labelOf);
+    const fail = failBranch(spec);
+    // La columna de «Si falla» va a la derecha: se reserva lo mismo a los dos lados para seguir centrados.
+    return fail ? base + 2 * (GAP_X + widthOfSeq(fail, labelOf)) : base;
+}
+
+function widthOfSeq(seq: ActionSpec[], labelOf: LabelOf): number {
     if (seq.length === 0) return GHOST_W;
-    return Math.max(NODE_W, ...seq.map(widthOfSpec));
+    return Math.max(NODE_W, ...seq.map((s) => widthOfSpec(s, labelOf)));
+}
+
+/** Una rama vacía: el fantasma «Añadir» y su conexión. Devuelve su fondo. */
+function ghostBranch(out: Layout, branchPath: SeqPath, from: { x: number; y: number }, cx: number, y: number, label: EdgeLabel): number {
+    out.nodes.push({
+        id: `g:${pathKey(branchPath)}`,
+        kind: 'ghost',
+        x: cx - GHOST_W / 2,
+        y,
+        w: GHOST_W,
+        h: GHOST_H,
+        insertSeqPath: branchPath,
+        insertIndex: 0,
+    });
+    out.edges.push({
+        id: `e:g:${pathKey(branchPath)}`,
+        sx: from.x,
+        sy: from.y,
+        tx: cx,
+        ty: y,
+        label,
+        insertSeqPath: branchPath,
+        insertIndex: 0,
+    });
+    return y + GHOST_H;
 }
 
 /**
@@ -153,6 +237,7 @@ function layoutSeq(
     y: number,
     entries: Exit[],
     out: Layout,
+    labelOf: LabelOf,
 ): { bottom: number; exits: Exit[] } {
     let incoming = entries;
     let cursorY = y;
@@ -188,110 +273,62 @@ function layoutSeq(
         }
 
         const bottomAnchor = { x: cx, y: cursorY + NODE_H };
+        const cols = columnBranches(spec, labelOf);
 
-        if (spec.type === 'if_else') {
-            const thenSeq = branchOf(spec, 'then');
-            const elseSeq = branchOf(spec, 'else');
-            const wThen = widthOfSeq(thenSeq);
-            const wElse = widthOfSeq(elseSeq);
-            const total = wThen + GAP_X + wElse;
-            const thenCx = cx - total / 2 + wThen / 2;
-            const elseCx = cx - total / 2 + wThen + GAP_X + wElse / 2;
+        if (cols) {
+            // Si / sino y «Según el valor de…»: una columna por rama, en
+            // paralelo; las ramas convergen en el paso siguiente.
+            const widths = cols.map((b) => widthOfSeq(b.seq, labelOf));
+            const total = widths.reduce((a, w) => a + w, 0) + GAP_X * (cols.length - 1);
             const childY = cursorY + NODE_H + GAP_Y;
-
-            const branches: Array<{ key: 'then' | 'else'; seq: ActionSpec[]; cx: number; label: 'si' | 'no' }> = [
-                { key: 'then', seq: thenSeq, cx: thenCx, label: 'si' },
-                { key: 'else', seq: elseSeq, cx: elseCx, label: 'no' },
-            ];
-
+            let left = cx - total / 2;
             let maxBottom = childY;
             const mergedExits: Exit[] = [];
-            for (const b of branches) {
+            cols.forEach((b, bi) => {
+                const bcx = left + widths[bi]! / 2;
+                left += widths[bi]! + GAP_X;
                 const branchPath: SeqPath = [...nodePath, b.key];
-                const entry: Exit = {
-                    x: bottomAnchor.x,
-                    y: bottomAnchor.y,
-                    insertSeqPath: branchPath,
-                    insertIndex: 0,
-                    label: b.label,
-                };
                 if (b.seq.length === 0) {
-                    // Rama vacía → nodo fantasma para añadir la primera acción.
-                    out.nodes.push({
-                        id: `g:${pathKey(branchPath)}`,
-                        kind: 'ghost',
-                        x: b.cx - GHOST_W / 2,
-                        y: childY,
-                        w: GHOST_W,
-                        h: GHOST_H,
-                        insertSeqPath: branchPath,
-                        insertIndex: 0,
-                    });
-                    out.edges.push({
-                        id: `e:g:${pathKey(branchPath)}`,
-                        sx: bottomAnchor.x,
-                        sy: bottomAnchor.y,
-                        tx: b.cx,
-                        ty: childY,
-                        label: b.label,
-                        insertSeqPath: branchPath,
-                        insertIndex: 0,
-                    });
-                    maxBottom = Math.max(maxBottom, childY + GHOST_H);
+                    const bottom = ghostBranch(out, branchPath, bottomAnchor, bcx, childY, b.label);
+                    maxBottom = Math.max(maxBottom, bottom);
                     // La rama vacía "cae" al siguiente paso de la secuencia padre.
-                    mergedExits.push({
-                        x: b.cx,
-                        y: childY + GHOST_H,
-                        insertSeqPath: branchPath,
-                        insertIndex: 0,
-                    });
+                    mergedExits.push({ x: bcx, y: bottom, insertSeqPath: branchPath, insertIndex: 0 });
                 } else {
-                    const res = layoutSeq(b.seq, branchPath, b.cx, childY, [entry], out);
+                    const entry: Exit = { x: bottomAnchor.x, y: bottomAnchor.y, insertSeqPath: branchPath, insertIndex: 0, label: b.label };
+                    const res = layoutSeq(b.seq, branchPath, bcx, childY, [entry], out, labelOf);
                     maxBottom = Math.max(maxBottom, res.bottom);
                     mergedExits.push(...res.exits);
                 }
-            }
+            });
             cursorY = maxBottom + GAP_Y;
             incoming = mergedExits;
-        } else if (spec.type === 'for_each_linked') {
+            continue;
+        }
+
+        let stepBottom: number;
+        let stepExits: Exit[];
+        let stepW = NODE_W;
+        if (spec.type === 'for_each_linked') {
             // v0.1.288 — «Repetir por cada vinculado»: los pasos de adentro
             // van en un marco debajo del nodo; lo que sigue sale del marco.
             const body = branchOf(spec, 'each');
             const bodyPath: SeqPath = [...nodePath, 'each'];
-            const bodyW = widthOfSeq(body);
+            const bodyW = widthOfSeq(body, labelOf);
             const frameTop = cursorY + NODE_H + 18;
             const childY = frameTop + FRAME_HEAD;
+            const cada: EdgeLabel = { tone: 'cada', text: __('Cada uno') };
             let bodyBottom: number;
             if (body.length === 0) {
-                out.nodes.push({
-                    id: `g:${pathKey(bodyPath)}`,
-                    kind: 'ghost',
-                    x: cx - GHOST_W / 2,
-                    y: childY,
-                    w: GHOST_W,
-                    h: GHOST_H,
-                    insertSeqPath: bodyPath,
-                    insertIndex: 0,
-                });
-                out.edges.push({
-                    id: `e:g:${pathKey(bodyPath)}`,
-                    sx: bottomAnchor.x,
-                    sy: bottomAnchor.y,
-                    tx: cx,
-                    ty: childY,
-                    label: 'cada',
-                    insertSeqPath: bodyPath,
-                    insertIndex: 0,
-                });
-                bodyBottom = childY + GHOST_H;
+                bodyBottom = ghostBranch(out, bodyPath, bottomAnchor, cx, childY, cada);
             } else {
                 const res = layoutSeq(
                     body,
                     bodyPath,
                     cx,
                     childY,
-                    [{ x: bottomAnchor.x, y: bottomAnchor.y, insertSeqPath: bodyPath, insertIndex: 0, label: 'cada' }],
+                    [{ x: bottomAnchor.x, y: bottomAnchor.y, insertSeqPath: bodyPath, insertIndex: 0, label: cada }],
                     out,
+                    labelOf,
                 );
                 bodyBottom = res.bottom;
                 // El final de los pasos de adentro: su «+» agrega al final del cuerpo.
@@ -312,27 +349,64 @@ function layoutSeq(
             const frameBottom = bodyBottom + FRAME_PAD;
             const frameW = Math.max(bodyW + FRAME_PAD * 2, NODE_W);
             out.frames.push({ id: `f:${pathKey(nodePath)}`, x: cx - frameW / 2, y: frameTop, w: frameW, h: frameBottom - frameTop });
-            cursorY = frameBottom + GAP_Y;
-            incoming = [{ x: cx, y: frameBottom, insertSeqPath: seqPath, insertIndex: i + 1 }];
+            stepW = frameW;
+            stepBottom = frameBottom;
+            stepExits = [{ x: cx, y: frameBottom, insertSeqPath: seqPath, insertIndex: i + 1 }];
         } else {
-            cursorY = cursorY + NODE_H + GAP_Y;
-            incoming = [
-                {
-                    x: bottomAnchor.x,
-                    y: bottomAnchor.y,
-                    insertSeqPath: seqPath,
-                    insertIndex: i + 1,
-                },
-            ];
+            stepBottom = bottomAnchor.y;
+            stepExits = [{ x: bottomAnchor.x, y: bottomAnchor.y, insertSeqPath: seqPath, insertIndex: i + 1 }];
         }
+
+        // v0.1.460 — «Si este paso falla → Hacer otros pasos»: su columna a la
+        // derecha del paso; si después «sigue con el resto», converge abajo.
+        const fail = failBranch(spec);
+        if (fail) {
+            const failPath: SeqPath = [...nodePath, 'fail'];
+            const wFail = widthOfSeq(fail, labelOf);
+            const failCx = cx + stepW / 2 + GAP_X + wFail / 2;
+            const failY = cursorY + NODE_H + GAP_Y;
+            const falla: EdgeLabel = { tone: 'falla', text: __('Si falla') };
+            const from = { x: cx + NODE_W / 2, y: cursorY + NODE_H / 2 };
+            let failBottom: number;
+            const failExits: Exit[] = [];
+            if (fail.length === 0) {
+                failBottom = ghostBranch(out, failPath, from, failCx, failY, falla);
+                failExits.push({ x: failCx, y: failBottom, insertSeqPath: failPath, insertIndex: 0 });
+            } else {
+                const res = layoutSeq(fail, failPath, failCx, failY, [{ ...from, insertSeqPath: failPath, insertIndex: 0, label: falla }], out, labelOf);
+                failBottom = res.bottom;
+                failExits.push(...res.exits);
+            }
+            const continues = readOnError(spec.on_error).afterSteps === 'continue';
+            stepBottom = Math.max(stepBottom, failBottom);
+            if (continues) stepExits = [...stepExits, ...failExits];
+            else {
+                // Termina ahí: un «+» al pie de la columna agrega al final de «Si falla».
+                for (const e of failExits) {
+                    out.edges.push({
+                        id: `e:end:${pathKey(failPath)}:${e.x},${e.y}`,
+                        sx: e.x,
+                        sy: e.y,
+                        tx: failCx,
+                        ty: e.y + 26,
+                        insertSeqPath: e.insertSeqPath,
+                        insertIndex: e.insertIndex,
+                    });
+                }
+                stepBottom = Math.max(stepBottom, failBottom + 26);
+            }
+        }
+
+        cursorY = stepBottom + GAP_Y;
+        incoming = stepExits;
     }
 
     return { bottom: cursorY - GAP_Y, exits: incoming };
 }
 
-function buildLayout(actions: ActionSpec[]): Layout {
+function buildLayout(actions: ActionSpec[], labelOf: LabelOf): Layout {
     const out: Layout = { nodes: [], edges: [], frames: [], width: 0, height: 0 };
-    const rootW = Math.max(widthOfSeq(actions), NODE_W);
+    const rootW = Math.max(widthOfSeq(actions, labelOf), NODE_W);
     const cx = rootW / 2;
 
     // Nodo del trigger
@@ -344,7 +418,7 @@ function buildLayout(actions: ActionSpec[]): Layout {
         insertIndex: 0,
     };
 
-    const res = layoutSeq(actions, [], cx, NODE_H + GAP_Y, [triggerExit], out);
+    const res = layoutSeq(actions, [], cx, NODE_H + GAP_Y, [triggerExit], out, labelOf);
     const exits = actions.length === 0 ? [triggerExit] : res.exits;
     const ghostY = (actions.length === 0 ? NODE_H : res.bottom) + GAP_Y;
 
@@ -409,7 +483,15 @@ export function AutomationCanvas({
     lists,
     relationPaths,
 }: AutomationCanvasProps): JSX.Element {
-    const layout = useMemo(() => buildLayout(actions), [actions]);
+    // v0.1.460 — las etiquetas de las ramas de «Según el valor de…» usan las de las opciones.
+    const layout = useMemo(() => {
+        const labelOf: LabelOf = (fieldId) => {
+            const opts = fieldOptions(fields.find((f) => f.id === fieldId));
+            if (opts.length === 0) return undefined;
+            return (v: string) => opts.find((o) => o.value === v)?.label ?? v;
+        };
+        return buildLayout(actions, labelOf);
+    }, [actions, fields]);
     const listId = useAutomationListId();
 
     const containerRef = useRef<HTMLDivElement | null>(null);
@@ -598,20 +680,33 @@ export function AutomationCanvas({
                                 <span
                                     className={cn(
                                         'imcrm-absolute imcrm-z-10 imcrm-rounded-full imcrm-border imcrm-px-2 imcrm-py-0.5 imcrm-text-[10px] imcrm-font-bold imcrm-uppercase imcrm-tracking-wide',
-                                        e.label === 'si'
+                                        'imcrm-max-w-[150px] imcrm-truncate',
+                                        e.label.tone === 'si' || e.label.tone === 'rama'
                                             ? 'imcrm-border-success/30 imcrm-bg-success/10 imcrm-text-success'
-                                            : e.label === 'cada'
+                                            : e.label.tone === 'cada'
                                               ? 'imcrm-border-info/30 imcrm-bg-info/10 imcrm-text-[hsl(var(--imcrm-info-ink))]'
-                                              : 'imcrm-border-warning/40 imcrm-bg-warning/10 imcrm-text-warning',
+                                              : e.label.tone === 'falla'
+                                                ? 'imcrm-border-destructive/30 imcrm-bg-destructive/10 imcrm-text-destructive'
+                                                : 'imcrm-border-warning/40 imcrm-bg-warning/10 imcrm-text-warning',
+                                        e.label.tone === 'rama' && 'imcrm-normal-case imcrm-tracking-normal',
                                     )}
-                                    style={{
-                                        // «Cada uno» va pegado al nodo, por encima del marco.
-                                        left: e.sx + (e.tx - e.sx) * (e.label === 'cada' ? 0.14 : 0.28),
-                                        top: e.sy + (e.ty - e.sy) * (e.label === 'cada' ? 0.14 : 0.28),
-                                        transform: 'translate(-50%, -50%)',
-                                    }}
+                                    style={
+                                        // Las ramas de «Según el valor de…» salen todas del mismo
+                                        // punto: su etiqueta va arriba de SU columna (si no, con 3+
+                                        // ramas se pisan). «Cada uno» va pegado al nodo, por
+                                        // encima del marco.
+                                        e.label.tone === 'rama' || e.label.tone === 'otro'
+                                            ? { left: e.tx, top: e.sy + (e.ty - e.sy) * 0.78, transform: 'translate(-50%, -50%)' }
+                                            : {
+                                                  left: e.sx + (e.tx - e.sx) * (e.label.tone === 'cada' ? 0.14 : e.label.tone === 'falla' ? 0.4 : 0.28),
+                                                  top: e.sy + (e.ty - e.sy) * (e.label.tone === 'cada' ? 0.14 : e.label.tone === 'falla' ? 0.4 : 0.28),
+                                                  transform: 'translate(-50%, -50%)',
+                                              }
+                                    }
+                                    title={e.label.text}
+                                    data-testid={`canvas-edge-label-${e.label.tone}`}
                                 >
-                                    {e.label === 'si' ? __('Sí') : e.label === 'cada' ? __('Cada uno') : __('No')}
+                                    {e.label.text}
                                 </span>
                             )}
                             <div
@@ -682,17 +777,19 @@ export function AutomationCanvas({
                     const spec = n.spec!;
                     const meta = actionMetaFor(spec.type);
                     const isIf = spec.type === 'if_else';
+                    const isSwitch = spec.type === 'switch';
                     const isLoop = spec.type === 'for_each_linked';
                     const condCount = actionConditionCount(spec);
+                    const failBadge = onErrorBadge(spec);
                     return (
                         <CanvasNode
                             key={n.id}
                             node={n}
-                            tone={isIf || isLoop ? 'branch' : 'neutral'}
-                            overline={isIf ? __('Condición') : isLoop ? __('Repetir') : __(meta.title)}
+                            tone={isIf || isSwitch || isLoop ? 'branch' : 'neutral'}
+                            overline={isIf ? __('Condición') : isSwitch ? __('Según el valor') : isLoop ? __('Repetir') : __(meta.title)}
                             icon={<meta.icon className="imcrm-h-4 imcrm-w-4" />}
                             title={summarizeAction(spec, fields, lists, actionsCatalog, relationPaths)}
-                            badge={condCount > 0 ? sprintf(__('%d cond.'), condCount) : undefined}
+                            badge={condCount > 0 ? sprintf(__('%d cond.'), condCount) : failBadge ?? undefined}
                             selected={
                                 selected?.kind === 'action' && pathKey(selected.path) === pathKey(n.path!)
                             }
@@ -945,6 +1042,7 @@ function NodeConfigPanel({
     const label = actionTitle(spec, actionsCatalog, meta.title);
     const isIf = spec.type === 'if_else';
     const isLoop = spec.type === 'for_each_linked';
+    const isSwitch = spec.type === 'switch';
 
     return (
         <>
@@ -956,7 +1054,9 @@ function NodeConfigPanel({
                             ? __('Define la condición. Las ramas Sí / No se editan directamente en el lienzo.')
                             : isLoop
                               ? __('Elige la relación y, si quieres, un filtro. Los pasos que se repiten se arman dentro del marco, en el lienzo.')
-                              : __(meta.description)}
+                              : isSwitch
+                                ? __('Elige de qué depende y arma las ramas. Los pasos de cada rama se agregan en el lienzo, en su columna.')
+                                : __(meta.description)}
                     </SheetDescription>
                 </div>
                 <SheetCloseButton aria-label={__('Cerrar')} />
@@ -975,7 +1075,7 @@ function NodeConfigPanel({
                             'Si el registro cumple TODAS las condiciones se ejecuta la rama Sí; si no, la rama No.',
                         )}
                     />
-                ) : isLoop ? (
+                ) : isLoop || isSwitch ? (
                     <ActionConfigEditor
                         spec={spec}
                         onChange={onChange}
@@ -989,13 +1089,14 @@ function NodeConfigPanel({
                             spec={spec}
                             actionsCatalog={actionsCatalog}
                             onChange={onChange}
-                            exclude={[...new Set(['if_else', 'for_each_linked', ...exclude])]}
+                            exclude={[...new Set(['if_else', 'switch', 'for_each_linked', ...exclude])]}
                         />
                         <ActionConfigEditor
                             spec={spec}
                             onChange={onChange}
                             fields={fields}
                             actionsCatalog={actionsCatalog}
+                            nestedInline={false}
                         />
                     </>
                 )}

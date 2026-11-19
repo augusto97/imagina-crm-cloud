@@ -1,4 +1,4 @@
-import { AUTOMATION_SECRET_MARKER } from '@imagina-base/shared';
+import { AUTOMATION_SECRET_MARKER, flowChildLists, mapFlowChildLists } from '@imagina-base/shared';
 
 /**
  * v0.1.288 — Secretos de una automatización en su historial de versiones.
@@ -118,10 +118,8 @@ function flatten(actions: unknown, out: ActionLike[] = []): ActionLike[] {
     for (const a of actions) {
         if (!isPlain(a)) continue;
         out.push(a);
-        const c = isPlain(a.config) ? a.config : {};
-        flatten(c.then_actions, out);
-        flatten(c.else_actions, out);
-        flatten(c.actions, out);
+        // Las ramas (si/sino, bucle, «Según el valor de…» y «Si falla»).
+        for (const kid of flowChildLists(a)) flatten(kid.actions, out);
     }
     return out;
 }
@@ -146,14 +144,16 @@ export function restoreRedactedSecrets(
             if (!Array.isArray(list)) return list;
             return list.map((a) => {
                 if (!isPlain(a)) return a;
-                const cfg = isPlain(a.config) ? { ...a.config } : {};
-                for (const k of ['then_actions', 'else_actions', 'actions']) if (Array.isArray(cfg[k])) cfg[k] = walk(cfg[k]);
-                let next: Record<string, unknown> = { ...a, config: cfg };
-                const own = { ...cfg, then_actions: undefined, else_actions: undefined, actions: undefined };
+                // Primero las ramas (si/sino, bucle, «Según el valor de…» y «Si falla»).
+                const mapped = mapFlowChildLists(a, (kids) => walk(kids) as unknown[]) as Record<string, unknown>;
+                const cfg = isPlain(mapped.config) ? { ...mapped.config } : {};
+                let next: Record<string, unknown> = { ...mapped, config: cfg };
+                const own: Record<string, unknown> = { ...cfg };
+                for (const k of BRANCH_CONFIG_KEYS) own[k] = undefined;
                 if (hasRedactedSecrets(own)) {
                     const twin = pool.find((p) => !used.has(p) && signature(p) === signature(a));
                     if (twin) used.add(twin);
-                    next = { ...next, config: { ...(fillFrom(own, twin?.config) as Record<string, unknown>), ...pick(cfg, ['then_actions', 'else_actions', 'actions']) } };
+                    next = { ...next, config: { ...(fillFrom(own, twin?.config) as Record<string, unknown>), ...pick(cfg, BRANCH_CONFIG_KEYS) } };
                 }
                 return next;
             });
@@ -162,6 +162,9 @@ export function restoreRedactedSecrets(
     }
     return out;
 }
+
+/** Las claves de la config que son ramas (o las contienen), no datos del paso. */
+const BRANCH_CONFIG_KEYS = ['then_actions', 'else_actions', 'actions', 'cases', 'default_actions'];
 
 function pick(obj: Record<string, unknown>, keys: string[]): Record<string, unknown> {
     const out: Record<string, unknown> = {};

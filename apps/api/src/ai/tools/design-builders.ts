@@ -5,6 +5,8 @@ import {
     docItemExprRefs,
     docItemExprSchema,
     emailDesignSchema,
+    flowChildLists,
+    mapFlowChildLists,
     markdownToRichDoc,
     richDocToMarkdown,
     sanitizeRichDoc,
@@ -222,11 +224,8 @@ export function translateEmailDesignActions(actions: unknown[], ctx: EmailDesign
         const a = raw as { type?: unknown; config?: Record<string, unknown> };
         const cfg = a?.config;
         if (!cfg || typeof cfg !== 'object') continue;
-        if (a.type === 'if_else') {
-            translateEmailDesignActions((cfg.then_actions as unknown[]) ?? [], ctx, depth + 1);
-            translateEmailDesignActions((cfg.else_actions as unknown[]) ?? [], ctx, depth + 1);
-            continue;
-        }
+        // Las ramas (si/sino, «Según el valor de…», «Si falla»): también traen correos.
+        for (const kid of flowChildLists(a)) translateEmailDesignActions(kid.actions, ctx, depth + 1);
         if (a.type !== 'send_email' || cfg.design === undefined || cfg.design === null) continue;
         const spec = emailDesignInput.safeParse(cfg.design);
         if (!spec.success) throw new AiToolError(`send_email.design: ${issues(spec.error)}.`);
@@ -262,16 +261,12 @@ export function emailActionsForModel(actions: unknown): unknown {
     return actions.map((raw) => {
         const a = raw as { type?: unknown; config?: Record<string, unknown> };
         if (!a || typeof a !== 'object' || !a.config) return raw;
-        if (a.type === 'if_else') {
-            return {
-                ...a,
-                config: { ...a.config, then_actions: emailActionsForModel(a.config.then_actions), else_actions: emailActionsForModel(a.config.else_actions) },
-            };
+        // Las ramas (si/sino, «Según el valor de…», «Si falla») también traen correos.
+        const node = flowChildLists(a).length > 0 ? mapFlowChildLists(a, (list) => emailActionsForModel(list) as unknown[]) : a;
+        if (node.type === 'send_email' && node.config?.body_mode === 'design' && node.config.design) {
+            return { ...node, config: { ...node.config, design: emailDesignForModel(node.config.design) } };
         }
-        if (a.type === 'send_email' && a.config.body_mode === 'design' && a.config.design) {
-            return { ...a, config: { ...a.config, design: emailDesignForModel(a.config.design) } };
-        }
-        return raw;
+        return node;
     });
 }
 

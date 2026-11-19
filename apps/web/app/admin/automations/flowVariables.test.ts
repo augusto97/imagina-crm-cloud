@@ -109,3 +109,49 @@ describe('resúmenes y versiones (v0.1.288)', () => {
         expect(describeVersionChanges(base, reordered, fields, [])).toEqual(['Reordenó los pasos.']);
     });
 });
+
+describe('variables del flujo — IA, ramas y «Si falla» (v0.1.460)', () => {
+    const steps = (): ActionSpec[] => [
+        {
+            type: 'ask_ai',
+            config: { instruction: 'Clasifica {{asunto}}', output: 'choice', choices: ['Ventas', 'Soporte'], response_name: 'tema' },
+        },
+        {
+            type: 'call_webhook',
+            config: { url: 'https://a.example' },
+            on_error: { mode: 'steps', actions: [{ type: 'send_email', config: { to: 'a@x.com', body: '{{error.mensaje}}' } }] },
+        },
+    ];
+
+    it('lo que deja «Preguntarle a la IA» aparece en los pasos de abajo', () => {
+        const vars = variablesAt(steps(), [1], {}, null);
+        const ia = vars.find((s) => s.title === 'Respuesta de la IA «tema»');
+        expect(ia?.items.map((i) => i.tag)).toEqual(['respuestas.tema.texto', 'respuestas.tema.valor']);
+        // Antes del paso de IA, nada.
+        expect(variablesAt(steps(), [0], {}, null)).toEqual([]);
+    });
+
+    it('dentro de «Si falla» se ofrecen {{error.mensaje}} y {{error.paso}}', () => {
+        const vars = variablesAt(steps(), [1, 'fail', 0], {}, null);
+        expect(vars[0]!.title).toBe('El error');
+        expect(vars[0]!.items.map((i) => i.tag)).toEqual(['error.mensaje', 'error.paso']);
+        // Fuera de «Si falla», no.
+        expect(variablesAt(steps(), [1], {}, null).some((s) => s.title === 'El error')).toBe(false);
+    });
+
+    it('con campos con nombre deja una variable por campo', () => {
+        const fieldsStep: ActionSpec = {
+            type: 'ask_ai',
+            config: {
+                instruction: 'Saca los datos',
+                output: 'fields',
+                items: [
+                    { key: 'nit', label: 'NIT', type: 'text' },
+                    { key: 'monto', label: 'Monto', type: 'number' },
+                ],
+            },
+        };
+        const vars = variablesAt([fieldsStep, { type: 'send_email', config: {} }], [1], {}, null);
+        expect(vars[0]!.items.map((i) => i.tag)).toEqual(['respuestas.ia.texto', 'respuestas.ia.nit', 'respuestas.ia.monto']);
+    });
+});

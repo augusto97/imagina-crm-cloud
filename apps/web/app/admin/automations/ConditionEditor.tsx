@@ -50,7 +50,7 @@ function isPayloadRule(slug: string): boolean {
  * anterior con nombre (`respuestas.busqueda.cantidad`). El motor la evalúa
  * con el mismo lector que las variables de los textos.
  */
-const VARIABLE_PREFIXES = ['comentario.', 'respuestas.', 'firma.'] as const;
+const VARIABLE_PREFIXES = ['comentario.', 'respuestas.', 'firma.', 'error.'] as const;
 
 function isVariableRule(slug: string): boolean {
     return VARIABLE_PREFIXES.some((p) => slug.startsWith(p));
@@ -178,7 +178,7 @@ export function ConditionEditor({
             : []),
         ...stepVars.flatMap((section) =>
             section.items
-                .filter((it) => it.tag.startsWith('respuestas.') || it.tag.startsWith('firma.') || it.tag.startsWith('asignado.'))
+                .filter((it) => it.tag.startsWith('respuestas.') || it.tag.startsWith('firma.') || it.tag.startsWith('asignado.') || it.tag.startsWith('error.'))
                 .map((it) => ({ tag: it.tag, label: it.label, group: section.title })),
         ),
     ];

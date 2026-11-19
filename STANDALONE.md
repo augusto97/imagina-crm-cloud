@@ -4188,6 +4188,62 @@ Cierra E1/E2 salvo «preguntarle a la IA»:
    vínculo por `link_field_id` en cualquiera de las dos listas. Respeta el
    límite del plan y las listas espejo; deja `{{respuestas.<nombre>.*}}`.
 
+**Addendum v0.1.460 — varias ramas, preguntarle a la IA y «Si este paso
+falla».** Cierra E2 y la parte de E3 que no son subflujos:
+
+1. **El árbol del flujo es uno solo.** Un paso puede tener sub-secuencias:
+   `then`/`else` (si/sino), `each` (bucle), `case0…caseN` y `default`
+   («Según el valor de…») y `fail` («Si este paso falla», en CUALQUIER
+   paso). `flowChildLists`/`mapFlowChildLists` (shared) son la única forma de
+   recorrerlo: el motor (rutas `[i, 'case1', j]`, esperas que se retoman en
+   la rama), el editor, el lienzo, el historial, las versiones, el
+   asistente/MCP, el enmascarado de secretos, el escaneo de conexiones, el
+   cambio de conexión y la migración de empresa. Un tipo de rama nuevo se
+   agrega ahí y lo ven todos.
+2. **`switch`**: la fuente es un campo POR ID (`source_field_id`, regla de
+   oro nº 1) o una variable del contexto (`source_variable`); las ramas usan
+   los operadores de las condiciones (`pickSwitchCase`, puro) y gana la
+   primera que coincide; sin ninguna, «En otro caso». Una fuente que ya no
+   existe falla con el motivo en vez de tomar «En otro caso» en silencio.
+   El log guarda la rama tomada y, en «Probar», el valor y el chequeo de cada
+   rama.
+3. **`ask_ai`**: un pedido de la cuota con la resolución de ADR-S21 (clave
+   de la plataforma con cuota del plan, o la propia; módulo `ai`; reserva
+   antes de llamar y devolución si el proveedor no contesta). Lo del registro
+   viaja como DATO etiquetado y recortado (600 caracteres por campo, 8.000 en
+   total), nunca como instrucción, y sin archivos, botones, vínculos ni los
+   campos cuyo nombre parece un secreto (contraseña, token, clave, API key);
+   el modelo no tiene herramientas. La respuesta se valida contra el tipo
+   pedido (una opción de la lista, un número o una fecha sin ambigüedad, sí o
+   no, datos con nombre en JSON): una respuesta que no cumple FALLA el paso
+   (y entra al «Si falla» de ese paso). Se reintenta como un paso que llama
+   afuera.
+4. **`on_error` por paso**: `{mode: stop|continue|retry|steps, retries 1-3,
+   if_still_fails, actions, after_steps}` (lectura tolerante; lo no
+   configurado es `stop`). El envoltorio vive en el motor alrededor de cada
+   paso (`runStep` → `runStepBody`); los contenedores (si/sino, switch) no
+   fallan por sí mismos. **Reintentar** sólo en pasos que llaman a otro
+   servicio y duerme en el worker entre intentos (3 s, 10 s, 30 s): como cada
+   acción corre en SU transacción y la llamada externa va después del commit
+   (ADR-S98), no queda ninguna conexión tomada mientras espera. «Probar» no
+   reintenta (lo anota). Dentro de «Si falla» no se espera (ni «Esperar» ni
+   «Esperar aprobación»).
+5. **Decisión: sin configurar, un paso que falla DETIENE la corrida.** Antes
+   seguía con los pasos de abajo y la corrida terminaba «Falló»: los pasos
+   siguientes corrían con datos que nunca llegaron (un WhatsApp con un link de
+   pago que no se creó). Es lo que hacen Zapier, Make y n8n. Quien prefería
+   lo de antes elige «Seguir con el resto» en ese paso. Se avisó en la
+   novedad, en la guía y en Aprende.
+6. **Problemas (ADR-S44).** Una falla manejada («Seguir con el resto» u
+   «Hacer otros pasos») deja la corrida en `with_errors` y **resuelve** el
+   Problema de la automatización igual que un éxito: la persona ya decidió
+   qué hacer con esa falla y avisarle otra vez sería ruido (si quiere un
+   aviso, lo arma en «Hacer otros pasos»). Una falla SIN manejar —también la
+   que agotó los reintentos y quedó en «detener», o la de un paso dentro de
+   «Si falla»— deja `failed` y abre el Problema de siempre. Para el
+   vencimiento («por fecha») y la retención, `with_errors` cuenta como una
+   corrida que salió (`status <> 'failed'`).
+
 
 ### ADR-S48 — Portal con contraseña por empresa, pagos del cliente y formularios verificados (v0.1.289)
 

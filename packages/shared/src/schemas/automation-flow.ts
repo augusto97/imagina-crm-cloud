@@ -15,33 +15,162 @@ import { addDaysYmd, FALLBACK_TIME_ZONE, isValidTimeZone, zonedInstant, zonedTod
 // ── Direccionamiento de pasos ────────────────────────────────────────────
 
 /**
- * Una rama de un contenedor: `then`/`else` de un si/sino y `each` (el cuerpo)
- * de «Repetir por cada registro vinculado».
+ * Una rama de un contenedor: `then`/`else` de un si/sino, `each` (el cuerpo)
+ * de «Repetir por cada registro vinculado», v0.1.460 `case<N>` y `default`
+ * de «Según el valor de…» y `fail`: la rama «Si este paso falla» de cualquier
+ * paso (vive en `on_error.actions`, al lado de `config`).
  */
-export type FlowBranch = 'then' | 'else' | 'each';
+export type FlowBranch = 'then' | 'else' | 'each' | 'default' | 'fail' | `case${number}`;
 /**
  * Ruta de un paso: índices y ramas alternados — `[2, 'then', 0]` es el primer
- * paso de la rama «Sí» del si/sino que está en la posición 2 de la raíz.
+ * paso de la rama «Sí» del si/sino que está en la posición 2 de la raíz;
+ * `[1, 'case2', 0]` el primero de la tercera rama de un «Según el valor de…».
  */
 export type FlowPath = Array<number | FlowBranch>;
 
-export const FLOW_BRANCH_KEYS: Record<FlowBranch, string> = {
+export const FLOW_BRANCH_KEYS: Record<'then' | 'else' | 'each' | 'default', string> = {
     then: 'then_actions',
     else: 'else_actions',
     each: 'actions',
+    default: 'default_actions',
 };
+
+const CASE_BRANCH_RE = /^case(\d{1,2})$/;
+
+/** ¿Es el nombre de una rama? (`then`, `else`, `each`, `default`, `fail`, `case0`…). */
+export function isFlowBranch(p: unknown): p is FlowBranch {
+    return p === 'then' || p === 'else' || p === 'each' || p === 'default' || p === 'fail' || (typeof p === 'string' && CASE_BRANCH_RE.test(p));
+}
+
+/** `case<N>` → N (o null si no es una rama de un «Según el valor de…»). */
+export function caseBranchIndex(branch: unknown): number | null {
+    if (typeof branch !== 'string') return null;
+    const m = CASE_BRANCH_RE.exec(branch);
+    return m ? Number(m[1]) : null;
+}
+
+export function caseBranch(index: number): FlowBranch {
+    return `case${index}` as FlowBranch;
+}
 
 interface FlowNodeLike {
     type?: unknown;
     config?: unknown;
+    on_error?: unknown;
 }
 
 /** Las acciones de una rama de un contenedor (vacío si no hay). */
 export function flowBranch(node: FlowNodeLike | undefined, branch: FlowBranch): FlowNodeLike[] {
+    if (branch === 'fail') {
+        const oe = node?.on_error;
+        const raw = oe && typeof oe === 'object' ? (oe as Record<string, unknown>).actions : undefined;
+        return Array.isArray(raw) ? (raw as FlowNodeLike[]) : [];
+    }
     const cfg = node?.config;
     if (!cfg || typeof cfg !== 'object') return [];
-    const raw = (cfg as Record<string, unknown>)[FLOW_BRANCH_KEYS[branch]];
+    const c = cfg as Record<string, unknown>;
+    const caseIdx = caseBranchIndex(branch);
+    if (caseIdx !== null) {
+        const cases = Array.isArray(c.cases) ? c.cases : [];
+        const one = cases[caseIdx] as { actions?: unknown } | undefined;
+        return one && Array.isArray(one.actions) ? (one.actions as FlowNodeLike[]) : [];
+    }
+    const raw = c[FLOW_BRANCH_KEYS[branch as 'then' | 'else' | 'each' | 'default']];
     return Array.isArray(raw) ? (raw as FlowNodeLike[]) : [];
+}
+
+/** Una lista de acciones hija de un paso, con su rama. */
+export interface FlowChildList {
+    branch: FlowBranch;
+    actions: unknown[];
+}
+
+/**
+ * Todas las listas de acciones hijas de un paso, según su tipo: las ramas del
+ * si/sino, el cuerpo del bucle, las ramas y «En otro caso» de «Según el valor
+ * de…» y la rama «Si falla». Son las MISMAS listas (no copias): quien recorre
+ * para cambiar algo en el lugar puede mutar sus elementos.
+ */
+/**
+ * v0.1.460 — La rama en palabras, para armar ubicaciones legibles en los
+ * mensajes («Acción 2.sí.1», «Acción 3.rama 2.1», «Acción 4.si falla.1»).
+ */
+export function flowBranchWord(branch: FlowBranch): string {
+    if (branch === 'then') return 'sí';
+    if (branch === 'else') return 'no';
+    if (branch === 'each') return 'cada';
+    if (branch === 'default') return 'en otro caso';
+    if (branch === 'fail') return 'si falla';
+    const i = caseBranchIndex(branch);
+    return i === null ? String(branch) : `rama ${i + 1}`;
+}
+
+export function flowChildLists(node: unknown): FlowChildList[] {
+    if (!node || typeof node !== 'object') return [];
+    const n = node as FlowNodeLike;
+    const cfg = n.config && typeof n.config === 'object' ? (n.config as Record<string, unknown>) : {};
+    const out: FlowChildList[] = [];
+    if (n.type === 'if_else') {
+        if (Array.isArray(cfg.then_actions)) out.push({ branch: 'then', actions: cfg.then_actions });
+        if (Array.isArray(cfg.else_actions)) out.push({ branch: 'else', actions: cfg.else_actions });
+    } else if (n.type === 'for_each_linked') {
+        if (Array.isArray(cfg.actions)) out.push({ branch: 'each', actions: cfg.actions });
+    } else if (n.type === 'switch') {
+        const cases = Array.isArray(cfg.cases) ? cfg.cases : [];
+        cases.forEach((c, i) => {
+            const acts = c && typeof c === 'object' ? (c as Record<string, unknown>).actions : undefined;
+            if (Array.isArray(acts)) out.push({ branch: caseBranch(i), actions: acts });
+        });
+        if (Array.isArray(cfg.default_actions)) out.push({ branch: 'default', actions: cfg.default_actions });
+    }
+    const oe = n.on_error;
+    if (oe && typeof oe === 'object' && Array.isArray((oe as Record<string, unknown>).actions)) {
+        out.push({ branch: 'fail', actions: (oe as Record<string, unknown>).actions as unknown[] });
+    }
+    return out;
+}
+
+/**
+ * Una copia del paso con cada lista hija reemplazada por `fn(lista, rama)`
+ * (para quien arma un árbol nuevo: traducir, enmascarar, normalizar).
+ */
+export function mapFlowChildLists<T>(node: T, fn: (actions: unknown[], branch: FlowBranch) => unknown[]): T {
+    if (!node || typeof node !== 'object') return node;
+    const n = node as FlowNodeLike & Record<string, unknown>;
+    const kids = flowChildLists(n);
+    if (kids.length === 0) return node;
+    const cfg = n.config && typeof n.config === 'object' ? { ...(n.config as Record<string, unknown>) } : {};
+    let onError = n.on_error && typeof n.on_error === 'object' ? { ...(n.on_error as Record<string, unknown>) } : undefined;
+    let cases = Array.isArray(cfg.cases) ? [...cfg.cases] : undefined;
+    for (const k of kids) {
+        const next = fn(k.actions, k.branch);
+        if (k.branch === 'fail' && onError) onError = { ...onError, actions: next };
+        else if (k.branch === 'default') cfg.default_actions = next;
+        else if (caseBranchIndex(k.branch) !== null && cases) {
+            const i = caseBranchIndex(k.branch)!;
+            cases[i] = { ...(cases[i] as Record<string, unknown>), actions: next };
+        } else if (k.branch === 'then') cfg.then_actions = next;
+        else if (k.branch === 'else') cfg.else_actions = next;
+        else if (k.branch === 'each') cfg.actions = next;
+    }
+    if (cases) cfg.cases = cases;
+    const out: Record<string, unknown> = { ...n, config: cfg };
+    if (onError) out.on_error = onError;
+    return out as T;
+}
+
+/**
+ * Recorre TODOS los pasos de un árbol (también los de las ramas y de «Si
+ * falla»), en orden, con su profundidad. Tope de profundidad para no
+ * recorrer sin fin un JSON armado a mano.
+ */
+export function walkFlowSteps(actions: unknown, visit: (step: Record<string, unknown>, depth: number) => void, depth = 0): void {
+    if (!Array.isArray(actions) || depth > 10) return;
+    for (const a of actions) {
+        if (!a || typeof a !== 'object') continue;
+        visit(a as Record<string, unknown>, depth);
+        for (const k of flowChildLists(a)) walkFlowSteps(k.actions, visit, depth + 1);
+    }
 }
 
 /** El paso en una ruta (o undefined si la ruta ya no existe). */
@@ -55,7 +184,7 @@ export function flowNodeAt<T extends FlowNodeLike>(actions: readonly T[], path: 
         if (!node || typeof node !== 'object') return undefined;
         if (i === path.length - 1) return node as T;
         const branch = path[i + 1];
-        if (branch !== 'then' && branch !== 'else' && branch !== 'each') return undefined;
+        if (!isFlowBranch(branch)) return undefined;
         seq = flowBranch(node, branch);
     }
     return undefined;
@@ -63,6 +192,12 @@ export function flowNodeAt<T extends FlowNodeLike>(actions: readonly T[], path: 
 
 export function flowPathKey(path: FlowPath): string {
     return path.join('.');
+}
+
+/** Cuántas ramas hay en una ruta (la profundidad del paso). */
+export function flowPathDepth(pathKey: string): number {
+    if (pathKey === '') return 0;
+    return pathKey.split('.').filter((p) => isFlowBranch(p)).length;
 }
 
 /** Lee una ruta guardada (`"2.then.0"` o un array) — null si no es válida. */
@@ -77,7 +212,7 @@ export function parseFlowPath(raw: unknown): FlowPath | null {
             if (!Number.isInteger(n) || n < 0 || n > 10_000) return null;
             out.push(n);
         } else {
-            if (p !== 'then' && p !== 'else' && p !== 'each') return null;
+            if (!isFlowBranch(p)) return null;
             out.push(p);
         }
     }

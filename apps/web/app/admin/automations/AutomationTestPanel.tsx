@@ -35,7 +35,7 @@ import { cn } from '@/lib/utils';
 import type { ActionMeta, ActionSpec, TriggerConfig } from '@/types/automation';
 import type { FieldEntity } from '@/types/field';
 
-import { getNode } from './actionsTree';
+import { getNode, type BranchKey } from './actionsTree';
 import { actionMetaFor } from './automationMeta';
 import { actionTitle } from './actionTypeOptions';
 
@@ -62,7 +62,8 @@ export interface AutomationTestPanelProps {
     onResponses: (responses: Record<string, unknown>) => void;
 }
 
-const REAL_TYPES = new Set(['call_webhook', 'connector_action']);
+// v0.1.460 — «Preguntarle a la IA» también: en «Probar» no gasta un pedido salvo que se marque.
+const REAL_TYPES = new Set(['call_webhook', 'connector_action', 'ask_ai']);
 
 export function AutomationTestPanel(props: AutomationTestPanelProps): JSX.Element {
     const { open, onOpenChange, listId, fields } = props;
@@ -313,7 +314,7 @@ function TestResult({
                         <StepResult
                             key={`${step.path}:${i}`}
                             step={step}
-                            spec={step.path ? getNode(actions, step.path.split('.').map((p) => (/^\d+$/.test(p) ? Number(p) : (p as 'then' | 'else' | 'each')))) : undefined}
+                            spec={step.path ? getNode(actions, step.path.split('.').map((p) => (/^\d+$/.test(p) ? Number(p) : (p as BranchKey)))) : undefined}
                             catalog={catalog}
                             real={real.has(step.path)}
                             onToggleReal={(on) => onToggleReal(step.path, on)}
@@ -393,6 +394,15 @@ function StepResult({
             </div>
 
             {Array.isArray(d.checks) && (d.checks as ConditionCheck[]).length > 0 && <ChecksTable checks={d.checks as ConditionCheck[]} />}
+            {step.action === 'switch' && Array.isArray(d.cases) && <SwitchChecks cases={d.cases as SwitchCheck[]} branchLabel={typeof d.branch_label === 'string' ? d.branch_label : ''} />}
+            {(d.handled === 'continue' || d.handled === 'steps') && (
+                <p className="imcrm-rounded imcrm-bg-warning/10 imcrm-px-2 imcrm-py-1 imcrm-text-xs imcrm-text-[hsl(var(--imcrm-warning-ink))]" data-testid="imcrm-test-handled">
+                    {d.handled === 'continue'
+                        ? __('Si este paso falla: la automatización sigue con el resto y la corrida queda «con errores».')
+                        : __('Si este paso falla: hace los pasos de «Si falla» (abajo) y la corrida queda «con errores».')}
+                </p>
+            )}
+            {typeof d.retry_note === 'string' && d.retry_note !== '' && <p className="imcrm-text-xs imcrm-text-muted-foreground">{d.retry_note}</p>}
             {d.email !== undefined && <EmailPreview email={d.email as EmailDetails} />}
             {d.request !== undefined && <RequestPreview request={d.request as RequestDetails} response={d.response as ResponseDetails | undefined} />}
             {Array.isArray(d.changes) && <ChangesList changes={d.changes as Array<{ label: string; before: unknown; after: unknown }>} />}
@@ -424,10 +434,43 @@ function StepResult({
                             {__('Ejecutarlo ahora')}
                         </Button>
                     )}
-                    <span className="imcrm-text-[11px] imcrm-text-muted-foreground">{__('Hace la llamada real para ver qué responde (los pasos siguientes la usan).')}</span>
+                    <span className="imcrm-text-[11px] imcrm-text-muted-foreground">
+                        {step.action === 'ask_ai'
+                            ? __('Le pregunta de verdad a la IA para ver qué responde (usa un pedido de la cuota de IA).')
+                            : __('Hace la llamada real para ver qué responde (los pasos siguientes la usan).')}
+                    </span>
                 </div>
             )}
         </li>
+    );
+}
+
+/** v0.1.460 — Cada rama de «Según el valor de…», en orden: cuál coincidió. */
+interface SwitchCheck {
+    index: number;
+    label: string;
+    ok: boolean;
+}
+
+function SwitchChecks({ cases, branchLabel }: { cases: SwitchCheck[]; branchLabel: string }): JSX.Element {
+    const matched = cases.some((c) => c.ok);
+    return (
+        <ul className="imcrm-flex imcrm-flex-col imcrm-gap-0.5 imcrm-rounded imcrm-border imcrm-border-border imcrm-p-2 imcrm-text-xs" data-testid="imcrm-test-switch">
+            {cases.map((c) => (
+                <li key={c.index} className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                    {c.ok ? <CheckCircle2 className="imcrm-h-3 imcrm-w-3 imcrm-text-success" /> : <MinusCircle className="imcrm-h-3 imcrm-w-3 imcrm-text-muted-foreground" />}
+                    <span className={c.ok ? 'imcrm-font-medium' : 'imcrm-text-muted-foreground'}>{c.label}</span>
+                    {!c.ok && <span className="imcrm-text-muted-foreground">· {__('no coincide')}</span>}
+                </li>
+            ))}
+            {!matched && (
+                <li className="imcrm-flex imcrm-items-center imcrm-gap-1.5">
+                    <CheckCircle2 className="imcrm-h-3 imcrm-w-3 imcrm-text-success" />
+                    <span className="imcrm-font-medium">{branchLabel || __('En otro caso')}</span>
+                    <span className="imcrm-text-muted-foreground">· {__('ninguna rama coincidió')}</span>
+                </li>
+            )}
+        </ul>
     );
 }
 

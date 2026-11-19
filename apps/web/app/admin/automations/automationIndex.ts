@@ -21,6 +21,15 @@ export function lastRunFailed(a: AutomationEntity): boolean {
     return a.last_run?.status === 'failed';
 }
 
+/**
+ * v0.1.460 — La última corrida terminó «con errores»: falló un paso cuyo
+ * «Si este paso falla» decía seguir o hacer otros pasos. Cuenta en el filtro
+ * «Con fallas», pero se marca en ámbar (no en rojo).
+ */
+export function lastRunHadErrors(a: AutomationEntity): boolean {
+    return a.last_run?.status === 'with_errors';
+}
+
 export function matchesStatus(a: AutomationEntity, filter: AutomationStatusFilter): boolean {
     switch (filter) {
         case 'active':
@@ -28,7 +37,7 @@ export function matchesStatus(a: AutomationEntity, filter: AutomationStatusFilte
         case 'paused':
             return !a.is_active;
         case 'failed':
-            return lastRunFailed(a);
+            return lastRunFailed(a) || lastRunHadErrors(a);
         default:
             return true;
     }
@@ -39,7 +48,7 @@ export function statusCounts(list: readonly AutomationEntity[]): Record<Automati
     let failed = 0;
     for (const a of list) {
         if (a.is_active) active++;
-        if (lastRunFailed(a)) failed++;
+        if (lastRunFailed(a) || lastRunHadErrors(a)) failed++;
     }
     return { all: list.length, active, paused: list.length - active, failed };
 }

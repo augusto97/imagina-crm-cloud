@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { integrationDef } from './integrations';
+import { mapFlowChildLists } from './automation-flow';
 
 /**
  * v0.1.400 — Reemplazar la conexión que usan las acciones de las
@@ -298,12 +299,6 @@ export interface SwapFinding {
     reason: string | null;
 }
 
-function branches(action: Record<string, unknown>): Array<['then' | 'else' | 'each', string]> {
-    if (action.type === 'if_else') return [['then', 'then_actions'], ['else', 'else_actions']];
-    if (action.type === 'for_each_linked') return [['each', 'actions']];
-    return [];
-}
-
 /**
  * Recorre las acciones (con sus ramas «Si / sino» y «Repetir por cada
  * vinculado») y devuelve qué se podría pasar a la conexión `target`. Con
@@ -373,13 +368,8 @@ export function swapConnectionInActions(
                 }
             }
 
-            const kids = branches(next);
-            if (kids.length === 0) return next;
-            const nextCfg = { ...((next.config as Record<string, unknown>) ?? {}) };
-            for (const [branch, key] of kids) {
-                if (Array.isArray(nextCfg[key])) nextCfg[key] = visit(nextCfg[key], `${path}.${branch}`);
-            }
-            return { ...next, config: nextCfg };
+            // Las ramas (si/sino, el bucle, «Según el valor de…» y «Si falla»).
+            return mapFlowChildLists(next, (list, branch) => visit(list, `${path}.${branch}`));
         });
     };
     const out = visit(actions, '');

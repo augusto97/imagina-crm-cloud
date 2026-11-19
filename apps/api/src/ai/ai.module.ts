@@ -18,6 +18,7 @@ import { AiQuotaService } from './ai-quota.service';
 import { AiModelCatalogService } from './ai-model-catalog.service';
 import { AiSettingsService } from './ai-settings.service';
 import { AiController } from './ai.controller';
+import { AutomationAskAiService } from './automation-ask-ai.service';
 import { AssistantService } from './assistant.service';
 import { McpController } from './mcp.controller';
 import { McpService } from './mcp.service';
@@ -54,6 +55,8 @@ import { SubscriptionTools } from './tools/subscription-tools';
         AiModelCatalogService,
         AiSettingsService,
         AiQuotaService,
+        // v0.1.460 — el paso «Preguntarle a la IA» de las automatizaciones (el motor lo pide por ModuleRef).
+        AutomationAskAiService,
         ProposalsStore,
         ConversationsStore,
         StructureTools,

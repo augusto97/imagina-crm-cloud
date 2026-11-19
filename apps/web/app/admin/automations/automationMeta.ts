@@ -37,10 +37,11 @@ import {
     BellRing,
     Shuffle,
     CopyCheck,
+    Split,
     type LucideIcon,
 } from 'lucide-react';
 
-import { ASSIGN_MODE_LABELS, describeFileTrigger, describeRecordMatchesTrigger, readAssignRoundRobinConfig, readCopyRecordConfig, readFileAddedConfig, readNotifyInAppConfig, readRecordMatchesConfig } from '@imagina-base/shared';
+import { ASSIGN_MODE_LABELS, ON_ERROR_EXEMPT_ACTIONS, describeAskAi, describeOnError, describeSwitch, readAskAiConfig, readOnError, readSwitchConfig, describeFileTrigger, describeRecordMatchesTrigger, readAssignRoundRobinConfig, readCopyRecordConfig, readFileAddedConfig, readNotifyInAppConfig, readRecordMatchesConfig } from '@imagina-base/shared';
 import { APPROVAL_STATUS_LABELS, SUBSCRIPTION_EVENT_LABELS, requestSignatureSummary, signatureTriggerSummary, describeCommentTrigger, readCommentTriggerConfig, readFindRecordsConfig, readUpsertRecordConfig, type SubscriptionEvent, describeWait, describeWaitApproval, describeWebhookRecord, describeWhatsTrigger, readWhatsTriggerConfig, readApprovalTriggerResults, readWebhookRecordConfig, scheduleParts } from '@imagina-base/shared';
 
 import { __, _n, sprintf } from '@/lib/i18n';
@@ -49,6 +50,7 @@ import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
 
 import { summarizeHelpdeskTrigger } from '../helpdesk/helpdeskUi';
+import { agentNameFor } from './agentNames';
 
 /**
  * Metadata visual + resúmenes en lenguaje humano del módulo de
@@ -267,6 +269,17 @@ export const ACTION_META: Record<string, StepMeta> = {
         title: 'Condición Si / Si no',
         description: 'Divide el flujo en dos ramas según una condición sobre el registro.',
     },
+    // v0.1.460 — varias ramas y la IA dentro del flujo.
+    switch: {
+        icon: Split,
+        title: 'Según el valor de…',
+        description: 'Varias ramas según el valor de un campo o de una variable (una por estado, por categoría…), y «En otro caso».',
+    },
+    ask_ai: {
+        icon: Sparkles,
+        title: 'Preguntarle a la IA',
+        description: 'Le pide a la IA que clasifique, resuma o saque datos del registro, y usa su respuesta en los pasos siguientes o la guarda en un campo.',
+    },
     // v0.1.288 — esperas durables y bucle por los vinculados.
     wait: {
         icon: Hourglass,
@@ -310,18 +323,7 @@ export const ACTION_META: Record<string, StepMeta> = {
     },
 };
 
-/**
- * E6 — Nombres de los agentes para los resúmenes («Le pide trabajo al agente
- * «Clasificador»»). Los registra el selector cuando carga las opciones; sin
- * ellos el resumen cae a «un agente de IA».
- */
-const AGENT_NAMES = new Map<number, string>();
-export function rememberAgentNames(agents: ReadonlyArray<{ id: number; name: string }>): void {
-    for (const a of agents) AGENT_NAMES.set(a.id, a.name);
-}
-function agentNameFor(id: number): string | null {
-    return Number.isInteger(id) && id > 0 ? (AGENT_NAMES.get(id) ?? null) : null;
-}
+export { rememberAgentNames } from './agentNames';
 
 export function triggerMetaFor(slug: string): StepMeta {
     return TRIGGER_META[slug] ?? { icon: Zap, title: slug, description: '' };
@@ -702,6 +704,18 @@ export function summarizeAction(
             const short = url.length > 48 ? `${url.slice(0, 48)}…` : url;
             return `${method} ${short}`;
         }
+        case 'switch': {
+            const sw = readSwitchConfig(cfg);
+            const label = sw.source.kind === 'field' ? fields.find((f) => f.id === (sw.source as { fieldId: number }).fieldId)?.label : undefined;
+            return __(describeSwitch(cfg, label ?? null));
+        }
+        case 'ask_ai': {
+            const a = readAskAiConfig(cfg);
+            const save = a.saveFieldId !== null ? fields.find((f) => f.id === a.saveFieldId)?.label : undefined;
+            const base = __(describeAskAi(cfg, save ?? null));
+            const what = a.instruction.trim().replace(/\s+/g, ' ');
+            return what !== '' ? `${base} · «${what.slice(0, 60)}${what.length > 60 ? '…' : ''}»` : base;
+        }
         case 'if_else': {
             const thenN = Array.isArray(cfg.then_actions) ? cfg.then_actions.length : 0;
             const elseN = Array.isArray(cfg.else_actions) ? cfg.else_actions.length : 0;
@@ -715,6 +729,24 @@ export function summarizeAction(
         default:
             return spec.type;
     }
+}
+
+/**
+ * v0.1.460 — El chip de «Si este paso falla» (null = lo de siempre: detener).
+ * «Reintenta 2», «Sigue», «Pasos si falla».
+ */
+export function onErrorBadge(spec: ActionSpec): string | null {
+    if (ON_ERROR_EXEMPT_ACTIONS.includes(spec.type)) return null;
+    const c = readOnError(spec.on_error);
+    if (c.mode === 'stop') return null;
+    if (c.mode === 'retry') return sprintf(__('Reintenta %d'), c.retries);
+    if (c.mode === 'continue') return __('Si falla, sigue');
+    return __('Pasos si falla');
+}
+
+/** La frase completa de «Si este paso falla» (para el título del chip). */
+export function onErrorTitle(spec: ActionSpec): string {
+    return __(describeOnError(spec.on_error));
 }
 
 /** Cantidad de condiciones de ejecución de una acción (chip "N cond."). */

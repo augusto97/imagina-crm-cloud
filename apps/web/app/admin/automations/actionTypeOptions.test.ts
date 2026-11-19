@@ -68,6 +68,16 @@ describe('cambiar de acción conserva lo escrito (v0.1.400)', () => {
         expect(next).toEqual({ type: 'connector_action', config: { connection_id: 9, action_key: 'send_text', values: { recipient: '{{celular}}', message: 'Hola' } }, condition });
     });
 
+    it('v0.1.460 — «Si este paso falla» se conserva, salvo en un contenedor o un «Reintentar» que el paso nuevo no admite', () => {
+        const seguir = { mode: 'continue' };
+        const prev = { type: 'connector_action', config: { connection_id: 2, action_key: 'send_text', values: {} }, on_error: seguir };
+        expect(carryOverSpec(prev, specForOption('connector:9:send_text'), catalog).on_error).toEqual(seguir);
+        expect(carryOverSpec(prev, { type: 'switch', config: {} }, catalog).on_error).toBeUndefined();
+        const retry = { ...prev, on_error: { mode: 'retry', retries: 2 } };
+        expect(carryOverSpec(retry, { type: 'send_email', config: {} }, catalog).on_error).toEqual({ mode: 'retry', retries: 2 });
+        expect(carryOverSpec(retry, { type: 'update_field', config: {} }, catalog).on_error).toBeUndefined();
+    });
+
     it('a otra acción sólo pasa lo que ésa entiende; de Gmail a Outlook pasan para/asunto/mensaje', () => {
         const prev = { type: 'connector_action', config: { connection_id: 9, action_key: 'send_text', values: { recipient: '+57300', message: 'Hola' } } };
         expect(carryOverSpec(prev, specForOption('connector:9:send_media'), catalog).config.values).toEqual({ recipient: '+57300' });

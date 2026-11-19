@@ -1,37 +1,53 @@
+import { caseBranchIndex, flowChildLists, isFlowBranch, type FlowBranch } from '@imagina-base/shared';
 import type { ActionSpec } from '@/types/automation';
 
 /**
  * Helpers para navegar y mutar (inmutablemente) el ÁRBOL de acciones de
- * una automatización. El array raíz es una secuencia; una acción
- * `if_else` contiene dos sub-secuencias (`config.then_actions` /
- * `config.else_actions`) que pueden anidar más `if_else` (el backend
- * limita a 4 niveles). v0.1.288: una acción `for_each_linked` contiene UNA
- * sub-secuencia (`config.actions`, rama `'each'`): lo que se repite por cada
- * registro vinculado.
+ * una automatización. El array raíz es una secuencia; un paso puede tener
+ * sub-secuencias («ramas»):
+ *  - `if_else`: `then` / `else` (`config.then_actions` / `config.else_actions`);
+ *  - `for_each_linked` (v0.1.288): `each` (`config.actions`), lo que se
+ *    repite por cada registro vinculado;
+ *  - v0.1.460 — `switch` («Según el valor de…»): `case0`, `case1`… (una por
+ *    rama, `config.cases[N].actions`) y `default` («En otro caso»,
+ *    `config.default_actions`);
+ *  - v0.1.460 — CUALQUIER paso: `fail`, los pasos de «Si este paso falla»
+ *    (`on_error.actions`).
+ * El backend limita el anidado a 4 niveles.
  *
  * Direccionamiento:
  *  - `SeqPath` apunta a una SECUENCIA: `[]` = raíz; `[2, 'then']` =
- *    la rama Sí del if_else en la posición 2 de la raíz; se encadena
- *    (`[2, 'then', 0, 'else']`…).
+ *    la rama Sí del si/sino en la posición 2 de la raíz; se encadena
+ *    (`[2, 'then', 0, 'case1']`…).
  *  - `NodePath` apunta a un NODO: una SeqPath + el índice final,
  *    p. ej. `[2, 'then', 0]`.
  */
-export type BranchKey = 'then' | 'else' | 'each';
+export type BranchKey = FlowBranch;
 export type SeqPath = Array<number | BranchKey>;
 export type NodePath = Array<number | BranchKey>;
 
 function isBranch(v: unknown): v is BranchKey {
-    return v === 'then' || v === 'else' || v === 'each';
-}
-
-function branchConfigKey(branch: BranchKey): 'then_actions' | 'else_actions' | 'actions' {
-    if (branch === 'each') return 'actions';
-    return branch === 'then' ? 'then_actions' : 'else_actions';
+    return isFlowBranch(v);
 }
 
 export function branchOf(spec: ActionSpec, branch: BranchKey): ActionSpec[] {
-    const raw = spec.config[branchConfigKey(branch)];
-    return Array.isArray(raw) ? (raw as ActionSpec[]) : [];
+    const kid = flowChildLists(spec).find((k) => k.branch === branch);
+    return kid ? (kid.actions as ActionSpec[]) : [];
+}
+
+/** Una copia del paso con la rama `branch` reemplazada por `next` (la crea si no estaba). */
+export function withBranch(spec: ActionSpec, branch: BranchKey, next: ActionSpec[]): ActionSpec {
+    if (branch === 'fail') return { ...spec, on_error: { ...(spec.on_error ?? {}), actions: next } };
+    if (branch === 'then') return { ...spec, config: { ...spec.config, then_actions: next } };
+    if (branch === 'else') return { ...spec, config: { ...spec.config, else_actions: next } };
+    if (branch === 'each') return { ...spec, config: { ...spec.config, actions: next } };
+    if (branch === 'default') return { ...spec, config: { ...spec.config, default_actions: next } };
+    const i = caseBranchIndex(branch);
+    if (i === null) return spec;
+    const cases = Array.isArray(spec.config.cases) ? [...(spec.config.cases as Array<Record<string, unknown>>)] : [];
+    if (!cases[i]) return spec;
+    cases[i] = { ...cases[i], actions: next };
+    return { ...spec, config: { ...spec.config, cases } };
 }
 
 /** Aplica `fn` a la secuencia direccionada por `seqPath` (inmutable). */
@@ -50,11 +66,10 @@ function mapSequence(
     }
     const node = actions[idx];
     if (!node) return actions;
-    const key = branchConfigKey(branch);
     const child = branchOf(node, branch);
     const nextChild = mapSequence(child, seqPath.slice(2), fn);
     const out = [...actions];
-    out[idx] = { ...node, config: { ...node.config, [key]: nextChild } };
+    out[idx] = withBranch(node, branch, nextChild);
     return out;
 }
 
@@ -137,22 +152,24 @@ export function insideLoop(seqPath: SeqPath): boolean {
     return seqPath.includes('each');
 }
 
+/** v0.1.460 — ¿La secuencia son los pasos de «Si este paso falla» (de algún paso)? */
+export function insideFail(seqPath: SeqPath): boolean {
+    return seqPath.includes('fail');
+}
+
 /** Un paso del árbol con su ruta. */
 export interface StepAt {
     spec: ActionSpec;
     path: NodePath;
 }
 
-/** Todos los nodos de una secuencia, ramas y bucles incluidos (en orden). */
+/** Todos los nodos de una secuencia, ramas, bucles y «Si falla» incluidos (en orden). */
 function flatten(seq: ActionSpec[], seqPath: SeqPath): StepAt[] {
     const out: StepAt[] = [];
     seq.forEach((node, i) => {
         const path: NodePath = [...seqPath, i];
         out.push({ spec: node, path });
-        if (node.type === 'if_else') {
-            out.push(...flatten(branchOf(node, 'then'), [...path, 'then']), ...flatten(branchOf(node, 'else'), [...path, 'else']));
-        }
-        if (node.type === 'for_each_linked') out.push(...flatten(branchOf(node, 'each'), [...path, 'each']));
+        for (const kid of flowChildLists(node)) out.push(...flatten(kid.actions as ActionSpec[], [...path, kid.branch]));
     });
     return out;
 }
@@ -162,7 +179,8 @@ function flatten(seq: ActionSpec[], seqPath: SeqPath): StepAt[] {
  * anteriores de cada secuencia que lo contiene, recorriendo hacia arriba.
  * Sirve para ofrecer las respuestas de webhooks previos como variables.
  * Incluye las ramas de un si/sino previo: pueden haber corrido (si no
- * corrieron, la variable queda vacía).
+ * corrieron, la variable queda vacía). Dentro de «Si falla», el paso que
+ * falló también cuenta (pudo dejar algo antes de fallar).
  */
 export function stepsBefore(actions: ActionSpec[], path: NodePath): StepAt[] {
     const out: StepAt[] = [];
@@ -175,6 +193,7 @@ export function stepsBefore(actions: ActionSpec[], path: NodePath): StepAt[] {
         const node = seq[idx];
         const branch = path[i + 1];
         if (!node || !isBranch(branch)) break;
+        if (branch === 'fail') out.push({ spec: node, path: [...seqPath, idx] });
         seqPath = [...seqPath, idx, branch];
         seq = branchOf(node, branch);
     }

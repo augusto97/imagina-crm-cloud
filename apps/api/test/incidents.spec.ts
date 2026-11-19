@@ -319,28 +319,46 @@ describe('v0.1.285 — problemas (Postgres + Redis reales)', () => {
         expect(await open()).toEqual([]);
     });
 
-    it('motor: un error de la base en una acción ya no borra la corrida (savepoint) y las demás acciones siguen', async () => {
+    it('motor: un error de la base en una acción ya no borra la corrida (savepoint); sin «Si falla» se detiene y con «Seguir» las demás siguen', async () => {
+        const boom = { type: 'create_record', config: { values: { nombre: 'boom' } } };
+        const next = { type: 'update_field', config: { values: { estado: 'siguió' } } };
         const auto = await automations.create(tenantId, 'facturas', {
             name: 'Duplicar con error',
             trigger_type: 'record_created',
-            actions: [
-                { type: 'create_record', config: { values: { nombre: 'boom' } } },
-                { type: 'update_field', config: { values: { estado: 'siguió' } } },
-            ],
+            actions: [boom, next],
         });
         const rec = await recs.create(tenantId, { userId: ana, role: 'admin' }, 'facturas', { data: { [fNombre]: 'B' } });
         await engine.process({ tenantId, listId, recordId: rec.id, trigger: 'record_created', after: {} });
         await settle();
-        const runs = await withTenant(pg.db, tenantId, (tx) =>
-            tx.select().from(automationRuns).where(eq(automationRuns.automationId, auto.id)),
-        );
+        const runsOf = (recordId: number) =>
+            withTenant(pg.db, tenantId, (tx) => tx.select().from(automationRuns).where(eq(automationRuns.automationId, auto.id))).then((rs) =>
+                rs.filter((r) => r.recordId === recordId),
+            );
+        const dataOf = async (recordId: number) => {
+            const [row] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(records).where(eq(records.id, recordId)));
+            return Object.values(row!.data as Record<string, unknown>);
+        };
+        // v0.1.460 — sin «Si este paso falla», la corrida se DETIENE en el paso que falló.
+        const runs = await runsOf(rec.id);
         expect(runs).toHaveLength(1);
         expect(runs[0]!.status).toBe('failed');
-        expect(runs[0]!.actionsLog.map((l) => l.status)).toEqual(['failed', 'success']);
+        expect(runs[0]!.actionsLog.map((l) => l.status)).toEqual(['failed']);
         expect(runs[0]!.error).toContain('boom desde la base');
-        const [after] = await withTenant(pg.db, tenantId, (tx) => tx.select().from(records).where(eq(records.id, rec.id)));
-        expect(Object.values(after!.data as Record<string, unknown>)).toContain('siguió');
+        expect(await dataOf(rec.id)).not.toContain('siguió');
         expect((await open()).map((r) => r.key)).toContain(`automation:${auto.id}`);
+
+        // Con «Seguir con el resto», la falla queda manejada: el paso siguiente corre, la corrida
+        // queda «con errores» y el problema se cierra (la persona ya decidió qué hacer con la falla).
+        await automations.update(tenantId, 'facturas', auto.id, { actions: [{ ...boom, on_error: { mode: 'continue' } }, next] });
+        const rec2 = await recs.create(tenantId, { userId: ana, role: 'admin' }, 'facturas', { data: { [fNombre]: 'B2' } });
+        await engine.process({ tenantId, listId, recordId: rec2.id, trigger: 'record_created', after: {} });
+        await settle();
+        const runs2 = await runsOf(rec2.id);
+        expect(runs2).toHaveLength(1);
+        expect(runs2[0]!.status).toBe('with_errors');
+        expect(runs2[0]!.actionsLog.map((l) => l.status)).toEqual(['failed', 'success']);
+        expect(await dataOf(rec2.id)).toContain('siguió');
+        expect((await open()).map((r) => r.key)).not.toContain(`automation:${auto.id}`);
         await automations.remove(tenantId, 'facturas', auto.id);
         await settle();
         expect((await open()).map((r) => r.key)).not.toContain(`automation:${auto.id}`);

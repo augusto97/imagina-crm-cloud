@@ -58,8 +58,12 @@ import {
     createAutomationSchema,
     createDashboardSchema,
     createViewSchema,
+    describeAskAi,
+    describeSwitch,
     describeWait,
     describeWaitApproval,
+    flowBranchWord,
+    flowChildLists,
     stepLabel,
     APPROVAL_TRIGGER_RESULTS,
     splitFormPages,
@@ -661,6 +665,8 @@ const automationSpec = z.object({
                 'bulk_edit {filters: [{field, op, value}], operations: [{field, op, …}]} — EDITA EN LOTE todo lo que coincide con filters cuando corre (mismas operaciones que propose_bulk_edit; ideal con trigger_type scheduled: {frequency: daily|weekly|monthly|hourly|twicedaily, hour, minute, weekday 0-6, day 1-28, tz}); sin filters exige all_records: true | ' +
                 'generate_pdf {document_template_id (id de una de las plantillas que lista `document_templates` en get_list_schema), save_field? (slug de un campo Archivo donde guardarlo), save_mode? append|replace, filename?} — arma un PDF (cuenta de cobro, recibo) y deja {{pdf.link}} y {{pdf.nombre}} para las acciones siguientes; sin save_field el enlace dura 30 días y arma el PDF al abrirlo (no ocupa espacio) | ' +
                 'if_else {condition: [{field, op, value}], then_actions: [...], else_actions: [...]} | ' +
+                'switch {field: slug de un campo (o variable: "respuestas.ia.valor", "payload.estado"), cases: [{label?, op?: eq (default)|neq|in|nin|contains|not_contains|starts_with|ends_with|gt|gte|lt|lte|is_null|is_not_null, value (en un campo de selección: la opción por valor o etiqueta; con in/nin una lista), actions: [...]}] (máx. 12), default_actions?: [...]} — «SEGÚN EL VALOR DE…»: varias ramas; corre la PRIMERA que coincide y, si ninguna, default_actions («En otro caso»). Úsalo en vez de varios if_else anidados cuando hay una rama por cada estado/categoría; se puede anidar y puede llevar wait adentro | ' +
+                'ask_ai {instruction (con variables {{slug}}), include_record?: true (default: la IA ve los campos del registro como DATOS), output?: text (default)|choice|number|boolean|date|fields, choices?: ["Alta","Media","Baja"] o choices_field?: slug de un campo de selección (las opciones salen de ahí), items?: [{key: "monto", label: "Monto", type: text|number|date|boolean, field?: slug donde guardarlo}] (con output fields), save_to?: slug del campo donde guardar la respuesta, response_name?: (default "ia"), quality?: fast (default, el modelo rápido)|assistant (el del asistente), length?: short|medium|long (con output text)} — LE PREGUNTA A LA IA y deja {{respuestas.<nombre>.texto}} y {{respuestas.<nombre>.valor}} (con fields, {{respuestas.<nombre>.<key>}}); la respuesta se valida contra el tipo (una opción fuera de la lista o un número que no se lee hacen fallar el paso). Gasta un pedido de la cuota de IA por corrida; ideal para clasificar o resumir y después un switch {variable: "respuestas.ia.valor"} | ' +
                 'wait {mode: "duration", amount, unit: minutes|hours|days} o {mode: "until_field", date_field: slug de un campo date/datetime, offset_amount?, offset_unit?: minutes|hours|days, offset_direction?: before|after, at_time?: "09:00"} + resume_condition?: [{field, op, value}] — PAUSA la corrida y sigue sola con los pasos siguientes (máx. 366 días; se reanuda con el registro releído y sólo si cumple resume_condition); puede ir dentro de if_else, NO dentro de for_each_linked | ' +
                 'ask_agent {agent_id (id de uno de los `ai_agents` de get_list_schema), instruction?: texto extra con variables {{slug}}} — le pide a un AGENTE DE IA que trabaje sobre el registro (corre aparte; según su modo cambia o deja una propuesta) | ' +
                 'request_approval {approval_flow: id o nombre de un flujo de approval_flows, note?} — PIDE una aprobación del registro con ese flujo (los aprobadores reciben el aviso; si ya hay una pendiente de ese flujo, no pide otra). Los flujos se crean con propose_configure_approval_flow | ' +
@@ -675,6 +681,7 @@ const automationSpec = z.object({
                 'request_signature {template: id o nombre de una plantilla de document_templates (o source: "file" + file_field: slug de un campo Archivo con el PDF), signers: [{name, email, role?, phone?}] (aceptan variables: "{{nombre}}", "{{correo}}", "{{celular}}"; email también puede ser el slug de un campo correo o persona), order?: parallel|sequential, verify?: email (código de 6 números por correo, default)|sms|whatsapp (el código llega al celular: phone obligatorio en cada persona + code_connection: id o nombre de signature_code_channels de get_list_schema, y code_template con WhatsApp de Meta)|none, title?, message?, expires_days? (30), remind_days? (3), send_email?: true (false = no manda correos: usa {{firma.enlace}} en un paso siguiente, por ejemplo un WhatsApp), save_field? (campo Archivo para el PDF firmado), status_field? + status_value? (selección y su opción, valor o etiqueta), date_field? (fecha de la firma)} — PIDE LA FIRMA ELECTRÓNICA de un documento del registro y deja {{firma.enlace}}, {{firma.siguiente}}, {{firma.titulo}}, {{firma.numero}}, {{firma.codigo}} y {{firma.verificar}} para los pasos siguientes | ' +
                 'call_webhook y connector_action aceptan response_name (minúsculas/números/_): su respuesta queda para los pasos SIGUIENTES — {{webhook.status}}, {{webhook.body.pedido.items.0.id}} (del último) y {{respuestas.<response_name>.body.x}}; sobreviven a un wait. ' +
                 'send_email acepta además pdf_templates: [ids de plantillas de documento] para ADJUNTAR esos PDF. ' +
+                'CUALQUIER acción (salvo if_else y switch) acepta on_error: «SI ESTE PASO FALLA» {mode: stop (default: la corrida se detiene y queda «falló») | continue (sigue con los pasos siguientes; la corrida queda «con errores») | retry (reintenta retries: 1-3 veces con esperas que crecen; sólo call_webhook, connector_action, send_email, reply_email, ask_ai y request_signature) + if_still_fails?: stop|continue|steps | steps (corre actions: [...] — por ejemplo un notify_in_app o un send_email al responsable con {{error.mensaje}} y {{error.paso}} — y después after_steps?: stop (default) | continue)}. ' +
                 'Merge tags en cualquier texto: {{slug}}, {{slug|label}}, {{before.slug}}, {{record.id}}, {{date.today}}, {{fecha|+1m|-1d}}.',
         ),
     is_active: z.boolean().optional().describe('Default true'),
@@ -4677,11 +4684,8 @@ export class StructureTools implements AiProposalApplier {
                 const a = raw as { type?: string; config?: Record<string, unknown> };
                 const at = `${path}${i + 1}`;
                 const cfg = a?.config ?? {};
-                if (a?.type === 'if_else') {
-                    walk((cfg.then_actions as unknown[] | undefined) ?? [], `${at}.sí.`);
-                    walk((cfg.else_actions as unknown[] | undefined) ?? [], `${at}.no.`);
-                    return;
-                }
+                // Las ramas (si/sino, bucle, «Según el valor de…» y «Si falla»).
+                for (const kid of flowChildLists(a)) walk(kid.actions, `${at}.${flowBranchWord(kid.branch)}.`);
                 if (a?.type !== 'request_signature') return;
                 // v0.1.448 — conexión (y plantilla) del código por SMS o WhatsApp, por nombre o id.
                 if (cfg.verify === 'sms' || cfg.verify === 'whatsapp') {
@@ -4794,10 +4798,8 @@ export class StructureTools implements AiProposalApplier {
                 const where = `Acción ${path}${i + 1}`;
                 if (a.type === 'request_approval') take(cfg, where, true);
                 else if (a.type === 'wait_approval') take(cfg, where, false);
-                else if (a.type === 'if_else') {
-                    walk((cfg.then_actions as unknown[] | undefined) ?? [], `${path}${i + 1}.sí.`);
-                    walk((cfg.else_actions as unknown[] | undefined) ?? [], `${path}${i + 1}.no.`);
-                } else if (a.type === 'for_each_linked') walk((cfg.actions as unknown[] | undefined) ?? [], `${path}${i + 1}.cada.`);
+                // Las ramas (si/sino, bucle, «Según el valor de…» y «Si falla»).
+                for (const kid of flowChildLists(a)) walk(kid.actions, `${path}${i + 1}.${flowBranchWord(kid.branch)}.`);
             });
         };
         walk(actions, '');
@@ -4844,15 +4846,9 @@ export class StructureTools implements AiProposalApplier {
                     );
                 }
                 const cfg = a.config ?? {};
-                if (type === 'if_else') {
-                    walk((cfg.then_actions as unknown[] | undefined) ?? [], `${where}.sí.`);
-                    walk((cfg.else_actions as unknown[] | undefined) ?? [], `${where}.no.`);
-                    return;
-                }
-                if (type === 'for_each_linked') {
-                    walk((cfg.actions as unknown[] | undefined) ?? [], `${where}.cada.`);
-                    return;
-                }
+                // Las ramas (si/sino, bucle, «Según el valor de…» y «Si falla»).
+                for (const kid of flowChildLists(a)) walk(kid.actions, `${where}.${flowBranchWord(kid.branch)}.`);
+                if (type === 'if_else' || type === 'for_each_linked' || type === 'switch') return;
                 if (type === 'call_webhook') {
                     // Con conexión: una API personalizada del equipo o tuya (las
                     // apps conectadas se usan con connector_action).
@@ -4937,6 +4933,8 @@ export class StructureTools implements AiProposalApplier {
                 // v0.1.455 — el archivo del disparador y la persona que asignó «Asignar por turno».
                 !s.startsWith('archivo.') &&
                 !s.startsWith('asignado.') &&
+                // v0.1.460 — lo que falló dentro de «Si este paso falla».
+                !s.startsWith('error.') &&
                 !slugs.has(s) &&
                 !/^f\d+$/.test(s)
             )
@@ -4964,6 +4962,8 @@ export class StructureTools implements AiProposalApplier {
                 if (!act || typeof act !== 'object') continue;
                 checkCondition(act.condition);
                 const cfg = act.config ?? {};
+                // Las ramas (si/sino, bucle, «Según el valor de…» y «Si falla»).
+                for (const kid of flowChildLists(act)) walk(kid.actions);
                 switch (act.type) {
                     case 'update_field':
                         for (const [k, v] of Object.entries((cfg.values as Record<string, unknown>) ?? {})) {
@@ -4977,7 +4977,12 @@ export class StructureTools implements AiProposalApplier {
                         checkCondition(cfg.resume_condition);
                         break;
                     case 'for_each_linked':
-                        walk((cfg.actions as unknown[]) ?? []);
+                        break;
+                    case 'switch':
+                        if (typeof cfg.source_variable === 'string' && !cfg.source_variable.includes('.')) check(cfg.source_variable.split('|')[0]!.trim());
+                        break;
+                    case 'ask_ai':
+                        checkTags(cfg.instruction);
                         break;
                     case 'create_record': {
                         const target = cfg.target_list ?? cfg.list_id;
@@ -5044,8 +5049,6 @@ export class StructureTools implements AiProposalApplier {
                         break;
                     case 'if_else':
                         checkCondition(cfg.condition);
-                        walk((cfg.then_actions as unknown[]) ?? []);
-                        walk((cfg.else_actions as unknown[]) ?? []);
                         break;
                     default:
                         for (const v of Object.values(cfg)) checkTags(v);
@@ -5238,8 +5241,8 @@ function firstEmailDesignBlocks(actions: unknown[]): AiProposalPreview['blocks']
                 const design = a.config.design as { blocks?: Array<Record<string, unknown>> } | undefined;
                 return describeDesignBlocks(design?.blocks ?? []);
             }
-            if (a?.type === 'if_else') {
-                const hit = walk((a.config?.then_actions as unknown[]) ?? []) ?? walk((a.config?.else_actions as unknown[]) ?? []);
+            for (const kid of flowChildLists(a)) {
+                const hit = walk(kid.actions);
                 if (hit) return hit;
             }
         }
@@ -5682,6 +5685,10 @@ function describeActions(
                 return connectorLabel(cfg);
             case 'if_else':
                 return 'Condicional sí / no';
+            case 'switch':
+                return describeSwitch(cfg);
+            case 'ask_ai':
+                return describeAskAi(cfg);
             case 'wait':
                 return describeWait(cfg);
             case 'request_approval': {

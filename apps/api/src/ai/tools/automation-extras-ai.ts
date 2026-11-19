@@ -1,4 +1,6 @@
 import {
+    flowBranchWord,
+    flowChildLists,
     ASSIGN_MODES,
     automationExtraActionIssues,
     automationExtraTriggerIssues,
@@ -92,15 +94,9 @@ export async function translateExtraActions(actions: unknown[], ctx: ExtraTransl
         const act = raw as { type?: unknown; config?: Record<string, unknown> };
         const cfg = (act.config ??= {});
         const where = `Acción ${path}${i + 1}`;
-        if (act.type === 'if_else') {
-            await translateExtraActions(Array.isArray(cfg.then_actions) ? cfg.then_actions : [], ctx, `${path}${i + 1}.sí.`);
-            await translateExtraActions(Array.isArray(cfg.else_actions) ? cfg.else_actions : [], ctx, `${path}${i + 1}.no.`);
-            continue;
-        }
-        if (act.type === 'for_each_linked') {
-            await translateExtraActions(Array.isArray(cfg.actions) ? cfg.actions : [], ctx, `${path}${i + 1}.cada.`);
-            continue;
-        }
+        // Las ramas (si/sino, bucle, «Según el valor de…» y «Si falla»).
+        for (const kid of flowChildLists(act)) await translateExtraActions(kid.actions, ctx, `${path}${i + 1}.${flowBranchWord(kid.branch)}.`);
+        if (act.type === 'if_else' || act.type === 'for_each_linked' || act.type === 'switch') continue;
         if (act.type === NOTIFY_IN_APP_ACTION) {
             if (cfg.person_fields !== undefined) {
                 const ids: number[] = [];

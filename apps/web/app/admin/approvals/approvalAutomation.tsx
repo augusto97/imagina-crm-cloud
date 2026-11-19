@@ -1,4 +1,5 @@
 import {
+    flowChildLists,
     APPROVAL_RESULT_LABELS,
     APPROVAL_RESULTS,
     APPROVAL_STATUS_LABELS,
@@ -31,10 +32,9 @@ import type { FieldEntity } from '@/types/field';
 export function actionsUseApprovals(actions: readonly ActionSpec[]): boolean {
     for (const a of actions) {
         if (a.type === 'request_approval' || a.type === 'wait_approval') return true;
-        const c = a.config ?? {};
-        for (const key of ['then_actions', 'else_actions', 'actions'] as const) {
-            const inner = c[key];
-            if (Array.isArray(inner) && actionsUseApprovals(inner as ActionSpec[])) return true;
+        // Si/sino, bucles, «Según el valor de…» y «Si este paso falla» (v0.1.460).
+        for (const kid of flowChildLists(a)) {
+            if (actionsUseApprovals(kid.actions as ActionSpec[])) return true;
         }
     }
     return false;

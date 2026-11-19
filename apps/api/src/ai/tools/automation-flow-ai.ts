@@ -1,4 +1,4 @@
-import { automationConfigIssues, readWaitConfig, type Field } from '@imagina-base/shared';
+import { ASK_AI_ACTION, SWITCH_ACTION, automationConfigIssues, flowChildLists, isUserWritableType, readWaitConfig, type Field } from '@imagina-base/shared';
 import { z } from 'zod';
 import { optionValue } from './bulk-ops';
 import { AiToolError } from './registry';
@@ -70,9 +70,16 @@ export async function translateFlowActions(actions: unknown[], ctx: FlowTranslat
         if (!raw || typeof raw !== 'object') continue;
         const act = raw as { type?: unknown; config?: Record<string, unknown> };
         const cfg = (act.config ??= {});
-        if (act.type === 'if_else') {
-            await translateFlowActions(Array.isArray(cfg.then_actions) ? cfg.then_actions : [], ctx, inLoop);
-            await translateFlowActions(Array.isArray(cfg.else_actions) ? cfg.else_actions : [], ctx, inLoop);
+        // v0.1.460 — las ramas de si/sino y de «Según el valor de…» y los pasos
+        // de «Si falla» (el cuerpo de un bucle va aparte, con el lado vinculado).
+        for (const kid of flowChildLists(act)) if (kid.branch !== 'each') await translateFlowActions(kid.actions, ctx, inLoop);
+        if (act.type === 'if_else') continue;
+        if (act.type === SWITCH_ACTION) {
+            translateSwitch(cfg, ctx.fields, ctx.listName);
+            continue;
+        }
+        if (act.type === ASK_AI_ACTION) {
+            translateAskAi(cfg, ctx.fields, ctx.listName);
             continue;
         }
         if (act.type === 'wait') {
@@ -125,6 +132,89 @@ export async function translateFlowActions(actions: unknown[], ctx: FlowTranslat
     }
 }
 
+/** Para encontrar un campo de la lista por slug (o por id, si ya viene traducido). */
+function fieldRef(raw: unknown, fields: Field[]): Field | undefined {
+    if (typeof raw === 'number') return fields.find((f) => f.id === raw);
+    if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+    const t = raw.trim().toLowerCase();
+    return fields.find((f) => f.slug === raw.trim()) ?? fields.find((f) => (f.label ?? '').trim().toLowerCase() === t);
+}
+
+const OPTION_TYPES = ['select', 'multi_select'];
+/** Dónde puede guardar la IA: lo que se escribe a mano (no archivos ni vínculos). */
+const savable = (f: Field): boolean => isUserWritableType(f.type) && f.type !== 'file' && f.type !== 'relation';
+
+/**
+ * v0.1.460 — «Según el valor de…» en el vocabulario del modelo:
+ * `{field: slug | variable: "respuestas.ia.valor", cases: [{label?, op?, value, actions}], default_actions?}`.
+ * El campo pasa a `source_field_id` (por id: si lo renombran no se rompe) y
+ * el valor de cada rama de un campo de selección, de etiqueta a valor.
+ */
+export function translateSwitch(cfg: Record<string, unknown>, fields: Field[], listName: string): void {
+    const raw = cfg.field ?? cfg.source_field ?? cfg.source_field_id;
+    delete cfg.field;
+    delete cfg.source_field;
+    let f: Field | undefined;
+    if (raw !== undefined && raw !== null && raw !== '') {
+        f = fieldRef(raw, fields);
+        if (!f) throw new AiToolError(`switch: el campo «${String(raw)}» no existe en «${listName}». Campos: ${fields.map((x) => x.slug).join(', ')}.`);
+        cfg.source_field_id = f.id;
+        delete cfg.source_variable;
+    } else if (typeof cfg.variable === 'string' && cfg.variable.trim() !== '') {
+        cfg.source_variable = cfg.variable.trim().replace(/^\{\{\s*|\s*\}\}$/g, '');
+    }
+    delete cfg.variable;
+    if (cfg.source_field_id === undefined && typeof cfg.source_variable !== 'string') {
+        throw new AiToolError('switch necesita field (slug del campo que decide la rama) o variable (por ejemplo "respuestas.ia.valor").');
+    }
+    const cases = Array.isArray(cfg.cases) ? (cfg.cases as Array<Record<string, unknown>>) : [];
+    if (cases.length === 0) throw new AiToolError('switch necesita cases: [{value, actions}] (una rama por valor).');
+    if (f && OPTION_TYPES.includes(f.type)) {
+        for (const c of cases) {
+            if (typeof c.value === 'string') c.value = optionValue(f, c.value);
+            else if (Array.isArray(c.value)) c.value = c.value.map((v) => (typeof v === 'string' ? optionValue(f!, v) : v));
+        }
+    }
+}
+
+/**
+ * v0.1.460 — «Preguntarle a la IA» en el vocabulario del modelo: campos por
+ * slug (`choices_field`, `save_to`, `items[].field`) → ids.
+ */
+export function translateAskAi(cfg: Record<string, unknown>, fields: Field[], listName: string): void {
+    const need = (raw: unknown, what: string): Field => {
+        const f = fieldRef(raw, fields);
+        if (!f) throw new AiToolError(`ask_ai: ${what} «${String(raw)}» no existe en «${listName}». Campos: ${fields.map((x) => x.slug).join(', ')}.`);
+        return f;
+    };
+    if (cfg.choices_field !== undefined && cfg.choices_field !== null && cfg.choices_field !== '') {
+        const f = need(cfg.choices_field, 'el campo de las opciones');
+        if (!OPTION_TYPES.includes(f.type)) throw new AiToolError(`ask_ai: «${f.label}» no es un campo de selección (choices_field).`);
+        cfg.choices_field_id = f.id;
+    }
+    delete cfg.choices_field;
+    if (cfg.save_to !== undefined && cfg.save_to !== null && cfg.save_to !== '') {
+        const f = need(cfg.save_to, 'el campo donde se guarda');
+        if (!savable(f)) throw new AiToolError(`ask_ai: en «${f.label}» no se puede guardar (es un campo que se calcula solo, un archivo o un vínculo).`);
+        cfg.save_field_id = f.id;
+    }
+    delete cfg.save_to;
+    if (Array.isArray(cfg.items)) {
+        cfg.items = (cfg.items as Array<Record<string, unknown>>).map((it) => {
+            const out: Record<string, unknown> = { ...it };
+            const ref = it.field ?? it.save_to;
+            delete out.field;
+            delete out.save_to;
+            if (ref !== undefined && ref !== null && ref !== '') {
+                const f = need(ref, `el campo del dato «${String(it.key ?? '')}»`);
+                if (!savable(f)) throw new AiToolError(`ask_ai: en «${f.label}» no se puede guardar.`);
+                out.field_id = f.id;
+            }
+            return out;
+        });
+    }
+}
+
 /** La relación del bucle: por id, por la lista vinculada (slug o nombre) y, si hay varias, por `via`. */
 function resolvePath(cfg: Record<string, unknown>, ctx: FlowTranslateCtx): AiRelationPath {
     const available = (): string =>
@@ -151,7 +241,9 @@ function resolvePath(cfg: Record<string, unknown>, ctx: FlowTranslateCtx): AiRel
  * respuesta). El resto de lo imprescindible lo sigue avisando el guardado.
  */
 export function assertFlowIssues(input: { trigger_type: string; trigger_config?: Record<string, unknown>; actions: unknown[] }): void {
-    const flowPath = /(\.type|\.response_name|\.relation_field_id|\.config\.actions|\.config\.target)$/;
+    // v0.1.460 — también «Según el valor de…», «Preguntarle a la IA» y «Si este paso falla».
+    const flowPath =
+        /(\.type|\.response_name|\.relation_field_id|\.config\.actions|\.config\.target|\.config\.source_field_id|\.config\.cases(\.\d+\.value)?|\.config\.(instruction|choices|items(\.\d+\.key)?)|\.on_error\.(mode|actions))$/;
     const issues = automationConfigIssues({ trigger_type: input.trigger_type, trigger_config: input.trigger_config ?? {}, actions: input.actions }).filter(
         (i) => flowPath.test(i.path) || /esperar|espera /i.test(i.message),
     );

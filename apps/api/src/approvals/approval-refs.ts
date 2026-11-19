@@ -1,3 +1,4 @@
+import { flowChildLists } from '@imagina-base/shared';
 import { BadRequestException } from '@nestjs/common';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Tx } from '../db/client';
@@ -23,9 +24,8 @@ export function approvalFlowRefs(input: { trigger_type?: string; trigger_config?
             const spec = a as { type?: unknown; config?: Record<string, unknown> };
             const cfg = spec.config ?? {};
             if (spec.type === 'request_approval' || spec.type === 'wait_approval') add(cfg.approval_flow_id);
-            walk(cfg.then_actions, depth + 1);
-            walk(cfg.else_actions, depth + 1);
-            walk(cfg.actions, depth + 1);
+            // Las ramas (si/sino, bucle, «Según el valor de…» y «Si falla»).
+            for (const kid of flowChildLists(spec)) walk(kid.actions, depth + 1);
         }
     };
     walk(input.actions, 0);

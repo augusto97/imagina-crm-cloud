@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import { ArrowLeft, Eye, History, RotateCcw } from 'lucide-react';
-import { AUTOMATION_SECRET_MARKER, type AutomationVersion } from '@imagina-base/shared';
+import {
+    AUTOMATION_SECRET_MARKER,
+    caseBranchIndex,
+    flowChildLists,
+    readSwitchConfig,
+    switchCaseLabel,
+    type AutomationVersion,
+    type FlowBranch,
+} from '@imagina-base/shared';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,6 +30,18 @@ import type { FieldEntity } from '@/types/field';
 import type { ListSummary } from '@/types/list';
 
 import { describeVersionChanges, summarizeAction, summarizeTrigger } from './automationMeta';
+
+/** El título de una rama en la vista de una versión. */
+function versionBranchTitle(spec: ActionSpec, branch: FlowBranch): string {
+    if (branch === 'then') return __('Si se cumple');
+    if (branch === 'else') return __('Si no');
+    if (branch === 'default') return __('En otro caso');
+    if (branch === 'fail') return __('Si este paso falla');
+    const i = caseBranchIndex(branch);
+    if (i === null) return String(branch);
+    const c = readSwitchConfig(spec.config).cases[i];
+    return c ? sprintf(__('Rama «%s»'), switchCaseLabel(c, i)) : sprintf(__('Rama %d'), i + 1);
+}
 
 /**
  * v0.1.288 — Historial de versiones de una automatización. Cada guardado deja
@@ -208,15 +228,25 @@ function VersionView({
                         <span className="imcrm-mr-1 imcrm-font-semibold imcrm-text-muted-foreground">{i + 1}.</span>
                         {summarizeAction(s, fields, lists, catalog, relationPaths)}
                     </span>
-                    {s.type === 'if_else' && (
-                        <>
-                            <span className="imcrm-text-[11px] imcrm-font-medium imcrm-text-success" style={{ marginLeft: (depth + 1) * 14 }}>{__('Si se cumple')}</span>
-                            {renderSteps(Array.isArray(s.config.then_actions) ? (s.config.then_actions as ActionSpec[]) : [], depth + 1)}
-                            <span className="imcrm-text-[11px] imcrm-font-medium imcrm-text-warning" style={{ marginLeft: (depth + 1) * 14 }}>{__('Si no')}</span>
-                            {renderSteps(Array.isArray(s.config.else_actions) ? (s.config.else_actions as ActionSpec[]) : [], depth + 1)}
-                        </>
+                    {/* Las ramas de un si/sino, de «Según el valor de…», de «Si este paso falla» y los pasos de un bucle. */}
+                    {flowChildLists(s).map((kid) =>
+                        kid.branch === 'each' ? (
+                            <div key={kid.branch}>{renderSteps(kid.actions as ActionSpec[], depth + 1)}</div>
+                        ) : (
+                            <div key={kid.branch} className="imcrm-flex imcrm-flex-col imcrm-gap-1">
+                                <span
+                                    className={
+                                        'imcrm-text-[11px] imcrm-font-medium ' +
+                                        (kid.branch === 'fail' ? 'imcrm-text-destructive' : kid.branch === 'else' || kid.branch === 'default' ? 'imcrm-text-warning' : 'imcrm-text-success')
+                                    }
+                                    style={{ marginLeft: (depth + 1) * 14 }}
+                                >
+                                    {versionBranchTitle(s, kid.branch)}
+                                </span>
+                                {renderSteps(kid.actions as ActionSpec[], depth + 1)}
+                            </div>
+                        ),
                     )}
-                    {s.type === 'for_each_linked' && renderSteps(Array.isArray(s.config.actions) ? (s.config.actions as ActionSpec[]) : [], depth + 1)}
                 </li>
             ))}
         </ol>
