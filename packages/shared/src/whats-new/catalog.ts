@@ -3692,4 +3692,34 @@ export const WHATS_NEW_CATALOG: readonly WhatsNewCatalogEntry[] = [
         action: { label: 'Ir a mis listas', href: '/lists' },
         audience: { roles: ['admin', 'manager'] },
     },
+    {
+        key: 'v0.1.458-importar-airtable',
+        version: '0.1.458',
+        date: '2026-11-19',
+        kind: 'feature',
+        title: 'Trae tu base completa de Airtable',
+        summary:
+            'Si tus datos están en Airtable, conectas una vez y cada tabla llega como una lista: campos con su tipo, opciones con su color, vínculos entre tablas y, si quieres, los adjuntos.',
+        media: {
+            slides: [
+                {
+                    title: 'Conecta con un token',
+                    text: 'Creas un token en Airtable con permiso para leer la base y lo pegas. Se usa sólo mientras dura la importación y no se guarda.',
+                    illustration: 'ie-importar',
+                },
+                {
+                    title: 'Revisa antes de crear',
+                    text: 'Ves cada tabla y cada campo con el tipo con el que llega, qué queda fuera y por qué, y si los registros y adjuntos entran en tu plan.',
+                    illustration: 'archivo-a-lista',
+                },
+            ],
+        },
+        body: [
+            '- Toca **Nueva lista** y elige **De Airtable** (también está en la bienvenida de una empresa sin listas).',
+            '- Los vínculos entre tablas llegan como una sola relación, los colaboradores de tu equipo como personas y las fórmulas con su valor de hoy.',
+            '- La importación corre sola con su avance a la vista y no dispara automatizaciones.',
+        ].join('\n'),
+        action: { label: 'Importar de Airtable', href: '/lists/new/airtable' },
+        audience: { roles: ['admin'] },
+    },
 ];

@@ -10380,3 +10380,89 @@ campo oculto puede seguir leyéndose en exportaciones, tableros y
 automatizaciones (decisión: es dato, no se borra). La condición no aplica a
 los formularios públicos ni al portal, que deciden qué se pregunta o se
 muestra con su propio diseño.
+
+### ADR-S111 — Importar una base completa de Airtable (v0.1.458)
+
+**Contexto.** Idea G5 del banco (sólo Airtable). Quien viene de Airtable
+tenía que exportar cada tabla a CSV, importarla en una lista y volver a armar
+a mano los vínculos, las opciones y los adjuntos.
+
+**Decisión.**
+- **Conexión por token personal de la persona** (no OAuth de la plataforma:
+  Airtable exige registrar una integración por instalación y el token es lo
+  que ya usan sus clientes). Permisos `data.records:read` y
+  `schema.bases:read`, verificados al conectar (`whoami` + bases). El token
+  **no toca la base de datos**: vive en Redis cifrado con `SECRETS_KEY`
+  (`airtable:t:{tenant}:{user}:{sesión}`), con el vencimiento de la sesión (2
+  h, renovado mientras corre) y se borra al terminar, al cancelar y al
+  detectar una corrida cortada. La sesión (`airtable:s:…`) guarda el estado,
+  nunca el token.
+- **Leer antes de crear**: la base se recorre una vez en segundo plano para
+  contar registros, medir adjuntos (cantidad, bytes, los de más de 15 MB),
+  ver qué personas aparecen y el mayor número automático. Con eso la revisión
+  avisa los límites del plan (registros y almacenamiento) ANTES de crear, con
+  la opción de importar sólo lo que entra.
+- **Las reglas de tipo son una función pura en shared**
+  (`packages/shared/src/airtable-import/`: `describeAirtableField`,
+  `buildAirtableDraftPlan`, `resolveAirtablePlan`, `convertAirtableValue`), la
+  misma en la pantalla y en el servidor. El plan habla por los ids de Airtable
+  y el servidor lo vuelve a resolver contra el esquema leído: lo que manda el
+  navegador nunca elige un tipo que no esté entre las alternativas.
+- **Mapeo de tipos**:
+
+  | Airtable | Llega como | Alternativas | Nota |
+  |---|---|---|---|
+  | Texto de una línea | Texto | texto largo, correo, enlace, teléfono | |
+  | Texto largo / texto con formato | Texto largo | texto | el formato queda como texto |
+  | Correo, enlace, teléfono | Correo, Enlace, Teléfono | texto | teléfono sin indicativo: país de la empresa |
+  | Código de barras | Texto | — | el texto del código |
+  | Número, moneda, porcentaje | Número, Moneda, Porcentaje | número, texto | moneda por el símbolo (`$` → la de la empresa si es dólar/peso); porcentaje de 0 a 100 |
+  | Calificación | Calificación | número | con su máximo |
+  | Duración | Duración | número, texto | segundos → minutos |
+  | Casilla | Casilla | texto | |
+  | Selección / selección múltiple | Selección / Selección múltiple | texto | opciones con color; más de 60 opciones → texto |
+  | Fecha / fecha y hora | Fecha / Fecha y hora | fecha, texto | la fecha y hora respeta la zona del campo |
+  | Vínculo a otra tabla | **Una** Relación | — | del lado que vincula a un registro (o el primero); la otra cara queda fuera porque en la app se ve sola; si la otra tabla no viene, fuera |
+  | Adjuntos | Archivo | — | sólo si se eligen; ≤15 MB; cuentan para el almacenamiento |
+  | Colaborador | Persona si TODOS los que aparecen son del equipo (por correo); si no, Texto con el nombre | texto / persona | varios colaboradores → texto |
+  | Creado por / modificado por | Persona o Texto (igual que colaborador) | | dato fijo |
+  | Fórmula / resumen (rollup) | Su tipo de resultado, como **valor fijo** | | no se recalcula; aviso en la revisión |
+  | Búsqueda (lookup) | Texto, valor fijo | | |
+  | Conteo | Número, valor fijo | | |
+  | Texto con IA | Texto largo, valor fijo | | |
+  | Número automático | ID automático | — | conserva los números; el contador sigue desde el mayor (`app.keep_autonumber`) |
+  | Fecha de creación / última modificación | Fecha y hora fija | | además, la fecha de creación de Airtable pasa a `records.created_at` |
+  | Botón, tipos desconocidos | Fuera | — | con el motivo |
+
+  El campo principal de Airtable es el título; si no es texto, llega como
+  texto. Topes: 20 tablas, 60 campos por lista, 100.000 registros.
+- **Importar en segundo plano, dentro del proceso del API** (como «Desde un
+  archivo»): estado en Redis que la pantalla consulta cada 1,2 s; 100
+  registros por página con `offset` y `returnFieldsByFieldId`; como mucho un
+  pedido cada 220 ms (Airtable admite 5 por segundo por base); un 429 espera
+  `Retry-After` (o 30 s, tope 60 s) y reintenta hasta 6 veces, igual que un
+  5xx o un corte de red. Las listas se crean con el motor de plantillas
+  (`StructureTools.buildCreateListBlueprint` + `BlueprintService.materialize`)
+  en una carpeta si son varias; los registros se insertan directo por tandas
+  de 100 (la primera carga no dispara automatizaciones ni deja actividad, como
+  la de las sincronizaciones), cada celda pasa por `validateFieldValue` (la
+  que no encaja queda vacía con aviso, la fila entra igual) y una segunda
+  pasada inserta las relaciones. Los adjuntos se bajan por el guard anti-SSRF
+  (`safeWebhookFetch`) y se guardan con `FilesService.upload`.
+- **Una a la vez por empresa** (candado en Redis), solo-lectura (ADR-S09),
+  módulo `integrations` del plan y `manage_lists` + `manage_fields` +
+  `create_records`. Un estado «leyendo» o «importando» que no se movió en 10
+  minutos y cuya corrida no vive en este proceso pasa a «se cortó» (un
+  reinicio del servidor), así la pantalla no espera para siempre. Bitácora
+  `airtable_import.apply` (base, listas, registros, vínculos, adjuntos).
+- **Doble de Airtable** (`scripts/dev/fake-airtable.mjs`) con la forma real
+  de la API, 429 a pedido y adjuntos servidos; `AIRTABLE_API_URL` lo apunta y
+  se ignora en producción.
+
+**Consecuencias.** Lo calculado en Airtable llega fijo: quien quiera que siga
+calculándose arma después el campo equivalente (fórmula, rollup). Las vistas,
+automatizaciones e interfaces de Airtable no se traen. Importar otra vez la
+misma base crea listas nuevas (no actualiza). Si las bases grandes se vuelven
+habituales, la importación conviene moverla a una cola de BullMQ para que un
+reinicio no la corte. Los próximos importadores (Notion, ClickUp, Trello,
+monday) pueden reusar la forma: leer → revisar → importar en segundo plano.

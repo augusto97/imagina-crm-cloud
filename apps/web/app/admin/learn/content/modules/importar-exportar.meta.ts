@@ -11,6 +11,7 @@ export const meta: LearnModuleMeta = {
     hero: 'ie-importar',
     highlights: [
         'Crear listas completas desde un Excel: tipos, opciones y listas vinculadas solos',
+        'Traer una base completa de Airtable, con sus vínculos y adjuntos',
         'Importar Excel o CSV, creando los campos que falten',
         'Actualizar precios, cuotas o stock desde un archivo, con vista previa y deshacer',
         'Exportar a Excel con montos y fechas reales, o a CSV',
@@ -25,6 +26,15 @@ export const meta: LearnModuleMeta = {
             minutes: 8,
             level: 'basic',
             keywords: 'crear lista desde excel csv archivo planilla hoja de calculo migrar empezar mapeo automatico tipos columnas descartar listas vinculadas varias hojas inteligencia artificial ia recomendaciones tablero vistas automatizaciones',
+            needs: 'manage_lists',
+        },
+        {
+            id: 'importar-exportar-airtable',
+            title: 'Traer tu base de Airtable',
+            summary: 'Conecta con un token, elige la base y cada tabla llega como una lista: campos con su tipo, opciones con color, vínculos entre tablas y adjuntos.',
+            minutes: 7,
+            level: 'basic',
+            keywords: 'airtable importar migrar base tablas token traer datos vinculos relaciones adjuntos colaboradores formulas pasar de airtable cambiar de herramienta',
             needs: 'manage_lists',
         },
         {

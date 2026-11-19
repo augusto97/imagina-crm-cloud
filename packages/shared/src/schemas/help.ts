@@ -167,6 +167,8 @@ export function helpScreensFor(pathname: string, search = ''): string[] {
     if (path === '/lists' || /^\/folders\/[^/]+$/.test(path)) out.push('lists-index');
     // v0.1.339 — «Crear desde un archivo».
     if (path === '/lists/new/file') out.push('lists-index', 'lists-index:archivo');
+    // v0.1.458 — «Importar de Airtable».
+    if (path === '/lists/new/airtable') out.push('lists-index', 'lists-index:airtable');
     if (/^\/lists\/[^/]+\/records$/.test(path)) {
         out.push('records');
         if (params.record) out.push('record');

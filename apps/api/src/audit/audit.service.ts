@@ -264,6 +264,8 @@ export type AuditAction =
     // su consentimiento en línea) y las listas creadas.
     | 'file_import.ai_request'
     | 'file_import.apply'
+    // v0.1.458 — «Importar de Airtable»: las listas creadas (nunca el token).
+    | 'airtable_import.apply'
     // v0.1.341 (ADR-S89) — sugerencias por lista: el análisis con IA (con su
     // consentimiento en línea), lo aplicado y el modo de la empresa.
     | 'list_suggestions.ai_request'

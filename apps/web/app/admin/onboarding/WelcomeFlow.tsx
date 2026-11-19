@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { ArrowLeft, FilePlus2, FileSpreadsheet, Info, LayoutTemplate, Loader2, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Database, FilePlus2, FileSpreadsheet, Info, LayoutTemplate, Loader2, Sparkles } from 'lucide-react';
 import type { OnboardingApplyResult } from '@imagina-base/shared';
 
 import { Button } from '@/components/ui/button';
@@ -108,6 +108,18 @@ export function WelcomeFlow({ variant, initialPath = 'choose', onBlank, onCreate
                     />
                 )}
             </div>
+            {/* v0.1.458 — quien viene de Airtable trae su base completa. */}
+            <button
+                type="button"
+                onClick={() => navigate('/lists/new/airtable')}
+                className="imcrm-mx-auto imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-lg imcrm-px-3 imcrm-py-2 imcrm-text-sm imcrm-text-muted-foreground imcrm-transition-colors hover:imcrm-bg-muted hover:imcrm-text-foreground"
+                data-testid="welcome-path-airtable"
+                data-tour="welcome-airtable"
+            >
+                <Database className="imcrm-h-4 imcrm-w-4" aria-hidden />
+                {__('¿Tus datos están en Airtable? Trae tu base completa')}
+                <ArrowRight className="imcrm-h-4 imcrm-w-4" aria-hidden />
+            </button>
         </div>
     );
 }

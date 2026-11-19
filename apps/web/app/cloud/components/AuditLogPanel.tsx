@@ -36,6 +36,7 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     // v0.1.339 — crear listas desde un archivo.
     'file_import.ai_request': { text: 'aceptó enviar un resumen protegido de un archivo a la IA para armar la lista' },
     'file_import.apply': { text: 'creó desde un archivo' },
+    'airtable_import.apply': { text: 'importó de Airtable' },
     // v0.1.341 — sugerencias por lista.
     'list_suggestions.ai_request': { text: 'aceptó enviar un resumen protegido de la lista a la IA para pedir sugerencias de' },
     'list_suggestion.apply': { text: 'aplicó la sugerencia' },
