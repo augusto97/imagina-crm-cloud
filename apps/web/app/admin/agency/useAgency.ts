@@ -6,11 +6,14 @@ import type {
     AgencyEnterResult,
     AgencyOverview,
     AgencyPayment,
+    AgencyDebit,
     CreateAgencyChargeInput,
     CreateAgencyClientInput,
     HelpSupport,
     MyAgencyBilling,
+    MyAgencyDebit,
     RegisterAgencyPaymentInput,
+    StartAgencyDebitInput,
     SetAgencyClientBillingInput,
     UpdateAgencyClientInput,
 } from '@imagina-base/shared';
@@ -31,6 +34,7 @@ export const agencyKeys = {
     support: ['agency', 'support'] as const,
     payments: (clientId: number) => ['agency', 'payments', clientId] as const,
     charges: (clientId: number) => ['agency', 'charges', clientId] as const,
+    debit: (clientId: number) => ['agency', 'debit', clientId] as const,
     /** Lo que ve la empresa CLIENTE de su cobro (otra clave: no es de la agencia). */
     mine: ['agency-billing', 'mine'] as const,
 };
@@ -245,6 +249,61 @@ export function usePayMyAgencyPlan() {
     const qc = useQueryClient();
     return useMutation({
         mutationFn: async (periods: number) => (await api.post<AgencyCharge>('/workspaces/current/agency-billing/pay', { periods })).data,
+        onSuccess: () => void qc.invalidateQueries({ queryKey: agencyKeys.mine }),
+    });
+}
+
+// ── v0.1.453 — débito automático ────────────────────────────────────────
+
+/** El débito de un cliente (lo ve la agencia). Con `refresh` se le pregunta al proveedor si ya autorizó. */
+export function useClientDebit(clientId: number, enabled = true) {
+    const qc = useQueryClient();
+    const key = agencyKeys.debit(clientId);
+    return useQuery({
+        queryKey: key,
+        queryFn: async () => {
+            // Mientras espera que el cliente autorice la tarjeta, se le pregunta al proveedor.
+            const prev = qc.getQueryData<MyAgencyDebit>(key);
+            const ask = prev?.current?.status === 'pending' ? '?refresh=1' : '';
+            return (await api.get<MyAgencyDebit>(`/agency/clients/${clientId}/debit${ask}`)).data;
+        },
+        enabled,
+        staleTime: 10_000,
+        refetchInterval: (query) => (query.state.data?.current?.status === 'pending' ? 15_000 : false),
+    });
+}
+
+/** La agencia arma el débito de un cliente (el link para autorizar la tarjeta). */
+export function useStartClientDebit() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async ({ id, input }: { id: number; input: Partial<StartAgencyDebitInput> }) =>
+            (await api.post<{ debit: AgencyDebit; client: AgencyClient }>(`/agency/clients/${id}/debit`, input)).data,
+        onSuccess: () => refresh(qc),
+    });
+}
+
+export function useCancelClientDebit() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (id: number) => (await api.delete<AgencyClient>(`/agency/clients/${id}/debit`)).data,
+        onSuccess: () => refresh(qc),
+    });
+}
+
+/** La empresa cliente activa el débito desde su app (con el correo de su cuenta de pago). */
+export function useStartMyAgencyDebit() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async (email: string) => (await api.post<AgencyDebit>('/workspaces/current/agency-billing/debit', { email })).data,
+        onSuccess: () => void qc.invalidateQueries({ queryKey: agencyKeys.mine }),
+    });
+}
+
+export function useCancelMyAgencyDebit() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: async () => (await api.delete<{ ok: true }>('/workspaces/current/agency-billing/debit')).data,
         onSuccess: () => void qc.invalidateQueries({ queryKey: agencyKeys.mine }),
     });
 }

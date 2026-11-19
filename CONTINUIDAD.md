@@ -430,7 +430,20 @@ sh scripts/dev/up.sh       # dockerd + Postgres/Redis + install + build + migrat
 ## 10. Estado actual e hilos abiertos
 
 **Estado**: todas las fases F0–F12 completas, y las fases 1-7 del estudio de
-funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.452**
+funcionalidades (ver `CLAUDE.md` §5). Última versión publicada: **v0.1.453**
+(**débito automático para los clientes de la agencia** — con Mercado Pago o
+PayPal, la agencia marca «Ofrecer débito automático» en Cobro en línea; desde
+«Plan y pagos» arma el débito (o el cliente lo activa en Ajustes →
+Suscripción): autoriza la tarjeta una vez y se le cobra el plan cada período,
+dos días antes de que venza, con la cuenta de la agencia. Cada cuota se
+registra sola (una vez aunque el aviso se repita), el plazo se corre y no se
+deshace; mientras cobra, los avisos no mandan «por vencer» ni links y «Pagar
+ahora» se oculta. Cambiar el período o la moneda del plan, quitarlo o que la
+empresa salga de la agencia lo cancela; cambiar el valor lo actualiza en el
+proveedor. Límite: un reembolso no descuenta el período solo. Migración 0137.
+ADR-S108 addendum. **Sigue** v0.1.454: el cobro de la plataforma a la agencia
+(«las dos»: plan base con N empresas + valor por empresa extra); G8 DIAN
+espera proveedor y credenciales de prueba). Antes **v0.1.452**
 (**la agencia cobra en línea a sus clientes** — la agencia conecta su cuenta
 de Mercado Pago, Wompi o PayPal y la elige en «Planes para tus clientes →
 Cobro en línea»: se arma en la agencia la lista «Empresas cliente» (un
@@ -2287,6 +2300,31 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
 > qué se hizo · decisiones/pedidos del usuario · qué queda. El detalle técnico
 > completo de cada versión vive en `CLAUDE.md` §5.
 
+- **2026-11-19 · v0.1.453** — **Débito automático para los clientes de la
+  agencia** (I3, ADR-S108 addendum). `agency_billing.online.debit` (sólo con
+  Mercado Pago o PayPal: `agency_debit_provider`). `AgencyDebitService`: un
+  plan de suscripción manejado por plan de la agencia y conexión
+  (`provider_refs.agency_plan_id`, fuera de los listados de la empresa, 400
+  `plan_managed_by_agency` al editarlo); `SubscriptionsService.createForAgency`
+  cuelga la suscripción del registro del cliente en «Empresas cliente», con el
+  valor del cliente y arranque dos días antes del «pagado hasta»; vuelta por
+  `/api/v1/public/agency-pay/debit/:reference` → Suscripción con `?debito=1`.
+  Una viva por cliente (409 `agency_debit_exists`; una por autorizar se
+  reemplaza), armada por la agencia o el cliente, cancelable desde los dos
+  lados; bitácora `agency.debit_start/cancel`. Cada cuota pasa a
+  `agency_payments` con `subscription_charge_id` (migración 0137, único
+  parcial: una vez aunque el aviso se repita) y no se deshace. `reconcileClient`
+  y el tic: período/moneda/plan quitado → cancela; valor → PATCH en el
+  proveedor (una por autorizar se cancela); empresa fuera de la agencia →
+  cancela. Mientras cobra, sin «por vencer» ni links y sin «Pagar ahora».
+  **Límite**: un reembolso no descuenta el período solo (se corrige «Pagado
+  hasta» a mano; está en la guía). Sin novedad (es de agencias). Tests: `agency-debit.spec` (5) + suites relacionadas 107/107 y
+  51/51, front 951; E2E navegador 35/35 en escritorio y 36/36 en celular oscuro
+  contra el Mercado Pago simulado (ofrecer, armar, autorizar y volver, cuota
+  registrada una vez, cancelar desde el cliente, activarlo él con otro correo,
+  volver sin autorizar). **Sigue** v0.1.454 (cobro de la plataforma a la
+  agencia). **Pendientes del usuario**: Redis, `NPM_TOKEN`, DIAN y usuario
+  propio para la app (sin cambios).
 - **2026-11-19 · v0.1.452** — **La agencia cobra en línea a sus clientes**
   (I3, ADR-S108 addendum). `agency_billing.online` (`connection_id` de una
   conexión de cobro del EQUIPO de la agencia, `client_can_pay`, `auto_link`);
@@ -2307,7 +2345,10 @@ y v0.1.351 formularios con tu diseño, ADR-S94), en `main`.
   propias primero), la franja de solo lectura seguía tras pagar (se refresca
   la sesión) y «¡Pago recibido!» llegaba una consulta tarde. **La división
   creció**: v0.1.453 débito automático para los clientes de la agencia,
-  v0.1.454 cobro de la plataforma a la agencia. Sin novedad (es de agencias).
+  v0.1.454 cobro de la plataforma a la agencia. **Atrapado por el CI del PR**:
+  `merge-plan.spec` exigía clasificar `tenants.agency_record_id` — fusionar el
+  registro de una empresa cliente queda bloqueado (`BLOCKING` con
+  `tenantColumn: 'agency_id'`). Sin novedad (es de agencias).
   Tests: `agency-charges.spec` (6), suites relacionadas 93/93, front 951,
   shared 1049; E2E navegador 40/40 en escritorio y 41/41 en celular oscuro
   contra el Mercado Pago simulado. **Pendientes del usuario**: Redis,

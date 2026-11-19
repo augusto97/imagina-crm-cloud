@@ -1,5 +1,11 @@
 import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, Logger, Param, ParseIntPipe, Patch, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
 import {
+    startAgencyDebitSchema,
+    startMyAgencyDebitSchema,
+    type AgencyDebit,
+    type MyAgencyDebit,
+    type StartAgencyDebitInput,
+    type StartMyAgencyDebitInput,
     agencyBillingSettingsSchema,
     createAgencyChargeSchema,
     payAgencyPlanSchema,
@@ -31,6 +37,7 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import { AgencyBillingService } from './agency-billing.service';
 import { AgencyChargesService } from './agency-charges.service';
 import { AgencyClientsListService } from './agency-clients-list.service';
+import { AgencyDebitService } from './agency-debit.service';
 import { AgencyService, notAgency } from './agency.service';
 
 /**
@@ -61,6 +68,7 @@ export class AgencyController {
         private readonly billing: AgencyBillingService,
         private readonly charges: AgencyChargesService,
         private readonly clientsList: AgencyClientsListService,
+        private readonly debit: AgencyDebitService,
     ) {}
 
     @Get()
@@ -167,6 +175,36 @@ export class AgencyController {
         return { data: await this.charges.list(agencyId, id) };
     }
 
+    // ── v0.1.453 — débito automático ───────────────────────────────────
+
+    @Get('clients/:id/debit')
+    async debitOf(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number, @Query('refresh') refresh?: string): Promise<{ data: MyAgencyDebit }> {
+        const agencyId = assertAgencyAdmin(req);
+        await this.agency.clientOf(agencyId, req.authUserId!, id);
+        return { data: await this.debit.mineFor(id, { refresh: refresh === '1' }) };
+    }
+
+    /** Arma el débito automático del cliente: el link para que autorice su tarjeta (y se lo manda). */
+    @Post('clients/:id/debit')
+    async startDebit(
+        @Req() req: FastifyRequest,
+        @Param('id', ParseIntPipe) id: number,
+        @Body(new ZodValidationPipe(startAgencyDebitSchema)) input: StartAgencyDebitInput,
+    ): Promise<{ data: { debit: AgencyDebit; client: AgencyClient } }> {
+        const agencyId = assertAgencyAdmin(req);
+        await this.agency.clientOf(agencyId, req.authUserId!, id);
+        const debit = await this.debit.start(agencyId, id, { email: input.email ?? null, sendEmail: input.send_email, via: 'agency', userId: req.authUserId! });
+        return { data: { debit, client: await this.agency.clientOf(agencyId, req.authUserId!, id) } };
+    }
+
+    @Delete('clients/:id/debit')
+    async cancelDebit(@Req() req: FastifyRequest, @Param('id', ParseIntPipe) id: number): Promise<{ data: AgencyClient }> {
+        const agencyId = assertAgencyAdmin(req);
+        await this.agency.clientOf(agencyId, req.authUserId!, id);
+        await this.debit.cancel(agencyId, id, { userId: req.authUserId!, by: 'agency' });
+        return { data: await this.agency.clientOf(agencyId, req.authUserId!, id) };
+    }
+
     /** Asignar o quitar el plan de un cliente, ajustar su valor o su «pagado hasta». */
     @Patch('clients/:id/billing')
     async setClientBilling(
@@ -228,6 +266,7 @@ export class AgencyClientBillingController {
     constructor(
         private readonly billing: AgencyBillingService,
         private readonly charges: AgencyChargesService,
+        private readonly debit: AgencyDebitService,
     ) {}
 
     @Get()
@@ -239,8 +278,10 @@ export class AgencyClientBillingController {
         // v0.1.452 — con `refresh` (volvió de pagar) se le pregunta al proveedor por el link
         // pendiente; si con eso entró el pago, se relee para que ya venga en «Tus pagos».
         const online = await this.charges.onlineFor(t, { refresh: refresh === '1' });
+        // v0.1.453 — el débito automático (con `refresh`, si estaba por autorizar se le pregunta al proveedor).
+        const debit = await this.debit.mineFor(t, { refresh: refresh === '1' });
         const base = refresh === '1' ? ((await this.billing.mine(t)) ?? first) : first;
-        return { data: { ...base, online } };
+        return { data: { ...base, online: { ...online, debit } } };
     }
 
     /**
@@ -256,6 +297,26 @@ export class AgencyClientBillingController {
     ): Promise<{ data: AgencyCharge }> {
         const t = assertClientAdmin(req);
         return { data: await this.charges.payAsClient(t, req.authUserId!, input.periods) };
+    }
+
+    /** v0.1.453 — Activar el débito automático desde la app (con el correo de su Mercado Pago o PayPal). */
+    @Post('debit')
+    @HttpCode(200)
+    @AllowReadOnly()
+    async startDebit(
+        @Req() req: FastifyRequest,
+        @Body(new ZodValidationPipe(startMyAgencyDebitSchema)) input: StartMyAgencyDebitInput,
+    ): Promise<{ data: AgencyDebit }> {
+        const t = assertClientAdmin(req);
+        return { data: await this.debit.startAsClient(t, req.authUserId!, input.email) };
+    }
+
+    @Delete('debit')
+    @AllowReadOnly()
+    async cancelDebit(@Req() req: FastifyRequest): Promise<{ data: { ok: true } }> {
+        const t = assertClientAdmin(req);
+        await this.debit.cancelAsClient(t, req.authUserId!);
+        return { data: { ok: true } };
     }
 }
 
@@ -275,7 +336,17 @@ function assertClientAdmin(req: FastifyRequest): number {
  */
 @Controller('public/agency-pay')
 export class PublicAgencyPayController {
-    constructor(private readonly charges: AgencyChargesService) {}
+    constructor(
+        private readonly charges: AgencyChargesService,
+        private readonly debit: AgencyDebitService,
+    ) {}
+
+    /** v0.1.453 — La vuelta de autorizar el débito automático: pregunta al proveedor y lleva a la app. */
+    @Get('debit/:reference')
+    async backFromDebit(@Param('reference') reference: string, @Res() reply: FastifyReply): Promise<void> {
+        const url = await this.debit.returnFromAuthorize(reference).catch(() => null);
+        await reply.header('cache-control', 'no-store').header('referrer-policy', 'no-referrer').redirect(url ?? '/', 302);
+    }
 
     @Get(':reference')
     async back(@Param('reference') reference: string, @Res() reply: FastifyReply): Promise<void> {

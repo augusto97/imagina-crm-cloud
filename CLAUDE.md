@@ -16393,6 +16393,62 @@ dashboards, Kanban, tabla, portal) se conserva y evoluciona acá.
         front 951, shared 1049 — E2E navegador 40/40 en escritorio y 41/41 en
         celular oscuro contra el Mercado Pago simulado.
 
+  - [x] **Modo agencia, quinta parte: débito automático para los clientes de
+        la agencia (v0.1.453, addendum ADR-S108)**: la empresa cliente autoriza
+        su tarjeta una vez y se le cobra el plan de la agencia cada período con
+        la cuenta de Mercado Pago o PayPal de la agencia (ADR-S96).
+        (a) **Se ofrece por agencia**: «Ofrecer débito automático» en Cobro en
+        línea (`agency_billing.online.debit`, default apagado; Wompi no tiene
+        cobros recurrentes → 400 `agency_debit_provider`; apagado → 409
+        `agency_debit_off`).
+        (b) **Planes de suscripción manejados** (`AgencyDebitService`,
+        `agency-debit.service.ts`): uno por plan de la agencia y conexión
+        (`provider_refs.agency_plan_id`), fuera de los listados de planes de la
+        empresa (Cobros, formularios, tienda) y sin edición a mano (400
+        `plan_managed_by_agency`). `SubscriptionsService.createForAgency` cuelga
+        la suscripción del registro del cliente en «Empresas cliente», con el
+        valor del cliente y el primer cobro **dos días antes** del «pagado
+        hasta»; vuelta por `/api/v1/public/agency-pay/debit/:reference` (pregunta
+        al proveedor) → Ajustes → Suscripción del cliente con `?debito=1`, que
+        consulta hasta verla activa.
+        (c) **Una viva por cliente**: otra con una por autorizar la reemplaza
+        (cancelada en el proveedor); con una activa → 409
+        `agency_debit_exists`. La arma la agencia (`POST
+        /agency/clients/:id/debit`: correo de quien paga o el del primer admin,
+        link por correo opcional) o el cliente (`POST
+        /workspaces/current/agency-billing/debit {email}`); se cancela desde
+        los dos lados (`DELETE …/debit`). Bitácora `agency.debit_start` y
+        `agency.debit_cancel` en la agencia y en el cliente.
+        (d) **Cada cuota se registra sola**: el sink de eventos de
+        suscripciones lleva cada cobro aprobado a `agency_payments` con
+        `subscription_charge_id` (migración 0137, único parcial: un aviso
+        repetido —de la suscripción, la cuota o el pago— no suma dos veces); el
+        plazo se encadena y no se deshace (`agency_payment_online`).
+        **Límite**: un reembolso en la cuenta de la agencia no descuenta el
+        período solo — se corrige «Pagado hasta» a mano (lo dice la guía).
+        (e) **Lo que cambia solo** (`reconcileClient` y el tic): cambiar el
+        período o la moneda del plan, o quitárselo, cancela el débito; cambiar
+        el valor lo actualiza en el proveedor (una por autorizar se cancela);
+        una empresa que sale de la agencia queda sin débito. Mientras cobra,
+        los avisos no mandan «por vencer» ni arman links y «Pagar ahora» se
+        oculta.
+        (f) **Pantallas**: la opción en Cobro en línea, sección «Débito
+        automático» en Plan y pagos (correo, link para autorizar, estado,
+        último fallo, cancelar), insignia en la fila del cliente y caja «Débito
+        automático» en Ajustes → Suscripción del cliente con «¡Listo! El débito
+        automático quedó activo» al volver (anclas `agency-debit`,
+        `agency-client-debit`, `settings-agency-debit`).
+        Guía `agency` al día; sin novedad (es de agencias). Tests:
+        `agency-debit.spec` (5: Wompi y sin cuenta, armar con el valor/arranque/
+        correo y reemplazo con el plan reusado, cuota por aviso registrada una
+        vez y sin «por vencer», cambio de valor/período y desde el cliente,
+        empresa que sale de la agencia) + agencia/suscripciones/plataforma/
+        merge-plan/RLS 107/107, formularios/tienda/cobros 51/51, front 951 — E2E
+        navegador 35/35 en escritorio y 36/36 en celular oscuro contra el
+        Mercado Pago simulado (ofrecer, armar, autorizar y volver, cuota
+        registrada, avisos repetidos sin sumar, cancelar desde el cliente,
+        activarlo él con otro correo, volver sin autorizar).
+
 ## 6. Cómo trabajar con Claude Code en este repo
 
 1. Leer este archivo + `STANDALONE.md` + `HANDOFF.md` antes de cualquier tarea.

@@ -36,8 +36,8 @@ credenciales de prueba) e **I3** (modo agencia: decisiones tomadas el
 2026-11-18, ver §2; la base salió en v0.1.449 —consola de la agencia, entrar
 con rastro, pausar, plan gestionado—, la marca de la agencia en v0.1.450 y
 sus planes con pagos registrados a mano en v0.1.451 y el cobro en línea con
-la cuenta de la agencia en v0.1.452; siguen el débito automático para los
-clientes de la agencia en v0.1.453 y el cobro de la plataforma a la agencia en
+la cuenta de la agencia en v0.1.452 y el débito automático para los clientes
+de la agencia en v0.1.453; sigue el cobro de la plataforma a la agencia en
 v0.1.454).
 
 ---

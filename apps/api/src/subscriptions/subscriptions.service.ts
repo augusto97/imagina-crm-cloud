@@ -317,6 +317,8 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
                     and(
                         eq(subscriptionPlans.tenantId, tenantId),
                         inArray(subscriptionPlans.connectionId, connectionId !== undefined ? [connectionId] : ids),
+                        // v0.1.453 — los planes del débito de una agencia los maneja la agencia (no se venden ni se editan aquí).
+                        sql`NOT (${subscriptionPlans.providerRefs} ? 'agency_plan_id')`,
                     ),
                 )
                 .orderBy(desc(subscriptionPlans.active), asc(subscriptionPlans.name));
@@ -494,6 +496,9 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
             tx.select().from(subscriptionPlans).where(and(eq(subscriptionPlans.tenantId, tenantId), eq(subscriptionPlans.id, planId))).limit(1),
         );
         if (!plan) throw new NotFoundException({ code: 'plan_not_found', message: 'Ese plan no existe.', data: { status: 404 } });
+        if (isAgencyManagedPlan(plan)) {
+            badRequest('plan_managed_by_agency', 'Este plan lo maneja tu agencia para el débito automático de sus clientes: se cambia desde «Planes para tus clientes».');
+        }
         if (plan.connectionId === null) badRequest('connection_gone', 'La conexión de este plan ya no existe.');
         await this.connectors.editableConnection(tenantId, actor.userId, actor.role, plan.connectionId!);
         return plan;
@@ -1554,7 +1559,7 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
                 .from(subscriptionPlans)
                 .where(and(eq(subscriptionPlans.tenantId, tenantId), inArray(subscriptionPlans.id, [...planIds]))),
         );
-        const byId = new Map(rows.filter((r) => r.active && r.connectionId !== null && team.has(r.connectionId)).map((r) => [r.id, r]));
+        const byId = new Map(rows.filter((r) => r.active && r.connectionId !== null && team.has(r.connectionId) && !isAgencyManagedPlan(r)).map((r) => [r.id, r]));
         return planIds
             .map((id) => byId.get(id))
             .filter((r): r is SubscriptionPlanRowDb => r !== undefined)
@@ -1717,6 +1722,50 @@ export class SubscriptionsService implements OnModuleInit, OnApplicationShutdown
         this.afterWrite(tenantId, result.write);
         if (!result.sub.url) throw new SubscriptionError(`${providerName(result.sub.provider)} no devolvió el link para autorizar el pago.`);
         return { id: result.sub.id, url: result.sub.url, provider: result.sub.provider };
+    }
+
+    /**
+     * v0.1.453 (ADR-S108) — El débito automático de un cliente de una agencia:
+     * la suscripción queda en el registro del cliente en «Empresas cliente» de
+     * la agencia, con un plan que maneja la agencia (`provider_refs.agency_plan_id`).
+     * Al autorizar, la persona vuelve a su app (`backUrlFor`).
+     */
+    async createForAgency(
+        tenantId: number,
+        opts: {
+            planId: number;
+            listId: number;
+            recordId: number;
+            payerEmail: string;
+            amount: number;
+            startDate: string | null;
+            title: string;
+            userId: number | null;
+            backUrlFor: (reference: string) => string;
+        },
+    ): Promise<Subscription> {
+        const result = await this.tenantDb.withTenant(tenantId, async (tx) => {
+            const [row] = await tx
+                .select()
+                .from(subscriptionPlans)
+                .where(and(eq(subscriptionPlans.tenantId, tenantId), eq(subscriptionPlans.id, opts.planId)))
+                .limit(1);
+            if (!row || !isAgencyManagedPlan(row)) throw new SubscriptionError('El plan del débito automático ya no existe.');
+            return this.createInTx(tx, tenantId, {
+                plan: row,
+                listId: opts.listId,
+                recordId: opts.recordId,
+                payerEmail: opts.payerEmail,
+                amount: opts.amount,
+                startDate: opts.startDate,
+                title: opts.title,
+                userId: opts.userId,
+                backUrlFor: opts.backUrlFor,
+            });
+        });
+        this.afterWrite(tenantId, result.write);
+        if (!result.sub.url) throw new SubscriptionError(`${providerName(result.sub.provider)} no devolvió el link para autorizar el pago.`);
+        return result.sub;
     }
 
     /**
@@ -2638,4 +2687,10 @@ function noticeFor(sub: SubscriptionRowDb, event: SubscriptionEvent, charge: Sub
         default:
             return null;
     }
+}
+
+/** v0.1.453 — Un plan que maneja una agencia para el débito automático de sus clientes. */
+export function isAgencyManagedPlan(plan: { providerRefs: unknown }): boolean {
+    const refs = plan.providerRefs;
+    return !!refs && typeof refs === 'object' && typeof (refs as Record<string, unknown>).agency_plan_id === 'string';
 }

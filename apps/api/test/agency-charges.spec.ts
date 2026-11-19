@@ -196,7 +196,7 @@ describe('v0.1.452 — la agencia cobra en línea a sus clientes (Postgres + Red
         charges = new AgencyChargesService(pg.db, env, billingSvc, clientsList, collections, mail, audit);
         charges.onModuleInit();
         agencySvc = new AgencyService(pg.db, auth, plans, billingSvc, audit, clientsList);
-        controller = new AgencyController(agencySvc, billingSvc, charges, clientsList);
+        controller = new AgencyController(agencySvc, billingSvc, charges, clientsList, {} as never);
         reminders = new AgencyBillingRemindersService(pg.db, redis, env, mail, undefined, charges);
         guard = new TenantGuard(tenantDb, new Reflector(), audit, redis);
         fakeMercadoPago();
@@ -250,7 +250,7 @@ describe('v0.1.452 — la agencia cobra en línea a sus clientes (Postgres + Red
             fields: { access_token: 'APP_USR-buena' },
             visibility: 'workspace',
         });
-        await billingSvc.updateSettings(agency, admin.id, { ...PLANS, online: { connection_id: connection.id, client_can_pay: true, auto_link: true, ...opts.online } });
+        await billingSvc.updateSettings(agency, admin.id, { ...PLANS, online: { connection_id: connection.id, client_can_pay: true, auto_link: true, debit: false, ...opts.online } });
         const client = await makeTenant({ name: 'Floristería Rosa', agencyId: agency });
         const clientAdmin = await makeUser('rosa');
         await addMember(client, clientAdmin.id, 'admin');
@@ -336,7 +336,7 @@ describe('v0.1.452 — la agencia cobra en línea a sus clientes (Postgres + Red
         });
         expect(await clientsList.listRef(agency)).toBeNull();
 
-        const body = { ...PLANS, online: { connection_id: connection.id, client_can_pay: false, auto_link: true } };
+        const body = { ...PLANS, online: { connection_id: connection.id, client_can_pay: false, auto_link: true, debit: false } };
         await controller.setBilling(await asAgencyAdmin(admin.id, agency, body), body);
         const ref = await clientsList.listRef(agency);
         expect(ref).not.toBeNull();
@@ -350,7 +350,7 @@ describe('v0.1.452 — la agencia cobra en línea a sus clientes (Postgres + Red
         await controller.setBilling(await asAgencyAdmin(admin.id, agency, withoutOnline), { ...withoutOnline, online: { ...DEFAULT_AGENCY_BILLING.online } } as AgencyBillingSettings);
         const [row] = await pg.db.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, agency));
         const saved = (row!.settings as Record<string, unknown>).agency_billing as AgencyBillingSettings;
-        expect(saved.online).toEqual({ connection_id: connection.id, client_can_pay: false, auto_link: true });
+        expect(saved.online).toEqual({ connection_id: connection.id, client_can_pay: false, auto_link: true, debit: false });
 
         // Wompi sólo cobra en pesos: un plan en dólares no se puede cobrar con esa cuenta.
         const [wompi] = await withTenant(pg.db, agency, (tx) =>
@@ -360,12 +360,12 @@ describe('v0.1.452 — la agencia cobra en línea a sus clientes (Postgres + Red
             billingSvc.updateSettings(agency, admin.id, {
                 ...PLANS,
                 plans: [{ ...PLANS.plans[0]!, currency: 'USD', price: 40 }],
-                online: { connection_id: wompi!.id, client_can_pay: true, auto_link: true },
+                online: { connection_id: wompi!.id, client_can_pay: true, auto_link: true, debit: false },
             }),
         ).rejects.toMatchObject({ response: { code: 'agency_online_currency' } });
         // Una cuenta de otra empresa no se puede elegir.
         await expect(
-            billingSvc.updateSettings(agency, admin.id, { ...PLANS, online: { connection_id: 999_999, client_can_pay: true, auto_link: true } }),
+            billingSvc.updateSettings(agency, admin.id, { ...PLANS, online: { connection_id: 999_999, client_can_pay: true, auto_link: true, debit: false } }),
         ).rejects.toMatchObject({ response: { code: 'agency_online_connection' } });
     });
 

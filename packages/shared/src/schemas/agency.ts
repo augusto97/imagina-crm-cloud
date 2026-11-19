@@ -10,6 +10,7 @@ import {
     agencyCollectionConnectionSchema,
 } from './agency-billing';
 import { tenantAccessSchema } from './plan-access';
+import { SUBSCRIPTION_STATUSES } from './subscriptions';
 
 /**
  * v0.1.449 (I3, ADR-S108) — Modo agencia.
@@ -84,6 +85,8 @@ export const agencyClientSchema = z.object({
     last_agency_access_at: z.string().nullable(),
     /** v0.1.451 — su plan con la agencia y cómo va el pago. */
     billing: agencyClientBillingSchema,
+    /** v0.1.453 — el estado de su débito automático (null = no tiene uno vivo). */
+    debit_status: z.enum(SUBSCRIPTION_STATUSES).nullable().default(null),
 });
 export type AgencyClient = z.infer<typeof agencyClientSchema>;
 

@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router';
 import {
     AGENCY_PAYMENT_METHOD_LABELS,
     agencyChargeAmount,
+    agencyDebitCharges,
     agencyMonthsText,
     resolveTimeZone,
     zonedInstant,
@@ -13,16 +14,26 @@ import {
 import { CheckCircle2, CreditCard, Loader2, Mail, MessageCircle, Receipt } from 'lucide-react';
 
 import { formatMoney } from '@/cloud/components/payments/paymentUi';
+import { useSession } from '@/cloud/session';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useConfirm } from '@/components/ui/confirm-dialog';
+import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { useToast } from '@/components/ui/toast';
 import { __ } from '@/lib/i18n';
 import { browserTimeZone, formatDate, getTenantTimeZone } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
 import { billingStateLabel, planPriceText } from './agencyUi';
-import { StateBadge } from './ClientBillingDialog';
-import { refreshSessionAfterPayment, useMyAgencyBilling, usePayMyAgencyPlan } from './useAgency';
+import { DebitCurrent, StateBadge } from './ClientBillingDialog';
+import {
+    refreshSessionAfterPayment,
+    useCancelMyAgencyDebit,
+    useMyAgencyBilling,
+    usePayMyAgencyPlan,
+    useStartMyAgencyDebit,
+} from './useAgency';
 
 const ONLINE_METHODS = new Set(['mercadopago', 'wompi', 'paypal']);
 const CONFIRM_FOR_MS = 120_000;
@@ -68,7 +79,30 @@ export function MyAgencyBillingPanel({ agencyName }: { agencyName: string }): JS
     const [startedAt] = useState(() => Date.now());
     const [confirmed, setConfirmed] = useState<string | null>(() => recentPaid());
     const [timedOut, setTimedOut] = useState(false);
-    const q = useMyAgencyBilling(true, { refresh: checking, pollMs: checking ? 4000 : 0 });
+    // v0.1.453 — volvió de autorizar el débito automático: se pregunta hasta que queda activo.
+    const [checkingDebit, setCheckingDebit] = useState(() => params.get('debito') === '1');
+    const [debitConfirmed, setDebitConfirmed] = useState(false);
+    const [debitTimedOut, setDebitTimedOut] = useState(false);
+    const asking = checking || checkingDebit;
+    const q = useMyAgencyBilling(true, { refresh: asking, pollMs: asking ? 4000 : 0 });
+
+    useEffect(() => {
+        if (!checkingDebit || !q.data) return;
+        const current = q.data.online.debit.current;
+        if (current && current.status !== 'pending') {
+            setCheckingDebit(false);
+            setDebitConfirmed(true);
+            void refreshSessionAfterPayment(qc).catch(() => undefined);
+            setParams((prev) => {
+                const next = new URLSearchParams(prev);
+                next.delete('debito');
+                return next;
+            }, { replace: true });
+        } else if (Date.now() - startedAt > CONFIRM_FOR_MS) {
+            setCheckingDebit(false);
+            setDebitTimedOut(true);
+        }
+    }, [checkingDebit, q.data, startedAt, setParams, qc]);
 
     useEffect(() => {
         if (!checking || !q.data) return;
@@ -106,6 +140,8 @@ export function MyAgencyBillingPanel({ agencyName }: { agencyName: string }): JS
     const state = data ? billingStateLabel(data.billing) : null;
     const tz = resolveTimeZone(getTenantTimeZone(), browserTimeZone());
     const payments = (data?.payments ?? []).filter((p) => !p.undone_at);
+    const debit = data?.online.debit ?? { available: false, current: null };
+    const debitCharges = agencyDebitCharges(debit.current);
 
     return (
         <div className="imcrm-flex imcrm-flex-col imcrm-gap-4" data-testid="settings-agency-managed">
@@ -119,6 +155,23 @@ export function MyAgencyBillingPanel({ agencyName }: { agencyName: string }): JS
                 <p className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-success/10 imcrm-px-3 imcrm-py-2 imcrm-text-sm" role="status" data-testid="my-agency-pay-confirmed">
                     <CheckCircle2 className="imcrm-h-4 imcrm-w-4 imcrm-text-success" aria-hidden />
                     {`${__('¡Pago recibido! La empresa quedó pagada hasta el')} ${formatDate(new Date(confirmed))}.`}
+                </p>
+            )}
+            {checkingDebit && (
+                <p className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-muted imcrm-px-3 imcrm-py-2 imcrm-text-sm" role="status" data-testid="my-agency-debit-checking">
+                    <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" aria-hidden />
+                    {__('Estamos confirmando tu débito automático…')}
+                </p>
+            )}
+            {debitConfirmed && (
+                <p className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-rounded-md imcrm-bg-success/10 imcrm-px-3 imcrm-py-2 imcrm-text-sm" role="status" data-testid="my-agency-debit-confirmed">
+                    <CheckCircle2 className="imcrm-h-4 imcrm-w-4 imcrm-text-success" aria-hidden />
+                    {__('¡Listo! El débito automático quedó activo: tu plan se paga solo cada período.')}
+                </p>
+            )}
+            {debitTimedOut && (
+                <p className="imcrm-rounded-md imcrm-bg-warning/10 imcrm-px-3 imcrm-py-2 imcrm-text-sm" role="status" data-testid="my-agency-debit-pending">
+                    {__('Todavía no nos llega la confirmación de tu tarjeta. Si ya la autorizaste, aparece aquí en unos minutos; si no, puedes terminar de autorizarla con el botón de abajo.')}
                 </p>
             )}
             {timedOut && (
@@ -158,12 +211,15 @@ export function MyAgencyBillingPanel({ agencyName }: { agencyName: string }): JS
                                     ? data!.online.enabled
                                         ? __('La empresa está en solo lectura: tus datos están intactos y se pueden ver y descargar. Apenas pagues, vuelve a funcionar al instante.')
                                         : `${__('La empresa está en solo lectura: tus datos están intactos y se pueden ver y descargar. Cuando')} ${name} ${__('registre el pago, vuelve a funcionar al instante.')}`
-                                    : data!.online.enabled
+                                    : debitCharges
+                                      ? __('Tu débito automático lo cobra solo antes de que venza: no tienes que hacer nada.')
+                                      : data!.online.enabled
                                       ? __('Puedes pagar aquí abajo con «Pagar ahora». Si ya pagaste por otro medio, tu agencia lo registra.')
                                       : `${__('Si ya pagaste,')} ${name} ${__('lo registra y no tienes que hacer nada más. Si no, escríbele para ponerte al día.')}`}
                             </p>
                         )}
-                        {data!.online.enabled && <PayNow data={data!} plan={plan} busy={checking} />}
+                        {(debit.available || debit.current) && <DebitBox data={data!} plan={plan} busy={asking} />}
+                        {data!.online.enabled && !(debitCharges && state.tone === 'ok') && <PayNow data={data!} plan={plan} busy={asking} />}
                     </CardContent>
                 )}
             </Card>
@@ -282,6 +338,92 @@ function PayNow({ data, plan, busy }: { data: MyAgencyBilling; plan: AgencyClien
             <p className="imcrm-text-[12px] imcrm-text-muted-foreground">
                 {`${__('Pagas con')} ${provider} ${__('a la cuenta de tu agencia. Cuando el pago entra, la empresa queda pagada al instante; no tienes que avisar.')}`}
             </p>
+            {error && <p className="imcrm-text-sm imcrm-text-destructive" role="alert">{error}</p>}
+        </div>
+    );
+}
+
+/**
+ * v0.1.453 — Débito automático: autorizar la tarjeta una vez (en la cuenta de
+ * Mercado Pago o PayPal de la agencia) y el plan se paga solo cada período.
+ */
+function DebitBox({ data, plan, busy }: { data: MyAgencyBilling; plan: AgencyClientPlan; busy: boolean }): JSX.Element {
+    const myEmail = useSession((s) => s.user?.email ?? '');
+    const start = useStartMyAgencyDebit();
+    const cancel = useCancelMyAgencyDebit();
+    const confirm = useConfirm();
+    const toast = useToast();
+    const [email, setEmail] = useState('');
+    const [error, setError] = useState<string | null>(null);
+    const current = data.online.debit.current;
+    const provider = data.online.provider ?? __('el medio de pago de tu agencia');
+
+    const go = (): void => {
+        setError(null);
+        const to = email.trim() || myEmail;
+        if (!to) {
+            setError(__('Escribe el correo de tu cuenta de pago.'));
+            return;
+        }
+        start.mutate(to, {
+            onSuccess: (d) => {
+                if (d.url) window.location.assign(d.url);
+                else setError(__('No se pudo armar el débito automático. Intenta de nuevo en un momento.'));
+            },
+            onError: (err) => setError(err instanceof Error ? err.message : String(err)),
+        });
+    };
+
+    const doCancel = async (): Promise<void> => {
+        const ok = await confirm({
+            title: __('¿Cancelar el débito automático?'),
+            description: __('Tu plan deja de pagarse solo. Lo que ya pagaste se conserva; los próximos pagos los haces con «Pagar ahora» o con tu agencia.'),
+            confirmLabel: __('Cancelar el débito'),
+            destructive: true,
+        });
+        if (!ok) return;
+        cancel.mutate(undefined, {
+            onSuccess: () => toast.success(__('Débito automático cancelado')),
+            onError: (err) => toast.error(__('No se pudo cancelar'), err instanceof Error ? err.message : String(err)),
+        });
+    };
+
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-3 imcrm-border-t imcrm-border-border imcrm-pt-3" data-testid="my-agency-debit" data-tour="settings-agency-debit">
+            <span className="imcrm-flex imcrm-items-center imcrm-gap-2 imcrm-text-sm imcrm-font-medium">
+                <CreditCard className="imcrm-h-4 imcrm-w-4 imcrm-text-muted-foreground" aria-hidden />
+                {__('Débito automático')}
+            </span>
+            {current ? (
+                <DebitCurrent
+                    current={current}
+                    onCancel={() => void doCancel()}
+                    cancelling={cancel.isPending}
+                    cancelLabel={__('Cancelar el débito automático')}
+                />
+            ) : (
+                <>
+                    <p className="imcrm-text-sm">
+                        {`${__('Autoriza tu tarjeta una sola vez con')} ${provider} ${__('y el plan se paga solo:')} ${planPriceText(plan)}, ${__('dos días antes de que venza. Lo puedes cancelar cuando quieras.')}`}
+                    </p>
+                    <div className="imcrm-flex imcrm-flex-col imcrm-gap-2 sm:imcrm-flex-row sm:imcrm-items-end">
+                        <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-sm sm:imcrm-w-72">
+                            <span>{__('Correo de tu cuenta de pago')}</span>
+                            <Input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder={myEmail || __('correo@empresa.com')}
+                                data-testid="my-agency-debit-email"
+                            />
+                        </label>
+                        <Button onClick={go} disabled={start.isPending || busy} data-testid="my-agency-debit-start">
+                            {start.isPending && <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />}
+                            {__('Activar el débito automático')}
+                        </Button>
+                    </div>
+                </>
+            )}
             {error && <p className="imcrm-text-sm imcrm-text-destructive" role="alert">{error}</p>}
         </div>
     );

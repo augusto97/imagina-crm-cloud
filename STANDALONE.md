@@ -10180,3 +10180,45 @@ v0.1.454 el cobro de la plataforma a la agencia.
   copiar, anular y el historial de cobros) y «Pagar ahora» en la Suscripción
   del cliente (anclas `agency-online` y `settings-agency-pay`).
 Sin novedad en el catálogo (es de agencias).
+
+**Addendum v0.1.453 — débito automático de los clientes de la agencia.** La
+empresa cliente autoriza su tarjeta UNA vez y se le cobra el plan de la agencia
+cada período con la cuenta de Mercado Pago o PayPal de la agencia (ADR-S96).
+- **Se ofrece por agencia** (`agency_billing.online.debit`, default apagado;
+  sólo con una conexión de Mercado Pago o PayPal: 400 `agency_debit_provider`
+  con Wompi, que no tiene cobros recurrentes; apagado → 409 `agency_debit_off`).
+- **Planes de suscripción manejados** (`AgencyDebitService.managedPlan`): un
+  `subscription_plans` por plan de la agencia y conexión, con
+  `provider_refs.agency_plan_id`. Quedan fuera de los listados de planes de
+  la empresa (Cobros, formularios, tienda) y no se editan a mano (400
+  `plan_managed_by_agency`). La suscripción (`SubscriptionsService.createForAgency`)
+  cuelga del registro del cliente en «Empresas cliente», lleva el valor del
+  cliente en línea y arranca **dos días antes** del «pagado hasta» (nadie paga
+  dos veces el mismo período); la vuelta es
+  `/api/v1/public/agency-pay/debit/:reference` → Ajustes → Suscripción del
+  cliente con `?debito=1`, que consulta al proveedor hasta verla activa.
+- **Una viva por cliente**: armar otra con una por autorizar la reemplaza (se
+  cancela en el proveedor); con una activa → 409 `agency_debit_exists`. La
+  arman la agencia (`POST /agency/clients/:id/debit`, correo de quien paga o
+  el del primer admin, y opcionalmente el link por correo) o el cliente
+  (`POST /workspaces/current/agency-billing/debit {email}`); se cancela desde
+  los dos lados (`DELETE …/debit`). Bitácora `agency.debit_start` y
+  `agency.debit_cancel` en la agencia y en el cliente.
+- **Cada cuota se registra sola**: el sink de eventos de suscripciones avisa a
+  `onSubscriptionEvent` y `registerCharges` pasa cada cobro aprobado a
+  `agency_payments` con `subscription_charge_id` (migración 0137, único
+  parcial: un aviso repetido —por la suscripción, la cuota o el pago— no suma
+  dos veces); el «pagado hasta» se encadena. No se deshace desde la consola
+  (`agency_payment_online`). **Límite**: un reembolso en la cuenta de la
+  agencia no descuenta el período solo — se corrige «Pagado hasta» a mano.
+- **Lo que cambia por sí solo** (`reconcileClient` y el tic): cambiar el
+  período, la moneda o quitar el plan cancela el débito; cambiar el valor lo
+  actualiza en el proveedor (una por autorizar se cancela); una empresa que
+  sale de la agencia queda sin débito. Mientras el débito cobra, los avisos de
+  facturación no mandan «por vencer» ni arman links, y «Pagar ahora» se oculta.
+- **Pantallas**: «Ofrecer débito automático» en Cobro en línea, sección
+  «Débito automático» en Plan y pagos (correo, link para autorizar, estado,
+  último fallo, cancelar), insignia en la fila del cliente y caja «Débito
+  automático» en Ajustes → Suscripción del cliente (anclas `agency-debit`,
+  `agency-client-debit`, `settings-agency-debit`).
+Sin novedad en el catálogo (es de agencias).

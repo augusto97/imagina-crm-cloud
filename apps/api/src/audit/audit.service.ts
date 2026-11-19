@@ -284,6 +284,8 @@ export type AuditAction =
     | 'agency.payment_undo'
     | 'agency.charge_create'
     | 'agency.charge_cancel'
+    | 'agency.debit_start'
+    | 'agency.debit_cancel'
     | 'agency.clients_list'
     | 'agency.link'
     | 'agency.unlink'

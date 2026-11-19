@@ -1,7 +1,9 @@
-import { bigint, date, index, integer, numeric, pgTable, timestamp, varchar } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { bigint, date, index, integer, numeric, pgTable, timestamp, uniqueIndex, varchar } from 'drizzle-orm/pg-core';
 import { tenants } from './tenants';
 import { users } from './users';
 import { paymentLinks } from './collections';
+import { subscriptionCharges } from './subscriptions';
 
 /**
  * v0.1.451 (I3, ADR-S108) — Un pago de una empresa CLIENTE a su agencia. Es
@@ -32,8 +34,14 @@ export const agencyPayments = pgTable(
         createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
         undoneAt: timestamp('undone_at', { withTimezone: true }),
         undoneBy: bigint('undone_by', { mode: 'number' }).references(() => users.id, { onDelete: 'set null' }),
+        /** v0.1.453 — La cuota del débito automático que pagó esto (una sola vez por cuota). */
+        subscriptionChargeId: bigint('subscription_charge_id', { mode: 'number' }).references(() => subscriptionCharges.id, { onDelete: 'set null' }),
     },
-    (t) => [index('agency_payments_client_ix').on(t.clientId, t.id), index('agency_payments_tenant_ix').on(t.tenantId, t.createdAt)],
+    (t) => [
+        index('agency_payments_client_ix').on(t.clientId, t.id),
+        index('agency_payments_tenant_ix').on(t.tenantId, t.createdAt),
+        uniqueIndex('agency_payments_sub_charge_ux').on(t.subscriptionChargeId).where(sql`${t.subscriptionChargeId} IS NOT NULL`),
+    ],
 );
 export type AgencyPaymentRow = typeof agencyPayments.$inferSelect;
 

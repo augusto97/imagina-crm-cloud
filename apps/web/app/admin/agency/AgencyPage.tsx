@@ -1,6 +1,6 @@
 import { forwardRef, useMemo, useState } from 'react';
 import * as RDialog from '@radix-ui/react-dialog';
-import { Building2, Clock, Loader2, LogIn, MoreHorizontal, PauseCircle, Pencil, PlayCircle, Plus, Receipt, Search, Users, X } from 'lucide-react';
+import { Building2, Clock, CreditCard, Loader2, LogIn, MoreHorizontal, PauseCircle, Pencil, PlayCircle, Plus, Receipt, Search, Users, X } from 'lucide-react';
 import type { AgencyClient, AgencyOverview } from '@imagina-base/shared';
 
 import { relativeTime } from '@/admin/activity/activityText';
@@ -27,7 +27,7 @@ import {
 } from './useAgency';
 import { AgencyBrandCard } from './AgencyBrandCard';
 import { AgencyPlansCard } from './AgencyPlansCard';
-import { billingStateLabel, clientStateLabel } from './agencyUi';
+import { billingStateLabel, clientStateLabel, debitStateLabel } from './agencyUi';
 import { ClientBillingDialog } from './ClientBillingDialog';
 import { formatMoney } from '@/cloud/components/payments/paymentUi';
 
@@ -284,6 +284,18 @@ function ClientRow({ client: c, onRename, onBilling }: { client: AgencyClient; o
                         {c.billing.plan ? `${c.billing.plan.name} · ${bill.label}` : bill.label}
                     </span>
                     {c.billing.plan && <span className="imcrm-text-muted-foreground">{bill.detail}</span>}
+                    {c.debit_status && (
+                        <span
+                            className={cn(
+                                'imcrm-inline-flex imcrm-items-center imcrm-gap-1',
+                                debitStateLabel(c.debit_status).tone === 'ok' ? 'imcrm-text-success' : 'imcrm-text-warning',
+                            )}
+                            data-testid="agency-client-debit"
+                        >
+                            <CreditCard className="imcrm-h-3.5 imcrm-w-3.5" aria-hidden />
+                            {debitStateLabel(c.debit_status).label}
+                        </span>
+                    )}
                 </button>
                 <div className="imcrm-mt-0.5 imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-3 imcrm-gap-y-0.5 imcrm-text-[12px] imcrm-text-muted-foreground">
                     <span className="imcrm-inline-flex imcrm-items-center imcrm-gap-1">

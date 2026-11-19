@@ -7,6 +7,7 @@ import {
     AGENCY_PAYMENT_METHOD_LABELS,
     agencyBillingState,
     agencyMonthlyAmount,
+    agencyDebitProviderOk,
     collectionCurrencyError,
     isCollectionProvider,
     extendPaidUntil,
@@ -121,6 +122,12 @@ export class AgencyBillingService {
                 const err = collectionCurrencyError(conn.provider, p.currency);
                 if (err) throw bad('agency_online_currency', `El plan «${p.name}» cobra en ${p.currency}: ${err}`);
             }
+            // v0.1.453 — el débito automático sólo existe con Mercado Pago o PayPal.
+            if (next.online.debit && !agencyDebitProviderOk(conn.provider)) {
+                throw bad('agency_debit_provider', 'El débito automático funciona con Mercado Pago o PayPal: elige una de esas cuentas o apágalo.');
+            }
+        } else if (next.online.debit) {
+            next.online.debit = false;
         }
         await this.db.transaction(async (tx) => {
             const [row] = await tx.select({ settings: tenants.settings }).from(tenants).where(eq(tenants.id, agencyId)).for('update').limit(1);
@@ -328,7 +335,17 @@ export class AgencyBillingService {
         tx: Tx,
         agencyId: number,
         clientId: number,
-        input: { months: number; amount?: number; method: AgencyPaymentMethod; note?: string | null; paidOn: string; userId: number | null; tz: string },
+        input: {
+            months: number;
+            amount?: number;
+            method: AgencyPaymentMethod;
+            note?: string | null;
+            paidOn: string;
+            userId: number | null;
+            tz: string;
+            /** v0.1.453 — la cuota del débito automático que pagó esto. */
+            subscriptionChargeId?: number | null;
+        },
     ): Promise<{ id: number; name: string; amount: number; currency: string; months: number; to: Date }> {
         const client = await this.lockClient(tx, agencyId, clientId);
         const plan = readAgencyClientPlan((client.settings as Record<string, unknown> | null)?.agency_plan);
@@ -352,6 +369,7 @@ export class AgencyBillingService {
                 periodTo: to,
                 prevPaidUntil: client.agencyPaidUntil,
                 createdBy: input.userId,
+                subscriptionChargeId: input.subscriptionChargeId ?? null,
             })
             .returning({ id: agencyPayments.id });
         await tx
@@ -454,7 +472,7 @@ export class AgencyBillingService {
             payments: await this.paymentsOf(clientTenantId, client.agencyPaidUntil, { tenantId: client.agencyId, withNames: false }),
             support: support.email || support.whatsapp || support.url ? support : null,
             // v0.1.452 — lo completa el servicio de cobros en línea.
-            online: { enabled: false, provider: null, periods: [], pending: null },
+            online: { enabled: false, provider: null, periods: [], pending: null, debit: { available: false, current: null } },
         };
     }
 

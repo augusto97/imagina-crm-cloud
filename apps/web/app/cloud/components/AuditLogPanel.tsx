@@ -173,6 +173,8 @@ const ACTION_META: Record<string, { text: string; danger?: boolean }> = {
     'agency.charge_create': { text: 'creó un link de pago para la empresa cliente' },
     'agency.charge_cancel': { text: 'anuló un link de pago de la empresa cliente' },
     'agency.clients_list': { text: 'creó la lista «Empresas cliente»' },
+    'agency.debit_start': { text: 'pidió activar el débito automático de la empresa cliente' },
+    'agency.debit_cancel': { text: 'canceló el débito automático de la empresa cliente', danger: true },
     // v0.1.442 — webhooks de eventos.
     'webhook.create': { text: 'creó el webhook' },
     'webhook.update': { text: 'cambió el webhook' },

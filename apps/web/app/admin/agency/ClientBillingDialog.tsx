@@ -5,7 +5,9 @@ import {
     AGENCY_PAYMENT_METHOD_LABELS,
     COLLECTION_PROVIDER_LABEL,
     agencyChargeAmount,
+    agencyDebitProviderOk,
     agencyMonthsText,
+    agencyPeriodText,
     agencyPayablePeriods,
     collectionCurrencyError,
     extendPaidUntil,
@@ -16,12 +18,13 @@ import {
     zonedToday,
     type AgencyCharge,
     type AgencyClient,
+    type AgencyDebit,
     type AgencyOverview,
     type AgencyPayment,
     type SetAgencyClientBillingInput,
     parseLooseAmount,
 } from '@imagina-base/shared';
-import { Copy, ExternalLink, Link2, Loader2, Undo2, X } from 'lucide-react';
+import { CreditCard, Copy, ExternalLink, Link2, Loader2, Undo2, X } from 'lucide-react';
 
 import { formatMoney } from '@/cloud/components/payments/paymentUi';
 import { Badge } from '@/components/ui/badge';
@@ -34,14 +37,17 @@ import { __ } from '@/lib/i18n';
 import { browserTimeZone, formatDate, formatNumber, getTenantTimeZone } from '@/lib/tenantFormat';
 import { cn } from '@/lib/utils';
 
-import { billingStateLabel, planPriceText } from './agencyUi';
+import { billingStateLabel, debitStateLabel, planPriceText } from './agencyUi';
 import {
     useCancelClientCharge,
+    useCancelClientDebit,
     useClientCharges,
+    useClientDebit,
     useClientPayments,
     useCreateClientCharge,
     useRegisterClientPayment,
     useSetClientBilling,
+    useStartClientDebit,
     useUndoClientPayment,
 } from './useAgency';
 
@@ -89,6 +95,9 @@ export function ClientBillingDialog({ client, overview, onClose }: { client: Age
                         <PlanSection client={client} overview={overview} />
                         {b.plan && overview.online.available && overview.billing.online.connection_id !== null && (
                             <OnlineChargeSection client={client} overview={overview} />
+                        )}
+                        {b.plan && overview.online.available && overview.billing.online.connection_id !== null && overview.billing.online.debit && (
+                            <DebitSection client={client} overview={overview} />
                         )}
                         {b.plan && <PaymentSection client={client} />}
                         <HistorySection client={client} />
@@ -553,6 +562,187 @@ function OnlineChargeSection({ client, overview }: { client: AgencyClient; overv
                 )}
             </div>
         </Section>
+    );
+}
+
+/**
+ * v0.1.453 (I3, ADR-S108) — Débito automático: la empresa autoriza su tarjeta
+ * una vez (en la cuenta de Mercado Pago o PayPal de la agencia) y se le cobra
+ * el plan cada período, dos días antes de que venza. Cada cobro se registra
+ * solo como pago y corre el «pagado hasta».
+ */
+function DebitSection({ client, overview }: { client: AgencyClient; overview: AgencyOverview }): JSX.Element {
+    const plan = client.billing.plan!;
+    const debit = useClientDebit(client.id);
+    const start = useStartClientDebit();
+    const cancel = useCancelClientDebit();
+    const confirm = useConfirm();
+    const toast = useToast();
+    const firstAdmin = client.admins.find((a) => !a.pending)?.email ?? client.admins[0]?.email ?? '';
+    const [email, setEmail] = useState('');
+    const [sendEmail, setSendEmail] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const conn = overview.online.connections.find((c) => c.id === overview.billing.online.connection_id) ?? null;
+    const providerOk = !!conn && agencyDebitProviderOk(conn.provider);
+    const current = debit.data?.current ?? null;
+    const available = debit.data?.available ?? false;
+    const hasAdmins = client.admins.length > 0;
+
+    const submit = (e: React.FormEvent): void => {
+        e.preventDefault();
+        setError(null);
+        const to = email.trim() || firstAdmin;
+        if (!to) {
+            setError(__('Escribe el correo de quien paga (el de su cuenta de Mercado Pago o PayPal).'));
+            return;
+        }
+        start.mutate(
+            { id: client.id, input: { email: to, send_email: sendEmail && hasAdmins } },
+            {
+                onSuccess: async (res) => {
+                    const copied = res.debit.url ? await copy(res.debit.url) : false;
+                    toast.success(__('Débito automático listo para autorizar'), copied ? __('El link quedó copiado.') : undefined);
+                    setEmail('');
+                    void debit.refetch();
+                },
+                onError: (err) => setError(err instanceof Error ? err.message : String(err)),
+            },
+        );
+    };
+
+    const doCancel = async (): Promise<void> => {
+        const ok = await confirm({
+            title: __('¿Cancelar el débito automático?'),
+            description: __('Se deja de cobrar solo. Lo que ya pagó se conserva y puedes seguir cobrando con links o registrando pagos a mano.'),
+            confirmLabel: __('Cancelar el débito'),
+            destructive: true,
+        });
+        if (!ok) return;
+        cancel.mutate(client.id, {
+            onSuccess: () => {
+                toast.success(__('Débito automático cancelado'));
+                void debit.refetch();
+            },
+            onError: (err) => toast.error(__('No se pudo cancelar'), err instanceof Error ? err.message : String(err)),
+        });
+    };
+
+    return (
+        <Section
+            title={__('Débito automático')}
+            hint={__('La empresa autoriza su tarjeta una sola vez y se le cobra el plan cada período, dos días antes de que venza. Cada cobro se registra solo.')}
+        >
+            <div className="imcrm-flex imcrm-flex-col imcrm-gap-3" data-testid="agency-debit" data-tour="agency-client-debit">
+                {debit.isLoading ? (
+                    <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin imcrm-text-muted-foreground" />
+                ) : current ? (
+                    <DebitCurrent current={current} onCancel={() => void doCancel()} cancelling={cancel.isPending} />
+                ) : !providerOk ? (
+                    <p className="imcrm-rounded-md imcrm-bg-muted imcrm-px-3 imcrm-py-2 imcrm-text-sm">
+                        {__('Tu cuenta de cobro no permite cobros recurrentes: sólo Mercado Pago o PayPal.')}
+                    </p>
+                ) : !available ? (
+                    <p className="imcrm-rounded-md imcrm-bg-muted imcrm-px-3 imcrm-py-2 imcrm-text-sm" data-testid="agency-debit-unavailable">
+                        {`${__('No está disponible para este plan: tu cuenta de cobro no acepta')} ${plan.currency}.`}
+                    </p>
+                ) : (
+                    <form className="imcrm-flex imcrm-flex-col imcrm-gap-3" onSubmit={submit} noValidate data-testid="agency-debit-form">
+                        <p className="imcrm-text-sm">
+                            {`${__('Se le cobra')} ${planPriceText(plan)}.`}
+                        </p>
+                        <label className="imcrm-flex imcrm-flex-col imcrm-gap-1 imcrm-text-sm sm:imcrm-max-w-sm">
+                            <span className="imcrm-font-medium">{__('Correo de quien paga')}</span>
+                            <Input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder={firstAdmin || __('correo@empresa.com')}
+                                data-testid="agency-debit-email"
+                            />
+                            <span className="imcrm-text-[12px] imcrm-text-muted-foreground">
+                                {__('El de su cuenta de Mercado Pago o PayPal. Si lo dejas vacío, se usa el de su administrador.')}
+                            </span>
+                        </label>
+                        <label className="imcrm-flex imcrm-items-start imcrm-gap-2 imcrm-text-sm">
+                            <input
+                                type="checkbox"
+                                className="imcrm-mt-0.5"
+                                checked={sendEmail && hasAdmins}
+                                disabled={!hasAdmins}
+                                onChange={(e) => setSendEmail(e.target.checked)}
+                                data-testid="agency-debit-send"
+                            />
+                            <span>{__('Mandarles el link para autorizar a sus administradores')}</span>
+                        </label>
+                        {error && <p className="imcrm-text-sm imcrm-text-destructive" role="alert">{error}</p>}
+                        <div>
+                            <Button type="submit" size="sm" disabled={start.isPending} data-testid="agency-debit-start">
+                                {start.isPending ? <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" /> : <CreditCard className="imcrm-h-4 imcrm-w-4" />}
+                                {__('Armar el débito automático')}
+                            </Button>
+                        </div>
+                    </form>
+                )}
+            </div>
+        </Section>
+    );
+}
+
+/** El débito vivo de un cliente: estado, valor, próximo cobro y el link mientras falta autorizar. */
+export function DebitCurrent({ current, onCancel, cancelling, cancelLabel }: { current: AgencyDebit; onCancel: () => void; cancelling: boolean; cancelLabel?: string }): JSX.Element {
+    const toast = useToast();
+    const state = debitStateLabel(current.status);
+    return (
+        <div className="imcrm-flex imcrm-flex-col imcrm-gap-2" data-testid="agency-debit-current">
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-items-center imcrm-gap-x-3 imcrm-gap-y-1 imcrm-text-sm">
+                <StateBadge tone={state.tone} label={state.label} />
+                <span className="imcrm-font-medium">{`${formatMoney(current.amount, current.currency)} ${__(agencyPeriodText(current.months))}`}</span>
+                {current.provider && <span className="imcrm-text-muted-foreground">{`${__('con')} ${current.provider}`}</span>}
+            </div>
+            <p className="imcrm-text-[12px] imcrm-text-muted-foreground" data-testid="agency-debit-detail">
+                {[
+                    state.detail,
+                    current.payer_email ? `${__('Paga')}: ${current.payer_email}` : '',
+                    current.next_charge_at && current.status !== 'pending' ? `${__('Próximo cobro')}: ${formatDate(new Date(current.next_charge_at))}` : '',
+                ]
+                    .filter(Boolean)
+                    .join(' · ')}
+            </p>
+            {current.last_failure_reason && current.status !== 'active' && (
+                <p className="imcrm-rounded-md imcrm-bg-warning/10 imcrm-px-3 imcrm-py-2 imcrm-text-sm" role="alert">
+                    {`${__('El último cobro no pasó')}: ${current.last_failure_reason}`}
+                </p>
+            )}
+            <div className="imcrm-flex imcrm-flex-wrap imcrm-gap-2">
+                {current.url && (
+                    <>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={async () => {
+                                if (await copy(current.url!)) toast.success(__('Link copiado'));
+                                else toast.error(__('No se pudo copiar'), current.url!);
+                            }}
+                            data-testid="agency-debit-copy"
+                        >
+                            <Copy className="imcrm-h-4 imcrm-w-4" />
+                            {__('Copiar link para autorizar')}
+                        </Button>
+                        <Button size="sm" variant="outline" asChild>
+                            <a href={current.url} target="_blank" rel="noopener noreferrer" data-testid="agency-debit-open">
+                                <ExternalLink className="imcrm-h-4 imcrm-w-4" />
+                                {__('Abrir')}
+                            </a>
+                        </Button>
+                    </>
+                )}
+                <Button size="sm" variant="ghost" onClick={onCancel} disabled={cancelling} data-testid="agency-debit-cancel">
+                    {cancelling && <Loader2 className="imcrm-h-4 imcrm-w-4 imcrm-animate-spin" />}
+                    {cancelLabel ?? __('Cancelar el débito')}
+                </Button>
+            </div>
+        </div>
     );
 }
 

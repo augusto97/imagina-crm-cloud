@@ -1,4 +1,4 @@
-import { agencyPeriodText, type AgencyClient, type AgencyClientBilling, type AgencyClientPlan } from '@imagina-base/shared';
+import { agencyPeriodText, type AgencyClient, type AgencyClientBilling, type AgencyClientPlan, type SubscriptionStatus } from '@imagina-base/shared';
 
 import { formatMoney } from '@/cloud/components/payments/paymentUi';
 import { formatDate } from '@/lib/tenantFormat';
@@ -50,5 +50,26 @@ export function billingStateLabel(b: AgencyClientBilling): { label: string; deta
             return { label: __('Venció'), detail: `${__('Pasa a solo lectura el')} ${cut}`, tone: 'warn' };
         case 'unpaid':
             return { label: __('Sin pagar'), detail: `${__('En solo lectura desde el')} ${cut}`, tone: 'bad' };
+    }
+}
+
+/**
+ * v0.1.453 — El débito automático de un cliente en palabras (y su color).
+ * `pending` = el cliente todavía no autorizó la tarjeta.
+ */
+export function debitStateLabel(status: SubscriptionStatus): { label: string; detail: string; tone: 'ok' | 'warn' | 'bad' | 'muted' } {
+    switch (status) {
+        case 'pending':
+            return { label: __('Débito por autorizar'), detail: __('Falta que autorice su tarjeta con el link.'), tone: 'warn' };
+        case 'active':
+            return { label: __('Débito automático'), detail: __('Se cobra solo cada período.'), tone: 'ok' };
+        case 'retrying':
+            return { label: __('Débito: reintentando'), detail: __('El último cobro no pasó: se vuelve a intentar.'), tone: 'warn' };
+        case 'past_due':
+            return { label: __('Débito en mora'), detail: __('Varios cobros no pasaron: hay que revisar su tarjeta.'), tone: 'bad' };
+        case 'paused':
+            return { label: __('Débito pausado'), detail: __('No se le está cobrando.'), tone: 'muted' };
+        default:
+            return { label: __('Sin débito'), detail: '', tone: 'muted' };
     }
 }
